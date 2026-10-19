@@ -56,6 +56,8 @@ void registerTableFunctions()
     registerTableFunctionView(factory);
     registerTableFunctionViewIfPermitted(factory);
 
+    registerTableFunctionObfuscate(factory);
+
 #if USE_MYSQL
     registerTableFunctionMySQL(factory);
 #endif

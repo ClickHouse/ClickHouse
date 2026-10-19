@@ -262,6 +262,10 @@ void MergeTreeDataPartWriterWide::addStreams(
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in Wide part writer addStreams");
         });
 
+        if (settings.stream_base_manifest && claim_column_stream_bases)
+            settings.stream_base_manifest->registerStreamBase(
+                stream_name, {StreamBaseManifest::Kind::Column, name_and_type.name});
+
         column_streams.emplace(stream_name, std::make_unique<MergeTreeWriterStream>(
             stream_name,
             data_part_storage,
@@ -837,6 +841,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
 void MergeTreeDataPartWriterWide::finalizeIndexGranularity()
 {
     /// If no data was written, streams and columns substreams will be uninitialized, but we need them.
+    claim_column_stream_bases = streams_initialized;
     initStreamsAndSubstreamsIfNeeded();
 
     auto serialize_settings = getSerializationSettings();
@@ -976,16 +981,6 @@ void MergeTreeDataPartWriterWide::writeFinalMark(const NameAndTypePair & name_an
     serialization->enumerateStreams(enumerate_settings, callback, data);
 }
 
-static void fillIndexGranularityImpl(
-    MergeTreeIndexGranularity & index_granularity,
-    size_t index_offset,
-    size_t index_granularity_for_block,
-    size_t rows_in_block)
-{
-    for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
-        index_granularity.appendMark(index_granularity_for_block);
-}
-
 void MergeTreeDataPartWriterWide::fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block)
 {
     if (getCurrentMark() < index_granularity->getMarksCount() && getCurrentMark() != index_granularity->getMarksCount() - 1)
@@ -996,11 +991,7 @@ void MergeTreeDataPartWriterWide::fillIndexGranularity(size_t index_granularity_
     if (rows_written_in_last_mark != 0)
         index_offset = index_granularity->getLastMarkRows() - rows_written_in_last_mark;
 
-    fillIndexGranularityImpl(
-        *index_granularity,
-        index_offset,
-        index_granularity_for_block,
-        rows_in_block);
+    fillIndexGranularityForWidePart(*index_granularity, index_offset, index_granularity_for_block, rows_in_block);
 }
 
 

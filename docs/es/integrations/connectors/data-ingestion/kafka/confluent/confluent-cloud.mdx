@@ -2,7 +2,7 @@
 sidebarTitle: 'Kafka Connector Sink en Confluent Cloud'
 slug: /integrations/kafka/cloud/confluent/sink-connector
 description: 'Guía para usar ClickHouse Connector Sink totalmente gestionado en Confluent Cloud'
-title: 'Integración de Confluent Cloud con ClickHouse'
+title: 'ClickHouse Connector Sink totalmente gestionado en Confluent Cloud'
 keywords: ['Kafka', 'Confluent Cloud']
 doc_type: 'guide'
 integration:
@@ -27,47 +27,33 @@ picture-in-picture"
   </Frame>
 </div>
 
-<div id="prerequisites">
-  ## Requisitos previos
-</div>
+## Requisitos previos {#prerequisites}
 
 Suponemos que estás familiarizado con:
 
 * [ClickHouse Connector Sink](/es/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink)
 * Confluent Cloud
 
-<div id="the-official-kafka-connector-from-clickhouse-with-confluent-cloud">
-  ## El conector oficial de ClickHouse para Kafka con Confluent Cloud
-</div>
+## El conector oficial de ClickHouse para Kafka con Confluent Cloud {#the-official-kafka-connector-from-clickhouse-with-confluent-cloud}
 
-<div id="create-a-topic">
-  #### Crear un topic
-</div>
+#### Crear un topic {#create-a-topic}
 
 Crear un topic en Confluent Cloud es bastante sencillo y encontrarás instrucciones detalladas [aquí](https://docs.confluent.io/cloud/current/client-apps/topics/manage.html).
 
-<div id="important-notes">
-  #### Notas importantes
-</div>
+#### Notas importantes {#important-notes}
 
 * El nombre del topic de Kafka debe ser el mismo que el de la tabla de ClickHouse. Esto se puede ajustar mediante un transformador (por ejemplo, [`ExtractTopic`](https://docs.confluent.io/platform/current/connect/transforms/extracttopic.html)).
 * Tener más particiones no siempre implica un mayor rendimiento; consulta nuestra próxima guía para obtener más detalles y consejos de rendimiento.
 
-<div id="gather-your-connection-details">
-  #### Recopila los datos de conexión
-</div>
+#### Recopila los datos de conexión {#gather-your-connection-details}
 
 <ConnectionDetails />
 
-<div id="install-connector">
-  #### Instalar el conector
-</div>
+#### Instalar el conector {#install-connector}
 
 Instala el ClickHouse Sink Connector completamente gestionado en Confluent Cloud siguiendo la [documentación oficial](https://docs.confluent.io/cloud/current/connectors/cc-clickhouse-sink-connector/cc-clickhouse-sink.html).
 
-<div id="configure-the-connector">
-  #### Configurar el conector
-</div>
+#### Configurar el conector {#configure-the-connector}
 
 Durante la configuración del ClickHouse Sink Connector, deberás proporcionar los siguientes datos:
 
@@ -83,8 +69,6 @@ La UI de Confluent Cloud admite opciones avanzadas de configuración para ajusta
   En Confluent Cloud, para ajustar determinadas opciones, como la [configuración de fetch](/es/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink#fetch-settings) y la [configuración de sondeo](/es/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink#poll-settings), es necesario abrir un caso de soporte en Confluent Cloud.
 </Note>
 
-<div id="known-limitations">
-  #### Limitaciones conocidas
-</div>
+#### Limitaciones conocidas {#known-limitations}
 
 * Consulta la lista de [limitaciones de los conectores en la documentación oficial](https://docs.confluent.io/cloud/current/connectors/cc-clickhouse-sink-connector/cc-clickhouse-sink.html#limitations)

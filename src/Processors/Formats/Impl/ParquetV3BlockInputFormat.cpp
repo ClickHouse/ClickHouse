@@ -1,4 +1,5 @@
 #include <memory>
+#include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
 #include <optional>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
@@ -6,7 +7,9 @@
 #if USE_PARQUET
 
 #include <Common/logger_useful.h>
+#include <Common/SipHash.h>
 #include <Common/ThreadPool.h>
+#include <Core/Settings.h>
 #include <Common/setThreadName.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatFilterInfo.h>
@@ -16,6 +19,12 @@
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
+#include <Storages/MergeTree/ColumnsCache.h>
+
+namespace ProfileEvents
+{
+    extern const Event ParquetReadMinMaxFromStatistics;
+}
 
 namespace DB
 {
@@ -23,6 +32,16 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace Setting
+{
+    extern const SettingsBool use_parquet_metadata_cache;
+    extern const SettingsBool use_columns_cache;
+    extern const SettingsBool enable_reads_from_columns_cache;
+    extern const SettingsBool enable_writes_to_columns_cache;
+    extern const SettingsUInt64 columns_cache_max_bytes_to_write_to_cache;
+    extern const SettingsUInt64 columns_cache_max_estimated_bytes_to_write_to_cache;
 }
 
 static Parquet::ReadOptions convertReadOptions(const FormatSettings & format_settings)
@@ -34,6 +53,86 @@ static Parquet::ReadOptions convertReadOptions(const FormatSettings & format_set
     options.schema_inference_force_not_nullable = format_settings.schema_inference_make_columns_nullable == 0;
 
     options.dictionary_filter_limit_bytes = format_settings.parquet.dictionary_filter_push_down;
+
+    return options;
+}
+
+/// The source whose `READ` grant is required to see the cached entries of a file in `system.columns_cache`.
+static std::optional<AccessTypeObjects::Source> getColumnsCacheSource(ObjectStorageType storage_type)
+{
+    switch (storage_type)
+    {
+        case ObjectStorageType::S3: return AccessTypeObjects::Source::S3;
+        case ObjectStorageType::Azure: return AccessTypeObjects::Source::AZURE;
+        case ObjectStorageType::HDFS: return AccessTypeObjects::Source::HDFS;
+        case ObjectStorageType::Web: return AccessTypeObjects::Source::URL;
+        case ObjectStorageType::Local: return AccessTypeObjects::Source::FILE;
+        case ObjectStorageType::None:
+        case ObjectStorageType::Max:
+            return std::nullopt;
+    }
+}
+
+/// The columns cache options for reading a file, or nullptr if the read does not use the cache.
+/// The cache is used only for a file whose content is identified by a strong version token:
+/// an ETag of an object in an object storage, or the version token of a local file once it has
+/// settled (see `StorageFile`), the same as for the userspace page cache. The file must also be
+/// identified among all storages, see `RelativePathWithMetadata::path_for_content_cache`.
+static std::shared_ptr<const Parquet::ColumnsCacheOptions> getColumnsCacheOptions(
+    const ContextPtr & context, const FormatSettings & format_settings, const std::optional<RelativePathWithMetadata> & object_with_metadata)
+{
+    const auto & settings = context->getSettingsRef();
+    if (!settings[Setting::use_columns_cache])
+        return nullptr;
+
+    const bool enable_reads = settings[Setting::enable_reads_from_columns_cache];
+    const bool enable_writes = settings[Setting::enable_writes_to_columns_cache];
+    if (!enable_reads && !enable_writes)
+        return nullptr;
+
+    if (!object_with_metadata || !object_with_metadata->metadata || !object_with_metadata->metadata->isEtagUsableAsCacheKey())
+        return nullptr;
+
+    if (!object_with_metadata->path_for_content_cache)
+        return nullptr;
+    const auto source = getColumnsCacheSource(object_with_metadata->storage_type_for_content_cache);
+    if (!source)
+        return nullptr;
+
+    /// A zero-sized cache accepts nothing, so it is not even looked up.
+    ColumnsCachePtr cache = context->getColumnsCache();
+    if (!cache || cache->maxSizeInBytes() == 0)
+        return nullptr;
+
+    auto options = std::make_shared<Parquet::ColumnsCacheOptions>();
+    options->cache = std::move(cache);
+    options->file_path = object_with_metadata->getPath();
+    options->table_uuid = object_with_metadata->table_uuid_for_content_cache;
+    options->source = *source;
+    options->enable_reads = enable_reads;
+    options->enable_writes = enable_writes;
+    options->max_bytes_to_write = settings[Setting::columns_cache_max_bytes_to_write_to_cache];
+    options->max_estimated_bytes_to_write = settings[Setting::columns_cache_max_estimated_bytes_to_write_to_cache];
+    options->write_budget = context->getColumnsCacheWriteBudget();
+    if (!options->write_budget)
+        options->write_budget = std::make_shared<ColumnsCacheWriteBudget>();
+
+    const ObjectMetadata & metadata = *object_with_metadata->metadata;
+    SipHash hash;
+    hash.update(*object_with_metadata->path_for_content_cache);
+    hash.update(metadata.etag);
+    hash.update(metadata.size_bytes);
+    /// The format settings that change the values decoded from the file without changing their
+    /// types. The types are part of the identity of every column, see `Reader::initColumnsCache`.
+    hash.update(format_settings.null_as_default);
+    hash.update(format_settings.parquet.allow_geoparquet_parser);
+    hash.update(format_settings.parquet.enable_json_parsing);
+    hash.update(format_settings.parquet.local_time_as_utc);
+    hash.update(format_settings.parquet.detect_variant_by_structure);
+    hash.update(format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp);
+    hash.update(format_settings.precise_float_parsing);
+    hash.update(static_cast<UInt64>(format_settings.date_time_overflow_behavior));
+    options->file_identity = hash.get64();
 
     return options;
 }
@@ -141,6 +240,14 @@ Chunk ParquetV3BlockInputFormat::read()
     }
 
     initializeIfNeeded();
+    if (reader->reader.min_max_chunk.has_value())
+    {
+        Chunk chunk = std::move(*reader->reader.min_max_chunk);
+        reader->reader.min_max_chunk.reset();
+        min_max_from_statistics = true;
+        ProfileEvents::increment(ProfileEvents::ParquetReadMinMaxFromStatistics);
+        return chunk;
+    }
     auto res = reader->read();
     previous_block_missing_values = res.block_missing_values;
     previous_approx_bytes_read_for_chunk = res.virtual_bytes_read;
@@ -149,7 +256,7 @@ Chunk ParquetV3BlockInputFormat::read()
 
 std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat::getMatchedBuckets() const
 {
-    if (!reader)
+    if (!reader || min_max_from_statistics)
         return std::nullopt;
     std::vector<size_t> matched;
     for (const auto & row_group : reader->reader.row_groups)
@@ -228,6 +335,7 @@ void ParquetV3BlockInputFormat::resetParser()
     {
         std::lock_guard lock(reader_mutex);
         reader.reset();
+        min_max_from_statistics = false;
     }
     previous_block_missing_values.clear();
     IInputFormat::resetParser();
@@ -384,8 +492,10 @@ void registerInputFormatParquet(FormatFactory & factory)
             /// initialise the cache (e.g. the client side of `INSERT ... FROM INFILE`).
             /// In such contexts we just don't memoise the footer — the format itself works
             /// correctly with a null cache.
-            ParquetMetadataCachePtr metadata_cache = context->tryGetParquetMetadataCache();
-            return std::make_shared<ParquetV3BlockInputFormat>(
+            ParquetMetadataCachePtr metadata_cache;
+            if (context->getSettingsRef()[Setting::use_parquet_metadata_cache])
+                metadata_cache = context->tryGetParquetMetadataCache();
+            auto format = std::make_shared<ParquetV3BlockInputFormat>(
                 buf,
                 std::make_shared<const Block>(sample),
                 settings,
@@ -395,6 +505,8 @@ void registerInputFormatParquet(FormatFactory & factory)
                 metadata_cache,
                 object_with_metadata
             );
+            format->setColumnsCacheOptions(getColumnsCacheOptions(context, settings, object_with_metadata));
+            return format;
         });
     factory.registerRandomAccessInputFormat(
         "Parquet",
@@ -474,6 +586,7 @@ The table below shows how Parquet data types match ClickHouse [data types](/refe
 | `MultiPolygon` (GeoParquet) | [MultiPolygon](/reference/data-types/geo#multipolygon) |
 | mixed/unknown geometry (GeoParquet) | [Geometry](/reference/data-types/geo#geometry) |
 | `VARIANT` | [Dynamic](/reference/data-types/dynamic) |
+| `FILE` | [Tuple](/reference/data-types/tuple) of `Nullable` fields, see [below](#file-type) |
 
 When writing Parquet file, data types that don't have a matching Parquet type are converted to the nearest available type:
 
@@ -525,6 +638,12 @@ Each value keeps its own type. Variant primitive types are read as the matching 
 A variant column can also be read as [`JSON`](/reference/data-types/newjson) by requesting that type explicitly, for example in the table structure or in the structure argument of the `file` table function. Then every value must be an object, otherwise an exception is thrown. A variant `null` and a `null` of the whole column are read as an empty object. Typed paths of the requested `JSON` type are converted to their types, and paths listed in `SKIP` and `SKIP REGEXP` are skipped.
 
 Shredded variants (groups with a `typed_value` field) are not supported yet: reading such a column throws an exception, while the other columns of the file can still be read, and schema inference skips the column if `input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference` is enabled. Writing `Dynamic` or `JSON` columns to Parquet as `VARIANT` is not supported either.
+
+## File references {#file-type}
+
+A group annotated with the Parquet [`FILE`](https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#file) logical type represents a reference to a range of bytes, stored inline or in an external file. It is read as a named `Tuple` of the fields present in the file, each of them `Nullable`: `uri`, `content_type` and `checksum` as `Nullable(String)`, `offset` and `size` as `Nullable(Int64)`, and `inline` as `Nullable(String)` with raw bytes. A `null` file reference is read as a tuple with all elements `NULL`. As for any `Tuple`, a subset of the fields can be read by requesting a `Tuple` with fewer elements, or individual fields as subcolumns, such as `file.uri`. The schema of the group is validated: it must contain only these fields, all `OPTIONAL`, with the types defined by the specification, otherwise an exception is thrown. The values are not validated: a value that does not form a valid reference (for example, `offset` without `uri`) is returned as stored. ClickHouse does not resolve the references, that is, it does not read the external files.
+
+On write, such a `Tuple` (with element names being a non-empty subset of the `FILE` fields, integer `offset` and `size`, and `String` or `FixedString` other elements) is written as a `FILE`-annotated group if the setting [`output_format_parquet_write_file_logical_type`](/reference/settings/formats/output-format#output_format_parquet_write_file_logical_type) is enabled. Otherwise it is written as an ordinary group.
 
 ## Geo types (GeoParquet) {#geo-types}
 
@@ -622,6 +741,7 @@ To exchange data with Hadoop, you can use the [`HDFS table engine`](/reference/e
 | `output_format_parquet_batch_size`                                             | Check page size every this many rows. Consider decreasing if you have columns with average values size above a few KBs.                                                                                                              | `1024`      |
 | `output_format_parquet_write_page_index`                                       | Add a possibility to write page index into parquet files.                                                                                                                                                                          | `1`         |
 | `output_format_parquet_geometadata`                                            | Write GeoParquet `geo` metadata into the Parquet file footer and encode top-level ClickHouse geo columns ([`Point`](/reference/data-types/geo#point), [`MultiPoint`](/reference/data-types/geo#multipoint), [`LineString`](/reference/data-types/geo#linestring), [`Polygon`](/reference/data-types/geo#polygon), [`MultiLineString`](/reference/data-types/geo#multilinestring), [`MultiPolygon`](/reference/data-types/geo#multipolygon)) as WKB. If `0`, those columns are written using their native underlying representation (e.g. `Point` as `Tuple(Float64, Float64)`) and no GeoParquet metadata is emitted.                                                                                                                                                                          | `1`         |
+| `output_format_parquet_write_file_logical_type` | Write a named `Tuple` whose element names are fields of the Parquet `FILE` logical type as a `FILE`-annotated group, see [File references](#file-type). | `0` |
 | `input_format_parquet_import_nested`                                           | Obsolete setting, does nothing.                                                                                                                                                                                                   | `0`         |
 | `input_format_parquet_local_time_as_utc` | true | Determines the data type used by schema inference for Parquet timestamps with isAdjustedToUTC=false. If true: DateTime64(..., 'UTC'), if false: DateTime64(...). Neither behavior is fully correct as ClickHouse doesn't have a data type for local wall-clock time. Counterintuitively, 'true' is probably the less incorrect option, because formatting the 'UTC' timestamp as String will produce representation of the correct local time. |
 )DOCS_MD"});

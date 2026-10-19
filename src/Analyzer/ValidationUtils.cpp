@@ -11,6 +11,7 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/Utils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Analyzer/traverseQueryTree.h>
 #include <Interpreters/Context.h>
@@ -236,6 +237,10 @@ public:
 
     bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr & child_node)
     {
+        /// A subquery is validated in its own scope; only the columns of this query that it uses are checked here.
+        if (auto * parent_query_node = parent_node->as<QueryNode>())
+            return child_node == parent_query_node->getCorrelatedColumnsNode();
+
         /// Arguments of the `grouping` function are validated in visitImpl against the keys
         /// in the original form. They must not be visited as ordinary expressions: when
         /// `group_by_use_nulls` is enabled, they are not converted to Nullable and would not
@@ -278,15 +283,10 @@ private:
 void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidationParams params)
 {
     const auto & query_node_typed = query_node->as<QueryNode &>();
-    auto join_tree_node_type = query_node_typed.getJoinTreeNode()->getNodeType();
-    bool join_tree_is_subquery = join_tree_node_type == QueryTreeNodeType::QUERY || join_tree_node_type == QueryTreeNodeType::UNION;
 
-    if (!join_tree_is_subquery)
-    {
-        assertNoAggregateFunctionNodes(query_node_typed.getJoinTreeNode(), "in JOIN TREE");
-        assertNoGroupingFunctionNodes(query_node_typed.getJoinTreeNode(), "in JOIN TREE");
-        assertNoWindowFunctionNodes(query_node_typed.getJoinTreeNode(), "in JOIN TREE");
-    }
+    assertNoAggregateFunctionNodes(query_node_typed.getJoinTreeNode(), "in JOIN TREE");
+    assertNoGroupingFunctionNodes(query_node_typed.getJoinTreeNode(), "in JOIN TREE");
+    assertNoWindowFunctionNodes(query_node_typed.getJoinTreeNode(), "in JOIN TREE");
 
     /// `SELECT count() AS c FROM t WHERE c > 1` is the common shape: the alias is expanded before this
     /// check, so the user is told about an aggregate in WHERE that they never wrote. Name the clause that
@@ -481,6 +481,9 @@ void assertNoFunctionNodes(const QueryTreeNodePtr & node,
     std::string_view exception_function_name,
     std::string_view exception_place_message)
 {
+    if (isQueryOrUnionNode(node))
+        return;
+
     ValidateFunctionNodesVisitor visitor(function_name, exception_code, exception_function_name, exception_place_message);
     visitor.visit(node);
 }
