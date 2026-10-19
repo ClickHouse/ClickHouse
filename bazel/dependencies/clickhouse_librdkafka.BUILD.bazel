@@ -282,11 +282,7 @@ ch_cc_library(
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
     ] + _GENERATED_HEADER_INPUTS_0) + glob(["src/**/*.h"]),
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-        "src/rdkafka_conf.c",
-    ],
+    additional_compiler_inputs = ["src/rdkafka_conf.c"],
     copts = [
         "-w",
         "-std=gnu11",

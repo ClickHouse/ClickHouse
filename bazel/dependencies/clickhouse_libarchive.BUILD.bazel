@@ -112,11 +112,7 @@ ch_cc_library(
         "@platforms//cpu:x86_64": glob(["libarchive/**/*.h"]),
         "@platforms//cpu:aarch64": glob(["libarchive/**/*.h"]),
     }),
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-        "libarchive/xxhash.c",
-    ],
+    additional_compiler_inputs = ["libarchive/xxhash.c"],
     copts = [
         "-w",
         "-std=gnu11",

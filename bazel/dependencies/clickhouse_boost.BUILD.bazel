@@ -14,11 +14,7 @@ _GENERATED_LOCAL_DEFINES_0 = [
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-_GENERATED_DEPS_0 = [
-    "@llvm-project//compiler-rt:headers",
-    "@llvm-project//libc:libc_headers",
-    "@llvm-project//libunwind:headers",
-]
+_GENERATED_DEPS_0 = []
 
 _BOOST_COPTS = [
     "-w",
@@ -43,6 +39,7 @@ ch_cc_library(
     copts = (
         _BOOST_COPTS
     ),
+    llvm_headers = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -79,6 +76,7 @@ ch_cc_library(
         ],
     })),
     language = "ASM",
+    llvm_headers = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",

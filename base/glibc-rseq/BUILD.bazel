@@ -15,10 +15,6 @@ ch_cc_library(
         "//bazel:gen/includes/configs/config_tools.h",
         "//bazel:gen/includes/configs/config_version.cpp",
     ],
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
     copts = [
         "-fxray-instrument",
         "-fxray-modes=none",
@@ -31,6 +27,8 @@ ch_cc_library(
         "-I",
     ] + ["$(GENDIR)/bazel/gen/includes/configs"],
     language = "C",
+    link_runtime = True,
+    llvm_headers = True,
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
@@ -43,15 +41,7 @@ ch_cc_library(
         "../../" + (llvm_toolchain_path() + "/compiler-rt/include"),
         "../../" + (repository_path("contrib/llvm-project") + "/libcxxabi/include"),
     ],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        "@clickhouse_llvm_project//:cxx",
-        "@clickhouse_llvm_project//:cxxabi",
-        "//base/glibc-compatibility:glibc-compatibility",
-        "@clickhouse_llvm_project//:unwind",
-    ],
+    deps = ["//base/glibc-compatibility:glibc-compatibility"],
 )
 
 cc_library(

@@ -148,11 +148,7 @@ _GENERATED_LOCAL_DEFINES_0 = select({
     "__STDC_FORMAT_MACROS",
 ]
 
-_GENERATED_DEPS_0 = [
-    "@llvm-project//compiler-rt:headers",
-    "@llvm-project//libc:libc_headers",
-    "@llvm-project//libunwind:headers",
-]
+_GENERATED_DEPS_0 = []
 
 _HDFS3_LOCAL_INCLUDES = [
 ]
@@ -350,6 +346,7 @@ ch_cc_library(
         "@clickhouse_libgsasl//:_gsasl",
         "@clickhouse_libxml2//:_libxml2",
     ],
+    llvm_headers = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "src",
@@ -469,6 +466,7 @@ ch_cc_library(
         "@clickhouse_libgsasl//:_gsasl",
         "@clickhouse_libxml2//:_libxml2",
     ],
+    llvm_headers = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "src",

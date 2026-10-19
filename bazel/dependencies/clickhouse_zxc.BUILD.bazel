@@ -22,10 +22,6 @@ ch_cc_library(
         "src/lib/zxc_pstream.c",
         "src/lib/zxc_seekable.c",
     ],
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
     copts = _ZXC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
@@ -108,10 +104,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_llvm_project//:runtime_source_inputs",
-            "@clickhouse_llvm_project//:runtime_generated_headers",
-        ],
+        "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [],
     }),
     arches = [
@@ -174,10 +167,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_llvm_project//:runtime_source_inputs",
-            "@clickhouse_llvm_project//:runtime_generated_headers",
-        ],
+        "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [],
     }),
     arches = [
@@ -220,10 +210,6 @@ ch_cc_library(
         "include/**/*.h",
         "src/lib/**/*.h",
     ]),
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
     copts = _ZXC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
@@ -254,10 +240,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_llvm_project//:runtime_source_inputs",
-            "@clickhouse_llvm_project//:runtime_generated_headers",
-        ],
+        "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [],
     }),
     arches = [
@@ -293,10 +276,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_llvm_project//:runtime_source_inputs",
-            "@clickhouse_llvm_project//:runtime_generated_headers",
-        ],
+        "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [],
     }),
     arches = [
@@ -330,10 +310,6 @@ ch_cc_library(
         "include/**/*.h",
         "src/lib/**/*.h",
     ]),
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
     copts = _ZXC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
@@ -364,10 +340,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_llvm_project//:runtime_source_inputs",
-            "@clickhouse_llvm_project//:runtime_generated_headers",
-        ],
+        "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [],
     }),
     arches = [
@@ -403,10 +376,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_llvm_project//:runtime_source_inputs",
-            "@clickhouse_llvm_project//:runtime_generated_headers",
-        ],
+        "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [],
     }),
     arches = [
@@ -440,10 +410,6 @@ ch_cc_library(
         "include/**/*.h",
         "src/lib/**/*.h",
     ]),
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
     copts = _ZXC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",

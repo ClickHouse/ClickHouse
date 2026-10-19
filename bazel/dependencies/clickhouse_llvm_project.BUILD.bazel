@@ -2722,10 +2722,6 @@ ch_cc_library(
         "llvm/lib/Support/BLAKE3/blake3_portable.c",
         "llvm/lib/Support/BLAKE3/blake3_neon.c",
     ]),
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
     copts = ([
         "-w",
         "-std=gnu11",

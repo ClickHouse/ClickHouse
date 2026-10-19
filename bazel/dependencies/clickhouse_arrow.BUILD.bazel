@@ -469,8 +469,6 @@ ch_cc_library(
         "@clickhouse_bzip2//:config/contrib/bzip2/bz_version.h",
     ],
     additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
         "cpp/src/arrow/vendored/uriparser/UriCommon.c",
         "cpp/src/arrow/vendored/uriparser/UriCompare.c",
         "cpp/src/arrow/vendored/uriparser/UriEscape.c",

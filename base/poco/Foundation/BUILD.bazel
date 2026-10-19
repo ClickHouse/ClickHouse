@@ -566,14 +566,8 @@ ch_cc_library(
         "../../../" + (repository_path("contrib/fast_float") + "/include"),
         "../../../" + (repository_path("contrib/simdutf") + "/include"),
         "../../../" + (repository_path("contrib/simdjson") + "/include"),
-        "../../../" + (llvm_toolchain_path() + "/libunwind/include"),
-        "../../../" + (llvm_toolchain_path() + "/libc"),
-        "../../../" + (llvm_toolchain_path() + "/compiler-rt/include"),
     ],
     deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
         "@lz4//:lz4_frame",
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_fmtlib//:_fmt",
@@ -618,10 +612,6 @@ ch_cc_library(
         "src/pcre_internal.h",
         "src/ucp.h",
     ],
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
     copts = [
         "-fxray-instrument",
         "-fxray-modes=none",
@@ -645,6 +635,8 @@ ch_cc_library(
         "-I",
     ] + ["$(GENDIR)/bazel/gen/includes/configs"],
     language = "C",
+    link_runtime = True,
+    llvm_headers = True,
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
@@ -658,14 +650,8 @@ ch_cc_library(
         "../../../" + (repository_path("contrib/llvm-project") + "/libcxxabi/include"),
     ],
     deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
         "@clickhouse_llvm_project//:clang_rt_builtins",
-        "@clickhouse_llvm_project//:cxx",
-        "@clickhouse_llvm_project//:cxxabi",
         "//base/glibc-compatibility:glibc-compatibility",
-        "@clickhouse_llvm_project//:unwind",
     ],
 )
 

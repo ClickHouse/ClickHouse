@@ -1,5 +1,5 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "llvm_toolchain_path", "repository_path")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_path")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -581,14 +581,8 @@ ch_cc_library(
         "../../" + "contrib/sz3-cmake",
         "../../" + (repository_path("contrib/NuRaft") + "/include"),
         "../../" + (repository_path("contrib/llvm-project") + "/llvm/include"),
-        "../../" + (llvm_toolchain_path() + "/libunwind/include"),
-        "../../" + (llvm_toolchain_path() + "/libc"),
-        "../../" + (llvm_toolchain_path() + "/compiler-rt/include"),
     ],
     deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
         "@clickhouse_llvm_project//:LLVMDebugInfoDWARF",
         "@clickhouse_llvm_project//:LLVMExecutionEngine",
         "@clickhouse_llvm_project//:LLVMPasses",

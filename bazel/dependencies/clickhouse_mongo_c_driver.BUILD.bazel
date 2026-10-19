@@ -138,10 +138,6 @@ ch_cc_library(
         "src/common/src/**/*.h",
         "src/libbson/src/**/*.h",
     ]),
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
     copts = [
         "-w",
         "-std=gnu11",
@@ -185,11 +181,7 @@ ch_cc_library(
         "src/utf8proc-2.11.3/**/*.h",
         "src/uthash/**/*.h",
     ]),
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-        "src/utf8proc-2.11.3/utf8proc_data.c",
-    ],
+    additional_compiler_inputs = ["src/utf8proc-2.11.3/utf8proc_data.c"],
     copts = [
         "-w",
         "-std=gnu11",

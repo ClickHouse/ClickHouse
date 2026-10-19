@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "llvm_toolchain_path")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -69,14 +68,8 @@ ch_cc_library(
     local_includes = [
         "../../../" + "base/poco/Net/include",
         "../../../" + "base/poco/Foundation/include",
-        "../../../" + (llvm_toolchain_path() + "/libunwind/include"),
-        "../../../" + (llvm_toolchain_path() + "/libc"),
-        "../../../" + (llvm_toolchain_path() + "/compiler-rt/include"),
     ],
     deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
         "//base/poco/NetSSL_OpenSSL:_poco_net_ssl",
         ":poco_net_headers",
         "//base/poco/Foundation:headers",

@@ -45,11 +45,7 @@ ch_cc_library(
             "libraries/liblunicode/ucdata/**/*.h",
         ]),
     }),
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-        "libraries/liblber/debug.c",
-    ],
+    additional_compiler_inputs = ["libraries/liblber/debug.c"],
     copts = [
         "-w",
         "-std=gnu11",
@@ -156,8 +152,6 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/openldap-cmake/ldap-version.c",
     ]) + glob(["libraries/libldap/**/*.h"]),
     additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
         "libraries/liblber/debug.c",
         "libraries/libldap/dnssrv.c",
         "libraries/libldap/error.c",

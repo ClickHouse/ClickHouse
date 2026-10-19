@@ -149,14 +149,8 @@ ch_cc_library(
     local_includes = [
         "../../../" + "base/poco/XML/include",
         "../../../" + "base/poco/Foundation/include",
-        "../../../" + (llvm_toolchain_path() + "/libunwind/include"),
-        "../../../" + (llvm_toolchain_path() + "/libc"),
-        "../../../" + (llvm_toolchain_path() + "/compiler-rt/include"),
     ],
     deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
         "//src:clickhouse_common_io",
         ":poco_xml_headers",
         "//base/poco/Foundation:headers",
@@ -168,8 +162,6 @@ ch_cc_library(
     srcs = glob(["src/*.c"]),
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
         "src/xmltok_impl.c",
         "src/xmltok_ns.c",
     ],
@@ -193,6 +185,8 @@ ch_cc_library(
         "$(GENDIR)/bazel/gen/includes/configs",
     ],
     language = "C",
+    link_runtime = True,
+    llvm_headers = True,
     local_defines = [
         "PRIVATE",
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -211,14 +205,8 @@ ch_cc_library(
         "../../../" + (repository_path("contrib/llvm-project") + "/libcxxabi/include"),
     ],
     deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
         "@clickhouse_llvm_project//:clang_rt_builtins",
-        "@clickhouse_llvm_project//:cxx",
-        "@clickhouse_llvm_project//:cxxabi",
         "//base/glibc-compatibility:glibc-compatibility",
-        "@clickhouse_llvm_project//:unwind",
         "//base/poco/Foundation:headers",
     ],
 )

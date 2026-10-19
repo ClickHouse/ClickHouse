@@ -675,8 +675,6 @@ ch_cc_library(
         "src/**/*.hpp",
     ])),
     additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
         "src/compiler/error.cpp",
         "src/util/supervector/arch/arm/impl.cpp",
         "src/util/supervector/arch/ppc64el/impl.cpp",

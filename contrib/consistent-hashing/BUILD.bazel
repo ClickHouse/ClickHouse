@@ -22,6 +22,8 @@ ch_cc_library(
         "-w",
         "-std=c++23",
     ],
+    link_runtime = True,
+    llvm_headers = True,
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
@@ -30,14 +32,8 @@ ch_cc_library(
     ],
     local_includes = ["../../" + "contrib/consistent-hashing"],
     deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
         "@clickhouse_llvm_project//:clang_rt_builtins",
-        "@clickhouse_llvm_project//:cxx",
-        "@clickhouse_llvm_project//:cxxabi",
         "//base/glibc-compatibility:glibc-compatibility",
-        "@clickhouse_llvm_project//:unwind",
     ],
 )
 

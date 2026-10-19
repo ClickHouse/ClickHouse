@@ -1,5 +1,5 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "llvm_toolchain_path", "repository_path")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_path")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -33,6 +33,7 @@ ch_cc_library(
         "-I",
         "$(GENDIR)/bazel/gen/includes/configs",
     ],
+    link_runtime = True,
     local_defines = select({
         "@platforms//cpu:x86_64": [
             "ENABLE_MULTITARGET_CODE=1",
@@ -98,9 +99,6 @@ ch_cc_library(
         "../../../" + (repository_path("contrib/openssl") + "/include"),
         "../../../" + (repository_path("contrib/google-protobuf") + "/src"),
         "../../../" + (repository_path("contrib/google-protobuf") + "/third_party/utf8_range"),
-        "../../../" + (llvm_toolchain_path() + "/libunwind/include"),
-        "../../../" + (llvm_toolchain_path() + "/libc"),
-        "../../../" + (llvm_toolchain_path() + "/compiler-rt/include"),
     ],
     textual_hdrs = select({
         "@platforms//cpu:x86_64": [
@@ -113,9 +111,6 @@ ch_cc_library(
         ],
     }),
     deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
         "@clickhouse_c_ares//:_c-ares",
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse_re2//:_re2",
@@ -196,14 +191,11 @@ ch_cc_library(
         "@clickhouse_grpc//:address_sorting",
         "@clickhouse_llvm_project//:clang_rt_builtins",
         "@clickhouse_openssl//:crypto",
-        "@clickhouse_llvm_project//:cxx",
-        "@clickhouse_llvm_project//:cxxabi",
         "//base/glibc-compatibility:glibc-compatibility",
         "@clickhouse_grpc//:gpr",
         "@clickhouse_grpc//:grpc",
         "@clickhouse_grpc//:grpc++",
         "@clickhouse_openssl//:ssl",
-        "@clickhouse_llvm_project//:unwind",
         "@clickhouse_grpc//:upb",
         "@clickhouse_grpc//:upb_json_lib",
         "@clickhouse_grpc//:upb_message_lib",

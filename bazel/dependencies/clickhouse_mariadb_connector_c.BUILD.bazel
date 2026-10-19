@@ -262,11 +262,7 @@ ch_cc_library(
         "include/**/*.h",
         "libmariadb/**/*.h",
     ]),
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-        "plugins/pvio/pvio_plugin.def",
-    ],
+    additional_compiler_inputs = ["plugins/pvio/pvio_plugin.def"],
     copts = [
         "-w",
         "-std=gnu11",

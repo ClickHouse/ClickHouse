@@ -14,12 +14,6 @@ _GENERATED_LOCAL_DEFINES_0 = [
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-_GENERATED_DEPS_0 = [
-    "@llvm-project//compiler-rt:headers",
-    "@llvm-project//libc:libc_headers",
-    "@llvm-project//libunwind:headers",
-]
-
 ch_cc_library(
     name = "_zstd__compile_0",
     srcs = (glob(["lib/common/*.c"]) + ([
@@ -41,10 +35,6 @@ ch_cc_library(
         "lib/decompress/zstd_decompress.c",
     ]) + glob(["lib/dictBuilder/*.c"]) + glob(["lib/legacy/*.c"])),
     hdrs = glob(["lib/**/*.h"]),
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
     copts = [
         "-w",
         "-std=gnu11",
@@ -57,6 +47,7 @@ ch_cc_library(
         "lib",
     ],
     language = "C",
+    llvm_headers = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "lib",
@@ -66,7 +57,6 @@ ch_cc_library(
 
     # librdkafka's rdxxhash.c includes this source as text.
     textual_hdrs = ["lib/common/xxhash.c"],
-    deps = _GENERATED_DEPS_0,
 )
 
 ch_cc_library(
@@ -81,13 +71,13 @@ ch_cc_library(
         "-fno-sanitize=undefined",
     ],
     language = "ASM",
+    llvm_headers = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "lib",
         "lib/legacy",
         "lib/common",
     ],
-    deps = _GENERATED_DEPS_0,
 )
 
 cc_library(

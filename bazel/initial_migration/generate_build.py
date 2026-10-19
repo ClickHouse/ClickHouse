@@ -927,12 +927,23 @@ def main():
         if after != before:
             path.write_text(format_and_prove(ROOT, before, after, str(path), files, {}))
     prune_native_exports(ROOT, write=True)
+    from initial_migration.library_runtime import normalize as normalize_library_runtime
+    # Pruning must see direct runtime dependencies before ch_cc_library supplies
+    # them. Keep the same order on regeneration, after native packages exist.
     for path in native_builds:
         package = path.parent.relative_to(ROOT).as_posix().removeprefix('.')
         if path.name == 'BUILD.bazel' and (not package or native_directory(package)):
             before = path.read_text()
             after = normalize(before, native=True)
             prove(before, after, path)
+            after = normalize_library_runtime(after, package)
+            if after != before:
+                path.write_text(after)
+    for spec in REPOSITORIES.values():
+        path = ROOT / 'bazel/dependencies' / (spec['name'] + '.BUILD.bazel')
+        if path.is_file():
+            before = path.read_text()
+            after = normalize_library_runtime(before, '')
             if after != before:
                 path.write_text(after)
     format_build_files()

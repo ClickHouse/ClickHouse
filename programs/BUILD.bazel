@@ -1,5 +1,5 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "llvm_toolchain_path", "repository_path")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_path")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -526,6 +526,8 @@ ch_cc_library(
         repository_path("contrib/libarchive") + "/libarchive",
     ],
     features = ["-static_link_cpp_runtimes"],
+    link_runtime = True,
+    llvm_headers = False,
     local_defines = select({
         "@platforms//cpu:x86_64": [
             "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
@@ -657,9 +659,6 @@ ch_cc_library(
         "../" + (repository_path("contrib/fast_float") + "/include"),
         "../" + (repository_path("contrib/simdutf") + "/include"),
         "../" + (repository_path("contrib/simdjson") + "/include"),
-        "../" + (llvm_toolchain_path() + "/libunwind/include"),
-        "../" + (llvm_toolchain_path() + "/libc"),
-        "../" + (llvm_toolchain_path() + "/compiler-rt/include"),
     ],
     deps = [
         "@clickhouse_llvm_project//:clang_rt_builtins",
@@ -959,8 +958,6 @@ ch_cc_library(
             "//src/TableFunctions:clickhouse_table_functions",
             "//base/base:common",
             "@clickhouse_openssl//:crypto",
-            "@clickhouse_llvm_project//:cxx",
-            "@clickhouse_llvm_project//:cxxabi",
             "//src:dbms",
             "//base/glibc-compatibility:glibc-compatibility",
             "@clickhouse_google_cloud_cpp//:google_cloud_cpp_api_annotations_protos",
@@ -1274,8 +1271,6 @@ ch_cc_library(
             "//src/TableFunctions:clickhouse_table_functions",
             "//base/base:common",
             "@clickhouse_openssl//:crypto",
-            "@clickhouse_llvm_project//:cxx",
-            "@clickhouse_llvm_project//:cxxabi",
             "//src:dbms",
             "//base/glibc-compatibility:glibc-compatibility",
             "@clickhouse_google_cloud_cpp//:google_cloud_cpp_api_annotations_protos",
@@ -1303,7 +1298,6 @@ ch_cc_library(
         "//base/readpassphrase:readpassphrase",
         "@clickhouse_openssl//:ssl",
         "@clickhouse_cctz//:tzdata",
-        "@clickhouse_llvm_project//:unwind",
         "@clickhouse_grpc//:upb",
         "@clickhouse_grpc//:upb_json_lib",
         "@clickhouse_grpc//:upb_message_lib",

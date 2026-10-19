@@ -1,5 +1,5 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "llvm_toolchain_path", "repository_path")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_path")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -578,15 +578,9 @@ _GENERATED_LOCAL_INCLUDES_0 = [
     "../../" + (repository_path("contrib/fast_float") + "/include"),
     "../../" + (repository_path("contrib/simdutf") + "/include"),
     "../../" + (repository_path("contrib/simdjson") + "/include"),
-    "../../" + (llvm_toolchain_path() + "/libunwind/include"),
-    "../../" + (llvm_toolchain_path() + "/libc"),
-    "../../" + (llvm_toolchain_path() + "/compiler-rt/include"),
 ]
 
 _GENERATED_DEPS_0 = [
-    "@llvm-project//compiler-rt:headers",
-    "@llvm-project//libc:libc_headers",
-    "@llvm-project//libunwind:headers",
     "@clickhouse_boost//:boost_headers",
     "@clickhouse_fmtlib//:_fmt",
     "@clickhouse_aws//:_aws",
@@ -698,12 +692,9 @@ _GENERATED_DEPS_0 = [
     "@clickhouse_llvm_project//:clang_rt_builtins",
     "//base/base:common",
     "@clickhouse_openssl//:crypto",
-    "@clickhouse_llvm_project//:cxx",
-    "@clickhouse_llvm_project//:cxxabi",
     "//base/glibc-compatibility:glibc-compatibility",
     "@clickhouse_openssl//:ssl",
     "@clickhouse_cctz//:tzdata",
-    "@clickhouse_llvm_project//:unwind",
     "@clickhouse_google_protobuf//:utf8_validity",
     "//base/widechar_width:widechar_width",
 ] + [
@@ -815,6 +806,7 @@ ch_cc_library(
         "-I",
         repository_path("contrib/libarchive") + "/libarchive",
     ],
+    link_runtime = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "..",
@@ -878,6 +870,7 @@ ch_cc_library(
         "-I",
         repository_path("contrib/libarchive") + "/libarchive",
     ],
+    link_runtime = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "..",

@@ -626,10 +626,7 @@ ch_cc_library(
         ":config/contrib/krb5-cmake/include_private/osconf.h",
         ":config/contrib/krb5-cmake/include_private/profile.h",
     ] + glob(["src/include/**/*.h"]),
-    additional_compiler_inputs = (([
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ] + glob(
+    additional_compiler_inputs = (glob(
         ["src/**"],
         exclude = [
             "src/**/*.h",
@@ -1059,7 +1056,7 @@ ch_cc_library(
             "src/util/support/utf8_conv.c",
             "src/util/support/zap.c",
         ],
-    )) + [
+    ) + [
         "src/util/support/hashtab.c",
         "src/lib/krb5/krb/chk_trans.c",
         "src/lib/krb5/os/locate_kdc.c",

@@ -1,5 +1,5 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "llvm_toolchain_path", "repository_path")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_path")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -84,15 +84,9 @@ _GENERATED_LOCAL_INCLUDES_0 = [
     "../../../" + (repository_path("contrib/fast_float") + "/include"),
     "../../../" + (repository_path("contrib/simdutf") + "/include"),
     "../../../" + (repository_path("contrib/simdjson") + "/include"),
-    "../../../" + (llvm_toolchain_path() + "/libunwind/include"),
-    "../../../" + (llvm_toolchain_path() + "/libc"),
-    "../../../" + (llvm_toolchain_path() + "/compiler-rt/include"),
 ]
 
 _GENERATED_DEPS_0 = [
-    "@llvm-project//compiler-rt:headers",
-    "@llvm-project//libc:libc_headers",
-    "@llvm-project//libunwind:headers",
     "@clickhouse_boost//:boost_headers",
     "@clickhouse_fmtlib//:_fmt",
     "@clickhouse_aws_c_mqtt//:aws_c_mqtt",

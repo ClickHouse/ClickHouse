@@ -62,10 +62,6 @@ ch_cc_library(
             "**/*.inc",
         ]),
     }),
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
     copts = [
         "-w",
         "-std=gnu11",

@@ -34,10 +34,6 @@ ch_cc_library(
         "**/*.hpp",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
     copts = _GRPC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
@@ -706,10 +702,6 @@ ch_cc_library(
         "**/*.hpp",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
     copts = [
         "-w",
         "-std=gnu11",
@@ -1481,10 +1473,6 @@ ch_cc_library(
         "**/*.hpp",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
     copts = _GRPC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
@@ -1536,10 +1524,6 @@ ch_cc_library(
         "third_party/upb/upb/wire/eps_copy_input_stream.c",
         "third_party/upb/upb/wire/reader.c",
     ]),
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
     copts = _GRPC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
@@ -1562,10 +1546,6 @@ ch_cc_library(
     srcs = [
         "third_party/upb/upb/json/decode.c",
         "third_party/upb/upb/json/encode.c",
-    ],
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
     ],
     copts = _GRPC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
@@ -1599,10 +1579,6 @@ ch_cc_library(
         "third_party/upb/upb/message/map_sorter.c",
         "third_party/upb/upb/message/message.c",
     ],
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
     copts = _GRPC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
@@ -1627,10 +1603,6 @@ ch_cc_library(
         "third_party/upb/upb/wire/eps_copy_input_stream.c",
         "third_party/upb/upb/wire/reader.c",
     ]),
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
     copts = _GRPC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
@@ -1662,10 +1634,6 @@ ch_cc_library(
         "**/*.hpp",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
     copts = _GRPC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
@@ -1704,10 +1672,6 @@ ch_cc_library(
         "third_party/upb/upb/reflection/oneof_def.c",
         "third_party/upb/upb/reflection/service_def.c",
     ]),
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
     copts = _GRPC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
@@ -1733,10 +1697,6 @@ ch_cc_library(
     srcs = [
         "third_party/upb/upb/text/encode.c",
         "third_party/upb/upb/text/internal/encode.c",
-    ],
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
     ],
     copts = _GRPC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
@@ -1767,10 +1727,6 @@ ch_cc_library(
         "third_party/upb/upb/wire/eps_copy_input_stream.c",
         "third_party/upb/upb/wire/internal/decoder.c",
         "third_party/upb/upb/wire/reader.c",
-    ],
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
     ],
     copts = _GRPC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
@@ -1805,10 +1761,6 @@ ch_cc_library(
         "**/*.hpp",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
     copts = _GRPC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",

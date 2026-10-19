@@ -165,11 +165,7 @@ _GENERATED_LOCAL_DEFINES_0 = select({
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-_GENERATED_DEPS_0 = [
-    "@llvm-project//compiler-rt:headers",
-    "@llvm-project//libc:libc_headers",
-    "@llvm-project//libunwind:headers",
-]
+_GENERATED_DEPS_0 = []
 
 _GOOGLE_PROTOBUF_LOCAL_INCLUDES = [
     "src",
@@ -616,6 +612,7 @@ ch_cc_library(
         "-w",
         "-std=c++17",
     ],
+    llvm_headers = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -682,16 +679,13 @@ ch_cc_library(
         "**/*.hpp",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
     copts = [
         "-w",
         "-std=gnu11",
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
+    llvm_headers = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -972,10 +966,6 @@ ch_cc_library(
         "third_party/utf8_range/**/*.h",
         "third_party/utf8_range/**/*.inc",
     ]),
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
     copts = _UTF8_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
@@ -998,10 +988,6 @@ ch_cc_library(
         "third_party/utf8_range/**/*.h",
         "third_party/utf8_range/**/*.inc",
     ]),
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
     copts = _UTF8_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",

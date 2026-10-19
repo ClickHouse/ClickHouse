@@ -78,11 +78,7 @@ _GENERATED_LOCAL_DEFINES_0 = select({
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-_GENERATED_DEPS_0 = [
-    "@llvm-project//compiler-rt:headers",
-    "@llvm-project//libc:libc_headers",
-    "@llvm-project//libunwind:headers",
-]
+_GENERATED_DEPS_0 = []
 
 _CRYPTO_LOCAL_INCLUDES = select({
     "@platforms//cpu:x86_64": [repository_local_include("contrib/openssl-cmake/linux_x86_64/include_private", "contrib/openssl")],
@@ -890,8 +886,6 @@ ch_cc_library(
     ]),
     additional_compiler_inputs = select({
         "@platforms//cpu:x86_64": [
-            "@clickhouse_llvm_project//:runtime_source_inputs",
-            "@clickhouse_llvm_project//:runtime_generated_headers",
             "crypto/LPdir_nyi.c",
             "crypto/LPdir_unix.c",
             "crypto/LPdir_vms.c",
@@ -904,8 +898,6 @@ ch_cc_library(
             "providers/implementations/macs/blake2_mac_impl.c",
         ],
         "@platforms//cpu:aarch64": [
-            "@clickhouse_llvm_project//:runtime_source_inputs",
-            "@clickhouse_llvm_project//:runtime_generated_headers",
             "crypto/LPdir_nyi.c",
             "crypto/LPdir_unix.c",
             "crypto/LPdir_vms.c",
@@ -924,6 +916,7 @@ ch_cc_library(
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
+    llvm_headers = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _CRYPTO_LOCAL_INCLUDES,
     deps = _GENERATED_DEPS_0 + ["@clickhouse//contrib/openssl-cmake:openssl_cmake_headers"],
@@ -1011,6 +1004,7 @@ ch_cc_library(
         "-Wno-unused-command-line-argument",
     ],
     language = "ASM",
+    llvm_headers = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _CRYPTO_LOCAL_INCLUDES,
     deps = _GENERATED_DEPS_0 + ["@clickhouse//contrib/openssl-cmake:openssl_cmake_headers"],
@@ -1100,11 +1094,7 @@ ch_cc_library(
         "ssl/tls13_enc.c",
         "ssl/tls_depr.c",
     ])),
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-        "ms/applink.c",
-    ],
+    additional_compiler_inputs = ["ms/applink.c"],
     copts = [
         "-w",
         "-std=gnu11",

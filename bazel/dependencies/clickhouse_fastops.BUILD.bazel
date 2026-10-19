@@ -21,6 +21,7 @@ ch_cc_library(
         "-w",
         "-std=c++23",
     ],
+    llvm_headers = True,
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
@@ -28,12 +29,7 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = ["."],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-    ] + select({
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"] + select({
         "@platforms//cpu:aarch64": [":_fastops_sve"],
         "//conditions:default": [],
     }),

@@ -1,5 +1,5 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "llvm_toolchain_path", "repository_path")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_path")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -282,9 +282,6 @@ _GENERATED_LOCAL_INCLUDES_0 = ["../../../" + (repository_path("contrib/google-be
     "../../../" + (repository_path("contrib/orc") + "/c++/include"),
     "../../../" + "contrib/arrow-cmake/cpp/src/orc/c++/include",
     "../../../" + (repository_path("contrib/llvm-project") + "/llvm/include"),
-    "../../../" + (llvm_toolchain_path() + "/libunwind/include"),
-    "../../../" + (llvm_toolchain_path() + "/libc"),
-    "../../../" + (llvm_toolchain_path() + "/compiler-rt/include"),
 ]
 
 _GENERATED_TEXTUAL_HDRS_0 = [
@@ -728,6 +725,7 @@ ch_cc_library(
         "$(GENDIR)/bazel/gen/contrib/arrow-cmake/cpp/src",
     ],
     implementation_deps = ["@clickhouse_google_benchmark//:google_benchmark"],
+    link_runtime = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "../..",
@@ -739,9 +737,6 @@ ch_cc_library(
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     deps = select({
         "@platforms//cpu:x86_64": [
-            "@llvm-project//compiler-rt:headers",
-            "@llvm-project//libc:libc_headers",
-            "@llvm-project//libunwind:headers",
             "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
             "@clickhouse_llvm_project//:LLVMAnalysis",
             "@clickhouse_llvm_project//:LLVMAsmParser",
@@ -986,8 +981,6 @@ ch_cc_library(
             "//src/Parsers:clickhouse_parsers",
             "//base/base:common",
             "@clickhouse_openssl//:crypto",
-            "@clickhouse_llvm_project//:cxx",
-            "@clickhouse_llvm_project//:cxxabi",
             "//src:dbms",
             "//base/glibc-compatibility:glibc-compatibility",
             "@clickhouse_google_cloud_cpp//:google_cloud_cpp_api_annotations_protos",
@@ -1012,7 +1005,6 @@ ch_cc_library(
             "//src/Common/mysqlxx:mysqlxx",
             "@clickhouse_openssl//:ssl",
             "@clickhouse_cctz//:tzdata",
-            "@clickhouse_llvm_project//:unwind",
             "@clickhouse_grpc//:upb",
             "@clickhouse_grpc//:upb_json_lib",
             "@clickhouse_grpc//:upb_message_lib",
@@ -1092,9 +1084,6 @@ ch_cc_library(
             "//src/TableFunctions:headers",
         ],
         "@platforms//cpu:aarch64": [
-            "@llvm-project//compiler-rt:headers",
-            "@llvm-project//libc:libc_headers",
-            "@llvm-project//libunwind:headers",
             "@clickhouse_llvm_project//:LLVMAArch64CodeGen",
             "@clickhouse_llvm_project//:LLVMAArch64Info",
             "@clickhouse_llvm_project//:LLVMAArch64Desc",
@@ -1336,8 +1325,6 @@ ch_cc_library(
             "//src/Parsers:clickhouse_parsers",
             "//base/base:common",
             "@clickhouse_openssl//:crypto",
-            "@clickhouse_llvm_project//:cxx",
-            "@clickhouse_llvm_project//:cxxabi",
             "//src:dbms",
             "//base/glibc-compatibility:glibc-compatibility",
             "@clickhouse_google_cloud_cpp//:google_cloud_cpp_api_annotations_protos",
@@ -1362,7 +1349,6 @@ ch_cc_library(
             "//src/Common/mysqlxx:mysqlxx",
             "@clickhouse_openssl//:ssl",
             "@clickhouse_cctz//:tzdata",
-            "@clickhouse_llvm_project//:unwind",
             "@clickhouse_grpc//:upb",
             "@clickhouse_grpc//:upb_json_lib",
             "@clickhouse_grpc//:upb_message_lib",
@@ -1883,6 +1869,7 @@ ch_cc_library(
         "$(GENDIR)/bazel/gen/contrib/arrow-cmake/cpp/src",
     ],
     implementation_deps = ["@clickhouse_google_benchmark//:google_benchmark"],
+    link_runtime = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "../..",
@@ -1894,9 +1881,6 @@ ch_cc_library(
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     deps = select({
         "@platforms//cpu:x86_64": [
-            "@llvm-project//compiler-rt:headers",
-            "@llvm-project//libc:libc_headers",
-            "@llvm-project//libunwind:headers",
             "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
             "@clickhouse_llvm_project//:LLVMAnalysis",
             "@clickhouse_llvm_project//:LLVMAsmParser",
@@ -2141,8 +2125,6 @@ ch_cc_library(
             "//src/Parsers:clickhouse_parsers",
             "//base/base:common",
             "@clickhouse_openssl//:crypto",
-            "@clickhouse_llvm_project//:cxx",
-            "@clickhouse_llvm_project//:cxxabi",
             "//src:dbms",
             "//base/glibc-compatibility:glibc-compatibility",
             "@clickhouse_google_cloud_cpp//:google_cloud_cpp_api_annotations_protos",
@@ -2167,7 +2149,6 @@ ch_cc_library(
             "//src/Common/mysqlxx:mysqlxx",
             "@clickhouse_openssl//:ssl",
             "@clickhouse_cctz//:tzdata",
-            "@clickhouse_llvm_project//:unwind",
             "@clickhouse_grpc//:upb",
             "@clickhouse_grpc//:upb_json_lib",
             "@clickhouse_grpc//:upb_message_lib",
@@ -2247,9 +2228,6 @@ ch_cc_library(
             "//src/TableFunctions:headers",
         ],
         "@platforms//cpu:aarch64": [
-            "@llvm-project//compiler-rt:headers",
-            "@llvm-project//libc:libc_headers",
-            "@llvm-project//libunwind:headers",
             "@clickhouse_llvm_project//:LLVMAArch64CodeGen",
             "@clickhouse_llvm_project//:LLVMAArch64Info",
             "@clickhouse_llvm_project//:LLVMAArch64Desc",
@@ -2491,8 +2469,6 @@ ch_cc_library(
             "//src/Parsers:clickhouse_parsers",
             "//base/base:common",
             "@clickhouse_openssl//:crypto",
-            "@clickhouse_llvm_project//:cxx",
-            "@clickhouse_llvm_project//:cxxabi",
             "//src:dbms",
             "//base/glibc-compatibility:glibc-compatibility",
             "@clickhouse_google_cloud_cpp//:google_cloud_cpp_api_annotations_protos",
@@ -2517,7 +2493,6 @@ ch_cc_library(
             "//src/Common/mysqlxx:mysqlxx",
             "@clickhouse_openssl//:ssl",
             "@clickhouse_cctz//:tzdata",
-            "@clickhouse_llvm_project//:unwind",
             "@clickhouse_grpc//:upb",
             "@clickhouse_grpc//:upb_json_lib",
             "@clickhouse_grpc//:upb_message_lib",

@@ -77,10 +77,6 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": ["source/arch/arm/auxv/cpuid.c"],
     }) + glob(["source/external/**/*.h"])),
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
     copts = [
         "-w",
         "-std=gnu11",
@@ -88,6 +84,7 @@ ch_cc_library(
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
+    llvm_headers = True,
     local_defines = ([
         "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
         "AWS_ENABLE_EPOLL",
@@ -109,12 +106,7 @@ ch_cc_library(
         "source/external/libcbor/cbor",
         "source/external/libcbor",
     ],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        ":aws_c_common_headers",
-    ],
+    deps = [":aws_c_common_headers"],
 )
 
 ch_cc_library(
@@ -124,10 +116,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_llvm_project//:runtime_source_inputs",
-            "@clickhouse_llvm_project//:runtime_generated_headers",
-        ],
+        "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [],
     }),
     arches = [
@@ -148,6 +137,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     language = "C",
+    llvm_headers = True,
     local_defines = select({
         "@platforms//cpu:x86_64": [
             "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
@@ -171,11 +161,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     deps = (select({
-        "@platforms//cpu:x86_64": [
-            "@llvm-project//compiler-rt:headers",
-            "@llvm-project//libc:libc_headers",
-            "@llvm-project//libunwind:headers",
-        ],
+        "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [],
     }) + [":aws_c_common_headers"]),
     alwayslink = select({

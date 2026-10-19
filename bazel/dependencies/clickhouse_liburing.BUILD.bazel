@@ -53,10 +53,6 @@ ch_cc_library(
         ":config/contrib/liburing/src/include-compat/liburing/compat.h",
         ":config/contrib/liburing/src/include/liburing/io_uring_version.h",
     ] + glob(["src/include/**/*.h"]),
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
     copts = [
         "-w",
         "-std=gnu11",

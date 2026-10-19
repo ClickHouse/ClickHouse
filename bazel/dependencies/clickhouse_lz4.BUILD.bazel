@@ -15,17 +15,14 @@ ch_cc_library(
         "lib/xxhash.c",
     ],
     hdrs = glob(["lib/*.h"]),
-    additional_compiler_inputs = [
-        "lib/lz4.c",
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ],
+    additional_compiler_inputs = ["lib/lz4.c"],
     copts = [
         "-w",
         "-std=gnu11",
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
+    llvm_headers = True,
     local_defines = [
         "LZ4_FAST_DEC_LOOP=1",
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -37,9 +34,4 @@ ch_cc_library(
         "lib",
     ],
     target_compatible_with = ["@platforms//os:linux"],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-    ],
 )
