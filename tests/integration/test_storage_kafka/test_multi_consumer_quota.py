@@ -445,8 +445,10 @@ def collect_tmp_quota_sequences(instance, tables, consumer_idx=0):
     """
     Return {table: [(quota, available), ...]} in log order for one consumer of each table.
 
-    The two early returns in `lockTemporaryLocksLocked` bail out before the log line, so
-    every entry is a round that really reached the quota adjustment.
+    `lockTemporaryLocksLocked` logs the line in every round, including the rounds that reset
+    the quota to zero (no available partitions, or a replica without locks). Those rounds
+    must be observed: otherwise the old alternating 1, 0, 1, 0, ... pattern under
+    fluctuating availability would look like a run of consecutive non-zero quotas.
     """
     sequences = {table: [] for table in tables}
     log = instance.grep_in_log("temporary locks in the current round")

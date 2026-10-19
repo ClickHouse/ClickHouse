@@ -421,22 +421,17 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(
     {
         LOG_TRACE(log, "There are no available topic partitions to lock");
         tmp_locks_quota = 0;
-        return;
     }
-    LOG_TRACE(log, "Starting to lock temporary locks");
-
     /// We have some temporary lock quota, but there is at least one replica without locks, let's drop the quote to give
     /// the other replica a chance to lock some partitions
-    if (tmp_locks_quota > 0 && has_replica_without_locks)
+    else if (tmp_locks_quota > 0 && has_replica_without_locks)
     {
         LOG_TRACE(log, "There is at least one consumer without locks, won't lock any temporary locks this round");
         tmp_locks_quota = 0;
-        return;
     }
-
     /// We have some temporary lock quota, but it is greater than the number of available topic partitions, so we will
     /// reduce the quota to give other replicas a chance to lock some partitions
-    if (tmp_locks_quota > available_topic_partitions.size())
+    else if (tmp_locks_quota > available_topic_partitions.size())
     {
         LOG_TRACE(log, "Reducing temporary locks to give other replicas a chance to lock some partitions");
         tmp_locks_quota = std::min(tmp_locks_quota - 1, available_topic_partitions.size() - 1);
@@ -445,6 +440,7 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(
     {
         tmp_locks_quota = std::min(available_topic_partitions.size(), tmp_locks_quota + 1);
     }
+    /// Logged for every round, including the ones that reset the quota, so the sequence of quotas can be followed
     LOG_INFO(
         log,
         "The consumer can take {} temporary locks in the current round (available={}, idx={})",
