@@ -9,8 +9,8 @@
 # query text together with its changed settings, and the worker clamps the default-valued
 # `use_uncompressed_cache = 0` away from those settings before it replays the query text, whose own
 # `SETTINGS enable_automatic_use_uncompressed_cache = 1` would then switch the automatic mode back on for the
-# local `MergeTree` read of a `CREATE ... AS SELECT`. The initiator therefore has to resolve the opt-out in
-# both the queued settings and the queued query text.
+# local `MergeTree` read of a `CREATE ... AS SELECT`. The initiator therefore bakes the opt-out into the queued
+# query text (not into the queued settings, which an older worker would reject for an unknown setting name).
 #
 # The worker runs the queued query under the `default` database, so the source table is qualified, and under
 # the `initial_query_id` of the `ON CLUSTER` query, which is set explicitly here to tell the rows of this test

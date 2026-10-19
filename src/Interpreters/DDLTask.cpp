@@ -22,7 +22,6 @@
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Processors/QueryPlan/UncompressedCacheUtils.h>
 #include <base/sort.h>
 #include <Poco/Net/NetException.h>
 #include <Common/DNSResolver.h>
@@ -151,12 +150,12 @@ void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
         for (std::string_view name : ClusterProxy::getInitiatorOnlySettingNames())
             settings->removeSetting(name);
 
-        /// An explicit `use_uncompressed_cache = 0` is carried only by the `changed` flag of a default-valued
-        /// setting, and the worker clamps such a change away in `makeQueryContext`, so its automatic mode (enabled
-        /// by the initiator or by the profile of the worker) would override the opt-out. Resolve it here, mirroring
-        /// `ClusterProxy::resolveAutomaticUncompressedCacheOptOut`.
-        if (automaticUncompressedCacheIsOverriddenByOptOut(context->getSettingsRef()))
-            settings->setSetting("enable_automatic_use_uncompressed_cache", Field{false});
+        /// An explicit `use_uncompressed_cache = 0` is not resolved into these settings (unlike
+        /// `ClusterProxy::resolveAutomaticUncompressedCacheOptOut` does for the settings packet of a secondary
+        /// query): they are reapplied on the worker without the fallback for unknown settings, so writing
+        /// `enable_automatic_use_uncompressed_cache` here would make an older worker reject the task with
+        /// `UNKNOWN_SETTING` during a rolling upgrade. The opt-out matters only for a DDL query that reads,
+        /// and `executeDDLQueryOnCluster` bakes it into the query text of such a query instead.
     }
 }
 
