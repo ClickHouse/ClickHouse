@@ -5,6 +5,9 @@
 -- The columns cache serves the columns of data parts in Parquet format: the whole columns of row groups are cached.
 
 SET max_threads = 1;
+-- `enable_parallel_replicas = 0`: with parallel replicas another replica may do some of the reads,
+-- so the entries written by this query would depend on how the reads are split.
+SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS t_parquet_columns_cache;
 
