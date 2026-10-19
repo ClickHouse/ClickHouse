@@ -273,6 +273,7 @@ namespace FailPoints
     extern const char rmt_mutation_prune_pause_before_zk_partition_list[];
     extern const char check_table_inject_retryable_zk_error[];
     extern const char check_table_inject_shutdown_abort[];
+    extern const char rmt_restore_replica_pause_during_metadata_bump[];
 }
 
 namespace ErrorCodes
@@ -7648,7 +7649,13 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
 
     LOG_INFO(log, "Moved all parts to detached/");
 
-    const bool is_first_replica = createTableIfNotExists(metadata_snapshot, zookeeper_retries_info);
+    /// If this replica is the first, it is published with the metadata_version the bump below reaches: a replica
+    /// restored at the same time can clone it as soon as it exists, and must not copy a version not reached yet.
+    StorageMetadataPtr first_replica_metadata_snapshot = metadata_snapshot;
+    if (max_parts_metadata_version > 0)
+        first_replica_metadata_snapshot = std::make_shared<StorageInMemoryMetadata>(
+            metadata_snapshot->withMetadataVersion(max_parts_metadata_version));
+    const bool is_first_replica = createTableIfNotExists(first_replica_metadata_snapshot, zookeeper_retries_info);
 
     LOG_INFO(log, "Created initial ZK nodes, replica is first: {}", is_first_replica);
 
@@ -7668,8 +7675,10 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
         auto zookeeper = getZooKeeper();
         String metadata_str = zookeeper->get(zookeeper_path + "/metadata");
         for (int32_t i = 0; i < max_parts_metadata_version; ++i)
+        {
             zookeeper->set(zookeeper_path + "/metadata", metadata_str);
-        zookeeper->set(replica_path + "/metadata_version", std::to_string(max_parts_metadata_version));
+            FailPointInjection::pauseFailPoint(FailPoints::rmt_restore_replica_pause_during_metadata_bump);
+        }
 
         LOG_INFO(log, "Bumped metadata version to {} to match parts", max_parts_metadata_version);
     }
