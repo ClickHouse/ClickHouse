@@ -216,6 +216,13 @@ constexpr size_t MAX_UNBOUNDED_SET_BYTES = 4 * 1024 * 1024;
 /// many distinct keys, and they balance the build between the threads.
 constexpr size_t BUCKETS_PER_STREAM = 16;
 
+/// A bucket whose set would be larger than this is partitioned again when it is built (see `buildSplitBucket`): the
+/// builders fill their sets at the same time, and large sets do not fit into the caches together.
+constexpr size_t MAX_BUCKET_SET_BYTES = 2 * 1024 * 1024;
+
+/// The keys of a part are inserted by chunks, so that its set grows with the distinct keys rather than all the keys.
+constexpr size_t SPLIT_INSERT_CHUNK = 1024;
+
 /// At least 256 buckets, and at most 4096, because every stream keeps a buffer per bucket.
 constexpr size_t MIN_BUCKET_BITS = 8;
 constexpr size_t MAX_BUCKET_BITS = 12;
@@ -432,6 +439,10 @@ public:
             expected = std::min(total, bucket_distinct + bucket_distinct / 16 + MIN_BLOCK_SIZE);
         }
 
+        const size_t set_bytes = std::bit_ceil(expected * 2) * sizeof(Key);
+        if (set_bytes > MAX_BUCKET_SET_BYTES)
+            return buildSplitBucket(bucket, total, expected, std::countr_zero(set_bytes / MAX_BUCKET_SET_BYTES));
+
         RadixSet<Key> bucket_set;
         bucket_set.reset(std::bit_ceil(expected * 2));
 
@@ -446,6 +457,50 @@ public:
         }
 
         return bucket_set.size();
+    }
+
+    /// Builds a bucket whose set would not fit into the caches: its keys are partitioned again by the next bits of
+    /// `bucketHash`, and a small set is built for each part. This is the multi-pass radix partitioning of Boncz, Manegold,
+    /// Kersten, "Database Architecture Optimized for the New Bottleneck: Memory Access" (VLDB 1999).
+    size_t buildSplitBucket(size_t bucket, size_t total, size_t expected, size_t split_bits)
+    {
+        const size_t num_parts = size_t{1} << split_bits;
+        std::vector<PODArray<Key>> parts(num_parts);
+        for (auto & part : parts)
+            part.reserve(total / num_parts + total / (8 * num_parts) + MIN_BLOCK_SIZE);
+
+        const size_t shift = 64 - split_bits;
+        for (const auto & stream : streams)
+        {
+            for (const Block * block = stream.local_buffers[bucket].head; block; block = block->next)
+            {
+                for (size_t i = 0; i < block->size; ++i)
+                {
+                    const Key key = block->keys()[i];
+                    parts[(bucketHash(key) << bucket_bits) >> shift].push_back(key);
+                }
+            }
+        }
+
+        const size_t part_expected = expected / num_parts + expected / (16 * num_parts) + MIN_BLOCK_SIZE;
+        size_t count = 0;
+        RadixSet<Key> part_set;
+        for (const auto & part : parts)
+        {
+            if (part.empty())
+                continue;
+
+            part_set.reset(std::bit_ceil(std::min(part.size(), part_expected) * 2));
+            for (size_t begin = 0; begin < part.size(); begin += SPLIT_INSERT_CHUNK)
+            {
+                const size_t num_keys = std::min(SPLIT_INSERT_CHUNK, part.size() - begin);
+                while ((part_set.numCellsInUse() + num_keys) * 2 > part_set.capacity())
+                    growLocalSet(part_set);
+                part_set.insertMany(part.data() + begin, num_keys);
+            }
+            count += part_set.size();
+        }
+        return count;
     }
 
     void recordStatistics(size_t num_distinct) override
