@@ -1052,6 +1052,31 @@ def test_native_create_s3a_base_location(started_cluster):
     assert node.query(f"SELECT count() FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "0\n"
 
 
+def test_native_create_non_primitive_key_rejected(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_native_create_non_primitive_key_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    for clause in ["PARTITION BY", "ORDER BY"]:
+        error = node.query_and_get_error(
+            f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (a Array(Int64)) {clause} a",
+            settings={
+                "allow_experimental_database_glue_catalog": 1,
+                "allow_database_glue_catalog": 1,
+                "write_full_path_in_iceberg_metadata": 1,
+            },
+        )
+        assert f"Cannot represent {clause}" in error, error
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    assert root_namespace not in [db["Name"] for db in glue_client.get_databases()["DatabaseList"]]
+
+
 def test_native_create_force_add_bucket_rejected(started_cluster):
     node = started_cluster.instances["node1"]
 

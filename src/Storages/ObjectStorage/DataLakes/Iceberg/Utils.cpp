@@ -1194,11 +1194,12 @@ static std::vector<std::pair<String, String>> parseTransformAndColumnPairs(ASTPt
 }
 
 /// SQL expressions are validated separately; this only checks whether an Iceberg transform can encode the key.
-static bool isRepresentableKey(ASTPtr key, const std::unordered_map<String, Int32> & column_name_to_source_id)
+/// Iceberg keys can only be sourced from columns of primitive types.
+static bool isRepresentableKey(ASTPtr key, const std::unordered_set<String> & primitive_columns)
 {
     key = unwrapOrderByElement(key);
     if (const auto * identifier = key->as<ASTIdentifier>())
-        return column_name_to_source_id.contains(identifier->name());
+        return primitive_columns.contains(identifier->name());
 
     const auto * function = key->as<ASTFunction>();
     const auto * expressions = key->as<ASTExpressionList>();
@@ -1208,7 +1209,7 @@ static bool isRepresentableKey(ASTPtr key, const std::unordered_map<String, Int3
     {
         bool representable = true;
         for (const auto & child : expressions->children)
-            representable = isRepresentableKey(child, column_name_to_source_id) && representable;
+            representable = isRepresentableKey(child, primitive_columns) && representable;
         return representable;
     }
 
@@ -1228,7 +1229,7 @@ static bool isRepresentableKey(ASTPtr key, const std::unordered_map<String, Int3
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg transform {} requires a positive parameter", function->name);
     }
     const auto * column = arguments.back()->as<ASTIdentifier>();
-    return column && column_name_to_source_id.contains(column->name());
+    return column && primitive_columns.contains(column->name());
 }
 
 std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
@@ -1241,6 +1242,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     bool is_catalog_table)
 {
     std::unordered_map<String, Int32> column_name_to_source_id;
+    std::unordered_set<String> primitive_columns;
     static Poco::UUIDGenerator uuid_generator;
 
     Poco::JSON::Object::Ptr new_metadata_file_content = new Poco::JSON::Object;
@@ -1278,6 +1280,9 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
         field->set(Iceberg::f_required, type.second);
         field->set(Iceberg::f_type, type.first);
         column_name_to_source_id[column.name] = iter_for_initial_columns;
+        /// Nested Iceberg types are JSON objects, primitive ones are strings.
+        if (type.first.isString())
+            primitive_columns.insert(column.name);
         schema_fields->add(field);
     }
     new_metadata_file_content->set(Iceberg::f_last_column_id, iter);
@@ -1295,7 +1300,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
                 return;
             /// Validate even when omissions are allowed: invalid SQL must not silently disappear.
             KeyDescription::getKeyFromAST(key, columns, {}, context);
-            if (!isRepresentableKey(key, column_name_to_source_id))
+            if (!isRepresentableKey(key, primitive_columns))
             {
                 if (!ignore_unsupported_properties)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
