@@ -2827,6 +2827,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         supportsSkipIndexesOnDataRead(),
         /*check_row_limits=*/true);
 
+    /// After the row-limit checks above; like them, the analysis totals count the rows before deletes.
+    if (const auto * uk_read_snapshot = tryGetDeleteBitmapSnapshot(*storage_snapshot))
+        uk_read_snapshot->dropFullyDeadGranules(analyzed_result_ptr->parts_with_ranges);
+
     return analyzed_result_ptr;
 }
 
@@ -4817,13 +4821,25 @@ std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColu
 
     PartRangesReadInfo info(getParts(), context->getSettingsRef(), *data.getSettings());
 
+    /// The lazy step re-reads by offset only rows this step already filtered, so it needs no bitmap.
+    StorageSnapshotPtr lazy_storage_snapshot = storage_snapshot;
+    if (tryGetDeleteBitmapSnapshot(*storage_snapshot))
+    {
+        const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
+        auto lazy_snapshot_data = std::make_unique<MergeTreeData::SnapshotData>();
+        lazy_snapshot_data->storage = snapshot_data.storage;
+        lazy_snapshot_data->parts = snapshot_data.parts;
+        lazy_snapshot_data->mutations_snapshot = snapshot_data.mutations_snapshot;
+        lazy_storage_snapshot = storage_snapshot->clone(std::move(lazy_snapshot_data));
+    }
+
     auto new_reading = std::make_unique<LazilyReadFromMergeTree>(
         std::move(lazy_reading_header),
         block_size.max_block_size_rows,
         info.min_marks_for_concurrent_read,
         reader_settings,
         mutations_snapshot,
-        storage_snapshot,
+        std::move(lazy_storage_snapshot),
         context,
         data.getLogName());
 
@@ -5241,6 +5257,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         {
             stripped_snapshot_data->storage = snapshot_data->storage;
             stripped_snapshot_data->mutations_snapshot = snapshot_data->mutations_snapshot;
+            /// Kept: the read pool resolves delete bitmaps through it.
+            stripped_snapshot_data->uk_read_snapshot = snapshot_data->uk_read_snapshot;
         }
 
         /// The snapshot object may be shared with other query plan steps.
@@ -5570,8 +5588,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     {
         const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
         const auto & column_type = top_k_filter_info->data_type;
-        /// Also nested inside `Tuple`, `Array`, ...: the threshold is compared as a raw `Field`, which places
-        /// a nested NULL or NaN regardless of NULLS FIRST/LAST.
+        /// Also nested inside `Tuple`, `Array`, ...: there too the primary key places a NULL or NaN by its own
+        /// order, not by the query's NULLS FIRST/LAST.
         bool has_nulls_direction_dependent_part = anyInTypeTree(
             *column_type, [](const IDataType & type) { return type.isNullable() || isFloat(type); });
         auto it = std::find(primary_key.column_names.begin(), primary_key.column_names.end(), top_k_filter_info->column_name);
@@ -6470,7 +6488,8 @@ void ReadFromMergeTree::createReadTasksForTextIndex(IndexReadTasks text_index_re
         }
     }
 
-    storage_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, std::move(new_metadata));
+    /// Keeps `data`: the read pool resolves delete bitmaps through it.
+    storage_snapshot = storage_snapshot->clone(std::move(new_metadata), storage_snapshot->data);
 
     if (output_header != nullptr)
     {
