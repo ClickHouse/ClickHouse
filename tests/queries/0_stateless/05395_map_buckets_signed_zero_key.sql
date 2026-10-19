@@ -12,7 +12,8 @@ CREATE TABLE t_map_buckets_signed_zero
 )
 ENGINE = MergeTree ORDER BY id
 SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets',
-    map_buckets_strategy = 'constant', map_buckets_min_avg_size = 0, max_buckets_in_map = 4;
+    map_buckets_strategy = 'constant', map_buckets_min_avg_size = 0, max_buckets_in_map = 4,
+    serialization_info_version = 'with_types';
 
 INSERT INTO t_map_buckets_signed_zero VALUES
     (1, map(-0.0, 'a'), map(-0.0, 'a'), map((-0.0, 1), 'a'), map([-0.0], 'a')),
@@ -32,7 +33,8 @@ DROP TABLE IF EXISTS t_map_buckets_signed_zero_json;
 CREATE TABLE t_map_buckets_signed_zero_json (id UInt64, m Map(JSON(z Float64), String))
 ENGINE = MergeTree ORDER BY id
 SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets',
-    map_buckets_strategy = 'constant', map_buckets_min_avg_size = 0, max_buckets_in_map = 4;
+    map_buckets_strategy = 'constant', map_buckets_min_avg_size = 0, max_buckets_in_map = 4,
+    serialization_info_version = 'with_types';
 
 INSERT INTO t_map_buckets_signed_zero_json SELECT 1, map(CAST('{"z":-0.0}', 'JSON(z Float64)'), 'a');
 INSERT INTO t_map_buckets_signed_zero_json SELECT 2, map(CAST('{"z":0.0}', 'JSON(z Float64)'), 'b');

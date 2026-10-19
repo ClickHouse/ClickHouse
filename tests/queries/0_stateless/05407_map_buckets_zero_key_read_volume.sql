@@ -7,7 +7,8 @@ DROP TABLE IF EXISTS t_map_buckets_zero_key_read_volume;
 CREATE TABLE t_map_buckets_zero_key_read_volume (id UInt64, m Map(Float64, UInt64))
 ENGINE = MergeTree ORDER BY id
 SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets',
-    map_buckets_strategy = 'constant', map_buckets_min_avg_size = 0, max_buckets_in_map = 4, min_bytes_for_wide_part = 0;
+    map_buckets_strategy = 'constant', map_buckets_min_avg_size = 0, max_buckets_in_map = 4, min_bytes_for_wide_part = 0,
+    serialization_info_version = 'with_types';
 
 -- Every map has the keys 1 to 16 except 8, which is a zero: `-0.0` in the even rows and `0.0` in the odd rows.
 INSERT INTO t_map_buckets_zero_key_read_volume
