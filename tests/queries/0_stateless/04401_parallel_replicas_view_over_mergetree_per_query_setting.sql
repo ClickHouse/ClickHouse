@@ -10,6 +10,14 @@ SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'parallel_replicas';
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET parallel_replicas_allow_view_over_mergetree = 1;
+-- The assertions below look for `ReadFromRemoteParallelReplicas` and for the view's name inside that
+-- step, i.e. for the SQL the initiator ships. Plan-based ships a serialized plan fragment through
+-- `ReadFromParallelReplicas`, and it resolves the view before placing the split, so neither the step
+-- name nor the relation it names can match. `parallel_replicas_allow_view_over_mergetree` is a
+-- setting of the query-based decision as well - it is read in `findParallelReplicasQuery` and
+-- `PlannerJoinTree`, which plan-based does not go through. See
+-- `05407_pr_plan_based_view_shapes` for what plan-based does with the same views.
+SET parallel_replicas_plan_based = 0;
 -- Mode 2 only collects statistics and does not use parallel replicas, which would
 -- make every assertion below pass without exercising the planner paths under test.
 SET automatic_parallel_replicas_mode = 0;

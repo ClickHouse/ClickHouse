@@ -10,6 +10,14 @@
 -- index_granularity = 1 makes the inflation deterministic: every replica receives marks, so a
 -- broken run returns exactly rows * max_parallel_replicas.
 
+-- The `-- what is shipped to replicas` section filters the plan for
+-- `ReadFromRemoteParallelReplicas` and reads the relation out of that step, i.e. out of the SQL the
+-- initiator ships. Plan-based ships a serialized plan fragment, so no row matches and every array
+-- comes back empty. The row counts above that section hold for both implementations;
+-- `05407_pr_plan_based_view_shapes` asserts, for the same views, which of them plan-based
+-- distributes - the property this section is really about.
+SET parallel_replicas_plan_based = 0;
+
 DROP VIEW IF EXISTS v_plain;
 DROP VIEW IF EXISTS v_set;
 DROP VIEW IF EXISTS v_nested;
