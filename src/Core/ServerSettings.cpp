@@ -132,7 +132,7 @@ namespace
 // clang-format off
 
 /// Settings without path are top-level server settings (no nesting).
-#define LIST_OF_SERVER_SETTINGS_WITHOUT_PATH(DECLARE, ALIAS) \
+#define LIST_OF_SERVER_SETTINGS_WITHOUT_PATH(DECLARE, DECLARE_WITH_ALIAS) \
     DECLARE(String, insert_deduplication_version, "new_unified_hash", R"(Deprecated migration guard. ClickHouse versions 26.7 and later support only the unified insert deduplication hash (`new_unified_hash`); the server refuses to start if this setting is present with any other value (such as `old_separate_hashes` or `compatible_double_hashes`). Complete the deduplication migration on the previous version before upgrading by running `compatible_double_hashes` (which writes both the legacy and unified hashes). For replicated tables run it for at least `replicated_deduplication_window_seconds` (one hour by default); the default windows retain the unified hashes of all inserts for that window, which is considered enough to cover an insert retry loop. For non-replicated tables with `non_replicated_deduplication_window` > 0 the window is count-based rather than time-based, so run `compatible_double_hashes` for at least that many inserts before upgrading.)", 0) \
     DECLARE(UInt64, dictionary_background_reconnect_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
     DECLARE(Bool, show_addresses_in_stack_traces, true, R"(If it is set true will show addresses in stack traces)", 0) \
@@ -1645,7 +1645,7 @@ Changing this value calls `prof.reset` which resets all accumulated profiling st
 \
     DECLARE(UInt64, s3_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(Max number of S3 redirects hops allowed.)", 0) \
     DECLARE(UInt64, s3_retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, R"(Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries)", 0) \
-    ALIAS(Bool, load_table_anonymously_if_credentials_restricted, true, R"(
+    DECLARE_WITH_ALIAS(Bool, load_table_anonymously_if_credentials_restricted, true, R"(
 The old name `s3_load_table_anonymously_if_credentials_restricted` is kept as an alias.
 
 Controls what happens when a persistent `S3` or `S3Queue` table, a dynamic `disk(type = s3, ...)`, or a
@@ -1673,7 +1673,7 @@ because those requests are denied as well. A dynamic Azure disk created with
 When disabled, loading such an object instead fails, which can prevent the server from starting. Use this only
 if you prefer a hard failure over a silently inaccessible table, disk, or catalog database.
 )", 0, s3_load_table_anonymously_if_credentials_restricted) \
-    ALIAS(Bool, allow_server_credentials_for_system_table_disks, false, R"(
+    DECLARE_WITH_ALIAS(Bool, allow_server_credentials_for_system_table_disks, false, R"(
 The old name `s3_allow_server_credentials_for_system_table_disks` is kept as an alias.
 
 Allows a dynamic `disk(type = s3, ...)` of a table in the `system` database to use the server's own (ambient)
@@ -2047,7 +2047,7 @@ that no disk of this type reads is reported as `UNKNOWN_ELEMENT_IN_CONFIG` inste
 )", 0)
 
 /// Settings with a path are server settings with at least one layer of nesting that have a fixed structure (no lists, lists, enumerations, repetitions, ...).
-#define LIST_OF_SERVER_SETTINGS_WITH_PATH(DECLARE, ALIAS) \
+#define LIST_OF_SERVER_SETTINGS_WITH_PATH(DECLARE, DECLARE_WITH_ALIAS) \
     DECLARE(String, named_collections_storage_type, "local", R"(
 The storage type for named collections. Possible values are `local`, `local_encrypted`, `keeper`,
 `keeper_encrypted`, `zookeeper`, and `zookeeper_encrypted`.
