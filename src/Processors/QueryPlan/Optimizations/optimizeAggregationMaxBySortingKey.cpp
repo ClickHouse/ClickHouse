@@ -19,6 +19,8 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/logger_useful.h>
 
+#include <limits>
+
 namespace DB
 {
 
@@ -672,9 +674,13 @@ static void tryApplyToLimitBy(const LimitByStep & limit_by, QueryPlan::Node & li
     if (last.collator || key_set.contains(last.column_name))
         return;
 
-    const size_t rows = limit_by.getGroupLength() + limit_by.getGroupOffset();
-    if (rows == 0)
+    /// `LIMIT -n OFFSET m BY` is planned as a `LimitByStep` with the largest length and offset `m`, followed by a
+    /// `NegativeLimitByStep`, so the sum may not fit: then every row may be needed.
+    const UInt64 length = limit_by.getGroupLength();
+    const UInt64 offset = limit_by.getGroupOffset();
+    if (length == 0 || length > std::numeric_limits<UInt64>::max() - offset)
         return;
+    const size_t rows = length + offset;
 
     tryApply(*node->children.front(), keys, {}, LimitByOrder{.column = last.column_name, .descending = last.direction < 0, .rows = rows});
 }
