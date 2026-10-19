@@ -66,10 +66,12 @@ SETTINGS workload = '05406_wl', max_threads = 1, use_concurrency_control = 1, ma
 
 -- A long aggregation in a nested pipeline renews the CPU slot of its thread, so the CPU limit preempts it.
 -- It is stopped after 1 s: the CPU limit is far below what any build gets in that time.
+-- No JIT: compiling the expressions can take that second before the aggregation starts.
 CREATE VIEW v_agg AS SELECT sum(cityHash64(number)) AS s FROM numbers(100000000000);
 SELECT * FROM loop(v_agg) LIMIT 1
 SETTINGS workload = '05406_capped', max_threads = 1, use_concurrency_control = 1, max_block_size = 65409, max_execution_time = 1,
-    timeout_overflow_mode = 'break', max_rows_to_read = 0, log_queries = 1, log_comment = '05406_q8'
+    timeout_overflow_mode = 'break', compile_expressions = 0, compile_aggregate_expressions = 0, max_rows_to_read = 0,
+    log_queries = 1, log_comment = '05406_q8'
 FORMAT Null;
 
 SELECT count() FROM t_heavy;
