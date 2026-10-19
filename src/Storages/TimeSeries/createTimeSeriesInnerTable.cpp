@@ -4,7 +4,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTViewTargets.h>
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Parsers/Prometheus/TimeSeriesVersion.h>
 #include <boost/algorithm/string.hpp>
 #include <base/EnumReflection.h>
 

@@ -256,6 +256,18 @@
             margin-top: 0.7rem;
         }
         .legend-item { display: inline-flex; align-items: center; gap: 0.35rem; }
+        button.legend-item {
+            background: transparent;
+            border: 1px solid transparent;
+            border-radius: 3px;
+            padding: 0.2rem 0.35rem;
+            font: inherit;
+            color: inherit;
+            cursor: pointer;
+        }
+        button.legend-item:hover { border-color: var(--border-color); }
+        button.legend-item:focus-visible { outline: 2px solid var(--muted); outline-offset: 2px; }
+        button.legend-item[aria-pressed="false"] { opacity: 0.45; }
         .legend-swatch {
             display: inline-block;
             width: 0.9rem;
@@ -637,12 +649,14 @@
             <span id="status"></span>
         </div>
         <div class="legend">
-            <span class="legend-item"><span class="legend-swatch" style="background:var(--header-mt)"></span>MergeTree / Table</span>
-            <span class="legend-item"><span class="legend-swatch" style="background:var(--header-mv)"></span>Materialized View</span>
-            <span class="legend-item"><span class="legend-swatch" style="background:var(--header-rmv)"></span>Refreshable MV</span>
-            <span class="legend-item"><span class="legend-swatch" style="background:var(--header-dict)"></span>Dictionary</span>
-            <span class="legend-item"><span class="legend-swatch" style="background:var(--header-distributed)"></span>Distributed</span>
-            <span class="legend-item"><span class="legend-swatch" style="background:var(--header-view)"></span>View</span>
+            <button type="button" class="legend-item" data-kind="mt" aria-pressed="true" title="Click to hide this category"><span class="legend-swatch" style="background:var(--header-mt)"></span>MergeTree / Table</button>
+            <button type="button" class="legend-item" data-kind="mv" aria-pressed="true" title="Click to hide this category"><span class="legend-swatch" style="background:var(--header-mv)"></span>Materialized View</button>
+            <button type="button" class="legend-item" data-kind="rmv" aria-pressed="true" title="Click to hide this category"><span class="legend-swatch" style="background:var(--header-rmv)"></span>Refreshable MV</button>
+            <button type="button" class="legend-item" data-kind="dict" aria-pressed="true" title="Click to hide this category"><span class="legend-swatch" style="background:var(--header-dict)"></span>Dictionary</button>
+            <button type="button" class="legend-item" data-kind="distributed" aria-pressed="true" title="Click to hide this category"><span class="legend-swatch" style="background:var(--header-distributed)"></span>Distributed</button>
+            <button type="button" class="legend-item" data-kind="view" aria-pressed="true" title="Click to hide this category"><span class="legend-swatch" style="background:var(--header-view)"></span>View</button>
+            <button type="button" class="legend-item" data-kind="other" aria-pressed="true" title="Click to hide this category"><span class="legend-swatch" style="background:var(--header-other)"></span>Other table</button>
+            <button type="button" id="toggle-all-categories" class="legend-item">Hide all</button>
             <span class="legend-item"><span class="legend-line" style="background:var(--link-mv)"></span>MV flow</span>
             <span class="legend-item"><span class="legend-line" style="background:var(--link-dict)"></span>Dictionary source</span>
             <span class="legend-item"><span class="legend-line" style="background:var(--link-distributed)"></span>Distributed shard</span>
@@ -834,6 +848,7 @@ const state = {
     edges: [],
     showColumns: true,
     dbFilter: '',
+    hiddenKinds: new Set(),
     selectedKey: null,
     zoom: 1.0,
     /// INSERT-pipeline heat-map state populated from `system.query_views_log`.
@@ -843,6 +858,10 @@ const state = {
     loadByEdge: new Map(),             /// "from\x00to" -> same shape (MV -> target only)
     loadMax: { byMv: {}, byEdge: {} }, /// per-metric maxima used to normalize colour intensity
 };
+
+function isNodeVisible(node) {
+    return (!state.dbFilter || node.database === state.dbFilter) && !state.hiddenKinds.has(node.kind);
+}
 
 function setStatus(text, isError) {
     $('status').textContent = text;
@@ -1514,7 +1533,7 @@ function layoutAll() {
     const dbSections = [];
 
     for (const db of visibleDbs) {
-        const dbNodes = state.nodesByDb.get(db);
+        const dbNodes = state.nodesByDb.get(db).filter(isNodeVisible);
         const dbKeys = new Set(dbNodes.map(n => n.key));
         const comps = connectedComponentsIn(dbKeys);
 
@@ -1728,7 +1747,7 @@ function render() {
     }
 
     for (const n of state.nodes.values()) {
-        if (state.dbFilter && n.database !== state.dbFilter) continue;
+        if (!isNodeVisible(n)) continue;
         if (!n.w) continue;
         const el = document.createElement('div');
         el.className = 'node node-' + n.kind;
@@ -1847,7 +1866,7 @@ function render() {
         let mx = 0, my = 0;
         const sx = parseFloat(g.style.left), sy = parseFloat(g.style.top);
         for (const n of section.nodes) {
-            if (state.dbFilter && n.database !== state.dbFilter) continue;
+            if (!isNodeVisible(n)) continue;
             mx = Math.max(mx, n.x + n.w - sx);
             my = Math.max(my, n.y + n.h - sy);
         }
@@ -1871,7 +1890,7 @@ function drawEdges() {
 
     const visible = new Set();
     for (const n of state.nodes.values()) {
-        if (!state.dbFilter || n.database === state.dbFilter) visible.add(n.key);
+        if (isNodeVisible(n)) visible.add(n.key);
     }
 
     const search = $('search').value.trim().toLowerCase();
@@ -2163,7 +2182,41 @@ for (const id of ['url', 'user', 'password']) {
     });
 }
 $('relayout').onclick = render;
-$('db-filter').onchange = (e) => { state.dbFilter = e.target.value; render(); };
+/// Redraw after a change of `isNodeVisible`: drop a selection that became hidden or no longer exists
+/// (a reload may have replaced the graph), and refresh the highlight and the sidebar of a still-visible
+/// selected node, because the redraw recomputes the links of the filtered graph and they must not
+/// refer to just-hidden neighbours.
+function renderWithVisibleSelection() {
+    const selected = state.nodes.get(state.selectedKey);
+    if (!selected || !isNodeVisible(selected)) clearHighlight();
+    render();
+    if (state.selectedKey) selectNode(state.selectedKey);
+}
+$('db-filter').onchange = (e) => { state.dbFilter = e.target.value; renderWithVisibleSelection(); };
+const categoryButtons = Array.from(document.querySelectorAll('.legend-item[data-kind]'));
+function updateCategoryVisibility() {
+    for (const button of categoryButtons) {
+        const visible = !state.hiddenKinds.has(button.dataset.kind);
+        button.setAttribute('aria-pressed', String(visible));
+        button.title = visible ? 'Click to hide this category' : 'Click to show this category';
+    }
+    const allHidden = categoryButtons.every(button => state.hiddenKinds.has(button.dataset.kind));
+    $('toggle-all-categories').textContent = allHidden ? 'Show all' : 'Hide all';
+    renderWithVisibleSelection();
+}
+for (const button of categoryButtons) {
+    button.addEventListener('click', () => {
+        const kind = button.dataset.kind;
+        if (state.hiddenKinds.has(kind)) state.hiddenKinds.delete(kind);
+        else state.hiddenKinds.add(kind);
+        updateCategoryVisibility();
+    });
+}
+$('toggle-all-categories').onclick = () => {
+    const allHidden = categoryButtons.every(button => state.hiddenKinds.has(button.dataset.kind));
+    state.hiddenKinds = allHidden ? new Set() : new Set(categoryButtons.map(button => button.dataset.kind));
+    updateCategoryVisibility();
+};
 $('toggle-columns').onclick = (e) => {
     state.showColumns = !state.showColumns;
     e.target.classList.toggle('active', state.showColumns);

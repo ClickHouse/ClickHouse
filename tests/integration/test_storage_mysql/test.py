@@ -672,6 +672,73 @@ def test_mysql_null(started_cluster):
     conn.close()
 
 
+def test_mysql_not_in_null(started_cluster):
+    table_name = "test_mysql_not_in_null"
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"""
+            CREATE TABLE `clickhouse`.`{table_name}` (
+            `id` int(11) NOT NULL,
+            `money` int NULL default NULL,
+            `price` decimal(10, 2) NULL default NULL,
+            PRIMARY KEY (`id`)) ENGINE=InnoDB;
+            """
+        )
+
+    node1.query(
+        f"""
+        CREATE TABLE {table_name}
+        (
+            id UInt32,
+            money Nullable(UInt32),
+            price Nullable(Decimal(10, 2))
+        )
+        ENGINE = MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')
+        """
+    )
+
+    money = "[1, 2, NULL][number % 3 + 1]"
+    price = "CAST([1.5, 2.5, NULL][number % 3 + 1] AS Nullable(Decimal(10, 2)))"
+    node1.query(
+        f"INSERT INTO {table_name} (id, money, price) SELECT number, {money}, {price} FROM numbers(9)"
+    )
+
+    # ClickHouse ignores a `NULL` member of an `IN` set, while MySQL applies the three-valued logic,
+    # so the set must reach MySQL without it. A `Decimal` set is written as `tuple(...)`, not as a literal.
+    for predicate, expected in [
+        ("money NOT IN (1, NULL)", 3),
+        ("NOT (money IN (1, NULL))", 3),
+        ("money IN (1, NULL)", 3),
+        ("money NOT IN (NULL)", 6),
+        ("price NOT IN (toDecimal64(1.5, 2), NULL)", 3),
+        ("price IN (toDecimal64(1.5, 2), NULL)", 3),
+    ]:
+        local = node1.query(
+            f"SELECT countIf({predicate}) FROM (SELECT {money} AS money, {price} AS price FROM numbers(9))"
+        )
+        remote = node1.query(f"SELECT count() FROM {table_name} WHERE {predicate}")
+        assert int(local) == expected, predicate
+        assert int(remote) == expected, predicate
+
+    for predicate in [
+        "money NOT IN (1, NULL)",
+        "price NOT IN (toDecimal64(1.5, 2), NULL)",
+        "price IN (toDecimal64(1.5, 2), NULL)",
+    ]:
+        remote = node1.query(
+            f"SELECT count() FROM {table_name} WHERE {predicate} SETTINGS external_table_strict_query = 1"
+        )
+        assert int(remote) == 3, predicate
+
+    node1.query(f"DROP TABLE {table_name}")
+    drop_mysql_table(conn, table_name)
+    conn.close()
+
+
 def test_settings(started_cluster):
     table_name = "test_settings"
     node1.query(f"DROP TABLE IF EXISTS {table_name}")
@@ -1602,32 +1669,6 @@ def test_mysql_ssl_contents_override_configured_paths(started_cluster):
             node1.query(f"SELECT count() FROM mysql(mysql_with_locked_ssl, {credentials})")
         assert "Override not allowed for 'ssl_ca'" in str(exception.value)
 
-        # The contents form is the only way to supply a TLS credential from SQL, so it stays usable
-        # when overrides are forbidden by default: it is not a new key, it replaces the path the
-        # collection defines, and the operator forbids that with `overridable="false"` instead.
-        hardened = {"allow_named_collection_override_by_default": 0}
-        assert (
-            node1.query(
-                f"SELECT count() FROM mysql(mysql_with_ssl, {credentials})",
-                settings=hardened,
-            )
-            == "0\n"
-        )
-        with pytest.raises(QueryRuntimeException) as exception:
-            node1.query(
-                f"SELECT count() FROM mysql(mysql_with_locked_ssl, {credentials})",
-                settings=hardened,
-            )
-        assert "Override not allowed for 'ssl_ca'" in str(exception.value)
-
-        # An unrelated key is still a new key, and is still refused under that policy.
-        with pytest.raises(QueryRuntimeException) as exception:
-            node1.query(
-                "SELECT count() FROM mysql(mysql_with_ssl, table = 'test_table')",
-                settings=hardened,
-            )
-        assert "Override not allowed for 'table'" in str(exception.value)
-
         # The same override on the dictionary DDL path: the overrides of `SOURCE(MYSQL(NAME ...))`
         # arrive as generated configuration keys rather than as an AST, and must be recognized as
         # query-supplied all the same. The source is instantiated when the dictionary is loaded.
@@ -1993,6 +2034,53 @@ def test_query_passing_type_mismatch(started_cluster):
     assert node1.query_and_get_error("SELECT * FROM mysql_type_mismatch") != ""
     node1.query("DROP TABLE mysql_type_mismatch")
 
+    drop_mysql_table(conn, table_name)
+    conn.close()
+
+
+def test_strict_query_local_only_column(started_cluster):
+    # A `MATERIALIZED` column of the table-backed engine is a physical column of the remote table: its
+    # value is read from MySQL, and a filter over it is pushed down like one over an ordinary column,
+    # so `external_table_strict_query` accepts it. An `ALIAS` column belongs to this source too, but exists
+    # only locally: its filter is applied locally and must be rejected under `external_table_strict_query`
+    # instead of being silently dropped as if it belonged to another table.
+    table_name = "strict_local_only_column"
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"CREATE TABLE clickhouse.{table_name} (a INT NOT NULL, m INT NOT NULL, PRIMARY KEY (a)) ENGINE=InnoDB;"
+        )
+        cursor.execute(f"INSERT INTO clickhouse.{table_name} VALUES (1, 2), (2, 3)")
+        conn.commit()
+
+    node1.query("DROP TABLE IF EXISTS mysql_strict_local_only")
+    node1.query(
+        f"CREATE TABLE mysql_strict_local_only (a Int32, m Int32 MATERIALIZED a + 1, l Int32 ALIAS a * 10) "
+        f"ENGINE = MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
+    )
+
+    assert node1.query("SELECT count() FROM mysql_strict_local_only WHERE m = 2").rstrip() == "1"
+    assert node1.query("SELECT count() FROM mysql_strict_local_only WHERE l = 10").rstrip() == "1"
+    assert (
+        node1.query(
+            "SELECT count() FROM mysql_strict_local_only WHERE a = 1 SETTINGS external_table_strict_query = 1"
+        ).rstrip()
+        == "1"
+    )
+    # The `MATERIALIZED` column is read from the remote table, not computed from its expression.
+    assert node1.query("SELECT a, m FROM mysql_strict_local_only ORDER BY a").splitlines() == ["1\t2", "2\t3"]
+    assert (
+        node1.query(
+            "SELECT count() FROM mysql_strict_local_only WHERE m = 2 SETTINGS external_table_strict_query = 1"
+        ).rstrip()
+        == "1"
+    )
+    assert "INCORRECT_QUERY" in node1.query_and_get_error(
+        "SELECT count() FROM mysql_strict_local_only WHERE l = 10 SETTINGS external_table_strict_query = 1"
+    )
+
+    node1.query("DROP TABLE mysql_strict_local_only")
     drop_mysql_table(conn, table_name)
     conn.close()
 

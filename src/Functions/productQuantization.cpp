@@ -88,7 +88,7 @@ CodebookView getCodebook(const ColumnWithTypeAndName & arg, const String & fn, s
     size_t stride = 0;
     if (const auto * cb_const = checkAndGetColumnConst<ColumnFixedString>(arg.column.get()))
         col_codebook = &assert_cast<const ColumnFixedString &>(cb_const->getDataColumn()); /// const codebook
-    else if ((col_codebook = checkAndGetColumn<ColumnFixedString>(arg.column.get())))
+    else if (col_codebook = checkAndGetColumn<ColumnFixedString>(arg.column.get()); col_codebook)
         stride = expected_floats; /// per-row codebook
     if (!col_codebook || col_codebook->empty())
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Codebook argument of function {} must be a (constant) FixedString", fn);

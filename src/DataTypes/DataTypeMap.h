@@ -62,12 +62,18 @@ public:
 
     static bool isValidKeyType(DataTypePtr key_type);
 
-    void forEachChild(const ChildCallback & callback) const override;
+    size_t getNumberOfChildren() const override { return 2; }
+    const DataTypePtr & getChild(size_t index) const override
+    {
+        chassert(index < 2);
+        return index == 0 ? key_type : value_type;
+    }
 
     bool hasDynamicSubcolumnsData() const override { return true; }
     bool hasDynamicStructure() const override { return key_type->hasDynamicStructure() || value_type->hasDynamicStructure(); }
     std::unique_ptr<SubcolumnInfo> getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const override;
 private:
+    DataTypePtr doCloneWithChildren(const DataTypes & new_children) const override;
     void assertKeyType() const;
 };
 

@@ -2,6 +2,7 @@
 
 #include <IO/OffsetMap.h>
 #include <IO/IFileBasedSourceReader.h>
+#include <IO/ByteRangeSet.h>
 #include <IO/ChainedBuffers.h>
 #include <IO/ReadContinuityTracker.h>
 #include <IO/LongConnectionLimit.h>
@@ -82,6 +83,8 @@ public:
 
     /// Bound reads to logical offsets below `bound`; `nullopt` reads to the file end.
     void setReadUntil(std::optional<size_t> bound) { read_until = bound; }
+
+    void setRequestMap(ByteRangeSet ranges);
 
     size_t getPosition() const { return position; }
 
@@ -241,6 +244,8 @@ private:
     bool reached_eof = false;
     /// Hard upper bound on the logical read position; `nullopt` = read to end.
     std::optional<size_t> read_until;
+    /// `nullopt` = no map was announced, the caller may read the whole file.
+    std::optional<ByteRangeSet> request_map;
 
     std::optional<LongConnection> long_conn;
     ReadContinuityTracker fetch_tracker;

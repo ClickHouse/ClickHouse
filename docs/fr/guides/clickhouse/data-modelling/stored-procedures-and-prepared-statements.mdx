@@ -10,9 +10,7 @@ doc_type: 'guide'
 Si vous venez d’une base de données relationnelle traditionnelle, vous cherchez peut-être des procédures stockées et des requêtes préparées dans ClickHouse.
 Ce guide explique l’approche de ClickHouse vis-à-vis de ces concepts et propose des alternatives recommandées.
 
-<div id="alternatives-to-stored-procedures">
-  ## Alternatives aux procédures stockées dans ClickHouse
-</div>
+## Alternatives aux procédures stockées dans ClickHouse {#alternatives-to-stored-procedures}
 
 ClickHouse ne prend pas en charge les procédures stockées traditionnelles avec une logique de contrôle de flux (`IF`/`ELSE`, boucles, etc.).
 Il s&#39;agit d&#39;un choix de conception délibéré, lié à l&#39;architecture de ClickHouse en tant que base de données analytique.
@@ -26,15 +24,11 @@ ClickHouse est optimisé pour :
 
 Les procédures stockées avec une logique procédurale vont à l&#39;encontre de ces optimisations. À la place, ClickHouse propose des alternatives qui correspondent à ses points forts.
 
-<div id="user-defined-functions">
-  ### Fonctions définies par l’utilisateur (UDFs)
-</div>
+### Fonctions définies par l’utilisateur (UDFs) {#user-defined-functions}
 
 Les fonctions définies par l’utilisateur permettent d’encapsuler une logique réutilisable sans structures de contrôle. ClickHouse prend en charge deux types :
 
-<div id="lambda-based-udfs">
-  #### UDF basées sur des expressions lambda
-</div>
+#### UDF basées sur des expressions lambda {#lambda-based-udfs}
 
 Créez des fonctions à l’aide d’expressions SQL et de la syntaxe lambda :
 
@@ -107,9 +101,7 @@ SELECT format_phone('5551234567');
 
 Voir [`CREATE FUNCTION`](/fr/reference/statements/create/function) pour la syntaxe complète.
 
-<div id="executable-udfs">
-  #### UDF exécutables
-</div>
+#### UDF exécutables {#executable-udfs}
 
 Pour une logique plus complexe, utilisez des UDF exécutables qui appellent des programmes externes :
 
@@ -141,9 +133,7 @@ Les UDF exécutables peuvent implémenter n’importe quelle logique dans n’im
 
 Consultez [les UDF exécutables](/fr/reference/functions/regular-functions/udf) pour plus de détails.
 
-<div id="parameterized-views">
-  ### Vues paramétrées
-</div>
+### Vues paramétrées {#parameterized-views}
 
 Les vues paramétrées se comportent comme des fonctions qui renvoient des jeux de données.
 Elles sont idéales pour des requêtes réutilisables avec un filtrage dynamique :
@@ -198,9 +188,7 @@ FROM sales_by_date(start_date='2024-01-01', end_date='2024-01-31')
 WHERE product_id = 12345;
 ```
 
-<div id="common-use-cases">
-  #### Cas d’usage courants
-</div>
+#### Cas d’usage courants {#common-use-cases}
 
 * Filtrage dynamique par plage de dates
 * Segmentation des données par utilisateur
@@ -245,9 +233,7 @@ SELECT * FROM top_products_by_category(
 
 Consultez la section [Vues paramétrées](/fr/reference/statements/create/view#parameterized-view) pour plus d’informations.
 
-<div id="materialized-views">
-  ### Vues matérialisées
-</div>
+### Vues matérialisées {#materialized-views}
 
 Les vues matérialisées sont idéales pour précalculer des agrégations coûteuses, qui seraient traditionnellement effectuées dans des procédures stockées. Si vous utilisez habituellement une base de données traditionnelle, voyez une vue matérialisée comme un **déclencheur INSERT** qui transforme et agrège automatiquement les données lorsqu’elles sont insérées dans la table source :
 
@@ -300,9 +286,7 @@ WHERE date BETWEEN '2024-01-01' AND '2024-01-31'
 GROUP BY user_id;
 ```
 
-<div id="refreshable-materialized-views">
-  #### Vues matérialisées actualisables
-</div>
+#### Vues matérialisées actualisables {#refreshable-materialized-views}
 
 Pour le traitement par lots planifié (par exemple, des procédures stockées exécutées chaque nuit) :
 
@@ -328,16 +312,12 @@ WHERE month = toStartOfMonth(today());
 
 Voir [Vues matérialisées en cascade](/fr/concepts/features/materialized-views/cascading-materialized-views) pour des modèles avancés.
 
-<div id="external-orchestration">
-  ### Orchestration externe
-</div>
+### Orchestration externe {#external-orchestration}
 
 Pour une logique métier complexe, des workflows ETL ou des processus en plusieurs étapes, il est toujours possible d&#39;implémenter cette logique en dehors de ClickHouse,
 à l&#39;aide de clients par langage.
 
-<div id="using-application-code">
-  #### Utiliser du code applicatif
-</div>
+#### Utiliser du code applicatif {#using-application-code}
 
 Voici une comparaison, côte à côte, montrant comment une procédure stockée MySQL peut être transposée en code applicatif avec ClickHouse :
 
@@ -570,27 +550,23 @@ Voici une comparaison, côte à côte, montrant comment une procédure stockée 
 
 <br />
 
-<div id="key-differences">
-  #### Différences clés
-</div>
+#### Différences clés {#key-differences}
 
-1. **Contrôle de flux** - Les procédures stockées MySQL utilisent `IF/ELSE` et des boucles `WHILE`. Dans ClickHouse, implémentez cette logique dans le code de votre application (Python, Java, etc.)
-2. **Transactions** - MySQL prend en charge `BEGIN/COMMIT/ROLLBACK` pour les transactions ACID. ClickHouse est une base de données analytique optimisée pour les workloads de type append-only, et non pour les mises à jour transactionnelles
+1. **Contrôle de flux** - Les procédures stockées MySQL utilisent `IF/ELSE` et des boucles `WHILE`. Dans ClickHouse, implémentez cette logique dans le code applicatif (Python, Java, etc.)
+2. **Transactions** - MySQL prend en charge `BEGIN/COMMIT/ROLLBACK` pour les transactions ACID. ClickHouse est une base de données analytique optimisée pour les charges de travail de type append-only, et non pour les mises à jour transactionnelles
 3. **Mises à jour** - MySQL utilise des instructions `UPDATE`. ClickHouse privilégie `INSERT` avec [ReplacingMergeTree](/fr/reference/engines/table-engines/mergetree-family/replacingmergetree) ou [CollapsingMergeTree](/fr/reference/engines/table-engines/mergetree-family/collapsingmergetree) pour les données mutables
-4. **Variables et état** - Les procédures stockées MySQL peuvent déclarer des variables (`DECLARE v_discount`). Avec ClickHouse, gérez l’état dans le code de votre application
-5. **Gestion des erreurs** - MySQL prend en charge `SIGNAL` et les gestionnaires d’exceptions. Dans le code de l’application, utilisez le mécanisme natif de gestion des erreurs de votre langage (try/catch)
+4. **Variables et état** - Les procédures stockées MySQL peuvent déclarer des variables (`DECLARE v_discount`). Avec ClickHouse, gérez l’état dans le code applicatif
+5. **Gestion des erreurs** - MySQL prend en charge `SIGNAL` et les gestionnaires d’exceptions. Dans le code applicatif, utilisez le mécanisme natif de gestion des erreurs de votre langage (try/catch)
 
 <Tip>
-  **Quand utiliser chaque approche :**
+  **Quand utiliser chaque approche :**
 
-  * **Workloads OLTP** (commandes, paiements, comptes utilisateurs) → Utilisez MySQL/PostgreSQL avec des procédures stockées
-  * **Workloads analytiques** (reporting, agrégations, séries temporelles) → Utilisez ClickHouse avec une orchestration au niveau de l’application
-  * **Architecture hybride** → Utilisez les deux ! Acheminez en continu les données transactionnelles d’OLTP vers ClickHouse pour l’analytique
+  * **Charges de travail OLTP** (commandes, paiements, comptes utilisateurs) → Utilisez MySQL ou PostgreSQL pour les transactions applicatives et les procédures stockées. [ClickHouse Managed Postgres](/fr/products/managed-postgres/overview) est disponible dans ClickHouse Cloud.
+  * **Charges de travail analytiques** (reporting, agrégations, séries temporelles) → Utilisez ClickHouse avec une orchestration au niveau de l’application
+  * **Architecture hybride** → Conservez les transactions applicatives dans Postgres et répliquez les changements committés vers ClickHouse pour l’analytique. Consultez [comment Postgres et ClickHouse fonctionnent ensemble](/fr/products/managed-postgres/overview#transactions-and-analytics) et le [quickstart d’intégration](/fr/products/managed-postgres/quickstart#part-2).
 </Tip>
 
-<div id="using-workflow-orchestration-tools">
-  #### Utilisation d&#39;outils d&#39;orchestration de workflows
-</div>
+#### Utilisation d&#39;outils d&#39;orchestration de workflows {#using-workflow-orchestration-tools}
 
 * **Apache Airflow** - Planifier et surveiller des DAG complexes de requêtes ClickHouse
 * **dbt** - Transformer les données avec des workflows basés sur SQL
@@ -606,21 +582,15 @@ Voici une comparaison, côte à côte, montrant comment une procédure stockée 
 * Monitoring et alertes
 * Planification plus flexible
 
-<div id="alternatives-to-prepared-statements-in-clickhouse">
-  ## Alternatives aux requêtes préparées dans ClickHouse
-</div>
+## Alternatives aux requêtes préparées dans ClickHouse {#alternatives-to-prepared-statements-in-clickhouse}
 
 Bien que ClickHouse ne dispose pas de « requêtes préparées » traditionnelles au sens des SGBDR, il propose des **paramètres de requête** qui remplissent le même rôle : des requêtes sécurisées et paramétrées qui empêchent les injections SQL.
 
-<div id="query-parameters-syntax">
-  ### Syntaxe
-</div>
+### Syntaxe {#query-parameters-syntax}
 
 Il existe deux manières de définir des paramètres de requête :
 
-<div id="method-1-using-set">
-  #### Méthode 1 : utilisation de `SET`
-</div>
+#### Méthode 1 : utilisation de `SET` {#method-1-using-set}
 
 <Accordion title="Exemple de table et de données">
   ```sql
@@ -670,9 +640,7 @@ WHERE user_id = {user_id: UInt64}
 GROUP BY event_name;
 ```
 
-<div id="method-2-using-cli-parameters">
-  #### Méthode 2 : utiliser des paramètres CLI
-</div>
+#### Méthode 2 : utiliser des paramètres CLI {#method-2-using-cli-parameters}
 
 ```bash
 clickhouse-client \
@@ -684,18 +652,14 @@ clickhouse-client \
              AND event_date BETWEEN {start_date: Date} AND {end_date: Date}"
 ```
 
-<div id="parameter-syntax">
-  ### Syntaxe des paramètres
-</div>
+### Syntaxe des paramètres {#parameter-syntax}
 
 Les paramètres sont référencés de la manière suivante : `{parameter_name: DataType}`
 
 * `parameter_name` - Le nom du paramètre (sans le préfixe `param_`)
 * `DataType` - Le type de données ClickHouse vers lequel caster le paramètre
 
-<div id="data-type-examples">
-  ### Exemples de types de données
-</div>
+### Exemples de types de données {#data-type-examples}
 
 <Accordion title="Tables et données d’exemple">
   ```sql
@@ -810,9 +774,7 @@ Les paramètres sont référencés de la manière suivante : `{parameter_name: 
 Pour l’utilisation des paramètres de requête dans les [clients par langage](/fr/integrations/language-clients/index), consultez la documentation du
 client pour le langage qui vous intéresse.
 
-<div id="limitations-of-query-parameters">
-  ### Limitations des paramètres de requête
-</div>
+### Limitations des paramètres de requête {#limitations-of-query-parameters}
 
 Les paramètres de requête ne sont **pas des substitutions de texte universelles**. Ils présentent des limites précises :
 
@@ -852,9 +814,7 @@ ALTER TABLE {table: Identifier} ADD COLUMN new_col String;  -- NOT SUPPORTED
 {statements: String};  -- NOT SUPPORTED
 ```
 
-<div id="security-best-practices">
-  ### Bonnes pratiques de sécurité
-</div>
+### Bonnes pratiques de sécurité {#security-best-practices}
 
 **Utilisez toujours des paramètres de requête pour les données fournies par l’utilisateur :**
 
@@ -890,9 +850,7 @@ def get_user_orders(user_id: int, start_date: str):
     )
 ```
 
-<div id="mysql-protocol-prepared-statements">
-  ### Requêtes préparées du protocole MySQL
-</div>
+### Requêtes préparées du protocole MySQL {#mysql-protocol-prepared-statements}
 
 L’[interface MySQL](/fr/concepts/features/interfaces/mysql) de ClickHouse inclut une prise en charge minimale des requêtes préparées (`COM_STMT_PREPARE`, `COM_STMT_EXECUTE`, `COM_STMT_CLOSE`), principalement pour assurer la compatibilité avec des outils comme Tableau Online qui encapsulent les requêtes dans des requêtes préparées.
 
@@ -922,13 +880,9 @@ EXECUTE stmt USING @user_id;  -- Parameter binding not supported
 
 Pour plus de détails, consultez la [documentation de l’interface MySQL](/fr/concepts/features/interfaces/mysql) ainsi que l’[article de blog sur la prise en charge de MySQL](https://clickhouse.com/blog/mysql-support-in-clickhouse-the-journey).
 
-<div id="summary">
-  ## Résumé
-</div>
+## Résumé {#summary}
 
-<div id="summary-stored-procedures">
-  ### Alternatives de ClickHouse aux procédures stockées
-</div>
+### Alternatives de ClickHouse aux procédures stockées {#summary-stored-procedures}
 
 | Modèle traditionnel de procédure stockée | Alternative ClickHouse                                                       |
 | ---------------------------------------- | ---------------------------------------------------------------------------- |
@@ -939,9 +893,7 @@ Pour plus de détails, consultez la [documentation de l’interface MySQL](/fr/c
 | ETL complexe en plusieurs étapes         | Vues matérialisées en chaîne ou orchestration externe (Python, Airflow, dbt) |
 | Logique métier avec contrôle de flux     | Code applicatif                                                              |
 
-<div id="summary-query-parameters">
-  ### Utilisation des paramètres de requête
-</div>
+### Utilisation des paramètres de requête {#summary-query-parameters}
 
 Les paramètres de requête peuvent être utilisés pour :
 
@@ -950,9 +902,7 @@ Les paramètres de requête peuvent être utilisés pour :
 * Mettre en place un filtrage dynamique dans les applications
 * Créer des modèles de requêtes réutilisables
 
-<div id="related-documentation">
-  ## Documentation connexe
-</div>
+## Documentation connexe {#related-documentation}
 
 * [`CREATE FUNCTION`](/fr/reference/statements/create/function) - Fonctions définies par l’utilisateur
 * [`CREATE VIEW`](/fr/reference/statements/create/view) - Vues, y compris les vues paramétrées et matérialisées
