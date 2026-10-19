@@ -1129,7 +1129,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     parts_with_ranges.size(), std::vector<MergeTreeIndexBulkGranulesMinMax::MinMaxGranule>());
 
     /// Perform top-K optimization during index analysis itself?
-    const bool perform_top_k_optimization = top_k_filter_info && skip_indexes.skip_index_for_top_k_filtering && !top_k_filter_info->where_clause;
+    bool perform_top_k_optimization = top_k_filter_info && skip_indexes.skip_index_for_top_k_filtering && !top_k_filter_info->where_clause;
+    /// TODO(unique-key): support top-k filtering by skip index.
+    perform_top_k_optimization &= !metadata_snapshot->hasUniqueKey();
     const bool top_k_handle_ties = perform_top_k_optimization && (top_k_filter_info->num_sort_columns > 1 || skip_indexes.skip_index_for_top_k_filtering->index.granularity > 1);
 
     size_t num_threads = std::min<size_t>(num_streams, parts_with_ranges.size());
@@ -1273,7 +1275,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     /// drops the deleted candidates in the same way. A pending `ALTER DELETE` is applied regardless.
                     const bool has_deleted_rows = (query_hides_lightweight_deleted_rows
                             && (ranges.data_part->hasLightweightDelete() || alter_conversions->hasLightweightDelete()))
-                        || alter_conversions->hasDeleteMutation();
+                        || alter_conversions->hasDeleteMutation()
+                        /// TODO(unique-key): check the part's delete bitmap, not the table.
+                        || metadata_snapshot->hasUniqueKey();
                     if (index->isVectorSimilarityIndex() && has_deleted_rows)
                     {
                         return std::unexpected(PreformattedMessage::create(
