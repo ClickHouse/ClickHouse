@@ -125,11 +125,6 @@ ch_cc_library(
     }) + [
         "include",
         "libraries/liblber",
-        repository_local_include("contrib/openssl-cmake/common/include", "contrib/openldap"),
-        repository_local_include(
-            repository_path("contrib/openssl") + "/include",
-            "contrib/openldap",
-        ),
         repository_local_include(
             repository_path("contrib/llvm-project") + "/libcxxabi/include",
             "contrib/openldap",
@@ -369,11 +364,6 @@ ch_cc_library(
     }) + [
         "include",
         "libraries/libldap",
-        repository_local_include("contrib/openssl-cmake/common/include", "contrib/openldap"),
-        repository_local_include(
-            repository_path("contrib/openssl") + "/include",
-            "contrib/openldap",
-        ),
         repository_local_include(
             repository_path("contrib/llvm-project") + "/libcxxabi/include",
             "contrib/openldap",

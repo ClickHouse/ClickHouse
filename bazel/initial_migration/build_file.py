@@ -482,7 +482,7 @@ class BuildFile:
                             and not (item.directory == 'contrib/boost' and target_name.startswith('_boost_'))
                             and not self.header_consumers.get(item.directory, set()) <= {target_name}):
                         directories.add(item.directory.rstrip('/') + '/')
-        result = tuple(sorted(directories)), frozenset(headers), frozenset(repositories)
+        result = tuple(sorted(directories)), frozenset(headers), frozenset(repositories), frozenset(seen)
         self.public_directories[key] = result
         return result
 
@@ -501,7 +501,7 @@ class BuildFile:
                 if not any(directory.startswith(parent + '/') for parent in directories if parent != directory)
             ]
         custom = group.get('cmake_runtime') or group.get('language') == 'ASM_NASM'
-        supplied, supplied_labels, supplied_repos = ((), (), frozenset()) if custom else self.dependency_headers(
+        supplied, supplied_labels, supplied_repos, _ = ((), (), frozenset(), frozenset()) if custom else self.dependency_headers(
             arch, tuple(group.get('deps', ())) + tuple(library_deps))
         for old_field, directories in original.items():
             for directory in directories:
@@ -963,6 +963,21 @@ class BuildFile:
                         raise ValueError(f'Postgres _libpq {arch} changed its OpenSSL or ABI includes: {supplied}')
                     system_includes[arch] = [inc for inc in includes if inc.directory not in foreign]
                 attrs['implementation_deps'] = select(implementation_deps)
+            elif native_library and self.owner not in {None, 'contrib/openssl'}:
+                # crypto publishes these public include roots. Only remove a
+                # captured local copy when this compile group already reaches
+                # crypto through its own native library dependencies.
+                openssl_includes = {'contrib/openssl-cmake/common/include', 'contrib/openssl/include'}
+                for arch, includes in system_includes.items():
+                    group = groups[arch]
+                    if group['language'] not in {'C', 'CXX'}:
+                        continue
+                    deps = tuple(group.get('deps', ()))
+                    if collapse_single:
+                        deps += tuple(variants[arch]['deps'])
+                    _, _, _, reachable = self.dependency_headers(arch, deps)
+                    if 'crypto' in reachable:
+                        system_includes[arch] = [inc for inc in includes if inc.directory not in openssl_includes]
             if any(system_includes.values()):
                 attrs['local_includes'] = select({
                     '@platforms//cpu:' + arch: system_includes.get(arch, [])

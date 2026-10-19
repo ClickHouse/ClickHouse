@@ -84,11 +84,6 @@ ch_cc_library(
     ],
     local_includes = [
         "src",
-        repository_local_include("contrib/openssl-cmake/common/include", "contrib/libcotp"),
-        repository_local_include(
-            repository_path("contrib/openssl") + "/include",
-            "contrib/libcotp",
-        ),
         repository_local_include(
             repository_path("contrib/llvm-project") + "/libcxxabi/include",
             "contrib/libcotp",

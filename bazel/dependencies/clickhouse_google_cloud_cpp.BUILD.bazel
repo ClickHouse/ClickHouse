@@ -850,11 +850,6 @@ _GENERATED_LOCAL_INCLUDES_0 = select({
         "contrib/google-cloud-cpp",
     ),
     repository_local_include("contrib/c-ares-cmake/linux", "contrib/google-cloud-cpp"),
-    repository_local_include("contrib/openssl-cmake/common/include", "contrib/google-cloud-cpp"),
-    repository_local_include(
-        repository_path("contrib/openssl") + "/include",
-        "contrib/google-cloud-cpp",
-    ),
     repository_local_include(
         repository_path("contrib/google-protobuf") + "/src",
         "contrib/google-cloud-cpp",
@@ -4831,11 +4826,6 @@ ch_cc_library(
             repository_path("contrib/abseil-cpp"),
             "contrib/google-cloud-cpp",
         ),
-        repository_local_include("contrib/openssl-cmake/common/include", "contrib/google-cloud-cpp"),
-        repository_local_include(
-            repository_path("contrib/openssl") + "/include",
-            "contrib/google-cloud-cpp",
-        ),
     ]),
     deps = [
         "@llvm-project//compiler-rt:headers",
@@ -5049,11 +5039,6 @@ ch_cc_library(
                 "contrib/google-cloud-cpp",
             ),
             repository_local_include("contrib/c-ares-cmake/linux", "contrib/google-cloud-cpp"),
-            repository_local_include("contrib/openssl-cmake/common/include", "contrib/google-cloud-cpp"),
-            repository_local_include(
-                repository_path("contrib/openssl") + "/include",
-                "contrib/google-cloud-cpp",
-            ),
             repository_local_include(
                 repository_path("contrib/google-protobuf") + "/src",
                 "contrib/google-cloud-cpp",
@@ -5093,11 +5078,6 @@ ch_cc_library(
                 "contrib/google-cloud-cpp",
             ),
             repository_local_include("contrib/c-ares-cmake/linux", "contrib/google-cloud-cpp"),
-            repository_local_include("contrib/openssl-cmake/common/include", "contrib/google-cloud-cpp"),
-            repository_local_include(
-                repository_path("contrib/openssl") + "/include",
-                "contrib/google-cloud-cpp",
-            ),
             repository_local_include(
                 repository_path("contrib/google-protobuf") + "/src",
                 "contrib/google-cloud-cpp",
@@ -6402,11 +6382,6 @@ ch_cc_library(
             repository_local_include("bazel/config/aarch64/.", "contrib/google-cloud-cpp"),
         ],
     }) + [
-        repository_local_include("contrib/openssl-cmake/common/include", "contrib/google-cloud-cpp"),
-        repository_local_include(
-            repository_path("contrib/openssl") + "/include",
-            "contrib/google-cloud-cpp",
-        ),
         repository_local_include(
             repository_path("contrib/nlohmann-json") + "/single_include",
             "contrib/google-cloud-cpp",
@@ -7121,11 +7096,6 @@ ch_cc_library(
             repository_local_include("bazel/config/aarch64/.", "contrib/google-cloud-cpp"),
         ],
     }) + [
-        repository_local_include("contrib/openssl-cmake/common/include", "contrib/google-cloud-cpp"),
-        repository_local_include(
-            repository_path("contrib/openssl") + "/include",
-            "contrib/google-cloud-cpp",
-        ),
         repository_local_include(
             repository_path("contrib/nlohmann-json") + "/single_include",
             "contrib/google-cloud-cpp",

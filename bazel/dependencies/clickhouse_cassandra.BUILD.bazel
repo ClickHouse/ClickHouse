@@ -393,11 +393,6 @@ ch_cc_library(
             repository_path("contrib/libuv") + "/include",
             "contrib/cassandra",
         ),
-        repository_local_include("contrib/openssl-cmake/common/include", "contrib/cassandra"),
-        repository_local_include(
-            repository_path("contrib/openssl") + "/include",
-            "contrib/cassandra",
-        ),
     ]),
     deps = [
         "@llvm-project//compiler-rt:headers",

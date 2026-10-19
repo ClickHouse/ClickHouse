@@ -59,11 +59,6 @@ _GENERATED_LOCAL_INCLUDES_0 = [
         "contrib/ai-sdk-cpp",
     ),
     "third_party/httplib-header-only",
-    repository_local_include("contrib/openssl-cmake/common/include", "contrib/ai-sdk-cpp"),
-    repository_local_include(
-        repository_path("contrib/openssl") + "/include",
-        "contrib/ai-sdk-cpp",
-    ),
     repository_local_include(
         repository_path("contrib/brotli") + "/c/include",
         "contrib/ai-sdk-cpp",

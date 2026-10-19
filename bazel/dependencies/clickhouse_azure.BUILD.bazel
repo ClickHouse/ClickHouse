@@ -146,11 +146,6 @@ ch_cc_library(
         "sdk/storage/azure-storage-common/inc",
         "sdk/storage/azure-storage-blobs/inc",
         "sdk/storage/azure-storage-files-datalake/inc",
-        repository_local_include("contrib/openssl-cmake/common/include", "contrib/azure"),
-        repository_local_include(
-            repository_path("contrib/openssl") + "/include",
-            "contrib/azure",
-        ),
     ],
     deps = [
         "@llvm-project//compiler-rt:headers",

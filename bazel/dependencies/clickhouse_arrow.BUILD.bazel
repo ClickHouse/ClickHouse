@@ -2137,11 +2137,6 @@ ch_cc_library(
             "contrib/arrow",
         ),
         repository_local_include("contrib/c-ares-cmake/linux", "contrib/arrow"),
-        repository_local_include("contrib/openssl-cmake/common/include", "contrib/arrow"),
-        repository_local_include(
-            repository_path("contrib/openssl") + "/include",
-            "contrib/arrow",
-        ),
     ]),
     textual_hdrs = select({
         "@platforms//cpu:x86_64": [
@@ -2592,11 +2587,6 @@ ch_cc_library(
             ),
         ],
     }) + [
-        repository_local_include("contrib/openssl-cmake/common/include", "contrib/arrow"),
-        repository_local_include(
-            repository_path("contrib/openssl") + "/include",
-            "contrib/arrow",
-        ),
         repository_local_include(
             repository_path("contrib/boost"),
             "contrib/arrow",

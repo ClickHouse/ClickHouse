@@ -249,11 +249,6 @@ ch_cc_library(
             repository_path("contrib/xz") + "/src/liblzma/api",
             "contrib/minizip-ng",
         ),
-        repository_local_include("contrib/openssl-cmake/common/include", "contrib/minizip-ng"),
-        repository_local_include(
-            repository_path("contrib/openssl") + "/include",
-            "contrib/minizip-ng",
-        ),
         repository_local_include(
             repository_path("contrib/llvm-project") + "/libcxxabi/include",
             "contrib/minizip-ng",
