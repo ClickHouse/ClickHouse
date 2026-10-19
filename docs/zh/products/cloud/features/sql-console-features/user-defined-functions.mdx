@@ -2,9 +2,9 @@
 sidebarTitle: '用户自定义函数'
 slug: /cloud/features/user-defined-functions
 title: 'Cloud 中的用户自定义函数'
-description: '在 Cloud 中添加自定义的可执行 Python 函数'
+description: '在 ClickHouse Cloud 中添加自定义的可执行函数，支持使用 Python 编写或以编译后的二进制文件形式提供'
 doc_type: 'guide'
-keywords: ['user defined function', 'UDF']
+keywords: ['user defined function', 'UDF', 'executable UDF', 'Python UDF', 'Native runtime']
 ---
 
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
@@ -13,14 +13,14 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 在 ClickHouse Cloud 中，有多种方式可以创建和管理用户自定义函数：
 
-1. 使用 SQL
-2. 使用 UI 和你自己的代码 (Public Beta)
+1. 使用 [SQL](#sql-udfs)
+2. 使用[控制台和你自己的代码](#ui-udfs)
 3. 使用 [Cloud API](#manage-udfs-with-the-cloud-api) (Beta)
 4. 使用 [Terraform](#manage-udfs-with-terraform) (Beta)
 
-<div id="sql-udfs">
-  ## SQL 用户自定义函数
-</div>
+可执行 UDF 已在 AWS、GCP 和 Azure 上提供，并已为所有组织默认启用，无需任何额外操作。该功能不单独计费：UDF 进程在服务的 Pod (容器组) 内运行，占用的是该服务自身的 CPU 和内存资源。
+
+## SQL 用户自定义函数 {#sql-udfs}
 
 可以使用 [`CREATE FUNCTION`](/zh/reference/statements/create/function) 语句，基于 lambda 表达式创建 SQL UDF。
 
@@ -66,20 +66,16 @@ DROP FUNCTION isBusinessHours
 * 用户 profile 中的设置不会被 UDFs 继承
 * 查询级设置在 UDF 执行期间不生效
 
-<div id="ui-udfs">
-  ## 通过 UI 创建的用户自定义函数
-</div>
+## 可执行用户自定义函数 {#ui-udfs}
 
-<BetaBadge />
-
-ClickHouse Cloud 提供了可通过 UI 创建用户自定义函数的配置界面。
+可执行 UDF 会在沙箱进程中运行您的代码，该进程与服务的每个副本一同运行。您可以上传 Python 脚本 (在 `python3.11` 运行时上运行) ，也可以上传预编译的二进制文件 (在 [Native 运行时](#native-runtime)上运行) 。
 
 在本示例中，我们将创建与前文相同的简单可执行用户自定义函数 `isBusinessHours`，用于检查某个时间戳是否落在正常工作时间内。
-此前我们是通过 SQL 创建它的，这次则改用 Python 创建，并通过 UI 进行配置。
+此前我们是通过 SQL 创建它的，这次则改用 Python 创建，并通过控制台进行配置。
 
 <Steps>
   <Step title="创建 Python 文件" id="create-python-file">
-    在本地新建一个 `main.py` 文件：
+    在本地新建文件 `main.py`：
 
     ```python
     cat > main.py << 'EOF'
@@ -94,7 +90,7 @@ ClickHouse Cloud 提供了可通过 UI 创建用户自定义函数的配置界�
     EOF
     ```
 
-    如果你的 Python 脚本导入了第三方包，请在 `requirements.txt` 文件中列出这些依赖项，ClickHouse Cloud 会为你安装。你也可以选择直接将依赖项打包到 ZIP 中，但这样就必须同时包含适用于两种 CPU 架构的缓存包，因此使用 `requirements.txt` 更简单。例如：
+    Python 运行时为 `python3.11`。如果您的 Python 脚本导入了第三方包，请将它们列在 `requirements.txt` 文件中，ClickHouse Cloud 会为其运行所在的两种 CPU 架构 (x86-64 和 ARM64) 自动安装这些包。您也可以直接将依赖项打包到 ZIP 文件中，但这样就必须同时包含适用于这两种 CPU 架构的缓存包，因此使用 `requirements.txt` 更为简便。例如：
 
     ```text
     requests>=2.28.0
@@ -102,19 +98,25 @@ ClickHouse Cloud 提供了可通过 UI 创建用户自定义函数的配置界�
     ```
 
     <Note>
-      ClickHouse Cloud 会在你下一步通过 UI 上传的 zip 文件中查找 `main.py`。
-      如果将该文件命名为其他名称，就会报错。
+      ClickHouse Cloud 会在您下一步通过控制台上传的 zip 文件中查找 `main.py`。
+      如果该文件使用其他名称，将会报错。
     </Note>
   </Step>
 
   <Step title="打包依赖项和本地文件" id="bundle-dependencies">
-    要包含依赖包以及其他本地文件 (例如 wheel 文件、配置文件或数据文件) ，请将它们放在与您的 `main.py` 和 `requirements.txt` 相同的目录中。创建 ZIP 归档时，请包含所有文件：
+    本教程不涉及任何依赖项或额外文件，因此归档中只需包含 `main.py`：
 
     ```bash
-    zip is_business_hours.zip main.py requirements.txt
+    zip is_business_hours.zip main.py
     ```
 
-    你可以在 Python 代码中使用 `os.path.dirname(os.path.abspath(__file__))` 引用本地打包路径的基目录。它会返回 ZIP 归档中 `main.py` 所在目录的绝对路径，以便你访问其他一并打包的文件：
+    如需包含依赖包及其他本地文件 (例如 `requirements.txt`、wheel 文件、配置文件或数据文件) ，请将它们放在 `main.py` 所在的目录中，然后在该目录下运行 `zip`，确保 `main.py` 位于归档文件的根目录：
+
+    ```bash
+    zip -r ../is_business_hours.zip .
+    ```
+
+    你可以在 Python 代码中通过 `os.path.dirname(os.path.abspath(__file__))` 引用本地打包内容的基础目录路径。该表达式会返回 `main.py` 在 ZIP 归档中所在目录的绝对路径，以便你访问其他一同打包的文件：
 
     ```python
     import os
@@ -124,53 +126,48 @@ ClickHouse Cloud 提供了可通过 UI 创建用户自定义函数的配置界�
     config_path = os.path.join(base_dir, 'config.json')
     ```
 
-    在你需要执行以下操作时，这会很有用：
+    此功能适用于以下场景：
 
-    * 访问随 UDF 一起打包的配置文件
-    * 为自定义依赖加载 wheel 包
+    * 访问与 UDF 一同打包的配置文件
+    * 加载 wheel 包以引入自定义依赖项
     * 引用其他脚本或数据文件
-
-    现在将该文件压缩为 ZIP 压缩包：
-
-    ```bash
-    zip is_business_hours.zip main.py
-    ```
 
     <Warning>
       **不允许使用符号链接**
 
-      ClickHouse Cloud 会拒绝包含符号链接的 UDF 归档文件。请确保 ZIP 压缩包中只包含普通文件和目录——包含符号链接的上传内容将无法通过验证。
+      ClickHouse Cloud 会拒绝包含符号链接的 UDF 归档文件。请确保 ZIP 包中仅包含普通文件和目录——包含符号链接的上传内容将无法通过校验。
     </Warning>
   </Step>
 
-  <Step title="通过 UI 创建 UDF" id="create-udf-via-ui">
-    1. 在 Cloud 控制台主页上，点击左下角菜单中的组织名称。
-    2. 从菜单中选择**用户自定义函数**。
-    3. 在用户自定义函数页面中，点击**设置 UDF**。屏幕右侧会打开一个配置面板。
+  <Step title="通过控制台创建 UDF" id="create-udf-via-ui">
+    1. 在 Cloud 控制台主页上，点击左下角菜单中您的组织名称。
+    2. 从菜单中选择 **User-defined functions**。
+    3. 在用户自定义函数页面上，点击 **Set up a UDF**，屏幕右侧会打开一个配置面板。
     4. 输入函数名称。本示例使用 `isBusinessHours`。
-    5. 选择函数类型，可选 **Executable pool** 或 **Executable**：
-       * **Executable pool**：系统会维护一个持久进程池，并从池中取出进程来处理读取请求。
-       * **Executable**：脚本会在每次查询时运行。
-    6. 本示例使用默认设置。有关完整的配置参数列表，请参见[可执行用户自定义函数](/zh/reference/functions/regular-functions/udf#executable-user-defined-functions)。
-    7. 点击**浏览文件**，上传在本教程开头创建的 `.zip` 文件。
-    8. 添加一个新参数。本示例中，添加一个类型为 `DateTime` 的参数 `timestamp`。
-    9. 选择返回类型。本示例中，选择 `Bool`。
-    10. 点击**创建 UDF**。此时会显示一个对话框，展示当前构建状态。
-        * 如果出现任何问题，状态将变为**错误**。
-        * 否则，状态会从**构建中**变为**预配中**。你的服务必须处于唤醒状态才能完成预配。如果服务处于空闲状态，请在服务名称旁的 **UDF 详细信息** 面板中点击**唤醒服务**。
-        * 完成后，状态将变为**已部署**。
+    5. 选择函数类型：**Executable pool** 或 **Executable**：
+       * **Executable pool**：只启动一次由长期运行进程组成的进程池，并在多个块和查询之间复用。几乎所有工作负载都推荐使用此类型。
+       * **Executable**：每处理一个数据块都会启动一个新进程。仅当进程不得在多次调用之间保留状态时才使用此类型。
+    6. 选择 **Runtime type**。本示例保持 `python3.11` 不变。如需改为上传预编译的二进制文件，请选择 **Native**；参见 [Native 运行时](#native-runtime)。
+    7. 本示例使用默认设置。有关全部配置参数及其在 Cloud 中的默认值，请参见[配置参考文档](#configuration-reference)。
+    8. 点击 **Browse File**，上传在本教程开头创建的 `.zip` 文件。
+    9. 添加一个新参数。本示例添加一个类型为 `DateTime` 的参数 `timestamp`。
+    10. 选择返回类型。本示例选择 `Bool`。
+    11. 点击 **Create UDF**，对话框中会显示当前的构建状态。
+        * 如果出现任何问题，状态会变为 **error**。
+        * 否则，状态会从 **building** 依次变为 **provisioning**。服务必须处于唤醒状态才能完成预配。如果服务处于空闲状态，请在 **UDF details** 面板中点击服务名称旁的 **Wake Up Service**。
+        * 完成后，状态会变为 **deployed**。
   </Step>
 
-  <Step title="测试你的 UDF" id="test-your-udf">
-    1. 点击页面左上角的 **Settings - 返回到服务视图**，返回 SQL 控制台主页
-    2. 点击左侧菜单中的 **SQL 控制台**
-    3. 输入以下查询：
+  <Step title="测试您的 UDF" id="test-your-udf">
+    1. 点击页面左上角的 **Settings - return to your service view**，返回 SQL 控制台主页
+    2. 点击左侧菜单中的 **SQL Console**
+    3. 编写以下查询：
 
     ```sql
     SELECT isBusinessHours('2026-03-20 10:00:00'::DateTime), isBusinessHours('2026-03-20 23:00:00'::DateTime);
     ```
 
-    你应该会看到如下结果：
+    您应该会看到如下结果：
 
     ```response
     true    false
@@ -178,25 +175,196 @@ ClickHouse Cloud 提供了可通过 UI 创建用户自定义函数的配置界�
   </Step>
 
   <Step title="创建新版本" id="create-new-version">
-    如需更改 UDF 的代码，请创建一个新版本。**Edit** 面板仅用于管理 UDF 分配给哪些服务；在此处上传文件不会替换已部署的代码。
+    如需修改 UDF 的代码或设置，请创建新版本。版本一经创建便不可更改。**Edit** 面板仅用于管理 UDF 分配到哪些服务；在该面板中上传文件不会替换已部署的代码。
 
-    1. 在 Cloud Console 首页，点击左下角菜单中的组织名称。
-    2. 在菜单中选择 **用户自定义函数**。
-    3. 在 `isBusinessHours` UDF 的 **操作** 一栏中点击三点图标，然后点击 **创建新版本**
-    4. 上传包含修改后代码的 ZIP 压缩包，或修改设置，然后点击 **创建新版本**
+    1. 在 Cloud 控制台首页，点击左下角菜单中您的组织名称。
+    2. 从菜单中选择 **User-defined functions**。
+    3. 在 `isBusinessHours` UDF 对应的 **Actions** 列下点击三个点图标，然后点击 **Create new version**
+    4. 上传包含修改后代码的 zip 文件，或修改设置，选择要接收新版本的服务，然后点击 **Create new version**
 
-    你已成功通过 UI 添加了第一个用户自定义函数，确认其可正常运行，并了解了在需要时如何创建新版本。
+    新版本不会继承上一版本的服务关联。新版本面板中提供了服务选择器，因此您可以先在单个服务上测试某个版本，再按服务逐一前滚或回滚。同一时间，一个服务只能持有某个函数的一个版本。
+
+    对于 `executable_pool` 类型的 UDF，长期运行的池进程会继续运行上一版本，直到该池被重新加载。请使用 UDF 面板中服务旁的 **Reload UDF** 操作，它会在该服务上执行 `SYSTEM RELOAD FUNCTION ON CLUSTER default isBusinessHours`。
+
+    至此，您已通过控制台成功添加了第一个用户自定义函数，确认其可正常运行，并了解了如何在需要时为其创建新版本。
   </Step>
 </Steps>
 
-<div id="manage-udfs-with-the-cloud-api">
-  ## 使用 Cloud API 管理 UDF
-</div>
+### Native 运行时 (已编译的二进制文件) {#native-runtime}
+
+借助 Native 运行时，您可以上传预编译的二进制文件，而不是 Python 脚本。创建 UDF 时，将 **运行时类型** 设置为 **Native** (在 API 中为 `runtime: native`) 。沙箱不会为您预装任何依赖；二进制文件所需的一切都必须在编译时打包进去。
+
+目前已支持：Rust、Go、C++，以及使用 Bun 编译为二进制文件的 JavaScript。Bun 已在 1.4.0 和 1.4.2 版本上通过测试，其他版本可能无法正常运行。
+
+归档文件中必须为每种 CPU 架构各提供一个可执行文件，并分别放在各自的文件夹中：
+
+```text
+my-udf.zip
+├── amd64/
+│   ├── main            # linux/amd64 executable
+│   └── my_data.json    # optional data files
+└── arm64/
+    ├── main            # linux/arm64 executable
+    └── my_data.json
+```
+
+由于 ClickHouse Cloud 服务同时运行在这两种架构上，因此必须同时提供两种架构的版本。可执行文件必须严格命名为 `main`，且运行时不带任何参数；如需指定模式或子命令，请将其作为普通函数参数传入。
+
+强烈建议使用静态链接的二进制文件：它们不依赖主机的系统库 (这些系统库的系统调用可能因服务器版本而异) ，而且沙箱的系统调用策略也是专门针对静态链接二进制文件调优的。动态链接的二进制文件只有在仅链接 glibc 且基于 glibc 2.35 或更早版本构建时才能正常运行。使用 Bun 编译的 JavaScript 始终是动态链接的。
+
+<Warning>
+  **基于可执行文件所在位置解析数据文件路径**
+
+  架构文件夹中的文件会与二进制文件部署在同一位置，但进程并不会在该目录中启动。请基于可执行文件自身的路径来解析这些文件，切勿基于工作目录：在 Go 中使用 `filepath.Dir(os.Args[0])` 或 `os.Executable()`，在 Rust 中使用 `std::env::current_exe()`。如果缺少必需的文件，应向 stderr 输出错误信息并以非零状态码退出，而不是静默回退。
+</Warning>
+
+Native UDF 无法启用网络访问；出站网络访问仅适用于 Python 运行时。参见[网络访问](#network-access)。
+
+为两种架构分别构建二进制文件。在 Rust 中，先一次性添加两个目标平台，然后分别构建：
+
+```bash
+rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl
+cargo build --release --target x86_64-unknown-linux-musl
+cargo build --release --target aarch64-unknown-linux-musl
+```
+
+Go 示例：
+
+```bash
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o amd64/main .
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o arm64/main .
+```
+
+压缩文件夹之前，请将各架构的输出分别复制到 `amd64/main` 和 `arm64/main`。
+
+其通信协议与 Python 运行时完全相同：进程从 stdin 读取参数，并按所配置的格式将结果写入 stdout。请参阅[格式与块头](#formats-and-chunk-headers)。[`llm-token-udf`](https://github.com/ClickHouse/llm-token-udf) 仓库提供了用 Rust 和 Go 编写的 Native UDF 及相应的构建脚本。
+
+### 配置参考 {#configuration-reference}
+
+以下设置可在控制台和 API 中配置。表中列出的默认值为 ClickHouse Cloud 的默认值，部分与开源版本的默认值不同。
+
+| 设置            | 适用于               | 默认值            | 说明                                                                                                                                                      |
+| ------------- | ----------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 类型            | 两者                | -              | `executable_pool` 或 `executable`                                                                                                                        |
+| 运行时类型         | 两者                | -              | `python3.11` 或 `Native`                                                                                                                                 |
+| 格式            | 两者                | `TabSeparated` | 任意 ClickHouse [输入/输出格式](/zh/reference/formats/index)。`Native` 和 `JSONEachRow` 格式还会序列化参数名称和返回值名称。                                                           |
+| 返回值名称         | 两者                | 未设置            | 返回值的名称 (API 中为 `returnName`，Terraform 中为 `return_name`) 。使用 `Native` 和 `JSONEachRow` 格式时，进程必须用此名称标记其结果列；未设置时，沿用开源默认值 `result`。                          |
+| 池大小           | `executable_pool` | 3              | 每个副本上的常驻进程数。不适用于 `executable`。                                                                                                                          |
+| 最大命令执行时间 (秒)  | `executable_pool` | 10             | 处理单个数据块的最长时间。`executable` 也接受此设置，但不会生效。                                                                                                                 |
+| 命令读取超时 (毫秒)   | 两者                | 10000          | 从命令的 stdout 读取数据的超时时间。                                                                                                                                  |
+| 命令写入超时 (毫秒)   | 两者                | 10000          | 向命令的 stdin 写入数据的超时时间。                                                                                                                                   |
+| Send chunk header        | 两者                | false          | 在每个块之前发送行数。参见[格式与块头](#formats-and-chunk-headers)。                                                                                                     |
+| 确定性           | 两者                | false          | 允许查询缓存存储调用此函数的查询结果。参见[确定性函数与查询缓存](#deterministic-functions-and-the-query-cache)。                                                                        |
+| 内存限制 (MiB)    | 两者                | 沙箱默认值          | 每个沙箱进程可使用的最大内存。参见[内存限制](#memory-limit)。                                                                                                                 |
+| 网络访问          | Python 运行时        | 在控制台中启用        | 允许向公网端点发起出站连接。在控制台中创建的 Python UDF 始终启用此功能；在 API 和 Terraform 中，可通过 `sandboxType` 选择 `netenable` 或 `basic`。Native UDF 无法启用网络访问。参见[网络访问](#network-access)。 |
+
+以下开源设置由 ClickHouse Cloud 统一管理，无法针对单个 UDF 修改：`command_termination_timeout`、`lifetime`、`stderr_reaction`、`check_exit_code` 和 `execute_direct`。`pool_size` 的开源默认值为 16，而 Cloud 默认值为 3。完整的开源设置列表请参见[可执行用户自定义函数](/zh/reference/functions/regular-functions/udf#executable-user-defined-functions)。
+
+函数名称必须匹配 `^[A-Za-z][A-Za-z0-9_]*$`，在组织内必须唯一，且不能与 ClickHouse 内置函数重名；API 会拒绝保留名称。每个参数都必须有符合相同模式的名称；无论使用哪种格式，API 和 Terraform 都要求提供参数名称。包含符号链接的归档文件会被拒绝。
+
+### 格式与块头 {#formats-and-chunk-headers}
+
+[`TabSeparated`](/zh/reference/formats/TabSeparated/TabSeparated) 是默认格式，也是最简单的格式。使用该格式时，双方都需要对制表符、换行符和反斜杠进行转义。[`RowBinary`](/zh/reference/formats/RowBinary/RowBinary) 是二进制安全的，可省去 ClickHouse 一侧的文本格式化与解析开销；处理大型字符串时应优先使用该格式。
+
+启用 **Send chunk header** 后，ClickHouse 会在每个块之前先写入以十进制文本表示的行数并跟上 `\n`，然后再按所配置的格式写入各行。进程应恰好读取这么多行，写出同样数量的结果，然后执行一次刷写。若未启用该选项，读取 `TabSeparated`、`RowBinary` 或 `JSONEachRow` 等行式格式并缓冲输出的进程将无从得知块何时结束，查询会一直卡住，直到读取超时。凡是不会在每行之后执行刷写的此类 UDF，都应启用该选项。`Native` 格式本身已携带块边界信息，因此 `Native` UDF 无需块头即可读取一个块、写出一个块并执行刷写。
+
+### 网络访问 {#network-access}
+
+网络访问仅适用于 Python 运行时；Native UDF 无法启用网络访问。在控制台中创建的 Python UDF 在构建时会默认启用网络访问，控制台中也没有相应的设置项。在 API 中，可通过 `sandboxType` 在 `netenable` (允许出站连接) 和 `basic` (不允许出站连接) 之间进行选择；Terraform provider 则通过 `sandbox_type` 提供相同的选项。
+
+启用网络访问后，可以向公网端点发起出站连接，但发往私有网络、链路本地地址和内部地址的连接会被阻止。沙箱不具备云身份：既没有实例角色和元数据端点，也不会继承任何环境变量，因此 UDF 只能使用您显式提供的凭证。网络访问在构建 UDF 版本时生效，因此如果某个现有版本在创建时未启用网络访问，则需要创建新版本。
+
+目前 UDF 尚不支持机密信息存储。请将 config 文件打包到 zip 中，并通过相对于 `__file__` 的路径读取；切勿在 SQL 中写入密钥。
+
+### 内存限制 {#memory-limit}
+
+**内存限制**用于设置每个沙箱进程可用的最大内存 (单位为 MiB) 。未设置时，使用沙箱的默认值 4 GiB。
+
+该限制针对的是虚拟地址空间，而非常驻内存。因此，对于会预留大段地址范围的运行时，需要在其实际用量之上留出充足的余量。例如，Go 在启动时就会预留远超 1 GiB 的地址空间。当进程超出限制时，内存分配会在进程内部失败：Python UDF 会输出 `MemoryError` traceback 并退出，查询随之失败，错误消息中会包含相应的 stderr 输出。
+
+### 确定性函数与查询缓存 {#deterministic-functions-and-the-query-cache}
+
+默认情况下，UDF 被视为非确定性函数。如果在 [`use_query_cache = 1`](/zh/reference/settings/session-settings/use-query#use_query_cache) 的情况下执行调用此类函数的查询，查询会失败并报错 `QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS`，除非更改了 [`query_cache_nondeterministic_function_handling`](/zh/reference/settings/session-settings/query-cache#query_cache_nondeterministic_function_handling) 设置。
+
+仅当函数对相同参数始终返回相同结果时，才应启用 **确定性**。启用后，[查询缓存](/zh/concepts/features/performance/caches/query-cache) 即可缓存调用该函数的查询结果，并直接返回缓存结果。在默认的 `throw` 处理方式下，如果同一查询中还包含其他非确定性函数 (例如 `now`、`today` 或 `rand`) ，该查询仍无法被缓存；若设置 `query_cache_nondeterministic_function_handling = 'save'`，则此类查询仍会被缓存；若设置为 `'ignore'`，则会正常执行这些查询，但不缓存结果。
+
+### 服务重启 {#service-restarts}
+
+<Warning>
+  **首次附加会导致服务重启**
+
+  向服务附加第一个 UDF 时，系统会在该服务的 Pod (容器组) 中添加一个辅助容器，并执行滚动重启。之后再附加其他 UDF 则不会触发重启。从服务中移除最后一个 UDF 时，也会再次执行滚动重启。请合理安排首次附加的时机。
+</Warning>
+
+### 监控 {#monitoring}
+
+ClickHouse 26.6 及更高版本使用八个计数器记录可执行 UDF 的资源用量，这些计数器均以 `ExecutableUserDefinedFunction` 为前缀。按查询维度，它们以条目形式记录在 [`system.query_log`](/zh/reference/system-tables/query_log) 的 `ProfileEvents` Map 列中。按服务器全局维度，它们既是 [`system.events`](/zh/reference/system-tables/events) 中的行 (自服务器启动起累计) ，也是 [`system.metric_log`](/zh/reference/system-tables/metric_log) 中的 `ProfileEvent_<name>` 列 (随时间采样) 。各计数器后缀如下：
+
+| 计数器                                              | 含义                 |
+| ------------------------------------------------ | ------------------ |
+| `Invocations`                                    | 每向 UDF 进程发送一个块计数一次 |
+| `ElapsedMicroseconds`                            | UDF 调用耗费的墙钟时间      |
+| `PoolWaitMicroseconds`                           | 等待进程池中出现空闲进程的时间    |
+| `UserTimeMicroseconds`, `SystemTimeMicroseconds` | 子进程的 CPU 时间        |
+| `PeakMemoryByteSeconds`                          | 各进程峰值内存占用对墙钟时间的积分  |
+| `InputBytes`, `OutputBytes`                      | 写入管道及从管道读取的字节数     |
+
+[`system.asynchronous_metrics`](/zh/reference/system-tables/asynchronous_metrics) 包含 `ExecutableUserDefinedFunctionProcesses` 和 `ExecutableUserDefinedFunctionMemoryResidentBytes`。后者是所有存活 UDF 进程的 `VmRSS` 之和。由于共享内存页会在每个进程中重复计入，该值只是一个上界。
+
+```sql
+SELECT
+    event_time,
+    query_duration_ms,
+    ProfileEvents['ExecutableUserDefinedFunctionInvocations']                              AS udf_invocations,
+    round(ProfileEvents['ExecutableUserDefinedFunctionElapsedMicroseconds'] / 1e6, 2)     AS udf_wall_s,
+    round(ProfileEvents['ExecutableUserDefinedFunctionPoolWaitMicroseconds'] / 1e6, 2)    AS udf_pool_wait_s,
+    round((ProfileEvents['ExecutableUserDefinedFunctionUserTimeMicroseconds']
+         + ProfileEvents['ExecutableUserDefinedFunctionSystemTimeMicroseconds']) / 1e6, 2) AS udf_cpu_s
+FROM system.query_log
+WHERE type = 'QueryFinish'
+  AND ProfileEvents['ExecutableUserDefinedFunctionInvocations'] > 0
+ORDER BY event_time DESC
+LIMIT 20;
+```
+
+<Note>
+  `system.query_log.memory_usage` 仅统计 ClickHouse 服务器进程自身的内存用量，不包含 UDF 进程。
+</Note>
+
+### 性能建议 {#performance-guidance}
+
+请使用 `executable_pool`。使用 `executable` 时，每处理一个数据块都会启动一个新进程，因此每个块都要承担一次启动开销。
+
+每次调用都有固定开销。如果 `ExecutableUserDefinedFunctionInvocations` 相对于已处理的行数过高，请为该查询调高 [`preferred_block_size_bytes`](/zh/reference/settings/session-settings/preferred#preferred_block_size_bytes)，让每个块容纳更多行。
+
+单个查询同时最多只会使用 [`max_threads`](/zh/reference/settings/session-settings/max-threads#max_threads) 个池进程，因此池大小超过 `max_threads` 对该查询并无帮助。建议先从较小的池大小开始，当 `ExecutableUserDefinedFunctionPoolWaitMicroseconds` 不可忽略时再逐步调大。
+
+每一行数据都要跨越进程边界。UDF 应当用于实现 SQL 无法表达的逻辑，而不应用于内置函数或 SQL UDF 就能完成的简单逐行处理。
+
+### 故障排查 {#troubleshooting}
+
+UDF 执行失败会导致查询失败，并返回错误代码 `754` (`UDF_EXECUTION_FAILED`) 。子进程的 stderr 输出会包含在错误消息中，因此请将诊断信息写入 stderr，并以非零状态码退出：
+
+```text
+Code: 754. DB::Exception: User defined function 'isBusinessHours' failed. Command: '...', Arguments: [...]. Original error: ... Child process was exited with return code 1: Stderr: <...>
+```
+
+常见情况：
+
+* **查询卡住，随后因超时而失败**：进程以行式格式缓冲了输出，但未启用 **Send chunk header**。请启用该选项，并每输出一个块 (chunk) 刷写一次；若使用 `Native` 格式，则每输出一个块 (block) 刷写一次。
+* **返回码为 1 并出现 `MemoryError` 回溯信息 (Python)&#x20;**：超出了内存限制。请调高 **内存限制**，或降低每个进程的内存占用。
+* **高负载下类型为 `executable` 的函数间歇性失败**：请改用 `executable_pool`。
+* **构建状态为 error**：zip 根目录中缺少 `main.py` (Python) 或 `amd64/main` 和 `arm64/main` (Native) ，或者压缩包中包含符号链接。
+* **无法创建函数**：函数名称与内置函数冲突。
+
+## 使用 Cloud API 管理 UDF {#manage-udfs-with-the-cloud-api}
 
 <BetaBadge />
 
-UI 中提供的所有功能也可通过 [ClickHouse Cloud API](/zh/products/cloud/features/admin-features/api/api-overview) 以编程方式使用。
-UDF 端点可让您通过脚本管理 UDF 的完整生命周期：上传源代码归档文件、创建函数和版本、将其附加到服务，以及进行清理。
+{/* 与 @zach.naimon 确认：PMM 是否希望在正式可用后移除 Cloud API 和 Terraform 的 Beta 徽章，以及“合约可能会变更”的说明。 */}
+
+控制台中的生命周期操作也可通过 [ClickHouse Cloud API](/zh/products/cloud/features/admin-features/api/api-overview) 以编程方式执行。
+UDF 端点可让您通过脚本完成以下操作：上传源代码归档文件、创建函数和版本、将其附加到服务或从服务中分离，以及删除版本和函数。该 API 不提供重新加载操作：将 `executable_pool` UDF 的新版本附加到服务后，请在该服务上通过 SQL 运行 `SYSTEM RELOAD FUNCTION ON CLUSTER default <name>`，使池中的进程加载新版本。
 
 <Note>
   这些端点目前处于 Beta 阶段，API 合约可能会变更。
@@ -207,6 +375,19 @@ UDF 端点可让您通过脚本管理 UDF 的完整生命周期：上传源代�
 1. [创建上传 URL](/zh/products/cloud/api-reference/udf/udf-upload-session-create) 以获取预签名的 `application/zip` 上传 URL，然后将 ZIP 归档文件上传至该 URL。每个上传 ID 只能用于一次创建 UDF 或创建版本的尝试；重试时请申请新的上传 URL。
 2. 从上传的归档文件[创建 UDF](/zh/products/cloud/api-reference/udf/udf-create)，并指定函数名称、运行时、参数和返回类型。
 3. [将 UDF 附加到服务](/zh/products/cloud/api-reference/udf/udf-attach)。如果省略版本，则会附加最新的就绪版本。服务必须处于运行状态；可先唤醒空闲服务。
+
+用于选择上述功能的请求字段如下：
+
+| 请求字段                                                                      | 取值                                                                              | 对应功能                                                |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | --------------------------------------------------- |
+| [`runtime`](/zh/products/cloud/api-reference/udf/udf-create)                 | `python3.11` 或 `native`                                                         | [运行时类型](#native-runtime)                            |
+| [`sandboxType`](/zh/products/cloud/api-reference/udf/udf-create)             | `netenable` 或 `basic`。API 对两种运行时均接受该字段，但仅对 `python3.11` 生效；Native UDF 无法启用网络访问。 | [网络访问](#network-access)                             |
+| [`memoryLimitMib`](/zh/products/cloud/api-reference/udf/udf-create)          | 整数，或设为 null 以使用沙箱默认值                                                            | [内存限制](#memory-limit)                               |
+| [`deterministic`](/zh/products/cloud/api-reference/udf/udf-create)           | `true` 或 `false` (默认)                                                           | [确定性](#deterministic-functions-and-the-query-cache) |
+| [`sendChunkHeader`](/zh/products/cloud/api-reference/udf/udf-create)         | `true` 或 `false` (默认)                                                           | [块头](#formats-and-chunk-headers)                    |
+| [`format`](/zh/products/cloud/api-reference/udf/udf-create)                  | 任意格式名称，默认为 `TabSeparated`                                                       | [格式](#formats-and-chunk-headers)                    |
+| [`poolSize`](/zh/products/cloud/api-reference/udf/udf-create)                | 整数，默认为 3；对于 `executable`，必须省略或设为 `null`                                         | 池大小                                                 |
+| [`maxCommandExecutionTime`](/zh/products/cloud/api-reference/udf/udf-create) | 秒数，默认为 10                                                                       | 命令最大执行时间；对 `executable` 无效                          |
 
 完整端点列表如下：
 
@@ -227,9 +408,7 @@ UDF 端点可让您通过脚本管理 UDF 的完整生命周期：上传源代�
 
 有关请求和响应 schema，请参阅 [UDF API 参考文档](/zh/products/cloud/api-reference/udf/udf-create)。
 
-<div id="manage-udfs-with-terraform">
-  ## 使用 Terraform 管理 UDF
-</div>
+## 使用 Terraform 管理 UDF {#manage-udfs-with-terraform}
 
 <BetaBadge />
 
@@ -266,4 +445,26 @@ resource "clickhouse_udf_attachment" "production" {
 }
 ```
 
-仅当版本处于就绪状态时，附加操作才能成功，且可能需要数分钟；空闲服务会自动唤醒。删除 `clickhouse_udf` 资源会移除该函数的所有版本，并将其从所有服务中分离。
+除上文所示的必需属性外，`clickhouse_udf` 资源还支持 `format`、`pool_size`、`max_command_execution_time`、`command_read_timeout`、`command_write_timeout`、`send_chunk_header`、`sandbox_type`、`sandbox_version`、`return_name` 和 `fail_on_build_error`；完整 schema 请参阅[资源文档](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md)。
+
+如需在新版本进入生产环境之前，先在开发服务上进行测试，可以让一个附加资源跟踪最新版本，并将另一个附加资源固定到某个变量。开发环境的附加资源会自动跟进每个新构建版本，而生产环境的附加资源仅在您修改 `var.prod_udf_version` 时才会更新：
+
+```terraform
+resource "clickhouse_udf_attachment" "dev" {
+  function_name = clickhouse_udf.is_business_hours.function_name
+  service_id    = var.dev_service_id
+  version       = clickhouse_udf.is_business_hours.version
+}
+
+resource "clickhouse_udf_attachment" "prod" {
+  function_name = clickhouse_udf.is_business_hours.function_name
+  service_id    = var.prod_service_id
+  version       = var.prod_udf_version
+}
+```
+
+<Note>
+  该 provider 尚未支持 `deterministic` 和内存限制。这两项均需在创建版本时设置，因此通过该 provider 发布的版本无法使用它们。如需使用，请改为通过控制台或 API 创建这些版本。
+</Note>
+
+仅当版本处于就绪状态时，附加操作才能成功，且可能需要数分钟；空闲服务会自动唤醒。该 provider 也不会重新加载进程池：对于 `executable_pool` UDF，在附加的版本发生变更后，请在该服务上运行 `SYSTEM RELOAD FUNCTION ON CLUSTER default <name>`。删除 `clickhouse_udf` 资源会移除该函数的所有版本，并将其从所有服务中分离。
