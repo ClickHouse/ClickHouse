@@ -110,16 +110,12 @@ ch_cc_library(
     srcs = [
         "absl/time/internal/cctz/src/civil_time_detail.cc",
     ],
-    hdrs = glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = (["@clickhouse_llvm_project//:clang_rt_builtins"]) + [":abseil_cpp_headers"],
     alwayslink = False,
 )
 
@@ -429,16 +425,12 @@ ch_cc_library(
     srcs = [
         "absl/profiling/internal/exponential_biased.cc",
     ],
-    hdrs = glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = (["@clickhouse_llvm_project//:clang_rt_builtins"]) + [":abseil_cpp_headers"],
     alwayslink = False,
 )
 
@@ -478,16 +470,12 @@ ch_cc_library(
     srcs = [
         "absl/flags/internal/commandlineflag.cc",
     ],
-    hdrs = glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = (["@clickhouse_llvm_project//:clang_rt_builtins"]) + [":abseil_cpp_headers"],
     alwayslink = False,
 )
 
@@ -669,16 +657,12 @@ ch_cc_library(
     srcs = [
         "absl/base/internal/hardening.cc",
     ],
-    hdrs = glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = (["@clickhouse_llvm_project//:clang_rt_builtins"]) + [":abseil_cpp_headers"],
     alwayslink = False,
 )
 
@@ -722,16 +706,12 @@ ch_cc_library(
     srcs = [
         "absl/numeric/int128.cc",
     ],
-    hdrs = glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = (["@clickhouse_llvm_project//:clang_rt_builtins"]) + [":abseil_cpp_headers"],
     alwayslink = False,
 )
 
@@ -777,16 +757,12 @@ ch_cc_library(
     srcs = [
         "absl/debugging/leak_check.cc",
     ],
-    hdrs = glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = (["@clickhouse_llvm_project//:clang_rt_builtins"]) + [":abseil_cpp_headers"],
     alwayslink = False,
 )
 
@@ -980,16 +956,12 @@ ch_cc_library(
     srcs = [
         "absl/log/internal/nullguard.cc",
     ],
-    hdrs = glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = (["@clickhouse_llvm_project//:clang_rt_builtins"]) + [":abseil_cpp_headers"],
     alwayslink = False,
 )
 
@@ -1026,16 +998,12 @@ ch_cc_library(
     srcs = [
         "absl/base/log_severity.cc",
     ],
-    hdrs = glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = (["@clickhouse_llvm_project//:clang_rt_builtins"]) + [":abseil_cpp_headers"],
     alwayslink = False,
 )
 
@@ -1135,16 +1103,12 @@ ch_cc_library(
     srcs = [
         "absl/random/internal/randen_round_keys.cc",
     ],
-    hdrs = glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = (["@clickhouse_llvm_project//:clang_rt_builtins"]) + [":abseil_cpp_headers"],
     alwayslink = False,
 )
 
@@ -1238,16 +1202,12 @@ ch_cc_library(
     srcs = [
         "absl/random/seed_gen_exception.cc",
     ],
-    hdrs = glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = (["@clickhouse_llvm_project//:clang_rt_builtins"]) + [":abseil_cpp_headers"],
     alwayslink = False,
 )
 
@@ -1318,16 +1278,12 @@ ch_cc_library(
     srcs = [
         "absl/base/internal/spinlock_wait.cc",
     ],
-    hdrs = glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = (["@clickhouse_llvm_project//:clang_rt_builtins"]) + [":abseil_cpp_headers"],
     alwayslink = False,
 )
 
@@ -1412,16 +1368,12 @@ ch_cc_library(
     srcs = [
         "absl/base/internal/strerror.cc",
     ],
-    hdrs = glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = (["@clickhouse_llvm_project//:clang_rt_builtins"]) + [":abseil_cpp_headers"],
     alwayslink = False,
 )
 
@@ -1571,16 +1523,12 @@ ch_cc_library(
         "absl/time/internal/cctz/src/time_zone_posix.cc",
         "absl/time/internal/cctz/src/zone_info_source.cc",
     ],
-    hdrs = glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = (["@clickhouse_llvm_project//:clang_rt_builtins"]) + [":abseil_cpp_headers"],
     alwayslink = False,
 )
 
