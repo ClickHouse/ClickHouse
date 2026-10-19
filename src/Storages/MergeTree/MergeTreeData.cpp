@@ -9055,6 +9055,12 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPar
                 original_active_part->force_keep_shared_data = true;
             }
 
+            /// The copy has the same sizes, so it takes the place of the original if that one is not accounted for yet.
+            {
+                std::lock_guard sizes_lock(columns_and_secondary_indices_sizes_mutex);
+                std::ranges::replace(parts_with_unaccounted_sizes, original_active_part, part_copy);
+            }
+
             modifyPartState(original_active_part, DataPartState::DeleteOnDestroy, lock);
             LOG_TEST(log, "swapActivePart: removing {} from data_parts_indexes", (*active_part_it)->getNameWithState());
             data_parts_indexes.erase(active_part_it);

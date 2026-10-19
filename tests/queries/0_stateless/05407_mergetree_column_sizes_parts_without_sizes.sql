@@ -60,6 +60,13 @@ INNER JOIN
 ORDER BY s.name;
 SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_sizes' AND active;
 
+-- The attached part is still not accounted for when the table is destroyed.
+SELECT 'detach table';
+ALTER TABLE t_sizes ATTACH PARTITION tuple() FROM t_sizes_src;
+DETACH TABLE t_sizes;
+ATTACH TABLE t_sizes;
+SELECT count() FROM t_sizes;
+
 DROP TABLE t_sizes;
 DROP TABLE t_sizes_src;
 DROP TABLE t_sizes_snapshot;

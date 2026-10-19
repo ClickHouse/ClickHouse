@@ -1771,9 +1771,6 @@ private:
     /// Current secondary index sizes in compressed and uncompressed form.
     mutable IndexSizeByName secondary_index_sizes;
     mutable IndexSize primary_index_size;
-    /// Active parts committed without computed sizes, not yet added to the sizes above.
-    /// The next reader adds them, see `calculateColumnAndSecondaryIndexSizesLazily`.
-    mutable DataPartsVector parts_with_unaccounted_sizes;
 
 protected:
     void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, ContextPtr local_context) const;
@@ -1908,6 +1905,12 @@ protected:
     mutable DataPartsVectorPtr shared_parts_list;
     /// Same as above, but this time caching a copy of RangesInDataParts
     mutable RangesInDataPartsPtr shared_ranges_in_parts;
+
+    /// Active parts committed without computed sizes, not yet added to `column_sizes` and the other sizes
+    /// (guarded by `columns_and_secondary_indices_sizes_mutex`). The next reader adds them, see
+    /// `calculateColumnAndSecondaryIndexSizesLazily`. Declared after `storage_settings` and `data_parts_indexes`
+    /// so it is destroyed before them: a part destroyed here must still see the settings of the table.
+    mutable DataPartsVector parts_with_unaccounted_sizes;
 
     /// Mutex for critical sections which alter set of parts
     /// It is like truncate, drop/detach partition
