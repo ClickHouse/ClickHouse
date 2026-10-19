@@ -35,7 +35,7 @@ RabbitMQConsumer::RabbitMQConsumer(
         , prefetch_count(static_cast<UInt16>(std::clamp<size_t>(
               queue_size_ / std::max<size_t>(queues_.size(), 1), 1, std::numeric_limits<UInt16>::max())))
         , log(log_)
-        , received(std::numeric_limits<size_t>::max())
+        , received(queue_size_)
 {
 }
 
