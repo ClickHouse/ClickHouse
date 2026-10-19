@@ -86,7 +86,8 @@ WHERE path = '/clickhouse/' || currentDatabase() || '/q_block' AND name = 'proce
 SELECT 'block / bucket 0 after', count() FROM system.zookeeper
 WHERE path = '/clickhouse/' || currentDatabase() || '/q_block/buckets/0' AND name = 'processed';
 
--- All three tables are left to the teardown of the test database, which drops them in one
--- batch. An explicit `DROP TABLE` costs about a second each here: the test profile waits for
--- the dropped table to leave the drop queue of DatabaseCatalog, and that queue is polled once
--- a second (tests/config/users.d/database_atomic_drop_detach_sync.xml).
+-- The holder has to go before `q_block`, so that the replicated table removes its own Keeper
+-- path while the queue path it lives under still exists.
+DROP TABLE q_block_holder;
+DROP TABLE q_block;
+DROP TABLE q_unset;
