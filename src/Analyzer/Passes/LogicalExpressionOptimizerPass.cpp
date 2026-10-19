@@ -1795,7 +1795,8 @@ public:
 
     /// a conjunct over these can't leave ON, and full_sorting_merge rejects it there
     TableExpressionNodes preserved_join_tables;
-    /// the join evaluates an input-less conjunct of ON with its left side
+    /// Whether the join may output left rows that fail ON, so a left side condition can't leave ON. `indexHint` is such a condition:
+    /// it reads no column (its argument is not executed), and the join assigns a conjunct without columns to its left side.
     bool join_left_side_preserved = false;
 
     /// Whether the join may evaluate `node` with a preserved side: it reads a column of `preserved_join_tables` (constant folding in the
@@ -2568,7 +2569,6 @@ private:
                                 {
                                     /// Within one source it filters nothing beyond the original chain,
                                     /// so add it as `indexHint`: it still prunes, but does not execute.
-                                    /// Not if the join's left side is preserved: the join evaluates the input-less `indexHint` there.
                                     auto index_hint_node = std::make_shared<FunctionNode>("indexHint");
                                     index_hint_node->getArguments().getNodes().push_back(and_node);
                                     index_hint_node->resolveAsFunction(
