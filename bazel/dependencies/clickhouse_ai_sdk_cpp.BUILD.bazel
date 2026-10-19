@@ -38,7 +38,6 @@ ch_cc_library(
         "src/providers/anthropic/anthropic_factory.cpp",
     ] + glob(["src/**/*.h"]),
     copts = [
-        "-w",
         "-std=c++20",
         "-w",
     ],
@@ -75,7 +74,6 @@ ch_cc_library(
         "third_party/httplib-header-only/**/*.h",
     ]),
     copts = [
-        "-w",
         "-std=c++20",
         "-w",
     ],
@@ -107,7 +105,6 @@ ch_cc_library(
         "src/providers/openai/openai_factory.cpp",
     ] + glob(["src/**/*.h"]),
     copts = [
-        "-w",
         "-std=c++20",
         "-w",
     ],

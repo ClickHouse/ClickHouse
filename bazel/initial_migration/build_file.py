@@ -917,6 +917,9 @@ class BuildFile:
                     if field == 'copts':
                         value = compile_options(value, group.get('deps', []))
                         language = group.get('language')
+                        if language in {'C', 'CXX'}:
+                            last_w = max((i for i, flag in enumerate(value) if flag == '-w'), default=-1)
+                            value = [flag for i, flag in enumerate(value) if flag != '-w' or i == last_w]
                         if arch in system_includes:
                             value, includes = split_system_includes(value, self.owner)
                             system_includes[arch] = includes + system_includes[arch]

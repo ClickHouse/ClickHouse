@@ -17,7 +17,6 @@ ch_cc_library(
     ],
     copts = [
         "-w",
-        "-w",
         "-std=c++23",
     ],
     local_defines = select({
