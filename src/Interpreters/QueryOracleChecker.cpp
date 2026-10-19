@@ -22,6 +22,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageProxy.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTLiteral.h>
@@ -1174,7 +1175,7 @@ void collectReadParts(const ASTPtr & ast, const ContextPtr & context, Strings & 
         const StorageID resolved = context->tryResolveStorageID(StorageID{table_id->getDatabaseName(), table_id->shortName()});
         if (auto storage = resolved ? DatabaseCatalog::instance().tryGetTable(resolved, context) : nullptr)
         {
-            if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
+            if (const auto merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load))
             {
                 parts.push_back(storage->getStorageID().getNameForLogs());
                 for (const auto & part : merge_tree->getDataPartsVectorForInternalUsage(
