@@ -9,9 +9,9 @@
 #include <Functions/extractKeyValuePairs.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/SchemaInferenceUtils.h>
 #include <Processors/Chunk.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/TypeTree.h>
 
 namespace DB
 {
@@ -95,8 +95,9 @@ NamesAndTypesList extractHivePartitionColumnsFromPath(
         {
             const auto hive_format_settings = buildHiveFormatSettings(format_settings, context);
             auto type = tryInferDataTypeByEscapingRule(value, hive_format_settings, FormatSettings::EscapingRule::Raw);
-            /// An empty value, `NULL`, `[]` or `{}` alone do not determine a type, and a type with `Nothing` cannot hold the other paths' values.
-            if (!type || !checkIfTypeIsComplete(type))
+            /// An empty value, `NULL`, `[]` or `{}` alone do not determine a type, and a type with `Nothing` anywhere in it
+            /// (a `Variant` alternative included) cannot hold the other paths' values.
+            if (!type || anyInTypeTree(*type, [](const IDataType & node) { return isNothing(node); }))
                 type = std::make_shared<DataTypeString>();
 
             if (type->canBeInsideLowCardinality() && isStringOrFixedString(type))
