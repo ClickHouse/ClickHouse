@@ -28,6 +28,9 @@ PUBLIC_HEADERS = {
 # header libraries have no compile dependencies, so the native libraries can
 # share public headers without depending on one another's archives.
 SOURCE_HEADER_DIRECTORIES = {
+    # Abseil's include root contains its public headers and the CI options
+    # header included in the captured CMake inputs. Publish both as headers.
+    'contrib/abseil-cpp': ('absl', 'ci'),
     'contrib/aws': (
         'generated/src/aws-cpp-sdk-glue/include',
         'generated/src/aws-cpp-sdk-s3/include',
@@ -520,6 +523,11 @@ class BuildFile:
                                 and path.endswith(CC_HEADER_SUFFIXES)):
                             fields['deps'].append('@' + REPOSITORIES[owner]['name'] + '//:' + public[1])
                             continue
+                        # This pinned Abseil revision has no non-header
+                        # textual includes. stacktrace_config.h selects .inc
+                        # files, which abseil_cpp_headers already supplies.
+                        if not custom and owner == 'contrib/abseil-cpp':
+                            continue
                         target_field = field if custom or path.endswith(CC_HEADER_SUFFIXES) else non_header_field
                         if (target_field in {'hdrs', 'additional_compiler_inputs'}
                                 and path.endswith(CC_HEADER_SUFFIXES)
@@ -528,6 +536,20 @@ class BuildFile:
                         fields[target_field].append(source_label(path))
         if not custom and self.external_headers is not None:
             self.external_headers.use(fields, self.owner)
+        if not custom and self.owner != 'contrib/abseil-cpp':
+            prefix = '@' + REPOSITORIES['contrib/abseil-cpp']['name'] + '//:'
+            for field in ('srcs', 'hdrs', 'textual_hdrs', 'additional_compiler_inputs'):
+                kept = []
+                for item in fields[field]:
+                    if isinstance(item, str) and item.startswith(prefix):
+                        filename = item.removeprefix(prefix)
+                        if filename.startswith(('absl/', 'ci/')) and filename.endswith(CC_HEADER_SUFFIXES):
+                            fields['deps'].append(prefix + SOURCE_HEADER_TARGETS['contrib/abseil-cpp'])
+                            continue
+                        if field == 'additional_compiler_inputs' and not filename.startswith(('config/', 'gen/')):
+                            continue
+                    kept.append(item)
+                fields[field] = kept
         if (not custom and not binary and self.owner in SOURCE_HEADER_DIRECTORIES
                 and self.owner.startswith('contrib/aws')):
             candidates = {

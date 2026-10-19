@@ -297,6 +297,14 @@ def write_overlays(builds, shared_inputs, system_repositories):
             if label.startswith(repository_label):
                 EXPORTS[prefix].discard(label.removeprefix(repository_label))
                 break
+    # Graph construction visits every Abseil source before cc_library header
+    # dependencies replace the captured include directories. Export only files
+    # still used across repositories (not those transient source_label calls).
+    abseil = 'contrib/abseil-cpp'
+    abseil_label = '@' + REPOSITORIES[abseil]['name'] + '//:'
+    EXPORTS[abseil].intersection_update(
+        value.removeprefix(abseil_label) for value in external_inputs if value.startswith(abseil_label)
+    )
     directory = ROOT / 'bazel/dependencies'
     directory.mkdir(exist_ok=True)
     EXPORTS['contrib/delta-kernel-rs'].update(['ffi/Cargo.toml', 'ffi/cbindgen.toml'])
