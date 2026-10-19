@@ -264,7 +264,7 @@ void IcebergMetadata::setExplicitMetadataFilePath(const String & path)
 
 void IcebergMetadata::update(const ContextPtr & context)
 {
-    UInt64 lookup_id;
+    UInt64 lookup_id = 0;
     {
         std::lock_guard lock(cached_latest_metadata_mutex);
         lookup_id = ++last_metadata_lookup_id;
