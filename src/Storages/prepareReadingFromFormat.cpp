@@ -326,7 +326,8 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
             || !new_info.format_header.has(column.getNameInStorage()))
             continue;
         new_info.requested_columns.push_back(column);
-        new_info.source_header.insert(position++, {column.type->createColumn(), column.type, column.name});
+        new_info.source_header.insert(position, {column.type->createColumn(), column.type, column.name});
+        ++position;
     }
 
     return new_info;
