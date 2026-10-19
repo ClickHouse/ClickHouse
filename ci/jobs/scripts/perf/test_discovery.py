@@ -59,15 +59,8 @@ def test_requires_local_read_dataset(test_path):
     return ElementTree.parse(test_path).getroot().get("requires_local_read_dataset") == "1"
 
 
-def _iter_queries(parent, source_dir, stack):
-    """Yield `<query>` elements, descending into `<include>`d `<fragment>` files.
-
-    A detection-only counterpart to perf.py's expand_includes: it follows the same
-    `<include file="..."/>` -> `<fragment>` structure (paths relative to the file
-    that declares them, cycle-guarded), but only needs to find elements, not splice
-    or rewrite them. A missing or malformed fragment is skipped here; perf.py
-    reports the real error when it runs the test.
-    """
+def _iter_elements(parent, source_dir, stack, tag):
+    """Find matching elements in a test and its included fragments, guarding cycles."""
     for element in parent:
         if element.tag == "include":
             filename = element.get("file")
@@ -80,11 +73,11 @@ def _iter_queries(parent, source_dir, stack):
                 fragment = ElementTree.parse(path).getroot()
             except (OSError, ElementTree.ParseError):
                 continue
-            yield from _iter_queries(fragment, os.path.dirname(path), stack | {path})
+            yield from _iter_elements(fragment, os.path.dirname(path), stack | {path}, tag)
             continue
-        if element.tag == "query":
+        if element.tag == tag:
             yield element
-        yield from _iter_queries(element, source_dir, stack)
+        yield from _iter_elements(element, source_dir, stack, tag)
 
 
 def test_has_shell_query(test_path):
@@ -106,5 +99,18 @@ def test_has_shell_query(test_path):
     source_dir = os.path.dirname(os.path.abspath(test_path))
     return any(
         q.get("type") == "shell"
-        for q in _iter_queries(root, source_dir, {os.path.realpath(test_path)})
+        for q in _iter_elements(root, source_dir, {os.path.realpath(test_path)}, "query")
+    )
+
+
+def test_has_failpoint(test_path):
+    """Whether a test enables a server-wide failpoint, including via `<include>`."""
+    try:
+        root = ElementTree.parse(test_path).getroot()
+    except ElementTree.ParseError:
+        return False
+    source_dir = os.path.dirname(os.path.abspath(test_path))
+    return any(
+        e.get("action") == "enable"
+        for e in _iter_elements(root, source_dir, {os.path.realpath(test_path)}, "failpoint")
     )

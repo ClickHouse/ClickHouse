@@ -3024,9 +3024,9 @@ def main():
         print("Download datasets")
         db_done = Path(f"{db_path}/.done").is_file()
         iceberg_dir = Path(db_path) / "user_files" / s3_service.READ_DATASET_DIRECTORY
-        # A cached db0 can predate the Iceberg fixture. Restore only the
-        # missing archive when the selected S3 read tests require it.
-        if not db_done or (needs_iceberg_read_dataset and not iceberg_dir.is_dir()):
+        iceberg_done = Path(db_path) / f".{s3_service.READ_DATASET_DIRECTORY}.done"
+        # Retry missing or partially extracted Iceberg fixtures in cached db0.
+        if not db_done or (needs_iceberg_read_dataset and (not iceberg_dir.is_dir() or not iceberg_done.is_file())):
             Shell.check(f"mkdir -p {db_path}/data/default/", verbose=True)
             dataset_paths = {
                 "hits10": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_10m_single.tar",
@@ -3051,8 +3051,10 @@ def main():
                     info="\n".join(errors),
                 )
             )
-            if res and not db_done:
-                Shell.check(f"touch {db_path}/.done")
+            if res:
+                iceberg_done.touch()
+                if not db_done:
+                    Shell.check(f"touch {db_path}/.done")
 
     if res and JobStages.CONFIGURE in stages:
         print("Configure")

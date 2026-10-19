@@ -1038,7 +1038,13 @@ for name in failpoint_enables:
             if not isinstance(error, clickhouse_driver.errors.ServerException):
                 return False
             if error.code == 344:  # `SUPPORT_IS_DISABLED`
-                return "Fail points are disabled because ClickHouse was built without libfiu" in error.message
+                return any(
+                    message in error.message
+                    for message in (
+                        "The server was compiled without FIU support",
+                        "Fail points are disabled because ClickHouse was built without libfiu",
+                    )
+                )
             return (
                 index == 0
                 and len(all_connections) == 2
