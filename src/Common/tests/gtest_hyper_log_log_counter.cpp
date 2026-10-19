@@ -6,6 +6,7 @@
 #include <array>
 #include <bit>
 #include <cfloat>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <vector>
@@ -111,7 +112,8 @@ void checkDenominatorSize()
         SCOPED_TRACE(fmt::format("K = {}, hash bits = {}, histogram {}", static_cast<UInt32>(K), sizeof(HashValueType) * 8, n));
 
         details::Denominator<K, max_rank, HashValueType, double, DenominatorMode::StableIfBig> denominator(0);
-        denominator.setRankCounts(h);
+        static_assert(sizeof(denominator) == sizeof(h));
+        memcpy(static_cast<void *>(&denominator), h.data(), sizeof(h));
         EXPECT_EQ(std::bit_cast<UInt64>(denominator.get()), std::bit_cast<UInt64>(sumInOrder<long double>(h)));
 
 #ifdef HAS_BINARY128
@@ -195,9 +197,10 @@ void appendLittleEndian(std::string & bytes, UInt64 value, size_t length)
         bytes.push_back(static_cast<char>(value >> (8 * i)));
 }
 
-/// Serialized state: registers, the count of registers of every rank in [0, max_rank], the number of zero registers.
+/// Serialized state: registers, the count of registers of every rank in [0, max_rank] (plus `max_rank_extra` for max_rank),
+/// the number of zero registers.
 template <UInt8 K, typename HashValueType>
-std::string makeState(const std::vector<UInt8> & registers)
+std::string makeState(const std::vector<UInt8> & registers, UInt32 max_rank_extra = 0)
 {
     static constexpr size_t width = details::RankWidth<HashValueType>::get();
     static constexpr int max_rank = sizeof(HashValueType) * 8 - K + 1;
@@ -216,6 +219,7 @@ std::string makeState(const std::vector<UInt8> & registers)
     for (UInt8 rank : registers)
         if (rank <= max_rank)
             ++rank_count[rank];
+    rank_count[max_rank] += max_rank_extra;
     for (UInt32 count : rank_count)
         appendLittleEndian(bytes, count, sizeof(UInt32));
     appendLittleEndian(bytes, rank_count[0], sizeof(typename details::MinCounterType<(1ULL << K)>::Type));
@@ -227,15 +231,18 @@ void checkMergeCorruptedRegisters()
 {
     using C = Counter<K, TrivialHash, HashValueType>;
     static constexpr size_t width = details::RankWidth<HashValueType>::get();
+    static constexpr int max_rank = sizeof(HashValueType) * 8 - K + 1;
     pcg64 rng(K + sizeof(HashValueType));
 
+    /// lhs holds registers above max_rank and a wrong count of max_rank, rhs only valid registers: like master, the merge
+    /// moves the counts of raised registers and keeps the rest of the counts of lhs.
     std::vector<UInt8> lhs_registers(1ULL << K);
     std::vector<UInt8> rhs_registers(1ULL << K);
     std::vector<UInt8> max_registers(1ULL << K);
     for (size_t bucket = 0; bucket < lhs_registers.size(); ++bucket)
     {
         lhs_registers[bucket] = static_cast<UInt8>(rng() % (1U << width));
-        rhs_registers[bucket] = static_cast<UInt8>(rng() % (1U << width));
+        rhs_registers[bucket] = static_cast<UInt8>(rng() % (max_rank + 1));
         max_registers[bucket] = std::max(lhs_registers[bucket], rhs_registers[bucket]);
     }
 
@@ -247,11 +254,15 @@ void checkMergeCorruptedRegisters()
         return counter;
     };
 
-    auto lhs = read(makeState<K, HashValueType>(lhs_registers));
-    auto rhs = read(makeState<K, HashValueType>(rhs_registers));
-    lhs->merge(*rhs);
+    auto lhs = read(makeState<K, HashValueType>(lhs_registers, 7));
+    lhs->merge(*read(makeState<K, HashValueType>(rhs_registers)));
+    expectSameState(serialize(*lhs), makeState<K, HashValueType>(max_registers, 7));
 
-    expectSameState(serialize(*lhs), makeState<K, HashValueType>(max_registers));
+    /// A register above max_rank that raises lhs would move a count out of [0, max_rank].
+    std::vector<UInt8> raising_registers(1ULL << K);
+    raising_registers.back() = max_rank + 1;
+    lhs = read(makeState<K, HashValueType>(std::vector<UInt8>(1ULL << K)));
+    EXPECT_THROW(lhs->merge(*read(makeState<K, HashValueType>(raising_registers))), DB::Exception);
 }
 
 }
