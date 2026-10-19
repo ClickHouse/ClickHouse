@@ -16,8 +16,11 @@
 #include <double-conversion/double-conversion.h>
 #include <simdjson.h>
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
+#include <cstring>
+#include <optional>
 
 namespace DB::ErrorCodes
 {
@@ -34,6 +37,47 @@ void throwJSONValueOutOfRange(std::string_view type_name)
 {
     throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "JSON value is out of range of type {}", type_name);
 }
+
+struct JSONDocument
+{
+    simdjson::dom::document document;
+};
+
+static_assert(sizeof(simdjson::dom::object) == sizeof(JSONDomRef) && std::is_trivially_copyable_v<simdjson::dom::object>);
+static_assert(sizeof(simdjson::dom::array) == sizeof(JSONDomRef) && std::is_trivially_copyable_v<simdjson::dom::array>);
+
+struct JSONLazyAccess
+{
+    template <typename T>
+    static T fromRef(const JSONDomRef & ref)
+    {
+        T result;
+        memcpy(static_cast<void *>(&result), &ref, sizeof(ref));
+        return result;
+    }
+
+    template <typename T>
+    static JSONDomRef toRef(const T & value)
+    {
+        JSONDomRef result;
+        memcpy(&result, static_cast<const void *>(&value), sizeof(result));
+        return result;
+    }
+
+    static bool isLazy(const JSONObject & object) { return !object.isMaterialized(); }
+    static bool isLazy(const JSONArray & array) { return !array.isMaterialized(); }
+    static simdjson::dom::object dom(const JSONObject & object) { return fromRef<simdjson::dom::object>(object.dom); }
+    static simdjson::dom::array dom(const JSONArray & array) { return fromRef<simdjson::dom::array>(array.dom); }
+
+    static std::optional<simdjson::dom::element> find(const JSONObject & object, std::string_view key)
+    {
+        std::optional<simdjson::dom::element> result;
+        for (auto [name, value] : dom(object))
+            if (name == key)
+                result = value;
+        return result;
+    }
+};
 
 namespace
 {
@@ -131,20 +175,22 @@ void writeEscapedString(String & out, std::string_view str)
 }
 
 void writeValue(String & out, const JSONValue & value, unsigned indent, unsigned step);
+void writeDomValue(String & out, simdjson::dom::element element, unsigned indent, unsigned step);
 
-void writeObject(String & out, const JSONObject & object, unsigned indent, unsigned step)
+template <typename Container, typename WriteEntry>
+void writeObjectEntries(String & out, const Container & entries, unsigned indent, unsigned step, WriteEntry && write_entry)
 {
     out += '{';
     if (indent > 0)
         out += '\n';
 
-    for (auto it = object.begin(); it != object.end();)
+    for (auto it = entries.begin(); it != entries.end();)
     {
         out.append(indent, ' ');
         writeEscapedString(out, it->first);
         out += indent > 0 ? " : " : ":";
-        writeValue(out, it->second, indent + step, step);
-        if (++it != object.end())
+        write_entry(it->second, indent + step);
+        if (++it != entries.end())
             out += ',';
         if (step > 0)
             out += '\n';
@@ -156,17 +202,18 @@ void writeObject(String & out, const JSONObject & object, unsigned indent, unsig
     out += '}';
 }
 
-void writeArray(String & out, const JSONArray & array, unsigned indent, unsigned step)
+template <typename Container, typename WriteElement>
+void writeArrayElements(String & out, const Container & elements, unsigned indent, unsigned step, WriteElement && write_element)
 {
     out += '[';
     if (indent > 0)
         out += '\n';
 
-    for (auto it = array.begin(); it != array.end();)
+    for (auto it = elements.begin(); it != elements.end();)
     {
         out.append(indent, ' ');
-        writeValue(out, *it, indent + step, step);
-        if (++it != array.end())
+        write_element(*it, indent + step);
+        if (++it != elements.end())
         {
             out += ',';
             if (step > 0)
@@ -180,6 +227,81 @@ void writeArray(String & out, const JSONArray & array, unsigned indent, unsigned
         indent -= step;
     out.append(indent, ' ');
     out += ']';
+}
+
+std::vector<std::pair<std::string_view, simdjson::dom::element>> sortedEntries(simdjson::dom::object object)
+{
+    std::vector<std::pair<std::string_view, simdjson::dom::element>> entries;
+    for (auto [key, value] : object)
+        entries.emplace_back(key, value);
+    std::stable_sort(entries.begin(), entries.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
+    std::vector<std::pair<std::string_view, simdjson::dom::element>> result;
+    result.reserve(entries.size());
+    for (auto & entry : entries)
+    {
+        if (!result.empty() && result.back().first == entry.first)
+            result.back() = entry;
+        else
+            result.push_back(entry);
+    }
+    return result;
+}
+
+void writeDomValue(String & out, simdjson::dom::element element, unsigned indent, unsigned step)
+{
+    auto write_nested = [&](simdjson::dom::element nested, unsigned nested_indent) { writeDomValue(out, nested, nested_indent, step); };
+    switch (element.type())
+    {
+        case simdjson::dom::element_type::OBJECT:
+            writeObjectEntries(out, sortedEntries(element.get_object().value_unsafe()), indent, step, write_nested);
+            return;
+        case simdjson::dom::element_type::ARRAY:
+            writeArrayElements(out, element.get_array().value_unsafe(), indent, step, write_nested);
+            return;
+        case simdjson::dom::element_type::INT64:
+            out += std::to_string(element.get_int64().value_unsafe());
+            return;
+        case simdjson::dom::element_type::UINT64:
+            out += std::to_string(element.get_uint64().value_unsafe());
+            return;
+        case simdjson::dom::element_type::DOUBLE:
+            out += formatFloat64(element.get_double().value_unsafe());
+            return;
+        case simdjson::dom::element_type::STRING:
+            writeEscapedString(out, element.get_string().value_unsafe());
+            return;
+        case simdjson::dom::element_type::BOOL:
+            out += element.get_bool().value_unsafe() ? "true" : "false";
+            return;
+        case simdjson::dom::element_type::NULL_VALUE:
+            out += "null";
+            return;
+        case simdjson::dom::element_type::BIGINT:
+            throw Exception(ErrorCodes::INCORRECT_DATA, "JSON number {} does not fit into 64 bits", element.get_bigint().value_unsafe());
+    }
+    UNREACHABLE();
+}
+
+void writeObject(String & out, const JSONObject & object, unsigned indent, unsigned step)
+{
+    if (JSONLazyAccess::isLazy(object))
+    {
+        writeObjectEntries(out, sortedEntries(JSONLazyAccess::dom(object)), indent, step,
+            [&](simdjson::dom::element value, unsigned nested_indent) { writeDomValue(out, value, nested_indent, step); });
+        return;
+    }
+    writeObjectEntries(out, object, indent, step, [&](const JSONValue & value, unsigned nested_indent) { writeValue(out, value, nested_indent, step); });
+}
+
+void writeArray(String & out, const JSONArray & array, unsigned indent, unsigned step)
+{
+    if (JSONLazyAccess::isLazy(array))
+    {
+        writeArrayElements(out, JSONLazyAccess::dom(array), indent, step,
+            [&](simdjson::dom::element value, unsigned nested_indent) { writeDomValue(out, value, nested_indent, step); });
+        return;
+    }
+    writeArrayElements(out, array, indent, step, [&](const JSONValue & value, unsigned nested_indent) { writeValue(out, value, nested_indent, step); });
 }
 
 void writeValue(String & out, const JSONValue & value, unsigned indent, unsigned step)
@@ -206,24 +328,10 @@ void writeValue(String & out, const JSONValue & value, unsigned indent, unsigned
         value.getVariant());
 }
 
-JSONValue fromSimdJSON(simdjson::dom::element element)
+JSONValue fromSimdJSONScalar(simdjson::dom::element element)
 {
     switch (element.type())
     {
-        case simdjson::dom::element_type::OBJECT:
-        {
-            auto object = JSONObject::create();
-            for (auto [key, value] : element.get_object().value_unsafe())
-                object->set(key, fromSimdJSON(value));
-            return object;
-        }
-        case simdjson::dom::element_type::ARRAY:
-        {
-            auto array = JSONArray::create();
-            for (auto value : element.get_array().value_unsafe())
-                array->add(fromSimdJSON(value));
-            return array;
-        }
         case simdjson::dom::element_type::INT64:
             return element.get_int64().value_unsafe();
         case simdjson::dom::element_type::UINT64:
@@ -238,8 +346,56 @@ JSONValue fromSimdJSON(simdjson::dom::element element)
             return nullptr;
         case simdjson::dom::element_type::BIGINT:
             throw Exception(ErrorCodes::INCORRECT_DATA, "JSON number {} does not fit into 64 bits", element.get_bigint().value_unsafe());
+        case simdjson::dom::element_type::OBJECT:
+        case simdjson::dom::element_type::ARRAY:
+            break;
     }
     UNREACHABLE();
+}
+
+JSONValue fromSimdJSON(simdjson::dom::element element);
+
+JSONObjectPtr fromSimdJSONObject(simdjson::dom::object dom_object)
+{
+    auto object = JSONObject::create();
+    for (auto [key, value] : dom_object)
+        object->set(key, fromSimdJSON(value));
+    return object;
+}
+
+JSONArrayPtr fromSimdJSONArray(simdjson::dom::array dom_array)
+{
+    auto array = JSONArray::create();
+    array->reserve(dom_array.size());
+    for (auto value : dom_array)
+        array->add(fromSimdJSON(value));
+    return array;
+}
+
+JSONValue fromSimdJSON(simdjson::dom::element element)
+{
+    switch (element.type())
+    {
+        case simdjson::dom::element_type::OBJECT:
+            return fromSimdJSONObject(element.get_object().value_unsafe());
+        case simdjson::dom::element_type::ARRAY:
+            return fromSimdJSONArray(element.get_array().value_unsafe());
+        default:
+            return fromSimdJSONScalar(element);
+    }
+}
+
+JSONValue fromSimdJSONLazy(const JSONDocumentPtr & document, simdjson::dom::element element)
+{
+    switch (element.type())
+    {
+        case simdjson::dom::element_type::OBJECT:
+            return std::make_shared<JSONObject>(document, JSONLazyAccess::toRef(element.get_object().value_unsafe()));
+        case simdjson::dom::element_type::ARRAY:
+            return std::make_shared<JSONArray>(document, JSONLazyAccess::toRef(element.get_array().value_unsafe()));
+        default:
+            return fromSimdJSONScalar(element);
+    }
 }
 
 }
@@ -410,14 +566,68 @@ bool JSONValue::operator==(const JSONValue & other) const
     return value == other.value;
 }
 
+JSONObject::JSONObject(JSONDocumentPtr document_, JSONDomRef dom_)
+    : document(std::move(document_)), dom(dom_), materialized(false)
+{
+}
+
+void JSONObject::materialize() const
+{
+    if (isMaterialized())
+        return;
+    std::call_once(
+        materialize_flag,
+        [this]
+        {
+            Values result;
+            for (auto [key, value] : JSONLazyAccess::dom(*this))
+                result.insert_or_assign(String(key), fromSimdJSONLazy(document, value));
+            values = std::move(result);
+            materialized.store(true, std::memory_order_release);
+        });
+}
+
+bool JSONObject::has(std::string_view key) const
+{
+    if (isMaterialized())
+        return values.contains(key);
+    return JSONLazyAccess::find(*this, key).has_value();
+}
+
 bool JSONObject::isNull(std::string_view key) const
 {
+    if (!isMaterialized())
+    {
+        auto element = JSONLazyAccess::find(*this, key);
+        return !element || element->is_null();
+    }
     auto it = values.find(key);
     return it == values.end() || it->second.isNull();
 }
 
+bool JSONObject::isObject(std::string_view key) const
+{
+    if (!isMaterialized())
+    {
+        auto element = JSONLazyAccess::find(*this, key);
+        return element && element->is_object();
+    }
+    return get(key).isObject();
+}
+
+bool JSONObject::isArray(std::string_view key) const
+{
+    if (!isMaterialized())
+    {
+        auto element = JSONLazyAccess::find(*this, key);
+        return element && element->is_array();
+    }
+    return get(key).isArray();
+}
+
 const JSONValue & JSONObject::get(std::string_view key) const
 {
+    materialize();
     auto it = values.find(key);
     return it == values.end() ? null_value : it->second;
 }
@@ -430,8 +640,17 @@ const JSONValue & JSONObject::getExisting(std::string_view key) const
     return it->second;
 }
 
+JSONValue JSONObject::getLazyExisting(std::string_view key) const
+{
+    auto element = JSONLazyAccess::find(*this, key);
+    if (!element)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "JSON object has no key '{}'", key);
+    return fromSimdJSONLazy(document, *element);
+}
+
 JSONObjectPtr JSONObject::getObject(std::string_view key) const
 {
+    materialize();
     auto it = values.find(key);
     if (it == values.end() || !it->second.isObject())
         return nullptr;
@@ -440,6 +659,7 @@ JSONObjectPtr JSONObject::getObject(std::string_view key) const
 
 JSONArrayPtr JSONObject::getArray(std::string_view key) const
 {
+    materialize();
     auto it = values.find(key);
     if (it == values.end() || !it->second.isArray())
         return nullptr;
@@ -448,6 +668,7 @@ JSONArrayPtr JSONObject::getArray(std::string_view key) const
 
 void JSONObject::set(std::string_view key, JSONValue value)
 {
+    materialize();
     auto it = values.find(key);
     if (it == values.end())
         values.emplace(String(key), std::move(value));
@@ -457,35 +678,91 @@ void JSONObject::set(std::string_view key, JSONValue value)
 
 void JSONObject::remove(std::string_view key)
 {
+    materialize();
     auto it = values.find(key);
     if (it != values.end())
         values.erase(it);
 }
 
+void JSONObject::clear()
+{
+    materialize();
+    values.clear();
+}
+
+size_t JSONObject::size() const
+{
+    if (isMaterialized())
+        return values.size();
+    return JSONLazyAccess::dom(*this).size();
+}
+
 std::vector<String> JSONObject::getNames() const
 {
     std::vector<String> names;
-    names.reserve(values.size());
-    for (const auto & [name, _] : values)
-        names.push_back(name);
+    if (isMaterialized())
+    {
+        names.reserve(values.size());
+        for (const auto & [name, _] : values)
+            names.push_back(name);
+        return names;
+    }
+    for (auto [name, _] : JSONLazyAccess::dom(*this))
+        names.emplace_back(name);
+    std::sort(names.begin(), names.end());
+    names.erase(std::unique(names.begin(), names.end()), names.end());
     return names;
 }
 
 JSONObjectPtr JSONObject::clone() const
 {
+    if (!isMaterialized())
+        return fromSimdJSONObject(JSONLazyAccess::dom(*this));
     auto result = create();
     for (const auto & [name, value] : values)
         result->values.emplace(name, value.clone());
     return result;
 }
 
+bool JSONObject::operator==(const JSONObject & other) const
+{
+    materialize();
+    other.materialize();
+    return values == other.values;
+}
+
+JSONArray::JSONArray(JSONDocumentPtr document_, JSONDomRef dom_)
+    : document(std::move(document_)), dom(dom_), materialized(false)
+{
+}
+
+void JSONArray::materialize() const
+{
+    if (isMaterialized())
+        return;
+    std::call_once(
+        materialize_flag,
+        [this]
+        {
+            auto array = JSONLazyAccess::dom(*this);
+            Values result;
+            result.reserve(array.size());
+            for (auto value : array)
+                result.push_back(fromSimdJSONLazy(document, value));
+            values = std::move(result);
+            materialized.store(true, std::memory_order_release);
+        });
+}
+
 const JSONValue & JSONArray::get(size_t index) const
 {
+    materialize();
     return index < values.size() ? values[index] : null_value;
 }
 
 const JSONValue & JSONArray::getExisting(size_t index) const
 {
+    materialize();
     if (index >= values.size())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "JSON array index {} is out of range, size is {}", index, values.size());
     return values[index];
@@ -493,6 +770,7 @@ const JSONValue & JSONArray::getExisting(size_t index) const
 
 JSONObjectPtr JSONArray::getObject(size_t index) const
 {
+    materialize();
     if (index >= values.size() || !values[index].isObject())
         return nullptr;
     return values[index].getObject();
@@ -500,13 +778,21 @@ JSONObjectPtr JSONArray::getObject(size_t index) const
 
 JSONArrayPtr JSONArray::getArray(size_t index) const
 {
+    materialize();
     if (index >= values.size() || !values[index].isArray())
         return nullptr;
     return values[index].getArray();
 }
 
+void JSONArray::add(JSONValue value)
+{
+    materialize();
+    values.push_back(std::move(value));
+}
+
 void JSONArray::set(size_t index, JSONValue value)
 {
+    materialize();
     if (index >= values.size())
         values.resize(index + 1);
     values[index] = std::move(value);
@@ -514,12 +800,34 @@ void JSONArray::set(size_t index, JSONValue value)
 
 void JSONArray::remove(size_t index)
 {
+    materialize();
     if (index < values.size())
         values.erase(values.begin() + index);
 }
 
+void JSONArray::clear()
+{
+    materialize();
+    values.clear();
+}
+
+void JSONArray::reserve(size_t size)
+{
+    materialize();
+    values.reserve(size);
+}
+
+size_t JSONArray::size() const
+{
+    if (isMaterialized())
+        return values.size();
+    return JSONLazyAccess::dom(*this).size();
+}
+
 JSONArrayPtr JSONArray::clone() const
 {
+    if (!isMaterialized())
+        return fromSimdJSONArray(JSONLazyAccess::dom(*this));
     auto result = create();
     result->values.reserve(values.size());
     for (const auto & value : values)
@@ -527,14 +835,22 @@ JSONArrayPtr JSONArray::clone() const
     return result;
 }
 
+bool JSONArray::operator==(const JSONArray & other) const
+{
+    materialize();
+    other.materialize();
+    return values == other.values;
+}
+
 JSONValue parseJSON(std::string_view json)
 {
+    auto document = std::make_shared<JSONDocument>();
     simdjson::dom::parser parser;
     simdjson::dom::element root;
-    auto error = parser.parse(json.data(), json.size()).get(root);
+    auto error = parser.parse_into_document(document->document, json.data(), json.size()).get(root);
     if (error)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON: {}", simdjson::error_message(error));
-    return fromSimdJSON(root);
+    return fromSimdJSONLazy(document, root);
 }
 
 JSONObjectPtr parseJSONObject(std::string_view json)

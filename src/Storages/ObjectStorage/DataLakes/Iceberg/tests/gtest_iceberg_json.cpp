@@ -13,8 +13,10 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <fmt/format.h>
 
+#include <atomic>
 #include <optional>
 #include <sstream>
+#include <thread>
 
 using namespace DB::Iceberg;
 
@@ -172,6 +174,85 @@ TEST(IcebergJSON, ObjectAccess)
     EXPECT_ANY_THROW(object->get("o").getArray());
     EXPECT_ANY_THROW(parseJSON("{"));
     EXPECT_ANY_THROW(parseJSONObject("[]"));
+}
+
+TEST(IcebergJSON, LazyAndMaterializedStringifyMatch)
+{
+    for (const auto & document : documents)
+    {
+        auto parsed = parseJSON(document);
+        auto lazy_text = stringifyJSON(parsed, 4);
+        auto materialized = parsed.clone();
+        SCOPED_TRACE(document);
+        EXPECT_EQ(stringifyJSON(materialized, 4), lazy_text);
+        EXPECT_EQ(materialized, parsed);
+    }
+}
+
+TEST(IcebergJSON, LazyChildMutationIsVisibleInParent)
+{
+    auto object = parseJSONObject(R"({"o":{"x":1,"s":"a"},"arr":[{"y":3},4]})");
+    object->getObject("o")->set("x", 5);
+    object->getArray("arr")->getObject(0)->set("z", true);
+    object->getArray("arr")->add("tail");
+    EXPECT_EQ(object->getObject("o")->getValue<Int64>("x"), 5);
+    EXPECT_EQ(object->getObject("o")->getValue<String>("s"), "a");
+    EXPECT_EQ(stringifyJSON(object), R"({"arr":[{"y":3,"z":true},4,"tail"],"o":{"s":"a","x":5}})");
+}
+
+TEST(IcebergJSON, LazyCloneIsIndependent)
+{
+    auto object = parseJSONObject(R"({"o":{"x":1}})");
+    auto copy = object->clone();
+    copy->getObject("o")->set("x", 2);
+    EXPECT_EQ(object->getObject("o")->getValue<Int64>("x"), 1);
+    EXPECT_EQ(copy->getObject("o")->getValue<Int64>("x"), 2);
+}
+
+TEST(IcebergJSON, DuplicateKeysLastWins)
+{
+    auto lazy = parseJSONObject(R"({"a":1,"b":{"c":2},"a":3})");
+    EXPECT_EQ(lazy->getValue<Int64>("a"), 3);
+    EXPECT_EQ(lazy->getNames(), (std::vector<std::string>{"a", "b"}));
+    EXPECT_EQ(stringifyJSON(lazy), R"({"a":3,"b":{"c":2}})");
+
+    auto materialized = parseJSONObject(R"({"a":1,"b":{"c":2},"a":3})");
+    materialized->set("d", 4);
+    EXPECT_EQ(materialized->getValue<Int64>("a"), 3);
+    EXPECT_EQ(materialized->size(), 3);
+}
+
+TEST(IcebergJSON, ConcurrentMaterialization)
+{
+    std::string document = R"({"snapshots":[)";
+    for (size_t i = 0; i < 1000; ++i)
+        document += fmt::format(R"({}{{"snapshot-id":{},"summary":{{"total-records":"{}"}}}})", i ? "," : "", i, i * 2);
+    document += "]}";
+
+    for (size_t attempt = 0; attempt < 20; ++attempt)
+    {
+        auto object = parseJSONObject(document);
+        std::vector<std::thread> threads;
+        std::atomic<size_t> errors = 0;
+        for (size_t t = 0; t < 8; ++t)
+        {
+            threads.emplace_back(
+                [&]
+                {
+                    auto snapshots = object->getArray("snapshots");
+                    for (size_t i = 0; i < snapshots->size(); ++i)
+                    {
+                        auto snapshot = snapshots->getObject(i);
+                        if (snapshot->getValue<Int64>("snapshot-id") != static_cast<Int64>(i)
+                            || snapshot->getObject("summary")->getValue<Int64>("total-records") != static_cast<Int64>(i * 2))
+                            ++errors;
+                    }
+                });
+        }
+        for (auto & thread : threads)
+            thread.join();
+        EXPECT_EQ(errors, 0);
+    }
 }
 
 #endif

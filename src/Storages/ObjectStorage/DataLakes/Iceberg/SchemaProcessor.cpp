@@ -558,7 +558,7 @@ void IcebergSchemaProcessor::addIcebergTableSchema(
         clickhouse_ids_by_source_names[{schema_id, current_full_name}] = field->getValue<Int32>(f_id);
     }
     clickhouse_table_schemas_by_ids[schema_id] = clickhouse_schema;
-    iceberg_table_schemas_by_ids[schema_id] = schema_ptr;
+    iceberg_table_schemas_by_ids[schema_id] = schema_ptr->clone();
     if (source == SchemaSource::ManifestFile)
         manifest_sourced_schema_ids.insert(schema_id);
     current_schema_id = std::nullopt;

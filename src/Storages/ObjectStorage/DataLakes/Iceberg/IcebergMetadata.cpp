@@ -508,7 +508,7 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         total_position_deletes,
         total_equality_deletes,
         refresh_cursor,
-        metadata_object->has(f_partition_specs) ? metadata_object->get(f_partition_specs).getArray() : nullptr);
+        metadata_object->has(f_partition_specs) ? metadata_object->get(f_partition_specs).getArray()->clone() : nullptr);
 }
 
 std::optional<String> IcebergMetadata::getRefreshCursor(ContextPtr local_context) const

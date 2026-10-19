@@ -2,9 +2,11 @@
 
 #include <base/types.h>
 
+#include <atomic>
 #include <concepts>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string_view>
 #include <typeinfo>
 #include <utility>
@@ -16,6 +18,16 @@ namespace DB::Iceberg
 
 class JSONObject;
 class JSONArray;
+struct JSONDocument;
+struct JSONLazyAccess;
+
+using JSONDocumentPtr = std::shared_ptr<const JSONDocument>;
+
+struct JSONDomRef
+{
+    const void * document = nullptr;
+    size_t index = 0;
+};
 
 using JSONObjectPtr = std::shared_ptr<JSONObject>;
 using JSONArrayPtr = std::shared_ptr<JSONArray>;
@@ -120,19 +132,24 @@ public:
     using Values = std::map<String, JSONValue, std::less<>>;
     using ConstIterator = Values::const_iterator;
 
+    JSONObject() = default;
+    JSONObject(JSONDocumentPtr document_, JSONDomRef dom_);
+
     static Ptr create() { return std::make_shared<JSONObject>(); }
 
-    bool has(std::string_view key) const { return values.contains(key); }
+    bool has(std::string_view key) const;
     bool isNull(std::string_view key) const;
-    bool isObject(std::string_view key) const { return get(key).isObject(); }
-    bool isArray(std::string_view key) const { return get(key).isArray(); }
+    bool isObject(std::string_view key) const;
+    bool isArray(std::string_view key) const;
 
     const JSONValue & get(std::string_view key) const;
 
     template <typename T>
     T getValue(std::string_view key) const
     {
-        return getExisting(key).getValue<T>();
+        if (isMaterialized())
+            return getExisting(key).getValue<T>();
+        return getLazyExisting(key).getValue<T>();
     }
 
     JSONObjectPtr getObject(std::string_view key) const;
@@ -140,23 +157,32 @@ public:
 
     void set(std::string_view key, JSONValue value);
     void remove(std::string_view key);
-    void clear() { values.clear(); }
+    void clear();
 
-    size_t size() const { return values.size(); }
-    bool empty() const { return values.empty(); }
+    size_t size() const;
+    bool empty() const { return size() == 0; }
     std::vector<String> getNames() const;
 
-    ConstIterator begin() const { return values.begin(); }
-    ConstIterator end() const { return values.end(); }
+    ConstIterator begin() const { materialize(); return values.begin(); }
+    ConstIterator end() const { materialize(); return values.end(); }
 
     Ptr clone() const;
 
-    bool operator==(const JSONObject & other) const { return values == other.values; }
+    bool operator==(const JSONObject & other) const;
 
 private:
-    const JSONValue & getExisting(std::string_view key) const;
+    friend struct JSONLazyAccess;
 
-    Values values;
+    bool isMaterialized() const { return materialized.load(std::memory_order_acquire); }
+    void materialize() const;
+    const JSONValue & getExisting(std::string_view key) const;
+    JSONValue getLazyExisting(std::string_view key) const;
+
+    JSONDocumentPtr document;
+    JSONDomRef dom;
+    mutable Values values;
+    mutable std::once_flag materialize_flag;
+    mutable std::atomic<bool> materialized{true};
 };
 
 class JSONArray
@@ -165,6 +191,9 @@ public:
     using Ptr = JSONArrayPtr;
     using Values = std::vector<JSONValue>;
     using ConstIterator = Values::const_iterator;
+
+    JSONArray() = default;
+    JSONArray(JSONDocumentPtr document_, JSONDomRef dom_);
 
     static Ptr create() { return std::make_shared<JSONArray>(); }
 
@@ -179,26 +208,34 @@ public:
     JSONObjectPtr getObject(size_t index) const;
     JSONArrayPtr getArray(size_t index) const;
 
-    void add(JSONValue value) { values.push_back(std::move(value)); }
+    void add(JSONValue value);
     void set(size_t index, JSONValue value);
     void remove(size_t index);
-    void clear() { values.clear(); }
-    void reserve(size_t size) { values.reserve(size); }
+    void clear();
+    void reserve(size_t size);
 
-    size_t size() const { return values.size(); }
-    bool empty() const { return values.empty(); }
+    size_t size() const;
+    bool empty() const { return size() == 0; }
 
-    ConstIterator begin() const { return values.begin(); }
-    ConstIterator end() const { return values.end(); }
+    ConstIterator begin() const { materialize(); return values.begin(); }
+    ConstIterator end() const { materialize(); return values.end(); }
 
     Ptr clone() const;
 
-    bool operator==(const JSONArray & other) const { return values == other.values; }
+    bool operator==(const JSONArray & other) const;
 
 private:
+    friend struct JSONLazyAccess;
+
+    bool isMaterialized() const { return materialized.load(std::memory_order_acquire); }
+    void materialize() const;
     const JSONValue & getExisting(size_t index) const;
 
-    Values values;
+    JSONDocumentPtr document;
+    JSONDomRef dom;
+    mutable Values values;
+    mutable std::once_flag materialize_flag;
+    mutable std::atomic<bool> materialized{true};
 };
 
 JSONValue parseJSON(std::string_view json);
