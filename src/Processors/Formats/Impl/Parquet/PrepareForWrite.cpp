@@ -944,7 +944,7 @@ void prepareColumnRecursive(
 {
     /// Remove const and sparse but leave LowCardinality as the encoder can directly use it for
     /// parquet dictionary-encoding.
-    column = column->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse()->convertToFullColumnIfConst();
+    column = removeSpecialRepresentations(column)->convertToFullColumnIfConst();
 
     switch (type->getTypeId())
     {
