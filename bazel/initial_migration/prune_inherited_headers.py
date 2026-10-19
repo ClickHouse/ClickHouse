@@ -315,6 +315,34 @@ class Rewrite:
         return self.source.rewrite(edits)
 
 
+def prune(root, inventories, *, write=False, consumers=(), owners=(), postgres_header_deps=False):
+    """Remove inherited headers using pinned package filenames keyed by contrib owner."""
+    docs = [Document(path, inventories) for path in [root / 'BUILD.bazel', *sorted(
+        (root / 'bazel/dependencies').glob('*.BUILD.bazel'))]]
+    graph = Graph(docs)
+    consumers = set(consumers) or {doc.repo for doc in docs}
+    if postgres_header_deps:
+        graph.add_postgres_header_deps(consumers)
+    total = Counter()
+    removed_owners = Counter()
+    for doc in docs:
+        if doc.repo not in consumers:
+            continue
+        rewrite = Rewrite(doc, graph, owners)
+        after = rewrite.text()
+        if after != doc.source.bytes.decode():
+            ast.parse(after)
+            total.update(rewrite.stats)
+            removed_owners.update(rewrite.removed_by_owner)
+            total['files'] += 1
+            print(doc.path.relative_to(root), dict(rewrite.stats))
+            if write:
+                doc.path.write_text(after)
+    print('Total:', dict(total), 'written' if write else 'no files written')
+    print('Removed source-header literals by owner:', json.dumps(dict(removed_owners), sort_keys=True))
+    return total, removed_owners
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--write', action='store_true')
@@ -335,29 +363,8 @@ def main():
                 if owner not in REPOSITORIES or entry['sha256'] != REPOSITORIES[owner]['sha256']:
                     raise ValueError(f'{path}: inventory is not at the configured SHA256: {owner}')
                 inventories[owner] = entry['files']
-    docs = [Document(path, inventories) for path in [args.root / 'BUILD.bazel', *sorted(
-        (args.root / 'bazel/dependencies').glob('*.BUILD.bazel'))]]
-    graph = Graph(docs)
-    consumers = set(args.consumer) or {doc.repo for doc in docs}
-    if args.postgres_header_deps:
-        graph.add_postgres_header_deps(consumers)
-    total = Counter()
-    owners = Counter()
-    for doc in docs:
-        if doc.repo not in consumers:
-            continue
-        rewrite = Rewrite(doc, graph, args.owner)
-        after = rewrite.text()
-        if after != doc.source.bytes.decode():
-            ast.parse(after)
-            total.update(rewrite.stats)
-            owners.update(rewrite.removed_by_owner)
-            total['files'] += 1
-            print(doc.path.relative_to(args.root), dict(rewrite.stats))
-            if args.write:
-                doc.path.write_text(after)
-    print('Total:', dict(total), 'written' if args.write else 'no files written')
-    print('Removed source-header literals by owner:', json.dumps(dict(owners), sort_keys=True))
+    prune(args.root, inventories, write=args.write, consumers=args.consumer, owners=args.owner,
+          postgres_header_deps=args.postgres_header_deps)
 
 
 if __name__ == '__main__':

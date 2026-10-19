@@ -21,6 +21,8 @@ from initial_migration.configuration import read_configurations
 from initial_migration import llvm_targets
 from initial_migration.external_headers import HeaderLibraries
 from initial_migration.format_build_files import format_build_files
+from initial_migration.prune_inherited_headers import prune
+from initial_migration.prune_unused_exports import prune_unused_exports
 from initial_migration.build_file import (
     BuildFile, CMakeCxxCompilerVersion, Glob, SOURCE_HEADER_DIRECTORIES, SOURCE_HEADER_SUFFIXES, SOURCE_HEADER_TARGETS,
     dependency_inputs, relocate_compilation,
@@ -29,7 +31,7 @@ from initial_migration.build_file import (
 from initial_migration.repository_inputs import (
     REPOSITORIES, cmake_has_source_prefix_map, comparison_root, configuration_owner, execution_path, repository,
     CC_HEADER_SUFFIXES, HeaderDirectory, directory_sources, input_key,
-    source_label, source_path, write_overlays,
+    package_sources, source_label, source_path, write_overlays,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -821,6 +823,8 @@ def main():
                         repository_includes[path].add(bool(include.get('isSystem')))
     system_repositories = {path for path, kinds in repository_includes.items() if kinds == {True}}
     write_overlays(builds, [codegen_rules, rust_cxx], system_repositories)
+    prune(ROOT, {owner: package_sources(owner) for owner in builds if owner in REPOSITORIES}, write=True)
+    prune_unused_exports(ROOT, write=True)
     parity_path = ROOT / 'bazel/initial_migration/any2bazel.json'
     parity = json.loads(parity_path.read_text())
     parity['target_map'] = {
