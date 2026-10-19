@@ -326,7 +326,7 @@ ALWAYS_INLINE inline DigitGroups digitGroups(UInt64 value)
     UInt64x2 fractions = {static_cast<UInt32>(high_half) + UInt64(1), static_cast<UInt32>(low_product >> 58) + UInt64(1)};
     UInt64x2 first = fractions * 10000;
     UInt64x2 second = (first & 0xFFFFFFFF) * 10000;
-    DigitGroups result;
+    DigitGroups result{};
     if constexpr (std::endian::native == std::endian::little)
         result.groups = __builtin_shufflevector(std::bit_cast<UInt32x4>(first), std::bit_cast<UInt32x4>(second), 1, 3, 5, 7);
     else
@@ -510,8 +510,8 @@ ALWAYS_INLINE inline void divideByTenToThirtyTwo(unsigned __int128 high, unsigne
 /// and 32 more.
 NO_INLINE char * itoa_impl::writeLargeUInt256Text(unsigned __int128 high, unsigned __int128 low, char * p)
 {
-    unsigned __int128 quotient_high;
-    unsigned __int128 quotient_low;
+    unsigned __int128 quotient_high = 0;
+    unsigned __int128 quotient_low = 0;
     divideByTenToThirtyTwo(high, low, quotient_high, quotient_low);
 
     /// In 128 bits: the remainder is below 10^32, and the high half of the product is not needed.
