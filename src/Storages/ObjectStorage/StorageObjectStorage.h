@@ -106,6 +106,8 @@ public:
     /// Captures the DROP query settings for drop(), which runs without a query context.
     void checkTableCanBeDropped(ContextPtr query_context) const override;
 
+    static std::shared_ptr<const Settings> getDropQuerySettings(const ContextPtr & query_context);
+
     static void dropImpl(
         const StorageObjectStorageConfigurationPtr & configuration,
         const ObjectStoragePtr & object_storage,

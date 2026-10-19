@@ -334,7 +334,7 @@ Pipe StorageObjectStorageCluster::executeCommand(const String & command_name, co
 
 void StorageObjectStorageCluster::checkTableCanBeDropped(ContextPtr query_context) const
 {
-    drop_query_settings = std::make_shared<const Settings>(query_context->getSettingsCopy());
+    drop_query_settings = StorageObjectStorage::getDropQuerySettings(query_context);
 }
 
 void StorageObjectStorageCluster::drop()

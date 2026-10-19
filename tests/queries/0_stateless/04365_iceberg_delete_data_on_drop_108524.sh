@@ -58,4 +58,13 @@ ${CLICKHOUSE_CLIENT} --iceberg_delete_data_on_drop=1 --query "DROP TABLE ${TABLE
 ${CLICKHOUSE_CLIENT} --query "SELECT x FROM ${TABLE}_new"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}_new SYNC"
 
+# Setting on: a table not read since it was attached is dropped after its files are deleted, as by another replica.
+rm -rf "${TABLE_PATH}"
+create_table
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${TABLE} SETTINGS allow_insert_into_iceberg = 1 VALUES (1)"
+${CLICKHOUSE_CLIENT} --query "DETACH TABLE ${TABLE} PERMANENTLY"
+${CLICKHOUSE_CLIENT} --query "ATTACH TABLE ${TABLE}"
+rm -rf "${TABLE_PATH}"
+${CLICKHOUSE_CLIENT} --iceberg_delete_data_on_drop=1 --query "DROP TABLE ${TABLE} SYNC" && echo "attached: dropped"
+
 rm -rf "${TABLE_PATH}"

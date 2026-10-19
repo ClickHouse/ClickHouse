@@ -14,6 +14,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DDLTask.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
@@ -71,6 +72,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ACCESS_DENIED;
     extern const int CANNOT_COMPILE_REGEXP;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 namespace FailPoints
@@ -1001,10 +1003,19 @@ void StorageObjectStorage::truncate(
     object_storage->removeObjectsIfExist(objects);
 }
 
-void StorageObjectStorage::checkTableCanBeDropped(ContextPtr query_context) const
+std::shared_ptr<const Settings> StorageObjectStorage::getDropQuerySettings(const ContextPtr & query_context)
 {
     /// All settings, the Iceberg metadata init in drop() reads more than `iceberg_delete_data_on_drop`.
-    drop_query_settings = std::make_shared<const Settings>(query_context->getSettingsCopy());
+    auto settings = query_context->getSettingsCopy();
+    /// Only the initial run of a `Replicated` database's DDL creates the Iceberg table, so only it deletes the files.
+    if (isSecondaryDDLReplay(query_context))
+        settings[Setting::iceberg_delete_data_on_drop] = false;
+    return std::make_shared<const Settings>(std::move(settings));
+}
+
+void StorageObjectStorage::checkTableCanBeDropped(ContextPtr query_context) const
+{
+    drop_query_settings = getDropQuerySettings(query_context);
 }
 
 void StorageObjectStorage::drop()
@@ -1042,9 +1053,23 @@ void StorageObjectStorage::dropImpl(
         return;
     }
 
-    /// A table from a DataLakeCatalog database is a fresh instance with no metadata loaded yet.
+    /// A table from a DataLakeCatalog database or one not read since it was attached has no metadata loaded yet.
     if (delete_data_on_drop && configuration->isIcebergConfiguration())
-        configuration->lazyInitializeIfNeeded(object_storage, drop_context);
+    {
+        try
+        {
+            configuration->lazyInitializeIfNeeded(object_storage, drop_context);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+                throw;
+            LOG_INFO(
+                getLogger("StorageObjectStorage"),
+                "No metadata file of the Iceberg table {} is left, nothing to delete",
+                storage_id.getNameForLogs());
+        }
+    }
 
     /// Only Atomic/Replicated databases give a non-temporary table a UUID.
     DropCleanupPolicy policy = DropCleanupPolicy::CatalogRetry;
