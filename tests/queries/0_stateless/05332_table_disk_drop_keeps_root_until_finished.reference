@@ -1,0 +1,6 @@
+-- the root is still owned by the dropped table
+It is dropped and keeps its data until the drop finishes, retry after that (`DROP TABLE ... SYNC` waits for the drop). (BAD_ARGUMENTS)
+-- after the drop has finished another table can use the root
+0
+-- DROP ... SYNC returns after the dropped table has released the root
+0

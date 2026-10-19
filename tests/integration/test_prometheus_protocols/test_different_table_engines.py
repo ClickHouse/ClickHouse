@@ -349,7 +349,7 @@ def test_inner_engines():
         "CREATE TABLE prometheus ENGINE=TimeSeries "
         "SAMPLES ENGINE=MergeTree ORDER BY (id, timestamp) "
         "TAGS ENGINE=AggregatingMergeTree ORDER BY (metric_name, id) "
-        "METRICS ENGINE=ReplacingMergeTree ORDER BY metric_family_name"
+        "METRICS ENGINE=ReplacingMergeTree ORDER BY metric_family"
     )
     check()
 
@@ -409,8 +409,8 @@ def test_external_tables():
     )
 
     node.query(
-        "CREATE TABLE mymetrics (metric_family_name String, type LowCardinality(String), unit LowCardinality(String), help String) "
-        "ENGINE=ReplacingMergeTree ORDER BY metric_family_name"
+        "CREATE TABLE mymetrics (metric_family String, type LowCardinality(String), unit LowCardinality(String), help String) "
+        "ENGINE=ReplacingMergeTree ORDER BY metric_family"
     )
     node.query(
         "CREATE TABLE prometheus ENGINE=TimeSeries "
@@ -426,7 +426,7 @@ def test_data_keyword():
         "CREATE TABLE prometheus ENGINE=TimeSeries "
         "DATA ENGINE=MergeTree ORDER BY (id, timestamp) "
         "TAGS ENGINE=AggregatingMergeTree ORDER BY (metric_name, id) "
-        "METRICS ENGINE=ReplacingMergeTree ORDER BY metric_family_name"
+        "METRICS ENGINE=ReplacingMergeTree ORDER BY metric_family"
     )
     check()
 
@@ -447,8 +447,8 @@ def test_data_keyword():
         "SETTINGS allow_dimensions_outside_sorting_key = 1"
     )
     node.query(
-        "CREATE TABLE mymetrics (metric_family_name String, type String, unit String, help String) "
-        "ENGINE=ReplacingMergeTree ORDER BY metric_family_name"
+        "CREATE TABLE mymetrics (metric_family String, type String, unit String, help String) "
+        "ENGINE=ReplacingMergeTree ORDER BY metric_family"
     )
     node.query(
         "CREATE TABLE prometheus ENGINE=TimeSeries "
@@ -459,8 +459,8 @@ def test_data_keyword():
     assert node.query("DESCRIBE timeSeriesData(prometheus)") == node.query("DESCRIBE timeSeriesSamples(prometheus)")
 
 
-# Checks that ALTER TABLE works and can modify settings
-# `id_generator` and `filter_by_min_time_and_max_time`.
+# Checks that ALTER TABLE works and can modify the `id_generator` setting,
+# and rejects `filter_by_min_time_and_max_time`, which applies to tables of version 7 or earlier only.
 def test_alter_modify_settings():
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
 
@@ -472,18 +472,16 @@ def test_alter_modify_settings():
     )
     node.query("ALTER TABLE prometheus RESET SETTING id_generator")
 
-    # `filter_by_min_time_and_max_time` is a pure query-time setting, so it can be altered.
-    node.query("ALTER TABLE prometheus MODIFY SETTING filter_by_min_time_and_max_time = 0")
-    assert re.search(
-        r"\bfilter_by_min_time_and_max_time\s*=\s*false",
-        node.query("SHOW CREATE TABLE prometheus"),
+    # `filter_by_min_time_and_max_time` applies to tables of version 7 or earlier only.
+    assert "INVALID_SETTING_VALUE" in node.query_and_get_error(
+        "ALTER TABLE prometheus MODIFY SETTING filter_by_min_time_and_max_time = 0"
     )
-    node.query("ALTER TABLE prometheus RESET SETTING filter_by_min_time_and_max_time")
 
     # Settings which can't be altered because they affect inner-table schemas.
     bound_settings = [
         "tags_to_columns = {'job': 'job'}",
         "use_all_tags_column_to_generate_id = 0",
+        "store_time_ranges = 0",
         "store_min_time_and_max_time = 0",
         "aggregate_min_time_and_max_time = 0",
     ]

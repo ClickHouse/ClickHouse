@@ -113,7 +113,8 @@ export CLICKHOUSE_PORT_KEEPER=${CLICKHOUSE_PORT_KEEPER:="9181"}
 export CLICKHOUSE_PORT_SSH=${CLICKHOUSE_PORT_SSH:=$(${CLICKHOUSE_EXTRACT_CONFIG} --try --key=tcp_ssh_port 2>/dev/null)} 2>/dev/null
 export CLICKHOUSE_PORT_SSH=${CLICKHOUSE_PORT_SSH:="9022"}
 
-export CLICKHOUSE_KEEPER_IDENTITY=${CLICKHOUSE_KEEPER_IDENTITY:=$(${CLICKHOUSE_EXTRACT_CONFIG} --try --key=zookeeper.identity 2>/dev/null)} 2>/dev/null
+# Without a colon: `clickhouse-test` exports an empty identity once resolved, so do not resolve it again.
+export CLICKHOUSE_KEEPER_IDENTITY=${CLICKHOUSE_KEEPER_IDENTITY=$(${CLICKHOUSE_EXTRACT_CONFIG} --try --key=zookeeper.identity 2>/dev/null)} 2>/dev/null
 export CLICKHOUSE_KEEPER_IDENTITY=${CLICKHOUSE_KEEPER_IDENTITY:=""}
 
 # keeper-client
@@ -190,8 +191,13 @@ function wait_for_query_to_start()
 {
     local query_id="$1"
     local timeout="${2:-120}"
+    # PID of the client running the query, optional: a short query can start and end between two polls.
+    local client_pid="${3:-}"
     local start=$EPOCHSECONDS
     while [[ $($CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "SELECT count() FROM system.processes WHERE query_id = '$query_id' SETTINGS use_query_cache = 0") == 0 ]]; do
+        if [[ -n "$client_pid" ]] && ! kill -0 "$client_pid" 2>/dev/null; then
+            return 0
+        fi
         if ((EPOCHSECONDS - start > timeout)); then
             echo "Timeout waiting for query $query_id to start" >&2
             exit 1

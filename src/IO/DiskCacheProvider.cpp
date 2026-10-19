@@ -280,10 +280,15 @@ size_t DiskCacheWriter::write(ChainedBuffers data, const FillRole & role)
     data.copyTo(flat_buf.data(), write_range);
 
     std::string failure_reason;
+    /// Don't reserve ahead past the end of the miss range.
+    const size_t reserve_hint = write_end_max - write_offset;
     const bool reserved = seg.reserve(
         contiguous,
         cache_settings.reserve_space_wait_lock_timeout_milliseconds,
-        failure_reason);
+        failure_reason,
+        /* reserve_stat */nullptr,
+        reserve_hint,
+        &reserve_ahead);
     if (!reserved)
     {
         LOG_TRACE(log, "DiskCacheWriter::write: reserve failed for [{}, {}]: {}",
