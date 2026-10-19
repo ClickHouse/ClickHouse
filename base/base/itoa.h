@@ -216,7 +216,6 @@ ALWAYS_INLINE inline char * writeUInt32Text(UInt32 value, char * p)
 
     using UInt64x2 = UInt64 __attribute__((vector_size(16)));
     using UInt32x4 = UInt32 __attribute__((vector_size(16)));
-    using UInt32x8 = UInt32 __attribute__((vector_size(32)));
     using UInt16x8 = UInt16 __attribute__((vector_size(16)));
 
     /// The groups, from n / 100 and n / 10^6 computed at once in two 64-bit lanes (the constants clang uses for them):
@@ -249,9 +248,9 @@ ALWAYS_INLINE inline char * writeUInt32Text(UInt32 value, char * p)
     /// with an extra instruction.
     UInt32x4 pairs = groups + ((groups * UInt32x4{5243, 5243, 5243, 0}) >> 19) * UInt32x4{65536 - 100, 65536 - 100, 65536 - 100, 0};
     /// Each 16-bit pair p < 100 becomes the characters (p % 10) | (p / 10) << 8: p + (p / 10) * (2^8 - 10), with
-    /// p / 10 = (p * 6554) >> 16, the high half of a 16-bit multiplication.
+    /// p / 10 = (p * 205) >> 11, exact for p < 100.
     UInt16x8 pair_lanes = std::bit_cast<UInt16x8>(pairs);
-    UInt16x8 tens = __builtin_convertvector((__builtin_convertvector(pair_lanes, UInt32x8) * 6554) >> 16, UInt16x8);
+    UInt16x8 tens = (pair_lanes * UInt16(205)) >> 11;
     UInt8x16 text = std::bit_cast<UInt8x16>(pair_lanes + 0x3030 + tens * UInt16(256 - 10));
 
     UInt8x16 order;
