@@ -1,4 +1,4 @@
--- https://github.com/ClickHouse/ClickHouse/pull/126018#pullrequestreview-4307283951
+-- https://github.com/ClickHouse/ClickHouse/pull/126018#discussion_r4307283951
 
 DROP TABLE IF EXISTS projection_null_check_drop_readd;
 CREATE TABLE projection_null_check_drop_readd
@@ -16,7 +16,6 @@ SETTINGS force_optimize_projection = 1;
 
 -- Keep the old nullable states while the reading schema already has the new non-nullable column.
 SYSTEM STOP MERGES projection_null_check_drop_readd;
-SYSTEM STOP MUTATIONS projection_null_check_drop_readd;
 ALTER TABLE projection_null_check_drop_readd DROP COLUMN x, ADD COLUMN x UInt8
 SETTINGS mutations_sync = 0;
 SELECT count() FROM system.mutations
@@ -25,7 +24,6 @@ SELECT countIf(isNull(x)), countIf(isNotNull(x)) FROM projection_null_check_drop
 SETTINGS optimize_use_projections = 0;
 SELECT countIf(isNull(x)), countIf(isNotNull(x)) FROM projection_null_check_drop_readd
 SETTINGS prefer_optimize_projection = 1;
-SYSTEM START MUTATIONS projection_null_check_drop_readd;
 SYSTEM START MERGES projection_null_check_drop_readd;
 DROP TABLE projection_null_check_drop_readd;
 
