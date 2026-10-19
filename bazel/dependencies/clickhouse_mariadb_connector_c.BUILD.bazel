@@ -487,14 +487,11 @@ ch_cc_library(
             "libmariadb/**/*.h",
         ])),
     }),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
-        "@clickhouse_openssl//:include/crypto/riscv_arch.def",
-    ] + [
-        ":plugins/pvio/pvio_plugin.def",
-    ]) + [
+        "plugins/pvio/pvio_plugin.def",
     ],
     copts = ([
         "-w",
@@ -573,35 +570,18 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    local_includes = (select({
+    local_includes = select({
         "@platforms//cpu:x86_64": [
             "config/x86_64/contrib/mariadb-connector-c-cmake/include-public",
             "include",
             "libmariadb",
-            repository_local_include(
-                repository_path("contrib/zlib-ng"),
-                "contrib/mariadb-connector-c",
-            ),
-            repository_local_include(
-                "$(GENDIR)/" + repository_path("contrib/zlib-ng") + "/config/x86_64/contrib/zlib-ng-cmake",
-                "contrib/mariadb-connector-c",
-            ),
         ],
         "@platforms//cpu:aarch64": [
             "config/aarch64/contrib/mariadb-connector-c-cmake/include-public",
             "include",
             "libmariadb",
-            repository_local_include(
-                repository_path("contrib/zlib-ng"),
-                "contrib/mariadb-connector-c",
-            ),
-            repository_local_include(
-                "$(GENDIR)/" + repository_path("contrib/zlib-ng") + "/config/aarch64/contrib/zlib-ng-cmake",
-                "contrib/mariadb-connector-c",
-            ),
         ],
-    }) + [
-    ]),
+    }),
     deps = [
         "@llvm-project//compiler-rt:headers",
         "@llvm-project//libc:libc_headers",
@@ -617,37 +597,3 @@ ch_cc_library(
     ],
     alwayslink = False,
 )
-
-exports_files([
-    "include/errmsg.h",
-    "include/ma_common.h",
-    "include/ma_compress.h",
-    "include/ma_context.h",
-    "include/ma_crypt.h",
-    "include/ma_decimal.h",
-    "include/ma_global.h",
-    "include/ma_hash.h",
-    "include/ma_hashtbl.h",
-    "include/ma_list.h",
-    "include/ma_priv.h",
-    "include/ma_pthread.h",
-    "include/ma_pvio.h",
-    "include/ma_server_error.h",
-    "include/ma_string.h",
-    "include/ma_sys.h",
-    "include/ma_tls.h",
-    "include/mariadb/ma_io.h",
-    "include/mariadb_async.h",
-    "include/mariadb_com.h",
-    "include/mariadb_ctype.h",
-    "include/mariadb_dyncol.h",
-    "include/mariadb_rpl.h",
-    "include/mariadb_stmt.h",
-    "include/mysql.h",
-    "include/mysql/client_plugin.h",
-    "include/mysql/plugin_auth.h",
-    "include/mysqld_error.h",
-    "libmariadb/secure/ma_schannel.h",
-    "libmariadb/secure/schannel_certs.h",
-    "libmariadb/win32_errmsg.h",
-])

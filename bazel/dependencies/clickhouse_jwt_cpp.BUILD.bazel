@@ -12,4 +12,7 @@ cc_library(
         "include/jwt-cpp/**/*.h",
         "include/picojson/**/*.h",
     ]),
+    includes = [
+        "include",
+    ],
 )

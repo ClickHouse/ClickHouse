@@ -18,16 +18,17 @@ ch_cc_library(
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
     ] + glob(["**/*.h"]),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-    ]) + [
-        ":zmij.cc",
+        "zmij.cc",
     ],
     copts = [
         "-w",
         "-std=c++23",
         "-nostdinc++",
+    ],
+    includes = [
+        ".",
     ],
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -50,19 +51,3 @@ ch_cc_library(
     ],
     alwayslink = False,
 )
-
-exports_files([
-    "test/benchmark.h",
-    "test/dragonbox/dragonbox.h",
-    "test/dragonbox/dragonbox_to_chars.h",
-    "test/fmt/base.h",
-    "test/fmt/format-inl.h",
-    "test/fmt/format.h",
-    "test/gtest/gmock/gmock.h",
-    "test/gtest/gtest/gtest-spi.h",
-    "test/gtest/gtest/gtest.h",
-    "test/modular-search.h",
-    "zmij-c.h",
-    "zmij.cc",
-    "zmij.h",
-])

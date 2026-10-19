@@ -22,12 +22,10 @@ ch_cc_library(
         "**/*.h",
         "**/*.hh",
     ]),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
-    ] + [
-    ]) + [
     ],
     copts = [
         "-w",
@@ -56,27 +54,3 @@ ch_cc_library(
     ],
     alwayslink = False,
 )
-
-exports_files([
-    "cli/xsum_arch.h",
-    "cli/xsum_bench.h",
-    "cli/xsum_config.h",
-    "cli/xsum_os_specific.h",
-    "cli/xsum_output.h",
-    "cli/xsum_sanity_check.h",
-    "tests/bench/benchHash.h",
-    "tests/bench/benchfn.h",
-    "tests/bench/bhDisplay.h",
-    "tests/bench/hashes.h",
-    "tests/bench/timefn.h",
-    "tests/collisions/allcodecs/dummy.h",
-    "tests/collisions/hashes.h",
-    "tests/collisions/pool.h",
-    "tests/collisions/sort.hh",
-    "tests/collisions/threading.h",
-    "tests/sanity_test_vectors.h",
-    "xxh3.h",
-    "xxh_x86dispatch.h",
-    "xxhash.c",
-    "xxhash.h",
-])

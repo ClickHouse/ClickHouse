@@ -1255,9 +1255,8 @@ ch_cc_library(
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
     ] + glob(["include/**/*.h"]),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + []) + [
     ],
     copts = (
         [
@@ -2529,10 +2528,3 @@ ch_cc_library(
     ],
     alwayslink = False,
 )
-
-exports_files([
-    "include/cctz/civil_time.h",
-    "include/cctz/civil_time_detail.h",
-    "include/cctz/time_zone.h",
-    "include/cctz/zone_info_source.h",
-])

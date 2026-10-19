@@ -5,43 +5,14 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "LICENSE",
-    "include/aws/io/async_stream.h",
-    "include/aws/io/channel.h",
-    "include/aws/io/channel_bootstrap.h",
-    "include/aws/io/event_loop.h",
-    "include/aws/io/exports.h",
-    "include/aws/io/file_utils.h",
-    "include/aws/io/future.h",
-    "include/aws/io/host_resolver.h",
-    "include/aws/io/io.h",
-    "include/aws/io/logging.h",
-    "include/aws/io/message_pool.h",
-    "include/aws/io/pem.h",
-    "include/aws/io/pipe.h",
-    "include/aws/io/pkcs11.h",
-    "include/aws/io/private/event_loop_impl.h",
-    "include/aws/io/private/pem_utils.h",
-    "include/aws/io/private/pki_utils.h",
-    "include/aws/io/private/socket_impl.h",
-    "include/aws/io/private/tls_channel_handler_private.h",
-    "include/aws/io/private/tls_channel_handler_shared.h",
-    "include/aws/io/private/tracing.h",
-    "include/aws/io/retry_strategy.h",
-    "include/aws/io/shared_library.h",
-    "include/aws/io/socket.h",
-    "include/aws/io/socket_channel_handler.h",
-    "include/aws/io/statistics.h",
-    "include/aws/io/stream.h",
-    "include/aws/io/tls_channel_handler.h",
-    "include/aws/io/uri.h",
-    "include/aws/testing/async_stream_tester.h",
-    "include/aws/testing/io_testing_channel.h",
-    "include/aws/testing/stream_tester.h",
-    "source/darwin/dispatch_queue_event_loop_private.h",
-    "source/pkcs11/v2.40/pkcs11.h",
-    "source/pkcs11_private.h",
-    "source/s2n/s2n_apple_keychain.h",
 ])
+
+_GENERATED_DEPS_0 = [
+    "@llvm-project//compiler-rt:headers",
+    "@llvm-project//libc:libc_headers",
+    "@llvm-project//libunwind:headers",
+    ":aws_c_io_headers",
+]
 
 ch_cc_library(
     name = "aws_c_io",
@@ -106,12 +77,7 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ]),
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        ":aws_c_io_headers",
-    ],
+    deps = _GENERATED_DEPS_0,
     alwayslink = False,
 )
 
@@ -155,12 +121,7 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ]),
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-        ":aws_c_io_headers",
-    ],
+    deps = _GENERATED_DEPS_0,
     alwayslink = False,
 )
 
@@ -168,5 +129,8 @@ cc_library(
     name = "aws_c_io_headers",
     hdrs = glob(["include/**/*.h"]),
     includes = ["include"],
-    deps = ["@clickhouse_aws_c_common//:aws_c_common_headers"],
+    deps = [
+        "@clickhouse_aws_c_common//:aws_c_common_headers",
+        "@clickhouse_openssl//:ssl",
+    ],
 )

@@ -27,22 +27,9 @@ ch_cc_library(
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
     ] + glob(["include/**/*.h"]),
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_sysroot//:linux_compile_files",
-        ] + [
-        ],
-        "@platforms//cpu:aarch64": [
-            "@clickhouse_sysroot//:linux_compile_files",
-        ] + [
-        ],
-    }) + ([
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    })),
+    additional_compiler_inputs = [
+        "@clickhouse_sysroot//:linux_compile_files",
+    ],
     copts = (
         (([
             "-w",
@@ -80,7 +67,3 @@ ch_cc_library(
     ],
     alwayslink = False,
 )
-
-exports_files([
-    "include/crc32c/crc32c.h",
-])

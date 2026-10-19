@@ -216,6 +216,32 @@ def remove_unused_constants(source):
     return source.rewrite(edits)
 
 
+def inline_small_constants(source):
+    uses = defaultdict(list)
+    for node in ast.walk(source.module):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+            uses[node.id].append(node)
+    edits = []
+    for statement in source.module.body:
+        if (not isinstance(statement, ast.Assign) or len(statement.targets) != 1
+                or not isinstance(statement.targets[0], ast.Name)
+                or not statement.targets[0].id.startswith(CONSTANT_PREFIX)
+                or not safe_expression(statement.value)):
+            continue
+        name = statement.targets[0].id
+        value = source.text(statement.value)
+        if not uses[name]:
+            continue
+        start, end = source.span(statement)
+        # Input pruning can leave a formerly useful constant with one short
+        # value. Keep it only when sharing the value still saves 64 bytes.
+        shared_bytes = end - start + len(name) * len(uses[name])
+        inline_bytes = len(value.encode("utf-8")) * len(uses[name])
+        if inline_bytes - shared_bytes < 64:
+            edits.extend((*source.span(use), "(" + value + ")") for use in uses[name])
+    return source.rewrite(edits)
+
+
 def simplify_list_expressions(source):
     edits = []
 
@@ -307,7 +333,7 @@ class Expand(ast.NodeTransformer):
 
 def compact(text):
     original_text = text
-    simplified = text
+    simplified = remove_unused_constants(Source(inline_small_constants(Source(text))))
     while True:
         # Folding adjacent literals can make select branches eligible for
         # factoring. Do both until neither changes the generated statements.

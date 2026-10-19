@@ -5,32 +5,6 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "LICENSE",
-    "include/aws/s3/exports.h",
-    "include/aws/s3/private/s3_auto_ranged_get.h",
-    "include/aws/s3/private/s3_auto_ranged_put.h",
-    "include/aws/s3/private/s3_checksum_context.h",
-    "include/aws/s3/private/s3_checksums.h",
-    "include/aws/s3/private/s3_client_impl.h",
-    "include/aws/s3/private/s3_copy_object.h",
-    "include/aws/s3/private/s3_default_buffer_pool.h",
-    "include/aws/s3/private/s3_default_meta_request.h",
-    "include/aws/s3/private/s3_endpoint_resolver.h",
-    "include/aws/s3/private/s3_list_objects.h",
-    "include/aws/s3/private/s3_list_parts.h",
-    "include/aws/s3/private/s3_meta_request_impl.h",
-    "include/aws/s3/private/s3_paginator.h",
-    "include/aws/s3/private/s3_parallel_input_stream.h",
-    "include/aws/s3/private/s3_part_streaming_input_stream.h",
-    "include/aws/s3/private/s3_platform_info.h",
-    "include/aws/s3/private/s3_request.h",
-    "include/aws/s3/private/s3_request_messages.h",
-    "include/aws/s3/private/s3_util.h",
-    "include/aws/s3/private/s3express_credentials_provider_impl.h",
-    "include/aws/s3/s3.h",
-    "include/aws/s3/s3_buffer_pool.h",
-    "include/aws/s3/s3_client.h",
-    "include/aws/s3/s3_endpoint_resolver.h",
-    "include/aws/s3/s3express_credentials_provider.h",
 ])
 
 ch_cc_library(

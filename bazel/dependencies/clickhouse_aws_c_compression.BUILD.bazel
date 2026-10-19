@@ -5,10 +5,6 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "LICENSE",
-    "include/aws/compression/compression.h",
-    "include/aws/compression/exports.h",
-    "include/aws/compression/huffman.h",
-    "include/aws/compression/private/huffman_testing.h",
 ])
 
 ch_cc_library(

@@ -17,6 +17,12 @@ _GENERATED_COPTS_0 = [
     repository_path("contrib/zxc") + "/src/lib/vendors",
 ]
 
+_GENERATED_ADDITIONAL_COMPILER_INPUTS_0 = [
+    "@clickhouse_sysroot//:linux_compile_files",
+    "@clickhouse_llvm_project//:runtime_source_inputs",
+    "@clickhouse_llvm_project//:runtime_generated_headers",
+]
+
 ch_cc_library(
     name = "_zxc",
     srcs = [
@@ -34,12 +40,7 @@ ch_cc_library(
         "include/**/*.h",
         "src/lib/**/*.h",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ] + []) + [
-    ],
+    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
     copts = _GENERATED_COPTS_0,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
@@ -104,7 +105,7 @@ _GENERATED_TARGET_COMPATIBLE_WITH_0 = select({
 
 _GENERATED_SRCS_0 = select({
     "@platforms//cpu:x86_64": [
-        ":src/lib/zxc_compress.c",
+        "src/lib/zxc_compress.c",
     ],
     "@platforms//cpu:aarch64": [],
 })
@@ -125,12 +126,6 @@ _GENERATED_COPTS_1 = select({
     "@platforms//cpu:aarch64": [],
 })
 
-_GENERATED_LOCAL_INCLUDES_0 = select({
-    "@platforms//cpu:x86_64": [
-    ],
-    "@platforms//cpu:aarch64": [],
-})
-
 _GENERATED_DEPS_2 = select({
     "@platforms//cpu:x86_64": [
         "@llvm-project//compiler-rt:headers",
@@ -146,6 +141,15 @@ _GENERATED_DEPS_2 = select({
     "@clickhouse//:unwind",
 ]
 
+_GENERATED_ADDITIONAL_COMPILER_INPUTS_1 = select({
+    "@platforms//cpu:x86_64": [
+        "@clickhouse_sysroot//:linux_compile_files",
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
+    ],
+    "@platforms//cpu:aarch64": [],
+})
+
 ch_cc_library(
     name = "_zxc_compress_avx2",
     srcs = _GENERATED_SRCS_0,
@@ -158,18 +162,7 @@ ch_cc_library(
         ]),
         "@platforms//cpu:aarch64": [],
     }),
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_sysroot//:linux_compile_files",
-            "@clickhouse_llvm_project//:runtime_source_inputs",
-            "@clickhouse_llvm_project//:runtime_generated_headers",
-        ] + [],
-        "@platforms//cpu:aarch64": [],
-    }) + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
+    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_1,
     arches = [
         "x86_64",
     ],
@@ -180,7 +173,8 @@ ch_cc_library(
     }),
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = [
+    ],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     deps = _GENERATED_DEPS_2,
     alwayslink = True,
@@ -229,18 +223,7 @@ ch_cc_library(
         ]),
         "@platforms//cpu:aarch64": [],
     }),
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_sysroot//:linux_compile_files",
-            "@clickhouse_llvm_project//:runtime_source_inputs",
-            "@clickhouse_llvm_project//:runtime_generated_headers",
-        ] + [],
-        "@platforms//cpu:aarch64": [],
-    }) + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
+    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_1,
     arches = [
         "x86_64",
     ],
@@ -251,7 +234,8 @@ ch_cc_library(
     }),
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = [
+    ],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     deps = _GENERATED_DEPS_2,
     alwayslink = True,
@@ -264,9 +248,6 @@ _GENERATED_LOCAL_DEFINES_2 = [
     "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
     "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
     "_LIBUNWIND_IS_NATIVE_ONLY",
-]
-
-_GENERATED_LOCAL_INCLUDES_1 = [
 ]
 
 _GENERATED_DEPS_3 = [
@@ -291,24 +272,20 @@ ch_cc_library(
         "include/**/*.h",
         "src/lib/**/*.h",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ] + []) + [
-    ],
+    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
     copts = _GENERATED_COPTS_0,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_2,
-    local_includes = _GENERATED_LOCAL_INCLUDES_1,
+    local_includes = [
+    ],
     deps = _GENERATED_DEPS_3,
     alwayslink = True,
 )
 
 _GENERATED_SRCS_1 = select({
     "@platforms//cpu:x86_64": [
-        ":src/lib/zxc_decompress.c",
+        "src/lib/zxc_decompress.c",
     ],
     "@platforms//cpu:aarch64": [],
 })
@@ -325,18 +302,7 @@ ch_cc_library(
         ]),
         "@platforms//cpu:aarch64": [],
     }),
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_sysroot//:linux_compile_files",
-            "@clickhouse_llvm_project//:runtime_source_inputs",
-            "@clickhouse_llvm_project//:runtime_generated_headers",
-        ] + [],
-        "@platforms//cpu:aarch64": [],
-    }) + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
+    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_1,
     arches = [
         "x86_64",
     ],
@@ -347,7 +313,8 @@ ch_cc_library(
     }),
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = [
+    ],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     deps = _GENERATED_DEPS_2,
     alwayslink = True,
@@ -365,18 +332,7 @@ ch_cc_library(
         ]),
         "@platforms//cpu:aarch64": [],
     }),
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_sysroot//:linux_compile_files",
-            "@clickhouse_llvm_project//:runtime_source_inputs",
-            "@clickhouse_llvm_project//:runtime_generated_headers",
-        ] + [],
-        "@platforms//cpu:aarch64": [],
-    }) + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
+    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_1,
     arches = [
         "x86_64",
     ],
@@ -387,7 +343,8 @@ ch_cc_library(
     }),
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = [
+    ],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     deps = _GENERATED_DEPS_2,
     alwayslink = True,
@@ -404,24 +361,20 @@ ch_cc_library(
         "include/**/*.h",
         "src/lib/**/*.h",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ] + []) + [
-    ],
+    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
     copts = _GENERATED_COPTS_0,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_2,
-    local_includes = _GENERATED_LOCAL_INCLUDES_1,
+    local_includes = [
+    ],
     deps = _GENERATED_DEPS_3,
     alwayslink = True,
 )
 
 _GENERATED_SRCS_2 = select({
     "@platforms//cpu:x86_64": [
-        ":src/lib/zxc_huffman.c",
+        "src/lib/zxc_huffman.c",
     ],
     "@platforms//cpu:aarch64": [],
 })
@@ -438,18 +391,7 @@ ch_cc_library(
         ]),
         "@platforms//cpu:aarch64": [],
     }),
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_sysroot//:linux_compile_files",
-            "@clickhouse_llvm_project//:runtime_source_inputs",
-            "@clickhouse_llvm_project//:runtime_generated_headers",
-        ] + [],
-        "@platforms//cpu:aarch64": [],
-    }) + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
+    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_1,
     arches = [
         "x86_64",
     ],
@@ -460,7 +402,8 @@ ch_cc_library(
     }),
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = [
+    ],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     deps = _GENERATED_DEPS_2,
     alwayslink = True,
@@ -478,18 +421,7 @@ ch_cc_library(
         ]),
         "@platforms//cpu:aarch64": [],
     }),
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_sysroot//:linux_compile_files",
-            "@clickhouse_llvm_project//:runtime_source_inputs",
-            "@clickhouse_llvm_project//:runtime_generated_headers",
-        ] + [],
-        "@platforms//cpu:aarch64": [],
-    }) + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
+    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_1,
     arches = [
         "x86_64",
     ],
@@ -500,7 +432,8 @@ ch_cc_library(
     }),
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = [
+    ],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     deps = _GENERATED_DEPS_2,
     alwayslink = True,
@@ -517,17 +450,13 @@ ch_cc_library(
         "include/**/*.h",
         "src/lib/**/*.h",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-    ] + []) + [
-    ],
+    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
     copts = _GENERATED_COPTS_0,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_2,
-    local_includes = _GENERATED_LOCAL_INCLUDES_1,
+    local_includes = [
+    ],
     deps = _GENERATED_DEPS_3,
     alwayslink = True,
 )

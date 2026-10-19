@@ -8,8 +8,6 @@ exports_files([
     "LICENSE.txt",
 ])
 
-_GENERATED_HEADER_INPUTS_0 = []
-
 ch_cc_library(
     name = "_avrocpp",
     srcs = [
@@ -39,16 +37,15 @@ ch_cc_library(
         "lang/c++/impl/Validator.cc",
     ] + glob(["lang/c++/impl/**/*.hh"]),
     hdrs = select({
-        "@platforms//cpu:x86_64": (([
+        "@platforms//cpu:x86_64": ([
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_0) + glob(["lang/c++/api/**/*.hh"])),
-        "@platforms//cpu:aarch64": (([
+        ] + glob(["lang/c++/api/**/*.hh"])),
+        "@platforms//cpu:aarch64": ([
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_0) + glob(["lang/c++/api/**/*.hh"])),
+        ] + glob(["lang/c++/api/**/*.hh"])),
     }),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + []) + [
     ],
     copts = [
         "-w",
@@ -67,14 +64,6 @@ ch_cc_library(
     ],
     local_includes = ([
         "lang/c++/api",
-        repository_local_include(
-            repository_path("contrib/boost"),
-            "contrib/avro",
-        ),
-        repository_local_include(
-            repository_path("contrib/snappy"),
-            "contrib/avro",
-        ),
     ] + select({
         "@platforms//cpu:x86_64": [
             repository_local_include(
@@ -106,44 +95,3 @@ ch_cc_library(
     ],
     alwayslink = False,
 )
-
-exports_files([
-    "lang/c++/api/AvroParse.hh",
-    "lang/c++/api/AvroSerialize.hh",
-    "lang/c++/api/AvroTraits.hh",
-    "lang/c++/api/Compiler.hh",
-    "lang/c++/api/Config.hh",
-    "lang/c++/api/DataFile.hh",
-    "lang/c++/api/Decoder.hh",
-    "lang/c++/api/Encoder.hh",
-    "lang/c++/api/Exception.hh",
-    "lang/c++/api/Generic.hh",
-    "lang/c++/api/GenericDatum.hh",
-    "lang/c++/api/Layout.hh",
-    "lang/c++/api/LogicalType.hh",
-    "lang/c++/api/Node.hh",
-    "lang/c++/api/NodeConcepts.hh",
-    "lang/c++/api/NodeImpl.hh",
-    "lang/c++/api/Parser.hh",
-    "lang/c++/api/Reader.hh",
-    "lang/c++/api/Resolver.hh",
-    "lang/c++/api/ResolverSchema.hh",
-    "lang/c++/api/ResolvingReader.hh",
-    "lang/c++/api/Schema.hh",
-    "lang/c++/api/SchemaResolution.hh",
-    "lang/c++/api/Serializer.hh",
-    "lang/c++/api/Specific.hh",
-    "lang/c++/api/Stream.hh",
-    "lang/c++/api/Types.hh",
-    "lang/c++/api/ValidSchema.hh",
-    "lang/c++/api/Validator.hh",
-    "lang/c++/api/Writer.hh",
-    "lang/c++/api/Zigzag.hh",
-    "lang/c++/api/buffer/Buffer.hh",
-    "lang/c++/api/buffer/BufferPrint.hh",
-    "lang/c++/api/buffer/BufferReader.hh",
-    "lang/c++/api/buffer/BufferStream.hh",
-    "lang/c++/api/buffer/BufferStreambuf.hh",
-    "lang/c++/api/buffer/detail/BufferDetail.hh",
-    "lang/c++/api/buffer/detail/BufferDetailIterator.hh",
-])

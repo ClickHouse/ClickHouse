@@ -16,11 +16,10 @@ ch_cc_library(
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
     ] + glob(["include/**/*.h"]),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
-    ] + []) + [
     ],
     copts = [
         "-w",
@@ -53,17 +52,3 @@ ch_cc_library(
     ],
     alwayslink = False,
 )
-
-exports_files([
-    "include/simsimd/binary.h",
-    "include/simsimd/curved.h",
-    "include/simsimd/dot.h",
-    "include/simsimd/elementwise.h",
-    "include/simsimd/geospatial.h",
-    "include/simsimd/mesh.h",
-    "include/simsimd/probability.h",
-    "include/simsimd/simsimd.h",
-    "include/simsimd/sparse.h",
-    "include/simsimd/spatial.h",
-    "include/simsimd/types.h",
-])

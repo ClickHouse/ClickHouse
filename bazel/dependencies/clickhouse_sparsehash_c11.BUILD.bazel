@@ -15,6 +15,9 @@ cc_library(
         "sparsehash/internal/**/*.h",
         "tests/**/*.h",
     ]),
+    includes = [
+        ".",
+    ],
     textual_hdrs = glob(
         ["sparsehash/*"],
         exclude = ["sparsehash/*.*"],

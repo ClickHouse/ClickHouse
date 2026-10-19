@@ -1,5 +1,5 @@
 load("@clickhouse//bazel:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel:repository_paths.bzl", "repository_local_include", "repository_path")
+load("@clickhouse//bazel:repository_paths.bzl", "repository_path")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -7,8 +7,6 @@ package(default_visibility = ["//visibility:public"])
 exports_files([
     "LICENSE",
 ])
-
-_GENERATED_HEADER_INPUTS_1 = []
 
 ch_cc_library(
     name = "_cppkafka",
@@ -33,20 +31,10 @@ ch_cc_library(
         "src/topic_partition.cpp",
         "src/topic.cpp",
     ],
-    hdrs = select({
-        "@platforms//cpu:x86_64": (([
-            "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_1) + glob(["include/**/*.h"])),
-        "@platforms//cpu:aarch64": (([
-            "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_1) + glob(["include/**/*.h"])),
-    }),
-    additional_compiler_inputs = ([
+    hdrs = ["@clickhouse_sysroot//:linux_native_headers"] + glob(["include/**/*.h"]),
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse//:contrib/librdkafka-cmake/include/README",
-        "@clickhouse_librdkafka//:src/rdkafka_conf.c",
-    ] + []) + [
-        ":src/error.cpp",
+        "src/error.cpp",
     ],
     copts = [
         "-w",
@@ -55,6 +43,7 @@ ch_cc_library(
         "-I",
         repository_path("contrib/cppkafka") + "/include/cppkafka",
     ],
+    includes = ["include"],
     local_defines = [
         "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
         "BOOST_ASIO_STANDALONE=1",
@@ -64,32 +53,6 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    local_includes = ([
-        "include",
-        repository_local_include("contrib/librdkafka-cmake/include", "contrib/cppkafka"),
-        repository_local_include(
-            repository_path("contrib/librdkafka") + "/src",
-            "contrib/cppkafka",
-        ),
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            repository_local_include(
-                "$(GENDIR)/" + repository_path("contrib/librdkafka") + "/config/x86_64/contrib/librdkafka-cmake",
-                "contrib/cppkafka",
-            ),
-        ],
-        "@platforms//cpu:aarch64": [
-            repository_local_include(
-                "$(GENDIR)/" + repository_path("contrib/librdkafka") + "/config/aarch64/contrib/librdkafka-cmake",
-                "contrib/cppkafka",
-            ),
-        ],
-    }) + [
-        repository_local_include(
-            repository_path("contrib/boost"),
-            "contrib/cppkafka",
-        ),
-    ]),
     deps = ([
         "@llvm-project//compiler-rt:headers",
         "@llvm-project//libc:libc_headers",
@@ -221,44 +184,3 @@ ch_cc_library(
     ]),
     alwayslink = False,
 )
-
-exports_files([
-    "include/cppkafka/buffer.h",
-    "include/cppkafka/clonable_ptr.h",
-    "include/cppkafka/configuration.h",
-    "include/cppkafka/configuration_base.h",
-    "include/cppkafka/configuration_option.h",
-    "include/cppkafka/consumer.h",
-    "include/cppkafka/cppkafka.h",
-    "include/cppkafka/detail/callback_invoker.h",
-    "include/cppkafka/detail/endianness.h",
-    "include/cppkafka/error.h",
-    "include/cppkafka/event.h",
-    "include/cppkafka/exceptions.h",
-    "include/cppkafka/group_information.h",
-    "include/cppkafka/header.h",
-    "include/cppkafka/header_list.h",
-    "include/cppkafka/header_list_iterator.h",
-    "include/cppkafka/kafka_handle_base.h",
-    "include/cppkafka/logging.h",
-    "include/cppkafka/macros.h",
-    "include/cppkafka/message.h",
-    "include/cppkafka/message_builder.h",
-    "include/cppkafka/message_internal.h",
-    "include/cppkafka/message_timestamp.h",
-    "include/cppkafka/metadata.h",
-    "include/cppkafka/producer.h",
-    "include/cppkafka/queue.h",
-    "include/cppkafka/topic.h",
-    "include/cppkafka/topic_configuration.h",
-    "include/cppkafka/topic_partition.h",
-    "include/cppkafka/topic_partition_list.h",
-    "include/cppkafka/utils/backoff_committer.h",
-    "include/cppkafka/utils/backoff_performer.h",
-    "include/cppkafka/utils/buffered_producer.h",
-    "include/cppkafka/utils/compacted_topic_processor.h",
-    "include/cppkafka/utils/consumer_dispatcher.h",
-    "include/cppkafka/utils/poll_interface.h",
-    "include/cppkafka/utils/poll_strategy_base.h",
-    "include/cppkafka/utils/roundrobin_poll_strategy.h",
-])

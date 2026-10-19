@@ -12,4 +12,7 @@ exports_files([
 cc_library(
     name = "pocketfft",
     hdrs = glob(["**/*.h"]),
+    includes = [
+        ".",
+    ],
 )

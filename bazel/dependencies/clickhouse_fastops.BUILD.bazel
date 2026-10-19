@@ -28,22 +28,9 @@ ch_cc_library(
         "**/*.h",
         "**/*.hpp",
     ]),
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_sysroot//:linux_compile_files",
-        ] + [
-        ],
-        "@platforms//cpu:aarch64": [
-            "@clickhouse_sysroot//:linux_compile_files",
-        ] + [
-        ],
-    }) + ([
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    })),
+    additional_compiler_inputs = [
+        "@clickhouse_sysroot//:linux_compile_files",
+    ],
     copts = [
         "-w",
         "-std=c++23",
@@ -87,11 +74,6 @@ ch_cc_library(
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
             "@clickhouse_sysroot//:linux_compile_files",
-        ] + [
-        ],
-    }) + select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
         ],
     }),
     arches = [
@@ -144,43 +126,3 @@ cc_library(
         ":_fastops__compile_1",
     ],
 )
-
-exports_files([
-    "contrib/libs/fmath/fmath.hpp",
-    "contrib/libs/tclap/include/tclap/Arg.h",
-    "contrib/libs/tclap/include/tclap/ArgException.h",
-    "contrib/libs/tclap/include/tclap/ArgTraits.h",
-    "contrib/libs/tclap/include/tclap/CmdLine.h",
-    "contrib/libs/tclap/include/tclap/CmdLineInterface.h",
-    "contrib/libs/tclap/include/tclap/CmdLineOutput.h",
-    "contrib/libs/tclap/include/tclap/Constraint.h",
-    "contrib/libs/tclap/include/tclap/DocBookOutput.h",
-    "contrib/libs/tclap/include/tclap/HelpVisitor.h",
-    "contrib/libs/tclap/include/tclap/IgnoreRestVisitor.h",
-    "contrib/libs/tclap/include/tclap/MultiArg.h",
-    "contrib/libs/tclap/include/tclap/MultiSwitchArg.h",
-    "contrib/libs/tclap/include/tclap/OptionalUnlabeledTracker.h",
-    "contrib/libs/tclap/include/tclap/StandardTraits.h",
-    "contrib/libs/tclap/include/tclap/StdOutput.h",
-    "contrib/libs/tclap/include/tclap/SwitchArg.h",
-    "contrib/libs/tclap/include/tclap/UnlabeledMultiArg.h",
-    "contrib/libs/tclap/include/tclap/UnlabeledValueArg.h",
-    "contrib/libs/tclap/include/tclap/ValueArg.h",
-    "contrib/libs/tclap/include/tclap/ValuesConstraint.h",
-    "contrib/libs/tclap/include/tclap/VersionVisitor.h",
-    "contrib/libs/tclap/include/tclap/Visitor.h",
-    "contrib/libs/tclap/include/tclap/XorHandler.h",
-    "contrib/libs/tclap/include/tclap/ZshCompletionOutput.h",
-    "contrib/libs/tclap/include/tclap/sstream.h",
-    "fastops/avx/ops_avx.h",
-    "fastops/avx2/ops_avx2.h",
-    "fastops/core/FastIntrinsics.h",
-    "fastops/core/SIMDFunctions.h",
-    "fastops/core/avx_id.h",
-    "fastops/fastops.h",
-    "fastops/neon/ops_neon.h",
-    "fastops/plain/ops_plain.h",
-    "fastops/sve/ops_sve.h",
-    "tools/benchmark/opts.h",
-    "tools/eval/opts.h",
-])

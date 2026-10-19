@@ -9,4 +9,7 @@ exports_files([
 cc_library(
     name = "xsimd",
     hdrs = glob(["include/xsimd/**/*.hpp"]),
+    includes = [
+        "include",
+    ],
 )

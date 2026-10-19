@@ -16,21 +16,19 @@ ch_cc_library(
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
     ] + glob(["include/**/*.h"]),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        ":src/id_tables.cpp",
-        ":src/identifier.cpp",
-        ":src/mapping.cpp",
-        ":src/mapping_tables.cpp",
-        ":src/normalization.cpp",
-        ":src/normalization_tables.cpp",
-        ":src/punycode.cpp",
-        ":src/to_ascii.cpp",
-        ":src/to_unicode.cpp",
-        ":src/unicode_transcoding.cpp",
-        ":src/validity.cpp",
-    ]) + [
+        "src/id_tables.cpp",
+        "src/identifier.cpp",
+        "src/mapping.cpp",
+        "src/mapping_tables.cpp",
+        "src/normalization.cpp",
+        "src/normalization_tables.cpp",
+        "src/punycode.cpp",
+        "src/to_ascii.cpp",
+        "src/to_unicode.cpp",
+        "src/unicode_transcoding.cpp",
+        "src/validity.cpp",
     ],
     copts = (
         [
@@ -60,15 +58,3 @@ ch_cc_library(
     ],
     alwayslink = False,
 )
-
-exports_files([
-    "include/ada/idna/identifier.h",
-    "include/ada/idna/mapping.h",
-    "include/ada/idna/normalization.h",
-    "include/ada/idna/punycode.h",
-    "include/ada/idna/to_ascii.h",
-    "include/ada/idna/to_unicode.h",
-    "include/ada/idna/unicode_transcoding.h",
-    "include/ada/idna/validity.h",
-    "include/idna.h",
-])

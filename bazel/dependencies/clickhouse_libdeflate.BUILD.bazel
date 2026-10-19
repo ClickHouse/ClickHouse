@@ -29,18 +29,19 @@ ch_cc_library(
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
     ] + glob(["**/*.h"]),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
-    ] + [
-    ]) + [
     ],
     copts = [
         "-w",
         "-std=gnu11",
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    includes = [
+        ".",
+    ],
     language = "C",
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -63,38 +64,3 @@ ch_cc_library(
     ],
     alwayslink = False,
 )
-
-exports_files([
-    "common_defs.h",
-    "lib/arm/adler32_impl.h",
-    "lib/arm/cpu_features.h",
-    "lib/arm/crc32_impl.h",
-    "lib/arm/crc32_pmull_helpers.h",
-    "lib/arm/crc32_pmull_wide.h",
-    "lib/arm/matchfinder_impl.h",
-    "lib/bt_matchfinder.h",
-    "lib/cpu_features_common.h",
-    "lib/crc32_multipliers.h",
-    "lib/crc32_tables.h",
-    "lib/decompress_template.h",
-    "lib/deflate_compress.h",
-    "lib/deflate_constants.h",
-    "lib/gzip_constants.h",
-    "lib/hc_matchfinder.h",
-    "lib/ht_matchfinder.h",
-    "lib/lib_common.h",
-    "lib/matchfinder_common.h",
-    "lib/riscv/matchfinder_impl.h",
-    "lib/x86/adler32_impl.h",
-    "lib/x86/adler32_template.h",
-    "lib/x86/cpu_features.h",
-    "lib/x86/crc32_impl.h",
-    "lib/x86/crc32_pclmul_template.h",
-    "lib/x86/decompress_impl.h",
-    "lib/x86/decompress_stream_impl.h",
-    "lib/x86/matchfinder_impl.h",
-    "lib/zlib_constants.h",
-    "libdeflate.h",
-    "programs/prog_util.h",
-    "programs/test_util.h",
-])

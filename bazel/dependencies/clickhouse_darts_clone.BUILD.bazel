@@ -9,4 +9,7 @@ exports_files([
 cc_library(
     name = "darts_clone",
     hdrs = glob(["include/**/*.h"]),
+    includes = [
+        "include",
+    ],
 )

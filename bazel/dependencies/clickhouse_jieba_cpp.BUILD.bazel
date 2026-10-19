@@ -19,37 +19,8 @@ ch_cc_library(
     hdrs = ([
         "@clickhouse_sysroot//:linux_native_headers",
     ] + glob(["include/**/*.h"])),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_zstd//:lib/common/debug.c",
-        "@clickhouse_zstd//:lib/common/entropy_common.c",
-        "@clickhouse_zstd//:lib/common/error_private.c",
-        "@clickhouse_zstd//:lib/common/fse_decompress.c",
-        "@clickhouse_zstd//:lib/common/pool.c",
-        "@clickhouse_zstd//:lib/common/threading.c",
-        "@clickhouse_zstd//:lib/common/zstd_common.c",
-        "@clickhouse_zstd//:lib/compress/fse_compress.c",
-        "@clickhouse_zstd//:lib/compress/hist.c",
-        "@clickhouse_zstd//:lib/compress/huf_compress.c",
-        "@clickhouse_zstd//:lib/compress/zstd_compress.c",
-        "@clickhouse_zstd//:lib/compress/zstd_compress_literals.c",
-        "@clickhouse_zstd//:lib/compress/zstd_compress_sequences.c",
-        "@clickhouse_zstd//:lib/compress/zstd_compress_superblock.c",
-        "@clickhouse_zstd//:lib/compress/zstd_double_fast.c",
-        "@clickhouse_zstd//:lib/compress/zstd_fast.c",
-        "@clickhouse_zstd//:lib/compress/zstd_lazy.c",
-        "@clickhouse_zstd//:lib/compress/zstd_ldm.c",
-        "@clickhouse_zstd//:lib/compress/zstd_opt.c",
-        "@clickhouse_zstd//:lib/compress/zstd_preSplit.c",
-        "@clickhouse_zstd//:lib/compress/zstdmt_compress.c",
-        "@clickhouse_zstd//:lib/decompress/huf_decompress.c",
-        "@clickhouse_zstd//:lib/decompress/zstd_ddict.c",
-        "@clickhouse_zstd//:lib/decompress/zstd_decompress.c",
-        "@clickhouse_zstd//:lib/decompress/zstd_decompress_block.c",
-        "@clickhouse_zstd//:lib/dictBuilder/cover.c",
-        "@clickhouse_zstd//:lib/dictBuilder/divsufsort.c",
-        "@clickhouse_zstd//:lib/dictBuilder/fastcover.c",
-        "@clickhouse_zstd//:lib/dictBuilder/zdict.c",
     ] + glob(
         [
             "data/**",
@@ -63,8 +34,7 @@ ch_cc_library(
             "src/jieba_hmm_seg.cpp",
             "src/jieba_mp_seg.cpp",
         ],
-    )) + [
-    ],
+    ),
     copts = [
         "-w",
         "-std=c++23",
@@ -82,10 +52,6 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = [
-        repository_local_include(
-            repository_path("contrib/darts-clone") + "/include",
-            "contrib/Jieba-CPP",
-        ),
         "include",
     ],
     deps = [
@@ -102,10 +68,3 @@ ch_cc_library(
     ],
     alwayslink = False,
 )
-
-exports_files([
-    "include/jieba.h",
-    "include/jieba_common.h",
-    "include/jieba_dict.h",
-    "include/jieba_separator_bitmap.h",
-])

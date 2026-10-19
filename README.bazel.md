@@ -201,6 +201,9 @@ they do not depend on rerunning the unchanged CMake build for every Bazel edit.
 | Remove 41,115 captured data-file inputs from native libraries; declare all Sparsehash extensionless headers on their library | [f8f92940](https://app.buildbuddy.io/invocation/f8f92940-11fa-4d2d-9cd7-cebfd177bd72) | [f00daa53](https://app.buildbuddy.io/invocation/f00daa53-c3bb-40ab-9a1a-1752d59ce241) |
 | Inherit OpenSSL public include directories through reachable library dependencies in 21 external repositories | [4b04bcc0](https://app.buildbuddy.io/invocation/4b04bcc0-991a-45be-862d-f2f3b57308ad) | [08e21950](https://app.buildbuddy.io/invocation/08e21950-02d9-4a2e-93b5-415689aced47) |
 | Supply `libcxxabi_headers` through `implementation_deps` in 57 external repositories | [54a9bf39](https://app.buildbuddy.io/invocation/54a9bf39-85ad-4290-ba29-5a3ab6cea9ce) | [ffd6c028](https://app.buildbuddy.io/invocation/ffd6c028-a56c-41c0-af53-a37329fb6f20) |
+| Remove native data unreachable from compiled sources and published headers; prune 6,027 unused exports (`b7b771b50`) | [228e87ab](https://app.buildbuddy.io/invocation/228e87ab-f161-4d44-8f70-baa31de7cc13) | [5110ccb0](https://app.buildbuddy.io/invocation/5110ccb0-83fe-45c4-9117-37dd84bea1dd) |
+| Use local directory names for the 36 same-repository include expressions (`3a652da04`) | [61415215](https://app.buildbuddy.io/invocation/61415215-0c82-4ef5-8af1-4b908b6c5bf2) | [d4593dc6](https://app.buildbuddy.io/invocation/d4593dc6-a400-4dbb-851f-5d6d82ae4545) |
+| Publish AWS CRT public headers and includes through library dependencies; remove captured foreign inputs (`120811fec`) | [2dfd2546](https://app.buildbuddy.io/invocation/2dfd2546-fb33-4c2c-aa26-b4071cc47001) | [99f08d57](https://app.buildbuddy.io/invocation/99f08d57-c4bd-4651-97dc-b4fa86722c54) |
 
 `@chdig_crates//:perfetto_protos-0.51.1` also compiled using the registered
 `@protobuf//:protoc` on both

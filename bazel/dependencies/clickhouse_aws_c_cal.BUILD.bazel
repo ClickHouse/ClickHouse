@@ -5,21 +5,6 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "LICENSE",
-    "include/aws/cal/cal.h",
-    "include/aws/cal/ecc.h",
-    "include/aws/cal/ed25519.h",
-    "include/aws/cal/exports.h",
-    "include/aws/cal/hash.h",
-    "include/aws/cal/hkdf.h",
-    "include/aws/cal/hmac.h",
-    "include/aws/cal/private/der.h",
-    "include/aws/cal/private/ecc.h",
-    "include/aws/cal/private/opensslcrypto_common.h",
-    "include/aws/cal/private/rsa.h",
-    "include/aws/cal/private/symmetric_cipher_priv.h",
-    "include/aws/cal/rsa.h",
-    "include/aws/cal/symmetric_cipher.h",
-    "source/darwin/common_cryptor_spi.h",
 ])
 
 ch_cc_library(

@@ -44,7 +44,3 @@ ch_cc_library(
     ],
     alwayslink = False,
 )
-
-exports_files([
-    "include/RdrLemmatizer.h",
-])

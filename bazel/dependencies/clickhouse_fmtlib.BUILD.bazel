@@ -16,16 +16,16 @@ ch_cc_library(
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
     ] + glob(["include/**/*.h"]),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + []) + [
-        ":src/format.cc",
-        ":src/os.cc",
     ],
     copts = [
         "-w",
         "-std=c++23",
         "-nostdinc++",
+    ],
+    includes = [
+        "include",
     ],
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",

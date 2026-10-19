@@ -47,18 +47,19 @@ ch_cc_library(
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
     ] + glob(["src/liblzma/api/**/*.h"]),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
-    ] + [
-    ]) + [
     ],
     copts = [
         "-w",
         "-std=gnu11",
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    includes = [
+        "src/liblzma/api",
+    ],
     language = "C",
     local_defines = [
         "HAVE_CHECK_CRC32",
@@ -143,21 +144,3 @@ ch_cc_library(
     ],
     alwayslink = False,
 )
-
-exports_files([
-    "src/liblzma/api/lzma.h",
-    "src/liblzma/api/lzma/base.h",
-    "src/liblzma/api/lzma/bcj.h",
-    "src/liblzma/api/lzma/block.h",
-    "src/liblzma/api/lzma/check.h",
-    "src/liblzma/api/lzma/container.h",
-    "src/liblzma/api/lzma/delta.h",
-    "src/liblzma/api/lzma/filter.h",
-    "src/liblzma/api/lzma/hardware.h",
-    "src/liblzma/api/lzma/index.h",
-    "src/liblzma/api/lzma/index_hash.h",
-    "src/liblzma/api/lzma/lzma12.h",
-    "src/liblzma/api/lzma/stream_flags.h",
-    "src/liblzma/api/lzma/version.h",
-    "src/liblzma/api/lzma/vli.h",
-])

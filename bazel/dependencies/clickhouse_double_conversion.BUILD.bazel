@@ -16,15 +16,16 @@ ch_cc_library(
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
     ] + glob(["**/*.h"]),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-    ]) + [
     ],
     copts = [
         "-w",
         "-std=c++23",
         "-nostdinc++",
+    ],
+    includes = [
+        ".",
     ],
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -47,24 +48,3 @@ ch_cc_library(
     ],
     alwayslink = False,
 )
-
-exports_files([
-    "double-conversion/bignum-dtoa.h",
-    "double-conversion/bignum.h",
-    "double-conversion/cached-powers.h",
-    "double-conversion/diy-fp.h",
-    "double-conversion/double-conversion.h",
-    "double-conversion/double-to-string.h",
-    "double-conversion/fast-dtoa.h",
-    "double-conversion/fixed-dtoa.h",
-    "double-conversion/ieee.h",
-    "double-conversion/string-to-double.h",
-    "double-conversion/strtod.h",
-    "double-conversion/utils.h",
-    "test/cctest/cctest.h",
-    "test/cctest/checks.h",
-    "test/cctest/gay-fixed.h",
-    "test/cctest/gay-precision.h",
-    "test/cctest/gay-shortest-single.h",
-    "test/cctest/gay-shortest.h",
-])

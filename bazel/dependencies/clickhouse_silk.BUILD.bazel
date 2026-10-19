@@ -8,11 +8,6 @@ exports_files([
     "LICENSE",
 ])
 
-_GENERATED_HEADER_INPUTS_0 = []
-
-_GENERATED_HEADER_INPUTS_2 = [
-]
-
 _GENERATED_LOCAL_DEFINES_0 = [
     "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
     "BOOST_ASIO_STANDALONE=1",
@@ -27,24 +22,22 @@ ch_cc_library(
     name = "_silk_fibers",
     srcs = glob(["src/fibers/*.cpp"]),
     hdrs = select({
-        "@platforms//cpu:x86_64": (([
+        "@platforms//cpu:x86_64": ([
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_0) + glob([
+        ] + glob([
             "include/**/*.h",
             "src/**/*.h",
         ])),
-        "@platforms//cpu:aarch64": (([
+        "@platforms//cpu:aarch64": ([
             "@clickhouse_sysroot//:linux_native_headers",
-        ] + _GENERATED_HEADER_INPUTS_0) + glob([
+        ] + glob([
             "include/**/*.h",
             "src/**/*.h",
         ])),
     }),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + _GENERATED_HEADER_INPUTS_2 + [
         "src/util/error.cpp",
-    ]) + [
     ],
     copts = [
         "-w",
@@ -55,10 +48,6 @@ ch_cc_library(
     local_includes = ([
         "include",
         "src",
-        repository_local_include(
-            repository_path("contrib/boost"),
-            "contrib/silk",
-        ),
     ] + select({
         "@platforms//cpu:x86_64": [
             repository_local_include(
@@ -80,12 +69,7 @@ ch_cc_library(
                 "contrib/silk",
             ),
         ],
-    }) + [
-        repository_local_include(
-            repository_path("contrib/liburing") + "/src/include",
-            "contrib/silk",
-        ),
-    ]),
+    })),
     deps = [
         "@llvm-project//compiler-rt:headers",
         "@llvm-project//libc:libc_headers",
@@ -109,15 +93,13 @@ ch_cc_library(
     srcs = glob(["src/util/*.cpp"]),
     hdrs = ([
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + _GENERATED_HEADER_INPUTS_0 + glob([
+    ] + glob([
         "include/**/*.h",
         "src/**/*.h",
     ])),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + _GENERATED_HEADER_INPUTS_2 + [
-    ] + []) + [
-        ":src/util/error.cpp",
+        "src/util/error.cpp",
     ],
     copts = [
         "-w",
@@ -128,14 +110,6 @@ ch_cc_library(
     local_includes = [
         "include",
         "src",
-        repository_local_include(
-            repository_path("contrib/boost"),
-            "contrib/silk",
-        ),
-        repository_local_include(
-            repository_path("contrib/librseq") + "/include",
-            "contrib/silk",
-        ),
     ],
     deps = [
         "@llvm-project//compiler-rt:headers",
@@ -151,35 +125,3 @@ ch_cc_library(
     ],
     alwayslink = False,
 )
-
-exports_files([
-    "include/silk/fibers/blocking-queue.h",
-    "include/silk/fibers/condvar.h",
-    "include/silk/fibers/event.h",
-    "include/silk/fibers/fair-mutex.h",
-    "include/silk/fibers/fiber.h",
-    "include/silk/fibers/futex.h",
-    "include/silk/fibers/future.h",
-    "include/silk/fibers/multi-lock.h",
-    "include/silk/fibers/mutex.h",
-    "include/silk/fibers/sequencer.h",
-    "include/silk/util/assert.h",
-    "include/silk/util/bitmap.h",
-    "include/silk/util/bounded-queue.h",
-    "include/silk/util/crash-dumper.h",
-    "include/silk/util/error.h",
-    "include/silk/util/init.h",
-    "include/silk/util/list.h",
-    "include/silk/util/logger.h",
-    "include/silk/util/memory-pool.h",
-    "include/silk/util/perf.h",
-    "include/silk/util/platform.h",
-    "include/silk/util/queue.h",
-    "include/silk/util/sanitizers.h",
-    "include/silk/util/scope-guard.h",
-    "include/silk/util/sharded-stack.h",
-    "include/silk/util/spinlock.h",
-    "include/silk/util/stack.h",
-    "include/silk/util/tree.h",
-    "include/silk/util/tsc.h",
-])

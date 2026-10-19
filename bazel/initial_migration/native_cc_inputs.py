@@ -10,6 +10,7 @@ considered native compilation inputs.
 import argparse
 import ast
 from collections import Counter, defaultdict, deque
+from functools import lru_cache
 import gzip
 import json
 from pathlib import Path, PurePosixPath
@@ -41,6 +42,8 @@ class Sources:
         self.inventory = set()
         self.by_name = defaultdict(set)
         self.scanned = set()
+        self.complete = set()
+        self.source_copies = {}
         self.root = root
         paths = sorted(receipt_dir.glob('*-v[23]-*.json.gz'))
         newest = {}
@@ -69,7 +72,13 @@ class Sources:
                 if set(changed).intersection(data['verified_blobs']):
                     raise ValueError('Root source files changed since the include scan; collect a new receipt')
                 repo = '@clickhouse'
+                # Document.owner is None for the main repository. These are
+                # real header and source globs, including compatibility
+                # wrappers in contrib/*-cmake.
+                self.inventories[None] = data['inventory']
             self.scanned.add(repo)
+            if data['version'] >= 3:
+                self.complete.add(repo)
             prefix = repo + '//:'
             for name in data['inventory']:
                 key = prefix + name
@@ -80,7 +89,86 @@ class Sources:
             for link, destination in data.get('source_links', {}).items():
                 if prefix + destination in self.directives:
                     self.directives[prefix + link] = self.directives[prefix + destination]
+        self.known_generated_sources()
 
+    def known_generated_sources(self):
+        """Account for source copies, rendered arrays and checked-in configs."""
+        from initial_migration.scan_include_adjacency import includes
+        codegen = self.root / 'bazel/initial_migration/codegen_rules.bzl'
+        tree = ast.parse(codegen.read_text())
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Dict):
+                continue
+            attrs = {k.value: v for k, v in zip(node.keys, node.values)
+                     if isinstance(k, ast.Constant) and isinstance(k.value, str)}
+            kind = attrs.get('kind')
+            if not isinstance(kind, ast.Constant):
+                continue
+            if kind.value == 'licenses':
+                # generate_licenses.py renders license contents inside raw
+                # strings in a const char* array; no include directives.
+                for out in ast.literal_eval(attrs['outs']):
+                    self.directives['@clickhouse//bazel:' + out] = []
+            elif kind.value == 'embedded_sources':
+                # _embedded_sources_impl in codegen_actions.bzl uses cp.
+                for src, out in zip(ast.literal_eval(attrs['srcs']),
+                                    ast.literal_eval(attrs['outs']), strict=True):
+                    original = label(src, '@clickhouse')
+                    if original not in self.directives:
+                        continue
+                    for arch in ARCHES:
+                        dest = '@clickhouse//bazel:' + out.replace('{arch}', arch)
+                        self.directives[dest] = self.directives[original]
+                        self.source_copies[dest] = original
+
+        tree = ast.parse((self.root / 'bazel/initial_migration/build_options_data.bzl').read_text())
+        data = next(stmt.value for stmt in tree.body if isinstance(stmt, ast.Assign) and
+                    any(isinstance(t, ast.Name) and t.id == 'BUILD_OPTIONS' for t in stmt.targets))
+        for node in data.values:
+            attrs = {k.value: v for k, v in zip(node.keys, node.values)}
+            template, out = (ast.literal_eval(attrs[key]) for key in ('template', 'out'))
+            # build_options.bzl only substitutes quoted flag/version strings
+            # and stringification defines. Includes come from the template.
+            self.directives['@clickhouse//bazel:' + out] = includes(
+                (self.root / 'bazel' / template).read_bytes(), template)
+
+        for path in (self.root / 'bazel/config').rglob('*'):
+            if path.is_file() and path.name.endswith(TUS):
+                rel = path.relative_to(self.root / 'bazel').as_posix()
+                self.directives['@clickhouse//bazel:' + rel] = includes(path.read_bytes(), rel)
+
+    def register_templates(self, graph):
+        """Model expand_template when replacements cannot create directives."""
+        for target, (doc, kind, attrs) in graph.rules.items():
+            if kind != 'expand_template':
+                continue
+            try:
+                substitutions = ast.literal_eval(attrs['substitutions'])
+                template = label(ast.literal_eval(attrs['template']), doc.repo)
+                out = label(ast.literal_eval(attrs['out']), doc.repo)
+            except (KeyError, ValueError, TypeError):
+                continue
+            if (template not in self.directives or not isinstance(substitutions, dict) or
+                    any(not isinstance(key, str) or not isinstance(value, str) or
+                        any(char in value for char in '\n\r#\\')
+                        for key, value in substitutions.items())):
+                continue
+            rows = []
+            for line, directive, syntax, operand in self.directives[template]:
+                for key, value in substitutions.items():
+                    operand = operand.replace(key, value)
+                rows.append((line, directive, syntax, operand))
+            self.directives[out] = rows
+
+    def require_complete(self):
+        expected = ({'@' + spec['name'] for spec in REPOSITORIES.values()} |
+                    {'@clickhouse'}) - SPECIAL_REPOS
+        missing = expected - self.complete
+        if missing:
+            raise ValueError('Collect complete v3 include receipts before editing: ' +
+                             ', '.join(sorted(missing)))
+
+    @lru_cache(maxsize=262144)
     def include_candidates(self, source, operand, syntax):
         """Superset of source files that a physical include can resolve to.
 
@@ -88,6 +176,7 @@ class Sources:
         Never infer use from the mere existence of another includer in an
         archive. Only called while traversing a reachable source/header.
         """
+        source = self.source_copies.get(source, source)
         repo, sep, filename = source.partition('//:')
         if not sep or not operand or operand.startswith(('/', '$(')):
             return ()
@@ -180,6 +269,8 @@ def main():
     parser.add_argument('--write', action='store_true')
     args = parser.parse_args()
     sources = Sources(args.receipts, args.root)
+    if args.write:
+        sources.require_complete()
     documents = [Document(path, sources.inventories) for path in [
         args.root / 'BUILD.bazel', *sorted((args.root / 'bazel/dependencies').glob('*.BUILD.bazel'))]]
     graph = Graph(documents)

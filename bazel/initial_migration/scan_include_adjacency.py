@@ -28,6 +28,8 @@ Receipt v3:
     files as having no includes. Missing/removed/broken links aren't inventory.
   source_links: resolved link filename -> real file in inventory.
   stats: receipt counts and digest data.
+  For root receipts, stats.inventory_scope must be "git_tracked_regular":
+    every regular Git file at commit, without generated Bazel metadata.
 """
 import argparse
 import bisect
@@ -53,6 +55,10 @@ from initial_migration.repository_inputs import (
 
 VERSION = 3
 SKIP = {'clickhouse_sysroot', 'clickhouse_llvm_project', 'clickhouse_rust_vendor'}
+ROOT_METADATA = {
+    'BUILD', 'BUILD.bazel', 'REPO.bazel', 'WORKSPACE', 'WORKSPACE.bazel',
+    'MODULE.bazel', 'MODULE.bazel.lock', '.bazelignore',
+}
 TU = ('.c', '.cc', '.cpp', '.cxx', '.c++', '.C', '.s', '.S', '.asm', '.ASM',
       '.m', '.mm', '.cu')
 SCAN_SUFFIXES = tuple(set(TU + TEXTUAL_SOURCE_SUFFIXES + (
@@ -334,16 +340,10 @@ def scan_root(root, revision, outdir):
     if output.exists():
         with gzip.open(output, 'rt') as source:
             result = json.load(source)
-        if result.get('version') == VERSION and result.get('commit') == commit:
+        if (result.get('version') == VERSION and result.get('commit') == commit
+                and result['stats'].get('inventory_scope') == 'git_tracked_regular'):
             return {'owner': '', 'path': str(output), 'cached': True, **result['stats']}
-        raise ValueError('Invalid root receipt: ' + str(output))
-    # git ls-files expands *-cmake with **: a trailing directory pathspec
-    # instead fails to enumerate those wrapper sources.
-    pathspecs = ('src', 'base', 'programs', 'contrib/*-cmake/**',
-                 'bazel/config', 'bazel/initial_migration')
-    tracked = subprocess.check_output(
-        ['git', 'ls-files', '-z', '--', *pathspecs], cwd=root,
-    ).decode().split('\0')
+        raise ValueError(f'{output}: root receipt does not cover all Git files; use a fresh --output directory')
     root_tree = {}
     tree = subprocess.check_output(['git', 'ls-tree', '-rz', '--full-tree', commit], cwd=root)
     for entry in tree.split(b'\0'):
@@ -351,25 +351,21 @@ def scan_root(root, revision, outdir):
             continue
         left, filename = entry.split(b'\t', 1)
         mode, kind, blob = left.decode().split()
-        if kind == 'blob':
-            root_tree[filename.decode()] = (mode, blob)
+        name = filename.decode()
+        # gitlinks (160000) are pinned external repositories; their headers
+        # come from the corresponding http_archive receipts. Exclude symlink
+        # blobs too: following one could read another repository's checkout.
+        if kind == 'blob' and mode in {'100644', '100755'} and PurePosixPath(name).name not in ROOT_METADATA:
+            root_tree[name] = blob
     categories = defaultdict(list)
     files = {}
     inventory = []
     verified_blobs = {}
     scanned_bytes = 0
-    for filename in tracked:
-        if not filename or PurePosixPath(filename).name in {'BUILD', 'BUILD.bazel'}:
-            continue
-        if filename not in root_tree:
-            raise ValueError(f'{filename} is indexed but does not exist at {commit}')
+    for filename, blob in root_tree.items():
         inventory.append(filename)
         if classify(filename) == 'unrecognized_suffix':
             categories['unrecognized_suffix'].append(filename)
-            continue
-        mode, blob = root_tree[filename]
-        if mode == '120000':
-            categories['root_symlink'].append(filename)
             continue
         raw = (root / filename).read_bytes()
         actual = hashlib.sha1(b'blob ' + str(len(raw)).encode() + b'\0' + raw).hexdigest()
@@ -387,7 +383,8 @@ def scan_root(root, revision, outdir):
         'scanned_bytes': scanned_bytes,
         'directives': sum(len(incs) for incs in files.values()),
         'computed': sum(inc[2] == 'computed' for incs in files.values() for inc in incs),
-        'inventory_checked': True, 'linked_files': 0,
+        'inventory_checked': True, 'inventory_scope': 'git_tracked_regular',
+        'linked_files': 0,
     }
     result = {
         'version': VERSION, 'name': '', 'owner': '', 'sha256': None,

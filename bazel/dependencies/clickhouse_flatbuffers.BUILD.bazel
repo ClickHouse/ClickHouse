@@ -36,14 +36,16 @@ ch_cc_library(
         "include/**/*.h",
         "src/**/*.h",
     ]),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + []) + [
     ],
     copts = [
         "-w",
         "-std=c++23",
         "-nostdinc++",
+    ],
+    includes = [
+        "include",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -94,7 +96,7 @@ cc_binary(
         "**/*.h",
         "**/*.hpp",
     ]),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
     ] + glob(
         ["**"],
@@ -134,8 +136,7 @@ cc_binary(
             "src/idl_gen_swift.cpp",
             "src/idl_gen_ts.cpp",
         ],
-    )) + [
-    ],
+    ),
     copts = ((([
         "--no-default-config",
         "-fdiagnostics-color=always",

@@ -14,6 +14,13 @@ cc_library(
         "src/include/**/*.h",
         "src/interfaces/libpq/**/*.h",
     ]),
+    includes = [
+        "src/include",
+        "src/interfaces/libpq",
+    ],
+    deps = [
+        "@clickhouse_openssl//:ssl",
+    ],
 )
 
 ch_cc_library(

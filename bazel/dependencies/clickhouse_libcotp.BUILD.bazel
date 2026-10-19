@@ -6,11 +6,6 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "LICENSE",
-    "src/cotp.h",
-    "src/utils/pct.h",
-    "src/utils/secure_zero.h",
-    "src/whash.h",
-    "src/whmac.h",
 ])
 
 ch_cc_library(
@@ -25,19 +20,17 @@ ch_cc_library(
         "src/utils/yaotp_uri.c",
     ]) + glob(["src/**/*.h"]),
     hdrs = [
-        ":src/cotp.h",
-        ":src/utils/pct.h",
-        ":src/utils/secure_zero.h",
-        ":src/whash.h",
-        ":src/whmac.h",
+        "src/cotp.h",
+        "src/utils/pct.h",
+        "src/utils/secure_zero.h",
+        "src/whash.h",
+        "src/whmac.h",
         "@clickhouse_sysroot//:linux_native_headers",
     ],
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
-        "@clickhouse_openssl//:include/crypto/riscv_arch.def",
-    ] + []) + [
     ],
     copts = [
         "-w",

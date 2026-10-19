@@ -37,11 +37,9 @@ ch_cc_library(
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
     ] + glob(["mecab/src/**/*.h"]),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
         "@clickhouse//:contrib/MeCab-cmake/CMakeLists.txt",
-    ] + [
-    ]) + [
     ],
     copts = [
         "-w",
@@ -74,34 +72,3 @@ ch_cc_library(
     ],
     alwayslink = False,
 )
-
-exports_files([
-    "mecab/src/char_property.h",
-    "mecab/src/common.h",
-    "mecab/src/connector.h",
-    "mecab/src/context_id.h",
-    "mecab/src/darts.h",
-    "mecab/src/dictionary.h",
-    "mecab/src/dictionary_rewriter.h",
-    "mecab/src/feature_index.h",
-    "mecab/src/freelist.h",
-    "mecab/src/iconv_utils.h",
-    "mecab/src/lbfgs.h",
-    "mecab/src/learner_node.h",
-    "mecab/src/learner_tagger.h",
-    "mecab/src/mecab.h",
-    "mecab/src/mmap.h",
-    "mecab/src/nbest_generator.h",
-    "mecab/src/param.h",
-    "mecab/src/scoped_ptr.h",
-    "mecab/src/stream_wrapper.h",
-    "mecab/src/string_buffer.h",
-    "mecab/src/thread.h",
-    "mecab/src/tokenizer.h",
-    "mecab/src/ucs.h",
-    "mecab/src/ucstable.h",
-    "mecab/src/utils.h",
-    "mecab/src/viterbi.h",
-    "mecab/src/winmain.h",
-    "mecab/src/writer.h",
-])

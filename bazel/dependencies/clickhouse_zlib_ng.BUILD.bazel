@@ -164,20 +164,10 @@ ch_cc_library(
             "@clickhouse_sysroot//:linux_native_headers",
         ] + glob(["**/*.h"]),
     }),
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_sysroot//:linux_compile_files",
-            "@clickhouse_llvm_project//:runtime_source_inputs",
-            "@clickhouse_llvm_project//:runtime_generated_headers",
-        ] + [
-        ],
-        "@platforms//cpu:aarch64": [
-            "@clickhouse_sysroot//:linux_compile_files",
-            "@clickhouse_llvm_project//:runtime_source_inputs",
-            "@clickhouse_llvm_project//:runtime_generated_headers",
-        ] + [
-        ],
-    }) + ([
+    additional_compiler_inputs = [
+        "@clickhouse_sysroot//:linux_compile_files",
+        "@clickhouse_llvm_project//:runtime_source_inputs",
+        "@clickhouse_llvm_project//:runtime_generated_headers",
     ] + select({
         "@platforms//cpu:x86_64": [
             ":config/x86_64/contrib/zlib-ng-cmake/gzread.c",
@@ -185,13 +175,22 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [
             ":config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         ],
-    }) + [
-    ]),
+    }),
     copts = [
         "-w",
         "-std=gnu11",
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    includes = [
+        ".",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "config/x86_64/contrib/zlib-ng-cmake",
+        ],
+        "@platforms//cpu:aarch64": [
+            "config/aarch64/contrib/zlib-ng-cmake",
+        ],
+    }),
     language = "C",
     local_defines = select({
         "@platforms//cpu:x86_64": [
@@ -244,17 +243,6 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
         "__USE_LARGEFILE64",
     ],
-    local_includes = ([
-        ".",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "config/x86_64/contrib/zlib-ng-cmake",
-        ],
-        "@platforms//cpu:aarch64": [
-            "config/aarch64/contrib/zlib-ng-cmake",
-        ],
-    }) + [
-    ]),
     deps = [
         "@llvm-project//compiler-rt:headers",
         "@llvm-project//libc:libc_headers",
@@ -267,60 +255,3 @@ ch_cc_library(
     ],
     alwayslink = False,
 )
-
-exports_files([
-    "adler32_fold.h",
-    "adler32_p.h",
-    "arch/arm/acle_intrins.h",
-    "arch/arm/arm_features.h",
-    "arch/arm/neon_intrins.h",
-    "arch/generic/chunk_permute_table.h",
-    "arch/power/crc32_constants.h",
-    "arch/power/fallback_builtins.h",
-    "arch/power/power_features.h",
-    "arch/power/slide_ppc_tpl.h",
-    "arch/riscv/riscv_features.h",
-    "arch/s390/dfltcc_common.h",
-    "arch/s390/dfltcc_deflate.h",
-    "arch/s390/dfltcc_detail.h",
-    "arch/s390/dfltcc_inflate.h",
-    "arch/s390/s390_features.h",
-    "arch/x86/adler32_avx2_p.h",
-    "arch/x86/adler32_avx512_p.h",
-    "arch/x86/adler32_ssse3_p.h",
-    "arch/x86/crc32_fold_pclmulqdq_tpl.h",
-    "arch/x86/crc32_fold_vpclmulqdq_tpl.h",
-    "arch/x86/crc32_pclmulqdq_tpl.h",
-    "arch/x86/x86_features.h",
-    "arch/x86/x86_intrins.h",
-    "chunkset_tpl.h",
-    "compare256_rle.h",
-    "cpu_features.h",
-    "crc32_braid_comb_p.h",
-    "crc32_braid_p.h",
-    "crc32_braid_tbl.h",
-    "crc32_fold.h",
-    "deflate.h",
-    "deflate_p.h",
-    "fallback_builtins.h",
-    "functable.h",
-    "gzguts.h",
-    "inffast_tpl.h",
-    "inffixed_tbl.h",
-    "inflate.h",
-    "inflate_p.h",
-    "inftrees.h",
-    "insert_string_tpl.h",
-    "match_tpl.h",
-    "test/benchmarks/benchmark_png_shared.h",
-    "test/test_cpu_features.h",
-    "test/test_shared.h",
-    "test/test_shared_ng.h",
-    "trees.h",
-    "trees_emit.h",
-    "trees_tbl.h",
-    "zbuild.h",
-    "zendian.h",
-    "zutil.h",
-    "zutil_p.h",
-])

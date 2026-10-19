@@ -173,19 +173,17 @@ genrule(
     ],
 )
 
-_GENERATED_SRCS_0 = [
-    ":llvm_tablegen_inputs",
-    ":llvm/include/llvm/Analysis/TargetLibraryInfo.td",
-    ":BUILD.bazel",
-]
-
 _GENERATED_TOOLS_0 = [
     "@llvm-project//llvm:llvm-tblgen",
 ]
 
 genrule(
     name = "tablegen_x86_64_7665946eb4c8dcff",
-    srcs = _GENERATED_SRCS_0,
+    srcs = [
+        ":llvm_tablegen_inputs",
+        ":llvm/include/llvm/Analysis/TargetLibraryInfo.td",
+        ":BUILD.bazel",
+    ],
     outs = [
         "gen/x86_64/llvm/include/llvm/Analysis/TargetLibraryInfo.inc",
     ],
@@ -801,7 +799,11 @@ genrule(
 
 genrule(
     name = "tablegen_aarch64_7665946eb4c8dcff",
-    srcs = _GENERATED_SRCS_0,
+    srcs = [
+        ":llvm_tablegen_inputs",
+        ":llvm/include/llvm/Analysis/TargetLibraryInfo.td",
+        ":BUILD.bazel",
+    ],
     outs = [
         "gen/aarch64/llvm/include/llvm/Analysis/TargetLibraryInfo.inc",
     ],

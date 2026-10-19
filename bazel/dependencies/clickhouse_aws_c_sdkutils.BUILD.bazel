@@ -5,16 +5,6 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "LICENSE",
-    "include/aws/sdkutils/aws_profile.h",
-    "include/aws/sdkutils/endpoints_bdd_engine.h",
-    "include/aws/sdkutils/endpoints_rule_engine.h",
-    "include/aws/sdkutils/exports.h",
-    "include/aws/sdkutils/partitions.h",
-    "include/aws/sdkutils/private/endpoints_regex.h",
-    "include/aws/sdkutils/private/endpoints_types_impl.h",
-    "include/aws/sdkutils/private/endpoints_util.h",
-    "include/aws/sdkutils/resource_name.h",
-    "include/aws/sdkutils/sdkutils.h",
 ])
 
 ch_cc_library(

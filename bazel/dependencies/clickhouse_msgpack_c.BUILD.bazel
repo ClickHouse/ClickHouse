@@ -12,4 +12,7 @@ cc_library(
         "include/**/*.h",
         "include/**/*.hpp",
     ]),
+    includes = [
+        "include",
+    ],
 )

@@ -5,15 +5,6 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "LICENSE",
-    "include/aws/checksums/checksums.h",
-    "include/aws/checksums/crc.h",
-    "include/aws/checksums/exports.h",
-    "include/aws/checksums/private/crc32_priv.h",
-    "include/aws/checksums/private/crc64_priv.h",
-    "include/aws/checksums/private/crc_util.h",
-    "include/aws/checksums/private/xxhash_priv.h",
-    "include/aws/checksums/xxhash.h",
-    "source/external/xxhash.h",
 ])
 
 ch_cc_library(

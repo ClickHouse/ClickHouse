@@ -113,15 +113,16 @@ ch_cc_library(
             "@clickhouse_sysroot//:linux_native_headers",
         ] + glob(["**/*.h"]),
     }),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-    ]) + [
     ],
     copts = [
         "-w",
         "-std=c++23",
         "-nostdinc++",
+    ],
+    includes = [
+        ".",
     ],
     local_defines = [
         "HAVE_CONFIG_H",
@@ -152,13 +153,3 @@ ch_cc_library(
     ],
     alwayslink = False,
 )
-
-exports_files([
-    "snappy-c.h",
-    "snappy-internal.h",
-    "snappy-sinksource.h",
-    "snappy-stubs-internal.h",
-    "snappy-test.h",
-    "snappy.h",
-    "snappy_test_data.h",
-])

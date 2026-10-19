@@ -43,9 +43,9 @@ def label(value, repo):
 
 
 class Document:
-    def __init__(self, path, inventories=None):
+    def __init__(self, path, inventories=None, text=None):
         self.path = path
-        self.source = Source(path.read_text())
+        self.source = Source(path.read_text() if text is None else text)
         self.repo = '@clickhouse' if path.name == 'BUILD.bazel' else (
             '@' + path.name.removesuffix('.BUILD.bazel'))
         self.constants = {

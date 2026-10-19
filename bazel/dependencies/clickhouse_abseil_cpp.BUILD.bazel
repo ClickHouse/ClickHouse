@@ -19,6 +19,15 @@ _GENERATED_COPTS_0 = [
     "-nostdinc++",
 ]
 
+_GENERATED_ADDITIONAL_COMPILER_INPUTS_0 = [
+    "@clickhouse_sysroot//:linux_compile_files",
+    "absl/container/internal/raw_hash_set.cc",
+    "absl/hash/internal/city.cc",
+    "absl/hash/internal/hash.cc",
+    "absl/time/format.cc",
+    "absl/time/internal/cctz/testdata/version",
+]
+
 ch_cc_library(
     name = "absl_base",
     srcs = [
@@ -34,17 +43,11 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
+    includes = [
+        ".",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -91,16 +94,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -121,15 +115,8 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-        ":absl/hash/internal/city.cc",
     ],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -162,16 +149,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -234,16 +212,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -269,16 +238,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -323,16 +283,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -396,16 +347,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -426,16 +368,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -494,16 +427,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -527,16 +451,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -578,16 +493,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -631,16 +537,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -692,16 +589,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -723,16 +611,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -753,16 +632,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -830,16 +700,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -883,16 +744,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -913,16 +765,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -967,16 +810,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1016,16 +850,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1046,16 +871,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1106,16 +922,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1192,16 +999,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1222,16 +1020,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1306,16 +1095,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1356,16 +1136,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1386,16 +1157,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1465,16 +1227,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1548,16 +1301,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1630,16 +1374,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1674,16 +1409,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1704,15 +1430,8 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-        ":absl/hash/internal/hash.cc",
     ],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -1754,16 +1473,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1814,16 +1524,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1867,16 +1568,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1897,16 +1589,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1927,16 +1610,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2012,16 +1686,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2075,16 +1740,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2140,16 +1796,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2216,16 +1863,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2266,16 +1904,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2296,16 +1925,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2349,16 +1969,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2379,16 +1990,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2445,16 +2047,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2520,16 +2113,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2550,16 +2134,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2580,16 +2155,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2629,16 +2195,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2659,16 +2216,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2689,16 +2237,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2719,16 +2258,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2760,16 +2290,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2791,16 +2312,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2821,16 +2333,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2887,16 +2390,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2917,16 +2411,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2960,16 +2445,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -3013,16 +2489,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -3043,16 +2510,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -3073,16 +2531,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -3103,16 +2552,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -3133,16 +2573,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -3183,15 +2614,8 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-        ":absl/container/internal/raw_hash_set.cc",
     ],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -3246,16 +2670,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -3286,16 +2701,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -3316,16 +2722,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -3346,16 +2743,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -3393,16 +2781,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -3464,16 +2843,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -3541,16 +2911,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -3571,16 +2932,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -3614,16 +2966,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -3663,16 +3006,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -3693,16 +3027,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -3755,16 +3080,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -3813,16 +3129,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -3847,15 +3154,8 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-        ":absl/time/format.cc",
     ],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -3905,16 +3205,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -3935,16 +3226,7 @@ ch_cc_library(
         "**/*.h",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        "absl/container/internal/raw_hash_set.cc",
-        "absl/hash/internal/city.cc",
-        "absl/hash/internal/hash.cc",
-        "absl/time/format.cc",
-        "absl/time/internal/cctz/testdata/version",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = _GENERATED_COPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -3995,4 +3277,7 @@ cc_library(
         "absl/**/*.inc",
         "ci/**/*.h",
     ]),
+    includes = [
+        ".",
+    ],
 )

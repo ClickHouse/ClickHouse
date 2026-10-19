@@ -27,10 +27,6 @@ ch_cc_library(
             "@clickhouse_llvm_project//:runtime_generated_headers",
         ],
         "@platforms//cpu:aarch64": [],
-    }) + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [],
     }),
     arches = [
         "x86_64",
@@ -85,14 +81,3 @@ ch_cc_library(
     ]),
     alwayslink = False,
 )
-
-exports_files([
-    "include/avx512bitpacking.h",
-    "include/avxbitpacking.h",
-    "include/portability.h",
-    "include/simdbitpacking.h",
-    "include/simdcomp.h",
-    "include/simdcomputil.h",
-    "include/simdfor.h",
-    "include/simdintegratedbitpacking.h",
-])

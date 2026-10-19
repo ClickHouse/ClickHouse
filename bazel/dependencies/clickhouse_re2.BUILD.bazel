@@ -17,11 +17,9 @@ ch_cc_library(
     hdrs = ([
         "@clickhouse_sysroot//:linux_native_headers",
     ] + glob(["**/*.h"])),
-    additional_compiler_inputs = (([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-    ]) + [
-    ]),
+    ],
     copts = [
         "-w",
         "-std=c++23",
@@ -36,10 +34,6 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = [
-        repository_local_include(
-            repository_path("contrib/abseil-cpp"),
-            "contrib/re2",
-        ),
     ],
     deps = [
         "@llvm-project//compiler-rt:headers",
@@ -112,29 +106,3 @@ ch_cc_library(
     ],
     alwayslink = False,
 )
-
-exports_files([
-    "re2/bitmap256.h",
-    "re2/filtered_re2.h",
-    "re2/pod_array.h",
-    "re2/prefilter.h",
-    "re2/prefilter_tree.h",
-    "re2/prog.h",
-    "re2/re2.h",
-    "re2/regexp.h",
-    "re2/set.h",
-    "re2/sparse_array.h",
-    "re2/sparse_set.h",
-    "re2/stringpiece.h",
-    "re2/testing/exhaustive_tester.h",
-    "re2/testing/regexp_generator.h",
-    "re2/testing/string_generator.h",
-    "re2/testing/tester.h",
-    "re2/unicode_casefold.h",
-    "re2/unicode_groups.h",
-    "re2/walker-inl.h",
-    "util/malloc_counter.h",
-    "util/pcre.h",
-    "util/strutil.h",
-    "util/utf.h",
-])

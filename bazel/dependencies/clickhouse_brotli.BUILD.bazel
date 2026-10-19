@@ -18,17 +18,19 @@ ch_cc_library(
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
     ] + glob(["c/include/**/*.h"]),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
-    ] + []) + [
     ],
     copts = [
         "-w",
         "-std=gnu11",
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    includes = [
+        "c/include",
+    ],
     language = "C",
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -51,11 +53,3 @@ ch_cc_library(
     ],
     alwayslink = False,
 )
-
-exports_files([
-    "c/include/brotli/decode.h",
-    "c/include/brotli/encode.h",
-    "c/include/brotli/port.h",
-    "c/include/brotli/shared_dictionary.h",
-    "c/include/brotli/types.h",
-])

@@ -8,29 +8,10 @@ exports_files([
     "LICENSE",
 ])
 
-_GENERATED_HEADER_INPUTS_4 = [
-    "@clickhouse_openssl//:include/crypto/riscv_arch.def",
-]
-
-_GENERATED_COPTS_0 = [
-    "-w",
-    "-std=c++20",
-    "-w",
-    "-nostdinc++",
-]
-
 _GENERATED_LOCAL_INCLUDES_0 = [
     "include",
     "src",
-    repository_local_include(
-        repository_path("contrib/nlohmann-json") + "/single_include",
-        "contrib/ai-sdk-cpp",
-    ),
     "third_party/httplib-header-only",
-    repository_local_include(
-        repository_path("contrib/brotli") + "/c/include",
-        "contrib/ai-sdk-cpp",
-    ),
     "third_party/concurrentqueue-header-only",
 ]
 
@@ -66,11 +47,15 @@ ch_cc_library(
         "third_party/concurrentqueue-header-only/**/*.h",
         "third_party/httplib-header-only/**/*.h",
     ])),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + _GENERATED_HEADER_INPUTS_4 + []) + [
     ],
-    copts = _GENERATED_COPTS_0,
+    copts = [
+        "-w",
+        "-std=c++20",
+        "-w",
+        "-nostdinc++",
+    ],
     local_defines = [
         "AI_SDK_HAS_ANTHROPIC=1",
         "CPPHTTPLIB_BROTLI_SUPPORT=1",
@@ -108,11 +93,15 @@ ch_cc_library(
         "third_party/concurrentqueue-header-only/**/*.h",
         "third_party/httplib-header-only/**/*.h",
     ])),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + _GENERATED_HEADER_INPUTS_4 + []) + [
     ],
-    copts = _GENERATED_COPTS_0,
+    copts = [
+        "-w",
+        "-std=c++20",
+        "-w",
+        "-nostdinc++",
+    ],
     local_defines = [
         "CPPHTTPLIB_BROTLI_SUPPORT=1",
         "CPPHTTPLIB_OPENSSL_SUPPORT=1",
@@ -157,11 +146,15 @@ ch_cc_library(
         "third_party/concurrentqueue-header-only/**/*.h",
         "third_party/httplib-header-only/**/*.h",
     ])),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + _GENERATED_HEADER_INPUTS_4 + []) + [
     ],
-    copts = _GENERATED_COPTS_0,
+    copts = [
+        "-w",
+        "-std=c++20",
+        "-w",
+        "-nostdinc++",
+    ],
     local_defines = [
         "AI_SDK_HAS_OPENAI=1",
         "CPPHTTPLIB_BROTLI_SUPPORT=1",
@@ -178,26 +171,3 @@ ch_cc_library(
     ]),
     alwayslink = False,
 )
-
-exports_files([
-    "include/ai/ai.h",
-    "include/ai/anthropic.h",
-    "include/ai/core.h",
-    "include/ai/errors.h",
-    "include/ai/logger.h",
-    "include/ai/openai.h",
-    "include/ai/retry/retry_error.h",
-    "include/ai/retry/retry_policy.h",
-    "include/ai/tools.h",
-    "include/ai/types/client.h",
-    "include/ai/types/embedding_options.h",
-    "include/ai/types/enums.h",
-    "include/ai/types/generate_options.h",
-    "include/ai/types/message.h",
-    "include/ai/types/model.h",
-    "include/ai/types/stream_event.h",
-    "include/ai/types/stream_options.h",
-    "include/ai/types/stream_result.h",
-    "include/ai/types/tool.h",
-    "include/ai/types/usage.h",
-])

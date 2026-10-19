@@ -5,23 +5,6 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "LICENSE",
-    "include/aws/auth/auth.h",
-    "include/aws/auth/aws_imds_client.h",
-    "include/aws/auth/credentials.h",
-    "include/aws/auth/exports.h",
-    "include/aws/auth/private/aws_http_credentials_provider.h",
-    "include/aws/auth/private/aws_profile.h",
-    "include/aws/auth/private/aws_signing.h",
-    "include/aws/auth/private/credentials_utils.h",
-    "include/aws/auth/private/key_derivation.h",
-    "include/aws/auth/private/login_token_utils.h",
-    "include/aws/auth/private/sigv4_http_request.h",
-    "include/aws/auth/private/sso_token_providers.h",
-    "include/aws/auth/private/sso_token_utils.h",
-    "include/aws/auth/signable.h",
-    "include/aws/auth/signing.h",
-    "include/aws/auth/signing_config.h",
-    "include/aws/auth/signing_result.h",
 ])
 
 ch_cc_library(
@@ -75,5 +58,6 @@ cc_library(
         "@clickhouse_aws_c_http//:aws_c_http_headers",
         "@clickhouse_aws_c_io//:aws_c_io_headers",
         "@clickhouse_aws_c_sdkutils//:aws_c_sdkutils_headers",
+        "@clickhouse_openssl//:ssl",
     ],
 )

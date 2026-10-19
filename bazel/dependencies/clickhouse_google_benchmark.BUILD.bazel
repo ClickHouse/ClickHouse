@@ -43,9 +43,8 @@ ch_cc_library(
         "include/**/*.h",
         "src/**/*.h",
     ]),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + []) + [
     ],
     copts = [
         "-w",
@@ -80,9 +79,8 @@ ch_cc_library(
         "include/**/*.h",
         "src/**/*.h",
     ]),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + []) + [
     ],
     copts = [
         "-w",
@@ -106,8 +104,3 @@ ch_cc_library(
     ],
     alwayslink = False,
 )
-
-exports_files([
-    "include/benchmark/benchmark.h",
-    "include/benchmark/export.h",
-])

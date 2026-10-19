@@ -16,6 +16,15 @@ _GENERATED_LOCAL_DEFINES_0 = [
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
+_GENERATED_ADDITIONAL_COMPILER_INPUTS_0 = [
+    "@clickhouse_sysroot//:linux_compile_files",
+    "googlemock/src/gmock-cardinalities.cc",
+    "googlemock/src/gmock-internal-utils.cc",
+    "googlemock/src/gmock-matchers.cc",
+    "googlemock/src/gmock-spec-builders.cc",
+    "googlemock/src/gmock.cc",
+]
+
 ch_cc_library(
     name = "_gmock",
     srcs = [
@@ -46,16 +55,7 @@ ch_cc_library(
         "googlemock/include/**/*.h",
         "googletest/include/**/*.h",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        ":googlemock/src/gmock-cardinalities.cc",
-        ":googlemock/src/gmock-internal-utils.cc",
-        ":googlemock/src/gmock-matchers.cc",
-        ":googlemock/src/gmock-spec-builders.cc",
-        ":googlemock/src/gmock.cc",
-    ]) + [
-    ],
+    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
     copts = [
         "-w",
         "-std=c++23",
@@ -93,16 +93,7 @@ ch_cc_library(
         "googlemock/include/**/*.h",
         "googletest/include/**/*.h",
     ]),
-    additional_compiler_inputs = ([
-        "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
-        ":googlemock/src/gmock-cardinalities.cc",
-        ":googlemock/src/gmock-internal-utils.cc",
-        ":googlemock/src/gmock-matchers.cc",
-        ":googlemock/src/gmock-spec-builders.cc",
-        ":googlemock/src/gmock.cc",
-    ]) + [
-    ],
+    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = [
         "-w",
         "-std=c++23",
@@ -163,9 +154,8 @@ ch_cc_library(
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
     ] + glob(["googletest/include/**/*.h"]),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + [
         "googletest/src/gtest-assertion-result.cc",
         "googletest/src/gtest-death-test.cc",
         "googletest/src/gtest-filepath.cc",
@@ -175,7 +165,6 @@ ch_cc_library(
         "googletest/src/gtest-test-part.cc",
         "googletest/src/gtest-typed-test.cc",
         "googletest/src/gtest.cc",
-    ]) + [
     ],
     copts = [
         "-w",

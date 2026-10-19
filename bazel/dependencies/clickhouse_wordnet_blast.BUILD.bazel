@@ -13,9 +13,8 @@ ch_cc_library(
     hdrs = [
         "@clickhouse_sysroot//:linux_native_headers",
     ] + glob(["**/*.hh"]),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + []) + [
     ],
     copts = [
         "-w",
@@ -33,10 +32,6 @@ ch_cc_library(
     ],
     local_includes = [
         ".",
-        repository_local_include(
-            repository_path("contrib/boost"),
-            "contrib/wordnet-blast",
-        ),
     ],
     deps = [
         "@llvm-project//compiler-rt:headers",
@@ -53,13 +48,3 @@ ch_cc_library(
     ],
     alwayslink = False,
 )
-
-exports_files([
-    "wnb/bfs.hh",
-    "wnb/core/info_helper.hh",
-    "wnb/core/load_wordnet.hh",
-    "wnb/core/pos_t.hh",
-    "wnb/core/wordnet.hh",
-    "wnb/nltk_similarity.hh",
-    "wnb/std_ext.hh",
-])

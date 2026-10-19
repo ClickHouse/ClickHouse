@@ -30,14 +30,16 @@ ch_cc_library(
         "include/**/*.h",
         "include/**/*.hxx",
     ]),
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + []) + [
     ],
     copts = [
         "-w",
         "-std=c++23",
         "-nostdinc++",
+    ],
+    includes = [
+        "include",
     ],
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -60,8 +62,3 @@ ch_cc_library(
     ],
     alwayslink = False,
 )
-
-exports_files([
-    "include/replxx.h",
-    "include/replxx.hxx",
-])
