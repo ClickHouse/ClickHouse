@@ -15,7 +15,6 @@ ch_cc_library(
     ] + glob(["**/*.hh"]),
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_boost//:index.html",
     ] + []) + [
     ],
     copts = [

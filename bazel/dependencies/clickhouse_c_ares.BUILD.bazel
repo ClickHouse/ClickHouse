@@ -73,7 +73,6 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ] + [
-        ":include/ares_build.h.in",
     ]) + [
     ],
     copts = [
@@ -113,7 +112,6 @@ ch_cc_library(
 
 exports_files([
     "include/ares.h",
-    "include/ares_build.h.in",
     "include/ares_dns.h",
     "include/ares_dns_record.h",
     "include/ares_nameser.h",

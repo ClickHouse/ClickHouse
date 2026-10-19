@@ -56,12 +56,7 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ] + [
-        "bz_version.h.in",
-        "bzip2.pc.in",
-        "cmake/Version.cmake",
         "libbz2.def",
-        "version.rc",
-        "version.rc.in",
     ]) + [
     ],
     copts = [
@@ -101,12 +96,7 @@ ch_cc_library(
 )
 
 exports_files([
-    "bz_version.h.in",
-    "bzip2.pc.in",
     "bzlib.h",
     "bzlib_private.h",
-    "cmake/Version.cmake",
     "libbz2.def",
-    "version.rc",
-    "version.rc.in",
 ])

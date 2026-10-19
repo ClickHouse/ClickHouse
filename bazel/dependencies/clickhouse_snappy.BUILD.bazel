@@ -116,9 +116,6 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ":cmake/SnappyConfig.cmake.in",
-        ":cmake/config.h.in",
-        ":snappy-stubs-public.h.in",
     ]) + [
     ],
     copts = [
@@ -157,13 +154,10 @@ ch_cc_library(
 )
 
 exports_files([
-    "cmake/SnappyConfig.cmake.in",
-    "cmake/config.h.in",
     "snappy-c.h",
     "snappy-internal.h",
     "snappy-sinksource.h",
     "snappy-stubs-internal.h",
-    "snappy-stubs-public.h.in",
     "snappy-test.h",
     "snappy.h",
     "snappy_test_data.h",

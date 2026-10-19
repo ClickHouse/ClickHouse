@@ -11,7 +11,6 @@ exports_files([
 _GENERATED_HEADER_INPUTS_0 = []
 
 _GENERATED_HEADER_INPUTS_1 = [
-    "@clickhouse_boost//:index.html",
 ]
 
 _GENERATED_LOCAL_DEFINES_0 = [
@@ -684,9 +683,6 @@ ch_cc_library(
             "@clickhouse_llvm_project//:runtime_generated_headers",
         ] + _GENERATED_HEADER_INPUTS_1 + [
             "src/compiler/error.cpp",
-            "src/hs_version.h.in",
-            "src/parser/Parser.rl",
-            "src/parser/control_verbs.rl",
             "src/util/supervector/arch/arm/impl.cpp",
             "src/util/supervector/arch/ppc64el/impl.cpp",
             "src/util/supervector/arch/x86/impl.cpp",
@@ -697,9 +693,6 @@ ch_cc_library(
             "@clickhouse_llvm_project//:runtime_generated_headers",
         ] + _GENERATED_HEADER_INPUTS_1 + [
             "src/compiler/error.cpp",
-            "src/hs_version.h.in",
-            "src/parser/Parser.rl",
-            "src/parser/control_verbs.rl",
             "src/util/supervector/arch/arm/impl.cpp",
             "src/util/supervector/arch/ppc64el/impl.cpp",
             "src/util/supervector/arch/x86/impl.cpp",
@@ -1880,9 +1873,6 @@ ch_cc_library(
         "@platforms//cpu:x86_64": [
             "@clickhouse_sysroot//:linux_compile_files",
         ] + _GENERATED_HEADER_INPUTS_1 + [
-            "src/hs_version.h.in",
-            "src/parser/Parser.rl",
-            "src/parser/control_verbs.rl",
             "src/rose/match.c",
             "src/util/supervector/arch/arm/impl.cpp",
             "src/util/supervector/arch/ppc64el/impl.cpp",
@@ -1890,9 +1880,6 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [
             "@clickhouse_sysroot//:linux_compile_files",
         ] + _GENERATED_HEADER_INPUTS_1 + [
-            "src/hs_version.h.in",
-            "src/parser/Parser.rl",
-            "src/parser/control_verbs.rl",
             "src/rose/match.c",
             "src/util/supervector/arch/ppc64el/impl.cpp",
             "src/util/supervector/arch/x86/impl.cpp",
@@ -1954,9 +1941,6 @@ ch_cc_library(
         "@clickhouse_sysroot//:linux_compile_files",
     ] + _GENERATED_HEADER_INPUTS_1 + [
         "src/compiler/error.cpp",
-        "src/hs_version.h.in",
-        "src/parser/Parser.rl",
-        "src/parser/control_verbs.rl",
         "src/rose/match.c",
         "src/util/supervector/arch/arm/impl.cpp",
         "src/util/supervector/arch/ppc64el/impl.cpp",
@@ -2045,7 +2029,6 @@ exports_files([
     "src/hs_compile.h",
     "src/hs_internal.h",
     "src/hs_runtime.h",
-    "src/hs_version.h.in",
     "src/hwlm/hwlm.h",
     "src/hwlm/hwlm_build.h",
     "src/hwlm/hwlm_dump.h",
@@ -2226,12 +2209,10 @@ exports_files([
     "src/parser/ComponentWordBoundary.h",
     "src/parser/ConstComponentVisitor.h",
     "src/parser/Parser.h",
-    "src/parser/Parser.rl",
     "src/parser/Utf8ComponentClass.h",
     "src/parser/buildstate.h",
     "src/parser/check_refs.h",
     "src/parser/control_verbs.h",
-    "src/parser/control_verbs.rl",
     "src/parser/dump.h",
     "src/parser/logical_combination.h",
     "src/parser/parse_error.h",

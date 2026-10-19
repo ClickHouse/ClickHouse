@@ -48,10 +48,6 @@ ch_cc_library(
     }),
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_boost//:index.html",
-        "@clickhouse_snappy//:cmake/SnappyConfig.cmake.in",
-        "@clickhouse_snappy//:cmake/config.h.in",
-        "@clickhouse_snappy//:snappy-stubs-public.h.in",
     ] + []) + [
     ],
     copts = [

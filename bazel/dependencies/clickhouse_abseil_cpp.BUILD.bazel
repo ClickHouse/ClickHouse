@@ -37,12 +37,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -99,12 +94,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -134,12 +124,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
         "absl/time/internal/cctz/testdata/version",
@@ -180,12 +165,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -257,12 +237,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -297,12 +272,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -356,12 +326,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -434,12 +399,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -469,12 +429,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -542,12 +497,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -580,12 +530,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -636,12 +581,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -694,12 +634,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -760,12 +695,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -796,12 +726,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -831,12 +756,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -913,12 +833,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -971,12 +886,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -1006,12 +916,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -1065,12 +970,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -1119,12 +1019,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -1154,12 +1049,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -1219,12 +1109,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -1310,12 +1195,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -1345,12 +1225,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -1434,12 +1309,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -1489,12 +1359,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -1524,12 +1389,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -1608,12 +1468,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -1696,12 +1551,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -1783,12 +1633,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -1832,12 +1677,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -1867,12 +1707,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/time/format.cc",
         "absl/time/internal/cctz/testdata/version",
@@ -1922,12 +1757,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -1987,12 +1817,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -2045,12 +1870,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -2080,12 +1900,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -2115,12 +1930,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -2205,12 +2015,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -2273,12 +2078,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -2343,12 +2143,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -2424,12 +2219,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -2479,12 +2269,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -2514,12 +2299,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -2572,12 +2352,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -2607,12 +2382,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -2678,12 +2448,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -2758,12 +2523,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -2793,12 +2553,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -2828,12 +2583,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -2882,12 +2632,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -2917,12 +2662,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -2952,12 +2692,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -2987,12 +2722,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -3033,12 +2763,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -3069,12 +2794,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -3104,12 +2824,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -3175,12 +2890,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -3210,12 +2920,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -3258,12 +2963,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -3316,12 +3016,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -3351,12 +3046,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -3386,12 +3076,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -3421,12 +3106,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -3456,12 +3136,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -3511,11 +3186,6 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -3579,12 +3249,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -3624,12 +3289,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -3659,12 +3319,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -3694,12 +3349,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -3746,12 +3396,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -3822,12 +3467,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -3904,12 +3544,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -3939,12 +3574,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -3987,12 +3617,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -4041,12 +3666,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -4076,12 +3696,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -4143,12 +3758,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -4206,12 +3816,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -4245,12 +3850,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/internal/cctz/testdata/version",
@@ -4308,12 +3908,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",
@@ -4343,12 +3938,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ".github/ISSUE_TEMPLATE/config.yml",
-        "CMake/Googletest/CMakeLists.txt.in",
-        "CMake/abslConfig.cmake.in",
-        "absl/base/config_test.cc",
         "absl/container/internal/raw_hash_set.cc",
-        "absl/flags/config_test.cc",
         "absl/hash/internal/city.cc",
         "absl/hash/internal/hash.cc",
         "absl/time/format.cc",

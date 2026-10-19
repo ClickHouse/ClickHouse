@@ -24,8 +24,6 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ] + [
-        ":libfiu/doxygen/Doxyfile.base.in",
-        ":libfiu/libfiu.pc.in",
     ]) + [
     ],
     copts = [
@@ -60,11 +58,9 @@ ch_cc_library(
 )
 
 exports_files([
-    "libfiu/doxygen/Doxyfile.base.in",
     "libfiu/fiu-control.h",
     "libfiu/fiu-local.h",
     "libfiu/fiu.h",
     "libfiu/internal.h",
-    "libfiu/libfiu.pc.in",
     "libfiu/wtable.h",
 ])

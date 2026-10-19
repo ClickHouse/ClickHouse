@@ -20,9 +20,6 @@ ch_cc_library(
     additional_compiler_inputs = (([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        "app/index.html",
-        "re2.pc.in",
-        "re2Config.cmake.in",
     ]) + [
     ]),
     copts = [
@@ -117,8 +114,6 @@ ch_cc_library(
 )
 
 exports_files([
-    "app/index.html",
-    "re2.pc.in",
     "re2/bitmap256.h",
     "re2/filtered_re2.h",
     "re2/pod_array.h",
@@ -138,7 +133,6 @@ exports_files([
     "re2/unicode_casefold.h",
     "re2/unicode_groups.h",
     "re2/walker-inl.h",
-    "re2Config.cmake.in",
     "util/malloc_counter.h",
     "util/pcre.h",
     "util/strutil.h",

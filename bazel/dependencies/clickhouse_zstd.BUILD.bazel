@@ -51,7 +51,6 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ] + [
-        ":lib/libzstd.pc.in",
     ]) + [
         ":lib/common/debug.c",
         ":lib/common/entropy_common.c",
@@ -238,7 +237,6 @@ exports_files([
     "lib/legacy/zstd_v05.h",
     "lib/legacy/zstd_v06.h",
     "lib/legacy/zstd_v07.h",
-    "lib/libzstd.pc.in",
     "lib/zdict.h",
     "lib/zstd.h",
     "lib/zstd_errors.h",

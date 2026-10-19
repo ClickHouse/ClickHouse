@@ -133,12 +133,6 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ] + [
-        ":include/jemalloc/internal/jemalloc_internal_defs.h.in",
-        ":include/jemalloc/internal/jemalloc_preamble.h.in",
-        ":include/jemalloc/jemalloc_defs.h.in",
-        ":include/jemalloc/jemalloc_macros.h.in",
-        ":include/jemalloc/jemalloc_protos.h.in",
-        ":include/jemalloc/jemalloc_typedefs.h.in",
     ]) + [
     ],
     copts = [

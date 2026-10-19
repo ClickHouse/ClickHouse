@@ -171,28 +171,6 @@ _GENERATED_HEADER_INPUTS_1 = [
 ]
 
 _GENERATED_HEADER_INPUTS_3 = [
-    "@clickhouse_zlib_ng//:Makefile.in",
-    "@clickhouse_zlib_ng//:arch/arm/Makefile.in",
-    "@clickhouse_zlib_ng//:arch/generic/Makefile.in",
-    "@clickhouse_zlib_ng//:arch/power/Makefile.in",
-    "@clickhouse_zlib_ng//:arch/s390/Makefile.in",
-    "@clickhouse_zlib_ng//:arch/x86/Makefile.in",
-    "@clickhouse_zlib_ng//:gzread.c.in",
-    "@clickhouse_zlib_ng//:test/Makefile.in",
-    "@clickhouse_zlib_ng//:test/add-subdirectory-project/main.c",
-    "@clickhouse_zlib_ng//:tools/config.sub",
-    "@clickhouse_zlib_ng//:win32/zlib-ng.def.in",
-    "@clickhouse_zlib_ng//:win32/zlib.def.in",
-    "@clickhouse_zlib_ng//:win32/zlibcompat.def.in",
-    "@clickhouse_zlib_ng//:zconf-ng.h.in",
-    "@clickhouse_zlib_ng//:zconf.h.in",
-    "@clickhouse_zlib_ng//:zlib-config.cmake.in",
-    "@clickhouse_zlib_ng//:zlib-ng-config.cmake.in",
-    "@clickhouse_zlib_ng//:zlib-ng.h.in",
-    "@clickhouse_zlib_ng//:zlib.h.in",
-    "@clickhouse_zlib_ng//:zlib.pc.in",
-    "@clickhouse_zlib_ng//:zlib_name_mangling-ng.h.in",
-    "@clickhouse_zlib_ng//:zlib_name_mangling.h.in",
 ]
 
 _GENERATED_LOCAL_DEFINES_0 = select({
@@ -1843,7 +1821,6 @@ exports_files([
     "src/google/protobuf/compiler/subprocess.h",
     "src/google/protobuf/compiler/versions.cc",
     "src/google/protobuf/compiler/versions.h",
-    "src/google/protobuf/compiler/versions_test.cc",
     "src/google/protobuf/compiler/zip_writer.h",
     "src/google/protobuf/cpp_edition_defaults.h",
     "src/google/protobuf/cpp_features.pb.h",
@@ -1986,11 +1963,8 @@ exports_files([
     "src/google/protobuf/wire_format_lite.h",
     "src/google/protobuf/wire_format_unittest.h",
     "src/google/protobuf/wrappers.pb.h",
-    "third_party/utf8_range/cmake/utf8_range-config.cmake.in",
-    "third_party/utf8_range/main.c",
     "third_party/utf8_range/utf8_range.h",
     "third_party/utf8_range/utf8_range_neon.inc",
     "third_party/utf8_range/utf8_range_sse.inc",
-    "third_party/utf8_range/utf8_to_utf16/main.c",
     "third_party/utf8_range/utf8_validity.h",
 ])

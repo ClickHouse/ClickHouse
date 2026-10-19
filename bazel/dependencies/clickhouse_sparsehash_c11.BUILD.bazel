@@ -7,7 +7,6 @@ package(
 
 exports_files([
     "LICENSE",
-    "docs/index.html",
 ])
 
 cc_library(

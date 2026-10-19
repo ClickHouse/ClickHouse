@@ -41,12 +41,6 @@ ch_cc_library(
             "@clickhouse_llvm_project//:runtime_source_inputs",
             "@clickhouse_llvm_project//:runtime_generated_headers",
         ] + [
-            "cmake/Config.cmake.in",
-            "drivers/arm/freebsd/Makefile.in",
-            "drivers/arm/linux/Makefile.in",
-            "drivers/arm/linux/dkms.conf.in",
-            "libcpuid.pc.in",
-            "libcpuid/Doxyfile.in",
             "libcpuid/exports.def",
         ],
         "@platforms//cpu:aarch64": [],
@@ -111,13 +105,7 @@ ch_cc_library(
 )
 
 exports_files([
-    "cmake/Config.cmake.in",
-    "drivers/arm/freebsd/Makefile.in",
-    "drivers/arm/linux/Makefile.in",
-    "drivers/arm/linux/dkms.conf.in",
     "drivers/x86/windows/msr/Kernel/resource.h",
-    "libcpuid.pc.in",
-    "libcpuid/Doxyfile.in",
     "libcpuid/asm-bits.h",
     "libcpuid/exports.def",
     "libcpuid/libcpuid.h",

@@ -4,7 +4,6 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "LICENSE",
-    "common/include/version.hpp.in",
 ])
 
 cc_library(

@@ -1047,67 +1047,13 @@ _GENERATED_HEADER_INPUTS_4 = [
 ]
 
 _GENERATED_HEADER_INPUTS_6 = [
-    "@clickhouse_krb5//:src/include/Makefile.in",
 ]
 
 _GENERATED_HEADER_INPUTS_7 = [
-    "@clickhouse_openssl//:include/crypto/bn_conf.h.in",
-    "@clickhouse_openssl//:include/crypto/dso_conf.h.in",
     "@clickhouse_openssl//:include/crypto/riscv_arch.def",
-    "@clickhouse_openssl//:include/internal/param_names.h.in",
-    "@clickhouse_openssl//:include/openssl/asn1.h.in",
-    "@clickhouse_openssl//:include/openssl/asn1t.h.in",
-    "@clickhouse_openssl//:include/openssl/bio.h.in",
-    "@clickhouse_openssl//:include/openssl/cmp.h.in",
-    "@clickhouse_openssl//:include/openssl/cms.h.in",
-    "@clickhouse_openssl//:include/openssl/comp.h.in",
-    "@clickhouse_openssl//:include/openssl/conf.h.in",
-    "@clickhouse_openssl//:include/openssl/configuration.h.in",
-    "@clickhouse_openssl//:include/openssl/core_names.h.in",
-    "@clickhouse_openssl//:include/openssl/crmf.h.in",
-    "@clickhouse_openssl//:include/openssl/crypto.h.in",
-    "@clickhouse_openssl//:include/openssl/ct.h.in",
-    "@clickhouse_openssl//:include/openssl/err.h.in",
-    "@clickhouse_openssl//:include/openssl/ess.h.in",
-    "@clickhouse_openssl//:include/openssl/fipskey.h.in",
-    "@clickhouse_openssl//:include/openssl/lhash.h.in",
-    "@clickhouse_openssl//:include/openssl/ocsp.h.in",
-    "@clickhouse_openssl//:include/openssl/opensslv.h.in",
-    "@clickhouse_openssl//:include/openssl/pkcs12.h.in",
-    "@clickhouse_openssl//:include/openssl/pkcs7.h.in",
-    "@clickhouse_openssl//:include/openssl/safestack.h.in",
-    "@clickhouse_openssl//:include/openssl/srp.h.in",
-    "@clickhouse_openssl//:include/openssl/ssl.h.in",
-    "@clickhouse_openssl//:include/openssl/ui.h.in",
-    "@clickhouse_openssl//:include/openssl/x509.h.in",
-    "@clickhouse_openssl//:include/openssl/x509_acert.h.in",
-    "@clickhouse_openssl//:include/openssl/x509_vfy.h.in",
-    "@clickhouse_openssl//:include/openssl/x509v3.h.in",
 ]
 
 _GENERATED_HEADER_INPUTS_8 = [
-    "@clickhouse_zlib_ng//:Makefile.in",
-    "@clickhouse_zlib_ng//:arch/arm/Makefile.in",
-    "@clickhouse_zlib_ng//:arch/generic/Makefile.in",
-    "@clickhouse_zlib_ng//:arch/power/Makefile.in",
-    "@clickhouse_zlib_ng//:arch/s390/Makefile.in",
-    "@clickhouse_zlib_ng//:arch/x86/Makefile.in",
-    "@clickhouse_zlib_ng//:gzread.c.in",
-    "@clickhouse_zlib_ng//:test/Makefile.in",
-    "@clickhouse_zlib_ng//:test/add-subdirectory-project/main.c",
-    "@clickhouse_zlib_ng//:tools/config.sub",
-    "@clickhouse_zlib_ng//:win32/zlib-ng.def.in",
-    "@clickhouse_zlib_ng//:win32/zlib.def.in",
-    "@clickhouse_zlib_ng//:win32/zlibcompat.def.in",
-    "@clickhouse_zlib_ng//:zconf-ng.h.in",
-    "@clickhouse_zlib_ng//:zconf.h.in",
-    "@clickhouse_zlib_ng//:zlib-config.cmake.in",
-    "@clickhouse_zlib_ng//:zlib-ng-config.cmake.in",
-    "@clickhouse_zlib_ng//:zlib-ng.h.in",
-    "@clickhouse_zlib_ng//:zlib.h.in",
-    "@clickhouse_zlib_ng//:zlib.pc.in",
-    "@clickhouse_zlib_ng//:zlib_name_mangling-ng.h.in",
-    "@clickhouse_zlib_ng//:zlib_name_mangling.h.in",
 ]
 
 _GENERATED_HEADER_INPUTS_9 = [
@@ -1141,7 +1087,6 @@ _GENERATED_HEADER_INPUTS_9 = [
     "@clickhouse_zstd//:lib/dictBuilder/divsufsort.c",
     "@clickhouse_zstd//:lib/dictBuilder/fastcover.c",
     "@clickhouse_zstd//:lib/dictBuilder/zdict.c",
-    "@clickhouse_zstd//:lib/libzstd.pc.in",
 ]
 
 expand_template(
@@ -1440,10 +1385,7 @@ ch_cc_library(
         "@clickhouse//:contrib/librdkafka-cmake/include/README",
         "@clickhouse//:contrib/librdkafka-cmake/rdhttp_poco_transport.cpp",
     ] + _GENERATED_HEADER_INPUTS_6 + _GENERATED_HEADER_INPUTS_7 + _GENERATED_HEADER_INPUTS_8 + _GENERATED_HEADER_INPUTS_9 + [
-        "src/lz4.c",
-        "src/lz4hc.c",
         "src/rdkafka_conf.c",
-        "src/regexp.c",
     ]) + [
         "@clickhouse//:contrib/librdkafka-cmake/rdkafka_conf_sensitive.c",
         "@clickhouse//:contrib/librdkafka-cmake/rdhttp_poco.c",
@@ -1627,10 +1569,7 @@ ch_cc_library(
         "@clickhouse//:contrib/librdkafka-cmake/rdhttp_poco.c",
         "@clickhouse//:contrib/librdkafka-cmake/rdkafka_conf_sensitive.c",
     ] + _GENERATED_HEADER_INPUTS_6 + _GENERATED_HEADER_INPUTS_7 + _GENERATED_HEADER_INPUTS_8 + _GENERATED_HEADER_INPUTS_9 + [
-        "src/lz4.c",
-        "src/lz4hc.c",
         "src/rdkafka_conf.c",
-        "src/regexp.c",
     ]) + [
         "@clickhouse//:contrib/librdkafka-cmake/rdhttp_poco_transport.cpp",
     ],
@@ -1852,11 +1791,9 @@ cc_library(
 exports_files([
     "src/cJSON.h",
     "src/crc32c.h",
-    "src/lz4.c",
     "src/lz4.h",
     "src/lz4frame.h",
     "src/lz4frame_static.h",
-    "src/lz4hc.c",
     "src/lz4hc.h",
     "src/nanopb/pb.h",
     "src/nanopb/pb_common.h",
@@ -1951,7 +1888,6 @@ exports_files([
     "src/rdvarint.h",
     "src/rdwin32.h",
     "src/rdxxhash.h",
-    "src/regexp.c",
     "src/regexp.h",
     "src/snappy.h",
     "src/snappy_compat.h",

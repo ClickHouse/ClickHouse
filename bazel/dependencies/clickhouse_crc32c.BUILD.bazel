@@ -31,12 +31,10 @@ ch_cc_library(
         "@platforms//cpu:x86_64": [
             "@clickhouse_sysroot//:linux_compile_files",
         ] + [
-            ":src/crc32c_config.h.in",
         ],
         "@platforms//cpu:aarch64": [
             "@clickhouse_sysroot//:linux_compile_files",
         ] + [
-            ":src/crc32c_config.h.in",
         ],
     }) + ([
     ] + select({

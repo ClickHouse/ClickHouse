@@ -109,7 +109,6 @@ ch_cc_library(
 )
 
 exports_files([
-    "icu4c/source/common/Makefile.in",
     "icu4c/source/common/bmpset.h",
     "icu4c/source/common/brkeng.h",
     "icu4c/source/common/bytesinkutil.h",
@@ -333,7 +332,6 @@ exports_files([
     "icu4c/source/common/uvectr32.h",
     "icu4c/source/common/uvectr64.h",
     "icu4c/source/common/wintz.h",
-    "icu4c/source/i18n/Makefile.in",
     "icu4c/source/i18n/anytrans.h",
     "icu4c/source/i18n/astro.h",
     "icu4c/source/i18n/bocsu.h",

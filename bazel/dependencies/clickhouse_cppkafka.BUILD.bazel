@@ -44,11 +44,7 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
         "@clickhouse//:contrib/librdkafka-cmake/include/README",
-        "@clickhouse_boost//:index.html",
-        "@clickhouse_librdkafka//:src/lz4.c",
-        "@clickhouse_librdkafka//:src/lz4hc.c",
         "@clickhouse_librdkafka//:src/rdkafka_conf.c",
-        "@clickhouse_librdkafka//:src/regexp.c",
     ] + []) + [
         ":src/error.cpp",
     ],

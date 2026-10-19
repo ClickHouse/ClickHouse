@@ -34,9 +34,6 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ] + [
-        ":libdeflate-config.cmake.in",
-        ":libdeflate.pc.in",
-        ":programs/config.h.in",
     ]) + [
     ],
     copts = [
@@ -97,10 +94,7 @@ exports_files([
     "lib/x86/decompress_stream_impl.h",
     "lib/x86/matchfinder_impl.h",
     "lib/zlib_constants.h",
-    "libdeflate-config.cmake.in",
     "libdeflate.h",
-    "libdeflate.pc.in",
-    "programs/config.h.in",
     "programs/prog_util.h",
     "programs/test_util.h",
 ])

@@ -19,8 +19,6 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ":cmake/Config.cmake.in",
-        ":double-conversion.pc.in",
     ]) + [
     ],
     copts = [
@@ -51,8 +49,6 @@ ch_cc_library(
 )
 
 exports_files([
-    "cmake/Config.cmake.in",
-    "double-conversion.pc.in",
     "double-conversion/bignum-dtoa.h",
     "double-conversion/bignum.h",
     "double-conversion/cached-powers.h",

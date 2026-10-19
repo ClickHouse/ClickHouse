@@ -49,25 +49,11 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ":googlemock/cmake/gmock.pc.in",
-        ":googlemock/cmake/gmock_main.pc.in",
         ":googlemock/src/gmock-cardinalities.cc",
         ":googlemock/src/gmock-internal-utils.cc",
         ":googlemock/src/gmock-matchers.cc",
         ":googlemock/src/gmock-spec-builders.cc",
         ":googlemock/src/gmock.cc",
-        ":googlemock/test/gmock-actions_test.cc",
-        ":googlemock/test/gmock-cardinalities_test.cc",
-        ":googlemock/test/gmock-internal-utils_test.cc",
-        ":googlemock/test/gmock-matchers-arithmetic_test.cc",
-        ":googlemock/test/gmock-matchers-comparisons_test.cc",
-        ":googlemock/test/gmock-matchers-containers_test.cc",
-        ":googlemock/test/gmock-matchers-misc_test.cc",
-        ":googlemock/test/gmock-more-actions_test.cc",
-        ":googlemock/test/gmock-nice-strict_test.cc",
-        ":googlemock/test/gmock-port_test.cc",
-        ":googlemock/test/gmock-spec-builders_test.cc",
-        ":googlemock/test/gmock_test.cc",
     ]) + [
     ],
     copts = [
@@ -180,10 +166,6 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        "googletest/cmake/Config.cmake.in",
-        "googletest/cmake/gtest.pc.in",
-        "googletest/cmake/gtest_main.pc.in",
-        "googletest/cmake/libgtest.la.in",
         "googletest/src/gtest-assertion-result.cc",
         "googletest/src/gtest-death-test.cc",
         "googletest/src/gtest-filepath.cc",
@@ -193,19 +175,6 @@ ch_cc_library(
         "googletest/src/gtest-test-part.cc",
         "googletest/src/gtest-typed-test.cc",
         "googletest/src/gtest.cc",
-        "googletest/test/custom/gmock_dynamic_cast_message_test.proto",
-        "googletest/test/googletest-filepath-test.cc",
-        "googletest/test/googletest-message-test.cc",
-        "googletest/test/googletest-options-test.cc",
-        "googletest/test/googletest-port-test.cc",
-        "googletest/test/googletest-test-part-test.cc",
-        "googletest/test/gtest-typed-test2_test.cc",
-        "googletest/test/gtest-typed-test_test.cc",
-        "googletest/test/gtest_pred_impl_unittest.cc",
-        "googletest/test/gtest_prod_test.cc",
-        "googletest/test/gtest_skip_test.cc",
-        "googletest/test/gtest_unittest.cc",
-        "googletest/test/production.cc",
     ]) + [
     ],
     copts = [

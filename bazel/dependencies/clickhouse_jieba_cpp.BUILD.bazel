@@ -50,7 +50,6 @@ ch_cc_library(
         "@clickhouse_zstd//:lib/dictBuilder/divsufsort.c",
         "@clickhouse_zstd//:lib/dictBuilder/fastcover.c",
         "@clickhouse_zstd//:lib/dictBuilder/zdict.c",
-        "@clickhouse_zstd//:lib/libzstd.pc.in",
     ] + glob(
         [
             "data/**",

@@ -76,8 +76,6 @@ ch_cc_library(
 )
 
 exports_files([
-    "mecab/src/Makefile.in",
-    "mecab/src/Makefile.msvc.in",
     "mecab/src/char_property.h",
     "mecab/src/common.h",
     "mecab/src/connector.h",

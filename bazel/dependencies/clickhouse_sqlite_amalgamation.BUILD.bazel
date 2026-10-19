@@ -24,7 +24,6 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ] + [
-        "sqlite3_config.h.in",
     ]) + [
     ],
     copts = [
@@ -57,6 +56,5 @@ ch_cc_library(
 
 exports_files([
     "sqlite3.h",
-    "sqlite3_config.h.in",
     "sqlite3ext.h",
 ])
