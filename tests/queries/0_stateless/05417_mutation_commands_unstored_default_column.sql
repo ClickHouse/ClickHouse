@@ -1,0 +1,134 @@
+-- A mutation with several commands on a column added by ADD COLUMN ... DEFAULT, which the part does not store,
+-- gives the same result as running the commands one by one.
+
+SET mutations_sync = 2;
+
+-- MATERIALIZE COLUMN keeps an earlier UPDATE of the column (compact part).
+DROP TABLE IF EXISTS t_compact;
+CREATE TABLE t_compact (id Int64, x Int64) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 1000000000;
+INSERT INTO t_compact SELECT number, number FROM numbers(4);
+ALTER TABLE t_compact ADD COLUMN a Int64 DEFAULT 7;
+ALTER TABLE t_compact UPDATE a = -1 WHERE id IN (1, 2), MATERIALIZE COLUMN a;
+SELECT DISTINCT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_compact' AND active;
+SELECT 'compact', id, a FROM t_compact ORDER BY id;
+DROP TABLE t_compact;
+
+-- Same with an UPDATE in between of a column the DEFAULT does not read (wide part).
+DROP TABLE IF EXISTS t_wide;
+CREATE TABLE t_wide (id Int64, x Int64) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_wide SELECT number, number FROM numbers(4);
+ALTER TABLE t_wide ADD COLUMN a Int64 DEFAULT 7;
+ALTER TABLE t_wide UPDATE a = -1 WHERE id IN (1, 2), UPDATE x = x + 1 WHERE 1, MATERIALIZE COLUMN a;
+SELECT DISTINCT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_wide' AND active;
+SELECT 'wide', id, x, a FROM t_wide ORDER BY id;
+DROP TABLE t_wide;
+
+-- A command after an UPDATE of an input of the DEFAULT sees the DEFAULT of the new value.
+DROP TABLE IF EXISTS t_update;
+CREATE TABLE t_update (id Int64, x Int64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_update SELECT number, number FROM numbers(4);
+ALTER TABLE t_update ADD COLUMN a Int64 DEFAULT x * 10;
+ALTER TABLE t_update UPDATE x = 100 WHERE id = 3, UPDATE a = -1 WHERE id IN (1, 2);
+SELECT 'update', id, x, a FROM t_update ORDER BY id;
+DROP TABLE t_update;
+
+-- Chain of defaults, ALIAS and a subcolumn of an unstored column.
+DROP TABLE IF EXISTS t_chain;
+CREATE TABLE t_chain (id Int64, x Int64, y Int64, z UInt8) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_chain SELECT number, number, 0, 0 FROM numbers(4);
+ALTER TABLE t_chain ADD COLUMN b Int64 DEFAULT x + 1;
+ALTER TABLE t_chain ADD COLUMN c Int64 DEFAULT b * 10;
+ALTER TABLE t_chain ADD COLUMN cc Int64 ALIAS c;
+ALTER TABLE t_chain ADD COLUMN n Nullable(Int64) DEFAULT if(x = 100, NULL, x);
+ALTER TABLE t_chain UPDATE x = 100 WHERE id = 3, UPDATE y = cc WHERE 1, UPDATE z = n.null WHERE 1;
+SELECT 'chain', id, x, y, z FROM t_chain ORDER BY id;
+DROP TABLE t_chain;
+
+-- Subcolumns inside the DEFAULT.
+DROP TABLE IF EXISTS t_subcolumns;
+CREATE TABLE t_subcolumns (id Int64, t Tuple(p Int64), n Nullable(Int64), y Int64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_subcolumns SELECT number, tuple(number), number, 0 FROM numbers(4);
+ALTER TABLE t_subcolumns ADD COLUMN a Int64 DEFAULT t.p * 10;
+ALTER TABLE t_subcolumns ADD COLUMN b UInt8 DEFAULT n.null;
+ALTER TABLE t_subcolumns UPDATE t = tuple(100), n = NULL WHERE id = 3, UPDATE y = a + b WHERE 1;
+SELECT 'subcolumns', id, y, a, b FROM t_subcolumns ORDER BY id;
+DROP TABLE t_subcolumns;
+
+-- Subcolumn of a Nested element inside the DEFAULT.
+DROP TABLE IF EXISTS t_nested;
+CREATE TABLE t_nested (id Int64, n Nested(e Int64), y Int64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_nested SELECT number, range(number), 0 FROM numbers(4);
+ALTER TABLE t_nested ADD COLUMN a UInt64 DEFAULT n.e.size0;
+ALTER TABLE t_nested UPDATE `n.e` = [1, 2, 3, 4, 5] WHERE id = 3, UPDATE y = a WHERE 1;
+SELECT 'nested', id, n.e, y, a FROM t_nested ORDER BY id;
+DROP TABLE t_nested;
+
+-- DELETE predicate and the columns DELETE writes.
+DROP TABLE IF EXISTS t_delete;
+CREATE TABLE t_delete (id Int64, x Int64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_delete SELECT number, number FROM numbers(4);
+ALTER TABLE t_delete ADD COLUMN a Int64 DEFAULT x * 10;
+ALTER TABLE t_delete UPDATE x = 100 WHERE id IN (2, 3), DELETE WHERE a = 1000 AND id = 2;
+SELECT 'delete', id, x, a FROM t_delete ORDER BY id;
+DROP TABLE t_delete;
+
+-- UPDATE of an input, UPDATE of the column, MATERIALIZE COLUMN.
+DROP TABLE IF EXISTS t_combined;
+CREATE TABLE t_combined (id Int64, x Int64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_combined SELECT number, number FROM numbers(4);
+ALTER TABLE t_combined ADD COLUMN a Int64 DEFAULT x * 10;
+ALTER TABLE t_combined UPDATE x = 100 WHERE id = 3, UPDATE a = -1 WHERE id IN (1, 2), MATERIALIZE COLUMN a;
+SELECT 'combined', id, x, a FROM t_combined ORDER BY id;
+DROP TABLE t_combined;
+
+-- A second MATERIALIZE COLUMN keeps what the first one wrote.
+DROP TABLE IF EXISTS t_materialize_twice;
+CREATE TABLE t_materialize_twice (id Int64, x Int64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_materialize_twice SELECT number, number FROM numbers(4);
+ALTER TABLE t_materialize_twice ADD COLUMN a Int64 DEFAULT x * 10;
+ALTER TABLE t_materialize_twice MATERIALIZE COLUMN a, UPDATE x = 100 WHERE id = 3, MATERIALIZE COLUMN a;
+SELECT 'materialize_twice', id, x, a FROM t_materialize_twice ORDER BY id;
+DROP TABLE t_materialize_twice;
+
+-- The DEFAULT reads a stored column, which does not change when its own input does.
+DROP TABLE IF EXISTS t_stored_input;
+CREATE TABLE t_stored_input (id Int64, x Int64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_stored_input SELECT number, number FROM numbers(4);
+ALTER TABLE t_stored_input ADD COLUMN b Int64 DEFAULT x + 1;
+ALTER TABLE t_stored_input MATERIALIZE COLUMN b;
+ALTER TABLE t_stored_input ADD COLUMN a Int64 DEFAULT b * 10;
+ALTER TABLE t_stored_input UPDATE a = -1 WHERE id = 1, UPDATE x = 100 WHERE id = 3, MATERIALIZE COLUMN a;
+SELECT 'stored_input', id, x, b, a FROM t_stored_input ORDER BY id;
+DROP TABLE t_stored_input;
+
+-- A stored column is not recomputed.
+DROP TABLE IF EXISTS t_stored;
+CREATE TABLE t_stored (id Int64, x Int64, y Int64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_stored SELECT number, number, 0 FROM numbers(4);
+ALTER TABLE t_stored ADD COLUMN a Int64 DEFAULT x * 10;
+ALTER TABLE t_stored MATERIALIZE COLUMN a;
+ALTER TABLE t_stored UPDATE x = 100 WHERE id = 3, UPDATE y = a WHERE 1;
+SELECT 'stored', id, y FROM t_stored ORDER BY id;
+DROP TABLE t_stored;
+
+-- MATERIALIZE COLUMN after an UPDATE of an input recomputes the column.
+DROP TABLE IF EXISTS t_materialize;
+CREATE TABLE t_materialize (id Int64, x Int64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_materialize SELECT number, number FROM numbers(4);
+ALTER TABLE t_materialize ADD COLUMN a Int64 DEFAULT x * 10;
+ALTER TABLE t_materialize UPDATE x = 100 WHERE id = 1, MATERIALIZE COLUMN a;
+SELECT 'materialize', id, a FROM t_materialize ORDER BY id;
+DROP TABLE t_materialize;
+
+-- A column updated by a patch part keeps the patched value.
+DROP TABLE IF EXISTS t_patch;
+CREATE TABLE t_patch (id Int64, x Int64, y Int64) ENGINE = MergeTree ORDER BY id
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+INSERT INTO t_patch SELECT number, number, 0 FROM numbers(4);
+ALTER TABLE t_patch ADD COLUMN a Int64 DEFAULT x * 10;
+UPDATE t_patch SET a = -1 WHERE id = 1;
+ALTER TABLE t_patch UPDATE x = 100 WHERE id = 3, UPDATE y = a WHERE 1;
+SELECT 'patch', id, y FROM t_patch ORDER BY id;
+DROP TABLE t_patch;
