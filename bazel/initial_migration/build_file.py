@@ -417,6 +417,8 @@ class BuildFile:
             value = '//' + value
         if value.startswith('//:') and value[3:] in self.owners:
             value = target_label(value[3:], self.owners)
+        if value == '@clickhouse_fastops//:_fastops__compile_0':
+            value = '@clickhouse_fastops//:_fastops'
         if self.owner:
             prefix = '@' + REPOSITORIES[self.owner]['name'] + '//:'
             if value.startswith(prefix):
@@ -831,6 +833,13 @@ class BuildFile:
             })
             return
         group_count = max(len(v['groups']) for v in variants.values())
+        fastops = self.owner == 'contrib/fastops' and name == '_fastops'
+        if fastops and (kind != 'STATIC_LIBRARY' or
+                        {arch: len(variant['groups']) for arch, variant in variants.items()} !=
+                        {'x86_64': 1, 'aarch64': 2} or
+                        any(group['language'] != 'CXX'
+                            for variant in variants.values() for group in variant['groups'])):
+            raise ValueError('Expected native FastOps and a separate ARM-only SVE compile group')
         collapse_single = group_count == 1 and kind != 'EXECUTABLE' and all(
             group['language'] in GLOBAL_COMPILE_OPTIONS and not group.get('cmake_runtime')
             for variant in variants.values() for group in variant['groups']
@@ -838,6 +847,8 @@ class BuildFile:
         binary_attrs = {}
         for index in range(group_count):
             groups = {arch: v['groups'][index] for arch, v in variants.items() if index < len(v['groups'])}
+            sve = fastops and index == 1
+            attribute_arches = tuple(groups) if sve else ARCHES
             if all(not g.get('srcs') and g.get('foreign_deps') for g in groups.values()):
                 self.rule('cc_library', name + '__compile_' + str(index), {
                     'deps': select({'@platforms//cpu:' + arch: [self.label(d) for d in g['foreign_deps']]
@@ -921,7 +932,7 @@ class BuildFile:
                             native_includes[arch].append([flag, origin, directory])
             for field in ['srcs', 'copts', 'hdrs', 'textual_hdrs', 'additional_compiler_inputs', 'local_defines', 'deps']:
                 values = {}
-                for arch in ARCHES:
+                for arch in attribute_arches:
                     group = groups.get(arch, {})
                     value = inputs.get(arch, {}).get(field, []) if field in inputs.get(arch, {}) else group.get(field, [])
                     if field == 'deps' and kind != 'EXECUTABLE' and arch in variants:
@@ -1038,12 +1049,12 @@ class BuildFile:
             if implementation_deps:
                 attrs['implementation_deps'] = select({
                     '@platforms//cpu:' + arch: implementation_deps.get('@platforms//cpu:' + arch, [])
-                    for arch in ARCHES
+                    for arch in attribute_arches
                 })
             if any(system_includes.values()):
                 attrs['local_includes'] = select({
                     '@platforms//cpu:' + arch: system_includes.get(arch, [])
-                    for arch in ARCHES
+                    for arch in attribute_arches
                 })
             if clickhouse_code:
                 attrs['clickhouse_code'] = True
@@ -1081,20 +1092,38 @@ class BuildFile:
                     'target_compatible_with': compatible,
                 })
                 attrs = {'srcs': [':' + nasm_name]}
-            self.rule('cc_library', name if collapse_single else name + '__compile_' + str(index), {
+            rule_name = name if collapse_single else name + '__compile_' + str(index)
+            rule_compatible = compatible
+            if fastops:
+                rule_name = '_fastops_sve' if sve else '_fastops'
+                if sve:
+                    attrs['visibility'] = ['@clickhouse//:__pkg__']
+                    rule_compatible = Select({
+                        '@platforms//cpu:aarch64': [],
+                        '//conditions:default': ['@platforms//:incompatible'],
+                    })
+                else:
+                    attrs['deps'] = Concat([attrs['deps'], select({
+                        '@platforms//cpu:' + arch: [self.label(dep) for dep in variant['deps']] +
+                        ([':_fastops_sve'] if arch == 'aarch64' else [])
+                        for arch, variant in variants.items()
+                    })])
+            self.rule('cc_library', rule_name, {
                 **attrs,
                 # These copts already contain the CMake compile group's flags.
                 # The LLVM toolchain otherwise forces frame pointers in Release.
                 'features': select({
                     '@platforms//cpu:' + arch: ['-fortify_source', '-default_compile_flags'] +
                     (['-llvm_system_c_headers'] if arch in native else [])
-                    for arch in ARCHES
+                    for arch in attribute_arches
                 }),
-                'target_compatible_with': compatible,
+                'target_compatible_with': rule_compatible,
                 'alwayslink': select({'@platforms//cpu:' + arch: v['alwayslink'] for arch, v in variants.items()}),
             })
             if collapse_single:
                 return
+        if fastops:
+            return
         deps = select({
             '@platforms//cpu:' + arch: [self.label(d) for d in v['deps']] + [
                 ':' + name + '__compile_' + str(i)

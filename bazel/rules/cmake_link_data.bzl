@@ -58,7 +58,7 @@ CMAKE_LINK = {
     "@clickhouse_dmlc_core//:_dmlc_core",
     "//contrib/libmetrohash:_metrohash",
     "//contrib/murmurhash:_murmurhash",
-    "@clickhouse_fastops//:_fastops__compile_0",
+    "@clickhouse_fastops//:_fastops",
     "//contrib/bech32:_bech32",
     "@clickhouse_cld2//:_cld2",
     "@clickhouse_idna//:_idna",

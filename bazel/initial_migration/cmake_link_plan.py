@@ -315,6 +315,9 @@ class Plan:
             collapsed = name.removesuffix("__compile_0")
             if collapsed != name and collapsed in names and names[collapsed] in ("ch_cc_library", None):
                 return collapsed
+            if (name == "_fastops__compile_1" and "_fastops_sve" in names
+                    and names["_fastops_sve"] in ("ch_cc_library", None)):
+                return "_fastops_sve"
             return None
 
         main_builds = None

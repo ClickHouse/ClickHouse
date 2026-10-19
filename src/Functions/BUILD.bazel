@@ -4091,7 +4091,7 @@ ch_cc_library(
         "@clickhouse_azure//:_azure_sdk",
         "@clickhouse_croaring//:_roaring__compile_0",
         "@clickhouse_double_conversion//:_double-conversion",
-        "@clickhouse_fastops//:_fastops__compile_0",
+        "@clickhouse_fastops//:_fastops",
         "@clickhouse_libfiu//:_libfiu",
         "@clickhouse_stringzilla//:_stringzilla",
         "@clickhouse_xxhash//:xxHash",

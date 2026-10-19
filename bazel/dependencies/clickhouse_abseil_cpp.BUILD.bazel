@@ -115,7 +115,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = (["@clickhouse_llvm_project//:clang_rt_builtins"]) + [":abseil_cpp_headers"],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"] + [":abseil_cpp_headers"],
     alwayslink = False,
 )
 
@@ -430,7 +430,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = (["@clickhouse_llvm_project//:clang_rt_builtins"]) + [":abseil_cpp_headers"],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"] + [":abseil_cpp_headers"],
     alwayslink = False,
 )
 
@@ -475,7 +475,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = (["@clickhouse_llvm_project//:clang_rt_builtins"]) + [":abseil_cpp_headers"],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"] + [":abseil_cpp_headers"],
     alwayslink = False,
 )
 
@@ -662,7 +662,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = (["@clickhouse_llvm_project//:clang_rt_builtins"]) + [":abseil_cpp_headers"],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"] + [":abseil_cpp_headers"],
     alwayslink = False,
 )
 
@@ -711,7 +711,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = (["@clickhouse_llvm_project//:clang_rt_builtins"]) + [":abseil_cpp_headers"],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"] + [":abseil_cpp_headers"],
     alwayslink = False,
 )
 
@@ -762,7 +762,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = (["@clickhouse_llvm_project//:clang_rt_builtins"]) + [":abseil_cpp_headers"],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"] + [":abseil_cpp_headers"],
     alwayslink = False,
 )
 
@@ -961,7 +961,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = (["@clickhouse_llvm_project//:clang_rt_builtins"]) + [":abseil_cpp_headers"],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"] + [":abseil_cpp_headers"],
     alwayslink = False,
 )
 
@@ -1003,7 +1003,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = (["@clickhouse_llvm_project//:clang_rt_builtins"]) + [":abseil_cpp_headers"],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"] + [":abseil_cpp_headers"],
     alwayslink = False,
 )
 
@@ -1108,7 +1108,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = (["@clickhouse_llvm_project//:clang_rt_builtins"]) + [":abseil_cpp_headers"],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"] + [":abseil_cpp_headers"],
     alwayslink = False,
 )
 
@@ -1207,7 +1207,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = (["@clickhouse_llvm_project//:clang_rt_builtins"]) + [":abseil_cpp_headers"],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"] + [":abseil_cpp_headers"],
     alwayslink = False,
 )
 
@@ -1283,7 +1283,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = (["@clickhouse_llvm_project//:clang_rt_builtins"]) + [":abseil_cpp_headers"],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"] + [":abseil_cpp_headers"],
     alwayslink = False,
 )
 
@@ -1373,7 +1373,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = (["@clickhouse_llvm_project//:clang_rt_builtins"]) + [":abseil_cpp_headers"],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"] + [":abseil_cpp_headers"],
     alwayslink = False,
 )
 
@@ -1528,7 +1528,7 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = (["@clickhouse_llvm_project//:clang_rt_builtins"]) + [":abseil_cpp_headers"],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"] + [":abseil_cpp_headers"],
     alwayslink = False,
 )
 
