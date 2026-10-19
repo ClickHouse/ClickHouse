@@ -121,6 +121,24 @@ ALTER TABLE t_no_match UPDATE a = -1 WHERE id = 100, UPDATE x = 100 WHERE id = 3
 SELECT 'no_match', id, x, a FROM t_no_match ORDER BY id;
 DROP TABLE t_no_match;
 
+-- The DEFAULT reads a stored MATERIALIZED column that reads an EPHEMERAL one, which an UPDATE of its other input does not recompute.
+DROP TABLE IF EXISTS t_ephemeral;
+CREATE TABLE t_ephemeral (id Int64, x Int64, e Int64 EPHEMERAL 1, m Int64 MATERIALIZED x + e) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_ephemeral (id, x) SELECT number, number FROM numbers(3);
+ALTER TABLE t_ephemeral ADD COLUMN d Int64 DEFAULT m * 10;
+ALTER TABLE t_ephemeral UPDATE d = -1 WHERE id = 1, UPDATE x = 100 WHERE id = 2, MATERIALIZE COLUMN d SETTINGS send_logs_level = 'error';
+SELECT 'ephemeral', id, x, m, d FROM t_ephemeral ORDER BY id;
+DROP TABLE t_ephemeral;
+
+-- The DEFAULT reads a stored MATERIALIZED column that an UPDATE of its input recomputes.
+DROP TABLE IF EXISTS t_materialized_input;
+CREATE TABLE t_materialized_input (id Int64, x Int64, m Int64 MATERIALIZED x + 1) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_materialized_input (id, x) SELECT number, number FROM numbers(3);
+ALTER TABLE t_materialized_input ADD COLUMN d Int64 DEFAULT m * 10;
+ALTER TABLE t_materialized_input UPDATE d = -1 WHERE id = 100, UPDATE x = 100 WHERE id = 2, MATERIALIZE COLUMN d;
+SELECT 'materialized_input', id, x, m, d FROM t_materialized_input ORDER BY id;
+DROP TABLE t_materialized_input;
+
 -- A stored column is not recomputed.
 DROP TABLE IF EXISTS t_stored;
 CREATE TABLE t_stored (id Int64, x Int64, y Int64) ENGINE = MergeTree ORDER BY id;

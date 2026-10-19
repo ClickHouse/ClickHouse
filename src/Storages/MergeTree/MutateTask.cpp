@@ -27,6 +27,7 @@
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/MutationsInterpreter.h>
@@ -589,6 +590,7 @@ static void splitAndModifyMutationCommands(
     MutationCommands & for_interpreter,
     MutationCommands & for_file_renames,
     size_t & num_for_file_renames_from_commands,
+    ContextPtr context,
     LoggerPtr log)
 {
     auto part_columns = part->getColumnsDescription();
@@ -607,9 +609,10 @@ static void splitAndModifyMutationCommands(
     const bool has_materialize_column = std::ranges::any_of(
         commands, [](const auto & command) { return command.type == MutationCommand::Type::MATERIALIZE_COLUMN; });
     auto is_ordinary = [&](const String & name) { return table_columns.tryGetColumn(GetColumnsOptions::Ordinary, name).has_value(); };
+    MaterializedColumnDependencies materialized_dependencies(table_columns, context);
     auto part_stores = [&](const String & name)
     {
-        if (!is_ordinary(name))
+        if (!table_columns.tryGetColumn(GetColumnsOptions::AllPhysical, name))
             return false;
         const auto name_in_part = nameInPart(name);
         if (part->getSerializationInfos().isMissingColumn(name_in_part))
@@ -635,9 +638,15 @@ static void splitAndModifyMutationCommands(
                     for (const auto & child : alter->update_assignments->children)
                         assigned.insert(child->as<ASTAssignment &>().column_name);
 
+                /// It also changes the MATERIALIZED columns it recomputes.
+                NameSet changed = assigned;
+                for (const auto & column : table_columns.getMaterialized())
+                    if (!materialized_dependencies.findColumnsToRecalculate(column.name, assigned).empty())
+                        changed.insert(column.name);
+
                 std::erase_if(updated_ordinary_columns, [&](const auto & entry)
                 {
-                    return std::ranges::any_of(entry.second, [&](const auto & input) { return assigned.contains(input); });
+                    return std::ranges::any_of(entry.second, [&](const auto & input) { return changed.contains(input); });
                 });
                 for (const auto & name : assigned)
                     if (is_ordinary(name))
@@ -4926,6 +4935,7 @@ bool MutateTask::prepare()
         ctx->for_interpreter,
         ctx->for_file_renames,
         ctx->num_for_file_renames_from_commands,
+        context_for_reading,
         ctx->log);
 
     if (commands_for_execution != &ctx->commands_for_part)
@@ -4941,6 +4951,7 @@ bool MutateTask::prepare()
             ctx->for_interpreter,
             unused_file_renames,
             unused_num_file_renames_from_commands,
+            context_for_reading,
             ctx->log);
     }
 

@@ -46,6 +46,12 @@ no_match	0	0	0
 no_match	1	1	10
 no_match	2	2	20
 no_match	3	100	1000
+ephemeral	0	0	1	10
+ephemeral	1	1	2	-1
+ephemeral	2	100	3	30
+materialized_input	0	0	1	10
+materialized_input	1	1	2	20
+materialized_input	2	100	101	1010
 stored	0	0
 stored	1	10
 stored	2	20
