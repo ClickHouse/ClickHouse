@@ -105,6 +105,17 @@ API graphs and declared Ninja generator commands into native Bazel targets.
 `build_file.py` emits the rules into the root `BUILD.bazel` and the dependency
 overlays. The root `contrib` filegroup keeps auxiliary dependency targets in
 the complete `//...` build, even when the server does not depend on them.
+`build_file.py` reads unconditional `common --copt`, `--conlyopt`, and
+`--cxxopt` entries from `.bazelrc`. It omits those flags from generated
+native libraries, including `-O3`, `-DNDEBUG`, and `-gz=zlib`.
+`ch_cc_library.bzl` selects the base `-march` flags from the target platform's
+`@platforms//cpu` constraint. Its CPU flags precede the library's `copts`,
+so a later ISA override still wins. `clickhouse_code = True` adds the
+ClickHouse XRay settings, `-Wall`, and `-Wextra` only for CMake groups which
+originally requested all five flags. Other warning exceptions remain in
+`copts`. NASM, Cargo, custom runtime actions, and executable code generators
+keep their own compiler flags.
+
 The native reference configuration can also build ClickHouse with CMake.
 For cross-compilation, the reference exposes inline TableGen targets through
 `reference_codegen.cmake` for graph extraction only; Bazel's platform

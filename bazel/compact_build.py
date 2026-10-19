@@ -33,6 +33,8 @@ def ast_key(node):
 def safe_expression(node):
     if isinstance(node, ast.Constant):
         return isinstance(node.value, (str, int, bool)) or node.value is None
+    if isinstance(node, ast.Name):
+        return node.id == "CLICKHOUSE_WARNINGS"
     if isinstance(node, (ast.List, ast.Tuple)):
         return all(safe_expression(value) for value in node.elts)
     if isinstance(node, ast.Dict):
@@ -178,6 +180,20 @@ def intern_attributes(source):
     return source.rewrite(edits)
 
 
+def remove_unused_constants(source):
+    used = {node.id for node in ast.walk(source.module)
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)}
+    edits = []
+    for statement in source.module.body:
+        if (isinstance(statement, ast.Assign) and len(statement.targets) == 1
+                and isinstance(statement.targets[0], ast.Name)
+                and statement.targets[0].id.startswith(CONSTANT_PREFIX)
+                and statement.targets[0].id not in used
+                and safe_expression(statement.value)):
+            edits.append((*source.span(statement), ""))
+    return source.rewrite(edits)
+
+
 class Expand(ast.NodeTransformer):
     def __init__(self):
         self.constants = {}
@@ -219,7 +235,7 @@ class Expand(ast.NodeTransformer):
 
 def compact(text):
     factored = factor_selects(Source(text))
-    result = intern_attributes(Source(factored))
+    result = remove_unused_constants(Source(intern_attributes(Source(factored))))
     original = Expand().visit(ast.parse(text))
     rewritten = Expand().visit(ast.parse(result))
     if ast_key(original) != ast_key(rewritten):

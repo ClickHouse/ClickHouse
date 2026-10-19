@@ -17,7 +17,7 @@ def global_compile_options():
     """Read unconditional Bazel compiler options from the project's rc file."""
     options = {'copt': set(), 'conlyopt': set(), 'cxxopt': set()}
     for option, value in re.findall(
-            r'^build --(copt|conlyopt|cxxopt)=(\S+)$',
+            r'^common --(copt|conlyopt|cxxopt)=(\S+)$',
             (ROOT / '.bazelrc').read_text(), re.MULTILINE):
         options[option].add(value)
     return {
@@ -33,6 +33,13 @@ CLICKHOUSE_WARNINGS = ast.literal_eval(next(
     if isinstance(node, ast.Assign)
     and any(isinstance(name, ast.Name) and name.id == 'CLICKHOUSE_WARNINGS' for name in node.targets)
 ))
+_LIBRARY_FLAGS = {
+    node.targets[0].id: ast.literal_eval(node.value)
+    for node in ast.parse((ROOT / 'bazel/ch_cc_library.bzl').read_text()).body
+    if isinstance(node, ast.Assign)
+}
+CLICKHOUSE_TARGET_FLAGS = _LIBRARY_FLAGS['CLICKHOUSE_TARGET_FLAGS']
+CLICKHOUSE_CODE_FLAGS = _LIBRARY_FLAGS['CLICKHOUSE_CODE_FLAGS']
 
 
 @dataclass
@@ -214,6 +221,11 @@ class BuildFile:
 
     def rule(self, kind, name, attrs):
         self.names.add(name)
+        copts = attrs.get('copts')
+        if (kind == 'cc_library' and isinstance(copts, CMakeNativeCopts)
+                and all(group['language'] in GLOBAL_COMPILE_OPTIONS for group in copts.groups.values())):
+            kind = 'ch_cc_library'
+            self.loads.setdefault('@clickhouse//bazel:ch_cc_library.bzl', set()).add(kind)
         if kind in {'cc_library', 'cc_binary', 'cc_test', 'cc_import'}:
             self.loads.setdefault('@rules_cc//cc:' + kind + '.bzl', set()).add(kind)
         elif kind == 'nasm_objects':
@@ -301,6 +313,12 @@ class BuildFile:
                 })
                 continue
             attrs = {}
+            native_library = kind != 'EXECUTABLE' or index != 0 or name == 'clickhouse'
+            clickhouse_code = native_library and bool(groups) and all(
+                any(group.get('copts', [])[start:start + len(CLICKHOUSE_CODE_FLAGS)] == CLICKHOUSE_CODE_FLAGS
+                    for start in range(len(group.get('copts', []))))
+                for group in groups.values()
+            )
             for field in ['srcs', 'copts', 'hdrs', 'textual_hdrs', 'additional_compiler_inputs', 'local_defines', 'deps']:
                 values = {}
                 for arch in ARCHES:
@@ -311,12 +329,15 @@ class BuildFile:
                     if field == 'copts':
                         value = compile_options(value, group.get('deps', []))
                         language = group.get('language')
-                        native_library = kind != 'EXECUTABLE' or index != 0 or name == 'clickhouse'
                         if native_library and language in GLOBAL_COMPILE_OPTIONS:
                             # These original CMake C groups have no -Werror.
                             if language == 'C' and name in {'glibc-compatibility', 'harmful'}:
                                 value = value + ['-Wno-error']
                             value = [flag for flag in value if flag not in GLOBAL_COMPILE_OPTIONS[language]]
+                            value = [flag for flag in value if flag not in CLICKHOUSE_TARGET_FLAGS[arch]]
+                            if clickhouse_code:
+                                start = value.index(CLICKHOUSE_CODE_FLAGS[0])
+                                value = value[:start] + value[start + len(CLICKHOUSE_CODE_FLAGS):]
                             if language in {'C', 'CXX'} and '-Weverything' in value:
                                 start = value.index('-Weverything')
                                 end = start + len(CLICKHOUSE_WARNINGS)
@@ -344,6 +365,8 @@ class BuildFile:
                                 raise ValueError(f'{name}: unsupported NASM include {origin} {directory}')
                     values['@platforms//cpu:' + arch] = [self.label(v) for v in value] if field in LABEL_ATTRIBUTES else value
                 attrs[field] = select(values)
+            if clickhouse_code:
+                attrs['clickhouse_code'] = True
             mapped_arches = [arch for arch, group in groups.items() if group.get('cmake_source_prefix_map')]
             if mapped_arches:
                 attrs['copts'] = CMakeCopts(attrs['copts'], sorted(mapped_arches))

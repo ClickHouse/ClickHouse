@@ -138,6 +138,13 @@ After using the recorded CMake compiler version in Arrow, Mongo C and Mongo
 C++ generated headers, the same x86-64 hashes and `cmp=0` were verified in
 [BuildBuddy 49f16579](https://app.buildbuddy.io/invocation/49f16579-c602-4eb5-8570-111469b2417a).
 
+Moving `-O3`, `-DNDEBUG`, and `-gz=zlib` into `.bazelrc` and using
+`ch_cc_library` for target-platform CPU flags and ClickHouse XRay/warnings
+preserved every x86-64 hash in the table above. The full comparison in
+[BuildBuddy b8794a76](https://app.buildbuddy.io/invocation/b8794a76-e24b-4778-8090-a04db10f8fa7)
+([Bazel build 86eecebf](https://app.buildbuddy.io/invocation/86eecebf-47e3-4263-9f12-9f3e84f2d341))
+returned `PARITY_STRIPPED_CMP_STATUS=0` and `PARITY_STATUS=0`.
+
 The simplified generated configuration was verified in
 [BuildBuddy invocation c972df98](https://app.buildbuddy.io/invocation/c972df98-7d2d-4b65-ac42-5ebf5117b5a3)
 ([Bazel build](https://app.buildbuddy.io/invocation/7bbae2ed-c019-4a04-b07f-746a6570c815)).
@@ -273,6 +280,14 @@ The normalized copies passed `cmp`: `PARITY_STRIPPED_CMP_STATUS=0` and
 Clang, Clang++, Rust, Cargo and the reference TableGen tools are native ARM64
 ELFs. The original and plain-stripped binaries differ because their build IDs
 still include information from discarded sections.
+
+The subsequent `ch_cc_library` and common optimization flags also preserved
+all ARM64 compiler, original ELF, plain-stripped, and normalized hashes in
+the table above. The full native comparison in
+[BuildBuddy fd0db6c9](https://app.buildbuddy.io/invocation/fd0db6c9-0b22-4a3e-b2cd-83a0b9a0dacc)
+([Bazel build d92f2e6c](https://app.buildbuddy.io/invocation/d92f2e6c-4a81-4674-8f56-74bcf2d18f68))
+reused and checked the recorded native source and tools archives, then returned
+`PARITY_STRIPPED_CMP_STATUS=0` and `PARITY_STATUS=0`.
 
 <details>
 <summary>Earlier ARM64 measurements and the compiler metadata fix</summary>
