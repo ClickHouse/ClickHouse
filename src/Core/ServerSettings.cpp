@@ -2034,7 +2034,9 @@ replica without `port` inherits the local `tcp_port` / `tcp_port_secure` shifted
 offset, and a replica is recognized as the local server by the shifted port. The same applies
 to the embedded Keeper: with `keeper_server.use_cluster` enabled and no `zookeeper` section,
 the server's own Keeper client dials every Raft member on `keeper_server.tcp_port` shifted
-by the local offset. In a cluster where nodes use different offsets, configure the actual
+by the local offset. Raft ports in `keeper_server.raft_configuration` are never offset: they
+describe the membership shared by all Keeper nodes, so each node's Raft port must be configured
+explicitly (and distinctly when several Keeper nodes run on one host). In a cluster where nodes use different offsets, configure the actual
 port of every node explicitly - for stateless-worker distributed plans, each worker's
 shifted `streaming_exchange_port` in the worker cluster configuration.
 

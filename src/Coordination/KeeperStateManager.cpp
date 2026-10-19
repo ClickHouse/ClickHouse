@@ -201,13 +201,9 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
         int new_server_id = config.getInt(full_prefix + ".id");
         std::string hostname = config.getString(full_prefix + ".hostname");
         int port = config.getInt(full_prefix + ".port");
-        /// Only this Keeper's Raft listener is local. Other entries can resolve to the
-        /// same host in a multi-instance deployment but use their own `port_offset`.
-        if (new_server_id == my_server_id)
-        {
-            const Int32 port_offset = getPortOffsetFromConfig(config);
-            port = applyPortOffset(static_cast<UInt16>(port), port_offset);
-        }
+        /// `port_offset` is deliberately not applied to Raft ports: `raft_configuration` is the
+        /// cluster membership shared by all members, so every member must see the same endpoint
+        /// for every server, and a node-local offset would make the members disagree.
         bool can_become_leader = config.getBool(full_prefix + ".can_become_leader", true);
         int32_t priority = config.getInt(full_prefix + ".priority", 1);
         bool start_as_follower = config.getBool(full_prefix + ".start_as_follower", false);
