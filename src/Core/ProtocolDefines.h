@@ -128,11 +128,11 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// needs the new contract is not serialized for such a peer at all.
 /// Version 20 also registers the `BlocksMarshalling` step, so a plan fragment that pre-serializes its
 /// result blocks can be shipped. A peer below it does not know the name and rejects the whole plan.
-/// Version 20 also knows the `group_by_each_block_no_merge` plan setting name on `AggregatingStep`.
 /// Version 20 also adds `allow_block_nested_loop_join` to the join step settings. A peer below it does not
 /// know the name and has no block nested loop join: it rejects a join without equality keys by itself.
 /// Version 20 also registers the `MergeRuntimeFilters` step and adds the `join_runtime_filter_exact_bytes_limit`
 /// plan setting.
+/// Version 21 adds the `group_by_each_block_no_merge` plan setting name on `AggregatingStep`.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -144,8 +144,8 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 ///   bumps its own serialization version instead, with the value of the current release as `since_plan_version`
 ///   (see `QueryPlanStepRegistry::StepVersions`).
 ///
-/// Last bumped for release 26.10.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 20;
+/// Last bumped for release 26.11.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 21;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -218,7 +218,7 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDI
 /// First query-plan serialization version that knows the `group_by_each_block_no_merge` plan setting
 /// name. `AggregatingStep::serializeSettings` writes the name only towards a peer at this version or
 /// later, and refuses to ship an enabled step towards an older peer (see the comment there).
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_EACH_BLOCK_NO_MERGE = 20;
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_EACH_BLOCK_NO_MERGE = 21;
 /// First global query-plan version that writes version 1 of `Aggregating`, which carries the
 /// `GROUP BY` top-K parameters. Towards an older peer the parameters are omitted rather than
 /// rejected: the peer aggregates without the heap and returns partial states for all its groups,

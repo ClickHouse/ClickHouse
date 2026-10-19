@@ -1648,7 +1648,7 @@ The setting only affects queries that have `GROUP BY` keys. Aggregation without 
 
 This setting is intended for special cases such as populating a materialized view with `POPULATE`, where the partial results are merged later in the background.
 )", 0, \
-        {"26.10", false, false, "New setting to process `GROUP BY` in a streaming fashion: aggregate, finalize and flush the result for every block separately, without merging across blocks."}) \
+        {"26.11", false, false, "New setting to process `GROUP BY` in a streaming fashion: aggregate, finalize and flush the result for every block separately, without merging across blocks."}) \
     \
     DECLARE(Bool, skip_unavailable_shards, false, R"(
 Enables or disables silently skipping of unavailable shards.
