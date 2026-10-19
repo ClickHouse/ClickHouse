@@ -1,49 +1,49 @@
 common --check_direct_dependencies=error
 
-build --incompatible_strict_action_env
-build --compilation_mode=opt
+common --incompatible_strict_action_env
+common --compilation_mode=opt
 # Common CMake flags for ClickHouse's native libraries. Per-target copts
 # retain exceptions such as -ffp-contract=fast on the array functions.
-build --copt=--no-default-config
-build --copt=-pipe
-build --copt=-fasynchronous-unwind-tables
-build --copt=-fdebug-compilation-dir=.
-build --copt=-falign-functions=64
-build --copt=-falign-loops=32
-build --copt=-ffunction-sections
-build --copt=-fdata-sections
-build --copt=-faddrsig
-build --copt=-fstack-protector-strong
-build --copt=-fstack-clash-protection
-build --copt=-ffp-contract=off
-build --copt=-fno-math-errno
-build --conlyopt=-fPIE
-build --conlyopt=-fdiagnostics-absolute-paths
-build --conlyopt=-Werror
-build --cxxopt=-fPIE
-build --cxxopt=-fdiagnostics-absolute-paths
-build --cxxopt=-fstrict-vtable-pointers
-build --cxxopt=-Werror
+common --copt=--no-default-config
+common --copt=-pipe
+common --copt=-fasynchronous-unwind-tables
+common --copt=-fdebug-compilation-dir=.
+common --copt=-falign-functions=64
+common --copt=-falign-loops=32
+common --copt=-ffunction-sections
+common --copt=-fdata-sections
+common --copt=-faddrsig
+common --copt=-fstack-protector-strong
+common --copt=-fstack-clash-protection
+common --copt=-ffp-contract=off
+common --copt=-fno-math-errno
+common --conlyopt=-fPIE
+common --conlyopt=-fdiagnostics-absolute-paths
+common --conlyopt=-Werror
+common --cxxopt=-fPIE
+common --cxxopt=-fdiagnostics-absolute-paths
+common --cxxopt=-fstrict-vtable-pointers
+common --cxxopt=-Werror
 # Match cmake/cxx.cmake for libraries supplied by external Bazel modules too.
-build --cxxopt=-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
-build --verbose_failures
-build --@rules_rust//rust/toolchain/channel=nightly
-build --@rules_python//python/config_settings:bootstrap_impl=script
-build --@llvm//toolchain:bootstrap_stage=stage1_from_source
+common --cxxopt=-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
+common --verbose_failures
+common --@rules_rust//rust/toolchain/channel=nightly
+common --@rules_python//python/config_settings:bootstrap_impl=script
+common --@llvm//toolchain:bootstrap_stage=stage1_from_source
 # Match contrib/llvm-project-cmake/config/llvm-config.h.in. ClickHouse links
 # its own compression libraries; the compiler retains its compression support.
-build --@llvm-project//third-party:llvm_enable_zlib=false
-build --@llvm-project//third-party:llvm_enable_zstd=false
+common --@llvm-project//third-party:llvm_enable_zlib=false
+common --@llvm-project//third-party:llvm_enable_zstd=false
 
-build:x86_64 --platforms=@rules_rs//rs/platforms:x86_64-unknown-linux-gnu
+common:x86_64 --platforms=@rules_rs//rs/platforms:x86_64-unknown-linux-gnu
 # Match CMake's code-generation flags for the LLVM libraries in ClickHouse.
 # per_file_copt leaves exec tools and the separately configured runtimes alone.
-build:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/.*@--no-default-config,-O3,-march=x86-64-v3,-mpclmul,-falign-functions=64,-falign-loops=32,-fasynchronous-unwind-tables,-faddrsig,-mbranches-within-32B-boundaries,-fstack-protector-strong,-fstack-clash-protection,-ffp-contract=off,-fno-math-errno,-fdebug-compilation-dir=.
-build:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/.*[.](c|cpp)$@-fPIE
-build:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/.*[.]cpp$@-fstrict-vtable-pointers
-build:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/.*[.]c$@-std=gnu11
-build:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/lib/Support/BLAKE3/blake3_avx512_x86-64_unix[.]S$@-mavx512f,-mavx512vl
-build:aarch64 --platforms=@rules_rs//rs/platforms:aarch64-unknown-linux-gnu
+common:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/.*@--no-default-config,-O3,-march=x86-64-v3,-mpclmul,-falign-functions=64,-falign-loops=32,-fasynchronous-unwind-tables,-faddrsig,-mbranches-within-32B-boundaries,-fstack-protector-strong,-fstack-clash-protection,-ffp-contract=off,-fno-math-errno,-fdebug-compilation-dir=.
+common:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/.*[.](c|cpp)$@-fPIE
+common:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/.*[.]cpp$@-fstrict-vtable-pointers
+common:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/.*[.]c$@-std=gnu11
+common:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/lib/Support/BLAKE3/blake3_avx512_x86-64_unix[.]S$@-mavx512f,-mavx512vl
+common:aarch64 --platforms=@rules_rs//rs/platforms:aarch64-unknown-linux-gnu
 
 # Use LLVM's Linux x86-64 execution platform for C++, Rust, and code generators.
 common:remote --extra_execution_platforms=//bazel:buildbuddy_linux_x86_64
@@ -60,13 +60,13 @@ common:remote --shell_executable=/bin/bash
 
 # Reproduce the recorded x86-64 CMake comparison under BuildBuddy.
 common:cmake_match --config=remote
-build:cmake_match --config=x86_64
-build:cmake_match --//bazel:cmake_metadata
+common:cmake_match --config=x86_64
+common:cmake_match --//bazel:cmake_metadata
 
 # Compile and run the ARM64 comparison on native ARM64 workers.
 common:cmake_match_aarch64 --config=remote
 common:cmake_match_aarch64 --extra_execution_platforms=//bazel:buildbuddy_linux_aarch64,//bazel:buildbuddy_linux_aarch64_test
-build:cmake_match_aarch64 --config=aarch64
-build:cmake_match_aarch64 --//bazel:cmake_metadata
+common:cmake_match_aarch64 --config=aarch64
+common:cmake_match_aarch64 --//bazel:cmake_metadata
 
 try-import %workspace%/.bazelrc.local
