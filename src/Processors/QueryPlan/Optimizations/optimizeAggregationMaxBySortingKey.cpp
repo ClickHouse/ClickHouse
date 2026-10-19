@@ -250,6 +250,12 @@ static void tryApply(
         return;
 
     const auto & metadata = reading->getStorageMetadata();
+    /// A table with `UNIQUE KEY` hides overwritten rows with a delete bitmap, so an index row may be a hidden row,
+    /// and a granule may hold fewer rows than its marks say. The read of a projection carries the projection's
+    /// metadata, so the table's own metadata is checked.
+    const auto table_metadata = reading->getMergeTreeData().getInMemoryMetadataPtr(reading->getContext(), /*bypass_metadata_cache=*/ false);
+    if (metadata->hasUniqueKey() || table_metadata->hasUniqueKey())
+        return;
     const auto & sorting_key = metadata->getSortingKey();
     const auto & primary_key = metadata->getPrimaryKey();
 
@@ -420,6 +426,12 @@ static void tryApply(
     std::optional<KeyCondition> witness_condition;
     if (!witness_conjuncts.empty())
     {
+        /// The witness rows are checked with their values from the primary index, but `KeyCondition` expects a NULL
+        /// of a key column (also one nested in a `Tuple`) in the form the index analysis converts it to, so a NULL
+        /// could pass a condition like `isNotNull`. Key columns that may contain NULL are not supported here.
+        for (const auto & key_type : primary_key.data_types)
+            if (anyInTypeTree(*key_type, [](const IDataType & type) { return type.isNullable() || type.isLowCardinalityNullable(); }))
+                return;
         witness_dag = ActionsDAG::buildFilterActionsDAG(witness_conjuncts);
         if (!witness_dag)
             return;
@@ -502,45 +514,58 @@ static void tryApply(
                 return whole_granule ? data_part->index_granularity->getMarkRows(granule) : 1;
             };
 
-            /// Granules with an index row: `continues_run[g]` when granule `g + 1` starts with the same prefix as `g`, so
-            /// that granule `g` lies entirely in one run.
+            /// The selected granules that have an index row, in order. Only they are looked at, so that the planning
+            /// time is proportional to the selected granules, not to the whole part, and stays linear even when no run
+            /// has enough rows (e.g. `LIMIT n BY` with `n` larger than every run).
             const size_t indexed_granules = std::min(num_granules, index_rows);
-            std::vector<UInt8> continues_run(indexed_granules);
-            for (size_t granule = 0; granule + 1 < indexed_granules; ++granule)
-                continues_run[granule] = same_prefix(granule, granule + 1);
+            std::vector<size_t> selected;
+            for (const auto & range : part.ranges)
+                for (size_t mark = range.begin; mark < std::min<size_t>(range.end, indexed_granules); ++mark)
+                    selected.push_back(mark);
 
-            /// `rows_from[g]`: such rows of the run of granule `g` in granules `g`, `g + 1`, ... of that run. The last
-            /// granule of a run may hold rows of the next run, so only its first row counts. Every one of the rows
-            /// after granule `mark` has a value of the aggregated column not smaller than any in granule `mark`.
-            /// `rows_before[g]`: such rows of the run of granule `g` in the granules before it. A granule before `g`
-            /// that starts with the same prefix lies entirely in the run, because the next one does too.
-            /// Both are computed in one pass each, so that the planning time stays linear in the number of granules
-            /// even when no run has enough rows (e.g. `LIMIT n BY` with `n` larger than every run).
-            std::vector<size_t> rows_from;
+            /// Whether granule `g` lies entirely in one run: granule `g + 1` starts with the same prefix.
+            auto continues_run = [&](size_t granule) { return granule + 1 < indexed_granules && same_prefix(granule, granule + 1); };
+
+            /// Granules that the index analysis did not select hold no such rows: with a filter, their first row does not
+            /// pass it, otherwise they would be selected, and without one, all granules of a run are selected. So the
+            /// counts below skip them, and a run continues from one selected granule to the next one when both start with
+            /// the same prefix: the part is sorted, so all granules between them do too.
+            /// `rows_after[i]`: such rows of the run of granule `selected[i]` in the granules after it. The last granule
+            /// of a run may hold rows of the next run, so only its first row counts. Every one of them has a value of the
+            /// aggregated column not smaller than any in granule `selected[i]`.
+            /// `rows_before[i]`: such rows of the run of granule `selected[i]` in the granules before it. A granule before
+            /// it that starts with the same prefix lies entirely in the run, because the next one does too.
+            const size_t num_selected = selected.size();
+            std::vector<size_t> rows_after;
             std::vector<size_t> rows_before;
             if (need_group_end)
             {
-                rows_from.assign(indexed_granules + 1, 0);
-                for (size_t granule = indexed_granules; granule-- > 0;)
-                    rows_from[granule] = known_rows(granule, continues_run[granule]) + (continues_run[granule] ? rows_from[granule + 1] : 0);
+                rows_after.assign(num_selected, 0);
+                size_t rows_from_next = 0;
+                for (size_t i = num_selected; i-- > 0;)
+                {
+                    const size_t granule = selected[i];
+                    rows_after[i] = (i + 1 < num_selected && same_prefix(granule, selected[i + 1])) ? rows_from_next : 0;
+                    rows_from_next = known_rows(granule, continues_run(granule)) + rows_after[i];
+                }
             }
             if (need_group_start)
             {
-                rows_before.assign(indexed_granules, 0);
-                for (size_t granule = 1; granule < indexed_granules; ++granule)
-                    if (continues_run[granule - 1])
-                        rows_before[granule] = rows_before[granule - 1] + known_rows(granule - 1, /*whole_granule=*/ true);
+                rows_before.assign(num_selected, 0);
+                for (size_t i = 1; i < num_selected; ++i)
+                    if (same_prefix(selected[i - 1], selected[i]))
+                        rows_before[i] = rows_before[i - 1] + known_rows(selected[i - 1], /*whole_granule=*/ true);
             }
 
-            /// Whether at least `rows_needed` such rows of the run of granule `mark` follow (precede) it. Called only
-            /// when granule `mark + 1` continues the run of `mark`.
-            auto enough_rows_after = [&](size_t mark) { return rows_from[mark + 1] >= rows_needed; };
-            auto enough_rows_before = [&](size_t mark) { return rows_before[mark] >= rows_needed; };
+            /// Whether at least `rows_needed` such rows of the run of granule `selected[i]` follow (precede) it.
+            auto enough_rows_after = [&](size_t i) { return rows_after[i] >= rows_needed; };
+            auto enough_rows_before = [&](size_t i) { return rows_before[i] >= rows_needed; };
 
             const size_t min_marks_for_seek = minMarksForSeek(
                 *data_part, reading->getAllColumnNames(), num_granules, context->getSettingsRef(), limit_by.has_value());
 
             MarkRanges new_ranges;
+            size_t position = 0;
             for (const auto & range : part.ranges)
             {
                 /// Gaps between the ranges selected by the index analysis are left as they are.
@@ -548,11 +573,14 @@ static void tryApply(
                 for (size_t mark = range.begin; mark < range.end; ++mark)
                 {
                     /// Granule `mark` must lie entirely in one run: the next granule starts with the same prefix.
-                    bool can_skip = mark < indexed_granules && continues_run[mark];
+                    const bool indexed = mark < indexed_granules;
+                    const size_t i = position;
+                    position += indexed ? 1 : 0;
+                    bool can_skip = indexed && continues_run(mark);
                     if (can_skip && need_group_end)
-                        can_skip = enough_rows_after(mark);
+                        can_skip = enough_rows_after(i);
                     if (can_skip && need_group_start)
-                        can_skip = enough_rows_before(mark);
+                        can_skip = enough_rows_before(i);
                     if (can_skip)
                         continue;
                     if (new_ranges.size() > first_new_range && mark - new_ranges.back().end <= min_marks_for_seek)

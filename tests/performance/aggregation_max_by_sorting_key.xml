@@ -39,6 +39,10 @@
     <query>SELECT symbol, argMax(price, ts) FROM {table} WHERE ts BETWEEN '2026-01-01 00:00:10' AND '2026-01-01 00:40:00' GROUP BY symbol SETTINGS optimize_aggregation_max_by_sorting_key = {optimize} FORMAT Null</query>
     <query>SELECT symbol, argMax(price, ts) FROM {table} WHERE symbol IN ('SYM1', 'SYM2', 'SYM3', 'SYM4', 'SYM5', 'SYM6', 'SYM7', 'SYM8', 'SYM9', 'SYM10') GROUP BY symbol SETTINGS optimize_aggregation_max_by_sorting_key = {optimize} FORMAT Null</query>
 
+    <!-- A selective query: the primary key selects a few granules, so the optimization must not add work for the rest
+         of the part. -->
+    <query>SELECT symbol, max(ts) FROM {table} WHERE symbol = 'SYM1' GROUP BY symbol SETTINGS optimize_aggregation_max_by_sorting_key = {optimize} FORMAT Null</query>
+
     <!-- Which symbols exist. -->
     <query>SELECT DISTINCT symbol FROM {table} SETTINGS optimize_aggregation_max_by_sorting_key = {optimize} FORMAT Null</query>
     <query>SELECT count(DISTINCT symbol) FROM {table} SETTINGS optimize_aggregation_max_by_sorting_key = {optimize} FORMAT Null</query>
