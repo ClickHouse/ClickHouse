@@ -1,3 +1,6 @@
+-- Tags: no-asan, no-tsan, no-msan
+-- Tag no-asan, no-tsan, no-msan: the sanitizers replace the allocator, so the copies of the plan are not counted against `max_memory_usage`
+
 -- A query that hits `max_memory_usage` while the local tasks of a distributed plan stage are being started
 -- must fail with the error instead of aborting the server.
 
