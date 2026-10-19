@@ -22,8 +22,8 @@ namespace DB::GPU
 PinnedMemoryPool & PinnedMemoryPool::instance()
 {
     /// Never destroyed, see the comment of the class.
-    static PinnedMemoryPool * const instance = new PinnedMemoryPool;
-    return *instance;
+    [[clang::no_destroy]] static PinnedMemoryPool instance;
+    return instance;
 }
 
 void PinnedMemoryPool::configure(size_t release_threshold)
