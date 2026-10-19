@@ -53,6 +53,7 @@ namespace ProfileEvents
     extern const Event KeeperReadSnapshotObject;
     extern const Event KeeperReadSnapshotFailed;
     extern const Event KeeperReadSnapshotDeferred;
+    extern const Event KeeperReadSnapshotStreamingSeeks;
     extern const Event KeeperSnapshotRemoteLoaderErrors;
     extern const Event KeeperSaveSnapshotObject;
     extern const Event KeeperSaveSnapshotFailed;
@@ -83,12 +84,14 @@ namespace CoordinationSetting
     extern const CoordinationSettingsInt64 snapshot_zstd_compression_level;
     extern const CoordinationSettingsUInt64 snapshots_to_keep;
     extern const CoordinationSettingsUInt64 snapshot_transfer_chunk_size;
+    extern const CoordinationSettingsBool snapshot_transfer_remote_disk_streaming;
 }
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int CORRUPTED_DATA;
+    extern const int CANNOT_SEEK_THROUGH_FILE;
 }
 
 /// nuraft::snapshot holds only Raft metadata (last_log_idx, last_log_term, size, cluster_config).
@@ -2222,10 +2225,13 @@ struct LocalSnapshotLoader : private boost::noncopyable, public ISnapshotLoader
 struct SnapshotTransferCtx
 {
     uint64_t chunk_size = 0;
-    /// Holds the snapshot file alive for this transfer. Declared before
-    /// `loader` so destruction closes loader handles before the pin may unlink.
+    uint64_t file_size = 0;
+    /// Holds the snapshot file alive for this transfer. Declared before `loader`
+    /// and `reader` so destruction closes their handles before the pin may unlink.
     SnapshotFileInfoPtr pin;
     std::shared_ptr<ISnapshotLoader> loader;
+    /// Streaming mode: owned by this transfer alone, so followers never share a cursor or an error.
+    std::unique_ptr<ReadBufferFromFileBase> reader{};
 };
 
 }
@@ -2248,6 +2254,7 @@ int KeeperStateMachine::read_logical_snp_obj(
     SnapshotFileInfoPtr pin;  // populated under the lock for obj_id == 0
     std::shared_ptr<ISnapshotLoader> remote_loader;
     const uint64_t configured_chunk_size = keeper_context->getCoordinationSettings()[CoordinationSetting::snapshot_transfer_chunk_size];
+    const bool streaming = keeper_context->getCoordinationSettings()[CoordinationSetting::snapshot_transfer_remote_disk_streaming];
 
     if (obj_id == 0)
     {
@@ -2273,7 +2280,7 @@ int KeeperStateMachine::read_logical_snp_obj(
 
         /// Cache one remote loader. A request for another `log_idx` replaces
         /// the cache, while active transfers keep their own `shared_ptr`.
-        if (!isLocalDisk(*pin->disk))
+        if (!streaming && !isLocalDisk(*pin->disk))
         {
             /// The remote loader cache is valid for exactly one `log_idx`.
             /// Drop it before serving a different retained snapshot.
@@ -2294,11 +2301,33 @@ int KeeperStateMachine::read_logical_snp_obj(
         }
     }
 
-    if (obj_id == 0)
+    if (obj_id == 0 && streaming && !isLocalDisk(*pin->disk))
+    {
+        try
+        {
+            const uint64_t file_size = pin->disk->getFileSize(pin->path);
+            if (file_size == 0)
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Snapshot {} on remote disk has zero size", s.get_last_log_idx());
+            auto reader = pin->disk->readFile(pin->path, getReadSettings(), file_size);
+            LOG_DEBUG(log, "Streaming snapshot {} from remote disk: {} bytes in objects of {} bytes",
+                      s.get_last_log_idx(), file_size, configured_chunk_size);
+            user_snp_ctx = new SnapshotTransferCtx{
+                .chunk_size = configured_chunk_size,
+                .file_size = file_size,
+                .pin = std::move(pin),
+                .loader = nullptr,
+                .reader = std::move(reader),
+            };
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("Failed to open snapshot {} for streaming transfer", s.get_last_log_idx()));
+            return -1;
+        }
+    }
+    else if (obj_id == 0)
     {
         const bool is_local_disk = !remote_loader;
-        LOG_DEBUG(log, "Opening snapshot {} on {} disk for transfer",
-                  s.get_last_log_idx(), is_local_disk ? "local" : "remote");
 
         std::shared_ptr<ISnapshotLoader> loader;
         if (is_local_disk)
@@ -2325,6 +2354,8 @@ int KeeperStateMachine::read_logical_snp_obj(
         const uint64_t file_size = loader->fileSize();
         /// `chunk_size == 0` sends the whole file in one object.
         const uint64_t effective_chunk_size = configured_chunk_size == 0 ? file_size : configured_chunk_size;
+        LOG_DEBUG(log, "Serving snapshot {} from {}: {} bytes in objects of {} bytes", s.get_last_log_idx(),
+                  is_local_disk ? "local disk" : "remote disk through the shared in-memory copy", file_size, effective_chunk_size);
         /// Member order makes `loader` close handles before `pin` may unlink.
         user_snp_ctx = new SnapshotTransferCtx{
             .chunk_size = effective_chunk_size,
@@ -2342,7 +2373,7 @@ int KeeperStateMachine::read_logical_snp_obj(
         return -1;
     }
 
-    const uint64_t file_size = ctx->loader->fileSize();
+    const uint64_t file_size = ctx->reader ? ctx->file_size : ctx->loader->fileSize();
 
     /// Guard against multiplication overflow before computing offset.
     if (ctx->chunk_size != 0 && obj_id > file_size / ctx->chunk_size)
@@ -2365,8 +2396,8 @@ int KeeperStateMachine::read_logical_snp_obj(
     const auto chunk_size = std::min(ctx->chunk_size, file_size - offset);
     is_last_obj = (offset + chunk_size == file_size);
 
-    nuraft::byte * src_ptr = ctx->loader->getChunk(offset, chunk_size, log);
-    if (!src_ptr)
+    nuraft::byte * src_ptr = ctx->reader ? nullptr : ctx->loader->getChunk(offset, chunk_size, log);
+    if (!src_ptr && !ctx->reader)
     {
         {
             std::lock_guard lock(snapshots_lock);
@@ -2388,7 +2419,21 @@ int KeeperStateMachine::read_logical_snp_obj(
     try
     {
         data_out = nuraft::buffer::alloc(chunk_size);
-        data_out->put_raw(src_ptr, chunk_size);
+        if (!ctx->reader)
+            data_out->put_raw(src_ptr, chunk_size);
+        else
+        {
+            /// NuRaft re-requests an object after an RPC error or a requeue, so the reader may be elsewhere.
+            const auto position = static_cast<off_t>(offset);
+            if (ctx->reader->getPosition() != position)
+            {
+                if (ctx->reader->seek(position, SEEK_SET) != position)
+                    throw Exception(
+                        ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Cannot seek snapshot {} to offset {}", s.get_last_log_idx(), offset);
+                ProfileEvents::increment(ProfileEvents::KeeperReadSnapshotStreamingSeeks);
+            }
+            ctx->reader->readStrict(reinterpret_cast<char *>(data_out->data_begin()), chunk_size);
+        }
     }
     catch (...)
     {
