@@ -51,14 +51,6 @@ public:
         return DB::DatabaseDataLakeCatalogType::UNITY;
     }
 
-    DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::DELTA; }
-
-    std::optional<std::string> getDefaultTableLocation(
-        const std::string & namespace_name,
-        const std::string & table_name) const override;
-
-    void createNamespaceIfNotExists(const String & namespace_name) const override;
-
     /// Register a freshly created external DELTA table with Unity; `metadata_content` holds the Delta schema from `createInitial`.
     /// The shared `ICatalog` parameter (a `vN.metadata.json` path for Iceberg) is the table's storage location for DeltaLake/Unity.
     void createTable(
@@ -74,7 +66,7 @@ private:
     const std::string bearer_token;
 
     std::pair<Poco::Dynamic::Var, std::string> getJSONRequest(const std::string & route, const Poco::URI::QueryParameters & params = {}) const;
-    std::pair<Poco::Dynamic::Var, std::string> postJSONRequest(const std::string & route, std::function<void(DB::WriteBuffer &)> out_stream_callaback) const;
+    std::pair<Poco::Dynamic::Var, std::string> postJSONRequest(const std::string & route, std::function<void(std::ostream &)> out_stream_callaback) const;
 
     DataLake::ICatalog::Namespaces getSchemas(const std::string & base_prefix, size_t limit = 0) const;
 
@@ -86,7 +78,7 @@ private:
     CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
     void getCredentials(const String & table_id, TableMetadata & metadata) const;
 
-    Poco::JSON::Object::Ptr requestCredentials(const String & table_id, const String & operation) const;
+    Poco::JSON::Object::Ptr requestReadCredentials(const String & table_id) const;
 
     std::shared_ptr<IStorageCredentials> parseS3Credentials(const Poco::JSON::Object::Ptr & response) const;
     std::shared_ptr<IStorageCredentials> parseAzureCredentials(const Poco::JSON::Object::Ptr & response) const;
@@ -96,12 +88,7 @@ private:
         const std::string & table_name,
         TableMetadata & result) const;
 
-    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(
-        const DB::StorageID & table_id, const TableMetadata & table_metadata) override;
-
-    ICatalog::CredentialsRefreshCallback getWriteCredentialsConfigurationCallback(const DB::StorageID & table_id) override;
-
-    ICatalog::CredentialsRefreshCallback getCredentialsCallbackForOperation(const String & unity_table_id, const String & operation);
+    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & table_id) override;
 };
 
 }

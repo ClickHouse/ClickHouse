@@ -14,7 +14,7 @@ namespace DB
 
 namespace QueryPlanSerializationSetting
 {
-    extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
+    extern const QueryPlanSerializationSettingsUInt64 max_block_size;
 }
 
 static ITransformingStep::Traits getTraits()
@@ -134,8 +134,7 @@ void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings,
 void ArrayJoinStep::serialize(Serialization & ctx) const
 {
     /// The filter is only ever serialized locally (e.g. calculateHashTableCacheKeys); fusion bails for
-    /// distributed, serialized and plan-based parallel replicas plans, so an older worker or replica never
-    /// receives it and no version bump is needed
+    /// distributed/serialized plans, so an older worker never receives it and no version bump is needed
     const bool serialize_filter = element_filter.has_value();
 
     UInt8 flags = 0;
@@ -157,26 +156,12 @@ void ArrayJoinStep::serialize(Serialization & ctx) const
 
     writeVarUInt(array_join.columns.size(), ctx.out);
     for (const auto & column : array_join.columns)
-    {
-        /// An array-joined column is named by the plan that built it (`__table1.arr` inside a shipped
-        /// fragment, `__table2.arr` outside it), so a cache key takes its position in the input header
-        /// instead - the same column sits in the same place in every build.
-        if (ctx.for_cache_key)
-        {
-            const auto & header = *getInputHeaders().front();
-            writeVarUInt(header.has(column) ? header.getPositionByName(column) : header.columns(), ctx.out);
-        }
-        else
-            writeStringBinary(column, ctx.out);
-    }
+        writeStringBinary(column, ctx.out);
 
     if (serialize_filter)
     {
-        if (ctx.for_cache_key)
-            writeIntBinary(element_filter->getOutputIdentity(element_filter_column_name, ctx.input_header), ctx.out);
-        else
-            writeStringBinary(element_filter_column_name, ctx.out);
-        element_filter->serialize(ctx.out, ctx.registry, ctx.input_header);
+        writeStringBinary(element_filter_column_name, ctx.out);
+        element_filter->serialize(ctx.out, ctx.registry);
     }
 }
 

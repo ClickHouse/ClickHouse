@@ -133,9 +133,13 @@ LimitByTransform::LimitByTransform(
     hash_method_context = AggregatedDataVariants::createCache(type, ctx_settings);
 }
 
-void LimitByTransform::processRunInsideWindow(
-    UInt64 run_start_row, UInt64 run_row_count, size_t group_idx, UInt64 group_rows_seen_before_run)
+void LimitByTransform::processRun(UInt64 run_start_row, UInt64 run_row_count, size_t group_idx)
 {
+    chassert(group_idx < group_counts.size());
+    const UInt64 group_rows_seen_before_run = group_counts[group_idx];
+    if (group_rows_seen_before_run >= group_limit_end)
+        return;
+
     const auto slice = shrinkRunToLimitWindow(run_start_row, run_row_count, group_rows_seen_before_run, group_offset, group_limit_end);
 
     if (slice.length > 0)

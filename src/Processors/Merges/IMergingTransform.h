@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 
 #include <Core/Block_fwd.h>
@@ -60,7 +59,7 @@ protected:
 
         /// Inputs to ask for data without waiting for it (read-ahead for sources
         /// deferred behind virtual rows). See `IMergingAlgorithm::Status::sources_to_prefetch`.
-        VectorWithMemoryTracking<size_t> inputs_to_prefetch;
+        std::vector<size_t> inputs_to_prefetch;
 
         IMergingAlgorithm::Inputs init_chunks;
     };
@@ -76,7 +75,7 @@ private:
         bool is_initialized = false;
     };
 
-    VectorWithMemoryTracking<InputState> input_states;
+    std::vector<InputState> input_states;
     std::atomic<bool> have_all_inputs;
     bool is_initialized = false;
     UInt64 limit_hint = 0;
@@ -155,7 +154,6 @@ public:
         {
             // std::cerr << "Got chunk with " << status.chunk.getNumRows() << " rows" << std::endl;
             state.output_chunk = std::move(status.chunk);
-            onOutputChunk(state.output_chunk);
         }
 
         if (status.required_source >= 0)
@@ -179,9 +177,6 @@ public:
     }
 
 protected:
-    /// Is called for every chunk the merge produces, before it is pushed to the output.
-    virtual void onOutputChunk(const Chunk & /*chunk*/) {}
-
     /// Call `consume` with empty chunk when there is no more data.
     bool empty_chunk_on_finish = false;
 

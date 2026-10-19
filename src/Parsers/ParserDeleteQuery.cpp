@@ -5,6 +5,8 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserPartition.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -105,11 +107,14 @@ bool ParserDeleteQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-std::map<String, Documentation> ParserDeleteQuery::getDocumentation() const
-{
-    std::map<String, Documentation> documentation;
+}
 
-    documentation["DELETE"] =
+namespace DB
+{
+
+void registerStatementDelete(StatementFactory & factory)
+{
+    factory.registerStatement("DELETE",
     {
         .description = R"DOCS_MD(
 The lightweight `DELETE` statement removes rows from the table `[db.]table` that match the expression `expr`. It is only available for the *MergeTree table engine family.
@@ -206,9 +211,7 @@ GRANT ALTER DELETE ON db.table to username;
 DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr1 [, partition_expr2 ...]] WHERE expr
 )",
         .related = {"ALTER TABLE ... DELETE", "ALTER TABLE ... APPLY DELETED MASK", "UPDATE", "TRUNCATE"},
-    };
-
-    return documentation;
+    });
 }
 
 }

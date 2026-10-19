@@ -172,9 +172,12 @@ void DataTypeMap::updateHashImpl(SipHash & hash) const
     value_type->updateHash(hash);
 }
 
-DataTypePtr DataTypeMap::doCloneWithChildren(const DataTypes & new_children) const
+void DataTypeMap::forEachChild(const DB::IDataType::ChildCallback & callback) const
 {
-    return std::make_shared<DataTypeMap>(new_children[0], new_children[1]);
+    callback(*key_type);
+    callback(*value_type);
+    key_type->forEachChild(callback);
+    value_type->forEachChild(callback);
 }
 
 /// Resolves a dynamic subcolumn like `map['key']` by parsing the key from the subcolumn name,
@@ -252,7 +255,7 @@ void registerDataTypeMap(DataTypeFactory & factory)
 {
     factory.registerDataType("Map", create, DataTypeFactory::Case::Sensitive, Documentation{
             .description = R"DOCS_MD(
-Data type `Map(K, V)` stores key-value pairs. It can also be written as `MAP(K, V)`.
+Data type `Map(K, V)` stores key-value pairs.
 
 Unlike other databases, maps are not unique in ClickHouse, i.e. a map can contain two elements with the same key.
 (The reason for that is that maps are internally implemented as `Array(Tuple(K, V))`.)

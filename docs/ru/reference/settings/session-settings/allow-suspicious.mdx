@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## allow_suspicious_codecs {#allow_suspicious_codecs}
+<div id="allow_suspicious_codecs">
+  ## allow_suspicious_codecs
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -21,23 +23,27 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Если установлено значение true, разрешается указывать бессмысленные кодеки сжатия.
 
-## allow_suspicious_fixed_string_types {#allow_suspicious_fixed_string_types}
+<div id="allow_suspicious_fixed_string_types">
+  ## allow_suspicious_fixed_string_types
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 В операторе CREATE TABLE разрешено создавать столбцы типа FixedString(n) с n &gt; 256. FixedString длиной &gt;= 256 выглядит подозрительно и, скорее всего, указывает на неправильное использование
 
-## allow_suspicious_indexes {#allow_suspicious_indexes}
-
-**Псевдонимы**: `allow_suspicious_indices`
+<div id="allow_suspicious_indices">
+  ## allow_suspicious_indices
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Добавлен псевдоним настройки `allow_suspicious_indices`."}]}, {"id": "row-2","items": [{"label": "23.4"},{"label": "0"},{"label": "Если значение равно true, индекс можно определить с идентичными выражениями"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.4"},{"label": "0"},{"label": "Если значение равно true, индекс можно определить с идентичными выражениями"}]}]} />
 
 Отклоняет основные/вторичные индексы и ключи сортировки с идентичными выражениями
 
-## allow_suspicious_low_cardinality_types {#allow_suspicious_low_cardinality_types}
+<div id="allow_suspicious_low_cardinality_types">
+  ## allow_suspicious_low_cardinality_types
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -56,7 +62,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 1 — использование `LowCardinality` не ограничено.
 * 0 — использование `LowCardinality` ограничено.
 
-## allow_suspicious_primary_key {#allow_suspicious_primary_key}
+<div id="allow_suspicious_primary_key">
+  ## allow_suspicious_primary_key
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -64,7 +72,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Разрешить сомнительные `PRIMARY KEY`/`ORDER BY` для MergeTree (например, с SimpleAggregateFunction).
 
-## allow_suspicious_ttl_expressions {#allow_suspicious_ttl_expressions}
+<div id="allow_suspicious_ttl_expressions">
+  ## allow_suspicious_ttl_expressions
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -72,7 +82,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Отклонять TTL-выражения, которые не зависят ни от одного из столбцов таблицы. В большинстве случаев это указывает на ошибку пользователя.
 
-## allow_suspicious_types_in_group_by {#allow_suspicious_types_in_group_by}
+<div id="allow_suspicious_types_in_group_by">
+  ## allow_suspicious_types_in_group_by
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -80,7 +92,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Разрешает или запрещает использовать типы [Variant](/ru/reference/data-types/variant) и [Dynamic](/ru/reference/data-types/dynamic) в ключах GROUP BY.
 
-## allow_suspicious_types_in_order_by {#allow_suspicious_types_in_order_by}
+<div id="allow_suspicious_types_in_order_by">
+  ## allow_suspicious_types_in_order_by
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -88,7 +102,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Разрешает или запрещает использование типов [Variant](/ru/reference/data-types/variant) и [Dynamic](/ru/reference/data-types/dynamic) в ключах ORDER BY.
 
-## allow_suspicious_variant_types {#allow_suspicious_variant_types}
+<div id="allow_suspicious_variant_types">
+  ## allow_suspicious_variant_types
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

@@ -26,8 +26,7 @@ WHERE (small.sid = (big.bid + 1) % 5000);
 
 SELECT count()
 FROM big, small
-WHERE (small.sid = (big.bid + 1) % 5000)
-SETTINGS distributed_plan_fallback_to_local_execution = 0;
+WHERE (small.sid = (big.bid + 1) % 5000);
 
 SELECT '------------';
 
@@ -44,8 +43,7 @@ WHERE (small.sid = (big.bid + 1) % 5000);
 
 SELECT count()
 FROM small, big
-WHERE (small.sid = (big.bid + 1) % 5000)
-SETTINGS distributed_plan_fallback_to_local_execution = 0;
+WHERE (small.sid = (big.bid + 1) % 5000);
 
 SELECT '------------';
 
@@ -58,4 +56,4 @@ SETTINGS distributed_plan_default_shuffle_join_bucket_count=3, distributed_plan_
 SELECT count()
 FROM big, small
 WHERE (small.sid = (big.bid + 1) % 5000)
-SETTINGS distributed_plan_default_shuffle_join_bucket_count=3, distributed_plan_default_reader_bucket_count=2, distributed_plan_fallback_to_local_execution = 0;
+SETTINGS distributed_plan_default_shuffle_join_bucket_count=3, distributed_plan_default_reader_bucket_count=2;

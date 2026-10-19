@@ -1,7 +1,6 @@
 #include <Columns/ColumnConst.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/normalizeDivision.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
@@ -344,8 +343,7 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     {
         /// Do not consider decimal overflow as parse error to avoid attempts to parse it as expression with float literal
         bool decimal_overflow = e.code() == ErrorCodes::ARGUMENT_OUT_OF_BOUND;
-        /// A throwing read cancels its buffer for good, and the recovery below reads it again.
-        if (!isParseError(e.code()) || decimal_overflow || buf->isCanceled())
+        if (!isParseError(e.code()) || decimal_overflow)
         {
             e.recordToSystemErrors();
             throw;
@@ -583,8 +581,6 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         if (rollback_on_exception)
             column.popBack(1);
     }
-
-    normalizeDivision(*ast, context);
 
     parser_type_for_column[column_idx] = ParserType::SingleExpressionEvaluation;
 

@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [الملف المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## text_index_hint_max_selectivity {#text_index_hint_max_selectivity}
+<div id="text_index_hint_max_selectivity">
+  ## text_index_hint_max_selectivity
+</div>
 
 <SettingsInfoBlock type="Float" default_value="0.2" />
 
@@ -21,7 +23,22 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 الحد الأقصى لانتقائية عامل التصفية الذي يسمح باستخدام التلميح المُنشأ من الفهرس النصي المعكوس.
 
-## text_index_like_max_postings_to_read {#text_index_like_max_postings_to_read}
+<div id="text_index_lazy_intersection_density_threshold">
+  ## text_index_lazy_intersection_density_threshold
+</div>
+
+**الأسماء البديلة**: `text_index_density_threshold`
+
+<SettingsInfoBlock type="Float" default_value="0.2" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0.2"},{"label": "أُعيدت تسميته من `text_index_density_threshold` (مع الإبقاء عليه كاسم بديل)؛ ويحدّد خوارزمية تقاطع قوائم الإسناد في وضع التطبيق الكسول لقوائم الإسناد."}]}]} />
+
+عتبة كثافة قوائم الإسناد التي تحدد خوارزمية التقاطع في وضع التطبيق الكسول لقوائم الإسناد (`text_index_posting_list_apply_mode = 'lazy'`).
+دون العتبة: تقاطع leapfrog (يفضّل قوائم الإسناد المتفرقة). عند العتبة أو فوقها: تقاطع bitmap بأسلوب brute-force (يفضّل قوائم الإسناد الكثيفة).
+
+<div id="text_index_like_max_postings_to_read">
+  ## text_index_like_max_postings_to_read
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="50" />
 
@@ -31,43 +48,30 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 يتطلب تمكين `use_text_index_like_evaluation_by_dictionary_scan`.
 
-## text_index_like_min_pattern_length {#text_index_like_min_pattern_length}
+<div id="text_index_like_min_pattern_length">
+  ## text_index_like_min_pattern_length
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "4"},{"label": "إعداد جديد"}]}]} />
 
-الحد الأدنى لطول السلسلة الأبجدية الرقمية الهدف في نمط LIKE/ILIKE، أو للسلسلة الهدف في `startsWith`/`endsWith`،
-واللازم لاستخدام تقييم LIKE في الفهرس النصي عبر فحص القاموس.
+الحد الأدنى لطول السلسلة الأبجدية الرقمية الهدف في نمط LIKE/ILIKE، واللازم لاستخدام تقييم LIKE في الفهرس النصي عبر فحص القاموس.
 الأنماط الأقصر من هذه العتبة تطابق عددًا كبيرًا جدًا من الرموز القاموسية، لذا يتم تجاوزها لتجنّب عمليات فحص مكلفة.
-
-مع المُرمِّز `array`، حيث يكون أي نمط مؤهلًا، تُقارن العتبة بعدد المحارف غير البديلة في النمط بأكمله.
 
 يتطلب أن يكون `use_text_index_like_evaluation_by_dictionary_scan` مفعّلًا.
 
-## text_index_posting_list_apply_mode {#text_index_posting_list_apply_mode}
+<div id="text_index_posting_list_apply_mode">
+  ## text_index_posting_list_apply_mode
+</div>
 
 <SettingsInfoBlock type="TextIndexPostingListApplyMode" default_value="lazy" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "lazy"},{"label": "تفك استعلامات الفهرس النصي الآن ترميز قوائم الترحيلات عند الطلب باستخدام مؤشر بدلًا من تحويلها إلى Roaring Bitmaps، مما يقلل استخدام الذاكرة ووقت CPU للاستعلامات الانتقائية."}]}, {"id": "row-2","items": [{"label": "26.6"},{"label": "materialize"},{"label": "إعداد جديد لوضع التطبيق الكسول لقائمة الترحيلات"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "lazy"},{"label": "تفك استعلامات الفهرس النصي الآن ترميز قوائم الإسناد عند الطلب باستخدام مؤشر بدلًا من تحويلها إلى Roaring Bitmaps، مما يقلل استخدام الذاكرة ووقت CPU للاستعلامات الانتقائية."}]}, {"id": "row-2","items": [{"label": "26.6"},{"label": "materialize"},{"label": "إعداد جديد لوضع التطبيق الكسول لقائمة الإسناد"}]}]} />
 
-يتحكّم في كيفية تطبيق قوائم الترحيلات أثناء استعلامات الفهرس النصي.
-يقوم &#39;materialize&#39; بفك ترميز قوائم الترحيلات مسبقًا إلى Roaring Bitmaps.
+يتحكّم في كيفية تطبيق قوائم الإسناد أثناء استعلامات الفهرس النصي.
+يقوم &#39;materialize&#39; بفك ترميز قوائم الإسناد مسبقًا إلى Roaring Bitmaps.
 يستخدم &#39;lazy&#39; (الافتراضي) فك الترميز عند الطلب بالاعتماد على المؤشر (ويتطلب تنسيق فهرس يتضمّن codec مُسلسَلًا).
 يُطبّق &#39;lazy&#39; فقط حيثما يكون مدعومًا: إذ تعود الاستعلامات ذات الأنماط (مثل `LIKE`) والأجزاء ذات الفهرس المكتوب بإصدار أقدم إلى &#39;materialize&#39;.
-
-## text_index_postings_intersection_algorithm {#text_index_postings_intersection_algorithm}
-
-<SettingsInfoBlock type="TextIndexPostingsIntersectionAlgorithm" default_value="auto" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "auto"},{"label": "إعداد جديد يحلّ محل `text_index_lazy_intersection_density_threshold`: يحدد خوارزمية تقاطع قوائم الترحيلات في وضع التطبيق الكسول لقوائم الترحيلات. تحافظ القيمة `auto` على السلوك الافتراضي السابق، ولذلك يجب ألا يغيّرها الإعداد `compatibility`."}]}]} />
-
-يحدد الخوارزمية المستخدمة لإجراء تقاطع قوائم الترحيلات في وضع التطبيق الكسول لقوائم الترحيلات (`text_index_posting_list_apply_mode = 'lazy'`).
-
-* `auto` (الافتراضي): لا تُستخدم خوارزمية leapfrog إلا عندما تستطيع قائمة الترحيلات الأكثر تناثرًا تخطي كتل مضغوطة كاملة من القائمة الأكثر كثافة، وإلا فيُستخدم تقاطع الـ bitmap بالقوة الغاشمة.
-* `bruteforce`: يُستخدم دائمًا تقاطع الـ bitmap بالقوة الغاشمة.
-* `leapfrog`: يُستخدم دائمًا تقاطع leapfrog.
-
-تعتمد عمليات التقاطع التي تشمل 256 رمزًا أو أكثر على خوارزمية leapfrog دائمًا.
 
 {/*AUTOGENERATED_END*/}

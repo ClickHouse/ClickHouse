@@ -15,7 +15,6 @@
 namespace ProfileEvents
 {
     extern const Event FilesystemCacheDowngradedFileSegments;
-    extern const Event FilesystemCachePromotedFileSegments;
 }
 namespace DB
 {
@@ -160,11 +159,7 @@ IFileCachePriority::IteratorPtr SLRUFileCachePriority::add( /// NOLINT
         /// If it is server startup, we put entries in any queue it will fit in,
         /// but with preference for probationary queue,
         /// because we do not know the distribution between queues after server restart.
-        /// Use the disk-accounted size for the fit check, because that is the size the
-        /// `Entry` will occupy in the subqueue (with `use_real_disk_size` the `Entry`
-        /// constructor aligns the size to the filesystem block size).
-        const size_t accounted_size = key_metadata->useRealDiskSize() ? key_metadata->alignFileSize(size) : size;
-        is_protected = !probationary_queue.canFit(accounted_size, /* elements */1, *state_lock);
+        is_protected = !probationary_queue.canFit(size, /* elements */1, *state_lock);
     }
     else if (size && !state_lock)
     {
@@ -635,10 +630,11 @@ bool SLRUFileCachePriority::tryIncreasePriority(
     }
     else if (!is_space_reservation_complete)
     {
-        /// The move must not run concurrently with a space reservation for this entry: the reservation
-        /// holds space and collects eviction candidates in the queue where the entry was when it started.
-        /// So a file segment which can be downloaded concurrently only gets a higher priority in
-        /// probationary (see `FileSegment::increasePriority`).
+        /// `is_space_reservation_complete` means that file segment is fully downloaded.
+        /// This is a limitation of current implementation
+        /// that we opt to upgrade only those entries which have already completed space reservation.
+        /// Because otherwise it becomes too complex to handle concurrent
+        /// space reservation and priority increase (because of the granular locking).
         return probationary_queue.tryIncreasePriority(
             iterator.lru_iterator, is_space_reservation_complete, state_guard);
     }
@@ -753,7 +749,6 @@ bool SLRUFileCachePriority::tryIncreasePriority(
         check(lock);
     }
 
-    ProfileEvents::increment(ProfileEvents::FilesystemCachePromotedFileSegments);
     return true;
 }
 

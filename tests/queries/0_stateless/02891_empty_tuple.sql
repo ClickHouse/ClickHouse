@@ -12,15 +12,15 @@ select ();
 
 drop table if exists x;
 
-SET enable_nullable_tuple_type = 0;
+SET allow_experimental_nullable_tuple_type = 0;
 
 create table x (i Nullable(Tuple())) engine MergeTree order by (); -- { serverError ILLEGAL_COLUMN }
 
-SET enable_nullable_tuple_type = 1;
+SET allow_experimental_nullable_tuple_type = 1;
 
 create table x (i Nullable(Tuple())) engine MergeTree order by ();
 
-SET enable_nullable_tuple_type = DEFAULT;
+SET allow_experimental_nullable_tuple_type = DEFAULT;
 
 drop table x;
 

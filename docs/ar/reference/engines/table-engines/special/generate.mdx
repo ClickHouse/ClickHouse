@@ -15,30 +15,24 @@ doc_type: 'reference'
 * استخدمه في الاختبارات لملء جدول كبير ببيانات قابلة لإعادة الإنتاج.
 * أنشئ مدخلات عشوائية لاختبارات Fuzzing.
 
-## الاستخدام في خادم ClickHouse {#usage-in-clickhouse-server}
+<div id="usage-in-clickhouse-server">
+  ## الاستخدام في خادم ClickHouse
+</div>
 
 ```sql
 ENGINE = GenerateRandom([random_seed [,max_string_length [,max_array_length]]])
-[SETTINGS null_ratio = ..., max_json_depth = ..., max_json_keys_per_object = ...]
 ```
 
-تحدد المعلمتان `max_array_length` و`max_string_length` الحد الأقصى لطول جميع
-أعمدة المصفوفات أو الخرائط والسلاسل النصية، على الترتيب، في البيانات المولَّدة.
+يحدِّد المعلَمان `max_array_length` و`max_string_length` الحد الأقصى لطول جميع
+الأعمدة من النوع Array أو Map، وكذلك السلاسل النصية، على الترتيب، في البيانات المُولَّدة.
 
-تتحكم عبارة `SETTINGS` في طريقة توليد قيم `Nullable` و`Variant` و`Dynamic` و`JSON`:
-يمثل `null_ratio` (القيمة الافتراضية `0.0625`) احتمال أن تكون القيمة `NULL`، كما يمثل الاحتمال الأساسي
-لغياب مفتاح `JSON` عن الصف - علمًا بأن قلة من المفاتيح المتناثرة تغيب بمعدل يفوق ذلك بعدة أضعاف،
-ويحدد `max_json_depth` (القيمة الافتراضية `3`) الحد الأقصى لعمق التداخل في كائنات `JSON` المولَّدة،
-ويحدد `max_json_keys_per_object` (القيمة الافتراضية `8`) الحد الأقصى لعدد المفاتيح المولَّدة في المستوى الواحد من
-الكائن. وتقبل دالة الجدول [`generateRandom`](/ar/reference/functions/table-functions/generate)
-الإعدادات نفسها.
+لا يدعم محرك الجدول Generate إلا استعلامات `SELECT`.
 
-لا يدعم محرك الجدول Generate سوى استعلامات `SELECT`.
+ويدعم جميع [أنواع البيانات](/ar/reference/data-types/index) التي يمكن تخزينها في جدول، باستثناء `AggregateFunction`.
 
-كما يدعم جميع [أنواع البيانات](/ar/reference/data-types/index) التي يمكن تخزينها في جدول،
-باستثناء `AggregateFunction` و`Interval` و`Nothing` و`QBit`.
-
-## مثال {#example}
+<div id="example">
+  ## مثال
+</div>
 
 **1.** أنشئ الجدول `generate_engine_table`:
 
@@ -60,7 +54,9 @@ SELECT * FROM generate_engine_table LIMIT 3
 └──────┴────────────┘
 ```
 
-## تفاصيل التنفيذ {#details-of-implementation}
+<div id="details-of-implementation">
+  ## تفاصيل التنفيذ
+</div>
 
 * غير مدعوم:
   * `ALTER`

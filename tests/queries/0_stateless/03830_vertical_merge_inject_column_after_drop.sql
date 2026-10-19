@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-parallel
 -- Tag no-parallel: uses the server-global failpoint mt_select_parts_to_mutate_no_free_threads
 
 -- Vertical merge should not fail when a dropped column is still physically present in parts.

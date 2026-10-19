@@ -1,5 +1,4 @@
 #include <memory>
-#include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
 #include <optional>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
@@ -16,12 +15,9 @@
 #include <IO/VarInt.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
-
-namespace ProfileEvents
-{
-    extern const Event ParquetReadMinMaxFromStatistics;
-}
+#include <parquet/file_reader.h>
 
 namespace DB
 {
@@ -118,11 +114,11 @@ parquet::format::FileMetaData ParquetV3BlockInputFormat::getFileMetadata(Parquet
         String etag = object_with_metadata->metadata->etag;
         ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
         return metadata_cache->getOrSetMetadata(
-            cache_key, [&]() { return Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size); });
+            cache_key, [&]() { return Parquet::Reader::readFileMetaData(prefetcher); });
     }
     else
     {
-        return Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size);
+        return Parquet::Reader::readFileMetaData(prefetcher);
     }
 }
 
@@ -147,14 +143,6 @@ Chunk ParquetV3BlockInputFormat::read()
     }
 
     initializeIfNeeded();
-    if (reader->reader.min_max_chunk.has_value())
-    {
-        Chunk chunk = std::move(*reader->reader.min_max_chunk);
-        reader->reader.min_max_chunk.reset();
-        min_max_from_statistics = true;
-        ProfileEvents::increment(ProfileEvents::ParquetReadMinMaxFromStatistics);
-        return chunk;
-    }
     auto res = reader->read();
     previous_block_missing_values = res.block_missing_values;
     previous_approx_bytes_read_for_chunk = res.virtual_bytes_read;
@@ -163,7 +151,7 @@ Chunk ParquetV3BlockInputFormat::read()
 
 std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat::getMatchedBuckets() const
 {
-    if (!reader || min_max_from_statistics)
+    if (!reader)
         return std::nullopt;
     std::vector<size_t> matched;
     for (const auto & row_group : reader->reader.row_groups)
@@ -185,24 +173,6 @@ std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat:
             matched.push_back(row_group.row_group_idx);
     }
     return std::make_pair(std::move(matched), reader->reader.file_metadata.row_groups.size());
-}
-
-std::vector<std::pair<size_t, Field>> ParquetV3BlockInputFormat::getTopKBestValuesOfBuckets() const
-{
-    std::vector<std::pair<size_t, Field>> res;
-    if (!reader)
-        return res;
-    for (const auto & row_group : reader->reader.row_groups)
-        if (row_group.need_to_process && row_group.top_k_best_value)
-            res.emplace_back(row_group.row_group_idx, (*row_group.top_k_best_value)[0]);
-    return res;
-}
-
-bool ParquetV3BlockInputFormat::isTopKFilterApplied() const
-{
-    /// The reader installs `__topKFilter` only for a file that stores the sort column.
-    return reader && reader->reader.format_filter_info && reader->reader.format_filter_info->top_k_filter
-        && reader->reader.top_k_column_is_read;
 }
 
 void ParquetV3BlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_)
@@ -242,7 +212,6 @@ void ParquetV3BlockInputFormat::resetParser()
     {
         std::lock_guard lock(reader_mutex);
         reader.reset();
-        min_max_from_statistics = false;
     }
     previous_block_missing_values.clear();
     IInputFormat::resetParser();
@@ -260,7 +229,7 @@ void NativeParquetSchemaReader::initializeIfNeeded()
         return;
     Parquet::Prefetcher prefetcher;
     prefetcher.init(&in, read_options, /*parser_shared_resources_=*/ nullptr);
-    file_metadata = Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size);
+    file_metadata = Parquet::Reader::readFileMetaData(prefetcher);
     initialized = true;
 }
 
@@ -335,13 +304,12 @@ void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr>
 
 std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_)
 {
-    Parquet::ReadOptions read_options = convertReadOptions(format_settings_);
-    Parquet::Prefetcher prefetcher;
-    prefetcher.init(&buf, read_options, /*parser_shared_resources_=*/ nullptr);
-    auto metadata = Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size);
+    std::atomic<int> is_stopped = false;
+    auto arrow_file = asArrowFile(buf, format_settings_, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true, nullptr);
+    auto metadata = parquet::ReadMetaData(arrow_file);
     std::vector<size_t> bucket_sizes;
-    for (const auto & row_group : metadata.row_groups)
-        bucket_sizes.push_back(size_t(row_group.total_byte_size));
+    for (int i = 0; i < metadata->num_row_groups(); ++i)
+        bucket_sizes.push_back(metadata->RowGroup(i)->total_byte_size());
 
     std::vector<std::vector<size_t>> buckets;
     size_t current_weight = 0;
@@ -466,8 +434,7 @@ The table below shows how Parquet data types match ClickHouse [data types](/refe
 | `UINT_64` | [UInt64](/reference/data-types/int-uint) |
 | `INT_64` | [Int64](/reference/data-types/int-uint) |
 | `DATE` | [Date32](/reference/data-types/date) |
-| `TIMESTAMP` | [DateTime64](/reference/data-types/datetime64) |
-| `TIME` | [Time64](/reference/data-types/time64) |
+| `TIMESTAMP`, `TIME` | [DateTime64](/reference/data-types/datetime64) |
 | `FLOAT` | [Float32](/reference/data-types/float) |
 | `DOUBLE` | [Float64](/reference/data-types/float) |
 | `INT96` | [DateTime64(9, 'UTC')](/reference/data-types/datetime64) |
@@ -488,8 +455,6 @@ The table below shows how Parquet data types match ClickHouse [data types](/refe
 | `MultiLineString` (GeoParquet) | [MultiLineString](/reference/data-types/geo#multilinestring) |
 | `MultiPolygon` (GeoParquet) | [MultiPolygon](/reference/data-types/geo#multipolygon) |
 | mixed/unknown geometry (GeoParquet) | [Geometry](/reference/data-types/geo#geometry) |
-| `VARIANT` | [Dynamic](/reference/data-types/dynamic) |
-| `FILE` | [Tuple](/reference/data-types/tuple) of `Nullable` fields, see [below](#file-type) |
 
 When writing Parquet file, data types that don't have a matching Parquet type are converted to the nearest available type:
 
@@ -529,24 +494,9 @@ Some Parquet clients support decimal precision only up to 38, while Arrow's high
 Data types of ClickHouse table columns can differ from the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/reference/functions/regular-functions/type-conversion-functions#CAST) the data to that data type which is set for the ClickHouse table column. E.g. a `UINT_32` Parquet column can be read into an [IPv4](/reference/data-types/ipv4) ClickHouse column.
 
 For some Parquet types there's no closely matching ClickHouse type. We read them as follows:
-* `TIMESTAMP` with `isAdjustedToUTC=false` is a local wall-clock time (year, month, day, hour, minute, second and subsecond fields in a local timezone, regardless of what specific time zone is considered local), same as SQL `TIMESTAMP WITHOUT TIME ZONE`. ClickHouse reads it as if it were a UTC timestamp instead. E.g. `2025-09-29 18:42:13.000` (representing a reading of a local wall clock) becomes `2025-09-29 18:42:13.000` (`DateTime64(3, 'UTC')` representing a point in time). If converted to String, it shows the correct year, month, day, hour, minute, second and subsecond, which can then be interpreted as being in some local timezone instead of UTC. Counterintuitively, changing the type from `DateTime64(3, 'UTC')` to `DateTime64(3)` would not help as both types represent a point in time rather than a clock reading, but `DateTime64(3)` would incorrectly be formatted using local timezone.
+* `TIME` (time of day) is read as a timestamp. E.g. `10:23:13.000` becomes `1970-01-01 10:23:13.000`.
+* `TIMESTAMP`/`TIME` with `isAdjustedToUTC=false` is a local wall-clock time (year, month, day, hour, minute, second and subsecond fields in a local timezone, regardless of what specific time zone is considered local), same as SQL `TIMESTAMP WITHOUT TIME ZONE`. ClickHouse reads it as if it were a UTC timestamp instead. E.g. `2025-09-29 18:42:13.000` (representing a reading of a local wall clock) becomes `2025-09-29 18:42:13.000` (`DateTime64(3, 'UTC')` representing a point in time). If converted to String, it shows the correct year, month, day, hour, minute, second and subsecond, which can then be interpreted as being in some local timezone instead of UTC. Counterintuitively, changing the type from `DateTime64(3, 'UTC')` to `DateTime64(3)` would not help as both types represent a point in time rather than a clock reading, but `DateTime64(3)` would incorrectly be formatted using local timezone.
 * `INTERVAL` is currently read as `FixedString(12)` with raw binary representation of the time interval, as encoded in Parquet file.
-
-## Variant type {#variant-type}
-
-ClickHouse reads columns stored in the Parquet [`VARIANT`](https://github.com/apache/parquet-format/blob/master/VariantEncoding.md) encoding, such as those written by Spark 4.0, into the [`Dynamic`](/reference/data-types/dynamic) type. A column is recognized as a variant if it is a group annotated with the `VARIANT` logical type (specification version 1). Spark 4.0 writes variant columns without this annotation, so a group with just a `metadata` and a `value` field of type `BYTE_ARRAY` is also read as a variant. This can be disabled with the setting `input_format_parquet_detect_variant_by_structure`, then such a group is read as a `Tuple` of the two raw fields, as before; requesting the `Dynamic` or `JSON` type for the column explicitly reads it as a variant regardless of the setting.
-
-Each value keeps its own type. Variant primitive types are read as the matching ClickHouse types (for example, `int32` as `Int32`, `decimal8` as `Decimal(18, S)`, `timestamp` as `DateTime64(6, 'UTC')`, `timestamp_ntz` as `DateTime64(6)`, `binary` and `string` as `String`, `uuid` as `UUID`), the variant `null` is read as `NULL`, variant objects are read as [`JSON`](/reference/data-types/newjson) with nested objects flattened into dot-separated paths (a `null` field is treated as absent), variant arrays whose elements are all objects are read as `Array(JSON)`, and other variant arrays are read as `Array(Dynamic)`. The top-level type is `Dynamic` rather than `JSON`, because a variant value is not necessarily an object.
-
-A variant column can also be read as [`JSON`](/reference/data-types/newjson) by requesting that type explicitly, for example in the table structure or in the structure argument of the `file` table function. Then every value must be an object, otherwise an exception is thrown. A variant `null` and a `null` of the whole column are read as an empty object. Typed paths of the requested `JSON` type are converted to their types, and paths listed in `SKIP` and `SKIP REGEXP` are skipped.
-
-Shredded variants (groups with a `typed_value` field) are not supported yet: reading such a column throws an exception, while the other columns of the file can still be read, and schema inference skips the column if `input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference` is enabled. Writing `Dynamic` or `JSON` columns to Parquet as `VARIANT` is not supported either.
-
-## File references {#file-type}
-
-A group annotated with the Parquet [`FILE`](https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#file) logical type represents a reference to a range of bytes, stored inline or in an external file. It is read as a named `Tuple` of the fields present in the file, each of them `Nullable`: `uri`, `content_type` and `checksum` as `Nullable(String)`, `offset` and `size` as `Nullable(Int64)`, and `inline` as `Nullable(String)` with raw bytes. A `null` file reference is read as a tuple with all elements `NULL`. As for any `Tuple`, a subset of the fields can be read by requesting a `Tuple` with fewer elements, or individual fields as subcolumns, such as `file.uri`. The schema of the group is validated: it must contain only these fields, all `OPTIONAL`, with the types defined by the specification, otherwise an exception is thrown. The values are not validated: a value that does not form a valid reference (for example, `offset` without `uri`) is returned as stored. ClickHouse does not resolve the references, that is, it does not read the external files.
-
-On write, such a `Tuple` (with element names being a non-empty subset of the `FILE` fields, integer `offset` and `size`, and `String` or `FixedString` other elements) is written as a `FILE`-annotated group if the setting [`output_format_parquet_write_file_logical_type`](/reference/settings/formats/output-format#output_format_parquet_write_file_logical_type) is enabled. Otherwise it is written as an ordinary group.
 
 ## Geo types (GeoParquet) {#geo-types}
 
@@ -644,7 +594,6 @@ To exchange data with Hadoop, you can use the [`HDFS table engine`](/reference/e
 | `output_format_parquet_batch_size`                                             | Check page size every this many rows. Consider decreasing if you have columns with average values size above a few KBs.                                                                                                              | `1024`      |
 | `output_format_parquet_write_page_index`                                       | Add a possibility to write page index into parquet files.                                                                                                                                                                          | `1`         |
 | `output_format_parquet_geometadata`                                            | Write GeoParquet `geo` metadata into the Parquet file footer and encode top-level ClickHouse geo columns ([`Point`](/reference/data-types/geo#point), [`MultiPoint`](/reference/data-types/geo#multipoint), [`LineString`](/reference/data-types/geo#linestring), [`Polygon`](/reference/data-types/geo#polygon), [`MultiLineString`](/reference/data-types/geo#multilinestring), [`MultiPolygon`](/reference/data-types/geo#multipolygon)) as WKB. If `0`, those columns are written using their native underlying representation (e.g. `Point` as `Tuple(Float64, Float64)`) and no GeoParquet metadata is emitted.                                                                                                                                                                          | `1`         |
-| `output_format_parquet_write_file_logical_type` | Write a named `Tuple` whose element names are fields of the Parquet `FILE` logical type as a `FILE`-annotated group, see [File references](#file-type). | `0` |
 | `input_format_parquet_import_nested`                                           | Obsolete setting, does nothing.                                                                                                                                                                                                   | `0`         |
 | `input_format_parquet_local_time_as_utc` | true | Determines the data type used by schema inference for Parquet timestamps with isAdjustedToUTC=false. If true: DateTime64(..., 'UTC'), if false: DateTime64(...). Neither behavior is fully correct as ClickHouse doesn't have a data type for local wall-clock time. Counterintuitively, 'true' is probably the less incorrect option, because formatting the 'UTC' timestamp as String will produce representation of the correct local time. |
 )DOCS_MD"});

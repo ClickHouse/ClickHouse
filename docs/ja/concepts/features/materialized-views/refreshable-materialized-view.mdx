@@ -30,7 +30,9 @@ ClickHouseのインクリメンタルmaterialized viewは非常に強力で、�
 
 > リフレッシャブルmaterialized viewでは、非正規化のようなタスクを実行するバッチ処理を実行できます。リフレッシャブルmaterialized view間には依存関係を作成でき、あるビューが別のビューの結果に依存し、その完了後にのみ実行されるようにできます。これにより、スケジュールされたワークフローや、[dbt](https://www.getdbt.com/) job のような単純なDAGを置き換えられます。リフレッシャブルmaterialized view間の依存関係の設定方法について詳しくは、[CREATE VIEW](/ja/reference/statements/create/view#refresh-dependencies) の `Dependencies` セクションを参照してください。
 
-## リフレッシャブルmaterialized viewをリフレッシュするにはどうすればよいですか？ {#how-do-you-refresh-a-refreshable-materialized-view}
+<div id="how-do-you-refresh-a-refreshable-materialized-view">
+  ## リフレッシャブルmaterialized viewをリフレッシュするにはどうすればよいですか？
+</div>
 
 リフレッシャブルmaterialized viewは、作成時に定義した間隔で自動的にリフレッシュされます。
 たとえば、次のmaterialized viewは1分ごとにリフレッシュされます。
@@ -49,10 +51,6 @@ SYSTEM REFRESH VIEW table_name_mv;
 
 ビューはキャンセル、停止、開始することもできます。
 詳しくは、[リフレッシャブルmaterialized viewの管理](/ja/reference/statements/system#managing-refreshable-materialized-views)のドキュメントを参照してください。
-
-<Warning>
-  リフレッシュが ClickHouse Keeper を介して調整されていないリフレッシャブルmaterialized viewは、最後にリフレッシュした時刻の情報が失われるため、サーバーの再起動後にすべてが一斉にリフレッシュされる可能性があります。影響を受けるビューと、それらを1つずつ順に再開する方法については、[サーバー再起動時にリフレッシャブルmaterialized viewはどうなるか](/ja/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts)を参照してください。
-</Warning>
 
 <div id="when-was-a-refreshable-materialized-view-last-refreshed">
   ## リフレッシャブルmaterialized view が最後にリフレッシュされたのはいつですか？

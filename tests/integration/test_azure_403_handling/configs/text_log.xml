@@ -1,5 +1,0 @@
-<clickhouse>
-    <text_log>
-        <level>debug</level>
-    </text_log>
-</clickhouse>
