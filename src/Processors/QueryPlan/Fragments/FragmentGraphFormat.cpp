@@ -1,19 +1,13 @@
 #include <Processors/QueryPlan/Fragments/FragmentGraphFormat.h>
 
-#include <Processors/QueryPlan/BroadcastReceiveStep.h>
 #include <Processors/QueryPlan/Fragments/FragmentGraph.h>
-#include <Processors/QueryPlan/GatherReceiveStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
-#include <Processors/QueryPlan/ShuffleReceiveStep.h>
 #include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
 #include <Common/Exception.h>
-#include <Common/typeid_cast.h>
 
 #include <fmt/format.h>
 #include <fmt/ranges.h>
-
-#include <ranges>
 
 namespace DB
 {
@@ -64,26 +58,6 @@ std::string_view formatExchangeMode(ExchangeDescription::Kind mode)
             return "persisted";
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected exchange mode {}", static_cast<int>(mode));
-}
-
-const String * tryGetReceiveExchangeId(const IQueryPlanStep & step)
-{
-    if (const auto * shuffle = typeid_cast<const ShuffleReceiveStep *>(&step))
-        return &shuffle->getExchangeId();
-    if (const auto * gather = typeid_cast<const GatherReceiveStep *>(&step))
-        return &gather->getExchangeId();
-    if (const auto * broadcast = typeid_cast<const BroadcastReceiveStep *>(&step))
-        return &broadcast->getExchangeId();
-    return nullptr;
-}
-
-std::vector<const QueryFragment *> getFragmentPrintOrder(const FragmentGraph & graph)
-{
-    std::vector<const QueryFragment *> order;
-    order.reserve(graph.fragments.size());
-    for (const auto & fragment : graph.fragments | std::views::reverse)
-        order.push_back(&fragment);
-    return order;
 }
 
 bool tryExplainSingleFragment(

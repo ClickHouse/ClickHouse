@@ -105,8 +105,24 @@ size_t TextCanvas::displayWidth(std::string_view text)
     return UTF8::computeWidth(reinterpret_cast<const UInt8 *>(text.data()), text.size());
 }
 
-String TextCanvas::cutToWidth(std::string_view text, size_t max_width)
+String TextCanvas::replaceControlCharacters(std::string_view text)
 {
+    String result;
+    result.reserve(text.size());
+    for (char c : text)
+    {
+        if (static_cast<UInt8>(c) < 0x20 || c == 0x7F)
+            result += "�";
+        else
+            result += c;
+    }
+    return result;
+}
+
+String TextCanvas::cutToWidth(std::string_view raw_text, size_t max_width)
+{
+    const String clean_text = replaceControlCharacters(raw_text);
+    std::string_view text = clean_text;
     if (displayWidth(text) <= max_width)
         return String(text);
 

@@ -36,8 +36,13 @@ public:
     /// The display width of `text`.
     static size_t displayWidth(std::string_view text);
 
-    /// `text` cut to at most `max_width` display columns; a cut text ends with `…`.
+    /// `text` cut to at most `max_width` display columns; a cut text ends with `…`. Control characters are replaced
+    /// first (see `replaceControlCharacters`).
     static String cutToWidth(std::string_view text, size_t max_width);
+
+    /// `text` with every ASCII control character (a tab, a newline, ESC, ...) replaced by `�`. A control character has no
+    /// width of its own, or one that depends on its position, so it would break the measured width of a box.
+    static String replaceControlCharacters(std::string_view text);
 
 private:
     /// Cell contents; an empty string is the continuation of a wide character.

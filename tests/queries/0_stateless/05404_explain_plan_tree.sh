@@ -78,6 +78,23 @@ SELECT bid % 10 AS k, sum(bid)
 FROM $DB.big
 GROUP BY k;
 
+-- Without descriptions the boxes are narrower than the frame titles: an edge must cross the top border of a frame
+-- after its title, not through it.
+SELECT '-- without descriptions';
+EXPLAIN tree = 1, description = 0
+SELECT bid % 10 AS k, sum(bid)
+FROM $DB.big
+GROUP BY k;
+
+-- Wide characters take two columns: the boxes and the labels must fit them, and the cut at 40 columns must not split one.
+SELECT '-- wide characters';
+CREATE TABLE $DB.\`大表名字测试数据\`(\`键\` UInt64) ENGINE = MergeTree ORDER BY \`键\`;
+INSERT INTO $DB.\`大表名字测试数据\` SELECT number FROM numbers(0, 100000);
+EXPLAIN tree = 1
+SELECT \`键\` % 10 AS k, sum(\`键\`)
+FROM $DB.\`大表名字测试数据\`
+GROUP BY k;
+
 -- A plan that is not distributed is printed as without \`tree\`. In the legacy format, so that the granule counts,
 -- which depend on the randomized MergeTree settings, are not printed.
 SET explain_query_plan_default = 'legacy';

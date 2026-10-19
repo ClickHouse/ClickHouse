@@ -7,7 +7,8 @@
 #include <Common/Exception.h>
 
 #include <fmt/format.h>
-#include <fmt/ranges.h>
+
+#include <ranges>
 
 namespace DB
 {
@@ -15,6 +16,22 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+/// By descending id. The cutter numbers the stages in post-order, so a fragment comes before the fragments it reads,
+/// and the fragment that produces the result (`main`) comes first.
+std::vector<const QueryFragment *> getPrintOrder(const FragmentGraph & graph)
+{
+    std::vector<const QueryFragment *> order;
+    order.reserve(graph.fragments.size());
+    for (const auto & fragment : graph.fragments | std::views::reverse)
+        order.push_back(&fragment);
+    return order;
+}
+
 }
 
 void explainFragmentGraph(
@@ -30,7 +47,7 @@ void explainFragmentGraph(
     if (tryExplainSingleFragment(graph, buf, options, max_step_description_length))
         return;
 
-    for (const auto * fragment : getFragmentPrintOrder(graph))
+    for (const auto * fragment : getPrintOrder(graph))
     {
         if (!fragment->plan)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Fragment {} has no plan to explain", fragment->id);

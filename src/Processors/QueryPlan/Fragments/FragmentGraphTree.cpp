@@ -1,14 +1,19 @@
 #include <Processors/QueryPlan/Fragments/FragmentGraphTree.h>
 
+#include <Processors/QueryPlan/BroadcastReceiveStep.h>
 #include <Processors/QueryPlan/Fragments/FragmentGraph.h>
 #include <Processors/QueryPlan/Fragments/FragmentGraphFormat.h>
 #include <Processors/QueryPlan/Fragments/TextCanvas.h>
+#include <Processors/QueryPlan/GatherReceiveStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/ShuffleReceiveStep.h>
 #include <IO/WriteBuffer.h>
 #include <Common/Exception.h>
+#include <Common/typeid_cast.h>
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 
 #include <algorithm>
 #include <limits>
@@ -25,6 +30,18 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// The exchange name of a receive step, or nullptr if the step is not a receive step.
+const String * tryGetReceiveExchangeId(const IQueryPlanStep & step)
+{
+    if (const auto * shuffle = typeid_cast<const ShuffleReceiveStep *>(&step))
+        return &shuffle->getExchangeId();
+    if (const auto * gather = typeid_cast<const GatherReceiveStep *>(&step))
+        return &gather->getExchangeId();
+    if (const auto * broadcast = typeid_cast<const BroadcastReceiveStep *>(&step))
+        return &broadcast->getExchangeId();
+    return nullptr;
+}
 
 /// The text of a step box is cut to this many columns.
 constexpr size_t max_step_text_width = 40;
@@ -58,8 +75,6 @@ struct FragmentFrame
 {
     String title;
     size_t root_box = 0;
-    /// The box that stands for the whole fragment when it has no plan: every exchange into the fragment ends there.
-    bool has_plan = true;
     size_t bottom = 0;
 };
 
@@ -78,7 +93,8 @@ public:
         buildBoxes();
         attachProducers();
 
-        const size_t root = frames[rootFragment()].root_box;
+        const size_t root_fragment = rootFragment();
+        const size_t root = frames[root_fragment].root_box;
         layoutColumns(root, 0);
         Int64 min_left = 0;
         for (size_t i = 0; i < frames.size(); ++i)
@@ -87,7 +103,7 @@ public:
             shiftSubtree(root, -min_left);
 
         /// The title of the root frame is on line 0, its first box on line 2.
-        layoutRows(rootFragment(), 2);
+        layoutRows(root_fragment, 2);
 
         TextCanvas canvas;
         for (size_t i = 0; i < frames.size(); ++i)
@@ -117,15 +133,22 @@ private:
         return it->second;
     }
 
+    /// The fragment that no exchange reads. The drawing hangs every other fragment under it, so it must be the only one:
+    /// a second root would never be laid out.
     size_t rootFragment() const
     {
         std::vector<bool> is_producer(graph.fragments.size(), false);
         for (const auto & exchange : graph.exchanges)
             is_producer[fragmentIndex(exchange.from)] = true;
+        std::vector<UInt32> roots;
         for (size_t i = 0; i < graph.fragments.size(); ++i)
             if (!is_producer[i])
-                return i;
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The fragment graph has no root fragment");
+                roots.push_back(graph.fragments[i].id);
+        if (roots.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Cannot draw the fragment graph: it must have exactly one fragment that no exchange reads, found [{}]",
+                fmt::join(roots, ", "));
+        return fragmentIndex(roots.front());
     }
 
     String stepText(IQueryPlanStep & step) const
@@ -136,8 +159,6 @@ private:
             description = QueryPlanFormat::trimColumnIdentifier(description);
         if (options.description && !description.empty())
             text += fmt::format(" ({})", description);
-        if (size_t child_plans = step.getChildPlans(/*for_explain=*/ true).size())
-            text += fmt::format(" (+{} child plans)", child_plans);
         return TextCanvas::cutToWidth(text, max_step_text_width);
     }
 
@@ -177,16 +198,11 @@ private:
                 frame.title += " · single node";
             if (fragment.fallback_reason)
                 frame.title += " · not distributed: " + *fragment.fallback_reason;
+            frame.title = TextCanvas::replaceControlCharacters(frame.title);
 
-            if (fragment.plan && fragment.plan->getRootNode())
-            {
-                frames[i].root_box = addPlanBoxes(*fragment.plan->getRootNode(), i);
-            }
-            else
-            {
-                frames[i].has_plan = false;
-                frames[i].root_box = addBox("(plan not available)", i);
-            }
+            if (!fragment.plan || !fragment.plan->getRootNode())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Fragment {} has no plan to draw", fragment.id);
+            frames[i].root_box = addPlanBoxes(*fragment.plan->getRootNode(), i);
         }
     }
 
@@ -203,14 +219,13 @@ private:
         return depth;
     }
 
-    /// The box of `consumer` that an exchange ends at: its receive step, or the placeholder of a fragment without a plan.
-    std::optional<size_t> findReceiveBox(size_t consumer, const FragmentExchange & exchange) const
+    /// The box of `consumer` that an exchange ends at: the receive step of the exchange.
+    size_t findReceiveBox(size_t consumer, const FragmentExchange & exchange) const
     {
-        if (!frames[consumer].has_plan)
-            return frames[consumer].root_box;
         auto it = receive_boxes.find({consumer, exchange.name});
         if (it == receive_boxes.end())
-            return std::nullopt;
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Cannot draw exchange {}: fragment {} has no receive step for it", exchange.name, exchange.to);
         return it->second;
     }
 
@@ -243,24 +258,18 @@ private:
             const auto & exchange = graph.exchanges[i];
             size_t producer = fragmentIndex(exchange.from);
             size_t consumer = fragmentIndex(exchange.to);
-            auto receive_box = findReceiveBox(consumer, exchange);
+            const size_t receive_box = findReceiveBox(consumer, exchange);
 
             if (primary_exchange[producer] == i)
             {
-                if (!receive_box)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Cannot draw exchange {}: fragment {} has no receive step for it", exchange.name, exchange.to);
-                boxes[*receive_box].children.push_back(frames[producer].root_box);
+                boxes[receive_box].children.push_back(frames[producer].root_box);
                 boxes[frames[producer].root_box].incoming_exchange = i;
             }
             else
             {
-                if (receive_box && frames[consumer].has_plan)
-                {
-                    auto & step_box = boxes[*receive_box];
-                    step_box.text = TextCanvas::cutToWidth(fmt::format("{} ← F{}", step_box.text, exchange.from), max_step_text_width);
-                    step_box.width = TextCanvas::displayWidth(step_box.text) + 4;
-                }
+                auto & step_box = boxes[receive_box];
+                step_box.text = TextCanvas::cutToWidth(fmt::format("{} ← F{}", step_box.text, exchange.from), max_step_text_width);
+                step_box.width = TextCanvas::displayWidth(step_box.text) + 4;
                 frames[producer].title += fmt::format(" · also read by F{}", exchange.to);
             }
         }
@@ -304,7 +313,13 @@ private:
         for (const auto & step_box : boxes)
             if (step_box.fragment == fragment)
                 left = std::min(left, step_box.left());
-        return left - frame_padding;
+        left -= frame_padding;
+
+        /// The edge into the fragment crosses the top border at the centre of the root box: `┌─ title ` must end before.
+        const auto & root_box = boxes[frames[fragment].root_box];
+        if (root_box.incoming_exchange)
+            left = std::min(left, root_box.center - static_cast<Int64>(TextCanvas::displayWidth(frames[fragment].title)) - 4);
+        return left;
     }
 
     Int64 frameRight(size_t fragment) const
@@ -346,6 +361,18 @@ private:
                 right += overflow;
             }
             right = std::max(right, placed.right() + 1 + frame_padding);
+        }
+
+        /// The frame of a fragment that an edge enters reaches left of its boxes when its title is long (see `frameLeft`), and
+        /// must not cross the left bound of the subtree either.
+        if (frames[boxes[index].fragment].root_box == index)
+        {
+            Int64 overflow = left - frameLeft(boxes[index].fragment);
+            if (overflow > 0)
+            {
+                shiftSubtree(index, overflow);
+                right += overflow;
+            }
         }
 
         const auto & placed = boxes[index];
@@ -486,8 +513,7 @@ private:
             const auto & producer = boxes[producer_root];
             const auto x = static_cast<size_t>(producer.center);
             const auto & exchange = graph.exchanges[*producer.incoming_exchange];
-            const char * line = exchange.mode == ExchangeDescription::Kind::Persisted
-                    || exchange.kind == FragmentExchange::Kind::SetValues ? "╎" : "│";
+            const char * line = exchange.mode == ExchangeDescription::Kind::Persisted ? "╎" : "│";
 
             const size_t producer_top = producer.y - 2;
             for (size_t y = labels_y; y < producer_top; ++y)
