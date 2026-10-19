@@ -73,6 +73,8 @@ namespace S3AuthSetting
 namespace S3RequestSetting
 {
     extern const S3RequestSettingsString storage_class_name;
+    extern const S3RequestSettingsString upload_checksum_algorithm;
+    extern const S3RequestSettingsString delete_checksum_algorithm;
 }
 
 namespace ErrorCodes
@@ -883,6 +885,20 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     if (storage_class_name.has_value())
     {
         s3_settings->request_settings[S3RequestSetting::storage_class_name] = storage_class_name.value();
+    }
+
+    /// Explicit arguments are applied last, so they take priority over the `<s3>` config and the `s3_*` query settings.
+    /// The algorithm names are upper-case, as `S3RequestSettings` normalizes them.
+    if (auto upload_checksum_algorithm = getFromPositionOrKeyValue<String>("upload_checksum_algorithm", args, {}, key_value_args);
+        upload_checksum_algorithm.has_value())
+    {
+        s3_settings->request_settings[S3RequestSetting::upload_checksum_algorithm] = boost::to_upper_copy(upload_checksum_algorithm.value());
+    }
+
+    if (auto delete_checksum_algorithm = getFromPositionOrKeyValue<String>("delete_checksum_algorithm", args, {}, key_value_args);
+        delete_checksum_algorithm.has_value())
+    {
+        s3_settings->request_settings[S3RequestSetting::delete_checksum_algorithm] = boost::to_upper_copy(delete_checksum_algorithm.value());
     }
 
     if (extra_credentials)
