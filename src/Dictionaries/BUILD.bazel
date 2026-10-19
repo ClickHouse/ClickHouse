@@ -20,7 +20,6 @@ exports_files([
 _GENERATED_HDRS_0 = select({
     "@platforms//cpu:x86_64": [
         "//bazel:gen/base/base/GitHash.generated.cpp",
-        "//bazel:gen/includes/configs/config_version.cpp",
         "//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.h",
         "//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.h",
         "//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.grpc.pb.h",
@@ -97,7 +96,6 @@ _GENERATED_HDRS_0 = select({
     ],
     "@platforms//cpu:aarch64": [
         "//bazel:gen/base/base/GitHash.generated.cpp",
-        "//bazel:gen/includes/configs/config_version.cpp",
         "//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.h",
         "//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.h",
         "//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.grpc.pb.h",

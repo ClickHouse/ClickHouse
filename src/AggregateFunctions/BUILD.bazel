@@ -109,7 +109,7 @@ ch_cc_library(
     ] + select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": ["AggregateFunctionUniq.cpp"],
-    }) + [
+    }) + ([
         "AggregateFunctionUniqCombined.cpp",
         "AggregateFunctionUniqCombined12.cpp",
         "AggregateFunctionUniqCombined13.cpp",
@@ -143,30 +143,10 @@ ch_cc_library(
         "Combinators/AggregateFunctionSimpleState.cpp",
         "Combinators/AggregateFunctionState.cpp",
         "Combinators/AggregateFunctionTuple.cpp",
-        "TimeSeries/AggregateFunctionLast2Samples.cpp",
-        "TimeSeries/AggregateFunctionTimeSeriesGroupArray.cpp",
-        "TimeSeries/AggregateFunctionTimeSeriesTopKMasks.cpp",
-        "TimeSeries/AggregateFunctionTimeseriesChanges.cpp",
-        "TimeSeries/AggregateFunctionTimeseriesCompensatedSum.cpp",
-        "TimeSeries/AggregateFunctionTimeseriesCount.cpp",
-        "TimeSeries/AggregateFunctionTimeseriesExtrapolatedValue.cpp",
-        "TimeSeries/AggregateFunctionTimeseriesFirstToGrid.cpp",
-        "TimeSeries/AggregateFunctionTimeseriesHelpers.cpp",
-        "TimeSeries/AggregateFunctionTimeseriesInstantValue.cpp",
-        "TimeSeries/AggregateFunctionTimeseriesLastToGrid.cpp",
-        "TimeSeries/AggregateFunctionTimeseriesLinearRegression.cpp",
-        "TimeSeries/AggregateFunctionTimeseriesMadToGrid.cpp",
-        "TimeSeries/AggregateFunctionTimeseriesMax.cpp",
-        "TimeSeries/AggregateFunctionTimeseriesMin.cpp",
-        "TimeSeries/AggregateFunctionTimeseriesPresentToGrid.cpp",
-        "TimeSeries/AggregateFunctionTimeseriesQuantileToGrid.cpp",
-        "TimeSeries/AggregateFunctionTimeseriesVariance.cpp",
-        "TimeSeries/registerAggregateFunctionTimeseries.cpp",
-    ],
+    ] + glob(["TimeSeries/*.cpp"])),
     hdrs = (select({
         "@platforms//cpu:x86_64": [
             "//bazel:gen/base/base/GitHash.generated.cpp",
-            "//bazel:gen/includes/configs/config_version.cpp",
             "//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.h",
             "//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.h",
             "//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.grpc.pb.h",
@@ -243,7 +223,6 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [
             "//bazel:gen/base/base/GitHash.generated.cpp",
-            "//bazel:gen/includes/configs/config_version.cpp",
             "//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.h",
             "//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.h",
             "//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.grpc.pb.h",
@@ -1599,7 +1578,6 @@ ch_cc_library(
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:gen/base/base/GitHash.generated.cpp",
-            "//bazel:gen/includes/configs/config_version.cpp",
             "//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.h",
             "//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.h",
             "//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.grpc.pb.h",

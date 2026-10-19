@@ -5,23 +5,11 @@ package(default_visibility = ["//visibility:public"])
 
 ch_cc_library(
     name = "glibc-compatibility__compile_0",
-    srcs = [
+    srcs = ([
         "glibc-compatibility.c",
-        "musl/__math_divzero.c",
-        "musl/__math_divzerof.c",
-        "musl/__math_invalid.c",
-        "musl/__math_invalidf.c",
-        "musl/__math_oflow.c",
-        "musl/__math_oflowf.c",
-        "musl/__math_uflow.c",
-        "musl/__math_uflowf.c",
-        "musl/__math_xflow.c",
-        "musl/__math_xflowf.c",
-        "musl/__polevll.c",
+    ] + glob(["musl/_*.c"]) + [
         "musl/accept4.c",
-        "musl/clock_getres.c",
-        "musl/clock_gettime.c",
-        "musl/clock_nanosleep.c",
+    ] + glob(["musl/clock_*.c"]) + [
         "musl/dup3.c",
         "musl/epoll.c",
         "musl/eventfd.c",
@@ -34,7 +22,7 @@ ch_cc_library(
         "musl/fallocate.c",
         "musl/fcntl.c",
         "musl/futimens.c",
-    ] + select({
+    ]) + select({
         "@platforms//cpu:x86_64": ["musl/getauxval.c"],
         "@platforms//cpu:aarch64": [],
     }) + [

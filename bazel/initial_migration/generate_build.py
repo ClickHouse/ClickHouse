@@ -897,16 +897,15 @@ def main():
     LlvmOutputs(ROOT).run(write=True)
     # Capture CMake at repository scope, then render native Bazel packages.
     # Existing native BUILD files must not hide CMake inputs on a second run.
-    from initial_migration.first_party_packages import Migration as NativePackages
+    from initial_migration.first_party_packages import Build, Migration as NativePackages
     native_packages = NativePackages(ROOT, stage='all', from_generator=True)
-    for path, content in native_packages.prepare().items():
+    native_builds = native_packages.prepare()
+    for path, content in native_builds.items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
-    prune_published(ROOT, repository_files, write=True, consumers={'@clickhouse'} | {
-        '@clickhouse_' + name for name in
-        ('nuraft', 'grpc', 'librdkafka', 'croaring', 'arrow', 'google_cloud_cpp')
-    })
-    from initial_migration.compact_external_options import compact as compact_external_options
+    from initial_migration.compact_external_options import (
+        PackageFiles, compact as compact_external_options, format_and_prove, source_globs,
+    )
     from initial_migration.normalize_cpp_builds import normalize
     for owner, spec in REPOSITORIES.items():
         path = ROOT / 'bazel/dependencies' / (spec['name'] + '.BUILD.bazel')
@@ -916,6 +915,17 @@ def main():
     from initial_migration.configured_native_snapshots import Migration as NativeSnapshots
     for path, content in NativeSnapshots(ROOT).prepare().items():
         path.write_text(content)
+    prune_published(ROOT, repository_files, write=True, consumers={'@clickhouse'} | {
+        '@clickhouse_' + name for name in
+        ('nuraft', 'grpc', 'librdkafka', 'croaring', 'arrow', 'google_cloud_cpp')
+    })
+    for path in native_builds:
+        before = path.read_text()
+        build = Build(ROOT, path, native_packages.files, native_packages.packages, before)
+        files = PackageFiles(build.inventory)
+        after = source_globs(before, files, collections.Counter(), [])
+        if after != before:
+            path.write_text(format_and_prove(ROOT, before, after, str(path), files, {}))
     prune_native_exports(ROOT, write=True)
     format_build_files()
     for arch, inventory in inventories.items():

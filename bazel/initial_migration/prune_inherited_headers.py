@@ -20,6 +20,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from initial_migration.compact_build import Source, ast_key
+from initial_migration.compact_external_options import SOURCE_SUFFIXES
 from initial_migration.repository_inputs import CC_HEADER_SUFFIXES, REPOSITORIES, ROOT
 from initial_migration.simplify_globs import GlobFiles, _literal_strings
 
@@ -424,14 +425,16 @@ class PublishedRewrite(Rewrite):
         native = self.doc.repo == '@clickhouse'
         proto_textual = (not native and field == 'textual_hdrs'
                          and candidate.endswith(('.pb.cc', '.grpc.pb.cc')))
-        if not (source_header or proto_textual):
+        native_generated = (native and field in {'hdrs', 'textual_hdrs'}
+                            and candidate.endswith(tuple(SOURCE_SUFFIXES)))
+        if not (source_header or proto_textual or native_generated):
             return False
         if source_header and not native and candidate.partition('//')[0] == self.doc.repo:
             return False
         for cpu in arches:
             if not self.graph.physical_file(candidate, cpu):
                 return False
-            if proto_textual and (candidate, cpu) not in self.graph.outputs:
+            if (proto_textual or native_generated) and (candidate, cpu) not in self.graph.outputs:
                 return False
             # Native private inputs can also come from implementation_deps.
             # Public inputs still require the same header kind through deps.

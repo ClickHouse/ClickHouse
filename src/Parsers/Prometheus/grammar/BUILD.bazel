@@ -6,16 +6,8 @@ package(default_visibility = ["//visibility:public"])
 
 ch_cc_library(
     name = "clickhouse_antlr4_grammars",
-    srcs = [
-        "generated/antlr4_grammars/PromQLLexer.cpp",
-        "generated/antlr4_grammars/PromQLParser.cpp",
-        "generated/antlr4_grammars/PromQLParserBaseListener.cpp",
-        "generated/antlr4_grammars/PromQLParserBaseVisitor.cpp",
-        "generated/antlr4_grammars/PromQLParserListener.cpp",
-        "generated/antlr4_grammars/PromQLParserVisitor.cpp",
-    ],
+    srcs = glob(["generated/antlr4_grammars/*.cpp"]),
     hdrs = ([
-        "//bazel:gen/includes/configs/config_version.cpp",
     ] + [
         "generated/antlr4_grammars/PromQLLexer.h",
         "generated/antlr4_grammars/PromQLParser.h",

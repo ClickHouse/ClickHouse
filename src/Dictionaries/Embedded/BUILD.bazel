@@ -6,19 +6,8 @@ package(default_visibility = ["//visibility:public"])
 
 ch_cc_library(
     name = "clickhouse_dictionaries_embedded",
-    srcs = [
-        "GeoDictionariesLoader.cpp",
-        "RegionsHierarchies.cpp",
-        "RegionsHierarchy.cpp",
-        "RegionsNames.cpp",
-        "GeodataProviders/HierarchiesProvider.cpp",
-        "GeodataProviders/HierarchyFormatReader.cpp",
-        "GeodataProviders/NamesFormatReader.cpp",
-        "GeodataProviders/NamesProvider.cpp",
-    ],
+    srcs = (glob(["*.cpp"]) + glob(["GeodataProviders/*.cpp"])),
     hdrs = [
-        "//bazel:gen/base/base/GitHash.generated.cpp",
-        "//bazel:gen/includes/configs/config_version.cpp",
     ],
     additional_compiler_inputs = [
         "//base/poco/Foundation:src/DirectoryIterator_UNIX.cpp",

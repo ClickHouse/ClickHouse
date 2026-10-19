@@ -7,7 +7,7 @@ package(default_visibility = ["//visibility:public"])
 ch_cc_library(
     name = "widechar_width",
     srcs = ["widechar_width.cpp"],
-    hdrs = ["//bazel:gen/includes/configs/config_version.cpp"] + ["widechar_width.h"],
+    hdrs = [] + ["widechar_width.h"],
     clickhouse_code = True,
     copts = [
         "-Wframe-larger-than=65536",

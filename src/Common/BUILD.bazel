@@ -443,8 +443,6 @@ exports_files([
 ])
 
 _GENERATED_HDRS_0 = [
-    "//bazel:gen/base/base/GitHash.generated.cpp",
-    "//bazel:gen/includes/configs/config_version.cpp",
 ] + [
     "AsynchronousMetricDocumentation.inc",
 ]

@@ -4,11 +4,7 @@ load("@clickhouse//bazel/rules:repository_paths.bzl", "CLICKHOUSE_WARNINGS", "ll
 package(default_visibility = ["//visibility:public"])
 
 _GENERATED_HDRS_0 = [
-    "//bazel:gen/base/base/GitHash.generated.cpp",
-    "//bazel:gen/includes/configs/config_version.cpp",
 ] + [
-    "@clickhouse_cctz//:config/contrib/cctz-cmake/TimeZones.generated.cpp",
-    "@clickhouse_mariadb_connector_c//:config/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
 ]
 
 _GENERATED_COPTS_0 = [
@@ -324,56 +320,10 @@ _GENERATED_LOCAL_INCLUDES_0 = ["../../../" + (repository_path("contrib/google-be
 ]
 
 _GENERATED_TEXTUAL_HDRS_0 = [
-    "//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.cc",
-    "//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc",
-    "//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.grpc.pb.cc",
-    "//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
-    "//bazel:gen/contrib/arrow-cmake/orc_proto.pb.cc",
-    "//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
-    "//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc",
-    "//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/client.grpc.pb.cc",
-    "//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/client.pb.cc",
-    "//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/field_behavior.grpc.pb.cc",
-    "//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/field_behavior.pb.cc",
-    "//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/http.grpc.pb.cc",
-    "//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/http.pb.cc",
-    "//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/launch_stage.grpc.pb.cc",
-    "//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/launch_stage.pb.cc",
-    "//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/resource.grpc.pb.cc",
-    "//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/resource.pb.cc",
-    "//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/routing.grpc.pb.cc",
-    "//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/routing.pb.cc",
-    "//bazel:gen/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.grpc.pb.cc",
-    "//bazel:gen/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.pb.cc",
-    "//bazel:gen/contrib/google-cloud-cpp-cmake/google/iam/v1/options.grpc.pb.cc",
-    "//bazel:gen/contrib/google-cloud-cpp-cmake/google/iam/v1/options.pb.cc",
-    "//bazel:gen/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.grpc.pb.cc",
-    "//bazel:gen/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.pb.cc",
-    "//bazel:gen/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.grpc.pb.cc",
-    "//bazel:gen/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.pb.cc",
-    "//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/date.grpc.pb.cc",
-    "//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/date.pb.cc",
-    "//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/expr.grpc.pb.cc",
-    "//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/expr.pb.cc",
-    "//bazel:gen/contrib/libhdfs3-cmake/ClientDatanodeProtocol.pb.cc",
-    "//bazel:gen/contrib/libhdfs3-cmake/ClientNamenodeProtocol.pb.cc",
-    "//bazel:gen/contrib/libhdfs3-cmake/IpcConnectionContext.pb.cc",
-    "//bazel:gen/contrib/libhdfs3-cmake/ProtobufRpcEngine.pb.cc",
-    "//bazel:gen/contrib/libhdfs3-cmake/RpcHeader.pb.cc",
-    "//bazel:gen/contrib/libhdfs3-cmake/Security.pb.cc",
-    "//bazel:gen/contrib/libhdfs3-cmake/datatransfer.pb.cc",
-    "//bazel:gen/contrib/libhdfs3-cmake/hdfs.pb.cc",
-    "//bazel:gen/contrib/prometheus-protobufs-cmake/gogoproto/gogo.pb.cc",
-    "//bazel:gen/contrib/prometheus-protobufs-cmake/prompb/remote.pb.cc",
-    "//bazel:gen/contrib/prometheus-protobufs-cmake/prompb/types.pb.cc",
 ] + select({
     "@platforms//cpu:x86_64": [
-        "//bazel:gen/x86_64/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc",
-        "//bazel:gen/x86_64/src/Server/grpc_protos/clickhouse_grpc.pb.cc",
     ],
     "@platforms//cpu:aarch64": [
-        "//bazel:gen/aarch64/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc",
-        "//bazel:gen/aarch64/src/Server/grpc_protos/clickhouse_grpc.pb.cc",
     ],
 })
 
@@ -1513,7 +1463,7 @@ ch_cc_library(
 ch_cc_library(
     name = "benchmark_sched_getcpu_objects",
     srcs = ["sched_getcpu.cpp"],
-    hdrs = ["//bazel:gen/includes/configs/config_version.cpp"],
+    hdrs = [],
     clickhouse_code = True,
     copts = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [
         "-std=c++23",
@@ -1547,8 +1497,6 @@ ch_cc_library(
 )
 
 _GENERATED_HDRS_1 = [
-    "//bazel:gen/base/base/GitHash.generated.cpp",
-    "//bazel:gen/includes/configs/config_version.cpp",
 ]
 
 _GENERATED_COPTS_1 = [

@@ -15,7 +15,6 @@ exports_files([
 
 _GENERATED_HDRS_0 = [
     "//bazel:gen/base/base/GitHash.generated.cpp",
-    "//bazel:gen/includes/configs/config_version.cpp",
 ] + [
     "@clickhouse_libssh//:config/contrib/libssh/include/libssh/libssh_version.h",
     "@clickhouse_liburing//:config/contrib/liburing/src/include-compat/liburing/compat.h",

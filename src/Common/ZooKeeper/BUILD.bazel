@@ -11,8 +11,6 @@ exports_files([
 ])
 
 _GENERATED_HDRS_0 = [
-    "//bazel:gen/base/base/GitHash.generated.cpp",
-    "//bazel:gen/includes/configs/config_version.cpp",
 ]
 
 _GENERATED_ADDITIONAL_COMPILER_INPUTS_0 = [
@@ -789,7 +787,7 @@ _GENERATED_LOCAL_DEFINES_0 = select({
 
 ch_cc_library(
     name = "clickhouse_common_zookeeper_base",
-    srcs = [
+    srcs = ([
         "IKeeper.cpp",
         "KeeperException.cpp",
         "KeeperFeatureFlags.cpp",
@@ -807,10 +805,7 @@ ch_cc_library(
         "ZooKeeperNodeCache.cpp",
         "ZooKeeperPathUtils.cpp",
         "ZooKeeperWithFaultInjection.cpp",
-        "KeeperClientCLI/Commands.cpp",
-        "KeeperClientCLI/KeeperClient.cpp",
-        "KeeperClientCLI/Parser.cpp",
-    ],
+    ] + glob(["KeeperClientCLI/*.cpp"])),
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = [
         "//base/poco/Foundation:src/DirectoryIterator_UNIX.cpp",

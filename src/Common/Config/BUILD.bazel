@@ -19,8 +19,6 @@ ch_cc_library(
         "parseConnectionCredentials.cpp",
     ],
     hdrs = [
-        "//bazel:gen/base/base/GitHash.generated.cpp",
-        "//bazel:gen/includes/configs/config_version.cpp",
     ],
     additional_compiler_inputs = [
         "//base/poco/Foundation:src/DirectoryIterator_UNIX.cpp",
