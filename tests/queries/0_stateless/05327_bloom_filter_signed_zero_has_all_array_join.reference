@@ -16,3 +16,7 @@ pruned for hasAny(a, [-0.0, -0.0, 42.0])	5
 pruned for arrayJoin(a) = 42	4
 pruned for arrayJoin(a) = 0.0	3
 pruned for arrayJoin(b) = 0.5	2
+LEFT ARRAY JOIN a, x = -0.0	50	50
+LEFT ARRAY JOIN a, x = 0.0	50	50
+LEFT ARRAY JOIN b, x = -0.0	50	50
+LEFT ARRAY JOIN a, x = 1	50	50

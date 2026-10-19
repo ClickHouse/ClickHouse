@@ -42,3 +42,25 @@ SELECT 'pruned for arrayJoin(a) = 0.0', count() FROM t_bf_zero_follow_up WHERE a
 SELECT 'pruned for arrayJoin(b) = 0.5', count() FROM t_bf_zero_follow_up WHERE arrayJoin(b) = 0.5 SETTINGS force_data_skipping_indices = 'idx_b', max_rows_to_read = 30;
 
 DROP TABLE t_bf_zero_follow_up;
+
+-- `LEFT ARRAY JOIN` pads an empty array with `+0.0`, which equals `-0.0` too. A granule with an empty and a
+-- nonempty array without zero holds neither zero hash, so a zero constant must not use the index.
+DROP TABLE IF EXISTS t_bf_zero_padded;
+CREATE TABLE t_bf_zero_padded
+(
+    id UInt64,
+    a Array(Float64),
+    b Array(Float32),
+    INDEX idx_a a TYPE bloom_filter(0.0001) GRANULARITY 1,
+    INDEX idx_b b TYPE bloom_filter(0.0001) GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 2, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_bf_zero_padded SELECT number, if(number % 2 = 0, [], [1.0]), if(number % 2 = 0, [], [1.0]) FROM numbers(100);
+
+SELECT 'LEFT ARRAY JOIN a, x = -0.0', count(), (SELECT count() FROM t_bf_zero_padded LEFT ARRAY JOIN a AS x WHERE x = -0.0 SETTINGS use_skip_indexes = 0) FROM t_bf_zero_padded LEFT ARRAY JOIN a AS x WHERE x = -0.0 SETTINGS use_query_condition_cache = 0;
+SELECT 'LEFT ARRAY JOIN a, x = 0.0', count(), (SELECT count() FROM t_bf_zero_padded LEFT ARRAY JOIN a AS x WHERE x = 0.0 SETTINGS use_skip_indexes = 0) FROM t_bf_zero_padded LEFT ARRAY JOIN a AS x WHERE x = 0.0 SETTINGS use_query_condition_cache = 0;
+SELECT 'LEFT ARRAY JOIN b, x = -0.0', count(), (SELECT count() FROM t_bf_zero_padded LEFT ARRAY JOIN b AS x WHERE x = -0.0 SETTINGS use_skip_indexes = 0) FROM t_bf_zero_padded LEFT ARRAY JOIN b AS x WHERE x = -0.0 SETTINGS use_query_condition_cache = 0;
+SELECT 'LEFT ARRAY JOIN a, x = 1', count(), (SELECT count() FROM t_bf_zero_padded LEFT ARRAY JOIN a AS x WHERE x = 1 SETTINGS use_skip_indexes = 0) FROM t_bf_zero_padded LEFT ARRAY JOIN a AS x WHERE x = 1 SETTINGS use_query_condition_cache = 0;
+
+DROP TABLE t_bf_zero_padded;
