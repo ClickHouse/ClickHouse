@@ -564,7 +564,18 @@ static ColumnPtr replaceNullRowsWithDefaults(const ColumnPtr & result, const Col
     VectorWithMemoryTracking<const NullMap *> null_maps;
     for (const auto & arg : args)
     {
-        if (const auto * nullable = typeid_cast<const ColumnNullable *>(arg.column.get()))
+        /// A constant argument can be left wrapped in `ColumnConst` when other arguments are not constant.
+        /// If it is null, all rows are null.
+        if (isColumnConst(*arg.column))
+        {
+            if (input_rows_count && arg.column->isNullAt(0))
+            {
+                auto defaults = result->cloneEmpty();
+                defaults->insertManyDefaults(input_rows_count);
+                return defaults;
+            }
+        }
+        else if (const auto * nullable = typeid_cast<const ColumnNullable *>(arg.column.get()))
             null_maps.push_back(&nullable->getNullMapData());
     }
 
