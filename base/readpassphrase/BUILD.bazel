@@ -34,7 +34,6 @@ ch_cc_library(
     ],
     local_includes = [
         ".",
-    ] + [
         "../../" + (llvm_toolchain_path() + "/libunwind/include"),
         "../../" + (llvm_toolchain_path() + "/libc"),
         "../../" + (llvm_toolchain_path() + "/compiler-rt/include"),

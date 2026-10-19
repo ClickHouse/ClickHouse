@@ -242,10 +242,13 @@ def inline_small_constants(source):
     return source.rewrite(edits)
 
 
-def simplify_list_expressions(source):
+def simplify_list_expressions(source, join_expression_lists=False):
     edits = []
 
     class Simplify(ast.NodeVisitor):
+        def __init__(self, expressions=False):
+            self.expressions = expressions
+
         def visit_BinOp(self, node):
             if isinstance(node.op, ast.Add):
                 if isinstance(node.left, ast.List) and not node.left.elts:
@@ -255,9 +258,9 @@ def simplify_list_expressions(source):
                     edits.append((*source.span(node), source.text(node.left)))
                     return
                 if (isinstance(node.left, ast.List) and isinstance(node.right, ast.List)
-                        and all(isinstance(value, ast.Constant)
-                                and isinstance(value.value, (str, int, bool))
-                                for value in node.left.elts + node.right.elts)):
+                        and (self.expressions or all(isinstance(value, ast.Constant)
+                                                     and isinstance(value.value, (str, int, bool))
+                                                     for value in node.left.elts + node.right.elts))):
                     edits.append((*source.span(node), render_list(
                         source, node.left.elts + node.right.elts, node.col_offset)))
                     return
@@ -270,11 +273,12 @@ def simplify_list_expressions(source):
             else:
                 self.generic_visit(node)
 
-    visit = Simplify()
+    visit = Simplify(join_expression_lists)
     for _, rule in source.rules():
         for attr in rule.keywords:
             if attr.arg in ATTRIBUTES:
                 visit.visit(attr.value)
+    visit = Simplify()
     for statement in source.module.body:
         if (isinstance(statement, ast.Assign) and len(statement.targets) == 1
                 and isinstance(statement.targets[0], ast.Name)

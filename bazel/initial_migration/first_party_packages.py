@@ -617,7 +617,7 @@ class Migration:
         data.update(builds)
         self.verify(data)
         for path, content in builds.items():
-            normalized = normalize(content)
+            normalized = normalize(content, native=True)
             prove(content, normalized, path)
             data[path] = normalized
         return data

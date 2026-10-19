@@ -178,13 +178,13 @@ def prove(before, after, path):
             raise ValueError(f"{path} changes expanded {cpu} statement {index}" + detail)
 
 
-def normalize(text):
+def normalize(text, *, native=False):
     previous = text
     while True:
         # Removal may make another assignment or import unused. Folding lists
         # may reveal an empty default. Do not intern replacement constants.
         updated = remove_unused_constants(CppSource(previous))
-        updated = simplify_list_expressions(CppSource(updated))
+        updated = simplify_list_expressions(CppSource(updated), join_expression_lists=native)
         updated = drop_defaults(CppSource(updated))
         updated = drop_unused_loads(CppSource(updated))
         if updated == previous:
@@ -245,8 +245,11 @@ def main():
     for path in files:
         path = path.resolve()
         relative = path.relative_to(root)
+        native = (path.name == "BUILD.bazel" and (
+            len(relative.parts) == 1 or relative.parts[0] in {"base", "src", "programs", "contrib"}
+        ))
         before = path.read_text()
-        after = normalize(before)
+        after = normalize(before, native=native)
         prove(before, after, relative)
         stats_before.update(census(before))
         originals[path] = before
@@ -261,11 +264,14 @@ def main():
               "proven_cpus": list(CPUS), "files": []}
     for path, before in originals.items():
         relative = path.relative_to(root)
+        native = (path.name == "BUILD.bazel" and (
+            len(relative.parts) == 1 or relative.parts[0] in {"base", "src", "programs", "contrib"}
+        ))
         destination = output / relative
         after = destination.read_text()
         prove(before, after, relative)
         stats_after.update(census(after))
-        if normalize(after) != after:
+        if normalize(after, native=native) != after:
             raise ValueError(f"{relative}: normalization did not reach its fixed point")
         report["files"].append({
             "path": str(relative),

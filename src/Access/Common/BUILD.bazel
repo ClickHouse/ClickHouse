@@ -141,7 +141,6 @@ ch_cc_library(
         "../../../base",
         "../../../bazel/gen/base",
         "../../../base/pcg-random",
-    ] + ([
         "../../../" + "contrib/jemalloc-cmake/include",
         "../../../" + repository_path("contrib/sparsehash-c11"),
         "../../../" + "contrib/cityhash102/include",
@@ -162,7 +161,6 @@ ch_cc_library(
         "../../../" + "contrib/libdivide-cmake",
         "../../../" + repository_path("contrib/libdivide"),
         "../../../" + repository_path("contrib/zlib-ng"),
-    ] + [
         "../../../" + (repository_path("contrib/zlib-ng") + "/config/contrib/zlib-ng-cmake"),
         "../../../" + repository_path("contrib/libdeflate"),
         "../../../" + (repository_path("contrib/jwt-cpp") + "/include"),
@@ -195,7 +193,6 @@ ch_cc_library(
         "../../../" + (repository_path("contrib/msgpack-c") + "/include"),
         "../../../" + (repository_path("contrib/liburing") + "/config/contrib/liburing/src/include-compat"),
         "../../../" + (repository_path("contrib/liburing") + "/config/contrib/liburing/src/include"),
-    ] + [
         "../../../" + (repository_path("contrib/liburing") + "/src/include"),
         "../../../" + (repository_path("contrib/fast_float") + "/include"),
         "../../../" + (repository_path("contrib/simdutf") + "/include"),
@@ -204,7 +201,7 @@ ch_cc_library(
         "../../../" + (llvm_toolchain_path() + "/libunwind/include"),
         "../../../" + (llvm_toolchain_path() + "/libc"),
         "../../../" + (llvm_toolchain_path() + "/compiler-rt/include"),
-    ]),
+    ],
     deps = [
         "@llvm-project//compiler-rt:headers",
         "@llvm-project//libc:libc_headers",

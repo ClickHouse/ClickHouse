@@ -71,7 +71,8 @@ ch_cc_library(
         "../../" + (repository_path("contrib/google-protobuf") + "/third_party/utf8_range"),
         "../../" + repository_path("contrib/zlib-ng"),
         "../../" + (repository_path("contrib/zlib-ng") + "/config/contrib/zlib-ng-cmake"),
-    ] + ["../../" + repository_path("contrib/abseil-cpp")],
+        "../../" + repository_path("contrib/abseil-cpp"),
+    ],
     textual_hdrs = [
         "//bazel:gen/contrib/prometheus-protobufs-cmake/gogoproto/gogo.pb.cc",
         "//bazel:gen/contrib/prometheus-protobufs-cmake/prompb/remote.pb.cc",

@@ -931,7 +931,7 @@ def main():
         package = path.parent.relative_to(ROOT).as_posix().removeprefix('.')
         if path.name == 'BUILD.bazel' and (not package or native_directory(package)):
             before = path.read_text()
-            after = normalize(before)
+            after = normalize(before, native=True)
             prove(before, after, path)
             if after != before:
                 path.write_text(after)

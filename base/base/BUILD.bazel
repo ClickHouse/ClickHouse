@@ -57,7 +57,6 @@ ch_cc_library(
         "../../bazel/gen/includes/configs",
         "..",
         "../../bazel/gen/base",
-    ] + [
         "../../" + "contrib/cityhash102/include",
         "../../" + repository_path("contrib/boost"),
         "../../" + "base/poco/Net/include",
