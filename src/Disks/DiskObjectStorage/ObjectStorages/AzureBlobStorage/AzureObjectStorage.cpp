@@ -779,6 +779,28 @@ void AzureObjectStorage::applyNewSettings(
     };
     settings.set(std::move(new_settings));
 
+    /// The storage of a table is built from the query, not from a config section. As in `S3ObjectStorage::applyNewSettings`,
+    /// a client that uses the server's own identity follows the restriction of the accessing session, so a table created
+    /// with the opt-in serves no restricted session, and a table loaded restricted works again for a session that allows it.
+    if (!client.get()->IsClientForDisk())
+    {
+        std::lock_guard lock(client_inputs_mutex);
+        const auto current_params = connection_params.get();
+        if (!current_params->usesServerManagedCredentials())
+            return;
+
+        const bool restrict_now = context->shouldRestrictUserQueryS3Credentials();
+        if (!options.force_client_rebuild && current_params->forbid_implicit_credentials == restrict_now)
+            return;
+
+        auto params = std::make_unique<AzureBlobStorage::ConnectionParams>(*current_params);
+        params->forbid_implicit_credentials = restrict_now;
+        params->anonymous_fallback_for_server_credentials = restrict_now;
+        client.set(AzureBlobStorage::getContainerClient(*params, /*readonly=*/ true));
+        connection_params.set(std::move(params));
+        return;
+    }
+
     if (!options.allow_client_change)
         return;
 

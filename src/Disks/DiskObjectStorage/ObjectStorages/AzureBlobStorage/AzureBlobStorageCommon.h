@@ -172,6 +172,12 @@ struct ConnectionParams
 
     /// Throws `ACCESS_DENIED` when the credential is off limits and the anonymous fallback is not allowed.
     bool checkOrDropServerManagedCredentials() const;
+
+    /// Whether requests would authenticate with the server's own identity: no SAS token and a server-managed `auth_method`.
+    bool usesServerManagedCredentials() const;
+
+    /// `auth_method` for a caller that obtains tokens from it directly; throws `ACCESS_DENIED` if it is off limits.
+    AuthMethod getPermittedAuthMethod() const;
 };
 
 void processURL(const String & url, const String & container_name, Endpoint & endpoint, AuthMethod & auth_method);

@@ -238,16 +238,8 @@ static bool isServerManagedCredential(const AuthMethod & auth_method)
         || std::holds_alternative<std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>(auth_method);
 }
 
-bool ConnectionParams::checkOrDropServerManagedCredentials() const
+[[noreturn]] static void throwServerCredentialsRestricted()
 {
-    /// A request authorized by SAS does not use `auth_method`.
-    if (!forbid_implicit_credentials || !endpoint.sas_auth.empty() || !endpoint.additional_params.empty()
-        || !isServerManagedCredential(auth_method))
-        return false;
-
-    if (anonymous_fallback_for_server_credentials)
-        return true;
-
     throw Exception(
         ErrorCodes::ACCESS_DENIED,
         "Azure access from user queries is not allowed to use the server's own identity (AKS workload identity "
@@ -257,6 +249,30 @@ bool ConnectionParams::checkOrDropServerManagedCredentials() const
         ", or enable the setting `s3_allow_server_credentials_in_user_queries`"
 #endif
         ".");
+}
+
+bool ConnectionParams::usesServerManagedCredentials() const
+{
+    /// A request authorized by SAS does not use `auth_method`.
+    return endpoint.sas_auth.empty() && endpoint.additional_params.empty() && isServerManagedCredential(auth_method);
+}
+
+bool ConnectionParams::checkOrDropServerManagedCredentials() const
+{
+    if (!forbid_implicit_credentials || !usesServerManagedCredentials())
+        return false;
+
+    if (anonymous_fallback_for_server_credentials)
+        return true;
+
+    throwServerCredentialsRestricted();
+}
+
+AuthMethod ConnectionParams::getPermittedAuthMethod() const
+{
+    if (checkOrDropServerManagedCredentials())
+        throwServerCredentialsRestricted();
+    return auth_method;
 }
 
 String ConnectionParams::getConnectionURLWithoutQuery() const

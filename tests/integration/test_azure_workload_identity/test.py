@@ -96,3 +96,36 @@ def test_token_request_goes_through_http_transport(started_cluster):
     for hit in hits:
         assert hit["path"] == f"/{TENANT_ID}/oauth2/v2.0/token"
         assert FEDERATED_TOKEN in hit["body"]
+
+
+def get_storage_hits(started_cluster):
+    node_ip = started_cluster.get_instance_ip("node")
+    return json.loads(
+        requests.get(f"https://{node_ip}:{TOKEN_PORT}/storage_hits", verify=False).text
+    )
+
+
+def test_table_created_with_opt_in_serves_no_restricted_session(started_cluster):
+    """A table that uses the server's identity follows the restriction of the accessing session, as for S3: a
+    client built under the opt-in is not reused by a restricted session, and the opt-in works again afterwards."""
+
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    allow = {"s3_allow_server_credentials_in_user_queries": 1}
+    node.query("DROP TABLE IF EXISTS t_opt_in SYNC")
+    node.query(
+        f"CREATE TABLE t_opt_in (c UInt64) ENGINE = AzureBlobStorage('https://127.0.0.1:{TOKEN_PORT}/account', 'cont', 'data.csv', 'CSV')",
+        settings=allow,
+    )
+
+    before = len(get_storage_hits(started_cluster))
+    node.query_and_get_error("SELECT * FROM t_opt_in", settings={"azure_sdk_max_retries": 0})
+    restricted_hits = get_storage_hits(started_cluster)[before:]
+    assert restricted_hits
+    assert not any(hit["authorization"] for hit in restricted_hits)
+
+    before = len(get_storage_hits(started_cluster))
+    node.query_and_get_error("SELECT * FROM t_opt_in", settings={**allow, "azure_sdk_max_retries": 0})
+    allowed_hits = get_storage_hits(started_cluster)[before:]
+    assert any(hit["authorization"] for hit in allowed_hits)
+
+    node.query("DROP TABLE t_opt_in SYNC")
