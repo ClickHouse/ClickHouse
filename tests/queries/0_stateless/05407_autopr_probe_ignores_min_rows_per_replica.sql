@@ -28,9 +28,16 @@ SELECT s.item, r.order_id FROM sales s, returns r
 WHERE s.item = r.item AND s.order_id = r.order_id AND s.item BETWEEN 100 AND 120 AND r.item BETWEEN 100 AND 120
 LIMIT 10 FORMAT Null SETTINGS log_comment = '05407_min_rows_in_session';
 
--- The setting given in a subquery's `SETTINGS` clause. Mode 2 builds the plan with parallel replicas on every run, while
--- mode 1 would decide the second query from the statistics the first one collected.
+-- The setting given in the `SETTINGS` clause of a subquery, of a view analyzed by its own interpreter (not inlined),
+-- and of the `view` table function.
+-- Mode 2 builds the plan with parallel replicas on every run, while mode 1 would decide each query after the first
+-- from the statistics the first one collected.
 SET parallel_replicas_min_number_of_rows_per_replica = 0, automatic_parallel_replicas_mode = 2, parallel_replicas_plan_based = 1;
+SET analyzer_inline_views = 0;
+
+CREATE VIEW sales_view_without_min_rows AS SELECT * FROM sales SETTINGS parallel_replicas_min_number_of_rows_per_replica = 0;
+CREATE VIEW sales_view AS SELECT * FROM sales SETTINGS parallel_replicas_min_number_of_rows_per_replica = 50000000;
+
 SELECT s.item, r.order_id FROM (SELECT * FROM sales SETTINGS parallel_replicas_min_number_of_rows_per_replica = 0) s, returns r
 WHERE s.item = r.item AND s.order_id = r.order_id AND s.item BETWEEN 100 AND 120 AND r.item BETWEEN 100 AND 120
 LIMIT 10 FORMAT Null SETTINGS log_comment = '05407_subquery_without_min_rows';
@@ -38,6 +45,22 @@ LIMIT 10 FORMAT Null SETTINGS log_comment = '05407_subquery_without_min_rows';
 SELECT s.item, r.order_id FROM (SELECT * FROM sales SETTINGS parallel_replicas_min_number_of_rows_per_replica = 50000000) s, returns r
 WHERE s.item = r.item AND s.order_id = r.order_id AND s.item BETWEEN 100 AND 120 AND r.item BETWEEN 100 AND 120
 LIMIT 10 FORMAT Null SETTINGS log_comment = '05407_min_rows_in_subquery';
+
+SELECT s.item, r.order_id FROM sales_view_without_min_rows s, returns r
+WHERE s.item = r.item AND s.order_id = r.order_id AND s.item BETWEEN 100 AND 120 AND r.item BETWEEN 100 AND 120
+LIMIT 10 FORMAT Null SETTINGS log_comment = '05407_view_without_min_rows';
+
+SELECT s.item, r.order_id FROM sales_view s, returns r
+WHERE s.item = r.item AND s.order_id = r.order_id AND s.item BETWEEN 100 AND 120 AND r.item BETWEEN 100 AND 120
+LIMIT 10 FORMAT Null SETTINGS log_comment = '05407_min_rows_in_view';
+
+SELECT s.item, r.order_id FROM view(SELECT * FROM sales SETTINGS parallel_replicas_min_number_of_rows_per_replica = 0) s, returns r
+WHERE s.item = r.item AND s.order_id = r.order_id AND s.item BETWEEN 100 AND 120 AND r.item BETWEEN 100 AND 120
+LIMIT 10 FORMAT Null SETTINGS log_comment = '05407_view_function_without_min_rows';
+
+SELECT s.item, r.order_id FROM view(SELECT * FROM sales SETTINGS parallel_replicas_min_number_of_rows_per_replica = 50000000) s, returns r
+WHERE s.item = r.item AND s.order_id = r.order_id AND s.item BETWEEN 100 AND 120 AND r.item BETWEEN 100 AND 120
+LIMIT 10 FORMAT Null SETTINGS log_comment = '05407_min_rows_in_view_function';
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -55,5 +78,9 @@ WHERE q.current_database = currentDatabase() AND base.current_database = current
         ('05407_min_rows_in_query', '05407_without_min_rows'),
         ('05407_min_rows_in_session', '05407_without_min_rows'),
         ('05407_subquery_without_min_rows', '05407_subquery_without_min_rows'),
-        ('05407_min_rows_in_subquery', '05407_subquery_without_min_rows'))
+        ('05407_min_rows_in_subquery', '05407_subquery_without_min_rows'),
+        ('05407_view_without_min_rows', '05407_view_without_min_rows'),
+        ('05407_min_rows_in_view', '05407_view_without_min_rows'),
+        ('05407_view_function_without_min_rows', '05407_view_function_without_min_rows'),
+        ('05407_min_rows_in_view_function', '05407_view_function_without_min_rows'))
 ORDER BY q.event_time_microseconds;

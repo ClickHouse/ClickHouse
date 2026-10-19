@@ -659,6 +659,10 @@ protected:
     /// purpose: only Interpreter may turn it on, but it must reach every join of the
     /// query, including joins in nested plans, which EXPLAIN also prints.
     JoinAnalyzeMode join_analyze_mode = JoinAnalyzeMode::None;
+    /// True while building the plan with parallel replicas that `automatic_parallel_replicas_mode` costs against the
+    /// single-node plan. It is a context field rather than a setting, because it must reach every planning of that
+    /// plan, including views analyzed later by their own interpreters, and no `SETTINGS` clause there may undo it.
+    bool is_automatic_parallel_replicas_probe = false;
 
     /// Defined out of line: a definition in the header gives every shared object its own copy.
     static ContextPtr global_context_instance;
@@ -2012,6 +2016,9 @@ public:
 
     JoinAnalyzeMode getJoinAnalyzeMode() const { return join_analyze_mode; }
     void setJoinAnalyzeMode(JoinAnalyzeMode value) { join_analyze_mode = value; }
+
+    bool isAutomaticParallelReplicasProbe() const { return is_automatic_parallel_replicas_probe; }
+    void setIsAutomaticParallelReplicasProbe(bool value) { is_automatic_parallel_replicas_probe = value; }
 
     ActionLocksManagerPtr getActionLocksManager() const;
 
