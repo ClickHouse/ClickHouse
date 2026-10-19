@@ -1389,7 +1389,21 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (auto it = column_to_affected_materialized.find(command.column_name); it != column_to_affected_materialized.end())
                 affected_materialized = it->second;
 
-            for (const auto & dependent_name : affected_materialized)
+            /// A MATERIALIZED column that also reads an EPHEMERAL column is kept out of
+            /// `column_to_affected_materialized` and is never recomputed, so it goes stale when the
+            /// materialized column (or a recomputed MATERIALIZED hop) is one of its inputs. If it
+            /// feeds a key, the key would keep stale values, so it is refused the same way (e.g.
+            /// `ver MATERIALIZED c + e` with `e ... EPHEMERAL` on `ReplacingMergeTree(ver)`).
+            Names key_checked_dependents = affected_materialized;
+            for (const auto & [mat_column, readable_dependencies] : ephemeral_reading_materialized)
+            {
+                if (column_required_by(command.column_name, *readable_dependencies)
+                    || std::ranges::any_of(affected_materialized,
+                        [&](const auto & dependent) { return column_required_by(dependent, *readable_dependencies); }))
+                    key_checked_dependents.push_back(mat_column);
+            }
+
+            for (const auto & dependent_name : key_checked_dependents)
             {
                 if (column_used_in_sorting_key(dependent_name, metadata_snapshot))
                 {

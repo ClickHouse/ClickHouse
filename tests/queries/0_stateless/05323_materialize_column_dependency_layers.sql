@@ -137,3 +137,46 @@ CREATE TABLE t_mat_ttl_target_ephemeral
 INSERT INTO t_mat_ttl_target_ephemeral (a, y, e) VALUES (1, 100, 5);
 ALTER TABLE t_mat_ttl_target_ephemeral MATERIALIZE COLUMN c; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_ttl_target_ephemeral;
+
+-- Case 51: A stored MATERIALIZED column that also reads an EPHEMERAL column is never recomputed,
+-- so materializing one of its regular inputs leaves it stale. When it feeds a key — here the
+-- version column of `ReplacingMergeTree`, the sorting key, the partition key or a projection
+-- sorting key — the command is refused, also when the input is reached through a recomputed
+-- MATERIALIZED hop. A column it does not read still materializes.
+DROP TABLE IF EXISTS t_mat_ephemeral_version;
+CREATE TABLE t_mat_ephemeral_version
+    (a UInt64, c UInt64 DEFAULT 1, e UInt64 EPHEMERAL 7, d UInt64 MATERIALIZED c + 1,
+     ver UInt64 MATERIALIZED c + e, ver2 UInt64 MATERIALIZED d + e, x UInt64 DEFAULT 3)
+    ENGINE = ReplacingMergeTree(ver) ORDER BY a;
+INSERT INTO t_mat_ephemeral_version (a, c, e) VALUES (1, 10, 5);
+ALTER TABLE t_mat_ephemeral_version MODIFY COLUMN c UInt64 DEFAULT 2;
+ALTER TABLE t_mat_ephemeral_version MATERIALIZE COLUMN c; -- { serverError CANNOT_UPDATE_COLUMN }
+ALTER TABLE t_mat_ephemeral_version MATERIALIZE COLUMN x SETTINGS mutations_sync = 2;
+SELECT c, ver FROM t_mat_ephemeral_version;
+DROP TABLE t_mat_ephemeral_version;
+
+DROP TABLE IF EXISTS t_mat_ephemeral_hop_sort_key;
+CREATE TABLE t_mat_ephemeral_hop_sort_key
+    (a UInt64, c UInt64 DEFAULT 1, e UInt64 EPHEMERAL 7, d UInt64 MATERIALIZED c + 1,
+     k UInt64 MATERIALIZED d + e)
+    ENGINE = MergeTree ORDER BY (a, k);
+INSERT INTO t_mat_ephemeral_hop_sort_key (a, c, e) VALUES (1, 10, 5);
+ALTER TABLE t_mat_ephemeral_hop_sort_key MATERIALIZE COLUMN c; -- { serverError CANNOT_UPDATE_COLUMN }
+DROP TABLE t_mat_ephemeral_hop_sort_key;
+
+DROP TABLE IF EXISTS t_mat_ephemeral_partition_key;
+CREATE TABLE t_mat_ephemeral_partition_key
+    (a UInt64, c UInt64 DEFAULT 1, e UInt64 EPHEMERAL 7, p UInt64 MATERIALIZED c + e)
+    ENGINE = MergeTree ORDER BY a PARTITION BY p;
+INSERT INTO t_mat_ephemeral_partition_key (a, c, e) VALUES (1, 10, 5);
+ALTER TABLE t_mat_ephemeral_partition_key MATERIALIZE COLUMN c; -- { serverError CANNOT_UPDATE_COLUMN }
+DROP TABLE t_mat_ephemeral_partition_key;
+
+DROP TABLE IF EXISTS t_mat_ephemeral_projection_key;
+CREATE TABLE t_mat_ephemeral_projection_key
+    (a UInt64, c UInt64 DEFAULT 1, e UInt64 EPHEMERAL 7, k UInt64 MATERIALIZED c + e,
+     PROJECTION p (SELECT a, k ORDER BY k))
+    ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_mat_ephemeral_projection_key (a, c, e) VALUES (1, 10, 5);
+ALTER TABLE t_mat_ephemeral_projection_key MATERIALIZE COLUMN c; -- { serverError CANNOT_UPDATE_COLUMN }
+DROP TABLE t_mat_ephemeral_projection_key;
