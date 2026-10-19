@@ -2075,7 +2075,8 @@ public:
         if (unlikely(t < 0))
         {
             is_negative = true;
-            t = -t;
+            /// Clamp before negating, so the minimal Int64 does not overflow.
+            t = t < -3599999 ? 3599999 : -t;
         }
 
         // Cap at 3599999 seconds (999:59:59)
