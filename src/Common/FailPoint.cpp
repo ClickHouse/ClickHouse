@@ -321,6 +321,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(restore_pause_on_start) \
     PAUSEABLE_ONCE(restore_pause_before_data_restore_tasks) \
     PAUSEABLE_ONCE(backups_pause_before_publishing_progress) \
+    REGULAR(backups_hold_registration_until_ddl_worker_stops) \
     PAUSEABLE_ONCE(restore_pause_before_publishing_final_progress) \
     PAUSEABLE(sc_state_application_pause) \
     PAUSEABLE(sc_state_application_pause_after_fetch) \
@@ -372,7 +373,7 @@ static struct InitFiu
     PAUSEABLE(after_snapshot_clean_pause) \
     ONCE(parallel_replicas_reading_response_timeout) \
     ONCE(prepared_sets_build_ordered_set_inplace_fail) \
-    ONCE(disk_set_builder_stop_before_finish) \
+    ONCE(disk_set_builder_reach_time_limit) \
     REGULAR(parallel_replicas_force_local_replica_inactive) \
     REGULAR(parallel_replicas_skip_aggregate_projection_on_follower) \
     ONCE(parallel_replicas_insert_select_drop_active_replica) \
