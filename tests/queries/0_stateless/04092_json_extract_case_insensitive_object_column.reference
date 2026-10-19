@@ -104,3 +104,6 @@ escaped dots literal key ci	x	x	y	y
 escaped dots literal key ci rows	1	x	x	y	y		
 escaped dots literal key ci rows	2	z	z	w	w		
 escaped dots literal key ci rows	3			v	v		
+const object non-const keys	0	1	1
+const object non-const keys	1	2	2
+const object non-const keys	2	0	0

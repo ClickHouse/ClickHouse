@@ -278,8 +278,10 @@ public:
             if (input_rows_count == 0)
                 return result_type->createColumn();
 
+            /// Only the key columns are read row by row here; the other arguments keep their `ColumnConst`
+            /// (a literal `JSON` object must not be expanded to `input_rows_count` copies).
             VectorWithMemoryTracking<ColumnPtr> full_columns(arguments.size());
-            for (size_t i = 0; i < arguments.size(); ++i)
+            for (size_t i = 1; i <= num_path_arguments; ++i)
                 full_columns[i] = arguments[i].column->convertToFullColumnIfConst();
 
             /// The keys of a row are encoded with length prefixes, so that distinct key lists never collide.
@@ -327,7 +329,7 @@ public:
                     else if (const auto * col_const = typeid_cast<const ColumnConst *>(arguments[i].column.get()))
                         group_arguments[i].column = ColumnConst::create(col_const->getDataColumnPtr(), group_size);
                     else
-                        group_arguments[i].column = full_columns[i]->index(*group_rows[group], 0);
+                        group_arguments[i].column = arguments[i].column->index(*group_rows[group], 0);
                 }
                 group_results[group] = runForObjectColumn<Name, Impl, case_insensitive>(group_arguments, result_type, group_size, format_settings)
                     ->convertToFullColumnIfConst();

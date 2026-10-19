@@ -269,3 +269,9 @@ SELECT 'escaped dots literal key ci rows', id,
 FROM t_04092_escaped_dots ORDER BY id;
 DROP TABLE t_04092_escaped_dots;
 SET json_type_escape_dots_in_keys = 0;
+
+-- A constant `JSON` object with non-constant keys stays constant and gives the same answer per row.
+SELECT 'const object non-const keys', number,
+    JSONExtractIntCaseInsensitive('{"A": 1, "b": 2}'::JSON, ['a', 'B', 'c'][number + 1]),
+    JSONExtractIntCaseInsensitive('{"A": 1, "b": 2}', ['a', 'B', 'c'][number + 1])
+FROM numbers(3);
