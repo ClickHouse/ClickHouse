@@ -250,14 +250,29 @@ std::pair<Iceberg::PersistentTableComponents, Iceberg::MetadataFileWithInfo> Ice
 void IcebergMetadata::setExplicitMetadataFilePath(const String & path)
 {
     explicit_metadata_file_path.set(std::make_unique<const String>(path));
-    std::lock_guard lock(initial_latest_metadata_mutex);
-    initial_latest_metadata.reset();
+    std::lock_guard lock(cached_latest_metadata_mutex);
+    cached_latest_metadata.reset();
 }
 
-void IcebergMetadata::update(const ContextPtr &)
+void IcebergMetadata::update(const ContextPtr & context)
 {
-    std::lock_guard lock(initial_latest_metadata_mutex);
-    initial_latest_metadata.reset();
+    auto latest_metadata = fetchLatestMetadata(context, /* force_fetch_latest_metadata */ false);
+    std::lock_guard lock(cached_latest_metadata_mutex);
+    cached_latest_metadata = std::move(latest_metadata);
+}
+
+Iceberg::MetadataFileWithInfo IcebergMetadata::fetchLatestMetadata(const ContextPtr & context, bool force_fetch_latest_metadata) const
+{
+    return getLatestOrExplicitMetadataFileAndVersion(
+        object_storage,
+        persistent_components.table_path,
+        getMetadataLookupSettings(),
+        persistent_components.metadata_cache,
+        context,
+        log.get(),
+        persistent_components.table_uuid,
+        persistent_components.metadata_compression_method,
+        force_fetch_latest_metadata);
 }
 
 DataLakeStorageSettings IcebergMetadata::getMetadataLookupSettings() const
@@ -275,24 +290,15 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
     {
         std::optional<Iceberg::MetadataFileWithInfo> latest_metadata;
         {
-            std::lock_guard lock(initial_latest_metadata_mutex);
-            latest_metadata = std::exchange(initial_latest_metadata, std::nullopt);
+            std::lock_guard lock(cached_latest_metadata_mutex);
+            latest_metadata = cached_latest_metadata;
         }
         if (latest_metadata)
             return getState(context, latest_metadata->path, latest_metadata->version);
     }
 
-    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
-        object_storage,
-        persistent_components.table_path,
-        getMetadataLookupSettings(),
-        persistent_components.metadata_cache,
-        context,
-        log.get(),
-        persistent_components.table_uuid,
-        persistent_components.metadata_compression_method,
-        force_fetch_latest_metadata);
-    return getState(context, metadata_file_path, metadata_version);
+    const auto latest_metadata = fetchLatestMetadata(context, force_fetch_latest_metadata);
+    return getState(context, latest_metadata.path, latest_metadata.version);
 }
 
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(
@@ -317,13 +323,13 @@ IcebergMetadata::IcebergMetadata(
     StorageObjectStorageConfigurationPtr configuration_,
     Iceberg::PersistentTableComponents && persistent_components_,
     ContextPtr context_,
-    std::optional<Iceberg::MetadataFileWithInfo> initial_latest_metadata_)
+    std::optional<Iceberg::MetadataFileWithInfo> cached_latest_metadata_)
     : log(getLogger("IcebergMetadata"))
     , object_storage(std::move(object_storage_))
     , persistent_components(std::move(persistent_components_))
     , data_lake_settings(configuration_->getDataLakeSettings())
     , write_format(configuration_->format)
-    , initial_latest_metadata(std::move(initial_latest_metadata_))
+    , cached_latest_metadata(std::move(cached_latest_metadata_))
 {
     /// TODO: for now it's okay to start/stop the task via constructor/destructor. Once refactored, we'd need to plumb startup/shutdown and schedule the task from there
     if (persistent_components.metadata_cache && data_lake_settings[DataLakeStorageSetting::iceberg_metadata_async_prefetch_period_ms] != 0)
