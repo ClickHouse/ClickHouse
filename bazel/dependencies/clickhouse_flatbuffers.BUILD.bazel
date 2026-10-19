@@ -6,8 +6,9 @@ load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 package(default_visibility = ["//visibility:public"], features = ["external_include_paths"])
 exports_files([
-  "BUILD.bazel",
-  "LICENSE"
+    "BUILD.bazel",
+    "LICENSE",
+    "include/codegen/python.cc",
 ])
 
 _GENERATED_LOCAL_DEFINES_0 = [
@@ -385,10 +386,3 @@ cc_binary(
                    "system_include_paths",
                ],
 )
-
-exports_files([
-    "include/codegen/idl_namer.h",
-    "include/codegen/namer.h",
-    "include/codegen/python.cc",
-    "include/codegen/python.h",
-])

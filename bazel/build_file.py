@@ -10,7 +10,7 @@ import llvm_targets
 from compact_build import compact, header_patterns
 from repository_inputs import (
     REPOSITORIES, ROOT, CC_HEADER_SUFFIXES, HeaderDirectory,
-    directory_sources, execution_path, repository, source_label, source_path,
+    directory_sources, execution_path, repository, source_label, source_path, textual_source_names,
 )
 
 ARCHES = ('x86_64', 'aarch64')
@@ -46,17 +46,6 @@ PUBLIC_HEADERS.update({
     owner: (tuple(owner + '/' + directory + '/' for directory in directories), SOURCE_HEADER_TARGETS[owner])
     for owner, directories in SOURCE_HEADER_DIRECTORIES.items()
 })
-
-# Foreign headers that may be omitted only when an existing dependency already
-# exports them. Keep raw source filenames and local_includes in the consumer:
-# Arrow's generated FlatBuffers headers must still precede its shipped headers.
-DEPENDENCY_HEADER_ROOTS = (
-    'contrib/arrow/cpp/src/arrow/',
-    'contrib/arrow/cpp/src/parquet/',
-    'contrib/zstd/lib/',
-    'contrib/thrift/lib/cpp/src/thrift/',
-)
-
 
 def global_compile_options():
     """Read unconditional Bazel compiler options from the project's rc file."""
@@ -378,11 +367,14 @@ def relocate_tools(value, owners):
 
 
 class BuildFile:
-    def __init__(self, owner, owners, header_consumers=None, targets=None):
+    def __init__(self, owner, owners, header_consumers=None, targets=None, external_headers=None,
+                 native_sources=()):
         self.owner = owner
         self.owners = owners
         self.header_consumers = header_consumers or {}
         self.targets = targets or {}
+        self.external_headers = external_headers
+        self.native_sources = native_sources
         self.public_directories = {}
         self.loads = {}
         self.rules = []
@@ -455,8 +447,10 @@ class BuildFile:
                     continue
                 for item in dep_group.get('hdrs', []):
                     if (isinstance(item, HeaderDirectory)
-                            and repository(item.directory) in {'contrib/arrow', 'contrib/zstd', 'contrib/thrift'}
                             and repository(item.directory) == self.owners.get(target_name)
+                            # _boost_* substitutes boost_headers plus its own
+                            # libs/<component>; it never exports all of boost/.
+                            and not (item.directory == 'contrib/boost' and target_name.startswith('_boost_'))
                             and not self.header_consumers.get(item.directory, set()) <= {target_name}):
                         directories.add(item.directory.rstrip('/') + '/')
         result = tuple(sorted(directories))
@@ -527,11 +521,28 @@ class BuildFile:
                             fields['deps'].append('@' + REPOSITORIES[owner]['name'] + '//:' + public[1])
                             continue
                         target_field = field if custom or path.endswith(CC_HEADER_SUFFIXES) else non_header_field
-                        if (target_field == 'hdrs' and path.endswith(CC_HEADER_SUFFIXES)
-                                and path.startswith(DEPENDENCY_HEADER_ROOTS)
+                        if (target_field in {'hdrs', 'additional_compiler_inputs'}
+                                and path.endswith(CC_HEADER_SUFFIXES)
                                 and path.startswith(supplied)):
                             continue
                         fields[target_field].append(source_label(path))
+        if not custom and self.external_headers is not None:
+            self.external_headers.use(fields, self.owner)
+        if (not custom and not binary and self.owner in SOURCE_HEADER_DIRECTORIES
+                and self.owner.startswith('contrib/aws')):
+            candidates = {
+                item for item in fields['additional_compiler_inputs']
+                if isinstance(item, str) and item in self.native_sources
+                and repository(source_path(item)) != self.owner
+            }
+            if candidates:
+                included = textual_source_names(self.owner)
+                if included is not None:
+                    fields['additional_compiler_inputs'] = [
+                        item for item in fields['additional_compiler_inputs']
+                        if not isinstance(item, str) or item not in candidates
+                        or Path(source_path(item)).name in included
+                    ]
         if custom:
             fields['hdrs'].extend(fields['textual_hdrs'])
             fields['hdrs'].extend(fields['additional_compiler_inputs'])
@@ -842,11 +853,13 @@ class BuildFile:
             '@platforms//cpu:' + arch: [self.label(d) for d in v['deps']] + [
                 ':' + name + '__compile_' + str(i)
                 for i in range(1 if kind == 'EXECUTABLE' else 0, group_count)
-            ] + ([self.label(d) for d in v['groups'][0].get('deps', [])] if kind == 'EXECUTABLE' and v['groups'] else [])
+            ]
             for arch, v in variants.items()
         })
         if kind == 'EXECUTABLE':
-            binary_attrs.pop('deps', None)
+            # Header providers added by compile_inputs must reach binaries as
+            # well as libraries. The original raw CMake group has no such deps.
+            deps = Concat([deps, binary_attrs.pop('deps', [])])
             if name == 'clickhouse':
                 self.rule('cc_library', 'clickhouse__compile_0', {
                     **binary_attrs,

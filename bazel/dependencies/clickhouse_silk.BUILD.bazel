@@ -10,14 +10,6 @@ exports_files([
 ])
 _GENERATED_HEADER_INPUTS_0 = []
 
-_GENERATED_HEADER_INPUTS_1 = [
-        "@clickhouse_liburing//:src/include/liburing.h",
-        "@clickhouse_liburing//:src/include/liburing/barrier.h",
-        "@clickhouse_liburing//:src/include/liburing/io_uring.h",
-        "@clickhouse_liburing//:src/include/liburing/io_uring/bpf_filter.h",
-        "@clickhouse_liburing//:src/include/liburing/io_uring/query.h",
-        "@clickhouse_liburing//:src/include/liburing/sanitize.h",
-    ]
 
 _GENERATED_HEADER_INPUTS_2 = [
                                  "@clickhouse_boost//:INSTALL",
@@ -83,22 +75,22 @@ ch_cc_library(
         repository_local_include(repository_path("contrib/liburing") + "/src/include", "contrib/silk"),
     ]),
     hdrs = select({
-        "@platforms//cpu:x86_64": [
+        "@platforms//cpu:x86_64": ([
         "@clickhouse_liburing//:config/x86_64/contrib/liburing/src/include-compat/liburing/compat.h",
         "@clickhouse_liburing//:config/x86_64/contrib/liburing/src/include/liburing/io_uring_version.h",
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + _GENERATED_HEADER_INPUTS_0 + _GENERATED_HEADER_INPUTS_1 + header_glob(['include/**', 'src/**'], exclude = [
+    ] + _GENERATED_HEADER_INPUTS_0 + header_glob(['include/**', 'src/**'], exclude = [
             "**/BUILD",
             "**/BUILD.bazel",
-        ], allow_empty = True),
-        "@platforms//cpu:aarch64": [
+        ], allow_empty = True)),
+        "@platforms//cpu:aarch64": ([
         "@clickhouse_liburing//:config/aarch64/contrib/liburing/src/include-compat/liburing/compat.h",
         "@clickhouse_liburing//:config/aarch64/contrib/liburing/src/include/liburing/io_uring_version.h",
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + _GENERATED_HEADER_INPUTS_0 + _GENERATED_HEADER_INPUTS_1 + header_glob(['include/**', 'src/**'], exclude = [
+    ] + _GENERATED_HEADER_INPUTS_0 + header_glob(['include/**', 'src/**'], exclude = [
             "**/BUILD",
             "**/BUILD.bazel",
-        ], allow_empty = True),
+        ], allow_empty = True)),
     }),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
@@ -200,46 +192,12 @@ ch_cc_library(
         repository_local_include(repository_path("contrib/boost"), "contrib/silk"),
         repository_local_include(repository_path("contrib/librseq") + "/include", "contrib/silk"),
     ],
-    hdrs = [
+    hdrs = ([
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + _GENERATED_HEADER_INPUTS_0 + [
-        "@clickhouse_librseq//:include/rseq/abi.h",
-        "@clickhouse_librseq//:include/rseq/arch.h",
-        "@clickhouse_librseq//:include/rseq/arch/aarch64.h",
-        "@clickhouse_librseq//:include/rseq/arch/aarch64/bits.h",
-        "@clickhouse_librseq//:include/rseq/arch/arm.h",
-        "@clickhouse_librseq//:include/rseq/arch/arm/bits.h",
-        "@clickhouse_librseq//:include/rseq/arch/generic/common.h",
-        "@clickhouse_librseq//:include/rseq/arch/generic/thread-pointer.h",
-        "@clickhouse_librseq//:include/rseq/arch/loongarch.h",
-        "@clickhouse_librseq//:include/rseq/arch/loongarch/bits.h",
-        "@clickhouse_librseq//:include/rseq/arch/loongarch/thread-pointer.h",
-        "@clickhouse_librseq//:include/rseq/arch/mips.h",
-        "@clickhouse_librseq//:include/rseq/arch/mips/bits.h",
-        "@clickhouse_librseq//:include/rseq/arch/ppc.h",
-        "@clickhouse_librseq//:include/rseq/arch/ppc/bits.h",
-        "@clickhouse_librseq//:include/rseq/arch/ppc/thread-pointer.h",
-        "@clickhouse_librseq//:include/rseq/arch/riscv.h",
-        "@clickhouse_librseq//:include/rseq/arch/riscv/bits.h",
-        "@clickhouse_librseq//:include/rseq/arch/riscv/thread-pointer.h",
-        "@clickhouse_librseq//:include/rseq/arch/s390.h",
-        "@clickhouse_librseq//:include/rseq/arch/s390/bits.h",
-        "@clickhouse_librseq//:include/rseq/arch/templates/bits-reset.h",
-        "@clickhouse_librseq//:include/rseq/arch/templates/bits.h",
-        "@clickhouse_librseq//:include/rseq/arch/x86.h",
-        "@clickhouse_librseq//:include/rseq/arch/x86/bits.h",
-        "@clickhouse_librseq//:include/rseq/arch/x86/thread-pointer.h",
-        "@clickhouse_librseq//:include/rseq/compiler.h",
-        "@clickhouse_librseq//:include/rseq/inject.h",
-        "@clickhouse_librseq//:include/rseq/mempool.h",
-        "@clickhouse_librseq//:include/rseq/pseudocode.h",
-        "@clickhouse_librseq//:include/rseq/rseq.h",
-        "@clickhouse_librseq//:include/rseq/thread-pointer.h",
-        "@clickhouse_librseq//:include/rseq/utils.h",
-    ] + header_glob(['include/**', 'src/**'], exclude = [
+    ] + _GENERATED_HEADER_INPUTS_0 + header_glob(['include/**', 'src/**'], exclude = [
             "**/BUILD",
             "**/BUILD.bazel",
-        ], allow_empty = True),
+        ], allow_empty = True)),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
     "@llvm-project//compiler-rt:headers",

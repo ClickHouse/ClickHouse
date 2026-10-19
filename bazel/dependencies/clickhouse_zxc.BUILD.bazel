@@ -5,8 +5,8 @@ load("@clickhouse//bazel:repository_paths.bzl", "repository_path", "repository_l
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 package(default_visibility = ["//visibility:public"])
 exports_files([
-  "BUILD.bazel",
-  "LICENSE"
+    "BUILD.bazel",
+    "LICENSE",
 ])
 
 
@@ -853,16 +853,3 @@ ch_cc_library(
     ],
     language = "C",
 )
-
-exports_files([
-    "include/zxc.h",
-    "include/zxc_buffer.h",
-    "include/zxc_constants.h",
-    "include/zxc_dict.h",
-    "include/zxc_error.h",
-    "include/zxc_export.h",
-    "include/zxc_opts.h",
-    "include/zxc_pstream.h",
-    "include/zxc_seekable.h",
-    "include/zxc_stream.h",
-])

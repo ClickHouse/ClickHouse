@@ -5,8 +5,9 @@ load("@clickhouse//bazel:repository_paths.bzl", "repository_path", "repository_l
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 package(default_visibility = ["//visibility:public"])
 exports_files([
-  "BUILD.bazel",
-  "LICENSE"
+    "BUILD.bazel",
+    "LICENSE",
+    "include/Makefile.am",
 ])
 
 ch_cc_library(
@@ -94,40 +95,3 @@ ch_cc_library(
     ],
     language = "C",
 )
-
-exports_files([
-    "include/Makefile.am",
-    "include/rseq/abi.h",
-    "include/rseq/arch.h",
-    "include/rseq/arch/aarch64.h",
-    "include/rseq/arch/aarch64/bits.h",
-    "include/rseq/arch/arm.h",
-    "include/rseq/arch/arm/bits.h",
-    "include/rseq/arch/generic/common.h",
-    "include/rseq/arch/generic/thread-pointer.h",
-    "include/rseq/arch/loongarch.h",
-    "include/rseq/arch/loongarch/bits.h",
-    "include/rseq/arch/loongarch/thread-pointer.h",
-    "include/rseq/arch/mips.h",
-    "include/rseq/arch/mips/bits.h",
-    "include/rseq/arch/ppc.h",
-    "include/rseq/arch/ppc/bits.h",
-    "include/rseq/arch/ppc/thread-pointer.h",
-    "include/rseq/arch/riscv.h",
-    "include/rseq/arch/riscv/bits.h",
-    "include/rseq/arch/riscv/thread-pointer.h",
-    "include/rseq/arch/s390.h",
-    "include/rseq/arch/s390/bits.h",
-    "include/rseq/arch/templates/bits-reset.h",
-    "include/rseq/arch/templates/bits.h",
-    "include/rseq/arch/x86.h",
-    "include/rseq/arch/x86/bits.h",
-    "include/rseq/arch/x86/thread-pointer.h",
-    "include/rseq/compiler.h",
-    "include/rseq/inject.h",
-    "include/rseq/mempool.h",
-    "include/rseq/pseudocode.h",
-    "include/rseq/rseq.h",
-    "include/rseq/thread-pointer.h",
-    "include/rseq/utils.h",
-])

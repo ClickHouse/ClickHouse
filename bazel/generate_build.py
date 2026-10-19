@@ -19,6 +19,7 @@ from rust_archives import ARCHIVE_TARGETS as RUST_ARCHIVES
 from reference_readers import read_file_api
 from configuration import read_configurations
 import llvm_targets
+from external_headers import HeaderLibraries
 from build_file import (
     BuildFile, CMakeCxxCompilerVersion, Glob, SOURCE_HEADER_DIRECTORIES, SOURCE_HEADER_TARGETS,
     dependency_inputs, relocate_compilation,
@@ -736,15 +737,25 @@ def main():
             if isinstance(item, HeaderDirectory):
                 consumers[item.directory].add('rust_cxx')
     targets = {arch: graph.generated_targets for arch, graph in graphs.items()}
+    external = HeaderLibraries(targets)
+    native_sources = {
+        src for arch_targets in targets.values() for target in arch_targets.values()
+        for group in target.get('groups', ())
+        if group.get('language') in {'C', 'CXX', 'ASM'} and not group.get('cmake_runtime')
+        for src in group.get('srcs', ())
+    }
     foreign = relocate_compilation(owners, targets)
-    builds = {owner: BuildFile(owner, owners, consumers, targets) for owner in {None, *owners.values()}}
+    builds = {owner: BuildFile(owner, owners, consumers, targets, external_headers=external,
+                               native_sources=native_sources)
+              for owner in {None, *owners.values()}}
     for graph in graphs.values():
         graph.declare_configuration(builds, owners)
     for name, owner in sorted(owners.items()):
         builds[owner].target(name, {arch: graph.generated_targets[name]
                                   for arch, graph in graphs.items() if name in graph.generated_targets})
     for (owner, name, input_name), variants in sorted(foreign.items()):
-        build = builds.setdefault(owner, BuildFile(owner, owners, consumers, targets))
+        build = builds.setdefault(owner, BuildFile(
+            owner, owners, consumers, targets, external_headers=external, native_sources=native_sources))
         build.target(name, variants, input_name=input_name)
     for owner, directories in SOURCE_HEADER_DIRECTORIES.items():
         build = builds.setdefault(owner, BuildFile(owner, owners, consumers, targets))
@@ -752,6 +763,8 @@ def main():
         build.rule('cc_library', SOURCE_HEADER_TARGETS[owner], {
             'hdrs': Glob(patterns, allow_empty=True),
         })
+    external.declare(
+        builds, lambda owner: BuildFile(owner, owners, consumers, targets, external_headers=external))
     # The public _lz4 wrapper serves rules_rs/BCR clients; the CMake link uses
     # the original group's ordered objects from its own pinned repository.
     lz4 = builds.setdefault('contrib/lz4', BuildFile('contrib/lz4', owners | {'_lz4': 'contrib/lz4'}, consumers))

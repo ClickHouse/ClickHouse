@@ -2191,26 +2191,26 @@ ch_cc_library(
     ],
     local_includes = (_GENERATED_LOCAL_INCLUDES_0),
     hdrs = select({
-        "@platforms//cpu:x86_64": [
+        "@platforms//cpu:x86_64": ([
         "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zconf.h",
         "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib.h",
         "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + _GENERATED_HEADER_INPUTS_0 + _GENERATED_HEADER_INPUTS_1 + header_glob(['src/**', 'third_party/utf8_range/**'], exclude = [
+    ] + header_glob(['src/**', 'third_party/utf8_range/**'], exclude = [
             "**/BUILD",
             "**/BUILD.bazel",
-        ], allow_empty = True),
-        "@platforms//cpu:aarch64": [
+        ], allow_empty = True)),
+        "@platforms//cpu:aarch64": ([
         "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zconf.h",
         "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib.h",
         "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + _GENERATED_HEADER_INPUTS_0 + _GENERATED_HEADER_INPUTS_1 + header_glob(['src/**', 'third_party/utf8_range/**'], exclude = [
+    ] + header_glob(['src/**', 'third_party/utf8_range/**'], exclude = [
             "**/BUILD",
             "**/BUILD.bazel",
-        ], allow_empty = True),
+        ], allow_empty = True)),
     }),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
@@ -2546,12 +2546,12 @@ ch_cc_library(
         "third_party/utf8_range",
         repository_local_include(repository_path("contrib/abseil-cpp"), "contrib/google-protobuf"),
     ],
-    hdrs = [
+    hdrs = ([
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + _GENERATED_HEADER_INPUTS_0 + header_glob(['src/**', 'third_party/utf8_range/**'], exclude = [
+    ] + header_glob(['src/**', 'third_party/utf8_range/**'], exclude = [
             "**/BUILD",
             "**/BUILD.bazel",
-        ], allow_empty = True),
+        ], allow_empty = True)),
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     deps = [
     "@llvm-project//compiler-rt:headers",
@@ -4321,12 +4321,12 @@ ch_cc_library(
         repository_local_include(repository_path("contrib/abseil-cpp"), "contrib/google-protobuf"),
         repository_local_include(repository_path("contrib/llvm-project") + "/libcxxabi/include", "contrib/google-protobuf"),
     ],
-    hdrs = [
+    hdrs = ([
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + _GENERATED_HEADER_INPUTS_0 + header_glob(['src/**', 'third_party/utf8_range/**'], exclude = [
+    ] + header_glob(['src/**', 'third_party/utf8_range/**'], exclude = [
             "**/BUILD",
             "**/BUILD.bazel",
-        ], allow_empty = True),
+        ], allow_empty = True)),
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     deps = [
     "@llvm-project//compiler-rt:headers",

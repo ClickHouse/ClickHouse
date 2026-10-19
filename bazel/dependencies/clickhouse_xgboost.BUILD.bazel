@@ -9,39 +9,6 @@ exports_files([
   "BUILD.bazel",
   "LICENSE"
 ])
-_GENERATED_HEADER_INPUTS_1 = [
-        "@clickhouse_dmlc_core//:include/dmlc/any.h",
-        "@clickhouse_dmlc_core//:include/dmlc/array_view.h",
-        "@clickhouse_dmlc_core//:include/dmlc/base.h",
-        "@clickhouse_dmlc_core//:include/dmlc/blockingconcurrentqueue.h",
-        "@clickhouse_dmlc_core//:include/dmlc/build_config_default.h",
-        "@clickhouse_dmlc_core//:include/dmlc/common.h",
-        "@clickhouse_dmlc_core//:include/dmlc/concurrency.h",
-        "@clickhouse_dmlc_core//:include/dmlc/concurrentqueue.h",
-        "@clickhouse_dmlc_core//:include/dmlc/config.h",
-        "@clickhouse_dmlc_core//:include/dmlc/data.h",
-        "@clickhouse_dmlc_core//:include/dmlc/endian.h",
-        "@clickhouse_dmlc_core//:include/dmlc/filesystem.h",
-        "@clickhouse_dmlc_core//:include/dmlc/input_split_shuffle.h",
-        "@clickhouse_dmlc_core//:include/dmlc/io.h",
-        "@clickhouse_dmlc_core//:include/dmlc/json.h",
-        "@clickhouse_dmlc_core//:include/dmlc/logging.h",
-        "@clickhouse_dmlc_core//:include/dmlc/lua.h",
-        "@clickhouse_dmlc_core//:include/dmlc/memory.h",
-        "@clickhouse_dmlc_core//:include/dmlc/memory_io.h",
-        "@clickhouse_dmlc_core//:include/dmlc/omp.h",
-        "@clickhouse_dmlc_core//:include/dmlc/optional.h",
-        "@clickhouse_dmlc_core//:include/dmlc/parameter.h",
-        "@clickhouse_dmlc_core//:include/dmlc/recordio.h",
-        "@clickhouse_dmlc_core//:include/dmlc/registry.h",
-        "@clickhouse_dmlc_core//:include/dmlc/serializer.h",
-        "@clickhouse_dmlc_core//:include/dmlc/strtonum.h",
-        "@clickhouse_dmlc_core//:include/dmlc/thread_group.h",
-        "@clickhouse_dmlc_core//:include/dmlc/thread_local.h",
-        "@clickhouse_dmlc_core//:include/dmlc/threadediter.h",
-        "@clickhouse_dmlc_core//:include/dmlc/timer.h",
-        "@clickhouse_dmlc_core//:include/dmlc/type_traits.h",
-    ]
 
 expand_template(
     name = "configure_x86_64_7e9adb5d4a91e061",
@@ -218,20 +185,20 @@ ch_cc_library(
         ],
     })),
     hdrs = select({
-        "@platforms//cpu:x86_64": [
+        "@platforms//cpu:x86_64": ([
         ":config/x86_64/contrib/xgboost/dmlc-core/dmlc/build_config.h",
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + _GENERATED_HEADER_INPUTS_1 + header_glob(['include/**'], exclude = [
+    ] + header_glob(['include/**'], exclude = [
             "**/BUILD",
             "**/BUILD.bazel",
-        ], allow_empty = True),
-        "@platforms//cpu:aarch64": [
+        ], allow_empty = True)),
+        "@platforms//cpu:aarch64": ([
         ":config/aarch64/contrib/xgboost/dmlc-core/dmlc/build_config.h",
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + _GENERATED_HEADER_INPUTS_1 + header_glob(['include/**'], exclude = [
+    ] + header_glob(['include/**'], exclude = [
             "**/BUILD",
             "**/BUILD.bazel",
-        ], allow_empty = True),
+        ], allow_empty = True)),
     }),
     local_defines = [
         "DMLC_CORE_USE_CMAKE",

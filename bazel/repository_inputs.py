@@ -125,6 +125,40 @@ def directory_sources(directory):
     return tuple(sorted(result))
 
 
+@cache
+def textual_source_names(owner):
+    """Names present in literal includes of a pinned repo, or None for macros.
+
+    Compare basenames conservatively: even an include in another directory
+    keeps every source of that name. Unresolved includes keep every source.
+    """
+    spec = REPOSITORIES[owner]
+    suffixes = ('.c', '.cc', '.cpp', '.cxx', '.c++', '.C', '.s', '.S', '.asm',
+                *CC_HEADER_SUFFIXES, '.def', '.in')
+    directive = re.compile(r'(?m)^[ \t]*#[ \t]*(include_next|include|import|embed)\b([^\r\n]*)')
+    literal = re.compile(r'^[ \t]*(?:"([^"\n]+)"|<([^>\n]+)>)(.*)$')
+    included = set()
+    unresolved = False
+    with subprocess.Popen(['git', '-C', str(ROOT / owner), 'archive', '--format=tar',
+                           spec['commit']], stdout=subprocess.PIPE) as process:
+        with tarfile.open(fileobj=process.stdout, mode='r|') as archive:
+            for member in archive:
+                if not member.isfile() or not member.name.endswith(suffixes):
+                    continue
+                text = archive.extractfile(member).read().decode('utf-8', errors='replace')
+                text = text.replace('\\\r\n', '').replace('\\\n', '')
+                for match in directive.finditer(text):
+                    operand = match[2].strip()
+                    parsed = literal.match(operand)
+                    if parsed:
+                        included.add(Path(parsed[1] or parsed[2]).name)
+                    elif operand and not operand.startswith(('//', '/*')):
+                        unresolved = True
+        if process.wait():
+            raise ValueError('Cannot scan pinned includes for ' + owner + ' at ' + spec['commit'])
+    return None if unresolved else frozenset(included)
+
+
 
 def repository(path):
     prefix = '/'.join(path.split('/')[:2])

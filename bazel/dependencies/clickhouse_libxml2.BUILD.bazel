@@ -14,62 +14,6 @@ _GENERATED_HEADER_INPUTS_0 = [
         "@clickhouse//:contrib/libxml2-cmake/linux_x86_64/include/libxml/xmlversion.h",
     ]
 
-_GENERATED_HEADER_INPUTS_1 = [
-        "@clickhouse_zlib_ng//:adler32_fold.h",
-        "@clickhouse_zlib_ng//:adler32_p.h",
-        "@clickhouse_zlib_ng//:arch/arm/acle_intrins.h",
-        "@clickhouse_zlib_ng//:arch/arm/arm_features.h",
-        "@clickhouse_zlib_ng//:arch/arm/neon_intrins.h",
-        "@clickhouse_zlib_ng//:arch/generic/chunk_permute_table.h",
-        "@clickhouse_zlib_ng//:arch/power/crc32_constants.h",
-        "@clickhouse_zlib_ng//:arch/power/fallback_builtins.h",
-        "@clickhouse_zlib_ng//:arch/power/power_features.h",
-        "@clickhouse_zlib_ng//:arch/power/slide_ppc_tpl.h",
-        "@clickhouse_zlib_ng//:arch/riscv/riscv_features.h",
-        "@clickhouse_zlib_ng//:arch/s390/dfltcc_common.h",
-        "@clickhouse_zlib_ng//:arch/s390/dfltcc_deflate.h",
-        "@clickhouse_zlib_ng//:arch/s390/dfltcc_detail.h",
-        "@clickhouse_zlib_ng//:arch/s390/dfltcc_inflate.h",
-        "@clickhouse_zlib_ng//:arch/s390/s390_features.h",
-        "@clickhouse_zlib_ng//:arch/x86/adler32_avx2_p.h",
-        "@clickhouse_zlib_ng//:arch/x86/adler32_avx512_p.h",
-        "@clickhouse_zlib_ng//:arch/x86/adler32_ssse3_p.h",
-        "@clickhouse_zlib_ng//:arch/x86/crc32_fold_pclmulqdq_tpl.h",
-        "@clickhouse_zlib_ng//:arch/x86/crc32_fold_vpclmulqdq_tpl.h",
-        "@clickhouse_zlib_ng//:arch/x86/crc32_pclmulqdq_tpl.h",
-        "@clickhouse_zlib_ng//:arch/x86/x86_features.h",
-        "@clickhouse_zlib_ng//:arch/x86/x86_intrins.h",
-        "@clickhouse_zlib_ng//:chunkset_tpl.h",
-        "@clickhouse_zlib_ng//:compare256_rle.h",
-        "@clickhouse_zlib_ng//:cpu_features.h",
-        "@clickhouse_zlib_ng//:crc32_braid_comb_p.h",
-        "@clickhouse_zlib_ng//:crc32_braid_p.h",
-        "@clickhouse_zlib_ng//:crc32_braid_tbl.h",
-        "@clickhouse_zlib_ng//:crc32_fold.h",
-        "@clickhouse_zlib_ng//:deflate.h",
-        "@clickhouse_zlib_ng//:deflate_p.h",
-        "@clickhouse_zlib_ng//:fallback_builtins.h",
-        "@clickhouse_zlib_ng//:functable.h",
-        "@clickhouse_zlib_ng//:gzguts.h",
-        "@clickhouse_zlib_ng//:inffast_tpl.h",
-        "@clickhouse_zlib_ng//:inffixed_tbl.h",
-        "@clickhouse_zlib_ng//:inflate.h",
-        "@clickhouse_zlib_ng//:inflate_p.h",
-        "@clickhouse_zlib_ng//:inftrees.h",
-        "@clickhouse_zlib_ng//:insert_string_tpl.h",
-        "@clickhouse_zlib_ng//:match_tpl.h",
-        "@clickhouse_zlib_ng//:test/benchmarks/benchmark_png_shared.h",
-        "@clickhouse_zlib_ng//:test/test_cpu_features.h",
-        "@clickhouse_zlib_ng//:test/test_shared.h",
-        "@clickhouse_zlib_ng//:test/test_shared_ng.h",
-        "@clickhouse_zlib_ng//:trees.h",
-        "@clickhouse_zlib_ng//:trees_emit.h",
-        "@clickhouse_zlib_ng//:trees_tbl.h",
-        "@clickhouse_zlib_ng//:zbuild.h",
-        "@clickhouse_zlib_ng//:zendian.h",
-        "@clickhouse_zlib_ng//:zutil.h",
-        "@clickhouse_zlib_ng//:zutil_p.h",
-    ]
 
 ch_cc_library(
     name = "_libxml2",
@@ -131,26 +75,26 @@ ch_cc_library(
         repository_local_include(repository_path("contrib/llvm-project") + "/libcxxabi/include", "contrib/libxml2"),
     ]),
     hdrs = select({
-        "@platforms//cpu:x86_64": [
+        "@platforms//cpu:x86_64": ([
         "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/gzread.c",
         "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zconf.h",
         "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib.h",
         "@clickhouse_zlib_ng//:config/x86_64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + _GENERATED_HEADER_INPUTS_0 + _GENERATED_HEADER_INPUTS_1 + header_glob(['**'], exclude = [
+    ] + _GENERATED_HEADER_INPUTS_0 + header_glob(['**'], exclude = [
             "**/BUILD",
             "**/BUILD.bazel",
-        ], allow_empty = True),
-        "@platforms//cpu:aarch64": [
+        ], allow_empty = True)),
+        "@platforms//cpu:aarch64": ([
         "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/gzread.c",
         "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zconf.h",
         "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib.h",
         "@clickhouse_zlib_ng//:config/aarch64/contrib/zlib-ng-cmake/zlib_name_mangling.h",
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + _GENERATED_HEADER_INPUTS_0 + _GENERATED_HEADER_INPUTS_1 + header_glob(['**'], exclude = [
+    ] + _GENERATED_HEADER_INPUTS_0 + header_glob(['**'], exclude = [
             "**/BUILD",
             "**/BUILD.bazel",
-        ], allow_empty = True),
+        ], allow_empty = True)),
     }),
     local_defines = select({
         "@platforms//cpu:x86_64": [

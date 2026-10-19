@@ -31,13 +31,14 @@ ch_cc_library(
         repository_local_include(repository_path("contrib/darts-clone") + "/include", "contrib/Jieba-CPP"),
         "include",
     ],
-    hdrs = [
-               "@clickhouse_sysroot//:linux_native_headers",
-               "@clickhouse_darts_clone//:include/darts.h",
-           ] + header_glob(['include/**'], exclude = [
-            "**/BUILD",
-            "**/BUILD.bazel",
-        ], allow_empty = True),
+    hdrs = ([
+        "@clickhouse_sysroot//:linux_native_headers",
+    ] + header_glob([
+        "include/**",
+    ], exclude = [
+        "**/BUILD",
+        "**/BUILD.bazel",
+    ], allow_empty = True)),
     additional_compiler_inputs = ([
                                       "@clickhouse_sysroot//:linux_compile_files",
                                       "@clickhouse_darts_clone//:include/Makefile.am",
@@ -154,16 +155,17 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     deps = [
-    "@llvm-project//compiler-rt:headers",
-    "@llvm-project//libc:libc_headers",
-    "@llvm-project//libunwind:headers",
-    "@clickhouse_zstd//:_zstd",
-    "@clickhouse//:clang_rt_builtins",
-    "@clickhouse//:cxx",
-    "@clickhouse//:cxxabi",
-    "@clickhouse//:glibc-compatibility",
-    "@clickhouse//:unwind"
-],
+        "@llvm-project//compiler-rt:headers",
+        "@llvm-project//libc:libc_headers",
+        "@llvm-project//libunwind:headers",
+        "@clickhouse_zstd//:_zstd",
+        "@clickhouse//:clang_rt_builtins",
+        "@clickhouse//:cxx",
+        "@clickhouse//:cxxabi",
+        "@clickhouse//:glibc-compatibility",
+        "@clickhouse//:unwind",
+        "@clickhouse_darts_clone//:darts_clone",
+    ],
     features = ["system_include_paths"],
     alwayslink = False,
 )

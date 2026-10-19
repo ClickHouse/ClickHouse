@@ -10,15 +10,6 @@ exports_files([
 ])
 _GENERATED_HEADER_INPUTS_0 = []
 
-_GENERATED_HEADER_INPUTS_1 = [
-        "@clickhouse_snappy//:snappy-c.h",
-        "@clickhouse_snappy//:snappy-internal.h",
-        "@clickhouse_snappy//:snappy-sinksource.h",
-        "@clickhouse_snappy//:snappy-stubs-internal.h",
-        "@clickhouse_snappy//:snappy-test.h",
-        "@clickhouse_snappy//:snappy.h",
-        "@clickhouse_snappy//:snappy_test_data.h",
-    ]
 
 ch_cc_library(
     name = "_avrocpp",
@@ -69,22 +60,22 @@ ch_cc_library(
         ],
     })),
     hdrs = select({
-        "@platforms//cpu:x86_64": [
+        "@platforms//cpu:x86_64": ([
         "@clickhouse_snappy//:config/x86_64/contrib/snappy-cmake/config.h",
         "@clickhouse_snappy//:config/x86_64/contrib/snappy-cmake/snappy-stubs-public.h",
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + _GENERATED_HEADER_INPUTS_0 + _GENERATED_HEADER_INPUTS_1 + header_glob(['lang/c++/api/**'], exclude = [
+    ] + _GENERATED_HEADER_INPUTS_0 + header_glob(['lang/c++/api/**'], exclude = [
             "**/BUILD",
             "**/BUILD.bazel",
-        ], allow_empty = True),
-        "@platforms//cpu:aarch64": [
+        ], allow_empty = True)),
+        "@platforms//cpu:aarch64": ([
         "@clickhouse_snappy//:config/aarch64/contrib/snappy-cmake/config.h",
         "@clickhouse_snappy//:config/aarch64/contrib/snappy-cmake/snappy-stubs-public.h",
         "@clickhouse_sysroot//:linux_native_headers",
-    ] + _GENERATED_HEADER_INPUTS_0 + _GENERATED_HEADER_INPUTS_1 + header_glob(['lang/c++/api/**'], exclude = [
+    ] + _GENERATED_HEADER_INPUTS_0 + header_glob(['lang/c++/api/**'], exclude = [
             "**/BUILD",
             "**/BUILD.bazel",
-        ], allow_empty = True),
+        ], allow_empty = True)),
     }),
     local_defines = [
         "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
