@@ -506,17 +506,26 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     ///
     /// `name = DEFAULT` in `WITH SETTINGS` is kept in `ASTSetQuery::default_settings`, not in `changes`:
     /// it sets the projection's own default explicitly, so such a setting is not inherited either.
-    if (parent_metadata)
+    ///
+    /// `explicit_only` = false is used for the baseline of the settings constraints check below, which
+    /// has no explicit settings of its own and takes the whole inherited policy.
+    const auto inherit_parent_policy = [&](MergeTreeSettings & settings, bool explicit_only)
     {
+        if (!parent_metadata)
+            return;
+
         const auto inherit = [&](const auto & setting, std::string_view setting_name, bool parent_value)
         {
-            if ((*merge_tree_settings)[setting].changed)
-                return;
-            if (projection_definition->with_settings
-                && std::ranges::find(projection_definition->with_settings->default_settings, setting_name)
-                    != projection_definition->with_settings->default_settings.end())
-                return;
-            (*merge_tree_settings)[setting] = parent_value;
+            if (explicit_only)
+            {
+                if (settings[setting].changed)
+                    return;
+                if (projection_definition->with_settings
+                    && std::ranges::find(projection_definition->with_settings->default_settings, setting_name)
+                        != projection_definition->with_settings->default_settings.end())
+                    return;
+            }
+            settings[setting] = parent_value;
         };
         inherit(MergeTreeSetting::add_minmax_index_for_numeric_columns, "add_minmax_index_for_numeric_columns",
             parent_metadata->add_minmax_index_for_numeric_columns);
@@ -524,7 +533,8 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
             parent_metadata->add_minmax_index_for_string_columns);
         inherit(MergeTreeSetting::add_minmax_index_for_temporal_columns, "add_minmax_index_for_temporal_columns",
             parent_metadata->add_minmax_index_for_temporal_columns);
-    }
+    };
+    inherit_parent_policy(*merge_tree_settings, /*explicit_only=*/ true);
 
     /// Track whether the effective settings include index_granularity or index_granularity_bytes overrides
     /// (from either the projection index's getDefaultSettings() or the user's explicit SETTINGS clause),
@@ -601,8 +611,11 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
             }
         }
 
-        /// What `WITH SETTINGS` changes from the defaults this projection would otherwise have.
+        /// What `WITH SETTINGS` changes from the settings this projection would otherwise have. These
+        /// include the policies inherited from the table: an inherited value is not a change made by the
+        /// projection, so it must not be checked against a `CONST` constraint as if it were.
         auto default_settings = result.index ? result.index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
+        inherit_parent_policy(*default_settings, /*explicit_only=*/ false);
         query_context->checkMergeTreeSettingsConstraints(*default_settings, merge_tree_settings->changesFrom(*default_settings));
 
         query_context->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();

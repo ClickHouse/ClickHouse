@@ -1,0 +1,7 @@
+no override
+p
+override to the inherited value
+override to another value
+1
+p
+p_same
