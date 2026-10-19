@@ -1,0 +1,320 @@
+---
+slug: /cloud/managed-postgres/guides/kysely
+sidebarTitle: 'Kysely'
+title: '将 Kysely 与 ClickHouse Managed Postgres 搭配使用'
+description: '使用 Kysely 和 node-postgres 将 TypeScript 应用连接到 ClickHouse Managed Postgres，并启用 TLS 证书验证、类型化查询及迁移功能'
+keywords: ['managed postgres', 'kysely', 'typescript', 'node.js', 'node-postgres', 'pg', 'query builder', 'migrations', 'tls']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-kysely-beta" />
+
+[Kysely](https://kysely.dev) 是一个面向 TypeScript 的类型安全 SQL 查询构建器。在本指南中，您将通过 [`pg`](https://node-postgres.com/) 驱动程序，在启用 TLS 证书验证的情况下将 Kysely 连接到 ClickHouse Managed Postgres，借助 Kysely 迁移创建表，并用 Node.js 搭建一个小型待办事项 API。
+
+## 前置条件 {#prerequisites}
+
+* Node.js 22.18 或更高版本，可直接运行 TypeScript 文件，无需构建步骤。本指南中的文件使用 `.mts` 扩展名，因此无论是 CommonJS 项目还是 ES 模块项目，Node.js 都会将其视为 ES 模块。
+* 一个 ClickHouse Cloud 账户。
+* [`psql`](https://www.postgresql.org/download/)，用于创建数据库。也可以在 [SQL 控制台](/zh/integrations/connectors/sql-clients/sql-console)中运行 `CREATE DATABASE` 语句。
+* `curl`，用于调用 API。
+
+本指南已在 Node.js 24.21、Kysely 0.29.6、`pg` 8.23.1、TypeScript 7.0.2 和 PostgreSQL 18 环境下测试通过。
+
+## 创建 ClickHouse Managed Postgres 服务 {#create-service}
+
+在 ClickHouse Cloud 控制台中，点击 **New service**，然后选择 **Postgres**。实例会在几分钟内准备就绪。详细操作步骤请参阅[快速入门](/zh/products/managed-postgres/quickstart)。
+
+## 获取连接信息 {#connection-details}
+
+在服务的左侧边栏中点击 **Connect**。保持选中 **Directly**，并开启 **Use SSL**：此时 **url** 连接字符串会以 `sslmode=verify-full&sslrootcert=...` 结尾。点击 **Download CA certificate** 下载服务的 CA 证书 (文件名为 `<service-name>-ca-certificate.pem`) ，然后复制该连接字符串。
+
+本指南**直接**连接到 Postgres 的 `5432` 端口，原因有二：
+
+* Node.js 服务器是长期运行的进程。`pg` 的 `Pool` 本身就会保持少量连接处于打开状态并加以复用，因此服务端连接池器带来的收益不大。
+* Kysely 的 `Migrator` 在执行迁移期间会持有一个会话级咨询锁 (`pg_advisory_lock`) 。PgBouncer 以事务池模式运行，因此获取锁、执行迁移和释放锁这几步操作可能分别落在不同的后端连接上。如果经由 PgBouncer 连接，该锁可能会一直被某个池化连接持有，导致后续的迁移因等待该锁而阻塞。
+
+如果之后需要运行大量应用实例或无服务器函数，可以将应用的连接字符串指向 PgBouncer (主机不变，端口为 `6432`) 。由于 `pg` 默认使用未命名的预处理语句，Kysely 搭配 `pg` 可以在事务池模式下正常工作。但迁移仍应通过 `5432` 端口执行。请参阅 [PgBouncer 连接池](/zh/products/managed-postgres/connection#pgbouncer)。
+
+## 设置项目 {#setup}
+
+创建一个项目，并安装 Kysely、`pg` 驱动程序和 TypeScript：
+
+```bash
+mkdir kysely-todo && cd kysely-todo
+npm init -y
+npm install kysely pg
+npm install --save-dev typescript @types/node @types/pg
+npm pkg set scripts.migrate="node --env-file=.env src/migrate.mts" scripts.start="node --env-file=.env src/server.mts" scripts.typecheck="tsc"
+mkdir src migrations
+```
+
+<Tip>
+  **要集成到现有应用中？**
+
+  请跳过 `mkdir kysely-todo && cd kysely-todo` 和 `npm init -y`。在你的项目中运行以下命令 (这些命令会添加 `migrate` 和 `typecheck` 脚本，但不会改动现有的 `start` 脚本) ，然后继续[配置连接](#connection-config)。
+
+  ```bash
+  npm install kysely pg
+  npm install --save-dev typescript @types/node @types/pg
+  npm pkg set scripts.migrate="node --env-file=.env src/migrate.mts" scripts.typecheck="tsc"
+  mkdir -p src migrations
+  ```
+</Tip>
+
+### 配置连接 {#connection-config}
+
+将下载的 CA 证书移至项目目录，并重命名为 `ca-certificate.pem`。然后为该应用创建一个数据库：
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_kysely;"
+```
+
+```text
+CREATE DATABASE
+```
+
+将复制的连接字符串添加到新建的 `.env` 文件或现有的 `.env` 文件中。将 `<PASSWORD>` 替换为您的密码，将数据库名称替换为 `guide_kysely`，并将 `sslrootcert` 设置为 `ca-certificate.pem`：
+
+```bash title=".env"
+DATABASE_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_kysely?sslmode=verify-full&sslrootcert=ca-certificate.pem"
+```
+
+`pg` 会从连接字符串中读取 `sslmode` 和 `sslrootcert`：`verify-full` 会让它校验服务器证书是否由您服务的 CA 签发，以及证书是否与主机名匹配。`sslrootcert` 按相对于工作目录的路径解析；使用 `npm run` 时，工作目录即为项目根目录。
+
+<Warning>
+  请在 URL 中保留 `sslmode=verify-full`。如果没有 `sslmode`，`pg` 既不会使用 TLS，也不会验证服务器。也不要再向 `Pool` 传入 `ssl` 对象：当 URL 包含 `sslmode` 时，URL 中的设置会覆盖您的 `ssl` 对象。如果需要从文件以外的位置加载 CA，请从 URL 中移除 `sslmode` 和 `sslrootcert`，改为向 `Pool` 传入 `ssl: { ca }`。
+</Warning>
+
+添加 `tsconfig.json`，让 `tsc` 对 Node.js 所运行的文件执行类型检查。如果您的应用已有 `tsconfig.json`，请将以下 `compilerOptions` 和 `migrations` 文件夹合并到其中：
+
+```json title="tsconfig.json"
+{
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "nodenext",
+    "types": ["node"],
+    "strict": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true
+  },
+  "include": ["src", "migrations"]
+}
+```
+
+## 定义数据库接口 {#database-interface}
+
+Kysely 依据一个描述各个表的接口，为每个查询推断类型。创建 `src/db.mts`，在其中定义该接口，并创建一个 `Kysely` 实例，该实例使用搭配 `pg` `Pool` 的 `PostgresDialect`：
+
+```ts title="src/db.mts"
+import { Kysely, PostgresDialect, type Generated } from 'kysely'
+import { Pool } from 'pg'
+
+export interface TodoTable {
+  id: Generated<number>
+  title: string
+  done: Generated<boolean>
+  created_at: Generated<Date>
+}
+
+export interface Database {
+  todo: TodoTable
+}
+
+export const db = new Kysely<Database>({
+  dialect: new PostgresDialect({
+    pool: new Pool({
+      connectionString: process.env.DATABASE_URL,
+      max: 10,
+    }),
+  }),
+})
+```
+
+`Generated` 用于标记由数据库自动填充的列，因此插入时可以省略这些列。
+
+## 创建并运行迁移 {#migrations}
+
+本指南使用 Kysely 内置的 `Migrator` 和 `FileMigrationProvider`，二者均包含在核心 `kysely` 包中。独立的 [`kysely-ctl`](https://github.com/kysely-org/kysely-ctl) 命令行客户端是可选的，它封装的也是同一个 `Migrator`。
+
+创建一个迁移文件。Kysely 会按文件名的字母数字顺序依次运行迁移，因此请以日期作为文件名前缀：
+
+```ts title="migrations/2026-09-30_create_todo.mts"
+import { type Kysely, sql } from 'kysely'
+
+export async function up(db: Kysely<any>): Promise<void> {
+  await db.schema
+    .createTable('todo')
+    .addColumn('id', 'integer', (col) => col.primaryKey().generatedAlwaysAsIdentity())
+    .addColumn('title', 'text', (col) => col.notNull())
+    .addColumn('done', 'boolean', (col) => col.notNull().defaultTo(false))
+    .addColumn('created_at', 'timestamptz', (col) => col.notNull().defaultTo(sql`now()`))
+    .execute()
+}
+
+export async function down(db: Kysely<any>): Promise<void> {
+  await db.schema.dropTable('todo').execute()
+}
+```
+
+创建 `src/migrate.mts`，用于执行所有待处理的迁移。在 Kysely 0.29 中，需从 `kysely/migration` 导入 `Migrator` 和 `FileMigrationProvider`：
+
+```ts title="src/migrate.mts"
+import { promises as fs } from 'node:fs'
+import path from 'node:path'
+import { FileMigrationProvider, Migrator } from 'kysely/migration'
+import { db } from './db.mts'
+
+const migrator = new Migrator({
+  db,
+  provider: new FileMigrationProvider({
+    fs,
+    path,
+    migrationFolder: path.join(import.meta.dirname, '../migrations'),
+  }),
+})
+
+const { error, results } = await migrator.migrateToLatest()
+
+for (const result of results ?? []) {
+  console.log(`${result.status}: ${result.migrationName}`)
+}
+
+await db.destroy()
+
+if (error) {
+  console.error('Migration failed:', error)
+  process.exit(1)
+}
+```
+
+运行迁移：
+
+```bash
+npm run migrate
+```
+
+```text
+Success: 2026-09-30_create_todo
+```
+
+Kysely 会在 `kysely_migration` 表中记录已应用的迁移，因此再次运行该命令不会有任何效果。
+
+<Tip>
+  如需确认 `pg` 确实会验证证书，可以在不指定 `sslrootcert` 的情况下运行迁移。由于 Node.js 默认不信任您的服务所使用的 CA，连接将会失败：
+
+  ```bash
+  DATABASE_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_kysely?sslmode=verify-full" npm run migrate
+  ```
+
+  ```text
+  Migration failed: Error: unable to verify the first certificate; if the root CA is installed locally, try running Node.js with --use-system-ca
+  ```
+</Tip>
+
+## 查询数据库 {#query}
+
+创建 `src/server.mts`，这是一个小型 HTTP 服务器，使用 Kysely 对待办事项执行增删改查操作。如果是现有应用，你可以在自己的路由处理程序中使用相同的查询：
+
+```ts title="src/server.mts"
+import { createServer } from 'node:http'
+import { json } from 'node:stream/consumers'
+import { db } from './db.mts'
+
+const port = Number(process.env.PORT ?? 3000)
+
+const server = createServer(async (req, res) => {
+  const { pathname } = new URL(req.url ?? '/', 'http://localhost')
+  const id = Number(pathname.match(/^\/todos\/(\d+)$/)?.[1])
+
+  try {
+    let result: unknown
+
+    if (req.method === 'GET' && pathname === '/todos') {
+      result = await db.selectFrom('todo').selectAll().orderBy('id').execute()
+    } else if (req.method === 'POST' && pathname === '/todos') {
+      const { title } = (await json(req)) as { title: string }
+      result = await db.insertInto('todo').values({ title }).returningAll().executeTakeFirstOrThrow()
+    } else if (req.method === 'PATCH' && id) {
+      const { done } = (await json(req)) as { done: boolean }
+      result = await db.updateTable('todo').set({ done }).where('id', '=', id).returningAll().executeTakeFirst()
+    } else if (req.method === 'DELETE' && id) {
+      result = await db.deleteFrom('todo').where('id', '=', id).returningAll().executeTakeFirst()
+    } else {
+      res.writeHead(404).end()
+      return
+    }
+
+    res.writeHead(result ? 200 : 404, { 'content-type': 'application/json' })
+    res.end(JSON.stringify(result ?? { error: 'not found' }, null, 2))
+  } catch (err) {
+    console.error(err)
+    res.writeHead(500).end()
+  }
+})
+
+server.listen(port, () => console.log(`Listening on http://localhost:${port}/todos`))
+```
+
+由于每个查询都会依据 `Database` 接口进行校验，因此一旦表名或列名拼写错误，或插入时缺少必填的 `title`，类型检查都会失败。对项目进行检查：
+
+```bash
+npm run typecheck
+```
+
+## 验证 {#verify}
+
+启动服务器：
+
+```bash
+npm start
+```
+
+如果是在现有应用中，`npm start` 运行的是你自己的应用，因此请改用 `node --env-file=.env src/server.mts` 来启动示例服务器。
+
+在另一个终端中，创建、更新和删除几条待办事项：
+
+```bash
+curl -X POST localhost:3000/todos -d '{"title": "Create a Managed Postgres service"}'
+curl -X POST localhost:3000/todos -d '{"title": "Connect Kysely with verify-full"}'
+curl -X POST localhost:3000/todos -d '{"title": "Try PgBouncer later"}'
+curl -X PATCH localhost:3000/todos/1 -d '{"done": true}'
+curl -X DELETE localhost:3000/todos/3
+```
+
+在浏览器中打开 [http://localhost:3000/todos](http://localhost:3000/todos)，即可查看剩余的待办事项列表。响应如下所示：
+
+```json
+[
+  {
+    "id": 1,
+    "title": "Create a Managed Postgres service",
+    "done": true,
+    "created_at": "2026-09-30T16:47:31.081Z"
+  },
+  {
+    "id": 2,
+    "title": "Connect Kysely with verify-full",
+    "done": false,
+    "created_at": "2026-09-30T16:47:31.142Z"
+  }
+]
+```
+
+要在控制台中查看相同的数据，请在服务的左侧边栏中打开 **SQL 控制台**，依次展开 `guide_kysely` 和 `public` schema，然后点击 `todo` 表。Kysely 创建的 `kysely_migration` 和 `kysely_migration_lock` 表也会一并列在旁边：
+
+| id | title                             | done  | created&#95;at                |
+| -- | --------------------------------- | ----- | ----------------------------- |
+| 1  | Create a Managed Postgres service | true  | 2026-09-30 16:47:31.081942+00 |
+| 2  | Connect Kysely with verify-full   | false | 2026-09-30 16:47:31.142225+00 |
+
+## 后续步骤 {#next-steps}
+
+* [连接](/zh/products/managed-postgres/connection)：连接字符串、PgBouncer 和 TLS。
+* [设置](/zh/products/managed-postgres/settings)：调优 PostgreSQL 和 PgBouncer 参数，例如 `max_connections`。
+* [只读副本](/zh/products/managed-postgres/read-replicas)：扩展读密集型工作负载。
+* [Kysely 文档](https://kysely.dev/docs/intro)：连接 (join) 、事务和类型生成。
