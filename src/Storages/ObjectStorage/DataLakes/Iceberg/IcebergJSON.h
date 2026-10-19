@@ -2,11 +2,14 @@
 
 #include <base/types.h>
 
+#include <simdjson.h>
+
 #include <atomic>
 #include <concepts>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string_view>
 #include <typeinfo>
 #include <utility>
@@ -18,16 +21,7 @@ namespace DB::Iceberg
 
 class JSONObject;
 class JSONArray;
-struct JSONDocument;
 struct JSONLazyAccess;
-
-using JSONDocumentPtr = std::shared_ptr<const JSONDocument>;
-
-struct JSONDomRef
-{
-    const void * document = nullptr;
-    size_t index = 0;
-};
 
 using JSONObjectPtr = std::shared_ptr<JSONObject>;
 using JSONArrayPtr = std::shared_ptr<JSONArray>;
@@ -133,7 +127,7 @@ public:
     using ConstIterator = Values::const_iterator;
 
     JSONObject() = default;
-    JSONObject(JSONDocumentPtr document_, JSONDomRef dom_);
+    JSONObject(std::shared_ptr<const simdjson::dom::document> document_, simdjson::dom::object dom_object_);
 
     static Ptr create() { return std::make_shared<JSONObject>(); }
 
@@ -177,9 +171,10 @@ private:
     void materialize() const;
     const JSONValue & getExisting(std::string_view key) const;
     JSONValue getLazyExisting(std::string_view key) const;
+    std::optional<simdjson::dom::element> findInDom(std::string_view key) const;
 
-    JSONDocumentPtr document;
-    JSONDomRef dom;
+    std::shared_ptr<const simdjson::dom::document> document;
+    simdjson::dom::object dom_object;
     mutable Values values;
     mutable std::once_flag materialize_flag;
     mutable std::atomic<bool> materialized{true};
@@ -193,7 +188,7 @@ public:
     using ConstIterator = Values::const_iterator;
 
     JSONArray() = default;
-    JSONArray(JSONDocumentPtr document_, JSONDomRef dom_);
+    JSONArray(std::shared_ptr<const simdjson::dom::document> document_, simdjson::dom::array dom_array_);
 
     static Ptr create() { return std::make_shared<JSONArray>(); }
 
@@ -231,8 +226,8 @@ private:
     void materialize() const;
     const JSONValue & getExisting(size_t index) const;
 
-    JSONDocumentPtr document;
-    JSONDomRef dom;
+    std::shared_ptr<const simdjson::dom::document> document;
+    simdjson::dom::array dom_array;
     mutable Values values;
     mutable std::once_flag materialize_flag;
     mutable std::atomic<bool> materialized{true};

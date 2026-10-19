@@ -14,12 +14,10 @@
 #include <base/defines.h>
 #include <base/find_symbols.h>
 #include <double-conversion/double-conversion.h>
-#include <simdjson.h>
 
 #include <algorithm>
 #include <charconv>
 #include <cmath>
-#include <cstring>
 #include <optional>
 
 namespace DB::ErrorCodes
@@ -38,45 +36,12 @@ void throwJSONValueOutOfRange(std::string_view type_name)
     throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "JSON value is out of range of type {}", type_name);
 }
 
-struct JSONDocument
-{
-    simdjson::dom::document document;
-};
-
-static_assert(sizeof(simdjson::dom::object) == sizeof(JSONDomRef) && std::is_trivially_copyable_v<simdjson::dom::object>);
-static_assert(sizeof(simdjson::dom::array) == sizeof(JSONDomRef) && std::is_trivially_copyable_v<simdjson::dom::array>);
-
 struct JSONLazyAccess
 {
-    template <typename T>
-    static T fromRef(const JSONDomRef & ref)
-    {
-        T result;
-        memcpy(static_cast<void *>(&result), &ref, sizeof(ref));
-        return result;
-    }
-
-    template <typename T>
-    static JSONDomRef toRef(const T & value)
-    {
-        JSONDomRef result;
-        memcpy(&result, static_cast<const void *>(&value), sizeof(result));
-        return result;
-    }
-
     static bool isLazy(const JSONObject & object) { return !object.isMaterialized(); }
     static bool isLazy(const JSONArray & array) { return !array.isMaterialized(); }
-    static simdjson::dom::object dom(const JSONObject & object) { return fromRef<simdjson::dom::object>(object.dom); }
-    static simdjson::dom::array dom(const JSONArray & array) { return fromRef<simdjson::dom::array>(array.dom); }
-
-    static std::optional<simdjson::dom::element> find(const JSONObject & object, std::string_view key)
-    {
-        std::optional<simdjson::dom::element> result;
-        for (auto [name, value] : dom(object))
-            if (name == key)
-                result = value;
-        return result;
-    }
+    static simdjson::dom::object dom(const JSONObject & object) { return object.dom_object; }
+    static simdjson::dom::array dom(const JSONArray & array) { return array.dom_array; }
 };
 
 namespace
@@ -385,14 +350,14 @@ JSONValue fromSimdJSON(simdjson::dom::element element)
     }
 }
 
-JSONValue fromSimdJSONLazy(const JSONDocumentPtr & document, simdjson::dom::element element)
+JSONValue fromSimdJSONLazy(const std::shared_ptr<const simdjson::dom::document> & document, simdjson::dom::element element)
 {
     switch (element.type())
     {
         case simdjson::dom::element_type::OBJECT:
-            return std::make_shared<JSONObject>(document, JSONLazyAccess::toRef(element.get_object().value_unsafe()));
+            return std::make_shared<JSONObject>(document, element.get_object().value_unsafe());
         case simdjson::dom::element_type::ARRAY:
-            return std::make_shared<JSONArray>(document, JSONLazyAccess::toRef(element.get_array().value_unsafe()));
+            return std::make_shared<JSONArray>(document, element.get_array().value_unsafe());
         default:
             return fromSimdJSONScalar(element);
     }
@@ -566,8 +531,8 @@ bool JSONValue::operator==(const JSONValue & other) const
     return value == other.value;
 }
 
-JSONObject::JSONObject(JSONDocumentPtr document_, JSONDomRef dom_)
-    : document(std::move(document_)), dom(dom_), materialized(false)
+JSONObject::JSONObject(std::shared_ptr<const simdjson::dom::document> document_, simdjson::dom::object dom_object_)
+    : document(std::move(document_)), dom_object(dom_object_), materialized(false)
 {
 }
 
@@ -580,25 +545,34 @@ void JSONObject::materialize() const
         [this]
         {
             Values result;
-            for (auto [key, value] : JSONLazyAccess::dom(*this))
+            for (auto [key, value] : dom_object)
                 result.insert_or_assign(String(key), fromSimdJSONLazy(document, value));
             values = std::move(result);
             materialized.store(true, std::memory_order_release);
         });
 }
 
+std::optional<simdjson::dom::element> JSONObject::findInDom(std::string_view key) const
+{
+    std::optional<simdjson::dom::element> result;
+    for (auto [name, value] : dom_object)
+        if (name == key)
+            result = value;
+    return result;
+}
+
 bool JSONObject::has(std::string_view key) const
 {
     if (isMaterialized())
         return values.contains(key);
-    return JSONLazyAccess::find(*this, key).has_value();
+    return findInDom(key).has_value();
 }
 
 bool JSONObject::isNull(std::string_view key) const
 {
     if (!isMaterialized())
     {
-        auto element = JSONLazyAccess::find(*this, key);
+        auto element = findInDom(key);
         return !element || element->is_null();
     }
     auto it = values.find(key);
@@ -609,7 +583,7 @@ bool JSONObject::isObject(std::string_view key) const
 {
     if (!isMaterialized())
     {
-        auto element = JSONLazyAccess::find(*this, key);
+        auto element = findInDom(key);
         return element && element->is_object();
     }
     return get(key).isObject();
@@ -619,7 +593,7 @@ bool JSONObject::isArray(std::string_view key) const
 {
     if (!isMaterialized())
     {
-        auto element = JSONLazyAccess::find(*this, key);
+        auto element = findInDom(key);
         return element && element->is_array();
     }
     return get(key).isArray();
@@ -642,7 +616,7 @@ const JSONValue & JSONObject::getExisting(std::string_view key) const
 
 JSONValue JSONObject::getLazyExisting(std::string_view key) const
 {
-    auto element = JSONLazyAccess::find(*this, key);
+    auto element = findInDom(key);
     if (!element)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "JSON object has no key '{}'", key);
     return fromSimdJSONLazy(document, *element);
@@ -694,7 +668,7 @@ size_t JSONObject::size() const
 {
     if (isMaterialized())
         return values.size();
-    return JSONLazyAccess::dom(*this).size();
+    return dom_object.size();
 }
 
 std::vector<String> JSONObject::getNames() const
@@ -707,7 +681,7 @@ std::vector<String> JSONObject::getNames() const
             names.push_back(name);
         return names;
     }
-    for (auto [name, _] : JSONLazyAccess::dom(*this))
+    for (auto [name, _] : dom_object)
         names.emplace_back(name);
     std::sort(names.begin(), names.end());
     names.erase(std::unique(names.begin(), names.end()), names.end());
@@ -717,7 +691,7 @@ std::vector<String> JSONObject::getNames() const
 JSONObjectPtr JSONObject::clone() const
 {
     if (!isMaterialized())
-        return fromSimdJSONObject(JSONLazyAccess::dom(*this));
+        return fromSimdJSONObject(dom_object);
     auto result = create();
     for (const auto & [name, value] : values)
         result->values.emplace(name, value.clone());
@@ -731,8 +705,8 @@ bool JSONObject::operator==(const JSONObject & other) const
     return values == other.values;
 }
 
-JSONArray::JSONArray(JSONDocumentPtr document_, JSONDomRef dom_)
-    : document(std::move(document_)), dom(dom_), materialized(false)
+JSONArray::JSONArray(std::shared_ptr<const simdjson::dom::document> document_, simdjson::dom::array dom_array_)
+    : document(std::move(document_)), dom_array(dom_array_), materialized(false)
 {
 }
 
@@ -744,7 +718,7 @@ void JSONArray::materialize() const
         materialize_flag,
         [this]
         {
-            auto array = JSONLazyAccess::dom(*this);
+            auto array = dom_array;
             Values result;
             result.reserve(array.size());
             for (auto value : array)
@@ -821,13 +795,13 @@ size_t JSONArray::size() const
 {
     if (isMaterialized())
         return values.size();
-    return JSONLazyAccess::dom(*this).size();
+    return dom_array.size();
 }
 
 JSONArrayPtr JSONArray::clone() const
 {
     if (!isMaterialized())
-        return fromSimdJSONArray(JSONLazyAccess::dom(*this));
+        return fromSimdJSONArray(dom_array);
     auto result = create();
     result->values.reserve(values.size());
     for (const auto & value : values)
@@ -844,10 +818,10 @@ bool JSONArray::operator==(const JSONArray & other) const
 
 JSONValue parseJSON(std::string_view json)
 {
-    auto document = std::make_shared<JSONDocument>();
+    auto document = std::make_shared<simdjson::dom::document>();
     simdjson::dom::parser parser;
     simdjson::dom::element root;
-    auto error = parser.parse_into_document(document->document, json.data(), json.size()).get(root);
+    auto error = parser.parse_into_document(*document, json.data(), json.size()).get(root);
     if (error)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON: {}", simdjson::error_message(error));
     return fromSimdJSONLazy(document, root);
