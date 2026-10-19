@@ -1141,6 +1141,8 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             bool only_spatial_bbox = !options.format.parquet.filter_push_down || !format_filter_info->key_condition;
             getHyperrectangleForRowGroup(meta, hyperrectangle, only_spatial_bbox);
         }
+        /// `canSkipFile` matches ranges kept by different queries by position, which must be the same row group for every
+        /// query: no `continue` that depends on the query may come before this push (hence no recording with `rows_to_read`).
         if (record_key_condition_ranges)
             for (auto & [idx, ranges] : key_condition_column_ranges)
                 ranges.push_back(hyperrectangle[idx]);

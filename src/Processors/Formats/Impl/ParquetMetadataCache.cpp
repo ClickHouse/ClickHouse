@@ -32,6 +32,8 @@ size_t ParquetMetadataCacheKeyHash::operator()(const ParquetMetadataCacheKey & k
 ParquetMetadataCacheCell::ParquetMetadataCacheCell(parquet::format::FileMetaData metadata_)
     : metadata(std::move(metadata_))
     , memory_bytes(calculateMemorySize() + SIZE_IN_MEMORY_OVERHEAD)
+    /// Kept statistics may add a quarter of the footer's size to the cell, and at least 4 KiB for a small footer, so the
+    /// cache limits still bound the cell. The columns kept first use up this budget for the lifetime of the cell.
     , kept_statistics(std::make_shared<ParquetKeptStatistics>(std::max<size_t>(memory_bytes / 4, MIN_KEPT_STATISTICS_BYTES)))
 {
 }
