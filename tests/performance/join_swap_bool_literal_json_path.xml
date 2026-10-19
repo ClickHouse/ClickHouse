@@ -1,0 +1,11 @@
+<test>
+    <create_query>CREATE TABLE join_bool_small (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE join_bool_json (k UInt64, j JSON) ENGINE = MergeTree ORDER BY k</create_query>
+    <fill_query>INSERT INTO join_bool_small SELECT number FROM numbers_mt(1000000)</fill_query>
+    <fill_query>INSERT INTO join_bool_json SELECT number, if(number % 10 = 0, '{{"f":true}}', '{{"f":false}}') FROM numbers_mt(10000000)</fill_query>
+    <fill_query>ALTER TABLE join_bool_small MATERIALIZE STATISTICS ALL SETTINGS mutations_sync = 1</fill_query>
+    <fill_query>ALTER TABLE join_bool_json MATERIALIZE STATISTICS ALL SETTINGS mutations_sync = 1</fill_query>
+    <query>SELECT count() FROM join_bool_small AS s LEFT JOIN join_bool_json AS t ON s.k = t.k WHERE t.j.f = false FORMAT Null</query>
+    <drop_query>DROP TABLE IF EXISTS join_bool_small</drop_query>
+    <drop_query>DROP TABLE IF EXISTS join_bool_json</drop_query>
+</test>
