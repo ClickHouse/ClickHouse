@@ -26,7 +26,7 @@ ls "${DIR}" | LC_ALL=C sort
 echo '--- The second insert fails in its second block, while writing the new numbered file'
 ${CLICKHOUSE_LOCAL} --query "
     INSERT INTO FUNCTION file('${DIR}/p_{_partition_id}_part.json', JSON, 'p UInt64, x UInt64') PARTITION BY p
-        SELECT 0 AS p, number + throwIf(number = 150) AS x FROM numbers(100, 100) SETTINGS ${SETTINGS};
+        SELECT 0 AS p, number + throwIf(number = 250) AS x FROM numbers(100, 200) SETTINGS ${SETTINGS};
 " 2>&1 | grep -o -m1 'FUNCTION_THROW_IF_VALUE_IS_NON_ZERO'
 
 echo '--- Only the completed file remains'
