@@ -382,8 +382,10 @@ def test_user_query_log_insecure_cluster_uses_initial_user(user, password):
         query_id=id_,
     )
 
+    # The forwarded query is a SECONDARY_QUERY on n2. Keep its operator attribution in
+    # system.query_log, but do not expose that child row through the user's top-level query log.
     assert get_query_user_info(n2, id_)[0] == ["default", user]
-    assert get_user_query_log_count_by_id(n2, id_, user, password) >= 1
+    assert get_user_query_log_count_by_id(n2, id_, user, password) == 0
     assert get_user_query_log_count_by_id(n2, id_, "default") == 0
 
 

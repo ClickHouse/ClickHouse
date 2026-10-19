@@ -1,0 +1,303 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# A native SECONDARY_QUERY peer can supply ClientInfo.initial_user. The authenticated user must
+# still be limited to its own top-level rows, while each real user can read its own row.
+
+import os
+import socket
+import uuid
+
+CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
+CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT_TCP", "9000"))
+CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "default")
+
+CLIENT_NAME = "user_query_log forged initial user"
+REVISION = 54484
+
+INITIAL_QUERY = 1
+SECONDARY_QUERY = 2
+INTERFACE_TCP = 1
+
+
+def write_var_uint(value, buffer):
+    for _ in range(9):
+        byte = value & 0x7F
+        if value > 0x7F:
+            byte |= 0x80
+        buffer.append(byte)
+        value >>= 7
+        if value == 0:
+            return
+
+
+def write_string(value, buffer):
+    encoded = value.encode("utf-8") if isinstance(value, str) else value
+    write_var_uint(len(encoded), buffer)
+    buffer.extend(encoded)
+
+
+def read_exact(sock, size=1):
+    result = bytearray()
+    while size:
+        chunk = sock.recv(size)
+        if not chunk:
+            raise EOFError("Connection closed by server")
+        result.extend(chunk)
+        size -= len(chunk)
+    return result
+
+
+def read_var_uint(sock):
+    result = 0
+    for index in range(9):
+        byte = read_exact(sock)[0]
+        result |= (byte & 0x7F) << (7 * index)
+        if not byte & 0x80:
+            return result
+    raise RuntimeError("Invalid VarUInt from server")
+
+
+def read_string(sock):
+    return read_exact(sock, read_var_uint(sock)).decode("utf-8")
+
+
+def send_hello(sock, user):
+    packet = bytearray()
+    write_var_uint(0, packet)  # Hello
+    write_string(CLIENT_NAME, packet)
+    write_var_uint(24, packet)  # major
+    write_var_uint(9, packet)  # minor
+    write_var_uint(REVISION, packet)
+    write_string(CLICKHOUSE_DATABASE, packet)
+    write_string(user, packet)
+    write_string("", packet)  # password
+    sock.sendall(packet)
+
+
+def receive_hello(sock):
+    if read_var_uint(sock) != 0:
+        raise RuntimeError("Expected server Hello")
+    read_string(sock)  # server name
+    read_var_uint(sock)  # major
+    read_var_uint(sock)  # minor
+    read_var_uint(sock)  # revision
+    read_var_uint(sock)  # parallel replicas protocol version
+    read_string(sock)  # timezone
+    read_string(sock)  # display name
+    read_var_uint(sock)  # version patch
+    read_string(sock)  # proto_send chunked
+    read_string(sock)  # proto_recv chunked
+    for _ in range(read_var_uint(sock)):
+        read_string(sock)  # password rule name
+        read_string(sock)  # password rule description
+    read_exact(sock, 8)  # nonce
+    while read_string(sock):  # server settings
+        read_var_uint(sock)  # flags
+        read_string(sock)  # value
+    read_var_uint(sock)  # query plan serialization version
+    read_var_uint(sock)  # cluster function protocol version
+
+
+def send_addendum(sock):
+    packet = bytearray()
+    write_string("", packet)  # quota key
+    write_string("notchunked", packet)
+    write_string("notchunked", packet)
+    write_var_uint(0, packet)  # parallel replicas protocol version
+    sock.sendall(packet)
+
+
+def serialize_client_info(packet, kind, initial_user, initial_query_id):
+    packet.append(kind)
+    write_string(initial_user, packet)
+    write_string(initial_query_id, packet)
+    write_string("127.0.0.1:9000", packet)
+    packet.extend([0] * 8)  # initial query start time
+    packet.append(INTERFACE_TCP)
+    write_string("os_user", packet)
+    write_string("client_hostname", packet)
+    write_string(CLIENT_NAME, packet)
+    write_var_uint(24, packet)
+    write_var_uint(9, packet)
+    write_var_uint(REVISION, packet)
+    write_string("", packet)  # quota key
+    write_var_uint(0, packet)  # distributed depth
+    write_var_uint(1, packet)  # client version patch
+    packet.append(0)  # no OpenTelemetry trace
+    write_var_uint(0, packet)  # parallel replicas: collaborate with initiator
+    write_var_uint(0, packet)  # parallel replicas: obsolete count
+    write_var_uint(0, packet)  # parallel replicas: replica number
+    write_var_uint(0, packet)  # script query number
+    write_var_uint(0, packet)  # script line number
+    packet.append(0)  # no JWT
+
+
+def send_empty_block(sock):
+    packet = bytearray()
+    write_var_uint(2, packet)  # Data
+    write_string("", packet)
+    write_var_uint(1, packet)  # block info field 1
+    packet.append(0)  # is_overflows
+    write_var_uint(2, packet)  # block info field 2
+    packet.extend((-1).to_bytes(4, "little", signed=True))  # bucket number
+    write_var_uint(0, packet)  # end of block info
+    write_var_uint(0, packet)  # columns
+    write_var_uint(0, packet)  # rows
+    sock.sendall(packet)
+
+
+def read_exception(sock):
+    code = int.from_bytes(read_exact(sock, 4), "little")
+    read_string(sock)  # name
+    read_string(sock)  # message
+    read_string(sock)  # stack trace
+    read_exact(sock)  # has nested exception
+    return code
+
+
+def skip_profile_info(sock):
+    read_var_uint(sock)  # rows
+    read_var_uint(sock)  # blocks
+    read_var_uint(sock)  # bytes
+    read_exact(sock)  # applied limit
+    read_var_uint(sock)  # rows before limit
+    read_exact(sock)  # obsolete field
+    read_exact(sock)  # applied aggregation
+    read_var_uint(sock)  # rows before aggregation
+
+
+def skip_empty_data_block(sock):
+    read_string(sock)  # temporary table name
+    while True:
+        field = read_var_uint(sock)
+        if field == 0:
+            break
+        if field == 1:
+            read_exact(sock)  # is_overflows
+        elif field == 2:
+            read_exact(sock, 4)  # bucket number
+        else:
+            raise RuntimeError("Unexpected block info field")
+    columns = read_var_uint(sock)
+    rows = read_var_uint(sock)
+    if columns != 0 or rows != 0:
+        raise RuntimeError("Unexpected result data for INSERT query")
+
+
+def run_query(
+    authenticated_user,
+    query,
+    kind,
+    initial_user,
+    initial_query_id,
+    settings=None,
+    query_id=None,
+):
+    query_id = query_id or uuid.uuid4().hex
+    packet = bytearray()
+    write_var_uint(1, packet)  # Query
+    write_string(query_id, packet)
+    serialize_client_info(packet, kind, initial_user, initial_query_id)
+    for name, value in (settings or {}).items():
+        write_string(name, packet)
+        write_var_uint(1, packet)  # important setting
+        write_string(str(value), packet)
+    write_string("", packet)  # end of settings
+    write_string("", packet)  # interserver externally granted roles
+    write_string("", packet)  # interserver secret
+    write_var_uint(2, packet)  # complete stage
+    packet.append(0)  # no compression
+    write_string(query, packet)
+    write_string("", packet)  # query parameters
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(30)
+        sock.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
+        send_hello(sock, authenticated_user)
+        receive_hello(sock)
+        send_addendum(sock)
+        sock.sendall(packet)
+        send_empty_block(sock)
+        while True:
+            packet_type = read_var_uint(sock)
+            if packet_type == 2:  # Exception
+                raise RuntimeError("Native query failed with code {}".format(read_exception(sock)))
+            if packet_type == 3:  # Progress, revision 54484 has seven VarUInt fields
+                for _ in range(7):
+                    read_var_uint(sock)
+            elif packet_type == 6:  # ProfileInfo
+                skip_profile_info(sock)
+            elif packet_type == 1:  # final empty Data block
+                skip_empty_data_block(sock)
+            elif packet_type == 5:  # EndOfStream
+                return
+            else:
+                raise RuntimeError("Unexpected native response packet {}".format(packet_type))
+
+
+def check_visible(authenticated_user, initial_user, query_id, should_be_visible):
+    operator = "=" if should_be_visible else ">"
+    predicate = "count() {} 0".format(operator)
+    query = (
+        "INSERT INTO t_05398_assertions "
+        "SELECT toUInt8(throwIf({}, 'user_query_log identity assertion failed')) "
+        "FROM system.user_query_log WHERE query_id = '{}'"
+    ).format(predicate, query_id)
+    run_query(
+        authenticated_user,
+        query,
+        SECONDARY_QUERY,
+        initial_user,
+        query_id,
+        settings={"interactive_delay": 0, "send_profile_events": 0},
+    )
+
+
+def main():
+    victim_query_id = uuid.uuid4().hex
+    default_query_id = uuid.uuid4().hex
+    logged_settings = {
+        "interactive_delay": 0,
+        "log_queries": 1,
+        "log_queries_probability": 1,
+        "send_profile_events": 0,
+    }
+
+    run_query(
+        "user_05398_victim",
+        "INSERT INTO t_05398_assertions SELECT 1",
+        INITIAL_QUERY,
+        "user_05398_victim",
+        victim_query_id,
+        settings=logged_settings,
+        query_id=victim_query_id,
+    )
+    run_query(
+        "default",
+        "INSERT INTO t_05398_assertions SELECT 1",
+        INITIAL_QUERY,
+        "default",
+        default_query_id,
+        settings=logged_settings,
+        query_id=default_query_id,
+    )
+    run_query(
+        "default",
+        "SYSTEM FLUSH LOGS query_log",
+        INITIAL_QUERY,
+        "default",
+        uuid.uuid4().hex,
+        settings={"interactive_delay": 0, "send_profile_events": 0},
+    )
+
+    check_visible("user_05398_victim", "user_05398_victim", victim_query_id, True)
+    print("victim can read own query")
+    check_visible("default", "default", default_query_id, True)
+    print("default can read own query")
+    check_visible("default", "user_05398_victim", victim_query_id, False)
+    print("forged initial_user cannot read victim query")
+
+
+if __name__ == "__main__":
+    main()

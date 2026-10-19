@@ -1,5 +1,6 @@
 -- Keep this test scoped to query IDs created by this native-client session so a
 -- previous invocation cannot satisfy the query-log assertions.
+SET enable_parallel_replicas = 0;
 SET log_queries = 1;
 SET log_queries_probability = 1;
 SET log_queries_min_type = 'QUERY_START';

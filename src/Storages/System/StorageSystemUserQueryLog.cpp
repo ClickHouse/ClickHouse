@@ -77,19 +77,6 @@ const std::unordered_set<std::string_view> pushable_columns
     "current_database",
 };
 
-/// These fields can identify objects or policies behind a SQL SECURITY DEFINER/NONE view. They are
-/// redacted in the internal source query before any expression in the outer query can inspect them.
-const std::unordered_set<std::string_view> query_access_info_columns
-{
-    "databases",
-    "tables",
-    "columns",
-    "partitions",
-    "projections",
-    "views",
-    "used_row_policies",
-};
-
 /// The functions that may appear in a pushed-down predicate: logical connectives and comparisons.
 /// They never throw depending on the value of an argument row.
 const std::unordered_set<std::string_view> pushable_functions
@@ -287,28 +274,32 @@ void ReadFromUserQueryLog::initializePipeline(QueryPipelineBuilder & pipeline, c
     inner_context->applySettingsChanges(settings_changes);
 
     String select_columns;
-    const String hidden_marker = has_query_access_info_marker
-        ? "ifNull(`query_access_info_is_hidden`, toUInt8(1))"
-        : "toUInt8(1)";
     for (const auto & name : requiredSourceColumns())
     {
         if (!select_columns.empty())
             select_columns += ", ";
-        const String quoted_name = backQuoteIfNeed(name);
-        if (query_access_info_columns.contains(name))
-            select_columns += fmt::format("if({} != 0, emptyArrayString(), {}) AS {}", hidden_marker, quoted_name, quoted_name);
-        else
-            select_columns += quoted_name;
+        select_columns += backQuoteIfNeed(name);
     }
 
-    /// For queries received from an initiator (e.g. from a distributed query), the initiating user is
-    /// recorded in `initial_user`, while `user` may be the interserver connection user. `currentUser()`
-    /// is `ClientInfo::initial_user` as well, so both sides of the comparison use the initiating user.
+    /// `initial_user` is forwarded in ClientInfo and may be supplied by a SECONDARY_QUERY peer. Only
+    /// trust it when it matches the authenticated current user; otherwise a peer could name another
+    /// user's log. EXECUTE AS updates both identities, while SQL SECURITY view contexts retain the
+    /// caller's ClientInfo. For rows received from an initiator, `initial_user` is the initiating user
+    /// and `user` may be the interserver connection user.
+    /// Only top-level rows with an explicit marker value of 0 are visible. Equality with 0 excludes
+    /// NULL markers, and a backing table without the marker fails closed by making the condition false.
+    /// The marker is checked here and is not part of the exposed table schema.
+    const auto & client_info = outer_context->getClientInfo();
+    const bool has_consistent_user_identity =
+        !client_info.current_user.empty() && client_info.current_user == client_info.initial_user;
+
     String select_query = fmt::format(
-        "SELECT {} FROM {} WHERE (if(initial_user != '', initial_user, user) = {})",
+        "SELECT {} FROM {} WHERE {} AND (if(initial_user != '', initial_user, user) = {}) AND is_initial_query = 1 AND {}",
         select_columns,
         log_table_id.getFullTableName(),
-        quoteString(outer_context->getClientInfo().initial_user));
+        has_consistent_user_identity ? "1" : "0",
+        quoteString(client_info.initial_user),
+        has_query_access_info_marker ? "`query_access_info_is_hidden` = 0" : "0");
 
     if (String pushed_conditions = buildPushedDownConditions(); !pushed_conditions.empty())
         select_query += fmt::format(" AND ({})", pushed_conditions);

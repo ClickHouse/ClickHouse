@@ -16,7 +16,7 @@ import SystemTableCloud from '/snippets/_system_table_cloud.mdx';
 
 Stores metadata and statistics about executed queries, such as start time, duration, error messages, resource usage, and other execution details. It does not store the results of queries.
 
-The nullable `query_access_info_is_hidden` column marks query access metadata that `system.user_query_log` suppresses after a query crosses an ordinary `SQL SECURITY DEFINER` or `SQL SECURITY NONE` view. `1` means the query crossed such a boundary, `0` means it was not marked, and `NULL` means the provenance is unknown. The access metadata in `system.query_log` remains complete for operators.
+The nullable `query_access_info_is_hidden` column marks rows that crossed a view or materialized view with `SQL SECURITY DEFINER` or `SQL SECURITY NONE` (`1`); `0` means no such boundary was recorded, and `NULL` means the provenance is unknown. Operators can inspect every row and its access details in `system.query_log`; `system.user_query_log` exposes only initial-query rows with an explicit `0`.
 
 You can change settings of queries logging in the [query_log](/reference/settings/server-settings/settings/query#query_log) section of the server configuration.
 
@@ -88,7 +88,7 @@ It is safe to truncate or drop this table at any time.
 - `formatted_query` ([String](/reference/data-types/string)) — Formatted query string.
 - `normalized_query_hash` ([UInt64](/reference/data-types/int-uint)) — A numeric hash value, such as it is identical for queries differ only by values of literals.
 - `query_kind` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — Type of the query.
-- `query_access_info_is_hidden` ([Nullable(UInt8)](/reference/data-types/nullable)) — Whether `system.user_query_log` suppresses query access metadata for this row. `1` marks an ordinary `SQL SECURITY DEFINER` or `SQL SECURITY NONE` view boundary; `0` means it was not marked; `NULL` means the provenance is unknown and is treated as restricted by `system.user_query_log`.
+- `query_access_info_is_hidden` ([Nullable(UInt8)](/reference/data-types/nullable)) — Whether this row crossed a view or materialized view with `SQL SECURITY DEFINER` or `SQL SECURITY NONE`. `1` means yes, `0` means no such boundary was recorded, and `NULL` means provenance is unknown. `system.user_query_log` exposes only initial-query rows with an explicit `0`; `system.query_log` retains every row.
 - `databases` ([Array(LowCardinality(String))](/reference/data-types/array)) — Names of the databases present in the query.
 - `tables` ([Array(LowCardinality(String))](/reference/data-types/array)) — Names of the tables present in the query.
 - `columns` ([Array(LowCardinality(String))](/reference/data-types/array)) — Names of the columns present in the query.

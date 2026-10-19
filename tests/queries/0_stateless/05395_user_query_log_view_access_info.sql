@@ -1,5 +1,5 @@
--- Query-log access metadata remains complete for operators, while own-log users cannot
--- inspect the objects behind SQL SECURITY DEFINER/NONE views through array expressions.
+-- Query-log access metadata remains complete for operators. Own-log users only see initial
+-- rows with an explicit unhidden marker; marked DEFINER/NONE QueryFinish rows are omitted.
 SET log_queries = 1;
 SET log_queries_probability = 1;
 SET log_queries_min_type = 'QUERY_START';
@@ -16,6 +16,7 @@ DROP VIEW IF EXISTS v_05395_none;
 DROP VIEW IF EXISTS v_05395_invoker;
 DROP TABLE IF EXISTS t_05395_invoker_expected_qai;
 DROP TABLE IF EXISTS t_05395_direct_expected_qai;
+DROP TABLE IF EXISTS t_05395_remote_query_id;
 DROP TABLE IF EXISTS t_05395_private;
 
 CREATE TABLE t_05395_private
@@ -41,6 +42,8 @@ SELECT id, name FROM t_05395_private;
 CREATE USER user_05395_sealed;
 GRANT SELECT ON v_05395_definer TO user_05395_sealed;
 GRANT SELECT ON v_05395_none TO user_05395_sealed;
+GRANT REMOTE ON *.* TO user_05395_sealed;
+GRANT CREATE TEMPORARY TABLE ON *.* TO user_05395_sealed;
 
 CREATE USER user_05395_invoker;
 GRANT SELECT ON v_05395_invoker TO user_05395_invoker;
@@ -81,6 +84,10 @@ INSERT INTO t_05395_run_marker SELECT now64(6, 'UTC');
 GRANT SELECT ON t_05395_run_marker TO user_05395_sealed;
 GRANT SELECT ON t_05395_run_marker TO user_05395_invoker;
 
+-- The sealed reader may inspect only this test-owned parent query ID.
+CREATE TABLE t_05395_remote_query_id (query_id String) ENGINE = Memory;
+GRANT SELECT ON t_05395_remote_query_id TO user_05395_sealed;
+
 -- This reader has only view grants; direct access to the private table remains denied.
 EXECUTE AS user_05395_sealed SELECT count() FROM t_05395_private; -- { serverError ACCESS_DENIED }
 
@@ -97,7 +104,28 @@ FORMAT Null SETTINGS force_optimize_projection = 1, force_optimize_projection_na
 SELECT name FROM t_05395_private WHERE id > 0 GROUP BY name ORDER BY name
 FORMAT Null SETTINGS force_optimize_projection = 1, force_optimize_projection_name = 'pn', log_comment = '05395_direct';
 
+-- Keep the projection selector out of the caller's SQL text while forcing the remote view query to use it.
+SET force_optimize_projection = 1;
+SET force_optimize_projection_name = 'pn';
+EXECUTE AS user_05395_sealed SELECT name
+FROM remote('127.0.0.1', currentDatabase(), 'v_05395_definer', 'user_05395_sealed')
+GROUP BY name ORDER BY name
+FORMAT Null SETTINGS prefer_localhost_replica = 0, log_comment = '05395_remote_definer';
+SET force_optimize_projection = 0;
+SET force_optimize_projection_name = '';
+
 SYSTEM FLUSH LOGS query_log;
+
+-- Save the exact outer query ID; children may have different IDs and comments.
+INSERT INTO t_05395_remote_query_id
+SELECT query_id
+FROM system.query_log
+WHERE current_database = currentDatabase()
+    AND type = 'QueryFinish'
+    AND query_id = initial_query_id
+    AND initial_user = 'user_05395_sealed'
+    AND query_start_time_microseconds >= (SELECT started_at FROM t_05395_run_marker)
+    AND log_comment = '05395_remote_definer';
 
 -- Snapshot only the INVOKER-view operator row for exact per-query comparison by that invoker.
 INSERT INTO t_05395_invoker_expected_qai
@@ -146,12 +174,47 @@ WHERE current_database = currentDatabase()
     AND query_start_time_microseconds >= (SELECT started_at FROM t_05395_run_marker)
     AND log_comment IN ('05395_definer', '05395_none', '05395_invoker', '05395_direct');
 
--- The sealed-view reader sees its own log rows, but every access-info array is empty.
+-- Require a real loopback child with both events and hidden private table/projection attribution.
+-- The remote child can record a different current_database; correlate it by initial_query_id.
+SELECT
+    (SELECT count() = 1 FROM t_05395_remote_query_id) AND count() > 0
+FROM
+(
+    SELECT query_id
+    FROM system.query_log
+    WHERE initial_query_id = (SELECT any(query_id) FROM t_05395_remote_query_id)
+        AND query_id != (SELECT any(query_id) FROM t_05395_remote_query_id)
+    GROUP BY query_id
+    HAVING countIf(type = 'QueryStart') > 0
+        AND countIf(type = 'QueryFinish'
+            AND query_access_info_is_hidden = 1
+            AND has(tables, concat(currentDatabase(), '.t_05395_private'))
+            AND has(projections, concat(currentDatabase(), '.t_05395_private.pn'))) > 0
+);
+
+-- The caller can retain its initial QueryStart, but sees no child rows or private tokens in any event.
 EXECUTE AS user_05395_sealed SELECT
-    count() = 2,
+    countIf(query_id = (SELECT any(query_id) FROM t_05395_remote_query_id) AND type = 'QueryStart') <= 1,
+    countIf(query_id != (SELECT any(query_id) FROM t_05395_remote_query_id)) = 0,
+    countIf(
+        arrayExists(token -> position(token, 't_05395_private') > 0,
+            arrayConcat(databases, tables, columns, partitions, projections, views, used_row_policies))
+        OR has(projections, concat(currentDatabase(), '.t_05395_private.pn'))
+        OR position(query, 't_05395_private') > 0
+        OR match(query, '(^|[^a-zA-Z0-9_])pn([^a-zA-Z0-9_]|$)')
+        OR position(formatted_query, 't_05395_private') > 0
+        OR match(formatted_query, '(^|[^a-zA-Z0-9_])pn([^a-zA-Z0-9_]|$)')
+        OR position(exception, 't_05395_private') > 0
+        OR match(exception, '(^|[^a-zA-Z0-9_])pn([^a-zA-Z0-9_]|$)')) = 0
+FROM system.user_query_log
+WHERE initial_query_id = (SELECT any(query_id) FROM t_05395_remote_query_id);
+
+-- The sealed-view reader cannot see the marked initial QueryFinish rows at all.
+EXECUTE AS user_05395_sealed SELECT
+    count() = 0,
     countIf(notEmpty(databases) OR notEmpty(tables) OR notEmpty(columns) OR notEmpty(partitions)
         OR notEmpty(projections) OR notEmpty(views) OR notEmpty(used_row_policies)) = 0,
-    countIf(initial_user = 'user_05395_sealed') = 2
+    countIf(initial_user = 'user_05395_sealed') = 0
 FROM system.user_query_log
 WHERE current_database = currentDatabase()
     AND type = 'QueryFinish'
@@ -236,5 +299,6 @@ DROP VIEW v_05395_none;
 DROP VIEW v_05395_definer;
 DROP TABLE t_05395_invoker_expected_qai;
 DROP TABLE t_05395_direct_expected_qai;
+DROP TABLE t_05395_remote_query_id;
 DROP TABLE t_05395_private;
 DROP TABLE t_05395_run_marker;
