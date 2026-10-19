@@ -17,6 +17,7 @@
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/JoinOperator.h>
+#include <Interpreters/JoinUtils.h>
 
 #include <Planner/Utils.h>
 
@@ -257,7 +258,8 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
     const std::string & filter_name,
     const Names & left_stream_available_columns,
     const Names & right_stream_available_columns,
-    const bool allow_dynamic_type_in_join_keys
+    const bool allow_dynamic_type_in_join_keys,
+    NameSet join_condition_names
 )
 {
     auto * predicate = const_cast<ActionsDAG::Node *>(filter_dag.tryFindInOutputs(filter_name));
@@ -319,6 +321,15 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
             if ((lhs_side == ExpressionSide::LEFT && rhs_side == ExpressionSide::RIGHT)
              || (lhs_side == ExpressionSide::RIGHT && rhs_side == ExpressionSide::LEFT))
             {
+                /// Such a key matches pairs `equals` rejects, so the condition also stays in the filter.
+                if (JoinCommon::keyMatchesValuesEqualsRejects(lhs->result_type) || JoinCommon::keyMatchesValuesEqualsRejects(rhs->result_type))
+                {
+                    if (join_condition_names.insert(conjunct->result_name).second)
+                        result.emplace_back(ActionsDAG::cloneSubDAG({ conjunct }, true));
+                    rejected_conjuncts.push_back(conjunct);
+                    continue;
+                }
+
                 result.emplace_back(ActionsDAG::cloneSubDAG({ conjunct }, true));
                 conjuncts_to_replace.insert(conjunct);
                 continue;
@@ -328,7 +339,7 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
     }
 
     const auto trivial_filter = rejected_conjuncts.empty();
-    if (!result.empty())
+    if (!conjuncts_to_replace.empty())
     {
         /// There's a non-empty list of extracted condition parts.
         /// After JOIN step these equalities will always evaluate to true.
@@ -428,13 +439,18 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
 
     const bool allow_dynamic_type_in_join_keys = join_step->getJoinSettings().allow_dynamic_type_in_join_keys;
 
+    NameSet join_condition_names;
+    for (const auto & condition : join_operator.expression)
+        join_condition_names.insert(condition.getColumnName());
+
     auto & filter_dag = filter_step->getExpression();
     auto [equality_predicates, trivial_filter] = extractActionsForJoinCondition(
         filter_dag,
         filter_step->getFilterColumnName(),
         left_stream_available_columns,
         right_stream_available_columns,
-        allow_dynamic_type_in_join_keys);
+        allow_dynamic_type_in_join_keys,
+        std::move(join_condition_names));
 
     if (equality_predicates.empty())
         return 0;
