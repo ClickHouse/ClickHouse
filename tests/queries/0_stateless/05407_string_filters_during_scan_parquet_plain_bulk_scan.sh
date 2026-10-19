@@ -60,6 +60,8 @@ done
 # Values decided by the bulk scan do not count towards the minimum size of skipped values, so the filter stays applied to
 # every value; checked one by one, these short values turn it off after 8192 checks.
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$FILE_A', Parquet) PREWHERE s LIKE '%needle%' SETTINGS apply_string_filters_during_scan = 1, use_columns_cache = 0, max_threads = 1, log_comment = '05407_plain_bulk_scan_applied' FORMAT Null"
+# A found value is also checked against the other conditions: the values with 'needle' but without '1' are replaced too.
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$FILE_A', Parquet) PREWHERE s LIKE '%needle%' AND s LIKE '%1%' SETTINGS apply_string_filters_during_scan = 1, use_columns_cache = 0, max_threads = 1, log_comment = '05407_plain_bulk_scan_other_conditions' FORMAT Null"
 # The 103-byte values have the length prefix 'g' and the values 'zz' the prefix '\x02\0\0\0', but no value contains these
 # needles, so every value is replaced.
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$FILE_B', Parquet) PREWHERE position(s, 'g') > 0 SETTINGS apply_string_filters_during_scan = 1, use_columns_cache = 0, max_threads = 1, log_comment = '05407_plain_bulk_scan_prefixes' FORMAT Null"
