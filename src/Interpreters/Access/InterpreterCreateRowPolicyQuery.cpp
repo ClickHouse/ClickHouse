@@ -300,7 +300,11 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
         };
         if (query.if_exists)
         {
-            auto ids = storage->find<RowPolicy>(names);
+            Strings checked_names;
+            checked_names.reserve(installed_names.size());
+            for (const auto & full_name : installed_names)
+                checked_names.push_back(full_name.toString());
+            auto ids = storage->find<RowPolicy>(checked_names);
             storage->tryUpdate(ids, update_func);
         }
         else
@@ -309,7 +313,7 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     else
     {
         std::vector<AccessEntityPtr> new_policies;
-        for (const auto & full_name : query.names->full_names)
+        for (const auto & full_name : installed_names)
         {
             auto new_policy = std::make_shared<RowPolicy>();
             updateRowPolicyFromQueryImpl(*new_policy, query, full_name, roles_from_query);
