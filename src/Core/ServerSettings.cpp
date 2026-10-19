@@ -1659,6 +1659,15 @@ permitted source again. It never silently regains the server's identity. This ke
 for example one created in an older version before the restriction existed, or one whose named collection was
 later re-bound to `use_environment_credentials = 1` — from aborting server startup.
 
+It applies to Azure the same way: a persistent `AzureBlobStorage` or `AzureQueue` table, or a table on a dynamic
+`disk(type = azure_blob_storage, ...)`, whose definition would authenticate with the server's own Azure identity
+(the AKS workload identity or the machine's managed identity) is loaded at server startup with a client that carries
+no credentials. `RESTORE` creates Azure tables like `CREATE`, so such a table is refused there instead. A table on
+such a dynamic Azure disk loads only if loading it reads nothing from Azure, for example an empty `MergeTree` table
+with local metadata; a table with data parts, or a disk with `plain_rewritable` metadata, may still fail to load,
+because those requests are denied as well. A dynamic Azure disk created with
+`s3_allow_server_credentials_in_user_queries` keeps the server's identity and is not affected.
+
 When disabled, loading such an object instead fails, which can prevent the server from starting. Use this only
 if you prefer a hard failure over a silently inaccessible table, disk, or catalog database.
 )", 0) \
@@ -1669,28 +1678,11 @@ server-internal infrastructure that ships system tables to S3 with the server's 
 cloud operator into the `system` database). Unlike the session setting, it is a server-level setting, so the
 exemption also applies when the table is reloaded from metadata on restart. It is scoped to the `system`
 database, which ordinary users cannot create tables in, so it does not relax the restriction for user queries.
+
+It applies to a dynamic `disk(type = azure_blob_storage, ...)` the same way: such a disk may use the server's own
+Azure identity (the AKS workload identity or the machine's managed identity) despite
+`s3_allow_server_credentials_in_user_queries`.
 )", 0) \
-    DECLARE(Bool, azure_load_table_anonymously_if_credentials_restricted, true, R"(
-Controls what happens when a persistent `AzureBlobStorage` or `AzureQueue` table, or a table on a dynamic Azure
-disk, is loaded from existing metadata at server startup and its definition would authenticate with the server's
-own identity, which is blocked for user queries by `azure_allow_server_credentials_in_user_queries`. `RESTORE`
-creates its tables like `CREATE`, so such a table is refused there instead.
-
-When enabled (the default), the table is loaded with a client that carries no credentials instead of aborting
-startup. The server starts, but the table is inaccessible (its requests are denied by Azure) until its
-credentials resolve to a permitted source again. It never silently regains the server's identity. This keeps a
-single such table — for example one created in an older version before the restriction existed — from
-aborting server startup.
-
-A table on such a dynamic disk loads only if loading it reads nothing from Azure, for example an empty `MergeTree`
-table with local metadata. A table with data parts, or a disk with `plain_rewritable` metadata, may still fail to
-load, because those requests are denied as well. Give the disk explicit credentials to load it. A dynamic disk
-created with `azure_allow_server_credentials_in_user_queries` keeps the server's identity and is not affected.
-
-When disabled, loading such a table instead fails, which can prevent the server from starting. Use this only
-if you prefer a hard failure over a silently inaccessible table.
-)", 0, \
-        {"26.11", true, true, "New setting."}) \
     DECLARE(Int32, os_threads_nice_value_merge_mutate, 0, R"(
 Linux nice value for merge and mutation threads. Lower values mean higher CPU priority.
 

@@ -44,7 +44,7 @@ namespace Setting
 
 namespace ServerSetting
 {
-    extern const ServerSettingsBool azure_load_table_anonymously_if_credentials_restricted;
+    extern const ServerSettingsBool s3_load_table_anonymously_if_credentials_restricted;
 }
 
 namespace ErrorCodes
@@ -103,7 +103,7 @@ ObjectStoragePtr StorageAzureConfiguration::createObjectStorage(ContextPtr conte
 
     connection_params.anonymous_fallback_for_server_credentials = connection_params.forbid_implicit_credentials
         && is_loading_from_existing_metadata
-        && (context->getGlobalContext()->getServerSettings()[ServerSetting::azure_load_table_anonymously_if_credentials_restricted]
+        && (context->getGlobalContext()->getServerSettings()[ServerSetting::s3_load_table_anonymously_if_credentials_restricted]
             || force_anonymous_load_fallback);
 
     if (connection_params.anonymous_fallback_for_server_credentials && connection_params.checkOrDropServerManagedCredentials())
@@ -111,8 +111,8 @@ ObjectStoragePtr StorageAzureConfiguration::createObjectStorage(ContextPtr conte
             getLogger("StorageAzureConfiguration"),
             "Loading this table with an Azure client that has no credentials: its definition uses the server's "
             "own identity, which is restricted for user queries "
-            "(azure_allow_server_credentials_in_user_queries = 0). It stays inaccessible until its credentials "
-            "resolve to a permitted source; set azure_load_table_anonymously_if_credentials_restricted = 0 to "
+            "(s3_allow_server_credentials_in_user_queries = 0). It stays inaccessible until its credentials "
+            "resolve to a permitted source; set s3_load_table_anonymously_if_credentials_restricted = 0 to "
             "fail loading instead.");
 
     auto settings = AzureBlobStorage::getRequestSettings(context->getSettingsRef());
@@ -177,7 +177,7 @@ AzureBlobStorage::ConnectionParams getAzureConnectionParams(
     connection_params.client_options = AzureBlobStorage::getClientOptions(local_context, local_context->getSettingsRef(), *request_settings, /*for_disk=*/ false);
 
     /// Captured here because the client is built later, sometimes from the global context.
-    connection_params.forbid_implicit_credentials = local_context->shouldRestrictUserQueryAzureCredentials();
+    connection_params.forbid_implicit_credentials = local_context->shouldRestrictUserQueryS3Credentials();
 
     return connection_params;
 }

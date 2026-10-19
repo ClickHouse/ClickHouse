@@ -5458,6 +5458,10 @@ For `BACKUP`/`RESTORE ... ON CLUSTER` the initiator's value of this setting is p
 
 Durability for persistent `S3` and `S3Queue` tables: enabling this only per session or profile is not durable across a restart. When the server reloads such a table from its stored definition (startup or `RESTORE`) it rebuilds the S3 client and re-applies the restriction with the startup context, so a table that relied on server-managed credentials and was created only under a session/profile `s3_allow_server_credentials_in_user_queries = 1` is created successfully but becomes inaccessible after a restart (the table is left in place; queries against it fail until its credentials resolve to a permitted source again). The server itself still starts. Give such tables explicit credentials for durable access; alternatively, enabling the setting server-wide keeps them loading across restarts, at the cost of relaxing the restriction for all reloads.
 
+Azure Blob Storage is covered by this setting as well. When it is disabled, the `azureBlobStorage`/`azureBlobStorageCluster` table functions, the `AzureBlobStorage`/`AzureQueue` engines, Azure named collections, dynamic `disk(type = azure_blob_storage, ...)` definitions, `BACKUP`/`RESTORE TO AzureBlobStorage`, and DataLake table-data reads over Azure may not authenticate with the identity the server itself runs under: the AKS workload identity (a projected service-account token from `AZURE_FEDERATED_TOKEN_FILE`) or the Azure managed identity of the machine. Such a request is rejected with `ACCESS_DENIED`. Credentials supplied explicitly are unaffected: an `account_name`/`account_key` pair, a connection string, a SAS token, and static credentials in a named collection or in the server `<storage_configuration>` all keep working. Azure binds a storage bearer token to the account it was minted for and not to the host it is sent to, so a request to a URL taken from the query would both hand a usable token to whoever controls that URL and read containers the user has no rights to.
+
+For Azure, a named collection that relies on workload or managed identity is restricted too, including one defined in the server configuration, and so is `extra_credentials(client_id = '...', tenant_id = '...')`, which exchanges the server's own federated token for the named client. Disks defined in the server configuration keep using workload or managed identity. A dynamic Azure disk is restricted like a table, except for a table in the `system` database with the server setting `s3_allow_server_credentials_for_system_table_disks`; a dynamic Azure disk created while this setting is enabled records that in its stored definition, so after a restart it keeps using the server's identity. The record is written only by the server and is ignored in a `CREATE` or `ATTACH` query. The destination of `after_processing = 'move'` in `AzureQueue` must carry its own credentials, a connection string or a SAS token, even with this setting enabled, the same way an `S3Queue` move destination needs its own keys. A persistent `AzureBlobStorage` or `AzureQueue` table, or a table on a dynamic Azure disk, that relied on the server's identity is loaded at startup with a client that has no credentials, per `s3_load_table_anonymously_if_credentials_restricted`; `RESTORE` creates Azure tables like `CREATE`, so such a table is refused there instead.
+
 To keep it disabled for untrusted users, pin it in their profile by both setting the value explicitly to `0` and marking it `readonly`:
 
 ```xml
@@ -5480,77 +5484,8 @@ This setting has no effect in `clickhouse-local`, where the user is the operator
 
 `DataLakeCatalog` databases (Glue, BigLake) are also covered, with one difference. A catalog object is created once and shared by every user of the database, so the value cannot be read per query; it is captured from the session that runs `CREATE DATABASE` (or a user `ATTACH DATABASE`). A database created while this setting is enabled (for example in a trusted session or profile) may use the server's ambient credentials for its catalog, and every user able to query that database then shares them; created under the default, the catalog is restricted for everyone regardless of who queries it. When the server loads an already-created database from its own metadata (startup, `RESTORE`) the restriction is re-applied with the startup context, the same as for persistent `S3`/`S3Queue` tables: a catalog that resolves server-managed credentials is left unavailable and the database becomes inaccessible after a restart (the server still starts; the database loads with an unavailable catalog per `s3_load_table_anonymously_if_credentials_restricted`, and queries report the restriction). A catalog given explicit credentials (Glue: `aws_access_key_id` and `aws_secret_access_key`; BigLake: a complete Google ADC triple) works regardless and is durable across restart.
 )", 0, \
+        {"26.11", false, false, "Also blocks Azure Blob Storage access from user SQL from authenticating with the server's own identity (the AKS workload identity or the machine's managed identity)."}, \
         {"26.7", true, false, "New setting to block S3 access from user SQL from resolving the server's own ambient credentials (environment/IMDS/IRSA/instance-profile/AWS-config-file/GCP-OAuth-metadata). Explicit role_arn-based STS assume-role is still allowed. The previous behavior (allowed) is restored with compatibility settings."}) \
-    DECLARE(Bool, azure_allow_server_credentials_in_user_queries, false, R"(
-Allow Azure Blob Storage access that originates from user SQL to use server-managed credentials.
-
-When disabled (the default), the `azureBlobStorage`/`azureBlobStorageCluster` table functions, the
-`AzureBlobStorage`/`AzureQueue` engines, Azure named collections, `BACKUP`/`RESTORE TO AzureBlobStorage`, and
-DataLake table-data reads over Azure may not authenticate with the identity the server itself runs under: the
-AKS workload identity (a projected service-account token from `AZURE_FEDERATED_TOKEN_FILE`) or the Azure
-managed identity of the machine. Such a request is rejected with `ACCESS_DENIED`. Credentials supplied
-explicitly are unaffected: an `account_name`/`account_key` pair, a connection string, a SAS token, and static
-credentials in a named collection or in the server `<storage_configuration>` all keep working.
-
-A named collection that relies on workload or managed identity is restricted as well, including one defined in
-the server configuration: a query that uses it is rejected the same way, because the endpoint and identity reach
-the request through user SQL. Give such a collection explicit credentials, or enable this setting for the users
-that need it.
-
-This prevents an authenticated user from making the server authenticate to an endpoint of the user's choosing
-with the server's own identity. Azure binds a storage bearer token to the account it was minted for and not to
-the host it is sent to, so a request to a URL taken from the query both hands a usable token to whoever
-controls that URL and reads containers the user has no rights to.
-
-`extra_credentials(client_id = '...', tenant_id = '...')` is covered as well: it exchanges the server's own
-federated token for the named client, so it resolves a server-managed credential even though the query names
-the identity.
-
-Disks defined in the server configuration are unaffected and keep using workload or managed identity. A dynamic
-disk defined in user SQL with `disk(type = azure_blob_storage, ...)` is restricted like a table.
-
-The destination of `after_processing = 'move'` in `AzureQueue` must carry its own credentials, a connection string
-or a SAS token, even with this setting enabled, the same way an `S3Queue` move destination needs its own keys.
-
-Durability for persistent `AzureBlobStorage` and `AzureQueue` tables and for dynamic Azure disks: when the
-server reloads such a table from its stored definition at startup it re-applies the restriction with the startup
-context, so a table that relied on server-managed credentials is loaded with a client that has no credentials and
-stays inaccessible until its credentials resolve to a permitted source. `RESTORE` creates its tables like
-`CREATE`, so such a table is refused there instead. See the server setting
-`azure_load_table_anonymously_if_credentials_restricted`. Give such tables explicit credentials for durable
-access.
-
-A dynamic Azure disk created while this setting is enabled records that in its stored definition, so after a
-restart it keeps using the server's identity without the setting. The record is written only by the server and is
-ignored in a `CREATE` or `ATTACH` query.
-
-The recommended way to give user queries Azure access is a named collection with explicit credentials: the
-credentials stay out of the query text, and use of each collection is controlled with RBAC
-(`GRANT NAMED COLLECTION ON <name> TO <user>`), so you grant specific users specific containers instead of
-exposing the server's own identity.
-
-To keep it disabled for untrusted users, pin it in their profile by both setting the value explicitly to `0`
-and marking it `readonly`:
-
-```xml
-<profiles>
-    <untrusted>
-        <!-- The explicit value is required: a `readonly` constraint alone only blocks direct changes,
-             but `compatibility` with a version before this setting was introduced would otherwise
-             restore the old (allowing) default. Setting the value explicitly defeats `compatibility`. -->
-        <azure_allow_server_credentials_in_user_queries>0</azure_allow_server_credentials_in_user_queries>
-        <constraints>
-            <azure_allow_server_credentials_in_user_queries>
-                <readonly/>
-            </azure_allow_server_credentials_in_user_queries>
-        </constraints>
-    </untrusted>
-</profiles>
-```
-
-This setting has no effect in `clickhouse-local`, where the user is the operator.
-)", 0, \
-        {"26.11", true, false, "New setting to block Azure Blob Storage access from user SQL from authenticating with the server's own identity (the AKS workload identity or the machine's managed identity). The previous behavior (allowed) is restored with compatibility settings."}) \
     DECLARE(UInt64, max_parts_to_move, 1000, "Limit the number of parts that can be moved in one query. Zero means unlimited.", 0, \
         {"24.10", 0, 1000, "New setting"}) \
     \

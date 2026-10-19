@@ -254,7 +254,7 @@ bool ConnectionParams::checkOrDropServerManagedCredentials() const
         "or the machine's managed identity). Provide explicit credentials: an `account_name` and `account_key`, "
         "a connection string, or a SAS token"
 #if !CLICKHOUSE_CLOUD
-        ", or enable the setting `azure_allow_server_credentials_in_user_queries`"
+        ", or enable the setting `s3_allow_server_credentials_in_user_queries`"
 #endif
         ".");
 }

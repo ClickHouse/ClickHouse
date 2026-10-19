@@ -82,7 +82,7 @@ def test_token_request_goes_through_http_transport(started_cluster):
 
     error = node.query_and_get_error(
         "SELECT * FROM azureBlobStorage('https://localhost:1', 'cont', 'data.csv', 'CSV', 'auto', 'c UInt64') "
-        "SETTINGS azure_allow_server_credentials_in_user_queries = 1"
+        "SETTINGS s3_allow_server_credentials_in_user_queries = 1"
     )
     assert "AuthenticationException" not in error
 

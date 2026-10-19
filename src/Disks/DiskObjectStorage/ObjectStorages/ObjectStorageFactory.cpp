@@ -48,7 +48,7 @@ namespace Setting
 
 namespace ServerSetting
 {
-    extern const ServerSettingsBool azure_load_table_anonymously_if_credentials_restricted;
+    extern const ServerSettingsBool s3_load_table_anonymously_if_credentials_restricted;
 }
 
 namespace ErrorCodes
@@ -256,9 +256,8 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
         /// We keep using empty prefix by default for compatibility, but allow to configure another one
         const String & common_key_prefix = config.getString(config_prefix + ".common_key_prefix_for_azure", "");
 
-        /// A custom disk is configured at the root, so its marker is there for every location; it is honored only on reload.
-        const bool server_credentials_allowed = remote_host_filter_check == RemoteHostFilterCheck::Warn
-            && hasAzureServerCredentialsMarker(config);
+        /// A custom disk is configured at the root, where `validateResolvedAzureDiskCredentials` has written the decision.
+        const bool server_credentials_allowed = hasAzureServerCredentialsMarker(config);
 
         AzureBlobStorage::ConnectionParams params
         {
@@ -267,10 +266,10 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
             .client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *azure_settings, /*for_disk=*/ true),
             /// Only a custom disk, `disk(...)` in user SQL, is checked; a disk from the server config may use the server's identity.
             .forbid_implicit_credentials = remote_host_filter_check != RemoteHostFilterCheck::None
-                && !server_credentials_allowed && context->shouldRestrictUserQueryAzureCredentials(),
+                && !server_credentials_allowed && context->shouldRestrictUserQueryS3Credentials(),
             /// A custom disk loaded from existing metadata gets no credentials instead of failing the table load.
             .anonymous_fallback_for_server_credentials = remote_host_filter_check == RemoteHostFilterCheck::Warn
-                && context->getGlobalContext()->getServerSettings()[ServerSetting::azure_load_table_anonymously_if_credentials_restricted],
+                && context->getGlobalContext()->getServerSettings()[ServerSetting::s3_load_table_anonymously_if_credentials_restricted],
         };
 
         const bool drop_credentials = params.checkOrDropServerManagedCredentials();
@@ -278,8 +277,8 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
             LOG_WARNING(
                 getLogger("ObjectStorageFactory"),
                 "Loading the dynamic Azure disk {} with a client that has no credentials: it uses the server's own "
-                "identity, which is restricted for user queries (azure_allow_server_credentials_in_user_queries = 0). "
-                "The disk stays inaccessible; set azure_load_table_anonymously_if_credentials_restricted = 0 to fail "
+                "identity, which is restricted for user queries (s3_allow_server_credentials_in_user_queries = 0). "
+                "The disk stays inaccessible; set s3_load_table_anonymously_if_credentials_restricted = 0 to fail "
                 "loading instead.",
                 name);
 

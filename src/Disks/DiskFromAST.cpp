@@ -70,7 +70,7 @@ static std::string getOrCreateCustomDisk(
         else
             validateResolvedS3DiskCredentials(*config, context, attach, s3_disk_info);
 
-        validateResolvedAzureDiskCredentials(*config, context, attach);
+        validateResolvedAzureDiskCredentials(*config, context, attach, for_system_database);
     }
 
     Poco::Util::AbstractConfiguration::Keys disk_settings_keys;
@@ -221,7 +221,7 @@ public:
         /// An `include` is resolved only later and may supply the Azure backend, so such a disk is marked as S3 marks it.
         Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
         config->load(xml_document);
-        if (!data.context->shouldRestrictUserQueryAzureCredentials() && (info.has_include || azureDiskUsesServerIdentity(*config)))
+        if (!data.context->shouldRestrictUserQueryS3Credentials() && (info.has_include || azureDiskUsesServerIdentity(*config)))
             args.push_back(makeASTFunction(
                 "equals",
                 make_intrusive<ASTIdentifier>(AZURE_SERVER_CREDENTIALS_MARKER),
