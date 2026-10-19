@@ -22,10 +22,12 @@ SETTINGS disk = disk(type = cache,
 INSERT INTO test SELECT number, randomString(100) FROM numbers(1000000);
 "
 
+# The read must use several streams and threads (each touches a different file segment), whatever else the server runs.
 QUERY_ID=$RANDOM
 $CLICKHOUSE_CLIENT --query_id "$QUERY_ID" -m -q "
 SET enable_filesystem_cache_log = 1;
 SET read_through_distributed_cache=0;
+SET use_concurrency_control = 0;
 SYSTEM CLEAR FILESYSTEM CACHE;
 SELECT * FROM test WHERE NOT ignore() LIMIT 1 FORMAT Null;
 SYSTEM FLUSH LOGS filesystem_cache_log;
