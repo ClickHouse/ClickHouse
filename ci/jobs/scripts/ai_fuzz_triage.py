@@ -273,6 +273,11 @@ def _issue_stack_digest(issue):
     return found[0] if len(found) == 1 else ""
 
 
+def _records_other_stack(issue, digest):
+    """Whether `issue` records a stack digest other than `digest`: another bug sharing the fingerprint."""
+    return bool(digest) and _issue_stack_digest(issue) not in ("", digest)
+
+
 def _tracked_failures(failures):
     """The failures the fingerprint is built from: the group its issue describes."""
     tracked = _tracked_signature(failures)
@@ -1031,7 +1036,7 @@ def _prior_occurrences(info, repo_name, pr_mode, fingerprint, digest):
         mismatched = sorted(
             issue["url"]
             for issue in older_issues
-            if digest and _issue_stack_digest(issue) not in ("", digest)
+            if _records_other_stack(issue, digest)
         )
         bodies = {issue["url"]: issue.get("body") or "" for issue in older_issues}
         return Occurrences(
@@ -1387,26 +1392,37 @@ def _track_issue(
         )
 
 
-def _tracking_issues(issues):
-    """The open issues with the `fuzz` label among `_fingerprint_issues`."""
-    return [
+def _tracking_issues(issues, digest):
+    """The open issues with the `fuzz` label among `_fingerprint_issues` that may track this failure.
+
+    One recording another stack digest tracks another bug that shares the fingerprint, so it is
+    left out. One recording `digest` comes before one recording none, oldest first within each.
+    """
+    candidates = [
         i
         for i in issues
-        if (i.get("state") or "").upper() == "OPEN" and _has_fuzz_label(i)
+        if (i.get("state") or "").upper() == "OPEN"
+        and _has_fuzz_label(i)
+        and not _records_other_stack(i, digest)
     ]
+    return sorted(
+        candidates, key=lambda i: not (digest and _issue_stack_digest(i) == digest)
+    )
 
 
 def _find_or_file_issue(
     repo_name, fingerprint, verdict, failures, job_kind, found_in, pr_url, deadline
 ):
-    """An open issue with the `fuzz` label tracks `fingerprint`.
+    """An open issue with the `fuzz` label tracks `fingerprint` and this stack.
 
     A closed one is a fixed bug that came back, and an unlabelled one is out of the
-    lookup's reach, so either gets a comment and a new issue that links it.
+    lookup's reach, so either gets a comment and a new issue that links it. One that
+    records another stack is another bug: the new issue neither comments on nor links it.
     `pr_url` is empty on post-merge runs.
     """
+    digest = stack_digest(failures)
     issues = _fingerprint_issues(repo_name, fingerprint, deadline)
-    tracking = _tracking_issues(issues)
+    tracking = _tracking_issues(issues, digest)
     if tracking:
         _comment_once(repo_name, tracking[0], job_kind, found_in, deadline)
         return {
@@ -1414,9 +1430,10 @@ def _find_or_file_issue(
             "issue_created": False,
             "label_applied": True,
         }
-    related = issues[-1]["url"] if issues else ""
-    if issues:
-        _comment_once(repo_name, issues[-1], job_kind, found_in, deadline)
+    same_stack = [i for i in issues if not _records_other_stack(i, digest)]
+    related = same_stack[-1]["url"] if same_stack else ""
+    if same_stack:
+        _comment_once(repo_name, same_stack[-1], job_kind, found_in, deadline)
     title, body = _issue_text(
         verdict,
         failures,
@@ -1434,7 +1451,7 @@ def _find_or_file_issue(
         print(f"WARNING: AI fuzz triage: issue create with `fuzz` failed: {e.stderr}")
         # GitHub may have filed it and only the response failed: look again first.
         tracking = _tracking_issues(
-            _fingerprint_issues(repo_name, fingerprint, deadline)
+            _fingerprint_issues(repo_name, fingerprint, deadline), digest
         )
         if tracking:
             return {
