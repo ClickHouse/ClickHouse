@@ -7917,7 +7917,7 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0, \
-        {"26.11", true, true, "New setting to compute the expressions with a small fixed-size result of a `String` or `FixedString` column before window functions, so that the window functions buffer the result instead of the column. The previous value is deliberately equal to the new one: the rewrite does not change the results, and the old query analysis, the default before 24.3, computed such expressions before the window functions too, so `compatibility` with an older version does not disable it."}) \
+        {"26.11", false, true, "New setting to compute the expressions with a small fixed-size result of a `String` or `FixedString` column before window functions, so that the window functions buffer the result instead of the column. previous_value=false so `compatibility` with versions before 26.11 restores the previous behavior."}) \
     DECLARE(Bool, query_plan_convert_outer_join_to_inner_join, true, R"(
 Allow to convert `OUTER JOIN` to `INNER JOIN` if filter after `JOIN` always filters default values
 )", 0, \
