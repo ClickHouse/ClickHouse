@@ -262,6 +262,54 @@ TEST(ConvertColumnToType, MatchesConvertFieldToType)
         checkEquivalent(c);
 }
 
+/// A `Date`/`Date32` whose local midnight is outside the `UInt32` range of `DateTime` is not representable.
+/// Deliberately NOT differential: `convertFieldToType` returns the exact out-of-range `Int64` timestamp, which a
+/// `DateTime` column can only hold truncated modulo 2^32 - e.g. `0000-01-01` became `2257290240`, so
+/// `dt IN (toDate32('0000-01-01'))` matched a row in 2041, and `2149-06-06` matched a row in 2013.
+TEST(ConvertColumnToType, DateToDateTimeOutOfRange)
+{
+    const auto & type_factory = DataTypeFactory::instance();
+
+    auto convert = [&](const char * from_type, const Field & from_value, const char * to_type, bool strict)
+    {
+        const auto from = type_factory.get(from_type);
+        auto column = from->createColumn();
+        column->insert(from_value);
+        return convertColumnToTypeOrNull(*column, from, type_factory.get(to_type), {}, strict);
+    };
+
+    for (const bool strict : {false, true})
+    {
+        SCOPED_TRACE(strict ? "strict" : "default");
+
+        /// A `Date32` before the epoch: 0000-01-01 and 1969-12-31.
+        EXPECT_EQ(convert("Date32", Field(Int64(-719528)), "DateTime('UTC')", strict), nullptr);
+        EXPECT_EQ(convert("Date32", Field(Int64(-1)), "DateTime('UTC')", strict), nullptr);
+        /// Past the last `DateTime` second (2106-02-07 06:28:15 UTC): 2106-02-08, and the `Date` maximum
+        /// 2149-06-06, which `CAST` wraps to 2013-04-29.
+        EXPECT_EQ(convert("Date32", Field(Int64(49711)), "DateTime('UTC')", strict), nullptr);
+        EXPECT_EQ(convert("Date", Field(UInt64(49711)), "DateTime('UTC')", strict), nullptr);
+        EXPECT_EQ(convert("Date", Field(UInt64(65535)), "DateTime('UTC')", strict), nullptr);
+
+        /// A `Date` cannot go before the epoch: `fromDayNum(DayNum)` saturates, so 1970-01-01 in Berlin
+        /// (local midnight -3600) stays representable.
+        EXPECT_NE(convert("Date", Field(UInt64(0)), "DateTime('Europe/Berlin')", strict), nullptr);
+
+        /// The boundaries that do fit.
+        const auto epoch = convert("Date", Field(UInt64(0)), "DateTime('UTC')", strict);
+        ASSERT_NE(epoch, nullptr);
+        EXPECT_EQ(epoch->getUInt(0), 0u);
+        const auto last_day = convert("Date32", Field(Int64(49710)), "DateTime('UTC')", strict);
+        ASSERT_NE(last_day, nullptr);
+        EXPECT_EQ(last_day->getUInt(0), 49710u * 86400u);
+    }
+
+    const auto date32 = type_factory.get("Date32");
+    auto before_epoch = date32->createColumn();
+    before_epoch->insert(Field(Int64(-719528)));
+    EXPECT_ANY_THROW(convertColumnToTypeOrThrow(*before_epoch, date32, type_factory.get("DateTime('UTC')")));
+}
+
 TEST(ConvertColumnToType, OrThrow)
 {
     const auto & type_factory = DataTypeFactory::instance();

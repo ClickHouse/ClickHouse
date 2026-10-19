@@ -246,8 +246,14 @@ std::optional<ColumnPtr> tryConvertToDateColumnNative(
 /// directly from the size-1 column and applies the very same `DateLUTImpl::toDayNum`/`fromDayNum` as
 /// there (the timezone comes from the `DateTime` type, `from` or `to`). Reading the value from the
 /// typed column avoids the `Field`'s `NearestFieldType` widening (`Date32` -> `Int64`) entirely.
-/// `DateTime64`/`Time`/`Time64` cross-calendar conversions are a later increment. Returns std::nullopt
-/// when the pair is not one of these. Pinned by `gtest_convert_column_to_type`.
+/// `DateTime64`/`Time`/`Time64` cross-calendar conversions are a later increment.
+/// A `Date`/`Date32` whose local midnight falls outside the `UInt32` range of `DateTime` (a `Date32` before
+/// 1970, or a day after 2106-02-07 such as the `Date` maximum `2149-06-06`) is not representable: `convertFieldToType` keeps the exact `Int64` timestamp so
+/// that it is outside the range of every stored value, but a `DateTime` column cannot hold it, and storing it
+/// truncated modulo 2^32 would make an exact `IN` constant match an unrelated row. This is the same range
+/// check as the `UInt64` -> `DateTime` path. Returns the converted size-1 column, a null `ColumnPtr{}` for a
+/// not-representable value, or std::nullopt when the pair is not one of these. Pinned by
+/// `gtest_convert_column_to_type`.
 std::optional<ColumnPtr> tryConvertBetweenDateAndDateTimeColumnNative(
     const IColumn & value, const DataTypePtr & from, const DataTypePtr & to)
 {
@@ -257,11 +263,13 @@ std::optional<ColumnPtr> tryConvertBetweenDateAndDateTimeColumnNative(
     if (which_to.isDateTime() && (which_from.isDate() || which_from.isDate32()))
     {
         const auto & time_zone = assert_cast<const DataTypeDateTime &>(*to).getTimeZone();
-        const UInt32 result = which_from.isDate()
-            ? static_cast<UInt32>(time_zone.fromDayNum(DayNum(static_cast<UInt16>(value.getUInt(0)))))
-            : static_cast<UInt32>(time_zone.fromDayNum(ExtendedDayNum(static_cast<Int32>(value.getInt(0)))));
+        const Int64 seconds = which_from.isDate()
+            ? time_zone.fromDayNum(DayNum(static_cast<UInt16>(value.getUInt(0))))
+            : time_zone.fromDayNum(ExtendedDayNum(static_cast<Int32>(value.getInt(0))));
+        if (seconds < 0 || seconds > static_cast<Int64>(std::numeric_limits<UInt32>::max()))
+            return ColumnPtr{};
         auto column = to->createColumn();
-        assert_cast<ColumnUInt32 &>(*column).getData().push_back(result);
+        assert_cast<ColumnUInt32 &>(*column).getData().push_back(static_cast<UInt32>(seconds));
         return column;
     }
 
