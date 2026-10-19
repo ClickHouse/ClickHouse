@@ -23,6 +23,7 @@
 #include <aws/core/client/RetryStrategy.h>
 #include <aws/core/http/URI.h>
 
+#include <Common/ProfileEvents.h>
 #include <Common/RemoteHostFilter.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/ReadHelpers.h>
@@ -36,6 +37,13 @@
 #include <Poco/Util/ServerApplication.h>
 
 #include <IO/S3/tests/TestPocoHTTPServer.h>
+
+namespace ProfileEvents
+{
+    extern const Event S3CredentialsAssumeRoleRequests;
+    extern const Event S3CredentialsAssumeRoleErrors;
+    extern const Event S3CredentialsAssumeRoleEmpty;
+}
 
 namespace DB::S3RequestSetting
 {
@@ -660,6 +668,61 @@ TEST(IOTestAwsS3Client, AssumeRoleWithSessionPolicy)
     ASSERT_EQ(result.getSecretAccessKey(), role_secret_key);
     ASSERT_EQ(result.getSessionToken(), "session_token");
     ASSERT_EQ(result.getExpiration().Millis(), Aws::Utils::DateTime("2030-01-01T00:00:00Z", Aws::Utils::DateFormat::ISO_8601).Millis());
+}
+
+TEST(IOTestAwsS3Client, AssumeRoleProfileEvents)
+{
+    TestPocoHTTPStsServer sts_http("role_access_key", "role_secret_key");
+
+    DB::RemoteHostFilter remote_host_filter;
+    DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
+        "eu-west-1",
+        remote_host_filter,
+        /* s3_max_redirects = */ 100,
+        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
+        /* s3_slow_all_threads_after_network_error = */ true,
+        /* s3_slow_all_threads_after_retryable_error = */ true,
+        /* enable_s3_requests_logging = */ false,
+        /* for_disk_s3 = */ false,
+        /* opt_disk_name = */ {},
+        /* request_throttler = */ {},
+        "http");
+
+    auto base_provider = std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("ACCESS_KEY_ID", "SECRET_ACCESS_KEY");
+
+    auto get = [](ProfileEvents::Event event) { return ProfileEvents::global_counters[event]; };
+    const auto requests = get(ProfileEvents::S3CredentialsAssumeRoleRequests);
+    const auto errors = get(ProfileEvents::S3CredentialsAssumeRoleErrors);
+    const auto empty = get(ProfileEvents::S3CredentialsAssumeRoleEmpty);
+
+    {
+        SCOPED_TRACE("AssumeRole fails");
+        sts_http.setFail(true);
+
+        /// A distinct role ARN to get a fresh provider from the process-wide cache.
+        auto provider = DB::S3::AwsAuthSTSAssumeRoleCredentialsProvider::create(
+            "arn::role/profile_events_fail", "session_name", "", 120, base_provider, client_configuration, sts_http.getUrl());
+        ASSERT_TRUE(provider->GetAWSCredentials().IsEmpty());
+
+        EXPECT_EQ(get(ProfileEvents::S3CredentialsAssumeRoleRequests), requests + 1);
+        EXPECT_EQ(get(ProfileEvents::S3CredentialsAssumeRoleErrors), errors + 1);
+        EXPECT_EQ(get(ProfileEvents::S3CredentialsAssumeRoleEmpty), empty + 1);
+    }
+
+    {
+        SCOPED_TRACE("AssumeRole succeeds");
+        sts_http.setFail(false);
+
+        auto provider = DB::S3::AwsAuthSTSAssumeRoleCredentialsProvider::create(
+            "arn::role/profile_events_ok", "session_name", "", 120, base_provider, client_configuration, sts_http.getUrl());
+        ASSERT_EQ(provider->GetAWSCredentials().GetAWSAccessKeyId(), "role_access_key");
+        /// Cached, no new AssumeRole call.
+        ASSERT_EQ(provider->GetAWSCredentials().GetAWSAccessKeyId(), "role_access_key");
+
+        EXPECT_EQ(get(ProfileEvents::S3CredentialsAssumeRoleRequests), requests + 2);
+        EXPECT_EQ(get(ProfileEvents::S3CredentialsAssumeRoleErrors), errors + 1);
+        EXPECT_EQ(get(ProfileEvents::S3CredentialsAssumeRoleEmpty), empty + 1);
+    }
 }
 
 TEST(IOTestAwsS3Client, ClientCacheRegistryGetOrCreateCacheForKey)

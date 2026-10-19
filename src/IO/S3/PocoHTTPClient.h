@@ -297,6 +297,7 @@ private:
     mutable std::optional<BearerToken> bearer_token TSA_GUARDED_BY(mutex);
 
     BearerToken requestBearerToken() const TSA_REQUIRES(mutex);
+    BearerToken requestBearerTokenFromMetadataService() const;
     BearerToken requestBearerTokenFromADC() const;
 };
 

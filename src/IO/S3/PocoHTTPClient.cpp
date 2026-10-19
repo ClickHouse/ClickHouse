@@ -14,6 +14,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Throttler.h>
 #include <Common/re2.h>
 #include <IO/Expect404ResponseScope.h>
@@ -77,6 +78,9 @@ namespace ProfileEvents
     extern const Event DiskS3PutRequestThrottlerCount;
     extern const Event DiskS3PutRequestThrottlerBlocked;
     extern const Event DiskS3PutRequestThrottlerSleepMicroseconds;
+    extern const Event S3CredentialsGCPRequests;
+    extern const Event S3CredentialsGCPErrors;
+    extern const Event S3CredentialsGCPMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -923,9 +927,23 @@ std::string PocoHTTPClientGCPOAuth::getBearerToken() const
 
 PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken() const
 {
-    if (!google_adc_client_id.empty() && !google_adc_client_secret.empty() && !google_adc_refresh_token.empty())
-        return requestBearerTokenFromADC();
+    ProfileEvents::increment(ProfileEvents::S3CredentialsGCPRequests);
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::S3CredentialsGCPMicroseconds);
+    try
+    {
+        if (!google_adc_client_id.empty() && !google_adc_client_secret.empty() && !google_adc_refresh_token.empty())
+            return requestBearerTokenFromADC();
+        return requestBearerTokenFromMetadataService();
+    }
+    catch (...)
+    {
+        ProfileEvents::increment(ProfileEvents::S3CredentialsGCPErrors);
+        throw;
+    }
+}
 
+PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerTokenFromMetadataService() const
+{
     chassert(!request_token_path.empty());
     chassert(!metadata_service.empty());
     chassert(!service_account.empty());
