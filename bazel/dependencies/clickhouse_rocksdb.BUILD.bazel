@@ -549,12 +549,10 @@ ch_cc_library(
         ":env/fs_posix.cc",
         ":env/io_posix.cc",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-I",
         repository_path("contrib/rocksdb"),
@@ -605,7 +603,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse//:headers_ef699b00b8da8663",
         "@clickhouse//:headers_f8cca6b6237a1ccb",

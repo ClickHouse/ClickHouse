@@ -67,17 +67,11 @@ _GENERATED_FEATURES_0 = [
         "-llvm_system_c_headers",
     ]
 
-_GENERATED_COPTS_1 = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+
+
+_GENERATED_COPTS_0 = [
         "-w",
         "-std=c++20",
-        "-D",
-        "OS_LINUX",
         "-w",
         "-nostdinc++",
         "-isystem",
@@ -116,7 +110,9 @@ ch_cc_library(
         ":src/providers/anthropic/anthropic_stream.cpp",
         ":src/providers/anthropic/anthropic_factory.cpp",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         "@clickhouse//:headers_1fd9e05d91f5eb25",
         ":headers_45879ded7a5f4e6e",
@@ -177,7 +173,9 @@ ch_cc_library(
         ":src/tools/tool_executor.cpp",
         ":src/tools/multi_step_coordinator.cpp",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         "@clickhouse//:headers_1fd9e05d91f5eb25",
         ":headers_097ee169b03eba4b",
@@ -235,7 +233,9 @@ ch_cc_library(
         ":src/providers/openai/openai_stream.cpp",
         ":src/providers/openai/openai_factory.cpp",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         "@clickhouse//:headers_1fd9e05d91f5eb25",
         ":headers_2ebd1e002ec0b486",

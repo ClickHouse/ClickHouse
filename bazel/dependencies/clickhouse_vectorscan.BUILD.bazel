@@ -167,12 +167,10 @@ ch_cc_library(
             ":src/util/arch/arm/cpuid_flags.c",
         ],
     }),
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-g1",
         "-I",
     ] + select({
@@ -222,7 +220,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//:headers_1cae61fa19ae2759",
@@ -432,12 +431,10 @@ ch_cc_library(
             ":src/util/supervector/arch/arm/impl.cpp",
         ],
     }),
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++17",
-        "-D",
-        "OS_LINUX",
         "-g1",
         "-nostdinc++",
         "-I",
@@ -466,7 +463,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//:headers_1cae61fa19ae2759",
@@ -533,12 +531,10 @@ ch_cc_library(
             "@clickhouse//:contrib/vectorscan-cmake/rageled_files/aarch64/control_verbs.cpp",
         ],
     }),
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++17",
-        "-D",
-        "OS_LINUX",
         "-g1",
         "-nostdinc++",
         "-funsigned-char",
@@ -570,7 +566,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//:headers_1cae61fa19ae2759",

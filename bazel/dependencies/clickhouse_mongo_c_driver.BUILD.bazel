@@ -306,12 +306,10 @@ ch_cc_library(
         ":src/common/src/common-string.c",
         ":src/common/src/common-thread.c",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-I",
         repository_path("contrib/mongo-c-driver") + "/src/common/src/src",
         "-isystem",
@@ -363,7 +361,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             ":config/x86_64/contrib/mongo-c-driver/src/common/src/common-config.h",
@@ -550,12 +549,10 @@ ch_cc_library(
         ":src/common/src/common-thread.c",
         ":src/utf8proc-2.11.3/utf8proc.c",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-I",
         repository_path("contrib/zstd") + "/lib",
         "-isystem",
@@ -644,7 +641,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse//:headers_1fd9e05d91f5eb25",
         "@clickhouse//:headers_ec695b8a0ea8c1f4",

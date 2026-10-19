@@ -65,17 +65,10 @@ ch_cc_library(
     srcs = [
         ":src/simdutf.cpp",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-isystem",
         repository_path("contrib/simdutf") + "/include",
@@ -90,7 +83,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         ":headers_10a250024c88a121",
         ":headers_47988840d3643acd",

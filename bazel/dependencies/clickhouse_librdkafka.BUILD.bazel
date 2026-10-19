@@ -228,12 +228,10 @@ ch_cc_library(
         ":src/rdkafka_sasl_scram.c",
         ":src/rdkafka_sasl_oauthbearer.c",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-fno-sanitize=undefined",
         "-I",
         "contrib/librdkafka-cmake",
@@ -331,7 +329,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/krb5-cmake/include/krb5/krb5.h",
@@ -462,12 +461,10 @@ ch_cc_library(
     srcs = [
         "@clickhouse//:contrib/librdkafka-cmake/rdhttp_poco_transport.cpp",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-fno-sanitize=undefined",
         "-nostdinc++",
         "-I",
@@ -544,7 +541,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/krb5-cmake/include/krb5/krb5.h",

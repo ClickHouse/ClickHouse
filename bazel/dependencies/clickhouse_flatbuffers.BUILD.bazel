@@ -51,17 +51,10 @@ ch_cc_library(
         ":src/reflection.cpp",
         ":src/util.cpp",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-isystem",
         repository_path("contrib/flatbuffers") + "/include",
@@ -74,7 +67,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         ":headers_2512043e06b144d4",
         ":headers_af5cd650cc63f904",

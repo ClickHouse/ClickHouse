@@ -1001,12 +1001,10 @@ ch_cc_library(
         ":src/lib/krb5/asn.1/ldap_key_seq.c",
         ":src/lib/krb5/krb5_libinit.c",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-iquote",
     ] + select({
         "@platforms//cpu:x86_64": [
@@ -1143,7 +1141,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/krb5-cmake/include/krb5/krb5.h",

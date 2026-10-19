@@ -108,12 +108,10 @@ ch_cc_library(
         ":src/util.c",
         ":src/witness.c",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-D_GNU_SOURCE",
         "-I",
         repository_path("contrib/jemalloc") + "/include",
@@ -158,7 +156,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse//:headers_f8cca6b6237a1ccb",
     ] + select({

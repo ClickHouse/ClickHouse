@@ -60,12 +60,10 @@ ch_cc_library(
         ":xmlsave.c",
         ":debugXML.c",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-I",
         repository_path("contrib/libxml2") + "/include",
         "-I",
@@ -111,7 +109,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse//:headers_087b9d25879b06c9",
         ":headers_725a9f7b37862089",

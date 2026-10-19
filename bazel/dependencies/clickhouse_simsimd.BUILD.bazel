@@ -21,17 +21,10 @@ ch_cc_library(
     srcs = [
         ":c/lib.c",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-isystem",
         repository_path("contrib/SimSIMD") + "/include",
     ] + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
@@ -65,7 +58,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = [
         ":headers_2a9e889ef9b6e17e",
         ":headers_990fe0036dadac2e",

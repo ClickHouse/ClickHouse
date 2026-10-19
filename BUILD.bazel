@@ -422,17 +422,10 @@ ch_cc_library(
     srcs = [
         "//:contrib/bech32/src/bech32.cpp",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-I",
         "contrib/bech32/include",
@@ -447,7 +440,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "//:headers_d3e3327f9846bf58",
         "//:headers_daae6cba91d99985",
@@ -478,17 +472,10 @@ ch_cc_library(
     srcs = [
         "//:contrib/cityhash102/src/city.cc",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-isystem",
         "contrib/cityhash102/include",
@@ -503,7 +490,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "//:headers_009a28652491736c",
         "//:headers_46fe1bff6e52b39f",
@@ -535,17 +523,10 @@ ch_cc_library(
         "//:contrib/consistent-hashing/consistent_hashing.cpp",
         "//:contrib/consistent-hashing/popcount.cpp",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-isystem",
         "contrib/consistent-hashing",
@@ -558,7 +539,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "//:headers_5a6a7eb5cbb13717",
     ] + [
@@ -588,17 +570,10 @@ ch_cc_library(
     srcs = [
         "//:contrib/libfarmhash/farmhash.cc",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-I",
         "contrib/libfarmhash",
@@ -611,7 +586,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "//:headers_e5c08d6d59b152ae",
     ] + [
@@ -674,17 +650,10 @@ ch_cc_library(
         "//:contrib/libmetrohash/src/metrohash64.cpp",
         "//:contrib/libmetrohash/src/metrohash128.cpp",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-I",
         "contrib/libmetrohash/src",
@@ -697,7 +666,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "//:headers_8ce3f579c2f447e5",
     ] + [
@@ -728,17 +698,10 @@ ch_cc_library(
         "//:contrib/murmurhash/src/MurmurHash2.cpp",
         "//:contrib/murmurhash/src/MurmurHash3.cpp",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-I",
         "contrib/murmurhash/include",
@@ -751,7 +714,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "//:headers_b4d175c6ca47081b",
         "//:headers_c5411fc71b4c5579",
@@ -927,14 +891,12 @@ ch_cc_library(
         "//:base/poco/Foundation/src/Void.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-Wno-array-bounds",
             "-Wno-atomic-implicit-seq-cst",
             "-Wno-cast-align",
@@ -1104,8 +1066,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-Wno-array-bounds",
             "-Wno-atomic-implicit-seq-cst",
             "-Wno-cast-align",
@@ -1295,7 +1255,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -1579,8 +1540,8 @@ ch_cc_library(
         "//:base/poco/Foundation/src/pcre_version.c",
         "//:base/poco/Foundation/src/pcre_xclass.c",
     ],
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-fxray-instrument",
             "-fxray-modes=none",
@@ -1588,8 +1549,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=gnu11",
-            "-D",
-            "OS_LINUX",
             "-Wno-cast-align",
             "-Wno-cast-qual",
             "-Wno-comma",
@@ -1613,8 +1572,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=gnu11",
-            "-D",
-            "OS_LINUX",
             "-Wno-cast-align",
             "-Wno-cast-qual",
             "-Wno-comma",
@@ -1669,7 +1626,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/includes/configs/config.h",
@@ -1729,14 +1687,12 @@ ch_cc_library(
         "//:base/poco/JSON/src/Stringifier.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-Wno-deprecated-dynamic-exception-spec",
             "-Wno-sign-compare",
             "-Wno-suggest-destructor-override",
@@ -1752,8 +1708,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-Wno-deprecated-dynamic-exception-spec",
             "-Wno-sign-compare",
             "-Wno-suggest-destructor-override",
@@ -1785,7 +1739,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/includes/configs/config.h",
@@ -1824,8 +1779,8 @@ ch_cc_library(
     srcs = [
         "//:base/poco/JSON/src/pdjson.c",
     ],
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-fxray-instrument",
             "-fxray-modes=none",
@@ -1833,8 +1788,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=gnu11",
-            "-D",
-            "OS_LINUX",
             "-Wno-cast-qual",
             "-Wno-declaration-after-statement",
             "-Wno-extra-semi-stmt",
@@ -1852,8 +1805,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=gnu11",
-            "-D",
-            "OS_LINUX",
             "-Wno-cast-qual",
             "-Wno-declaration-after-statement",
             "-Wno-extra-semi-stmt",
@@ -1902,7 +1853,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/includes/configs/config.h",
@@ -2024,14 +1976,12 @@ ch_cc_library(
         "//:base/poco/Net/src/WebSocketImpl.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-Wno-atomic-implicit-seq-cst",
             "-Wno-cast-align",
             "-Wno-cast-qual",
@@ -2063,8 +2013,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-Wno-atomic-implicit-seq-cst",
             "-Wno-cast-align",
             "-Wno-cast-qual",
@@ -2112,7 +2060,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/includes/configs/config.h",
@@ -2392,14 +2341,13 @@ _GENERATED_LOCAL_DEFINES_2 = select({
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ]
 
-_GENERATED_COPTS_6 = [
-    ] + select({
+
+
+_GENERATED_COPTS_0 = select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-Wno-cast-qual",
             "-Wno-covered-switch-default",
             "-Wno-deprecated-copy-with-user-provided-dtor",
@@ -2552,8 +2500,6 @@ _GENERATED_COPTS_6 = [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-Wno-cast-qual",
             "-Wno-covered-switch-default",
             "-Wno-deprecated-copy-with-user-provided-dtor",
@@ -2757,7 +2703,9 @@ ch_cc_library(
         "//:base/poco/NetSSL_OpenSSL/src/VerificationErrorArgs.cpp",
     ],
     clickhouse_code = True,
-    copts = _GENERATED_COPTS_6,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_2,
     deps = _GENERATED_DEPS_0,
@@ -2777,7 +2725,9 @@ ch_cc_library(
         ],
     }),
     clickhouse_code = True,
-    copts = _GENERATED_COPTS_6,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = select({
         "@platforms//cpu:x86_64": [
@@ -2889,14 +2839,12 @@ ch_cc_library(
         "//:base/poco/Redis/src/Type.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-Wno-deprecated-dynamic-exception-spec",
             "-Wno-shadow",
             "-Wno-shorten-64-to-32",
@@ -2911,8 +2859,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-Wno-deprecated-dynamic-exception-spec",
             "-Wno-shadow",
             "-Wno-shorten-64-to-32",
@@ -2945,7 +2891,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/includes/configs/config.h",
@@ -3130,14 +3077,12 @@ ch_cc_library(
         "//:base/poco/Util/src/XMLConfiguration.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-Wno-deprecated-dynamic-exception-spec",
             "-Wno-disabled-macro-expansion",
             "-Wno-extra-semi-stmt",
@@ -3158,8 +3103,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-Wno-deprecated-dynamic-exception-spec",
             "-Wno-disabled-macro-expansion",
             "-Wno-extra-semi-stmt",
@@ -3202,7 +3145,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/includes/configs/config.h",
@@ -3335,14 +3279,12 @@ ch_cc_library(
         "//:base/poco/XML/src/xmlparse.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-Wno-c99-extensions",
             "-Wno-cast-qual",
             "-Wno-covered-switch-default",
@@ -3373,8 +3315,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-Wno-c99-extensions",
             "-Wno-cast-qual",
             "-Wno-covered-switch-default",
@@ -3421,7 +3361,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = _GENERATED_HDRS_1,
     local_defines = [
         "POCO_ENABLE_CPP11",
@@ -3457,8 +3398,8 @@ ch_cc_library(
         "//:base/poco/XML/src/xmltok_ns.c",
         "//:base/poco/XML/src/xmlxcs.c",
     ],
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-fxray-instrument",
             "-fxray-modes=none",
@@ -3466,8 +3407,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=gnu11",
-            "-D",
-            "OS_LINUX",
             "-Wno-cast-qual",
             "-Wno-disabled-macro-expansion",
             "-Wno-empty-translation-unit",
@@ -3487,8 +3426,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=gnu11",
-            "-D",
-            "OS_LINUX",
             "-Wno-cast-qual",
             "-Wno-disabled-macro-expansion",
             "-Wno-empty-translation-unit",
@@ -3543,7 +3480,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = _GENERATED_HDRS_1,
     local_defines = [
         "PRIVATE",
@@ -3586,13 +3524,11 @@ ch_cc_library(
             "//bazel:gen/aarch64/contrib/prometheus-protobufs-cmake/gogoproto/gogo.pb.cc",
         ],
     }),
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-isystem",
     ] + select({
@@ -3630,7 +3566,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:gen/x86_64/contrib/prometheus-protobufs-cmake/gogoproto/gogo.pb.h",
@@ -5266,14 +5203,13 @@ _GENERATED_DEPS_2 = [
         "@llvm-project//third-party/siphash:siphash",
     ]
 
-_GENERATED_COPTS_7 = [
-    ] + select({
+
+
+_GENERATED_COPTS_1 = select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -5598,8 +5534,6 @@ _GENERATED_COPTS_7 = [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -5952,7 +5886,9 @@ ch_cc_library(
         "//:src/Columns/benchmarks/benchmark_compute_hash_into.cpp",
     ],
     clickhouse_code = True,
-    copts = _GENERATED_COPTS_7,
+    copts = (
+(_GENERATED_COPTS_1)
+),
     hdrs = _GENERATED_HDRS_2,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_2,
@@ -7179,7 +7115,9 @@ ch_cc_library(
         "//:src/Common/benchmarks/radix_sort.cpp",
     ],
     clickhouse_code = True,
-    copts = _GENERATED_COPTS_7,
+    copts = (
+(_GENERATED_COPTS_1)
+),
     hdrs = _GENERATED_HDRS_3,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_2,
@@ -7629,7 +7567,9 @@ ch_cc_library(
         "//:src/Functions/registerFunctions.cpp",
     ],
     clickhouse_code = True,
-    copts = _GENERATED_COPTS_7,
+    copts = (
+(_GENERATED_COPTS_1)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -8856,14 +8796,12 @@ ch_cc_library(
         "//:src/Common/benchmarks/sched_getcpu.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -8872,8 +8810,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -8896,7 +8832,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/includes/configs/config.h",
@@ -9181,14 +9118,13 @@ _GENERATED_LOCAL_DEFINES_4 = select({
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ]
 
-_GENERATED_COPTS_8 = [
-    ] + select({
+
+
+_GENERATED_COPTS_2 = select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -9329,8 +9265,6 @@ _GENERATED_COPTS_8 = [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -9499,7 +9433,9 @@ ch_cc_library(
         "//:src/Common/benchmarks/stack_trace.cpp",
     ],
     clickhouse_code = True,
-    copts = _GENERATED_COPTS_8,
+    copts = (
+(_GENERATED_COPTS_2)
+),
     hdrs = _GENERATED_HDRS_4,
     local_defines = _GENERATED_LOCAL_DEFINES_4,
     deps = _GENERATED_DEPS_0,
@@ -9641,7 +9577,9 @@ ch_cc_library(
         "//:src/Storages/benchmarks/benchmark_statistics.cpp",
     ],
     clickhouse_code = True,
-    copts = _GENERATED_COPTS_7,
+    copts = (
+(_GENERATED_COPTS_1)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -10876,14 +10814,12 @@ ch_cc_library(
         "//:programs/main.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -11024,8 +10960,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -11186,7 +11120,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     additional_compiler_inputs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:gen/x86_64/contrib/clickstack-cmake/clickstack_compressed/404.html.gz",
@@ -12738,14 +12673,12 @@ ch_cc_library(
         "//:programs/benchmark/Benchmark.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -13070,8 +13003,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -13416,7 +13347,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -14668,14 +14600,12 @@ ch_cc_library(
         "//:programs/check-marks/CheckMarks.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -15000,8 +14930,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -15346,7 +15274,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -16668,14 +16597,12 @@ ch_cc_library(
         "//:programs/checksum-for-compressed-block/ChecksumForCompressedBlock.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -17036,8 +16963,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -17426,7 +17351,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -18720,14 +18646,12 @@ ch_cc_library(
         "//:programs/client/FuzzLoop.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -19090,8 +19014,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -19482,7 +19404,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -20779,14 +20702,12 @@ ch_cc_library(
         "//:programs/compressor/Compressor.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -21111,8 +21032,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -21457,7 +21376,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -22703,14 +22623,12 @@ ch_cc_library(
         "//:programs/disks/Utils.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -23071,8 +22989,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -23461,7 +23377,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -24757,14 +24674,12 @@ ch_cc_library(
         "//:programs/docker-init/docker-init.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -24905,8 +24820,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -25067,7 +24980,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -25372,14 +25286,12 @@ ch_cc_library(
         "//:programs/extract-from-config/ExtractFromConfig.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -25522,8 +25434,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -25696,7 +25606,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -26258,14 +26169,12 @@ ch_cc_library(
         "//:programs/format/Format.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -26626,8 +26535,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -27016,7 +26923,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -28312,14 +28220,12 @@ ch_cc_library(
         "//:programs/git-import/git-import.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -28644,8 +28550,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -28990,7 +28894,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -30218,14 +30123,12 @@ ch_cc_library(
         ],
     }),
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -30552,8 +30455,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -30900,7 +30801,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -32515,14 +32417,12 @@ ch_cc_library(
         "//:programs/keeper-bench/StorageRunner.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -32883,8 +32783,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -33273,7 +33171,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -34566,14 +34465,12 @@ ch_cc_library(
         "//:programs/keeper-client/KeeperClient.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -34898,8 +34795,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -35244,7 +35139,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -36467,14 +36363,12 @@ ch_cc_library(
         "//:programs/keeper-converter/KeeperConverter.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -36799,8 +36693,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -37145,7 +37037,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -38368,14 +38261,12 @@ ch_cc_library(
         "//:programs/keeper-data-dumper/KeeperDataDumper.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -38736,8 +38627,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -39126,7 +39015,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -40426,14 +40316,12 @@ ch_cc_library(
         ],
     }),
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -40794,8 +40682,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -41184,7 +41070,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -42856,14 +42743,12 @@ ch_cc_library(
         "//:programs/keeper-utils/KeeperUtils.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -43224,8 +43109,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -43614,7 +43497,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -44907,14 +44791,12 @@ ch_cc_library(
         "//:programs/local/LocalServer.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -45277,8 +45159,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -45669,7 +45549,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -46969,14 +46850,12 @@ ch_cc_library(
         "//:programs/obfuscator/Obfuscator.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -47301,8 +47180,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -47647,7 +47524,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -48871,14 +48749,12 @@ ch_cc_library(
         "//:programs/oom-canary/OomCanary.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -49203,8 +49079,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -49549,7 +49423,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -50772,14 +50647,12 @@ ch_cc_library(
         "//:programs/packed-io/PackedIO.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -51104,8 +50977,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -51450,7 +51321,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -52680,14 +52552,12 @@ ch_cc_library(
         ],
     }),
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -53048,8 +52918,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -53438,7 +53306,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -55111,14 +54980,12 @@ ch_cc_library(
         "//:programs/static-files-disk-uploader/static-files-disk-uploader.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -55443,8 +55310,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -55789,7 +55654,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -57013,14 +56879,12 @@ ch_cc_library(
         "//:programs/su/su.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -57345,8 +57209,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -57691,7 +57553,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -58914,14 +58777,12 @@ ch_cc_library(
         "//:programs/zookeeper-dump-tree/ZooKeeperDumpTree.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -59282,8 +59143,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -59672,7 +59531,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -60965,14 +60825,12 @@ ch_cc_library(
         "//:programs/zookeeper-remove-by-list/ZooKeeperRemoveByList.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -61333,8 +61191,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -61723,7 +61579,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -63012,14 +62869,13 @@ cc_library(
 
 
 
-_GENERATED_COPTS_9 = [
-    ] + select({
+
+
+_GENERATED_COPTS_3 = select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -63342,8 +63198,6 @@ _GENERATED_COPTS_9 = [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -63834,7 +63688,9 @@ ch_cc_library(
         "//:src/AggregateFunctions/TimeSeries/registerAggregateFunctionTimeseries.cpp",
     ],
     clickhouse_code = True,
-    copts = _GENERATED_COPTS_9,
+    copts = (
+(_GENERATED_COPTS_3)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -64950,13 +64806,12 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     clickhouse_code = True,
-    copts = select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-mno-bmi",
             "-mno-bmi2",
@@ -65297,7 +65152,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -66195,14 +66051,12 @@ ch_cc_library(
         "//:src/Parsers/Prometheus/grammar/generated/antlr4_grammars/PromQLParserVisitor.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-w",
             "-fno-xray-instrument",
             "-nostdinc++",
@@ -66213,8 +66067,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-w",
             "-fno-xray-instrument",
             "-nostdinc++",
@@ -66241,7 +66093,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/includes/configs/config.h",
@@ -66295,14 +66148,12 @@ ch_cc_library(
         "//:src/Access/Common/RowPolicyDefs.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -66441,8 +66292,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -66603,7 +66452,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -67003,14 +66853,12 @@ ch_cc_library(
         "//:src/Common/Config/parseConnectionCredentials.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -67151,8 +66999,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -67325,7 +67171,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -68699,14 +68546,12 @@ ch_cc_library(
         ],
     }),
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -68889,8 +68734,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -69085,7 +68928,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "//bazel/rust:delta_ffi_headers",
     ] + select({
@@ -69975,14 +69819,12 @@ ch_cc_library(
         "//:src/Common/CaresPTRResolver.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-Wno-reserved-identifier",
             "-I",
@@ -70166,8 +70008,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-Wno-reserved-identifier",
             "-I",
@@ -70363,7 +70203,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = _GENERATED_HDRS_5,
     local_defines = _GENERATED_LOCAL_DEFINES_8,
     deps = _GENERATED_DEPS_1,
@@ -70378,14 +70219,12 @@ ch_cc_library(
         "//:src/Common/IntervalTree.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-U_LIBCPP_HARDENING_MODE",
             "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE",
@@ -70570,8 +70409,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-U_LIBCPP_HARDENING_MODE",
             "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE",
@@ -70768,7 +70605,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = _GENERATED_HDRS_5,
     local_defines = _GENERATED_LOCAL_DEFINES_8,
     deps = _GENERATED_DEPS_1,
@@ -70783,14 +70621,12 @@ ch_cc_library(
         "//:src/Common/ThreadFuzzer.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-fomit-frame-pointer",
             "-momit-leaf-frame-pointer",
@@ -70975,8 +70811,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-fomit-frame-pointer",
             "-momit-leaf-frame-pointer",
@@ -71173,7 +71007,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = _GENERATED_HDRS_5,
     local_defines = _GENERATED_LOCAL_DEFINES_8,
     deps = _GENERATED_DEPS_1,
@@ -71528,14 +71363,13 @@ _GENERATED_HDRS_6 = select({
         "@clickhouse_sysroot//:linux_native_headers",
     ]
 
-_GENERATED_COPTS_10 = [
-    ] + select({
+
+
+_GENERATED_COPTS_4 = select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -71676,8 +71510,6 @@ _GENERATED_COPTS_10 = [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -71856,7 +71688,9 @@ ch_cc_library(
         "//:src/Common/ZooKeeper/ZooKeeperImpl.cpp",
     ],
     clickhouse_code = True,
-    copts = _GENERATED_COPTS_10,
+    copts = (
+(_GENERATED_COPTS_4)
+),
     hdrs = _GENERATED_HDRS_6,
     local_defines = select({
         "@platforms//cpu:x86_64": [
@@ -72224,7 +72058,9 @@ ch_cc_library(
         "//:src/Common/ZooKeeper/KeeperClientCLI/Parser.cpp",
     ],
     clickhouse_code = True,
-    copts = _GENERATED_COPTS_10,
+    copts = (
+(_GENERATED_COPTS_4)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -72713,7 +72549,9 @@ ch_cc_library(
         "//:src/Common/ZooKeeper/ZooKeeperImpl.cpp",
     ],
     clickhouse_code = True,
-    copts = _GENERATED_COPTS_10,
+    copts = (
+(_GENERATED_COPTS_4)
+),
     hdrs = _GENERATED_HDRS_6,
     local_defines = _GENERATED_LOCAL_DEFINES_7,
     deps = _GENERATED_DEPS_2,
@@ -73018,14 +72856,12 @@ ch_cc_library(
         "//:src/Compression/getCompressionCodecForFile.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -73194,8 +73030,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -73382,7 +73216,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -74978,14 +74813,12 @@ ch_cc_library(
         "//:src/Dictionaries/SparseHashedDictionary.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-g1",
             "-I",
@@ -75315,8 +75148,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-g1",
             "-I",
@@ -75678,7 +75509,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = _GENERATED_HDRS_7,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_2,
@@ -75743,14 +75575,12 @@ ch_cc_library(
         "//:src/Dictionaries/registerRangeHashedDictionary.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -76079,8 +75909,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -76441,7 +76269,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = _GENERATED_HDRS_7,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_2,
@@ -76459,14 +76288,12 @@ ch_cc_library(
         "//:src/Dictionaries/RangeHashedDictionary.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-U_LIBCPP_HARDENING_MODE",
             "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE",
@@ -76798,8 +76625,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-U_LIBCPP_HARDENING_MODE",
             "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE",
@@ -77163,7 +76988,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = _GENERATED_HDRS_7,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_2,
@@ -77621,14 +77447,12 @@ ch_cc_library(
         "//:src/Dictionaries/Embedded/GeodataProviders/NamesProvider.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -77779,8 +77603,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -77947,7 +77769,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -79220,14 +79043,12 @@ ch_cc_library(
         "//:src/Functions/array/range.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-g1",
             "-nostdinc++",
             "-I",
@@ -79551,8 +79372,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-g1",
             "-nostdinc++",
             "-I",
@@ -79902,7 +79721,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = _GENERATED_HDRS_8,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_2,
@@ -79918,14 +79738,12 @@ ch_cc_library(
         "//:src/Functions/array/array.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-g1",
             "-nostdinc++",
             "-U_LIBCPP_HARDENING_MODE",
@@ -80251,8 +80069,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-g1",
             "-nostdinc++",
             "-U_LIBCPP_HARDENING_MODE",
@@ -80604,7 +80420,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = _GENERATED_HDRS_8,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_2,
@@ -80621,14 +80438,12 @@ ch_cc_library(
         "//:src/Functions/array/arrayNorm.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-g1",
             "-nostdinc++",
             "-march=x86-64-v2",
@@ -80954,8 +80769,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-g1",
             "-nostdinc++",
             "-ffp-contract=fast",
@@ -81306,7 +81119,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = _GENERATED_HDRS_8,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_2,
@@ -81322,14 +81136,12 @@ ch_cc_library(
         "//:src/Functions/array/arrayDotProduct.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-g1",
             "-nostdinc++",
             "-ffp-contract=fast",
@@ -81654,8 +81466,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-g1",
             "-nostdinc++",
             "-ffp-contract=fast",
@@ -82006,7 +81816,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = _GENERATED_HDRS_8,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_2,
@@ -82450,14 +82261,13 @@ cc_library(
 
 
 
-_GENERATED_COPTS_11 = [
-    ] + select({
+
+
+_GENERATED_COPTS_5 = select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-g1",
             "-nostdinc++",
             "-I",
@@ -82781,8 +82591,6 @@ _GENERATED_COPTS_11 = [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-g1",
             "-nostdinc++",
             "-I",
@@ -83149,7 +82957,9 @@ ch_cc_library(
         "//:src/Functions/GatherUtils/starts_with.cpp",
     ],
     clickhouse_code = True,
-    copts = _GENERATED_COPTS_11,
+    copts = (
+(_GENERATED_COPTS_5)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -84378,7 +84188,9 @@ ch_cc_library(
         "//:src/Functions/JSONPath/Parsers/ParserJSONPathStar.cpp",
     ],
     clickhouse_code = True,
-    copts = _GENERATED_COPTS_11,
+    copts = (
+(_GENERATED_COPTS_5)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -86850,14 +86662,12 @@ ch_cc_library(
         "//:src/Functions/Kusto/FunctionKQLToTimespan.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-g1",
             "-nostdinc++",
             "-I",
@@ -87217,8 +87027,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-g1",
             "-nostdinc++",
             "-I",
@@ -87606,7 +87414,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -88456,14 +88265,12 @@ ch_cc_library(
         ],
     }),
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-g1",
             "-nostdinc++",
             "-march=x86-64-v2",
@@ -88824,8 +88631,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-g1",
             "-nostdinc++",
             "-fno-sanitize=signed-integer-overflow",
@@ -89214,7 +89019,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -90056,13 +89862,12 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     clickhouse_code = True,
-    copts = select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-g1",
             "-nostdinc++",
             "-fno-sanitize=signed-integer-overflow",
@@ -90447,7 +90252,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -91410,7 +91216,9 @@ ch_cc_library(
         "//:src/Functions/TimeSeries/timeSeriesThrowDuplicateSeriesIf.cpp",
     ],
     clickhouse_code = True,
-    copts = _GENERATED_COPTS_9,
+    copts = (
+(_GENERATED_COPTS_3)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -92633,7 +92441,9 @@ ch_cc_library(
         "//:src/Functions/UniqTheta/FunctionsUniqTheta.cpp",
     ],
     clickhouse_code = True,
-    copts = _GENERATED_COPTS_9,
+    copts = (
+(_GENERATED_COPTS_3)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -94667,14 +94477,12 @@ ch_cc_library(
         "//:src/Functions/URL/topLevelDomain.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-g1",
             "-nostdinc++",
             "-I",
@@ -94998,8 +94806,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-g1",
             "-nostdinc++",
             "-I",
@@ -95347,7 +95153,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = _GENERATED_HDRS_9,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_2,
@@ -95363,14 +95170,12 @@ ch_cc_library(
         "//:src/Functions/URL/tldLookup.generated.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-g1",
             "-nostdinc++",
             "-Wno-shorten-64-to-32",
@@ -95695,8 +95500,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-g1",
             "-nostdinc++",
             "-Wno-shorten-64-to-32",
@@ -96045,7 +95848,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = _GENERATED_HDRS_9,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_2,
@@ -96497,14 +96301,12 @@ ch_cc_library(
         ],
     }),
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-w",
             "-nostdinc++",
             "-I",
@@ -96524,8 +96326,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-w",
             "-nostdinc++",
             "-I",
@@ -96575,7 +96375,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/includes/configs/config.h",
@@ -96966,14 +96767,12 @@ ch_cc_library(
         "//:src/Common/malloc.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-fno-builtin",
             "-I",
@@ -97113,8 +96912,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-fno-builtin",
             "-I",
@@ -97274,7 +97071,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = _GENERATED_HDRS_10,
     local_defines = _GENERATED_LOCAL_DEFINES_4,
     deps = _GENERATED_DEPS_0,
@@ -97416,14 +97214,12 @@ ch_cc_library(
         "//:src/Common/AllocationInterceptors.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -97562,8 +97358,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -97722,7 +97516,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = _GENERATED_HDRS_10,
     local_defines = _GENERATED_LOCAL_DEFINES_4,
     deps = _GENERATED_DEPS_0,
@@ -98139,14 +97934,12 @@ ch_cc_library(
         "//:src/Parsers/LogsQL/parseLogsQLQuery.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -98293,8 +98086,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -98461,7 +98252,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -98898,14 +98690,12 @@ ch_cc_library(
         ],
     }),
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-w",
             "-I",
@@ -99229,8 +99019,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-w",
             "-I",
@@ -99578,7 +99366,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -100663,14 +100452,12 @@ ch_cc_library(
         "//:src/Storages/System/getQueriedColumnsMaskAndHeader.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -100993,8 +100780,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -101341,7 +101126,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -103011,14 +102797,12 @@ ch_cc_library(
         "//:src/TableFunctions/Hive/TableFunctionHive.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -103351,8 +103135,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -103705,7 +103487,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -104939,7 +104722,9 @@ ch_cc_library(
         "//:src/Columns/benchmarks/benchmark_column_insert_many_from.cpp",
     ],
     clickhouse_code = True,
-    copts = _GENERATED_COPTS_7,
+    copts = (
+(_GENERATED_COPTS_1)
+),
     hdrs = _GENERATED_HDRS_2,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_2,
@@ -105416,14 +105201,12 @@ ch_cc_library(
         "//:base/base/wide_integer_to_string.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -105436,8 +105219,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -105490,7 +105271,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -105569,14 +105351,12 @@ ch_cc_library(
         "//:src/Daemon/CrashWriter.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -105719,8 +105499,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -105893,7 +105671,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -109157,14 +108936,12 @@ ch_cc_library(
         "//:src/Coordination/Storage/StorageState.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -109553,8 +109330,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -109957,7 +109732,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "//bazel/rust:delta_ffi_headers",
     ] + select({
@@ -111525,14 +111301,12 @@ ch_cc_library(
         "//:src/Functions/GatherUtils/resizeDynamicSize.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-g1",
             "-I",
@@ -111922,8 +111696,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-g1",
             "-I",
@@ -112327,7 +112099,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "//bazel/rust:delta_ffi_headers",
     ] + select({
@@ -113189,14 +112962,12 @@ ch_cc_library(
         "//:src/WindowFunctions/WindowFunctionRowNumber.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-U_LIBCPP_HARDENING_MODE",
             "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE",
@@ -113587,8 +113358,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-U_LIBCPP_HARDENING_MODE",
             "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE",
@@ -113993,7 +113762,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "//bazel/rust:delta_ffi_headers",
     ] + select({
@@ -114849,14 +114619,12 @@ ch_cc_library(
         ],
     }),
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-march=x86-64-v2",
             "-I",
@@ -115246,8 +115014,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -115650,7 +115416,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "//bazel/rust:delta_ffi_headers",
     ] + select({
@@ -116496,13 +116263,12 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     clickhouse_code = True,
-    copts = select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -116905,7 +116671,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel/rust:delta_ffi_headers",
@@ -117492,12 +117259,10 @@ ch_cc_library(
         "//:base/glibc-compatibility/musl/vasprintf.c",
         "//:base/glibc-compatibility/musl/vdso.c",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-fomit-frame-pointer",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-Wno-unused-command-line-argument",
         "-Wno-unused-but-set-variable",
         "-Wno-builtin-requires-header",
@@ -117520,7 +117285,8 @@ ch_cc_library(
             "language": "C",
             "includes": [],
         },
-    }) + ["-Wno-error"],
+    }) + ["-Wno-error"]
+),
     hdrs = [
         "//:headers_1444a5f28cffd356",
         "//:headers_45725456c79b475b",
@@ -117556,10 +117322,8 @@ ch_cc_library(
             "//:base/glibc-compatibility/musl/aarch64/longjmp.s",
         ],
     }),
-    copts = [
-    ] + [
-        "-D",
-        "OS_LINUX",
+    copts = (
+[
         "-Wno-unused-command-line-argument",
         "-Wno-unused-but-set-variable",
         "-Wno-builtin-requires-header",
@@ -117582,7 +117346,8 @@ ch_cc_library(
             "language": "ASM",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "//:headers_45725456c79b475b",
     ] + select({
@@ -117616,8 +117381,8 @@ ch_cc_library(
     srcs = [
         "//:base/glibc-rseq/rseq.c",
     ],
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-fxray-instrument",
             "-fxray-modes=none",
@@ -117625,8 +117390,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=gnu11",
-            "-D",
-            "OS_LINUX",
             "-fno-direct-access-external-data",
             "-Wno-declaration-after-statement",
             "-I",
@@ -117639,8 +117402,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=gnu11",
-            "-D",
-            "OS_LINUX",
             "-fno-direct-access-external-data",
             "-Wno-declaration-after-statement",
             "-I",
@@ -117684,7 +117445,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/includes/configs/config.h",
@@ -117724,16 +117486,9 @@ ch_cc_library(
     srcs = [
         "//:base/harmful/harmful.c",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-I",
         "base",
     ] + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
@@ -117745,7 +117500,8 @@ ch_cc_library(
             "language": "C",
             "includes": [],
         },
-    }) + ["-Wno-error"],
+    }) + ["-Wno-error"]
+),
     hdrs = [
         "//:headers_bcf1e91916493096",
         "//:headers_cae662172fd450bb",
@@ -117773,14 +117529,12 @@ ch_cc_library(
         "//:src/Common/benchmarks/integer_hash_tables_and_hashes.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -117923,8 +117677,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -118091,7 +117843,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -118498,7 +118251,9 @@ ch_cc_library(
         "//:src/Loggers/OwnSplitChannel.cpp",
     ],
     clickhouse_code = True,
-    copts = _GENERATED_COPTS_9,
+    copts = (
+(_GENERATED_COPTS_3)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -119730,14 +119485,12 @@ ch_cc_library(
         "//:src/Common/mysqlxx/PoolWithFailover.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -119888,8 +119641,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -120056,7 +119807,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -120368,14 +120120,12 @@ ch_cc_library(
         "//:src/Common/benchmarks/orc_string_dictionary.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -120388,8 +120138,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -120444,7 +120192,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -120632,7 +120381,9 @@ ch_cc_library(
         "//:src/Common/benchmarks/profile_events.cpp",
     ],
     clickhouse_code = True,
-    copts = _GENERATED_COPTS_8,
+    copts = (
+(_GENERATED_COPTS_2)
+),
     hdrs = _GENERATED_HDRS_4,
     local_defines = _GENERATED_LOCAL_DEFINES_4,
     deps = _GENERATED_DEPS_0,
@@ -120773,8 +120524,8 @@ ch_cc_library(
     srcs = [
         "//:base/readpassphrase/readpassphrase.c",
     ],
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-fxray-instrument",
             "-fxray-modes=none",
@@ -120782,8 +120533,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=gnu11",
-            "-D",
-            "OS_LINUX",
             "-Wno-unused-result",
             "-Wno-reserved-id-macro",
             "-Wno-disabled-macro-expansion",
@@ -120797,8 +120546,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=gnu11",
-            "-D",
-            "OS_LINUX",
             "-Wno-unused-result",
             "-Wno-reserved-id-macro",
             "-Wno-disabled-macro-expansion",
@@ -120845,7 +120592,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/includes/configs/config.h",
@@ -124585,14 +124333,12 @@ ch_cc_library(
         "//:base/widechar_width/widechar_width.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-    ] + select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/x86_64/includes/configs",
@@ -124601,8 +124347,6 @@ ch_cc_library(
             "-Wframe-larger-than=65536",
             ] + CLICKHOUSE_WARNINGS + [
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             "bazel/config/aarch64/includes/configs",
@@ -124625,7 +124369,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/includes/configs/config.h",
@@ -124667,7 +124412,9 @@ ch_cc_library(
         "//:src/Common/benchmarks/wrap_in_nullable.cpp",
     ],
     clickhouse_code = True,
-    copts = _GENERATED_COPTS_7,
+    copts = (
+(_GENERATED_COPTS_1)
+),
     hdrs = _GENERATED_HDRS_3,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_2,

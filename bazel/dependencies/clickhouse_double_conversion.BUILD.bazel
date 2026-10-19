@@ -28,17 +28,10 @@ ch_cc_library(
         ":double-conversion/string-to-double.cc",
         ":double-conversion/strtod.cc",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-isystem",
         repository_path("contrib/double-conversion"),
@@ -51,7 +44,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         ":headers_926772174878f882",
         ":headers_d6b59dc5126af3de",

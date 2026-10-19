@@ -43,12 +43,10 @@ ch_cc_library(
         ":src/topic_partition.cpp",
         ":src/topic.cpp",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-I",
         repository_path("contrib/cppkafka") + "/include/cppkafka",
@@ -78,7 +76,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/krb5-cmake/include/krb5/krb5.h",

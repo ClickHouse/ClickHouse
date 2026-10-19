@@ -52,12 +52,10 @@ ch_cc_library(
         ":lang/c++/impl/Resolver.cc",
         ":lang/c++/impl/Validator.cc",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++17",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-isystem",
         repository_path("contrib/avro") + "/lang/c++/api",
@@ -82,7 +80,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         ":headers_28bf8e149b9cf14b",
         ":headers_6b69b3f95a5c206b",

@@ -38,17 +38,11 @@ _GENERATED_DEPS_0 = [
         "@llvm-project//libunwind:headers",
     ]
 
-_GENERATED_COPTS_1 = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+
+
+_GENERATED_COPTS_0 = [
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-isystem",
         repository_path("contrib/google-benchmark") + "/include",
@@ -86,7 +80,9 @@ ch_cc_library(
         ":src/sysinfo.cc",
         ":src/timers.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -119,7 +115,9 @@ ch_cc_library(
     srcs = [
         ":src/benchmark_main.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,

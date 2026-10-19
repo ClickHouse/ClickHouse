@@ -58,6 +58,22 @@ def select_dictionary(node):
     return None
 
 
+def shared_cpu_selection(node):
+    choices = select_dictionary(node)
+    if choices is None:
+        return None
+    if not all(isinstance(key, ast.Constant) for key in choices.keys):
+        return None
+    cpus = {"@platforms//cpu:x86_64", "@platforms//cpu:aarch64"}
+    keys = {key.value for key in choices.keys}
+    if not (cpus <= keys <= cpus | {"//conditions:default"}):
+        return None
+    first = choices.values[0]
+    if all(ast_key(value) == ast_key(first) for value in choices.values):
+        return first
+    return None
+
+
 class Source:
     def __init__(self, text):
         # Python AST positions count UTF-8 bytes, including for non-ASCII names.
@@ -194,6 +210,40 @@ def remove_unused_constants(source):
     return source.rewrite(edits)
 
 
+def simplify_list_expressions(source):
+    edits = []
+
+    class Simplify(ast.NodeVisitor):
+        def visit_BinOp(self, node):
+            if isinstance(node.op, ast.Add):
+                if isinstance(node.left, ast.List) and not node.left.elts:
+                    edits.append((*source.span(node), source.text(node.right)))
+                    return
+                if isinstance(node.right, ast.List) and not node.right.elts:
+                    edits.append((*source.span(node), source.text(node.left)))
+                    return
+            self.generic_visit(node)
+
+        def visit_Call(self, node):
+            value = shared_cpu_selection(node)
+            if value is not None:
+                edits.append((*source.span(node), source.text(value)))
+            else:
+                self.generic_visit(node)
+
+    visit = Simplify()
+    for _, rule in source.rules():
+        for attr in rule.keywords:
+            if attr.arg in ATTRIBUTES:
+                visit.visit(attr.value)
+    for statement in source.module.body:
+        if (isinstance(statement, ast.Assign) and len(statement.targets) == 1
+                and isinstance(statement.targets[0], ast.Name)
+                and statement.targets[0].id.startswith(CONSTANT_PREFIX)):
+            visit.visit(statement.value)
+    return source.rewrite(edits)
+
+
 class Expand(ast.NodeTransformer):
     def __init__(self):
         self.constants = {}
@@ -213,11 +263,20 @@ class Expand(ast.NodeTransformer):
     def visit_Name(self, node):
         return self.constants.get(node.id, node)
 
+    def visit_Call(self, node):
+        node = self.generic_visit(node)
+        value = shared_cpu_selection(node)
+        return value if value is not None else node
+
     def visit_BinOp(self, node):
         node = self.generic_visit(node)
         if not isinstance(node.op, ast.Add):
             return node
         left, right = node.left, node.right
+        if isinstance(left, ast.List) and not left.elts:
+            return right
+        if isinstance(right, ast.List) and not right.elts:
+            return left
         if isinstance(left, ast.List) and isinstance(right, ast.List):
             return ast.List(elts=left.elts + right.elts, ctx=ast.Load())
         choices = select_dictionary(left)
@@ -235,7 +294,13 @@ class Expand(ast.NodeTransformer):
 
 def compact(text):
     factored = factor_selects(Source(text))
-    result = remove_unused_constants(Source(intern_attributes(Source(factored))))
+    simplified = factored
+    while True:
+        result = simplify_list_expressions(Source(simplified))
+        if result == simplified:
+            break
+        simplified = result
+    result = remove_unused_constants(Source(intern_attributes(Source(result))))
     original = Expand().visit(ast.parse(text))
     rewritten = Expand().visit(ast.parse(result))
     if ast_key(original) != ast_key(rewritten):

@@ -82,17 +82,11 @@ _GENERATED_FEATURES_0 = [
         "-llvm_system_c_headers",
     ]
 
-_GENERATED_COPTS_1 = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+
+
+_GENERATED_COPTS_0 = [
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-I",
         repository_path("contrib/boost"),
@@ -114,7 +108,9 @@ ch_cc_library(
         ":libs/context/src/fcontext.cpp",
         ":libs/context/src/posix/stack_traits.cpp",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         ":headers_12c97917c78bec8e",
         ":headers_1c2127cfc3a8f999",
@@ -145,16 +141,8 @@ ch_cc_library(
             ":libs/context/src/asm/ontop_arm64_aapcs_elf_gas.S",
         ],
     }),
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
-        "-D",
-        "OS_LINUX",
-        "-Werror",
+    copts = (
+[
         "-I",
         repository_path("contrib/boost"),
     ] + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
@@ -188,7 +176,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = [
         ":headers_1c2127cfc3a8f999",
         ":headers_5f41234323aac212",
@@ -227,7 +216,9 @@ ch_cc_library(
         ":libs/coroutine/src/exceptions.cpp",
         ":libs/coroutine/src/posix/stack_traits.cpp",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         ":headers_1c2127cfc3a8f999",
         ":headers_37f7f532eb8e9034",
@@ -258,17 +249,11 @@ cc_library(
     ],
 )
 
-_GENERATED_COPTS_2 = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+
+
+_GENERATED_COPTS_3 = [
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-isystem",
         repository_path("contrib/boost"),
@@ -297,7 +282,9 @@ ch_cc_library(
         ":libs/filesystem/src/utf8_codecvt_facet.cpp",
         ":libs/filesystem/src/windows_file_codecvt.cpp",
     ],
-    copts = _GENERATED_COPTS_2,
+    copts = (
+(_GENERATED_COPTS_3)
+),
     hdrs = [
         ":headers_1c2127cfc3a8f999",
         ":headers_a5a4f63a7c720216",
@@ -337,7 +324,9 @@ ch_cc_library(
         ":libs/graph/src/graphml.cpp",
         ":libs/graph/src/read_graphviz_new.cpp",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         ":headers_1c2127cfc3a8f999",
         ":headers_b2ab5322263751d2",
@@ -375,12 +364,10 @@ ch_cc_library(
         ":libs/iostreams/src/zlib.cpp",
         ":libs/iostreams/src/zstd.cpp",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-I",
         repository_path("contrib/boost"),
@@ -405,7 +392,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         ":headers_1c2127cfc3a8f999",
         ":headers_d316cd57b4f223d6",
@@ -511,7 +499,9 @@ ch_cc_library(
         ":libs/program_options/src/variables_map.cpp",
         ":libs/program_options/src/winmain.cpp",
     ],
-    copts = _GENERATED_COPTS_2,
+    copts = (
+(_GENERATED_COPTS_3)
+),
     hdrs = [
         ":headers_1c2127cfc3a8f999",
         ":headers_c72f66fc3993b442",
@@ -545,7 +535,9 @@ ch_cc_library(
         ":libs/regex/src/posix_api.cpp",
         ":libs/regex/src/wide_posix_api.cpp",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         ":headers_1c2127cfc3a8f999",
         ":headers_8f983806880f113a",

@@ -168,12 +168,10 @@ ch_cc_library(
         ":lib/cpp/src/thrift/concurrency/Monitor.cpp",
         ":lib/cpp/src/thrift/concurrency/Mutex.cpp",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-isystem",
     ] + select({
@@ -201,7 +199,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse//:headers_1fd9e05d91f5eb25",
         "@clickhouse_boost//:headers_1c2127cfc3a8f999",

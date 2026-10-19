@@ -58,17 +58,10 @@ ch_cc_library(
         ":src/lib/zxc_pstream.c",
         ":src/lib/zxc_seekable.c",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-I",
         repository_path("contrib/zxc") + "/src/lib",
         "-I",
@@ -106,7 +99,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = _GENERATED_HDRS_0,
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -219,12 +213,12 @@ _GENERATED_ADDITIONAL_COMPILER_INPUTS_1 = select({
         "@platforms//cpu:aarch64": [],
     })
 
-_GENERATED_COPTS_3 = select({
+
+
+_GENERATED_COPTS_0 = select({
         "@platforms//cpu:x86_64": [
             "-w",
             "-std=gnu11",
-            "-D",
-            "OS_LINUX",
             "-mavx2",
             "-mbmi",
             "-mbmi2",
@@ -256,7 +250,9 @@ _GENERATED_COPTS_3 = select({
 ch_cc_library(
     name = "_zxc_compress_avx2__compile_0",
     srcs = _GENERATED_SRCS_0,
-    copts = _GENERATED_COPTS_3,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_1,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_1,
@@ -293,12 +289,12 @@ _GENERATED_LOCAL_DEFINES_1 = select({
         "@platforms//cpu:aarch64": [],
     })
 
-_GENERATED_COPTS_4 = select({
+
+
+_GENERATED_COPTS_1 = select({
         "@platforms//cpu:x86_64": [
             "-w",
             "-std=gnu11",
-            "-D",
-            "OS_LINUX",
             "-mavx512f",
             "-mavx512bw",
             "-mavx512vbmi",
@@ -333,7 +329,9 @@ _GENERATED_COPTS_4 = select({
 ch_cc_library(
     name = "_zxc_compress_avx512__compile_0",
     srcs = _GENERATED_SRCS_0,
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_1)
+),
     hdrs = _GENERATED_HDRS_1,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     deps = _GENERATED_DEPS_1,
@@ -367,17 +365,11 @@ _GENERATED_LOCAL_DEFINES_2 = [
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ]
 
-_GENERATED_COPTS_5 = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+
+
+_GENERATED_COPTS_2 = [
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-I",
         repository_path("contrib/zxc") + "/src/lib",
         "-I",
@@ -420,7 +412,9 @@ ch_cc_library(
     srcs = [
         ":src/lib/zxc_compress.c",
     ],
-    copts = _GENERATED_COPTS_5,
+    copts = (
+(_GENERATED_COPTS_2)
+),
     hdrs = _GENERATED_HDRS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_2,
     deps = _GENERATED_DEPS_0,
@@ -451,7 +445,9 @@ _GENERATED_SRCS_1 = select({
 ch_cc_library(
     name = "_zxc_decompress_avx2__compile_0",
     srcs = _GENERATED_SRCS_1,
-    copts = _GENERATED_COPTS_3,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_1,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_1,
@@ -477,7 +473,9 @@ cc_library(
 ch_cc_library(
     name = "_zxc_decompress_avx512__compile_0",
     srcs = _GENERATED_SRCS_1,
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_1)
+),
     hdrs = _GENERATED_HDRS_1,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     deps = _GENERATED_DEPS_1,
@@ -505,7 +503,9 @@ ch_cc_library(
     srcs = [
         ":src/lib/zxc_decompress.c",
     ],
-    copts = _GENERATED_COPTS_5,
+    copts = (
+(_GENERATED_COPTS_2)
+),
     hdrs = _GENERATED_HDRS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_2,
     deps = _GENERATED_DEPS_0,
@@ -536,7 +536,9 @@ _GENERATED_SRCS_2 = select({
 ch_cc_library(
     name = "_zxc_huffman_avx2__compile_0",
     srcs = _GENERATED_SRCS_2,
-    copts = _GENERATED_COPTS_3,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_1,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_1,
@@ -562,7 +564,9 @@ cc_library(
 ch_cc_library(
     name = "_zxc_huffman_avx512__compile_0",
     srcs = _GENERATED_SRCS_2,
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_1)
+),
     hdrs = _GENERATED_HDRS_1,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     deps = _GENERATED_DEPS_1,
@@ -590,7 +594,9 @@ ch_cc_library(
     srcs = [
         ":src/lib/zxc_huffman.c",
     ],
-    copts = _GENERATED_COPTS_5,
+    copts = (
+(_GENERATED_COPTS_2)
+),
     hdrs = _GENERATED_HDRS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_2,
     deps = _GENERATED_DEPS_0,

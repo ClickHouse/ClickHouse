@@ -169,17 +169,10 @@ ch_cc_library(
         ":sdk/storage/azure-storage-files-datalake/src/datalake_utilities.cpp",
         ":sdk/storage/azure-storage-files-datalake/src/rest_client.cpp",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-I",
         repository_path("contrib/libxml2") + "/include",
@@ -208,7 +201,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse//:headers_087b9d25879b06c9",
         "@clickhouse//:headers_1fd9e05d91f5eb25",

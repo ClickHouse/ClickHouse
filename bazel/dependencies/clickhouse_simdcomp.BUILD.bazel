@@ -31,12 +31,11 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    copts = select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
             "-w",
             "-std=gnu11",
-            "-D",
-            "OS_LINUX",
             "-isystem",
             repository_path("contrib/simdcomp") + "/include",
             "-isystem",
@@ -59,7 +58,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             ":headers_22a4509c6be425e1",

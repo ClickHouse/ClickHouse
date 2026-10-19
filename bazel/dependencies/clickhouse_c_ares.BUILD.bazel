@@ -139,17 +139,10 @@ ch_cc_library(
         ":src/lib/util/ares_timeval.c",
         ":src/lib/util/ares_uri.c",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-isystem",
         repository_path("contrib/c-ares") + "/src/lib/include",
         "-isystem",
@@ -189,7 +182,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse//:headers_ec695b8a0ea8c1f4",
         ":headers_001ac6f0c9c53e75",

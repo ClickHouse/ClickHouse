@@ -1266,17 +1266,10 @@ ch_cc_library(
         ":src/time_zone_posix.cc",
         ":src/zone_info_source.cc",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-I",
         repository_path("contrib/cctz") + "/include",
@@ -1289,7 +1282,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         ":headers_3db3dfe23706eb2f",
         ":headers_7764faaa786c9086",
@@ -1333,12 +1327,10 @@ ch_cc_library(
             ":config/aarch64/contrib/cctz-cmake/TimeZones.generated.cpp",
         ],
     }),
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
     ] + select({
         "@platforms//cpu:x86_64": [
@@ -1356,7 +1348,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     additional_compiler_inputs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/embedded/contrib/cctz/testdata/zoneinfo/Africa/Abidjan",

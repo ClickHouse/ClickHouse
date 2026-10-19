@@ -44,17 +44,10 @@ ch_cc_library(
         ":internal/cld2_generated_distinctoctachrome.cc",
         ":internal/cld_generated_score_quad_octa_2.cc",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-Wno-reserved-id-macro",
         "-Wno-c++11-narrowing",
         "-nostdinc++",
@@ -69,7 +62,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         ":headers_366a5547e4285353",
         ":headers_d55c85c44d2184ec",

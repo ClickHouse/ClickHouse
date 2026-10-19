@@ -21,12 +21,10 @@ ch_cc_library(
     srcs = [
         ":src/simdjson.cpp",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
     ] + select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -47,7 +45,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         ":headers_bbf9a7cd86f426f2",
         ":headers_d8cac31ff95b438c",

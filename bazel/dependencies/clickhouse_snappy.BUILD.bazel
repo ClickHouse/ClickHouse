@@ -103,12 +103,10 @@ ch_cc_library(
         ":snappy-stubs-internal.cc",
         ":snappy.cc",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-isystem",
         repository_path("contrib/snappy"),
@@ -129,7 +127,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             ":config/x86_64/contrib/snappy-cmake/config.h",

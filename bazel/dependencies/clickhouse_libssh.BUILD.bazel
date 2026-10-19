@@ -121,12 +121,10 @@ ch_cc_library(
         ":src/bind_config.c",
         ":src/server.c",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-I",
         repository_path("contrib/libssh") + "/include",
         "-I",
@@ -177,7 +175,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse//:headers_1fd9e05d91f5eb25",
     ] + select({

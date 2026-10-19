@@ -30,17 +30,10 @@ ch_cc_library(
         ":src/util.cxx",
         ":src/wcwidth.cpp",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-isystem",
         repository_path("contrib/replxx") + "/include",
@@ -53,7 +46,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         ":headers_816a5bf5981264b1",
         ":headers_da490ae2bae04cce",

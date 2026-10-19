@@ -76,12 +76,10 @@ ch_cc_library(
         ":src/version.cxx",
         ":src/wait.cxx",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-isystem",
         repository_path("contrib/libpqxx") + "/include",
@@ -109,7 +107,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse//:headers_5c80754e4205425a",
     ] + select({

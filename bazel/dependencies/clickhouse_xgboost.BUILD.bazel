@@ -141,12 +141,10 @@ ch_cc_library(
         "@clickhouse_dmlc_core//:src/io/filesys.cc",
         "@clickhouse_dmlc_core//:src/config.cc",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-Wall",
         "-Wno-unknown-pragmas",
     ] + select({
@@ -174,7 +172,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse_dmlc_core//:headers_27d1d3ded2ddddc0",
         "@clickhouse_dmlc_core//:headers_509ded1923e056b5",
@@ -341,12 +340,10 @@ ch_cc_library(
         ":src/gbm/gblinear.cc",
         ":src/context.cc",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-std=c++17",
         "-include",
         "exception",
@@ -372,7 +369,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse_dmlc_core//:headers_e52d7e1f3fa39363",
     ] + select({

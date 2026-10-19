@@ -1115,17 +1115,11 @@ _GENERATED_ADDITIONAL_COMPILER_INPUTS_0 = [
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ]
 
-_GENERATED_COPTS_1 = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+
+
+_GENERATED_COPTS_0 = [
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-I",
         repository_path("contrib/grpc") + "/include",
         "-I",
@@ -1182,7 +1176,9 @@ ch_cc_library(
         ":third_party/address_sorting/address_sorting_posix.c",
         ":third_party/address_sorting/address_sorting_windows.c",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         ":headers_5214b3fd03448ed1",
         ":headers_a61db6f10ae887b4",
@@ -1258,17 +1254,10 @@ ch_cc_library(
         ":src/core/util/windows/time.cc",
         ":src/core/util/windows/tmpfile.cc",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=c++17",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-I",
         repository_path("contrib/grpc") + "/include",
@@ -1297,7 +1286,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse_abseil_cpp//:headers_a3c3998d32c664e7",
         ":headers_1f3f0414369dddad",
@@ -2006,12 +1996,10 @@ ch_cc_library(
         ":src/core/xds/xds_client/xds_bootstrap.cc",
         ":src/core/xds/xds_client/xds_client.cc",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++17",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-I",
         repository_path("contrib/grpc") + "/include",
@@ -2065,7 +2053,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse//:headers_1fd9e05d91f5eb25",
         "@clickhouse//:headers_ec695b8a0ea8c1f4",
@@ -2574,12 +2563,10 @@ ch_cc_library(
         ":src/core/ext/upbdefs-gen/xds/type/v3/range.upbdefs.c",
         ":src/core/ext/upbdefs-gen/xds/type/v3/typed_struct.upbdefs.c",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-I",
         repository_path("contrib/grpc") + "/include",
         "-I",
@@ -2654,7 +2641,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse//:headers_1fd9e05d91f5eb25",
         "@clickhouse//:headers_ec695b8a0ea8c1f4",
@@ -2974,12 +2962,10 @@ ch_cc_library(
         ":src/cpp/util/string_ref.cc",
         ":src/cpp/util/time_cc.cc",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++17",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-I",
         repository_path("contrib/grpc") + "/include",
@@ -3037,7 +3023,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse//:headers_1fd9e05d91f5eb25",
         "@clickhouse//:headers_ec695b8a0ea8c1f4",
@@ -3241,12 +3228,10 @@ ch_cc_library(
         ":src/cpp/util/string_ref.cc",
         ":src/cpp/util/time_cc.cc",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++17",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-I",
         repository_path("contrib/grpc") + "/include",
@@ -3298,7 +3283,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse//:headers_ec695b8a0ea8c1f4",
         "@clickhouse_abseil_cpp//:headers_a3c3998d32c664e7",
@@ -3783,12 +3769,10 @@ ch_cc_library(
         ":src/compiler/python_generator.cc",
         ":src/compiler/ruby_generator.cc",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++17",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-I",
         repository_path("contrib/grpc") + "/include",
@@ -3832,7 +3816,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse_abseil_cpp//:headers_a3c3998d32c664e7",
         "@clickhouse_google_protobuf//:headers_14cf14cd07cd6189",
@@ -4379,12 +4364,10 @@ ch_cc_library(
         ":src/core/util/validation_errors.cc",
         ":src/core/util/work_serializer.cc",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++17",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-I",
         repository_path("contrib/grpc") + "/include",
@@ -4432,7 +4415,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse//:headers_ec695b8a0ea8c1f4",
         "@clickhouse_abseil_cpp//:headers_a3c3998d32c664e7",
@@ -4593,12 +4577,10 @@ ch_cc_library(
         ":src/core/ext/upbdefs-gen/src/proto/grpc/channelz/v2/property_list.upbdefs.c",
         ":src/core/ext/upbdefs-gen/src/proto/grpc/channelz/v2/service.upbdefs.c",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-I",
         repository_path("contrib/grpc") + "/include",
         "-I",
@@ -4667,7 +4649,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse//:headers_ec695b8a0ea8c1f4",
         "@clickhouse_abseil_cpp//:headers_a3c3998d32c664e7",
@@ -4816,7 +4799,9 @@ ch_cc_library(
         ":third_party/upb/upb/wire/eps_copy_input_stream.c",
         ":third_party/upb/upb/wire/reader.c",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         ":headers_20b8d463fa2dfe2c",
         ":headers_4ca56fd58e3cc842",
@@ -4863,7 +4848,9 @@ ch_cc_library(
         ":third_party/upb/upb/json/decode.c",
         ":third_party/upb/upb/json/encode.c",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         ":headers_5214b3fd03448ed1",
         ":headers_8f1af7c843d85216",
@@ -4915,7 +4902,9 @@ ch_cc_library(
         ":third_party/upb/upb/message/map_sorter.c",
         ":third_party/upb/upb/message/message.c",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         ":headers_5214b3fd03448ed1",
         ":headers_5ff37d5f4104c599",
@@ -4962,7 +4951,9 @@ ch_cc_library(
         ":third_party/upb/upb/wire/eps_copy_input_stream.c",
         ":third_party/upb/upb/wire/reader.c",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         ":headers_4da18fe2075cbe70",
         ":headers_5214b3fd03448ed1",
@@ -5008,7 +4999,9 @@ ch_cc_library(
         ":third_party/upb/upb/mini_table/message.c",
         ":third_party/upb/upb/hash/common.c",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         ":headers_5214b3fd03448ed1",
         ":headers_7de51dcbb803c79e",
@@ -5066,7 +5059,9 @@ ch_cc_library(
         ":third_party/upb/upb/reflection/oneof_def.c",
         ":third_party/upb/upb/reflection/service_def.c",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         ":headers_5214b3fd03448ed1",
         ":headers_5b33d9bdbcf590a6",
@@ -5112,7 +5107,9 @@ ch_cc_library(
         ":third_party/upb/upb/text/encode.c",
         ":third_party/upb/upb/text/internal/encode.c",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         ":headers_04d56b37464678f4",
         ":headers_5214b3fd03448ed1",
@@ -5163,7 +5160,9 @@ ch_cc_library(
         ":third_party/upb/upb/wire/internal/decoder.c",
         ":third_party/upb/upb/wire/reader.c",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         ":headers_5214b3fd03448ed1",
         ":headers_92c06291c26e3a79",
@@ -5209,7 +5208,9 @@ ch_cc_library(
         ":third_party/utf8_range/range2-neon.c",
         ":third_party/utf8_range/range2-sse.c",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         ":headers_5214b3fd03448ed1",
         ":headers_a66bef54d21040a6",

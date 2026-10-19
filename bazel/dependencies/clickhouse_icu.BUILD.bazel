@@ -42,17 +42,8 @@ ch_cc_library(
     srcs = [
         "@clickhouse_icudata//:icudt78l_dat.S",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
-        "-D",
-        "OS_LINUX",
-        "-Werror",
-    ] + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
+    copts = (
+cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
         "x86_64": {
             "language": "ASM",
             "includes": [
@@ -83,7 +74,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse_icudata//:headers_b97c5d5c5622cefc",
     ] + [
@@ -381,17 +373,10 @@ ch_cc_library(
         ":icu4c/source/i18n/zrule.cpp",
         ":icu4c/source/i18n/ztrans.cpp",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-isystem",
         repository_path("contrib/icu") + "/icu4c/source/i18n",
@@ -406,7 +391,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         ":headers_199858a7c4bdd302",
         ":headers_d635030f4caaed10",
@@ -654,17 +640,10 @@ ch_cc_library(
         ":icu4c/source/common/uvectr64.cpp",
         ":icu4c/source/common/wintz.cpp",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-isystem",
         repository_path("contrib/icu") + "/icu4c/source/common",
@@ -677,7 +656,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         ":headers_769cf5385b9783f2",
         ":headers_d635030f4caaed10",

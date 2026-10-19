@@ -50,17 +50,11 @@ _GENERATED_FEATURES_0 = [
         "-llvm_system_c_headers",
     ]
 
-_GENERATED_COPTS_1 = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+
+
+_GENERATED_COPTS_0 = [
         "-w",
         "-std=c++17",
-        "-D",
-        "OS_LINUX",
         "-fno-char8_t",
         "-nostdinc++",
         "-isystem",
@@ -95,7 +89,9 @@ ch_cc_library(
         ":c++/src/capnp/dynamic.c++",
         ":c++/src/capnp/stringify.c++",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         ":headers_1a517b7a59fb090e",
         ":headers_6aa8f1952a966d56",
@@ -139,7 +135,9 @@ ch_cc_library(
         ":c++/src/capnp/schema-parser.c++",
         ":c++/src/capnp/serialize-text.c++",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         ":headers_1a517b7a59fb090e",
         ":headers_6aa8f1952a966d56",
@@ -197,7 +195,9 @@ ch_cc_library(
         ":c++/src/kj/filesystem-disk-win32.c++",
         ":c++/src/kj/parse/char.c++",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         ":headers_0bbe329c35ba79c8",
         ":headers_1a517b7a59fb090e",

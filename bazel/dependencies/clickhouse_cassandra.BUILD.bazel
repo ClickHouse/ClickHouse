@@ -218,12 +218,10 @@ ch_cc_library(
         ":src/ssl/ssl_openssl_impl.cpp",
         ":src/ssl/ring_buffer_bio.cpp",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++17",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-I",
     ] + select({
@@ -303,7 +301,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse//:headers_1fd9e05d91f5eb25",
         "@clickhouse//:headers_3e25de38c7943983",
@@ -446,17 +445,11 @@ _GENERATED_LOCAL_DEFINES_0 = [
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ]
 
-_GENERATED_COPTS_1 = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+
+
+_GENERATED_COPTS_0 = [
         "-w",
         "-std=c++17",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
     ] + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
         "x86_64": {
@@ -474,7 +467,9 @@ ch_cc_library(
     srcs = [
         ":src/third_party/curl/hostcheck.cpp",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         ":headers_84c564dfaf227bd1",
     ] + [
@@ -506,7 +501,9 @@ ch_cc_library(
     srcs = [
         ":src/third_party/hdr_histogram/hdr_histogram.cpp",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         ":headers_319e5d3b3196be35",
     ] + [
@@ -538,17 +535,10 @@ ch_cc_library(
     srcs = [
         ":src/third_party/http-parser/http_parser.c",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
     ] + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
         "x86_64": {
             "language": "C",
@@ -580,7 +570,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = [
         ":headers_99ad2862e1989565",
     ] + [

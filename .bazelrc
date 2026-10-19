@@ -6,6 +6,7 @@ common --compilation_mode=opt
 # retain exceptions such as -ffp-contract=fast on the array functions.
 common --copt=-O3
 common --copt=-DNDEBUG
+common --copt=-DOS_LINUX
 common --copt=-gz=zlib
 common --copt=--no-default-config
 common --copt=-pipe
@@ -20,15 +21,11 @@ common --copt=-fstack-protector-strong
 common --copt=-fstack-clash-protection
 common --copt=-ffp-contract=off
 common --copt=-fno-math-errno
-common --conlyopt=-fPIE
-common --conlyopt=-fdiagnostics-absolute-paths
-common --conlyopt=-fdiagnostics-color=always
-common --conlyopt=-Werror
-common --cxxopt=-fPIE
-common --cxxopt=-fdiagnostics-absolute-paths
-common --cxxopt=-fdiagnostics-color=always
+common --copt=-fPIE
+common --copt=-fdiagnostics-absolute-paths
+common --copt=-fdiagnostics-color=always
+common --copt=-Werror
 common --cxxopt=-fstrict-vtable-pointers
-common --cxxopt=-Werror
 # Match cmake/cxx.cmake for libraries supplied by external Bazel modules too.
 common --cxxopt=-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
 common --verbose_failures

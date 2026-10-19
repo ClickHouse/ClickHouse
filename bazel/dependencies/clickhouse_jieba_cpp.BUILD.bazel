@@ -28,17 +28,10 @@ ch_cc_library(
         ":src/jieba_mp_seg.cpp",
         ":src/jieba_hmm_seg.cpp",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "--embed-dir=" + repository_path("contrib/Jieba-CPP") + "/data",
         "-nostdinc++",
         "-I",
@@ -58,7 +51,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse_darts_clone//:headers_04e97e6eeafa177f",
         ":headers_17398d51c3a57a7a",

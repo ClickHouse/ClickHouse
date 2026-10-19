@@ -20,17 +20,10 @@ ch_cc_library(
     srcs = [
         ":src/ulid.c",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-isystem",
         repository_path("contrib/ulid-c") + "/include",
     ] + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
@@ -64,7 +57,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = [
         ":headers_2966a8e3356e1fb6",
         ":headers_e36680d2f3c650e4",

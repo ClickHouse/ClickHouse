@@ -573,12 +573,10 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-g1",
         "-nostdinc++",
         "-I",
@@ -665,7 +663,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/orc_proto.pb.h",
@@ -793,12 +792,10 @@ ch_cc_library(
         ":cpp/src/arrow/vendored/uriparser/UriResolve.c",
         ":cpp/src/arrow/vendored/uriparser/UriShorten.c",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-g1",
         "-I",
         repository_path("contrib/zstd") + "/lib",
@@ -906,7 +903,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/orc_proto.pb.h",
@@ -1118,12 +1116,10 @@ ch_cc_library(
         ":cpp/src/arrow/flight/sql/server.cc",
         ":cpp/src/arrow/flight/sql/sql_info_internal.cc",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-I",
     ] + select({
@@ -1213,7 +1209,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.h",
@@ -1492,12 +1489,10 @@ ch_cc_library(
         "@clickhouse_orc//:c++/src/sargs/SearchArgument.cc",
         "@clickhouse_orc//:c++/src/sargs/TruthValue.cc",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-include",
         repository_path("contrib/google-protobuf") + "/src/google/protobuf/stubs/port.h",
         "-nostdinc++",
@@ -1572,7 +1567,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/orc_proto.pb.h",
@@ -1878,12 +1874,10 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-g1",
         "-nostdinc++",
         "-isystem",
@@ -1944,7 +1938,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/arrow-cmake/orc_proto.pb.h",

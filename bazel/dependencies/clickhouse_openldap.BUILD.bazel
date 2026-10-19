@@ -52,12 +52,10 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/openldap-cmake/lber-version.c",
         ],
     }),
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-isystem",
     ] + select({
         "@platforms//cpu:x86_64": [
@@ -106,7 +104,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse//:headers_1fd9e05d91f5eb25",
     ] + select({
@@ -248,12 +247,10 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/openldap-cmake/ldap-version.c",
         ],
     }),
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-isystem",
     ] + select({
         "@platforms//cpu:x86_64": [
@@ -302,7 +299,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse//:headers_1fd9e05d91f5eb25",
     ] + select({

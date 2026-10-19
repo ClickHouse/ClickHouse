@@ -151,17 +151,10 @@ ch_cc_library(
         ":src/s2/util/math/mathutil.cc",
         ":src/s2/util/units/length-units.cc",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-isystem",
         repository_path("contrib/s2geometry") + "/src",
@@ -182,7 +175,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse//:headers_1fd9e05d91f5eb25",
         "@clickhouse//:headers_77a5098a8c820026",

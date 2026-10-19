@@ -42,12 +42,10 @@ ch_cc_library(
         ":decompress.c",
         ":bzlib.c",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-isystem",
         repository_path("contrib/bzip2"),
         "-isystem",
@@ -89,7 +87,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             ":config/x86_64/contrib/bzip2/bz_version.h",

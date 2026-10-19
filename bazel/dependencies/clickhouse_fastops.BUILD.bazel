@@ -40,17 +40,10 @@ ch_cc_library(
             ":fastops/neon/ops_neon.cpp",
         ],
     }),
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-isystem",
         repository_path("contrib/fastops"),
@@ -63,7 +56,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         ":headers_4d91f4973a41cb44",
     ] + select({
@@ -109,13 +103,12 @@ ch_cc_library(
             ":fastops/sve/ops_sve.cpp",
         ],
     }),
-    copts = select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
             "-w",
             "-std=c++23",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-march=armv8-a+sve",
             "-isystem",
@@ -126,7 +119,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [

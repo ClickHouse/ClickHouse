@@ -184,17 +184,10 @@ ch_cc_library(
         ":runtime/Cpp/runtime/src/tree/xpath/XPathWildcardAnywhereElement.cpp",
         ":runtime/Cpp/runtime/src/tree/xpath/XPathWildcardElement.cpp",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-I",
         repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src",
@@ -223,7 +216,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         ":headers_29ab6cfc2cab4a1e",
         ":headers_6076180fda294687",

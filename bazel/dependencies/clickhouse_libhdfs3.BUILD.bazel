@@ -291,12 +291,10 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/libhdfs3-cmake/datatransfer.pb.cc",
         ],
     }),
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-include",
         "contrib/libhdfs3-cmake/absl_log_undef.h",
         "-include",
@@ -400,7 +398,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse//:contrib/libhdfs3-cmake/absl_log_undef.h",
     ] + select({
@@ -563,12 +562,10 @@ ch_cc_library(
     srcs = [
         ":src/rpc/RpcClient.cpp",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-include",
         "contrib/libhdfs3-cmake/absl_log_undef.h",
         "-include",
@@ -673,7 +670,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse//:contrib/libhdfs3-cmake/absl_log_undef.h",
     ] + select({

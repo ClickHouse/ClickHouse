@@ -51,12 +51,10 @@ ch_cc_library(
         ":src/cluster_config.cxx",
         ":src/client_req_stream.cxx",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-I",
         "src",
@@ -348,7 +346,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:config/x86_64/base/base/GitHash.generated.cpp",

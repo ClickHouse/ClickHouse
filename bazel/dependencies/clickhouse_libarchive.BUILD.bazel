@@ -144,12 +144,10 @@ ch_cc_library(
         ":libarchive/filter_fork_windows.c",
         ":libarchive/xxhash.c",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-Wno-reserved-macro-identifier",
         "-I",
         "contrib/libarchive-cmake",
@@ -208,7 +206,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse//:headers_01272d8bcb118649",
     ] + select({

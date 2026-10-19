@@ -40,12 +40,10 @@ ch_cc_library(
         ":compat/unzip.c",
         ":compat/ioapi.c",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-I",
         repository_path("contrib/minizip-ng"),
         "-I",
@@ -110,7 +108,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse//:headers_1fd9e05d91f5eb25",
         "@clickhouse//:headers_3e25de38c7943983",

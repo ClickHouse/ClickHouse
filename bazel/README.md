@@ -108,6 +108,9 @@ the complete `//...` build, even when the server does not depend on them.
 `build_file.py` reads unconditional `common --copt`, `--conlyopt`, and
 `--cxxopt` entries from `.bazelrc`. It omits those flags from generated
 native libraries, including `-O3`, `-DNDEBUG`, and `-gz=zlib`.
+`OS_LINUX`, position independence, and diagnostics shared by C and C++ are
+also `common --copt` options. The generator recognizes both `-DOS_LINUX`
+and CMake's two-argument `-D OS_LINUX` spelling.
 `ch_cc_library.bzl` selects the base `-march` flags from the target platform's
 `@platforms//cpu` constraint. Its CPU flags precede the library's `copts`,
 so a later ISA override still wins. `clickhouse_code = True` adds the
@@ -115,6 +118,9 @@ ClickHouse XRay settings, `-Wall`, and `-Wextra` only for CMake groups which
 originally requested all five flags. Other warning exceptions remain in
 `copts`. NASM, Cargo, custom runtime actions, and executable code generators
 keep their own compiler flags.
+`compact_build.py` removes empty list additions and collapses identical
+x86-64/ARM64 `select()` lists. It retains differing or single-platform
+selections and verifies the expanded generated BUILD statements.
 
 The native reference configuration can also build ClickHouse with CMake.
 For cross-compilation, the reference exposes inline TableGen targets through

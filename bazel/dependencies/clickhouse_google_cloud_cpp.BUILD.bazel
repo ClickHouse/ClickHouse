@@ -133,12 +133,11 @@ _GENERATED_ADDITIONAL_COMPILER_INPUTS_0 = [
         "@clickhouse_sysroot//:linux_compile_files",
     ]
 
-_GENERATED_COPTS_1 = [
-    ] + [
+
+
+_GENERATED_COPTS_0 = [
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-I",
         repository_path("contrib/re2"),
@@ -208,7 +207,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.h",
@@ -398,7 +399,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/auth.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.h",
@@ -597,7 +600,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/backend.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/backend.grpc.pb.h",
@@ -778,7 +783,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/billing.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.h",
@@ -1004,7 +1011,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/client.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/client.grpc.pb.h",
@@ -1194,7 +1203,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/config_change.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/config_change.grpc.pb.h",
@@ -1375,7 +1386,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/consumer.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/consumer.grpc.pb.h",
@@ -1556,7 +1569,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/context.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/context.grpc.pb.h",
@@ -1737,7 +1752,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/control.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/control.grpc.pb.h",
@@ -1927,7 +1944,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/distribution.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.h",
@@ -2126,7 +2145,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/documentation.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/documentation.grpc.pb.h",
@@ -2307,7 +2328,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/endpoint.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.h",
@@ -2506,7 +2529,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/error_reason.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/error_reason.grpc.pb.h",
@@ -2687,7 +2712,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/field_behavior.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/field_behavior.grpc.pb.h",
@@ -2868,7 +2895,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/field_info.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/field_info.grpc.pb.h",
@@ -3049,7 +3078,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/http.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/http.grpc.pb.h",
@@ -3230,7 +3261,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/httpbody.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/httpbody.grpc.pb.h",
@@ -3411,7 +3444,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.h",
@@ -3592,7 +3627,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/launch_stage.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/launch_stage.grpc.pb.h",
@@ -3773,7 +3810,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/log.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.h",
@@ -3963,7 +4002,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/logging.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.h",
@@ -4171,7 +4212,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/metric.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.h",
@@ -4370,7 +4413,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.h",
@@ -4569,7 +4614,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/monitoring.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.h",
@@ -4768,7 +4815,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/policy.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/policy.grpc.pb.h",
@@ -4949,7 +4998,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/quota.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.h",
@@ -5148,7 +5199,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/resource.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/resource.grpc.pb.h",
@@ -5329,7 +5382,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/routing.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/routing.grpc.pb.h",
@@ -5510,7 +5565,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/service.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.h",
@@ -5907,7 +5964,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/source_info.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/source_info.grpc.pb.h",
@@ -6088,7 +6147,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/system_parameter.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/system_parameter.grpc.pb.h",
@@ -6269,7 +6330,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/usage.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.h",
@@ -6477,7 +6540,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/api/visibility.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/visibility.grpc.pb.h",
@@ -6658,7 +6723,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/field_behavior.grpc.pb.h",
@@ -6848,7 +6915,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.grpc.pb.h",
@@ -7029,7 +7098,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.h",
@@ -7246,7 +7317,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.grpc.pb.h",
@@ -7483,12 +7556,10 @@ ch_cc_library(
         ":google/cloud/tracing_options.cc",
         ":google/cloud/version.cc",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-g1",
         "-nostdinc++",
         "-I",
@@ -7519,7 +7590,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -8020,12 +8092,10 @@ ch_cc_library(
         ":google/cloud/internal/time_utils.cc",
         ":google/cloud/internal/unified_grpc_credentials.cc",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-I",
         repository_path("contrib/google-cloud-cpp"),
@@ -8106,7 +8176,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -8779,7 +8850,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/field_behavior.grpc.pb.h",
@@ -8978,7 +9051,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.h",
@@ -9222,7 +9297,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.h",
@@ -9484,7 +9561,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/iam/v1/options.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.h",
@@ -9683,7 +9762,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.h",
@@ -9891,7 +9972,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/longrunning/operations.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.h",
@@ -10159,12 +10242,10 @@ ch_cc_library(
         ":google/cloud/internal/unified_rest_credentials.cc",
         "@clickhouse//:contrib/google-cloud-cpp-cmake/poco_rest_client.cc",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-g1",
         "-nostdinc++",
         "-I",
@@ -10209,7 +10290,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -10770,7 +10852,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/rpc/code.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/rpc/code.grpc.pb.h",
@@ -10951,7 +11035,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.grpc.pb.h",
@@ -11132,7 +11218,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/rpc/error_details.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/rpc/error_details.grpc.pb.h",
@@ -11313,7 +11401,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/rpc/status.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/rpc/error_details.grpc.pb.h",
@@ -11595,12 +11685,10 @@ ch_cc_library(
         ":google/cloud/storage/well_known_headers.cc",
         ":google/cloud/storage/well_known_parameters.cc",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-g1",
         "-nostdinc++",
         "-I",
@@ -11635,7 +11723,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -12184,12 +12273,10 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/storage/v2/storage.grpc.pb.cc",
         ],
     }),
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-g1",
         "-nostdinc++",
         "-I",
@@ -12246,7 +12333,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.h",
@@ -12535,7 +12623,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/calendar_period.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/calendar_period.grpc.pb.h",
@@ -12716,7 +12806,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/color.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/color.grpc.pb.h",
@@ -12897,7 +12989,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/date.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/date.grpc.pb.h",
@@ -13078,7 +13172,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/datetime.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/datetime.grpc.pb.h",
@@ -13259,7 +13355,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/dayofweek.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/dayofweek.grpc.pb.h",
@@ -13440,7 +13538,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/decimal.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/decimal.grpc.pb.h",
@@ -13621,7 +13721,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/expr.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/expr.grpc.pb.h",
@@ -13802,7 +13904,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/fraction.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/fraction.grpc.pb.h",
@@ -13983,7 +14087,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/interval.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/interval.grpc.pb.h",
@@ -14164,7 +14270,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/latlng.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/latlng.grpc.pb.h",
@@ -14345,7 +14453,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/localized_text.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/localized_text.grpc.pb.h",
@@ -14526,7 +14636,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/money.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/money.grpc.pb.h",
@@ -14707,7 +14819,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/month.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/month.grpc.pb.h",
@@ -14888,7 +15002,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/phone_number.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/phone_number.grpc.pb.h",
@@ -15069,7 +15185,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/postal_address.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/postal_address.grpc.pb.h",
@@ -15250,7 +15368,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/quaternion.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/quaternion.grpc.pb.h",
@@ -15431,7 +15551,9 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/contrib/google-cloud-cpp-cmake/google/type/timeofday.grpc.pb.cc",
         ],
     }),
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:gen/x86_64/contrib/google-cloud-cpp-cmake/google/type/timeofday.grpc.pb.h",

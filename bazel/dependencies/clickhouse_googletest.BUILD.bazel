@@ -58,17 +58,10 @@ ch_cc_library(
     srcs = [
         ":googlemock/src/gmock-all.cc",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-I",
         repository_path("contrib/googletest") + "/googlemock",
@@ -85,7 +78,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         ":headers_5d5df83cb06efd16",
         ":headers_65bf810092bbd63a",
@@ -121,17 +115,10 @@ ch_cc_library(
     srcs = [
         ":googlemock/src/gmock_main.cc",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-isystem",
         repository_path("contrib/googletest") + "/googlemock/include",
@@ -146,7 +133,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         ":headers_5d5df83cb06efd16",
         ":headers_65bf810092bbd63a",
@@ -182,17 +170,10 @@ ch_cc_library(
     srcs = [
         ":googletest/src/gtest-all.cc",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-I",
         repository_path("contrib/googletest") + "/googletest",
@@ -207,7 +188,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         ":headers_6670588cd6679403",
         ":headers_8ce5d311a316ebf1",

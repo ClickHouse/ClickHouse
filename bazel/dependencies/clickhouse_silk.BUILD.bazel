@@ -54,12 +54,10 @@ ch_cc_library(
         ":src/fibers/profiler.cpp",
         ":src/fibers/sequencer.cpp",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-isystem",
         repository_path("contrib/silk") + "/include",
@@ -91,7 +89,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse_boost//:headers_1c2127cfc3a8f999",
     ] + select({
@@ -156,17 +155,10 @@ ch_cc_library(
         ":src/util/sharded-stack.cpp",
         ":src/util/tsc.cpp",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-isystem",
         repository_path("contrib/silk") + "/include",
@@ -185,7 +177,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse_boost//:headers_1c2127cfc3a8f999",
         "@clickhouse_librseq//:headers_4634b05ddde933f4",

@@ -441,12 +441,10 @@ ch_cc_library(
         ":libmariadb/mariadb_async.c",
         ":libmariadb/ma_context.c",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-D",
         "HAVE_COMPRESS",
         "-D",
@@ -518,7 +516,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse//:headers_1fd9e05d91f5eb25",
     ] + select({

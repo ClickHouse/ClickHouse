@@ -2202,12 +2202,10 @@ ch_cc_library(
         ":generated/src/aws-cpp-sdk-glue/source/model/XMLClassifier.cpp",
         "@clickhouse//:contrib/aws-cmake/aws_stubs.cpp",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-g1",
         "-nostdinc++",
         "-isystem",
@@ -2266,7 +2264,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse//:headers_1fd9e05d91f5eb25",
         "@clickhouse//:headers_990f3397bb7c1a77",
@@ -2374,12 +2373,11 @@ _GENERATED_ADDITIONAL_COMPILER_INPUTS_0 = [
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ]
 
-_GENERATED_COPTS_1 = [
-    ] + [
+
+
+_GENERATED_COPTS_0 = [
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-g1",
         "-isystem",
         repository_path("contrib/aws-c-cal") + "/include",
@@ -2724,7 +2722,9 @@ ch_cc_library(
         "@clickhouse_aws_c_sdkutils//:source/resource_name.c",
         "@clickhouse_aws_c_sdkutils//:source/sdkutils.c",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         "@clickhouse//:headers_1fd9e05d91f5eb25",
     ] + select({
@@ -2833,12 +2833,10 @@ ch_cc_library(
             "@clickhouse_aws_checksums//:source/arm/crc32c_arm.c",
         ],
     }),
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-g1",
     ] + select({
         "@platforms//cpu:x86_64": [
@@ -2940,7 +2938,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse//:headers_1fd9e05d91f5eb25",
     ] + select({
@@ -3005,7 +3004,9 @@ ch_cc_library(
     srcs = [
         "@clickhouse_aws_c_io//:source/tls_channel_handler.c",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         "@clickhouse//:headers_1fd9e05d91f5eb25",
     ] + select({

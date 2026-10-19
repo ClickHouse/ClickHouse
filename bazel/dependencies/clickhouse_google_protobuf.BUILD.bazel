@@ -436,12 +436,10 @@ ch_cc_library(
         ":src/google/protobuf/util/type_resolver_util.cc",
         ":src/google/protobuf/wire_format.cc",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++17",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-isystem",
         repository_path("contrib/google-protobuf") + "/src",
@@ -469,7 +467,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse_abseil_cpp//:headers_a3c3998d32c664e7",
         ":headers_0d6dea8dbbefd7bf",
@@ -625,17 +624,10 @@ ch_cc_library(
         ":src/google/protobuf/unknown_field_set_lite.cc",
         ":src/google/protobuf/wire_format_lite.cc",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=c++17",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-isystem",
         repository_path("contrib/google-protobuf") + "/src",
@@ -652,7 +644,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse_abseil_cpp//:headers_a3c3998d32c664e7",
         ":headers_14cf14cd07cd6189",
@@ -943,12 +936,10 @@ ch_cc_library(
         ":upb_generator/minitable/names_internal.cc",
         ":upb_generator/plugin.cc",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++17",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-I",
         repository_path("contrib/google-protobuf"),
@@ -980,7 +971,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse_abseil_cpp//:headers_a3c3998d32c664e7",
         ":headers_05b6e376e0460341",
@@ -1098,12 +1090,10 @@ ch_cc_library(
         ":upb/wire/internal/encoder.c",
         ":upb/wire/reader.c",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-I",
         repository_path("contrib/google-protobuf"),
         "-I",
@@ -1156,7 +1146,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse_abseil_cpp//:headers_a3c3998d32c664e7",
         ":headers_05b6e376e0460341",
@@ -1484,17 +1475,10 @@ ch_cc_library(
         ":third_party/utf8_range/range2-neon.c",
         ":third_party/utf8_range/range2-sse.c",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-I",
         repository_path("contrib/google-protobuf") + "/src",
         "-I",
@@ -1530,7 +1514,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = [
         ":headers_14cf14cd07cd6189",
         ":headers_e74006126233e49c",
@@ -1561,17 +1546,10 @@ ch_cc_library(
     srcs = [
         ":third_party/utf8_range/utf8_range.c",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-I",
         repository_path("contrib/google-protobuf") + "/src",
         "-I",
@@ -1609,7 +1587,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse_abseil_cpp//:headers_a3c3998d32c664e7",
         ":headers_14cf14cd07cd6189",

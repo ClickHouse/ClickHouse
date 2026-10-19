@@ -1508,12 +1508,11 @@ _GENERATED_ADDITIONAL_COMPILER_INPUTS_0 = [
         "@clickhouse_sysroot//:linux_compile_files",
     ]
 
-_GENERATED_COPTS_4 = [
-    ] + [
+
+
+_GENERATED_COPTS_0 = [
         "-w",
         "-std=c++17",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-I",
         repository_path("contrib/llvm-project") + "/llvm/include",
@@ -1554,7 +1553,9 @@ ch_cc_library(
         ":llvm/lib/Transforms/AggressiveInstCombine/AggressiveInstCombine.cpp",
         ":llvm/lib/Transforms/AggressiveInstCombine/TruncInstCombine.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -1717,7 +1718,9 @@ ch_cc_library(
         ":llvm/lib/Analysis/ValueTracking.cpp",
         ":llvm/lib/Analysis/VectorUtils.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -1757,7 +1760,9 @@ ch_cc_library(
         ":llvm/lib/AsmParser/LLParser.cpp",
         ":llvm/lib/AsmParser/Parser.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -1815,7 +1820,9 @@ ch_cc_library(
         ":llvm/lib/CodeGen/AsmPrinter/WinCFGuard.cpp",
         ":llvm/lib/CodeGen/AsmPrinter/WinException.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -1876,7 +1883,9 @@ ch_cc_library(
         ":llvm/lib/BinaryFormat/Wasm.cpp",
         ":llvm/lib/BinaryFormat/XCOFF.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -1907,7 +1916,9 @@ ch_cc_library(
         ":llvm/lib/Bitcode/Reader/MetadataLoader.cpp",
         ":llvm/lib/Bitcode/Reader/ValueList.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -1942,7 +1953,9 @@ ch_cc_library(
         ":llvm/lib/Bitcode/Writer/BitWriter.cpp",
         ":llvm/lib/Bitcode/Writer/ValueEnumerator.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -1974,7 +1987,9 @@ ch_cc_library(
     srcs = [
         ":llvm/lib/Bitstream/Reader/BitstreamReader.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -2001,7 +2016,9 @@ ch_cc_library(
     srcs = [
         ":llvm/lib/Transforms/CFGuard/CFGuard.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -2039,7 +2056,9 @@ ch_cc_library(
         ":llvm/lib/CGData/StableFunctionMap.cpp",
         ":llvm/lib/CGData/StableFunctionMapRecord.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -2310,7 +2329,9 @@ ch_cc_library(
         ":llvm/lib/CodeGen/WinEHPrepare.cpp",
         ":llvm/lib/CodeGen/XRayInstrumentation.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -2355,7 +2376,9 @@ ch_cc_library(
     srcs = [
         ":llvm/lib/CodeGenTypes/LowLevelType.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -2461,7 +2484,9 @@ ch_cc_library(
         ":llvm/lib/IR/Verifier.cpp",
         ":llvm/lib/IR/VFABIDemangler.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -2502,7 +2527,9 @@ ch_cc_library(
         ":llvm/lib/Transforms/Coroutines/SpillUtils.cpp",
         ":llvm/lib/Transforms/Coroutines/SuspendCrossingInfo.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -2587,7 +2614,9 @@ ch_cc_library(
         ":llvm/lib/DebugInfo/CodeView/TypeStreamMerger.cpp",
         ":llvm/lib/DebugInfo/CodeView/TypeTableCollection.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -2645,7 +2674,9 @@ ch_cc_library(
         ":llvm/lib/DebugInfo/DWARF/LowLevel/DWARFExpression.cpp",
         ":llvm/lib/DebugInfo/DWARF/LowLevel/DWARFUnwindTable.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -2685,7 +2716,9 @@ ch_cc_library(
         ":llvm/lib/Demangle/MicrosoftDemangleNodes.cpp",
         ":llvm/lib/Demangle/RustDemangle.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -2714,7 +2747,9 @@ ch_cc_library(
         ":llvm/lib/ExecutionEngine/SectionMemoryManager.cpp",
         ":llvm/lib/ExecutionEngine/TargetSelect.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -2754,7 +2789,9 @@ ch_cc_library(
     srcs = [
         ":llvm/lib/Frontend/Atomic/Atomic.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -2797,7 +2834,9 @@ ch_cc_library(
         ":llvm/lib/Frontend/HLSL/RootSignatureMetadata.cpp",
         ":llvm/lib/Frontend/HLSL/RootSignatureValidations.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -2831,7 +2870,9 @@ ch_cc_library(
         ":llvm/lib/Frontend/Offloading/PropertySet.cpp",
         ":llvm/lib/Frontend/Offloading/Utility.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -2866,7 +2907,9 @@ ch_cc_library(
         ":llvm/lib/Frontend/OpenMP/OMPContext.cpp",
         ":llvm/lib/Frontend/OpenMP/OMPIRBuilder.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -2936,7 +2979,9 @@ ch_cc_library(
         ":llvm/lib/CodeGen/GlobalISel/RegBankSelect.cpp",
         ":llvm/lib/CodeGen/GlobalISel/Utils.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -2982,7 +3027,9 @@ ch_cc_library(
     srcs = [
         ":llvm/lib/Transforms/HipStdPar/HipStdPar.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -3021,7 +3068,9 @@ ch_cc_library(
     srcs = [
         ":llvm/lib/IRPrinter/IRPrintingPasses.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -3059,7 +3108,9 @@ ch_cc_library(
     srcs = [
         ":llvm/lib/IRReader/IRReader.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -3107,7 +3158,9 @@ ch_cc_library(
         ":llvm/lib/Transforms/InstCombine/InstCombineVectorOps.cpp",
         ":llvm/lib/Transforms/InstCombine/InstructionCombining.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -3173,7 +3226,9 @@ ch_cc_library(
         ":llvm/lib/Transforms/Instrumentation/TypeSanitizer.cpp",
         ":llvm/lib/Transforms/Instrumentation/ValueProfileCollector.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -3213,7 +3268,9 @@ ch_cc_library(
         ":llvm/lib/Linker/IRMover.cpp",
         ":llvm/lib/Linker/LinkModules.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -3321,7 +3378,9 @@ ch_cc_library(
         ":llvm/lib/MC/WinCOFFObjectWriter.cpp",
         ":llvm/lib/MC/XCOFFObjectWriter.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -3354,7 +3413,9 @@ ch_cc_library(
         ":llvm/lib/MC/MCDisassembler/MCRelocationInfo.cpp",
         ":llvm/lib/MC/MCDisassembler/MCSymbolizer.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -3396,7 +3457,9 @@ ch_cc_library(
         ":llvm/lib/MC/MCParser/WasmAsmParser.cpp",
         ":llvm/lib/MC/MCParser/XCOFFAsmParser.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -3433,7 +3496,9 @@ ch_cc_library(
         ":llvm/lib/Transforms/ObjCARC/ProvenanceAnalysisEvaluator.cpp",
         ":llvm/lib/Transforms/ObjCARC/PtrState.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -3507,7 +3572,9 @@ ch_cc_library(
         ":llvm/lib/Object/WindowsResource.cpp",
         ":llvm/lib/Object/XCOFFObjectFile.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -3569,7 +3636,9 @@ ch_cc_library(
         ":llvm/lib/ObjectYAML/YAML.cpp",
         ":llvm/lib/ObjectYAML/yaml2obj.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -3610,7 +3679,9 @@ ch_cc_library(
         ":llvm/lib/Passes/PassBuilderPipelines.cpp",
         ":llvm/lib/Passes/StandardInstrumentations.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -3679,7 +3750,9 @@ ch_cc_library(
         ":llvm/lib/ProfileData/SampleProfWriter.cpp",
         ":llvm/lib/ProfileData/SymbolRemappingReader.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -3721,7 +3794,9 @@ ch_cc_library(
         ":llvm/lib/Remarks/YAMLRemarkParser.cpp",
         ":llvm/lib/Remarks/YAMLRemarkSerializer.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -3756,7 +3831,9 @@ ch_cc_library(
         ":llvm/lib/ExecutionEngine/RuntimeDyld/RuntimeDyldMachO.cpp",
         ":llvm/lib/ExecutionEngine/RuntimeDyld/Targets/RuntimeDyldELFMips.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -3805,7 +3882,9 @@ ch_cc_library(
         ":llvm/lib/SandboxIR/User.cpp",
         ":llvm/lib/SandboxIR/Value.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -3917,7 +3996,9 @@ ch_cc_library(
         ":llvm/lib/Transforms/Scalar/TailRecursionElimination.cpp",
         ":llvm/lib/Transforms/Scalar/WarnMissedTransforms.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -3981,7 +4062,9 @@ ch_cc_library(
         ":llvm/lib/CodeGen/SelectionDAG/StatepointLowering.cpp",
         ":llvm/lib/CodeGen/SelectionDAG/TargetLowering.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -4195,7 +4278,9 @@ ch_cc_library(
         ":llvm/lib/Support/Z3Solver.cpp",
         ":llvm/lib/Support/zOSLibFunctions.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -4217,12 +4302,10 @@ ch_cc_library(
         ":llvm/lib/Support/BLAKE3/blake3_portable.c",
         ":llvm/lib/Support/BLAKE3/blake3_neon.c",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-I",
         repository_path("contrib/llvm-project") + "/llvm/include",
         "-I",
@@ -4276,7 +4359,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -4357,11 +4441,9 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    copts = select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
-            "-D",
-            "OS_LINUX",
-            "-Werror",
             "-I",
             repository_path("contrib/llvm-project") + "/llvm/include",
             "-I",
@@ -4390,7 +4472,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     deps = _GENERATED_DEPS_1,
     features = _GENERATED_FEATURES_1,
@@ -4407,11 +4490,9 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    copts = select({
+    copts = (
+select({
         "@platforms//cpu:x86_64": [
-            "-D",
-            "OS_LINUX",
-            "-Werror",
             "-mavx512f",
             "-mavx512vl",
             "-I",
@@ -4442,7 +4523,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     deps = _GENERATED_DEPS_1,
     features = _GENERATED_FEATURES_1,
@@ -4475,7 +4557,9 @@ ch_cc_library(
         ":llvm/lib/Target/TargetMachineC.cpp",
         ":llvm/lib/Target/TargetMachine.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -4527,7 +4611,9 @@ ch_cc_library(
         ":llvm/lib/TargetParser/X86TargetParser.cpp",
         ":llvm/lib/TargetParser/XtensaTargetParser.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -4568,7 +4654,9 @@ ch_cc_library(
         ":llvm/lib/TextAPI/TextStubCommon.cpp",
         ":llvm/lib/TextAPI/Utils.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -4690,7 +4778,9 @@ ch_cc_library(
         ":llvm/lib/Transforms/Utils/ValueMapper.cpp",
         ":llvm/lib/Transforms/Utils/VNCoercion.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -4760,7 +4850,9 @@ ch_cc_library(
         ":llvm/lib/Transforms/Vectorize/VPlanUtils.cpp",
         ":llvm/lib/Transforms/Vectorize/VPlanVerifier.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -4810,12 +4902,12 @@ _GENERATED_ADDITIONAL_COMPILER_INPUTS_2 = select({
         "@platforms//cpu:aarch64": [],
     })
 
-_GENERATED_COPTS_5 = select({
+
+
+_GENERATED_COPTS_1 = select({
         "@platforms//cpu:x86_64": [
             "-w",
             "-std=c++17",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             repository_path("contrib/llvm-project") + "/llvm/include",
@@ -4909,7 +5001,9 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    copts = _GENERATED_COPTS_5,
+    copts = (
+(_GENERATED_COPTS_1)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     deps = _GENERATED_DEPS_1,
     features = _GENERATED_FEATURES_1,
@@ -4983,7 +5077,9 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    copts = _GENERATED_COPTS_5,
+    copts = (
+(_GENERATED_COPTS_1)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     deps = _GENERATED_DEPS_1,
     features = _GENERATED_FEATURES_1,
@@ -5020,7 +5116,9 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    copts = _GENERATED_COPTS_5,
+    copts = (
+(_GENERATED_COPTS_1)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     deps = _GENERATED_DEPS_1,
     features = _GENERATED_FEATURES_1,
@@ -5065,7 +5163,9 @@ ch_cc_library(
         ":llvm/lib/XRay/RecordPrinter.cpp",
         ":llvm/lib/XRay/Trace.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -5144,7 +5244,9 @@ ch_cc_library(
         ":llvm/lib/Transforms/IPO/ThinLTOBitcodeWriter.cpp",
         ":llvm/lib/Transforms/IPO/WholeProgramDevirt.cpp",
     ],
-    copts = _GENERATED_COPTS_4,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = _GENERATED_FEATURES_0,
@@ -12899,13 +13001,13 @@ _GENERATED_ADDITIONAL_COMPILER_INPUTS_3 = select({
         ],
     })
 
-_GENERATED_COPTS_6 = select({
+
+
+_GENERATED_COPTS_3 = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
             "-w",
             "-std=c++17",
-            "-D",
-            "OS_LINUX",
             "-nostdinc++",
             "-I",
             repository_path("contrib/llvm-project") + "/llvm/include",
@@ -12995,7 +13097,9 @@ ch_cc_library(
             ":llvm/lib/Target/AArch64/SVEIntrinsicOpts.cpp",
         ],
     }),
-    copts = _GENERATED_COPTS_6,
+    copts = (
+(_GENERATED_COPTS_3)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_5,
     deps = _GENERATED_DEPS_2,
     features = _GENERATED_FEATURES_2,
@@ -13066,7 +13170,9 @@ ch_cc_library(
             ":llvm/lib/Target/AArch64/Utils/AArch64BaseInfo.cpp",
         ],
     }),
-    copts = _GENERATED_COPTS_6,
+    copts = (
+(_GENERATED_COPTS_3)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_5,
     deps = _GENERATED_DEPS_2,
     features = _GENERATED_FEATURES_2,
@@ -13103,7 +13209,9 @@ ch_cc_library(
             ":llvm/lib/Target/AArch64/TargetInfo/AArch64TargetInfo.cpp",
         ],
     }),
-    copts = _GENERATED_COPTS_6,
+    copts = (
+(_GENERATED_COPTS_3)
+),
     local_defines = _GENERATED_LOCAL_DEFINES_5,
     deps = _GENERATED_DEPS_2,
     features = _GENERATED_FEATURES_2,

@@ -41,6 +41,23 @@ _LIBRARY_FLAGS = {
 CLICKHOUSE_TARGET_FLAGS = _LIBRARY_FLAGS['CLICKHOUSE_TARGET_FLAGS']
 CLICKHOUSE_CODE_FLAGS = _LIBRARY_FLAGS['CLICKHOUSE_CODE_FLAGS']
 
+def remove_global_compile_options(flags, language):
+    """Omit flags from .bazelrc, including CMake's split -D definitions."""
+    options = GLOBAL_COMPILE_OPTIONS[language]
+    result = []
+    position = 0
+    while position < len(flags):
+        flag = flags[position]
+        if (flag == '-D' and position + 1 < len(flags)
+                and '-D' + flags[position + 1] in options):
+            position += 2
+        elif flag in options:
+            position += 1
+        else:
+            result.append(flag)
+            position += 1
+    return result
+
 
 @dataclass
 class Select:
@@ -333,7 +350,7 @@ class BuildFile:
                             # These original CMake C groups have no -Werror.
                             if language == 'C' and name in {'glibc-compatibility', 'harmful'}:
                                 value = value + ['-Wno-error']
-                            value = [flag for flag in value if flag not in GLOBAL_COMPILE_OPTIONS[language]]
+                            value = remove_global_compile_options(value, language)
                             value = [flag for flag in value if flag not in CLICKHOUSE_TARGET_FLAGS[arch]]
                             if clickhouse_code:
                                 start = value.index(CLICKHOUSE_CODE_FLAGS[0])

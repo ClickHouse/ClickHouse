@@ -84,17 +84,10 @@ ch_cc_library(
         ":libstemmer/libstemmer.c",
         ":libstemmer/libstemmer_utf8.c",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-isystem",
         repository_path("contrib/libstemmer_c") + "/include",
     ] + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
@@ -128,7 +121,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = [
         ":headers_08d32d901d5d668d",
         ":headers_24294df135da7031",

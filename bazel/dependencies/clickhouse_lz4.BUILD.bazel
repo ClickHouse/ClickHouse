@@ -25,19 +25,10 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [ ],
-        "@platforms//cpu:aarch64": [],
-    }) + [
-    ] + select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-isystem",
         repository_path("contrib/lz4") + "/lib",
     ] + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
@@ -49,7 +40,8 @@ ch_cc_library(
             ],
         }
         for arch in ["x86_64", "aarch64"]
-    }),
+    })
+),
     local_defines = [
         "LZ4_FAST_DEC_LOOP=1",
         "STD_EXCEPTION_HAS_STACK_TRACE=1",

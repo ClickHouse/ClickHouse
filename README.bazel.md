@@ -145,6 +145,12 @@ preserved every x86-64 hash in the table above. The full comparison in
 ([Bazel build 86eecebf](https://app.buildbuddy.io/invocation/86eecebf-47e3-4263-9f12-9f3e84f2d341))
 returned `PARITY_STRIPPED_CMP_STATUS=0` and `PARITY_STATUS=0`.
 
+Using common `--copt` for shared C/C++ flags and `-DOS_LINUX`, and
+collapsing redundant CPU selections, preserved every x86-64 hash in the
+table. [BuildBuddy d21148b0](https://app.buildbuddy.io/invocation/d21148b0-7ae9-4305-8e90-ba1fe0b9a758)
+([Bazel build 9404f5b7](https://app.buildbuddy.io/invocation/9404f5b7-849b-4157-bb5b-6c8503712177))
+returned `PARITY_STRIPPED_CMP_STATUS=0` and `PARITY_STATUS=0`.
+
 The simplified generated configuration was verified in
 [BuildBuddy invocation c972df98](https://app.buildbuddy.io/invocation/c972df98-7d2d-4b65-ac42-5ebf5117b5a3)
 ([Bazel build](https://app.buildbuddy.io/invocation/7bbae2ed-c019-4a04-b07f-746a6570c815)).
@@ -280,6 +286,13 @@ The normalized copies passed `cmp`: `PARITY_STRIPPED_CMP_STATUS=0` and
 Clang, Clang++, Rust, Cargo and the reference TableGen tools are native ARM64
 ELFs. The original and plain-stripped binaries differ because their build IDs
 still include information from discarded sections.
+
+The common `--copt`, `-DOS_LINUX` and CPU selection cleanup preserved
+every ARM64 hash in the table.
+[BuildBuddy 7978c989](https://app.buildbuddy.io/invocation/7978c989-9762-46ce-96e7-956313e499fe)
+([Bazel build 26aa0801](https://app.buildbuddy.io/invocation/26aa0801-f625-4be7-9cdb-f4196ebb15ab))
+rechecked the native CMake reference and returned
+`PARITY_STRIPPED_CMP_STATUS=0` and `PARITY_STATUS=0`.
 
 The subsequent `ch_cc_library` and common optimization flags also preserved
 all ARM64 compiler, original ELF, plain-stripped, and normalized hashes in

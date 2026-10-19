@@ -145,17 +145,11 @@ _GENERATED_ADDITIONAL_COMPILER_INPUTS_0 = [
         "@clickhouse_sysroot//:linux_compile_files",
     ]
 
-_GENERATED_COPTS_1 = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+
+
+_GENERATED_COPTS_0 = [
         "-w",
         "-std=c++17",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-isystem",
         repository_path("contrib/abseil-cpp"),
@@ -179,7 +173,9 @@ ch_cc_library(
         ":absl/base/internal/thread_identity.cc",
         ":absl/base/internal/unscaledcycleclock.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -208,7 +204,9 @@ ch_cc_library(
     srcs = [
         ":absl/base/internal/cpu_detect.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -245,7 +243,9 @@ ch_cc_library(
     srcs = [
         ":absl/hash/internal/city.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_1,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -282,7 +282,9 @@ ch_cc_library(
     srcs = [
         ":absl/time/internal/cctz/src/civil_time_detail.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_2,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -309,7 +311,9 @@ ch_cc_library(
         ":absl/strings/cord.cc",
         ":absl/strings/cord_analysis.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         ":headers_a3c3998d32c664e7",
         ":headers_db24b64d44a6cdac",
@@ -382,7 +386,9 @@ ch_cc_library(
         ":absl/strings/internal/cord_rep_crc.cc",
         ":absl/strings/internal/cord_rep_consume.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_3,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -423,7 +429,9 @@ ch_cc_library(
     srcs = [
         ":absl/strings/internal/cordz_functions.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_3,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -452,7 +460,9 @@ ch_cc_library(
     srcs = [
         ":absl/strings/internal/cordz_handle.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_3,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -498,7 +508,9 @@ ch_cc_library(
     srcs = [
         ":absl/strings/internal/cordz_info.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_3,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -553,7 +565,9 @@ ch_cc_library(
     srcs = [
         ":absl/strings/internal/cordz_sample_token.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_3,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -612,7 +626,9 @@ ch_cc_library(
         ":absl/crc/internal/crc_memcpy_x86_arm_combined.cc",
         ":absl/crc/internal/crc_non_temporal_memcpy.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         ":headers_846b47f6349cddeb",
         ":headers_8b560772d08b198f",
@@ -663,7 +679,9 @@ ch_cc_library(
     srcs = [
         ":absl/crc/internal/crc_cord_state.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_4,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -703,7 +721,9 @@ ch_cc_library(
         ":absl/crc/internal/crc.cc",
         ":absl/crc/internal/crc_x86_arm_combined.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_4,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -745,7 +765,9 @@ ch_cc_library(
         ":absl/debugging/internal/decode_rust_punycode.cc",
         ":absl/debugging/internal/utf8_for_code_point.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_5,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -774,7 +796,9 @@ ch_cc_library(
         ":absl/debugging/internal/demangle.cc",
         ":absl/debugging/internal/demangle_rust.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_5,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -811,7 +835,9 @@ ch_cc_library(
     srcs = [
         ":absl/log/die_if_null.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_6,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -875,7 +901,9 @@ ch_cc_library(
     srcs = [
         ":absl/debugging/internal/examine_stack.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_5,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -922,7 +950,9 @@ ch_cc_library(
     srcs = [
         ":absl/profiling/internal/exponential_biased.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_7,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -955,7 +985,9 @@ ch_cc_library(
     srcs = [
         ":absl/debugging/failure_signal_handler.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_8,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -1003,7 +1035,9 @@ ch_cc_library(
     srcs = [
         ":absl/flags/commandlineflag.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_9,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -1046,7 +1080,9 @@ ch_cc_library(
     srcs = [
         ":absl/flags/internal/commandlineflag.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_10,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -1072,7 +1108,9 @@ ch_cc_library(
     srcs = [
         ":absl/flags/usage_config.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_9,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -1119,7 +1157,9 @@ ch_cc_library(
     srcs = [
         ":absl/flags/internal/flag.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_10,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -1171,7 +1211,9 @@ ch_cc_library(
     srcs = [
         ":absl/flags/marshalling.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_9,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -1207,7 +1249,9 @@ ch_cc_library(
     srcs = [
         ":absl/flags/parse.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_9,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -1278,7 +1322,9 @@ ch_cc_library(
     srcs = [
         ":absl/flags/internal/private_handle_accessor.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_10,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -1315,7 +1361,9 @@ ch_cc_library(
     srcs = [
         ":absl/flags/internal/program_name.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_10,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -1361,7 +1409,9 @@ ch_cc_library(
     srcs = [
         ":absl/flags/reflection.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_9,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -1427,7 +1477,9 @@ ch_cc_library(
     srcs = [
         ":absl/flags/usage.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_9,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -1497,7 +1549,9 @@ ch_cc_library(
     srcs = [
         ":absl/flags/internal/usage.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_10,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -1573,7 +1627,9 @@ ch_cc_library(
     srcs = [
         ":absl/synchronization/internal/graphcycles.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_11,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -1604,7 +1660,9 @@ ch_cc_library(
     srcs = [
         ":absl/base/internal/hardening.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -1630,7 +1688,9 @@ ch_cc_library(
     srcs = [
         ":absl/hash/internal/hash.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_1,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -1674,7 +1734,9 @@ ch_cc_library(
         ":absl/container/internal/hashtablez_sampler.cc",
         ":absl/container/internal/hashtablez_sampler_force_weak_definition.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_12,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -1721,7 +1783,9 @@ ch_cc_library(
     srcs = [
         ":absl/numeric/int128.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         ":headers_65f7a193e27fc327",
         ":headers_a3c3998d32c664e7",
@@ -1752,7 +1816,9 @@ ch_cc_library(
     srcs = [
         ":absl/synchronization/internal/kernel_timeout.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_11,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -1790,7 +1856,9 @@ ch_cc_library(
     srcs = [
         ":absl/debugging/leak_check.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_8,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -1816,7 +1884,9 @@ ch_cc_library(
     srcs = [
         ":absl/log/flags.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_6,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -1888,7 +1958,9 @@ ch_cc_library(
     srcs = [
         ":absl/log/globals.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_6,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -1938,7 +2010,9 @@ ch_cc_library(
     srcs = [
         ":absl/log/initialize.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_6,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -1997,7 +2071,9 @@ ch_cc_library(
     srcs = [
         ":absl/log/internal/check_op.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_13,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -2060,7 +2136,9 @@ ch_cc_library(
     srcs = [
         ":absl/log/internal/conditions.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_13,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -2090,7 +2168,9 @@ ch_cc_library(
     srcs = [
         ":absl/log/internal/fnmatch.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_13,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -2125,7 +2205,9 @@ ch_cc_library(
     srcs = [
         ":absl/log/internal/log_format.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_13,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -2165,7 +2247,9 @@ ch_cc_library(
     srcs = [
         ":absl/log/internal/globals.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_13,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -2203,7 +2287,9 @@ ch_cc_library(
     srcs = [
         ":absl/log/internal/log_sink_set.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_13,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -2256,7 +2342,9 @@ ch_cc_library(
     srcs = [
         ":absl/log/internal/log_message.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_13,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -2318,7 +2406,9 @@ ch_cc_library(
     srcs = [
         ":absl/log/internal/nullguard.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_13,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -2344,7 +2434,9 @@ ch_cc_library(
     srcs = [
         ":absl/log/internal/proto.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_13,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -2379,7 +2471,9 @@ ch_cc_library(
     srcs = [
         ":absl/log/internal/structured_proto.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_13,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -2422,7 +2516,9 @@ ch_cc_library(
     srcs = [
         ":absl/base/log_severity.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_14,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -2448,7 +2544,9 @@ ch_cc_library(
     srcs = [
         ":absl/log/log_sink.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_6,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -2486,7 +2584,9 @@ ch_cc_library(
     srcs = [
         ":absl/base/internal/low_level_alloc.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -2516,7 +2616,9 @@ ch_cc_library(
     srcs = [
         ":absl/profiling/internal/periodic_sampler.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_7,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -2551,7 +2653,9 @@ ch_cc_library(
         ":absl/random/discrete_distribution.cc",
         ":absl/random/gaussian_distribution.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_15,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -2594,7 +2698,9 @@ ch_cc_library(
         ":absl/random/internal/chi_square.cc",
         ":absl/random/internal/distribution_test_util.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_16,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -2630,7 +2736,9 @@ ch_cc_library(
     srcs = [
         ":absl/random/internal/entropy_pool.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_16,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -2683,7 +2791,9 @@ ch_cc_library(
     srcs = [
         ":absl/random/internal/randen_round_keys.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_16,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -2709,7 +2819,9 @@ ch_cc_library(
     srcs = [
         ":absl/random/internal/randen.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_16,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -2739,7 +2851,9 @@ ch_cc_library(
     srcs = [
         ":absl/random/internal/randen_detect.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_16,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -2767,7 +2881,9 @@ ch_cc_library(
     srcs = [
         ":absl/random/internal/randen_hwaes.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_16,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -2794,7 +2910,9 @@ ch_cc_library(
     srcs = [
         ":absl/random/internal/randen_slow.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_16,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -2821,7 +2939,9 @@ ch_cc_library(
     srcs = [
         ":absl/random/internal/seed_material.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_16,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -2856,7 +2976,9 @@ ch_cc_library(
     srcs = [
         ":absl/random/seed_gen_exception.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_15,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -2882,7 +3004,9 @@ ch_cc_library(
     srcs = [
         ":absl/random/seed_sequences.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_15,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -2919,7 +3043,9 @@ ch_cc_library(
     srcs = [
         ":absl/container/internal/raw_hash_set.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_12,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -2969,7 +3095,9 @@ ch_cc_library(
     srcs = [
         ":absl/base/internal/raw_logging.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -2996,7 +3124,9 @@ ch_cc_library(
     srcs = [
         ":absl/base/internal/scoped_set_env.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -3024,7 +3154,9 @@ ch_cc_library(
     srcs = [
         ":absl/base/internal/spinlock_wait.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -3050,7 +3182,9 @@ ch_cc_library(
     srcs = [
         ":absl/debugging/stacktrace.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_8,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -3084,7 +3218,9 @@ ch_cc_library(
         ":absl/status/status.cc",
         ":absl/status/status_payload_printer.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         ":headers_3efeb5822748ffa4",
         ":headers_61abe9e71fc1d7fb",
@@ -3148,7 +3284,9 @@ ch_cc_library(
     srcs = [
         ":absl/status/statusor.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         ":headers_61abe9e71fc1d7fb",
         ":headers_a3c3998d32c664e7",
@@ -3217,7 +3355,9 @@ ch_cc_library(
         ":absl/strings/internal/str_format/output.cc",
         ":absl/strings/internal/str_format/parser.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         ":headers_213699b07906276d",
         ":headers_a3c3998d32c664e7",
@@ -3257,7 +3397,9 @@ ch_cc_library(
     srcs = [
         ":absl/base/internal/strerror.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -3296,7 +3438,9 @@ ch_cc_library(
         ":absl/strings/str_split.cc",
         ":absl/strings/substitute.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         ":headers_a3c3998d32c664e7",
         ":headers_c19fb056eab85975",
@@ -3338,7 +3482,9 @@ ch_cc_library(
         ":absl/strings/internal/utf8.cc",
         ":absl/strings/internal/escaping.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_3,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -3368,7 +3514,9 @@ ch_cc_library(
     srcs = [
         ":absl/debugging/symbolize.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_8,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -3417,7 +3565,9 @@ ch_cc_library(
         ":absl/synchronization/notification.cc",
         ":absl/synchronization/mutex.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         ":headers_a3c3998d32c664e7",
         ":headers_b784f86d27a6fe05",
@@ -3468,7 +3618,9 @@ ch_cc_library(
     srcs = [
         ":absl/base/throw_delegate.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_14,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -3500,7 +3652,9 @@ ch_cc_library(
         ":absl/time/format.cc",
         ":absl/time/time.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = [
         ":headers_a3c3998d32c664e7",
         ":headers_f2595e5c18b9480e",
@@ -3550,7 +3704,9 @@ ch_cc_library(
         ":absl/time/internal/cctz/src/time_zone_posix.cc",
         ":absl/time/internal/cctz/src/zone_info_source.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_2,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -3576,7 +3732,9 @@ ch_cc_library(
     srcs = [
         ":absl/log/internal/vlog_config.cc",
     ],
-    copts = _GENERATED_COPTS_1,
+    copts = (
+(_GENERATED_COPTS_0)
+),
     hdrs = _GENERATED_HDRS_13,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,

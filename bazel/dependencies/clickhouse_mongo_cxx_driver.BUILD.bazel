@@ -533,12 +533,10 @@ ch_cc_library(
         ":src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/validate.cpp",
         ":src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/vector.cpp",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-isystem",
         repository_path("contrib/mongo-cxx-driver") + "/src/bsoncxx/include",
@@ -585,7 +583,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse_mongo_c_driver//:config/x86_64/contrib/mongo-c-driver/src/common/src/common-config.h",
@@ -855,12 +854,10 @@ ch_cc_library(
         ":src/mongocxx/lib/mongocxx/v_noabi/mongocxx/validation_criteria.cpp",
         ":src/mongocxx/lib/mongocxx/v_noabi/mongocxx/write_concern.cpp",
     ],
-    copts = [
-    ] + [
+    copts = (
+[
         "-w",
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-nostdinc++",
         "-I",
         repository_path("contrib/zstd") + "/lib",
@@ -966,7 +963,8 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    }),
+    })
+),
     hdrs = [
         "@clickhouse//:headers_1fd9e05d91f5eb25",
         "@clickhouse//:headers_ec695b8a0ea8c1f4",

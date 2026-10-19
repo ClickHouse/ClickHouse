@@ -24,17 +24,10 @@ ch_cc_library(
         ":crypt_blowfish/crypt_gensalt.c",
         ":crypt_blowfish/wrapper.c",
     ],
-    copts = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
+    copts = (
+[
         "-w",
         "-std=gnu11",
-        "-D",
-        "OS_LINUX",
         "-isystem",
         repository_path("contrib/libbcrypt"),
     ] + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
@@ -68,7 +61,8 @@ ch_cc_library(
                 ],
             ],
         },
-    }),
+    })
+),
     hdrs = [
         ":headers_62b91512e431e0eb",
         ":headers_6b5ad336efe46a25",
