@@ -1237,6 +1237,7 @@ namespace
     {
         String field;
         bool ok = true;
+        size_t start = buf.count();
         if constexpr (is_json)
             ok = tryReadJSONStringInto(field, buf, settings.json);
         else
@@ -1244,6 +1245,9 @@ namespace
 
         if (!ok)
             return nullptr;
+
+        /// IP columns read the raw text, so a string with escapes is not inferred as an IP address.
+        bool has_escapes = buf.count() - start != field.size() + 2;
 
         skipWhitespaceIfAny(buf);
 
@@ -1257,8 +1261,11 @@ namespace
         if (auto type = tryInferDateOrDateTimeFromString(field, settings))
             return type;
 
-        if (auto type = tryInferIPv4OrIPv6FromString(field, settings))
-            return type;
+        if (!has_escapes)
+        {
+            if (auto type = tryInferIPv4OrIPv6FromString(field, settings))
+                return type;
+        }
 
         if constexpr (is_json)
         {

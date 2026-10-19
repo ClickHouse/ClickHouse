@@ -142,3 +142,20 @@ for settings in "--input_format_try_infer_ipv4=0 --input_format_try_infer_ipv6=1
 {\"j\":{\"ip\":\"192.168.1.1\",\"a\":[\"10.0.0.1\"]}}')"
     done
 done
+
+# 19. JSONExtract into Dynamic keeps every element of a mixed IP/text array
+echo '19. JSONExtract mixed IP and text arrays'
+for setting in "--input_format_try_infer_ipv4=1" "--input_format_try_infer_ipv6=1"; do
+    for rows in "('[\"192.168.1.1\"]'), ('[\"10.0.0.1\",\"not-an-ip\"]')" "('[\"10.0.0.1\",\"not-an-ip\"]'), ('[\"192.168.1.1\"]')" \
+                "('[\"2001:db8::1\"]'), ('[\"2001:db8::2\",\"not-an-ip\"]')" "('[\"2001:db8::2\",\"not-an-ip\"]'), ('[\"2001:db8::1\"]')"; do
+        # shellcheck disable=SC2086
+        $CLICKHOUSE_CLIENT $setting -q "SELECT toString(d), dynamicType(d) FROM (SELECT JSONExtract(j, 'Dynamic') AS d FROM values('j String', $rows))"
+    done
+done
+
+# 20. Escaped IP text is not inferred as an IP type, so the inferred schema reads it
+echo '20. Escaped IP text'
+$CLICKHOUSE_CLIENT --input_format_try_infer_ipv4=1 -q "DESCRIBE format(JSONEachRow, '{\"a\":\"192.168.1.\\\\u0031\"}')"
+$CLICKHOUSE_CLIENT --input_format_try_infer_ipv4=1 -q "SELECT a FROM format(JSONEachRow, '{\"a\":\"192.168.1.\\\\u0031\"}')"
+$CLICKHOUSE_CLIENT --input_format_try_infer_ipv6=1 -q "DESCRIBE format(JSONEachRow, '{\"a\":\"2001:db8:\\\\u003a1\"}')"
+$CLICKHOUSE_CLIENT --input_format_try_infer_ipv6=1 -q "SELECT a FROM format(JSONEachRow, '{\"a\":\"2001:db8:\\\\u003a1\"}')"

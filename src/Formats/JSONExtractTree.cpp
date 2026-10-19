@@ -1844,6 +1844,8 @@ public:
             auto shared_variant_discr = column_dynamic.getSharedVariantDiscriminator();
             auto insert_settings_with_no_type_conversion = insert_settings;
             insert_settings_with_no_type_conversion.allow_type_conversion = false;
+            /// A default in place of an element that does not fit is a lossy match, so infer a new type instead.
+            insert_settings_with_no_type_conversion.insert_default_on_invalid_elements_in_complex_types = false;
 
             /// Check if we already have variants order for this Variant type in cache.
             auto variants_order_it = variants_order_cache.find(variant_info.variant_name);
