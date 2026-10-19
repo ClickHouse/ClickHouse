@@ -44,7 +44,7 @@ SerializationPtr SerializationMapKeyValue::create(
 }
 
 /// Deserialization state for reading a single key's value from a Map.
-/// For WITH_BUCKETS format, reads only one bucket (the one containing the requested key).
+/// For WITH_BUCKETS format, reads only one bucket (the one containing the requested key), unless `read_whole_map` is set.
 struct DeserializeBinaryBulkStateMapKeyValue : public ISerialization::DeserializeBinaryBulkState
 {
     /// The specific bucket that contains the requested key (determined by hashing the key).
@@ -153,7 +153,7 @@ void SerializationMapKeyValue::deserializeBinaryBulkWithMultipleStreams(
     size_t num_read_rows = 0;
     auto * map_key_value_state = checkAndGetState<DeserializeBinaryBulkStateMapKeyValue>(state);
 
-    /// For the bucketed format, read only the bucket that contains our key.
+    /// For the bucketed format, read only the bucket that contains our key, unless the whole Map is read.
     bool read_one_bucket = serialization_version == MergeTreeMapSerializationVersion::WITH_BUCKETS && !read_whole_map;
     if (read_one_bucket)
     {
