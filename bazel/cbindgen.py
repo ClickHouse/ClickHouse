@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Delta's C/C++ bindings using its pinned offline Cargo sources."""
+"""Run cbindgen with Cargo metadata from declared offline vendor sources."""
 
 import argparse
 import os
@@ -10,13 +10,16 @@ import tempfile
 
 def main():
     parser = argparse.ArgumentParser()
-    for name in ['cargo', 'rustc', 'cbindgen', 'output', 'manifest', 'vendor', 'config']:
+    for name in ['cargo', 'rustc', 'cbindgen', 'manifest', 'vendor', 'config', 'cargo-config']:
         parser.add_argument('--' + name, type=Path, required=True)
+    parser.add_argument('--crate', required=True)
+    parser.add_argument('--header', nargs=2, metavar=('LANGUAGE', 'OUTPUT'), action='append', required=True)
     args = parser.parse_args()
-    args.output.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=args.output) as scratch:
+    output_dir = Path(args.header[0][1]).parent
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=output_dir) as scratch:
         scratch = Path(scratch).resolve()
-        config = args.config.read_text()
+        config = args.cargo_config.read_text()
         config = config[config.index('[source.vendored-sources]'):]
         config = config.replace('@RUST_VENDOR_DIR@', str(args.vendor.resolve()))
         (scratch / 'config.toml').write_text(config)
@@ -25,17 +28,15 @@ def main():
             'CARGO_NET_OFFLINE': 'true',
             'RUSTC': str(args.rustc.resolve()),
         }
-        crate = args.manifest.resolve().parent
         metadata = scratch / 'metadata.json'
         with metadata.open('w') as stream:
             subprocess.run([str(args.cargo.resolve()), 'metadata', '--all-features', '--locked', '--offline',
-                            '--format-version=1', '--manifest-path', str(crate / 'Cargo.toml'),
+                            '--format-version=1', '--manifest-path', str(args.manifest.resolve()),
                             '--config', str(scratch / 'config.toml')], env=env, stdout=stream, check=True)
-        for language, extension in [('c++', 'hpp'), ('c', 'h')]:
-            subprocess.run([str(args.cbindgen.resolve()), str(crate), '--crate', 'delta_kernel_ffi',
-                            '--config', str(crate / 'cbindgen.toml'), '--metadata', str(metadata),
-                            '--lang', language, '--output', str(args.output / ('delta_kernel_ffi.' + extension))],
-                           env=env, check=True)
+        for language, output in args.header:
+            subprocess.run([str(args.cbindgen.resolve()), str(args.manifest.resolve().parent), '--crate', args.crate,
+                            '--config', str(args.config.resolve()), '--metadata', str(metadata),
+                            '--lang', language, '--output', output], env=env, check=True)
 
 
 if __name__ == '__main__':

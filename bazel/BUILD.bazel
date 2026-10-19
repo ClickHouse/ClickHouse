@@ -154,7 +154,7 @@ native_stripped_hash(
         "embed_resources",
         "process_rust_archive",
         "cmake_cargo",
-        "generate_delta_headers",
+        "cbindgen",
         "generate_timezones",
     ]
 ]

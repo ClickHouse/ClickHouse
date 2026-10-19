@@ -297,7 +297,7 @@ def write_overlays(builds, shared_inputs, system_repositories):
                 break
     directory = ROOT / 'bazel/dependencies'
     directory.mkdir(exist_ok=True)
-    EXPORTS['contrib/delta-kernel-rs'].add('ffi/Cargo.toml')
+    EXPORTS['contrib/delta-kernel-rs'].update(['ffi/Cargo.toml', 'ffi/cbindgen.toml'])
     EXPORTS['contrib/openssl'].add('include/openssl/ssl.h')
     (directory / 'BUILD.bazel').write_text('exports_files(glob(["*.BUILD.bazel"]))\n')
     for prefix, spec in REPOSITORIES.items():

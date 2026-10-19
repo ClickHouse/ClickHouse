@@ -3,7 +3,7 @@ load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//bazel:rust_archive.bzl", "rust_archive")
 load("//bazel:cmake_cargo.bzl", "cmake_cargo")
-load("//bazel:delta_headers.bzl", "delta_headers")
+load("//bazel:cbindgen.bzl", "rust_cbindgen")
 load("//bazel:rust_archives.bzl", "RUST_ARCHIVES")
 load("//bazel:rust_cxx_flags.bzl", "RUST_CXX")
 load("//bazel:rust_localization_data.bzl", "RUST_LOCALIZATION_GROUPS")
@@ -64,9 +64,19 @@ alias(
     }),
 )
 
-delta_headers(
+rust_cbindgen(
     name = "delta_ffi_headers",
     srcs = ["//:delta_cbindgen_sources"],
+    crate = "delta_kernel_ffi",
+    manifest = "@clickhouse_delta_kernel_rs//:ffi/Cargo.toml",
+    config = "@clickhouse_delta_kernel_rs//:ffi/cbindgen.toml",
+    cargo_config = "//:contrib/corrosion-cmake/config.toml.in",
+    vendor = "@clickhouse_rust_vendor//:BUILD.bazel",
+    headers = {
+        "c++": "delta_kernel_ffi.hpp",
+        "c": "delta_kernel_ffi.h",
+    },
+    cbindgen_tool = "@delta_crates//:cbindgen_cli",
 )
 
 rust_static_library(
