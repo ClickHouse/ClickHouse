@@ -5,6 +5,7 @@ bazel_dep(name = "llvm", version = "0.8.24")
 bazel_dep(name = "lz4", version = "1.10.0.bcr.2")
 bazel_dep(name = "nasm", version = "2.16.03.bcr.4")
 bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "protobuf", version = "33.4")
 bazel_dep(name = "rules_cc", version = "0.2.26")
 bazel_dep(name = "rules_perl", version = "1.1.1")
 bazel_dep(name = "rules_python", version = "1.8.0")
@@ -189,73 +190,12 @@ crate.annotation(
     gen_build_script = "on",
 )
 
-# Vendored protoc stays at the Cargo.lock version, but its path is supplied
-# when the Perfetto build script runs, never embedded from a compile sandbox.
-
-crate.annotation(
-    crate = "protoc-bin-vendored-linux-aarch_64",
-    patch_args = ["-p1"],
-    patches = ["//bazel/patches:protoc-vendored-runtime-path.patch"],
-    repositories = ["chdig_crates"],
-    additive_build_file_content = "exports_files([\"bin/protoc\"])\n",
-    extra_aliased_targets = {"protoc_linux_aarch64": "bin/protoc"},
-)
-
-crate.annotation(
-    crate = "protoc-bin-vendored-linux-x86_64",
-    patch_args = ["-p1"],
-    patches = ["//bazel/patches:protoc-vendored-runtime-path.patch"],
-    repositories = ["chdig_crates"],
-    additive_build_file_content = "exports_files([\"bin/protoc\"])\n",
-    extra_aliased_targets = {"protoc_linux_x86_64": "bin/protoc"},
-)
-
-crate.annotation(
-    crate = "protoc-bin-vendored-linux-x86_32",
-    patch_args = ["-p1"],
-    patches = ["//bazel/patches:protoc-vendored-runtime-path.patch"],
-    repositories = ["chdig_crates"],
-)
-
-crate.annotation(
-    crate = "protoc-bin-vendored-linux-ppcle_64",
-    patch_args = ["-p1"],
-    patches = ["//bazel/patches:protoc-vendored-runtime-path.patch"],
-    repositories = ["chdig_crates"],
-)
-
-crate.annotation(
-    crate = "protoc-bin-vendored-linux-s390_64",
-    patch_args = ["-p1"],
-    patches = ["//bazel/patches:protoc-vendored-runtime-path.patch"],
-    repositories = ["chdig_crates"],
-)
-
-crate.annotation(
-    crate = "protoc-bin-vendored-macos-aarch_64",
-    patch_args = ["-p1"],
-    patches = ["//bazel/patches:protoc-vendored-runtime-path.patch"],
-    repositories = ["chdig_crates"],
-)
-
-crate.annotation(
-    crate = "protoc-bin-vendored-macos-x86_64",
-    patch_args = ["-p1"],
-    patches = ["//bazel/patches:protoc-vendored-runtime-path.patch"],
-    repositories = ["chdig_crates"],
-)
-
-crate.annotation(
-    crate = "protoc-bin-vendored-win32",
-    patch_args = ["-p1"],
-    patches = ["//bazel/patches:protoc-vendored-runtime-path.patch"],
-    repositories = ["chdig_crates"],
-)
-
 crate.annotation(
     crate = "perfetto_protos",
-    build_script_env = {"PROTOC": "$(execpath @@//bazel/rust:protoc)"},
-    build_script_tools = ["//bazel/rust:protoc"],
+    build_script_env = {"PROTOC": "$(execpath @@protobuf+//:protoc)"},
+    build_script_tools = ["@protobuf//:protoc"],
+    patch_args = ["-p1"],
+    patches = ["//bazel/patches:perfetto-protos-protoc.patch"],
     repositories = ["chdig_crates"],
 )
 

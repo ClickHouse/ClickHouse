@@ -49,14 +49,6 @@ genrule(
 ]
 
 alias(
-    name = "protoc",
-    actual = select({
-        "@platforms//cpu:x86_64": "@chdig_crates//:protoc_linux_x86_64",
-        "@platforms//cpu:aarch64": "@chdig_crates//:protoc_linux_aarch64",
-    }),
-)
-
-alias(
     name = "cmake",
     actual = select({
         "@platforms//cpu:x86_64": "@clickhouse_cmake_linux_x86_64//:bin/cmake",

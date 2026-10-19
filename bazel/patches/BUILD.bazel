@@ -9,7 +9,7 @@ exports_files([
     "llvm-clickhouse-runtime.patch",
     "librdkafka-config-include.patch",
     "lz4-fast-decoder.patch",
-    "protoc-vendored-runtime-path.patch",
+    "perfetto-protos-protoc.patch",
     "rules_rs-local-workspaces.patch",
     "zstd-public-headers.patch",
 ])
