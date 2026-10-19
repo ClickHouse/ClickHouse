@@ -2,8 +2,9 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: depends on S3
 
--- The type of a hive partition column is inferred from one sampled path. A sampled value `NULL`, `null` or `[]`
--- must not give a type with `Nothing`, which reads every value of the column as NULL or fails.
+-- The type of a hive partition column is inferred from one sampled path. A sampled value that does not determine
+-- a type (`NULL`, `null`, `[]`, an empty value) must give `LowCardinality(String)` like any other string, not a type
+-- with `Nothing`, which reads every value of the column as NULL or fails.
 
 SET use_hive_partitioning = 1;
 
@@ -12,6 +13,8 @@ INSERT INTO FUNCTION file(currentDatabase() || '/05407/p0=x/data.jsonl', JSONEac
 INSERT INTO FUNCTION file(currentDatabase() || '/05407/p0=y/data.jsonl', JSONEachRow) SETTINGS engine_file_truncate_on_insert = 1 SELECT 3 AS rid;
 INSERT INTO FUNCTION file(currentDatabase() || '/05407/p0=null/data.jsonl', JSONEachRow) SETTINGS engine_file_truncate_on_insert = 1 SELECT 4 AS rid;
 INSERT INTO FUNCTION file(currentDatabase() || '/05407/p0=[]/data.jsonl', JSONEachRow) SETTINGS engine_file_truncate_on_insert = 1 SELECT 5 AS rid;
+INSERT INTO FUNCTION file(currentDatabase() || '/05407/p0=/data.jsonl', JSONEachRow) SETTINGS engine_file_truncate_on_insert = 1 SELECT 6 AS rid;
+INSERT INTO FUNCTION file(currentDatabase() || '/05407/p0=()/data.jsonl', JSONEachRow) SETTINGS engine_file_truncate_on_insert = 1 SELECT 7 AS rid;
 
 -- The first path of the brace list is the sampled one.
 SELECT rid, p0, toTypeName(p0) FROM file(currentDatabase() || '/05407/p0={NULL,x,y}/data.jsonl') ORDER BY rid;
@@ -20,6 +23,8 @@ SELECT rid, p0, toTypeName(p0) FROM file(currentDatabase() || '/05407/p0={null,x
 SELECT count() FROM file(currentDatabase() || '/05407/p0={NULL,x,y}/data.jsonl') WHERE p0 = 'x';
 SELECT rid, p0, toTypeName(p0) FROM file(currentDatabase() || '/05407/p0={NULL,x,y}/data.jsonl') ORDER BY rid SETTINGS schema_inference_make_columns_nullable = 0;
 SELECT rid, p0, toTypeName(p0) FROM file(currentDatabase() || '/05407/p0={[],x}/data.jsonl') ORDER BY rid;
+SELECT rid, p0, toTypeName(p0) FROM file(currentDatabase() || '/05407/p0{=,=x}/data.jsonl') ORDER BY rid;
+SELECT rid, p0, toTypeName(p0) FROM file(currentDatabase() || '/05407/p0={(),x}/data.jsonl') ORDER BY rid;
 
 -- S3 lists keys in lexicographic order, so `p0=NULL` is sampled.
 -- A query parameter, not `currentDatabase()`: a parallel replica evaluates `currentDatabase()` in its default database.
