@@ -27,7 +27,7 @@ CPUS = ('x86_64', 'aarch64')
 COMPILERS = {'ch_cc_library', 'cc_library', 'cc_test', 'cc_binary'}
 TUS = ('.c', '.cc', '.cpp', '.cxx', '.c++', '.C', '.s', '.S', '.asm', '.ASM')
 TEXTUAL = ('.inc', '.inl', '.ipp', '.tpp', '.icc', '.def', '.defs', '.th', '.td',
-           '.tbl', '.tbi', '.ixx', '.cuh', '.msh')
+           '.tbl', '.tbi', '.ixx', '.cuh', '.msh', '.txx')
 LABEL_FIELDS = {
     'srcs', 'hdrs', 'textual_hdrs', 'additional_compiler_inputs', 'deps',
     'implementation_deps', 'actual', 'tools', 'data', 'template', 'src', 'refs',
@@ -479,9 +479,9 @@ class Migration:
                     continue
             if field == 'additional_compiler_inputs':
                 # Never feed unrelated source/metadata files to C++ actions.
-                # Kept textual translation units are discovered by includes.
-                if suffix not in (*CC_HEADER_SUFFIXES, *TEXTUAL) and (
-                        not file.endswith(TUS) or PurePosixPath(file).name not in self.textual_names):
+                # Keep named includes and #embed inputs, regardless of suffix.
+                if (suffix not in (*CC_HEADER_SUFFIXES, *TEXTUAL) and
+                        PurePosixPath(file).name not in self.textual_names):
                     self.stats['dropped_metadata_or_unincluded_tus'] += 1
                     continue
                 if owner != current and file.endswith((*CC_HEADER_SUFFIXES, *TEXTUAL)):

@@ -22,7 +22,7 @@ CC_HEADER_SUFFIXES = ('.h', '.hh', '.hpp', '.ipp', '.hxx', '.h++',
 # computes an include name. Ordinary build/test data is retained only when a
 # scanned include actually names it.
 TEXTUAL_SOURCE_SUFFIXES = (*CC_HEADER_SUFFIXES, '.def', '.defs', '.th', '.td', '.tbl', '.tbi',
-                           '.tpp', '.icc', '.ixx', '.cuh', '.msh', '.in', '.proto', '.fbs',
+                           '.tpp', '.icc', '.ixx', '.cuh', '.msh', '.txx', '.in', '.proto', '.fbs',
                            '.capnp', '.thrift', '.rl', '.gperf', '.grammar')
 
 

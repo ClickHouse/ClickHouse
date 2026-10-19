@@ -691,7 +691,7 @@ _GENERATED_TEXTUAL_HDRS_0 = [
         "//bazel:gen/aarch64/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc",
         "//bazel:gen/aarch64/src/Server/grpc_protos/clickhouse_grpc.pb.cc",
     ],
-})
+}) + glob(["*.txx"])
 
 _GENERATED_DEPS_0 = [
     "@llvm-project//compiler-rt:headers",
@@ -2928,5 +2928,5 @@ cc_library(
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
-    textual_hdrs = [],
+    textual_hdrs = glob(["*.txx"]),
 )
