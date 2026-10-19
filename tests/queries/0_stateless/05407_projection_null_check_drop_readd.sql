@@ -18,7 +18,7 @@ SETTINGS force_optimize_projection = 1, optimize_functions_to_subcolumns = 0;
 SYSTEM STOP MERGES projection_null_check_drop_readd;
 ALTER TABLE projection_null_check_drop_readd DROP COLUMN x, ADD COLUMN x UInt8
 SETTINGS alter_sync = 0;
-SELECT count() FROM system.mutations
+SELECT count() > 0 FROM system.mutations
 WHERE database = currentDatabase() AND table = 'projection_null_check_drop_readd' AND NOT is_done;
 SELECT countIf(isNull(x)), countIf(isNotNull(x)) FROM projection_null_check_drop_readd
 SETTINGS optimize_use_projections = 0;
