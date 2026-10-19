@@ -338,8 +338,8 @@ void ColumnNullable::insertManyDefaults(size_t length)
         return;
 
     /// Reserved first, so that filling the null map cannot throw.
+    reserve(size() + length);
     auto & null_map_data = getNullMapData();
-    null_map_data.reserve(null_map_data.size() + length);
     try
     {
         getNestedColumn().insertManyDefaults(length);
