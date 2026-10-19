@@ -6311,20 +6311,16 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         /// and a legacy replicated entry spanning several partitions stores no per-command scope).
         /// Refuse the change while such entries exist instead of leaving them, and possibly the whole
         /// table, unloadable afterwards.
-        if (command.type == AlterCommand::MODIFY_COLUMN && command.data_type
-            && columns_alter_type_check_safe_for_partition.contains(command.column_name))
+        if (command.type == AlterCommand::MODIFY_COLUMN
+            && changesTypeOfPartitionKeyColumns(old_metadata, new_metadata, command.column_name))
         {
-            auto old_type = old_types.find(command.column_name);
-            if (old_type != old_types.end() && !old_type->second->equals(*command.data_type))
-            {
-                if (auto legacy_mutations = getMutationsWithLegacyPartitionScope(); !legacy_mutations.empty())
-                    throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                                    "ALTER of partition key column {} is forbidden while the mutation(s) {} created by "
-                                    "an older server version still scope their commands with an `IN PARTITION <value>` "
-                                    "literal that would become undecodable after the change; "
-                                    "wait for them to finish or kill them (KILL MUTATION) and retry",
-                                    backQuoteIfNeed(command.column_name), fmt::join(legacy_mutations, ", "));
-            }
+            if (auto legacy_mutations = getMutationsWithLegacyPartitionScope(); !legacy_mutations.empty())
+                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                                "ALTER of partition key column {} is forbidden while the mutation(s) {} created by "
+                                "an older server version still scope their commands with an `IN PARTITION <value>` "
+                                "literal that would become undecodable after the change; "
+                                "wait for them to finish or kill them (KILL MUTATION) and retry",
+                                backQuoteIfNeed(command.column_name), fmt::join(legacy_mutations, ", "));
         }
         /// Just validate partition expression
         if (command.partition)
@@ -11507,6 +11503,30 @@ PartitionIds MergeTreeData::rewritePartitionScopeToIds(MutationCommands & comman
         return PartitionIds{};
 
     return PartitionIds{area.begin(), area.end()};
+}
+
+bool MergeTreeData::changesTypeOfPartitionKeyColumns(
+    const StorageInMemoryMetadata & old_metadata, const StorageInMemoryMetadata & new_metadata, const String & column_name)
+{
+    if (!old_metadata.hasPartitionKey())
+        return false;
+
+    const auto & old_columns = old_metadata.getColumns();
+    const auto & new_columns = new_metadata.getColumns();
+    for (const String & key_column : old_metadata.getPartitionKey().expression->getRequiredColumns())
+    {
+        /// A subcolumn of the partition key (e.g. `p.e` of `PARTITION BY p.e`) is changed through its storage column `p`.
+        auto old_column = old_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, key_column);
+        if (!old_column || old_column->getNameInStorage() != column_name)
+            continue;
+
+        /// A key column which disappears is refused by the other checks of the `ALTER`.
+        auto new_column = new_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, key_column);
+        if (new_column && !old_column->type->equals(*new_column->type))
+            return true;
+    }
+
+    return false;
 }
 
 bool MergeTreeData::hasUnresolvedPartitionScope(const MutationCommands & commands)

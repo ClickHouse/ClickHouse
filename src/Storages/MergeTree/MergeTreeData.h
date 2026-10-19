@@ -1353,6 +1353,12 @@ public:
     /// `IN PARTITION ID` form yet (a legacy mutation entry)?
     static bool hasUnresolvedPartitionScope(const MutationCommands & commands);
 
+    /// Does the change of the storage column `column_name` from `old_metadata` to `new_metadata` change
+    /// the type of a column or a subcolumn that the partition key reads? Such a change can make an
+    /// `IN PARTITION <value>` literal undecodable, even if it keeps the partition ids (e.g. `Enum8 -> Int8`).
+    static bool changesTypeOfPartitionKeyColumns(
+        const StorageInMemoryMetadata & old_metadata, const StorageInMemoryMetadata & new_metadata, const String & column_name);
+
     /// Pins `MutationCommand::resolved_partition_ids` for partition-scoped commands of a legacy
     /// `ReplicatedMergeTree` mutation entry, i.e. one whose znode was written before
     /// `rewritePartitionScopeToIds` existed and therefore still carries `IN PARTITION <value>`

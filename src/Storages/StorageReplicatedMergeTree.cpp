@@ -7251,25 +7251,15 @@ void StorageReplicatedMergeTree::alter(
 
     const auto zookeeper = getZooKeeperAndAssertNotReadonly();
 
-    /// Does the `ALTER` change the type of a column used in the partition key as is? `checkAlterEligibility`
+    /// Does the `ALTER` change the type of a column or a subcolumn used in the partition key? `checkAlterEligibility`
     /// refuses it while a mutation entry with an undecodable `IN PARTITION <value>` literal exists, but that
     /// check is only a snapshot: a replica of an older server version may create such an entry concurrently.
     /// So the check is repeated below and the version of `/mutations` it saw is fenced in the commit.
-    bool changes_partition_key_column_type = false;
-    if (metadata_snapshot->hasPartitionKey())
+    const bool changes_partition_key_column_type = std::ranges::any_of(commands, [&](const AlterCommand & command)
     {
-        const auto partition_key_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
-        for (const auto & command : commands)
-        {
-            if (command.type != AlterCommand::MODIFY_COLUMN || !command.data_type
-                || std::ranges::find(partition_key_columns, command.column_name) == partition_key_columns.end())
-                continue;
-
-            auto old_column = metadata_snapshot->getColumns().tryGetPhysical(command.column_name);
-            if (old_column && !old_column->type->equals(*command.data_type))
-                changes_partition_key_column_type = true;
-        }
-    }
+        return command.type == AlterCommand::MODIFY_COLUMN
+            && MergeTreeData::changesTypeOfPartitionKeyColumns(*metadata_snapshot, future_metadata, command.column_name);
+    });
 
     std::optional<ReplicatedMergeTreeLogEntryData> alter_entry;
     std::optional<String> mutation_znode;
