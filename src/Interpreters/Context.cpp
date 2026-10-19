@@ -1654,6 +1654,15 @@ ContextMutablePtr Context::createCopy(const ContextMutablePtr & other)
     return createCopy(std::const_pointer_cast<const Context>(other));
 }
 
+ContextPtr Context::withUnresolvedPositionalArguments(const ContextPtr & context)
+{
+    if (!context->isPositionalArgumentsAlreadyResolved())
+        return context;
+    auto copy = createCopy(context);
+    copy->setPositionalArgumentsAlreadyResolved(false);
+    return copy;
+}
+
 Context::~Context() = default;
 
 InterserverIOHandler & Context::getInterserverIOHandler() { return shared->interserver_io_handler; }
@@ -4887,6 +4896,23 @@ void Context::waitAllBackupsAndRestores() const
 {
     if (shared->backups_worker)
         shared->backups_worker->waitAll();
+}
+
+void Context::stopDDLWorkerAndWaitAllBackupsAndRestores() const
+{
+    /// A worker that has not started yet must never start, because its startup job would undo the stop.
+    if (shared->ddl_worker_startup_task)
+        getAsyncLoader().remove(shared->ddl_worker_startup_task->goals());
+
+    DDLWorker * ddl_worker = nullptr;
+    {
+        SharedLockGuard lock(shared->mutex);
+        ddl_worker = shared->ddl_worker.get();
+    }
+    if (ddl_worker)
+        ddl_worker->shutdown();
+
+    waitAllBackupsAndRestores();
 }
 
 bool Context::cancelAllBackupsAndRestores(std::optional<std::chrono::steady_clock::time_point> deadline) const
