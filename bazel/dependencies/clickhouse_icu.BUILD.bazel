@@ -11,53 +11,11 @@ exports_files([
 
 
 
-ch_cc_library(
+alias(
     name = "_icudata",
-    srcs = [
-        "@clickhouse_icudata//:icudt78l_dat.S",
-    ],
-    copts = [],
-    local_includes = [
-        repository_local_include(repository_path("contrib/llvm-project") + "/libcxxabi/include", "contrib/icu"),
-    ],
-    hdrs = [
-        "@clickhouse_sysroot//:linux_native_headers",
-    ],
-    local_defines = [
-        "'DEFAULT_ICU_PLUGINS=\"/dev/null\"'",
-        "STD_EXCEPTION_HAS_STACK_TRACE=1",
-        "U_HAVE_ELF_H=1",
-        "U_HAVE_STRTOD_L=1",
-        "U_HAVE_XLOCALE_H=0",
-        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-        "_LIBUNWIND_IS_NATIVE_ONLY",
-        "_REENTRANT",
-    ],
-    deps = [
-    "@llvm-project//compiler-rt:headers",
-    "@llvm-project//libc:libc_headers",
-    "@llvm-project//libunwind:headers",
-    "@clickhouse//:clang_rt_builtins",
-    "@clickhouse//:cxx",
-    "@clickhouse//:cxxabi",
-    "@clickhouse//:glibc-compatibility",
-    "@clickhouse//:unwind"
-],
-    features = ["system_include_paths"],
-    alwayslink = False,
-    additional_compiler_inputs = [
-                                     "@clickhouse_sysroot//:linux_compile_files",
-                                     "@clickhouse_llvm_project//:runtime_source_inputs",
-                                     "@clickhouse_llvm_project//:runtime_generated_headers",
-                                     "@clickhouse_icudata//:LICENSE",
-                                     "@clickhouse_icudata//:README.md",
-                                     "@clickhouse_icudata//:darwin/icudt78l_dat.S",
-                                     "@clickhouse_icudata//:icudt78b_dat.S",
-                                     "@clickhouse_icudata//:icudt78l_dat.S",
-                                 ],
-    language = "ASM",
+    actual = "@clickhouse_icudata//:_icudata",
 )
+
 
 ch_cc_library(
     name = "_icui18n",

@@ -10,7 +10,7 @@ import llvm_targets
 from compact_build import compact, header_patterns
 from repository_inputs import (
     REPOSITORIES, ROOT, CC_HEADER_SUFFIXES, HeaderDirectory,
-    directory_sources, execution_path, repository, source_label,
+    directory_sources, execution_path, repository, source_label, source_path,
 )
 
 ARCHES = ('x86_64', 'aarch64')
@@ -23,6 +23,29 @@ PUBLIC_HEADERS = {
     'contrib/flatbuffers': ('contrib/flatbuffers/include/flatbuffers/', '_flatbuffers'),
     'contrib/libuv': ('contrib/libuv/include/', '_uv'),
 }
+
+# These CMake groups compile mutually including source repositories. Their
+# header libraries have no compile dependencies, so the native libraries can
+# share public headers without depending on one another's archives.
+SOURCE_HEADER_DIRECTORIES = {
+    'contrib/aws': (
+        'generated/src/aws-cpp-sdk-glue/include',
+        'generated/src/aws-cpp-sdk-s3/include',
+        'src/aws-cpp-sdk-core/include',
+    ),
+    'contrib/arrow': ('cpp/src',),
+    **{owner: ('include',) for owner in REPOSITORIES
+       if (owner.startswith('contrib/aws-c-') and owner != 'contrib/aws-c-mqtt')
+       or owner in {'contrib/aws-checksums', 'contrib/aws-crt-cpp'}},
+}
+SOURCE_HEADER_TARGETS = {
+    owner: (REPOSITORIES[owner]['name'].removeprefix('clickhouse_') + '_headers')
+    for owner in SOURCE_HEADER_DIRECTORIES
+}
+PUBLIC_HEADERS.update({
+    owner: (tuple(owner + '/' + directory + '/' for directory in directories), SOURCE_HEADER_TARGETS[owner])
+    for owner, directories in SOURCE_HEADER_DIRECTORIES.items()
+})
 
 # Foreign headers that may be omitted only when an existing dependency already
 # exports them. Keep raw source filenames and local_includes in the consumer:
@@ -253,24 +276,93 @@ def starlark(value, indent=0, paths=False, step=2):
 
 
 def target_owner(target):
-    # Most ClickHouse wrappers are named <submodule>-cmake. Prefer that
-    # explicit owner for libraries that combine sources from several repos.
+    # Generated sources follow the native library. Configuration files stay in
+    # configuration_owner(), even when the CMake wrapper is in another repo.
+    sources = {
+        repository(source['path'].removeprefix(str(ROOT) + '/'))
+        for source in target.get('sources', [])
+        if not source.get('isGenerated') and 'compileGroupIndex' in source
+    } - {None}
+    if len(sources) == 1:
+        return next(iter(sources))
     directory = target['paths']['source'].removesuffix('-cmake')
     owner = repository(directory)
     if owner:
         return owner
-    sources = {
-        repository(source['path'].removeprefix(str(ROOT) + '/'))
-        for source in target.get('sources', []) if not source.get('isGenerated')
-    } - {None}
     if len(sources) > 1:
         raise ValueError('Ambiguous source repository: ' + target['name'])
-    return next(iter(sources)) if sources else None
+    return None
 
 
 def target_label(name, owners):
     owner = owners.get(name)
     return ('@' + REPOSITORIES[owner]['name'] + '//:' if owner else '//:') + name
+
+
+def native_source_owner(path, owner, language):
+    """Keep generated, main-repo, and toolchain files with their native target."""
+    if language not in GLOBAL_COMPILE_OPTIONS:
+        return owner
+    candidate = repository(path)
+    if (candidate and not REPOSITORIES[candidate].get('module')
+            and not path.removeprefix(candidate + '/').startswith(('config/', 'gen/'))):
+        return candidate
+    return owner
+
+
+def source_compile_label(name, index, owner, first):
+    """Name the first source-owned group for its repository; keep flag variants."""
+    short = REPOSITORIES[owner]['name'].removeprefix('clickhouse_')
+    if index != first:
+        short += '__compile_' + str(index)
+    return target_label(short, {short: owner})
+
+
+def relocate_compilation(owners, targets):
+    """Partition each native group without changing source or archive ordering."""
+    foreign = {}
+    for name, owner in list(owners.items()):
+        first = {}
+        for arch, arch_targets in targets.items():
+            target = arch_targets.get(name)
+            if not target or target['kind'] == 'EXECUTABLE':
+                continue
+            for index, group in enumerate(target.get('groups', [])):
+                if group.get('cmake_runtime'):
+                    continue
+                for src in group.get('srcs', []):
+                    src_owner = native_source_owner(source_path(src), owner, group['language'])
+                    if src_owner != owner:
+                        first[src_owner] = min(first.get(src_owner, index), index)
+        for arch, arch_targets in targets.items():
+            target = arch_targets.get(name)
+            if not target or not first:
+                continue
+            for index, group in enumerate(target.get('groups', [])):
+                if group.get('cmake_runtime'):
+                    continue
+                partitions = {}
+                for src in group.get('srcs', []):
+                    src_owner = native_source_owner(source_path(src), owner, group['language'])
+                    partitions.setdefault(src_owner, []).append(src)
+                group['srcs'] = partitions.pop(owner, [])
+                group['foreign_deps'] = []
+                for src_owner, srcs in partitions.items():
+                    label = source_compile_label(name, index, src_owner, first[src_owner])
+                    part_name = label.rsplit(':', 1)[-1]
+                    if part_name in owners:
+                        raise ValueError('Source-owned compile target name collision: ' + label)
+                    key = (src_owner, part_name, name)
+                    variants = foreign.setdefault(key, {})
+                    if arch in variants:
+                        raise ValueError('Multiple source-owned groups for ' + label)
+                    group['foreign_deps'].append(label)
+                    variants[arch] = {
+                        **target, 'kind': 'STATIC_LIBRARY', 'deps': [],
+                        'groups': [{**group, 'srcs': srcs, 'foreign_deps': [],
+                                    'deps': compile_dependencies(group.get('deps', []), target['deps'])}],
+                    }
+    return foreign
 
 
 def relocate_tools(value, owners):
@@ -523,7 +615,8 @@ class BuildFile:
             lines.append('    ' + key + ' = ' + starlark(value, 4, paths=paths, step=4) + ',\n')
         self.rules.append(''.join(lines) + ')\n')
 
-    def target(self, name, variants):
+    def target(self, name, variants, input_name=None):
+        input_name = input_name or name
         if all('alias' in variant for variant in variants.values()):
             actual, = {variant['alias'] for variant in variants.values()}
             self.rule('alias', name, {'actual': actual})
@@ -552,10 +645,17 @@ class BuildFile:
         binary_attrs = {}
         for index in range(group_count):
             groups = {arch: v['groups'][index] for arch, v in variants.items() if index < len(v['groups'])}
+            if all(not g.get('srcs') and g.get('foreign_deps') for g in groups.values()):
+                self.rule('cc_library', name + '__compile_' + str(index), {
+                    'deps': select({'@platforms//cpu:' + arch: [self.label(d) for d in g['foreign_deps']]
+                                    for arch, g in groups.items()}),
+                    'target_compatible_with': compatible,
+                })
+                continue
             binary = kind == 'EXECUTABLE' and index == 0 and name != 'clickhouse'
             inputs = {
                 arch: self.compile_inputs(
-                    name, group, binary, arch,
+                    input_name, group, binary, arch,
                     variants[arch]['deps'] if collapse_single else (),
                 )
                 for arch, group in groups.items()
@@ -629,6 +729,7 @@ class BuildFile:
                         value = compile_dependencies(value, variants[arch]['deps'])
                         if collapse_single:
                             value = value + variants[arch]['deps']
+                        value = value + group.get('foreign_deps', [])
                     if field == 'copts':
                         value = compile_options(value, group.get('deps', []))
                         language = group.get('language')

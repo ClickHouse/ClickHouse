@@ -19,7 +19,11 @@ from rust_archives import ARCHIVE_TARGETS as RUST_ARCHIVES
 from reference_readers import read_file_api
 from configuration import read_configurations
 import llvm_targets
-from build_file import BuildFile, CMakeCxxCompilerVersion, Glob, dependency_inputs, relocate_tools, select, starlark, target_label, target_owner
+from build_file import (
+    BuildFile, CMakeCxxCompilerVersion, Glob, SOURCE_HEADER_DIRECTORIES, SOURCE_HEADER_TARGETS,
+    dependency_inputs, relocate_compilation,
+    relocate_tools, select, starlark, target_label, target_owner,
+)
 from repository_inputs import (
     REPOSITORIES, cmake_has_source_prefix_map, comparison_root, configuration_owner, execution_path, repository,
     CC_HEADER_SUFFIXES, HeaderDirectory, directory_sources, input_key,
@@ -732,12 +736,22 @@ def main():
             if isinstance(item, HeaderDirectory):
                 consumers[item.directory].add('rust_cxx')
     targets = {arch: graph.generated_targets for arch, graph in graphs.items()}
+    foreign = relocate_compilation(owners, targets)
     builds = {owner: BuildFile(owner, owners, consumers, targets) for owner in {None, *owners.values()}}
     for graph in graphs.values():
         graph.declare_configuration(builds, owners)
     for name, owner in sorted(owners.items()):
         builds[owner].target(name, {arch: graph.generated_targets[name]
                                   for arch, graph in graphs.items() if name in graph.generated_targets})
+    for (owner, name, input_name), variants in sorted(foreign.items()):
+        build = builds.setdefault(owner, BuildFile(owner, owners, consumers, targets))
+        build.target(name, variants, input_name=input_name)
+    for owner, directories in SOURCE_HEADER_DIRECTORIES.items():
+        build = builds.setdefault(owner, BuildFile(owner, owners, consumers, targets))
+        patterns = [directory + '/**/*' + suffix for directory in directories for suffix in CC_HEADER_SUFFIXES]
+        build.rule('cc_library', SOURCE_HEADER_TARGETS[owner], {
+            'hdrs': Glob(patterns, allow_empty=True),
+        })
     # The public _lz4 wrapper serves rules_rs/BCR clients; the CMake link uses
     # the original group's ordered objects from its own pinned repository.
     lz4 = builds.setdefault('contrib/lz4', BuildFile('contrib/lz4', owners | {'_lz4': 'contrib/lz4'}, consumers))

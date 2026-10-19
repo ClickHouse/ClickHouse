@@ -16,7 +16,7 @@ from pathlib import Path
 import re
 import shlex
 
-from build_file import target_label, target_owner
+from build_file import native_source_owner, source_compile_label, target_label, target_owner
 import llvm_targets
 from reference_readers import read_file_api, ninja_edges, ninja_words as words
 from repository_inputs import REPOSITORIES, ROOT
@@ -98,6 +98,7 @@ class Plan:
     def make_slots(self):
         for name, t in self.targets.items():
             actual_group = 0
+            first = {}
             for g in t.get("compileGroups", []):
                 srcs = [os.path.normpath(t["sources"][s]["path"]) for s in g["sourceIndexes"]]
                 omitted = [s for s in srcs if s.endswith("/contrib/icu-cmake/empty.cpp")]
@@ -106,13 +107,26 @@ class Plan:
                 if not srcs:
                     continue
                 label = target_label(name, self.owners) + "__compile_" + str(actual_group)
-                for index, source in enumerate(srcs):
-                    size = len(srcs)
-                    key = (name, source)
-                    if key in self.slots:
-                        raise ValueError("Multiple compilation groups for " + str(key))
-                    # Register only references reachable from the final link.
-                    self.slots[key] = (label, index, size)
+                owner = self.owners[name]
+                partitions = {}
+                for source in srcs:
+                    src_owner = owner
+                    if t['type'] != 'EXECUTABLE' and owner != 'contrib/llvm-project':
+                        relative = source.removeprefix(self.source + '/')
+                        src_owner = native_source_owner(relative, owner, g['language'])
+                    partitions.setdefault(src_owner, []).append(source)
+                for src_owner, group_sources in partitions.items():
+                    group_label = label
+                    if src_owner != owner:
+                        first.setdefault(src_owner, actual_group)
+                        group_label = source_compile_label(name, actual_group, src_owner, first[src_owner])
+                    size = len(group_sources)
+                    for index, source in enumerate(group_sources):
+                        key = (name, source)
+                        if key in self.slots:
+                            raise ValueError("Multiple compilation groups for " + str(key))
+                        # Register only references reachable from the final link.
+                        self.slots[key] = (group_label, index, size)
                 actual_group += 1
             generated = []
             for source in t.get("sources", []):
