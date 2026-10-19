@@ -192,8 +192,10 @@ crate.annotation(
 
 crate.annotation(
     crate = "perfetto_protos",
-    build_script_env = {"PROTOC": "$(execpath @@protobuf+//:protoc)"},
-    build_script_tools = ["@protobuf//:protoc"],
+    additive_build_file = "//bazel/rust:perfetto_protos.BUILD.bazel",
+    deps = ["@chdig_crates//:perfetto_build_script"],
+    extra_aliased_targets = {"perfetto_build_script": "_bs"},
+    gen_build_script = "off",
     patch_args = ["-p1"],
     patches = ["//bazel/patches:perfetto-protos-protoc.patch"],
     repositories = ["chdig_crates"],

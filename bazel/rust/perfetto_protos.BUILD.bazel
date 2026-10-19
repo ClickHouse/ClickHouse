@@ -1,0 +1,20 @@
+load("@rules_rs//rs:cargo_build_script.bzl", "cargo_build_script")
+
+# Perfetto uses protobuf-codegen and the Bazel protoc. Its Cargo build
+# dependencies also name all vendored protoc platforms, which are unused here.
+cargo_build_script(
+    name = "_bs",
+    srcs = ["build.rs"],
+    crate_name = "build_script_build",
+    crate_root = "build.rs",
+    edition = "2021",
+    pkg_name = "perfetto_protos",
+    version = "0.51.1",
+    data = ["Cargo.toml"] + glob(["protos/**/*.proto"]),
+    deps = ["@chdig_crates//:protobuf-codegen-3.7.2"],
+    tools = ["@@protobuf+//:protoc"],
+    build_script_env = {"PROTOC": "$(execpath @@protobuf+//:protoc)"},
+    build_script_env_files = ["cargo_toml_env_vars.env"],
+    rustc_env_files = ["cargo_toml_env_vars.env"],
+    visibility = ["//visibility:public"],
+)

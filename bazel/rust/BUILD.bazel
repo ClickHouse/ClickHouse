@@ -13,6 +13,8 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files(glob(["*/Cargo.toml", "*/Cargo.lock"]))
 
+exports_files(["perfetto_protos.BUILD.bazel"])
+
 openssl_headers(
     name = "openssl_include",
     configured_headers = "//:openssl_configured_headers",
