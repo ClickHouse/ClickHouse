@@ -47,7 +47,7 @@ native_stripped_hash = rule(
         "reference": attr.label(mandatory = True, allow_single_file = True),
         "clickhouse": attr.label(mandatory = True, allow_single_file = True),
         "_driver": attr.label(
-            default = "//bazel:native_stripped_hash_driver",
+            default = "//bazel/initial_migration:native_stripped_hash_driver",
             executable = True,
             cfg = "exec",
         ),

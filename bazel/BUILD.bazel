@@ -4,12 +4,12 @@ load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@rules_rs//rs/platforms:triples.bzl", "triple_to_constraint_set")
 load("//bazel/initial_migration:build_options_data.bzl", "BUILD_OPTIONS")
 load("//bazel/initial_migration:cmake_metadata.bzl", "CMAKE_METADATA")
+load("//bazel/initial_migration:cmake_toolchain.bzl", "cmake_toolchain")
 load("//bazel/initial_migration:codegen_rules.bzl", "CODEGEN_RULES")
+load("//bazel/initial_migration:native_cmake_reference.bzl", "native_cmake_reference")
+load("//bazel/initial_migration:native_stripped_hash.bzl", "native_stripped_hash")
 load(":build_options.bzl", "build_options")
-load(":cmake_toolchain.bzl", "cmake_toolchain")
 load(":codegen_actions.bzl", "declare_codegen")
-load(":native_cmake_reference.bzl", "native_cmake_reference")
-load(":native_stripped_hash.bzl", "native_stripped_hash")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -96,29 +96,8 @@ cmake_toolchain(
     ],
 )
 
-# prepare_native_reference.py creates the source and utility archives on the
-# hosted coordinator. Only these manual CMake targets consume the archives.
-py_binary(
-    name = "native_cmake_reference_driver",
-    srcs = ["native_cmake_reference.py"],
-    interpreter_args = ["-B"],
-    main = "native_cmake_reference.py",
-    python_version = "3.11",
-)
-
-py_binary(
-    name = "native_stripped_hash_driver",
-    srcs = [
-        "native_stripped_hash.py",
-        "verify_stripped_hash.py",
-        "compare_elf_sections.py",
-    ],
-    imports = ["."],
-    interpreter_args = ["-B"],
-    main = "native_stripped_hash.py",
-    python_version = "3.11",
-)
-
+# initial_migration/prepare_native_reference.py creates the archives.
+# Only these manual CMake targets consume the archives.
 native_stripped_hash(
     name = "stripped_hash_aarch64",
     clickhouse = "//:clickhouse",

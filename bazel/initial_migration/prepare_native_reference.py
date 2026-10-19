@@ -344,7 +344,7 @@ def tools_archive(directory):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument('--skip-submodule-update', action='store_true',
                         help='Use only with an already initialized checkout.')
     parser.add_argument('--sources-only', action='store_true', help='Prepare Git sources without ARM tools.')

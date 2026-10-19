@@ -1,4 +1,4 @@
-# CMake reference metadata; refreshed by bazel/refresh_cmake_metadata.py.
+# CMake reference metadata; refreshed by bazel/initial_migration/refresh_cmake_metadata.py.
 CMAKE_METADATA = {
   "x86_64": {
     "build_options": {

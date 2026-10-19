@@ -15,7 +15,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from initial_migration.codegen import Codegen, common_googleapis_rules, googleapis_path, googleapis_source_map, render_rules
 from initial_migration.cmake_metadata import read_metadata, write_metadata
-from rust_archives import ARCHIVE_TARGETS as RUST_ARCHIVES
+from initial_migration.rust_archives import ARCHIVE_TARGETS as RUST_ARCHIVES
 from initial_migration.reference_readers import read_file_api
 from initial_migration.configuration import read_configurations
 from initial_migration import llvm_targets

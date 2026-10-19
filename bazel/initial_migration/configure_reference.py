@@ -19,14 +19,14 @@ def main():
     parser.add_argument('--cmake-arg', action='append', default=[],
                         help='Additional CMake argument; repeat as --cmake-arg=-DNAME=VALUE.')
     args = parser.parse_args()
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     build = root / ('build_bazel_reference_' + args.arch)
     query = build / '.cmake/api/v1/query'
     query.mkdir(parents=True, exist_ok=True)
     (query / 'codemodel-v2').touch()
     llvm = args.llvm_root.resolve()
     cross_compiling = args.arch != platform.machine()
-    codegen_hook = ('-DCMAKE_PROJECT_INCLUDE=' + str(root / 'bazel/reference_codegen.cmake')
+    codegen_hook = ('-DCMAKE_PROJECT_INCLUDE=' + str(root / 'bazel/initial_migration/reference_codegen.cmake')
                     if cross_compiling else '-UCMAKE_PROJECT_INCLUDE')
     command = [
         'cmake', '-S', str(root), '-B', str(build), '-G', 'Ninja',

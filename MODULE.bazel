@@ -13,7 +13,7 @@ bazel_dep(name = "rules_rs", version = "0.1.0")
 
 include("//bazel:contrib.MODULE.bazel")
 
-# Same CMake release used by bazel/run_cmake_reference.sh.
+# Same CMake release used by bazel/initial_migration/run_cmake_reference.sh.
 # SHA-256 values are from Kitware's cmake-3.28.3-SHA-256.txt.
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 

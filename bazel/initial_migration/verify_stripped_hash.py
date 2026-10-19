@@ -194,7 +194,7 @@ def main():
     snapshot = commands.add_parser('recorded', help='Compare against the recorded CMake reference, downloading if needed')
     snapshot.add_argument('--arch', choices=('x86_64', 'aarch64'), default='x86_64')
     snapshot.add_argument('--reference-summary', type=Path,
-                          help='AArch64 cmake-reference-summary.json from bazel/run_cmake_reference.sh')
+                          help='AArch64 cmake-reference-summary.json from bazel/initial_migration/run_cmake_reference.sh')
     snapshot.add_argument('--reference-invocation',
                           help='AArch64 BuildBuddy invocation containing the recorded clickhouse.cmake artifact')
     saved = commands.add_parser('compare', help='Compare the preserved CMake and Bazel executables')

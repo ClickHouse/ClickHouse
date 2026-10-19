@@ -1,4 +1,8 @@
-"""Recorded migration data still consumed by the native Bazel build."""
+"""CMake migration, parity checks and recorded data used by the Bazel build."""
+
+load("@rules_python//python:py_binary.bzl", "py_binary")
+
+package(default_visibility = ["//visibility:public"])
 
 exports_files(
     glob([
@@ -9,4 +13,25 @@ exports_files(
         "license_manifest.json",
     ],
     visibility = ["//visibility:public"],
+)
+
+py_binary(
+    name = "native_cmake_reference_driver",
+    srcs = ["native_cmake_reference.py"],
+    interpreter_args = ["-B"],
+    main = "native_cmake_reference.py",
+    python_version = "3.11",
+)
+
+py_binary(
+    name = "native_stripped_hash_driver",
+    srcs = [
+        "compare_elf_sections.py",
+        "native_stripped_hash.py",
+        "verify_stripped_hash.py",
+    ],
+    imports = ["."],
+    interpreter_args = ["-B"],
+    main = "native_stripped_hash.py",
+    python_version = "3.11",
 )

@@ -4,13 +4,13 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF'
-Usage: bash bazel/run_bazel_parity.sh [--stripped]
+Usage: bash bazel/initial_migration/run_bazel_parity.sh [--stripped]
 
 Build //:clickhouse using --config=cmake_match, compare
 both complete executables, then capture the CMake and Bazel command audits.
 Requires the preserved CMake reference and tool installation from
-bazel/run_cmake_reference.sh. Refresh the saved Bazel metadata from that
-reference with bazel/refresh_cmake_metadata.py before running this script.
+bazel/initial_migration/run_cmake_reference.sh. Refresh the saved Bazel metadata from that
+reference with bazel/initial_migration/refresh_cmake_metadata.py before running this script.
 
 --stripped hashes both originals, compares copies made with the same
 llvm-strip --strip-all --remove-section=.note.gnu.build-id, and requires the
@@ -170,7 +170,7 @@ if [[ $actual_cmake_hash != "$expected_cmake_hash" ]]; then
     exit 2
 fi
 cmake_hash="$actual_cmake_hash"
-if ! python3 bazel/refresh_cmake_metadata.py --arch=x86_64 --build-dir="$build" --check \
+if ! python3 bazel/initial_migration/refresh_cmake_metadata.py --arch=x86_64 --build-dir="$build" --check \
         > "$output/metadata-check.log" 2>&1; then
     echo "PARITY_PREREQUISITE_FAILED=Saved CMake metadata differs; see metadata-check.log" >&2
     tail -50 "$output/metadata-check.log" >&2
@@ -273,7 +273,7 @@ echo "PARITY_LLVM_HEADERS_STATUS=$llvm_header_status"
 mapfile -t rust_targets < <(python3 - <<'PY'
 import sys
 sys.path.insert(0, 'bazel')
-from rust_archives import ARCHIVE_TARGETS as RUST_ARCHIVES
+from initial_migration.rust_archives import ARCHIVE_TARGETS as RUST_ARCHIVES
 for crate in RUST_ARCHIVES.values():
     print(f'//bazel/rust:{crate}_processed')
 PY
@@ -312,7 +312,7 @@ else
     echo "BAZEL_CLICKHOUSE_SHA256=$bazel_hash"
     echo "PARITY_CMP_STATUS=$cmp_status"
     if [[ $mode == stripped ]]; then
-        python3 bazel/verify_stripped_hash.py compare --cmake "$cmake_binary" --bazel "$bazel_binary" \
+        python3 bazel/initial_migration/verify_stripped_hash.py compare --cmake "$cmake_binary" --bazel "$bazel_binary" \
             --strip "$tools_dir/llvm/bin/llvm-strip" --output "$output" \
             > "$output/stripped-verification.log" 2>&1 || result=$?
         cat "$output/stripped-verification.log"
@@ -352,15 +352,15 @@ readelf_args=(--file-header --program-headers --sections --notes --dynamic --ver
 if (( bazel_status == 0 )) && [[ -f $bazel_binary ]]; then
     "$tools_dir/llvm/bin/llvm-readelf" "${readelf_args[@]}" "$bazel_binary" \
         > "$output/bazel.readelf.txt" 2> "$output/bazel-readelf.log" || elf_status=$?
-    python3 bazel/compare_elf_sections.py "$cmake_binary" "$bazel_binary" \
+    python3 bazel/initial_migration/compare_elf_sections.py "$cmake_binary" "$bazel_binary" \
         "$output/elf-sections.json" > "$output/elf-sections.log" 2>&1 || elf_status=$?
     cat "$output/elf-sections.log"
     if [[ $mode == stripped && $stripped_cmp_status != not-run ]]; then
-        python3 bazel/compare_elf_sections.py "$output/cmake.stripped" "$output/bazel.stripped" \
+        python3 bazel/initial_migration/compare_elf_sections.py "$output/cmake.stripped" "$output/bazel.stripped" \
             "$output/stripped-elf-sections.json" > "$output/stripped-elf-sections.log" 2>&1 || elf_status=$?
         cat "$output/stripped-elf-sections.log"
         if (( stripped_cmp_status == 1 )); then
-            python3 bazel/compare_elf_symbols.py "$cmake_binary" "$bazel_binary" \
+            python3 bazel/initial_migration/compare_elf_symbols.py "$cmake_binary" "$bazel_binary" \
                 "$output/elf-symbols.json.gz" > "$output/elf-symbols.log" 2>&1 || elf_status=$?
             cat "$output/elf-symbols.log"
         fi
@@ -377,7 +377,7 @@ import sys
 
 root, build, output = map(Path, sys.argv[1:])
 sys.path.insert(0, str(root / 'bazel'))
-from rust_archives import ARCHIVE_TARGETS as RUST_ARCHIVES
+from initial_migration.rust_archives import ARCHIVE_TARGETS as RUST_ARCHIVES
 ar = root / 'build_bazel_reference_tools/llvm/bin/llvm-ar'
 
 def record(path):
@@ -449,7 +449,7 @@ fi
 # Capture commands even when the build or binary comparison failed.
 echo 'PARITY_COMMAND_AUDIT_STARTED'
 audit_status=0
-bash bazel/compare_cmake_actions.sh "$build" "$tools_dir/any2bazel" "$output/command-audit" \
+bash bazel/initial_migration/compare_cmake_actions.sh "$build" "$tools_dir/any2bazel" "$output/command-audit" \
     2>&1 | tee "$output/command-audit.log" || audit_status=$?
 echo "PARITY_AUDIT_STATUS=$audit_status"
 case "$audit_status" in

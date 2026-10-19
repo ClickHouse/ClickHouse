@@ -68,14 +68,14 @@ On a Linux x86-64 host with BuildBuddy remote execution configured, build the
 CMake reference with the compiler selected by this repository:
 
 ```sh
-bash bazel/run_cmake_reference.sh
-python3 bazel/refresh_cmake_metadata.py --arch=x86_64 \
+bash bazel/initial_migration/run_cmake_reference.sh
+python3 bazel/initial_migration/refresh_cmake_metadata.py --arch=x86_64 \
   --build-dir="$PWD/build_bazel_reference_x86_64"
-python3 bazel/refresh_cmake_metadata.py --check --arch=x86_64 \
+python3 bazel/initial_migration/refresh_cmake_metadata.py --check --arch=x86_64 \
   --build-dir="$PWD/build_bazel_reference_x86_64"
 ```
 
-`bazel/run_cmake_reference.sh` builds `//bazel:cmake_toolchain_files`,
+`bazel/initial_migration/run_cmake_reference.sh` builds `//bazel:cmake_toolchain_files`,
 installs that compiler and its builtin headers, configures Release CMake with
 the pinned submodules and Rust compiler, and builds the native CMake
 `clickhouse` target. It records the compiler and executable SHA-256 values,
@@ -94,7 +94,7 @@ bazel build --config=cmake_match //:clickhouse
 For the stripped x86-64 comparison, run on a BuildBuddy Linux hosted runner:
 
 ```sh
-bash bazel/run_stripped_hash.sh
+bash bazel/initial_migration/run_stripped_hash.sh
 ```
 
 `--config=cmake_match` expands to `--config=remote --config=x86_64
@@ -161,7 +161,7 @@ their configured consumers do not compile C/C++ sources from them.
 
 LLVM registration, Rust code generation, initial migration, Abseil, and
 Buildifier were verified again as separate batches. Each x86-64 run below
-executes `bazel/run_stripped_hash.sh`: it verifies the reference compiler and
+executes `bazel/initial_migration/run_stripped_hash.sh`: it verifies the reference compiler and
 CMake executable, verifies both normalized hashes, and requires `cmp=0` and
 `PARITY_STATUS=0`. All x86-64 hashes in the table above are unchanged.
 
@@ -313,14 +313,14 @@ again preserved all hashes in the table and passed `cmp`.
 On the original Linux x86-64 reference host, run the complete audit with:
 
 ```sh
-bash bazel/run_bazel_parity.sh
+bash bazel/initial_migration/run_bazel_parity.sh
 ```
 
-Use `bash bazel/run_bazel_parity.sh --stripped` for the same normalized
+Use `bash bazel/initial_migration/run_bazel_parity.sh --stripped` for the same normalized
 comparison against a CMake build retained on that host. Both entry points use
-`bazel/verify_stripped_hash.py` and record plain-stripped hashes separately.
+`bazel/initial_migration/verify_stripped_hash.py` and record plain-stripped hashes separately.
 
-`bazel/run_bazel_parity.sh` verifies the saved reference hashes and metadata,
+`bazel/initial_migration/run_bazel_parity.sh` verifies the saved reference hashes and metadata,
 rebuilds `//bazel:cmake_toolchain_files` and confirms that Bazel selected the
 recorded CMake compiler. It also compares all embedded LLVM generated headers
 against the CMake headers. It then builds the Bazel executable and seven Rust
@@ -336,11 +336,11 @@ binary or command difference from a failed build or failed audit.
 For ARM64, run these commands on a BuildBuddy Linux hosted runner:
 
 ```sh
-bash bazel/run_native_reference.sh --configure-only
-bash bazel/run_native_reference.sh
-python3 bazel/refresh_cmake_metadata.py --arch=aarch64 --full-reference \
+bash bazel/initial_migration/run_native_reference.sh --configure-only
+bash bazel/initial_migration/run_native_reference.sh
+python3 bazel/initial_migration/refresh_cmake_metadata.py --arch=aarch64 --full-reference \
   --build-dir="$PWD/bazel-bin/bazel/cmake_reference_aarch64"
-bash bazel/run_native_reference.sh --compare
+bash bazel/initial_migration/run_native_reference.sh --compare
 ```
 
 `run_native_reference.sh` prepares the current Git checkout, its pinned submodules, and Ubuntu ARM64
@@ -484,7 +484,7 @@ The CMake executable is an input only to the comparison, never to
 ### Embedded CMake metadata
 
 `--//bazel:cmake_metadata` uses the values recorded by
-`bazel/initial_migration/generate_build.py` or refreshed by `bazel/refresh_cmake_metadata.py`
+`bazel/initial_migration/generate_build.py` or refreshed by `bazel/initial_migration/refresh_cmake_metadata.py`
 from the configured CMake reference. It also maps generated source filenames
 to the corresponding CMake build directory, so compiler-generated filenames
 such as `__FILE__` match that reference. The reference must match the CMake
@@ -520,7 +520,7 @@ The CMake build was Release with libraries, Rust, tests and ClickHouse ALL
 enabled, compiler cache disabled, `SOURCE_DATE_EPOCH=1`, the repository's
 `cmake/linux/toolchain-x86_64.cmake` sysroot, CMake 3.28.3 and Rust
 `nightly-2026-03-22`. The exact invocation is in the uploaded
-`configure-command.json`; `bash bazel/run_cmake_reference.sh` reproduces
+`configure-command.json`; `bash bazel/initial_migration/run_cmake_reference.sh` reproduces
 the setup and build on a Linux x86-64 host with BuildBuddy configured.
 
 This is the reference for commit `f61e9b32`, including after PR #1 was

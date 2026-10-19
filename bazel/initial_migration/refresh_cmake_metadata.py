@@ -9,8 +9,10 @@ import json
 from pathlib import Path
 import re
 import struct
+import sys
 import tarfile
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from initial_migration.build_file import starlark
 from initial_migration.codegen import render_license
 from initial_migration.cmake_metadata import read_metadata, write_metadata

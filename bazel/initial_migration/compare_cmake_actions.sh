@@ -4,7 +4,7 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF'
-Usage: bazel/compare_cmake_actions.sh CMAKE_BUILD ANY2BAZEL_CHECKOUT [OUTPUT_DIR]
+Usage: bazel/initial_migration/compare_cmake_actions.sh CMAKE_BUILD ANY2BAZEL_CHECKOUT [OUTPUT_DIR]
 
 Run on the Linux host that configured CMAKE_BUILD, with BuildBuddy configured
 for Bazel and the reference Ninja on PATH. The default OUTPUT_DIR is a new
@@ -34,7 +34,7 @@ if [[ ! -d $1 || ! -d $2 ]]; then
 fi
 build="$(cd "$1" && pwd -P)"
 any2bazel="$(cd "$2" && pwd -P)"
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 output="${3:-$build/action-audit-$(date -u +%Y%m%dT%H%M%SZ)}"
 
 for input in "$build/build.ninja" "$build/compile_commands.json" \
@@ -103,7 +103,7 @@ python3 "$any2bazel/scripts/extract_cmake.py" "$build" "$root" \
 # The raw model is preserved. Scope the CMake comparison to clickhouse and
 # its dependency closure, including Ninja direct object inputs.
 stage "CMake clickhouse dependencies"
-python3 bazel/compare_cmake_actions.py scope "$output"
+python3 bazel/initial_migration/compare_cmake_actions.py scope "$output"
 
 bazel_args=(
     --config=cmake_match
@@ -141,10 +141,10 @@ stage "Bazel archive MRI files"
 # Keep actual labels and mnemonic/argv provenance separate from stock
 # any2bazel's executable attribution. model.bazel.json retains native labels.
 stage "any2bazel Bazel extraction"
-python3 bazel/compare_cmake_actions.py adapt "$output"
+python3 bazel/initial_migration/compare_cmake_actions.py adapt "$output"
 python3 "$any2bazel/scripts/extract_bazel.py" "$output/native.any2bazel.aquery.json" "$root" \
     "$output/model.bazel.json" > "$output/extract-bazel.log" 2>&1
-python3 bazel/compare_cmake_actions.py project "$output" --any2bazel "$any2bazel"
+python3 bazel/initial_migration/compare_cmake_actions.py project "$output" --any2bazel "$any2bazel"
 
 # EngFlow/any2bazel diff.py returns zero even when its report contains errors.
 stage "any2bazel diff"
@@ -155,10 +155,10 @@ python3 "$any2bazel/scripts/triage.py" "$output/stock-diff.json" \
 
 audit_status=0
 stage "native archive and object audit"
-python3 bazel/audit_native_actions.py --any2bazel "$any2bazel" \
+python3 bazel/initial_migration/audit_native_actions.py --any2bazel "$any2bazel" \
     --cmake-model "$output/model.cmake.clickhouse.json" --cmake-build "$build" \
     --bazel-model "$output/model.bazel.json" --config "$root/bazel/initial_migration/any2bazel.json" \
     --native-aquery "$output/native.aquery.json" --mri-aquery "$output/mri.aquery.json" \
     --assembly-aquery "$output/assembly.aquery.json" --output "$output/native-actions.json" \
     > "$output/native-actions.log" 2>&1 || audit_status=$?
-python3 bazel/compare_cmake_actions.py report "$output" --native-status "$audit_status"
+python3 bazel/initial_migration/compare_cmake_actions.py report "$output" --native-status "$audit_status"

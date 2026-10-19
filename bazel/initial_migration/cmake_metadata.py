@@ -16,5 +16,5 @@ def read_metadata(root):
 
 def write_metadata(root, metadata):
     (root / 'bazel/initial_migration/cmake_metadata.bzl').write_text(
-        '# CMake reference metadata; refreshed by bazel/refresh_cmake_metadata.py.\n'
+        '# CMake reference metadata; refreshed by bazel/initial_migration/refresh_cmake_metadata.py.\n'
         'CMAKE_METADATA = ' + starlark(metadata) + '\n')

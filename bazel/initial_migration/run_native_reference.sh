@@ -7,9 +7,9 @@ case "${1:-}" in
     '') ;;
     --configure-only) mode=cmake_configure_aarch64 ;;
     --compare) mode=stripped_hash_aarch64 ;;
-    *) echo 'Usage: bazel/run_native_reference.sh [--configure-only|--compare]' >&2; exit 2 ;;
+    *) echo 'Usage: bazel/initial_migration/run_native_reference.sh [--configure-only|--compare]' >&2; exit 2 ;;
 esac
-python3 -B bazel/prepare_native_reference.py
+python3 -B bazel/initial_migration/prepare_native_reference.py
 if [[ -n ${BUILDBUDDY_ARTIFACTS_DIRECTORY:-} ]]; then
     cp bazel/native_reference_inputs/source.json "$BUILDBUDDY_ARTIFACTS_DIRECTORY/source-inputs.json"
     cp bazel/native_reference_inputs/tools.json "$BUILDBUDDY_ARTIFACTS_DIRECTORY/arm-tools-inputs.json"

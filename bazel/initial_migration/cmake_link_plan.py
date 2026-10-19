@@ -24,7 +24,7 @@ from initial_migration.build_file import native_source_owner, source_compile_lab
 from initial_migration import llvm_targets
 from initial_migration.reference_readers import read_file_api, ninja_edges, ninja_words as words
 from initial_migration.repository_inputs import REPOSITORIES, ROOT
-from rust_archives import ARCHIVE_TARGETS as RUST_ARCHIVES
+from initial_migration.rust_archives import ARCHIVE_TARGETS as RUST_ARCHIVES
 
 
 def object_ranges(objects):

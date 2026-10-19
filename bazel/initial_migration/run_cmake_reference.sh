@@ -194,7 +194,7 @@ if [[ ! -f "$tools_dir/any2bazel/scripts/extract_cmake.py" ]]; then
     git -C "$tools_dir/any2bazel" checkout c1ca1b4e3583f5321934a25dae84af954c6a021c
 fi
 git submodule update --init --recursive --depth 1 --jobs 12
-python3 bazel/configure_reference.py --arch "$arch" --llvm-root "$tools_dir/llvm" \
+python3 bazel/initial_migration/configure_reference.py --arch "$arch" --llvm-root "$tools_dir/llvm" \
     --any2bazel "$tools_dir/any2bazel" --nasm "$tools_dir/llvm/bin/nasm" \
     "--cmake-arg=-DLINKER_NAME=$tools_dir/llvm/bin/ld.lld" \
     "--cmake-arg=-DLLVM_AR_PATH=$tools_dir/llvm/bin/llvm-ar" \

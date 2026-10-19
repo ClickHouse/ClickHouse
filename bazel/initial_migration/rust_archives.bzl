@@ -1,6 +1,6 @@
 """Rust Cargo packages and the CMake archives consumed by ClickHouse."""
 
-# Keep this assignment literal: bazel/rust_archives.py reads the same inventory.
+# Keep this assignment literal: bazel/initial_migration/rust_archives.py reads the same inventory.
 RUST_ARCHIVES = {
     "chdig": {
         "archive": "contrib/chdig-cmake/libchdig.a",

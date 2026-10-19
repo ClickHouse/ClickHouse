@@ -109,7 +109,8 @@ and kernel headers come from hermetic-llvm.
 
 ## Initial migration and validation
 
-The one-time BUILD generators and CMake/any2bazel data are in
+The one-time BUILD generators, CMake reference builders, parity checks, and
+CMake/any2bazel data are in
 [`initial_migration/`](initial_migration/). Root and dependency BUILD files
 remain in their ordinary packages for direct maintenance. No generator runs
 during a normal Bazel build. The recorded linker order, configured compiler
@@ -118,7 +119,7 @@ the Bazel rules and build-time tools that read those files remain in
 `bazel/`. Generation from both CMake reference graphs overwrites generated
 BUILD files, so run it only for an intentional migration refresh.
 
-`configure_reference.py` configures both complete CMake graphs and invokes
+`initial_migration/configure_reference.py` configures both complete CMake graphs and invokes
 EngFlow/any2bazel's CMake extractor. `initial_migration/generate_build.py` translates the File
 API graphs and declared Ninja generator commands into native Bazel targets.
 `initial_migration/build_file.py` emits the rules into the root `BUILD.bazel` and the dependency
@@ -196,7 +197,7 @@ selections and verifies the expanded generated BUILD statements.
 
 The native reference configuration can also build ClickHouse with CMake.
 For cross-compilation, the reference exposes inline TableGen targets through
-`reference_codegen.cmake` for graph extraction only; Bazel's platform
+`initial_migration/reference_codegen.cmake` for graph extraction only; Bazel's platform
 transition builds those generators for the host. Use an ordinary CMake
 configuration for an actual CMake cross-build. LLVM's configured default
 triple follows the target (`aarch64-unknown-linux-gnu` for ARM64).
@@ -266,7 +267,7 @@ Native ClickHouse targets disable hermetic-llvm's extra `_FORTIFY_SOURCE`
 definition to match the CMake reference; the toolchain's default remains
 enabled for other consumers.
 
-`audit_native_actions.py` supplements any2bazel's unmodified extractor and
+`initial_migration/audit_native_actions.py` supplements any2bazel's unmodified extractor and
 diff. It selects the output configuration of the main `clickhouse` binary,
 so host-tool actions cannot satisfy target-platform checks. It compares each
 source within its original target, preserving the ISA and define variants
@@ -291,7 +292,7 @@ For example, after extracting the C/C++ model and capturing the native,
 archive-MRI and NASM aqueries:
 
 ```sh
-python3 bazel/audit_native_actions.py \
+python3 bazel/initial_migration/audit_native_actions.py \
   --any2bazel /path/to/any2bazel \
   --cmake-model build_bazel_reference_x86_64/model.cmake.json \
   --bazel-model /path/to/model.bazel.x86_64.json \

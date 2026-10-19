@@ -20,10 +20,10 @@ import sys
 import tomllib
 from types import SimpleNamespace
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from initial_migration import llvm_targets
 from compare_cmake_actions import expanded_arguments
-from rust_archives import PACKAGE_TARGETS as RUST_ARCHIVES
+from initial_migration.rust_archives import PACKAGE_TARGETS as RUST_ARCHIVES
 
 OBJECT_ACTIONS = {'CppCompile', 'ObjcCompile', 'Assemble', 'PreprocessAssemble', 'NasmCompile'}
 ARCHIVE_ACTIONS = {'CppArchive', 'ClickHouseNativeArchive'}
@@ -811,7 +811,7 @@ def main():
     parser.add_argument('--bazel-model', required=True, type=Path)
     parser.add_argument('--native-aquery', required=True, type=Path)
     parser.add_argument('--mri-aquery', type=Path)
-    parser.add_argument('--config', default=Path(__file__).resolve().parent / 'initial_migration/any2bazel.json', type=Path)
+    parser.add_argument('--config', default=Path(__file__).resolve().parent / 'any2bazel.json', type=Path)
     parser.add_argument('--assembly-aquery', type=Path)
     parser.add_argument('--output', required=True, type=Path)
     args = parser.parse_args()

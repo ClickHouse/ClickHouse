@@ -69,7 +69,7 @@ native_cmake_reference = rule(
         "_cmake_files": attr.label(default = "@clickhouse_cmake_linux_aarch64//:files", cfg = "exec"),
         "_python": attr.label(default = "@python_3_11//:python3", allow_single_file = True, cfg = "exec"),
         "_python_files": attr.label(default = "@python_3_11//:files", cfg = "exec"),
-        "_driver": attr.label(default = "//bazel:native_cmake_reference_driver", executable = True, cfg = "exec"),
+        "_driver": attr.label(default = "//bazel/initial_migration:native_cmake_reference_driver", executable = True, cfg = "exec"),
     },
     fragments = ["cpp"],
     toolchains = use_cc_toolchain() + ["@rules_rust//rust:toolchain_type"],
