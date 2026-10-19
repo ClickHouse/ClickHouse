@@ -1719,6 +1719,7 @@ bool IcebergStorageSink::initializeMetadata()
     }
     catch (...)
     {
+        /// TODO: keep the files when the catalog reports an unknown commit outcome (`CommitStateUnknownException` or a 5xx), because the snapshot may already reference them.
         cleanup(false);
         throw;
     }
