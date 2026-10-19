@@ -35,17 +35,6 @@ ch_cc_library(
         "@platforms//cpu:x86_64": ["//bazel:config/x86_64/includes/configs/config_version.cpp"],
         "@platforms//cpu:aarch64": ["//bazel:config/aarch64/includes/configs/config_version.cpp"],
     }),
-    additional_compiler_inputs = [
-        "src/Array.cpp",
-        "src/AsyncReader.cpp",
-        "src/Client.cpp",
-        "src/Command.cpp",
-        "src/Error.cpp",
-        "src/Exception.cpp",
-        "src/RedisEventArgs.cpp",
-        "src/RedisStream.cpp",
-        "src/Type.cpp",
-    ],
     clickhouse_code = True,
     copts = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [
         "-std=c++23",

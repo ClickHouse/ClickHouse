@@ -37,18 +37,6 @@ ch_cc_library(
         "@platforms//cpu:x86_64": ["//bazel:config/x86_64/includes/configs/config_version.cpp"],
         "@platforms//cpu:aarch64": ["//bazel:config/aarch64/includes/configs/config_version.cpp"],
     }),
-    additional_compiler_inputs = [
-        "src/Array.cpp",
-        "src/Handler.cpp",
-        "src/JSONException.cpp",
-        "src/Object.cpp",
-        "src/ParseHandler.cpp",
-        "src/Parser.cpp",
-        "src/ParserImpl.cpp",
-        "src/PrintHandler.cpp",
-        "src/Query.cpp",
-        "src/Stringifier.cpp",
-    ],
     clickhouse_code = True,
     copts = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [
         "-std=c++23",
@@ -99,7 +87,6 @@ ch_cc_library(
     additional_compiler_inputs = [
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
-        "src/pdjson.c",
     ],
     copts = [
         "-fxray-instrument",

@@ -13,7 +13,6 @@ ch_cc_library(
         "@platforms//cpu:x86_64": ["//bazel:config/x86_64/includes/configs/config_version.cpp"],
         "@platforms//cpu:aarch64": ["//bazel:config/aarch64/includes/configs/config_version.cpp"],
     }) + ["widechar_width.h"],
-    additional_compiler_inputs = ["widechar_width.cpp"],
     clickhouse_code = True,
     copts = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [
         "-std=c++23",

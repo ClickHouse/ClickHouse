@@ -38,14 +38,6 @@ ch_cc_library(
         "generated/antlr4_grammars/PromQLParserListener.h",
         "generated/antlr4_grammars/PromQLParserVisitor.h",
     ]),
-    additional_compiler_inputs = [
-        "generated/antlr4_grammars/PromQLLexer.cpp",
-        "generated/antlr4_grammars/PromQLParser.cpp",
-        "generated/antlr4_grammars/PromQLParserBaseListener.cpp",
-        "generated/antlr4_grammars/PromQLParserBaseVisitor.cpp",
-        "generated/antlr4_grammars/PromQLParserListener.cpp",
-        "generated/antlr4_grammars/PromQLParserVisitor.cpp",
-    ],
     clickhouse_code = True,
     copts = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [
         "-std=c++23",

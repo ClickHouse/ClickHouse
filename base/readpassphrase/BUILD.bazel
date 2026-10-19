@@ -16,7 +16,6 @@ ch_cc_library(
     additional_compiler_inputs = [
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
-        "readpassphrase.c",
     ],
     copts = [
         "-fxray-instrument",
