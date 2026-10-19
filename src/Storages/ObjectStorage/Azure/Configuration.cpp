@@ -69,7 +69,7 @@ namespace ErrorCodes
 
 void StorageAzureConfiguration::check(ContextPtr context)
 {
-    auto url = Poco::URI(connection_params.getConnectionURL());
+    auto url = Poco::URI(connection_params.getConnectionURLWithoutQuery());
     context->getGlobalContext()->getRemoteHostFilter().checkURL(url);
     StorageObjectStorageConfiguration::check(context);
 }

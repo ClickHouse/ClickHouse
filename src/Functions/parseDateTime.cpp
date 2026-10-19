@@ -534,6 +534,15 @@ namespace
             if (!yearIsInValidRange(week_year_))
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid week year {}", week_year_)
 
+            if (week_of_year_ == 53)
+            {
+                Int32 days_since_epoch_of_jan_first = 0;
+                ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch_of_jan_first, (daysSinceEpochFromDate(week_year_, 1, 1)))
+                Int32 first_day_of_week_year = extractISODayOfTheWeek(days_since_epoch_of_jan_first);
+                if (first_day_of_week_year != 4 && !(isLeapYear(week_year_) && first_day_of_week_year == 3))
+                    RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid week 53 for ISO week year {}", week_year_)
+            }
+
             Int32 days_since_epoch_of_jan_fourth = 0;
             ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch_of_jan_fourth, (daysSinceEpochFromDate(week_year_, 1, 4)))
             Int32 first_day_of_week_year = extractISODayOfTheWeek(days_since_epoch_of_jan_fourth);

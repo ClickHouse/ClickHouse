@@ -23,8 +23,7 @@ inline std::unordered_map<String, ValueMaskingFunc> settingsToHide()
             std::string masked_value;
             if (!value.tryGet<std::string>(masked_value))
                 return {};
-            DB::maskConnectionStringKey(masked_value, "AccountKey=");
-            DB::maskConnectionStringKey(masked_value, "SharedAccessSignature=");
+            DB::maskAzureConnectionStringSecrets(masked_value);
             return fmt::format("'{}'", masked_value);
         }},
     };
