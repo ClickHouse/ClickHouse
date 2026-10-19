@@ -1291,6 +1291,9 @@ void StorageObjectStorageQueue::commit(
                 for (auto & source : sources)
                     source->releaseAfterChangedGeneration(message);
             }
+            /// Ordered mode must read the new generation before later keys move the pointer past it.
+            if (mode == ObjectStorageQueueMode::ORDERED && ObjectStorageQueuePostProcessor::isChangedGeneration(getCurrentExceptionCode()))
+                sources.front()->invalidateFileIterator();
             throw;
         }
     }

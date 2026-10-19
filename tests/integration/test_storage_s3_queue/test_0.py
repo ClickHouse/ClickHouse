@@ -4,7 +4,6 @@ import json
 import logging
 import random
 import time
-import urllib.parse
 from datetime import datetime, timezone
 
 import boto3
@@ -1007,19 +1006,20 @@ def test_move_of_a_non_ascii_name(started_cluster, engine_name):
             aws_access_key_id=started_cluster.minio_access_key,
             aws_secret_access_key=started_cluster.minio_secret_key,
         )
-        head = client.head_object(
+        stamped = client.head_object(
             Bucket=started_cluster.minio_bucket, Key=destination_key
-        )
-        stamped = head["Metadata"]["clickhouse_move_source_path"]
+        )["Metadata"]
     else:
         stamped = (
             started_cluster.blob_service_client.get_blob_client(
                 started_cluster.azurite_container, destination_key
             )
             .get_blob_properties()
-            .metadata["clickhouse_move_source_path"]
+            .metadata
         )
-    assert stamped == urllib.parse.quote(source_key)
+    # The token covers the path, so no non-ASCII value is stamped.
+    assert "clickhouse_move_token" in stamped
+    assert all(value.isascii() for value in stamped.values())
 
 
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
@@ -1180,6 +1180,101 @@ def test_move_fails_closed_when_source_rewritten_before_post_processing(
         read_s3_object(started_cluster, bucket, f"{processed_prefix}/part.csv")
         == rewritten
     )
+
+
+def test_ordered_reads_a_rewritten_file_before_a_later_key(started_cluster):
+    """An ordered queue whose post-processing finds a rewritten file must read the new generation
+    before a later key moves the processed pointer past it."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    table_name = f"ordered_rewrite_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    put_s3_file_content(started_cluster, f"{files_path}/a.csv", b"1,2,3\n")
+    put_s3_file_content(started_cluster, f"{files_path}/b.csv", b"4,5,6\n")
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+        additional_settings={
+            "processing_threads_num": 1,
+            "max_processed_files_before_commit": 1,
+        },
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_BEFORE_POST_PROCESS_FAILPOINT}")
+    try:
+        create_mv(node, table_name, f"{table_name}_dst")
+        wait_failpoint_paused(node, PAUSE_BEFORE_POST_PROCESS_FAILPOINT)
+        # a.csv is read and inserted; its move has not looked at the source yet.
+        put_s3_file_content(started_cluster, f"{files_path}/a.csv", b"7,8,9\n")
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_BEFORE_POST_PROCESS_FAILPOINT}")
+
+    wait_until(
+        lambda: node.query(
+            f"SELECT column1, column2, column3 FROM {table_name}_dst ORDER BY ALL"
+        )
+        == "1\t2\t3\n4\t5\t6\n7\t8\t9\n",
+        timeout=90,
+    )
+    wait_until(
+        lambda: move_counts(
+            started_cluster, "S3Queue", None, files_path, processed_prefix
+        )
+        == (2, 0),
+        timeout=90,
+    )
+
+
+def test_move_keeps_source_metadata_near_the_s3_limit(started_cluster):
+    """A flattening move whose stamp would push the copy past the 2 KiB S3 user metadata limit still
+    archives the object with its own metadata."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    table_name = f"move_big_metadata_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    data = b"1,2,3\n"
+    description = "a" * 1900
+    started_cluster.minio_client.put_object(
+        started_cluster.minio_bucket,
+        f"{files_path}/part.csv",
+        io.BytesIO(data),
+        len(data),
+        metadata={"description": description},
+    )
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+    )
+    create_mv(node, table_name, f"{table_name}_dst")
+
+    wait_until(
+        lambda: move_counts(
+            started_cluster, "S3Queue", None, files_path, processed_prefix
+        )
+        == (1, 0),
+        timeout=60,
+    )
+    moved = started_cluster.minio_client.stat_object(
+        started_cluster.minio_bucket, f"{processed_prefix}/part.csv"
+    )
+    assert moved.metadata["x-amz-meta-description"] == description
+    assert read_s3_object(
+        started_cluster, started_cluster.minio_bucket, f"{processed_prefix}/part.csv"
+    ) == data
 
 
 def test_after_processing_change_does_not_reach_a_batch_in_flight(started_cluster):

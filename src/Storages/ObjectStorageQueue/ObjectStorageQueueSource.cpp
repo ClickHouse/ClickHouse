@@ -605,6 +605,9 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
         else
         {
             std::lock_guard lock(mutex);
+            if (iterator_invalidated)
+                return {};
+
             if (objects_to_retry.empty())
             {
                 std::tie(object_info, file_metadata) = next();
@@ -1773,6 +1776,9 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                 /// Resetting replays the path from offset 0 and duplicates rows already emitted (`deduplication_v2` tokens name the new
                 /// generation), so a file that emitted rows keeps the ordinary failure handling.
                 const bool a_replay_would_duplicate_rows = file_metadata->getFileStatus()->processed_rows > 0;
+                /// Ordered mode must read the new generation before later keys move the pointer past it.
+                if (is_ordered_mode && the_generation_was_rewritten && !a_replay_would_duplicate_rows)
+                    file_iterator->invalidate();
                 file_metadata->prepareFailedRequests(
                     requests,
                     exception_during_read,
@@ -2009,6 +2015,9 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
             {
                 if (mode == ObjectStorageQueueMode::EXCLUSIVE && ObjectStorageQueuePostProcessor::isChangedGeneration(getCurrentExceptionCode()))
                     releaseAfterChangedGeneration(getCurrentExceptionMessage(false));
+                /// Ordered mode must read the new generation before later keys move the pointer past it.
+                if (mode == ObjectStorageQueueMode::ORDERED && ObjectStorageQueuePostProcessor::isChangedGeneration(getCurrentExceptionCode()))
+                    file_iterator->invalidate();
                 throw;
             }
 

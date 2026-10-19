@@ -19,8 +19,6 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <base/scope_guard.h>
 
-#include <Poco/URI.h>
-
 #include <chrono>
 #include <thread>
 #include <unordered_set>
@@ -85,13 +83,14 @@ namespace
 {
 
 /// Provenance lets a later attempt recognize a committed copy after an interrupted move.
-constexpr auto move_source_path_attribute = "clickhouse_move_source_path";
 constexpr auto move_source_etag_attribute = "clickhouse_move_source_etag";
 constexpr auto move_source_last_modified_attribute = "clickhouse_move_source_last_modified";
 constexpr auto move_source_version_id_attribute = "clickhouse_move_source_version_id";
 /// The source generation alone does not prove who copied it, as it can be restamped onto other bytes.
 /// The token is a digest of it keyed by the queue's Keeper name and path, so only the same queue reproduces it.
 constexpr auto move_token_attribute = "clickhouse_move_token";
+/// S3 keeps at most 2 KiB of user metadata, counted as the bytes of all keys and values.
+constexpr size_t s3_user_metadata_limit = 2048;
 
 String makeMoveToken(
     const String & keeper_identity,
@@ -115,20 +114,31 @@ std::optional<ObjectAttributes> makeMoveProvenance(
     const String & source_path,
     const String & source_etag,
     time_t source_last_modified,
-    const String & source_version_id = {})
+    const String & source_version_id = {},
+    size_t metadata_limit = 0)
 {
     if (source_etag.empty())
         return std::nullopt;
-    /// Azure metadata values must be ASCII, so the path is percent-encoded.
-    String encoded_source_path;
-    Poco::URI::encode(source_path, /*reserved=*/"", encoded_source_path);
-    source_attributes[move_source_path_attribute] = encoded_source_path;
+    /// The token covers the source path, so the path itself is not stamped and long names fit.
+    auto unstamped = source_attributes;
     source_attributes[move_source_etag_attribute] = source_etag;
     source_attributes[move_source_last_modified_attribute] = toString(size_t(source_last_modified));
     source_attributes[move_token_attribute]
         = makeMoveToken(keeper_identity, source_path, source_etag, source_last_modified, source_version_id);
     if (!source_version_id.empty())
         source_attributes[move_source_version_id_attribute] = source_version_id;
+
+    /// A copy whose stamp would not fit keeps only the source metadata, and a later attempt cannot recognize it.
+    size_t metadata_size = 0;
+    for (const auto & [key, value] : source_attributes)
+        metadata_size += key.size() + value.size();
+    if (metadata_limit && metadata_size > metadata_limit)
+    {
+        for (const auto * key :
+             {move_source_etag_attribute, move_source_last_modified_attribute, move_source_version_id_attribute, move_token_attribute})
+            unstamped.erase(key);
+        return unstamped;
+    }
     return source_attributes;
 }
 
@@ -139,7 +149,7 @@ bool destinationIsOwnCommittedCopy(const std::optional<ObjectAttributes> & prove
     /// The token digests the source version id too, so a destination stamped for another generation
     /// of the same key does not match one built for this generation.
     for (const auto * key :
-         {move_source_path_attribute, move_source_etag_attribute, move_source_last_modified_attribute, move_token_attribute})
+         {move_source_etag_attribute, move_source_last_modified_attribute, move_token_attribute})
     {
         auto expected = provenance->find(key);
         auto actual = destination_attributes.find(key);
@@ -578,7 +588,8 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
                                         source_object.remote_path,
                                         source_metadata->etag,
                                         source_metadata->last_modified.epochTime(),
-                                        source_metadata->version_id);
+                                        source_metadata->version_id,
+                                        s3_user_metadata_limit);
                                 /// The backend looks the source up again, so pin it to the generation this lookup describes:
                                 /// a rewrite in between fails the copy instead of copying newer bytes.
                                 write_settings.object_storage_copy_source_if_match = source_metadata->etag;
@@ -797,7 +808,8 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                                                                                  object_from.remote_path,
                                                                                  source_info.etag,
                                                                                  source_info.last_modification_time,
-                                                                                 source_version_id);
+                                                                                 source_version_id,
+                                                                                 s3_user_metadata_limit);
                         /// What the copy below consumes, and therefore the only generation the delete
                         /// that follows it may remove.
                         const SourceGeneration consumed{source_version_id, source_info.etag};

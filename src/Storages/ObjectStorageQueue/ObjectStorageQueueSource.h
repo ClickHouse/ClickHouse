@@ -93,6 +93,9 @@ public:
         /// `after_processing` as it was when the iterator was created, used for every file it hands out.
         ObjectStorageQueueAction getAfterProcessing() const { return after_processing; }
 
+        /// Finish the iterator, so the next batch lists the files again.
+        void invalidate() { iterator_invalidated = true; }
+
     private:
         using Bucket = ObjectStorageQueueMetadata::Bucket;
         using Processor = ObjectStorageQueueMetadata::Processor;
@@ -245,6 +248,8 @@ public:
     void releaseAfterChangedGeneration(const std::string & exception_message);
 
     ObjectStorageQueueAction getAfterProcessing() const { return file_iterator->getAfterProcessing(); }
+
+    void invalidateFileIterator() { file_iterator->invalidate(); }
 
     /// Do some work after Processed/Failed files were successfully committed to keeper.
     void finalizeCommit(
