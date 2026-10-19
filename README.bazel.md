@@ -371,7 +371,7 @@ The first mismatch started at byte 105,961 in `.rela.dyn`. The only
 `21.1.8` instead of native CMake's `22.1.1`. All 161,684 differing
 relocations referenced the same strings at addresses shifted by those
 compiler strings. Mongo C, Mongo C++ and Arrow now obtain the C++ compiler
-version from `bazel/cmake_metadata.bzl`; `bazel/generate_build.py` preserves
+version from `bazel/initial_migration/cmake_metadata.bzl`; `bazel/initial_migration/generate_build.py` preserves
 that behavior on regeneration.
 
 The first ARM64 Bazel build completed 17,334 remote actions in
@@ -398,7 +398,7 @@ The CMake executable is an input only to the comparison, never to
 ### Embedded CMake metadata
 
 `--//bazel:cmake_metadata` uses the values recorded by
-`bazel/generate_build.py` or refreshed by `bazel/refresh_cmake_metadata.py`
+`bazel/initial_migration/generate_build.py` or refreshed by `bazel/refresh_cmake_metadata.py`
 from the configured CMake reference. It also maps generated source filenames
 to the corresponding CMake build directory, so compiler-generated filenames
 such as `__FILE__` match that reference. The reference must match the CMake

@@ -273,7 +273,7 @@ echo "PARITY_LLVM_HEADERS_STATUS=$llvm_header_status"
 mapfile -t rust_targets < <(python3 - <<'PY'
 import sys
 sys.path.insert(0, 'bazel')
-from cmake_link_plan import RUST_ARCHIVES
+from rust_archives import ARCHIVE_TARGETS as RUST_ARCHIVES
 for crate in RUST_ARCHIVES.values():
     print(f'//bazel/rust:{crate}_processed')
 PY
@@ -377,7 +377,7 @@ import sys
 
 root, build, output = map(Path, sys.argv[1:])
 sys.path.insert(0, str(root / 'bazel'))
-from cmake_link_plan import RUST_ARCHIVES
+from rust_archives import ARCHIVE_TARGETS as RUST_ARCHIVES
 ar = root / 'build_bazel_reference_tools/llvm/bin/llvm-ar'
 
 def record(path):

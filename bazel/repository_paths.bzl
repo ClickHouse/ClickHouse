@@ -1,7 +1,7 @@
 """Resolve external repository names and CMake source filenames."""
 
-load(":repository_labels.bzl", _REPOSITORIES = "REPOSITORIES")
-load(":cmake_metadata.bzl", _CMAKE_METADATA = "CMAKE_METADATA")
+load("//bazel/initial_migration:repository_labels.bzl", _REPOSITORIES = "REPOSITORIES")
+load("//bazel/initial_migration:cmake_metadata.bzl", _CMAKE_METADATA = "CMAKE_METADATA")
 
 _LLVM_TOOLCHAIN_PATH = Label("@llvm-project//:BUILD.bazel").workspace_root
 

@@ -2,11 +2,11 @@
 
 import ast
 
-from build_file import starlark
+from initial_migration.build_file import starlark
 
 
 def read_metadata(root):
-    filename = root / 'bazel/cmake_metadata.bzl'
+    filename = root / 'bazel/initial_migration/cmake_metadata.bzl'
     statements = ast.parse(filename.read_text(), filename=str(filename)).body
     if (len(statements) != 1 or not isinstance(statements[0], ast.Assign)
             or [getattr(target, 'id', None) for target in statements[0].targets] != ['CMAKE_METADATA']):
@@ -15,6 +15,6 @@ def read_metadata(root):
 
 
 def write_metadata(root, metadata):
-    (root / 'bazel/cmake_metadata.bzl').write_text(
+    (root / 'bazel/initial_migration/cmake_metadata.bzl').write_text(
         '# CMake reference metadata; refreshed by bazel/refresh_cmake_metadata.py.\n'
         'CMAKE_METADATA = ' + starlark(metadata) + '\n')

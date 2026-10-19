@@ -21,7 +21,7 @@ import tomllib
 from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import llvm_targets
+from initial_migration import llvm_targets
 from compare_cmake_actions import expanded_arguments
 from rust_archives import PACKAGE_TARGETS as RUST_ARCHIVES
 
@@ -37,7 +37,7 @@ class BuildIncludeEvidence:
     HEADER_SUFFIXES = {'.h', '.hh', '.hpp', '.hxx', '.inc', '.ipp', '.inl', '.tcc', '.def'}
 
     def __init__(self, build, repo_root, cfg):
-        from codegen import read_ninja
+        from initial_migration.reference_readers import read_ninja
 
         self.build = build
         self.prefix = cfg.map_include(os.path.relpath(build, repo_root))
@@ -684,7 +684,7 @@ def ninja_link_objects(build, reference, cfg):
     or the executable. Only the executable operands decide which must be
     nonlazy. For whole archives, inspect their Ninja ar inputs as well.
     """
-    from cmake_link_plan import words
+    from initial_migration.reference_readers import ninja_words as words
 
     commands = json.loads((build / 'compile_commands.json').read_text())
     sources = {}
@@ -811,7 +811,7 @@ def main():
     parser.add_argument('--bazel-model', required=True, type=Path)
     parser.add_argument('--native-aquery', required=True, type=Path)
     parser.add_argument('--mri-aquery', type=Path)
-    parser.add_argument('--config', default=Path('any2bazel.json'), type=Path)
+    parser.add_argument('--config', default=Path(__file__).resolve().parent / 'initial_migration/any2bazel.json', type=Path)
     parser.add_argument('--assembly-aquery', type=Path)
     parser.add_argument('--output', required=True, type=Path)
     args = parser.parse_args()

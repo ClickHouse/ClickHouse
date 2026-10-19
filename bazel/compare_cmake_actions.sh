@@ -149,7 +149,7 @@ python3 bazel/compare_cmake_actions.py project "$output" --any2bazel "$any2bazel
 # EngFlow/any2bazel diff.py returns zero even when its report contains errors.
 stage "any2bazel diff"
 python3 "$any2bazel/scripts/diff.py" "$output/model.cmake.clickhouse.json" \
-    "$output/model.bazel.any2bazel.json" "$root/any2bazel.json" > "$output/stock-diff.json" 2> "$output/stock-diff.log"
+    "$output/model.bazel.any2bazel.json" "$root/bazel/initial_migration/any2bazel.json" > "$output/stock-diff.json" 2> "$output/stock-diff.log"
 python3 "$any2bazel/scripts/triage.py" "$output/stock-diff.json" \
     > "$output/stock-triage.txt" 2> "$output/stock-triage.log"
 
@@ -157,7 +157,7 @@ audit_status=0
 stage "native archive and object audit"
 python3 bazel/audit_native_actions.py --any2bazel "$any2bazel" \
     --cmake-model "$output/model.cmake.clickhouse.json" --cmake-build "$build" \
-    --bazel-model "$output/model.bazel.json" --config "$root/any2bazel.json" \
+    --bazel-model "$output/model.bazel.json" --config "$root/bazel/initial_migration/any2bazel.json" \
     --native-aquery "$output/native.aquery.json" --mri-aquery "$output/mri.aquery.json" \
     --assembly-aquery "$output/assembly.aquery.json" --output "$output/native-actions.json" \
     > "$output/native-actions.log" 2>&1 || audit_status=$?

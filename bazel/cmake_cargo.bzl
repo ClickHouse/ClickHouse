@@ -3,8 +3,8 @@
 load("@rules_cc//cc:action_names.bzl", "ACTION_NAMES")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain", "use_cc_toolchain")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
-load(":rust_archives.bzl", "RUST_ARCHIVES")
-load(":rust_cxx_flags.bzl", "RUST_CXX")
+load("//bazel/initial_migration:rust_archives.bzl", "RUST_ARCHIVES")
+load("//bazel/initial_migration:rust_cxx_flags.bzl", "RUST_CXX")
 
 def _cmake_cargo_impl(ctx):
     rust = ctx.toolchains["@rules_rust//rust:toolchain_type"]
@@ -148,7 +148,7 @@ cmake_cargo = rule(
         "cmake": attr.label(executable = True, cfg = "exec", allow_files = True),
         "cmake_files": attr.label(allow_files = True, cfg = "exec"),
         "_contrib_repositories": attr.label(
-            default = "//bazel:contrib_repositories.json",
+            default = "//bazel/initial_migration:contrib_repositories.json",
             allow_single_file = True,
         ),
         # Additional Cargo path crates to record in the raw archive evidence.

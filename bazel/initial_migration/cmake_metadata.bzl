@@ -35,6 +35,6 @@ CMAKE_METADATA = {
       "ClickStack": 1780518042,
       "SQLConsole": 1790945103,
     },
-    "license_substitutions": "config/x86_64/license_substitutions.json",
+    "license_substitutions": "license_substitutions_x86_64.json",
   },
 }

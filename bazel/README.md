@@ -33,12 +33,12 @@ The unit test target runs the complete GoogleTest suite with the same
 ## Third-party dependencies
 
 Prefer BCR modules when their sources and configuration preserve ClickHouse's
-required behavior. `bcr_dependencies.json` records adopted modules and maps
-CMake targets and include directories to them. `any2bazel.json` records the
+required behavior. `initial_migration/bcr_dependencies.json` records adopted modules and maps
+CMake targets and include directories to them. `initial_migration/any2bazel.json` records the
 corresponding reference-target exclusions; these are module substitutions,
 not removed functionality.
 
-`contrib_repositories.json` records the 159 upstream submodule revisions,
+`initial_migration/contrib_repositories.json` records the 159 upstream submodule revisions,
 official GitHub archive URLs, SHA-256 checksums, and archive prefixes.
 `repositories.bzl` fetches them with `http_archive`, except LLVM, which uses
 hermetic-llvm's `llvm.from_archive`. Generated BUILD overlays
@@ -97,7 +97,7 @@ Wasmtime uses its original fetched headers beside the configured `conf.h`;
 unchanged copies are not checked into the port.
 
 Configured dependency headers are declared outputs in their owning external
-repositories. `configuration.py` recovers the original CMake templates and
+repositories. `initial_migration/configuration.py` recovers the original CMake templates and
 substitutions and verifies that they reproduce the reference outputs before
 emitting `expand_template`, `copy_file`, or `write_file` rules. The port does
 not check these configured headers into `bazel/config`. The empty ICU source
@@ -107,15 +107,24 @@ ARM64 Vectorscan also uses the pinned sysroot's `asm/hwcap.h`, which supplies
 the capability bits needed for its runtime CPU checks. Its remaining libc
 and kernel headers come from hermetic-llvm.
 
-## Regeneration and validation
+## Initial migration and validation
+
+The one-time BUILD generators and CMake/any2bazel data are in
+[`initial_migration/`](initial_migration/). Root and dependency BUILD files
+remain in their ordinary packages for direct maintenance. No generator runs
+during a normal Bazel build. The recorded linker order, configured compiler
+and license metadata, and Rust inventories remain consumed as static data;
+the Bazel rules and build-time tools that read those files remain in
+`bazel/`. Generation from both CMake reference graphs overwrites generated
+BUILD files, so run it only for an intentional migration refresh.
 
 `configure_reference.py` configures both complete CMake graphs and invokes
-EngFlow/any2bazel's CMake extractor. `generate_build.py` translates the File
+EngFlow/any2bazel's CMake extractor. `initial_migration/generate_build.py` translates the File
 API graphs and declared Ninja generator commands into native Bazel targets.
-`build_file.py` emits the rules into the root `BUILD.bazel` and the dependency
+`initial_migration/build_file.py` emits the rules into the root `BUILD.bazel` and the dependency
 overlays. The root `contrib` filegroup keeps auxiliary dependency targets in
 the complete `//...` build, even when the server does not depend on them.
-`build_file.py` reads unconditional `common --copt`, `--conlyopt`, and
+`initial_migration/build_file.py` reads unconditional `common --copt`, `--conlyopt`, and
 `--cxxopt` entries from `.bazelrc`. It omits those flags from generated
 native libraries, including `-O3`, `-DNDEBUG`, and `-gz=zlib`.
 `OS_LINUX`, position independence, and diagnostics shared by C and C++ are
@@ -139,7 +148,7 @@ configurations: `__FILE__` and embedded file names survive stripping.
 When a CMake library has one native compile group, the generated
 `ch_cc_library` carries its public name and ordered dependencies directly.
 Multiple compile groups, runtimes, NASM and executables retain separate rules.
-`cmake_link_plan.py` resolves each original archive to its actual declared
+`initial_migration/cmake_link_plan.py` resolves each original archive to its actual declared
 owner and verifies object order on both platforms.
 
 CMake's system include directories in native C/C++/ASM rules are emitted as
@@ -162,7 +171,7 @@ FlatBuffers, libuv, Arrow and librdkafka headers likewise come from their
 existing libraries. For example, cppkafka depends on librdkafka instead of
 listing librdkafka's headers again.
 
-`external_headers.py` declares public `cc_library` targets for header-only
+`initial_migration/external_headers.py` declares public `cc_library` targets for header-only
 dependencies such as RapidJSON, nlohmann/json and xsimd. It collects the
 source header directories actually used in the configured native graphs,
 emits header globs in each owning repository, and adds dependencies only for
@@ -172,7 +181,7 @@ remain exported where an actual cross-repository consumer still needs them.
 
 AWS CRT, ORC, DMLC, and ICU translation units compile in their owning fetched
 repositories. ClickHouse configuration inputs remain in `contrib/*-cmake`;
-`cmake_link_plan.py` verifies that the declared CMake archives have the same
+`initial_migration/cmake_link_plan.py` verifies that the declared CMake archives have the same
 ordered objects after moving compilation.
 
 Textually included implementation files and embedded files remain compiler
@@ -181,7 +190,7 @@ textually includes some `.c` files that are also separate translation units,
 and ClickHouse embeds non-header resources. The native reference's source and
 link order remain authoritative.
 
-`compact_build.py` removes empty list additions and collapses identical
+`initial_migration/compact_build.py` removes empty list additions and collapses identical
 x86-64/ARM64 `select()` lists. It retains differing or single-platform
 selections and verifies the expanded generated BUILD statements.
 
@@ -195,22 +204,22 @@ Reference configuration and regeneration still use upstream's initialized
 submodules (`git submodule update --init --recursive`). This is separate from
 the Bazel build's repository-rule acquisition.
 When updating a submodule, update its revision, archive URL, checksum, prefix,
-and removed BUILD-file list in `contrib_repositories.json` as well. Reconfigure
+and removed BUILD-file list in `initial_migration/contrib_repositories.json` as well. Reconfigure
 both reference architectures and regenerate the overlays before validating
 the new dependency. The build generator consumes these pins; it does not
 discover new revisions or download archives.
 Run it after updating either reference configuration:
 
 ```sh
-python3 bazel/generate_build.py
+python3 bazel/initial_migration/generate_build.py
 ```
 
-`coverage.json` retains target/action counts, untranslated outputs, and an
+`initial_migration/coverage.json` retains target/action counts, untranslated outputs, and an
 explicit inventory of CMake-only commands. All current custom outputs are
 either translated or classified: cache/install/test entry points, replaced
 Cargo and ExternalProject steps, or manual contributor-list generation.
 CMake installation commands are inventoried; Bazel packaging is not implemented.
-`codegen.py` invokes
+`initial_migration/codegen.py` records actions for
 native Bazel-built TableGen, Protobuf, and FlatBuffers tools. NASM comes from
 its BCR module and executes as a declared Bazel tool. Building `//:clickhouse`
 does not run C/C++ compilation or linking through CMake or Ninja.
@@ -294,7 +303,7 @@ Bazel-produced object passed 29,952 comparisons with software CRC32C.
 ISA-L also uses the BCR NASM tool.
 
 All seven imported Rust libraries have native `rules_rs` targets under
-`//bazel/rust`. `generate_rust_inputs.py --cargo /path/to/pinned/cargo` resolves
+`//bazel/rust`. `initial_migration/generate_rust_inputs.py --cargo /path/to/pinned/cargo` resolves
 the Delta and Chdig dependency workspaces offline from ClickHouse's vendored
 crates and rejects package versions absent from their upstream lockfiles.
 The `*_processed` targets run ClickHouse's original symbol-localization and

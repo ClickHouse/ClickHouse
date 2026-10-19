@@ -3,7 +3,7 @@
 from collections import defaultdict
 from pathlib import PurePosixPath
 
-from repository_inputs import (
+from initial_migration.repository_inputs import (
     CC_HEADER_SUFFIXES, HeaderDirectory, REPOSITORIES, repository, source_path,
 )
 
@@ -118,7 +118,7 @@ class HeaderLibraries:
         """Add one logical cc_library to each observed dependency repository."""
         # Import after build_file has loaded; build_file supplies the Glob
         # renderer used for both native libraries and these header libraries.
-        from build_file import Glob
+        from initial_migration.build_file import Glob
 
         for owner, directories in sorted(self.directories.items()):
             if owner not in builds:

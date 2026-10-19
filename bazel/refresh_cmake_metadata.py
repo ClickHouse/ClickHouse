@@ -11,11 +11,11 @@ import re
 import struct
 import tarfile
 
-from build_file import starlark
-from codegen import render_license
-from cmake_metadata import read_metadata, write_metadata
-from generate_build import ARCHES, BUILD_OPTIONS_OUTPUT, LICENSES_OUTPUT, ROOT, cmake_build_options
-from repository_inputs import source_label
+from initial_migration.build_file import starlark
+from initial_migration.codegen import render_license
+from initial_migration.cmake_metadata import read_metadata, write_metadata
+from initial_migration.generate_build import ARCHES, BUILD_OPTIONS_OUTPUT, LICENSES_OUTPUT, ROOT, cmake_build_options
+from initial_migration.repository_inputs import source_label
 
 GIT_HASH_OUTPUT = 'base/base/GitHash.generated.cpp'
 LLVM_CONFIG = 'contrib/llvm-project/llvm/include/llvm/Config/'
@@ -78,7 +78,7 @@ def _license_substitutions(root, reference):
         offset = found.end()
     if body[offset:] != 'nullptr\n};\n':
         raise ValueError('Unparsed CMake license bytes after row ' + str(len(actual)))
-    expected = [tuple(row) for row in json.loads((root / 'bazel/license_manifest.json').read_text())]
+    expected = [tuple(row) for row in json.loads((root / 'bazel/initial_migration/license_manifest.json').read_text())]
     substitutions = {}
     for kind, start, end, rstart, rend in difflib.SequenceMatcher(
             a=expected, b=actual, autojunk=False).get_opcodes():
@@ -181,7 +181,7 @@ def _llvm_reference(root, build, arch):
 
 
 def _full_reference(root, build, arch, metadata, check):
-    codegen_file = root / 'bazel/codegen_rules.bzl'
+    codegen_file = root / 'bazel/initial_migration/codegen_rules.bzl'
     codegen = codegen_file.read_text()
     records = _codegen_records(codegen)
     with gzip.open(build / (LICENSES_OUTPUT + '.gz'), 'rb') as source:
@@ -202,15 +202,15 @@ def _full_reference(root, build, arch, metadata, check):
             if source not in inputs:
                 inputs[source] = source_label(source)
     attrs = dict(before)
-    license_name = 'config/' + arch + '/license_substitutions.json'
-    shared_license_name = 'config/x86_64/license_substitutions.json'
-    shared_license_file = root / 'bazel' / shared_license_name
+    license_name = 'license_substitutions_' + arch + '.json'
+    shared_license_name = 'license_substitutions_x86_64.json'
+    shared_license_file = root / 'bazel/initial_migration' / shared_license_name
     reuse_licenses = shared_license_file.is_file() and json.loads(shared_license_file.read_text()) == substitutions
     if reuse_licenses:
         license_name = shared_license_name
-    license_file = root / 'bazel' / license_name
+    license_file = root / 'bazel/initial_migration' / license_name
     attrs.update({
-        'cmake_metadata': '//bazel:' + license_name,
+        'cmake_metadata': '//bazel/initial_migration:' + license_name,
         'cmake_condition': '//bazel:use_cmake_metadata_' + arch,
         'source_paths': sorted(inputs),
         'srcs': [inputs[source] for source in sorted(inputs)],
@@ -238,14 +238,14 @@ def _full_reference(root, build, arch, metadata, check):
     if check:
         if json.loads(license_file.read_text()) != substitutions:
             raise ValueError('Saved CMake license substitutions do not match the full reference')
-        recorded_license_name = metadata[arch].get('license_substitutions', 'config/' + arch + '/license_substitutions.json')
+        recorded_license_name = metadata[arch].get('license_substitutions', 'license_substitutions_' + arch + '.json')
         if recorded_license_name != license_name:
             raise ValueError('Saved license metadata filename does not match the full reference')
         if metadata[arch]['resource_gzip_mtimes'] != mtimes or codegen != expected_codegen:
             raise ValueError('Saved codegen metadata does not match the full reference')
     else:
         metadata[arch]['resource_gzip_mtimes'] = mtimes
-        if license_name != 'config/' + arch + '/license_substitutions.json':
+        if license_name != 'license_substitutions_' + arch + '.json':
             metadata[arch]['license_substitutions'] = license_name
         else:
             metadata[arch].pop('license_substitutions', None)

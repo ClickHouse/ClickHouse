@@ -4,7 +4,7 @@ import ast
 from pathlib import Path
 
 
-_module = ast.parse(Path(__file__).with_suffix(".bzl").read_text())
+_module = ast.parse((Path(__file__).resolve().parent / "initial_migration/rust_archives.bzl").read_text())
 _inventory = next(
     statement.value
     for statement in _module.body

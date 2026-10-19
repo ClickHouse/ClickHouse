@@ -1,0 +1,9 @@
+"""Recorded migration data still consumed by the native Bazel build."""
+
+exports_files(
+    glob(["*.bzl", "license_substitutions_*.json"]) + [
+        "contrib_repositories.json",
+        "license_manifest.json",
+    ],
+    visibility = ["//visibility:public"],
+)

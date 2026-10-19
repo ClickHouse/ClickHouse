@@ -41,7 +41,7 @@ TOOLS_ARCHIVE_VERSION = 3
 SAFE_GIT_CONFIG = '[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n'
 ROOT_NON_CMAKE_FILES = (
     'BUILD.bazel', 'MODULE.bazel', 'MODULE.bazel.lock',
-    '.bazelrc', '.gitignore', 'README.bazel.md',
+    '.bazelrc', '.gitignore', 'README.bazel.md', 'any2bazel.json',
 )
 ROOT_DIFF_EXCLUDES = (':!bazel/**',) + tuple(':!' + name for name in ROOT_NON_CMAKE_FILES)
 

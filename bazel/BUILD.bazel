@@ -1,8 +1,8 @@
-load(":codegen_rules.bzl", "CODEGEN_RULES")
+load("//bazel/initial_migration:codegen_rules.bzl", "CODEGEN_RULES")
 load(":codegen_actions.bzl", "declare_codegen")
 load(":build_options.bzl", "build_options")
-load(":build_options_data.bzl", "BUILD_OPTIONS")
-load(":cmake_metadata.bzl", "CMAKE_METADATA")
+load("//bazel/initial_migration:build_options_data.bzl", "BUILD_OPTIONS")
+load("//bazel/initial_migration:cmake_metadata.bzl", "CMAKE_METADATA")
 load(":cmake_toolchain.bzl", "cmake_toolchain")
 load(":native_cmake_reference.bzl", "native_cmake_reference")
 load(":native_stripped_hash.bzl", "native_stripped_hash")
@@ -40,7 +40,7 @@ platform(
     constraint_values = triple_to_constraint_set("aarch64-unknown-linux-gnu"),
 )
 
-exports_files(glob(["*.bzl", "*.MODULE.bazel", "config/**"]) + ["license_manifest.json", "contrib_repositories.json"])
+exports_files(glob(["*.bzl", "*.MODULE.bazel", "config/**"]))
 
 bool_flag(
     name = "cmake_metadata",

@@ -4,8 +4,8 @@ load("@rules_cc//cc:action_names.bzl", "ACTION_NAMES")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain", "use_cc_toolchain")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
-load(":cmake_link_data.bzl", "CMAKE_LINK")
-load(":cmake_link_data_aarch64.bzl", CMAKE_LINK_AARCH64 = "CMAKE_LINK")
+load("//bazel/initial_migration:cmake_link_data.bzl", "CMAKE_LINK")
+load("//bazel/initial_migration:cmake_link_data_aarch64.bzl", CMAKE_LINK_AARCH64 = "CMAKE_LINK")
 
 _CMAKE_LINKS = {
     "x86_64": CMAKE_LINK,

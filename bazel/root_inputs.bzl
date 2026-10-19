@@ -1,6 +1,6 @@
 """First-party headers and generator inputs shared by native targets."""
 
-load(":codegen_rules.bzl", "CODEGEN_RULES")
+load("//bazel/initial_migration:codegen_rules.bzl", "CODEGEN_RULES")
 
 def declare_inputs():
     native.exports_files(["cmake/localize_rust_c_symbols.sh", "cmake/strip_rust_symbols.sh"])

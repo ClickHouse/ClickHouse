@@ -6,9 +6,9 @@ import json
 from pathlib import Path
 import re
 
-import llvm_targets
-from compact_build import compact, header_patterns
-from repository_inputs import (
+from initial_migration import llvm_targets
+from initial_migration.compact_build import compact, header_patterns
+from initial_migration.repository_inputs import (
     REPOSITORIES, ROOT, CC_HEADER_SUFFIXES, HeaderDirectory,
     directory_sources, execution_path, repository, source_label, source_path, textual_source_names,
 )
