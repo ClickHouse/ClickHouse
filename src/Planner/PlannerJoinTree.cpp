@@ -999,11 +999,12 @@ std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & sto
     SelectQueryInfo & table_expression_query_info,
     PlannerContextPtr & planner_context,
     std::set<std::string> & used_row_policies,
-    NameSet required_names_without_filter = {})
+    NameSet required_names_without_filter = {},
+    RowPolicyFilterPtr * own_row_policy_filter = nullptr)
 {
     const auto & query_context = planner_context->getQueryContext();
 
-    auto row_policy_filter = getEffectiveRowPolicyFilter(*storage, query_context);
+    auto row_policy_filter = getEffectiveRowPolicyFilter(*storage, query_context, own_row_policy_filter);
     if (!row_policy_filter)
         return {};
 
@@ -2108,6 +2109,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
         /// columns-only metadata (no view `select`, no constraints), so recording them
         /// would pin a wrong semantics fingerprint for the name; only the real pass
         /// records.
+        /// The row-policy part of the fingerprint is the storage's own policy exactly as it was
+        /// combined into the filter built below (`plan_cache_row_policy_filter`), not a second
+        /// lookup: `ALTER ROW POLICY` can replace the policy in between, and a fresh lookup would
+        /// pair the old filter with the new fingerprint, so a stale entry would validate. It stays
+        /// nullptr on the trivial count path, which applies only when no row policy filters the table.
+        RowPolicyFilterPtr plan_cache_row_policy_filter;
         auto record_plan_cache_storage_identity = [&]()
         {
             if (table_node && table_node->getTemporaryTableName().empty()
@@ -2116,10 +2123,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     identities->add(
                         table_node->getStorageID(),
                         computeQueryPlanCacheSemanticsFingerprint(
-                            storage_snapshot->metadata,
-                            table_node->getStorageID().getDatabaseName(),
-                            table_node->getStorageID().table_name,
-                            query_context));
+                            storage_snapshot->metadata, plan_cache_row_policy_filter, query_context));
         };
 
         /// Apply trivial_count if possible. The plain variant requires no `WHERE`; the
@@ -2263,7 +2267,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 }
 
                 auto row_policy_filter_info = buildRowPolicyFilterIfNeeded(
-                    storage, table_expression_query_info, planner_context, used_row_policies, std::move(row_policy_required_names));
+                    storage,
+                    table_expression_query_info,
+                    planner_context,
+                    used_row_policies,
+                    std::move(row_policy_required_names),
+                    &plan_cache_row_policy_filter);
                 if (row_policy_filter_info)
                 {
                     table_expression_data.setRowLevelFilterActions(row_policy_filter_info->actions.clone());

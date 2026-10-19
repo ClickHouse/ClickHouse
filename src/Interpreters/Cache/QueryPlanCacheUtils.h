@@ -9,6 +9,9 @@
 namespace DB
 {
 
+struct RowPolicyFilter;
+using RowPolicyFilterPtr = std::shared_ptr<const RowPolicyFilter>;
+
 /// Returns true if the AST contains functions whose results must not be frozen into a
 /// cached plan (non-deterministic functions; `arrayJoin` is exempt because it is pure).
 bool astContainsFunctionsUnsafeForQueryPlanCache(const ASTPtr & ast, const ContextPtr & context);
@@ -50,8 +53,12 @@ std::optional<std::vector<QueryPlanCacheDependency>> collectQueryPlanCacheDepend
 /// collection: the dependency would record the post-alter schema or row policy while the plan
 /// carries the pre-alter semantics, producing an entry that validates successfully on every hit
 /// yet keeps executing the stale semantics.
+/// `row_policy` must be the very `SELECT` row-policy filter of the storage itself that the plan was
+/// built with (nullptr if none was applied), not a second lookup: `ALTER ROW POLICY` can replace the
+/// policy between building the filter and recording the fingerprint, and a fresh lookup would then
+/// pair the old filter with the new policy's fingerprint.
 UInt64 computeQueryPlanCacheSemanticsFingerprint(
-    const StorageMetadataPtr & metadata, const String & database, const String & table, const ContextPtr & context);
+    const StorageMetadataPtr & metadata, const RowPolicyFilterPtr & row_policy, const ContextPtr & context);
 
 /// The same fingerprint computed from a collected dependency record, for comparison with the
 /// analysis-time value above.

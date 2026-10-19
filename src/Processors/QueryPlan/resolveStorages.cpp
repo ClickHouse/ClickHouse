@@ -7,6 +7,8 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/Sources/NullSource.h>
 
+#include <Access/Common/RowPolicyDefs.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Analyzer/Resolve/IdentifierResolver.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/QueryTreeBuilder.h>
@@ -236,7 +238,9 @@ static QueryPlanResourceHolder replaceReadingFromTable(
         /// an unexpected UUID. Note this must use the pre-modifier metadata: FINAL/SAMPLE extend
         /// the metadata below, after the identity is pinned, on both the validation and this side.
         if (computeQueryPlanCacheSemanticsFingerprint(
-                snapshot->metadata, storage_id.getDatabaseName(), storage_id.table_name, context)
+                snapshot->metadata,
+                context->getRowPolicyFilter(storage_id.getDatabaseName(), storage_id.table_name, RowPolicyFilterType::SELECT_FILTER),
+                context)
             != it->second.semantics_fingerprint)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,

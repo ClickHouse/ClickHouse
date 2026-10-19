@@ -97,17 +97,15 @@ public:
             /// query plan cache like `PlannerJoinTree` does for the storages it reads: otherwise the
             /// cache would drop it from the dependencies of the plan, and a hit of a plan in which the
             /// set is folded into a constant (inside a scalar subquery) would neither revalidate it
-            /// nor recheck `SELECT` on it (see `Context::PlanCacheStorageIdentities`).
+            /// nor recheck `SELECT` on it (see `Context::PlanCacheStorageIdentities`). The set is used
+            /// unfiltered, as `checkNoRowPolicy` has just verified, so the fingerprint describes no row
+            /// policy: a policy created after that check makes it differ from the collected dependency.
             if (auto identities = query_context->getPlanCacheStorageIdentities())
             {
-                const auto & storage_id = second_argument_table->getStorageID();
                 identities->add(
-                    storage_id,
+                    second_argument_table->getStorageID(),
                     computeQueryPlanCacheSemanticsFingerprint(
-                        second_argument_table->getStorageSnapshot()->metadata,
-                        storage_id.getDatabaseName(),
-                        storage_id.table_name,
-                        query_context));
+                        second_argument_table->getStorageSnapshot()->metadata, /*row_policy=*/ nullptr, query_context));
             }
 
             /// Handle storage_set as ready set.

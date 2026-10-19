@@ -222,10 +222,9 @@ struct RowPolicyInfo
     RowPolicyFilterContents contents;
 };
 
-RowPolicyInfo getRowPolicyInfo(const ContextPtr & context, const String & database, const String & table)
+RowPolicyInfo getRowPolicyInfo(const ContextPtr & context, const RowPolicyFilterPtr & row_policy)
 {
     RowPolicyInfo info;
-    auto row_policy = context->getRowPolicyFilter(database, table, RowPolicyFilterType::SELECT_FILTER);
     if (row_policy && !row_policy->isAlwaysTrue() && row_policy->expression)
     {
         std::unordered_set<String> visited_udfs;
@@ -241,6 +240,11 @@ RowPolicyInfo getRowPolicyInfo(const ContextPtr & context, const String & databa
         info.hash = getSipHash128AsPair(hash_state);
     }
     return info;
+}
+
+RowPolicyInfo getRowPolicyInfo(const ContextPtr & context, const String & database, const String & table)
+{
+    return getRowPolicyInfo(context, context->getRowPolicyFilter(database, table, RowPolicyFilterType::SELECT_FILTER));
 }
 
 Int64 getMetadataVersionOrSchemaHash(const StorageMetadataPtr & metadata)
@@ -898,9 +902,9 @@ static UInt64 combineSemanticsFingerprint(Int64 metadata_version, const IASTHash
 }
 
 UInt64 computeQueryPlanCacheSemanticsFingerprint(
-    const StorageMetadataPtr & metadata, const String & database, const String & table, const ContextPtr & context)
+    const StorageMetadataPtr & metadata, const RowPolicyFilterPtr & row_policy, const ContextPtr & context)
 {
-    return combineSemanticsFingerprint(getMetadataVersionOrSchemaHash(metadata), getRowPolicyInfo(context, database, table).hash);
+    return combineSemanticsFingerprint(getMetadataVersionOrSchemaHash(metadata), getRowPolicyInfo(context, row_policy).hash);
 }
 
 UInt64 computeQueryPlanCacheSemanticsFingerprint(const QueryPlanCacheDependency & dep)
