@@ -1808,16 +1808,18 @@ std::vector<Iceberg::ExternalFile> IcebergMetadata::tryCollectExternalFilesToDel
     }
 }
 
-bool IcebergMetadata::deletesDataOnDrop()
+bool IcebergMetadata::deletesDataOnDrop(ContextPtr query_context)
 {
-    return Context::getGlobalContextInstance()->getSettingsRef()[Setting::iceberg_delete_data_on_drop];
+    /// `drop` reads the setting from the query context when it runs inside the query, and from the global context
+    /// when it runs in the background.
+    return query_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop]
+        || Context::getGlobalContextInstance()->getSettingsRef()[Setting::iceberg_delete_data_on_drop];
 }
 
 void IcebergMetadata::checkCanBeDropped(ContextPtr query_context, bool catalog_purges_files) const
 {
     /// `drop` runs in the background with the global context, so the dropping user's grants are checked here.
-    if (!Context::getGlobalContextInstance()->getSettingsRef()[Setting::iceberg_delete_data_on_drop].value
-        || persistent_components.table_root_was_derived)
+    if (!deletesDataOnDrop(query_context) || persistent_components.table_root_was_derived)
         return;
 
     /// The catalog purges even the files that cannot be enumerated here, so their check must fail the `DROP`.
