@@ -1,3 +1,6 @@
+-- Tags: no-parallel
+-- Tag no-parallel: copies share global users with fixed names.
+
 -- Query-log access metadata remains complete for operators. Own-log users only see initial
 -- rows with an explicit unhidden marker; marked DEFINER/NONE QueryFinish rows are omitted.
 SET log_queries = 1;

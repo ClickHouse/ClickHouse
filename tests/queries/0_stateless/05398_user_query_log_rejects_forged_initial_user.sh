@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
+# Tag no-parallel: copies share a global user with a fixed name.
 
 set -e
 

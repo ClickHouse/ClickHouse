@@ -1,3 +1,6 @@
+-- Tags: no-parallel
+-- Tag no-parallel: copies share global users with fixed names.
+
 -- An INSERT-only caller reaches a protected lookup through a DEFINER materialized view and a nested DEFINER view.
 -- The outer insert keeps complete operator attribution; its marked initial QueryFinish row is omitted from user_query_log.
 SET log_queries = 1;

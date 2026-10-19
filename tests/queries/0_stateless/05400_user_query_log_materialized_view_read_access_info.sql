@@ -1,3 +1,6 @@
+-- Tags: no-parallel
+-- Tag no-parallel: copies share a global user with a fixed name.
+
 -- Reading a DEFINER/NONE materialized view hides its access metadata from the reader's own query log.
 SET log_queries = 1;
 SET log_queries_probability = 1;
