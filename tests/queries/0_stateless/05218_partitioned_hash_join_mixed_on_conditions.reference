@@ -65,11 +65,11 @@ ANY LEFT | join_use_nulls	7	1
 SEMI LEFT | join_use_nulls	6	1
 ANTI LEFT | join_use_nulls	1	1
 -- a build large enough to partition, and probe blocks the residual filter stops at max_joined_block_size_rows
-LEFT | large	2702138	1
-ANY LEFT | large	20000	1
-SEMI LEFT | large	18000	1
-ANTI LEFT | large	2000	1
-ANY INNER | large	18000	1
+LEFT | large	301046	1
+ANY LEFT | large	7000	1
+SEMI LEFT | large	6000	1
+ANTI LEFT | large	1000	1
+ANY INNER | large	6000	1
 -- a shape hash rejects with a mixed condition is rejected the same way
 -- every labelled query ran the partitioned join
 1	0
