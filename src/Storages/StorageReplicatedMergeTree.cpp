@@ -7800,7 +7800,7 @@ void StorageReplicatedMergeTree::restoreMetadataVersionFromBackup(Int32 metadata
     /// /columns changes only together with /metadata, so if /metadata has the same version before and after
     /// reading /columns, both are of that version. Column comments are not compared, as they are not replicated.
     ColumnsDescription columns_from_zk;
-    Int32 version_before_columns;
+    Int32 version_before_columns = 0;
     do
     {
         zookeeper->get(table_metadata_path, &metadata_stat);
