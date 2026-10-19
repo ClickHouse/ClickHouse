@@ -1,7 +1,9 @@
 """Headroom of the 32-bit PC-relative references of an x86-64 binary.
 
-The small code model reaches +-2 GiB and lld adds no range extension thunks on x86-64, so these spans of the linked image
-must stay below 2 GiB or the link fails with `relocation R_X86_64_PC32 out of range`.
+The small code model reaches +-2 GiB and lld adds no range extension thunks on x86-64. lld places the read-only data, the unwind
+tables and the code above the ELF header (which code references as `__ehdr_start`) and the writable data above the code, and the
+unwind tables point at personality and type-info slots in `.data`, so these spans must stay below 2 GiB or the link fails with
+`relocation R_X86_64_PC32 out of range`.
 
 Usage: python3 -m ci.jobs.scripts.relocation_headroom <binary>...
 """
@@ -50,15 +52,14 @@ def headroom(path):
     by_name = {s[0]: s for s in sections}
     small = [s for s in sections if not s[1] & SHF_X86_64_LARGE]
     code = [s for s in small if s[1] & SHF_EXECINSTR]
-    all_code = [s for s in sections if s[1] & SHF_EXECINSTR]
-    start = lambda group: min(s[2] for s in group)
-    end = lambda group: max(s[2] + s[3] for s in group)
-    eh_frame_hdr = by_name[".eh_frame_hdr"][2]
+    end_of_code = max(s[2] + s[3] for s in code)
+    end_of_data = max(s[2] + s[3] for s in small if not s[1] & SHF_EXECINSTR)
+    unwind_tables = min(by_name[n][2] for n in (".gcc_except_table", ".eh_frame") if n in by_name)
+    data = by_name[".data"]
     spans = {
-        ".rodata to end of code": end(code) - by_name[".rodata"][2],
-        "start of code to end of data": end([s for s in small if not s[1] & SHF_EXECINSTR]) - start(code),
-        ".eh_frame_hdr to code": max(end(all_code) - eh_frame_hdr, eh_frame_hdr - start(all_code)),
-        "code": end(code) - start(code),
+        "start of image to end of code": end_of_code,
+        "start of code to end of data": end_of_data - min(s[2] for s in code),
+        "unwind tables to end of .data": data[2] + data[3] - unwind_tables,
     }
     return {name: REACH - span for name, span in spans.items()}
 
