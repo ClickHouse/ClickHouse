@@ -475,13 +475,18 @@ static SortDescription getSortDescriptionForOutputHeader(
     return {};
 }
 
+static Int64 getMaxPartitionsToRead(const Settings & settings, const MergeTreeSettings & data_settings)
+{
+    return settings[Setting::max_partitions_to_read].changed
+        ? settings[Setting::max_partitions_to_read].value
+        : data_settings[MergeTreeSetting::max_partitions_to_read].value;
+}
+
 std::shared_ptr<QueryIdHolder> ReadFromMergeTree::AnalysisResult::checkLimits(
     const Context & context_, const MergeTreeData & data_, const MergeTreeSettings & data_settings_) const
 {
     const Settings & settings = context_.getSettingsRef();
-    auto max_partitions_to_read = settings[Setting::max_partitions_to_read].changed
-        ? settings[Setting::max_partitions_to_read].value
-        : data_settings_[MergeTreeSetting::max_partitions_to_read].value;
+    auto max_partitions_to_read = getMaxPartitionsToRead(settings, data_settings_);
     if (max_partitions_to_read > 0)
     {
         std::set<String> partitions;
@@ -4955,6 +4960,11 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
     if (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
         return false;
     if (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf])
+        return false;
+
+    /// Same for `max_partitions_to_read`: it is checked before the read, so parts that a skip index
+    /// would drop must already be excluded by index analysis.
+    if (getMaxPartitionsToRead(settings, *data_settings) > 0)
         return false;
 
     /// Pending ALTER mutations (e.g. `MODIFY COLUMN`) can change the type of an indexed column,
