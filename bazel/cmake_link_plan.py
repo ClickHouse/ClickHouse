@@ -264,11 +264,16 @@ class Plan:
         }
 
     def check_labels(self, builds=None):
-        """Check generated rule names, or parse each existing BUILD once for CLI use."""
+        """Check archive owners and resolve collapsed single-compile libraries.
+
+        The other CPU may have more compile groups than this reference. The
+        generated BUILD declaration, not this CPU's File API alone, decides
+        whether __compile_0 was collapsed into the original library.
+        """
         repositories = {"@" + spec["name"]: owner for owner, spec in REPOSITORIES.items()}
         rust_names = {name + "_cc" for name in RUST_ARCHIVES.values()} | {"skim_bridge", "cxx_runtime"}
         declared = {}
-        for label in self.refs:
+        for index, label in enumerate(self.refs):
             if label.startswith("//bazel/rust:"):
                 if label.removeprefix("//bazel/rust:") not in rust_names:
                     raise ValueError("No declared Rust archive or bridge: " + label)
@@ -285,18 +290,24 @@ class Plan:
             name = rest.removeprefix(":")
             if owner not in declared:
                 if builds is not None:
-                    declared[owner] = builds[owner].names if owner in builds else set()
+                    declared[owner] = dict.fromkeys(builds[owner].names) if owner in builds else {}
                 else:
                     parsed = ast.parse(filename.read_text(), filename=str(filename))
                     declared[owner] = {
-                        keyword.value.value
+                        keyword.value.value: getattr(statement.value.func, "id", "")
                         for statement in parsed.body
                         if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call)
                         for keyword in statement.value.keywords
                         if keyword.arg == "name" and isinstance(keyword.value, ast.Constant)
                     }
             if name not in declared[owner]:
-                raise ValueError("No Bazel target for " + label + " in " + str(filename))
+                collapsed = name.removesuffix("__compile_0")
+                if (collapsed == name or collapsed not in declared[owner]
+                        or declared[owner][collapsed] not in ("ch_cc_library", None)):
+                    raise ValueError("No Bazel target for " + label + " in " + str(filename))
+                self.refs[index] = repository + "//:" + collapsed
+        if len(set(self.refs)) != len(self.refs):
+            raise ValueError("Collapsed compile libraries describe duplicate archive owners")
 
 
 def main():

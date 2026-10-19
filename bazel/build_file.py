@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 
 import llvm_targets
-from compact_build import compact
+from compact_build import compact, header_patterns
 from repository_inputs import (
     REPOSITORIES, ROOT, CC_HEADER_SUFFIXES, HeaderDirectory,
     directory_sources, execution_path, repository, source_label,
@@ -15,6 +15,24 @@ from repository_inputs import (
 
 ARCHES = ('x86_64', 'aarch64')
 LABEL_ATTRIBUTES = {'srcs', 'hdrs', 'textual_hdrs', 'additional_compiler_inputs', 'deps'}
+
+# These libraries already export their complete public C/C++ headers. Private
+# sources and generated configuration files must still be declared separately.
+PUBLIC_HEADERS = {
+    'contrib/fmtlib': ('contrib/fmtlib/include/fmt/', '_fmt'),
+    'contrib/flatbuffers': ('contrib/flatbuffers/include/flatbuffers/', '_flatbuffers'),
+    'contrib/libuv': ('contrib/libuv/include/', '_uv'),
+}
+
+# Foreign headers that may be omitted only when an existing dependency already
+# exports them. Keep raw source filenames and local_includes in the consumer:
+# Arrow's generated FlatBuffers headers must still precede its shipped headers.
+DEPENDENCY_HEADER_ROOTS = (
+    'contrib/arrow/cpp/src/arrow/',
+    'contrib/arrow/cpp/src/parquet/',
+    'contrib/zstd/lib/',
+    'contrib/thrift/lib/cpp/src/thrift/',
+)
 
 
 def global_compile_options():
@@ -180,8 +198,25 @@ def starlark(value, indent=0, paths=False, step=2):
         return (starlark(value.flags, indent, paths, step) + ' + cmake_prefix_maps('
                 + json.dumps(value.arches) + ')')
     if isinstance(value, CMakeNativeCopts):
-        return (starlark(value.flags, indent, paths, step) + ' + cmake_native_compile_flags('
-                + starlark(value.groups, indent, False, step) + ')')
+        # Executables and NASM retain their own flags; ch_cc_library supplies
+        # these flags to native libraries in BuildFile.rule().
+        choices = {'//conditions:default': []}
+        for arch, group in value.groups.items():
+            options = []
+            if group['language'] in GLOBAL_COMPILE_OPTIONS:
+                gcc_root = 'contrib/sysroot/linux-' + arch
+                options = ['--sysroot=' + gcc_root + '/' + arch + '-linux-gnu/libc',
+                           '--gcc-toolchain=' + gcc_root]
+            if group['language'] == 'CXX':
+                options.append('-nostdinc++')
+            for flag, origin, directory in group['includes']:
+                root = llvm_targets.PREFIX
+                if origin == 'generated':
+                    root = '$(GENDIR)/' + root + '/gen/' + arch
+                options.extend([flag, root + '/' + directory])
+            choices['@platforms//cpu:' + arch] = options
+        return (starlark(value.flags, indent, paths, step) + ' + '
+                + starlark(Select(choices), indent, 'cmake_runtime', step))
     if isinstance(value, CMakeWarnings):
         return (starlark(value.before, indent, paths, step) + ' + CLICKHOUSE_WARNINGS + '
                 + starlark(value.after, indent, paths, step))
@@ -194,7 +229,9 @@ def starlark(value, indent=0, paths=False, step=2):
     if isinstance(value, Select):
         return 'select(' + starlark(value.values, indent, paths, step) + ')'
     if isinstance(value, Glob):
-        return 'glob(' + json.dumps(value.patterns) + (
+        patterns = header_patterns(value.patterns)
+        function = 'header_glob' if patterns is not None else 'glob'
+        return function + '(' + json.dumps(value.patterns if patterns is None else patterns) + (
             ', exclude = ' + json.dumps(value.exclude) if value.exclude else '') + (
             ', allow_empty = True' if value.allow_empty else '') + ')'
     if isinstance(value, dict):
@@ -249,10 +286,12 @@ def relocate_tools(value, owners):
 
 
 class BuildFile:
-    def __init__(self, owner, owners, header_consumers=None):
+    def __init__(self, owner, owners, header_consumers=None, targets=None):
         self.owner = owner
         self.owners = owners
         self.header_consumers = header_consumers or {}
+        self.targets = targets or {}
+        self.public_directories = {}
         self.loads = {}
         self.rules = []
         self.names = set()
@@ -292,10 +331,50 @@ class BuildFile:
             parts.append(labels)
         return parts[0] if len(parts) == 1 else Concat(parts)
 
-    def compile_inputs(self, name, group, binary=False):
+    def dependency_header_directories(self, arch, dependencies):
+        """Source header directories already exported by existing cc deps."""
+        key = (arch, tuple(dependencies))
+        if key in self.public_directories:
+            return self.public_directories[key]
+        targets = self.targets.get(arch, {})
+        directories, seen = set(), set()
+        pending = list(dependencies)
+        while pending:
+            # Configured native target names are unique across repositories.
+            ref = pending.pop()
+            target_name = ref.rsplit(':', 1)[-1]
+            if target_name in seen:
+                continue
+            if ref not in {
+                ':' + target_name,
+                '//:' + target_name,
+                target_label(target_name, self.owners),
+            }:
+                # An external Bazel module may use the same short name.
+                continue
+            seen.add(target_name)
+            target = targets.get(target_name)
+            if not target or target.get('kind') == 'EXECUTABLE':
+                continue
+            pending.extend(target.get('deps', []))
+            for dep_group in target.get('groups', []):
+                pending.extend(dep_group.get('deps', []))
+                if dep_group.get('cmake_runtime') or dep_group.get('language') == 'ASM_NASM':
+                    continue
+                for item in dep_group.get('hdrs', []):
+                    if (isinstance(item, HeaderDirectory)
+                            and repository(item.directory) in {'contrib/arrow', 'contrib/zstd', 'contrib/thrift'}
+                            and repository(item.directory) == self.owners.get(target_name)
+                            and not self.header_consumers.get(item.directory, set()) <= {target_name}):
+                        directories.add(item.directory.rstrip('/') + '/')
+        result = tuple(sorted(directories))
+        self.public_directories[key] = result
+        return result
+
+    def compile_inputs(self, name, group, binary=False, arch=None, library_deps=()):
         """Separate private headers, public headers, and non-compilable inputs."""
         fields = {key: list(group.get(key, [])) for key in
-                  ('srcs', 'hdrs', 'textual_hdrs', 'additional_compiler_inputs')}
+                  ('srcs', 'hdrs', 'textual_hdrs', 'additional_compiler_inputs', 'deps')}
         original = {}
         for field in ('hdrs', 'additional_compiler_inputs'):
             directories = [item.directory for item in fields[field] if isinstance(item, HeaderDirectory)]
@@ -307,10 +386,21 @@ class BuildFile:
                 if not any(directory.startswith(parent + '/') for parent in directories if parent != directory)
             ]
         custom = group.get('cmake_runtime') or group.get('language') == 'ASM_NASM'
+        supplied = () if custom else self.dependency_header_directories(
+            arch, tuple(group.get('deps', ())) + tuple(library_deps))
         for old_field, directories in original.items():
             for directory in directories:
                 owner = repository(directory)
                 field = ('srcs' if binary or self.header_consumers.get(directory, set()) <= {name} else 'hdrs')
+                if not custom and owner == 'contrib/boost':
+                    if owner != self.owner:
+                        fields['deps'].append('@clickhouse_boost//:boost_headers')
+                        continue
+                    if directory == owner and name.startswith('_boost_'):
+                        fields['deps'].append('@clickhouse_boost//:boost_headers')
+                        # The compiled Boost component keeps all private
+                        # implementation files, including textual .cpp inputs.
+                        directory += '/libs/' + name.removeprefix('_boost_')
                 if old_field == 'additional_compiler_inputs':
                     field = old_field
                 elif custom:
@@ -330,7 +420,8 @@ class BuildFile:
                         # prevent one header from being declared twice.
                         local = []
                         prefix = '@' + REPOSITORIES[owner]['name'] + '//:' if owner else '//:'
-                        for values in fields.values():
+                        for key in ('srcs', 'hdrs', 'textual_hdrs', 'additional_compiler_inputs'):
+                            values = fields[key]
                             for item in values:
                                 if isinstance(item, str) and item.startswith(prefix):
                                     local.append(item.removeprefix(prefix))
@@ -338,7 +429,16 @@ class BuildFile:
                         fields[non_header_field].append(Glob([pattern], (*excluded, *headers), allow_empty=True))
                 else:
                     for path in directory_sources(directory):
+                        public = PUBLIC_HEADERS.get(owner)
+                        if (not custom and public and path.startswith(public[0])
+                                and path.endswith(CC_HEADER_SUFFIXES)):
+                            fields['deps'].append('@' + REPOSITORIES[owner]['name'] + '//:' + public[1])
+                            continue
                         target_field = field if custom or path.endswith(CC_HEADER_SUFFIXES) else non_header_field
+                        if (target_field == 'hdrs' and path.endswith(CC_HEADER_SUFFIXES)
+                                and path.startswith(DEPENDENCY_HEADER_ROOTS)
+                                and path.startswith(supplied)):
+                            continue
                         fields[target_field].append(source_label(path))
         if custom:
             fields['hdrs'].extend(fields['textual_hdrs'])
@@ -371,6 +471,36 @@ class BuildFile:
                 and all(group['language'] in GLOBAL_COMPILE_OPTIONS for group in copts.groups.values())):
             kind = 'ch_cc_library'
             self.loads.setdefault('@clickhouse//bazel:ch_cc_library.bzl', set()).add(kind)
+            languages = {group['language'] for group in copts.groups.values()}
+            if len(languages) != 1:
+                raise ValueError(f'{name}: expected one native compiler language, got {languages}')
+            language = next(iter(languages))
+            if language != 'CXX':
+                attrs['language'] = language
+            arches = list(copts.groups)
+            if set(arches) != set(ARCHES):
+                attrs['arches'] = arches
+            expected_includes = [] if language == 'CXX' else [['-I', 'generated', 'libcxx/include/c++/v1']]
+            includes = [group['includes'] for group in copts.groups.values()]
+            if all(value == [] for value in includes) and expected_includes:
+                attrs['libcxx_headers'] = False
+            elif not all(value == expected_includes for value in includes):
+                raise ValueError(f'{name}: unsupported native libc++ includes: {includes}')
+            flags = copts.flags
+            if isinstance(flags, CMakeCopts) and set(flags.arches) == set(arches):
+                flags = flags.flags
+            else:
+                # If a future CMake group uses source maps on only one CPU,
+                # retain that select instead of applying the macro's default.
+                attrs['map_source_files'] = False
+            attrs['copts'] = flags
+            defaults = {'-fortify_source', '-default_compile_flags', '-llvm_system_c_headers'}
+            features = attrs.get('features', [])
+            if isinstance(features, Select):
+                attrs['features'] = select({key: [flag for flag in value if flag not in defaults]
+                                            for key, value in features.values.items()})
+            else:
+                attrs['features'] = [flag for flag in features if flag not in defaults]
         if kind in {'cc_library', 'cc_binary', 'cc_test', 'cc_import'}:
             self.loads.setdefault('@rules_cc//cc:' + kind + '.bzl', set()).add(kind)
         elif kind == 'nasm_objects':
@@ -415,11 +545,21 @@ class BuildFile:
             })
             return
         group_count = max(len(v['groups']) for v in variants.values())
+        collapse_single = group_count == 1 and kind != 'EXECUTABLE' and all(
+            group['language'] in GLOBAL_COMPILE_OPTIONS and not group.get('cmake_runtime')
+            for variant in variants.values() for group in variant['groups']
+        )
         binary_attrs = {}
         for index in range(group_count):
             groups = {arch: v['groups'][index] for arch, v in variants.items() if index < len(v['groups'])}
             binary = kind == 'EXECUTABLE' and index == 0 and name != 'clickhouse'
-            inputs = {arch: self.compile_inputs(name, group, binary) for arch, group in groups.items()}
+            inputs = {
+                arch: self.compile_inputs(
+                    name, group, binary, arch,
+                    variants[arch]['deps'] if collapse_single else (),
+                )
+                for arch, group in groups.items()
+            }
             runtime_groups = [g for g in groups.values() if g.get('cmake_runtime')]
             if runtime_groups:
                 if len(runtime_groups) != len(groups) or kind != 'STATIC_LIBRARY':
@@ -487,6 +627,8 @@ class BuildFile:
                     value = inputs.get(arch, {}).get(field, []) if field in inputs.get(arch, {}) else group.get(field, [])
                     if field == 'deps' and kind != 'EXECUTABLE' and arch in variants:
                         value = compile_dependencies(value, variants[arch]['deps'])
+                        if collapse_single:
+                            value = value + variants[arch]['deps']
                     if field == 'copts':
                         value = compile_options(value, group.get('deps', []))
                         language = group.get('language')
@@ -527,7 +669,14 @@ class BuildFile:
                                 value.append('@clickhouse_llvm_project//:runtime_' + library + '_headers')
                             else:
                                 raise ValueError(f'{name}: unsupported NASM include {origin} {directory}')
-                    values['@platforms//cpu:' + arch] = self.label_inputs(value) if field in LABEL_ATTRIBUTES else value
+                    if field in LABEL_ATTRIBUTES:
+                        value = self.label_inputs(value)
+                        if field == 'deps' and collapse_single:
+                            # The compile dependencies include public header
+                            # libraries. Keep them before the old wrapper's
+                            # dependencies and deduplicate after rebasing.
+                            value = list(dict.fromkeys(value))
+                    values['@platforms//cpu:' + arch] = value
                 attrs[field] = select(values)
             if any(system_includes.values()):
                 attrs['local_includes'] = select({
@@ -573,7 +722,7 @@ class BuildFile:
                     'target_compatible_with': compatible,
                 })
                 attrs = {'srcs': [':' + nasm_name]}
-            self.rule('cc_library', name + '__compile_' + str(index), {
+            self.rule('cc_library', name if collapse_single else name + '__compile_' + str(index), {
                 **attrs,
                 # These copts already contain the CMake compile group's flags.
                 # The LLVM toolchain otherwise forces frame pointers in Release.
@@ -586,6 +735,8 @@ class BuildFile:
                 'target_compatible_with': compatible,
                 'alwayslink': select({'@platforms//cpu:' + arch: v['alwayslink'] for arch, v in variants.items()}),
             })
+            if collapse_single:
+                return
         deps = select({
             '@platforms//cpu:' + arch: [self.label(d) for d in v['deps']] + [
                 ':' + name + '__compile_' + str(i)
@@ -619,8 +770,10 @@ class BuildFile:
 
     def load_statements(self):
         loads = dict(self.loads)
+        if any('header_glob(' in rule for rule in self.rules):
+            loads.setdefault('@clickhouse//bazel:ch_cc_library.bzl', set()).add('header_glob')
         paths = {function for function in ('repository_path', 'repository_local_include', 'llvm_toolchain_path', 'cmake_prefix_maps',
-                                           'cmake_native_compile_flags', 'cmake_cxx_compiler_version')
+                                           'cmake_cxx_compiler_version')
                  if any(function + '(' in rule for rule in self.rules)}
         if any('CLICKHOUSE_WARNINGS' in rule for rule in self.rules):
             paths.add('CLICKHOUSE_WARNINGS')

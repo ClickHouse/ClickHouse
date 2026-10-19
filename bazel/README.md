@@ -69,6 +69,7 @@ Some dependencies require further work before substituting a stock module:
 | Zstandard | The pinned source reports 1.5.8; the audited BCR module is 1.5.7. |
 | xxHash | The header differs from BCR 0.8.3, including namespace and C-linkage controls. |
 | fmt | The pinned 12.1.0 sources include a trailing-percent `vprintf` bounds fix absent from the matching BCR release. |
+| Arrow and Parquet | ClickHouse pins its Arrow 25.0.0 fork at `363af92e`. BCR's `apache_arrow@25.0.1` uses Apache release sources, different Thrift and version configuration, and excludes the SIMD sources selected by ClickHouse. |
 | libc++ and related runtimes | The `llvm` module uses ClickHouse's source fork to preserve its ABI and exception-stack-trace changes across the binary. |
 
 These dependencies compile from the fetched, pinned source revisions.
@@ -77,6 +78,15 @@ archives. Google API schemas use the archive already checked into ClickHouse.
 GitHub archives honor upstream `export-ignore` and `export-subst` attributes:
 an audit found 616 omitted files and one LLVM archive-metadata substitution,
 with no material compile, generator, license, or Rust input changes.
+
+The [BCR Arrow overlay](https://github.com/bazelbuild/bazel-central-registry/blob/main/modules/apache_arrow/25.0.1/overlay/BUILD.bazel)
+is a useful reference for public header ownership and named component
+dependencies. Its broad source globs, generated feature headers, and
+`strip_include_prefix` cannot be copied into this build: ClickHouse depends on
+its ordered translation units, generated FlatBuffers include precedence, and
+the file names embedded in the normalized executable. Keep the pinned sources,
+explicit source order, and ClickHouse configuration when adopting its header
+organization for other dependencies.
 
 Cargo metadata resolves the original relative path dependencies in a small
 repository assembled from the fetched sources and first-party manifests.
@@ -119,6 +129,19 @@ originally requested all five flags. Other warning exceptions remain in
 `copts`. NASM, Cargo, custom runtime actions, and executable code generators
 keep their own compiler flags.
 
+`ch_cc_library` also supplies the pinned ClickHouse sysroot and GCC
+toolchain, source-file prefix maps, and the three standard native features.
+The defaults describe C++ on both supported CPUs. Only C, assembly,
+single-CPU groups, and the few libc groups that omit libc++ headers need
+explicit overrides. Prefix maps still apply in the CMake comparison
+configurations: `__FILE__` and embedded file names survive stripping.
+
+When a CMake library has one native compile group, the generated
+`ch_cc_library` carries its public name and ordered dependencies directly.
+Multiple compile groups, runtimes, NASM and executables retain separate rules.
+`cmake_link_plan.py` resolves each original archive to its actual declared
+owner and verifies object order on both platforms.
+
 CMake's system include directories in native C/C++/ASM rules are emitted as
 `local_includes`. The rules request `system_include_paths` so rules_cc
 passes these directories as system headers to Clang. These directories are
@@ -131,11 +154,19 @@ not have rules_cc's `local_includes` attribute.
 
 Generated libraries list headers in `hdrs` when more than one CMake target
 uses the directory; private headers are in `srcs`. Local headers use
-`glob()`; foreign headers are explicit exported file labels from the pinned
-dependency. Non-header inputs stay in `additional_compiler_inputs` so
-textually included implementation files and embedded files are available
-without compiling additional translation units. The native reference's
-translation units and ordering remain authoritative.
+`glob()`. `@clickhouse_boost//:boost_headers` owns Boost's public `boost/**`
+headers. Each Boost component keeps its own private `libs/<component>`
+inputs. Foreign consumers depend on `boost_headers` and do not copy Boost's
+documentation, tests, and implementation inventories. Public fmt,
+FlatBuffers, and libuv headers likewise come from their existing libraries.
+Other foreign file labels remain exported where a real cross-repository
+consumer still needs them.
+
+Textually included implementation files and embedded files remain compiler
+inputs. They must not be compiled as additional translation units: Poco
+textually includes some `.c` files that are also separate translation units,
+and ClickHouse embeds non-header resources. The native reference's source and
+link order remain authoritative.
 
 `compact_build.py` removes empty list additions and collapses identical
 x86-64/ARM64 `select()` lists. It retains differing or single-platform

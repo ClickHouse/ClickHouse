@@ -50,11 +50,6 @@ exports_files([
   "proto/orc_proto.proto"
 ])
 
-
-
-
-
-
 expand_template(
     name = "configure_x86_64_12e6f6bdb894c631",
     template = ":c++/src/Adaptor.hh.in",

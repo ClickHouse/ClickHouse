@@ -11,6 +11,8 @@ import ast
 from collections import defaultdict
 from pathlib import Path
 
+from repository_inputs import CC_HEADER_SUFFIXES
+
 
 ATTRIBUTES = {
     "srcs", "hdrs", "textual_hdrs", "additional_compiler_inputs", "deps",
@@ -21,7 +23,7 @@ ATTRIBUTES = {
 # never hoist glob(), Label(), a macro invocation, or an unknown identifier.
 PURE_FUNCTIONS = {
     "select", "repository_path", "llvm_toolchain_path", "cmake_prefix_maps",
-    "cmake_native_compile_flags", "repository_local_include",
+    "repository_local_include",
 }
 CONSTANT_PREFIX = "_GENERATED_"
 
@@ -158,7 +160,10 @@ def factor_selects(source):
                 parts.append("select({\n" + "".join(rows) + " " * indent + "})")
                 if suffix:
                     parts.append(render_list(source, lists[0][-suffix:], indent))
-                edits.append((*source.span(node), " + ".join(parts)))
+                # Preserve the original select's grouping after another
+                # expression. The preceding select may contain glob() and
+                # must not acquire this select's factored prefix or suffix.
+                edits.append((*source.span(node), "(" + " + ".join(parts) + ")"))
     return source.rewrite(edits)
 
 
@@ -222,6 +227,13 @@ def simplify_list_expressions(source):
                 if isinstance(node.right, ast.List) and not node.right.elts:
                     edits.append((*source.span(node), source.text(node.left)))
                     return
+                if (isinstance(node.left, ast.List) and isinstance(node.right, ast.List)
+                        and all(isinstance(value, ast.Constant)
+                                and isinstance(value.value, (str, int, bool))
+                                for value in node.left.elts + node.right.elts)):
+                    edits.append((*source.span(node), render_list(
+                        source, node.left.elts + node.right.elts, node.col_offset)))
+                    return
             self.generic_visit(node)
 
         def visit_Call(self, node):
@@ -242,6 +254,48 @@ def simplify_list_expressions(source):
                 and statement.targets[0].id.startswith(CONSTANT_PREFIX)):
             visit.visit(statement.value)
     return source.rewrite(edits)
+
+
+def header_patterns(patterns):
+    """Recognize only complete, ordered C/C++ suffix lists."""
+    count = len(CC_HEADER_SUFFIXES)
+    if not patterns or len(patterns) % count:
+        return None
+    roots = []
+    for start in range(0, len(patterns), count):
+        suffix = "/*" + CC_HEADER_SUFFIXES[0]
+        first = patterns[start]
+        if not isinstance(first, str) or not first.endswith(suffix):
+            return None
+        root = first.removesuffix(suffix)
+        if patterns[start:start + count] != [root + "/*" + suffix for suffix in CC_HEADER_SUFFIXES]:
+            return None
+        roots.append(root)
+    return roots
+
+
+def factor_header_globs(source):
+    """Replace exact glob patterns; excludes and other keyword tokens stay put."""
+    library = Path(__file__).with_name("ch_cc_library.bzl")
+    declarations = ast.parse(library.read_text()).body
+    suffixes = next(
+        ast.literal_eval(stmt.value) for stmt in declarations
+        if isinstance(stmt, ast.Assign) and any(isinstance(target, ast.Name)
+            and target.id == "_CC_HEADER_SUFFIXES" for target in stmt.targets)
+    )
+    if suffixes != list(CC_HEADER_SUFFIXES):
+        raise ValueError("header_glob suffixes differ from repository_inputs.CC_HEADER_SUFFIXES")
+    edits = []
+    for node in ast.walk(source.module):
+        if (not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name)
+                or node.func.id != "glob" or len(node.args) != 1 or not isinstance(node.args[0], ast.List)
+                or any(not isinstance(value, ast.Constant) for value in node.args[0].elts)):
+            continue
+        roots = header_patterns([value.value for value in node.args[0].elts])
+        if roots is not None:
+            edits.append((*source.span(node.func), "header_glob"))
+            edits.append((*source.span(node.args[0]), repr(roots)))
+    return source.rewrite(edits), bool(edits)
 
 
 class Expand(ast.NodeTransformer):
@@ -265,6 +319,14 @@ class Expand(ast.NodeTransformer):
 
     def visit_Call(self, node):
         node = self.generic_visit(node)
+        if isinstance(node.func, ast.Name) and node.func.id == "header_glob":
+            if len(node.args) != 1 or not isinstance(node.args[0], ast.List):
+                raise ValueError("Cannot verify non-literal header_glob patterns")
+            roots = ast.literal_eval(node.args[0])
+            node = ast.Call(func=ast.Name(id="glob", ctx=ast.Load()), args=[ast.List(
+                elts=[ast.Constant(value=root + "/*" + suffix)
+                      for root in roots for suffix in CC_HEADER_SUFFIXES],
+                ctx=ast.Load())], keywords=node.keywords)
         value = shared_cpu_selection(node)
         return value if value is not None else node
 
@@ -292,16 +354,37 @@ class Expand(ast.NodeTransformer):
         return node
 
 
-def compact(text):
-    factored = factor_selects(Source(text))
-    simplified = factored
+def compact(text, header_globs=False):
+    original_text = text
+    if header_globs:
+        source = Source(text)
+        text, changed = factor_header_globs(source)
+        loaded = any(
+            isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)
+            and isinstance(stmt.value.func, ast.Name) and stmt.value.func.id == "load"
+            and any(isinstance(arg, ast.Constant) and arg.value == "header_glob" for arg in stmt.value.args[1:])
+            for stmt in source.module.body
+        )
+        if changed and not loaded:
+            # This single declared symbol is the only permitted load change.
+            # Include it in both proof inputs; every other statement, including
+            # all original glob patterns and keywords, must still expand alike.
+            load = 'load("@clickhouse//bazel:ch_cc_library.bzl", "header_glob")\n'
+            for_check = original_text.find("\n") + 1 if original_text.startswith("#") else 0
+            for_output = text.find("\n") + 1 if text.startswith("#") else 0
+            original_text = original_text[:for_check] + load + original_text[for_check:]
+            text = text[:for_output] + load + text[for_output:]
+    simplified = text
     while True:
-        result = simplify_list_expressions(Source(simplified))
+        # Folding adjacent literals can make select branches eligible for
+        # factoring. Do both until neither changes the generated statements.
+        factored = factor_selects(Source(simplified))
+        result = simplify_list_expressions(Source(factored))
         if result == simplified:
             break
         simplified = result
     result = remove_unused_constants(Source(intern_attributes(Source(result))))
-    original = Expand().visit(ast.parse(text))
+    original = Expand().visit(ast.parse(original_text))
     rewritten = Expand().visit(ast.parse(result))
     if ast_key(original) != ast_key(rewritten):
         raise ValueError("Compaction changed expanded BUILD statements")
@@ -311,6 +394,7 @@ def compact(text):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--write", action="store_true", help="replace verified generated BUILD files")
+    parser.add_argument("--header-globs", action="store_true", help="also collapse the full repeated header suffix patterns")
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("files", nargs="*", type=Path, help="default: root and generated contrib BUILD files")
     args = parser.parse_args()
@@ -323,7 +407,7 @@ def main():
             "# Generated by bazel/generate_build.py --llvm-references.",
         }:
             raise ValueError(f"Refusing to rewrite a non-generated BUILD: {path}")
-        after = compact(before)
+        after = compact(before, header_globs=args.header_globs)
         total_before += len(before.encode("utf-8"))
         total_after += len(after.encode("utf-8"))
         if before != after:

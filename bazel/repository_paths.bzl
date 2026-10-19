@@ -108,26 +108,3 @@ def cmake_prefix_maps(arches):
         # this more specific map after the general generated-directory map.
         embedded_settings[cpu] = _EMBEDDED_PREFIX_MAPS[arch]
     return select(source_settings) + select(generated_settings) + select(embedded_settings)
-
-def cmake_native_compile_flags(groups):
-    """Apply the recorded headers and the sysroot only for Clang compilations."""
-    choices = {"//conditions:default": []}
-    for arch, group in groups.items():
-        options = []
-        if group["language"] in ["C", "CXX", "ASM"]:
-            gcc_root = repository_path("contrib/sysroot") + "/linux-" + arch
-            options = [
-                "--sysroot=" + gcc_root + "/" + arch + "-linux-gnu/libc",
-                "--gcc-toolchain=" + gcc_root,
-            ]
-        if group["language"] == "CXX":
-            # The module already supplies public libc++ headers. Do not let
-            # the GCC sysroot add a second C++ standard library.
-            options.append("-nostdinc++")
-        for flag, kind, directory in group["includes"]:
-            raw = repository_path("contrib/llvm-project")
-            if kind == "generated":
-                raw = "$(GENDIR)/" + raw + "/gen/" + arch
-            options.extend([flag, raw + "/" + directory])
-        choices[str(Label("@platforms//cpu:" + arch))] = options
-    return select(choices)

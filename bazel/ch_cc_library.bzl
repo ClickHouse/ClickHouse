@@ -1,6 +1,32 @@
 """CMake native libraries compiled for the ClickHouse target platform."""
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load(":repository_paths.bzl", "cmake_prefix_maps", "repository_path")
+
+# Keep in sync with repository_inputs.CC_HEADER_SUFFIXES. The compactor
+# verifies these before converting any generated glob.
+_CC_HEADER_SUFFIXES = [
+    ".h",
+    ".hh",
+    ".hpp",
+    ".ipp",
+    ".hxx",
+    ".h++",
+    ".inc",
+    ".inl",
+    ".tlh",
+    ".tli",
+    ".H",
+    ".tcc",
+]
+
+def header_glob(patterns, **kwargs):
+    """List C/C++ headers in the calling package, preserving native.glob options."""
+    return native.glob([
+        pattern + "/*" + suffix
+        for pattern in patterns
+        for suffix in _CC_HEADER_SUFFIXES
+    ], **kwargs)
 
 # Place these before library copts: several libraries require an older ISA.
 CLICKHOUSE_TARGET_FLAGS = {
@@ -16,14 +42,42 @@ CLICKHOUSE_CODE_FLAGS = [
     "-Wextra",
 ]
 
-def ch_cc_library(name, copts, clickhouse_code = False, **kwargs):
+def ch_cc_library(
+        name,
+        copts = [],
+        clickhouse_code = False,
+        language = "CXX",
+        arches = ["x86_64", "aarch64"],
+        libcxx_headers = True,
+        map_source_files = True,
+        features = [],
+        **kwargs):
     """Keep CPU defaults ahead of per-source ISA and warning overrides."""
     cpu_flags = select({
         str(Label("@platforms//cpu:" + arch)): flags
         for arch, flags in CLICKHOUSE_TARGET_FLAGS.items()
     } | {"//conditions:default": []})
+    native_options = {"//conditions:default": []}
+    for arch in arches:
+        gcc_root = repository_path("contrib/sysroot") + "/linux-" + arch
+        options = [
+            "--sysroot=" + gcc_root + "/" + arch + "-linux-gnu/libc",
+            "--gcc-toolchain=" + gcc_root,
+        ]
+        if language == "CXX":
+            # GCC's sysroot must not supply a second C++ standard library.
+            options.append("-nostdinc++")
+        elif language in ["C", "ASM"] and libcxx_headers:
+            options.extend([
+                "-I",
+                "$(GENDIR)/" + repository_path("contrib/llvm-project") +
+                "/gen/" + arch + "/libcxx/include/c++/v1",
+            ])
+        native_options[str(Label("@platforms//cpu:" + arch))] = options
     cc_library(
         name = name,
-        copts = cpu_flags + (CLICKHOUSE_CODE_FLAGS if clickhouse_code else []) + copts,
+        copts = cpu_flags + (CLICKHOUSE_CODE_FLAGS if clickhouse_code else []) + copts +
+                (cmake_prefix_maps(arches) if map_source_files else []) + select(native_options),
+        features = ["-fortify_source", "-default_compile_flags", "-llvm_system_c_headers"] + features,
         **kwargs
     )

@@ -6,7 +6,6 @@ exports_files([
 ])
 
 exports_files([
-    "Modern Non-Cryptographic Hash Function and Pseudorandom Number Generator.pdf",
     "README.md",
     "SupplementsInformation.zip",
     "benchmark.cpp",
@@ -26,5 +25,9 @@ exports_files([
     "old_versions/wyhash_v6.h",
     "test_vector.cpp",
     "wyhash.h",
-    "wyhash32.h",
+    "wyhash32.h"
+])
+
+exports_files([
+    "Modern Non-Cryptographic Hash Function and Pseudorandom Number Generator.pdf"
 ])

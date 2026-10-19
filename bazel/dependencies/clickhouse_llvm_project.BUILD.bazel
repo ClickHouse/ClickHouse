@@ -4,7 +4,7 @@ load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@clickhouse//bazel:cmake_runtime.bzl", "cmake_runtime_objects")
-load("@clickhouse//bazel:repository_paths.bzl", "cmake_native_compile_flags", "cmake_prefix_maps", "repository_path")
+load("@clickhouse//bazel:repository_paths.bzl", "cmake_prefix_maps", "repository_path")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 package(default_visibility = ["//visibility:public"])
 exports_files(["BUILD.bazel"])
@@ -1461,8 +1461,6 @@ cc_library(
     ],
 )
 
-
-
 _GENERATED_LOCAL_DEFINES_0 = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -1493,13 +1491,6 @@ _GENERATED_DEPS_0 = [
         "@llvm-project//libunwind:headers",
     ]
 
-_GENERATED_FEATURES_0 = [
-        "-fortify_source",
-        "-default_compile_flags",
-    ] + [
-        "-llvm_system_c_headers",
-    ]
-
 _GENERATED_HDRS_0 = [
         "@clickhouse_sysroot//:linux_native_headers",
     ]
@@ -1507,8 +1498,6 @@ _GENERATED_HDRS_0 = [
 _GENERATED_ADDITIONAL_COMPILER_INPUTS_0 = [
         "@clickhouse_sysroot//:linux_compile_files",
     ]
-
-
 
 _GENERATED_COPTS_0 = [
         "-w",
@@ -1536,61 +1525,52 @@ _GENERATED_COPTS_0 = [
             "-I",
             repository_path("contrib/llvm-project") + "/llvm/lib/Target/AArch64",
         ],
-    }) + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
-        "x86_64": {
-            "language": "CXX",
-            "includes": [],
-        },
-        "aarch64": {
-            "language": "CXX",
-            "includes": [],
-        },
     })
 
+_GENERATED_DEPS_3 = [
+    ":llvm_headers",
+    "@llvm-project//libc:libc_headers",
+    "@llvm-project//compiler-rt:headers",
+    "@llvm-project//libunwind:headers",
+    ":unwind",
+    ":cxxabi",
+    ":cxx",
+    ":clang_rt_builtins",
+    ":LLVMDemangle",
+    ":LLVMSupport",
+    ":LLVMBinaryFormat",
+    ":LLVMTargetParser",
+    ":LLVMCore",
+    ":LLVMMC",
+    ":LLVMBitstreamReader",
+    ":LLVMRemarks",
+    ":LLVMObject",
+    ":LLVMTextAPI",
+    ":LLVMProfileData",
+    ":LLVMAnalysis",
+    ":LLVMTransformUtils",
+    ":LLVMFrontendHLSL"
+]
+
 ch_cc_library(
-    name = "LLVMAggressiveInstCombine__compile_0",
+    name = "LLVMAggressiveInstCombine",
     srcs = [
         ":llvm/lib/Transforms/AggressiveInstCombine/AggressiveInstCombine.cpp",
         ":llvm/lib/Transforms/AggressiveInstCombine/TruncInstCombine.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_3,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMAggressiveInstCombine",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMObject",
-        ":LLVMTextAPI",
-        ":LLVMProfileData",
-        ":LLVMAnalysis",
-        ":LLVMTransformUtils",
-        ":LLVMFrontendHLSL",
-        ":LLVMAggressiveInstCombine__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMAnalysis__compile_0",
+    name = "LLVMAnalysis",
     srcs = [
         ":llvm/lib/Analysis/AliasAnalysis.cpp",
         ":llvm/lib/Analysis/AliasAnalysisEvaluator.cpp",
@@ -1719,41 +1699,57 @@ ch_cc_library(
         ":llvm/lib/Analysis/VectorUtils.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = [
+    ":llvm_headers",
+    "@llvm-project//libc:libc_headers",
+    "@llvm-project//compiler-rt:headers",
+    "@llvm-project//libunwind:headers",
+    ":unwind",
+    ":cxxabi",
+    ":cxx",
+    ":clang_rt_builtins",
+    ":LLVMDemangle",
+    ":LLVMSupport",
+    ":LLVMBinaryFormat",
+    ":LLVMTargetParser",
+    ":LLVMCore",
+    ":LLVMMC",
+    ":LLVMBitstreamReader",
+    ":LLVMRemarks",
+    ":LLVMObject",
+    ":LLVMTextAPI",
+    ":LLVMProfileData",
+    ":LLVMFrontendHLSL"
+],
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMAnalysis",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMObject",
-        ":LLVMTextAPI",
-        ":LLVMProfileData",
-        ":LLVMFrontendHLSL",
-        ":LLVMAnalysis__compile_0",
-    ],
-)
+_GENERATED_DEPS_4 = [
+    ":llvm_headers",
+    "@llvm-project//libc:libc_headers",
+    "@llvm-project//compiler-rt:headers",
+    "@llvm-project//libunwind:headers",
+    ":unwind",
+    ":cxxabi",
+    ":cxx",
+    ":clang_rt_builtins",
+    ":LLVMDemangle",
+    ":LLVMSupport",
+    ":LLVMBinaryFormat",
+    ":LLVMTargetParser",
+    ":LLVMCore",
+    ":LLVMBitstreamReader",
+    ":LLVMRemarks"
+]
 
 ch_cc_library(
-    name = "LLVMAsmParser__compile_0",
+    name = "LLVMAsmParser",
     srcs = [
         ":llvm/lib/AsmParser/AsmParserContext.cpp",
         ":llvm/lib/AsmParser/LLLexer.cpp",
@@ -1761,36 +1757,18 @@ ch_cc_library(
         ":llvm/lib/AsmParser/Parser.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_4,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMAsmParser",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMAsmParser__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMAsmPrinter__compile_0",
+    name = "LLVMAsmPrinter",
     srcs = [
         ":llvm/lib/CodeGen/AsmPrinter/AccelTable.cpp",
         ":llvm/lib/CodeGen/AsmPrinter/AddressPool.cpp",
@@ -1821,52 +1799,63 @@ ch_cc_library(
         ":llvm/lib/CodeGen/AsmPrinter/WinException.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = [
+    ":llvm_headers",
+    "@llvm-project//libc:libc_headers",
+    "@llvm-project//compiler-rt:headers",
+    "@llvm-project//libunwind:headers",
+    ":unwind",
+    ":cxxabi",
+    ":cxx",
+    ":clang_rt_builtins",
+    ":LLVMDemangle",
+    ":LLVMSupport",
+    ":LLVMBinaryFormat",
+    ":LLVMTargetParser",
+    ":LLVMCore",
+    ":LLVMMC",
+    ":LLVMMCParser",
+    ":LLVMBitstreamReader",
+    ":LLVMBitReader",
+    ":LLVMBitWriter",
+    ":LLVMRemarks",
+    ":LLVMDebugInfoCodeView",
+    ":LLVMObject",
+    ":LLVMTextAPI",
+    ":LLVMProfileData",
+    ":LLVMAnalysis",
+    ":LLVMTransformUtils",
+    ":LLVMTarget",
+    ":LLVMScalarOpts",
+    ":LLVMCodeGenTypes",
+    ":LLVMCodeGen",
+    ":LLVMCGData",
+    ":LLVMFrontendHLSL"
+],
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMAsmPrinter",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMMCParser",
-        ":LLVMBitstreamReader",
-        ":LLVMBitReader",
-        ":LLVMBitWriter",
-        ":LLVMRemarks",
-        ":LLVMDebugInfoCodeView",
-        ":LLVMObject",
-        ":LLVMTextAPI",
-        ":LLVMProfileData",
-        ":LLVMAnalysis",
-        ":LLVMTransformUtils",
-        ":LLVMTarget",
-        ":LLVMScalarOpts",
-        ":LLVMCodeGenTypes",
-        ":LLVMCodeGen",
-        ":LLVMCGData",
-        ":LLVMFrontendHLSL",
-        ":LLVMAsmPrinter__compile_0",
-    ],
-)
+_GENERATED_DEPS_5 = [
+    ":llvm_headers",
+    "@llvm-project//libc:libc_headers",
+    "@llvm-project//compiler-rt:headers",
+    "@llvm-project//libunwind:headers",
+    ":unwind",
+    ":cxxabi",
+    ":cxx",
+    ":clang_rt_builtins",
+    ":LLVMDemangle",
+    ":LLVMSupport"
+]
 
 ch_cc_library(
-    name = "LLVMBinaryFormat__compile_0",
+    name = "LLVMBinaryFormat",
     srcs = [
         ":llvm/lib/BinaryFormat/AMDGPUMetadataVerifier.cpp",
         ":llvm/lib/BinaryFormat/COFF.cpp",
@@ -1884,31 +1873,18 @@ ch_cc_library(
         ":llvm/lib/BinaryFormat/XCOFF.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_5,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMBinaryFormat",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMBitReader__compile_0",
+    name = "LLVMBitReader",
     srcs = [
         ":llvm/lib/Bitcode/Reader/BitcodeAnalyzer.cpp",
         ":llvm/lib/Bitcode/Reader/BitcodeReader.cpp",
@@ -1917,36 +1893,18 @@ ch_cc_library(
         ":llvm/lib/Bitcode/Reader/ValueList.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_4,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMBitReader",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMBitReader__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMBitWriter__compile_0",
+    name = "LLVMBitWriter",
     srcs = [
         ":llvm/lib/Bitcode/Writer/BitcodeWriter.cpp",
         ":llvm/lib/Bitcode/Writer/BitcodeWriterPass.cpp",
@@ -1954,99 +1912,71 @@ ch_cc_library(
         ":llvm/lib/Bitcode/Writer/ValueEnumerator.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_4,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMBitWriter",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMBitWriter__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMBitstreamReader__compile_0",
+    name = "LLVMBitstreamReader",
     srcs = [
         ":llvm/lib/Bitstream/Reader/BitstreamReader.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_5,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMBitstreamReader",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBitstreamReader__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMCFGuard__compile_0",
+    name = "LLVMCFGuard",
     srcs = [
         ":llvm/lib/Transforms/CFGuard/CFGuard.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_4,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMCFGuard",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMCFGuard__compile_0",
-    ],
-)
+_GENERATED_DEPS_6 = [
+    ":llvm_headers",
+    "@llvm-project//libc:libc_headers",
+    "@llvm-project//compiler-rt:headers",
+    "@llvm-project//libunwind:headers",
+    ":unwind",
+    ":cxxabi",
+    ":cxx",
+    ":clang_rt_builtins",
+    ":LLVMDemangle",
+    ":LLVMSupport",
+    ":LLVMBinaryFormat",
+    ":LLVMTargetParser",
+    ":LLVMCore",
+    ":LLVMMC",
+    ":LLVMBitstreamReader",
+    ":LLVMRemarks",
+    ":LLVMObject",
+    ":LLVMTextAPI"
+]
 
 ch_cc_library(
-    name = "LLVMCGData__compile_0",
+    name = "LLVMCGData",
     srcs = [
         ":llvm/lib/CGData/CodeGenData.cpp",
         ":llvm/lib/CGData/CodeGenDataReader.cpp",
@@ -2057,39 +1987,18 @@ ch_cc_library(
         ":llvm/lib/CGData/StableFunctionMapRecord.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_6,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMCGData",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMObject",
-        ":LLVMTextAPI",
-        ":LLVMCGData__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMCodeGen__compile_0",
+    name = "LLVMCodeGen",
     srcs = [
         ":llvm/lib/CodeGen/AggressiveAntiDepBreaker.cpp",
         ":llvm/lib/CodeGen/AllocationOrder.cpp",
@@ -2330,78 +2239,63 @@ ch_cc_library(
         ":llvm/lib/CodeGen/XRayInstrumentation.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = [
+    ":llvm_headers",
+    "@llvm-project//libc:libc_headers",
+    "@llvm-project//compiler-rt:headers",
+    "@llvm-project//libunwind:headers",
+    ":unwind",
+    ":cxxabi",
+    ":cxx",
+    ":clang_rt_builtins",
+    ":LLVMDemangle",
+    ":LLVMSupport",
+    ":LLVMBinaryFormat",
+    ":LLVMTargetParser",
+    ":LLVMCore",
+    ":LLVMMC",
+    ":LLVMBitstreamReader",
+    ":LLVMBitReader",
+    ":LLVMBitWriter",
+    ":LLVMRemarks",
+    ":LLVMObject",
+    ":LLVMTextAPI",
+    ":LLVMProfileData",
+    ":LLVMAnalysis",
+    ":LLVMTransformUtils",
+    ":LLVMTarget",
+    ":LLVMScalarOpts",
+    ":LLVMCodeGenTypes",
+    ":LLVMCGData",
+    ":LLVMFrontendHLSL"
+],
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMCodeGen",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMBitstreamReader",
-        ":LLVMBitReader",
-        ":LLVMBitWriter",
-        ":LLVMRemarks",
-        ":LLVMObject",
-        ":LLVMTextAPI",
-        ":LLVMProfileData",
-        ":LLVMAnalysis",
-        ":LLVMTransformUtils",
-        ":LLVMTarget",
-        ":LLVMScalarOpts",
-        ":LLVMCodeGenTypes",
-        ":LLVMCGData",
-        ":LLVMFrontendHLSL",
-        ":LLVMCodeGen__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMCodeGenTypes__compile_0",
+    name = "LLVMCodeGenTypes",
     srcs = [
         ":llvm/lib/CodeGenTypes/LowLevelType.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_5,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMCodeGenTypes",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMCodeGenTypes__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMCore__compile_0",
+    name = "LLVMCore",
     srcs = [
         ":llvm/lib/IR/AbstractCallSite.cpp",
         ":llvm/lib/IR/AsmWriter.cpp",
@@ -2485,35 +2379,33 @@ ch_cc_library(
         ":llvm/lib/IR/VFABIDemangler.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = [
+    ":llvm_headers",
+    "@llvm-project//libc:libc_headers",
+    "@llvm-project//compiler-rt:headers",
+    "@llvm-project//libunwind:headers",
+    ":unwind",
+    ":cxxabi",
+    ":cxx",
+    ":clang_rt_builtins",
+    ":LLVMDemangle",
+    ":LLVMSupport",
+    ":LLVMBinaryFormat",
+    ":LLVMTargetParser",
+    ":LLVMBitstreamReader",
+    ":LLVMRemarks"
+],
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMCore",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMCore__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMCoroutines__compile_0",
+    name = "LLVMCoroutines",
     srcs = [
         ":llvm/lib/Transforms/Coroutines/CoroAnnotationElide.cpp",
         ":llvm/lib/Transforms/Coroutines/CoroCleanup.cpp",
@@ -2528,50 +2420,48 @@ ch_cc_library(
         ":llvm/lib/Transforms/Coroutines/SuspendCrossingInfo.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = [
+    ":llvm_headers",
+    "@llvm-project//libc:libc_headers",
+    "@llvm-project//compiler-rt:headers",
+    "@llvm-project//libunwind:headers",
+    ":unwind",
+    ":cxxabi",
+    ":cxx",
+    ":clang_rt_builtins",
+    ":LLVMDemangle",
+    ":LLVMSupport",
+    ":LLVMBinaryFormat",
+    ":LLVMTargetParser",
+    ":LLVMCore",
+    ":LLVMMC",
+    ":LLVMBitstreamReader",
+    ":LLVMRemarks",
+    ":LLVMObject",
+    ":LLVMTextAPI",
+    ":LLVMProfileData",
+    ":LLVMAnalysis",
+    ":LLVMTransformUtils",
+    ":LLVMScalarOpts",
+    ":LLVMInstCombine",
+    ":LLVMipo",
+    ":LLVMCGData",
+    ":LLVMFrontendOpenMP",
+    ":LLVMFrontendAtomic",
+    ":LLVMFrontendOffloading",
+    ":LLVMFrontendHLSL"
+],
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMCoroutines",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMObject",
-        ":LLVMTextAPI",
-        ":LLVMProfileData",
-        ":LLVMAnalysis",
-        ":LLVMTransformUtils",
-        ":LLVMScalarOpts",
-        ":LLVMInstCombine",
-        ":LLVMipo",
-        ":LLVMCGData",
-        ":LLVMFrontendOpenMP",
-        ":LLVMFrontendAtomic",
-        ":LLVMFrontendOffloading",
-        ":LLVMFrontendHLSL",
-        ":LLVMCoroutines__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMDebugInfoCodeView__compile_0",
+    name = "LLVMDebugInfoCodeView",
     srcs = [
         ":llvm/lib/DebugInfo/CodeView/AppendingTypeTableBuilder.cpp",
         ":llvm/lib/DebugInfo/CodeView/CodeViewError.cpp",
@@ -2615,31 +2505,18 @@ ch_cc_library(
         ":llvm/lib/DebugInfo/CodeView/TypeTableCollection.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_5,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMDebugInfoCodeView",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMDebugInfoCodeView__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMDebugInfoDWARF__compile_0",
+    name = "LLVMDebugInfoDWARF",
     srcs = [
         ":llvm/lib/DebugInfo/DWARF/DWARFAbbreviationDeclaration.cpp",
         ":llvm/lib/DebugInfo/DWARF/DWARFAcceleratorTable.cpp",
@@ -2675,39 +2552,18 @@ ch_cc_library(
         ":llvm/lib/DebugInfo/DWARF/LowLevel/DWARFUnwindTable.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_6,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMDebugInfoDWARF",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMObject",
-        ":LLVMTextAPI",
-        ":LLVMDebugInfoDWARF__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMDemangle__compile_0",
+    name = "LLVMDemangle",
     srcs = [
         ":llvm/lib/Demangle/Demangle.cpp",
         ":llvm/lib/Demangle/DLangDemangle.cpp",
@@ -2717,29 +2573,27 @@ ch_cc_library(
         ":llvm/lib/Demangle/RustDemangle.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = [
+    ":llvm_headers",
+    "@llvm-project//libc:libc_headers",
+    "@llvm-project//compiler-rt:headers",
+    "@llvm-project//libunwind:headers",
+    ":unwind",
+    ":cxxabi",
+    ":cxx",
+    ":clang_rt_builtins"
+],
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMDemangle",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMExecutionEngine__compile_0",
+    name = "LLVMExecutionEngine",
     srcs = [
         ":llvm/lib/ExecutionEngine/ExecutionEngineBindings.cpp",
         ":llvm/lib/ExecutionEngine/ExecutionEngine.cpp",
@@ -2748,84 +2602,82 @@ ch_cc_library(
         ":llvm/lib/ExecutionEngine/TargetSelect.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = [
+    ":llvm_headers",
+    "@llvm-project//libc:libc_headers",
+    "@llvm-project//compiler-rt:headers",
+    "@llvm-project//libunwind:headers",
+    ":unwind",
+    ":cxxabi",
+    ":cxx",
+    ":clang_rt_builtins",
+    ":LLVMDemangle",
+    ":LLVMSupport",
+    ":LLVMBinaryFormat",
+    ":LLVMTargetParser",
+    ":LLVMCore",
+    ":LLVMMC",
+    ":LLVMBitstreamReader",
+    ":LLVMRemarks",
+    ":LLVMObject",
+    ":LLVMTextAPI",
+    ":LLVMProfileData",
+    ":LLVMAnalysis",
+    ":LLVMTarget",
+    ":LLVMRuntimeDyld",
+    ":LLVMFrontendHLSL"
+],
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMExecutionEngine",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMObject",
-        ":LLVMTextAPI",
-        ":LLVMProfileData",
-        ":LLVMAnalysis",
-        ":LLVMTarget",
-        ":LLVMRuntimeDyld",
-        ":LLVMFrontendHLSL",
-        ":LLVMExecutionEngine__compile_0",
-    ],
-)
+_GENERATED_DEPS_7 = [
+    ":llvm_headers",
+    "@llvm-project//libc:libc_headers",
+    "@llvm-project//compiler-rt:headers",
+    "@llvm-project//libunwind:headers",
+    ":unwind",
+    ":cxxabi",
+    ":cxx",
+    ":clang_rt_builtins",
+    ":LLVMDemangle",
+    ":LLVMSupport",
+    ":LLVMBinaryFormat",
+    ":LLVMTargetParser",
+    ":LLVMCore",
+    ":LLVMMC",
+    ":LLVMBitstreamReader",
+    ":LLVMRemarks",
+    ":LLVMObject",
+    ":LLVMTextAPI",
+    ":LLVMProfileData",
+    ":LLVMAnalysis",
+    ":LLVMFrontendHLSL"
+]
 
 ch_cc_library(
-    name = "LLVMFrontendAtomic__compile_0",
+    name = "LLVMFrontendAtomic",
     srcs = [
         ":llvm/lib/Frontend/Atomic/Atomic.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_7,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMFrontendAtomic",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMObject",
-        ":LLVMTextAPI",
-        ":LLVMProfileData",
-        ":LLVMAnalysis",
-        ":LLVMFrontendHLSL",
-        ":LLVMFrontendAtomic__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMFrontendHLSL__compile_0",
+    name = "LLVMFrontendHLSL",
     srcs = [
         ":llvm/lib/Frontend/HLSL/CBuffer.cpp",
         ":llvm/lib/Frontend/HLSL/HLSLBinding.cpp",
@@ -2835,72 +2687,36 @@ ch_cc_library(
         ":llvm/lib/Frontend/HLSL/RootSignatureValidations.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_4,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMFrontendHLSL",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMFrontendHLSL__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMFrontendOffloading__compile_0",
+    name = "LLVMFrontendOffloading",
     srcs = [
         ":llvm/lib/Frontend/Offloading/OffloadWrapper.cpp",
         ":llvm/lib/Frontend/Offloading/PropertySet.cpp",
         ":llvm/lib/Frontend/Offloading/Utility.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_4,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMFrontendOffloading",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMFrontendOffloading__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMFrontendOpenMP__compile_0",
+    name = "LLVMFrontendOpenMP",
     srcs = [
         ":llvm/lib/Frontend/OpenMP/DirectiveNameParser.cpp",
         ":llvm/lib/Frontend/OpenMP/OMP.cpp",
@@ -2908,45 +2724,75 @@ ch_cc_library(
         ":llvm/lib/Frontend/OpenMP/OMPIRBuilder.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = [
+    ":llvm_headers",
+    "@llvm-project//libc:libc_headers",
+    "@llvm-project//compiler-rt:headers",
+    "@llvm-project//libunwind:headers",
+    ":unwind",
+    ":cxxabi",
+    ":cxx",
+    ":clang_rt_builtins",
+    ":LLVMDemangle",
+    ":LLVMSupport",
+    ":LLVMBinaryFormat",
+    ":LLVMTargetParser",
+    ":LLVMCore",
+    ":LLVMMC",
+    ":LLVMBitstreamReader",
+    ":LLVMRemarks",
+    ":LLVMObject",
+    ":LLVMTextAPI",
+    ":LLVMProfileData",
+    ":LLVMAnalysis",
+    ":LLVMTransformUtils",
+    ":LLVMFrontendAtomic",
+    ":LLVMFrontendOffloading",
+    ":LLVMFrontendHLSL"
+],
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMFrontendOpenMP",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMObject",
-        ":LLVMTextAPI",
-        ":LLVMProfileData",
-        ":LLVMAnalysis",
-        ":LLVMTransformUtils",
-        ":LLVMFrontendAtomic",
-        ":LLVMFrontendOffloading",
-        ":LLVMFrontendHLSL",
-        ":LLVMFrontendOpenMP__compile_0",
-    ],
-)
+_GENERATED_DEPS_8 = [
+    ":llvm_headers",
+    "@llvm-project//libc:libc_headers",
+    "@llvm-project//compiler-rt:headers",
+    "@llvm-project//libunwind:headers",
+    ":unwind",
+    ":cxxabi",
+    ":cxx",
+    ":clang_rt_builtins",
+    ":LLVMDemangle",
+    ":LLVMSupport",
+    ":LLVMBinaryFormat",
+    ":LLVMTargetParser",
+    ":LLVMCore",
+    ":LLVMMC",
+    ":LLVMBitstreamReader",
+    ":LLVMBitReader",
+    ":LLVMBitWriter",
+    ":LLVMRemarks",
+    ":LLVMObject",
+    ":LLVMTextAPI",
+    ":LLVMProfileData",
+    ":LLVMAnalysis",
+    ":LLVMTransformUtils",
+    ":LLVMTarget",
+    ":LLVMScalarOpts",
+    ":LLVMCodeGenTypes",
+    ":LLVMCodeGen",
+    ":LLVMCGData",
+    ":LLVMFrontendHLSL"
+]
 
 ch_cc_library(
-    name = "LLVMGlobalISel__compile_0",
+    name = "LLVMGlobalISel",
     srcs = [
         ":llvm/lib/CodeGen/GlobalISel/CallLowering.cpp",
         ":llvm/lib/CodeGen/GlobalISel/Combiner.cpp",
@@ -2980,167 +2826,84 @@ ch_cc_library(
         ":llvm/lib/CodeGen/GlobalISel/Utils.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_8,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMGlobalISel",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMBitstreamReader",
-        ":LLVMBitReader",
-        ":LLVMBitWriter",
-        ":LLVMRemarks",
-        ":LLVMObject",
-        ":LLVMTextAPI",
-        ":LLVMProfileData",
-        ":LLVMAnalysis",
-        ":LLVMTransformUtils",
-        ":LLVMTarget",
-        ":LLVMScalarOpts",
-        ":LLVMCodeGenTypes",
-        ":LLVMCodeGen",
-        ":LLVMCGData",
-        ":LLVMFrontendHLSL",
-        ":LLVMGlobalISel__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMHipStdPar__compile_0",
+    name = "LLVMHipStdPar",
     srcs = [
         ":llvm/lib/Transforms/HipStdPar/HipStdPar.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_3,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMHipStdPar",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMObject",
-        ":LLVMTextAPI",
-        ":LLVMProfileData",
-        ":LLVMAnalysis",
-        ":LLVMTransformUtils",
-        ":LLVMFrontendHLSL",
-        ":LLVMHipStdPar__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMIRPrinter__compile_0",
+    name = "LLVMIRPrinter",
     srcs = [
         ":llvm/lib/IRPrinter/IRPrintingPasses.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_7,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMIRPrinter",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMObject",
-        ":LLVMTextAPI",
-        ":LLVMProfileData",
-        ":LLVMAnalysis",
-        ":LLVMFrontendHLSL",
-        ":LLVMIRPrinter__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMIRReader__compile_0",
+    name = "LLVMIRReader",
     srcs = [
         ":llvm/lib/IRReader/IRReader.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = [
+    ":llvm_headers",
+    "@llvm-project//libc:libc_headers",
+    "@llvm-project//compiler-rt:headers",
+    "@llvm-project//libunwind:headers",
+    ":unwind",
+    ":cxxabi",
+    ":cxx",
+    ":clang_rt_builtins",
+    ":LLVMDemangle",
+    ":LLVMSupport",
+    ":LLVMBinaryFormat",
+    ":LLVMTargetParser",
+    ":LLVMCore",
+    ":LLVMBitstreamReader",
+    ":LLVMBitReader",
+    ":LLVMRemarks",
+    ":LLVMAsmParser"
+],
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMIRReader",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMBitstreamReader",
-        ":LLVMBitReader",
-        ":LLVMRemarks",
-        ":LLVMAsmParser",
-        ":LLVMIRReader__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMInstCombine__compile_0",
+    name = "LLVMInstCombine",
     srcs = [
         ":llvm/lib/Transforms/InstCombine/InstCombineAddSub.cpp",
         ":llvm/lib/Transforms/InstCombine/InstCombineAndOrXor.cpp",
@@ -3159,43 +2922,18 @@ ch_cc_library(
         ":llvm/lib/Transforms/InstCombine/InstructionCombining.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_3,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMInstCombine",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMObject",
-        ":LLVMTextAPI",
-        ":LLVMProfileData",
-        ":LLVMAnalysis",
-        ":LLVMTransformUtils",
-        ":LLVMFrontendHLSL",
-        ":LLVMInstCombine__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMInstrumentation__compile_0",
+    name = "LLVMInstrumentation",
     srcs = [
         ":llvm/lib/Transforms/Instrumentation/AddressSanitizer.cpp",
         ":llvm/lib/Transforms/Instrumentation/AllocToken.cpp",
@@ -3227,85 +2965,50 @@ ch_cc_library(
         ":llvm/lib/Transforms/Instrumentation/ValueProfileCollector.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_3,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMInstrumentation",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMObject",
-        ":LLVMTextAPI",
-        ":LLVMProfileData",
-        ":LLVMAnalysis",
-        ":LLVMTransformUtils",
-        ":LLVMFrontendHLSL",
-        ":LLVMInstrumentation__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMLinker__compile_0",
+    name = "LLVMLinker",
     srcs = [
         ":llvm/lib/Linker/IRMover.cpp",
         ":llvm/lib/Linker/LinkModules.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_3,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMLinker",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMObject",
-        ":LLVMTextAPI",
-        ":LLVMProfileData",
-        ":LLVMAnalysis",
-        ":LLVMTransformUtils",
-        ":LLVMFrontendHLSL",
-        ":LLVMLinker__compile_0",
-    ],
-)
+_GENERATED_DEPS_9 = [
+    ":llvm_headers",
+    "@llvm-project//libc:libc_headers",
+    "@llvm-project//compiler-rt:headers",
+    "@llvm-project//libunwind:headers",
+    ":unwind",
+    ":cxxabi",
+    ":cxx",
+    ":clang_rt_builtins",
+    ":LLVMDemangle",
+    ":LLVMSupport",
+    ":LLVMBinaryFormat",
+    ":LLVMTargetParser"
+]
 
 ch_cc_library(
-    name = "LLVMMC__compile_0",
+    name = "LLVMMC",
     srcs = [
         ":llvm/lib/MC/ConstantPools.cpp",
         ":llvm/lib/MC/DXContainerPSVInfo.cpp",
@@ -3379,33 +3082,34 @@ ch_cc_library(
         ":llvm/lib/MC/XCOFFObjectWriter.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_9,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMMC",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMMC__compile_0",
-    ],
-)
+_GENERATED_DEPS_10 = [
+    ":llvm_headers",
+    "@llvm-project//libc:libc_headers",
+    "@llvm-project//compiler-rt:headers",
+    "@llvm-project//libunwind:headers",
+    ":unwind",
+    ":cxxabi",
+    ":cxx",
+    ":clang_rt_builtins",
+    ":LLVMDemangle",
+    ":LLVMSupport",
+    ":LLVMBinaryFormat",
+    ":LLVMTargetParser",
+    ":LLVMMC"
+]
 
 ch_cc_library(
-    name = "LLVMMCDisassembler__compile_0",
+    name = "LLVMMCDisassembler",
     srcs = [
         ":llvm/lib/MC/MCDisassembler/Disassembler.cpp",
         ":llvm/lib/MC/MCDisassembler/MCDisassembler.cpp",
@@ -3414,34 +3118,18 @@ ch_cc_library(
         ":llvm/lib/MC/MCDisassembler/MCSymbolizer.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_10,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMMCDisassembler",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMMC",
-        ":LLVMMCDisassembler__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMMCParser__compile_0",
+    name = "LLVMMCParser",
     srcs = [
         ":llvm/lib/MC/MCParser/AsmLexer.cpp",
         ":llvm/lib/MC/MCParser/AsmParser.cpp",
@@ -3458,34 +3146,18 @@ ch_cc_library(
         ":llvm/lib/MC/MCParser/XCOFFAsmParser.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_10,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMMCParser",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMMC",
-        ":LLVMMCParser__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMObjCARCOpts__compile_0",
+    name = "LLVMObjCARCOpts",
     srcs = [
         ":llvm/lib/Transforms/ObjCARC/DependencyAnalysis.cpp",
         ":llvm/lib/Transforms/ObjCARC/ObjCARC.cpp",
@@ -3497,43 +3169,18 @@ ch_cc_library(
         ":llvm/lib/Transforms/ObjCARC/PtrState.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_3,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMObjCARCOpts",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMObject",
-        ":LLVMTextAPI",
-        ":LLVMProfileData",
-        ":LLVMAnalysis",
-        ":LLVMTransformUtils",
-        ":LLVMFrontendHLSL",
-        ":LLVMObjCARCOpts__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMObject__compile_0",
+    name = "LLVMObject",
     srcs = [
         ":llvm/lib/Object/Archive.cpp",
         ":llvm/lib/Object/ArchiveWriter.cpp",
@@ -3573,38 +3220,36 @@ ch_cc_library(
         ":llvm/lib/Object/XCOFFObjectFile.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = [
+    ":llvm_headers",
+    "@llvm-project//libc:libc_headers",
+    "@llvm-project//compiler-rt:headers",
+    "@llvm-project//libunwind:headers",
+    ":unwind",
+    ":cxxabi",
+    ":cxx",
+    ":clang_rt_builtins",
+    ":LLVMDemangle",
+    ":LLVMSupport",
+    ":LLVMBinaryFormat",
+    ":LLVMTargetParser",
+    ":LLVMCore",
+    ":LLVMMC",
+    ":LLVMBitstreamReader",
+    ":LLVMRemarks",
+    ":LLVMTextAPI"
+],
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMObject",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMTextAPI",
-        ":LLVMObject__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMObjectYAML__compile_0",
+    name = "LLVMObjectYAML",
     srcs = [
         ":llvm/lib/ObjectYAML/ArchiveEmitter.cpp",
         ":llvm/lib/ObjectYAML/ArchiveYAML.cpp",
@@ -3637,40 +3282,38 @@ ch_cc_library(
         ":llvm/lib/ObjectYAML/yaml2obj.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = [
+    ":llvm_headers",
+    "@llvm-project//libc:libc_headers",
+    "@llvm-project//compiler-rt:headers",
+    "@llvm-project//libunwind:headers",
+    ":unwind",
+    ":cxxabi",
+    ":cxx",
+    ":clang_rt_builtins",
+    ":LLVMDemangle",
+    ":LLVMSupport",
+    ":LLVMBinaryFormat",
+    ":LLVMTargetParser",
+    ":LLVMCore",
+    ":LLVMMC",
+    ":LLVMBitstreamReader",
+    ":LLVMRemarks",
+    ":LLVMDebugInfoCodeView",
+    ":LLVMObject",
+    ":LLVMTextAPI"
+],
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMObjectYAML",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMDebugInfoCodeView",
-        ":LLVMObject",
-        ":LLVMTextAPI",
-        ":LLVMObjectYAML__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMPasses__compile_0",
+    name = "LLVMPasses",
     srcs = [
         ":llvm/lib/Passes/CodeGenPassBuilder.cpp",
         ":llvm/lib/Passes/OptimizationLevel.cpp",
@@ -3680,53 +3323,51 @@ ch_cc_library(
         ":llvm/lib/Passes/StandardInstrumentations.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = [
+    ":llvm_headers",
+    "@llvm-project//libc:libc_headers",
+    "@llvm-project//compiler-rt:headers",
+    "@llvm-project//libunwind:headers",
+    ":unwind",
+    ":cxxabi",
+    ":cxx",
+    ":clang_rt_builtins",
+    ":LLVMDemangle",
+    ":LLVMSupport",
+    ":LLVMBinaryFormat",
+    ":LLVMTargetParser",
+    ":LLVMCore",
+    ":LLVMMC",
+    ":LLVMBitstreamReader",
+    ":LLVMRemarks",
+    ":LLVMObject",
+    ":LLVMTextAPI",
+    ":LLVMProfileData",
+    ":LLVMAnalysis",
+    ":LLVMTransformUtils",
+    ":LLVMTarget",
+    ":LLVMScalarOpts",
+    ":LLVMInstCombine",
+    ":LLVMVectorize",
+    ":LLVMipo",
+    ":LLVMInstrumentation",
+    ":LLVMCGData",
+    ":LLVMFrontendOpenMP",
+    ":LLVMFrontendAtomic",
+    ":LLVMFrontendOffloading",
+    ":LLVMFrontendHLSL"
+],
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMPasses",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMObject",
-        ":LLVMTextAPI",
-        ":LLVMProfileData",
-        ":LLVMAnalysis",
-        ":LLVMTransformUtils",
-        ":LLVMTarget",
-        ":LLVMScalarOpts",
-        ":LLVMInstCombine",
-        ":LLVMVectorize",
-        ":LLVMipo",
-        ":LLVMInstrumentation",
-        ":LLVMCGData",
-        ":LLVMFrontendOpenMP",
-        ":LLVMFrontendAtomic",
-        ":LLVMFrontendOffloading",
-        ":LLVMFrontendHLSL",
-        ":LLVMPasses__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMProfileData__compile_0",
+    name = "LLVMProfileData",
     srcs = [
         ":llvm/lib/ProfileData/DataAccessProf.cpp",
         ":llvm/lib/ProfileData/GCOV.cpp",
@@ -3751,36 +3392,18 @@ ch_cc_library(
         ":llvm/lib/ProfileData/SymbolRemappingReader.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_4,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMProfileData",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMProfileData__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMRemarks__compile_0",
+    name = "LLVMRemarks",
     srcs = [
         ":llvm/lib/Remarks/BitstreamRemarkParser.cpp",
         ":llvm/lib/Remarks/BitstreamRemarkSerializer.cpp",
@@ -3795,32 +3418,30 @@ ch_cc_library(
         ":llvm/lib/Remarks/YAMLRemarkSerializer.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = [
+    ":llvm_headers",
+    "@llvm-project//libc:libc_headers",
+    "@llvm-project//compiler-rt:headers",
+    "@llvm-project//libunwind:headers",
+    ":unwind",
+    ":cxxabi",
+    ":cxx",
+    ":clang_rt_builtins",
+    ":LLVMDemangle",
+    ":LLVMSupport",
+    ":LLVMBitstreamReader"
+],
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMRemarks",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMRuntimeDyld__compile_0",
+    name = "LLVMRuntimeDyld",
     srcs = [
         ":llvm/lib/ExecutionEngine/RuntimeDyld/JITSymbol.cpp",
         ":llvm/lib/ExecutionEngine/RuntimeDyld/RTDyldMemoryManager.cpp",
@@ -3832,39 +3453,18 @@ ch_cc_library(
         ":llvm/lib/ExecutionEngine/RuntimeDyld/Targets/RuntimeDyldELFMips.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_6,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMRuntimeDyld",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMObject",
-        ":LLVMTextAPI",
-        ":LLVMRuntimeDyld__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMSandboxIR__compile_0",
+    name = "LLVMSandboxIR",
     srcs = [
         ":llvm/lib/SandboxIR/Argument.cpp",
         ":llvm/lib/SandboxIR/BasicBlock.cpp",
@@ -3883,36 +3483,18 @@ ch_cc_library(
         ":llvm/lib/SandboxIR/Value.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_4,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMSandboxIR",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMSandboxIR__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMScalarOpts__compile_0",
+    name = "LLVMScalarOpts",
     srcs = [
         ":llvm/lib/Transforms/Scalar/ADCE.cpp",
         ":llvm/lib/Transforms/Scalar/AlignmentFromAssumptions.cpp",
@@ -3997,43 +3579,18 @@ ch_cc_library(
         ":llvm/lib/Transforms/Scalar/WarnMissedTransforms.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_3,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMScalarOpts",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMObject",
-        ":LLVMTextAPI",
-        ":LLVMProfileData",
-        ":LLVMAnalysis",
-        ":LLVMTransformUtils",
-        ":LLVMFrontendHLSL",
-        ":LLVMScalarOpts__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMSelectionDAG__compile_0",
+    name = "LLVMSelectionDAG",
     srcs = [
         ":llvm/lib/CodeGen/SelectionDAG/DAGCombiner.cpp",
         ":llvm/lib/CodeGen/SelectionDAG/FastISel.cpp",
@@ -4063,46 +3620,14 @@ ch_cc_library(
         ":llvm/lib/CodeGen/SelectionDAG/TargetLowering.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_8,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
-)
-
-cc_library(
-    name = "LLVMSelectionDAG",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMBitstreamReader",
-        ":LLVMBitReader",
-        ":LLVMBitWriter",
-        ":LLVMRemarks",
-        ":LLVMObject",
-        ":LLVMTextAPI",
-        ":LLVMProfileData",
-        ":LLVMAnalysis",
-        ":LLVMTransformUtils",
-        ":LLVMTarget",
-        ":LLVMScalarOpts",
-        ":LLVMCodeGenTypes",
-        ":LLVMCodeGen",
-        ":LLVMCGData",
-        ":LLVMFrontendHLSL",
-        ":LLVMSelectionDAG__compile_0",
-    ],
 )
 
 ch_cc_library(
@@ -4279,11 +3804,11 @@ ch_cc_library(
         ":llvm/lib/Support/zOSLibFunctions.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
@@ -4302,7 +3827,7 @@ ch_cc_library(
         ":llvm/lib/Support/BLAKE3/blake3_portable.c",
         ":llvm/lib/Support/BLAKE3/blake3_neon.c",
     ],
-    copts = [
+    copts = ([
         "-w",
         "-std=gnu11",
         "-I",
@@ -4327,34 +3852,13 @@ ch_cc_library(
         "-I",
         repository_path("contrib/llvm-project") + "/llvm/lib/Target/AArch64",
     ],
-    }) + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
-        "x86_64": {
-            "language": "C",
-            "includes": [
-                [
-                    "-I",
-                    "generated",
-                    "libcxx/include/c++/v1",
-                ],
-            ],
-        },
-        "aarch64": {
-            "language": "C",
-            "includes": [
-                [
-                    "-I",
-                    "generated",
-                    "libcxx/include/c++/v1",
-                ],
-            ],
-        },
-    }),
+    })),
     local_includes = [
         "libcxxabi/include",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0 + ["system_include_paths"],
+    features = ["system_include_paths"],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = [
@@ -4362,6 +3866,7 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ],
+    language = "C",
 )
 
 _GENERATED_LOCAL_DEFINES_1 = select({
@@ -4388,16 +3893,6 @@ _GENERATED_DEPS_1 = select({
             "@llvm-project//libc:libc_headers",
             "@llvm-project//compiler-rt:headers",
             "@llvm-project//libunwind:headers",
-        ],
-        "@platforms//cpu:aarch64": [],
-    })
-
-_GENERATED_FEATURES_1 = [
-        "-fortify_source",
-        "-default_compile_flags",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "-llvm_system_c_headers",
         ],
         "@platforms//cpu:aarch64": [],
     })
@@ -4446,17 +3941,6 @@ ch_cc_library(
         repository_path("contrib/llvm-project") + "/llvm/lib/Target/X86",
     ],
         "@platforms//cpu:aarch64": [],
-    }) + cmake_prefix_maps(["x86_64"]) + cmake_native_compile_flags({
-        "x86_64": {
-            "language": "ASM",
-            "includes": [
-                [
-                    "-I",
-                    "generated",
-                    "libcxx/include/c++/v1",
-                ],
-            ],
-        },
     }),
     local_includes = select({
         "@platforms//cpu:x86_64": [
@@ -4466,10 +3950,14 @@ ch_cc_library(
     }),
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     deps = _GENERATED_DEPS_1,
-    features = _GENERATED_FEATURES_1 + ["system_include_paths"],
+    features = (["system_include_paths"]),
     alwayslink = False,
     hdrs = _GENERATED_HDRS_1,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_1,
+    language = "ASM",
+    arches = [
+        "x86_64",
+    ],
 )
 
 ch_cc_library(
@@ -4496,17 +3984,6 @@ ch_cc_library(
         repository_path("contrib/llvm-project") + "/llvm/lib/Target/X86",
     ],
         "@platforms//cpu:aarch64": [],
-    }) + cmake_prefix_maps(["x86_64"]) + cmake_native_compile_flags({
-        "x86_64": {
-            "language": "ASM",
-            "includes": [
-                [
-                    "-I",
-                    "generated",
-                    "libcxx/include/c++/v1",
-                ],
-            ],
-        },
     }),
     local_includes = select({
         "@platforms//cpu:x86_64": [
@@ -4516,10 +3993,14 @@ ch_cc_library(
     }),
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     deps = _GENERATED_DEPS_1,
-    features = _GENERATED_FEATURES_1 + ["system_include_paths"],
+    features = (["system_include_paths"]),
     alwayslink = False,
     hdrs = _GENERATED_HDRS_1,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_1,
+    language = "ASM",
+    arches = [
+        "x86_64",
+    ],
 )
 
 cc_library(
@@ -4538,7 +4019,7 @@ cc_library(
 )
 
 ch_cc_library(
-    name = "LLVMTarget__compile_0",
+    name = "LLVMTarget",
     srcs = [
         ":llvm/lib/Target/RegisterTargetPassConfigCallback.cpp",
         ":llvm/lib/Target/Target.cpp",
@@ -4547,42 +4028,18 @@ ch_cc_library(
         ":llvm/lib/Target/TargetMachine.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_7,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMTarget",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMObject",
-        ":LLVMTextAPI",
-        ":LLVMProfileData",
-        ":LLVMAnalysis",
-        ":LLVMFrontendHLSL",
-        ":LLVMTarget__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMTargetParser__compile_0",
+    name = "LLVMTargetParser",
     srcs = [
         ":llvm/lib/TargetParser/AArch64TargetParser.cpp",
         ":llvm/lib/TargetParser/ARMTargetParserCommon.cpp",
@@ -4601,31 +4058,18 @@ ch_cc_library(
         ":llvm/lib/TargetParser/XtensaTargetParser.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_5,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMTargetParser",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMTargetParser__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMTextAPI__compile_0",
+    name = "LLVMTextAPI",
     srcs = [
         ":llvm/lib/TextAPI/Architecture.cpp",
         ":llvm/lib/TextAPI/ArchitectureSet.cpp",
@@ -4644,33 +4088,18 @@ ch_cc_library(
         ":llvm/lib/TextAPI/Utils.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_9,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMTextAPI",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMTextAPI__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMTransformUtils__compile_0",
+    name = "LLVMTransformUtils",
     srcs = [
         ":llvm/lib/Transforms/Utils/AddDiscriminators.cpp",
         ":llvm/lib/Transforms/Utils/AMDGPUEmitPrintf.cpp",
@@ -4768,42 +4197,18 @@ ch_cc_library(
         ":llvm/lib/Transforms/Utils/VNCoercion.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_7,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMTransformUtils",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMObject",
-        ":LLVMTextAPI",
-        ":LLVMProfileData",
-        ":LLVMAnalysis",
-        ":LLVMFrontendHLSL",
-        ":LLVMTransformUtils__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMVectorize__compile_0",
+    name = "LLVMVectorize",
     srcs = [
         ":llvm/lib/Transforms/Vectorize/LoadStoreVectorizer.cpp",
         ":llvm/lib/Transforms/Vectorize/LoopIdiomVectorize.cpp",
@@ -4840,42 +4245,15 @@ ch_cc_library(
         ":llvm/lib/Transforms/Vectorize/VPlanVerifier.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_3,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
-
-cc_library(
-    name = "LLVMVectorize",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMObject",
-        ":LLVMTextAPI",
-        ":LLVMProfileData",
-        ":LLVMAnalysis",
-        ":LLVMTransformUtils",
-        ":LLVMFrontendHLSL",
-        ":LLVMVectorize__compile_0",
-    ],
-)
-
-
 
 _GENERATED_TARGET_COMPATIBLE_WITH_0 = select({
         "@platforms//cpu:x86_64": [],
@@ -4890,8 +4268,6 @@ _GENERATED_ADDITIONAL_COMPILER_INPUTS_2 = select({
         ],
         "@platforms//cpu:aarch64": [],
     })
-
-
 
 _GENERATED_COPTS_1 = select({
         "@platforms//cpu:x86_64": [
@@ -4910,15 +4286,10 @@ _GENERATED_COPTS_1 = select({
             repository_path("contrib/llvm-project") + "/llvm/lib/Target/X86",
         ],
         "@platforms//cpu:aarch64": [],
-    }) + cmake_prefix_maps(["x86_64"]) + cmake_native_compile_flags({
-        "x86_64": {
-            "language": "CXX",
-            "includes": [],
-        },
     })
 
 ch_cc_library(
-    name = "LLVMX86CodeGen__compile_0",
+    name = "LLVMX86CodeGen",
     srcs = select({
         "@platforms//cpu:x86_64": [
             ":llvm/lib/Target/X86/GISel/X86CallLowering.cpp",
@@ -4994,17 +4365,15 @@ ch_cc_library(
 (_GENERATED_COPTS_1)
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    deps = _GENERATED_DEPS_1,
-    features = _GENERATED_FEATURES_1,
-    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
-    alwayslink = False,
-    hdrs = _GENERATED_HDRS_1,
-    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_2,
-)
-
-cc_library(
-    name = "LLVMX86CodeGen",
-    deps = [
+    deps = (select({
+        "@platforms//cpu:x86_64": [
+            ":llvm_headers",
+            "@llvm-project//libc:libc_headers",
+            "@llvm-project//compiler-rt:headers",
+            "@llvm-project//libunwind:headers",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }) + [
         ":unwind",
         ":cxxabi",
         ":cxx",
@@ -5038,13 +4407,19 @@ cc_library(
         ":LLVMFrontendHLSL",
         ":LLVMX86Info",
         ":LLVMX86Desc",
-        ":LLVMX86CodeGen__compile_0",
-    ],
+    ]),
+    features = [],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
+    alwayslink = False,
+    hdrs = _GENERATED_HDRS_1,
+    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_2,
+    arches = [
+        "x86_64",
+    ],
 )
 
 ch_cc_library(
-    name = "LLVMX86Desc__compile_0",
+    name = "LLVMX86Desc",
     srcs = select({
         "@platforms//cpu:x86_64": [
             ":llvm/lib/Target/X86/MCTargetDesc/X86AsmBackend.cpp",
@@ -5070,17 +4445,15 @@ ch_cc_library(
 (_GENERATED_COPTS_1)
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    deps = _GENERATED_DEPS_1,
-    features = _GENERATED_FEATURES_1,
-    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
-    alwayslink = False,
-    hdrs = _GENERATED_HDRS_1,
-    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_2,
-)
-
-cc_library(
-    name = "LLVMX86Desc",
-    deps = [
+    deps = (select({
+        "@platforms//cpu:x86_64": [
+            ":llvm_headers",
+            "@llvm-project//libc:libc_headers",
+            "@llvm-project//compiler-rt:headers",
+            "@llvm-project//libunwind:headers",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }) + [
         ":unwind",
         ":cxxabi",
         ":cxx",
@@ -5092,13 +4465,19 @@ cc_library(
         ":LLVMMC",
         ":LLVMMCDisassembler",
         ":LLVMX86Info",
-        ":LLVMX86Desc__compile_0",
-    ],
+    ]),
+    features = [],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
+    alwayslink = False,
+    hdrs = _GENERATED_HDRS_1,
+    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_2,
+    arches = [
+        "x86_64",
+    ],
 )
 
 ch_cc_library(
-    name = "LLVMX86Info__compile_0",
+    name = "LLVMX86Info",
     srcs = select({
         "@platforms//cpu:x86_64": [
             ":llvm/lib/Target/X86/TargetInfo/X86TargetInfo.cpp",
@@ -5109,17 +4488,15 @@ ch_cc_library(
 (_GENERATED_COPTS_1)
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    deps = _GENERATED_DEPS_1,
-    features = _GENERATED_FEATURES_1,
-    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
-    alwayslink = False,
-    hdrs = _GENERATED_HDRS_1,
-    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_2,
-)
-
-cc_library(
-    name = "LLVMX86Info",
-    deps = [
+    deps = (select({
+        "@platforms//cpu:x86_64": [
+            ":llvm_headers",
+            "@llvm-project//libc:libc_headers",
+            "@llvm-project//compiler-rt:headers",
+            "@llvm-project//libunwind:headers",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }) + [
         ":unwind",
         ":cxxabi",
         ":cxx",
@@ -5129,13 +4506,19 @@ cc_library(
         ":LLVMBinaryFormat",
         ":LLVMTargetParser",
         ":LLVMMC",
-        ":LLVMX86Info__compile_0",
-    ],
+    ]),
+    features = [],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
+    alwayslink = False,
+    hdrs = _GENERATED_HDRS_1,
+    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_2,
+    arches = [
+        "x86_64",
+    ],
 )
 
 ch_cc_library(
-    name = "LLVMXRay__compile_0",
+    name = "LLVMXRay",
     srcs = [
         ":llvm/lib/XRay/BlockIndexer.cpp",
         ":llvm/lib/XRay/BlockPrinter.cpp",
@@ -5153,39 +4536,18 @@ ch_cc_library(
         ":llvm/lib/XRay/Trace.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = _GENERATED_DEPS_6,
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
 )
 
-cc_library(
-    name = "LLVMXRay",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMObject",
-        ":LLVMTextAPI",
-        ":LLVMXRay__compile_0",
-    ],
-)
-
 ch_cc_library(
-    name = "LLVMipo__compile_0",
+    name = "LLVMipo",
     srcs = [
         ":llvm/lib/Transforms/IPO/AlwaysInliner.cpp",
         ":llvm/lib/Transforms/IPO/Annotation2Metadata.cpp",
@@ -5234,45 +4596,43 @@ ch_cc_library(
         ":llvm/lib/Transforms/IPO/WholeProgramDevirt.cpp",
     ],
     copts = (
-(_GENERATED_COPTS_0)
+((_GENERATED_COPTS_0))
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _GENERATED_DEPS_0,
-    features = _GENERATED_FEATURES_0,
+    deps = [
+    ":llvm_headers",
+    "@llvm-project//libc:libc_headers",
+    "@llvm-project//compiler-rt:headers",
+    "@llvm-project//libunwind:headers",
+    ":unwind",
+    ":cxxabi",
+    ":cxx",
+    ":clang_rt_builtins",
+    ":LLVMDemangle",
+    ":LLVMSupport",
+    ":LLVMBinaryFormat",
+    ":LLVMTargetParser",
+    ":LLVMCore",
+    ":LLVMMC",
+    ":LLVMBitstreamReader",
+    ":LLVMRemarks",
+    ":LLVMObject",
+    ":LLVMTextAPI",
+    ":LLVMProfileData",
+    ":LLVMAnalysis",
+    ":LLVMTransformUtils",
+    ":LLVMScalarOpts",
+    ":LLVMInstCombine",
+    ":LLVMCGData",
+    ":LLVMFrontendOpenMP",
+    ":LLVMFrontendAtomic",
+    ":LLVMFrontendOffloading",
+    ":LLVMFrontendHLSL"
+],
+    features = [],
     alwayslink = False,
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_0,
-)
-
-cc_library(
-    name = "LLVMipo",
-    deps = [
-        ":unwind",
-        ":cxxabi",
-        ":cxx",
-        ":clang_rt_builtins",
-        ":LLVMDemangle",
-        ":LLVMSupport",
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMBitstreamReader",
-        ":LLVMRemarks",
-        ":LLVMObject",
-        ":LLVMTextAPI",
-        ":LLVMProfileData",
-        ":LLVMAnalysis",
-        ":LLVMTransformUtils",
-        ":LLVMScalarOpts",
-        ":LLVMInstCombine",
-        ":LLVMCGData",
-        ":LLVMFrontendOpenMP",
-        ":LLVMFrontendAtomic",
-        ":LLVMFrontendOffloading",
-        ":LLVMFrontendHLSL",
-        ":LLVMipo__compile_0",
-    ],
 )
 
 copy_file(
@@ -12925,8 +12285,6 @@ cc_library(
     ],
 )
 
-
-
 _GENERATED_LOCAL_DEFINES_5 = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -12949,25 +12307,7 @@ _GENERATED_LOCAL_DEFINES_5 = select({
         ],
     })
 
-_GENERATED_DEPS_2 = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            ":llvm_headers",
-            "@llvm-project//libc:libc_headers",
-            "@llvm-project//compiler-rt:headers",
-            "@llvm-project//libunwind:headers",
-        ],
-    })
 
-_GENERATED_FEATURES_2 = [
-        "-fortify_source",
-        "-default_compile_flags",
-    ] + select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            "-llvm_system_c_headers",
-        ],
-    })
 
 _GENERATED_TARGET_COMPATIBLE_WITH_1 = select({
         "@platforms//cpu:x86_64": [
@@ -12990,8 +12330,6 @@ _GENERATED_ADDITIONAL_COMPILER_INPUTS_3 = select({
         ],
     })
 
-
-
 _GENERATED_COPTS_3 = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -13009,15 +12347,10 @@ _GENERATED_COPTS_3 = select({
             "-I",
             repository_path("contrib/llvm-project") + "/llvm/lib/Target/AArch64",
         ],
-    }) + cmake_prefix_maps(["aarch64"]) + cmake_native_compile_flags({
-        "aarch64": {
-            "language": "CXX",
-            "includes": [],
-        },
     })
 
 ch_cc_library(
-    name = "LLVMAArch64CodeGen__compile_0",
+    name = "LLVMAArch64CodeGen",
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -13090,17 +12423,15 @@ ch_cc_library(
 (_GENERATED_COPTS_3)
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_5,
-    deps = _GENERATED_DEPS_2,
-    features = _GENERATED_FEATURES_2,
-    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_1,
-    alwayslink = False,
-    hdrs = _GENERATED_HDRS_4,
-    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_3,
-)
-
-cc_library(
-    name = "LLVMAArch64CodeGen",
-    deps = [
+    deps = (select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            ":llvm_headers",
+            "@llvm-project//libc:libc_headers",
+            "@llvm-project//compiler-rt:headers",
+            "@llvm-project//libunwind:headers",
+        ],
+    }) + [
         ":unwind",
         ":cxxabi",
         ":cxx",
@@ -13134,13 +12465,19 @@ cc_library(
         ":LLVMFrontendHLSL",
         ":LLVMAArch64Info",
         ":LLVMAArch64Desc",
-        ":LLVMAArch64CodeGen__compile_0",
-    ],
+    ]),
+    features = [],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_1,
+    alwayslink = False,
+    hdrs = _GENERATED_HDRS_4,
+    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_3,
+    arches = [
+        "aarch64",
+    ],
 )
 
 ch_cc_library(
-    name = "LLVMAArch64Desc__compile_0",
+    name = "LLVMAArch64Desc",
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -13163,17 +12500,15 @@ ch_cc_library(
 (_GENERATED_COPTS_3)
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_5,
-    deps = _GENERATED_DEPS_2,
-    features = _GENERATED_FEATURES_2,
-    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_1,
-    alwayslink = False,
-    hdrs = _GENERATED_HDRS_4,
-    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_3,
-)
-
-cc_library(
-    name = "LLVMAArch64Desc",
-    deps = [
+    deps = (select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            ":llvm_headers",
+            "@llvm-project//libc:libc_headers",
+            "@llvm-project//compiler-rt:headers",
+            "@llvm-project//libunwind:headers",
+        ],
+    }) + [
         ":unwind",
         ":cxxabi",
         ":cxx",
@@ -13185,13 +12520,19 @@ cc_library(
         ":LLVMMC",
         ":LLVMMCDisassembler",
         ":LLVMAArch64Info",
-        ":LLVMAArch64Desc__compile_0",
-    ],
+    ]),
+    features = [],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_1,
+    alwayslink = False,
+    hdrs = _GENERATED_HDRS_4,
+    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_3,
+    arches = [
+        "aarch64",
+    ],
 )
 
 ch_cc_library(
-    name = "LLVMAArch64Info__compile_0",
+    name = "LLVMAArch64Info",
     srcs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -13202,17 +12543,15 @@ ch_cc_library(
 (_GENERATED_COPTS_3)
 ),
     local_defines = _GENERATED_LOCAL_DEFINES_5,
-    deps = _GENERATED_DEPS_2,
-    features = _GENERATED_FEATURES_2,
-    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_1,
-    alwayslink = False,
-    hdrs = _GENERATED_HDRS_4,
-    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_3,
-)
-
-cc_library(
-    name = "LLVMAArch64Info",
-    deps = [
+    deps = (select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            ":llvm_headers",
+            "@llvm-project//libc:libc_headers",
+            "@llvm-project//compiler-rt:headers",
+            "@llvm-project//libunwind:headers",
+        ],
+    }) + [
         ":unwind",
         ":cxxabi",
         ":cxx",
@@ -13222,9 +12561,15 @@ cc_library(
         ":LLVMBinaryFormat",
         ":LLVMTargetParser",
         ":LLVMMC",
-        ":LLVMAArch64Info__compile_0",
-    ],
+    ]),
+    features = [],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_1,
+    alwayslink = False,
+    hdrs = _GENERATED_HDRS_4,
+    additional_compiler_inputs = _GENERATED_ADDITIONAL_COMPILER_INPUTS_3,
+    arches = [
+        "aarch64",
+    ],
 )
 
 filegroup(

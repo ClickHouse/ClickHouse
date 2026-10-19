@@ -19,10 +19,10 @@ from rust_archives import ARCHIVE_TARGETS as RUST_ARCHIVES
 from reference_readers import read_file_api
 from configuration import read_configurations
 import llvm_targets
-from build_file import BuildFile, CMakeCxxCompilerVersion, dependency_inputs, relocate_tools, select, starlark, target_label, target_owner
+from build_file import BuildFile, CMakeCxxCompilerVersion, Glob, dependency_inputs, relocate_tools, select, starlark, target_label, target_owner
 from repository_inputs import (
     REPOSITORIES, cmake_has_source_prefix_map, comparison_root, configuration_owner, execution_path, repository,
-    HeaderDirectory, directory_sources, input_key,
+    CC_HEADER_SUFFIXES, HeaderDirectory, directory_sources, input_key,
     source_label, source_path, write_overlays,
 )
 
@@ -731,7 +731,8 @@ def main():
         for item in graph.rust_headers:
             if isinstance(item, HeaderDirectory):
                 consumers[item.directory].add('rust_cxx')
-    builds = {owner: BuildFile(owner, owners, consumers) for owner in {None, *owners.values()}}
+    targets = {arch: graph.generated_targets for arch, graph in graphs.items()}
+    builds = {owner: BuildFile(owner, owners, consumers, targets) for owner in {None, *owners.values()}}
     for graph in graphs.values():
         graph.declare_configuration(builds, owners)
     for name, owner in sorted(owners.items()):
@@ -741,6 +742,12 @@ def main():
     # the original group's ordered objects from its own pinned repository.
     lz4 = builds.setdefault('contrib/lz4', BuildFile('contrib/lz4', owners | {'_lz4': 'contrib/lz4'}, consumers))
     lz4.target('_lz4', native_lz4)
+    boost_patterns = ['boost/**/*' + suffix for suffix in CC_HEADER_SUFFIXES]
+    builds['contrib/boost'].rule('cc_library', 'boost_headers', {
+        'hdrs': Glob(boost_patterns, allow_empty=True),
+        'textual_hdrs': Glob(['boost/**'], ('**/BUILD', '**/BUILD.bazel', *boost_patterns), allow_empty=True),
+        'features': ['external_include_paths'],
+    })
     llvm, llvm_native_targets, llvm_root_inputs = llvm_targets.declare_from_references(
         ROOT, {arch: graph.build for arch, graph in graphs.items()})
     builds[llvm_targets.PREFIX] = llvm
