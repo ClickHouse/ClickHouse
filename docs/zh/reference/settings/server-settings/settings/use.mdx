@@ -12,45 +12,18 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置用于配置 ClickHouse 服务器，并由 ClickHouse 源代码自动生成。
 
-<div id="use_minimalistic_part_header_in_zookeeper">
-  ## use_minimalistic_part_header_in_zookeeper
-</div>
+## use_minimalistic_part_header_in_zookeeper {#use_minimalistic_part_header_in_zookeeper}
 
-ZooKeeper 中数据分区片段头信息的存储方式。此设置仅适用于 [`MergeTree`](/zh/reference/engines/table-engines/mergetree-family/index) 家族。可按以下方式指定：
+已废弃的设置，不起任何作用。[复制](/zh/reference/engines/table-engines/mergetree-family/replication)表始终使用单个 `znode` 以紧凑方式存储数据分区片段的头信息。旧版本写入的分区片段头信息 (使用独立的 `columns` 和 `checksums` 子 `znodes` 存储) 仍可正常读取。
 
-**在 `config.xml` 文件的 [merge&#95;tree](/zh/reference/settings/server-settings/settings/merge#merge_tree) 部分中全局设置**
-
-ClickHouse 会将此设置应用于服务器上的所有表。你可以随时更改该设置。设置变更后，现有表的行为也会随之变化。
-
-**为每个表单独设置**
-
-创建表时，指定相应的[引擎设置](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table)。对于已设置此项的现有表，即使全局设置发生变化，其行为也不会改变。
-
-**可能的值**
-
-* `0` — 功能关闭。
-* `1` — 功能开启。
-
-如果 [`use_minimalistic_part_header_in_zookeeper = 1`](/zh/reference/settings/server-settings/settings/use#use_minimalistic_part_header_in_zookeeper)，则[复制](/zh/reference/engines/table-engines/mergetree-family/replication)表会使用单个 `znode` 以紧凑方式存储数据分区片段的头信息。如果表包含很多列，这种存储方式会显著减少存储在 Zookeeper 中的数据量。
-
-<Note>
-  应用 `use_minimalistic_part_header_in_zookeeper = 1` 后，你将无法把 ClickHouse 服务器降级到不支持此设置的版本。升级集群中各服务器上的 ClickHouse 时请务必小心。不要一次性升级所有服务器。更稳妥的做法是先在测试环境中，或仅在集群中的少数几台服务器上测试新版本的 ClickHouse。
-
-  已通过此设置存储的数据分区片段头信息，无法恢复为之前的 (非紧凑) 表示形式。
-</Note>
-
-<div id="use_separate_cache_arena">
-  ## use_separate_cache_arena
-</div>
+## use_separate_cache_arena {#use_separate_cache_arena}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
 为缓存分配启用专用的 jemalloc arena (标记缓存、未压缩缓存、页缓存) 。
 将缓存数据与查询处理中的内存分配隔离开来，从而减少内存碎片。
 
-<div id="use_shared_merge_tree_log_pipeline">
-  ## use_shared_merge_tree_log_pipeline
-</div>
+## use_shared_merge_tree_log_pipeline {#use_shared_merge_tree_log_pipeline}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
