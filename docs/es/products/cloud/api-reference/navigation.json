@@ -26,8 +26,8 @@
       {
         "group": "Notificaciones",
         "pages": [
-          "products/cloud/api-reference/notifications/notification-get-list",
-          "products/cloud/api-reference/notifications/notification-types-get-list"
+          "es/products/cloud/api-reference/notifications/notification-get-list",
+          "es/products/cloud/api-reference/notifications/notification-types-get-list"
         ]
       },
       {
