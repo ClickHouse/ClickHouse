@@ -46,6 +46,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageDummy.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
 #include <Analyzer/AggregationUtils.h>
@@ -337,7 +338,7 @@ void ColumnsDescription::setAliases(NamesAndAliases aliases)
 {
     for (auto & alias : aliases)
     {
-        ColumnDescription description(std::move(alias.name), std::move(alias.type));
+        ColumnDescription description(std::move(alias.name), std::move(alias.type), std::move(alias.comment));
         description.default_desc.kind = ColumnDefaultKind::Alias;
 
         const char * alias_expression_pos = alias.expression.data();
@@ -1059,7 +1060,7 @@ bool ColumnsDescription::hasExplicitDefaultCompressionCodec(const String & colum
     for (const auto & stage : codec_func->arguments->children)
     {
         const auto * identifier = stage->as<ASTIdentifier>();
-        if (identifier && identifier->name() == DEFAULT_CODEC_NAME)
+        if (identifier && equalsCaseInsensitive(identifier->name(), DEFAULT_CODEC_NAME))
             return true;
     }
 
