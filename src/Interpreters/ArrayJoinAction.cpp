@@ -284,7 +284,8 @@ Block ArrayJoinResultIterator::next()
     const auto & columns = array_join->columns;
     bool is_unaligned = array_join->is_unaligned;
     bool is_left = array_join->is_left;
-    auto cut_any_col = cutAnyArray(current_row, next_row - current_row);
+    const size_t window_rows = next_row - current_row;
+    auto cut_any_col = cutAnyArray(current_row, window_rows);
     const auto * cut_any_array = typeid_cast<const ColumnArray *>(cut_any_col.get());
     ColumnPtr indexes_for_lazy_replication;
 
@@ -292,20 +293,20 @@ Block ArrayJoinResultIterator::next()
     {
         ColumnWithTypeAndName current = block.safeGetByPosition(i);
 
-        /// Reuse cut_any_col if possible to avoid unnecessary cut.
-        if (!is_unaligned && !is_left && current.name == *columns.begin())
-        {
-            current.column = cut_any_col;
-            current.type = getArrayJoinDataType(current.type);
-        }
-        else
-            current.column = current.column->cut(current_row, next_row - current_row);
-
         if (columns.contains(current.name))
         {
+            /// Reuse cut_any_col if possible to avoid unnecessary cut.
+            if (!is_unaligned && !is_left && current.name == *columns.begin())
+            {
+                current.column = cut_any_col;
+                current.type = getArrayJoinDataType(current.type);
+            }
+            else
+                current.column = current.column->cut(current_row, window_rows);
+
             if (const auto & type = getArrayJoinDataType(current.type))
             {
-                ColumnPtr array_ptr = (is_left && !is_unaligned) ? non_empty_array_columns[current.name]->cut(current_row, next_row - current_row)
+                ColumnPtr array_ptr = (is_left && !is_unaligned) ? non_empty_array_columns[current.name]->cut(current_row, window_rows)
                                                                  : getArrayJoinColumn(current.column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated());
                 array_ptr = array_ptr->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
 
@@ -319,19 +320,14 @@ Block ArrayJoinResultIterator::next()
             else
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "ARRAY JOIN of not array nor map: {}", current.name);
         }
-        else
+        else if (enable_lazy_columns_replication && isLazyReplicationUseful(current.column))
         {
-            if (enable_lazy_columns_replication && isLazyReplicationUseful(current.column))
-            {
-                if (!indexes_for_lazy_replication)
-                    indexes_for_lazy_replication = convertOffsetsToIndexes(cut_any_array->getOffsets());
-                current.column = ColumnReplicated::create(current.column, indexes_for_lazy_replication);
-            }
-            else
-            {
-                current.column = current.column->replicate(cut_any_array->getOffsets());
-            }
+            if (!indexes_for_lazy_replication)
+                indexes_for_lazy_replication = convertOffsetsToIndexes(cut_any_array->getOffsets());
+            current.column = ColumnReplicated::create(current.column->cut(current_row, window_rows), indexes_for_lazy_replication);
         }
+        else
+            current.column = current.column->cut(current_row, window_rows)->replicate(cut_any_array->getOffsets());
 
         res.insert(std::move(current));
     }
@@ -480,22 +476,18 @@ Block ArrayJoinResultIterator::nextWithElementFilter()
                 current.column = all_survive ? element.column : element.column->filter(mask, survivors);
                 current.type = element.type;
             }
-            else
+            else if (enable_lazy_columns_replication && isLazyReplicationUseful(current.column))
             {
-                auto cut_col = current.column->cut(current_row, window_rows);
-                if (enable_lazy_columns_replication && isLazyReplicationUseful(cut_col))
+                if (!indexes)
                 {
-                    if (!indexes)
-                    {
-                        indexes = convertOffsetsToIndexes(win_offsets);
-                        if (!all_survive)
-                            indexes = indexes->filter(mask, survivors);
-                    }
-                    current.column = ColumnReplicated::create(cut_col, indexes);
+                    indexes = convertOffsetsToIndexes(win_offsets);
+                    if (!all_survive)
+                        indexes = indexes->filter(mask, survivors);
                 }
-                else
-                    current.column = cut_col->replicate(get_result_offsets());
+                current.column = ColumnReplicated::create(current.column->cut(current_row, window_rows), indexes);
             }
+            else
+                current.column = current.column->cut(current_row, window_rows)->replicate(get_result_offsets());
             res.insert(std::move(current));
         }
 

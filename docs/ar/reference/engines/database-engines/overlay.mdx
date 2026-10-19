@@ -1,0 +1,53 @@
+---
+description: 'يعرض محرك قاعدة البيانات Overlay اتحاد جداول عدة قواعد بيانات قائمة.'
+sidebarTitle: 'Overlay'
+slug: /engines/database-engines/overlay
+title: 'Overlay'
+doc_type: 'reference'
+---
+
+يعرض محرك قاعدة البيانات `Overlay` اتحاد جداول عدة قواعد بيانات قائمة.
+
+## إنشاء قاعدة بيانات {#creating-a-database}
+
+```sql
+CREATE DATABASE overlay_db
+ENGINE = Overlay(db1[, db2, ...]);
+```
+
+يُبحث عن اسم الجدول في قواعد البيانات المصدر وفق ترتيب إدراجها، ويُعتمد الجدول من أول قاعدة بيانات تحتوي على جدول بهذا الاسم.
+
+لا تمتلك قاعدة البيانات أي جداول خاصة بها، إذ يعمل كل جدول في قاعدة بيانات Overlay (overlay) بوصفه جدول [`Alias`](/ar/reference/engines/table-engines/special/alias) يشير إلى الجدول المقابل في قاعدة البيانات المصدر، فتُوجَّه عمليات القراءة والكتابة إلى الجدول المصدر.
+عمليات `CREATE` و`DROP` و`RENAME` و`ATTACH` و`DETACH` على الجداول داخل قاعدة بيانات Overlay غير مدعومة.
+
+يُبحث عن قواعد البيانات المصدر باسمها عند كل وصول، لذا عند حذف قاعدة بيانات مصدر تختفي جداولها من قاعدة بيانات Overlay، ثم تظهر مجددًا عند إعادة إنشائها.
+لا يمكن استخدام قاعدة بيانات `Overlay` مصدرًا لقاعدة بيانات `Overlay` أخرى.
+
+## التحكم في الوصول {#access-control}
+
+كما هو الحال مع جدول `Alias`، يتطلب العمل مع جدول من قاعدة بيانات overlay امتلاك الأذونات على كلٍّ من قاعدة بيانات overlay والجدول المصدر، وتُطبَّق سياسات الصفوف الخاصة بكليهما.
+لا يظهر جدول قاعدة بيانات overlay إلا للمستخدم الذي يستطيع رؤية كلٍّ من قاعدة بيانات overlay والجدول المصدر (أي من يمتلك امتياز `SHOW TABLES` على كليهما).
+يُحدَّد الجدول المقصود بالاسم في أول قاعدة بيانات مصدر يستطيع فيها المستخدم رؤية جدول بهذا الاسم، إذ يُتخطّى الجدول المخفي عن المستخدم كأنه غير موجود.
+
+## مثال {#example}
+
+```sql
+CREATE DATABASE db1;
+CREATE DATABASE db2;
+CREATE TABLE db1.a (x UInt8) ENGINE = Memory;
+CREATE TABLE db2.b (y String) ENGINE = Memory;
+INSERT INTO db2.b VALUES ('Hello');
+CREATE DATABASE overlay_db ENGINE = Overlay(db1, db2);
+SELECT name, engine FROM system.tables WHERE database = 'overlay_db' ORDER BY name;
+SELECT * FROM overlay_db.b;
+```
+
+```response
+┌─name─┬─engine─┐
+│ a    │ Alias  │
+│ b    │ Alias  │
+└──────┴────────┘
+┌─y─────┐
+│ Hello │
+└───────┘
+```

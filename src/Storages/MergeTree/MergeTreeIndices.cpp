@@ -49,20 +49,15 @@ bool indexFileExistsInChecksums(
     if (checksums.files.contains(hash + extension))
         return true;
 
-    /// Packed substreams: not listed in checksums.txt as individual entries, but the archive
-    /// itself is, and its index names the members. Ask for archive membership specifically:
-    /// `IDataPartStorage::existsFile` falls back to the loose file on disk when the archive does
-    /// not hold the name, and a loose `skp_idx_*` file next to `skp_idx.packed` that is in neither
-    /// `checksums.txt` nor the archive is an orphan the part does not own (#109595).
+    /// A standalone file always has a checksums entry, so the only files missing above are members
+    /// of `skp_idx.packed`, which are written under the unhashed name. Answer from the archive index
+    /// (loaded once per part and cached) and do not ask the disk about the file: this runs for every
+    /// part during query planning, often for optional substreams that do not exist.
     if (storage && checksums.files.contains(String(SKIP_INDICES_PACKED_FILENAME)))
     {
-        if (const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(storage))
-        {
-            if (disk_storage->isFileInPackedSkipIndicesArchive(path_prefix + extension))
-                return true;
-            if (disk_storage->isFileInPackedSkipIndicesArchive(hash + extension))
-                return true;
-        }
+        const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(storage);
+        if (disk_storage && disk_storage->isFileInPackedSkipIndicesArchive(path_prefix + extension))
+            return true;
     }
 
     return false;
@@ -488,9 +483,11 @@ MergeTreeIndexSubstreams IMergeTreeIndex::getAllSubstreamsInPart(
 {
     /// Not routed through `getDeserializedFormat`: that answers the read-time question and
     /// reports nothing once a required system column is invalidated, while a file left on disk
-    /// still has to be skipped/stripped here. (minmax overrides to add its legacy `.idx`.)
+    /// still has to be skipped/stripped here. Probes `getPotentialSubstreams`, not `getSubstreams`:
+    /// a part may hold a substream that the current definition does not write (the legacy minmax
+    /// `.idx`, the text index `.pos` after the index was redefined without `support_phrase_search`).
     MergeTreeIndexSubstreams substreams;
-    for (const auto & substream : getSubstreams())
+    for (const auto & substream : getPotentialSubstreams())
         if (indexFileExistsInChecksums(checksums, relative_path_prefix + substream.suffix, substream.extension, storage))
             substreams.push_back(substream);
 
