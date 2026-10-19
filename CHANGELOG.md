@@ -24,6 +24,32 @@
 
 # 2026 Changelog
 
+<!-- CHANGELOG-RAW-BEGIN: auto-generated entries below are edited and removed by the nightly changelog CI job; do not edit them manually -->
+### ClickHouse release c22dc6a9088c713c4ee65cea505da8c6d8bff33b (c22dc6a9088) FIXME as compared to 39618113e63cef6ef3b6c01dad67bf25be38ce0b (39618113e63)
+
+#### Performance Improvement
+* Sets of `IN` with a subquery spill to disk by default: `max_bytes_ratio_before_external_set` now defaults to `0.5`, so a set spills once query memory exceeds half of the memory that the server or user memory limits leave. Set it to `0` to keep such sets in memory. Sets on disk are built and looked up several times faster: they keep numbers, dates, short `FixedString` values and tuples of them in order, pack close keys, read neighboring blocks together without decompression, skip blocks with Bloom filters, cache the blocks that lookups read, and look up each distinct key of a block of rows once. The new settings `max_bytes_for_external_set_bloom_filter` and `max_bytes_for_external_set_cache`, 128 MiB each by default, limit the memory of the Bloom filters and of the cache. [#124907](https://github.com/ClickHouse/ClickHouse/pull/124907) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+
+#### Improvement
+* Fix `modulo` throwing `Division by the most negative number` when the divisor is a constant equal to the minimum value of a signed integer type (e.g. `modulo(materialize(5), toInt8(-128))`). It now returns the correct remainder. [#121645](https://github.com/ClickHouse/ClickHouse/pull/121645) ([Shubham](https://github.com/shubhamojha1)).
+
+#### Bug Fix (user-visible misbehavior in an official stable release)
+* Respect `remote_url_allow_hosts` in the Hive metastore catalog. [#119353](https://github.com/ClickHouse/ClickHouse/pull/119353) ([Smita Kulkarni](https://github.com/SmitaRKulkarni)).
+* The default partition key of the inner recent samples table of a `TimeSeries` table is now anchored to UTC. Previously it depended on the server timezone, so changing that timezone made range queries silently skip whole parts. [#120960](https://github.com/ClickHouse/ClickHouse/pull/120960) ([Valery Petrov](https://github.com/valerypetrov)).
+* Fixes `RabbitMQ` tables inserting most of the already received but unprocessed messages twice after a lost connection or channel, sometimes followed by `unknown delivery tag` channel errors. [#125105](https://github.com/ClickHouse/ClickHouse/pull/125105) ([Sven Eliasson](https://github.com/comino)).
+* Creating an Iceberg table with a `Time` column, adding a `Nullable(Time)` column, or changing a column to `Time` with `ALTER TABLE` now fails with `Unsupported type for iceberg Time`, as it already does for `Time64`. Previously the column was declared as Iceberg `time` (microseconds) but written as whole seconds without the Parquet `TIME` annotation, so other Iceberg readers refused or misread the table. Closes [#118806](https://github.com/ClickHouse/ClickHouse/issues/118806). [#125189](https://github.com/ClickHouse/ClickHouse/pull/125189) ([Groene AI](https://github.com/groeneai)).
+* Fixed crashes of the interactive line editor of `clickhouse-client` and `clickhouse-local`, which also crashed the server when used through the web terminal or an SSH session: after a history search that found nothing on an edited recalled query, when the prompt or the line given to an Alt-R history search contained a tab, when leaving a history search with a double-width character in the prompt (for example in the server's `display_name`), and on Ctrl-W or Alt-. after some non-ASCII characters. Closes [#126008](https://github.com/ClickHouse/ClickHouse/issues/126008). [#126120](https://github.com/ClickHouse/ClickHouse/pull/126120) ([Groene AI](https://github.com/groeneai)).
+
+#### NOT FOR CHANGELOG / INSIGNIFICANT
+
+* UNIQUE KEY: read. [#123008](https://github.com/ClickHouse/ClickHouse/pull/123008) ([Murphy](https://github.com/murphy-4o)).
+* Apply the condition before symbolizing stack traces in `system.errors`. [#125441](https://github.com/ClickHouse/ClickHouse/pull/125441) ([Groene AI](https://github.com/groeneai)).
+* An HTTP response with a status above 511 no longer produces an out-of-range `HTTPStatus` value. [#126225](https://github.com/ClickHouse/ClickHouse/pull/126225) ([Groene AI](https://github.com/groeneai)).
+* Do not report LLVM coverage jobs as failed because of failed tests. [#126227](https://github.com/ClickHouse/ClickHouse/pull/126227) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Rename integer division setting to sql_compatible_division_for_integers. [#126245](https://github.com/ClickHouse/ClickHouse/pull/126245) ([Ilya Yatsishin](https://github.com/qoega)).
+* Do not build `prql`, `polyglot` and `skim` with MSan. [#126354](https://github.com/ClickHouse/ClickHouse/pull/126354) ([Nikita Taranov](https://github.com/nickitat)).
+<!-- CHANGELOG-RAW-END -->
+
 ### <a id="2611"></a> ClickHouse release 26.11, FIXME (in progress)
 
 #### Backward Incompatible Change
