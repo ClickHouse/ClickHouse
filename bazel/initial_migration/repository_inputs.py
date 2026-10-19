@@ -1,5 +1,6 @@
 """Map reference-checkout inputs to pinned Bazel source repositories."""
 
+import ast
 from dataclasses import dataclass
 from functools import cache
 import json
@@ -326,20 +327,40 @@ def write_overlays(builds, shared_inputs, system_repositories):
         elif isinstance(value, str) and value.startswith('@'):
             external_inputs.add(value)
     collect(shared_inputs)
+    # A hand-written .bzl rule can consume a file directly without going
+    # through BuildFile.label(), for example OpenSSL and Delta codegen inputs.
+    # Parse complete strings: Bazel source file labels may contain spaces or
+    # brackets. An incomplete label stem keeps the affected repo's exports.
+    dynamic_repositories = set()
+    for path in (ROOT / 'bazel').rglob('*.bzl'):
+        for node in ast.walk(ast.parse(path.read_text(), filename=str(path))):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                value = node.value
+                if value.startswith('@clickhouse_') and '//:' in value:
+                    repo, _, name = value.partition('//:')
+                    if not name or '{' in name or '$' in name:
+                        dynamic_repositories.add(repo)
+                    else:
+                        external_inputs.add(value)
     for label in local_sources - external_inputs:
         for prefix, spec in REPOSITORIES.items():
             repository_label = '@' + spec['name'] + '//:'
             if label.startswith(repository_label):
                 EXPORTS[prefix].discard(label.removeprefix(repository_label))
                 break
-    # Graph construction visits every Abseil source before cc_library header
+    # Graph construction visits source directories before cc_library header
     # dependencies replace the captured include directories. Export only files
     # still used across repositories (not those transient source_label calls).
-    abseil = 'contrib/abseil-cpp'
-    abseil_label = '@' + REPOSITORIES[abseil]['name'] + '//:'
-    EXPORTS[abseil].intersection_update(
-        value.removeprefix(abseil_label) for value in external_inputs if value.startswith(abseil_label)
-    )
+    for prefix in builds:
+        if prefix not in REPOSITORIES:
+            continue
+        repo = '@' + REPOSITORIES[prefix]['name']
+        if repo in dynamic_repositories:
+            continue
+        label_prefix = repo + '//:'
+        EXPORTS[prefix].intersection_update(
+            value.removeprefix(label_prefix) for value in external_inputs if value.startswith(label_prefix)
+        )
     directory = ROOT / 'bazel/dependencies'
     directory.mkdir(exist_ok=True)
     EXPORTS['contrib/delta-kernel-rs'].update(['ffi/Cargo.toml', 'ffi/cbindgen.toml'])

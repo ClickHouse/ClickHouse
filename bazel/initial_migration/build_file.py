@@ -45,9 +45,15 @@ SOURCE_HEADER_DIRECTORIES = {
         'src/aws-cpp-sdk-core/include',
     ),
     'contrib/arrow': ('cpp/src',),
+    'contrib/postgres': ('src/include', 'src/interfaces/libpq'),
+    'contrib/libpqxx': ('include',),
     **{owner: ('include',) for owner in REPOSITORIES
        if (owner.startswith('contrib/aws-c-') and owner != 'contrib/aws-c-mqtt')
        or owner in {'contrib/aws-checksums', 'contrib/aws-crt-cpp'}},
+}
+SOURCE_HEADER_SUFFIXES = {
+    'contrib/postgres': ('.h',),
+    'contrib/libpqxx': ('.hxx',),
 }
 SOURCE_HEADER_TARGETS = {
     owner: (REPOSITORIES[owner]['name'].removeprefix('clickhouse_') + '_headers')
@@ -530,13 +536,17 @@ class BuildFile:
                             for item in values:
                                 if isinstance(item, str) and item.startswith(prefix):
                                     local.append(item.removeprefix(prefix))
-                        fields[field].append(Glob(headers, (*excluded, *local)))
+                        if (owner in SOURCE_HEADER_SUFFIXES and relative in SOURCE_HEADER_DIRECTORIES[owner]
+                                and not local):
+                            fields['deps'].append(':' + SOURCE_HEADER_TARGETS[owner])
+                        else:
+                            fields[field].append(Glob(headers, (*excluded, *local)))
                         fields[non_header_field].append(Glob([pattern], (*excluded, *headers)))
                 else:
                     for path in directory_sources(directory):
                         public = PUBLIC_HEADERS.get(owner)
                         if (not custom and public and path.startswith(public[0])
-                                and path.endswith(CC_HEADER_SUFFIXES)):
+                                and path.endswith(SOURCE_HEADER_SUFFIXES.get(owner, CC_HEADER_SUFFIXES))):
                             fields['deps'].append('@' + REPOSITORIES[owner]['name'] + '//:' + public[1])
                             continue
                         # This pinned Abseil revision has no non-header
@@ -557,7 +567,7 @@ class BuildFile:
                 fields['textual_hdrs'].extend(
                     source_label(path) for path in OWNED_TEXTUAL_HEADERS.get(name, ())
                 )
-            for field in ('hdrs', 'textual_hdrs'):
+            for field in ('hdrs', 'textual_hdrs', 'additional_compiler_inputs'):
                 fields[field] = [
                     item for item in fields[field]
                     if not isinstance(item, str) or item not in supplied_labels

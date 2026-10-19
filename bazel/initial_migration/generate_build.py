@@ -22,7 +22,7 @@ from initial_migration import llvm_targets
 from initial_migration.external_headers import HeaderLibraries
 from initial_migration.format_build_files import format_build_files
 from initial_migration.build_file import (
-    BuildFile, CMakeCxxCompilerVersion, Glob, SOURCE_HEADER_DIRECTORIES, SOURCE_HEADER_TARGETS,
+    BuildFile, CMakeCxxCompilerVersion, Glob, SOURCE_HEADER_DIRECTORIES, SOURCE_HEADER_SUFFIXES, SOURCE_HEADER_TARGETS,
     dependency_inputs, relocate_compilation,
     relocate_tools, select, starlark, target_label, target_owner,
 )
@@ -760,7 +760,8 @@ def main():
         build.target(name, variants, input_name=input_name)
     for owner, directories in SOURCE_HEADER_DIRECTORIES.items():
         build = builds.setdefault(owner, BuildFile(owner, owners, consumers, targets))
-        patterns = [directory + '/**/*' + suffix for directory in directories for suffix in CC_HEADER_SUFFIXES]
+        patterns = [directory + '/**/*' + suffix for directory in directories
+                    for suffix in SOURCE_HEADER_SUFFIXES.get(owner, CC_HEADER_SUFFIXES)]
         build.rule('cc_library', SOURCE_HEADER_TARGETS[owner], {
             'hdrs': Glob(patterns),
         })
