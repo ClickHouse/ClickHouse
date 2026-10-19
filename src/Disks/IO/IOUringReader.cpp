@@ -312,8 +312,8 @@ void IOUringReader::monitorRing()
             int fd = assert_cast<const LocalFileDescriptor &>(*req.descriptor).fd;
             failRequest(it, Exception(
                 ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR,
-                "Failed reading {} bytes at offset {} to address {} from fd {}: {}",
-                req.size, req.offset, static_cast<void*>(req.buf), fd, errnoToString(-cqe->res)
+                "Failed reading {} bytes at offset {} from fd {}: {}",
+                req.size, req.offset, fd, errnoToString(-cqe->res)
             ));
 
             ProfileEvents::increment(ProfileEvents::IOUringCQEsFailed);

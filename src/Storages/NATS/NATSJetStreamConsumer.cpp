@@ -67,7 +67,7 @@ void NATSJetStreamConsumer::subscribeImpl()
         created_subscriptions.emplace_back(subscribeToSubject(subject));
         LOG_DEBUG(getLogger(), "Subscribed to subject {}", subject);
     }
-    LOG_DEBUG(getLogger(), "Consumer {} subscribed to {} subjects", static_cast<void*>(this), created_subscriptions.size());
+    LOG_DEBUG(getLogger(), "Consumer subscribed to {} subjects", created_subscriptions.size());
 
     setSubscriptions(std::move(created_subscriptions));
 }
@@ -91,7 +91,7 @@ NATSSubscriptionPtr NATSJetStreamConsumer::subscribeToSubject(const String & sub
     if (status != NATS_OK)
         throw Exception(
             ErrorCodes::CANNOT_CONNECT_NATS,
-            "Failed to subscribe consumer {} to subject {}. Error: {} {}", static_cast<void*>(this), subject, natsStatus_GetText(status), getNATSLastError());
+            "Failed to subscribe consumer to subject {}. Error: {} {}", subject, natsStatus_GetText(status), getNATSLastError());
 
     NATSSubscriptionPtr result(subscription, &natsSubscription_Destroy);
     natsSubscription_SetPendingLimits(result.get(), -1, -1);
