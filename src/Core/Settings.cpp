@@ -984,7 +984,7 @@ When enabled, ClickHouse may automatically use the uncompressed cache for eligib
 
 A `use_uncompressed_cache` value set in the query text (`SETTINGS use_uncompressed_cache = 0`) or in a settings profile takes precedence over the automatic decision. Note that a setting passed as an HTTP query parameter or a command-line client option with a value equal to its default (`use_uncompressed_cache=0`) is indistinguishable from an unset one on the server side and does not override the automatic decision.
 )", 0, \
-        {"26.10", false, false, "New setting to allow automatic use of the uncompressed cache for eligible local MergeTree reads."}) \
+        {"26.11", false, false, "New setting to allow automatic use of the uncompressed cache for eligible local MergeTree reads."}) \
     DECLARE(Bool, use_columns_cache, false, R"(
 Whether to use the columns cache. Accepts 0 or 1. By default, 0 (disabled).
 The columns cache stores deserialized columns from `MergeTree` tables, eliminating repeated decompression and deserialization for hot data. This can significantly reduce latency for repeated queries on the same data. The cache is keyed by table UUID, data part name, column name, and a stripe of consecutive granules of about 65536 rows.
