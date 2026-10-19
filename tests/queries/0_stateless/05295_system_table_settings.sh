@@ -24,11 +24,11 @@ SELECT count() FROM
 (
     SELECT engine_name, name, value, default, changed, description, min, max, disallowed_values, readonly, type, is_obsolete, tier
     FROM system.table_settings WHERE database = currentDatabase() AND table = 'mem'
-    EXCEPT SELECT * FROM system.engine_settings WHERE engine_name = 'Memory'
+    EXCEPT SELECT engine_name, name, value, default, changed, description, min, max, disallowed_values, readonly, type, is_obsolete, tier FROM system.engine_settings WHERE engine_name = 'Memory'
 );
 SELECT count() FROM
 (
-    SELECT * FROM system.engine_settings WHERE engine_name = 'Memory'
+    SELECT engine_name, name, value, default, changed, description, min, max, disallowed_values, readonly, type, is_obsolete, tier FROM system.engine_settings WHERE engine_name = 'Memory'
     EXCEPT SELECT engine_name, name, value, default, changed, description, min, max, disallowed_values, readonly, type, is_obsolete, tier
     FROM system.table_settings WHERE database = currentDatabase() AND table = 'mem'
 );

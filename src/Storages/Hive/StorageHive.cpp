@@ -8,6 +8,7 @@
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
+#include <Core/FormatFactorySettings.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/SipHash.h>
@@ -1153,7 +1154,8 @@ void registerStorageHive(StorageFactory & factory)
             .supports_sort_order = true,
             .source_access_type = AccessTypeObjects::Source::HIVE,
             .has_builtin_setting_fn = HiveSettings::hasBuiltin,
-            .enumerate_engine_settings_fn = enumerateCompiledDefaults<HiveSettings>,
+            /// `Hive` accepts the format settings its settings class declares, but never reads them.
+            .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<HiveSettings, isFormatFactorySetting>,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -1198,25 +1200,6 @@ The table structure can differ from the original Hive table structure:
 - `table` — Remote table name.
 
 ## Usage example {#usage-example}
-
-### How to use local cache for HDFS filesystem {#how-to-use-local-cache-for-hdfs-filesystem}
-
-We strongly advice you to enable local cache for remote filesystems. Benchmark shows that its almost 2x faster with cache.
-
-Before using cache, add it to `config.xml`
-```xml
-<local_cache_for_remote_fs>
-    <enable>true</enable>
-    <root_dir>local_cache</root_dir>
-    <limit_size>559096952</limit_size>
-    <bytes_read_before_flush>1048576</bytes_read_before_flush>
-</local_cache_for_remote_fs>
-```
-
-- enable: ClickHouse will maintain local cache for remote filesystem(HDFS) after startup if true.
-- root_dir: Required. The root directory to store local cache files for remote filesystem.
-- limit_size: Required. The maximum size(in bytes) of local cache files.
-- bytes_read_before_flush: Control bytes before flush to local filesystem when downloading file from remote filesystem. The default value is 1MB.
 
 ### Query Hive table with ORC input format  {#query-hive-table-with-orc-input-format}
 

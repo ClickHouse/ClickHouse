@@ -152,6 +152,23 @@ StorageRabbitMQ::StorageRabbitMQ(
         std::find_if(queue_settings_list.begin(), queue_settings_list.end(),
                      [](const String & name) { return name.starts_with(deadletter_exchange_setting); });
 
+    /// The first routing key is used unconditionally for binding and publishing.
+    /// An empty list is meaningful (e.g. `fanout` ignores the routing key, `rabbitmq_queue_consume`
+    /// does not bind at all), so treat it as a single empty routing key.
+    if (routing_keys.empty())
+        routing_keys.emplace_back();
+
+    /// For the `headers` exchange every routing key is a `key=value` pair.
+    if (exchange_type == AMQP::ExchangeType::headers)
+    {
+        for (const auto & header : routing_keys)
+        {
+            if (!header.contains('='))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Invalid routing key '{}' for the `headers` exchange type: expected `key=value`", header);
+        }
+    }
+
     const auto & config = getContext()->getConfigRef();
 
     std::pair<String, UInt16> parsed_address;
@@ -1435,6 +1452,9 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
     auto block_io = interpreter.execute();
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
+    /// Read all consumers in parallel, as Kafka does: with `parallel_view_processing = 0` the pipeline has one thread, and
+    /// sources that share the flush deadline would run one after another, the later ones finding it already spent.
+    block_io.pipeline.setNumThreads(std::max(block_io.pipeline.getNumThreads(), num_created_consumers));
 
     std::atomic_size_t rows = 0;
     block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
@@ -1575,6 +1595,15 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
 }
 
 
+/// The settings of `RabbitMQ`, with the format settings the engine sets itself when a table does not state them
+/// (`addSettings`) and the header detection it always disables.
+static SettingDescriptions enumerateRabbitMQSettings(ContextPtr context, const SettingsChanges & changes)
+{
+    auto settings = enumerateStreamingEngineDefaults<RabbitMQSettings>(context, changes);
+    setStreamingErrorHandlingDefaults(settings, changes, "rabbitmq_skip_broken_messages", "rabbitmq_handle_error_mode");
+    return settings;
+}
+
 void registerStorageRabbitMQ(StorageFactory & factory);
 void registerStorageRabbitMQ(StorageFactory & factory)
 {
@@ -1620,14 +1649,14 @@ void registerStorageRabbitMQ(StorageFactory & factory)
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::RABBITMQ,
             .has_builtin_setting_fn = RabbitMQSettings::hasBuiltin,
-            .enumerate_engine_settings_fn = enumerateCompiledDefaults<RabbitMQSettings>,
+            .enumerate_engine_settings_fn = enumerateRabbitMQSettings,
             /// A table that leaves the credentials empty takes them from the `rabbitmq` section of the server
-            /// configuration; one that does not state the others takes the server's `max_insert_block_size` and
-            /// `stream_flush_interval_ms`.
+            /// configuration, whose `vhost` replaces the table's `rabbitmq_vhost`; one that does not state the others
+            /// takes the server's `max_insert_block_size` and `stream_flush_interval_ms`.
             .is_inherited_setting_fn = [](std::string_view name)
             {
-                return name == "rabbitmq_username" || name == "rabbitmq_password" || name == "rabbitmq_max_block_size"
-                    || name == "rabbitmq_flush_interval_ms";
+                return name == "rabbitmq_username" || name == "rabbitmq_password" || name == "rabbitmq_vhost"
+                    || name == "rabbitmq_max_block_size" || name == "rabbitmq_flush_interval_ms";
             },
         },
         Documentation{

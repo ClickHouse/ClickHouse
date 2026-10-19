@@ -41,7 +41,7 @@ public:
     using EnumerateEngineSettingsFn = SettingDescriptions(ContextPtr, const SettingsChanges & changes);
 
     /// Whether a table of the engine takes a setting from elsewhere (the query context, the server configuration)
-    /// when its definition does not state it, so the setting has no value of its own to report. The format settings
+    /// when its definition does not state it, which `system.engine_settings` shows as `inherited`. The format settings
     /// always are, see `isInheritedSetting`; this names the others.
     using IsInheritedSettingFn = bool(std::string_view);
 

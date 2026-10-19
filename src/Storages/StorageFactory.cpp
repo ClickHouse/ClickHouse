@@ -325,6 +325,8 @@ std::optional<AccessTypeObjects::Source> StorageFactory::getSourceAccessObject(c
 
 bool StorageFactory::isInheritedSetting(const StorageFeatures & features, std::string_view name)
 {
+    /// The check for format settings is by name, for every engine: an engine setting of its own named like a format
+    /// setting would be taken for one.
     return isFormatFactorySetting(name) || (features.is_inherited_setting_fn && features.is_inherited_setting_fn(name));
 }
 

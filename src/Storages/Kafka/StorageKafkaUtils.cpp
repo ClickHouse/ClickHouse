@@ -167,6 +167,17 @@ static SettingsChanges kafkaSettingsFromEngineArguments(const ASTs & engine_args
     return changes;
 }
 
+/// The settings of a `Kafka` table: the compiled defaults with `changes` applied, the values of the format settings the
+/// engine sets itself when a table does not state them (`createSettingsAdjustments`), and the header detection it always
+/// disables.
+static SettingDescriptions enumerateKafkaSettings(ContextPtr context, const SettingsChanges & changes)
+{
+    auto settings = enumerateCompiledDefaults<KafkaSettings>(context, changes);
+    setStreamingErrorHandlingDefaults(settings, changes, "kafka_skip_broken_messages", /* handle_error_mode_name */ "");
+    setHeaderDetectionDisabled(settings);
+    return settings;
+}
+
 void registerStorageKafka(StorageFactory & factory);
 void registerStorageKafka(StorageFactory & factory)
 {
@@ -412,7 +423,7 @@ void registerStorageKafka(StorageFactory & factory)
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::KAFKA,
             .has_builtin_setting_fn = KafkaSettings::hasBuiltin,
-            .enumerate_engine_settings_fn = enumerateCompiledDefaults<KafkaSettings>,
+            .enumerate_engine_settings_fn = enumerateKafkaSettings,
             .is_inherited_setting_fn = isKafkaSettingTakenFromElsewhere,
             .settings_from_engine_arguments_fn = kafkaSettingsFromEngineArguments,
         },

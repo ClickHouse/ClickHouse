@@ -53,6 +53,18 @@ namespace
     return name == "storage_catalog_type" || name == "storage_catalog_url" || name == "storage_aws_access_key_id";
 }
 
+/// The Iceberg compaction settings of `DataLakeStorageSettings`, which an Iceberg table that does not state them takes
+/// from the query settings of the same names, as their descriptions say.
+[[maybe_unused]] bool isIcebergSettingTakenFromQuery(std::string_view name)
+{
+    return name == "allow_experimental_iceberg_compaction" || name == "allow_experimental_cleanup_old_data_files_compaction"
+        || name == "iceberg_compaction_delay_bias" || name == "iceberg_compaction_data_cleanup"
+        || name == "iceberg_compaction_commit_batch_size" || name == "iceberg_compaction_max_rows_in_data_file"
+        || name == "iceberg_compaction_max_bytes_in_data_file" || name == "iceberg_max_number_datafiles_to_compact"
+        || name == "iceberg_data_file_size_lower_threshold_compaction"
+        || name == "iceberg_data_file_size_upper_threshold_compaction";
+}
+
 // LocalObjectStorage is only supported for Iceberg Datalake operations where Avro format is required. For regular file access, use FileStorage instead.
 #if USE_AWS_S3 || USE_AZURE_BLOB_STORAGE || USE_HDFS || USE_AVRO
 
@@ -1164,6 +1176,7 @@ void registerStorageIceberg(StorageFactory & factory)
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
             .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<DataLakeStorageSettings, isDeprecatedDataLakeCatalogSetting>,
+            .is_inherited_setting_fn = isIcebergSettingTakenFromQuery,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -1268,7 +1281,8 @@ The following table shows how Iceberg data types are mapped to ClickHouse data t
 
 The data type mappings above apply to reads. The following limitations apply when ClickHouse creates or evolves Iceberg schemas and writes data:
 
-- ClickHouse cannot create an Iceberg schema containing `Bool`, `Decimal`, `FixedString`, `Int8`, `UInt8`, `Int16`, or `UInt16`, or add or modify a column to one of these types. The operation fails with an unsupported-type exception. This does not prevent inserting `Bool` or `Decimal` values into existing Iceberg columns.
+- ClickHouse cannot create an Iceberg schema containing `Bool`, `FixedString`, `Int8`, `UInt8`, `Int16`, `UInt16`, `Time`, or `Time64`, or add or modify a column to one of these types. The operation fails with an unsupported-type exception. This does not prevent inserting `Bool` values into existing Iceberg columns.
+- ClickHouse cannot create an Iceberg schema containing `UInt64` either: the widest Iceberg integer type is the signed 64-bit `long`, which cannot represent every `UInt64` value. Use `Int64` or `Decimal(20, 0)`. Creating a table with a `UInt64` column, including a nested one such as `Array(UInt64)`, fails with an exception even if the Iceberg table already exists at the path. A `UInt32` column is widened to Iceberg `long` for the same reason, and is therefore read back as `Int64`.
 - When ClickHouse creates or evolves an Iceberg schema, it maps every `DateTime` and `DateTime64` column to Iceberg `timestamp`, which has microsecond precision and no timezone. ClickHouse cannot generate `timestamptz`, `timestamp_ns`, or `timestamptz_ns` schema types, so higher precision and timezone semantics are not represented in the Iceberg schema.
 - ClickHouse cannot write to an Iceberg table that uses a `decimal`, `fixed`, `timestamp_ns`, or `timestamptz_ns` column as a direct partition field. The operation fails with an unsupported-type exception.
 - For data files containing types whose bounds ClickHouse cannot serialize, including `Bool` and `Decimal`, ClickHouse omits all lower and upper column bounds from the Iceberg manifest entry. Column sizes and null counts are still included, and the data remains correct, but readers cannot use manifest-level min-max pruning for those files.
@@ -1290,7 +1304,7 @@ ClickHouse supports partition pruning during SELECT queries for Iceberg tables, 
 
 ## `DROP PARTITION` {#drop-partition}
 
-`ALTER TABLE ... DROP PARTITION <value>` removes every data file belonging to a single partition and creates a new snapshot that no longer references them. It is currently supported for local and object-storage Iceberg tables, but not for catalog-backed tables.
+`ALTER TABLE ... DROP PARTITION <value>` removes every data file belonging to a single partition and creates a new snapshot that no longer references them. It is supported for local and object-storage Iceberg tables, and for tables in a `DataLakeCatalog` database with the `rest`, `onelake`, `biglake`, `delta_sharing`, `horizon`, `s3tables`, or `unity` (with `use_unity_catalog_v2 = 1`) catalog type.
 
 Enable `allow_insert_into_iceberg` to use this operation.
 
@@ -1609,6 +1623,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
             .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<DataLakeStorageSettings, isDeprecatedDataLakeCatalogSetting>,
+            .is_inherited_setting_fn = isIcebergSettingTakenFromQuery,
         },
         Documentation{
             .description = "Provides an integration with Apache Iceberg tables stored in Amazon S3 or S3-compatible object storage.",
@@ -1650,6 +1665,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             .source_access_type = AccessTypeObjects::Source::AZURE,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
             .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<DataLakeStorageSettings, isDeprecatedDataLakeCatalogSetting>,
+            .is_inherited_setting_fn = isIcebergSettingTakenFromQuery,
         },
         Documentation{
             .description = "Provides an integration with Apache Iceberg tables stored in Microsoft Azure Blob Storage.",
@@ -1673,6 +1689,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             .source_access_type = AccessTypeObjects::Source::HDFS,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
             .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<DataLakeStorageSettings, isDeprecatedDataLakeCatalogSetting>,
+            .is_inherited_setting_fn = isIcebergSettingTakenFromQuery,
         },
         Documentation{
             .description = "Provides an integration with existing Apache Iceberg tables stored in HDFS.",
@@ -1713,6 +1730,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             .source_access_type = AccessTypeObjects::Source::FILE,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
             .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<DataLakeStorageSettings, isDeprecatedDataLakeCatalogSetting>,
+            .is_inherited_setting_fn = isIcebergSettingTakenFromQuery,
         },
         Documentation{
             .description = "Provides an integration with Apache Iceberg tables stored on the local filesystem.",

@@ -90,9 +90,8 @@ void PostgreSQLSettings::loadFromQueryContext(const Context & context)
 
 bool PostgreSQLSettings::isLoadedFromQueryContext(std::string_view name)
 {
-    return name == "postgresql_connection_pool_size" || name == "postgresql_connection_pool_wait_timeout"
-        || name == "postgresql_connection_pool_retries" || name == "postgresql_connection_pool_auto_close_connection"
-        || name == "postgresql_connection_attempt_timeout";
+    /// `loadFromQueryContext` seeds every setting of this class: they are all connection pool settings.
+    return hasBuiltin(name);
 }
 
 void PostgreSQLSettings::loadFromNamedCollection(const NamedCollection & named_collection)
