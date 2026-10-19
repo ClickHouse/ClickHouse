@@ -522,7 +522,7 @@ void explainFragmentGraphTree(
 
     buf.write('\n');
     writeExchangesSection(graph, buf, options.pretty);
-    writeDependenciesSection(graph, buf);
+    writeLevelsSection(graph, buf);
 }
 
 }

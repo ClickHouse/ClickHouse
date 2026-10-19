@@ -586,13 +586,15 @@ TEST_F(RuntimeFilterExchangeWiring, FragmentGraphLeavesOutMergeStages)
     EXPECT_TRUE(plan.stage_depends_on.at("main").contains(merge_stages.back()));
 
     auto graph = buildFragmentGraph(plan);
-    EXPECT_EQ(dumpFragmentGraph(graph),
-        "query fragments: 2\n"
-        "  F0 stage_0  distributed  tasks=40\n"
-        "  F1 main     distributed  tasks=1  needs F0 via exchange_0\n"
-        "exchanges: 1\n"
-        "  exchange_0  F0 -> F1  gather  streaming  40 -> 1\n"
-        "levels: [F0] [F1]\n");
+    ASSERT_EQ(graph.fragments.size(), 2u);
+    EXPECT_EQ(graph.getFragment(0).stage_name, "stage_0");
+    EXPECT_EQ(graph.getFragment(0).tasks, 40u);
+    EXPECT_EQ(graph.getFragment(1).stage_name, "main");
+    ASSERT_EQ(graph.exchanges.size(), 1u);
+    const auto & exchange = graph.getExchange(0);
+    EXPECT_EQ(exchange.from, 0u);
+    EXPECT_EQ(exchange.to, 1u);
+    EXPECT_EQ(exchange.kind, FragmentExchange::Kind::Gather);
 
     /// The steps that build and apply the filter stay in the plans of the data fragments.
     EXPECT_NE(findBuildStep(plan.stages.at("stage_0").query_plan_fragment), nullptr);

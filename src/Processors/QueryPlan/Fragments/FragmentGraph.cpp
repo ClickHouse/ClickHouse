@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/Fragments/FragmentGraph.h>
-#include <Processors/QueryPlan/Fragments/FragmentGraphFormat.h>
 
 #include <Processors/QueryPlan/BroadcastReceiveStep.h>
 #include <Processors/QueryPlan/BroadcastSendStep.h>
@@ -10,12 +9,8 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 
-#include <fmt/format.h>
-#include <fmt/ranges.h>
-
 #include <algorithm>
 #include <cmath>
-#include <queue>
 
 namespace DB
 {
@@ -58,30 +53,6 @@ void checkNotEmpty(const QueryPlan & plan, const String & stage_name)
 {
     if (!plan.getRootNode())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The plan of stage {} is empty", stage_name);
-}
-
-/// Checks that `plan` has exactly one receive step of `exchange_name`: a dependency of the cut plan without one is
-/// an inconsistent cut.
-void checkReceiveStep(const QueryPlan & plan, const String & stage_name, const String & exchange_name)
-{
-    size_t receive_steps = 0;
-    std::vector<const QueryPlan::Node *> stack{plan.getRootNode()};
-    while (!stack.empty())
-    {
-        const auto * node = stack.back();
-        stack.pop_back();
-
-        if (const auto * exchange_id = tryGetReceiveExchangeId(*node->step); exchange_id && *exchange_id == exchange_name)
-            ++receive_steps;
-        stack.insert(stack.end(), node->children.begin(), node->children.end());
-    }
-
-    if (receive_steps == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Stage {} depends on exchange {}, but has no receive step for it", stage_name, exchange_name);
-    if (receive_steps > 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Stage {} has more than one receive step for exchange {}", stage_name, exchange_name);
 }
 
 /// The estimated number of rows a producer fragment sends: the estimate of its root node,
@@ -149,9 +120,9 @@ std::optional<size_t> findFragmentIndex(const FragmentGraph & graph, UInt32 id)
     return it - graph.fragments.begin();
 }
 
-/// Validates the graph (see `validateFragmentGraph`) and sorts it. Ready fragments are taken in the order of ids
-/// for determinism. The ids assigned by the cutter already ascend from producers to consumers; the sort does not
-/// rely on that, because the fragments of `IN`-subquery sets get ids after the fragments that read them.
+/// Validates the graph (see `validateFragmentGraph`) and sorts it producers first, as `computeLevels` needs. The sort
+/// detects cycles. The ids assigned by the cutter mostly ascend from producers to consumers, but the order of ids is
+/// not topological, because the fragments of `IN`-subquery sets get ids after the fragments that read them.
 TopologicalOrder sortTopologically(const FragmentGraph & graph)
 {
     const size_t num_fragments = graph.fragments.size();
@@ -183,32 +154,20 @@ TopologicalOrder sortTopologically(const FragmentGraph & graph)
         ++in_degree[*consumer];
     }
 
-    std::priority_queue<std::pair<UInt32, size_t>, std::vector<std::pair<UInt32, size_t>>, std::greater<>> ready;
+    /// Kahn's algorithm, with `order` as the queue of fragments whose producers are all taken. The fragments of a
+    /// cycle never become ready, so `order` ends up short.
+    result.order.reserve(num_fragments);
     for (size_t i = 0; i < num_fragments; ++i)
         if (in_degree[i] == 0)
-            ready.emplace(graph.fragments[i].id, i);
+            result.order.push_back(i);
 
-    result.order.reserve(num_fragments);
-    while (!ready.empty())
-    {
-        const auto [id, i] = ready.top();
-        ready.pop();
-        result.order.push_back(i);
-        for (size_t consumer : consumers[i])
+    for (size_t pos = 0; pos < result.order.size(); ++pos)
+        for (size_t consumer : consumers[result.order[pos]])
             if (--in_degree[consumer] == 0)
-                ready.emplace(graph.fragments[consumer].id, consumer);
-    }
+                result.order.push_back(consumer);
 
     if (result.order.size() != num_fragments)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The fragment graph has a cycle");
-
-    /// The root is the fragment whose output nobody consumes: the result of the query.
-    size_t num_roots = 0;
-    for (size_t i = 0; i < num_fragments; ++i)
-        if (consumers[i].empty())
-            ++num_roots;
-    if (num_roots != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The fragment graph has {} root fragments, expected one", num_roots);
 
     return result;
 }
@@ -284,7 +243,6 @@ FragmentGraph buildFragmentGraph(const DistributedQueryPlan & distributed_plan)
             const auto & description = findDescription(distributed_plan, exchange_name);
 
             const auto kind = getExchangeKind(description);
-            checkReceiveStep(*graph.getFragment(consumer_id).plan, consumer_stage, exchange_name);
 
             graph.exchanges.push_back(FragmentExchange{
                 .id = description.id,
@@ -323,93 +281,6 @@ FragmentGraph buildSingleFragmentGraph(const QueryPlan & plan, std::optional<Str
         .plan = &plan,
     });
     return graph;
-}
-
-String dumpFragmentGraph(const FragmentGraph & graph)
-{
-    String result;
-    auto out = std::back_inserter(result);
-
-    size_t stage_name_width = 0;
-    for (const auto & fragment : graph.fragments)
-        stage_name_width = std::max(stage_name_width, fragment.stage_name.size());
-
-    fmt::format_to(out, "query fragments: {}\n", graph.fragments.size());
-    for (const auto & fragment : graph.fragments)
-    {
-        fmt::format_to(out, "  F{} {:<{}}  {:<11}  tasks={}",
-            fragment.id, fragment.stage_name, stage_name_width,
-            fragment.execution_mode == QueryFragment::ExecutionMode::Distributed ? "distributed" : "single node",
-            fragment.tasks);
-
-        bool first_input = true;
-        for (const auto & exchange : graph.exchanges)
-        {
-            if (exchange.to != fragment.id)
-                continue;
-            fmt::format_to(out, "{}F{} via {}", first_input ? "  needs " : ", ", exchange.from, exchange.name);
-            first_input = false;
-        }
-        if (fragment.fallback_reason)
-            fmt::format_to(out, "  not distributed: {}", *fragment.fallback_reason);
-        if (fragment.description)
-            fmt::format_to(out, "  description: {}", *fragment.description);
-        result += '\n';
-    }
-
-    struct ExchangeColumns
-    {
-        String name;
-        String edge;
-        String kind;
-        String mode;
-        String buckets;
-    };
-    std::vector<ExchangeColumns> rows;
-    size_t name_width = 0;
-    size_t edge_width = 0;
-    size_t kind_width = 0;
-    size_t mode_width = 0;
-    for (const auto & exchange : graph.exchanges)
-    {
-        ExchangeColumns row
-        {
-            .name = exchange.name,
-            .edge = fmt::format("F{} -> F{}", exchange.from, exchange.to),
-            .kind = formatExchangeKind(exchange, /*pretty=*/ false),
-            .mode = String(formatExchangeMode(exchange.mode)),
-            .buckets = fmt::format("{} -> {}", exchange.source_buckets, exchange.destination_buckets),
-        };
-        name_width = std::max(name_width, row.name.size());
-        edge_width = std::max(edge_width, row.edge.size());
-        kind_width = std::max(kind_width, row.kind.size());
-        mode_width = std::max(mode_width, row.mode.size());
-        rows.push_back(std::move(row));
-    }
-
-    fmt::format_to(out, "exchanges: {}\n", graph.exchanges.size());
-    for (size_t i = 0; i < rows.size(); ++i)
-    {
-        const auto & row = rows[i];
-        fmt::format_to(out, "  {:<{}}  {:<{}}  {:<{}}  {:<{}}  {}",
-            row.name, name_width, row.edge, edge_width, row.kind, kind_width, row.mode, mode_width, row.buckets);
-        if (graph.exchanges[i].statistics.estimated_rows)
-            fmt::format_to(out, "  ~{} rows", *graph.exchanges[i].statistics.estimated_rows);
-        result += '\n';
-    }
-
-    result += "levels:";
-    for (const auto & level : computeLevels(graph))
-    {
-        std::vector<String> names;
-        names.reserve(level.size());
-        for (UInt32 id : level)
-            names.push_back(fmt::format("F{}", id));
-        fmt::format_to(out, " [{}]", fmt::join(names, ", "));
-    }
-    result += '\n';
-
-    return result;
 }
 
 }

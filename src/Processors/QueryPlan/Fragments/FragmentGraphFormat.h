@@ -40,7 +40,7 @@ bool tryExplainSingleFragment(
 /// The `Exchanges:` section: one line per exchange with its kind, mode, producer and consumer, and buckets.
 void writeExchangesSection(const FragmentGraph & graph, WriteBuffer & buf, bool pretty);
 
-/// The `Dependencies:` section: for every fragment in print order, the fragments it reads and through which exchange.
-void writeDependenciesSection(const FragmentGraph & graph, WriteBuffer & buf);
+/// The `Levels:` line: the fragment ids grouped by topological level, leaves first (see `computeLevels`).
+void writeLevelsSection(const FragmentGraph & graph, WriteBuffer & buf);
 
 }

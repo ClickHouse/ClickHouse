@@ -120,20 +120,21 @@ void writeExchangesSection(const FragmentGraph & graph, WriteBuffer & buf, bool 
     }
 }
 
-void writeDependenciesSection(const FragmentGraph & graph, WriteBuffer & buf)
+void writeLevelsSection(const FragmentGraph & graph, WriteBuffer & buf)
 {
-    if (graph.exchanges.empty())
-        return;
-
-    buf << "Dependencies:\n";
-    for (const auto * fragment : getFragmentPrintOrder(graph))
+    const auto levels = computeLevels(graph);
+    buf << "Levels: ";
+    for (size_t i = 0; i < levels.size(); ++i)
     {
-        for (const auto & exchange : graph.exchanges)
-        {
-            if (exchange.to == fragment->id)
-                buf << fmt::format("  F{} <- F{} ({})\n", fragment->id, exchange.from, exchange.name);
-        }
+        if (i != 0)
+            buf << " -> ";
+        std::vector<String> names;
+        names.reserve(levels[i].size());
+        for (UInt32 id : levels[i])
+            names.push_back(fmt::format("F{}", id));
+        buf << fmt::format("[{}]", fmt::join(names, ", "));
     }
+    buf << '\n';
 }
 
 }

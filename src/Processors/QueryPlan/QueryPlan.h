@@ -78,7 +78,7 @@ struct ExplainPlanOptions
     /// Show remote plans for distributed query.
     bool distributed = false;
     /// Print a plan executed by stateless workers (`make_distributed_plan`) as one plan per query fragment,
-    /// followed by the exchanges and the dependencies between the fragments.
+    /// followed by the exchanges between the fragments.
     /// Not sent to remote shards by `toSettingsChanges`, because it cannot be combined with `distributed`.
     bool fragments = false;
     /// Draw a plan executed by stateless workers as boxes: one box per step, a frame per query fragment, and the

@@ -40,21 +40,7 @@ void explainFragmentGraph(
     }
 
     writeExchangesSection(graph, buf, options.pretty);
-    writeDependenciesSection(graph, buf);
-
-    const auto levels = computeLevels(graph);
-    buf << "Levels: ";
-    for (size_t i = 0; i < levels.size(); ++i)
-    {
-        if (i != 0)
-            buf << " -> ";
-        std::vector<String> names;
-        names.reserve(levels[i].size());
-        for (UInt32 id : levels[i])
-            names.push_back(fmt::format("F{}", id));
-        buf << fmt::format("[{}]", fmt::join(names, ", "));
-    }
-    buf << '\n';
+    writeLevelsSection(graph, buf);
 }
 
 }

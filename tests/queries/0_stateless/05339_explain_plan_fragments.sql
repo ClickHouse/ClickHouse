@@ -54,6 +54,13 @@ SELECT bid
 FROM big
 ORDER BY bid DESC;
 
+-- The `Output` line of a fragment shows what its send step sends.
+SELECT '-- pretty';
+EXPLAIN fragments = 1, pretty = 1
+SELECT bid % 10 AS k, sum(bid)
+FROM big
+GROUP BY k;
+
 SELECT '-- make_distributed_plan = 0';
 EXPLAIN fragments = 1
 SELECT bid % 10 AS k, sum(bid)
