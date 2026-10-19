@@ -988,27 +988,49 @@ RadixUniqExactStatePtr createState(size_t num_streams, const StatsCollectingPara
 
 }
 
+namespace
+{
+
+/// The types for which `uniqExact` keeps the value itself in the set, and their size if it is at most 64 bits.
+std::optional<size_t> valueKeySize(const IDataType & type)
+{
+    WhichDataType which(type);
+    if (which.isNativeInteger() || which.isFloat() || which.isEnum() || which.isDate() || which.isDate32() || which.isDateTime() || which.isIPv4())
+        return type.getSizeOfValueInMemory();
+    return {};
+}
+
+bool isHashedKey(const IDataType & type)
+{
+    WhichDataType which(type);
+    return which.isUInt128() || which.isInt128() || which.isUUID() || which.isString() || which.isFixedString() || which.isIPv6();
+}
+
+}
+
+bool isRadixUniqExactSupported(const IDataType & argument_type)
+{
+    const IDataType & type = *removeNullable(argument_type.shared_from_this());
+    if (const auto size = valueKeySize(type))
+        return *size <= sizeof(UInt64);
+    return isHashedKey(type);
+}
+
 RadixUniqExactStatePtr createRadixUniqExactState(
     const IDataType & argument_type, size_t num_streams, const StatsCollectingParams & stats_collecting_params)
 {
     const IDataType & type = *removeNullable(argument_type.shared_from_this());
-    WhichDataType which(type);
-
-    /// The types for which `uniqExact` keeps the value itself in the set.
-    if (which.isNativeInteger() || which.isFloat() || which.isEnum() || which.isDate() || which.isDate32() || which.isDateTime() || which.isIPv4())
+    if (const auto size = valueKeySize(type))
     {
-        const size_t size = type.getSizeOfValueInMemory();
-        if (size <= sizeof(UInt32))
+        if (*size <= sizeof(UInt32))
             return createState<UInt32>(num_streams, stats_collecting_params);
-        if (size == sizeof(UInt64))
+        if (*size == sizeof(UInt64))
             return createState<UInt64>(num_streams, stats_collecting_params);
-        return nullptr;
     }
-
-    if (which.isUInt128() || which.isInt128() || which.isUUID() || which.isString() || which.isFixedString() || which.isIPv6())
+    else if (isHashedKey(type))
         return createState<UInt128>(num_streams, stats_collecting_params);
 
-    return nullptr;
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported argument type {} for the radix partitioned uniqExact", argument_type.getName());
 }
 
 

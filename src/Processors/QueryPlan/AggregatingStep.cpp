@@ -495,10 +495,15 @@ bool AggregatingStep::canUseRadixUniqExact() const
         return false;
 
     const auto & aggregate = params.aggregates[0];
-    return aggregate.function->getName() == "uniqExact" && aggregate.parameters.empty() && aggregate.argument_names.size() == 1;
+    if (aggregate.function->getName() != "uniqExact" || !aggregate.parameters.empty() || aggregate.argument_names.size() != 1
+        || !WhichDataType(aggregate.function->getResultType()).isUInt64())
+        return false;
+
+    /// The type of the column as the transforms read it, not the argument type of the function, which has no `LowCardinality`.
+    return isRadixUniqExactSupported(*input_headers.front()->getByName(aggregate.argument_names[0]).type);
 }
 
-bool AggregatingStep::tryBuildRadixUniqExact(
+void AggregatingStep::buildRadixUniqExact(
     QueryPipelineBuilder & pipeline,
     const AggregatingTransformParamsPtr & transform_params,
     size_t max_threads,
@@ -506,17 +511,12 @@ bool AggregatingStep::tryBuildRadixUniqExact(
 {
     const auto & aggregator_params = transform_params->params;
     const auto & aggregate = aggregator_params.aggregates[0];
-
     const auto & output_header = transform_params->getHeader();
-    if (output_header.columns() != 1 || !WhichDataType(output_header.getByPosition(0).type).isUInt64())
-        return false;
 
     const auto & input_header = pipeline.getHeader();
     const auto & argument = input_header.getByName(aggregate.argument_names[0]);
     const size_t num_streams = pipeline.getNumStreams();
     auto state = createRadixUniqExactState(*argument.type, num_streams, stats_collecting_params);
-    if (!state)
-        return false;
 
     const size_t key_position = input_header.getPositionByName(argument.name);
     auto result_header = std::make_shared<const Block>(output_header);
@@ -549,7 +549,6 @@ bool AggregatingStep::tryBuildRadixUniqExact(
     pipeline.resize(1);
     pipeline.addTransform(std::make_shared<RadixUniqExactSumTransform>(
         result_header, state, aggregator_params.empty_result_for_aggregation_by_empty_set));
-    return true;
 }
 
 void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
@@ -623,9 +622,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     const auto & src_header = pipeline.getSharedHeader();
     auto transform_params = std::make_shared<AggregatingTransformParams>(src_header, std::move(params), final);
 
-    if (use_radix_uniq_exact
-        && tryBuildRadixUniqExact(pipeline, transform_params, max_threads, radix_uniq_exact_stats_params))
+    if (use_radix_uniq_exact)
     {
+        buildRadixUniqExact(pipeline, transform_params, max_threads, radix_uniq_exact_stats_params);
         aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
         return;
     }

@@ -180,8 +180,8 @@ public:
 private:
     void updateOutputHeader() override;
 
-    /// Replaces the aggregation by the radix partitioned `uniqExact` (see `RadixUniqExactTransform.h`) if it applies.
-    bool tryBuildRadixUniqExact(
+    /// Replaces the aggregation by the radix partitioned `uniqExact` (see `RadixUniqExactTransform.h`), if `canUseRadixUniqExact`.
+    void buildRadixUniqExact(
         QueryPipelineBuilder & pipeline,
         const AggregatingTransformParamsPtr & transform_params,
         size_t max_threads,
