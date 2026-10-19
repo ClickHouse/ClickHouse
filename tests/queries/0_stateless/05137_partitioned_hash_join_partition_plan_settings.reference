@@ -1,0 +1,9 @@
+default plan	500000	1
+two partitions per pass: several passes, same plan	500000	1
+descriptor cap off	500000	1
+two partitions per pass, right all	500000	1
+two partitions per pass, string key	500000	1
+two partitions per pass, 8 rows per key from 100000-row build blocks	1600000	1
+-- values outside 2..32768 are rejected
+-- all three plans partitioned, and into the same number of partitions
+3	1	1
