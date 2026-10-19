@@ -267,7 +267,7 @@ public:
         Range key_range,
         const MonotonicFunctionsChain & functions,
         size_t first_function_number,
-        DataTypePtr current_type,
+        const DataTypePtr & key_type,
         bool single_point = false);
 
     /// How many times `applyMonotonicFunctionsChainToRange` answered "unknown" on the current thread because the chain
