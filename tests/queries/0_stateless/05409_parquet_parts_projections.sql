@@ -25,7 +25,8 @@ SELECT count() FROM t_projection_parquet WHERE value LIKE '12%' SETTINGS optimiz
 
 INSERT INTO t_projection_parquet SELECT number + 1000, toString(number + 1000) FROM numbers(1000);
 OPTIMIZE TABLE t_projection_parquet FINAL;
-SELECT name, part_type, rows, marks FROM system.projection_parts WHERE database = currentDatabase() AND table = 't_projection_parquet' AND active;
+-- The sizes of row groups after a merge depend on the sizes of blocks, but they are limited by the setting of the projection.
+SELECT name, part_type, rows, marks > 10 FROM system.projection_parts WHERE database = currentDatabase() AND table = 't_projection_parquet' AND active;
 SELECT key FROM t_projection_parquet WHERE value = '1555' SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 
 CREATE TABLE t_parquet_projection
