@@ -1174,7 +1174,10 @@ String StatementGenerator::getTableStructure(RandomGenerator & rg, const SQLTabl
         /// modifier the external catalog can't express. Don't return an empty structure string, use all columns
         flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn &) { return true; });
     }
-    std::shuffle(this->remote_entries.begin(), this->remote_entries.end(), rg.generator);
+    if (this->allow_not_deterministic)
+    {
+        std::shuffle(this->remote_entries.begin(), this->remote_entries.end(), rg.generator);
+    }
     for (const auto & entry : this->remote_entries)
     {
         buf += fmt::format(
