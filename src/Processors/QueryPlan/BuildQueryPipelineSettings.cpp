@@ -11,8 +11,6 @@ namespace Setting
     extern const SettingsBool query_plan_merge_filters;
     extern const SettingsBool allow_preliminary_distinct_abandoning;
     extern const SettingsBool optimize_uniq_exact_radix_partitioning;
-    extern const SettingsMaxThreads max_threads;
-    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 min_outstreams_per_resize_after_split;
     extern const SettingsUInt64 max_streams_for_union_step;
