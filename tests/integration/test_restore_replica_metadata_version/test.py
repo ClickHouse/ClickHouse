@@ -136,3 +136,53 @@ def test_alter_after_restoring_every_replica(start_cluster):
 
     for node in [node_1, node_2]:
         node.query("DROP TABLE IF EXISTS test_restored_alter SYNC")
+
+
+def test_alter_after_restoring_lagging_replica_first(start_cluster):
+    zk = cluster.get_kazoo_client("zoo1")
+    table = "test_restored_lagging_first"
+
+    for node in [node_1, node_2]:
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    for node in [node_1, node_2]:
+        node.query(
+            f"CREATE TABLE {table}(n UInt32) "
+            f"ENGINE = ReplicatedMergeTree('/clickhouse/tables/{table}/', '{node.name}') ORDER BY n"
+        )
+
+    node_1.query(
+        f"ALTER TABLE {table} ADD COLUMN a1 UInt32", settings={"alter_sync": 2}
+    )
+    node_1.query(f"INSERT INTO {table} (n) VALUES (1)")
+    node_2.query(f"SYSTEM SYNC REPLICA {table}")
+    node_1.query(
+        f"ALTER TABLE {table} ADD COLUMN a2 UInt32", settings={"alter_sync": 2}
+    )
+
+    # node_2 lags: its newest part is at metadata version 1, node_1 has one at version 2
+    node_2.query(f"SYSTEM STOP FETCHES {table}")
+    node_1.query(f"INSERT INTO {table} (n) VALUES (2)")
+
+    zk_rmr_with_retries(zk, f"/clickhouse/tables/{table}")
+
+    for node in [node_2, node_1]:
+        node.query(f"SYSTEM START FETCHES {table}")
+        node.query(f"SYSTEM RESTART REPLICA {table}")
+        node.query(f"SYSTEM RESTORE REPLICA {table}")
+    for node in [node_1, node_2]:
+        node.query(f"SYSTEM SYNC REPLICA {table}")
+
+    _, stat = zk.get(f"/clickhouse/tables/{table}/metadata")
+    for node in [node_1, node_2]:
+        version, _ = zk.get(
+            f"/clickhouse/tables/{table}/replicas/{node.name}/metadata_version"
+        )
+        assert int(version) == stat.version
+
+    for i, node in enumerate([node_2, node_1]):
+        node.query(
+            f"ALTER TABLE {table} ADD COLUMN b{i} UInt32", settings={"alter_sync": 2}
+        )
+
+    for node in [node_1, node_2]:
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
