@@ -16,11 +16,11 @@ SelectWithUnionQuery (children 1)
  ExpressionList (children 1)
   SelectQuery (children 2)
    ExpressionList (children 1)
-    Identifier number
+    Identifier __table1.number (alias number)
    TablesInSelectQuery (children 1)
     TablesInSelectQueryElement (children 1)
      TableExpression (children 1)
-      Function numbers (children 1)
+      Function numbers (alias __table1) (children 1)
        ExpressionList (children 1)
         Literal UInt64_0
 EXPLAIN AST optimize=0 SELECT countDistinct(number) FROM numbers(0);
@@ -42,12 +42,12 @@ SelectWithUnionQuery (children 1)
  ExpressionList (children 1)
   SelectQuery (children 2)
    ExpressionList (children 1)
-    Function uniqExact (children 1)
+    Function uniqExact (alias countDistinct(number)) (children 1)
      ExpressionList (children 1)
-      Identifier number
+      Identifier __table1.number
    TablesInSelectQuery (children 1)
     TablesInSelectQueryElement (children 1)
      TableExpression (children 1)
-      Function numbers (children 1)
+      Function numbers (alias __table1) (children 1)
        ExpressionList (children 1)
         Literal UInt64_0
