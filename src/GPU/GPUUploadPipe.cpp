@@ -356,6 +356,10 @@ void ColumnUploadPipe::reset()
 
     std::visit([](auto & column) { column.clear(); }, device);
 
+    /// `waitForUploads` clears the staging only after an upload, but a batch below the threshold may still be staged.
+    staged_data.clear();
+    staged_offsets.clear();
+    staging_bytes = 0;
     staged_rows = 0;
     staged_bytes = 0;
     staged_chars = 0;
