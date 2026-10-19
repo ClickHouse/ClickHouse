@@ -22,9 +22,9 @@ FROM <left_table>
 
 Les expressions de la clause `ON` et les colonnes de la clause `USING` sont appelées « clés de jointure ». Sauf indication contraire, un `JOIN` produit un [produit cartésien](https://en.wikipedia.org/wiki/Cartesian_product) à partir des lignes dont les « clés de jointure » correspondent, ce qui peut donner des résultats comportant bien plus de lignes que les tables sources.
 
-## Types de JOIN pris en charge
+## Types de JOIN pris en charge {#supported-types-of-join}
 
-Tous les types standard de [SQL JOIN](https://en.wikipedia.org/wiki/Join_\(SQL\)) sont pris en charge :
+Tous les types standard de [SQL JOIN](https://en.wikipedia.org/wiki/Join_\(SQL\)) sont pris en charge :
 
 | Type               | Description                                                                                                                                                                                                                                                                                                                                                    |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -32,29 +32,99 @@ Tous les types standard de [SQL JOIN](https://en.wikipedia.org/wiki/Join_\(SQL\)
 | `LEFT OUTER JOIN`  | les lignes non correspondantes de la table de gauche sont renvoyées en plus des lignes correspondantes.                                                                                                                                                                                                                                                        |
 | `RIGHT OUTER JOIN` | les lignes non correspondantes de la table de droite sont renvoyées en plus des lignes correspondantes.                                                                                                                                                                                                                                                        |
 | `FULL OUTER JOIN`  | les lignes non correspondantes des deux tables sont renvoyées en plus des lignes correspondantes.                                                                                                                                                                                                                                                              |
-| `CROSS JOIN`       | produit le produit cartésien des tables entières ; les « clés de jointure » ne sont **pas** spécifiées.                                                                                                                                                                                                                                                        |
-| `NATURAL JOIN`     | effectue automatiquement la jointure sur toutes les colonnes portant le même nom dans les deux tables ; chaque colonne commune apparaît une seule fois dans le résultat. Prend en charge les variantes `INNER` (par défaut), `LEFT`, `RIGHT` et `FULL`. Équivalent à `JOIN ... USING (col1, col2, ...)`, où la liste des colonnes est déduite automatiquement. |
+| `CROSS JOIN`       | produit le produit cartésien des tables entières ; les « clés de jointure » ne sont **pas** spécifiées.                                                                                                                                                                                                                                                        |
+| `NATURAL JOIN`     | effectue automatiquement la jointure sur toutes les colonnes portant le même nom dans les deux tables ; chaque colonne commune apparaît une seule fois dans le résultat. Prend en charge les variantes `INNER` (par défaut), `LEFT`, `RIGHT` et `FULL`. Équivalent à `JOIN ... USING (col1, col2, ...)`, où la liste des colonnes est déduite automatiquement. |
 
 * `JOIN` sans type spécifié implique `INNER`.
 * Le mot-clé `OUTER` peut être omis sans risque.
 * Une syntaxe alternative pour `CROSS JOIN` consiste à spécifier plusieurs tables dans la [clause `FROM`](/fr/reference/statements/select/from), séparées par des virgules.
 * S&#39;il n&#39;y a pas de colonnes correspondantes pour un `NATURAL JOIN`, il fonctionne comme un `CROSS JOIN`.
 
-D&#39;autres types de jointure disponibles dans ClickHouse sont :
+D&#39;autres types de jointure disponibles dans ClickHouse sont :
 
 | Type                                                | Description                                                                                                                                                         |
 | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `LEFT SEMI JOIN`, `RIGHT SEMI JOIN`                 | Une liste d&#39;autorisation sur les « clés de jointure », sans produire de produit cartésien.                                                                      |
-| `LEFT ANTI JOIN`, `RIGHT ANTI JOIN`                 | Une liste d&#39;exclusion sur les « clés de jointure », sans produire de produit cartésien.                                                                         |
+| `LEFT SEMI JOIN`, `RIGHT SEMI JOIN`                 | Une liste d&#39;autorisation sur les « clés de jointure », sans produire de produit cartésien.                                                                      |
+| `LEFT ANTI JOIN`, `RIGHT ANTI JOIN`                 | Une liste d&#39;exclusion sur les « clés de jointure », sans produire de produit cartésien.                                                                         |
 | `LEFT ANY JOIN`, `RIGHT ANY JOIN`, `INNER ANY JOIN` | Désactive partiellement (pour le côté opposé de `LEFT` et `RIGHT`) ou complètement (pour `INNER` et `FULL`) le produit cartésien pour les types de `JOIN` standard. |
 | `ASOF JOIN`, `LEFT ASOF JOIN`                       | Joint des séquences avec une correspondance non exacte. L&#39;utilisation de `ASOF JOIN` est décrite ci-dessous.                                                    |
 | `PASTE JOIN`                                        | Effectue une concaténation horizontale de deux tables.                                                                                                              |
 
 <Note>
+  Avec l&#39;analyseur, la désactivation du paramètre `semi_join_include_columns_from_both_sides` ou `anti_join_include_columns_from_both_sides` fait que la jointure correspondante n&#39;expose que son côté préservé aux expressions résolues une fois le résultat de la jointure formé.
+
+  * `LEFT SEMI JOIN` et `LEFT ANTI JOIN` n&#39;exposent que les colonnes du côté gauche.
+  * `RIGHT SEMI JOIN` et `RIGHT ANTI JOIN` n&#39;exposent que les colonnes du côté droit.
+  * Cela concerne les clauses telles que `SELECT`, `PREWHERE`, `WHERE`, `GROUP BY`, `HAVING`, `QUALIFY`, `ORDER BY` et `LIMIT BY`, y compris les jokers qualifiés comme `t1.*`.
+  * L&#39;expression `ON` du même `JOIN` peut toujours faire référence aux deux côtés.
+
+  Lorsque ces paramètres sont activés (valeur par défaut), ClickHouse conserve le comportement historique : les deux côtés restent accessibles et `SELECT *` développe les colonnes des deux tables.
+</Note>
+
+<Note>
   Lorsque [join&#95;algorithm](/fr/reference/settings/session-settings/join#join_algorithm) est défini sur `partial_merge`, `RIGHT JOIN` et `FULL JOIN` sont pris en charge uniquement avec la strictness `ALL` (`SEMI`, `ANTI`, `ANY` et `ASOF` ne sont pas pris en charge).
 </Note>
 
-## Paramètres
+## LATERAL JOIN {#lateral-join}
+
+`JOIN LATERAL` permet à la sous-requête située du côté droit d&#39;une jointure de faire référence aux colonnes des expressions de table
+situées à sa gauche ; la sous-requête est évaluée pour chaque combinaison distincte des valeurs de colonnes de gauche
+auxquelles elle fait référence, et son résultat est joint à chaque ligne de gauche présentant cette combinaison :
+
+```sql
+SELECT ...
+FROM <left_table>
+[INNER|LEFT] JOIN LATERAL (SELECT ... WHERE <expr referencing left_table>) AS <alias> ON true
+```
+
+Le prédicat `ON true` est obligatoire, comme pour toute autre jointure `INNER` ou `LEFT JOIN` ; l&#39;omettre provoque une erreur de syntaxe.
+
+Cette fonctionnalité est expérimentale et désactivée par défaut ; activez-la avec le paramètre
+[`allow_experimental_lateral_join`](/fr/reference/settings/session-settings/allow-experimental#allow_experimental_lateral_join).
+
+Seul le sous-ensemble suivant est pris en charge pour l&#39;instant ; toute autre forme est rejetée avec une erreur :
+
+* Uniquement `INNER JOIN LATERAL` et `LEFT JOIN LATERAL` ; les jointures `RIGHT`, `FULL`, `PASTE` et `NATURAL` ne sont pas prises en charge, et `LATERAL` ne peut en aucun cas être combiné avec une jointure `CROSS` ou une jointure par virgule.
+* Uniquement la strictness `ALL` par défaut ; `ANY`, `SEMI`, `ANTI` et `ASOF` ne sont pas pris en charge.
+* Aucun prédicat de jointure autre que `ON true` (`ON 1` est également accepté) ; `USING` n&#39;est pas pris en charge, et le prédicat
+  ne peut pas être omis. Placez les filtres qui relient les deux côtés dans la clause `WHERE` de la sous-requête latérale.
+* Les modificateurs de jointure `GLOBAL` et `LOCAL` ne sont pas pris en charge.
+* La sous-requête latérale doit référencer au moins une colonne du côté gauche. Pour une
+  sous-requête non corrélée, utilisez une jointure classique.
+* La sous-requête latérale est évaluée une fois par valeur distincte des colonnes du côté gauche qu&#39;elle référence, et non
+  une fois par ligne de gauche ; elle ne doit donc pas contenir de fonctions non déterministes au sein d&#39;une requête, telles que
+  `rand` ou `generateUUIDv4`, ni de fonctions de table générant des lignes aléatoires, telles que `generateRandom`.
+  Les fonctions constantes au sein d&#39;une requête, telles que `now`, sont autorisées.
+* Seule une sous-requête est prise en charge comme expression de table latérale. Les formes de source de table PostgreSQL
+  `LATERAL unnest(...)` et `CROSS JOIN UNNEST(...)` ne sont pas prises en charge : utilisez plutôt la clause
+  [`ARRAY JOIN`](/fr/reference/statements/select/array-join).
+* Les clauses `GROUP BY` et `ORDER BY` de la sous-requête latérale s&#39;exécutent une seule fois sur l&#39;ensemble des évaluations ; les limites
+  `max_rows_to_group_by`, `max_rows_to_sort` et `max_bytes_to_sort` comptabilisent donc les lignes de toutes les évaluations,
+  et non d&#39;une seule. Elles ne sont prises en charge qu&#39;avec le mode de dépassement de capacité `throw` ; `any` et `break` sont rejetés.
+* Les lignes de toutes les évaluations sont mises en correspondance avec les lignes de gauche par une seule jointure. Comme pour toute jointure de hachage,
+  `max_rows_in_join` et `max_bytes_in_join` limitent le côté de cette jointure conservé en mémoire, et c&#39;est le
+  planificateur qui choisit ce côté : avec les paramètres par défaut (`correlated_subqueries_use_in_memory_buffer = 1`),
+  il s&#39;agit du côté gauche de `JOIN LATERAL`, car les lignes de gauche doivent être entièrement lues avant l&#39;évaluation de la
+  sous-requête latérale ; sinon, il peut s&#39;agir des résultats de l&#39;ensemble des évaluations. Les limites sont toujours
+  appliquées comme si `join_overflow_mode` valait `throw` : avec `break`, la jointure supprimerait silencieusement des lignes de gauche sans rapport.
+
+**Exemple**
+
+```sql
+SELECT u.id, o.total
+FROM users AS u
+LEFT JOIN LATERAL
+(
+    SELECT total
+    FROM orders
+    WHERE orders.user_id = u.id
+    ORDER BY total DESC
+    LIMIT 1
+) AS o ON true
+SETTINGS allow_experimental_lateral_join = 1;
+```
+
+## Paramètres {#settings}
 
 Le type de jointure par défaut peut être remplacé à l’aide du paramètre [`join_default_strictness`](/fr/reference/settings/session-settings/join#join_default_strictness).
 
@@ -71,26 +141,26 @@ Le comportement du serveur ClickHouse pour les opérations `ANY JOIN` dépend du
 
 Utilisez le paramètre `cross_to_inner_join_rewrite` pour définir le comportement lorsque ClickHouse ne parvient pas à réécrire un `CROSS JOIN` en `INNER JOIN`. La valeur par défaut est `1`, ce qui permet à la jointure de se poursuivre, mais plus lentement. Définissez `cross_to_inner_join_rewrite` sur `0` si vous voulez qu’une erreur soit générée, et sur `2` pour ne pas exécuter les jointures `CROSS`, mais forcer à la place la réécriture de toutes les jointures par virgule/`CROSS`. Si la réécriture échoue lorsque la valeur est `2`, vous recevrez un message d’erreur indiquant &quot;Please, try to simplify `WHERE` section&quot;.
 
-## Conditions de la section ON
+## Conditions de la section ON {#on-section-conditions}
 
-Une section `ON` peut contenir plusieurs conditions combinées à l’aide des opérateurs `AND` et `OR`. Les conditions qui spécifient des clés de jointure doivent :
+Une section `ON` peut contenir plusieurs conditions combinées à l’aide des opérateurs `AND` et `OR`. Les conditions qui spécifient des clés de jointure doivent :
 
 * faire référence à la fois aux tables de gauche et de droite
 * utiliser l’opérateur d’égalité
 
-Les autres conditions peuvent utiliser d’autres opérateurs logiques, mais elles doivent faire référence soit à la table de gauche, soit à la table de droite d’une requête.
+Les autres conditions peuvent utiliser d’autres opérateurs et faire référence à la table de gauche ou à la table de droite d’une requête, ou aux deux.
 
 Les lignes sont jointes si l’ensemble de la condition complexe est rempli. Si les conditions ne sont pas remplies, des lignes peuvent tout de même être incluses dans le résultat selon le type de `JOIN`. Notez que si les mêmes conditions sont placées dans une section `WHERE` et qu’elles ne sont pas remplies, les lignes sont alors toujours exclues du résultat.
 
-L’opérateur `OR` à l’intérieur de la clause `ON` fonctionne à l’aide de l’algorithme de jointure par hachage : pour chaque argument `OR` avec des clés de jointure pour `JOIN`, une table de hachage distincte est créée, de sorte que la consommation de mémoire et le temps d’exécution de la requête augmentent linéairement avec le nombre d’expressions `OR` dans la clause `ON`.
+L’opérateur `OR` à l’intérieur de la clause `ON` fonctionne à l’aide de l’algorithme de jointure de hachage : pour chaque argument `OR` avec des clés de jointure pour `JOIN`, une table de hachage distincte est créée, de sorte que la consommation de mémoire et le temps d’exécution de la requête augmentent linéairement avec le nombre d’expressions `OR` dans la clause `ON`.
 
 <Note>
-  Si une condition fait référence à des colonnes provenant de tables différentes, alors seul l’opérateur d’égalité (`=`) est actuellement pris en charge.
+  Seul l’opérateur d’égalité (`=`) fait d’une condition une clé de jointure. Les autres opérateurs entre des colonnes de tables différentes sont pris en charge, mais sans aucune égalité, la jointure doit examiner chaque paire de lignes, ce qui est beaucoup plus lent ; voir [JOIN avec une condition ON arbitraire](#join-with-an-arbitrary-on-condition).
 </Note>
 
 **Exemple**
 
-Considérons `table_1` et `table_2` :
+Considérons `table_1` et `table_2` :
 
 ```response
 ┌─Id─┬─name─┐     ┌─Id─┬─text───────────┬─scores─┐
@@ -100,7 +170,7 @@ Considérons `table_1` et `table_2` :
 └────┴──────┘     └────┴────────────────┴────────┘
 ```
 
-Requête avec une condition sur la clé de jointure et une condition supplémentaire sur `table_2` :
+Requête avec une condition sur la clé de jointure et une condition supplémentaire sur `table_2` :
 
 ```sql title="Query"
 SELECT name, text FROM table_1 LEFT OUTER JOIN table_2
@@ -117,7 +187,7 @@ Notez que le résultat contient la ligne nommée `C` ainsi que la colonne de tex
 └──────┴────────┘
 ```
 
-Requête avec une jointure de type `INNER` et plusieurs conditions :
+Requête avec une jointure de type `INNER` et plusieurs conditions :
 
 ```sql title="Query"
 SELECT name, text, scores FROM table_1 INNER JOIN table_2
@@ -130,7 +200,7 @@ SELECT name, text, scores FROM table_1 INNER JOIN table_2
 └──────┴────────┴────────┘
 ```
 
-Requête avec une jointure de type `INNER` et une condition avec `OR` :
+Requête avec une jointure de type `INNER` et une condition avec `OR` :
 
 ```sql title="Query"
 CREATE TABLE t1 (`a` Int64, `b` Int64) ENGINE = MergeTree() ORDER BY a;
@@ -154,12 +224,11 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key;
 └───┴────┴─────┘
 ```
 
-Requête avec une jointure de type `INNER` et des conditions avec `OR` et `AND` :
+Requête avec une jointure de type `INNER` et des conditions avec `OR` et `AND` :
 
 <Note>
-  Par défaut, les conditions d’inégalité sont prises en charge tant qu’elles utilisent des colonnes de la même table.
-  Par exemple, `t1.a = t2.key AND t1.b > 0 AND t2.b > t2.c`, car `t1.b > 0` n’utilise que des colonnes de `t1` et `t2.b > t2.c` n’utilise que des colonnes de `t2`.
-  Cependant, vous pouvez essayer la prise en charge expérimentale de conditions telles que `t1.a = t2.key AND t1.b > t2.key` ; consultez la section ci-dessous pour plus de détails.
+  Une condition d’inégalité qui utilise des colonnes d’une seule table, comme `t1.a = t2.key AND t1.b > 0 AND t2.b > t2.c`, s’applique uniquement à cette table : `t1.b > 0` n’utilise que des colonnes de `t1` et `t2.b > t2.c` n’utilise que des colonnes de `t2`.
+  Une condition d’inégalité qui compare des colonnes de tables différentes, comme `t1.a = t2.key AND t1.b > t2.key`, est également prise en charge ; consultez les sections ci-dessous pour plus de détails.
 </Note>
 
 ```sql title="Query"
@@ -174,9 +243,15 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.
 └───┴────┴─────┘
 ```
 
-## JOIN avec des conditions d’inégalité sur des colonnes de tables différentes
+## JOIN avec des conditions d’inégalité sur des colonnes de tables différentes {#join-with-inequality-conditions-for-columns-from-different-tables}
 
-ClickHouse prend actuellement en charge `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` avec des conditions d’inégalité, en plus des conditions d’égalité. Les conditions d’inégalité sont prises en charge uniquement par les algorithmes de jointure `hash`, `parallel_hash` et `grace_hash`. Une condition de non-équijointure évaluée lors de la jointure ne peut pas contenir `arrayJoin`, car une telle condition doit préserver le nombre de lignes ; une condition qui ne s’applique qu’à un seul côté, ainsi qu’une clé d’égalité sur `arrayJoin`, sont extraites avant la jointure et ne sont pas affectées ; une condition `ALL INNER JOIN` non disjonctive n’est pas non plus affectée, car la condition est alors appliquée après la jointure. Lorsque l’expansion ne dépend que d’un seul côté, placez-la dans un `ARRAY JOIN` d’une sous-requête avant la jointure ; une condition dont l’argument `arrayJoin` lit des colonnes des deux côtés doit être restructurée.
+ClickHouse prend en charge `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` avec des conditions d’inégalité, en plus des conditions d’égalité.
+
+Lorsque la section `ON` contient, en plus de l’inégalité, une égalité entre les deux tables, cette égalité sert de clé de jointure et l’inégalité est vérifiée sur les lignes qu’elle a fait correspondre. Une telle condition mixte n’est exécutée que par les algorithmes de jointure `hash`, `parallel_hash` et `grace_hash`.
+
+Lorsque la section `ON` ne contient aucune égalité entre les deux tables, il n’existe aucune clé de jointure sur laquelle effectuer la correspondance. Une telle jointure est exécutée par [`ie_join`](/fr/reference/settings/session-settings/join#join_algorithm) si la condition est une paire d’inégalités, et sinon sous forme de [jointure par boucles imbriquées par blocs](#join-with-an-arbitrary-on-condition).
+
+Une condition évaluée lors de la jointure ne peut pas contenir `arrayJoin`, car elle doit préserver le nombre de lignes ; utilisez plutôt `ARRAY JOIN` dans une sous-requête.
 
 **Exemple**
 
@@ -224,7 +299,50 @@ key2    a2    1    1    1            0    0    \N
 key4    f    2    3    4            0    0    \N
 ```
 
-## Valeurs NULL et NaN dans les clés de jointure
+## JOIN avec une condition ON arbitraire {#join-with-an-arbitrary-on-condition}
+
+La section `ON` peut contenir une expression booléenne arbitraire portant sur les colonnes des deux tables, par exemple une vérification de plage, une comparaison arithmétique ou un appel à une fonction scalaire. Lorsqu&#39;elle ne contient aucune égalité entre les deux tables, il n&#39;existe aucune clé de jointure sur laquelle faire correspondre les lignes. Une paire de conditions d&#39;inégalité est exécutée par `ie_join` lorsque cet algorithme figure dans [`join_algorithm`](/fr/reference/settings/session-settings/join#join_algorithm), ce qui est le cas par défaut. Toute autre condition est exécutée sous la forme d&#39;une [jointure par boucles imbriquées par blocs](https://en.wikipedia.org/wiki/Nested_loop_join) : la table de droite est matérialisée, puis la condition est évaluée sur chaque paire de lignes. Un `ALL INNER JOIN` prend alors la forme équivalente d&#39;un `CROSS JOIN` dont la condition sert de filtre.
+
+La jointure par boucles imbriquées par blocs prend en charge tous les types de JOIN et toutes les strictness, à l&#39;exception de `ASOF JOIN`, `PASTE JOIN` et `ANY FULL JOIN`. Elle ne fait pas partie des valeurs de `join_algorithm` : il s&#39;agit d&#39;une solution de dernier recours, utilisée uniquement lorsqu&#39;aucun autre algorithme ne peut exécuter la condition. Dans la sortie de `EXPLAIN`, elle apparaît sous la forme d&#39;une étape `BlockNestedLoopJoin`. Lorsque [`allow_block_nested_loop_join`](/fr/reference/settings/session-settings/allow#allow_block_nested_loop_join) est désactivé, toute requête qui en aurait besoin est rejetée avec l&#39;erreur `INVALID_JOIN_ON_EXPRESSION`.
+
+**Exemple**
+
+```sql title="Query"
+CREATE TABLE orders (id UInt32, amount UInt32) ENGINE = Memory;
+CREATE TABLE discounts (min_amount UInt32, max_amount UInt32, pct UInt32) ENGINE = Memory;
+
+INSERT INTO orders VALUES (1, 50), (2, 150), (3, 300);
+INSERT INTO discounts VALUES (100, 199, 5), (200, 1000, 10);
+
+SELECT o.id, o.amount, d.pct
+FROM orders AS o
+LEFT JOIN discounts AS d ON o.amount BETWEEN d.min_amount AND d.max_amount
+ORDER BY o.id;
+```
+
+```response title="Response"
+┌─id─┬─amount─┬─pct─┐
+│  1 │     50 │   0 │
+│  2 │    150 │   5 │
+│  3 │    300 │  10 │
+└────┴────────┴─────┘
+```
+
+La ligne sans correspondance est complétée selon [`join_use_nulls`](/fr/reference/settings/session-settings/join#join_use_nulls), comme pour toute autre jointure : avec une valeur par défaut dans l&#39;exemple ci-dessus, et avec `NULL` lorsque le paramètre est activé.
+
+**Strictness**
+
+`ANY` et `SEMI` conservent normalement une ligne par groupe de lignes partageant une clé de jointure. Comme un tel groupe n&#39;existe pas ici, ils conservent une ligne par ligne de la table qui pilote la jointure : `LEFT ANY` et `LEFT SEMI` émettent chaque ligne de gauche au plus une fois, `RIGHT ANY` et `RIGHT SEMI` chaque ligne de droite au plus une fois. `ANY INNER` limite les deux côtés à la fois — chaque ligne de l&#39;une ou l&#39;autre table est utilisée au plus une fois, de sorte que le résultat contient au plus autant de lignes que la plus petite des deux tables. Les paires qui composent un tel résultat sont arbitraires, comme le sous-entend précisément `ANY`, et peuvent varier d&#39;une exécution à l&#39;autre de la même requête. Pour `ANY INNER`, cela vaut aussi pour le nombre de lignes : apparier de manière gloutonne chaque ligne des deux côtés, quel que soit l&#39;ordre dans lequel les lignes sont examinées, peut laisser un nombre variable de lignes non appariées. Le résultat de `count()` sur une jointure `ANY INNER` sans clé de jointure n&#39;est donc pas reproductible et dépend du nombre de threads ainsi que de l&#39;ordre physique de la table de droite.
+
+**Performances**
+
+Chaque paire de lignes est examinée : le travail croît donc avec le *produit* des nombres de lignes des deux tables, et non avec leur somme. Une jointure par boucles imbriquées par blocs est par conséquent plus coûteuse de plusieurs ordres de grandeur qu&#39;une jointure de hachage sur les mêmes données, et l&#39;écart se creuse à mesure que les tables grossissent. Si une requête peut être écrite avec au moins une égalité dans sa section `ON`, privilégiez cette forme.
+
+Les jointures `LEFT ANY`, `ANY INNER`, `LEFT SEMI` et `LEFT ANTI` interrompent le parcours de la table de droite dès la première ligne correspondant à une ligne de gauche, ce qui les rend généralement moins coûteuses que la jointure `ALL` correspondante. Leurs équivalents pilotés par la droite (`RIGHT ANY`, `RIGHT SEMI`, `RIGHT ANTI`) examinent chaque paire, car le résultat dépend des lignes de droite qui ont trouvé une correspondance. [`join_any_take_last_row`](/fr/reference/settings/session-settings/join#join_any_take_last_row) n&#39;a aucun effet ici : sans clé de jointure, il n&#39;existe aucun groupe de lignes correspondantes dont on pourrait retenir la dernière.
+
+La consommation mémoire est limitée par la table de droite matérialisée et n&#39;augmente pas avec la taille du résultat. La table de droite est soumise aux mêmes paramètres que pour les autres algorithmes de jointure, répertoriés dans la section [Limitations de mémoire](#memory-limitations) : [`max_rows_in_join`](/fr/reference/settings/session-settings/max-rows#max_rows_in_join), [`max_bytes_in_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_in_join) et [`join_overflow_mode`](/fr/reference/settings/session-settings/join#join_overflow_mode) en limitent la taille, et [`max_bytes_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) déclenche son déversement sur disque.
+
+## Valeurs NULL et NaN dans les clés de jointure {#null-values-in-join-keys}
 
 `NULL` n’est égal à aucune valeur, pas même à lui-même. Cela signifie que si une clé de `JOIN` contient une valeur `NULL` dans une table, elle ne correspondra pas à une valeur `NULL` dans l’autre table.
 
@@ -285,7 +403,7 @@ Ne vous fiez pas à un comportement particulier.
 Si vous voulez vous assurer que les lignes contenant `NaN` ne correspondent pas, mappez-les à des valeurs `NULL` : `ON if(isNaN(A.id), NULL, A.id) = B.id`.
 Dans un `ASOF JOIN`, la colonne de correspondance la plus proche est comparée selon l’ordre, ce que `NaN` ne permet pas ; filtrez ces lignes des deux côtés.
 
-## Utilisation de ASOF JOIN
+## Utilisation de ASOF JOIN {#asof-join-usage}
 
 `ASOF JOIN` est utile lorsque vous devez joindre des enregistrements qui n’ont pas de correspondance exacte.
 
@@ -339,7 +457,7 @@ Par exemple, considérons les tables suivantes :
   Il n’est **pas** pris en charge par le moteur de table [Join](/fr/reference/engines/table-engines/special/join).
 </Note>
 
-## Utilisation de PASTE JOIN
+## Utilisation de PASTE JOIN {#paste-join-usage}
 
 Le résultat de `PASTE JOIN` est une table qui contient toutes les colonnes de la sous-requête de gauche, suivies de toutes les colonnes de la sous-requête de droite.
 Les lignes sont appariées en fonction de leur position dans les tables d&#39;origine (l&#39;ordre des lignes doit être défini).
@@ -397,7 +515,7 @@ SETTINGS max_block_size = 2;
 └───┴──────┘
 ```
 
-## JOIN distribué
+## JOIN distribué {#distributed-join}
 
 Il existe deux façons d’exécuter un JOIN impliquant des tables distribuées :
 
@@ -406,7 +524,7 @@ Il existe deux façons d’exécuter un JOIN impliquant des tables distribuées�
 
 Soyez prudent lorsque vous utilisez `GLOBAL`. Pour plus d’informations, consultez la section [Sous-requêtes distribuées](/fr/reference/statements/in#distributed-subqueries).
 
-## Conversion implicite de type
+## Conversion implicite de type {#implicit-type-conversion}
 
 Les requêtes `INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN` et `FULL JOIN` prennent en charge la conversion implicite de type pour les clés de jointure. Toutefois, la requête ne peut pas être exécutée si les clés de jointure des tables de gauche et de droite ne peuvent pas être converties vers un même type (par exemple, il n’existe aucun type de données pouvant contenir toutes les valeurs de `UInt64` et `Int64`, ou de `String` et `Int32`).
 
@@ -448,21 +566,21 @@ renvoie l’ensemble suivant :
 └────┴──────┴───────────────┴─────────────────┘
 ```
 
-## Conseils d&#39;utilisation
+## Conseils d&#39;utilisation {#usage-recommendations}
 
-### Traitement des cellules vides ou NULL
+### Traitement des cellules vides ou NULL {#processing-of-empty-or-null-cells}
 
 Lors d’une jointure entre tables, des cellules vides peuvent apparaître. Le paramètre [join&#95;use&#95;nulls](/fr/reference/settings/session-settings/join#join_use_nulls) définit comment ClickHouse remplit ces cellules.
 
 Si les clés de `JOIN` sont des champs [Nullable](/fr/reference/data-types/nullable), les lignes pour lesquelles au moins une des clés a la valeur [NULL](/fr/reference/syntax#null) ne sont pas prises en compte dans la jointure.
 
-### Syntaxe
+### Syntaxe {#syntax}
 
 Les colonnes spécifiées dans `USING` doivent avoir les mêmes noms dans les deux sous-requêtes, et les autres colonnes doivent porter des noms différents. Vous pouvez utiliser des alias pour renommer les colonnes dans les sous-requêtes.
 
 La clause `USING` spécifie une ou plusieurs colonnes de jointure, ce qui établit l&#39;égalité entre ces colonnes. La liste des colonnes s&#39;écrit sans parenthèses. Les conditions de jointure plus complexes ne sont pas prises en charge.
 
-### Limites de la syntaxe
+### Limites de la syntaxe {#syntax-limitations}
 
 Pour plusieurs clauses `JOIN` dans une même requête `SELECT` :
 
@@ -474,7 +592,7 @@ Pour les clauses `ON`, `WHERE` et `GROUP BY` :
 
 * Les expressions arbitraires ne peuvent pas être utilisées dans les clauses `ON`, `WHERE` et `GROUP BY`, mais vous pouvez définir une expression dans une clause `SELECT`, puis l’utiliser dans ces clauses via un alias.
 
-### Performance
+### Performance {#performance}
 
 Lors de l’exécution d’un `JOIN`, l’ordre d’exécution n’est pas optimisé par rapport aux autres étapes de la requête. La jointure (recherche dans la table de droite) est exécutée avant le filtrage dans `WHERE` et avant l’agrégation.
 
@@ -484,7 +602,7 @@ Dans certains cas, il est plus efficace d’utiliser [IN](/fr/reference/statemen
 
 Si vous avez besoin d’un `JOIN` avec des tables de dimension (des tables relativement petites qui contiennent des propriétés de dimension, comme des noms de campagnes publicitaires), un `JOIN` peut ne pas être très pratique, car la table de droite est de nouveau consultée pour chaque requête. Dans ce type de cas, il existe la fonctionnalité « dictionnaires », à utiliser à la place de `JOIN`. Pour plus d’informations, consultez la section [Dictionnaires](/fr/reference/statements/create/dictionary).
 
-### Limitations de mémoire
+### Limitations de mémoire {#memory-limitations}
 
 Par défaut, ClickHouse utilise l’algorithme de [jointure par hachage](https://en.wikipedia.org/wiki/Hash_join). ClickHouse prend la table de droite et crée une table de hachage en RAM pour celle-ci. Si `join_algorithm = 'auto'` est activé, alors au-delà d’un certain seuil de consommation de mémoire, ClickHouse bascule vers l’algorithme de [jointure par fusion](https://en.wikipedia.org/wiki/Sort-merge_join). Pour une description des algorithmes de jointure, consultez le paramètre [join&#95;algorithm](/fr/reference/settings/session-settings/join#join_algorithm).
 
@@ -505,7 +623,7 @@ Pour permettre à une jointure de poursuivre son exécution en déversant le cô
 
 Ils constituent le déclencheur de déversement fondé sur un seuil pour tous les algorithmes à base de hachage, y compris `grace_hash` ; en cas de pression mémoire, `enable_adaptive_memory_spill_scheduler` peut déverser plus tôt qu’ils ne le demandent — mais uniquement si l’un d’eux est non nul, car une jointure dépourvue de tout seuil ne déverse jamais. L’algorithme `join_algorithm` que vous choisissez détermine la manière dont une jointure déverse — `grace_hash` partitionne la table de droite dès le premier bloc, tandis que `hash` et `parallel_hash` la collectent en mémoire puis basculent lorsque le seuil est franchi — et non si ces paramètres s’appliquent. La seule exception est `legacy_join_size_limits_trigger_spilling` : lorsqu’il est activé, `grace_hash` utilisé seul ignore les deux seuils et déverse en fonction des deux plafonds stricts.
 
-## Exemples
+## Exemples {#examples}
 
 Exemple :
 
@@ -548,7 +666,7 @@ LIMIT 10
 └───────────┴────────┴────────┘
 ```
 
-## Contenu connexe
+## Contenu connexe {#related-content}
 
 * Blog : [ClickHouse : un SGBD ultra-rapide avec une prise en charge complète des jointures SQL - Partie 1](https://clickhouse.com/blog/clickhouse-fully-supports-joins)
 * Blog : [ClickHouse : un SGBD ultra-rapide avec une prise en charge complète des jointures SQL - Dans les coulisses - Partie 2](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2)

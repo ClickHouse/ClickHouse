@@ -35,7 +35,7 @@ Utilice `clickhouse_connect.get_client` para crear un `Client` síncrono, o inst
 | `headers`                  | dict o None                             | `None`                                         | Encabezados HTTP aplicados a cada solicitud, incluida la inicialización del client. Los encabezados de usuario se aplican después de los valores predeterminados del driver y pueden sobrescribirlos.                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `compress`                 | bool o str                              | `True`                                         | Active la compresión o seleccione `"lz4"`, `"zstd"`, `"br"` o `"gzip"`. Consulte [Compression](/es/integrations/language-clients/python/additional-options#compression).                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `query_limit`              | int                                     | `0`                                            | Límite predeterminado de filas que se añade a las consultas aptas. Cero significa sin límite. Transmita los resultados grandes en lugar de materializarlos todos en memoria.                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `query_retries`            | int                                     | `2`                                            | Límite de reintentos para errores de lectura reintentables. Por lo general, los comandos y las inserciones no se reintentan, ya que repetirlas puede duplicar los efectos secundarios.                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `query_retries`            | int                                     | `2`                                            | Límite de reintentos para lecturas aptas realizadas mediante métodos de consulta. Consulte [Reintentos HTTP](#http-retries) para obtener información sobre los reintentos por cierre de conexión, los comandos y las inserciones.                                                                                                                                                                                                                                                                                                                                                                                           |
 | `connect_timeout`          | int en sync, float en async             | `10`                                           | Tiempo de espera en segundos para establecer una nueva conexión. No incluye la espera de un hueco libre en el grupo de conexiones. El client async acepta fracciones de segundo.                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `send_receive_timeout`     | int en sync, float en async             | `300`                                          | Tiempo de espera de lectura del socket en segundos. El client async acepta fracciones de segundo.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `client_name`              | str o None                              | `None`                                         | Prefijo añadido al User-Agent de HTTP para su identificación en `system.query_log`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
@@ -148,6 +148,16 @@ with clickhouse_connect.get_client(interface="chdb") as client:
 ```
 
 De forma predeterminada, se usa una base de datos en memoria. Pase `path="/data/my_chdb"` o use `dsn="chdb:///data/my_chdb"` para contar con almacenamiento persistente. El backend permite una sola ruta de engine por proceso y no admite `get_async_client` ni datos externos.
+
+### Reintentos HTTP {#http-retries}
+
+Tanto los Clients HTTP síncronos como los asíncronos reintentan las lecturas aptas tras determinados cierres remotos de la conexión y ante respuestas HTTP 429, 503 o 504. Para `query`, sus métodos de consulta especializados, `raw_query` y `raw_stream`, `query_retries` define el número de intentos adicionales. Las lecturas aptas admiten al menos un reintento tras un cierre remoto, incluso con `query_retries=0`. Una lectura enviada mediante `command` puede reintentarse una vez tras un cierre remoto, pero no consume el presupuesto de `query_retries` ni se reintenta ante esos códigos de estado HTTP.
+
+El Client reconoce sentencias de lectura como `SELECT`, `SHOW`, `DESCRIBE` y `EXISTS`, incluidas las formas compatibles de `WITH` y `EXPLAIN`. Las sentencias SQL que no reconoce como lecturas no se reintentan tras estos fallos. También quedan excluidas las sentencias con `PARALLEL WITH` o `INTO OUTFILE`, así como las que contienen varias sentencias.
+
+Las escrituras SQL, las sentencias DDL y las mutaciones enviadas mediante `command`, `query`, `raw_query` o `raw_stream` no se vuelven a ejecutar tras estos fallos. Lo mismo ocurre cuando DB-API o SQLAlchemy ejecutan SQL a través de esos métodos. Un error de conexión no indica si una escritura llegó a confirmarse (committed). Compruebe el resultado antes de reintentarla desde su aplicación.
+
+Las API de inserción conservan los reintentos ante cierres de conexión cuando el cuerpo de la solicitud puede reenviarse. Estos reintentos pueden generar filas duplicadas. Consulte [Reintentos de inserción y deduplicación](/es/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication).
 
 ## Ciclo de vida del Client y buenas prácticas {#client-lifecycle-and-best-practices}
 
@@ -812,32 +822,29 @@ El módulo exporta la jerarquía de excepciones de PEP 249: `Warning`, `Error`, 
 ```python
 from clickhouse_connect import dbapi
 
-connection = dbapi.connect(
+with dbapi.connect(
     host="localhost",
     username="default",
     password="password",
     database="default",
-)
-cursor = connection.cursor()
-
-try:
-    cursor.execute(
-        "SELECT name FROM system.tables "
-        "WHERE database = %(database)s ORDER BY name LIMIT 5",
-        {"database": "system"},
-    )
-    print(cursor.description)
-    print(cursor.fetchall())
-finally:
-    cursor.close()
-    connection.close()
+) as connection:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT name FROM system.tables "
+            "WHERE database = %(database)s ORDER BY name LIMIT 5",
+            {"database": "system"},
+        )
+        print(cursor.description)
+        print(cursor.fetchall())
 ```
+
+Como extensión del driver, los gestores de contexto de `Connection` y `Cursor` devuelven el objeto existente y llaman a `close()` tanto al salir normalmente como al salir por una excepción. No suprimen las excepciones que se produzcan dentro del bloque.
 
 `Cursor.execute` y `Cursor.executemany` aceptan argumentos adicionales de palabra clave, `settings` y `query_formats`. `settings` pasa ajustes de ClickHouse. `query_formats` aplica formatos de lectura según el tipo de ClickHouse cuando una sentencia devuelve filas, usando la misma correspondencia que `Client.query`. Ambos métodos también aceptan el argumento exclusivo de palabra clave `pyformat_encoded`. Su valor predeterminado, `True`, se ajusta al contrato `pyformat` de DB-API. El dialecto SQLAlchemy lo establece en `False` cuando el compilador de sentencias emitió signos de porcentaje sin procesar, por lo que normalmente las aplicaciones no deberían establecerlo. Las operaciones parametrizadas de `Cursor.executemany` se ejecutan una vez por cada conjunto de parámetros, lo que preserva la semántica de vinculación y de expresiones de SQL. Con HTTP, se envía una solicitud por cada conjunto de parámetros. Si falla un conjunto de parámetros posterior, las escrituras anteriores permanecen confirmadas. Para estas inserciones con `executemany`, `Cursor.rowcount` es la suma de los valores `written_rows` informados por ClickHouse, o `-1` cuando ese valor no está disponible. Las sentencias INSERT enviadas mediante `Cursor.execute` informan `0`. La forma de compatibilidad `INSERT INTO table (columns) VALUES` sin marcadores de posición usa inserción Native. Un INSERT sin marcadores de posición que termine en `VALUES` genera `ProgrammingError` si no puede reconocerse como esa forma de compatibilidad. Las aplicaciones que necesiten inserción masiva Native explícita deben usar `Client.insert`. `fetchone`, `fetchmany` y `fetchall` consumen el resultado materializado actual.
 
 `Cursor.description` deriva `null_ok` del tipo de cada columna de resultado. Los tipos que no admiten valores NULL informan `False`, y los tipos que admiten valores NULL informan `True`, incluidos los envoltorios `Nullable`, `Variant` y `Dynamic`. `None` significa que se desconoce la nulabilidad. Cuando una consulta que comienza con `SELECT` o `WITH`, ignorando los comentarios iniciales, no devuelve filas ni metadatos de columnas, el cursor ejecuta una consulta de metadatos `LIMIT 0` para poblar `description`. Si esa consulta de metadatos falla, `description` se deja vacío.
 
-ClickHouse no proporciona transacciones tradicionales a través de esta interfaz HTTP. `Connection.commit()` y `Connection.rollback()` no tienen efecto. Las [reglas de concurrencia del ID de sesión](/es/integrations/language-clients/python/advanced-usage#managing-clickhouse-session-ids) siguen aplicándose cuando se comparte una conexión.
+ClickHouse no proporciona transacciones tradicionales a través de esta interfaz HTTP. `Connection.commit()` y `Connection.rollback()` no tienen efecto, por lo que, al salir de un contexto de conexión, se llama a `Connection.close()` en lugar de confirmar o revertir. Las [reglas de concurrencia del ID de sesión](/es/integrations/language-clients/python/advanced-usage#managing-clickhouse-session-ids) siguen aplicándose cuando se comparte una conexión.
 
 ## Clases y funciones de utilidad {#utility-classes-and-functions}
 
