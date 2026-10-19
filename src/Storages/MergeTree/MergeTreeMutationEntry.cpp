@@ -178,6 +178,15 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(
     /// partition key type change (e.g. `Enum8 -> Int8`) would leave the table unloadable.
     const bool has_unresolved_partition_scope = MergeTreeData::hasUnresolvedPartitionScope(*commands);
 
+    /// A binary without this feature applied every mutation, `IN PARTITION` or not, to all parts,
+    /// so its mutation is finished once no part has a lower data version, and no new part can get
+    /// one. Such a mutation is never executed again, and the partition key may have changed since
+    /// it finished (e.g. `MODIFY COLUMN p Int8` of an `Enum8` key before the upgrade), so its
+    /// literals are left as they are instead of being decoded: the entry stays global and the file
+    /// is not rewritten.
+    if (has_unresolved_partition_scope && storage_->areAllPartsMutatedTo(static_cast<Int64>(block_number)))
+        return;
+
     partition_ids = storage_->rewritePartitionScopeToIds(*commands, context_);
 
     needs_file_upgrade = has_unresolved_partition_scope;

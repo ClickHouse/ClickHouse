@@ -1828,6 +1828,12 @@ std::map<std::string, MutationCommands> StorageMergeTree::getUnfinishedMutationC
     return result;
 }
 
+bool StorageMergeTree::areAllPartsMutatedTo(Int64 version) const
+{
+    const auto parts = getDataPartsVectorForInternalUsage({DataPartState::Active}, {DataPartKind::Regular, DataPartKind::Patch});
+    return std::ranges::none_of(parts, [version](const auto & part) { return part->info.getDataVersion() < version; });
+}
+
 Strings StorageMergeTree::getMutationsWithLegacyPartitionScope() const
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
