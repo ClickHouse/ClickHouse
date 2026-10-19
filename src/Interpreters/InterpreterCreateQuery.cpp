@@ -3948,18 +3948,14 @@ BlockIO InterpreterCreateQuery::execute()
             /// check the inherited definition here, on a copy of the query
             if (!create.as_table.empty())
             {
-                /// a worker resolves a name without a database in its own database, so resolve ours
-                /// the same way, as the UUIDs above do
-                const String as_database_on_initiator = getContext()->resolveDatabase(create.as_database);
+                /// a worker resolves a name without a database in its own database, so set ours, as
+                /// the UUIDs above do
+                create.as_database = getContext()->resolveDatabase(create.as_database);
 
                 /// The initiator can read the source definition only when it holds the source. A
-                /// cross-replication cluster keeps each shard in a database the initiator does not
-                /// have, and there the query ships as written for the worker to resolve, the way it
-                /// did before this check existed.
-                if (DatabaseCatalog::instance().isTableExist({as_database_on_initiator, create.as_table}, getContext()))
+                /// cross-replication cluster keeps each shard in a database the initiator may not have.
+                if (DatabaseCatalog::instance().isTableExist({create.as_database, create.as_table}, getContext()))
                 {
-                    create.as_database = as_database_on_initiator;
-
                     /// OLDEST_VERSION sends no settings, so a worker replaces nothing with Null. check
                     /// what the worker builds, not what our settings give
                     auto preflight_context = Context::createCopy(getContext());
@@ -3976,6 +3972,24 @@ BlockIO InterpreterCreateQuery::execute()
                     /// getRequiredAccess sees no engine, because this query holds none of its own
                     if (inherited.storage && inherited.storage->engine)
                         getContext()->checkAccess(AccessType::TABLE_ENGINE, inherited.storage->engine->name);
+                }
+                else if (!create.storage || !create.storage->engine)
+                {
+                    /// The initiator cannot see the engine and the settings the worker inherits, so require
+                    /// `SELECT` on the source and `TABLE ENGINE` on every engine, which covers any source. A
+                    /// query with its own `ENGINE` inherits neither.
+                    const auto access = getContext()->getAccess();
+                    if (!access->isGranted(AccessType::SELECT, create.as_database, create.as_table)
+                        || !access->isGranted(AccessType::TABLE_ENGINE))
+                    {
+                        const String qualified_name = backQuoteIfNeed(create.as_database) + "." + backQuoteIfNeed(create.as_table);
+                        throw Exception(
+                            ErrorCodes::ACCESS_DENIED,
+                            "Not enough privileges. {} is not on this server, so the definition that the new table "
+                            "inherits from it cannot be checked here. To execute this query, it's necessary to have "
+                            "the grants SELECT ON {} and TABLE ENGINE ON *, or to specify ENGINE explicitly",
+                            qualified_name, qualified_name);
+                    }
                 }
             }
 
