@@ -195,7 +195,7 @@ ALWAYS_INLINE inline UInt8x16 shuffleBytes(UInt8x16 bytes, UInt8x16 order)
 #elif defined(__aarch64__)
     return std::bit_cast<UInt8x16>(vqtbl1q_u8(std::bit_cast<uint8x16_t>(bytes), std::bit_cast<uint8x16_t>(order)));
 #else
-    UInt8x16 result;
+    UInt8x16 result{};
     for (size_t i = 0; i < 16; ++i)
         result[i] = bytes[order[i]];
     return result;
