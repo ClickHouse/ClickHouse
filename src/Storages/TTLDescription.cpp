@@ -506,9 +506,12 @@ TTLDescription TTLDescription::getTTLFromAST(
         }
         else if (ttl_element->mode == TTLMode::RECOMPRESS)
         {
+            /// Stored metadata must load, so `ATTACH` skips the codec sanity checks, as it does for column codecs.
             result.recompression_codec =
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                    ttl_element->recompression_codec, {}, !context->getSettingsRef()[Setting::allow_suspicious_codecs], context->getSettingsRef()[Setting::allow_experimental_codecs]);
+                    ttl_element->recompression_codec, {},
+                    !is_attach && !context->getSettingsRef()[Setting::allow_suspicious_codecs],
+                    context->getSettingsRef()[Setting::allow_experimental_codecs]);
         }
     }
 
