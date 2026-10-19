@@ -3066,7 +3066,7 @@ Like `join_use_nulls`, this applies only to element types that can be placed ins
 For an element type that cannot (`Array`, `Map`, `AggregateFunction`, ...) the column keeps
 its original type and the empty-array rows keep getting the default value of that type.
 )", 0, \
-        {"26.10", false, false, "New setting to control NULL handling in LEFT ARRAY JOIN."}) \
+        {"26.11", false, false, "New setting to control NULL handling in LEFT ARRAY JOIN."}) \
     \
     DECLARE(UInt64, join_output_by_rowlist_perkey_rows_threshold, 5, R"(
 The lower limit of per-key average rows in the right table to determine whether to output by row list in hash join.
