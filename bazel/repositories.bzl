@@ -83,7 +83,7 @@ def _contrib_impl(module_ctx):
             Label("//bazel/rust:" + name + "/Cargo.toml"): "bazel/rust/" + name
             for name in ["chdig", "delta-kernel-rs"]
         } | {
-            Label("@" + repositories["contrib/" + name]["name"] + "//:BUILD.bazel"): "contrib/" + name
+            Label("@" + repositories["contrib/" + name]["name"] + "//:Cargo.toml"): "contrib/" + name
             for name in ["chdig", "delta-kernel-rs", "pcodec", "wasmtime"]
         },
     )
