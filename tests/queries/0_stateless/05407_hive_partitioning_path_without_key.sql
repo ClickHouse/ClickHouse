@@ -9,6 +9,8 @@ INSERT INTO FUNCTION file(currentDatabase() || '/05407/misc/stray.csv', CSV, 'c1
 INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '/05407/hour=10/a.csv', format = CSV, structure = 'c1 Int64') SELECT 1 SETTINGS s3_truncate_on_insert = 1;
 INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '/05407/hour=11/b.csv', format = CSV, structure = 'c1 Int64') SELECT 2 SETTINGS s3_truncate_on_insert = 1;
 INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '/05407/misc/stray.csv', format = CSV, structure = 'c1 Int64') SELECT 3 SETTINGS s3_truncate_on_insert = 1;
+INSERT INTO FUNCTION file(currentDatabase() || '/05407_dup/key=1/key=2/data.csv', CSV, 'c1 Int64') SELECT 4 SETTINGS engine_file_truncate_on_insert = 1, use_hive_partitioning = 0;
+INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '/05407_dup/key=1/key=2/data.csv', format = CSV, structure = 'c1 Int64') SELECT 4 SETTINGS s3_truncate_on_insert = 1, use_hive_partitioning = 0;
 
 SET use_hive_partitioning = 1;
 
@@ -33,3 +35,9 @@ CREATE TABLE t_05407_s3 (c1 Int64) ENGINE = S3(s3_conn, filename = currentDataba
 SET use_hive_partitioning = 0;
 SELECT c1, hour FROM t_05407_s3 ORDER BY c1;
 SELECT c1 FROM t_05407_s3 WHERE hour = 10;
+
+-- with use_hive_partitioning = 0, a read without hive columns does not parse the path, and key=1/key=2/ is valid
+SELECT c1 FROM file(currentDatabase() || '/05407_dup/key=1/key=2/data.csv', CSV, 'c1 Int64');
+SELECT c1, _file FROM file(currentDatabase() || '/05407_dup/key=1/key=2/data.csv', CSV, 'c1 Int64');
+SELECT c1 FROM s3(s3_conn, filename = currentDatabase() || '/05407_dup/key=1/key=2/data.csv', format = CSV, structure = 'c1 Int64');
+SELECT c1, _file FROM s3(s3_conn, filename = currentDatabase() || '/05407_dup/key=1/key=2/data.csv', format = CSV, structure = 'c1 Int64');

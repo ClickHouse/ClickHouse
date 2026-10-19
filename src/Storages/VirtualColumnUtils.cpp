@@ -479,13 +479,9 @@ void addRequestedFileLikeStorageVirtualsToChunk(
     ContextPtr context,
     const std::optional<FormatSettings> & format_settings)
 {
-    const auto hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(virtual_values.path);
-
-    /// `hive_format_settings` is hoisted out of the loop because constructing it from `getFormatSettings(context)`
-    /// reads many settings, and the result is identical for every hive virtual column in `requested_virtual_columns`.
-    const auto hive_format_settings = hive_map.empty()
-        ? FormatSettings{}
-        : HivePartitioningUtils::buildHiveFormatSettings(format_settings, context);
+    /// Parse the path only for a requested hive virtual column: the parser rejects some paths, such as `key=1/key=2/`.
+    std::optional<HivePartitioningUtils::HivePartitioningKeysAndValues> hive_map;
+    std::optional<FormatSettings> hive_format_settings;
 
     for (const auto & virtual_column : requested_virtual_columns)
     {
@@ -637,11 +633,16 @@ void addRequestedFileLikeStorageVirtualsToChunk(
         else if (!isReaderOnlyVirtualColumn(virtual_column.name))
         {
             /// All other file-like virtual columns are hive partition columns.
-            const auto value = HivePartitioningUtils::getHivePartitionValue(hive_map, virtual_column.getNameInStorage(), virtual_values.path);
+            if (!hive_map)
+            {
+                hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(virtual_values.path);
+                hive_format_settings = HivePartitioningUtils::buildHiveFormatSettings(format_settings, context);
+            }
+            const auto value = HivePartitioningUtils::getHivePartitionValue(*hive_map, virtual_column.getNameInStorage(), virtual_values.path);
             chunk.addColumn(
                 virtual_column.type->createColumnConst(
                     chunk.getNumRows(),
-                    convertFieldToType(Field(String(value)), *virtual_column.type, nullptr, hive_format_settings))->convertToFullColumnIfConst());
+                    convertFieldToType(Field(String(value)), *virtual_column.type, nullptr, *hive_format_settings))->convertToFullColumnIfConst());
         }
     }
 }
