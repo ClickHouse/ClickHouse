@@ -125,7 +125,10 @@ try
     }
     if (!has_default_disk)
     {
-        recordDisk(DEFAULT_DISK_NAME, std::make_shared<DiskLocal>(DEFAULT_DISK_NAME, context->getPath(), 0, context, config, config_prefix));
+        auto tracked_config = DiskFactory::trackImplicitLocalDisk(DEFAULT_DISK_NAME, config, config_prefix + "." + DEFAULT_DISK_NAME, context);
+        auto default_disk = std::make_shared<DiskLocal>(DEFAULT_DISK_NAME, context->getPath(), 0, context, config, config_prefix);
+        default_disk->keepConfigurationAlive(tracked_config);
+        recordDisk(DEFAULT_DISK_NAME, std::move(default_disk));
     }
 
     if (!has_local_disk && (context->getApplicationType() == Context::ApplicationType::DISKS))
@@ -177,7 +180,7 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
         {
             auto disk = old_disks_minus_new_disks[disk_name];
 
-            disk->applyNewSettings(config, context, disk_config_prefix, result->getDisksMap());
+            factory.applyNewSettings(disk, disk_name, config, disk_config_prefix, context, result->getDisksMap());
 
             old_disks_minus_new_disks.erase(disk_name);
         }

@@ -37,6 +37,7 @@
 #include <Poco/UUID.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/DateLUT.h>
+#include <Common/ErrnoException.h>
 #include <Common/quoteString.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -65,6 +66,11 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
 
+#if USE_AWS_S3
+#include <IO/S3Common.h>
+#include <IO/S3/getObjectInfo.h>
+#endif
+
 
 using namespace DB;
 
@@ -78,6 +84,7 @@ extern const int BAD_ARGUMENTS;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int LOGICAL_ERROR;
 extern const int UNSUPPORTED_METHOD;
+extern const int READONLY;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -351,6 +358,36 @@ void writeMessageToFile(
     }
 }
 
+/// Whether the storage refused the request itself rather than its condition, so that a retry is refused again.
+static bool isRefusedWrite(const Exception & e)
+{
+    if (e.code() == ErrorCodes::UNSUPPORTED_METHOD || e.code() == ErrorCodes::READONLY)
+        return true;
+    if (const auto * errno_exception = dynamic_cast<const ErrnoException *>(&e))
+        return errno_exception->getErrno() == EACCES || errno_exception->getErrno() == EPERM
+            || errno_exception->getErrno() == EROFS;
+#if USE_AWS_S3
+    if (const auto * s3_exception = dynamic_cast<const S3Exception *>(&e))
+        return DB::S3::isAuthenticationError(s3_exception->getS3ErrorCode())
+            || s3_exception->getS3ErrorCode() == Aws::S3::S3Errors::SIGNATURE_DOES_NOT_MATCH;
+#endif
+    return false;
+}
+
+/// Whether `path` is known to be absent; a failed check proves nothing.
+static bool isKnownAbsent(const DB::ObjectStoragePtr & object_storage, const std::string & path)
+{
+    try
+    {
+        return !object_storage->exists(StoredObject(path));
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return false;
+    }
+}
+
 bool writeMetadataFile(
     const IcebergPathResolver & resolver,
     const GeneratedMetadataFileWithInfo & metadata_file_info,
@@ -359,11 +396,13 @@ bool writeMetadataFile(
     DB::ContextPtr context)
 {
     auto storage_metadata_path = resolver.resolve(metadata_file_info.path);
+    bool write_attempted = false;
     try
     {
         if (object_storage->exists(StoredObject(storage_metadata_path)))
             return false;
 
+        write_attempted = true;
         Iceberg::writeMessageToFile(
             metadata_file_content,
             storage_metadata_path,
@@ -375,10 +414,9 @@ bool writeMetadataFile(
     }
     catch (const Exception & e)
     {
-        /// A backend that cannot express the commit's compare-and-swap will never be able to, so
-        /// reporting a lost race would make the caller retry an operation that can never succeed.
-        /// Propagate instead; every other failure (including a genuinely lost CAS) stays retryable.
-        if (e.code() == ErrorCodes::UNSUPPORTED_METHOD)
+        /// A refused write is not a lost race, and retrying the commit cannot get past it. Once the write was sent,
+        /// a refusal (e.g. of the check after an upload) proves nothing was written only while the file is absent.
+        if (isRefusedWrite(e) && (!write_attempted || isKnownAbsent(object_storage, storage_metadata_path)))
             throw;
         tryLogCurrentException(__PRETTY_FUNCTION__);
         return false;
@@ -661,12 +699,17 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
 {
     switch (type->getTypeId())
     {
-        case TypeIndex::UInt32:
         case TypeIndex::Int32:
             return {"int", true};
-        case TypeIndex::UInt64:
+        case TypeIndex::UInt32:
         case TypeIndex::Int64:
             return {"long", true};
+        case TypeIndex::UInt64:
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Type {} cannot be stored in Iceberg: the widest Iceberg integer type is the signed 64-bit `long`, "
+                "which cannot represent every UInt64 value. Use Int64 or Decimal(20, 0) instead",
+                type->getName());
         case TypeIndex::Float32:
             return {"float", true};
         case TypeIndex::Float64:
@@ -677,8 +720,6 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
         case TypeIndex::DateTime:
         case TypeIndex::DateTime64:
             return {"timestamp", true};
-        case TypeIndex::Time:
-            return {"time", true};
         case TypeIndex::String:
             return {"string", true};
         case TypeIndex::UUID:
@@ -765,12 +806,12 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
         case TypeIndex::Int8:
         case TypeIndex::UInt16:
         case TypeIndex::Int16:
-        case TypeIndex::UInt32:
         case TypeIndex::Int32:
         case TypeIndex::Date:
         case TypeIndex::Date32:
         case TypeIndex::Time:
             return "int";
+        case TypeIndex::UInt32:
         case TypeIndex::UInt64:
         case TypeIndex::Int64:
         case TypeIndex::DateTime:

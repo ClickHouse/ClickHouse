@@ -136,7 +136,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     ast_create_query.setDatabase(database_name);
 
     if (ast_create_query.select && ast_create_query.isView())
-        ApplyWithSubqueryVisitor::visit(*ast_create_query.select);
+        ApplyWithSubqueryVisitor::visit(*ast_create_query.select, /*max_expanded_ast_elements=*/ 0); /// Bounded when it was created.
 
     /// The dependency graphs were built out of exactly the same repaired names, see
     /// `TablesLoader::buildDependencyGraph`.
@@ -620,6 +620,13 @@ void DatabaseOnDisk::renameTable(
         attachTable(local_context, table_name, table, table_data_relative_path);
         /// Better diagnostics.
         throw Exception{Exception::CreateFromPocoTag{}, e};
+    }
+    catch (...)
+    {
+        /// std::filesystem_error is not a Poco::Exception, and the storage hooks above may throw it.
+        setDetachedTableNotInUseForce(prev_uuid);
+        attachTable(local_context, table_name, table, table_data_relative_path);
+        throw;
     }
 
     /// Now table data are moved to new database, so we must add metadata and attach table to new database

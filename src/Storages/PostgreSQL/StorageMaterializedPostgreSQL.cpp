@@ -765,6 +765,10 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         if (has_settings)
             postgresql_replication_settings->loadFromQuery(*args.storage_def);
 
+        /// A definition stored by an older version, which did not check it, must still be loaded.
+        if (!isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()))
+            postgresql_replication_settings->checkConsistencyForFreshDefinition();
+
         /// For the table engine the user declares the column types explicitly, so this setting cannot
         /// affect anything (it would be a silent no-op). It is only meaningful for the database engine,
         /// where the nested table structure is derived from PostgreSQL.
