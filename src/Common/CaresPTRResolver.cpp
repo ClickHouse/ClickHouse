@@ -156,7 +156,7 @@ CaresPTRResolver::CaresPTRResolver(CaresPTRResolver::provider_token)
     /*
          * ares_library_init is not thread safe. Currently, the only other usage of c-ares seems to be in grpc.
          * In grpc, ares_library_init seems to be called only in Windows.
-         * See https://github.com/grpc/grpc/blob/master/src/core/ext/filters/client_channel/resolver/dns/c_ares/grpc_ares_wrapper.cc#L1187
+         * See https://github.com/grpc/grpc/blob/17d37ac9cf2753e4ea6d820ad5c8bb5dd8b5ce04/src/core/ext/filters/client_channel/resolver/dns/c_ares/grpc_ares_wrapper.cc#L1187
          * That means it's safe to init it here, but we should be cautious when introducing new code that depends on c-ares and even updates
          * to grpc. As discussed in https://github.com/ClickHouse/ClickHouse/pull/37827#discussion_r919189085, c-ares should be adapted to be atomic
          *
