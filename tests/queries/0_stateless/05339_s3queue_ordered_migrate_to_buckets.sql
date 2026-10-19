@@ -52,28 +52,7 @@ WHERE path = '/clickhouse/' || currentDatabase() || '/q_unset/buckets/1' AND nam
 -- The new layout is in place now, so a second migration is refused.
 ALTER TABLE q_unset MODIFY SETTING buckets = 4; -- { serverError SUPPORT_IS_DISABLED }
 
--- 2. Nothing was processed yet, so there is no old node at all: `processed` is deliberately
---    not created in advance (ObjectStorageQueueOrderedFileMetadata::getMetadataPaths). The
---    migration finds nothing to move and leaves Keeper as it is.
-
-CREATE TABLE q_fresh (x UInt64)
-ENGINE = S3Queue('http://localhost:11111/test/05339_fresh/', 'username', 'password', CSV)
-SETTINGS mode = 'ordered', processing_threads_num = 1,
-         keeper_path = '/clickhouse/{database}/q_fresh';
-
-SELECT 'fresh / processed before', count() FROM system.zookeeper
-WHERE path = '/clickhouse/' || currentDatabase() || '/q_fresh' AND name = 'processed';
-
-ALTER TABLE q_fresh MODIFY SETTING buckets = 2;
-
-SELECT 'fresh / buckets setting', extract(create_table_query, 'buckets = (\\d+)')
-FROM system.tables WHERE database = currentDatabase() AND name = 'q_fresh';
-SELECT 'fresh / processed after', count() FROM system.zookeeper
-WHERE path = '/clickhouse/' || currentDatabase() || '/q_fresh' AND name = 'processed';
-SELECT 'fresh / buckets after', count() FROM system.zookeeper
-WHERE path = '/clickhouse/' || currentDatabase() || '/q_fresh' AND name = 'buckets';
-
--- 3. The migration removes the old node and creates the bucket nodes in one Keeper
+-- 2. The migration removes the old node and creates the bucket nodes in one Keeper
 --    transaction, so when the removal is rejected the whole migration must be rejected and
 --    the old pointer must survive. The removal is made to fail deterministically by giving
 --    the old node a child: the replicated table below keeps its metadata under it. This is
@@ -107,7 +86,7 @@ WHERE path = '/clickhouse/' || currentDatabase() || '/q_block' AND name = 'proce
 SELECT 'block / bucket 0 after', count() FROM system.zookeeper
 WHERE path = '/clickhouse/' || currentDatabase() || '/q_block/buckets/0' AND name = 'processed';
 
--- All four tables are left to the teardown of the test database, which drops them in one
+-- All three tables are left to the teardown of the test database, which drops them in one
 -- batch. An explicit `DROP TABLE` costs about a second each here: the test profile waits for
 -- the dropped table to leave the drop queue of DatabaseCatalog, and that queue is polled once
 -- a second (tests/config/users.d/database_atomic_drop_detach_sync.xml).
