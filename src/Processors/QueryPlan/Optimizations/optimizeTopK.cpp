@@ -374,6 +374,15 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
     const bool where_clause
         = filter_step || read_from_mergetree_step->getPrewhereInfo() || read_from_mergetree_step->getRowLevelFilter();
 
+    /// Both the read-time skip-index pruning (`TopKThresholdTracker` in `MergeTreeIndexReadResultPool`) and the
+    /// `__topKFilter` drop rows before the `WHERE` / `PREWHERE` / row-level filter and the expressions below the
+    /// sort see them, so a function sensitive to the evaluation count (`sleepEachRow`, `rowNumberInAllBlocks`, ...)
+    /// there would be evaluated on a different set of rows. Refused before stamping: `applyParallelReplicas` keeps
+    /// a stamped read local even if no filter is added later.
+    const auto mergetree_row_level_filter = read_from_mergetree_step->getRowLevelFilter();
+    if (actions_depend_on_block || (mergetree_row_level_filter && dependsOnItsBlock(mergetree_row_level_filter->actions)))
+        return 0;
+
     const auto & read_columns = read_from_mergetree_step->getAllColumnNames();
     if (std::find(read_columns.begin(), read_columns.end(), sort_column_name) == read_columns.end())
     {
@@ -414,10 +423,6 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
         && !isVariant(sort_column.type)
         && (!sort_column_tuple_type || !sort_column_tuple_type->getElements().empty())
         && (!sort_column_is_variable_length || settings.use_top_k_dynamic_filtering_for_variable_length_types);
-
-    /// Refused before stamping: `applyParallelReplicas` keeps a stamped read local even if no filter is added later.
-    if (use_dynamic_filtering && actions_depend_on_block)
-        use_dynamic_filtering = false;
 
     /// When read-in-order optimization is enabled and the sort column is a prefix
     /// of the storage's sorting key, the engine will read data in sorted order.
