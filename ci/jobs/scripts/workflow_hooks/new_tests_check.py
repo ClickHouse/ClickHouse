@@ -1,3 +1,4 @@
+import re
 import sys
 from pathlib import Path
 
@@ -80,6 +81,20 @@ def has_new_integration_test_docker_images(changed_files):
         # derive the test modules to run from changed `test_*.py` files and would
         # have nothing to run for a Docker-image-only change.
         if file.startswith("ci/docker/integration/") and Path(file).is_file():
+            return True
+    return False
+
+
+# A test is a `clickhouse-*` or `keeper-*` directory, the names `config.sh` runs; `tests/lib.sh` is a shared helper.
+_DOCKER_SERVER_TEST_RE = re.compile(
+    r"ci/jobs/scripts/docker_server/tests/(clickhouse|keeper)-[^/]+/"
+)
+
+
+def has_new_docker_server_tests(changed_files):
+    for file in changed_files:
+        file = file.removeprefix(".").removeprefix("/")
+        if _DOCKER_SERVER_TEST_RE.match(file) and Path(file).is_file():
             return True
     return False
 
@@ -216,6 +231,7 @@ def check():
     has_ft = has_new_functional_tests(changed_files)
     has_it = has_new_integration_tests(changed_files)
     has_docker = has_new_integration_test_docker_images(changed_files)
+    has_docker_server = has_new_docker_server_tests(changed_files)
 
     # Branching by what kinds of new tests the PR adds. The structure
     # below is deliberately mutually exclusive on the FT/IT-vs-rest axis
@@ -273,6 +289,14 @@ def check():
         print(
             "Integration test Docker image changed (no new functional/"
             "integration/unit tests) - pass"
+        )
+        return True
+
+    # Docker server/keeper image test, run by the `Docker server image` and `Docker keeper image` jobs, which have no Bugfix
+    # validation counterpart: accept it on its own, like a Docker image change.
+    if has_docker_server:
+        print(
+            "Docker image test changed (no new functional/integration/unit tests) - pass"
         )
         return True
 
