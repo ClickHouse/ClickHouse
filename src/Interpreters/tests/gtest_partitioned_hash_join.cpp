@@ -23,6 +23,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/assert_cast.h>
 #include <Common/scope_guard_safe.h>
@@ -40,6 +41,7 @@ extern const int MEMORY_LIMIT_EXCEEDED;
 namespace ProfileEvents
 {
 extern const Event QueryMemoryLimitExceeded;
+extern const Event HashJoinPreallocatedElementsInHashTables;
 }
 
 namespace
@@ -175,6 +177,9 @@ std::shared_ptr<TableJoin> makeTableJoin(const Block & left_header, const Block 
         settings.set("partitioned_hash_join_max_fanout_per_pass", *options.max_fanout_per_pass);
     if (!options.cap_partitions_by_l1_descriptors)
         settings.set("partitioned_hash_join_cap_partitions_by_l1_descriptors", false);
+    /// These tests read the shared table's geometry after the build; the dense sequential keys they
+    /// build would otherwise be converted to a range map.
+    settings.set("enable_join_fixed_hash_table_conversion", false);
     auto table_join = std::make_shared<TableJoin>(settings, JoinAnalyzeMode::None, /*tmp_volume=*/nullptr, /*tmp_data=*/nullptr);
     table_join->setKind(options.kind);
     table_join->getTableJoin().strictness = options.strictness;
@@ -970,7 +975,10 @@ TEST(PartitionedHashJoin, ArenaAndScratchPredictionsCoverActuals)
         EXPECT_EQ(stats.scratch_used_high_water, 28u * distinct_keys);
 }
 
-TEST(PartitionedHashJoin, ReusesCachedDistinctCountWithoutSketching)
+/// The statistics cache receives every build's exact distinct count. The next build under the same
+/// key sizes its table without sketching. A build that outgrows the cached count grows its table and
+/// republishes the count.
+TEST(PartitionedHashJoin, SizesTableFromPublishedStatistics)
 {
     static std::atomic<UInt64> key_counter{0};
     const UInt64 key = 0xC1D15117C4C4E000ULL + key_counter.fetch_add(1);
@@ -990,25 +998,32 @@ TEST(PartitionedHashJoin, ReusesCachedDistinctCountWithoutSketching)
     addBuildBlocks(*small.join, small_keys, /*duplicates=*/1, options);
     EXPECT_GT(small.join->getFillSketchEstimateForTests(), 0.0);
     finishBuild(small, options);
-    expectTableInvariants(small.join->getBuildStats(), small_keys, small_keys);
+    const auto small_stats = small.join->getBuildStats();
+    EXPECT_NEAR(small_stats.hll_estimate, static_cast<double>(small_keys), 0.05 * static_cast<double>(small_keys))
+        << "the first build under a key has no cached count and sizes from its sketch";
+    expectTableInvariants(small_stats, small_keys, small_keys);
     const auto published = getHashTablesStatistics<HashJoinEntry>().getSizeHint(params);
     ASSERT_TRUE(published.has_value());
     EXPECT_EQ(published->ht_size, small_keys);
 
+    /// The same key again: the cached count replaces the sketch without a reserve safety margin.
     auto warm = makeJoin(options);
     addBuildBlocks(*warm.join, small_keys, /*duplicates=*/2, options);
     EXPECT_EQ(warm.join->getFillSketchEstimateForTests(), 0.0);
-    warm.join->onBuildPhaseFinish();
-    warm.join->runPostBuildPhase();
-    expectTableInvariants(warm.join->getBuildStats(), small_keys, 2 * small_keys);
-    EXPECT_EQ(warm.join->getBuildStats().hll_estimate, static_cast<double>(small_keys));
-    EXPECT_EQ(warm.join->getBuildStats().bits, 4u);
+    finishBuild(warm, options);
+    const auto warm_stats = warm.join->getBuildStats();
+    EXPECT_EQ(warm_stats.hll_estimate, static_cast<double>(small_keys)) << "the cached count must have replaced the sketch";
+    EXPECT_EQ(warm_stats.table_size_degree, Key64Table::degreeFor(small_keys));
+    EXPECT_EQ(warm_stats.table_resizes, 0u);
+    EXPECT_EQ(warm_stats.bits, 4u);
+    expectTableInvariants(warm_stats, small_keys, 2 * small_keys);
     probeAndCheck(warm, small_keys, /*duplicates=*/2, /*misses=*/1000);
 
-    /// A stale count must not lose rows when the table grows.
+    /// Five times more keys than the cache says: the table starts at the cached size, grows during the
+    /// build, and republishes the larger count.
     auto large = buildJoin(large_keys, /*duplicates=*/1, options);
     const auto large_stats = large.join->getBuildStats();
-    EXPECT_EQ(large_stats.hll_estimate, static_cast<double>(small_keys));
+    EXPECT_EQ(large_stats.hll_estimate, static_cast<double>(small_keys)) << "the cached count is read whatever the data holds";
     EXPECT_GT(large_stats.table_resizes, 0u);
     expectTableInvariants(large_stats, large_keys, large_keys);
     probeAndCheck(large, large_keys, /*duplicates=*/1, /*misses=*/1000);
@@ -1027,81 +1042,91 @@ TEST(PartitionedHashJoin, ReusesCachedDistinctCountWithoutSketching)
     options.stats_collecting_params = &params;
     BuildOptions spill_options = options;
     spill_options.max_bytes_before_external_join = 1ULL << 30;
+    const auto spill_hint = getHashTablesStatistics<HashJoinEntry>().getSizeHint(params);
+    ASSERT_TRUE(spill_hint.has_value());
+    const auto preallocated_before = ProfileEvents::global_counters[ProfileEvents::HashJoinPreallocatedElementsInHashTables];
     auto spill = makeJoin(spill_options);
     addBuildBlocks(*spill.join, /*distinct_keys=*/10000, /*duplicates=*/1, spill_options);
     EXPECT_NEAR(spill.join->getFillSketchEstimateForTests(), 10000.0, 1000.0);
     EXPECT_GT(spill.join->predictedResidentBytes(), 0u);
     finishBuild(spill, spill_options);
+    EXPECT_EQ(spill.join->getBuildStats().hll_estimate, static_cast<double>(spill_hint->ht_size));
+    EXPECT_EQ(
+        ProfileEvents::global_counters[ProfileEvents::HashJoinPreallocatedElementsInHashTables] - preallocated_before,
+        spill_hint->ht_size);
     expectTableInvariants(spill.join->getBuildStats(), 10000, 10000);
 }
 
 TEST(PartitionedHashJoin, LiveEstimateGatePreservesFirstSpillPoint)
 {
-    constexpr size_t lanes = 4;
     constexpr size_t keys_per_block = 512;
     constexpr size_t blocks = 16;
-
-    const auto prediction_trace = [&](bool gate_enabled, std::vector<size_t> & estimates)
-    {
-        BuildOptions options;
-        options.num_threads = lanes;
-        options.max_bytes_before_external_join = 1ULL << 30;
-        auto built = makeJoin(options);
-        built.join->setLiveEstimateGateEnabledForTests(gate_enabled);
-
-        std::vector<size_t> predictions;
-        predictions.reserve(blocks + 6);
-        const auto add_block = [&](size_t first_key, size_t count, size_t lane, size_t block_no, bool repeat_key = false)
-        {
-            /// `SpillingHashJoin` checks the prediction before admitting each block.
-            predictions.push_back(built.join->predictedResidentBytes());
-            estimates.push_back(built.join->getCachedLiveDistinctEstimateForTests());
-
-            std::vector<UInt64> keys;
-            std::vector<UInt64> ids;
-            keys.reserve(count);
-            ids.reserve(count);
-            for (size_t i = 0; i < count; ++i)
-            {
-                keys.push_back(keyOf(first_key + (repeat_key ? 0 : i)));
-                ids.push_back(block_no * 20000 + i);
-            }
-            EXPECT_TRUE(addBuildBlock(*built.join, twoColumnBlock("rk", "build_id", keys, ids), lane));
-        };
-        for (size_t block_no = 0; block_no < blocks; ++block_no)
-            add_block(block_no < 12 ? (block_no % lanes) * keys_per_block : (lanes + block_no - 12) * keys_per_block,
-                keys_per_block, block_no % lanes, block_no);
-
-        add_block(100000, 11000, 0, blocks);
-        /// Repeating a key in its original lane forces a clean refresh before new keys arrive.
-        add_block(0, 1200, 0, blocks + 1, /*repeat_key=*/true);
-        add_block(200000, 1000, 2, blocks + 2);
-        add_block(0, 300, 0, blocks + 3, /*repeat_key=*/true);
-
-        /// The wrapper makes one last prediction when no further block can trigger a switch.
-        predictions.push_back(built.join->predictedResidentBytes(/*at_barrier=*/true));
-        estimates.push_back(built.join->getCachedLiveDistinctEstimateForTests());
-        return predictions;
-    };
-
-    std::vector<size_t> full_estimates;
-    std::vector<size_t> gated_estimates;
-    const auto full_merge = prediction_trace(/*gate_enabled=*/false, full_estimates);
-    const auto gated = prediction_trace(/*gate_enabled=*/true, gated_estimates);
-    ASSERT_EQ(gated.size(), full_merge.size());
-    EXPECT_EQ(gated, full_merge);
-    EXPECT_EQ(gated_estimates, full_estimates);
-    ASSERT_GT(*std::min_element(full_merge.begin(), full_merge.end()), 0u);
 
     const auto first_spill = [](const std::vector<size_t> & predictions, size_t budget)
     {
         return static_cast<size_t>(std::find_if(predictions.begin(), predictions.end(), [budget](size_t bytes) { return bytes >= budget; })
                                    - predictions.begin());
     };
-    for (size_t prediction : full_merge)
+
+    for (size_t lanes : {1, 2, 4, 8, 16})
     {
-        for (size_t budget : {prediction - 1, prediction, prediction + 1})
-            EXPECT_EQ(first_spill(gated, budget), first_spill(full_merge, budget)) << "budget " << budget;
+        SCOPED_TRACE(lanes);
+        const auto prediction_trace = [&](bool gate_enabled, std::vector<size_t> & estimates)
+        {
+            BuildOptions options;
+            options.num_threads = lanes;
+            options.max_bytes_before_external_join = 1ULL << 30;
+            auto built = makeJoin(options);
+            built.join->setLiveEstimateGateEnabledForTests(gate_enabled);
+
+            std::vector<size_t> predictions;
+            predictions.reserve(blocks + 6);
+            const auto add_block = [&](size_t first_key, size_t count, size_t lane, size_t block_no, bool repeat_key = false)
+            {
+                /// `SpillingHashJoin` checks the prediction before admitting each block.
+                predictions.push_back(built.join->predictedResidentBytes());
+                estimates.push_back(built.join->getCachedLiveDistinctEstimateForTests());
+
+                std::vector<UInt64> keys;
+                std::vector<UInt64> ids;
+                keys.reserve(count);
+                ids.reserve(count);
+                for (size_t i = 0; i < count; ++i)
+                {
+                    keys.push_back(keyOf(first_key + (repeat_key ? 0 : i)));
+                    ids.push_back(block_no * 20000 + i);
+                }
+                EXPECT_TRUE(addBuildBlock(*built.join, twoColumnBlock("rk", "build_id", keys, ids), lane));
+            };
+            for (size_t block_no = 0; block_no < blocks; ++block_no)
+                add_block(block_no * keys_per_block, keys_per_block, block_no % lanes, block_no);
+
+            add_block(100000, 11000, 0, blocks);
+            /// Repeating a key in its original lane forces a clean refresh before new keys arrive.
+            add_block(0, 1200, 0, blocks + 1, /*repeat_key=*/true);
+            add_block(200000, 1000, 2 % lanes, blocks + 2);
+            add_block(0, 300, 0, blocks + 3, /*repeat_key=*/true);
+
+            /// The wrapper makes one last prediction when no further block can trigger a switch.
+            predictions.push_back(built.join->predictedResidentBytes(/*at_barrier=*/true));
+            estimates.push_back(built.join->getCachedLiveDistinctEstimateForTests());
+            return predictions;
+        };
+
+        std::vector<size_t> full_estimates;
+        std::vector<size_t> gated_estimates;
+        const auto full_merge = prediction_trace(/*gate_enabled=*/false, full_estimates);
+        const auto gated = prediction_trace(/*gate_enabled=*/true, gated_estimates);
+        ASSERT_EQ(gated.size(), full_merge.size());
+        EXPECT_EQ(gated, full_merge);
+        EXPECT_EQ(gated_estimates, full_estimates);
+        ASSERT_GT(*std::min_element(full_merge.begin(), full_merge.end()), 0u);
+
+        for (size_t prediction : full_merge)
+        {
+            for (size_t budget : {prediction - 1, prediction, prediction + 1})
+                EXPECT_EQ(first_spill(gated, budget), first_spill(full_merge, budget)) << "budget " << budget;
+        }
     }
 }
 
