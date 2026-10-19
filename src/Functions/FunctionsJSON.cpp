@@ -346,12 +346,20 @@ private:
 
     struct Move
     {
-        explicit Move(MoveType type_, size_t index_ = 0) : type(type_), index(index_) {}
+        explicit Move(MoveType type_, Int64 index_ = 0) : type(type_), index(index_) {}
         Move(MoveType type_, const String & key_) : type(type_), key(key_) {}
         MoveType type;
-        size_t index = 0;
+        Int64 index = 0;
         String key;
     };
+
+    /// A UInt64 index above the Int64 range is past the end of any array or object.
+    static Int64 getIndex(const ColumnWithTypeAndName & argument, size_t row)
+    {
+        if (isNativeUInt(argument.type))
+            return static_cast<Int64>(std::min<UInt64>(argument.column->getUInt(row), std::numeric_limits<Int64>::max()));
+        return argument.column->getInt(row);
+    }
 
     static VectorWithMemoryTracking<FunctionJSONHelpers::Move> prepareMoves(
         const char * function_name,
@@ -376,7 +384,7 @@ private:
                 if (isString(column.type))
                     moves.emplace_back(MoveType::ConstKey, column_const.getValue<String>());
                 else
-                    moves.emplace_back(MoveType::ConstIndex, column_const.getInt(0));
+                    moves.emplace_back(MoveType::ConstIndex, getIndex(column, 0));
             }
             else
             {
@@ -405,7 +413,7 @@ private:
             {
                 case MoveType::ConstIndex:
                 {
-                    if (!moveToElementByIndex<JSONParser>(res_element, static_cast<int>(moves[j].index), key))
+                    if (!moveToElementByIndex<JSONParser>(res_element, moves[j].index, key))
                         return false;
                     break;
                 }
@@ -426,8 +434,8 @@ private:
                 }
                 case MoveType::Index:
                 {
-                    Int64 index = (*arguments[j + 1].column)[row].safeGet<Int64>();
-                    if (!moveToElementByIndex<JSONParser>(res_element, static_cast<int>(index), key))
+                    Int64 index = getIndex(arguments[j + 1], row);
+                    if (!moveToElementByIndex<JSONParser>(res_element, index, key))
                         return false;
                     break;
                 }
@@ -455,7 +463,7 @@ private:
     }
 
     template <typename JSONParser>
-    static bool moveToElementByIndex(typename JSONParser::Element & element, int index, std::string_view & out_key)
+    static bool moveToElementByIndex(typename JSONParser::Element & element, Int64 index, std::string_view & out_key)
     {
         if (element.isArray())
         {
