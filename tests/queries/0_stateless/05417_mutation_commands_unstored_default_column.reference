@@ -39,6 +39,13 @@ stored_input	0	0	1	10
 stored_input	1	1	2	-1
 stored_input	2	2	3	30
 stored_input	3	100	4	40
+dotted	0	0	10	100
+dotted	1	1	11	-1
+dotted	2	100	12	120
+no_match	0	0	0
+no_match	1	1	10
+no_match	2	2	20
+no_match	3	100	1000
 stored	0	0
 stored	1	10
 stored	2	20

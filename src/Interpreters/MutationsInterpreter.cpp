@@ -785,9 +785,14 @@ NameSet MutationsInterpreter::getColumnsReadByDefault(
         RequiredSourceColumnsVisitor(required_columns).visit(expression);
         for (const auto & required : required_columns.requiredColumns())
         {
-            Names reads{required, Nested::splitName(required).first};
-            if (auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required); column && column->isSubcolumn())
-                reads.push_back(column->getNameInStorage());
+            Names reads{required};
+            if (auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required))
+            {
+                if (column->isSubcolumn())
+                    reads.push_back(column->getNameInStorage());
+            }
+            else
+                reads.push_back(Nested::splitName(required).first);
 
             for (const auto & read : reads)
             {

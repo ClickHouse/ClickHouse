@@ -103,6 +103,24 @@ ALTER TABLE t_stored_input UPDATE a = -1 WHERE id = 1, UPDATE x = 100 WHERE id =
 SELECT 'stored_input', id, x, b, a FROM t_stored_input ORDER BY id;
 DROP TABLE t_stored_input;
 
+-- The DEFAULT reads a column with a dotted name, which an UPDATE of the column named by its prefix does not change.
+DROP TABLE IF EXISTS t_dotted;
+CREATE TABLE t_dotted (id Int64, a Int64, `a.b` Int64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_dotted SELECT number, number, number + 10 FROM numbers(3);
+ALTER TABLE t_dotted ADD COLUMN d Int64 DEFAULT `a.b` * 10;
+ALTER TABLE t_dotted UPDATE d = -1 WHERE id = 1, UPDATE a = 100 WHERE id = 2, MATERIALIZE COLUMN d;
+SELECT 'dotted', id, a, `a.b`, d FROM t_dotted ORDER BY id;
+DROP TABLE t_dotted;
+
+-- MATERIALIZE COLUMN after an UPDATE of the column that matches no row and an UPDATE of an input recomputes the column.
+DROP TABLE IF EXISTS t_no_match;
+CREATE TABLE t_no_match (id Int64, x Int64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_no_match SELECT number, number FROM numbers(4);
+ALTER TABLE t_no_match ADD COLUMN a Int64 DEFAULT x * 10;
+ALTER TABLE t_no_match UPDATE a = -1 WHERE id = 100, UPDATE x = 100 WHERE id = 3, MATERIALIZE COLUMN a;
+SELECT 'no_match', id, x, a FROM t_no_match ORDER BY id;
+DROP TABLE t_no_match;
+
 -- A stored column is not recomputed.
 DROP TABLE IF EXISTS t_stored;
 CREATE TABLE t_stored (id Int64, x Int64, y Int64) ENGINE = MergeTree ORDER BY id;
