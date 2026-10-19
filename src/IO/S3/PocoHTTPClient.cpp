@@ -16,7 +16,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/re2.h>
-#include <IO/Expect404ResponseScope.h>
 #include <IO/GCPOAuth.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
@@ -103,15 +102,6 @@ namespace HistogramMetrics
 
 namespace DB::S3
 {
-
-bool isS3WrongSigningRegionBadRequest(int status_code, const Poco::Net::HTTPMessage & response)
-{
-    if (status_code != Poco::Net::HTTPResponse::HTTP_BAD_REQUEST)
-        return false;
-    if (!response.has("x-amz-bucket-region"))
-        return false;
-    return !response.get("x-amz-bucket-region").empty();
-}
 
 String httpResponseCodeToString(Aws::Http::HttpResponseCode response_code)
 {
@@ -686,31 +676,9 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
             int status_code = static_cast<int>(poco_response.getStatus());
 
-            if (status_code >= SUCCESS_RESPONSE_MIN && status_code <= SUCCESS_RESPONSE_MAX)
-            {
-                if (enable_s3_requests_logging)
-                    LOG_TEST(log, "Response status: {}, {}", status_code, poco_response.getReason());
-            }
-            else if (Poco::Net::HTTPResponse::HTTP_PRECONDITION_FAILED == status_code)
-            {
-                /// PreconditionFailed (412) is an expected response for conditional writes
-                /// (e.g. If-None-Match: *), not a genuine error.
-                LOG_INFO(log, "Response status: {}, {}", status_code, poco_response.getReason());
-            }
-            else if (isS3WrongSigningRegionBadRequest(status_code, poco_response))
-            {
-                /// Wrong signing region: S3 returns 400 and `x-amz-bucket-region`; `getRegionForBucket` recovers.
-                LOG_INFO(
-                    log,
-                    "Response status: {}, {}. Wrong signing region.",
-                    status_code,
-                    poco_response.getReason());
-            }
-            else if (Poco::Net::HTTPResponse::HTTP_NOT_FOUND != status_code || !Expect404ResponseScope::is404Expected())
-            {
-                /// Error statuses are more important so we show them even if `enable_s3_requests_logging == false`.
-                LOG_ERROR(log, "Response status: {}, {}", status_code, poco_response.getReason());
-            }
+            /// Errors are classified and reported by the client after the SDK parses the response.
+            if (enable_s3_requests_logging)
+                LOG_TEST(log, "Response status: {}, {}", status_code, poco_response.getReason());
 
             if (poco_response.getStatus() == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT)
             {
