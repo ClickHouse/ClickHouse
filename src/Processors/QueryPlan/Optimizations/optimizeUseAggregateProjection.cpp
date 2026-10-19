@@ -1257,14 +1257,6 @@ UseProjectionsResult optimizeUseAggregateProjections(
         hypothetical->outcome.rejected_for_query = true;
         recordHypotheticalOutcome(*hypothetical, result, nullptr, false);
     }
-    auto record_hypothetical = [&](const AggregateProjectionCandidate * best)
-    {
-        const AggregateProjectionCandidate * own = nullptr;
-        for (const auto & candidate : candidates.real)
-            if (candidate.projection == hypothetical_projection)
-                own = &candidate;
-        recordHypotheticalOutcome(*hypothetical, result, own, own && own == best);
-    };
 
     auto logger = getLogger("optimizeUseAggregateProjections");
     const auto & query_info = reading->getQueryInfo();
@@ -1505,7 +1497,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
         if (!best_candidate && exact_count == 0)
         {
             if (hypothetical)
-                record_hypothetical(nullptr);
+                recordHypotheticalOutcome(*hypothetical, result, findCandidate(candidates.real, hypothetical_projection), false);
             return result;
         }
     }
@@ -1548,7 +1540,8 @@ UseProjectionsResult optimizeUseAggregateProjections(
 
     if (hypothetical)
     {
-        record_hypothetical(best_candidate);
+        const auto * own = findCandidate(candidates.real, hypothetical_projection);
+        recordHypotheticalOutcome(*hypothetical, result, own, own == best_candidate);
         /// never read a hypothetical projection
         if (best_candidate && best_candidate->projection == hypothetical_projection)
             return result;

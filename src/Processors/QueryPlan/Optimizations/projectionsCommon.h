@@ -83,6 +83,16 @@ struct ProjectionCandidate
 
 struct UseProjectionsResult;
 
+/// the candidate of the projection, or nullptr if the optimizer did not analyze it
+template <typename Candidates>
+const ProjectionCandidate * findCandidate(const Candidates & candidates, const ProjectionDescription * projection)
+{
+    for (const auto & candidate : candidates)
+        if (candidate.projection == projection)
+            return &candidate;
+    return nullptr;
+}
+
 /// fills the outcome of the hypothetical projection from its candidate, or only the reject reason with no candidate
 void recordHypotheticalOutcome(
     HypotheticalProjection & hypothetical, const UseProjectionsResult & result, const ProjectionCandidate * candidate, bool chosen);

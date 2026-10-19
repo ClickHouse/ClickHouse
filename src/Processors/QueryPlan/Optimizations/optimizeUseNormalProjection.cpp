@@ -476,13 +476,6 @@ UseProjectionsResult optimizeUseNormalProjections(
 
     std::list<NormalProjectionCandidate> candidates;
     NormalProjectionCandidate * best_candidate = nullptr;
-    auto hypothetical_candidate = [&]() -> const NormalProjectionCandidate *
-    {
-        for (const auto & candidate : candidates)
-            if (candidate.projection == &hypothetical->projection)
-                return &candidate;
-        return nullptr;
-    };
 
     const auto & query_info = reading->getQueryInfo();
     auto parent_reading_select_result = reading->getAnalyzedResult();
@@ -723,7 +716,7 @@ UseProjectionsResult optimizeUseNormalProjections(
     if (!best_candidate)
     {
         if (hypothetical)
-            recordHypotheticalOutcome(*hypothetical, result, hypothetical_candidate(), false);
+            recordHypotheticalOutcome(*hypothetical, result, findCandidate(candidates, &hypothetical->projection), false);
         return result;
     }
 
@@ -756,7 +749,8 @@ UseProjectionsResult optimizeUseNormalProjections(
 
     if (hypothetical)
     {
-        recordHypotheticalOutcome(*hypothetical, result, hypothetical_candidate(), hypothetical_candidate() == best_candidate);
+        const auto * own = findCandidate(candidates, &hypothetical->projection);
+        recordHypotheticalOutcome(*hypothetical, result, own, own == best_candidate);
         /// never read a hypothetical projection
         if (best_candidate->projection == &hypothetical->projection)
             return result;
