@@ -32,6 +32,10 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#if CLICKHOUSE_CLOUD
+#include <Access/ContextAccess.h>
+#include <Access/EnabledMaskingPolicies.h>
+#endif
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
@@ -65,6 +69,7 @@
 #include <Common/FailPoint.h>
 #include <Common/ThreadPool.h>
 #include <base/sleep.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
@@ -929,12 +934,32 @@ static bool partHasStaleTopKIndex(
     if (part->hasLightweightDelete())
         return true;
 
+    /// A Cloud masking policy rewrites the indexed column on read but is not part of the mutation
+    /// snapshot: getAlterConversionsForPart appends it as an UPDATE command independently of the flags
+    /// checked below. A table with only a masking policy therefore has none of hasDataMutations,
+    /// hasAlterMutations or hasPatchParts set, so without this gate it would skip the canUseIndex check
+    /// and let top-k rank/prune by the unmasked minmax. Include enabled masking policies for this part's
+    /// table in the gate so such parts reach the overlap check.
+#if CLICKHOUSE_CLOUD
+    const auto enabled_masking_policies = context->getAccess()->getEnabledMaskingPolicies();
+    const auto & storage_id = part->storage.getStorageID();
+    const bool has_masking_policies = enabled_masking_policies
+        && !enabled_masking_policies->getPolicies(storage_id.database_name, storage_id.table_name).empty();
+#else
+    const bool has_masking_policies = false;
+#endif
+
     /// Pending on-the-fly mutations or patch parts not yet written into the part. hasAlterMutations()
     /// covers ALTER MODIFY COLUMN, which is a READ_COLUMN alter mutation (not a data mutation or patch).
     if (mutations_snapshot
-        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts()))
+        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations()
+            || mutations_snapshot->hasPatchParts() || has_masking_policies))
     {
-        auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context);
+        auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context
+#if CLICKHOUSE_CLOUD
+                    , enabled_masking_policies
+#endif
+                );
 
         /// A pending delete hides rows of any value -> the index is stale. This covers both a
         /// lightweight DELETE (rewritten as an UPDATE of _row_exists) and an ordinary ALTER DELETE
@@ -1429,9 +1454,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             for (size_t job = 0; job < num_jobs; ++job)
             {
                 pool.scheduleOrThrowOnError(
-                    [&, thread_group = CurrentThread::getGroup()]
+                    [&, thread_group = CurrentThread::getGroup(), component_name = Coordination::getCurrentComponent()]
                     {
                         ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_INDEX);
+                        /// ThreadGroupSwitcher does not carry the Keeper component, so propagate it
+                        /// explicitly: skip-index analysis below may read from a Keeper-backed disk.
+                        auto local_component_guard = Coordination::setCurrentComponent(component_name);
 
                         /// The pool is finished once a job has thrown or its destructor has started, then the other parts are abandoned.
                         while (!pool.isFinished())
