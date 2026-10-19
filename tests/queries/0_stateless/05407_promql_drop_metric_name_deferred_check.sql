@@ -18,16 +18,20 @@ INSERT INTO ts (metric_name, tags, samples) VALUES
     ('b', map('host', '1'), [(toDateTime64(90, 3), 10), (toDateTime64(100, 3), 20)]),
     ('c', map('host', '2'), [(toDateTime64(190, 3), 10), (toDateTime64(200, 3), 20)]),
     ('d', map('host', '2'), [(toDateTime64(90, 3), 10), (toDateTime64(100, 3), 20)]),
-    ('e', map('host', '3'), [(toDateTime64(90, 3), 10), (toDateTime64(100, 3), 20), (toDateTime64(190, 3), 30), (toDateTime64(200, 3), 40)]);
+    ('e', map('host', '3'), [(toDateTime64(90, 3), 10), (toDateTime64(100, 3), 20), (toDateTime64(190, 3), 30), (toDateTime64(200, 3), 40)]),
+    ('f', map('host', '2'), [(toDateTime64(290, 3), 10), (toDateTime64(300, 3), 20)]),
+    ('g', map('host', '2'), [(toDateTime64(190, 3), 10), (toDateTime64(200, 3), 20)]);
 
 SELECT '-- series with values at the same step are duplicates after the metric name is dropped';
 SELECT * FROM prometheusQueryRange(ts, 'rate({__name__=~"a|b", host="1"}[20s])', 100, 300, 100); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
 SELECT * FROM prometheusQueryRange(ts, 'sum(rate({__name__=~"a|b", host="1"}[20s]))', 100, 300, 100); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
 SELECT * FROM prometheusQueryRange(ts, 'sum by (host) (rate({__name__=~"a|b", host="1"}[20s]))', 100, 300, 100); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
 SELECT * FROM prometheusQuery(ts, 'rate({__name__=~"a|b", host="1"}[20s])', 100); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
+SELECT * FROM prometheusQueryRange(ts, 'rate({__name__=~"c|d|f|g", host="2"}[20s])', 100, 300, 100); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
 
 SELECT '-- series with values at different steps are merged after the metric name is dropped';
 SELECT * FROM prometheusQueryRange(ts, 'rate({__name__=~"c|d", host="2"}[20s])', 100, 300, 100) ORDER BY ALL;
+SELECT * FROM prometheusQueryRange(ts, 'rate({__name__=~"c|d|f", host="2"}[20s])', 100, 300, 100) ORDER BY ALL;
 SELECT * FROM prometheusQueryRange(ts, 'sum(rate({__name__=~"c|d", host="2"}[20s]))', 100, 300, 100) ORDER BY ALL;
 SELECT * FROM prometheusQueryRange(ts, 'sum by (host) (rate({__name__=~"c|d|e"}[20s]))', 100, 300, 100) ORDER BY ALL;
 SELECT * FROM prometheusQueryRange(ts, 'topk(1, rate({__name__=~"c|d", host="2"}[20s]))', 100, 300, 100) ORDER BY ALL;

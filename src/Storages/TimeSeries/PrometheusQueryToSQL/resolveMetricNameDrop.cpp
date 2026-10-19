@@ -1,10 +1,8 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/resolveMetricNameDrop.h>
 
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTWindowDefinition.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/makeNoDuplicateSeriesPerStepCheck.h>
@@ -34,15 +32,14 @@ namespace
         return context.subqueries.back().name;
     }
 
-    /// SELECT new_group AS group, values FROM <from_table> [UNION ALL SELECT new_group AS group, values FROM <union_table>]
-    ASTPtr makeRenamingQuery(const String & from_table, const String & union_table)
+    /// SELECT new_group AS group, values FROM <from_table>
+    ASTPtr makeRenamingQuery(const String & from_table)
     {
         SelectQueryBuilder builder;
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
         builder.select_list.back()->setAlias(ColumnNames::Group);
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
         builder.from_table = from_table;
-        builder.union_table = union_table;
         return builder.getSelectQuery();
     }
 
@@ -63,87 +60,27 @@ namespace
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
         builder.from_table = addSubquery(std::move(vector_grid), SQLSubqueryType::TABLE, context);
 
-        return makeRenamingQuery(addSubquery(builder.getSelectQuery(), SQLSubqueryType::TABLE, context), /* union_table = */ "");
+        return makeRenamingQuery(addSubquery(builder.getSelectQuery(), SQLSubqueryType::TABLE, context));
     }
+}
 
-    /// Drops the metric name and merges series which get the same tags, checking that they don't have values at the same step.
-    /// Only such series go through the array aggregates, the others are passed as they are.
-    ///
-    /// Step 1 (materialized because steps 2 and 3 both read it):
-    /// SELECT timeSeriesRemoveTag(group, '__name__') AS new_group, values, count() OVER (PARTITION BY new_group) AS series_count
-    /// FROM <vector_grid>
-    ///
-    /// Step 2:
-    /// SELECT new_group, values
-    /// FROM step1
-    /// WHERE series_count = 1
-    ///
-    /// Step 3:
-    /// SELECT new_group, anyForEach(values) AS values
-    /// FROM step1
-    /// WHERE series_count > 1
-    /// GROUP BY new_group
-    /// HAVING timeSeriesThrowDuplicateSeriesIf(arrayExists(c -> c > 1, countForEach(step1.values)), new_group) = 0
-    ///
-    /// Step 4:
-    /// SELECT new_group AS group, values FROM step2
-    /// UNION ALL
-    /// SELECT new_group AS group, values FROM step3
-    ASTPtr dropMetricNameAndMergeDuplicates(ASTPtr vector_grid, ConverterContext & context)
-    {
-        String counted_grid;
-        {
-            SelectQueryBuilder builder;
-            builder.select_list.push_back(makeRemoveMetricNameAST(make_intrusive<ASTIdentifier>(ColumnNames::Group)));
-            builder.select_list.back()->setAlias(ColumnNames::NewGroup);
-            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
 
-            auto partition_by = make_intrusive<ASTExpressionList>();
-            partition_by->children.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
+ASTPtr dropMetricNameAndMergeDuplicates(ASTPtr vector_grid, ConverterContext & context)
+{
+    String vector_grid_name = addSubquery(std::move(vector_grid), SQLSubqueryType::TABLE, context);
 
-            auto window_definition = make_intrusive<ASTWindowDefinition>();
-            window_definition->partition_by = partition_by;
-            window_definition->children.push_back(std::move(partition_by));
+    SelectQueryBuilder builder;
+    builder.select_list.push_back(makeRemoveMetricNameAST(make_intrusive<ASTIdentifier>(ColumnNames::Group)));
+    builder.select_list.back()->setAlias(ColumnNames::NewGroup);
+    builder.select_list.push_back(makeNoDuplicateSeriesPerStepValues(make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+    builder.select_list.back()->setAlias(ColumnNames::Values);
+    builder.from_table = vector_grid_name;
+    builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
+    builder.having = makeNoDuplicateSeriesPerStepCheck(
+        make_intrusive<ASTIdentifier>(Strings{vector_grid_name, ColumnNames::Values}),
+        make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
 
-            auto series_count = makeASTFunction("count");
-            series_count->setIsWindowFunction(true);
-            series_count->setKind(ASTFunction::Kind::WINDOW_FUNCTION);
-            series_count->window_definition = window_definition;
-            series_count->children.push_back(std::move(window_definition));
-            series_count->setAlias(ColumnNames::SeriesCount);
-            builder.select_list.push_back(std::move(series_count));
-
-            builder.from_table = addSubquery(std::move(vector_grid), SQLSubqueryType::TABLE, context);
-            counted_grid = addSubquery(builder.getSelectQuery(), SQLSubqueryType::MATERIALIZED_TABLE, context);
-        }
-
-        String unique_series;
-        {
-            SelectQueryBuilder builder;
-            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
-            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
-            builder.from_table = counted_grid;
-            builder.where = makeASTFunction("equals", make_intrusive<ASTIdentifier>(ColumnNames::SeriesCount), make_intrusive<ASTLiteral>(1u));
-            unique_series = addSubquery(builder.getSelectQuery(), SQLSubqueryType::TABLE, context);
-        }
-
-        String merged_series;
-        {
-            SelectQueryBuilder builder;
-            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
-            builder.select_list.push_back(makeNoDuplicateSeriesPerStepValues(make_intrusive<ASTIdentifier>(ColumnNames::Values)));
-            builder.select_list.back()->setAlias(ColumnNames::Values);
-            builder.from_table = counted_grid;
-            builder.where = makeASTFunction("greater", make_intrusive<ASTIdentifier>(ColumnNames::SeriesCount), make_intrusive<ASTLiteral>(1u));
-            builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
-            builder.having = makeNoDuplicateSeriesPerStepCheck(
-                make_intrusive<ASTIdentifier>(Strings{counted_grid, ColumnNames::Values}),
-                make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
-            merged_series = addSubquery(builder.getSelectQuery(), SQLSubqueryType::TABLE, context);
-        }
-
-        return makeRenamingQuery(unique_series, merged_series);
-    }
+    return makeRenamingQuery(addSubquery(builder.getSelectQuery(), SQLSubqueryType::TABLE, context));
 }
 
 

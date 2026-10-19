@@ -15,7 +15,22 @@ bool hasSingleMetricName(const PrometheusQueryTree::Node * node);
 /// Emits the SQL for a deferred drop of the metric name, see `SQLQueryPiece::metric_name_drop_pending`.
 /// Returns `query_piece` unchanged if no drop is pending.
 /// Must be called by every consumer which reads `group` of a VECTOR_GRID and relies on its uniqueness (toVectorGrid() does it).
+/// Series with one metric name only lose the tag; otherwise dropMetricNameAndMergeDuplicates() is used.
 SQLQueryPiece resolveMetricNameDrop(SQLQueryPiece && query_piece, ConverterContext & context);
+
+/// Drops the metric name from the series of `vector_grid` and merges the series which get the same tags,
+/// checking that they don't have values at the same step:
+///
+/// Step 1:
+/// SELECT timeSeriesRemoveTag(group, '__name__') AS new_group, anyForEach(values) AS values
+/// FROM <vector_grid>
+/// GROUP BY new_group
+/// HAVING timeSeriesThrowDuplicateSeriesIf(arrayExists(c -> c > 1, countForEach(<vector_grid>.values)), new_group) = 0
+///
+/// Step 2:
+/// SELECT new_group AS group, values
+/// FROM step1
+ASTPtr dropMetricNameAndMergeDuplicates(ASTPtr vector_grid, ConverterContext & context);
 
 /// Returns the `group` AST to pass to transformGroupASTForAggregationOperator() for an aggregation over `argument`
 /// which drops the metric name itself (`drop_metric_name = true`).
