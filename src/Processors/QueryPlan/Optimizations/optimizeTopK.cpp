@@ -129,7 +129,7 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
             read_from_mergetree_step->isSkipIndexAvailableForTopK(sort_column_name) && settings.use_skip_indexes_on_data_read) ||
         (settings.use_top_k_dynamic_filtering && !read_from_mergetree_step->getPrewhereInfo()))
     {
-        threshold_tracker = std::make_shared<TopKThresholdTracker>(direction);
+        threshold_tracker = std::make_shared<TopKThresholdTracker>(direction, sort_column.type);
         sorting_step->setTopKThresholdTracker(threshold_tracker);
     }
 
