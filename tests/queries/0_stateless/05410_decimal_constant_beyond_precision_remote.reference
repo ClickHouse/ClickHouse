@@ -1,0 +1,27 @@
+Decimal(18, 18)	Decimal(9, 9)	1.2
+-- local
+1
+1	1	1	2	1	1
+-- remote
+1
+1	1	1	2	1	1
+2
+1
+-- Distributed
+1
+1	1	1	2	1	1
+-- filter pushed down into a subquery
+1
+-- serialized query plan
+1
+-- parallel replicas
+1
+-- values computed by the other server
+1	1.2	0.5
+1	-1	170141183
+5789604
+[1,0.5]	(1,1)	{'a':1}	1
+1	1
+-- the bounds of the precision and of the native integer
+0.999999999999999999	1	-2.147483648
+5789604.4618658097711785492504343953926634992332820282019728792003956564819967
