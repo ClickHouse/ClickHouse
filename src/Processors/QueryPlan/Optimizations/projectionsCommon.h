@@ -77,7 +77,15 @@ struct ProjectionCandidate
 
     /// Parent parts that need to be read due to missing this projection
     std::unordered_set<const IMergeTreeDataPart *> parent_parts;
+    /// Rows of the parent parts that need to be read due to missing this projection
+    size_t parent_rows = 0;
 };
+
+struct UseProjectionsResult;
+
+/// fills the outcome of the hypothetical projection from its candidate, or only the reject reason with no candidate
+void recordHypotheticalOutcome(
+    HypotheticalProjection & hypothetical, const UseProjectionsResult & result, const ProjectionCandidate * candidate, bool chosen);
 
 /// Removes parts not in valid_parts from reading_select_result and updates related counters.
 /// Returns the number of parts removed.

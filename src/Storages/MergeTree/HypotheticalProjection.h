@@ -25,9 +25,11 @@ struct HypotheticalProjection
         /// empty until the optimizer analyzes the projection
         std::optional<UInt64> marks;
         UInt64 rows = 0;
-        /// the rows read from the base table for the parts with no projection part
-        UInt64 base_table_rows = 0;
         bool chosen = false;
+        /// the optimizer weighed the projection for this query
+        bool weighed = false;
+        /// the optimizer takes an aggregate projection also at the marks of the base table, as it reads aggregated rows
+        bool equal_marks_suffice = false;
         /// chosen only because a forcing setting cancels a rejection
         bool forced = false;
         /// the projection order serves the ORDER BY of the query
