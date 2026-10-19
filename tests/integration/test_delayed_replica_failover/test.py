@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import uuid
 
 import pytest
 
@@ -8,6 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -199,3 +201,52 @@ SELECT sum(x) FROM distributed SETTINGS
             ).strip()
             == "7"
         )
+
+
+def test_global_in_pushed_down_to_stale_local_replica(started_cluster):
+    # A GLOBAL IN pushed down into the query of a shard with a stale local replica must use the initiator's set.
+    node_1_1.query("SYSTEM DISABLE FAILPOINT replicated_merge_tree_all_replicas_stale")
+    try:
+        node_1_2.query(
+            "INSERT INTO replicated VALUES ('2017-05-08', 1), ('2017-05-08', 2), ('2017-05-08', 3)"
+        )
+        node_1_1.query("SYSTEM SYNC REPLICA replicated")
+        for node, values in ((node_1_1, "(1), (4)"), (node_1_2, "(1), (2)")):
+            node.query("CREATE TABLE ids (y UInt32) ENGINE = Memory")
+            node.query(f"INSERT INTO ids VALUES {values}")
+
+        node_1_1.query("SYSTEM STOP FETCHES replicated")
+        node_1_2.query("INSERT INTO replicated VALUES ('2017-05-08', 4)")
+        assert_eq_with_retry(
+            node_1_1,
+            "SELECT absolute_delay >= 2 FROM system.replicas WHERE database = 'default' AND table = 'replicated'",
+            "1",
+        )
+
+        query = """
+SELECT x FROM (SELECT * FROM distributed) WHERE x {} (SELECT y FROM ids) ORDER BY x SETTINGS
+    load_balancing='in_order',
+    max_replica_delay_for_distributed_queries=1,
+    prefer_localhost_replica=1,
+    serialize_query_plan=0,
+    allow_push_predicate_ast_for_distributed_subqueries=1
+"""
+        for op, function, expected in (
+            ("GLOBAL IN", "globalIn", ["1", "4"]),
+            ("GLOBAL NOT IN", "globalNotIn", ["2", "3"]),
+        ):
+            query_id = uuid.uuid4().hex
+            assert (
+                node_1_1.query(query.format(op), query_id=query_id).split() == expected
+            )
+            # Rows above + a pushed-down filter on the fresh replica mean it used the initiator's set.
+            node_1_2.query("SYSTEM FLUSH LOGS query_log")
+            shard_query = node_1_2.query(
+                "SELECT query FROM system.query_log WHERE type = 'QueryFinish' AND is_initial_query = 0 "
+                f"AND initial_query_id = '{query_id}' FORMAT TSVRaw"
+            )
+            assert f"{function}(" in shard_query, shard_query
+    finally:
+        node_1_1.query("SYSTEM START FETCHES replicated")
+        for node in (node_1_1, node_1_2):
+            node.query("DROP TABLE IF EXISTS ids SYNC")

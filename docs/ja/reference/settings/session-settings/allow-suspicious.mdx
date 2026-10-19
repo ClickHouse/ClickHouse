@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) に掲載されており、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="allow_suspicious_codecs">
-  ## allow_suspicious_codecs
-</div>
+## allow_suspicious_codecs {#allow_suspicious_codecs}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -23,27 +21,23 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 true に設定すると、無意味な圧縮コーデックの指定を許可します。
 
-<div id="allow_suspicious_fixed_string_types">
-  ## allow_suspicious_fixed_string_types
-</div>
+## allow_suspicious_fixed_string_types {#allow_suspicious_fixed_string_types}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 CREATE TABLE 文で、n &gt; 256 の FixedString(n) 型カラムの作成を許可します。長さが 256 以上の FixedString は疑わしく、ほとんどの場合は誤用を示しています
 
-<div id="allow_suspicious_indices">
-  ## allow_suspicious_indices
-</div>
+## allow_suspicious_indexes {#allow_suspicious_indexes}
+
+**別名**: `allow_suspicious_indices`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.4"},{"label": "0"},{"label": "true の場合、同一の式を持つ索引を定義できます"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "設定 `allow_suspicious_indices` の別名を追加しました。"}]}, {"id": "row-2","items": [{"label": "23.4"},{"label": "0"},{"label": "true の場合、同一の式を持つ索引を定義できます"}]}]} />
 
 同一の式を持つプライマリ索引、セカンダリ索引、およびソートキーを拒否します
 
-<div id="allow_suspicious_low_cardinality_types">
-  ## allow_suspicious_low_cardinality_types
-</div>
+## allow_suspicious_low_cardinality_types {#allow_suspicious_low_cardinality_types}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -62,9 +56,7 @@ CREATE TABLE 文で、n &gt; 256 の FixedString(n) 型カラムの作成を許�
 * 1 — `LowCardinality` の使用は制限されません。
 * 0 — `LowCardinality` の使用は制限されます。
 
-<div id="allow_suspicious_primary_key">
-  ## allow_suspicious_primary_key
-</div>
+## allow_suspicious_primary_key {#allow_suspicious_primary_key}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -72,9 +64,7 @@ CREATE TABLE 文で、n &gt; 256 の FixedString(n) 型カラムの作成を許�
 
 MergeTree で問題のある `PRIMARY KEY`/`ORDER BY` (つまり SimpleAggregateFunction) を許可します。
 
-<div id="allow_suspicious_ttl_expressions">
-  ## allow_suspicious_ttl_expressions
-</div>
+## allow_suspicious_ttl_expressions {#allow_suspicious_ttl_expressions}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -82,9 +72,7 @@ MergeTree で問題のある `PRIMARY KEY`/`ORDER BY` (つまり SimpleAggregate
 
 テーブルのいずれのカラムにも依存しない有効期限 (TTL) 式を拒否します。多くの場合、これはユーザーの誤りを示します。
 
-<div id="allow_suspicious_types_in_group_by">
-  ## allow_suspicious_types_in_group_by
-</div>
+## allow_suspicious_types_in_group_by {#allow_suspicious_types_in_group_by}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -92,9 +80,7 @@ MergeTree で問題のある `PRIMARY KEY`/`ORDER BY` (つまり SimpleAggregate
 
 GROUP BY キーで [Variant](/ja/reference/data-types/variant) 型および [Dynamic](/ja/reference/data-types/dynamic) 型の使用を許可または制限します。
 
-<div id="allow_suspicious_types_in_order_by">
-  ## allow_suspicious_types_in_order_by
-</div>
+## allow_suspicious_types_in_order_by {#allow_suspicious_types_in_order_by}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -102,9 +88,7 @@ GROUP BY キーで [Variant](/ja/reference/data-types/variant) 型および [Dyn
 
 ORDER BY キーでの [Variant](/ja/reference/data-types/variant) 型および [Dynamic](/ja/reference/data-types/dynamic) 型の使用を許可または禁止します。
 
-<div id="allow_suspicious_variant_types">
-  ## allow_suspicious_variant_types
-</div>
+## allow_suspicious_variant_types {#allow_suspicious_variant_types}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

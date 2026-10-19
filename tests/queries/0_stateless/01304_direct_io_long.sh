@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-object-storage, no-flaky-check, no-tsan, no-msan
+# Tags: long, no-object-storage, no-flaky-check, no-tsan, no-msan, no-asan
 # - no-msan - too slow
 # - no-flaky-check - It can be too long with ThreadFuzzer
 # - no-tsan - It is slow under TSan and may lead to query timeouts
