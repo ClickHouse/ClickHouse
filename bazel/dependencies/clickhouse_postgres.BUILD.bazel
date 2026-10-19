@@ -185,7 +185,6 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
     ],
-    features = ["system_include_paths"],
     implementation_deps = [
         "@clickhouse_openssl//:crypto",
         "@clickhouse_openssl//:ssl",

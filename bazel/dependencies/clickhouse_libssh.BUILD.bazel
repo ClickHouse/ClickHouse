@@ -351,7 +351,6 @@ ch_cc_library(
             "contrib/libssh-cmake/linux/aarch64",
         ],
     })),
-    features = ["system_include_paths"],
     language = "C",
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",

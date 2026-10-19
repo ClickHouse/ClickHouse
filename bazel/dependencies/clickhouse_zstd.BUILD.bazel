@@ -123,7 +123,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/zstd") + "/lib/common",
     ],
-    features = ["system_include_paths"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -167,7 +166,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/zstd") + "/lib/common",
     ],
-    features = ["system_include_paths"],
     language = "ASM",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [

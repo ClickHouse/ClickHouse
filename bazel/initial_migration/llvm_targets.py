@@ -221,7 +221,6 @@ def declare_from_references(root, references):
         })
     build.rule('cc_library', 'libcxxabi_headers', {
         'hdrs': Glob(['libcxxabi/include/*.h']),
-        'features': ['system_include_paths'],
         'includes': ['libcxxabi/include'],
     })
     for path in RUNTIME_ROOT_INPUTS:

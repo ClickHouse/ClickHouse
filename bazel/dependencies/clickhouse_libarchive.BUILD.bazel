@@ -830,7 +830,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/zstd") + "/lib",
     ],
-    features = ["system_include_paths"],
     language = "C",
     local_defines = select({
         "@platforms//cpu:x86_64": [

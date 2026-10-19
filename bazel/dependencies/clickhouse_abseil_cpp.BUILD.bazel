@@ -20,8 +20,6 @@ _GENERATED_COPTS_0 = [
     "-nostdinc++",
 ]
 
-_GENERATED_FEATURES_0 = ["system_include_paths"]
-
 ch_cc_library(
     name = "absl_base",
     srcs = [
@@ -59,7 +57,6 @@ ch_cc_library(
         ":absl/base/internal/unscaledcycleclock.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -120,7 +117,6 @@ ch_cc_library(
         ":absl/base/internal/cpu_detect.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -154,7 +150,6 @@ ch_cc_library(
         ":absl/hash/internal/city.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -199,7 +194,6 @@ ch_cc_library(
         ":absl/time/internal/cctz/src/civil_time_detail.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -277,7 +271,6 @@ ch_cc_library(
         ":absl/strings/cord_analysis.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -326,7 +319,6 @@ ch_cc_library(
         ":absl/strings/internal/cord_rep_consume.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -384,7 +376,6 @@ ch_cc_library(
         ":absl/strings/internal/cordz_functions.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -461,7 +452,6 @@ ch_cc_library(
         ":absl/strings/internal/cordz_handle.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -495,7 +485,6 @@ ch_cc_library(
         ":absl/strings/internal/cordz_info.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -567,7 +556,6 @@ ch_cc_library(
         ":absl/strings/internal/cordz_sample_token.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -610,7 +598,6 @@ ch_cc_library(
         ":absl/crc/internal/crc_non_temporal_memcpy.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -665,7 +652,6 @@ ch_cc_library(
         ":absl/crc/internal/crc_cord_state.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -724,7 +710,6 @@ ch_cc_library(
         ":absl/crc/internal/crc_x86_arm_combined.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -797,7 +782,6 @@ ch_cc_library(
         ":absl/debugging/internal/utf8_for_code_point.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -834,7 +818,6 @@ ch_cc_library(
         ":absl/debugging/internal/demangle_rust.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -868,7 +851,6 @@ ch_cc_library(
         ":absl/log/die_if_null.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -949,7 +931,6 @@ ch_cc_library(
         ":absl/debugging/internal/examine_stack.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -1006,7 +987,6 @@ ch_cc_library(
         ":absl/profiling/internal/exponential_biased.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -1040,7 +1020,6 @@ ch_cc_library(
         ":absl/debugging/failure_signal_handler.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -1098,7 +1077,6 @@ ch_cc_library(
         ":absl/flags/commandlineflag.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -1151,7 +1129,6 @@ ch_cc_library(
         ":absl/flags/internal/commandlineflag.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -1185,7 +1162,6 @@ ch_cc_library(
         ":absl/flags/usage_config.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -1249,7 +1225,6 @@ ch_cc_library(
         ":absl/flags/internal/flag.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -1339,7 +1314,6 @@ ch_cc_library(
         ":absl/flags/marshalling.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -1373,7 +1347,6 @@ ch_cc_library(
         ":absl/flags/parse.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -1461,7 +1434,6 @@ ch_cc_library(
         ":absl/flags/internal/private_handle_accessor.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -1515,7 +1487,6 @@ ch_cc_library(
         ":absl/flags/internal/program_name.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -1549,7 +1520,6 @@ ch_cc_library(
         ":absl/flags/reflection.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -1632,7 +1602,6 @@ ch_cc_library(
         ":absl/flags/usage.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -1719,7 +1688,6 @@ ch_cc_library(
         ":absl/flags/internal/usage.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -1805,7 +1773,6 @@ ch_cc_library(
         ":absl/synchronization/internal/graphcycles.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -1853,7 +1820,6 @@ ch_cc_library(
         ":absl/base/internal/hardening.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -1887,7 +1853,6 @@ ch_cc_library(
         ":absl/hash/internal/hash.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -1943,7 +1908,6 @@ ch_cc_library(
         ":absl/container/internal/hashtablez_sampler_force_weak_definition.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -2007,7 +1971,6 @@ ch_cc_library(
         ":absl/numeric/int128.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -2064,7 +2027,6 @@ ch_cc_library(
         ":absl/synchronization/internal/kernel_timeout.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -2098,7 +2060,6 @@ ch_cc_library(
         ":absl/debugging/leak_check.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -2132,7 +2093,6 @@ ch_cc_library(
         ":absl/log/flags.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -2221,7 +2181,6 @@ ch_cc_library(
         ":absl/log/globals.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -2288,7 +2247,6 @@ ch_cc_library(
         ":absl/log/initialize.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -2357,7 +2315,6 @@ ch_cc_library(
         ":absl/log/internal/check_op.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -2437,7 +2394,6 @@ ch_cc_library(
         ":absl/log/internal/conditions.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -2491,7 +2447,6 @@ ch_cc_library(
         ":absl/log/internal/fnmatch.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -2525,7 +2480,6 @@ ch_cc_library(
         ":absl/log/internal/log_format.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -2582,7 +2536,6 @@ ch_cc_library(
         ":absl/log/internal/globals.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -2616,7 +2569,6 @@ ch_cc_library(
         ":absl/log/internal/log_sink_set.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -2686,7 +2638,6 @@ ch_cc_library(
         ":absl/log/internal/log_message.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -2765,7 +2716,6 @@ ch_cc_library(
         ":absl/log/internal/nullguard.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -2799,7 +2749,6 @@ ch_cc_library(
         ":absl/log/internal/proto.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -2833,7 +2782,6 @@ ch_cc_library(
         ":absl/log/internal/structured_proto.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -2886,7 +2834,6 @@ ch_cc_library(
         ":absl/base/log_severity.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -2920,7 +2867,6 @@ ch_cc_library(
         ":absl/log/log_sink.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -2954,7 +2900,6 @@ ch_cc_library(
         ":absl/base/internal/low_level_alloc.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -2988,7 +2933,6 @@ ch_cc_library(
         ":absl/profiling/internal/periodic_sampler.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -3035,7 +2979,6 @@ ch_cc_library(
         ":absl/random/gaussian_distribution.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -3072,7 +3015,6 @@ ch_cc_library(
         ":absl/random/internal/distribution_test_util.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -3106,7 +3048,6 @@ ch_cc_library(
         ":absl/random/internal/entropy_pool.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -3176,7 +3117,6 @@ ch_cc_library(
         ":absl/random/internal/randen_round_keys.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -3210,7 +3150,6 @@ ch_cc_library(
         ":absl/random/internal/randen.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -3257,7 +3196,6 @@ ch_cc_library(
         ":absl/random/internal/randen_detect.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -3314,7 +3252,6 @@ ch_cc_library(
         ":absl/random/internal/randen_hwaes.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -3348,7 +3285,6 @@ ch_cc_library(
         ":absl/random/internal/randen_slow.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -3382,7 +3318,6 @@ ch_cc_library(
         ":absl/random/internal/seed_material.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -3416,7 +3351,6 @@ ch_cc_library(
         ":absl/random/seed_gen_exception.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -3450,7 +3384,6 @@ ch_cc_library(
         ":absl/random/seed_sequences.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -3504,7 +3437,6 @@ ch_cc_library(
         ":absl/container/internal/raw_hash_set.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -3571,7 +3503,6 @@ ch_cc_library(
         ":absl/base/internal/raw_logging.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -3615,7 +3546,6 @@ ch_cc_library(
         ":absl/base/internal/scoped_set_env.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -3649,7 +3579,6 @@ ch_cc_library(
         ":absl/base/internal/spinlock_wait.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -3683,7 +3612,6 @@ ch_cc_library(
         ":absl/debugging/stacktrace.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -3738,7 +3666,6 @@ ch_cc_library(
         ":absl/status/status_payload_printer.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -3813,7 +3740,6 @@ ch_cc_library(
         ":absl/status/statusor.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -3904,7 +3830,6 @@ ch_cc_library(
         ":absl/strings/internal/str_format/parser.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -3938,7 +3863,6 @@ ch_cc_library(
         ":absl/base/internal/strerror.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -4011,7 +3935,6 @@ ch_cc_library(
         ":absl/strings/substitute.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -4068,7 +3991,6 @@ ch_cc_library(
         ":absl/strings/internal/escaping.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -4102,7 +4024,6 @@ ch_cc_library(
         ":absl/debugging/symbolize.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -4190,7 +4111,6 @@ ch_cc_library(
         ":absl/synchronization/mutex.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -4252,7 +4172,6 @@ ch_cc_library(
         ":absl/base/throw_delegate.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -4298,7 +4217,6 @@ ch_cc_library(
         ":absl/time/time.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -4376,7 +4294,6 @@ ch_cc_library(
         ":absl/time/internal/cctz/src/zone_info_source.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -4410,7 +4327,6 @@ ch_cc_library(
         ":absl/log/internal/vlog_config.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",

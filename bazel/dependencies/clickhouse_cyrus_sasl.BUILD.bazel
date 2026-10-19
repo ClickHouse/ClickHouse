@@ -147,7 +147,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/cyrus-sasl") + "/tests",
     ]),
-    features = ["system_include_paths"],
     language = "C",
     local_defines = [
         "'CONFIGDIR=\"\"'",

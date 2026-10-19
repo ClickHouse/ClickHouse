@@ -1586,7 +1586,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_3,
     alwayslink = False,
@@ -1726,7 +1725,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":llvm_headers",
@@ -1784,7 +1782,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_4,
     alwayslink = False,
@@ -1826,7 +1823,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":llvm_headers",
@@ -1900,7 +1896,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_5,
     alwayslink = False,
@@ -1920,7 +1915,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_4,
     alwayslink = False,
@@ -1939,7 +1933,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_4,
     alwayslink = False,
@@ -1955,7 +1948,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_5,
     alwayslink = False,
@@ -1971,7 +1963,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_4,
     alwayslink = False,
@@ -2014,7 +2005,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_6,
     alwayslink = False,
@@ -2266,7 +2256,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":llvm_headers",
@@ -2311,7 +2300,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_5,
     alwayslink = False,
@@ -2406,7 +2394,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":llvm_headers",
@@ -2447,7 +2434,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":llvm_headers",
@@ -2532,7 +2518,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_5,
     alwayslink = False,
@@ -2579,7 +2564,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_6,
     alwayslink = False,
@@ -2600,7 +2584,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":llvm_headers",
@@ -2629,7 +2612,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":llvm_headers",
@@ -2693,7 +2675,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_7,
     alwayslink = False,
@@ -2714,7 +2695,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_4,
     alwayslink = False,
@@ -2732,7 +2712,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_4,
     alwayslink = False,
@@ -2751,7 +2730,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":llvm_headers",
@@ -2853,7 +2831,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_8,
     alwayslink = False,
@@ -2869,7 +2846,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_3,
     alwayslink = False,
@@ -2885,7 +2861,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_7,
     alwayslink = False,
@@ -2901,7 +2876,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":llvm_headers",
@@ -2949,7 +2923,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_3,
     alwayslink = False,
@@ -2992,7 +2965,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_3,
     alwayslink = False,
@@ -3009,7 +2981,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_3,
     alwayslink = False,
@@ -3109,7 +3080,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_9,
     alwayslink = False,
@@ -3145,7 +3115,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_10,
     alwayslink = False,
@@ -3173,7 +3142,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_10,
     alwayslink = False,
@@ -3196,7 +3164,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_3,
     alwayslink = False,
@@ -3247,7 +3214,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":llvm_headers",
@@ -3309,7 +3275,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":llvm_headers",
@@ -3350,7 +3315,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":llvm_headers",
@@ -3419,7 +3383,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_4,
     alwayslink = False,
@@ -3445,7 +3408,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":llvm_headers",
@@ -3480,7 +3442,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_6,
     alwayslink = False,
@@ -3510,7 +3471,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_4,
     alwayslink = False,
@@ -3606,7 +3566,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_3,
     alwayslink = False,
@@ -3647,7 +3606,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_8,
     alwayslink = False,
@@ -3831,7 +3789,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     alwayslink = False,
@@ -3882,7 +3839,6 @@ ch_cc_library(
             repository_path("contrib/llvm-project") + "/llvm/lib/Target/AArch64",
         ],
     })),
-    features = ["system_include_paths"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -3970,7 +3926,6 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    features = ["system_include_paths"],
     language = "ASM",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = select({
@@ -4013,7 +3968,6 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    features = ["system_include_paths"],
     language = "ASM",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = select({
@@ -4055,7 +4009,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_7,
     alwayslink = False,
@@ -4085,7 +4038,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_5,
     alwayslink = False,
@@ -4115,7 +4067,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_9,
     alwayslink = False,
@@ -4224,7 +4175,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_7,
     alwayslink = False,
@@ -4272,7 +4222,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_3,
     alwayslink = False,
@@ -4392,7 +4341,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_1
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     deps = (select({
@@ -4472,7 +4420,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_1
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     deps = (select({
@@ -4515,7 +4462,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_1
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     deps = (select({
@@ -4563,7 +4509,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_6,
     alwayslink = False,
@@ -4623,7 +4568,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_0
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":llvm_headers",
@@ -12466,7 +12410,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_3
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_5,
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_1,
     deps = (select({
@@ -12543,7 +12486,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_3
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_5,
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_1,
     deps = (select({
@@ -12586,7 +12528,6 @@ ch_cc_library(
     copts = (
         _GENERATED_COPTS_3
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_5,
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_1,
     deps = (select({
@@ -12619,7 +12560,6 @@ filegroup(
 cc_library(
     name = "libcxxabi_headers",
     hdrs = glob(["libcxxabi/include/*.h"]),
-    features = ["system_include_paths"],
     includes = ["libcxxabi/include"],
 )
 

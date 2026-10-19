@@ -4201,9 +4201,6 @@ ch_cc_library(
         "-g1",
         "-nostdinc++",
     ],
-    features = [
-        "system_include_paths",
-    ],
     local_defines = ([
         "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
         "AWS_ENABLE_EPOLL",

@@ -13229,7 +13229,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/libarchive") + "/libarchive",
     ]),
-    features = ["system_include_paths"],
     local_defines = select({
         "@platforms//cpu:x86_64": [
             "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",

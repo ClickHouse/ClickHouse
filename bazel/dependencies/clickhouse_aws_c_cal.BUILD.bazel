@@ -594,9 +594,6 @@ ch_cc_library(
         "-std=gnu11",
         "-g1",
     ],
-    features = [
-        "system_include_paths",
-    ],
     language = "C",
     local_defines = ([
         "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",

@@ -75,7 +75,6 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    features = ["system_include_paths"],
     language = "C",
     local_defines = select({
         "@platforms//cpu:x86_64": [

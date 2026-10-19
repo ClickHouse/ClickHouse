@@ -240,7 +240,6 @@ ch_cc_library(
         "-I",
         "contrib/libxml2-cmake/linux_x86_64/include",
     ],
-    features = ["system_include_paths"],
     language = "C",
     local_defines = select({
         "@platforms//cpu:x86_64": [

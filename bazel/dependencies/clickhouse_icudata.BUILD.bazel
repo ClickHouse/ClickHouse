@@ -21,9 +21,6 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ],
-    features = [
-        "system_include_paths",
-    ],
     language = "ASM",
     local_defines = [
         "'DEFAULT_ICU_PLUGINS=\"/dev/null\"'",

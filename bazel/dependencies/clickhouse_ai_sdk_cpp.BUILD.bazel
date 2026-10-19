@@ -108,7 +108,6 @@ ch_cc_library(
     ] + _GENERATED_HEADER_INPUTS_4 + []) + [
     ],
     copts = _GENERATED_COPTS_0,
-    features = ["system_include_paths"],
     local_defines = [
         "AI_SDK_HAS_ANTHROPIC=1",
         "CPPHTTPLIB_BROTLI_SUPPORT=1",
@@ -151,7 +150,6 @@ ch_cc_library(
     ] + _GENERATED_HEADER_INPUTS_4 + []) + [
     ],
     copts = _GENERATED_COPTS_0,
-    features = ["system_include_paths"],
     local_defines = [
         "CPPHTTPLIB_BROTLI_SUPPORT=1",
         "CPPHTTPLIB_OPENSSL_SUPPORT=1",
@@ -201,7 +199,6 @@ ch_cc_library(
     ] + _GENERATED_HEADER_INPUTS_4 + []) + [
     ],
     copts = _GENERATED_COPTS_0,
-    features = ["system_include_paths"],
     local_defines = [
         "AI_SDK_HAS_OPENAI=1",
         "CPPHTTPLIB_BROTLI_SUPPORT=1",

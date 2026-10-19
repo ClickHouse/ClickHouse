@@ -413,7 +413,6 @@ ch_cc_library(
         "-std=c++23",
         "-nostdinc++",
     ],
-    features = ["system_include_paths"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = ([
         "src/bsoncxx/include",
@@ -795,7 +794,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/zstd") + "/lib",
     ],
-    features = ["system_include_paths"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = ([
         "src/mongocxx/include",

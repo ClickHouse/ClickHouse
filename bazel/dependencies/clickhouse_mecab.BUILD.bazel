@@ -53,7 +53,6 @@ ch_cc_library(
         "-I",
         "contrib/MeCab-cmake",
     ],
-    features = ["system_include_paths"],
     local_defines = [
         "HAVE_CONFIG_H",
         "STD_EXCEPTION_HAS_STACK_TRACE=1",

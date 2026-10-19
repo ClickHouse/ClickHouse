@@ -907,9 +907,6 @@ ch_cc_library(
         "-std=gnu11",
         "-g1",
     ],
-    features = [
-        "system_include_paths",
-    ],
     language = "C",
     local_defines = ([
         "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
@@ -1761,9 +1758,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     features = select({
-        "@platforms//cpu:x86_64": [
-            "system_include_paths",
-        ],
+        "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [],
     }),
     language = "C",

@@ -39,7 +39,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/libfiu") + "/libfiu",
     ],
-    features = ["system_include_paths"],
     language = "C",
     local_defines = [
         "DUMMY_BACKTRACE",

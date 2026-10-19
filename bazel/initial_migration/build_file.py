@@ -710,7 +710,6 @@ class BuildFile:
                 LocalInclude('contrib/openssl-cmake/common/include', self.owner),
                 'include',
             ]
-            attrs['features'] = ['system_include_paths']
         if kind in {'cc_library', 'cc_binary', 'cc_test', 'cc_import'}:
             self.loads.setdefault('@rules_cc//cc:' + kind + '.bzl', set()).add(kind)
         elif kind == 'nasm_objects':
@@ -946,13 +945,10 @@ class BuildFile:
                 if binary:
                     del binary_attrs['hdrs'], binary_attrs['textual_hdrs']
                 # A binary and its first compile group share these features.
-                binary_attrs['features'] = select({
-                    '@platforms//cpu:' + arch: ['-static_link_cpp_runtimes', '-fortify_source',
-                                                '-llvm_system_c_headers'] +
-                    (['-default_compile_flags'] if name == 'clickhouse' else []) +
-                    (['system_include_paths'] if system_includes.get(arch) else [])
-                    for arch in ARCHES
-                })
+                binary_attrs['features'] = (
+                    ['-static_link_cpp_runtimes', '-fortify_source', '-llvm_system_c_headers'] +
+                    (['-default_compile_flags'] if name == 'clickhouse' else [])
+                )
                 continue
             languages = {g['language'] for g in groups.values()}
             if 'ASM_NASM' in languages:
@@ -975,8 +971,7 @@ class BuildFile:
                 # The LLVM toolchain otherwise forces frame pointers in Release.
                 'features': select({
                     '@platforms//cpu:' + arch: ['-fortify_source', '-default_compile_flags'] +
-                    (['-llvm_system_c_headers'] if arch in native else []) +
-                    (['system_include_paths'] if system_includes.get(arch) else [])
+                    (['-llvm_system_c_headers'] if arch in native else [])
                     for arch in ARCHES
                 }),
                 'target_compatible_with': compatible,

@@ -1751,8 +1751,6 @@ _GENERATED_LOCAL_INCLUDES_0 = select({
     ),
 ]
 
-_GENERATED_FEATURES_0 = ["system_include_paths"]
-
 ch_cc_library(
     name = "google_cloud_cpp_api_annotations_protos",
     srcs = select({
@@ -1786,7 +1784,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -2049,7 +2046,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -2211,7 +2207,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -2261,7 +2256,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -2438,7 +2432,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -2595,7 +2588,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -2645,7 +2637,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -2695,7 +2686,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -2745,7 +2735,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -2902,7 +2891,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -2960,7 +2948,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -3010,7 +2997,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -3068,7 +3054,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -3118,7 +3103,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -3168,7 +3152,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -3218,7 +3201,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -3268,7 +3250,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -3318,7 +3299,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -3368,7 +3348,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -3418,7 +3397,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -3575,7 +3553,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -3848,7 +3825,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -3906,7 +3882,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -3964,7 +3939,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -4022,7 +3996,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -4072,7 +4045,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -4130,7 +4102,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -4180,7 +4151,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -4230,7 +4200,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -4502,7 +4471,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -4552,7 +4520,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -4602,7 +4569,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -4769,7 +4735,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -4819,7 +4784,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -4976,7 +4940,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -5026,7 +4989,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -5198,7 +5160,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -5792,7 +5753,6 @@ ch_cc_library(
         ":google/cloud/version.cc",
     ]),
     copts = _GENERATED_COPTS_1,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = (select({
         "@platforms//cpu:x86_64": [
@@ -6015,7 +5975,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/re2"),
     ],
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = ([
         repository_local_include(
@@ -6333,7 +6292,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -6495,7 +6453,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -6682,7 +6639,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -6879,7 +6835,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -6937,7 +6892,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -7104,7 +7058,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -7429,7 +7382,6 @@ ch_cc_library(
         "@clickhouse//:contrib/google-cloud-cpp-cmake/poco_rest_client.cc",
     ]),
     copts = _GENERATED_COPTS_1,
-    features = _GENERATED_FEATURES_0,
     local_defines = [
         "POCO_ENABLE_CPP11",
         "POCO_OS_FAMILY_UNIX",
@@ -7631,7 +7583,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -7681,7 +7632,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -7731,7 +7681,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -7781,7 +7730,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -8259,7 +8207,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/crc32c") + "/include",
     ],
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = ([
         repository_local_include(
@@ -8456,7 +8403,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/re2"),
     ],
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -8668,7 +8614,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -8718,7 +8663,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -8768,7 +8712,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -8818,7 +8761,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -8868,7 +8810,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -8918,7 +8859,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -8968,7 +8908,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -9018,7 +8957,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -9068,7 +9006,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -9118,7 +9055,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -9168,7 +9104,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -9218,7 +9153,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -9268,7 +9202,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -9318,7 +9251,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -9368,7 +9300,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -9418,7 +9349,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({
@@ -9468,7 +9398,6 @@ ch_cc_library(
     ] + [
     ]) + _GENERATED_HEADER_INPUTS_9) + _GENERATED_HEADER_INPUTS_10) + _GENERATED_HEADER_INPUTS_11) + _GENERATED_HEADER_INPUTS_12) + _GENERATED_HEADER_INPUTS_13) + _GENERATED_HEADER_INPUTS_14),
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     textual_hdrs = select({

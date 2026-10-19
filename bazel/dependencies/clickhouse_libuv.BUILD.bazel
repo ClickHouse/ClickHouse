@@ -64,7 +64,6 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
     ],
-    features = ["system_include_paths"],
     language = "C",
     local_defines = [
         "CLICKHOUSE_GLIBC_COMPATIBILITY",

@@ -2,6 +2,7 @@ common --check_direct_dependencies=error
 
 common --incompatible_strict_action_env
 common --compilation_mode=opt
+common --features=system_include_paths
 # Common CMake flags for ClickHouse's native libraries. Per-target copts
 # retain exceptions such as -ffp-contract=fast on the array functions.
 common --copt=-O3

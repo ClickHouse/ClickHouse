@@ -936,7 +936,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/minizip-ng") + "/compat",
     ]),
-    features = ["system_include_paths"],
     local_defines = select({
         "@platforms//cpu:x86_64": [
             "CASS_BUILDING",
@@ -1093,7 +1092,6 @@ ch_cc_library(
             "-nostdinc++",
         ]
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_1,
     alwayslink = True,
@@ -1125,7 +1123,6 @@ ch_cc_library(
             "-nostdinc++",
         ]
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_1,
     alwayslink = True,
@@ -1156,7 +1153,6 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
     ],
-    features = ["system_include_paths"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [

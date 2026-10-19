@@ -104,7 +104,6 @@ ch_cc_library(
     ]) + [
     ],
     copts = _GENERATED_COPTS_0,
-    features = ["system_include_paths"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "c++/src",
@@ -201,7 +200,6 @@ ch_cc_library(
     ]) + [
     ],
     copts = _GENERATED_COPTS_0,
-    features = ["system_include_paths"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "c++/src",
@@ -311,7 +309,6 @@ ch_cc_library(
         ":c++/src/kj/filesystem-disk-unix.c++",
     ],
     copts = _GENERATED_COPTS_0,
-    features = ["system_include_paths"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "c++/src",

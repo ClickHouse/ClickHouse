@@ -303,7 +303,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/mongo-c-driver") + "/src/common/src/src",
     ],
-    features = ["system_include_paths"],
     language = "C",
     local_defines = [
         "BSON_COMPILATION",
@@ -599,7 +598,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/zstd") + "/lib",
     ],
-    features = ["system_include_paths"],
     language = "C",
     local_defines = [
         "MONGOC_COMPILATION",

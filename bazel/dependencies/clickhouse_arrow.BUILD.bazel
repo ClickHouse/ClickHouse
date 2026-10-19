@@ -3029,7 +3029,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/zstd") + "/lib",
     ],
-    features = ["system_include_paths"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = (select({
         "@platforms//cpu:x86_64": [
@@ -3302,7 +3301,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/zstd") + "/lib",
     ],
-    features = ["system_include_paths"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = (select({
@@ -3895,7 +3893,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/re2"),
     ]),
-    features = ["system_include_paths"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = (select({
         "@platforms//cpu:x86_64": [
@@ -4440,7 +4437,6 @@ ch_cc_library(
         "-g1",
         "-nostdinc++",
     ],
-    features = ["system_include_paths"],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = (select({
         "@platforms//cpu:x86_64": [
@@ -4975,7 +4971,7 @@ cc_binary(
         ":cpp/tools/parquet/parquet_dump_schema.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_1 + ["system_include_paths"],
+    features = _GENERATED_FEATURES_1 + [],
     linkopts = _GENERATED_LINKOPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -5048,7 +5044,7 @@ cc_binary(
         ":cpp/tools/parquet/parquet_reader.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_1 + ["system_include_paths"],
+    features = _GENERATED_FEATURES_1 + [],
     linkopts = _GENERATED_LINKOPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -5121,7 +5117,7 @@ cc_binary(
         ":cpp/tools/parquet/parquet_scan.cc",
     ],
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_1 + ["system_include_paths"],
+    features = _GENERATED_FEATURES_1 + [],
     linkopts = _GENERATED_LINKOPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,

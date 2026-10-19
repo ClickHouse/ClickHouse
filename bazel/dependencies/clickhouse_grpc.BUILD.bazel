@@ -1656,7 +1656,6 @@ ch_cc_library(
     )) + [
     ],
     copts = _GENERATED_COPTS_0,
-    features = ["system_include_paths"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -1828,7 +1827,6 @@ ch_cc_library(
         ":src/core/util/windows/tmpfile.cc",
     ]),
     copts = _GENERATED_COPTS_1,
-    features = ["system_include_paths"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         repository_local_include(
@@ -3701,7 +3699,6 @@ ch_cc_library(
         ":src/core/xds/xds_client/xds_client.cc",
     ]),
     copts = _GENERATED_COPTS_2,
-    features = ["system_include_paths"],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = ([
         repository_local_include(
@@ -4860,7 +4857,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/re2"),
     ],
-    features = ["system_include_paths"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = ([
@@ -5205,7 +5201,6 @@ ch_cc_library(
         ":src/cpp/util/time_cc.cc",
     ]),
     copts = _GENERATED_COPTS_2,
-    features = ["system_include_paths"],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = ([
         repository_local_include(
@@ -5524,7 +5519,6 @@ ch_cc_library(
         ":src/cpp/util/time_cc.cc",
     ]),
     copts = _GENERATED_COPTS_1,
-    features = ["system_include_paths"],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = ([
         repository_local_include(
@@ -6189,7 +6183,6 @@ cc_binary(
         "-static_link_cpp_runtimes",
         "-fortify_source",
         "-llvm_system_c_headers",
-        "system_include_paths",
     ],
     linkopts = [
         "--no-default-config",
@@ -6410,7 +6403,6 @@ ch_cc_library(
         ":src/compiler/ruby_generator.cc",
     ]),
     copts = _GENERATED_COPTS_1,
-    features = ["system_include_paths"],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = _GENERATED_LOCAL_INCLUDES_1,
     deps = [
@@ -7806,7 +7798,6 @@ ch_cc_library(
         ":src/core/util/work_serializer.cc",
     ]),
     copts = _GENERATED_COPTS_1,
-    features = ["system_include_paths"],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = ([
         repository_local_include(
@@ -7988,7 +7979,6 @@ ch_cc_library(
         ":src/core/ext/upbdefs-gen/src/proto/grpc/channelz/v2/service.upbdefs.c",
     ]),
     copts = _GENERATED_COPTS_0,
-    features = ["system_include_paths"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = ([
@@ -8171,7 +8161,6 @@ ch_cc_library(
     )) + [
     ],
     copts = _GENERATED_COPTS_0,
-    features = ["system_include_paths"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -8237,7 +8226,6 @@ ch_cc_library(
     )) + [
     ],
     copts = _GENERATED_COPTS_0,
-    features = ["system_include_paths"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -8299,7 +8287,6 @@ ch_cc_library(
     )) + [
     ],
     copts = _GENERATED_COPTS_0,
-    features = ["system_include_paths"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -8349,7 +8336,6 @@ ch_cc_library(
     )) + [
     ],
     copts = _GENERATED_COPTS_0,
-    features = ["system_include_paths"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -8393,7 +8379,6 @@ ch_cc_library(
     )) + [
     ],
     copts = _GENERATED_COPTS_0,
-    features = ["system_include_paths"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -8465,7 +8450,6 @@ ch_cc_library(
     )) + [
     ],
     copts = _GENERATED_COPTS_0,
-    features = ["system_include_paths"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -8517,7 +8501,6 @@ ch_cc_library(
     )) + [
     ],
     copts = _GENERATED_COPTS_0,
-    features = ["system_include_paths"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -8563,7 +8546,6 @@ ch_cc_library(
     )) + [
     ],
     copts = _GENERATED_COPTS_0,
-    features = ["system_include_paths"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -8617,7 +8599,6 @@ ch_cc_library(
     )) + [
     ],
     copts = _GENERATED_COPTS_0,
-    features = ["system_include_paths"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,

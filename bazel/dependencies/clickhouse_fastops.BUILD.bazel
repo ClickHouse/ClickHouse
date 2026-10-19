@@ -69,7 +69,6 @@ ch_cc_library(
         "-std=c++23",
         "-nostdinc++",
     ],
-    features = ["system_include_paths"],
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
@@ -135,7 +134,6 @@ ch_cc_library(
             "-march=armv8-a+sve",
         ],
     }),
-    features = ["system_include_paths"],
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [

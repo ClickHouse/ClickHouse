@@ -54766,13 +54766,10 @@ ch_cc_library(
             "contrib/bech32/src",
         ]
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_5,
     alwayslink = False,
 )
-
-_GENERATED_FEATURES_0 = ["system_include_paths"]
 
 ch_cc_library(
     name = "_cityhash",
@@ -54791,7 +54788,6 @@ ch_cc_library(
         "-std=c++23",
         "-nostdinc++",
     ],
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "contrib/cityhash102/include",
@@ -54828,7 +54824,6 @@ ch_cc_library(
         "-std=c++23",
         "-nostdinc++",
     ],
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "contrib/consistent-hashing",
@@ -54865,7 +54860,6 @@ ch_cc_library(
             "contrib/libfarmhash",
         ]
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_5,
     alwayslink = False,
@@ -54934,7 +54928,6 @@ ch_cc_library(
             "contrib/libmetrohash/src",
         ]
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_5,
     alwayslink = False,
@@ -54963,7 +54956,6 @@ ch_cc_library(
             "contrib/murmurhash/include",
         ]
     ),
-    features = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_5,
     alwayslink = False,
@@ -55562,7 +55554,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/libarchive") + "/libarchive",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = select({
         "@platforms//cpu:x86_64": [
             "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
@@ -55881,7 +55872,6 @@ ch_cc_library(
             "bazel/config/aarch64/includes/configs",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -55987,7 +55977,6 @@ ch_cc_library(
             "bazel/config/aarch64/includes/configs",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
         "base/poco/JSON/include",
@@ -56056,7 +56045,6 @@ ch_cc_library(
             "bazel/config/aarch64/includes/configs",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -56287,7 +56275,6 @@ ch_cc_library(
             "bazel/config/aarch64/includes/configs",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     local_defines = [
         "POCO_ENABLE_CPP11",
         "POCO_HAVE_FD_EPOLL",
@@ -56747,7 +56734,6 @@ ch_cc_library(
     ]),
     clickhouse_code = True,
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_2,
     local_includes = _GENERATED_LOCAL_INCLUDES_1,
     deps = (((_GENERATED_DEPS_0 + [
@@ -56929,7 +56915,6 @@ ch_cc_library(
     }),
     clickhouse_code = True,
     copts = _GENERATED_COPTS_0,
-    features = _GENERATED_FEATURES_0,
     local_defines = select({
         "@platforms//cpu:x86_64": [
             "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
@@ -57093,7 +57078,6 @@ ch_cc_library(
             "bazel/config/aarch64/includes/configs",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
         "base/poco/Redis/include",
@@ -57339,7 +57323,6 @@ ch_cc_library(
             "bazel/config/aarch64/includes/configs",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
         "base/poco/Util/include",
@@ -57650,7 +57633,6 @@ ch_cc_library(
             "bazel/config/aarch64/includes/configs",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     local_defines = [
         "POCO_ENABLE_CPP11",
         "POCO_OS_FAMILY_UNIX",
@@ -57762,7 +57744,6 @@ ch_cc_library(
         "-I",
         "base/poco/Foundation/include",
     ]),
-    features = _GENERATED_FEATURES_0,
     language = "C",
     local_defines = [
         "PRIVATE",
@@ -57818,7 +57799,6 @@ ch_cc_library(
         "-std=c++23",
         "-nostdinc++",
     ],
-    features = _GENERATED_FEATURES_0,
     local_defines = select({
         "@platforms//cpu:x86_64": [
             "HAVE_ATTRIBUTE_ALIGNED",
@@ -59741,7 +59721,6 @@ ch_cc_library(
     ]),
     clickhouse_code = True,
     copts = _GENERATED_COPTS_1,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_3,
     local_includes = _GENERATED_LOCAL_INCLUDES_2,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -60323,7 +60302,6 @@ ch_cc_library(
     ]),
     clickhouse_code = True,
     copts = _GENERATED_COPTS_1,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_3,
     local_includes = _GENERATED_LOCAL_INCLUDES_2,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -60929,7 +60907,6 @@ ch_cc_library(
     ]),
     clickhouse_code = True,
     copts = _GENERATED_COPTS_1,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_3,
     local_includes = _GENERATED_LOCAL_INCLUDES_2,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -60992,7 +60969,6 @@ ch_cc_library(
             "bazel/config/aarch64/includes/configs",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     local_defines = [
         "ENABLE_MULTITARGET_CODE=1",
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -61457,7 +61433,6 @@ ch_cc_library(
     ]),
     clickhouse_code = True,
     copts = _GENERATED_COPTS_2,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_4,
     local_includes = _GENERATED_LOCAL_INCLUDES_3,
     deps = (_GENERATED_DEPS_7 + [
@@ -62031,7 +62006,6 @@ ch_cc_library(
     ]),
     clickhouse_code = True,
     copts = _GENERATED_COPTS_1,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_3,
     local_includes = _GENERATED_LOCAL_INCLUDES_2,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -67533,10 +67507,7 @@ ch_cc_library(
         "-I",
         repository_path("contrib/libarchive") + "/libarchive",
     ]),
-    features = [
-        "-static_link_cpp_runtimes",
-        "system_include_paths",
-    ],
+    features = ["-static_link_cpp_runtimes"],
     local_defines = _GENERATED_LOCAL_DEFINES_2,
     local_includes = _GENERATED_LOCAL_INCLUDES_4,
     deps = (((([
@@ -69241,7 +69212,6 @@ ch_cc_library(
             "$(GENDIR)/bazel/gen/aarch64/contrib/arrow-cmake/cpp/src",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_5,
     local_includes = _GENERATED_LOCAL_INCLUDES_5,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -70476,7 +70446,6 @@ ch_cc_library(
             "$(GENDIR)/bazel/gen/aarch64/contrib/arrow-cmake/cpp/src",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_5,
     local_includes = _GENERATED_LOCAL_INCLUDES_5,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -72682,7 +72651,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/idna") + "/include",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_6,
     local_includes = _GENERATED_LOCAL_INCLUDES_6,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -73719,7 +73687,6 @@ ch_cc_library(
         "-I",
         "base/readpassphrase",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_6,
     local_includes = _GENERATED_LOCAL_INCLUDES_7,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -74959,7 +74926,6 @@ ch_cc_library(
             "$(GENDIR)/bazel/gen/aarch64/contrib/arrow-cmake/cpp/src",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_5,
     local_includes = ([
         repository_path("contrib/boost"),
@@ -76601,7 +76567,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/idna") + "/include",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_6,
     local_includes = _GENERATED_LOCAL_INCLUDES_7,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -76781,7 +76746,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/libarchive") + "/libarchive",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_2,
     local_includes = _GENERATED_LOCAL_INCLUDES_4,
     deps = (_GENERATED_DEPS_7 + [
@@ -76953,7 +76917,6 @@ ch_cc_library(
         "-I",
         "rust/workspace/pco/include",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = select({
         "@platforms//cpu:x86_64": [
             "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
@@ -78207,7 +78170,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/idna") + "/include",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_6,
     local_includes = ([
         repository_path("contrib/boost"),
@@ -79472,7 +79434,6 @@ ch_cc_library(
             "$(GENDIR)/bazel/gen/aarch64/contrib/arrow-cmake/cpp/src",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_5,
     local_includes = _GENERATED_LOCAL_INCLUDES_8,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -80159,7 +80120,6 @@ ch_cc_library(
         "-I",
         "base/readpassphrase",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_5,
     local_includes = ([
         repository_path("contrib/boost"),
@@ -82027,7 +81987,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/idna") + "/include",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_6,
     local_includes = _GENERATED_LOCAL_INCLUDES_9,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -82712,7 +82671,6 @@ ch_cc_library(
             "$(GENDIR)/bazel/gen/aarch64/contrib/arrow-cmake/cpp/src",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_5,
     local_includes = _GENERATED_LOCAL_INCLUDES_8,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -83389,7 +83347,6 @@ ch_cc_library(
             "$(GENDIR)/bazel/gen/aarch64/contrib/arrow-cmake/cpp/src",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_5,
     local_includes = _GENERATED_LOCAL_INCLUDES_8,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -84113,7 +84070,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/idna") + "/include",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_6,
     local_includes = _GENERATED_LOCAL_INCLUDES_6,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -84854,7 +84810,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/idna") + "/include",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_6,
     local_includes = ([
         "contrib/jemalloc-cmake/include",
@@ -86438,7 +86393,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/idna") + "/include",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_6,
     local_includes = _GENERATED_LOCAL_INCLUDES_6,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -87172,7 +87126,6 @@ ch_cc_library(
         "-I",
         "base/readpassphrase",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_6,
     local_includes = _GENERATED_LOCAL_INCLUDES_7,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -88415,7 +88368,6 @@ ch_cc_library(
             "$(GENDIR)/bazel/gen/aarch64/contrib/arrow-cmake/cpp/src",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_5,
     local_includes = _GENERATED_LOCAL_INCLUDES_8,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -89381,7 +89333,6 @@ ch_cc_library(
             "$(GENDIR)/bazel/gen/aarch64/contrib/arrow-cmake/cpp/src",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_5,
     local_includes = _GENERATED_LOCAL_INCLUDES_10,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -90058,7 +90009,6 @@ ch_cc_library(
             "$(GENDIR)/bazel/gen/aarch64/contrib/arrow-cmake/cpp/src",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_5,
     local_includes = _GENERATED_LOCAL_INCLUDES_8,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -90793,7 +90743,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/idna") + "/include",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_6,
     local_includes = ([
         "contrib/cityhash102/include",
@@ -91773,7 +91722,6 @@ ch_cc_library(
             "$(GENDIR)/bazel/gen/aarch64/contrib/arrow-cmake/cpp/src",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_5,
     local_includes = _GENERATED_LOCAL_INCLUDES_8,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -92454,7 +92402,6 @@ ch_cc_library(
             "$(GENDIR)/bazel/gen/aarch64/contrib/arrow-cmake/cpp/src",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_5,
     local_includes = _GENERATED_LOCAL_INCLUDES_10,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -93176,7 +93123,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/idna") + "/include",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_6,
     local_includes = _GENERATED_LOCAL_INCLUDES_9,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -93904,7 +93850,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/idna") + "/include",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_6,
     local_includes = _GENERATED_LOCAL_INCLUDES_9,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -95577,7 +95522,6 @@ ch_cc_library(
     ]),
     clickhouse_code = True,
     copts = _GENERATED_COPTS_1,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_3,
     local_includes = _GENERATED_LOCAL_INCLUDES_10,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -96329,7 +96273,6 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    features = _GENERATED_FEATURES_0,
     local_defines = select({
         "@platforms//cpu:x86_64": [
             "AI_SDK_HAS_ANTHROPIC=1",
@@ -97064,7 +97007,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_11,
     deps = [
@@ -97194,7 +97136,6 @@ ch_cc_library(
     ]),
     clickhouse_code = True,
     copts = _GENERATED_COPTS_2,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_4,
     local_includes = ([
         "contrib/jemalloc-cmake/include",
@@ -97690,7 +97631,6 @@ ch_cc_library(
     ]),
     clickhouse_code = True,
     copts = _GENERATED_COPTS_3,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_7,
     local_includes = ([
         "contrib/jemalloc-cmake/include",
@@ -100953,7 +100893,6 @@ ch_cc_library(
         "-I",
         "$(GENDIR)/bazel/rust/delta_ffi_headers",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_8,
     local_includes = _GENERATED_LOCAL_INCLUDES_12,
     deps = (((_GENERATED_DEPS_1 + [
@@ -101456,7 +101395,6 @@ ch_cc_library(
         "-I",
         "$(GENDIR)/bazel/rust/delta_ffi_headers",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_8,
     local_includes = _GENERATED_LOCAL_INCLUDES_12,
     deps = (((_GENERATED_DEPS_1 + [
@@ -101960,7 +101898,6 @@ ch_cc_library(
         "-I",
         "$(GENDIR)/bazel/rust/delta_ffi_headers",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_8,
     local_includes = _GENERATED_LOCAL_INCLUDES_12,
     deps = (((_GENERATED_DEPS_1 + [
@@ -102464,7 +102401,6 @@ ch_cc_library(
         "-I",
         "$(GENDIR)/bazel/rust/delta_ffi_headers",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_8,
     local_includes = _GENERATED_LOCAL_INCLUDES_12,
     deps = (((_GENERATED_DEPS_1 + [
@@ -102808,7 +102744,6 @@ ch_cc_library(
     ]),
     clickhouse_code = True,
     copts = _GENERATED_COPTS_3,
-    features = _GENERATED_FEATURES_0,
     local_defines = select({
         "@platforms//cpu:x86_64": [
             "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
@@ -103770,7 +103705,6 @@ ch_cc_library(
     ]),
     clickhouse_code = True,
     copts = _GENERATED_COPTS_3,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_7,
     local_includes = _GENERATED_LOCAL_INCLUDES_13,
     deps = (_GENERATED_DEPS_10 + [
@@ -103878,7 +103812,6 @@ ch_cc_library(
     ]),
     clickhouse_code = True,
     copts = _GENERATED_COPTS_3,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_7,
     local_includes = _GENERATED_LOCAL_INCLUDES_13,
     deps = (_GENERATED_DEPS_10 + [
@@ -104221,7 +104154,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/libarchive") + "/libarchive",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = select({
         "@platforms//cpu:x86_64": [
             "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
@@ -106387,7 +106319,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/minizip-ng") + "/compat",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_9,
     local_includes = _GENERATED_LOCAL_INCLUDES_14,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -107819,7 +107750,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/minizip-ng") + "/compat",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_9,
     local_includes = _GENERATED_LOCAL_INCLUDES_14,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -109066,7 +108996,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/minizip-ng") + "/compat",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_9,
     local_includes = _GENERATED_LOCAL_INCLUDES_14,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -109805,7 +109734,6 @@ ch_cc_library(
         "-I",
         "src/Common/mysqlxx",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_4,
     local_includes = _GENERATED_LOCAL_INCLUDES_15,
     deps = ((([
@@ -111807,7 +111735,6 @@ ch_cc_library(
     ]),
     clickhouse_code = True,
     copts = _GENERATED_COPTS_4,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_10,
     local_includes = _GENERATED_LOCAL_INCLUDES_16,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -113027,7 +112954,6 @@ ch_cc_library(
             "$(GENDIR)/bazel/gen/aarch64/contrib/arrow-cmake/cpp/src",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_10,
     local_includes = _GENERATED_LOCAL_INCLUDES_16,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -114253,7 +114179,6 @@ ch_cc_library(
             "$(GENDIR)/bazel/gen/aarch64/contrib/arrow-cmake/cpp/src",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_10,
     local_includes = _GENERATED_LOCAL_INCLUDES_16,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -115472,7 +115397,6 @@ ch_cc_library(
             "$(GENDIR)/bazel/gen/aarch64/contrib/arrow-cmake/cpp/src",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_10,
     local_includes = _GENERATED_LOCAL_INCLUDES_16,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -116550,7 +116474,6 @@ ch_cc_library(
     ]),
     clickhouse_code = True,
     copts = _GENERATED_COPTS_4,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_3,
     local_includes = _GENERATED_LOCAL_INCLUDES_10,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -117156,7 +117079,6 @@ ch_cc_library(
     ]),
     clickhouse_code = True,
     copts = _GENERATED_COPTS_4,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_3,
     local_includes = _GENERATED_LOCAL_INCLUDES_10,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -122190,7 +122112,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/idna") + "/include",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_11,
     local_includes = _GENERATED_LOCAL_INCLUDES_6,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -123478,7 +123399,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/idna") + "/include",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_11,
     local_includes = _GENERATED_LOCAL_INCLUDES_6,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -124156,7 +124076,6 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    features = _GENERATED_FEATURES_0,
     local_defines = select({
         "@platforms//cpu:x86_64": [
             "AI_SDK_HAS_ANTHROPIC=1",
@@ -125504,7 +125423,6 @@ ch_cc_library(
     ]),
     clickhouse_code = True,
     copts = _GENERATED_COPTS_1,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_3,
     local_includes = _GENERATED_LOCAL_INCLUDES_10,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -126086,7 +126004,6 @@ ch_cc_library(
     ]),
     clickhouse_code = True,
     copts = _GENERATED_COPTS_1,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_3,
     local_includes = _GENERATED_LOCAL_INCLUDES_10,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -127601,7 +127518,6 @@ ch_cc_library(
     ]),
     clickhouse_code = True,
     copts = _GENERATED_COPTS_4,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_3,
     local_includes = _GENERATED_LOCAL_INCLUDES_17,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -128820,7 +128736,6 @@ ch_cc_library(
             "$(GENDIR)/bazel/gen/aarch64/contrib/arrow-cmake/cpp/src",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_3,
     local_includes = _GENERATED_LOCAL_INCLUDES_17,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -129342,7 +129257,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/re2"),
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = select({
         "@platforms//cpu:x86_64": [
             "ENABLE_MULTITARGET_CODE=1",
@@ -129679,7 +129593,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/libarchive") + "/libarchive",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_4,
     local_includes = _GENERATED_LOCAL_INCLUDES_4,
     deps = (_GENERATED_DEPS_7 + [
@@ -129782,7 +129695,6 @@ ch_cc_library(
     ]),
     clickhouse_code = True,
     copts = _GENERATED_COPTS_2,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_4,
     local_includes = _GENERATED_LOCAL_INCLUDES_4,
     deps = (_GENERATED_DEPS_7 + [
@@ -130780,7 +130692,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/antlr4-cpp-runtime") + "/runtime/Cpp/runtime/src",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_4,
     local_includes = _GENERATED_LOCAL_INCLUDES_4,
     deps = ((([
@@ -132496,7 +132407,6 @@ ch_cc_library(
             "$(GENDIR)/bazel/gen/aarch64/contrib/arrow-cmake/cpp/src",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_12,
     local_includes = _GENERATED_LOCAL_INCLUDES_18,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -134361,7 +134271,6 @@ ch_cc_library(
     ]),
     clickhouse_code = True,
     copts = _GENERATED_COPTS_1,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_12,
     local_includes = _GENERATED_LOCAL_INCLUDES_18,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -135564,7 +135473,6 @@ ch_cc_library(
     ]),
     clickhouse_code = True,
     copts = _GENERATED_COPTS_1,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_3,
     local_includes = ([
         "contrib/jemalloc-cmake/include",
@@ -136954,7 +136862,6 @@ ch_cc_library(
     ]),
     clickhouse_code = True,
     copts = _GENERATED_COPTS_1,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_3,
     local_includes = _GENERATED_LOCAL_INCLUDES_2,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -137135,7 +137042,6 @@ ch_cc_library(
     ],
     clickhouse_code = True,
     copts = _GENERATED_COPTS_5,
-    features = _GENERATED_FEATURES_0,
     local_defines = [
         "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
         "BOOST_ASIO_STANDALONE=1",
@@ -137760,7 +137666,6 @@ ch_cc_library(
         "-I",
         "rust/workspace/pco/include",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_7,
     local_includes = ([
         "contrib/cityhash102/include",
@@ -149449,7 +149354,6 @@ ch_cc_library(
             "$(GENDIR)/bazel/gen/aarch64/contrib/arrow-cmake/cpp/src",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_13,
     local_includes = _GENERATED_LOCAL_INCLUDES_19,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -150749,7 +150653,6 @@ ch_cc_library(
             "$(GENDIR)/bazel/gen/aarch64/contrib/arrow-cmake/cpp/src",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_13,
     local_includes = _GENERATED_LOCAL_INCLUDES_19,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -152062,7 +151965,6 @@ ch_cc_library(
             "$(GENDIR)/bazel/gen/aarch64/contrib/arrow-cmake/cpp/src",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_13,
     local_includes = _GENERATED_LOCAL_INCLUDES_19,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -153317,7 +153219,6 @@ ch_cc_library(
             "$(GENDIR)/bazel/gen/aarch64/contrib/arrow-cmake/cpp/src",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_13,
     local_includes = _GENERATED_LOCAL_INCLUDES_19,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -153975,7 +153876,6 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    features = _GENERATED_FEATURES_0,
     local_defines = select({
         "@platforms//cpu:x86_64": [
             "AI_SDK_HAS_ANTHROPIC=1",
@@ -154656,7 +154556,6 @@ ch_cc_library(
             ],
         })) + ["-Wno-error"])
     ),
-    features = [],
     language = "C",
     libcxx_headers = False,
     deps = [
@@ -154709,7 +154608,6 @@ ch_cc_library(
             ],
         }))
     ),
-    features = [],
     language = "ASM",
     libcxx_headers = False,
     deps = [
@@ -154776,7 +154674,6 @@ ch_cc_library(
             "bazel/config/aarch64/includes/configs",
         ],
     })),
-    features = _GENERATED_FEATURES_0,
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -154823,7 +154720,6 @@ ch_cc_library(
             "-Wno-error",
         ]
     ),
-    features = [],
     language = "C",
     libcxx_headers = False,
     deps = [
@@ -154982,7 +154878,6 @@ ch_cc_library(
         "-I",
         "contrib/libfarmhash",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = select({
         "@platforms//cpu:x86_64": [
             "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
@@ -155898,7 +155793,6 @@ ch_cc_library(
     ]),
     clickhouse_code = True,
     copts = _GENERATED_COPTS_1,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_3,
     local_includes = _GENERATED_LOCAL_INCLUDES_10,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
@@ -156629,7 +156523,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/libarchive") + "/libarchive",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_4,
     local_includes = _GENERATED_LOCAL_INCLUDES_15,
     deps = ((([
@@ -156820,7 +156713,6 @@ ch_cc_library(
     ],
     clickhouse_code = True,
     copts = _GENERATED_COPTS_5,
-    features = _GENERATED_FEATURES_0,
     local_defines = [
         "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
         "BOOST_ASIO_STANDALONE=1",
@@ -156946,7 +156838,6 @@ ch_cc_library(
     ]),
     clickhouse_code = True,
     copts = _GENERATED_COPTS_2,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_4,
     local_includes = _GENERATED_LOCAL_INCLUDES_3,
     deps = (_GENERATED_DEPS_7 + [
@@ -157013,7 +156904,6 @@ ch_cc_library(
         "-I",
         "base/readpassphrase",
     ]),
-    features = _GENERATED_FEATURES_0,
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
@@ -161622,7 +161512,6 @@ cc_test(
         "-static_link_cpp_runtimes",
         "-fortify_source",
         "-llvm_system_c_headers",
-        "system_include_paths",
     ],
     linkopts = [
         "--no-default-config",
@@ -162718,7 +162607,6 @@ ch_cc_library(
         "-I",
         "base/widechar_width",
     ]),
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_11,
     deps = _GENERATED_DEPS_5,
@@ -163282,7 +163170,6 @@ ch_cc_library(
     ]),
     clickhouse_code = True,
     copts = _GENERATED_COPTS_1,
-    features = _GENERATED_FEATURES_0,
     local_defines = _GENERATED_LOCAL_DEFINES_3,
     local_includes = _GENERATED_LOCAL_INCLUDES_2,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,

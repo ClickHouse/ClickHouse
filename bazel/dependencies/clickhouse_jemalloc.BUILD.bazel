@@ -159,7 +159,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/jemalloc") + "/include",
     ],
-    features = ["system_include_paths"],
     language = "C",
     local_defines = [
         "JEMALLOC_NO_PRIVATE_NAMESPACE",

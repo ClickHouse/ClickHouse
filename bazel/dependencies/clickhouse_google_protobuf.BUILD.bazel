@@ -826,7 +826,6 @@ ch_cc_library(
         "-std=c++17",
         "-nostdinc++",
     ],
-    features = ["system_include_paths"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     deps = [
@@ -1028,7 +1027,6 @@ ch_cc_library(
         "-std=c++17",
         "-nostdinc++",
     ],
-    features = ["system_include_paths"],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
         "src",
@@ -1533,7 +1531,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/google-protobuf") + "/upb/reflection/cmake",
     ],
-    features = ["system_include_paths"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_0,
     deps = _GENERATED_DEPS_0 + ["@clickhouse_abseil_cpp//:abseil_cpp_headers"],
@@ -1761,7 +1758,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/google-protobuf") + "/upb/reflection/cmake",
     ],
-    features = ["system_include_paths"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = ([
@@ -2050,7 +2046,6 @@ cc_binary(
         "-static_link_cpp_runtimes",
         "-fortify_source",
         "-llvm_system_c_headers",
-        "system_include_paths",
     ],
     linkopts = [
         "--no-default-config",
@@ -2259,7 +2254,6 @@ ch_cc_library(
         ":third_party/utf8_range/range2-sse.c",
     ],
     copts = _GENERATED_COPTS_0,
-    features = ["system_include_paths"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
@@ -2315,7 +2309,6 @@ ch_cc_library(
         ":third_party/utf8_range/utf8_range.c",
     ]),
     copts = _GENERATED_COPTS_0,
-    features = ["system_include_paths"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
