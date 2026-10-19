@@ -53,10 +53,11 @@ for FMT in Arrow ArrowStream; do
         SELECT * FROM file('${DATA_FILE}.nulls.${FMT}', '${FMT}', 'id Int32, nulls Array(Nullable(String))') ORDER BY id;"
 done
 
-# Paths the cases above don't reach. "mask": dictionary index 99 is invalid, and only the null row's range points at
-# it, so the read succeeds only if child rows used by no visible row are skipped. "cut": contiguous ranges that don't
-# start at child position 0. "oor": a range past the end of the child. The first and last files are invalid on purpose
-# and are not validated by pyarrow.
+# Paths the cases above don't reach. "mask" and "mask_unordered": dictionary index 99 is invalid, and only the null
+# row's range points at it, so the read succeeds only if child rows used by no visible row are skipped. The ranges are
+# contiguous in "mask" and out of order in "mask_unordered", where the unused rows are found by counting. "cut":
+# contiguous ranges that don't start at child position 0. "oor": a range past the end of the child. The "mask",
+# "mask_unordered" and "oor" files are invalid on purpose and are not validated by pyarrow.
 python3 - "$DATA_FILE" <<'EOF'
 import sys
 import pyarrow as pa
@@ -67,6 +68,10 @@ cases = {
     "mask": pa.ListViewArray.from_arrays(
         *offsets_sizes([0, 1, 2], [1, 1, 2]),
         pa.DictionaryArray.from_arrays(pa.array([0, 1, 99, 99], pa.int32()), pa.array(["x", "y"]), safe=False),
+        mask=pa.array([False, False, True])),
+    "mask_unordered": pa.ListViewArray.from_arrays(
+        *offsets_sizes([2, 0, 1], [1, 1, 1]),
+        pa.DictionaryArray.from_arrays(pa.array([0, 99, 1], pa.int32()), pa.array(["x", "y"]), safe=False),
         mask=pa.array([False, False, True])),
     "cut": pa.ListViewArray.from_arrays(*offsets_sizes([3, 5, 6], [2, 1, 1]), pa.array([100, 101, 102, 3, 4, 5, 6], pa.int32())),
     "oor": pa.ListViewArray.from_arrays(*offsets_sizes([0, 3], [1, 2]), pa.array([1, 2, 3, 4], pa.int32())),
@@ -80,6 +85,8 @@ EOF
 
 echo "--- unused child rows are not validated ---"
 ${CLICKHOUSE_LOCAL} --query "SELECT v FROM file('${DATA_FILE}.mask.ArrowStream', 'ArrowStream')"
+echo "--- unused child rows of out-of-order ranges are not validated ---"
+${CLICKHOUSE_LOCAL} --query "SELECT v FROM file('${DATA_FILE}.mask_unordered.ArrowStream', 'ArrowStream')"
 echo "--- contiguous ranges after the start of the child ---"
 ${CLICKHOUSE_LOCAL} --query "SELECT v FROM file('${DATA_FILE}.cut.ArrowStream', 'ArrowStream')"
 echo "--- a range past the end of the child ---"

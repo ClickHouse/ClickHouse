@@ -44,6 +44,10 @@ dict	Array(Nullable(String))
 ['x']
 ['y']
 []
+--- unused child rows of out-of-order ranges are not validated ---
+['y']
+['x']
+[]
 --- contiguous ranges after the start of the child ---
 [3,4]
 [5]
