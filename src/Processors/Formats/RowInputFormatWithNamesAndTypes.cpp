@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/ParseError.h>
 #include <IO/Operators.h>
 #include <IO/PeekableReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
@@ -174,11 +175,25 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::tryDetectHeader(std::vec
 
     /// A BOM before the header is not a part of the first column name. It is skipped after the checkpoint,
     /// so if the first row turns out to be data, the rollback below restores it.
-    /// It must be skipped before reading: the values are unescaped while reading, and a BOM before
-    /// a quoted CSV name makes it read as an unquoted value with the quotes.
+    /// It must be skipped before reading: a BOM before a quoted CSV name makes it read as an unquoted value
+    /// with the quotes, and a quoted name containing a delimiter is split.
     skipBOMIfExists(*peekable_buf);
+    const bool has_bom = peekable_buf->offsetFromCheckpoint() != 0;
 
-    auto first_row_values = format_reader->readRowForHeaderDetection();
+    std::vector<String> first_row_values;
+    try
+    {
+        first_row_values = format_reader->readRowForHeaderDetection();
+    }
+    catch (const Exception & e)
+    {
+        /// A data row can be valid only with the BOM, for example `"abc"x` is an unquoted CSV value after a BOM.
+        /// Such a row is not a header, so parse it as data with the BOM, as without header detection.
+        if (!has_bom || !isParseError(e.code()) || peekable_buf->isCanceled())
+            throw;
+        peekable_buf->rollbackToCheckpoint(true);
+        return;
+    }
 
     /// To understand if the first row is a header with column names, we check
     /// that all values from this row is a subset of column names from provided header
@@ -515,33 +530,78 @@ namespace
                 return true;
         return false;
     }
-
-    /// A BOM before the header is not a part of the first column name.
-    /// Unlike `RowInputFormatWithNamesAndTypes::tryDetectHeader`, the schema reader cannot skip the BOM
-    /// before reading the first row: it decides about the header only after reading several rows, and
-    /// if the first row is data, the BOM is a part of its first value and affects the inferred type
-    /// (as without header detection). The fields here are not unescaped yet, so the BOM is a prefix
-    /// of the first field, and it is removed only when the header is detected.
-    std::vector<String> removeBOMFromFirstField(std::vector<String> fields)
-    {
-        if (!fields.empty() && fields[0].starts_with("\xEF\xBB\xBF"))
-            fields[0].erase(0, 3);
-        return fields;
-    }
 }
 
 void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & column_names, std::vector<String> & type_names)
 {
-    auto first_row = readRowAndGetFieldsAndDataTypes();
+    /// A BOM before the header is not a part of the first column name. But if the first row is data, the BOM is a part
+    /// of its first value and affects the inferred type, as without header detection. The BOM also affects how the first
+    /// row is split into fields: a quoted CSV value after a BOM is read as an unquoted value with the quotes, and a quoted
+    /// value containing a delimiter is split. So, if there is a BOM, the first row is read twice: without the BOM
+    /// as a header candidate, and with the BOM as data.
+    std::optional<std::pair<std::vector<String>, DataTypes>> first_row;
+    std::optional<std::pair<std::vector<String>, DataTypes>> first_row_without_bom;
+    auto * peekable_buf = dynamic_cast<PeekableReadBuffer *>(&in);
+    bool has_bom = false;
+    if (peekable_buf)
+    {
+        peekable_buf->setCheckpoint();
+        skipBOMIfExists(*peekable_buf);
+        has_bom = peekable_buf->offsetFromCheckpoint() != 0;
+        if (!has_bom)
+            peekable_buf->dropCheckpoint();
+    }
+
+    if (has_bom)
+    {
+        try
+        {
+            first_row_without_bom = readRowAndGetFieldsAndDataTypes();
+        }
+        catch (const Exception & e)
+        {
+            /// A data row can be valid only with the BOM, for example `"abc"x` is an unquoted CSV value after a BOM.
+            if (!isParseError(e.code()) || peekable_buf->isCanceled())
+                throw;
+        }
+        size_t first_row_end_without_bom = peekable_buf->offsetFromCheckpoint();
+
+        peekable_buf->rollbackToCheckpoint();
+        try
+        {
+            first_row = readRowAndGetFieldsAndDataTypes();
+        }
+        catch (const Exception & e)
+        {
+            /// The first row can be valid only without the BOM, for example a quoted name with the `JSON` escaping rule.
+            if (!first_row_without_bom || !isParseError(e.code()) || peekable_buf->isCanceled())
+                throw;
+            peekable_buf->rollbackToCheckpoint();
+            skipBOMIfExists(*peekable_buf);
+            first_row = readRowAndGetFieldsAndDataTypes();
+        }
+
+        /// The first row can be a header only if both variants of it end at the same position,
+        /// so the following rows are the same in both cases.
+        if (peekable_buf->offsetFromCheckpoint() != first_row_end_without_bom)
+            first_row_without_bom.reset();
+        peekable_buf->dropCheckpoint();
+    }
+    else
+    {
+        first_row = readRowAndGetFieldsAndDataTypes();
+    }
 
     /// No data.
     if (!first_row)
         return;
 
-    const auto & [first_row_values, first_row_types] = *first_row;
+    const auto & first_row_types = first_row->second;
+    const auto & [header_candidate_values, header_candidate_types] = first_row_without_bom ? *first_row_without_bom : *first_row;
 
     /// The first row contains non String elements, it cannot be a header.
-    if (!checkIfAllTypesAreString(first_row_types))
+    /// With a BOM, the first row cannot be a header if it cannot be read without the BOM.
+    if ((has_bom && !first_row_without_bom) || !checkIfAllTypesAreString(first_row_types) || !checkIfAllTypesAreString(header_candidate_types))
     {
         buffered_types = first_row_types;
         return;
@@ -594,7 +654,7 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & 
         if (haveNotStringAndNotNullType(data_types))
         {
             buffered_types = data_types;
-            column_names = readNamesFromFields(removeBOMFromFirstField(first_row_values));
+            column_names = readNamesFromFields(header_candidate_values);
             if (second_row_can_be_type_names)
                 type_names = readNamesFromFields(second_row_values);
             return;

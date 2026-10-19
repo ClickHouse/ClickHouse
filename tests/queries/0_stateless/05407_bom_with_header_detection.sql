@@ -16,3 +16,15 @@ SELECT * FROM file(currentDatabase() || '_05407.csv') FORMAT TSVWithNames;
 
 -- If the first row is not a header, a BOM before a `String` value is kept, as without header detection.
 SELECT hex(c1), c2 FROM format(CSV, '\xEF\xBB\xBFbob,3\n');
+
+-- A quoted name after a BOM can contain a delimiter.
+SELECT * FROM format(CSV, '\xEF\xBB\xBF"a,b",c\n1,2\n') FORMAT TSVWithNames;
+SELECT * FROM format(CSV, '`a,b` String, c UInt8', '\xEF\xBB\xBF"a,b",c\nx,2\n') FORMAT TSVWithNames;
+
+-- A data row that is valid only with the BOM is parsed with the BOM, as without header detection.
+SELECT hex(x), y FROM format(CSV, 'x String, y UInt8', '\xEF\xBB\xBF"abc"x,3\n');
+SELECT hex(c1), c2 FROM format(CSV, '\xEF\xBB\xBF"abc"x,3\n');
+SELECT hex(c1), c2 FROM format(CSV, '\xEF\xBB\xBF"abc"x,3\ny,4\n');
+
+-- A quoted name after a BOM with the `JSON` escaping rule.
+SELECT * FROM format(CustomSeparated, '\xEF\xBB\xBF"a"\t"b"\n1\t2\n') SETTINGS format_custom_escaping_rule = 'JSON' FORMAT TSVWithNames;
