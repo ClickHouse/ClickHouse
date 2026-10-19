@@ -79,6 +79,22 @@ public:
     bool hasIcebergRequiredInfo() const { return has_iceberg_required_info; }
     bool isIcebergOptionalPath(const String & path) const { return iceberg_optional_paths.contains(path); }
 
+    /// Paths whose lake type is a local (wall clock) timestamp, not an instant: Delta `timestamp_ntz`,
+    /// Iceberg `timestamp`. ClickHouse has no wall-clock type, so both arrive as DateTime64.
+    void setLocalTimestampPaths(std::unordered_set<String> && local_timestamp_paths_)
+    {
+        local_timestamp_paths = std::move(local_timestamp_paths_);
+    }
+    bool isLocalTimestampPath(const String & path) const { return local_timestamp_paths.contains(path); }
+
+    /// Field ids whose Iceberg type is `time` (microseconds since midnight, exposed as `Int64`).
+    void setIcebergTimeFieldIds(std::unordered_set<Int64> && iceberg_time_field_ids_)
+    {
+        iceberg_time_field_ids = std::move(iceberg_time_field_ids_);
+    }
+    bool isIcebergTimeFieldId(Int64 field_id) const { return iceberg_time_field_ids.contains(field_id); }
+    bool hasIcebergTimeFieldIds() const { return !iceberg_time_field_ids.empty(); }
+
     void setLastAssignedFieldId(Int64 last_assigned_field_id_) { last_assigned_field_id = last_assigned_field_id_; }
     std::optional<Int64> getLastAssignedFieldId() const { return last_assigned_field_id; }
 
@@ -92,6 +108,8 @@ private:
     bool has_iceberg_string_info = false;
     std::unordered_set<String> iceberg_optional_paths;
     bool has_iceberg_required_info = false;
+    std::unordered_set<String> local_timestamp_paths;
+    std::unordered_set<Int64> iceberg_time_field_ids;
     std::optional<Int64> last_assigned_field_id;
 };
 
