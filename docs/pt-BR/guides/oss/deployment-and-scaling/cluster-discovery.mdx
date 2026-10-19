@@ -6,32 +6,19 @@ title: 'Descoberta de clusters'
 doc_type: 'guide'
 ---
 
-<div id="overview">
-  ## Visão geral
-</div>
+## Visão geral {#overview}
 
 O recurso Cluster Discovery do ClickHouse simplifica a configuração do cluster, permitindo que os nós se descubram e se registrem automaticamente, sem precisar ser definidos explicitamente nos arquivos de configuração. Isso é especialmente útil quando a definição manual de cada nó se torna trabalhosa.
 
 <Note>
-  Cluster Discovery é um recurso experimental e pode ser alterado ou removido em versões futuras.
-  Para habilitá-lo, inclua a configuração `allow_experimental_cluster_discovery` no seu arquivo de configuração:
-
-  ```xml
-  <clickhouse>
-      <!-- ... -->
-      <allow_experimental_cluster_discovery>1</allow_experimental_cluster_discovery>
-      <!-- ... -->
-  </clickhouse>
-  ```
+  O Cluster Discovery requer que o [ClickHouse Keeper](/pt-BR/guides/sre/keeper/clickhouse-keeper) ou o ZooKeeper esteja configurado.
+  Em versões mais antigas, era um recurso experimental que precisava ser habilitado com a configuração `allow_experimental_cluster_discovery` no arquivo de configuração.
+  Essa configuração agora está obsoleta e não tem mais efeito.
 </Note>
 
-<div id="remote-servers-configuration">
-  ## Configuração dos servidores remotos
-</div>
+## Configuração dos servidores remotos {#remote-servers-configuration}
 
-<div id="traditional-manual-configuration">
-  ### Configuração manual tradicional
-</div>
+### Configuração manual tradicional {#traditional-manual-configuration}
 
 Tradicionalmente, no ClickHouse, era necessário especificar manualmente, na configuração, cada shard e réplica do cluster:
 
@@ -63,9 +50,7 @@ Tradicionalmente, no ClickHouse, era necessário especificar manualmente, na con
 
 ```
 
-<div id="using-cluster-discovery">
-  ### Usando o Cluster Discovery
-</div>
+### Usando o Cluster Discovery {#using-cluster-discovery}
 
 Com o Cluster Discovery, em vez de definir explicitamente cada nó, basta especificar um caminho no ZooKeeper. Todos os nós que se registrarem nesse caminho no ZooKeeper serão descobertos automaticamente e adicionados ao cluster.
 
@@ -113,9 +98,7 @@ para `node3` e `node4`:
 </discovery>
 ```
 
-<div id="observer-mode">
-  ### Modo observador
-</div>
+### Modo observador {#observer-mode}
 
 Os nós configurados no modo observador não se registrarão como réplicas.
 Eles apenas observarão e detectarão outras réplicas ativas no cluster, sem participar ativamente.
@@ -128,9 +111,7 @@ Para habilitar o modo observador, inclua a tag `<observer/>` na seção `<discov
 </discovery>
 ```
 
-<div id="discovery-of-clusters">
-  ### Descoberta de clusters
-</div>
+### Descoberta de clusters {#discovery-of-clusters}
 
 Às vezes, pode ser necessário adicionar e remover não apenas hosts em clusters, mas também os próprios clusters. Você pode usar o nó `<multicluster_root_path>` com o caminho raiz de vários clusters:
 
@@ -171,9 +152,7 @@ Limitações:
 * `<multicluster_root_path>` só pode ser usado com `<observer/>`.
 * A última parte do path no Keeper é usada como nome do cluster, enquanto, no registro, o nome é obtido da tag XML.
 
-<div id="use-cases-and-limitations">
-  ## Casos de uso e limitações
-</div>
+## Casos de uso e limitações {#use-cases-and-limitations}
 
 À medida que nós são adicionados ou removidos do path do ZooKeeper especificado, eles são automaticamente descobertos ou removidos do cluster, sem a necessidade de alterações na configuração ou de reinicializar o servidor.
 

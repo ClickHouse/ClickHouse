@@ -13,37 +13,29 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.merge&#95;tree&#95;settings](/zh/reference/system-tables/merge_tree_settings) 中找到，并由 ClickHouse 源代码自动生成。
 
-<div id="max_postpone_time_for_failed_mutations_ms">
-  ## max_postpone_time_for_failed_mutations_ms
-</div>
+## max_postpone_time_for_failed_mutations_ms {#max_postpone_time_for_failed_mutations_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="300000" />
 
-失败变更的最大延后时间。
+在同一数据分区片段上重试失败的变更前，指数退避的最大等待时间，单位为毫秒。连续失败时，等待时间会逐步增加，但不会超过此值。设置为 `0` 可立即重试，无需等待。
 
-<div id="max_postpone_time_for_failed_replicated_fetches_ms">
-  ## max_postpone_time_for_failed_replicated_fetches_ms
-</div>
+## max_postpone_time_for_failed_replicated_fetches_ms {#max_postpone_time_for_failed_replicated_fetches_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="60000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "60000"},{"label": "新增此设置，用于在复制队列中延迟拉取任务。"}]}]} />
 
-失败的复制拉取操作的最大延后时间。
+在 `ReplicatedMergeTree` 复制队列中，重试失败的 `GET_PART` 任务前的最大指数退避时间 (以毫秒为单位) 。连续失败时，延迟时间会逐步增加，但不会超过此值。设置为 `0` 则禁用延后。
 
-<div id="max_postpone_time_for_failed_replicated_merges_ms">
-  ## max_postpone_time_for_failed_replicated_merges_ms
-</div>
+## max_postpone_time_for_failed_replicated_merges_ms {#max_postpone_time_for_failed_replicated_merges_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="60000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "60000"},{"label": "新增此设置，用于启用在复制队列中延后合并任务。"}]}]} />
 
-失败的复制合并任务的最大延后时间。
+`ReplicatedMergeTree` 复制队列中失败的 `MERGE_PARTS` 任务在重试前的最大指数退避时间 (单位为毫秒) 。延迟会随失败次数增加而增长，但不会超过此值。设置为 `0` 可禁用延后。
 
-<div id="max_postpone_time_for_failed_replicated_tasks_ms">
-  ## max_postpone_time_for_failed_replicated_tasks_ms
-</div>
+## max_postpone_time_for_failed_replicated_tasks_ms {#max_postpone_time_for_failed_replicated_tasks_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="300000" />
 
