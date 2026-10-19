@@ -60,7 +60,7 @@ Granules: 3
 b >= 4000: within a granule of the real count: 1
 b < 2000: within a granule of the real count: 1
 --- a materialized lightweight delete ---
-rows the rebuilt projection kept:	1000
+rows the rebuilt projection kept:	500
 hypothetical:
 marks: 10
 rows: 1000
@@ -73,7 +73,7 @@ reason: 3 marks would be read instead of 10 from the base table
 source: empirical
 real:
 ReadFromMergeTree (p_d)
-Granules: 3
+Granules: 2
 --- a full projection scan that is cheaper than the base read ---
 hypothetical:
 marks: 162

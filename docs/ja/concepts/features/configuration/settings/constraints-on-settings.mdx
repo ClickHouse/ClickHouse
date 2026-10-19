@@ -112,6 +112,19 @@ ClickHouse でサポートされている制約には、いくつかの種類が
   未設定の制約タイプはすべて前のプロファイルから引き継がれ、
   設定済みの制約タイプはすべて新しいプロファイルの値で置き換えられます。
 
+## CONSTRAINTと `compatibility` 設定 {#constraints-and-compatibility}
+
+[`compatibility`](/ja/reference/settings/session-settings/compatibility#compatibility) 設定は、ユーザーが明示的に設定していない
+設定を、以前のバージョンのデフォルト値に変更します。ただし、CONSTRAINTによって拒否される値が適用されることはありません。以前のデフォルト値が `min`/`max`
+の範囲外である場合、`disallowed` の値のいずれかに該当する場合、または設定が `const` である場合、その設定は現在のデフォルト値のままになります。[`allow_feature_tier`](/ja/reference/settings/server-settings/settings/allow#allow_feature_tier) によって無効化されている
+ティアに属する設定も同様です。
+`readonly` 設定は、このような形で `compatibility` を制限するものではなく、クエリが
+`compatibility` を設定できるかどうかそのものを決定します。
+
+`MergeTree` 設定は、デフォルトプロファイルの `compatibility` にのみ従います。デフォルトプロファイルは、すべてのテーブルに適用されるサーバー全体の
+デフォルト値を定めるものです。この場合も同様に、デフォルトプロファイルの `merge_tree_` プレフィックス付きの
+CONSTRAINTまたは `allow_feature_tier` によって以前のデフォルト値が拒否される場合、その設定は現在のデフォルト値のままになります。
+
 ## 読み取り専用モード {#read-only}
 
 読み取り専用モードは `readonly` 設定によって有効になります。これは `readonly` という CONSTRAINT の種別とは

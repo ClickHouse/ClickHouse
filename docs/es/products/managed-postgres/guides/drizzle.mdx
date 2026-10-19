@@ -1,0 +1,274 @@
+---
+slug: /cloud/managed-postgres/guides/drizzle
+sidebarTitle: 'Drizzle ORM'
+title: 'Usar Drizzle ORM con ClickHouse Managed Postgres'
+description: 'Conecte una aplicación TypeScript a ClickHouse Managed Postgres con Drizzle ORM y node-postgres, ejecute migraciones con drizzle-kit y realice consultas a través de TLS verificado'
+keywords: ['managed postgres', 'drizzle', 'drizzle orm', 'drizzle-kit', 'typescript', 'node.js', 'node-postgres', 'pgbouncer', 'migrations']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-drizzle-beta" />
+
+[Drizzle ORM](https://orm.drizzle.team/) es un ORM para TypeScript con un generador de consultas de sintaxis similar a SQL, y `drizzle-kit` es la CLI que lo acompaña para generar y ejecutar migraciones. En esta guía, definirá una tabla `todos` en TypeScript, la creará mediante una migración de `drizzle-kit` y atenderá consultas de creación, lectura, actualización y eliminación desde un pequeño servidor HTTP en Node.js. Todas las conexiones usan TLS con verificación completa de certificados.
+
+## Requisitos previos {#prerequisites}
+
+* [Node.js](https://nodejs.org/) 20 o una versión posterior
+* Una cuenta de ClickHouse Cloud
+* [`psql`](https://www.postgresql.org/download/), para crear la base de datos. También puede ejecutar la sentencia `CREATE DATABASE` en la [consola SQL](/es/integrations/connectors/sql-clients/sql-console).
+
+## Crear un servicio de ClickHouse Managed Postgres {#create-service}
+
+En la consola de ClickHouse Cloud, haga clic en **New service** y seleccione **Postgres**. La instancia estará lista en unos minutos. Consulte la [guía de inicio rápido](/es/products/managed-postgres/quickstart) para seguir el proceso paso a paso.
+
+## Obtener los detalles de conexión {#connection-details}
+
+Haga clic en **Conectar** en la barra lateral izquierda de su servicio. La ventana modal muestra su nombre de usuario, contraseña, servidor y puerto, e incluye un toggle **Directly** / **via PgBouncer**.
+
+Esta guía utiliza dos cadenas de conexión:
+
+* **Directa (puerto `5432`)** para `drizzle-kit`. Las migraciones ejecutan DDL, pueden prolongarse durante mucho tiempo y pueden depender del estado de la sesión, como `SET lock_timeout`, por lo que deben conectarse directamente a Postgres.
+* **PgBouncer (puerto `6432`)** para la aplicación. El [PgBouncer](/es/products/managed-postgres/connection#pgbouncer) incluido funciona en modo de agrupación por transacción y permite que muchas instancias de la aplicación, incluidas las funciones sin servidor, compartan un número reducido de conexiones a Postgres.
+
+<Tip>
+  Si ejecuta un único servidor Node.js de larga duración, `node-postgres` ya mantiene su propio grupo de conexiones, por lo que también puede apuntar la aplicación a la conexión directa. Utilice la conexión de PgBouncer cuando escale horizontalmente a muchos procesos o trabaje en plataformas sin servidor.
+</Tip>
+
+Con **Directly** seleccionado, active **Use SSL**. La URL de conexión de la pestaña **url** termina ahora en `sslmode=verify-full&sslrootcert=<service-name>-ca-certificate.pem`, y el puerto es `5432`. Seleccione **via PgBouncer** para ver los detalles de la conexión agrupada: el puerto cambia a `6432` y la URL siempre incluye `sslmode=verify-full`.
+
+En la ventana modal, haga clic en **Download CA certificate**. También puede descargarlo desde **Settings → CA Certificate**. El certificado es exclusivo de su instancia, de modo que el controlador puede usarlo para verificar que se está comunicando con su servidor.
+
+## Configurar el proyecto {#project-setup}
+
+Cree un proyecto e instale Drizzle ORM, el controlador [`node-postgres`](https://node-postgres.com/) (`pg`) y `drizzle-kit`:
+
+```bash
+mkdir drizzle-managed-postgres && cd drizzle-managed-postgres
+npm init -y
+npm pkg set type=module
+npm install drizzle-orm pg dotenv
+npm install -D drizzle-kit tsx @types/pg
+```
+
+<Tip>
+  **¿Va a añadirlo a una aplicación existente?**
+
+  Omita los comandos `mkdir`, `npm init` y `npm pkg set type=module`. En su proyecto, ejecute `npm install drizzle-orm pg dotenv` y `npm install -D drizzle-kit tsx @types/pg` y, a continuación, siga con [Configurar la conexión](#configure-connection).
+</Tip>
+
+## Configurar la conexión {#configure-connection}
+
+Mueva el certificado de CA que descargó al directorio del proyecto y cámbiele el nombre a `ca-certificate.pem`.
+
+Cree una base de datos para la aplicación. Sustituya `<PASSWORD>` y el host por los valores que aparecen en el cuadro de diálogo **Conectar**:
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_drizzle;"
+```
+
+```text
+CREATE DATABASE
+```
+
+Añada ambas cadenas de conexión a un archivo `.env` en la raíz del proyecto o a su archivo `.env` existente. Solo difieren en el puerto y ambas apuntan a la base de datos `guide_drizzle`:
+
+```bash title=".env"
+# Runtime queries go through PgBouncer (port 6432)
+DATABASE_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:6432/guide_drizzle?sslmode=verify-full&sslrootcert=ca-certificate.pem"
+# drizzle-kit migrations connect directly to Postgres (port 5432)
+DIRECT_DATABASE_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_drizzle?sslmode=verify-full&sslrootcert=ca-certificate.pem"
+```
+
+`node-postgres` lee `sslmode=verify-full` y `sslrootcert` de la URL. Carga el archivo de la CA y verifica tanto la cadena de certificados como el nombre del host, por lo que no necesita código TLS adicional. La ruta de `sslrootcert` se resuelve en relación con el directorio desde el que ejecuta los comandos. No incluya `.env` en el control de versiones.
+
+<Note>
+  Si falta la CA o es incorrecta, la conexión falla con `unable to verify the first certificate`. Si el nombre del host no coincide con el certificado, falla con `ERR_TLS_CERT_ALTNAME_INVALID`. Si su contraseña contiene caracteres especiales como `@`, `/` o `#`, aplíqueles codificación URL.
+</Note>
+
+## Definir el esquema {#schema}
+
+Cree `src/db/schema.ts`:
+
+```ts title="src/db/schema.ts"
+import { boolean, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+
+export const todos = pgTable("todos", {
+  id: integer().primaryKey().generatedAlwaysAsIdentity(),
+  title: text().notNull(),
+  done: boolean().notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+```
+
+Cree `drizzle.config.ts` en la raíz del proyecto. Este archivo indica a `drizzle-kit` dónde se encuentran el esquema y la conexión directa:
+
+```ts title="drizzle.config.ts"
+import "dotenv/config";
+import { defineConfig } from "drizzle-kit";
+
+export default defineConfig({
+  dialect: "postgresql",
+  schema: "./src/db/schema.ts",
+  out: "./drizzle",
+  dbCredentials: {
+    // Migrations use the direct connection (port 5432)
+    url: process.env.DIRECT_DATABASE_URL!,
+  },
+});
+```
+
+## Ejecutar migraciones {#migrations}
+
+Genera una migración SQL a partir del esquema:
+
+```bash
+npx drizzle-kit generate --name init
+```
+
+```text
+1 tables
+todos 4 columns 0 indexes 0 fks
+
+[✓] Your SQL migration file ➜ drizzle/0000_init.sql 🚀
+```
+
+El archivo generado `drizzle/0000_init.sql` contiene la sentencia `CREATE TABLE`. Revísalo y haz commit de la carpeta `drizzle` junto con tu código. A continuación, aplícalo:
+
+```bash
+npx drizzle-kit migrate
+```
+
+```text
+Using 'pg' driver for database querying
+[✓] migrations applied successfully!
+```
+
+`drizzle-kit migrate` registra las migraciones aplicadas en la tabla `drizzle.__drizzle_migrations` y, en ejecuciones posteriores, solo ejecuta las nuevas. Cada vez que modifique `schema.ts`, vuelva a ejecutar `generate` y, a continuación, `migrate`.
+
+<Tip>
+  `drizzle-kit migrate` finaliza con estado `1` y sin ningún mensaje de error cuando no puede conectarse, por ejemplo, cuando la ruta de `sslrootcert` o la contraseña son incorrectas. Si esto ocurre, compruebe primero `DIRECT_DATABASE_URL` con `psql`.
+</Tip>
+
+`drizzle-kit push` aplica los cambios de esquema sin archivos de migración. Resulta práctico para crear prototipos, pero `generate` y `migrate` le proporcionan archivos SQL que se pueden revisar y un historial para producción.
+
+## Consultar la base de datos {#query}
+
+Cree `src/db/index.ts`. Este archivo crea el client de Drizzle sobre un grupo de `node-postgres` mediante la conexión de PgBouncer:
+
+```ts title="src/db/index.ts"
+import "dotenv/config";
+import { drizzle } from "drizzle-orm/node-postgres";
+
+// The app uses the PgBouncer connection (port 6432)
+export const db = drizzle(process.env.DATABASE_URL!);
+```
+
+Cree `src/server.ts`, un pequeño servidor HTTP que ejecuta una consulta de Drizzle por ruta. En una aplicación existente, puede llamar a las mismas consultas `db` desde sus propios handlers de ruta:
+
+```ts title="src/server.ts"
+import { createServer } from "node:http";
+import { desc, eq, not } from "drizzle-orm";
+import { db } from "./db";
+import { todos } from "./db/schema";
+
+const server = createServer(async (req, res) => {
+  const url = new URL(req.url ?? "/", "http://localhost");
+  const id = Number(url.pathname.split("/")[2]);
+  let body: unknown;
+
+  try {
+    if (req.method === "GET" && url.pathname === "/todos") {
+      // Read
+      body = await db.select().from(todos).orderBy(desc(todos.id));
+    } else if (req.method === "POST" && url.pathname === "/todos") {
+      // Create
+      const title = url.searchParams.get("title") ?? "Untitled";
+      [body] = await db.insert(todos).values({ title }).returning();
+    } else if (req.method === "PATCH" && id) {
+      // Update: toggle the done flag
+      [body] = await db
+        .update(todos)
+        .set({ done: not(todos.done) })
+        .where(eq(todos.id, id))
+        .returning();
+    } else if (req.method === "DELETE" && id) {
+      // Delete
+      [body] = await db.delete(todos).where(eq(todos.id, id)).returning();
+    } else {
+      res.writeHead(404).end();
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(body, null, 2) + "\n");
+  } catch (err) {
+    console.error(err);
+    res.writeHead(500).end("Database error\n");
+  }
+});
+
+server.listen(3101, () => console.log("Listening on http://localhost:3101/todos"));
+```
+
+<Note>
+  PgBouncer no requiere ninguna configuración del controlador. De forma predeterminada, las consultas de Drizzle usan sentencias sin nombre, y el PgBouncer incluido también admite sentencias preparadas con nombre, como las creadas con `.prepare` de Drizzle, en el modo de agrupación por transacción. Las funcionalidades a nivel de sesión, como `LISTEN` y los bloqueos consultivos de sesión, no funcionan a través de PgBouncer. Consulte las [preguntas frecuentes](/es/products/managed-postgres/faq#prepared-statement-errors).
+</Note>
+
+## Ejecutar y verificar {#verify}
+
+Inicie el servidor:
+
+```bash
+npx tsx src/server.ts
+```
+
+```text
+Listening on http://localhost:3101/todos
+```
+
+En una segunda terminal, cree dos tareas, marque la primera como completada y elimine la segunda:
+
+```bash
+curl -X POST "http://localhost:3101/todos?title=Try%20Drizzle%20ORM"
+curl -X POST "http://localhost:3101/todos?title=Write%20a%20migration"
+curl -X PATCH http://localhost:3101/todos/1
+curl -X DELETE http://localhost:3101/todos/2
+```
+
+La solicitud `PATCH` devuelve la fila actualizada:
+
+```json
+{
+  "id": 1,
+  "title": "Try Drizzle ORM",
+  "done": true,
+  "createdAt": "2026-09-30T16:45:14.610Z"
+}
+```
+
+Abre `http://localhost:3101/todos` en tu navegador para ver las tareas pendientes. La respuesta será similar a la siguiente:
+
+```json
+[
+  {
+    "id": 1,
+    "title": "Try Drizzle ORM",
+    "done": true,
+    "createdAt": "2026-09-30T16:45:14.610Z"
+  }
+]
+```
+
+Para ver los datos en la consola, abra **consola SQL** en la barra lateral izquierda de su servicio, expanda `guide_drizzle` y, a continuación, `public`, y haga clic en la tabla `todos`. El esquema `drizzle` contiene la tabla del historial de migraciones. La tabla contiene la fila restante:
+
+| id | title           | done | created&#95;at                |
+| -- | --------------- | ---- | ----------------------------- |
+| 1  | Try Drizzle ORM | true | 2026-09-30 16:45:14.610099+00 |
+
+## Próximos pasos {#next-steps}
+
+* [Conexión](/es/products/managed-postgres/connection): cadenas de conexión, PgBouncer y TLS
+* [Configuración](/es/products/managed-postgres/settings): parámetros de Postgres y PgBouncer, como `max_connections`
+* [Réplicas de lectura](/es/products/managed-postgres/read-replicas): escale las lecturas con [`withReplicas`](https://orm.drizzle.team/docs/read-replicas) de Drizzle
+* [Seguridad](/es/products/managed-postgres/security): listas de acceso por IP y redes privadas

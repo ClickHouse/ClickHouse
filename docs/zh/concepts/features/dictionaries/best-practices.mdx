@@ -11,9 +11,7 @@ keywords: ['字典', '字典', '布局', 'dictGet', 'JOIN', 'hashed', 'flat', '�
 
 如需通过完整示例了解字典，请参阅[字典主指南](/zh/concepts/features/dictionaries/index)。
 
-<div id="when-to-use-dictionaries-vs-joins">
-  ## 何时使用字典而不是 JOINs
-</div>
+## 何时使用字典而不是 JOINs {#when-to-use-dictionaries-vs-joins}
 
 当 JOIN 的一侧是可装入内存的查找表时，字典通常最合适。使用标准 JOIN 时，ClickHouse 会先根据右侧构建哈希表，再用左侧数据去探测——即使其中大多数行随后会被 `WHERE` 过滤器筛掉。虽然较新版本 (24.12+) 在很多情况下会先下推过滤器再执行 JOIN，但这并不总能消除这部分开销。使用字典时，你可以内联调用 `dictGet`，因此只会对已经通过过滤的行执行查找。
 
@@ -24,9 +22,7 @@ keywords: ['字典', '字典', '布局', 'dictGet', 'JOIN', 'hashed', 'flat', '�
 * 当查找键已经可用时，使用字典来替代针对小型维度表的 JOIN。
 * 当需要基于查找到的值对大量行进行过滤时，使用普通列和索引。
 
-<div id="choosing-a-layout">
-  ## 选择布局
-</div>
+## 选择布局 {#choosing-a-layout}
 
 `LAYOUT` 子句控制字典的内部数据结构。所有可用布局均记录在[布局参考](/zh/reference/statements/create/dictionary/layouts/overview#storing-dictionaries-in-memory)中。
 
@@ -37,12 +33,16 @@ keywords: ['字典', '字典', '布局', 'dictGet', 'JOIN', 'hashed', 'flat', '�
 * **`hashed`** — 将整个字典存储在哈希表中。当属性很少时，它可能比 `hashed_array` 更快，但随着属性数量增加，内存占用也会更高。
 * **`complex_key_hashed` / `complex_key_hashed_array`** — 当键无法 CAST 为 `UInt64` 时使用 (例如 `String` 键) 。它们与对应的非复杂键版本具有相同的性能权衡。
 * **`sparse_hashed`** — 与 `hashed` 相比，以增加 CPU 开销为代价换取更低的内存占用。它很少是最佳选择——只有在仅有一个属性时才比较高效。在大多数情况下，`hashed_array` 更合适。
-* **`cache` / `ssd_cache`** — 仅缓存频繁访问的键。当完整数据集无法装入内存时，它们会很有用，但缓存未命中时，查找可能会访问数据源。对于延迟敏感型工作负载，不推荐使用。
+* **`cache` / `ssd_cache`** — 仅缓存频繁访问的键。当完整数据集无法装入内存时，它们会很有用，但缓存未命中时，查找可能会访问数据源。不推荐用于延迟敏感型工作负载，也不适合需要可靠写入时富集的场景；请参阅[摄取路径中的缓存字典](#cache-dictionaries-in-ingestion-path)。
 * **`direct`** — 每次查找都直接查询数据源，不进行内存存储。适用于数据变化过于频繁而无法缓存，或字典太大而无法放入内存的情况。
 
-<div id="monitoring-dictionary-usage">
-  ## 监控字典使用情况
-</div>
+## 摄取路径中的缓存字典 {#cache-dictionaries-in-ingestion-path}
+
+基于缓存的布局 (`cache`、`complex_key_cache`、`ssd_cache` 和 `complex_key_ssd_cache`) 仅在本地服务器上保留已预热的条目。每台服务器独立预热各自的缓存，服务器一旦重启或被替换，缓存就会从空状态开始。冷缓存查找依赖于字典源，会增加延迟；如果字典源无法响应查找请求，还可能导致插入被阻塞或失败。在 ClickHouse Cloud 中，自动扩缩容和托管节点替换会使这种情况更容易发生。
+
+如果对延迟的可预测性和字典源的可用性有较高要求，请避免在[增量materialized view](/zh/concepts/features/materialized-views/incremental-materialized-view) 或 `MATERIALIZED` 和 `DEFAULT` 列中使用这些布局进行写入时富集，而应改用在每台服务器上加载完整字典的布局：对于 `UInt64` 键，通常使用 `hashed` 或 `hashed_array`；对于字符串键或复合键，通常使用 `complex_key_hashed` 或 `complex_key_hashed_array`。`flat` 以及其他全量加载的布局也可能适用。如果完整字典无法装入内存，请在插入之前或在查询时对数据进行富集，而不要依赖摄取路径中已预热的缓存。
+
+## 监控字典使用情况 {#monitoring-dictionary-usage}
 
 通过 [`system.dictionaries`](/zh/reference/system-tables/dictionaries) 表跟踪内存占用和健康状态：
 

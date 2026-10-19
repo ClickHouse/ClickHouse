@@ -30,15 +30,15 @@ ClickHouse Connect は、中核となるデータベースドライバーであ�
 
 ## 要件と互換性 {#requirements-and-compatibility}
 
-| コンポーネント    | サポート対象バージョン                                                                   |
-| ---------- | ----------------------------------------------------------------------------- |
-| Python     | 3.10 〜 3.14。3.14t などのフリースレッドビルドは試験的にサポートされています。                               |
-| ClickHouse | 現在サポート中の ClickHouse リリース。最近の LTS および stable の server リリースに対して CI テストを実施しています。 |
-| SQLAlchemy | 同期ダイアレクトの場合は 1.4.40 以降、3.0 未満。非同期ダイアレクトの場合は 2.0.44 以降、3.0 未満。                 |
-| Pandas     | 2.x および 3.x                                                                   |
-| Polars     | 1.0 以降                                                                        |
-| aiohttp    | 3.9 以降                                                                        |
-| Platforms  | 各 Python バージョン向けに公開されている wheel アーキテクチャ上の Linux、macOS、Windows                  |
+| コンポーネント    | サポート対象バージョン                                                                                                                                                                        |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Python     | 3.10 〜 3.14。3.14t などのフリースレッドビルドは試験的にサポートされています。                                                                                                                                    |
+| ClickHouse | 現在サポート中の ClickHouse リリース。CI では、[こちらに記載されている LTS および stable のリリースシリーズ](https://github.com/ClickHouse/clickhouse-connect/blob/main/.github/clickhouse-versions.json)に対してテストを実施しています。 |
+| SQLAlchemy | 同期ダイアレクトの場合は 1.4.40 以降、3.0 未満。非同期ダイアレクトの場合は 2.0.44 以降、3.0 未満。                                                                                                                      |
+| Pandas     | 2.x および 3.x                                                                                                                                                                        |
+| Polars     | 1.0 以降                                                                                                                                                                             |
+| aiohttp    | 3.9 以降                                                                                                                                                                             |
+| Platforms  | 各 Python バージョン向けに公開されている wheel アーキテクチャ上の Linux、macOS、Windows                                                                                                                       |
 
 この package には、利用可能な環境向けのコンパイル済み wheel が含まれており、Cython 拡張機能をビルドできない場合は pure Python 実装にフォールバックします。PyArrow は Python 3.10 〜 3.14 をサポートしています。Python 3.14 では PyArrow 22 以降が必要です。
 
@@ -61,7 +61,7 @@ pip install "clickhouse-connect[sqlalchemy]" # SQLAlchemy dialect
 pip install "clickhouse-connect[sqlalchemy-async]" # Async SQLAlchemy dialect
 pip install "clickhouse-connect[alembic]"    # SQLAlchemy and Alembic
 pip install "clickhouse-connect[chdb]"       # Embedded chDB backend
-pip install "clickhouse-connect[rust,arrow]" # Experimental Rust codec evaluation setup
+pip install "clickhouse-connect[rust]"       # Experimental Rust codec
 pip install "clickhouse-connect[tzdata]"     # IANA time zones on minimal systems
 ```
 

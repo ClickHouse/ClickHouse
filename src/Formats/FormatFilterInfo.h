@@ -87,6 +87,14 @@ public:
     }
     bool isLocalTimestampPath(const String & path) const { return local_timestamp_paths.contains(path); }
 
+    /// Field ids whose Iceberg type is `time` (microseconds since midnight, exposed as `Int64`).
+    void setIcebergTimeFieldIds(std::unordered_set<Int64> && iceberg_time_field_ids_)
+    {
+        iceberg_time_field_ids = std::move(iceberg_time_field_ids_);
+    }
+    bool isIcebergTimeFieldId(Int64 field_id) const { return iceberg_time_field_ids.contains(field_id); }
+    bool hasIcebergTimeFieldIds() const { return !iceberg_time_field_ids.empty(); }
+
     void setLastAssignedFieldId(Int64 last_assigned_field_id_) { last_assigned_field_id = last_assigned_field_id_; }
     std::optional<Int64> getLastAssignedFieldId() const { return last_assigned_field_id; }
 
@@ -101,6 +109,7 @@ private:
     std::unordered_set<String> iceberg_optional_paths;
     bool has_iceberg_required_info = false;
     std::unordered_set<String> local_timestamp_paths;
+    std::unordered_set<Int64> iceberg_time_field_ids;
     std::optional<Int64> last_assigned_field_id;
 };
 

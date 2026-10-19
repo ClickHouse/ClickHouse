@@ -13,13 +13,13 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="max_insert_block_size">
-  ## max_insert_block_size
-</div>
+## max_insert_block_size {#max_insert_block_size}
 
 **Aliases**: `max_insert_block_size_rows`
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1048449" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1048449"},{"label": "Adicionado o alias `max_insert_block_size_rows`."}]}]} />
 
 O tamanho máximo dos blocos (em número de linhas) a serem formados para inserção em uma tabela.
 
@@ -34,19 +34,17 @@ Essa configuração controla a formação de blocos em dois contextos:
 
 2. Operações de INSERT: Durante consultas INSERT e quando os dados fluem por visões materializadas, o comportamento dessa configuração depende de `use_strict_insert_block_limits`:
 
-   * Quando ativado: Os blocos são emitidos quando:
+   * Quando habilitado: Os blocos são emitidos quando:
      * Limiares mínimos (AND): Ambos min&#95;insert&#95;block&#95;size&#95;rows AND min&#95;insert&#95;block&#95;size&#95;bytes são atingidos
      * Limiares máximos (OR): max&#95;insert&#95;block&#95;size&#95;rows OR max&#95;insert&#95;block&#95;size&#95;bytes é atingido
 
-   * Quando desativado: Os blocos são emitidos quando min&#95;insert&#95;block&#95;size&#95;rows OR min&#95;insert&#95;block&#95;size&#95;bytes é atingido. As configurações max&#95;insert&#95;block&#95;size não são aplicadas.
+   * Quando desabilitado: Os blocos são emitidos quando min&#95;insert&#95;block&#95;size&#95;rows OR min&#95;insert&#95;block&#95;size&#95;bytes é atingido. As configurações max&#95;insert&#95;block&#95;size não são aplicadas.
 
 Valores possíveis:
 
 * Inteiro positivo.
 
-<div id="max_insert_block_size_bytes">
-  ## max_insert_block_size_bytes
-</div>
+## max_insert_block_size_bytes {#max_insert_block_size_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -61,9 +59,7 @@ Valores possíveis:
 * Inteiro positivo.
 * 0 — a configuração não participa da formação de blocos.
 
-<div id="max_insert_delayed_streams_for_parallel_write">
-  ## max_insert_delayed_streams_for_parallel_write
-</div>
+## max_insert_delayed_streams_for_parallel_write {#max_insert_delayed_streams_for_parallel_write}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -71,9 +67,7 @@ O número máximo de fluxos (colunas) cujo flush final da parte pode ser atrasad
 
 Valor padrão no Cloud: `50`.
 
-<div id="max_insert_threads">
-  ## max_insert_threads
-</div>
+## max_insert_threads {#max_insert_threads}
 
 <SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
@@ -106,9 +100,7 @@ A paralelização do lado de gravação se aplica apenas a `INSERT`s simples sí
 O lado de gravação é paralelizado apenas quando é seguro fazê-lo; caso contrário, permanece em um único fluxo e esta configuração não tem efeito sobre ele. Em particular, a gravação é mantida em um único fluxo quando [`use_strict_insert_block_limits`](/pt-BR/reference/settings/session-settings/use#use_strict_insert_block_limits) está habilitada, uma tabela de destino (ou uma tabela para a qual ela encaminha dados) desduplica blocos inseridos e a desduplicação de inserção está habilitada para a consulta (consulte [`deduplicate_insert`](/pt-BR/reference/settings/session-settings/deduplicate-insert#deduplicate_insert)), quando o destino tem visões materializadas dependentes — incluindo visões de uma tabela para a qual o destino encaminha dados, por exemplo, por trás de um `Alias` — (a menos que [`parallel_view_processing`](/pt-BR/reference/settings/session-settings/parallel#parallel_view_processing) esteja habilitada e as cadeias de visões dependentes não apresentem riscos de desduplicação — a desduplicação nas visões está desabilitada ([`deduplicate_blocks_in_dependent_materialized_views`](/pt-BR/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views)) ou nenhum caminho de visão dependente possa desduplicar), e sempre para destinos `Buffer` e `Distributed`. Um `Buffer` grava em seu próprio contexto e um `Distributed` encaminha a gravação para um fragmento remoto (que pode armazenar os dados em buffer), portanto as configurações de desduplicação desta consulta não controlam a gravação final, que é mantida em um único fluxo independentemente delas. Uma inserção de quorum não paralela ([`insert_quorum`](/pt-BR/reference/settings/session-settings/insert-quorum#insert_quorum) é `2` ou maior, ou `'auto'`, e [`insert_quorum_parallel`](/pt-BR/reference/settings/session-settings/insert-quorum#insert_quorum_parallel) está desabilitada) também permanece em um único fluxo, pois permite apenas uma parte de quorum em andamento por tabela.
 Valores mais altos resultam em maior uso de memória.
 
-<div id="max_insert_threads_min_free_memory_per_thread">
-  ## max_insert_threads_min_free_memory_per_thread
-</div>
+## max_insert_threads_min_free_memory_per_thread {#max_insert_threads_min_free_memory_per_thread}
 
 <SettingsInfoBlock type="UInt64" default_value="4294967296" />
 
