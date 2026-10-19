@@ -89,7 +89,7 @@ SELECT ([tuple(CAST(1,'Nullable(UInt64)'))]::Array(Tuple(Nullable(UInt64))) IS N
 SELECT ([tuple(CAST(1,'Nullable(UInt64)'))]::Array(Tuple(Nullable(UInt64))) IS DISTINCT FROM     [tuple(CAST(2,'Nullable(Int64)'))]::Array(Tuple(Nullable(Int64)))) = ([tuple(CAST(1,'Nullable(UInt64)'))]::Array(Tuple(Nullable(UInt64))) != [tuple(CAST(2,'Nullable(Int64)'))]::Array(Tuple(Nullable(Int64))));
 
 -- Top-level Nullable(Tuple(...)) with an aligned String subfield exercises the no-supertype
--- Nullable path (executeNullableWithoutSupertype) and matches the non-Nullable value comparison.
+-- Nullable path (executeNullableByNullMap) and matches the non-Nullable value comparison.
 SET enable_nullable_tuple_type = 1;
 SELECT (CAST(tuple('a', 1::UInt64), 'Nullable(Tuple(String, UInt64))') IS NOT DISTINCT FROM CAST(tuple('a', -1::Int64), 'Nullable(Tuple(String, Int64))')) = (tuple('a', 1::UInt64) = tuple('a', -1::Int64));
 SELECT (CAST(tuple('a', 1::UInt64), 'Nullable(Tuple(String, UInt64))') IS DISTINCT FROM     CAST(tuple('a', -1::Int64), 'Nullable(Tuple(String, Int64))')) = (tuple('a', 1::UInt64) != tuple('a', -1::Int64));
