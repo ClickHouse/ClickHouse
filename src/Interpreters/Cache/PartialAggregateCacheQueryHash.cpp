@@ -6,6 +6,7 @@
 #include <Core/SettingsEnums.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/SipHash.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
@@ -22,17 +23,18 @@ extern const SettingsBool use_partial_aggregate_cache;
 namespace
 {
 
-bool nodeHasArrayJoinStep(const QueryPlan::Node * node)
+template <typename Predicate>
+bool nodeHasStep(const QueryPlan::Node * node, const Predicate & predicate)
 {
     if (!node)
         return false;
 
-    if (typeid_cast<const ArrayJoinStep *>(node->step.get()))
+    if (predicate(*node->step))
         return true;
 
     for (const QueryPlan::Node * child : node->children)
     {
-        if (nodeHasArrayJoinStep(child))
+        if (nodeHasStep(child, predicate))
             return true;
     }
 
@@ -43,7 +45,18 @@ bool nodeHasArrayJoinStep(const QueryPlan::Node * node)
 
 bool planHasArrayJoinStep(const QueryPlan & query_plan)
 {
-    return nodeHasArrayJoinStep(query_plan.getRootNode());
+    return nodeHasStep(query_plan.getRootNode(), [](const IQueryPlanStep & step) { return typeid_cast<const ArrayJoinStep *>(&step) != nullptr; });
+}
+
+bool planHasGroupByTopK(const QueryPlan & query_plan)
+{
+    return nodeHasStep(
+        query_plan.getRootNode(),
+        [](const IQueryPlanStep & step)
+        {
+            const auto * aggregating_step = typeid_cast<const AggregatingStep *>(&step);
+            return aggregating_step && aggregating_step->getParams().top_k.has_value();
+        });
 }
 
 std::optional<IASTHash> computePartialAggregateCacheQueryHash(
@@ -55,6 +68,12 @@ std::optional<IASTHash> computePartialAggregateCacheQueryHash(
     std::optional<size_t> grouping_set_index)
 {
     if (has_sort_description_for_merging || !cache)
+        return std::nullopt;
+
+    /// The GROUP BY top-K heap (`enable_group_by_top_k_optimization`) skips the keys of a part that are beyond
+    /// the boundary derived from the rows of other parts, so the state of a part depends on the whole part set
+    /// and cannot be keyed by the part identity alone. See `planHasGroupByTopK`.
+    if (params.top_k)
         return std::nullopt;
 
     const bool partial_cache_is_compatible_with_group_by_limits

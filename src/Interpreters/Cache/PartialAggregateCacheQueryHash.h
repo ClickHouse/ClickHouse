@@ -21,6 +21,12 @@ struct Settings;
 /// plans. Execution-time caching is unaffected because it observes the chunks before `ARRAY JOIN`.
 bool planHasArrayJoinStep(const QueryPlan & query_plan);
 
+/// The GROUP BY top-K heap prunes the keys of a part by a boundary derived from the rows of other parts, so the
+/// partial states it produces must neither be put into nor served from the cache. The heap can be applied by
+/// the plan optimization after the query hash for plan-time probing was computed, so the hash must be dropped
+/// for an optimized plan that has an aggregation with the heap.
+bool planHasGroupByTopK(const QueryPlan & query_plan);
+
 /// Single SipHash implementation for `PartialAggregateCache::Key::query_hash` (must stay in sync with
 /// `AggregatingTransform` and `ReadFromMergeTree` planning probes).
 ///

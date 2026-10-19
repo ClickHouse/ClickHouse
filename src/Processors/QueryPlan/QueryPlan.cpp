@@ -11,6 +11,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
+#include <Interpreters/Cache/PartialAggregateCacheQueryHash.h>
 #include <Interpreters/Context.h>
 
 #include <Processors/ConcatProcessor.h>
@@ -254,6 +255,17 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     if (effective_settings.make_distributed_plan)
         convertToDistributed(effective_settings);
 
+    /// The query hash for plan-time probes of the partial aggregate cache is computed before the plan is optimized,
+    /// but the optimization can apply the GROUP BY top-K heap, which makes per-part states unsuitable for the cache.
+    std::optional<BuildQueryPipelineSettings> build_pipeline_settings_without_partial_aggregate_cache;
+    const BuildQueryPipelineSettings * effective_build_pipeline_settings = &build_pipeline_settings;
+    if (build_pipeline_settings.partial_aggregate_cache_query_hash && planHasGroupByTopK(*this))
+    {
+        build_pipeline_settings_without_partial_aggregate_cache.emplace(build_pipeline_settings);
+        build_pipeline_settings_without_partial_aggregate_cache->partial_aggregate_cache_query_hash.reset();
+        effective_build_pipeline_settings = &*build_pipeline_settings_without_partial_aggregate_cache;
+    }
+
     struct Frame
     {
         Node * node = {};
@@ -279,7 +291,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
         if (next_child == frame.node->children.size())
         {
             bool limit_max_threads = frame.pipelines.empty();
-            last_pipeline = frame.node->step->updatePipeline(std::move(frame.pipelines), build_pipeline_settings);
+            last_pipeline = frame.node->step->updatePipeline(std::move(frame.pipelines), *effective_build_pipeline_settings);
 
             if (limit_max_threads && max_threads)
                 last_pipeline->limitMaxThreads(max_threads);
