@@ -11,9 +11,6 @@
 #include <Columns/ColumnString.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/quoteString.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
 #include <DataTypes/DataTypeString.h>
 #include <Processors/Sources/PostgreSQLSource.h>
 #include <Dictionaries/readInvalidateQuery.h>
@@ -83,7 +80,7 @@ namespace
             qualified_name = QualifiedTableName::parseFromString(qualified_name.table);
 
         /// Do not need db because it is already in a connection string.
-        return {dict_struct, "", qualified_name.database, qualified_name.table, query, where, IdentifierQuotingStyle::DoubleQuotesPostgreSQL};
+        return {dict_struct, "", qualified_name.database, qualified_name.table, query, where, IdentifierQuotingStyle::DoubleQuotes};
     }
 }
 
@@ -155,29 +152,9 @@ BlockIO PostgreSQLDictionarySource::loadKeys(const Columns & key_columns, const 
 }
 
 
-String PostgreSQLDictionarySource::getCustomQueryStructureHint() const
-{
-    if (configuration.query.empty())
-        return {};
-
-    /// The columns of a custom query are taken by position, so name the order that is expected.
-    WriteBufferFromOwnString out;
-    out << "the columns of a dictionary QUERY are taken by position, so it must return them in this order:";
-
-    for (size_t i = 0; i < sample_block->columns(); ++i)
-        out << (i ? ", " : " ") << backQuote(sample_block->getByPosition(i).name);
-
-    if (dict_struct.range_min && dict_struct.range_max)
-        out << " (the key column(s) first, then the RANGE MIN and RANGE MAX columns, then the remaining attributes)";
-
-    return out.str();
-}
-
-
 QueryPipeline PostgreSQLDictionarySource::loadBase(const String & query)
 {
-    return QueryPipeline(
-        std::make_shared<PostgreSQLSource<>>(pool->get(), query, sample_block, max_block_size, getCustomQueryStructureHint()));
+    return QueryPipeline(std::make_shared<PostgreSQLSource<>>(pool->get(), query, sample_block, max_block_size));
 }
 
 
@@ -412,7 +389,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 #endif
     };
 
-    factory.registerSource("postgresql", create_table_source, SecretArgumentsSpec{.secret_keys = {"password", "sslrootcert_pem", "sslcert_pem", "sslkey_pem"}}, Documentation{
+    factory.registerSource("postgresql", create_table_source, Documentation{
         .description = R"DOCS_MD(
 # PostgreSQL dictionary source
 
@@ -477,7 +454,7 @@ Setting fields:
 | `where` | The selection criteria. The syntax for conditions is the same as for `WHERE` clause in PostgreSQL. For example, `id > 10 AND id < 20`. Optional. |
 | `invalidate_query` | Query for checking the dictionary status. Optional. Read more in the section [Refreshing dictionary data using LIFETIME](/reference/statements/create/dictionary/lifetime). |
 | `background_reconnect` | Reconnect to replica in background if connection fails. Optional. |
-| `query` | The custom query. Optional. Its columns are taken by position, so it must return them in the [order the dictionary expects](/reference/statements/create/dictionary/sources/overview#custom-query-column-order). |
+| `query` | The custom query. Optional. |
 | `sslmode` | TLS/SSL mode passed to `libpq`: `disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`. When unset, the `libpq` default of `prefer` applies. Optional. |
 | `sslrootcert_pem` | Contents of the CA certificate that the PostgreSQL server certificate is verified against. Optional. |
 | `sslcert_pem` | Contents of the client certificate, for certificate-based authentication. Optional. |

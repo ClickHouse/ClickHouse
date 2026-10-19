@@ -185,6 +185,9 @@ private:
     using SizeAndChecksum = std::pair<UInt64, UInt128>;
     std::map<String /* file_name */, SizeAndChecksum> file_names TSA_GUARDED_BY(mutex); /// Should be ordered alphabetically, see listFiles(). For empty files we assume checksum = 0.
     std::map<SizeAndChecksum, BackupFileInfo> file_infos TSA_GUARDED_BY(mutex); /// Information about files. Without empty files.
+    /// Instead of `file_infos` when the backup is opened only for lookups (`CreateParams::for_file_lookups_only`): the sizes
+    /// and checksums of its files, sorted and without duplicates. Without empty files.
+    std::vector<SizeAndChecksum> sizes_and_checksums TSA_GUARDED_BY(mutex);
     /// object_key -> file name, only used by lightweight snapshot
     std::unordered_map<String, String> file_object_keys TSA_GUARDED_BY(mutex);
     std::unordered_map<String, BackupFileInfo> lightweight_snapshot_file_infos TSA_GUARDED_BY(mutex);
@@ -221,13 +224,8 @@ private:
     bool corrupted = false;
     /// Outcome of the one own-lock cleanup a failed `open` performs; see `tryRemoveOwnLockFile`.
     std::optional<bool> own_lock_cleanup_result;
-    /// Whether this `open` wrote the destination lock, which is what makes it ours to take back. After a
-    /// failed lock write it is set only on a backend that creates the lock exclusively: elsewhere the
-    /// matching contents `removeLockFile` relies on may sit in a lock this attempt wrote over.
+    /// Whether this `open` wrote the destination lock, which is what makes it ours to take back.
     bool created_own_lock_file = false;
-    /// `createLockFile` has created the lock file exclusively, or read it back and found this attempt's own
-    /// contents in it, so there is nothing for an immediate re-check to add.
-    bool lock_file_verified_on_create = false;
     const LoggerPtr log;
 };
 

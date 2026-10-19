@@ -63,7 +63,7 @@ PreparedSets::Subqueries extractSetsForMaterialization(QueryPlan::Node & subplan
 
         /// Some steps own whole subplans (e.g. `ReadFromMerge` children), whose root node cannot be
         /// removed from here either.
-        for (auto * child_plan : node->step->getChildPlans(/*for_explain=*/ false))
+        for (auto * child_plan : node->step->getChildPlans())
         {
             auto * child_root = child_plan ? child_plan->getRootNode() : nullptr;
             if (!child_root)

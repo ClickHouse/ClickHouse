@@ -83,6 +83,7 @@ namespace Setting
     extern const SettingsBool http_wait_end_of_query;
     extern const SettingsBool http_write_exception_in_output_format;
     extern const SettingsInt64 http_zlib_compression_level;
+    extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 input_format_max_block_wait_ms;
     extern const SettingsUInt64 readonly;
     extern const SettingsBool run_query_in_background;
@@ -722,6 +723,15 @@ void HTTPHandler::processQuery(
     bool enable_http_compression = params.getParsedLast<bool>("enable_http_compression", settings[Setting::enable_http_compression]);
     Int64 http_zlib_compression_level
         = params.getParsed<Int64>("http_zlib_compression_level", settings[Setting::http_zlib_compression_level]);
+    /// `http_zlib_compression_level` is for the zlib-based methods only. Other methods have their own ranges
+    /// and meanings of levels (e.g. `lz4` switches to the slow high-compression mode starting from level 2),
+    /// so they use the generic `output_format_compression_level`.
+    auto compression_level_for_method = [&](CompressionMethod method)
+    {
+        if (method == CompressionMethod::Gzip || method == CompressionMethod::Zlib)
+            return static_cast<int>(http_zlib_compression_level);
+        return static_cast<int>(settings[Setting::output_format_compression_level]);
+    };
     /// HTTP `Content-Encoding: snappy` is standardized to use the snappy framing format,
     /// independent of the user-tunable `snappy_mode` (which controls generic `file()`/`url()` reads).
     auto snappy_mode = SnappyMode::Framed;
@@ -740,7 +750,7 @@ void HTTPHandler::processQuery(
         used_output.wrap_compressed_holder = wrapWriteBufferWithCompressionMethod(
             used_output.out.get(),
             http_response_compression_method,
-            static_cast<int>(http_zlib_compression_level),
+            compression_level_for_method(http_response_compression_method),
             0,
             snappy_mode,
             DBMS_DEFAULT_BUFFER_SIZE,
@@ -766,7 +776,7 @@ void HTTPHandler::processQuery(
             used_output.generic_compression_holder = wrapWriteBufferWithCompressionMethod(
                 used_output.out.get(),
                 response_compression_method,
-                static_cast<int>(http_zlib_compression_level),
+                compression_level_for_method(response_compression_method),
                 0,
                 settings[Setting::snappy_mode],
                 DBMS_DEFAULT_BUFFER_SIZE,
@@ -1657,11 +1667,9 @@ DynamicQueryHandler::DynamicQueryHandler(
     const std::string & param_name_,
     const HTTPResponseHeaderSetup & http_response_headers_override_,
     const std::string & url_prefix_,
-    HTTPPathHintsPtr path_hints_,
-    bool parse_http_path_)
+    HTTPPathHintsPtr path_hints_)
     : HTTPHandler(server_, connection_config_, "DynamicQueryHandler", http_response_headers_override_, url_prefix_, std::move(path_hints_))
     , param_name(param_name_)
-    , parse_http_path(parse_http_path_)
 {
 }
 
@@ -1939,12 +1947,7 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
     }
 
     auto creator = [&server, query_param_name, http_response_headers_override, connection_config, url_prefix]() -> std::unique_ptr<DynamicQueryHandler>
-    {
-        /// A rule without `url_prefix` is matched by its own `url`, which is not a `database/table.format` path.
-        const bool parse_http_path = !url_prefix.empty();
-        return std::make_unique<DynamicQueryHandler>(
-            server, connection_config, query_param_name, http_response_headers_override, url_prefix, nullptr, parse_http_path);
-    };
+    { return std::make_unique<DynamicQueryHandler>(server, connection_config, query_param_name, http_response_headers_override, url_prefix); };
 
     auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(creator));
     factory->addFiltersFromConfig(config, config_prefix);

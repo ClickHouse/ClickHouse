@@ -22,7 +22,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/S3/ProviderType.h>
-#include <IO/SocketPeerClosed.h>
 #include <Interpreters/Context.h>
 
 #include <aws/core/http/HttpRequest.h>
@@ -110,13 +109,6 @@ bool isS3WrongSigningRegionBadRequest(int status_code, const Poco::Net::HTTPMess
     if (!response.has("x-amz-bucket-region"))
         return false;
     return !response.get("x-amz-bucket-region").empty();
-}
-
-String httpResponseCodeToString(Aws::Http::HttpResponseCode response_code)
-{
-    if (response_code == Aws::Http::HttpResponseCode::REQUEST_NOT_MADE)
-        return "none (no response from the server)";
-    return std::to_string(static_cast<std::underlying_type_t<Aws::Http::HttpResponseCode>>(response_code));
 }
 
 PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
@@ -645,25 +637,9 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 request.GetContentBody()->seekg(0);
 
                 setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
-                try
-                {
-                    auto size = Poco::StreamCopier::copyStream(*request.GetContentBody(), request_body_stream);
-                    request_body_stream.flush();
-                    if (enable_s3_requests_logging)
-                        LOG_TEST(log, "Written {} bytes to request body", size);
-                }
-                catch (const Poco::IOException &)
-                {
-                    /// A server may answer with an error and close the connection before reading the whole body.
-                    /// TLS allows no I/O after a failed write.
-                    if (session->secure()
-                        || DB::getSocketState(session->socket()) != DB::SocketState::DataPending
-                        || !session->receiveEarlyResponse(poco_response)
-                        || poco_response.getStatus() < Poco::Net::HTTPResponse::HTTP_MULTIPLE_CHOICES)
-                        throw;
-                    LOG_DEBUG(log, "Failed to send the request body to {}, using the response the server has already sent: {}",
-                        uri, getCurrentExceptionMessage(/* with_stacktrace */ false));
-                }
+                auto size = Poco::StreamCopier::copyStream(*request.GetContentBody(), request_body_stream);
+                if (enable_s3_requests_logging)
+                    LOG_TEST(log, "Written {} bytes to request body", size);
             }
 
             setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));

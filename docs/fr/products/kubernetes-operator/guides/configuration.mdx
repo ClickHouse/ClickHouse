@@ -139,9 +139,11 @@ Les nœuds Keeper utilisent les noms de pods via leur Service headless : `<pod>
   ## Configuration du pod
 </div>
 
-### Répartition topologique et affinité automatiques {#automatic-topology-spread-and-affinity}
+<div id="automatic-topology-spread-and-affinity">
+  ### Répartition topologique et affinité automatiques
+</div>
 
-Répartissez les pods sur plusieurs zones de disponibilité :
+Répartissez les pods sur plusieurs zones de disponibilité :
 
 ```yaml
 spec:
@@ -152,22 +154,6 @@ spec:
 
 <Note>
   Assurez-vous que votre cluster Kubernetes dispose d’un nombre suffisant de nœuds répartis sur différentes zones pour respecter les contraintes de répartition.
-</Note>
-
-Avec un autoscaler de nœuds (Karpenter, Cluster Autoscaler), la contrainte de répartition seule ne suffit pas à
-provisionner une zone dépourvue de nœuds — le scheduler se contente des zones qu’il peut voir.
-Définissez `topologyMinDomains` sur le nombre de zones de disponibilité pour forcer la répartition :
-
-```yaml
-spec:
-  podTemplate:
-    topologyZoneKey: topology.kubernetes.io/zone
-    topologyMinDomains: 3   # number of availability zones
-```
-
-<Note>
-  `topologyMinDomains` nécessite `topologyZoneKey`. Les pods restent à l’état `Pending` tant que le nombre de zones disponibles est inférieur à celui
-  demandé ; restez donc dans les limites des zones que votre cluster peut fournir.
 </Note>
 
 <div id="manual-configuration">
@@ -732,12 +718,12 @@ Le nom du conteneur `version-probe` est le nom par défaut de l’opérateur —
   ### Contrôles globaux de l’opérateur
 </div>
 
-Deux options du manager de l’opérateur contrôlent globalement la boucle de vérification des mises à niveau :
+Deux options du manager de l’opérateur contrôlent globalement la boucle de vérification des mises à niveau :
 
-| Option                            | Par défaut | Effet                                                                                                                                                                          |
-| --------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--version-update-interval`       | `24h`      | Fréquence à laquelle l’opérateur récupère à nouveau la liste des versions amont. Doit être supérieure à zéro lorsque les vérifications de mise à jour de version sont activées |
-| `--disable-version-update-checks` | `false`    | Désactive entièrement la vérification des mises à niveau. La condition `VersionUpgraded` n’est pas définie et aucun trafic HTTP sortant vers `clickhouse.com` n’est généré     |
+| Option                            | Par défaut | Effet                                                                                                                                                                      |
+| --------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--version-update-interval`       | `24h`      | Fréquence à laquelle l’opérateur récupère à nouveau la liste des versions amont                                                                                         |
+| `--disable-version-update-checks` | `false`    | Désactive entièrement la vérification des mises à niveau. La condition `VersionUpgraded` n’est pas définie et aucun trafic HTTP sortant vers `clickhouse.com` n’est généré |
 
 Définissez `--disable-version-update-checks=true` dans les environnements isolés du réseau ou lorsque le trafic sortant vers `clickhouse.com` n’est pas autorisé.
 
@@ -848,7 +834,9 @@ spec:
   (`passwordType: password`).
 </Note>
 
-### Utilisateurs personnalisés dans la configuration {#custom-users-in-configuration}
+<div id="custom-users-in-configuration">
+  ### Utilisateurs personnalisés dans la configuration
+</div>
 
 Configurez des utilisateurs supplémentaires dans les fichiers de configuration.
 
@@ -1097,17 +1085,4 @@ spec:
       configMap:
         key: password
         name: default-password
-```
-
-## Resynchronisation périodique {#periodic-resync}
-
-En plus de réagir aux événements Kubernetes, l&#39;opérateur réconcilie à nouveau chaque cluster à intervalle fixe. Cela permet de garder à jour les conditions d&#39;état relatives à un state qu&#39;aucun watch ne peut observer — santé des replicas ClickHouse, quorum Keeper — et de réessayer les actions correctives telles que le nettoyage des pods bloqués.
-
-L&#39;intervalle est contrôlé par la variable d&#39;environnement `RESYNC_PERIOD` de l&#39;opérateur (valeur par défaut : `30s`). Elle s&#39;applique aux ressources `KeeperCluster`, où `0` désactive la resynchronisation périodique. Les ressources `ClickHouseCluster` interrogent la table ClickHouse `system.warnings` toutes les 30 secondes, ce qui relance déjà la réconciliation ; `RESYNC_PERIOD` n&#39;a donc actuellement aucun effet sur elles.
-
-```yaml
-# in the operator Deployment spec
-env:
-- name: RESYNC_PERIOD
-  value: "1m"
 ```

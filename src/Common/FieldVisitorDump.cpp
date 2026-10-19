@@ -130,11 +130,6 @@ String FieldVisitorDump::operator() (const AggregateFunctionStateData & x) const
     return wb.str();
 }
 
-String FieldVisitorDump::operator() (const NumberLiteral & x) const
-{
-    return "Number_" + x.value;
-}
-
 String FieldVisitorDump::operator() (const CustomType & x) const
 {
     WriteBufferFromOwnString wb;

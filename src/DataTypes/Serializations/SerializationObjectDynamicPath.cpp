@@ -147,13 +147,8 @@ void SerializationObjectDynamicPath::deserializeBinaryBulkStatePrefix(
     if (dynamic_path_state->read_from_shared_data)
     {
         settings.path.push_back(Substream::ObjectSharedData);
-        /// The shared data stores each path as a separate column, so its subcolumns are resolved
-        /// from that root, while `nested_serialization` was resolved inside the enclosing types.
-        auto shared_data_subcolumn_serialization = path_subcolumn.empty()
-            ? nested_serialization
-            : dynamic_type->getSubcolumnSerialization(path_subcolumn, dynamic_serialization);
         dynamic_path_state->shared_data_path_serialization = SerializationObjectSharedDataPath::create(
-            shared_data_subcolumn_serialization,
+            nested_serialization,
             object_structure_state->shared_data_serialization_version,
             path,
             path_subcolumn,

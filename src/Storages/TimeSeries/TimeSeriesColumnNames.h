@@ -53,8 +53,7 @@ struct TimeSeriesColumnNames
 
     /// Old names kept for compatibility:
 
-    /// The name of the column with the name of a metric family in the "metric families" target table of tables
-    /// of versions before 6, see `getInnerMetricFamily`.
+    /// The old name of the "metric_family" column, still used in the "metric families" target table.
     static constexpr const char * MetricFamilyName = "metric_family_name";
 
     /// Tables created by older versions declare it as an ephemeral column and used to fill it
@@ -66,13 +65,6 @@ struct TimeSeriesColumnNames
     static constexpr const char * getOuterSamples(UInt64 version)
     {
         return (version >= TimeSeriesVersion::MIN_WITH_SAMPLES_OUTER_COLUMN) ? Samples : TimeSeries;
-    }
-
-    /// Returns the name of the column with the name of a metric family in the "metric families" target table
-    /// for a TimeSeries table of the specified version.
-    static constexpr const char * getInnerMetricFamily(UInt64 version)
-    {
-        return (version >= TimeSeriesVersion::MIN_WITH_METRIC_FAMILY_INNER_COLUMN) ? MetricFamily : MetricFamilyName;
     }
 };
 

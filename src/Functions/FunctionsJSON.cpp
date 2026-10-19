@@ -51,7 +51,6 @@ namespace Setting
 {
     extern const SettingsBool allow_simdjson;
     extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
-    extern const SettingsBool json_extract_named_tuples_as_objects;
 }
 
 namespace ErrorCodes
@@ -256,22 +255,24 @@ public:
                 return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
 
             /// Use combined `@` subcolumn that merges literal value and sub-object.
-            /// For typed paths getSubcolumn returns only the literal value. For non-typed paths it returns
-            /// a Dynamic column: literal if present, sub-object as JSON if not, NULL otherwise.
-            /// When type_json_skip_null_typed_paths is enabled, use extractCombinedSubcolumn for every path
-            /// (including typed ones) so a NULL typed literal still surfaces a non-empty sub-object, and
-            /// a parent whose typed descendants are all NULL is treated as absent.
+            /// For typed paths it returns only the literal value. For non-typed paths it returns a Dynamic
+            /// column: literal if present, sub-object as JSON if not, NULL otherwise.
             String combined_name = DataTypeObject::getCombinedSubcolumnName(path);
-            const bool skip_null = format_settings.json.type_json_skip_null_typed_paths;
-            bool is_typed_path = data_type_object.getTypedPaths().contains(path);
-            bool treat_typed_as_always_present = is_typed_path && !skip_null;
+            auto merged_type = data_type_object.getSubcolumnType(combined_name);
 
-            auto merged = skip_null
+            /// Typed paths are always present in a JSON column, even when the key was missing
+            /// from the inserted JSON (they get the type's default value). For non-typed paths
+            /// the combined subcolumn returns a Dynamic column where NULL means absent.
+            /// When type_json_skip_null_typed_paths is enabled, NULL typed paths are treated as absent.
+            bool is_typed_path = data_type_object.getTypedPaths().contains(path);
+            bool treat_typed_as_always_present = is_typed_path && !format_settings.json.type_json_skip_null_typed_paths;
+
+            /// When skip_null_typed_paths is enabled for a non-typed parent path (e.g. 'a' when 'a.b' is typed),
+            /// use extractCombinedSubcolumn which propagates the setting into sub-object emptiness checks.
+            /// Otherwise the sub-object with all-NULL typed descendants would be considered non-empty.
+            auto merged = (format_settings.json.type_json_skip_null_typed_paths && !is_typed_path)
                 ? data_type_object.extractCombinedSubcolumn(path, object_column, true)
                 : data_type_object.getSubcolumn(combined_name, object_column);
-            auto merged_type = skip_null
-                ? data_type_object.getDynamicType()
-                : data_type_object.getSubcolumnType(combined_name);
 
             /// JSONHas must be UInt8 {0,1} from path presence. The generic `else` below would
             /// cast the extracted value to UInt8 and silently return the value itself.
@@ -646,22 +647,17 @@ public:
         DataTypes argument_types_,
         DataTypePtr return_type_,
         DataTypePtr json_return_type_,
-        const FormatSettings & format_settings_,
-        UInt64 settings_hash_)
+        const FormatSettings & format_settings_)
         : null_presence(null_presence_)
         , allow_simdjson(allow_simdjson_)
         , argument_types(std::move(argument_types_))
         , return_type(std::move(return_type_))
         , json_return_type(std::move(json_return_type_))
         , format_settings(format_settings_)
-        , settings_hash(settings_hash_)
     {
     }
 
     String getName() const override { return Name::name; }
-
-    /// The captured settings decide how a JSON value is parsed into the result, see `IFunctionBase::updateHash`.
-    void updateHash(SipHash & hash) const override { hash.update(settings_hash); }
 
     const DataTypes & getArgumentTypes() const override
     {
@@ -687,7 +683,6 @@ private:
     DataTypePtr return_type;
     DataTypePtr json_return_type;
     FormatSettings format_settings;
-    UInt64 settings_hash;
 };
 
 /// We use IFunctionOverloadResolver instead of IFunction to handle non-default NULL processing.
@@ -712,19 +707,6 @@ public:
         /// Extracting a string JSON value into a DateTime/DateTime64 column is a string-to-type
         /// cast, so we honour `cast_string_to_date_time_mode` (rather than `date_time_input_format`).
         format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
-
-        /// Not a format setting: it governs these functions, so it is applied here rather than in
-        /// `getFormatSettings`, which would also reach the `JSON` data type.
-        format_settings.json.extract_named_tuples_as_objects = context->getSettingsRef()[Setting::json_extract_named_tuples_as_objects];
-
-        /// Everything captured above, for `FunctionBaseFunctionJSON::updateHash`: `format_settings` through the
-        /// hash of the session settings it was derived from, plus the members overridden above.
-        SipHash hash;
-        hash.update(allow_simdjson);
-        hash.update(format_settings.date_time_input_format);
-        hash.update(format_settings.json.extract_named_tuples_as_objects);
-        hash.update(getFormatSettingsHash(context->getSettingsRef()));
-        settings_hash = hash.get64();
     }
 
     bool isVariadic() const override { return true; }
@@ -758,13 +740,12 @@ public:
         for (const auto & argument : arguments)
             argument_types.emplace_back(argument.type);
         return std::make_unique<FunctionBaseFunctionJSON<Name, Impl, case_insensitive>>(
-            null_presence, allow_simdjson, argument_types, return_type, json_return_type, format_settings, settings_hash);
+            null_presence, allow_simdjson, argument_types, return_type, json_return_type, format_settings);
     }
 
 private:
     const bool allow_simdjson;
     FormatSettings format_settings;
-    UInt64 settings_hash = 0;
 };
 
 struct NameJSONHas { static constexpr auto name{"JSONHas"}; };
@@ -1190,13 +1171,22 @@ public:
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view, const FormatSettings & format_settings, String &)
+    static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view, const FormatSettings & format_settings, String & error)
     {
         ColumnString & col_str = assert_cast<ColumnString &>(dest);
         auto & chars = col_str.getChars();
+        size_t prev_chars_size = chars.size();
+        bool written = false;
         {
             WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
-            jsonElementToString<JSONParser>(element, buf, format_settings);
+            written = jsonElementToString<JSONParser>(element, buf, format_settings, format_settings.json.max_depth);
+        }
+        /// A value nested deeper than the limit cannot be rendered whole: a failure to extract it.
+        if (!written)
+        {
+            chars.resize_assume_reserved(prev_chars_size);
+            error = fmt::format("Maximum JSON depth ({}) exceeded. Consider raising input_format_json_max_depth setting.", format_settings.json.max_depth);
+            return false;
         }
         col_str.getOffsets().push_back(chars.size());
         return true;
@@ -1226,7 +1216,11 @@ public:
         ColumnArray & col_res = assert_cast<ColumnArray &>(dest);
 
         for (auto value : array)
-            JSONExtractRawImpl<JSONParser>::insertResultToColumn(col_res.getData(), value, {}, format_settings, error);
+        {
+            /// The result keeps one element per array element, also where one cannot be rendered.
+            if (!JSONExtractRawImpl<JSONParser>::insertResultToColumn(col_res.getData(), value, {}, format_settings, error))
+                col_res.getData().insertDefault();
+        }
 
         col_res.getOffsets().push_back(col_res.getOffsets().back() + array.size());
         return true;
@@ -1264,7 +1258,9 @@ public:
         for (const auto & [key, value] : object)
         {
             col_key.insertData(key.data(), key.size());
-            JSONExtractRawImpl<JSONParser>::insertResultToColumn(col_value, value, {}, format_settings, error);
+            /// Keep one value per key even where the value cannot be rendered.
+            if (!JSONExtractRawImpl<JSONParser>::insertResultToColumn(col_value, value, {}, format_settings, error))
+                col_value.insertDefault();
         }
 
         col_arr.getOffsets().push_back(col_arr.getOffsets().back() + object.size());

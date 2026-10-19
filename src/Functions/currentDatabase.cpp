@@ -92,9 +92,6 @@ SELECT CURRENT_DATABASE
     factory.registerAlias("DATABASE", FunctionCurrentDatabase::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("SCHEMA", FunctionCurrentDatabase::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_database", FunctionCurrentDatabase::name, FunctionFactory::Case::Insensitive);
-    /// ClickHouse databases are exposed as schemas over the PostgreSQL wire protocol, and unqualified names
-    /// are resolved in the current database, so `current_schema` is the current database.
-    factory.registerAlias("current_schema", FunctionCurrentDatabase::name, FunctionFactory::Case::Insensitive);
 }
 
 }

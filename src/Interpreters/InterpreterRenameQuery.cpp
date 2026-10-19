@@ -168,8 +168,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
             bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
             std::tie(from_ref_dependencies, from_loading_dependencies, from_mv_dependencies) = database_catalog.removeDependencies(from_table_id, check_ref_deps, check_loading_deps, false, /*is_mv*/ true);
-            if (!keep_source_view_dependencies)
-                from_dependent_views = database_catalog.takeSourceViewDependencies(from_table_id);
+            from_dependent_views = database_catalog.takeSourceViewDependencies(from_table_id);
         }
         try
         {

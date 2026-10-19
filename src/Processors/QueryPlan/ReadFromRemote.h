@@ -40,7 +40,6 @@ public:
         UInt32 shard_count_,
         std::shared_ptr<const StorageLimitsList> storage_limits_,
         const String & cluster_name_,
-        const String & shard_scope_identity_,
         UnavailableShardTrackerPtr unavailable_shard_tracker_ = nullptr);
 
     String getName() const override { return "ReadFromRemote"; }
@@ -67,32 +66,23 @@ private:
     std::shared_ptr<const StorageLimitsList> storage_limits;
     LoggerPtr log;
     UInt32 shard_count;
-    /// A resolvable cluster name, also assigned to `cluster_for_parallel_replicas`.
     const String cluster_name;
-    /// Identifies the shard numbering the shipped `_shard_num` belongs to; not necessarily a cluster name.
-    const String shard_scope_identity;
     UnavailableShardTrackerPtr unavailable_shard_tracker;
     std::optional<GetPriorityForLoadBalancing> priority_func_factory;
 
-    /// An EXPLAIN runs extra executors of its own, whose skips are not the query's: it passes no tracker.
-    Pipes addPipes(
-        const ClusterProxy::SelectStreamFactory::Shards & used_shards,
-        const SharedHeader & out_header,
-        const UnavailableShardTrackerPtr & tracker);
+    Pipes addPipes(const ClusterProxy::SelectStreamFactory::Shards & used_shards, const SharedHeader & out_header);
 
     void addLazyPipe(
         Pipes & pipes,
         const ClusterProxy::SelectStreamFactory::Shard & shard,
         const SharedHeader & out_header,
-        size_t parallel_marshalling_threads,
-        const UnavailableShardTrackerPtr & tracker);
+        size_t parallel_marshalling_threads);
 
     void addPipe(
         Pipes & pipes,
         const ClusterProxy::SelectStreamFactory::Shard & shard,
         const SharedHeader & out_header,
-        size_t parallel_marshalling_threads,
-        const UnavailableShardTrackerPtr & tracker);
+        size_t parallel_marshalling_threads);
 };
 
 

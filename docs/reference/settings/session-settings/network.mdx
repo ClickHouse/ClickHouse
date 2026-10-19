@@ -19,7 +19,9 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "ZSTD"},{"label": "Switched the default compression method for client\/server and server\/server communication from `LZ4` to `ZSTD` to reduce network traffic."}]}]}/>
 
-The codec for compressing the client/server and server/server communication over the native protocol, the response of an HTTP request made with `compress=1`, which uses the same frame format, and the streaming exchange between the tasks of a distributed query plan (`make_distributed_plan`). Exchanges through temporary files use the default codec of the server.
+The codec for compressing the client/server and server/server communication over the native protocol, and the response of an HTTP request made with `compress=1`, which uses the same frame format.
+
+The setting does not apply to the streaming-exchange channel of distributed queries, which always uses the server default codec: every compressed frame is self-describing, so the receiver detects the codec automatically.
 
 Possible values:
 
