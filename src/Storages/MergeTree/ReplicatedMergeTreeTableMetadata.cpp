@@ -532,9 +532,16 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(
 
 static bool hasMinMaxIndexOnColumn(const StorageInMemoryMetadata & metadata, const String & column_name)
 {
+    /// `column_names` of an index over an expression alias hold the columns of the expanded alias
+    /// expression rather than the alias itself (see `IndexDescription::initExpressionInfo`), so match an
+    /// implicit index by its generated name, as `dropImplicitIndicesForColumn` does.
     return std::ranges::any_of(metadata.secondary_indices, [&](const IndexDescription & index)
     {
-        return index.type == "minmax" && !index.column_names.empty() && index.column_names.front() == column_name;
+        if (index.type != "minmax")
+            return false;
+        if (index.isImplicitlyCreated())
+            return index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name;
+        return !index.column_names.empty() && index.column_names.front() == column_name;
     });
 }
 
