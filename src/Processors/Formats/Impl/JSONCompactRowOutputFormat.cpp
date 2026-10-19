@@ -78,6 +78,7 @@ void registerOutputFormatJSONCompact(FormatFactory & factory)
     });
 
     factory.markOutputFormatSupportsParallelFormatting("JSONCompact");
+    factory.markFormatHasNoAppendSupport("JSONCompact");
     factory.setContentType("JSONCompact", "application/json; charset=UTF-8");
 
     /// The `meta.type` strings are written from the header type names and are only UTF-8 validated
@@ -100,6 +101,7 @@ void registerOutputFormatJSONCompact(FormatFactory & factory)
     });
 
     factory.markOutputFormatSupportsParallelFormatting("JSONCompactStrings");
+    factory.markFormatHasNoAppendSupport("JSONCompactStrings");
     factory.setContentType("JSONCompactStrings", "application/json; charset=UTF-8");
 
     /// Additionally to the `meta.type` strings, `JSONCompactStrings` serializes the values through
