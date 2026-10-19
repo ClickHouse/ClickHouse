@@ -6,6 +6,7 @@ which would pull in `ci.defs.job_configs` and the rest of that script's module s
 
 import logging
 import os
+import re
 import shlex
 import tempfile
 import traceback
@@ -21,6 +22,24 @@ GITHUB_SERVER_URL = os.getenv("GITHUB_SERVER_URL", "https://github.com")
 SCRIPT_DIR = Path(__file__).resolve().parent  # ci/jobs/scripts/docker_server
 CONFIG_OVERRIDE = SCRIPT_DIR / "config.sh"
 TEMP_PATH = SCRIPT_DIR.parents[2] / "tmp"  # parents[2] is `ci`
+REPO_ROOT = SCRIPT_DIR.parents[3]
+OFFICIAL_IMAGES_REPO = "docker-library/official-images"
+
+# A test is a `clickhouse-*` or `keeper-*` directory, the names `config.sh` runs; `tests/lib.sh` is a shared helper.
+_TEST_FILE_RE = re.compile(
+    r"ci/jobs/scripts/docker_server/tests/((?:clickhouse|keeper)-[^/]+)/"
+)
+
+
+def changed_tests(changed_files) -> list:
+    """Names of the tests with a changed file that still exists."""
+    tests = []
+    for file in changed_files or []:
+        file = file.removeprefix(".").removeprefix("/")
+        match = _TEST_FILE_RE.match(file)
+        if match and (REPO_ROOT / file).is_file() and match.group(1) not in tests:
+            tests.append(match.group(1))
+    return tests
 
 
 def is_distroless_image(docker_image: str) -> bool:
@@ -134,3 +153,48 @@ def test_docker_library(test_results, check_images=None) -> None:
                 info=f"Exception while testing docker library: {traceback.format_exc()}",
             )
         )
+
+
+def validate_bugfix_tests(test_results, master_images, tests) -> None:
+    """Run a bug fix's changed tests on the images built from master, where they must fail.
+
+    A test passing there does not reproduce the bug. Each test runs only on the images whose `config.sh` list has it.
+    """
+    # Cloned by `test_docker_library`, which reports a failed clone itself.
+    repo_path = TEMP_PATH / OFFICIAL_IMAGES_REPO
+    run_sh = repo_path / "test/run.sh"
+    configs = f"-c {shlex.quote((repo_path / 'test/config.sh').as_posix())} -c {shlex.quote(CONFIG_OVERRIDE.as_posix())}"
+    for image in master_images:
+        name = f"bugfix validation ({image})"
+        if not Shell.check(
+            f"docker pull {shlex.quote(image)}", verbose=True, retries=3
+        ):
+            test_results.append(
+                Result(
+                    name=name,
+                    status=Result.Status.ERROR,
+                    info=f"Failed to pull {image}",
+                )
+            )
+            continue
+        for test in tests:
+            cmd = f"{shlex.quote(run_sh.as_posix())} -t {shlex.quote(test)} {shlex.quote(image)} {configs}"
+            exit_code, stdout, stderr = Shell.get_res_stdout_stderr(cmd, verbose=True)
+            if "image has no tests" in stdout:
+                continue
+            if exit_code == 0:
+                status = Result.Status.FAIL
+                info = f"{test} passes on {image}, built from master, so it does not reproduce the bug"
+            elif f"'{test}' [" in stdout:
+                status = Result.Status.OK
+                info = f"{test} fails on {image}, built from master, as expected"
+            else:
+                status = Result.Status.ERROR
+                info = f"{test} did not run on {image}"
+            test_results.append(
+                Result(
+                    name=f"bugfix validation: {test} ({image})",
+                    status=status,
+                    info="\n".join(part for part in (info, stdout, stderr) if part),
+                )
+            )

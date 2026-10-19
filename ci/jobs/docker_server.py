@@ -9,7 +9,12 @@ from typing import Dict, List
 
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.clickhouse_version import CHVersion
-from ci.jobs.scripts.docker_server.docker_library import test_docker_library
+from ci.jobs.scripts.docker_server.docker_library import (
+    changed_tests,
+    test_docker_library,
+    validate_bugfix_tests,
+)
+from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika import Secret
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -787,6 +792,18 @@ def main():
         # The image is built locally only when we don't push it
         # See `--output=type=docker`
         test_docker_library(test_results)
+        # A PR to master only: the `head` images are built from master, where a backported fix is already present.
+        if info.workflow_name == "PR" and any(
+            label in info.pr_labels
+            for label in (Labels.PR_BUGFIX, Labels.PR_CRITICAL_BUGFIX)
+        ):
+            tests = changed_tests(info.get_changed_files())
+            if tests:
+                master_images = [
+                    f"{image.name}:head" + ("" if os_ == "ubuntu" else f"-{os_}")
+                    for os_ in args.os
+                ]
+                validate_bugfix_tests(test_results, master_images, tests)
 
     test_results.append(check_server_readme(image.path))
 
