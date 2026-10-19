@@ -102,16 +102,15 @@ BlockIO InterpreterTransactionControlQuery::executeCommit(ContextMutablePtr sess
 
         /// Try to wait for connection to be restored and its status to be loaded.
         /// It's useful for testing. It allows to enable fault injection (after commit) without breaking tests.
-        txn->waitStateChange(Tx::CommittingCSN);
+        using StateWaitResult = MergeTreeTransaction::StateWaitResult;
+        auto wait_result = txn->waitForCommitOutcome();
 
-        CSN csn_changed_state = txn->getCSN();
-        if (csn_changed_state == Tx::UnknownCSN)
+        if (wait_result != StateWaitResult::Changed)
         {
-            /// CommittingCSN -> UnknownCSN -> RolledBackCSN
-            /// It's possible if connection was lost before commit
-            /// (maybe we should get rid of intermediate UnknownCSN in this transition)
-            txn->waitStateChange(Tx::UnknownCSN);
-            chassert(txn->getCSN() == Tx::RolledBackCSN);
+            session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
+            throw Exception(ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION,
+                "Stopped waiting for the status of transaction {} because {}, will finalize it later",
+                txn->tid, wait_result == StateWaitResult::ShuttingDown ? "the server is shutting down" : "the query was cancelled");
         }
 
         if (txn->getState() == MergeTreeTransaction::ROLLED_BACK)
