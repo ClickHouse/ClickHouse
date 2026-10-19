@@ -199,9 +199,9 @@ struct CountSubstringsImpl
                 while ((pos = searcher.search(beg, end)) < end)
                 {
                     budget.charge(pos - beg);
+                    /// `search` returns only a match that ends before `end`.
                     const UInt8 * match_end = searcher.matchEnd(pos, end);
-                    if (!match_end)
-                        break;
+                    chassert(match_end);
                     ++res[i];
                     beg = match_end;
                 }
@@ -264,9 +264,9 @@ struct CountSubstringsImpl
                     while ((pos = searcher.search(beg, end)) < end)
                     {
                         budget.charge(pos - beg);
+                        /// `search` returns only a match that ends before `end`.
                         const UInt8 * match_end = searcher.matchEnd(pos, end);
-                        if (!match_end)
-                            break;
+                        chassert(match_end);
                         ++res[i];
                         beg = match_end;
                     }

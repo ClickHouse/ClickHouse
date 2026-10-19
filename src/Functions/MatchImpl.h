@@ -218,9 +218,7 @@ struct MatchImpl
                 }
 
                 /// We check that the entry does not pass through the boundaries of strings.
-                /// A match is at most four bytes per needle byte long, so it surely fits when that much is left in the row.
-                const UInt8 * row_end = begin + haystack_offsets[i];
-                if (static_cast<size_t>(row_end - pos) >= 4 * strstr_pattern.size() || searcher.matchEnd(pos, row_end) != nullptr)
+                if (matchFitsInRow(searcher, pos, begin + haystack_offsets[i], strstr_pattern.size()))
                     res[i] = !negate;
                 else
                     res[i] = negate;
@@ -292,7 +290,7 @@ struct MatchImpl
 
                 /// We check that the entry does not pass through the boundaries of strings.
                 const UInt8 * row_end = begin + haystack_offsets[i];
-                if (static_cast<size_t>(row_end - pos) >= 4 * required_substring.size() || searcher.matchEnd(pos, row_end) != nullptr)
+                if (matchFitsInRow(searcher, pos, row_end, required_substring.size()))
                 {
                     /// And if it does not, if necessary, we check the regexp.
                     if (is_trivial)
@@ -398,7 +396,7 @@ struct MatchImpl
                     next_pos += N;
 
                     /// We check that the entry does not pass through the boundaries of strings.
-                    if (static_cast<size_t>(next_pos - pos) >= 4 * strstr_pattern.size() || searcher.matchEnd(pos, next_pos) != nullptr)
+                    if (matchFitsInRow(searcher, pos, next_pos, strstr_pattern.size()))
                         res[i] = !negate;
                     else
                         res[i] = negate;
@@ -474,7 +472,7 @@ struct MatchImpl
                     }
                     next_pos += N;
 
-                    if (static_cast<size_t>(next_pos - pos) >= 4 * required_substring.size() || searcher.matchEnd(pos, next_pos) != nullptr)
+                    if (matchFitsInRow(searcher, pos, next_pos, required_substring.size()))
                     {
                         /// And if it does not, if necessary, we check the regexp.
                         if (is_trivial)

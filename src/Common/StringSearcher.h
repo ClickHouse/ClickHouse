@@ -509,4 +509,14 @@ public:
     const UInt8 * search(const UInt8 * haystack, size_t haystack_size) const { return search(haystack, haystack + haystack_size); }
 };
 
+/// A match is at most this many bytes per needle byte, since a UTF-8 code point has at most 4 bytes.
+constexpr size_t MAX_MATCH_BYTES_PER_NEEDLE_BYTE = 4;
+
+/// True if the match that `searcher` found at `pos` ends before `row_end`. Skips `matchEnd` when the row is long enough.
+template <typename Searcher>
+ALWAYS_INLINE bool matchFitsInRow(const Searcher & searcher, const UInt8 * pos, const UInt8 * row_end, size_t needle_size)
+{
+    return static_cast<size_t>(row_end - pos) >= MAX_MATCH_BYTES_PER_NEEDLE_BYTE * needle_size || searcher.matchEnd(pos, row_end) != nullptr;
+}
+
 }

@@ -255,9 +255,7 @@ struct PositionImpl
             auto start = start_pos != nullptr ? start_pos->getUInt(i) : 0;
 
             /// We check that the entry does not pass through the boundaries of strings.
-            /// A match is at most four bytes per needle byte long, so it surely fits when that much is left in the row.
-            const UInt8 * row_end = begin + haystack_offsets[i];
-            if (static_cast<size_t>(row_end - pos) >= 4 * needle.size() || searcher.matchEnd(pos, row_end) != nullptr)
+            if (matchFitsInRow(searcher, pos, begin + haystack_offsets[i], needle.size()))
             {
                 auto res_pos = 1 + Impl::countChars(reinterpret_cast<const char *>(begin + haystack_offsets[i - 1]), reinterpret_cast<const char *>(pos));
                 if (res_pos < start)
@@ -306,8 +304,12 @@ struct PositionImpl
         typename Impl::SearcherInSmallHaystack searcher = Impl::createSearcherInSmallHaystack(needle.data(), needle.size());
         const UInt8 * found = searcher.search(data_begin + start_byte, data_end);
 
-        if (found != data_end && searcher.matchEnd(found, data_end) != nullptr)
+        if (found != data_end)
+        {
+            /// `search` returns only a match that ends before `data_end`.
+            chassert(searcher.matchEnd(found, data_end));
             res = 1 + Impl::countChars(data.data(), reinterpret_cast<const char *>(found));
+        }
         else
             res = 0;
     }

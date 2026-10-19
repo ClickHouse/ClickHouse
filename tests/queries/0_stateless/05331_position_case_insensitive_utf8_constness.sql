@@ -269,6 +269,26 @@ SELECT
     sum((char(0xCE, 0xBC) ILIKE concat('%', s, '%')) != (materialize(char(0xCE, 0xBC)) ILIKE concat('%', s, '%')))
 FROM needles;
 
+-- haystacks over 20000 bytes, where a constant needle of 4 or more bytes takes Volnitsky's n-gram path
+SELECT
+    sum(positionCaseInsensitiveUTF8(s, concat('k', char(0xE2, 0x84, 0xAA))) != positionCaseInsensitiveUTF8(s, materialize(concat('k', char(0xE2, 0x84, 0xAA))))) +
+    sum(positionCaseInsensitiveUTF8(s, concat(char(0xCE, 0xBC), char(0xCE, 0xBC))) != positionCaseInsensitiveUTF8(s, materialize(concat(char(0xCE, 0xBC), char(0xCE, 0xBC))))) +
+    sum(countSubstringsCaseInsensitiveUTF8(s, concat('k', char(0xE2, 0x84, 0xAA))) != countSubstringsCaseInsensitiveUTF8(s, materialize(concat('k', char(0xE2, 0x84, 0xAA))))) +
+    sum(countSubstringsCaseInsensitiveUTF8(s, concat(char(0xCE, 0xBC), char(0xCE, 0xBC))) != countSubstringsCaseInsensitiveUTF8(s, materialize(concat(char(0xCE, 0xBC), char(0xCE, 0xBC))))) +
+    sum((s ILIKE concat('%', concat('k', char(0xE2, 0x84, 0xAA)), '%')) != (s ILIKE materialize(concat('%', concat('k', char(0xE2, 0x84, 0xAA)), '%')))) +
+    sum((s ILIKE concat('%', concat(char(0xCE, 0xBC), char(0xCE, 0xBC)), '%')) != (s ILIKE materialize(concat('%', concat(char(0xCE, 0xBC), char(0xCE, 0xBC)), '%'))))
+FROM (SELECT concat(repeat('x', 20000), s) AS s FROM haystacks);
+
 DROP TABLE symbols;
 DROP TABLE needles;
 DROP TABLE haystacks;
+
+SELECT 'FixedString';
+-- `ß` has 2 bytes and `ẞ` has 3, so the match is shorter than the needle and can fill a FixedString(2) row.
+SELECT
+    groupArray(s ILIKE '%ẞ%'), groupArray(s ILIKE 'ẞ%'), groupArray(s ILIKE '%ẞ'), groupArray(s ILIKE '%ẞ_%')
+FROM (SELECT toFixedString(arrayJoin(['ß', 'ab', 'ß', 'sS']), 2) AS s);
+SELECT
+    groupArray(s ILIKE '%ẞ%'), groupArray(s ILIKE 'ẞ%'), groupArray(s ILIKE '%ẞz%'), groupArray(s ILIKE '%ẞz')
+FROM (SELECT toFixedString(arrayJoin(['ßz', 'zß', 'abc', 'ẞ']), 3) AS s);
+SELECT toFixedString('ß', 2) ILIKE '%ẞ%', toFixedString('ß', 2) ILIKE 'ẞ%', toFixedString('ßz', 3) ILIKE '%ẞz%';
