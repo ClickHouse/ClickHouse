@@ -1,0 +1,16 @@
+two preprocessors in one DAG
+2	2
+2
+2
+2
+preprocessor next to a query lambda
+2	['FOO']
+2	['FOO']
+string needles and a query lambda in one SELECT list
+1	1	1	['X y']
+2	0	0	['z']
+1	1	1	['X y']
+2	0	0	['z']
+postprocessor next to a query lambda
+2	['FOO']
+2	['FOO']
