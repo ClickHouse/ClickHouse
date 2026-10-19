@@ -192,6 +192,7 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::tryDetectHeader(std::vec
         if (!has_bom || !isParseError(e.code()) || peekable_buf->isCanceled())
             throw;
         peekable_buf->rollbackToCheckpoint(true);
+        format_reader->resetStateBeforeFirstRow();
         return;
     }
 
@@ -205,6 +206,7 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::tryDetectHeader(std::vec
     {
         /// Rollback to the beginning of the first row to parse it as data later.
         peekable_buf->rollbackToCheckpoint(true);
+        format_reader->resetStateBeforeFirstRow();
         return;
     }
 
@@ -566,7 +568,9 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & 
         }
         size_t first_row_end_without_bom = peekable_buf->offsetFromCheckpoint();
 
+        /// The read can change the state of the readers, for example, the number of columns or whether it is the first row.
         peekable_buf->rollbackToCheckpoint();
+        resetStateBeforeFirstRow();
         try
         {
             first_row = readRowAndGetFieldsAndDataTypes();
@@ -577,13 +581,18 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & 
             if (!first_row_without_bom || !isParseError(e.code()) || peekable_buf->isCanceled())
                 throw;
             peekable_buf->rollbackToCheckpoint();
+            resetStateBeforeFirstRow();
             skipBOMIfExists(*peekable_buf);
             first_row = readRowAndGetFieldsAndDataTypes();
         }
 
         /// The first row can be a header only if both variants of it end at the same position,
-        /// so the following rows are the same in both cases.
-        if (peekable_buf->offsetFromCheckpoint() != first_row_end_without_bom)
+        /// so the following rows are the same in both cases. If the number of fields in the first row
+        /// determines how the following rows are split, both variants must also have the same number of fields,
+        /// because the following rows are read with the state left by the variant with the BOM.
+        if (peekable_buf->offsetFromCheckpoint() != first_row_end_without_bom
+            || (first_row_without_bom && first_row && format_reader->isNumberOfFieldsFixedByFirstRow()
+                && first_row_without_bom->first.size() != first_row->first.size()))
             first_row_without_bom.reset();
         peekable_buf->dropCheckpoint();
     }

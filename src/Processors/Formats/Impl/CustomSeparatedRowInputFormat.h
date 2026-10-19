@@ -63,6 +63,9 @@ public:
 
     bool checkForSuffix() override;
 
+    void resetStateBeforeFirstRow() override { columns = 0; }
+    bool isNumberOfFieldsFixedByFirstRow() const override { return !format_settings.custom.allow_variable_number_of_columns; }
+
     bool parseRowStartWithDiagnosticInfo(WriteBuffer & out) override;
     bool parseFieldDelimiterWithDiagnosticInfo(WriteBuffer & out) override;
     bool parseRowEndWithDiagnosticInfo(WriteBuffer & out) override;
@@ -118,6 +121,8 @@ private:
     std::optional<DataTypes> readRowAndGetDataTypesImpl() override;
 
     std::optional<std::pair<std::vector<String>, DataTypes>> readRowAndGetFieldsAndDataTypes() override;
+
+    void resetStateBeforeFirstRow() override;
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 

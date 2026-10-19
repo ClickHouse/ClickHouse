@@ -28,3 +28,9 @@ SELECT hex(c1), c2 FROM format(CSV, '\xEF\xBB\xBF"abc"x,3\ny,4\n');
 
 -- A quoted name after a BOM with the `JSON` escaping rule.
 SELECT * FROM format(CustomSeparated, '\xEF\xBB\xBF"a"\t"b"\n1\t2\n') SETTINGS format_custom_escaping_rule = 'JSON' FORMAT TSVWithNames;
+
+-- Reading the first row without the BOM does not change how the data is read if it is not a header.
+SELECT hex(c1), c2, c3 FROM format(CustomSeparated, '\xEF\xBB\xBF"a,b",c\nx,y,z\n') SETTINGS format_custom_escaping_rule = 'CSV', format_custom_field_delimiter = ',';
+SELECT hex(x), y, z FROM format(CustomSeparated, 'x String, y String, z String', '\xEF\xBB\xBF"a,b",c\nx,y,z\n') SETTINGS format_custom_escaping_rule = 'CSV', format_custom_field_delimiter = ',';
+SELECT hex(c1), c2 FROM format(CustomSeparated, '\xEF\xBB\xBFbob\t3\n') SETTINGS format_custom_row_between_delimiter = '|';
+SELECT hex(x), y FROM format(CustomSeparated, 'x String, y UInt8', '\xEF\xBB\xBFbob\t3\n') SETTINGS format_custom_row_between_delimiter = '|';

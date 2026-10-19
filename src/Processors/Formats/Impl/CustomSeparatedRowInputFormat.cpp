@@ -434,6 +434,14 @@ std::optional<std::pair<std::vector<String>, DataTypes>> CustomSeparatedSchemaRe
     return std::make_pair(std::move(fields), std::move(data_types));
 }
 
+void CustomSeparatedSchemaReader::resetStateBeforeFirstRow()
+{
+    reader.resetStateBeforeFirstRow();
+    first_row = true;
+    no_more_data = false;
+    json_inference_info = {};
+}
+
 std::optional<DataTypes> CustomSeparatedSchemaReader::readRowAndGetDataTypesImpl()
 {
     auto fields_with_types = readRowAndGetFieldsAndDataTypes();
