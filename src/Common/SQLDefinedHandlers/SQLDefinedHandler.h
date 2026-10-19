@@ -60,6 +60,12 @@ struct SQLDefinedHandler
     /// that never looks at the body must not impose that requirement on ordinary clients.
     bool consumes_request_body = false;
 
+    /// Whether the HTTP request body is the continuation of `query` - the data of an `INSERT` (or of the `input`
+    /// table function). Only then is the body appended to the query text. For any other query, including one that
+    /// reads the body through the `_request_body` parameter, appending it would let the request body extend the
+    /// handler's SQL, e.g. with `UNION ALL SELECT ...`, so it is never done.
+    bool feeds_request_body_to_query = false;
+
     /// Returns true if the request path (without query string and fragment) matches this handler's URL.
     bool matchesURL(const String & path) const;
 

@@ -1757,8 +1757,18 @@ bool PredefinedQueryHandler::customizeQueryParam(NameToNameMap & query_parameter
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate name {} of query parameter", backQuote(name));
     };
 
+    /// `_request_body` is bound from the request body (see `customizeContext`). Supplying it in the URL would leave
+    /// the body unread, so that the body would be appended to the text of the handler's query instead.
+    const auto check_not_request_body = [&](const String & name)
+    {
+        if (name == "_request_body")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The query parameter `_request_body` is bound from the HTTP request body and cannot be passed in the URL");
+    };
+
     if (receive_params.contains(key))
     {
+        check_not_request_body(key);
         set_query_parameter(key, value);
         return true;
     }
@@ -1769,7 +1779,10 @@ bool PredefinedQueryHandler::customizeQueryParam(NameToNameMap & query_parameter
         const String parameter_name = key.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
 
         if (receive_params.contains(parameter_name))
+        {
+            check_not_request_body(parameter_name);
             set_query_parameter(parameter_name, value);
+        }
         return true;
     }
 
@@ -1914,7 +1927,7 @@ SQLDefinedQueryHandler::SQLDefinedQueryHandler(
         std::nullopt)
 {
     setIntrospectionHandlerName(handler.name);
-    setConsumesRequestBody(handler.consumes_request_body);
+    setRequestBodyContract(handler.consumes_request_body, handler.feeds_request_body_to_query);
 }
 
 std::string SQLDefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body)

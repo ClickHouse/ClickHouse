@@ -432,7 +432,8 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
 
     /// An `INSERT` handler takes the request body as its data, and a query using `_request_body` reads the body
     /// explicitly. Only these handlers need `Content-Length` on a non-chunked request (see `SQLDefinedHandler`).
-    handler->consumes_request_body = queryConsumesRequestBody(*create.query)
+    handler->feeds_request_body_to_query = queryConsumesRequestBody(*create.query);
+    handler->consumes_request_body = handler->feeds_request_body_to_query
         || handler->receive_params.contains("_request_body");
 
     /// A handler whose query reads the HTTP request body can never receive one over a safe method:
