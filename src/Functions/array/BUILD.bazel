@@ -5,28 +5,9 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
-    "FunctionArrayMapped.h",
-    "arrayAll.h",
-    "arrayConcat.h",
-    "arrayEnumerateExtended.h",
-    "arrayEnumerateRanked.h",
-    "arrayExists.h",
-    "arrayFilter.h",
-    "arrayIndex.h",
-    "arrayMap.h",
-    "arrayPop.h",
-    "arrayPush.h",
-    "arrayRemove.h",
     "arrayResize.cpp",
-    "arrayResize.h",
-    "arraySort.h",
-    "arrayTopK.h",
     "emptyArrayToSingle.cpp",
-    "emptyArrayToSingle.h",
     "has.cpp",
-    "has.h",
-    "hasAllAny.h",
-    "length.h",
 ])
 
 _GENERATED_HDRS_0 = select({

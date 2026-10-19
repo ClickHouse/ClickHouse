@@ -4,18 +4,6 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "ExtractFirstSignificantSubdomain.h",
-    "FirstSignificantSubdomainCustomImpl.h",
-    "domain.h",
-    "fragment.h",
-    "path.h",
-    "protocol.h",
-    "queryString.h",
-    "queryStringAndFragment.h",
-    "tldLookup.h",
-])
-
 _GENERATED_HDRS_0 = select({
     "@platforms//cpu:x86_64": [
         "//bazel:gen/base/base/GitHash.generated.cpp",

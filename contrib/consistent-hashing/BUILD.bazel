@@ -3,12 +3,6 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "bitops.h",
-    "consistent_hashing.h",
-    "popcount.h",
-])
-
 ch_cc_library(
     name = "_consistent_hashing",
     srcs = [

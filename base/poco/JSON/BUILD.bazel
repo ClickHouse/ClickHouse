@@ -4,21 +4,6 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "include/Poco/JSON/Array.h",
-    "include/Poco/JSON/Handler.h",
-    "include/Poco/JSON/JSON.h",
-    "include/Poco/JSON/JSONException.h",
-    "include/Poco/JSON/Object.h",
-    "include/Poco/JSON/ParseHandler.h",
-    "include/Poco/JSON/Parser.h",
-    "include/Poco/JSON/ParserImpl.h",
-    "include/Poco/JSON/PrintHandler.h",
-    "include/Poco/JSON/Query.h",
-    "include/Poco/JSON/Stringifier.h",
-    "src/pdjson.h",
-])
-
 ch_cc_library(
     name = "_poco_json",
     srcs = [

@@ -23,7 +23,7 @@ from initial_migration import llvm_targets
 from initial_migration.external_headers import HeaderLibraries
 from initial_migration.format_build_files import format_build_files
 from initial_migration.prune_inherited_headers import prune, prune_published
-from initial_migration.prune_unused_exports import prune_unused_exports
+from initial_migration.prune_unused_exports import prune_native_exports, prune_unused_exports
 from initial_migration.build_file import (
     BuildFile, CMakeCxxCompilerVersion, Glob,
     SOURCE_HEADER_DIRECTORIES, SOURCE_HEADER_EXCLUDES, SOURCE_HEADER_SUFFIXES, SOURCE_HEADER_TARGETS,
@@ -916,6 +916,7 @@ def main():
     from initial_migration.configured_native_snapshots import Migration as NativeSnapshots
     for path, content in NativeSnapshots(ROOT).prepare().items():
         path.write_text(content)
+    prune_native_exports(ROOT, write=True)
     format_build_files()
     for arch, inventory in inventories.items():
         print(arch, inventory['native_targets'], 'native targets,', inventory['compile_actions'], 'compile actions')

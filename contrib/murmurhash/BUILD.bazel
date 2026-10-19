@@ -5,8 +5,6 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "LICENSE",
-    "include/MurmurHash2.h",
-    "include/MurmurHash3.h",
 ])
 
 ch_cc_library(

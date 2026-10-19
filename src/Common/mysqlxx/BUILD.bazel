@@ -5,19 +5,6 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
-    "mysqlxx/Connection.h",
-    "mysqlxx/Exception.h",
-    "mysqlxx/Pool.h",
-    "mysqlxx/PoolFactory.h",
-    "mysqlxx/PoolWithFailover.h",
-    "mysqlxx/Query.h",
-    "mysqlxx/ResultBase.h",
-    "mysqlxx/Row.h",
-    "mysqlxx/SSLParams.h",
-    "mysqlxx/Transaction.h",
-    "mysqlxx/Types.h",
-    "mysqlxx/UseQueryResult.h",
-    "mysqlxx/Value.h",
     "tests/gtest_pool_entry_name.cpp",
     "tests/gtest_ssl_params.cpp",
 ])

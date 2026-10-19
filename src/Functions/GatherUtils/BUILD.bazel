@@ -5,25 +5,11 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
-    "Algorithms.h",
-    "ArraySinkVisitor.h",
-    "ArraySourceVisitor.h",
-    "GatherUtils.h",
-    "IArraySink.h",
-    "IArraySource.h",
-    "IValueSource.h",
-    "Selectors.h",
-    "Sinks.h",
-    "Slices.h",
-    "Sources.h",
-    "ValueSourceVisitor.h",
     "createArraySink.cpp",
     "createArraySource.cpp",
     "createValueSource.cpp",
     "resizeConstantSize.cpp",
     "resizeDynamicSize.cpp",
-    "sliceEqualElements.h",
-    "sliceHasImplAnyAll.h",
 ])
 
 ch_cc_library(

@@ -4,17 +4,6 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "GeneratedRunner.h",
-    "Generator.h",
-    "LogRunner.h",
-    "NodesSetup.h",
-    "PathSet.h",
-    "RunnerCommon.h",
-    "Stats.h",
-    "StorageRunner.h",
-])
-
 ch_cc_library(
     name = "clickhouse-keeper-bench-lib",
     srcs = [

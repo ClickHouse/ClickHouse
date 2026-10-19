@@ -4,15 +4,6 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "generated/antlr4_grammars/PromQLLexer.h",
-    "generated/antlr4_grammars/PromQLParser.h",
-    "generated/antlr4_grammars/PromQLParserBaseListener.h",
-    "generated/antlr4_grammars/PromQLParserBaseVisitor.h",
-    "generated/antlr4_grammars/PromQLParserListener.h",
-    "generated/antlr4_grammars/PromQLParserVisitor.h",
-])
-
 ch_cc_library(
     name = "clickhouse_antlr4_grammars",
     srcs = [

@@ -4,19 +4,6 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "AbstractConfigurationComparison.h",
-    "ConfigHelper.h",
-    "ConfigProcessor.h",
-    "ConfigReloader.h",
-    "ConfigurationWithUsageTracking.h",
-    "YAMLParser.h",
-    "getClientConfigPath.h",
-    "getConfigPath.h",
-    "getLocalConfigPath.h",
-    "parseConnectionCredentials.h",
-])
-
 ch_cc_library(
     name = "clickhouse_common_config",
     srcs = [

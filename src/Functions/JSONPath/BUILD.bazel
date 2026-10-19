@@ -4,31 +4,6 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "ASTs/ASTJSONPath.h",
-    "ASTs/ASTJSONPathMemberAccess.h",
-    "ASTs/ASTJSONPathQuery.h",
-    "ASTs/ASTJSONPathRange.h",
-    "ASTs/ASTJSONPathRoot.h",
-    "ASTs/ASTJSONPathStar.h",
-    "Generator/GeneratorJSONPath.h",
-    "Generator/IGenerator.h",
-    "Generator/IGenerator_fwd.h",
-    "Generator/IVisitor.h",
-    "Generator/VisitorJSONPathMemberAccess.h",
-    "Generator/VisitorJSONPathRange.h",
-    "Generator/VisitorJSONPathRoot.h",
-    "Generator/VisitorJSONPathStar.h",
-    "Generator/VisitorStatus.h",
-    "Parsers/ParserJSONPath.h",
-    "Parsers/ParserJSONPathMemberAccess.h",
-    "Parsers/ParserJSONPathMemberSquareBracketAccess.h",
-    "Parsers/ParserJSONPathQuery.h",
-    "Parsers/ParserJSONPathRange.h",
-    "Parsers/ParserJSONPathRoot.h",
-    "Parsers/ParserJSONPathStar.h",
-])
-
 ch_cc_library(
     name = "clickhouse_functions_jsonpath",
     srcs = [

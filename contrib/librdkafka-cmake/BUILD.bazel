@@ -4,8 +4,6 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "config.h.in",
-    "include/chrdkafka_conf_sensitive.h",
-    "include/librdkafka/rdkafka.h",
     "rdhttp_poco.c",
     "rdhttp_poco_transport.cpp",
     "rdhttp_poco_transport.h",

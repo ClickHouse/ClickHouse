@@ -4,38 +4,6 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "include/Poco/Util/AbstractConfiguration.h",
-    "include/Poco/Util/Application.h",
-    "include/Poco/Util/ConfigurationView.h",
-    "include/Poco/Util/FilesystemConfiguration.h",
-    "include/Poco/Util/HelpFormatter.h",
-    "include/Poco/Util/IniFileConfiguration.h",
-    "include/Poco/Util/IntValidator.h",
-    "include/Poco/Util/JSONConfiguration.h",
-    "include/Poco/Util/LayeredConfiguration.h",
-    "include/Poco/Util/LoggingConfigurator.h",
-    "include/Poco/Util/LoggingSubsystem.h",
-    "include/Poco/Util/MapConfiguration.h",
-    "include/Poco/Util/Option.h",
-    "include/Poco/Util/OptionCallback.h",
-    "include/Poco/Util/OptionException.h",
-    "include/Poco/Util/OptionProcessor.h",
-    "include/Poco/Util/OptionSet.h",
-    "include/Poco/Util/PropertyFileConfiguration.h",
-    "include/Poco/Util/RegExpValidator.h",
-    "include/Poco/Util/ServerApplication.h",
-    "include/Poco/Util/Subsystem.h",
-    "include/Poco/Util/SystemConfiguration.h",
-    "include/Poco/Util/Timer.h",
-    "include/Poco/Util/TimerTask.h",
-    "include/Poco/Util/TimerTaskAdapter.h",
-    "include/Poco/Util/Units.h",
-    "include/Poco/Util/Util.h",
-    "include/Poco/Util/Validator.h",
-    "include/Poco/Util/XMLConfiguration.h",
-])
-
 ch_cc_library(
     name = "_poco_util",
     srcs = [

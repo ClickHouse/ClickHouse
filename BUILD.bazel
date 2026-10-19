@@ -4,9 +4,6 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
-    "base/pcg-random/pcg_extras.hpp",
-    "base/pcg-random/pcg_random.hpp",
-    "base/pcg-random/pcg_uint128.hpp",
     "base/poco/LICENSE",
     "cmake/generate_export_header.h.in",
     "cmake/localize_rust_c_symbols.sh",

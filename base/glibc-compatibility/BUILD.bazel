@@ -3,26 +3,6 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "musl/aarch64/atomic_arch.h",
-    "musl/aarch64/syscall_arch.h",
-    "musl/atomic.h",
-    "musl/exp2f_data.h",
-    "musl/exp_data.h",
-    "musl/libm.h",
-    "musl/log2_data.h",
-    "musl/log2f_data.h",
-    "musl/log_data.h",
-    "musl/logf_data.h",
-    "musl/musl_features.h",
-    "musl/pow_data.h",
-    "musl/powf_data.h",
-    "musl/syscall.h",
-    "musl/x86_64/atomic_arch.h",
-    "musl/x86_64/syscall_arch.h",
-    "spawn.h",
-])
-
 ch_cc_library(
     name = "glibc-compatibility__compile_0",
     srcs = [

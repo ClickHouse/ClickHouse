@@ -6,32 +6,8 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "ITableFunction.cpp",
-    "ITableFunction.h",
-    "ITableFunctionCluster.h",
-    "ITableFunctionFileLike.h",
-    "TableFunctionArrowFlight.h",
-    "TableFunctionDictionary.h",
     "TableFunctionFactory.cpp",
-    "TableFunctionFactory.h",
-    "TableFunctionFile.h",
-    "TableFunctionFileCluster.h",
-    "TableFunctionFilesystem.h",
-    "TableFunctionFuzzJSON.h",
-    "TableFunctionFuzzQuery.h",
-    "TableFunctionMongoDB.h",
-    "TableFunctionObfuscate.h",
-    "TableFunctionObjectStorage.h",
-    "TableFunctionObjectStorageCluster.h",
-    "TableFunctionPrometheusQuery.h",
-    "TableFunctionRemote.h",
-    "TableFunctionTimeSeries.h",
-    "TableFunctionTimeSeriesSelector.h",
-    "TableFunctionTraceView.h",
-    "TableFunctionURL.h",
-    "TableFunctionURLCluster.h",
     "TableFunctionView.cpp",
-    "TableFunctionView.h",
-    "registerTableFunctions.h",
 ])
 
 ch_cc_library(

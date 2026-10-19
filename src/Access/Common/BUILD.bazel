@@ -4,20 +4,6 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "AccessEntityType.h",
-    "AccessFlags.h",
-    "AccessRightsElement.h",
-    "AccessType.h",
-    "AllowedClientHosts.h",
-    "AuthenticationType.h",
-    "HTTPAuthenticationScheme.h",
-    "OneTimePassword.h",
-    "QuotaDefs.h",
-    "RowPolicyDefs.h",
-    "SQLSecurityDefs.h",
-])
-
 ch_cc_library(
     name = "clickhouse_common_access",
     srcs = [

@@ -5,32 +5,11 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
-    "include/Poco/Net/AcceptCertificateHandler.h",
-    "include/Poco/Net/CertificateHandlerFactory.h",
-    "include/Poco/Net/CertificateHandlerFactoryMgr.h",
     "include/Poco/Net/Context.h",
-    "include/Poco/Net/EmbeddedCertificates.h",
     "include/Poco/Net/HTTPSClientSession.h",
-    "include/Poco/Net/HTTPSSessionInstantiator.h",
-    "include/Poco/Net/HTTPSStreamFactory.h",
-    "include/Poco/Net/InvalidCertificateHandler.h",
-    "include/Poco/Net/KeyConsoleHandler.h",
-    "include/Poco/Net/KeyFileHandler.h",
     "include/Poco/Net/NetSSL.h",
-    "include/Poco/Net/PrivateKeyFactory.h",
-    "include/Poco/Net/PrivateKeyFactoryMgr.h",
-    "include/Poco/Net/PrivateKeyPassphraseHandler.h",
-    "include/Poco/Net/RejectCertificateHandler.h",
-    "include/Poco/Net/SSLException.h",
-    "include/Poco/Net/SSLManager.h",
-    "include/Poco/Net/SecureServerSocket.h",
-    "include/Poco/Net/SecureServerSocketImpl.h",
-    "include/Poco/Net/SecureSocketImpl.h",
-    "include/Poco/Net/SecureStreamSocket.h",
-    "include/Poco/Net/SecureStreamSocketImpl.h",
     "include/Poco/Net/Session.h",
     "include/Poco/Net/Utility.h",
-    "include/Poco/Net/VerificationErrorArgs.h",
     "src/EmbeddedCertificates.cpp",
 ])
 

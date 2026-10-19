@@ -4,15 +4,6 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "ExtendedLogMessage.h",
-    "Loggers.h",
-    "OwnFormattingChannel.h",
-    "OwnJSONPatternFormatter.h",
-    "OwnPatternFormatter.h",
-    "OwnSplitChannel.h",
-])
-
 ch_cc_library(
     name = "loggers",
     srcs = [

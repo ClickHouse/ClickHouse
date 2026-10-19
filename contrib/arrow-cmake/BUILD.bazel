@@ -6,8 +6,6 @@ exports_files([
     "cpp/src/arrow/util/config.h",
     "cpp/src/arrow/util/config_internal.h",
     "cpp/src/orc/c++/include/orc/orc-config.hh",
-    "cpp/src/parquet/parquet_version.h",
-    "cpp/src/thrift/stdcxx.h",
 ])
 
 cc_library(

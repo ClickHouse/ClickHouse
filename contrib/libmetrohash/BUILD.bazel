@@ -5,12 +5,6 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "LICENSE",
-    "src/metrohash.h",
-    "src/metrohash128.h",
-    "src/metrohash128crc.h",
-    "src/metrohash64.h",
-    "src/platform.h",
-    "src/testvector.h",
 ])
 
 ch_cc_library(

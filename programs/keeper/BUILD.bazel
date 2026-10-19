@@ -6,7 +6,6 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "Keeper.cpp",
-    "Keeper.h",
     "dashboard.html",
     "keeper_embedded.xml",
 ])

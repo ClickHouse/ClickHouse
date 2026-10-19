@@ -4,21 +4,6 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "GeoDictionariesLoader.h",
-    "GeodataProviders/Entries.h",
-    "GeodataProviders/HierarchiesProvider.h",
-    "GeodataProviders/HierarchyFormatReader.h",
-    "GeodataProviders/IHierarchiesProvider.h",
-    "GeodataProviders/INamesProvider.h",
-    "GeodataProviders/NamesFormatReader.h",
-    "GeodataProviders/NamesProvider.h",
-    "GeodataProviders/Types.h",
-    "RegionsHierarchies.h",
-    "RegionsHierarchy.h",
-    "RegionsNames.h",
-])
-
 ch_cc_library(
     name = "clickhouse_dictionaries_embedded",
     srcs = [
