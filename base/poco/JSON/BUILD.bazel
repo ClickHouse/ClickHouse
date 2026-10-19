@@ -37,18 +37,6 @@ ch_cc_library(
         "@platforms//cpu:x86_64": ["//bazel:config/x86_64/includes/configs/config_version.cpp"],
         "@platforms//cpu:aarch64": ["//bazel:config/aarch64/includes/configs/config_version.cpp"],
     }) + [
-        "include/Poco/JSON/Array.h",
-        "include/Poco/JSON/Handler.h",
-        "include/Poco/JSON/JSON.h",
-        "include/Poco/JSON/JSONException.h",
-        "include/Poco/JSON/Object.h",
-        "include/Poco/JSON/ParseHandler.h",
-        "include/Poco/JSON/Parser.h",
-        "include/Poco/JSON/ParserImpl.h",
-        "include/Poco/JSON/PrintHandler.h",
-        "include/Poco/JSON/Query.h",
-        "include/Poco/JSON/Stringifier.h",
-        "src/pdjson.h",
     ],
     additional_compiler_inputs = [
         "src/Array.cpp",

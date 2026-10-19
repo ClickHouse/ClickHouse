@@ -41,18 +41,6 @@ ch_cc_library(
             "//bazel:config/aarch64/includes/configs/config_version.cpp",
         ],
     }) + [
-        "GeoDictionariesLoader.h",
-        "GeodataProviders/Entries.h",
-        "GeodataProviders/HierarchiesProvider.h",
-        "GeodataProviders/HierarchyFormatReader.h",
-        "GeodataProviders/IHierarchiesProvider.h",
-        "GeodataProviders/INamesProvider.h",
-        "GeodataProviders/NamesFormatReader.h",
-        "GeodataProviders/NamesProvider.h",
-        "GeodataProviders/Types.h",
-        "RegionsHierarchies.h",
-        "RegionsHierarchy.h",
-        "RegionsNames.h",
     ]),
     additional_compiler_inputs = [
         "//base/poco/Foundation:src/DirectoryIterator_UNIX.cpp",

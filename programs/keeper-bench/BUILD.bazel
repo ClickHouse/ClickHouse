@@ -27,14 +27,6 @@ ch_cc_library(
         "RunnerCommon.cpp",
         "Stats.cpp",
         "StorageRunner.cpp",
-        "GeneratedRunner.h",
-        "Generator.h",
-        "LogRunner.h",
-        "NodesSetup.h",
-        "PathSet.h",
-        "RunnerCommon.h",
-        "Stats.h",
-        "StorageRunner.h",
     ],
     hdrs = (select({
         "@platforms//cpu:x86_64": [

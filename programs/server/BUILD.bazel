@@ -46,8 +46,6 @@ ch_cc_library(
             "//bazel:gen/aarch64/embedded/programs/server/Server.cpp",
         ],
     }) + [
-        "MetricsTransmitter.h",
-        "Server.h",
     ]),
     hdrs = (select({
         "@platforms//cpu:x86_64": [

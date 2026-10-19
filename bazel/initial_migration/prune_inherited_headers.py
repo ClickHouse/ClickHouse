@@ -421,19 +421,22 @@ class PublishedRewrite(Rewrite):
         if 'include_prefix' in attrs or 'strip_include_prefix' in attrs:
             return False
         source_header = candidate.endswith((*CC_HEADER_SUFFIXES, '.th', '.defs', '.icc', '.cuh', '.tpp', '.def'))
-        proto_textual = field == 'textual_hdrs' and candidate.endswith(('.pb.cc', '.grpc.pb.cc'))
+        native = self.doc.repo == '@clickhouse'
+        proto_textual = (not native and field == 'textual_hdrs'
+                         and candidate.endswith(('.pb.cc', '.grpc.pb.cc')))
         if not (source_header or proto_textual):
             return False
-        if source_header and candidate.partition('//')[0] == self.doc.repo:
+        if source_header and not native and candidate.partition('//')[0] == self.doc.repo:
             return False
         for cpu in arches:
             if not self.graph.physical_file(candidate, cpu):
                 return False
             if proto_textual and (candidate, cpu) not in self.graph.outputs:
                 return False
-            # Never use implementation_deps to remove a public declaration.
-            # Keep the distinction between modular and textual public headers.
-            supplied = self.graph.inherited(target, cpu)
+            # Native private inputs can also come from implementation_deps.
+            # Public inputs still require the same header kind through deps.
+            compile_only = native and field in {'srcs', 'additional_compiler_inputs'}
+            supplied = self.graph.inherited(target, cpu, compile_only)
             fields = (field,) if field in {'hdrs', 'textual_hdrs'} else ('hdrs', 'textual_hdrs')
             if not any((kind, candidate) in supplied for kind in fields):
                 return False
@@ -441,7 +444,7 @@ class PublishedRewrite(Rewrite):
 
 
 def prune_published(root, inventories, *, consumers, write=False):
-    """Remove only exact public duplicates after native packages are rendered."""
+    """Remove exact inherited headers after native packages are rendered."""
     from initial_migration.first_party_packages import Build, git_inventory
 
     names = subprocess.check_output(
@@ -474,9 +477,8 @@ def prune_published(root, inventories, *, consumers, write=False):
         else:
             updated.append(doc)
     final = PublishedGraph(root, updated)
-    # Every removed literal still has a public witness after all six overlays
-    # have been rewritten. This also prevents circular proofs between consumers
-    # that happened to repeat one another's captured file lists.
+    # Recheck every witness after all selected packages have been rewritten.
+    # This prevents circular proofs through repeated captured header lists.
     for path, (old, _) in changes.items():
         doc = next(item for item in updated if item.path == path)
         for (_, before), (_, after) in zip(old.source.rules(), doc.source.rules(), strict=True):

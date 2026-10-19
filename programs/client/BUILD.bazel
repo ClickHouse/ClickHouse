@@ -11,7 +11,6 @@ ch_cc_library(
     srcs = [
         "Client.cpp",
         "FuzzLoop.cpp",
-        "Client.h",
     ],
     hdrs = (select({
         "@platforms//cpu:x86_64": [

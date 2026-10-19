@@ -41,16 +41,6 @@ ch_cc_library(
             "//bazel:config/aarch64/includes/configs/config_version.cpp",
         ],
     }) + [
-        "AbstractConfigurationComparison.h",
-        "ConfigHelper.h",
-        "ConfigProcessor.h",
-        "ConfigReloader.h",
-        "ConfigurationWithUsageTracking.h",
-        "YAMLParser.h",
-        "getClientConfigPath.h",
-        "getConfigPath.h",
-        "getLocalConfigPath.h",
-        "parseConnectionCredentials.h",
     ]),
     additional_compiler_inputs = [
         "//base/poco/Foundation:src/DirectoryIterator_UNIX.cpp",

@@ -27,9 +27,6 @@ ch_cc_library(
             "//bazel:config/aarch64/includes/configs/config_version.cpp",
         ],
     }) + [
-        "BaseDaemon.h",
-        "CrashWriter.h",
-        "GraphiteWriter.h",
     ]),
     additional_compiler_inputs = select({
         "@platforms//cpu:x86_64": [

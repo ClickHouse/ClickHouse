@@ -23,7 +23,6 @@ ch_cc_library(
             "//bazel:gen/aarch64/embedded/programs/keeper/Keeper.cpp",
         ],
     }) + [
-        "Keeper.h",
     ]),
     hdrs = (select({
         "@platforms//cpu:x86_64": [

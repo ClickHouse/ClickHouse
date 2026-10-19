@@ -902,7 +902,7 @@ def main():
     for path, content in native_packages.prepare().items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
-    prune_published(ROOT, repository_files, write=True, consumers={
+    prune_published(ROOT, repository_files, write=True, consumers={'@clickhouse'} | {
         '@clickhouse_' + name for name in
         ('nuraft', 'grpc', 'librdkafka', 'croaring', 'arrow', 'google_cloud_cpp')
     })

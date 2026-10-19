@@ -39,11 +39,6 @@ ch_cc_library(
         "CommandDiskUsage.cpp",
         "CommandWordCount.cpp",
         "Utils.cpp",
-        "DisksApp.h",
-        "DisksClient.h",
-        "ICommand.h",
-        "ICommand_fwd.h",
-        "Utils.h",
     ],
     hdrs = (select({
         "@platforms//cpu:x86_64": [

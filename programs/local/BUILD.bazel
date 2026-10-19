@@ -10,7 +10,6 @@ ch_cc_library(
     name = "clickhouse-local-lib",
     srcs = [
         "LocalServer.cpp",
-        "LocalServer.h",
     ],
     hdrs = (select({
         "@platforms//cpu:x86_64": [
