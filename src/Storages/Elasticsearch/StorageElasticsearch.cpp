@@ -279,11 +279,13 @@ LIMIT 10;
 Filter on the Elasticsearch side with a Query DSL object:
 
 ```sql
-CREATE TABLE recent_errors
+CREATE TABLE errors_since_october
 ENGINE = Elasticsearch('https://localhost:9200', 'logs-*',
                        api_key = '...',
-                       query = '{"bool": {"filter": [{"term": {"level": "error"}}, {"range": {"@timestamp": {"gte": "now-1h"}}}]}}');
+                       query = '{"bool": {"filter": [{"term": {"level": "error"}}, {"range": {"@timestamp": {"gte": "2026-10-01T00:00:00Z"}}}]}}');
 ```
+
+Use absolute dates in the `query`: date math such as `now-1h` is evaluated anew for each page, so it can skip documents. See the [limitations of the `elasticsearch` table function](/reference/functions/table-functions/elasticsearch#limitations).
 
 ## Related {#related}
 

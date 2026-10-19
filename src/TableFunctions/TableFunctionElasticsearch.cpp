@@ -254,6 +254,7 @@ SELECT * FROM elasticsearch(my_elasticsearch, index = 'logs');
 - The function is read-only; `INSERT` is not supported.
 - Predicates are not pushed down. A `WHERE` condition is applied in ClickHouse after the documents have been downloaded; use the `query` argument to filter on the Elasticsearch side.
 - The `query` is sent with the `size` of a page. A query whose result depends on `size`, such as a `knn` query without `k`, returns a set of documents that depends on `page_size`. Specify such parameters explicitly.
+- Each page is a separate search request, and Elasticsearch evaluates date math such as `now-1h` in the `query` anew for each request. The point in time freezes the documents but not the clock, so a time-dependent `query` can silently skip documents near the moving boundary. Use absolute dates in the `query`.
 - Each read opens a point in time, pages through the results with `search_after` sorted by `_shard_doc`, and closes the point in time at the end. A page request that fails on any shard, or that times out in Elasticsearch, raises an error instead of returning partial results.
 - Elasticsearch 7.12 or later is required: the function relies on the point in time API and on the `_shard_doc` sort field, so older versions and OpenSearch reject the first request.
 - `page_size` cannot exceed the `index.max_result_window` index setting of Elasticsearch (`10000` by default).
