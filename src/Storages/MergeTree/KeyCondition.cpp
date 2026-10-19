@@ -2279,6 +2279,35 @@ static bool isFixedStringConstant(
     return false;
 }
 
+/// Whether casting a `Tuple` key of `from_type` to `to_type` changes how its elements compare. A tuple comparison
+/// compares each pair of elements as is: a `FixedString` zero-padded with a `String`, and a `Dynamic` by its value.
+/// After the cast, a `FixedString` element cast to `String` has lost its trailing zero bytes, and an element cast to
+/// `Dynamic` keeps its own type, so `(toFixedString('ab', 4), 1) = ('ab\0', 1)` and `(1, 1) = (1::Int64::Dynamic, 1)`
+/// would no longer hold. A `FixedString` cast to a wider `FixedString` is padded the same way as in the comparison.
+static bool castChangesTupleElementComparison(const DataTypePtr & from_type, const DataTypePtr & to_type)
+{
+    const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from_type.get());
+    const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to_type.get());
+    if (!from_tuple || !to_tuple)
+        return false;
+
+    /// The least supertype of tuples is built position by position, as a comparison pairs them.
+    const auto & from_elements = from_tuple->getElements();
+    const auto & to_elements = to_tuple->getElements();
+    if (from_elements.size() != to_elements.size())
+        return true;
+
+    for (size_t i = 0; i < from_elements.size(); ++i)
+    {
+        const auto from = removeLowCardinalityAndNullable(from_elements[i]);
+        const auto to = removeLowCardinalityAndNullable(to_elements[i]);
+        if ((isFixedString(from) && !isFixedString(to)) || (isDynamic(to) && !isDynamic(from))
+            || castChangesTupleElementComparison(from, to))
+            return true;
+    }
+    return false;
+}
+
 /// A `FixedString(N)` constant is stored as a `String` `Field` of exactly N bytes, right-padded with
 /// '\0', and is compared zero-padded, so it can match a whole family of values rather than a single
 /// one: `toFixedString('abc', 257) = p` is true for a `String` `p` equal
@@ -5941,6 +5970,12 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                 }
                 if (!key_expr_type_not_null->equals(*common_type))
                 {
+                    /// The single point case below accepts any cast, assuming that it keeps the comparison, which
+                    /// does not hold for some elements of a `Tuple` key. Decline: another candidate may convert the
+                    /// constant to the key type instead.
+                    if (castChangesTupleElementComparison(key_expr_type_not_null, common_type))
+                        return std::nullopt;
+
                     auto common_type_maybe_nullable = (key_expr_type_is_nullable && !common_type->isNullable())
                         ? DataTypePtr(std::make_shared<DataTypeNullable>(common_type))
                         : common_type;
