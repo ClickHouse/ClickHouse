@@ -1569,23 +1569,16 @@ void FileSegment::markRead(size_t offset, size_t size)
 
 void FileSegment::addReservedSize(Int64 delta)
 {
-    auto apply = [&]
-    {
-        if (delta >= 0)
-            reserved_size.fetch_add(static_cast<size_t>(delta));
-        else
-            reserved_size.fetch_sub(static_cast<size_t>(-delta));
-    };
-
+    /// Unsigned addition wraps, so a negative `delta` subtracts.
     if (!cache || is_unbound)
     {
-        apply();
+        reserved_size += static_cast<size_t>(delta);
         return;
     }
 
     /// Under the lock, so the first window start of `markRead` sees either none or all of `delta`.
     std::lock_guard lock(efficiency_mutex);
-    apply();
+    reserved_size += static_cast<size_t>(delta);
     if (removed_from_cache)
         return;
     /// The sizes grow before the counters and shrink after them.
