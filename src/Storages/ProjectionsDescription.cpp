@@ -441,7 +441,8 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     const ContextPtr & query_context,
     LoadingStrictnessLevel mode,
     bool attach_short_syntax,
-    const StorageInMemoryMetadata * parent_metadata)
+    const StorageInMemoryMetadata * parent_metadata,
+    const ContextPtr & constraints_context)
 {
     const auto * projection_definition = definition_ast->as<ASTProjectionDeclaration>();
 
@@ -618,12 +619,13 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
         /// Without `parent_metadata` the inherited policy is unknown, so the check is left to the call that
         /// has it. This is the preliminary pass of `InterpreterCreateQuery::setProperties`: only `MergeTree`
         /// tables support projections, and their storage registration builds the projections again with
-        /// the table metadata and the context of the query, and runs this check then.
+        /// the table metadata, and runs this check then with the context of the query.
         if (parent_metadata)
         {
             auto default_settings = result.index ? result.index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
             inherit_parent_policy(*default_settings, /*explicit_only=*/ false);
-            query_context->checkMergeTreeSettingsConstraints(*default_settings, merge_tree_settings->changesFrom(*default_settings));
+            const auto & check_context = constraints_context ? constraints_context : query_context;
+            check_context->checkMergeTreeSettingsConstraints(*default_settings, merge_tree_settings->changesFrom(*default_settings));
         }
 
         query_context->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();

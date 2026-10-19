@@ -107,7 +107,10 @@ struct ProjectionDescription
         /// The table the projection belongs to. When given, the projection inherits the table's
         /// implicit min-max index policy (`add_minmax_index_for_*`) for every such setting that its
         /// own `WITH SETTINGS` does not set. Without it the projection uses the settings' defaults.
-        const StorageInMemoryMetadata * parent_metadata = nullptr);
+        const StorageInMemoryMetadata * parent_metadata = nullptr,
+        /// The context whose settings constraints `WITH SETTINGS` is checked against, when it differs from
+        /// `query_context`. The expressions are always analyzed with `query_context`.
+        const ContextPtr & constraints_context = nullptr);
 
     static void fillProjectionDescriptionByQuery(
         ProjectionDescription & result,

@@ -1094,13 +1094,17 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             /// A fresh definition is checked against the settings constraints of the user who issues it, as the
             /// table settings above are. This is the first pass that knows the policy the projection inherits from
             /// the table, so the preliminary pass in `InterpreterCreateQuery` leaves that check to it.
-            const ContextPtr projection_context = is_fresh_definition ? ContextPtr(args.getLocalContext()) : ContextPtr(context);
+            /// The expressions are still analyzed with the global context, as on `ATTACH`: the persisted definition
+            /// does not record the session settings, so analyzing it with them could give the projection types
+            /// that a reload does not reproduce.
+            const ContextPtr constraints_context = is_fresh_definition ? ContextPtr(args.getLocalContext()) : ContextPtr(context);
             for (auto & projection_ast : args.query.columns_list->projections->children)
             {
                 try
                 {
                     auto projection = ProjectionDescription::getProjectionFromAST(
-                        projection_ast, columns, &metadata.partition_key, projection_context, args.mode, args.query.attach_short_syntax, &metadata);
+                        projection_ast, columns, &metadata.partition_key, context, args.mode, args.query.attach_short_syntax, &metadata,
+                        constraints_context);
                     metadata.projections.add(std::move(projection));
                 }
                 catch (...)
