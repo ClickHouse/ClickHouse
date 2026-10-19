@@ -93,7 +93,6 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [
-        ":src/contrib/yaml-cpp.natvis",
     ]) + [
     ],
     copts = [

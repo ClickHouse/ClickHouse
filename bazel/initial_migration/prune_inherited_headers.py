@@ -13,7 +13,7 @@ from collections import Counter
 from functools import cache
 import gzip
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -208,14 +208,11 @@ class Rewrite:
                 or self.owners and repo not in self.owners
                 or owner.files is None or filename not in owner.files):
             return False
-        if not candidate.endswith((*CC_HEADER_SUFFIXES, '.th', '.defs')):
-            # libpqxx's published extensionless wrappers contain #include
-            # directives and are declared as textual_hdrs by their owner.
-            provider = '@clickhouse_libpqxx//:libpqxx_headers'
-            if (repo != '@clickhouse_libpqxx' or not filename.startswith('include/pqxx/')
-                    or '.' in filename.removeprefix('include/pqxx/')
-                    or not all(candidate in self.graph.own_headers(provider, cpu) for cpu in arches)):
-                return False
+        if (not candidate.endswith((*CC_HEADER_SUFFIXES, '.th', '.defs'))
+                and PurePosixPath(filename).suffix):
+            return False
+        # This also covers extensionless files declared in their owner's hdrs
+        # or textual_hdrs, after the same pinned-file and deps checks.
         return all(candidate in self.graph.inherited(
             target, cpu, field in {'srcs', 'additional_compiler_inputs'}) for cpu in arches)
 

@@ -88,11 +88,15 @@ class HeaderLibraries:
             return None
         path = source_path(label)
         owner = _source_owner(path)
-        if not owner or not path.endswith(CC_HEADER_SUFFIXES):
+        if not owner:
             return None
         relative = path.removeprefix(owner + '/')
-        if not any(directory == '.' or relative.startswith(directory + '/')
-                   for directory in self.directories.get(owner, ())):
+        sparsehash_textual = (HEADER_ONLY_REPOSITORIES[owner] == 'sparsehash_c11'
+                              and PurePosixPath(relative).parent == PurePosixPath('sparsehash')
+                              and not PurePosixPath(relative).suffix)
+        if not sparsehash_textual and (not path.endswith(CC_HEADER_SUFFIXES) or not any(
+                directory == '.' or relative.startswith(directory + '/')
+                for directory in self.directories.get(owner, ()))):
             return None
         return '@' + REPOSITORIES[owner]['name'] + '//:' + HEADER_ONLY_REPOSITORIES[owner]
 
@@ -133,6 +137,7 @@ class HeaderLibraries:
                 for directory in directories
                 for suffix in CC_HEADER_SUFFIXES
             ]
-            build.rule('cc_library', name, {
-                'hdrs': Glob(patterns, ('**/BUILD', '**/BUILD.bazel')),
-            })
+            attrs = {'hdrs': Glob(patterns, ('**/BUILD', '**/BUILD.bazel'))}
+            if name == 'sparsehash_c11':
+                attrs['textual_hdrs'] = Glob(['sparsehash/*'], ['sparsehash/*.*'])
+            build.rule('cc_library', name, attrs)

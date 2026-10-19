@@ -22,8 +22,6 @@ ch_cc_library(
     ] + glob(["include/**/*.h"])),
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_zstd//:lib/.gitignore",
-        "@clickhouse_zstd//:lib/BUCK",
         "@clickhouse_zstd//:lib/common/debug.c",
         "@clickhouse_zstd//:lib/common/entropy_common.c",
         "@clickhouse_zstd//:lib/common/error_private.c",
@@ -53,12 +51,7 @@ ch_cc_library(
         "@clickhouse_zstd//:lib/dictBuilder/divsufsort.c",
         "@clickhouse_zstd//:lib/dictBuilder/fastcover.c",
         "@clickhouse_zstd//:lib/dictBuilder/zdict.c",
-        "@clickhouse_zstd//:lib/dll/example/build_package.bat",
-        "@clickhouse_zstd//:lib/dll/example/fullbench-dll.sln",
-        "@clickhouse_zstd//:lib/dll/example/fullbench-dll.vcxproj",
-        "@clickhouse_zstd//:lib/libzstd.mk",
         "@clickhouse_zstd//:lib/libzstd.pc.in",
-        "@clickhouse_zstd//:lib/module.modulemap",
     ] + glob(
         [
             "data/**",

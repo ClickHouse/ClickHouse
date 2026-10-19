@@ -24,15 +24,9 @@ ch_cc_library(
         "@clickhouse_sysroot//:linux_compile_files",
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
-    ] + glob(
-        ["**"],
-        exclude = [
-            "**/*.h",
-            "**/BUILD.bazel",
-            "sqlite3.c",
-        ],
-    )) + [
-        ":sqlite3.c",
+    ] + [
+        "sqlite3_config.h.in",
+    ]) + [
     ],
     copts = [
         "-w",
@@ -66,11 +60,6 @@ ch_cc_library(
 )
 
 exports_files([
-    ".gitignore",
-    "CMakeLists.txt",
-    "README.md",
-    "shell.c",
-    "sqlite3.c",
     "sqlite3.h",
     "sqlite3_config.h.in",
     "sqlite3ext.h",

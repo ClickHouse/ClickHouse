@@ -8,8 +8,6 @@ package(
 
 exports_files([
     "LICENSE.md",
-    "README.md",
-    "pocketfft_demo.cc",
 ])
 
 cc_library(

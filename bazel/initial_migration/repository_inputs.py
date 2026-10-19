@@ -18,6 +18,12 @@ EXPORTS = {path: set() for path in REPOSITORIES}
 # rules_cc's allowed header extensions (cc/private/cc_helper.bzl).
 CC_HEADER_SUFFIXES = ('.h', '.hh', '.hpp', '.ipp', '.hxx', '.h++',
                       '.inc', '.inl', '.tlh', '.tli', '.H', '.tcc')
+# Retain textual and generated-header source classes even when a macro
+# computes an include name. Ordinary build/test data is retained only when a
+# scanned include actually names it.
+TEXTUAL_SOURCE_SUFFIXES = (*CC_HEADER_SUFFIXES, '.def', '.defs', '.th', '.td', '.tbl', '.tbi',
+                           '.tpp', '.icc', '.ixx', '.cuh', '.msh', '.in', '.proto', '.fbs',
+                           '.capnp', '.thrift', '.rl', '.gperf', '.grammar')
 
 
 @dataclass(frozen=True)
@@ -143,23 +149,26 @@ def package_sources(owner):
 
 
 @cache
-def textual_source_names(owner):
-    """Names present in literal includes of a pinned repo, or None for macros.
+def package_source_files(owner):
+    return frozenset(package_sources(owner))
 
-    Compare basenames conservatively: even an include in another directory
-    keeps every source of that name. Unresolved includes keep every source.
+
+@cache
+def textual_source_names(owner):
+    """Names present in literal includes of a pinned repository.
+
+    Compare basenames conservatively: an include in another directory keeps
+    every source of that name. Callers must also retain TEXTUAL_SOURCE_SUFFIXES
+    for macro-computed includes.
     """
     suffixes = ('.c', '.cc', '.cpp', '.cxx', '.c++', '.C', '.s', '.S', '.asm',
-                *CC_HEADER_SUFFIXES, '.def', '.defs', '.th', '.in', '.td', '.tbi',
-                '.tbl', '.icc', '.tpp')
+                *TEXTUAL_SOURCE_SUFFIXES)
     directive = re.compile(r'(?m)^[ \t]*[%#][ \t]*(include_next|include|import|embed)\b([^\r\n]*)')
     assembly = re.compile(r'(?mi)^[ \t]*\.(include|incbin)\b([^\r\n]*)')
     literal = re.compile(r"""^[ \t]*(?:"([^"\n]+)"|<([^>\n]+)>|'([^'\n]+)')(.*)$""")
     included = set()
-    unresolved = False
 
     def scan(path, raw):
-        nonlocal unresolved
         text = raw.decode('utf-8', errors='replace')
         text = text.replace('\\\r\n', '').replace('\\\n', '')
         expressions = (directive, assembly) if path.lower().endswith(('.s', '.asm', '.s.in', '.asm.in')) else (directive,)
@@ -169,19 +178,17 @@ def textual_source_names(owner):
                 parsed = literal.match(operand)
                 if parsed:
                     included.add(Path(next(s for s in parsed.groups()[:3] if s is not None)).name)
-                elif operand and not operand.startswith(('//', '/*', ';')):
-                    unresolved = True
 
     if owner is None:
         paths = subprocess.check_output(
-            ['git', 'ls-files', '-z', '--', 'src', 'base', 'programs', 'contrib/*-cmake',
+            ['git', 'ls-files', '-z', '--', 'src', 'base', 'programs', 'contrib/*-cmake/**',
              'bazel/config', 'bazel/initial_migration'], cwd=ROOT,
         ).decode().split('\0')
         for path in paths:
             source = ROOT / path
             if path.endswith(suffixes) and source.is_file():
                 scan(path, source.read_bytes())
-        return None if unresolved else frozenset(included)
+        return frozenset(included)
     spec = REPOSITORIES[owner]
     with subprocess.Popen(['git', '-C', str(ROOT / owner), 'archive', '--format=tar',
                            spec['commit']], stdout=subprocess.PIPE) as process:
@@ -192,7 +199,7 @@ def textual_source_names(owner):
                 scan(member.name, archive.extractfile(member).read())
         if process.wait():
             raise ValueError('Cannot scan pinned includes for ' + owner + ' at ' + spec['commit'])
-    return None if unresolved else frozenset(included)
+    return frozenset(included)
 
 
 

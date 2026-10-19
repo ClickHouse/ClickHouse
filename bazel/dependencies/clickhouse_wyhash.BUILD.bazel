@@ -8,18 +8,9 @@ package(
 
 exports_files([
     "LICENSE",
-    "README.md",
-    "SupplementsInformation.zip",
-    "benchmark.cpp",
-    "makefile",
-    "test_vector.cpp",
 ])
 
 cc_library(
     name = "wyhash",
     hdrs = glob(["**/*.h"]),
 )
-
-exports_files([
-    "Modern Non-Cryptographic Hash Function and Pseudorandom Number Generator.pdf",
-])

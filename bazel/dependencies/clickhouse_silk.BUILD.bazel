@@ -12,19 +12,7 @@ exports_files([
 _GENERATED_HEADER_INPUTS_0 = []
 
 _GENERATED_HEADER_INPUTS_2 = [
-    "@clickhouse_boost//:INSTALL",
-    "@clickhouse_boost//:Jamroot",
-    "@clickhouse_boost//:LICENSE_1_0.txt",
-    "@clickhouse_boost//:README.md",
-    "@clickhouse_boost//:boost-build.jam",
-    "@clickhouse_boost//:boost.css",
-    "@clickhouse_boost//:boost.png",
-    "@clickhouse_boost//:boostcpp.jam",
-    "@clickhouse_boost//:bootstrap.bat",
-    "@clickhouse_boost//:bootstrap.sh",
-    "@clickhouse_boost//:index.htm",
     "@clickhouse_boost//:index.html",
-    "@clickhouse_boost//:rst.css",
 ]
 
 _GENERATED_LOCAL_DEFINES_0 = [
@@ -56,36 +44,9 @@ ch_cc_library(
     }),
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + _GENERATED_HEADER_INPUTS_2 + glob(
-        [
-            "include/**",
-            "src/**",
-        ],
-        exclude = [
-            "include/**/*.h",
-            "src/**/*.h",
-            "src/fibers/condvar.cpp",
-            "src/fibers/cpu.cpp",
-            "src/fibers/fiber.cpp",
-            "src/fibers/futex.cpp",
-            "src/fibers/future.cpp",
-            "src/fibers/histogram.cpp",
-            "src/fibers/multi-lock.cpp",
-            "src/fibers/mutex.cpp",
-            "src/fibers/profiler.cpp",
-            "src/fibers/sequencer.cpp",
-        ],
-    )) + [
-        ":src/fibers/condvar.cpp",
-        ":src/fibers/cpu.cpp",
-        ":src/fibers/fiber.cpp",
-        ":src/fibers/futex.cpp",
-        ":src/fibers/future.cpp",
-        ":src/fibers/histogram.cpp",
-        ":src/fibers/multi-lock.cpp",
-        ":src/fibers/mutex.cpp",
-        ":src/fibers/profiler.cpp",
-        ":src/fibers/sequencer.cpp",
+    ] + _GENERATED_HEADER_INPUTS_2 + [
+        "src/util/error.cpp",
+    ]) + [
     ],
     copts = [
         "-w",
@@ -157,39 +118,8 @@ ch_cc_library(
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
     ] + _GENERATED_HEADER_INPUTS_2 + [
-        "@clickhouse_librseq//:include/Makefile.am",
-    ] + glob(
-        [
-            "include/**",
-            "src/**",
-        ],
-        exclude = [
-            "include/**/*.h",
-            "src/**/*.h",
-            "src/util/assert.cpp",
-            "src/util/bitmap.cpp",
-            "src/util/crash-dumper.cpp",
-            "src/util/error.cpp",
-            "src/util/init.cpp",
-            "src/util/logger.cpp",
-            "src/util/memory-pool.cpp",
-            "src/util/perf.cpp",
-            "src/util/queue.cpp",
-            "src/util/sharded-stack.cpp",
-            "src/util/tsc.cpp",
-        ],
-    )) + [
-        ":src/util/assert.cpp",
-        ":src/util/bitmap.cpp",
-        ":src/util/crash-dumper.cpp",
+    ] + []) + [
         ":src/util/error.cpp",
-        ":src/util/init.cpp",
-        ":src/util/logger.cpp",
-        ":src/util/memory-pool.cpp",
-        ":src/util/perf.cpp",
-        ":src/util/queue.cpp",
-        ":src/util/sharded-stack.cpp",
-        ":src/util/tsc.cpp",
     ],
     copts = [
         "-w",

@@ -119,9 +119,6 @@ ch_cc_library(
     ]),
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
-        ":src/io/azure_filesys.cc",
-        ":src/io/hdfs_filesys.cc",
-        ":src/io/s3_filesys.cc",
         ":src/data.cc",
         ":src/io.cc",
         ":src/recordio.cc",

@@ -26,11 +26,7 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ] + [
         ":libfiu/doxygen/Doxyfile.base.in",
-        ":libfiu/doxygen/Doxyfile.internal",
-        ":libfiu/doxygen/Doxyfile.public",
-        ":libfiu/libfiu.3",
         ":libfiu/libfiu.pc.in",
-        ":libfiu/symbols.map",
     ]) + [
     ],
     copts = [
@@ -68,21 +64,11 @@ ch_cc_library(
 )
 
 exports_files([
-    "libfiu/Makefile",
-    "libfiu/backtrace.c",
     "libfiu/doxygen/Doxyfile.base.in",
-    "libfiu/doxygen/Doxyfile.internal",
-    "libfiu/doxygen/Doxyfile.public",
-    "libfiu/doxygen/Makefile",
     "libfiu/fiu-control.h",
     "libfiu/fiu-local.h",
-    "libfiu/fiu-rc.c",
-    "libfiu/fiu.c",
     "libfiu/fiu.h",
     "libfiu/internal.h",
-    "libfiu/libfiu.3",
     "libfiu/libfiu.pc.in",
-    "libfiu/symbols.map",
-    "libfiu/wtable.c",
     "libfiu/wtable.h",
 ])

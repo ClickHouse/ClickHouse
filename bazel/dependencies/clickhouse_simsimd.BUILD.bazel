@@ -21,16 +21,7 @@ ch_cc_library(
         "@clickhouse_sysroot//:linux_compile_files",
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
-    ] + glob(
-        [
-            "c/**",
-            "include/**",
-        ],
-        exclude = [
-            "c/lib.c",
-            "include/**/*.h",
-        ],
-    )) + [
+    ] + []) + [
     ],
     copts = [
         "-w",
@@ -68,7 +59,6 @@ ch_cc_library(
 )
 
 exports_files([
-    "include/module.modulemap",
     "include/simsimd/binary.h",
     "include/simsimd/curved.h",
     "include/simsimd/dot.h",

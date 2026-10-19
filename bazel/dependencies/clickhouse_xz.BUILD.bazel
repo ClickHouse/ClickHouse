@@ -53,9 +53,6 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ] + [
-        ":src/common/common_w32res.rc",
-        ":src/common/w32_application.manifest",
-        ":src/common/w32_application.manifest.comments.txt",
     ]) + [
     ],
     copts = [
@@ -152,7 +149,6 @@ ch_cc_library(
 )
 
 exports_files([
-    "src/liblzma/api/Makefile.am",
     "src/liblzma/api/lzma.h",
     "src/liblzma/api/lzma/base.h",
     "src/liblzma/api/lzma/bcj.h",

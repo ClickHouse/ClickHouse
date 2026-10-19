@@ -25,13 +25,6 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ] + [
-        ":.gitignore",
-        ":crypt_blowfish/LINKS",
-        ":crypt_blowfish/PERFORMANCE",
-        ":crypt_blowfish/crypt.3",
-        ":crypt_blowfish/glibc-2.1.3-crypt.diff",
-        ":crypt_blowfish/glibc-2.14-crypt.diff",
-        ":crypt_blowfish/glibc-2.3.6-crypt.diff",
     ]) + [
     ],
     copts = [
@@ -67,25 +60,9 @@ ch_cc_library(
 )
 
 exports_files([
-    ".gitignore",
-    "Makefile",
-    "README",
-    "bcrypt.c",
     "bcrypt.h",
-    "crypt_blowfish/LINKS",
-    "crypt_blowfish/Makefile",
-    "crypt_blowfish/PERFORMANCE",
-    "crypt_blowfish/README",
-    "crypt_blowfish/crypt.3",
     "crypt_blowfish/crypt.h",
-    "crypt_blowfish/crypt_blowfish.c",
     "crypt_blowfish/crypt_blowfish.h",
-    "crypt_blowfish/crypt_gensalt.c",
     "crypt_blowfish/crypt_gensalt.h",
-    "crypt_blowfish/glibc-2.1.3-crypt.diff",
-    "crypt_blowfish/glibc-2.14-crypt.diff",
-    "crypt_blowfish/glibc-2.3.6-crypt.diff",
     "crypt_blowfish/ow-crypt.h",
-    "crypt_blowfish/wrapper.c",
-    "crypt_blowfish/x86.S",
 ])

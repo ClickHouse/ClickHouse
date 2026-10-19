@@ -639,7 +639,6 @@ ch_cc_library(
         "@clickhouse//:contrib/aws-cmake/AwsThreadName.cmake",
         "@clickhouse//:contrib/aws-cmake/CMakeLists.txt",
         "@clickhouse_aws_c_common//:include/aws/common/config.h.in",
-        "@clickhouse_aws_c_common//:include/aws/common/external/.clang-format",
         "@clickhouse_aws_c_http//:include/aws/http/private/hpack_header_static_table.def",
         "@clickhouse_aws_c_http//:include/aws/http/private/hpack_huffman_static_table.def",
         ":include/aws/crt/Config.h.in",

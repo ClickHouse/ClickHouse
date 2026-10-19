@@ -21,14 +21,10 @@ ch_cc_library(
     ] + glob(["**/*.h"]),
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + glob(
-        ["**"],
-        exclude = [
-            "**/*.h",
-            "**/BUILD.bazel",
-            "zmij.cc",
-        ],
-    )) + [
+    ] + [
+        "test/fmt/format.cc",
+        "zmij.c",
+    ]) + [
         ":zmij.cc",
     ],
     copts = [
@@ -59,37 +55,17 @@ ch_cc_library(
 )
 
 exports_files([
-    ".clang-format",
-    ".cmake-format",
-    ".github/workflows/ci.yml",
-    "CMakeLists.txt",
-    "README.md",
-    "example.cc",
-    "test/CMakeLists.txt",
-    "test/benchmark-all-commits.py",
-    "test/benchmark.cc",
     "test/benchmark.h",
-    "test/double-check.cc",
     "test/dragonbox/dragonbox.h",
-    "test/dragonbox/dragonbox_to_chars.cpp",
     "test/dragonbox/dragonbox_to_chars.h",
-    "test/float-check.cc",
     "test/fmt/base.h",
     "test/fmt/format-inl.h",
     "test/fmt/format.cc",
     "test/fmt/format.h",
-    "test/gen-pow10.py",
-    "test/gtest/.clang-format",
-    "test/gtest/CMakeLists.txt",
-    "test/gtest/gmock-gtest-all.cc",
     "test/gtest/gmock/gmock.h",
     "test/gtest/gtest/gtest-spi.h",
     "test/gtest/gtest/gtest.h",
-    "test/modular-search-test.cc",
     "test/modular-search.h",
-    "test/pow10-test.cc",
-    "test/zmij-benchmark.cc",
-    "test/zmij-test.cc",
     "zmij-c.h",
     "zmij.c",
     "zmij.cc",

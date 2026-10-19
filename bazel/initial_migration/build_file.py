@@ -9,8 +9,9 @@ import re
 from initial_migration import llvm_targets
 from initial_migration.compact_build import compact
 from initial_migration.repository_inputs import (
-    REPOSITORIES, ROOT, CC_HEADER_SUFFIXES, HeaderDirectory,
-    directory_sources, execution_path, package_sources, repository, source_label, source_path, textual_source_names,
+    REPOSITORIES, ROOT, CC_HEADER_SUFFIXES, TEXTUAL_SOURCE_SUFFIXES, HeaderDirectory,
+    directory_sources, execution_path, package_source_files, package_sources, repository, source_label, source_path,
+    textual_source_names,
 )
 from initial_migration.simplify_globs import GlobFiles, simplify_globs, simplify_source_globs
 
@@ -395,7 +396,6 @@ class BuildFile:
         self.external_inputs = set()
         self.local_sources = set()
         self.root_sources = set()
-        self.source_files = None
 
     def label(self, value, source_file=False):
         if value.startswith(':'):
@@ -407,11 +407,8 @@ class BuildFile:
             if value.startswith(prefix):
                 self.local_sources.add(value)
                 local = value.removeprefix(prefix)
-                if source_file:
-                    if self.source_files is None:
-                        self.source_files = frozenset(package_sources(self.owner))
-                    if local in self.source_files:
-                        return local
+                if source_file and local in package_source_files(self.owner):
+                    return local
                 return ':' + local
             if value.startswith('//:') and (ROOT / value[3:]).is_file():
                 self.root_sources.add(value[3:])
@@ -640,51 +637,50 @@ class BuildFile:
                     repository(source_path(item)) for item in fields[field] if isinstance(item, str)
                 )
             related.difference_update({'contrib/sysroot', llvm_targets.PREFIX})
-            compiled_suffixes = ('.c', '.cc', '.cpp', '.cxx', '.c++', '.C', '.s', '.S', '.asm', '.ASM')
-            documentation = re.compile(
-                r'^(?:CMakeLists\.txt|Makefile(?:\..*)?|GNUmakefile(?:\..*)?|'
-                r'LICENSE(?:[._-].*)?|COPYING(?:[._-].*)?|NOTICE(?:[._-].*)?|'
-                r'README(?:[._-].*)?|CHANGELOG(?:[._-].*)?)$', re.I,
-            )
+            def source_data(path, owner):
+                relative = path.removeprefix(owner + '/')
+                return (
+                    not relative.startswith(('config/', 'gen/', 'bazel/'))
+                    and '/gen/' not in relative
+                    and not relative.endswith(TEXTUAL_SOURCE_SUFFIXES)
+                    and not Path(relative).name.lower().startswith(('version', 'config.', 'config_'))
+                    and relative in package_source_files(owner)
+                )
             candidates = {
                 item for item in fields['additional_compiler_inputs']
                 if isinstance(item, str) and repository(source_path(item)) not in {None, 'contrib/sysroot', llvm_targets.PREFIX}
-                and (source_path(item).endswith((*compiled_suffixes, '.md'))
-                     or documentation.fullmatch(Path(source_path(item)).name))
+                and source_data(source_path(item), repository(source_path(item)))
             }
             globs = self.owner not in {None, 'contrib/sysroot', llvm_targets.PREFIX} and any(
                 isinstance(item, Glob) for item in fields['additional_compiler_inputs']
             )
             if candidates or globs:
                 related.update(repository(source_path(item)) for item in candidates)
-                scans = [textual_source_names(owner) for owner in related]
-                if all(included is not None for included in scans):
-                    included = frozenset().union(*scans)
-                    kept = []
-                    files = GlobFiles(package_sources(self.owner)) if globs else None
-                    for item in fields['additional_compiler_inputs']:
-                        if isinstance(item, str):
-                            if item not in candidates or Path(source_path(item)).name in included:
-                                kept.append(item)
-                        elif globs and isinstance(item, Glob):
-                            original_files = files.result(item.patterns, item.exclude)
-                            data = [
-                                path for path in original_files
-                                if Path(path).name in included
-                                or not (path.endswith((*compiled_suffixes, '.md'))
-                                        or documentation.fullmatch(Path(path).name))
-                            ]
-                            # Keep large globs rather than listing hundreds of
-                            # files or adding another list of exclusions.
-                            if len(data) != len(original_files) and (
-                                len(data) <= 32 or len(data) <= 256 and len(data) * 3 < len(original_files)
-                            ):
-                                kept.extend(source_label(self.owner + '/' + path) for path in data)
-                            else:
-                                kept.append(item)
+                included = frozenset().union(*(textual_source_names(owner) for owner in related))
+                kept = []
+                files = GlobFiles(package_sources(self.owner)) if globs else None
+                for item in fields['additional_compiler_inputs']:
+                    if isinstance(item, str):
+                        if item not in candidates or Path(source_path(item)).name in included:
+                            kept.append(item)
+                    elif globs and isinstance(item, Glob):
+                        original_files = files.result(item.patterns, item.exclude)
+                        data = [
+                            path for path in original_files
+                            if Path(path).name in included
+                            or not source_data(self.owner + '/' + path, self.owner)
+                        ]
+                        # Keep large globs rather than listing hundreds of
+                        # files or adding another list of exclusions.
+                        if len(data) != len(original_files) and (
+                            len(data) <= 32 or len(data) <= 256 and len(data) * 3 < len(original_files)
+                        ):
+                            kept.extend(source_label(self.owner + '/' + path) for path in data)
                         else:
                             kept.append(item)
-                    fields['additional_compiler_inputs'] = kept
+                    else:
+                        kept.append(item)
+                fields['additional_compiler_inputs'] = kept
         if custom:
             fields['hdrs'].extend(fields['textual_hdrs'])
             fields['hdrs'].extend(fields['additional_compiler_inputs'])

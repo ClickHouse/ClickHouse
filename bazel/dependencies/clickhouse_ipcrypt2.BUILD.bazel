@@ -24,13 +24,7 @@ ch_cc_library(
         "@clickhouse_sysroot//:linux_compile_files",
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
-    ] + glob(
-        ["src/**"],
-        exclude = [
-            "src/**/*.h",
-            "src/ipcrypt2.c",
-        ],
-    )) + [
+    ] + []) + [
     ],
     copts = [
         "-w",

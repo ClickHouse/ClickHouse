@@ -68,11 +68,7 @@ ch_cc_library(
         ":googlemock/test/gmock-nice-strict_test.cc",
         ":googlemock/test/gmock-port_test.cc",
         ":googlemock/test/gmock-spec-builders_test.cc",
-        ":googlemock/test/gmock_leak_test.py",
-        ":googlemock/test/gmock_output_test.py",
-        ":googlemock/test/gmock_output_test_golden.txt",
         ":googlemock/test/gmock_test.cc",
-        ":googlemock/test/gmock_test_utils.py",
     ]) + [
     ],
     copts = [
@@ -184,13 +180,34 @@ ch_cc_library(
     ] + glob(["googletest/include/**/*.h"]),
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + glob(
-        ["googletest/**"],
-        exclude = [
-            "googletest/**/*.h",
-            "googletest/src/gtest-all.cc",
-        ],
-    )) + [
+    ] + [
+        "googletest/cmake/Config.cmake.in",
+        "googletest/cmake/gtest.pc.in",
+        "googletest/cmake/gtest_main.pc.in",
+        "googletest/cmake/libgtest.la.in",
+        "googletest/src/gtest-assertion-result.cc",
+        "googletest/src/gtest-death-test.cc",
+        "googletest/src/gtest-filepath.cc",
+        "googletest/src/gtest-matchers.cc",
+        "googletest/src/gtest-port.cc",
+        "googletest/src/gtest-printers.cc",
+        "googletest/src/gtest-test-part.cc",
+        "googletest/src/gtest-typed-test.cc",
+        "googletest/src/gtest.cc",
+        "googletest/test/custom/gmock_dynamic_cast_message_test.proto",
+        "googletest/test/googletest-filepath-test.cc",
+        "googletest/test/googletest-message-test.cc",
+        "googletest/test/googletest-options-test.cc",
+        "googletest/test/googletest-port-test.cc",
+        "googletest/test/googletest-test-part-test.cc",
+        "googletest/test/gtest-typed-test2_test.cc",
+        "googletest/test/gtest-typed-test_test.cc",
+        "googletest/test/gtest_pred_impl_unittest.cc",
+        "googletest/test/gtest_prod_test.cc",
+        "googletest/test/gtest_skip_test.cc",
+        "googletest/test/gtest_unittest.cc",
+        "googletest/test/production.cc",
+    ]) + [
     ],
     copts = [
         "-w",
@@ -215,8 +232,3 @@ ch_cc_library(
     ],
     alwayslink = False,
 )
-
-exports_files([
-    "googlemock/include/gmock/internal/custom/README.md",
-    "googletest/include/gtest/internal/custom/README.md",
-])

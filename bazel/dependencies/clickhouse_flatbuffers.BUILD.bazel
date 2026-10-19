@@ -11,7 +11,6 @@ package(
 
 exports_files([
     "LICENSE",
-    "include/codegen/python.cc",
 ])
 
 _GENERATED_LOCAL_DEFINES_0 = [
@@ -40,28 +39,7 @@ ch_cc_library(
     ]),
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
-    ] + glob(
-        [
-            "include/**",
-            "src/**",
-        ],
-        exclude = [
-            "include/**/*.h",
-            "src/**/*.h",
-            "src/file_manager.cpp",
-            "src/file_name_manager.cpp",
-            "src/idl_gen_text.cpp",
-            "src/idl_parser.cpp",
-            "src/reflection.cpp",
-            "src/util.cpp",
-        ],
-    )) + [
-        ":src/idl_parser.cpp",
-        ":src/file_manager.cpp",
-        ":src/file_name_manager.cpp",
-        ":src/idl_gen_text.cpp",
-        ":src/reflection.cpp",
-        ":src/util.cpp",
+    ] + []) + [
     ],
     copts = [
         "-w",
@@ -158,37 +136,6 @@ cc_binary(
             "src/idl_gen_ts.cpp",
         ],
     )) + [
-        ":src/annotated_binary_text_gen.cpp",
-        ":src/bfbs_gen_lua.cpp",
-        ":src/bfbs_gen_nim.cpp",
-        ":src/binary_annotator.cpp",
-        ":src/code_generators.cpp",
-        ":src/flatc.cpp",
-        ":src/flatc_main.cpp",
-        ":src/idl_gen_binary.cpp",
-        ":src/idl_gen_cpp.cpp",
-        ":src/idl_gen_csharp.cpp",
-        ":src/idl_gen_dart.cpp",
-        ":src/idl_gen_fbs.cpp",
-        ":src/idl_gen_go.cpp",
-        ":src/idl_gen_grpc.cpp",
-        ":src/idl_gen_java.cpp",
-        ":src/idl_gen_json_schema.cpp",
-        ":src/idl_gen_kotlin.cpp",
-        ":src/idl_gen_kotlin_kmp.cpp",
-        ":src/idl_gen_lobster.cpp",
-        ":src/idl_gen_php.cpp",
-        ":src/idl_gen_python.cpp",
-        ":src/idl_gen_rust.cpp",
-        ":src/idl_gen_swift.cpp",
-        ":src/idl_gen_ts.cpp",
-        ":include/codegen/python.cc",
-        ":grpc/src/compiler/cpp_generator.cc",
-        ":grpc/src/compiler/go_generator.cc",
-        ":grpc/src/compiler/java_generator.cc",
-        ":grpc/src/compiler/python_generator.cc",
-        ":grpc/src/compiler/swift_generator.cc",
-        ":grpc/src/compiler/ts_generator.cc",
     ],
     copts = ((([
         "--no-default-config",

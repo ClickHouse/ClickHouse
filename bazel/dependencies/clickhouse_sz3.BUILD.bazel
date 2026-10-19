@@ -5,7 +5,6 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "copyright-and-BSD-license.txt",
-    "include/SZ3/utils/ska_hash/LICENSE.txt",
     "include/SZ3/version.hpp.in",
     "tools/pysz/LICENSE",
 ])

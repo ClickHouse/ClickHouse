@@ -16,32 +16,8 @@ ch_cc_library(
     ] + glob(["**/*.hh"]),
     additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
-        "@clickhouse_boost//:INSTALL",
-        "@clickhouse_boost//:Jamroot",
-        "@clickhouse_boost//:LICENSE_1_0.txt",
-        "@clickhouse_boost//:README.md",
-        "@clickhouse_boost//:boost-build.jam",
-        "@clickhouse_boost//:boost.css",
-        "@clickhouse_boost//:boost.png",
-        "@clickhouse_boost//:boostcpp.jam",
-        "@clickhouse_boost//:bootstrap.bat",
-        "@clickhouse_boost//:bootstrap.sh",
-        "@clickhouse_boost//:index.htm",
         "@clickhouse_boost//:index.html",
-        "@clickhouse_boost//:rst.css",
-    ] + glob(
-        ["**"],
-        exclude = [
-            "**/*.hh",
-            "**/BUILD.bazel",
-            "wnb/core/info_helper.cc",
-            "wnb/core/load_wordnet.cc",
-            "wnb/core/wordnet.cc",
-        ],
-    )) + [
-        ":wnb/core/info_helper.cc",
-        ":wnb/core/load_wordnet.cc",
-        ":wnb/core/wordnet.cc",
+    ] + []) + [
     ],
     copts = [
         "-w",
@@ -81,24 +57,11 @@ ch_cc_library(
 )
 
 exports_files([
-    ".gitignore",
-    "AUTHORS",
-    "CMakeLists.txt",
-    "README",
-    "WORDNET_LICENSE",
-    "changelog",
-    "check/biglist.txt",
-    "check/check.sh",
-    "check/list.txt",
     "wnb/bfs.hh",
-    "wnb/core/info_helper.cc",
     "wnb/core/info_helper.hh",
-    "wnb/core/load_wordnet.cc",
     "wnb/core/load_wordnet.hh",
     "wnb/core/pos_t.hh",
-    "wnb/core/wordnet.cc",
     "wnb/core/wordnet.hh",
-    "wnb/main.cc",
     "wnb/nltk_similarity.hh",
     "wnb/std_ext.hh",
 ])

@@ -7,7 +7,6 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "LICENSE",
-    "include/Makefile.am",
 ])
 
 ch_cc_library(
