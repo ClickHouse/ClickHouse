@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وقد أُنشئت تلقائيًا من [الشيفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="vector_search_filter_strategy">
-  ## vector_search_filter_strategy
-</div>
+## vector_search_filter_strategy {#vector_search_filter_strategy}
 
 <SettingsInfoBlock type="VectorSearchFilterStrategy" default_value="auto" />
 
@@ -27,21 +25,17 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * &#39;postfilter&#39; - استخدم فهرس تشابه المتجهات لتحديد أقرب الجيران، ثم طبّق عوامل التصفية الأخرى
 * &#39;prefilter&#39; - قيّم عوامل التصفية الأخرى أولًا، ثم نفّذ بحثًا بالقوة الغاشمة لتحديد الجيران.
 
-<div id="vector_search_index_fetch_multiplier">
-  ## vector_search_index_fetch_multiplier
-</div>
+## vector_search_index_fetch_multiplier {#vector_search_index_fetch_multiplier}
 
 **الأسماء البديلة**: `vector_search_postfilter_multiplier`
 
 <SettingsInfoBlock type="Float" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "اسم بديل للإعداد 'vector_search_postfilter_multiplier'"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "اسم بديل للإعداد 'vector_search_postfilter_multiplier'"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "إعداد جديد. كان اسم الإعداد آنذاك `vector_search_postfilter_multiplier`، وأصبح الآن اسمًا بديلًا له."}]}]} />
 
-يُضرب عدد أقرب الجيران الذين جرى جلبهم من فهرس تشابه المتجهات في هذا الرقم. لا يُطبَّق ذلك إلا عند التصفية اللاحقة مع شروط أخرى، أو إذا كان الإعداد &#39;vector&#95;search&#95;with&#95;rescoring = 1&#39;. النطاق الصالح: [1.0, 1000.0]. تُرفَض القيم خارج هذا النطاق.
+يُضرب عدد أقرب الجيران الذين جرى جلبهم من فهرس تشابه المتجهات في هذا الرقم. لا يُطبَّق ذلك إلا عند التصفية اللاحقة مع شروط أخرى، أو إذا كان الإعداد &#39;vector&#95;search&#95;with&#95;rescoring = 1&#39;. النطاق الصالح: [1.0, 1000.0]. تُرفَض القيم خارج هذا النطاق.
 
-<div id="vector_search_use_quantized_codes">
-  ## vector_search_use_quantized_codes
-</div>
+## vector_search_use_quantized_codes {#vector_search_use_quantized_codes}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -52,9 +46,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 1. يفحص المتجهات المُكمّاة ويُرشّحها (تنتج هذه الخطوة `k * vector_search_index_fetch_multiplier` نتيجة)، و
 2. يعيد احتساب درجات المتجهات التي عُثر عليها بمقارنتها بالمتجهات الأصلية كاملة الدقة.
 
-<div id="vector_search_with_rescoring">
-  ## vector_search_with_rescoring
-</div>
+## vector_search_with_rescoring {#vector_search_with_rescoring}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
