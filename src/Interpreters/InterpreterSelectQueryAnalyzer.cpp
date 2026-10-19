@@ -173,6 +173,30 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
     return result_context;
 }
 
+/// The automatic mode decides with its own cost model, and the row estimate that
+/// `parallel_replicas_min_number_of_rows_per_replica` asks for is a full index analysis of the read, repeated on every
+/// build of the plan with parallel replicas. The planner reads the setting from the context of each query node, where
+/// a subquery's own `SETTINGS` clause has already been applied, so it is overridden there. The clause itself stays:
+/// it is part of the node's tree hash, which matches the node against the single-node plan.
+void disableParallelReplicasRowEstimate(const QueryTreeNodePtr & query_tree)
+{
+    std::vector<const IQueryTreeNode *> nodes_to_visit{query_tree.get()};
+    while (!nodes_to_visit.empty())
+    {
+        const auto * node = nodes_to_visit.back();
+        nodes_to_visit.pop_back();
+
+        if (const auto * query_node = node->as<QueryNode>())
+            query_node->getMutableContext()->setSetting("parallel_replicas_min_number_of_rows_per_replica", Field{0});
+        else if (const auto * union_node = node->as<UnionNode>())
+            union_node->getMutableContext()->setSetting("parallel_replicas_min_number_of_rows_per_replica", Field{0});
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                nodes_to_visit.push_back(child.get());
+    }
+}
+
 template <typename... Args>
 PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
     const ASTPtr & ast,
@@ -207,8 +231,8 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
     ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
     // We don't want to analyze primaty key at all, see `query_plan_optimize_primary_key` below.
     ctx->setSetting("force_primary_key", false);
-    /// The automatic mode decides with its own cost model, and the row estimate this setting asks for is
-    /// a full index analysis of the read, repeated on every build of this plan.
+    /// See `disableParallelReplicasRowEstimate`. Set here as well, because the planner of the outer query collects
+    /// filters for the estimate as soon as it is constructed.
     ctx->setSetting("parallel_replicas_min_number_of_rows_per_replica", Field{0});
 
     /// Building the plan below re-analyzes and re-plans the query from scratch, and for a query parallel
@@ -284,6 +308,7 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
         LOG_TRACE(logger, "Shipping this query would materialize its subqueries. Skipping building a plan to cost");
         return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::QueryShape};
     }
+    disableParallelReplicasRowEstimate(interpreter.getQueryTree());
     auto plan = std::move(interpreter).extractQueryPlan();
     auto optimization_settings = QueryPlanOptimizationSettings(ctx);
     // We should build sets and create `CreatingSetsStep` only in the original plan. The automatic parallel replicas optimization happens before building sets,
