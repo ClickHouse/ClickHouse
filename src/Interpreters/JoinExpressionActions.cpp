@@ -246,10 +246,7 @@ JoinActionRef::JoinActionRef(NodeRawPtr node_, std::weak_ptr<JoinExpressionActio
         auto raw_nodes = data_ptr->actions_dag.getNodes() | std::views::transform([](const ActionsDAG::Node & node) { return &node; });
         if (!std::ranges::contains(raw_nodes, node_ptr))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Cannot create JoinActionRef for node {} not in actions DAG: [{}] <- {}",
-                    node_ptr->result_name,
-                    fmt::join(raw_nodes | std::views::transform([](const ActionsDAG::Node * node) { return fmt::ptr(node); }), ", "),
-                    fmt::ptr(node_ptr));
+                "Cannot create JoinActionRef for node {} not in actions DAG", node_ptr->result_name);
     }
 #endif
 }

@@ -103,8 +103,8 @@ void recordKernelErrorAllocation(uintptr_t error, std::string error_message)
     {
         throw DB::Exception(
             DB::ErrorCodes::LOGICAL_ERROR,
-            "Trying to record already allocated error. (Current Pointer: {}, Current Message: {}, Previous Message: {})",
-            error, error_message, it->second);
+            "Trying to record already allocated error. (Current Message: {}, Previous Message: {})",
+            error_message, it->second);
     }
 }
 
@@ -114,7 +114,7 @@ std::string forgetKernelErrorAllocation(uintptr_t error)
 
     const auto it = allocated_errors.find(error);
     if (it == allocated_errors.end())
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Trying to deallocate unregistered error. (Pointer: {})", error);
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Trying to deallocate unregistered error");
 
     std::string recorded_message = std::move(it->second);
     allocated_errors.erase(it);
