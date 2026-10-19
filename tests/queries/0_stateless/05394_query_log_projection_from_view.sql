@@ -87,6 +87,35 @@ WHERE current_database = currentDatabase()
 GROUP BY log_comment
 ORDER BY log_comment;
 
+-- Both exact top-level protected QueryStart and QueryFinish are hidden; the direct-query control remains visible.
+SELECT
+    countIf(log_comment = '05394_inline1' AND type = 'QueryStart'),
+    countIf(log_comment = '05394_inline1' AND type = 'QueryStart' AND query_access_info_is_hidden = 1),
+    countIf(log_comment = '05394_inline1' AND type = 'QueryFinish'),
+    countIf(log_comment = '05394_inline1' AND type = 'QueryFinish' AND query_access_info_is_hidden = 1),
+    countIf(log_comment = '05394_direct' AND type = 'QueryStart'),
+    countIf(log_comment = '05394_direct' AND type = 'QueryStart' AND query_access_info_is_hidden = 0),
+    countIf(log_comment = '05394_direct' AND type = 'QueryFinish'),
+    countIf(log_comment = '05394_direct' AND type = 'QueryFinish' AND query_access_info_is_hidden = 0)
+FROM system.query_log
+WHERE current_database = currentDatabase()
+    AND type IN ('QueryStart', 'QueryFinish')
+    AND initial_query_id = query_id
+    AND query_id IN (SELECT query_id FROM system.session_query_ids)
+    AND log_comment IN ('05394_inline1', '05394_direct');
+
+SELECT
+    countIf(log_comment = '05394_inline1' AND type = 'QueryStart'),
+    countIf(log_comment = '05394_inline1' AND type = 'QueryFinish'),
+    countIf(log_comment = '05394_direct' AND type = 'QueryStart'),
+    countIf(log_comment = '05394_direct' AND type = 'QueryFinish')
+FROM system.user_query_log
+WHERE current_database = currentDatabase()
+    AND type IN ('QueryStart', 'QueryFinish')
+    AND initial_query_id = query_id
+    AND query_id IN (SELECT query_id FROM system.session_query_ids)
+    AND log_comment IN ('05394_inline1', '05394_direct');
+
 DROP VIEW v_05394_projection_sealed;
 DROP VIEW v_05394_projection_inline;
 DROP TABLE t_05394_projection_view;

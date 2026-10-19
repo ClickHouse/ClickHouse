@@ -1,3 +1,6 @@
+-- Tags: no-parallel
+-- Tag no-parallel: copies share a global user, and EXECUTE AS does not accept identifier parameters.
+
 -- A marker-zero remote child must remain hidden from its initiator's own query log.
 SET log_queries = 1;
 SET log_queries_probability = 1;
@@ -42,18 +45,40 @@ WHERE current_database = currentDatabase()
     AND query_start_time_microseconds >= (SELECT started_at FROM t_05397_run_marker)
     AND log_comment = '05397_remote_visible';
 
--- Require exactly one linked child, with both events and an explicit marker-zero finish row.
+-- Require exactly one linked child.
 -- Do not filter child current_database: remote child rows may record another database context.
 SELECT
     (SELECT count() = 1 FROM t_05397_remote_query_id),
-    count() = 1,
-    countIf(query_starts = 1 AND query_finishes = 1 AND marker_zero_finishes = 1) = 1
+    count() = 1
+FROM
+(
+    SELECT query_id
+    FROM system.query_log
+    WHERE initial_query_id = (SELECT any(query_id) FROM t_05397_remote_query_id)
+        AND query_id != (SELECT any(query_id) FROM t_05397_remote_query_id)
+    GROUP BY query_id
+);
+
+-- Report each child property independently, while retaining the combined hidden-child assertion.
+SELECT
+    count() = 1 AND countIf(query_starts = 1) = 1,
+    count() = 1 AND countIf(query_finishes = 1) = 1,
+    count() = 1 AND countIf(non_initial_finishes = 1) = 1,
+    count() = 1 AND countIf(unhidden_finishes = 1) = 1,
+    count() = 1 AND countIf(user_finishes = 1) = 1,
+    count() = 1 AND countIf(table_finishes = 1) = 1,
+    count() = 1 AND countIf(marker_zero_finishes = 1) = 1
 FROM
 (
     SELECT
         query_id,
         countIf(type = 'QueryStart') AS query_starts,
         countIf(type = 'QueryFinish') AS query_finishes,
+        countIf(type = 'QueryFinish' AND is_initial_query = 0) AS non_initial_finishes,
+        countIf(type = 'QueryFinish' AND query_access_info_is_hidden = 0) AS unhidden_finishes,
+        countIf(type = 'QueryFinish' AND initial_user = 'user_05397_remote') AS user_finishes,
+        countIf(type = 'QueryFinish'
+            AND has(tables, concat(currentDatabase(), '.t_05397_visible'))) AS table_finishes,
         countIf(type = 'QueryFinish'
             AND is_initial_query = 0
             AND query_access_info_is_hidden = 0
