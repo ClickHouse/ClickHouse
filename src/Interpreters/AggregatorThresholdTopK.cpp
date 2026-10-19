@@ -212,7 +212,7 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
         /// aggregate, arranged as a heap ("sorted lists" materialized lazily).
         struct Entry
         {
-            TableKey key;
+            TableKey key{};
             AggregateDataPtr * slot = nullptr;  /// the cell's mapped slot; consumed cells are zeroed
             UInt32 value_index = 0;             /// into the list's values (entries are permuted by the heap)
         };
@@ -560,7 +560,7 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
                         for (size_t f = 0; f < params.aggregates_size; ++f)
                         {
                             const size_t state_offset = offsets_of_aggregate_states[f];
-                            const AggregateDataPtr other_state = other + state_offset;
+                            AggregateDataPtr other_state = other + state_offset;
                             aggregate_functions[f]->mergeBatch(0, 1, &place, state_offset, &other_state, *thread_pool, is_cancelled, arena);
                         }
                         other_in_flight = nullptr;
