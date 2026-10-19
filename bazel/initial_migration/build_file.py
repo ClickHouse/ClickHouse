@@ -149,7 +149,10 @@ def split_system_includes(flags, owner, native_library):
                 _, _, arch, relative = directory.split('/', 3)
                 if relative.startswith('contrib/') and configuration_owner(relative) == owner:
                     directory = owner + '/config/' + arch + '/' + relative
-            if repository(directory.removeprefix('$(GENDIR)/')) == owner:
+            # CppKafka's quoted queue.h must precede the other system headers.
+            if original == 'contrib/cppkafka/include/cppkafka':
+                options.extend([flag, original])
+            elif repository(directory.removeprefix('$(GENDIR)/')) == owner:
                 includes.append(LocalInclude(directory, owner))
             else:
                 options.extend([flag, original])
