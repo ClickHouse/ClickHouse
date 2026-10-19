@@ -474,8 +474,10 @@ QueryPipeline::QueryPipeline(Chain chain)
         processors->emplace_back(std::move(processor));
 
     auto sink = std::make_shared<EmptySink>(chain.getOutputPort().getSharedHeader());
-    connect(chain.getOutputPort(), sink->getPort());
+    auto * sink_ptr = sink.get();
     processors->emplace_back(std::move(sink));
+
+    connect(chain.getOutputPort(), sink_ptr->getPort());
 
     input = &chain.getInputPort();
 }
@@ -490,16 +492,21 @@ QueryPipeline::QueryPipeline(std::shared_ptr<IOutputFormat> format)
     if (!totals)
     {
         auto source = std::make_shared<NullSource>(format_totals.getSharedHeader());
-        totals = &source->getPort();
+        auto * source_ptr = source.get();
         processors->emplace_back(std::move(source));
+        totals = &source_ptr->getPort();
     }
 
     if (!extremes)
     {
         auto source = std::make_shared<NullSource>(format_extremes.getSharedHeader());
-        extremes = &source->getPort();
+        auto * source_ptr = source.get();
         processors->emplace_back(std::move(source));
+        extremes = &source_ptr->getPort();
     }
+
+    output_format = format.get();
+    processors->emplace_back(std::move(format));
 
     connect(*totals, format_totals);
     connect(*extremes, format_extremes);
@@ -507,10 +514,6 @@ QueryPipeline::QueryPipeline(std::shared_ptr<IOutputFormat> format)
     input = &format_main;
     totals = nullptr;
     extremes = nullptr;
-
-    output_format = format.get();
-
-    processors->emplace_back(std::move(format));
 }
 
 /// Discards `totals`/`extremes` without adding a childless node; see `DroppingTransform`.
@@ -529,22 +532,24 @@ static void dropTotalsAndExtremesViaTransform(
         totals ? totals->getSharedHeader() : nullptr,
         extremes ? extremes->getSharedHeader() : nullptr);
 
-    connect(*output, dropping->getInputs().front());
+    auto * dropping_ptr = dropping.get();
+    processors.emplace_back(std::move(dropping));
+
+    connect(*output, dropping_ptr->getInputs().front());
 
     if (totals)
     {
-        connect(*totals, *dropping->getTotalsPort());
+        connect(*totals, *dropping_ptr->getTotalsPort());
         totals = nullptr;
     }
 
     if (extremes)
     {
-        connect(*extremes, *dropping->getExtremesPort());
+        connect(*extremes, *dropping_ptr->getExtremesPort());
         extremes = nullptr;
     }
 
-    output = &dropping->getOutputs().front();
-    processors.emplace_back(std::move(dropping));
+    output = &dropping_ptr->getOutputs().front();
 }
 
 QueryPipeline::QueryPipeline(std::shared_ptr<SinkToStorage> sink) : QueryPipeline(Chain(std::move(sink))) {}
@@ -556,8 +561,10 @@ void QueryPipeline::complete(std::shared_ptr<ISink> sink)
 
     dropTotalsAndExtremesViaTransform(output, totals, extremes, *processors);
 
-    connect(*output, sink->getPort());
+    auto * sink_ptr = sink.get();
     processors->emplace_back(std::move(sink));
+
+    connect(*output, sink_ptr->getPort());
     output = nullptr;
 }
 
@@ -574,9 +581,11 @@ void QueryPipeline::complete(Chain chain)
         processors->emplace_back(std::move(processor));
 
     auto sink = std::make_shared<EmptySink>(chain.getOutputPort().getSharedHeader());
-    connect(*output, chain.getInputPort());
-    connect(chain.getOutputPort(), sink->getPort());
+    auto * sink_ptr = sink.get();
     processors->emplace_back(std::move(sink));
+
+    connect(*output, chain.getInputPort());
+    connect(chain.getOutputPort(), sink_ptr->getPort());
     output = nullptr;
 }
 
@@ -592,11 +601,13 @@ void QueryPipeline::complete(Pipe pipe)
 
     pipe.resize(1);
     pipe.dropTotalsAndExtremes();
-    connect(*pipe.getOutputPort(0), *input);
-    input = nullptr;
+    auto * pipe_output = pipe.getOutputPort(0);
 
     auto pipe_processors = Pipe::detachProcessors(std::move(pipe));
     processors->insert(processors->end(), pipe_processors.begin(), pipe_processors.end());
+
+    connect(*pipe_output, *input);
+    input = nullptr;
 }
 
 static void addMaterializing(OutputPort *& output, Processors & processors, bool remove_special_column_representations)
@@ -605,9 +616,11 @@ static void addMaterializing(OutputPort *& output, Processors & processors, bool
         return;
 
     auto materializing = std::make_shared<MaterializingTransform>(output->getSharedHeader(), remove_special_column_representations);
-    connect(*output, materializing->getInputPort());
-    output = &materializing->getOutputPort();
+    auto * materializing_ptr = materializing.get();
     processors.emplace_back(std::move(materializing));
+
+    connect(*output, materializing_ptr->getInputPort());
+    output = &materializing_ptr->getOutputPort();
 }
 
 void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
@@ -630,16 +643,21 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
     if (!totals)
     {
         auto source = std::make_shared<NullSource>(format_totals.getSharedHeader());
-        totals = &source->getPort();
+        auto * source_ptr = source.get();
         processors->emplace_back(std::move(source));
+        totals = &source_ptr->getPort();
     }
 
     if (!extremes)
     {
         auto source = std::make_shared<NullSource>(format_extremes.getSharedHeader());
-        extremes = &source->getPort();
+        auto * source_ptr = source.get();
         processors->emplace_back(std::move(source));
+        extremes = &source_ptr->getPort();
     }
+
+    auto * format_ptr = format.get();
+    processors->emplace_back(std::move(format));
 
     connect(*output, format_main);
     connect(*totals, format_totals);
@@ -649,18 +667,16 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
     totals = nullptr;
     extremes = nullptr;
 
-    initRowsBeforeLimit(format.get());
+    initRowsBeforeLimit(format_ptr);
     for (const auto & context : resources.interpreter_context)
     {
         if (context->getSettingsRef()[Setting::rows_before_aggregation])
         {
-            initRowsBeforeAggregation(processors, format.get());
+            initRowsBeforeAggregation(processors, format_ptr);
             break;
         }
     }
-    output_format = format.get();
-
-    processors->emplace_back(std::move(format));
+    output_format = format_ptr;
 }
 
 Block QueryPipeline::getHeader() const
@@ -719,9 +735,12 @@ void QueryPipeline::setLimitsAndQuota(const StreamLocalLimits & limits, std::sha
     auto transform = std::make_shared<LimitsCheckingTransform>(output->getSharedHeader(), limits);
     transform->setQuota(quota_);
     transform->setNormalizedQueryHash(normalized_query_hash);
-    connect(*output, transform->getInputPort());
-    output = &transform->getOutputPort();
+
+    auto * transform_ptr = transform.get();
     processors->emplace_back(std::move(transform));
+
+    connect(*output, transform_ptr->getInputPort());
+    output = &transform_ptr->getOutputPort();
 }
 
 bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const
@@ -749,9 +768,11 @@ void QueryPipeline::writeResultIntoQueryResultCache(std::shared_ptr<QueryResultC
             return;
 
         auto transform = std::make_shared<StreamInQueryResultCacheTransform>(out_port->getHeader(), query_result_cache_writer, chunk_type);
-        connect(*out_port, transform->getInputPort());
-        out_port = &transform->getOutputPort();
+        auto * transform_ptr = transform.get();
         processors->emplace_back(std::move(transform));
+
+        connect(*out_port, transform_ptr->getInputPort());
+        out_port = &transform_ptr->getOutputPort();
     };
 
     using enum QueryResultCacheWriter::ChunkType;
@@ -783,8 +804,9 @@ void QueryPipeline::readFromQueryResultCache(
     {
         if (!source_)
             return;
-        out_port = &source_->getPort();
+        auto * source_ptr = source_.get();
         processors->emplace_back(std::shared_ptr<SourceFromChunks>(std::move(source_)));
+        out_port = &source_ptr->getPort();
     };
 
     add_stream_from_query_result_cache_source(output, std::move(source));
@@ -836,9 +858,11 @@ static void addExpression(OutputPort *& port, ExpressionActionsPtr actions, Proc
     if (port)
     {
         auto transform = std::make_shared<ExpressionTransform>(port->getSharedHeader(), actions);
-        connect(*port, transform->getInputPort());
-        port = &transform->getOutputPort();
+        auto * transform_ptr = transform.get();
         processors.emplace_back(std::move(transform));
+
+        connect(*port, transform_ptr->getInputPort());
+        port = &transform_ptr->getOutputPort();
     }
 }
 

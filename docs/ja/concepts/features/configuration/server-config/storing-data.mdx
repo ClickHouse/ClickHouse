@@ -413,9 +413,10 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 新しいディスクタイプ `s3_plain_rewritable` は `24.4` で導入されました。
 `s3_plain` ディスクタイプと同様に、メタデータファイル用の追加ストレージは必要ありません。代わりに、メタデータは S3 に保存されます。
 `s3_plain` ディスクタイプとは異なり、`s3_plain_rewritable` ではマージを実行でき、`INSERT` 操作もサポートされます。
-[Mutations](/ja/reference/statements/alter/index#mutations) とテーブルのレプリケーションはサポートされていません。
+テーブルのレプリケーションはサポートされていません。
+[Mutations](/ja/reference/statements/alter/index#mutations) と `ALTER` 操作は、ディスクが `enable_hard_links` で設定されている場合にのみサポートされます。詳細は以下を参照してください。
 
-このディスクタイプのユースケースの 1 つは、非レプリケートの `MergeTree` テーブルです。`s3` ディスクタイプも非レプリケートの `MergeTree` テーブルに適していますが、テーブルのローカルメタデータが不要で、利用できる操作が限られていても問題ない場合は、`s3_plain_rewritable` ディスクタイプを選択できます。たとえば、システムテーブルで有用です。
+このディスクタイプのユースケースの 1 つは、非レプリケートの `MergeTree` テーブルです。`s3` ディスクタイプも非レプリケートの `MergeTree` テーブルに適していますが、テーブルのローカルメタデータが不要な場合は、`s3_plain_rewritable` ディスクタイプを選択できます。たとえば、システムテーブルで有用です。
 
 設定:
 
@@ -441,6 +442,38 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 
 `24.5` 以降では、`plain_rewritable` メタデータタイプを使用して任意のオブジェクトストレージディスク
 (`s3`、`azure`、`local`) を設定できます。
+
+#### plain rewritable ディスクでのハードリンク {#plain-rewritable-hard-links}
+
+`MergeTree` テーブルに対する `ALTER` 操作およびミューテーションでは、パーツとミューテーション後の新しいパーツとの間で、変更されていないファイルをコピーせず
+ハードリンクで共有します。`enable_hard_links` 設定 (デフォルトは `0`) を使用すると、
+`plain_rewritable` メタデータを使用するディスクで実際のハードリンクを作成できるようになり、
+次の操作が利用可能になります:
+
+```xml
+<s3_plain_rewritable>
+    <type>s3_plain_rewritable</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+    <enable_hard_links>1</enable_hard_links>
+</s3_plain_rewritable>
+```
+
+ハードリンクを使用すると、ディレクトリのメタデータにそのファイルと、それらを格納するオブジェクトのキーが明示的に列挙されるため、
+あるファイルから別のディレクトリのプレフィックス配下に格納されたオブジェクトを参照できるようになります。
+有効化する前に、次の点に注意してください。
+
+* `enable_hard_links` 設定を持たないサーバーは、この形式のディレクトリを読み取れません。
+  このようなサーバーは、ディレクトリのメタデータ全体をその論理パスとして読み取ってしまいます。そのため、このようなディレクトリを含むディスクは、
+  該当するバージョンへダウングレードすると読み取れなくなり、そのバージョンとディスクを共有することもできません。一度もハードリンクを持たなかったディレクトリは
+  従来のレイアウトのままであるため、ハードリンクを作成する最初の操作 (ミューテーション、
+  `ALTER`、`FREEZE`、またはバックアップ) が行われるまでは、古いサーバーからもディスクを読み取ることができます。設定を再び無効にしても、
+  既存のディレクトリは元の形式に戻りません。
+* この設定はディスクの作成時にのみ読み込まれます。変更はサーバーの再起動後に反映され、
+  `SYSTEM RELOAD CONFIG` では反映されません。
+* 最後のリンクが削除されたオブジェクトは、2 段階で削除されます。まずディレクトリのメタデータが
+  書き換えられ、その後にオブジェクトが削除されます。この間にサーバーが強制終了された場合、
+  オブジェクトはどこからも参照されないままバケットに残るため、手動で削除する必要があります。
 
 ### Azure Blob Storage の使用 {#azure-blob-storage}
 
@@ -620,7 +653,7 @@ HDFS は一部の特殊なケースでは正常に動作しない可能性があ
 バージョン 22.3 以降では、ストレージ構成内のディスクに対してローカル cache を設定できます。
 バージョン 22.3 ～ 22.7 では、cache は `s3` ディスクタイプ でのみサポートされます。バージョン &gt;= 22.8 では、cache は S3、Azure、Local、Encrypted など、あらゆるディスクタイプ でサポートされます。
 バージョン &gt;= 23.5 では、cache は S3、Azure、HDFS (非サポート) などのリモートディスクタイプ でのみサポートされます。
-cache には `LRU` cache ポリシーが使用されます。
+cache のエビクションには `cache_policy` 設定 (デフォルトは `SLRU`) が使用されます。この設定は [`system.filesystem_cache_settings`](/operations/system-tables/filesystem_cache_settings) で確認できます。cache ディスク設定の全一覧も [`system.filesystem_cache_settings`](/operations/system-tables/filesystem_cache_settings) に掲載されています。
 
 バージョン 22.8 以降の構成例:
 
@@ -680,24 +713,33 @@ cache には `LRU` cache ポリシーが使用されます。
 </clickhouse>
 ```
 
-ファイルcache **ディスク設定**:
+ファイルcache **ディスク設定** (一般的な設定):
 
-これらの設定は、ディスク設定セクションで定義する必要があります。
+これらの設定は、ディスク設定セクションで定義する必要があります。この表には、よく使用される cache ディスクの設定項目のみを掲載しており、設定ファイルで指定可能なすべてのキーを網羅しているわけではありません。実行時の値および設定の完全な一覧は [`system.filesystem_cache_settings`](/operations/system-tables/filesystem_cache_settings) で確認できます。
 
-| パラメータ                                 | Type    | Default    | Description                                                                                                                     |
-| ------------------------------------- | ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `path`                                | String  | -          | **必須**。cacheを保存するディレクトリのパス。                                                                                                     |
-| `max_size`                            | Size    | -          | **必須**。cacheの最大サイズ (バイト、または人間が読みやすい形式。例: `10Gi`) 。上限に達すると、ファイルは LRU ポリシーに従って追い出されます。`ki`、`Mi`、`Gi` フォーマットをサポートします (v22.10 以降) 。 |
-| `cache_on_write_operations`           | Boolean | `false`    | `INSERT` クエリおよびバックグラウンドマージに対して、ライトスルーcacheを有効にします。クエリごとに `enable_filesystem_cache_on_write_operations` で上書きできます。                |
-| `enable_filesystem_query_cache_limit` | Boolean | `false`    | `filesystem_cache_max_download_size` に基づく、クエリごとのcacheサイズ制限を有効にします。                                                              |
-| `cache_hits_threshold`                | Integer | `0`        | 非推奨。効果はありません。                                                                                                                   |
-| `enable_bypass_cache_with_threshold`  | Boolean | `false`    | 読み取り範囲が大きい場合はcacheをスキップします。                                                                                                     |
-| `bypass_cache_threshold`              | Size    | `256Mi`    | cacheのバイパスをトリガーする読み取り範囲サイズ (`enable_bypass_cache_with_threshold` が必要) 。                                                         |
-| `max_file_segment_size`               | Size    | `8Mi`      | 単一のcacheファイルの最大サイズ (バイト、または人間が読みやすい形式) 。                                                                                        |
-| `max_elements`                        | Integer | `10000000` | cacheファイルの最大数。                                                                                                                  |
-| `load_metadata_threads`               | Integer | `16`       | 起動時にcacheメタデータを読み込むためのスレッド数。                                                                                                    |
-| `use_split_cache`                     | Boolean | `false`    | ファイルをシステム用とデータ用に分離して使用します。                                                                                                      |
-| `split_cache_ratio`                   | Double  | `0.1`      | split&#95;cache における、システムセグメントのcache総サイズに対する比率。                                                                                 |
+| パラメータ                                       | Type    | Default    | Description                                                                                                                                                                                                                   |
+| ------------------------------------------- | ------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`                                      | String  | -          | **必須**。cacheを保存するディレクトリのパス。                                                                                                                                                                                                   |
+| `max_size`                                  | Size    | -          | cacheの最大サイズ (バイト、または人間が読みやすい形式。例: `10Gi`) 。`max_size_ratio_to_total_space` を設定しない場合は**必須**です。両者を同時に設定することはできません。上限に達すると、ファイルは `cache_policy` で指定されたポリシー (デフォルトは SLRU) に従って追い出されます。`ki`、`Mi`、`Gi` フォーマットをサポートします (v22.10 以降) 。 |
+| `max_size_ratio_to_total_space`             | Double  | -          | `max_size` の代替となる設定で、cacheサイズとして使用するディスク総容量の割合を `(0, 1]` の範囲で指定します。`max_size` を設定しない場合は**必須**です。`max_size` と同時に指定することはできません。                                                                                                  |
+| `cache_policy`                              | Enum    | `SLRU`     | cacheのエビクションポリシー。設定可能な値: `LRU`、`SLRU` (デフォルト) 、`SLRU_OVERCOMMIT`、`LRU_OVERCOMMIT`。overcommit ポリシーを使用するには分散cacheをサポートするビルドが必要です。また、`use_split_cache` と組み合わせることはできません (いずれの場合も起動時にエラーとなります) 。                                   |
+| `slru_size_ratio`                           | Double  | `0.6`      | `SLRU` / `SLRU_OVERCOMMIT` における、protected cache と probationary cache の比率。                                                                                                                                                     |
+| `reserve_granularity`                       | Size    | `4Mi`      | ファイルセグメントのダウンロード用に領域を予約する際に、少なくともこのバイト数を先行して予約します (ただしファイルセグメントのサイズを上限とします) 。`0` の場合は、要求されたサイズのみを予約します。                                                                                                                       |
+| `cache_on_write_operations`                 | ブール値 | `false`    | `INSERT` クエリおよびバックグラウンドマージに対して、ライトスルーcacheを有効にします。クエリごとに `enable_filesystem_cache_on_write_operations` で上書きできます。                                                                                                              |
+| `enable_filesystem_query_cache_limit`       | ブール値 | `false`    | `filesystem_cache_max_download_size` に基づく、クエリごとのcacheサイズ制限を有効にします。                                                                                                                                                            |
+| `cache_hits_threshold`                      | Integer | `0`        | 非推奨。効果はありません。                                                                                                                                                                                                                 |
+| `enable_bypass_cache_with_threshold`        | ブール値 | `false`    | 読み取り範囲が大きい場合はcacheをスキップします。                                                                                                                                                                                                   |
+| `bypass_cache_threshold`                    | Size    | `256Mi`    | cacheのバイパスをトリガーする読み取り範囲サイズ (`enable_bypass_cache_with_threshold` が必要) 。                                                                                                                                                       |
+| `max_file_segment_size`                     | Size    | `32Mi`     | 単一のcacheファイルの最大サイズ (バイト、または人間が読みやすい形式) 。                                                                                                                                                                                      |
+| `boundary_alignment`                        | Size    | `4Mi`      | cache内のファイルセグメント境界のアラインメント。`max_file_segment_size` 以下にする必要があります (これを超える値は起動時にエラーとなります) 。                                                                                                                                      |
+| `max_elements`                              | Integer | `10000000` | cacheファイルの最大数。                                                                                                                                                                                                                |
+| `load_metadata_threads`                     | Integer | `16`       | 起動時にcacheメタデータを読み込むためのスレッド数。                                                                                                                                                                                                  |
+| `background_download_threads`               | UInt64  | `5`        | ファイルセグメントのバックグラウンドダウンロードに使用するスレッド数。`0` を指定すると、バックグラウンドダウンロードは無効になります。                                                                                                                                                         |
+| `background_download_queue_size_limit`      | UInt64  | `5000`     | バックグラウンドダウンロードのキューで待機できるセグメントの最大数。`0` は無制限を意味します (キューが無効になるわけではありません) 。バックグラウンドダウンロード自体が無効になるのは、`background_download_threads` が `0` の場合のみです。                                                                                  |
+| `background_download_max_file_segment_size` | Size    | `4Mi`      | セグメントをバックグラウンドでどこまでプリフェッチするかを決めるしきい値 (アラインメントによる丸めあり) 。ダウンロードサイズは `boundary_alignment` の倍数に切り上げられるため、厳密な上限にはなりません (例えば、`1Mi` を指定しても `boundary_alignment` が `4Mi` であれば `4Mi` がダウンロードされます) 。                                    |
+| `load_metadata_asynchronously`              | ブール値 | `false`    | サーバー起動時にcacheメタデータを非同期で読み込みます。                                                                                                                                                                                                |
+| `use_split_cache`                           | ブール値 | `false`    | ファイルをシステム用とデータ用に分離して使用します。`SLRU_OVERCOMMIT` または `LRU_OVERCOMMIT` とは併用できません。                                                                                                                                                   |
+| `split_cache_ratio`                         | Double  | `0.1`      | split&#95;cache における、システムセグメントのcache総サイズに対する比率。                                                                                                                                                                               |
 
 > **注**: サイズ値は `ki`、`Mi`、`Gi` などの単位をサポートします (例: `10Gi`) 。
 

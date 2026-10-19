@@ -17,7 +17,7 @@ INSERT INTO logs_05042 VALUES
     ('2024-01-01 00:00:02', '2024-01-02 03:04:05Z', 7, 3.00, '', 'inf'),
     ('2024-01-01 00:00:03', '2024-01-02T03:04:05-05:00', 8, 4.75, 'w', 'information');
 
-SET allow_experimental_logsql_dialect = 1;
+SET enable_logsql_dialect = 1;
 SET logsql_table = 'logs_05042';
 SET dialect = 'logsql';
 

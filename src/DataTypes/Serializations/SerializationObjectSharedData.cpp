@@ -111,14 +111,14 @@ struct DeserializeBinaryBulkStateObjectSharedData : public ISerialization::Deser
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> bucket_map_states;
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> bucket_structure_states;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateObjectSharedData>(*this);
-        new_state->map_state = map_state ? map_state->clone() : nullptr;
+        new_state->map_state = map_state ? map_state->clone(context) : nullptr;
         for (size_t bucket = 0; bucket != bucket_map_states.size(); ++bucket)
-            new_state->bucket_map_states[bucket] = bucket_map_states[bucket] ? bucket_map_states[bucket]->clone() : nullptr;
+            new_state->bucket_map_states[bucket] = bucket_map_states[bucket] ? bucket_map_states[bucket]->clone(context) : nullptr;
         for (size_t bucket = 0; bucket != bucket_structure_states.size(); ++bucket)
-            new_state->bucket_structure_states[bucket] = bucket_structure_states[bucket] ? bucket_structure_states[bucket]->clone() : nullptr;
+            new_state->bucket_structure_states[bucket] = bucket_structure_states[bucket] ? bucket_structure_states[bucket]->clone(context) : nullptr;
         return new_state;
     }
 };
@@ -1372,7 +1372,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataChunks> SerializationObj
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot read paths from object shared data with ADVANCED serialization version because seek_stream_to_mark_callback is not initialized");
 
     DeserializeBinaryBulkSettings deserialization_settings;
-    deserialization_settings.object_and_dynamic_read_statistics = false;
+    deserialization_settings.read_statistics = false;
     deserialization_settings.position_independent_encoding = true;
     deserialization_settings.use_specialized_prefixes_and_suffixes_substreams = true;
     deserialization_settings.data_part_type = MergeTreeDataPartType::Compact;
@@ -1624,7 +1624,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for object shared data data");
 
                 DeserializeBinaryBulkSettings deserialization_settings;
-                deserialization_settings.object_and_dynamic_read_statistics = false;
+                deserialization_settings.read_statistics = false;
                 deserialization_settings.position_independent_encoding = true;
                 deserialization_settings.use_specialized_prefixes_and_suffixes_substreams = true;
                 deserialization_settings.data_part_type = MergeTreeDataPartType::Compact;
