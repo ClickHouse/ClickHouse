@@ -10,6 +10,7 @@
 #include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
 
+#include <algorithm>
 #include <filesystem>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -341,7 +342,11 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
     if (!endpoint.sas_auth.empty())
         set_option("azure_storage_sas_key", endpoint.sas_auth);
 
-    if (drop_credentials)
+    /// A connection string may carry neither a key nor a SAS token; the kernel would then use the managed identity.
+    const bool has_credential = std::ranges::any_of(options, [](const auto & option)
+        { return option.first == "azure_storage_account_key" || option.first == "azure_storage_sas_key"; });
+
+    if (drop_credentials || (connection_params.forbid_implicit_credentials && !has_credential))
         set_option("azure_skip_signature", "true");
 
     /// If the configuration carries an endpoint URL, pass it to the kernel explicitly, which

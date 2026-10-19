@@ -5512,10 +5512,14 @@ disk defined in user SQL with `disk(type = azure_blob_storage, ...)` is restrict
 Durability for persistent `AzureBlobStorage` and `AzureQueue` tables and for dynamic Azure disks: when the
 server reloads such a table from its stored definition at startup it re-applies the restriction with the startup
 context, so a table that relied on server-managed credentials is loaded with a client that has no credentials and
-stays inaccessible until its credentials resolve to a permitted source. The server itself still starts. `RESTORE`
-creates its tables like `CREATE`, so such a table is refused there instead. See the
-server setting `azure_load_table_anonymously_if_credentials_restricted`. Give such tables explicit credentials
-for durable access.
+stays inaccessible until its credentials resolve to a permitted source. `RESTORE` creates its tables like
+`CREATE`, so such a table is refused there instead. See the server setting
+`azure_load_table_anonymously_if_credentials_restricted`. Give such tables explicit credentials for durable
+access.
+
+A dynamic Azure disk created while this setting is enabled records that in its stored definition, so after a
+restart it keeps using the server's identity without the setting. The record is written only by the server and is
+ignored in a `CREATE` or `ATTACH` query.
 
 The recommended way to give user queries Azure access is a named collection with explicit credentials: the
 credentials stay out of the query text, and use of each collection is controlled with RBAC

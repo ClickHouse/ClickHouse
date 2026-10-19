@@ -467,16 +467,13 @@ void validateResolvedS3DiskCredentials(
             );
 }
 
-void validateResolvedAzureDiskCredentials(
-    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
-    [[maybe_unused]] ContextPtr context,
-    [[maybe_unused]] bool is_loading_from_existing_metadata)
-{
 #if USE_AZURE_BLOB_STORAGE
-    if (!context->shouldRestrictUserQueryAzureCredentials())
-        return;
+namespace
+{
 
-    /// The same prefixes `registerDiskObjectStorage` passes to the object storage factory.
+/// The Azure backends of a dynamic disk, at the same prefixes `registerDiskObjectStorage` passes to the object storage factory.
+std::vector<String> getAzureDiskPrefixes(const Poco::Util::AbstractConfiguration & config)
+{
     std::vector<String> prefixes{""};
     if (config.has(".locations"))
     {
@@ -486,25 +483,64 @@ void validateResolvedAzureDiskCredentials(
             prefixes.push_back(".locations." + location);
     }
 
-    for (const auto & prefix : prefixes)
+    std::erase_if(prefixes, [&](const String & prefix)
     {
         const String type = config.has(prefix + ".object_storage_type")
             ? config.getString(prefix + ".object_storage_type")
             : config.getString(prefix + ".type", "");
-        if (!type.starts_with("azure"))
-            continue;
+        return !type.starts_with("azure");
+    });
+    return prefixes;
+}
 
-        const AzureBlobStorage::ConnectionParams params
-        {
-            .endpoint = AzureBlobStorage::processEndpoint(config, prefix),
-            .auth_method = AzureBlobStorage::getAuthMethod(config, prefix),
-            .client_options = {},
-            .forbid_implicit_credentials = true,
-            .anonymous_fallback_for_server_credentials = is_loading_from_existing_metadata
-                && context->getGlobalContext()->getServerSettings()[ServerSetting::azure_load_table_anonymously_if_credentials_restricted],
-        };
-        params.checkOrDropServerManagedCredentials();
-    }
+AzureBlobStorage::ConnectionParams getAzureDiskConnectionParams(
+    const Poco::Util::AbstractConfiguration & config, const String & prefix, bool anonymous_fallback)
+{
+    return AzureBlobStorage::ConnectionParams
+    {
+        .endpoint = AzureBlobStorage::processEndpoint(config, prefix),
+        .auth_method = AzureBlobStorage::getAuthMethod(config, prefix),
+        .client_options = {},
+        .forbid_implicit_credentials = true,
+        .anonymous_fallback_for_server_credentials = anonymous_fallback,
+    };
+}
+
+}
+#endif
+
+bool azureDiskUsesServerIdentity([[maybe_unused]] const Poco::Util::AbstractConfiguration & config)
+{
+#if USE_AZURE_BLOB_STORAGE
+    for (const auto & prefix : getAzureDiskPrefixes(config))
+        if (getAzureDiskConnectionParams(config, prefix, /*anonymous_fallback=*/ true).checkOrDropServerManagedCredentials())
+            return true;
+#endif
+    return false;
+}
+
+bool hasAzureServerCredentialsMarker(const Poco::Util::AbstractConfiguration & config)
+{
+    return config.getBool("." + String(AZURE_SERVER_CREDENTIALS_MARKER), false);
+}
+
+void validateResolvedAzureDiskCredentials(
+    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
+    [[maybe_unused]] ContextPtr context,
+    [[maybe_unused]] bool is_loading_from_existing_metadata)
+{
+#if USE_AZURE_BLOB_STORAGE
+    if (!context->shouldRestrictUserQueryAzureCredentials())
+        return;
+
+    /// The marker is written only by the server, for a disk created with the opt-in, and honored only on reload.
+    if (is_loading_from_existing_metadata && hasAzureServerCredentialsMarker(config))
+        return;
+
+    const bool anonymous_fallback = is_loading_from_existing_metadata
+        && context->getGlobalContext()->getServerSettings()[ServerSetting::azure_load_table_anonymously_if_credentials_restricted];
+    for (const auto & prefix : getAzureDiskPrefixes(config))
+        getAzureDiskConnectionParams(config, prefix, anonymous_fallback).checkOrDropServerManagedCredentials();
 #endif
 }
 

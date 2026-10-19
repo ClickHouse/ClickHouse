@@ -105,6 +105,10 @@ $CLICKHOUSE_CLIENT --azure_allow_server_credentials_in_user_queries=1 -q "
     CREATE TABLE ${OPT_IN_TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple() SETTINGS disk = ${OPT_IN_DISK}"
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE ${DISK_TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple() SETTINGS disk = ${OPT_IN_DISK}; -- { serverError ACCESS_DENIED }
+    -- The marker that keeps an opted-in disk's credentials across a restart is ignored in a query.
+    CREATE TABLE ${DISK_TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS disk = disk(type = azure_blob_storage, storage_account_url = '${DISK_URL}', container_name = 'cont',
+            _azure_server_credentials_allowed = 1); -- { serverError ACCESS_DENIED }
 "
 
 # Permitted: explicit credentials read and write for real.

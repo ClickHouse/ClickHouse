@@ -71,9 +71,19 @@ void forceAnonymousS3DiskConfigAtPrefix(Poco::Util::AbstractConfiguration & conf
 /// anonymous when loading from existing metadata (see `s3_load_table_anonymously_if_credentials_restricted`).
 void validateResolvedS3DiskCredentials(Poco::Util::AbstractConfiguration & config, ContextPtr context, bool is_loading_from_existing_metadata, const DynamicS3DiskCredentialInfo & info);
 
+/// Persisted in the stored definition of a dynamic Azure disk created with `azure_allow_server_credentials_in_user_queries`.
+inline constexpr auto AZURE_SERVER_CREDENTIALS_MARKER = "_azure_server_credentials_allowed";
+
+/// Whether a dynamic disk configuration has an Azure backend that authenticates with the server's own identity.
+bool azureDiskUsesServerIdentity(const Poco::Util::AbstractConfiguration & config);
+
+/// Whether the root of a dynamic disk configuration carries `AZURE_SERVER_CREDENTIALS_MARKER`.
+bool hasAzureServerCredentialsMarker(const Poco::Util::AbstractConfiguration & config);
+
 /// Refuse a dynamic Azure disk that resolves to the server's own identity, unless loading from existing metadata
 /// with `azure_load_table_anonymously_if_credentials_restricted`. Run on every resolution, because a disk already
-/// created by a session with the opt-in is reused without building its object storage again.
+/// created by a session with the opt-in is reused without building its object storage again. A disk loaded from
+/// existing metadata with `AZURE_SERVER_CREDENTIALS_MARKER` is exempt.
 void validateResolvedAzureDiskCredentials(const Poco::Util::AbstractConfiguration & config, ContextPtr context, bool is_loading_from_existing_metadata);
 
 /*

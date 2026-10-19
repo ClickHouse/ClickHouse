@@ -14,6 +14,7 @@
 #if USE_AZURE_BLOB_STORAGE
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include <Disks/getDiskConfigurationFromAST.h>
 #endif
 
 #include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
@@ -255,6 +256,10 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
         /// We keep using empty prefix by default for compatibility, but allow to configure another one
         const String & common_key_prefix = config.getString(config_prefix + ".common_key_prefix_for_azure", "");
 
+        /// A custom disk is configured at the root, so its marker is there for every location; it is honored only on reload.
+        const bool server_credentials_allowed = remote_host_filter_check == RemoteHostFilterCheck::Warn
+            && hasAzureServerCredentialsMarker(config);
+
         AzureBlobStorage::ConnectionParams params
         {
             .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
@@ -262,7 +267,7 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
             .client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *azure_settings, /*for_disk=*/ true),
             /// Only a custom disk, `disk(...)` in user SQL, is checked; a disk from the server config may use the server's identity.
             .forbid_implicit_credentials = remote_host_filter_check != RemoteHostFilterCheck::None
-                && context->shouldRestrictUserQueryAzureCredentials(),
+                && !server_credentials_allowed && context->shouldRestrictUserQueryAzureCredentials(),
             /// A custom disk loaded from existing metadata gets no credentials instead of failing the table load.
             .anonymous_fallback_for_server_credentials = remote_host_filter_check == RemoteHostFilterCheck::Warn
                 && context->getGlobalContext()->getServerSettings()[ServerSetting::azure_load_table_anonymously_if_credentials_restricted],

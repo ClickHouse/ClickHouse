@@ -30,6 +30,7 @@ def cluster():
             main_configs=["configs/named_collections.xml", "configs/schema_cache.xml", "configs/blob_log.xml"],
             user_configs=["configs/disable_profilers.xml", "configs/users.xml", "configs/sync_inserts.xml"],
             with_azurite=True,
+            stay_alive=True,
         )
         cluster.start()
         container_client = cluster.blob_service_client.get_container_client("cont")
@@ -2063,16 +2064,17 @@ def test_invalid_upload_settings_do_not_affect_reads(cluster):
     azure_query(node, "DROP TABLE test_reads_with_invalid_upload_settings")
 
 
-def test_server_credentials_anonymous_on_reload(cluster):
-    # A stored table whose definition now resolves to the server's own identity is loaded at startup with a
-    # client that has no credentials (`azure_load_table_anonymously_if_credentials_restricted`), so the server
-    # starts and the table cannot use that identity. `UNDROP` cannot cover it: a table without local data is
-    # removed at once on `DROP`.
+def test_server_credentials_on_reload(cluster):
+    # At startup a stored table whose definition now resolves to the server's own identity is loaded with a client
+    # that has no credentials (`azure_load_table_anonymously_if_credentials_restricted`), so the server starts and
+    # the table cannot use that identity. `UNDROP` cannot cover it: a table without local data is removed at once on
+    # `DROP`. A dynamic disk created with the opt-in records it in its definition and keeps the server's identity.
     node = cluster.instances["node"]
     url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
     key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
 
     node.query("DROP TABLE IF EXISTS test_server_credentials_reload SYNC")
+    node.query("DROP TABLE IF EXISTS test_server_credentials_disk_reload SYNC")
     node.query("DROP NAMED COLLECTION IF EXISTS azure_server_credentials_reload")
     node.query(
         f"CREATE NAMED COLLECTION azure_server_credentials_reload AS storage_account_url = '{url}', container = 'cont',"
@@ -2088,6 +2090,18 @@ def test_server_credentials_anonymous_on_reload(cluster):
 
     # Without the account key the stored definition resolves to the server's own identity.
     node.query("ALTER NAMED COLLECTION azure_server_credentials_reload DELETE account_name, account_key")
+
+    # The disk uses the server's own identity; these settings keep it from contacting Azurite, which cannot verify it.
+    node.query(
+        f"CREATE TABLE test_server_credentials_disk_reload (x UInt8) ENGINE = MergeTree ORDER BY tuple()"
+        f" SETTINGS disk = disk(type = azure_blob_storage, storage_account_url = '{url}', container_name = 'cont',"
+        f" readonly = 1, container_already_exists = 1, skip_access_check = 1)",
+        settings={"azure_allow_server_credentials_in_user_queries": 1},
+    )
+    assert "_azure_server_credentials_allowed" in node.query(
+        "SHOW CREATE TABLE test_server_credentials_disk_reload"
+    )
+
     node.restart_clickhouse()
 
     assert node.query("EXISTS TABLE test_server_credentials_reload").strip() == "1"
@@ -2096,5 +2110,9 @@ def test_server_credentials_anonymous_on_reload(cluster):
         "SELECT * FROM test_server_credentials_reload", settings={"azure_sdk_max_retries": 0}
     )
 
+    assert node.query("EXISTS TABLE test_server_credentials_disk_reload").strip() == "1"
+    assert not node.contains_in_log("Loading the dynamic Azure disk")
+
     node.query("DROP TABLE test_server_credentials_reload SYNC")
+    node.query("DROP TABLE test_server_credentials_disk_reload SYNC")
     node.query("DROP NAMED COLLECTION azure_server_credentials_reload")

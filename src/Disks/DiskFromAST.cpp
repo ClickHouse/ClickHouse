@@ -191,7 +191,7 @@ public:
             if (!eq || eq->name != "equals" || !eq->arguments || eq->arguments->children.size() < 2)
                 return false;
             const auto * key = eq->arguments->children[0]->as<ASTIdentifier>();
-            return key && key->name() == "_server_credentials_allowed";
+            return key && (key->name() == "_server_credentials_allowed" || key->name() == AZURE_SERVER_CREDENTIALS_MARKER);
         };
 
         /// Strip any marker the user put in the definition. This runs only on a fresh create (not on metadata
@@ -211,11 +211,20 @@ public:
         }
 
         DynamicS3DiskCredentialInfo info;
-        getDiskConfigurationFromASTImpl(args, data.context, /* is_loading_from_existing_metadata */ false, &info, data.for_system_database);
+        auto xml_document = getDiskConfigurationFromASTImpl(args, data.context, /* is_loading_from_existing_metadata */ false, &info, data.for_system_database);
         if (info.persist_server_credentials_allowance)
             args.push_back(makeASTFunction(
                 "equals",
                 make_intrusive<ASTIdentifier>("_server_credentials_allowed"),
+                make_intrusive<ASTLiteral>(static_cast<UInt64>(1))));
+
+        /// An `include` is not resolved here, so an Azure backend that comes from it is not marked and stays restricted.
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+        config->load(xml_document);
+        if (!data.context->shouldRestrictUserQueryAzureCredentials() && azureDiskUsesServerIdentity(*config))
+            args.push_back(makeASTFunction(
+                "equals",
+                make_intrusive<ASTIdentifier>(AZURE_SERVER_CREDENTIALS_MARKER),
                 make_intrusive<ASTLiteral>(static_cast<UInt64>(1))));
     }
 };

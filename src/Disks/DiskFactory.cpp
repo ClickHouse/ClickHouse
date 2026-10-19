@@ -61,11 +61,13 @@ DiskPtr DiskFactory::create(
 
     /// A disk defined in a query (`disk(type = ..., name = ...)`) has its own configuration,
     /// in which these elements are read by the caller and not by the disk itself:
-    /// `name` in `getOrCreateCustomDisk` and `_server_credentials_allowed` in `getDiskConfigurationFromAST`.
+    /// `name` in `getOrCreateCustomDisk`, and `_server_credentials_allowed` and `_azure_server_credentials_allowed`
+    /// in `getDiskConfigurationFromAST`.
     if (custom_disk)
     {
         tracked_config->markAsUsed(config_prefix + ".name");
         tracked_config->markAsUsed(config_prefix + "._server_credentials_allowed");
+        tracked_config->markAsUsed(config_prefix + "._azure_server_credentials_allowed");
     }
 
     const auto disk_type = tracked_config->getString(config_prefix + ".type", "local");

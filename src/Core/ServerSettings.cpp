@@ -1682,6 +1682,11 @@ credentials resolve to a permitted source again. It never silently regains the s
 single such table — for example one created in an older version before the restriction existed — from
 aborting server startup.
 
+A table on such a dynamic disk loads only if loading it reads nothing from Azure, for example an empty `MergeTree`
+table with local metadata. A table with data parts, or a disk with `plain_rewritable` metadata, may still fail to
+load, because those requests are denied as well. Give the disk explicit credentials to load it. A dynamic disk
+created with `azure_allow_server_credentials_in_user_queries` keeps the server's identity and is not affected.
+
 When disabled, loading such a table instead fails, which can prevent the server from starting. Use this only
 if you prefer a hard failure over a silently inaccessible table.
 )", 0) \
