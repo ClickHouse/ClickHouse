@@ -643,6 +643,8 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
         String secret_access_key;
         String session_token;
         String region;
+        /// Bearer token of catalog-vended GCS credentials; the base client is rebuilt with a new one on refresh.
+        String authorization_header;
         std::optional<S3Settings> base_s3_settings;
         if (reuse_base_credentials)
         {
@@ -657,6 +659,10 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
                     secret_access_key = credentials.GetAWSSecretKey();
                     session_token = credentials.GetSessionToken();
                     region = s3_client->getRegion();
+
+                    for (const auto & header : s3_client->getClientConfiguration().extra_headers)
+                        if (header.name == "authorization")
+                            authorization_header = header.value;
                 }
             }
         }
@@ -667,7 +673,7 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
 
         /// Credential rotation makes older cache entries unreachable; evict them by their common prefix.
         std::string supersedes_prefix;
-        if (!access_key_id.empty() || !session_token.empty())
+        if (!access_key_id.empty() || !session_token.empty() || !authorization_header.empty())
         {
             supersedes_prefix = storage_cache_key + "#cred=";
 
@@ -675,6 +681,7 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
             creds_hash.update(access_key_id);
             creds_hash.update(secret_access_key);
             creds_hash.update(session_token);
+            creds_hash.update(authorization_header);
             storage_cache_key = supersedes_prefix + std::to_string(creds_hash.get64());
         }
 
@@ -711,6 +718,11 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
                     s3_settings.auth_settings[S3AuthSetting::session_token] = session_token;
                 if (!region.empty())
                     s3_settings.auth_settings[S3AuthSetting::region] = region;
+                if (!authorization_header.empty())
+                {
+                    s3_settings.auth_settings.headers.eraseByName("Authorization");
+                    s3_settings.auth_settings.headers.push_back({"Authorization", authorization_header});
+                }
 
                 s3_settings.auth_settings[S3AuthSetting::uri_style] = endpoint_uri_style;
 
