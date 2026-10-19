@@ -1,8 +1,6 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:cmake_link.bzl", "cmake_link")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "CLICKHOUSE_WARNINGS", "cmake_prefix_maps", "llvm_toolchain_path", "repository_path")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "CLICKHOUSE_WARNINGS", "llvm_toolchain_path")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -182,13 +180,9 @@ ch_cc_library(
         "src/WebSocket.cpp",
         "src/WebSocketImpl.cpp",
     ],
-    hdrs = (select({
-        "@platforms//cpu:x86_64": [
-            "//bazel:config/x86_64/includes/configs/config_version.cpp",
-        ],
-        "@platforms//cpu:aarch64": [
-            "//bazel:config/aarch64/includes/configs/config_version.cpp",
-        ],
+    hdrs = select({
+        "@platforms//cpu:x86_64": ["//bazel:config/x86_64/includes/configs/config_version.cpp"],
+        "@platforms//cpu:aarch64": ["//bazel:config/aarch64/includes/configs/config_version.cpp"],
     }) + [
         "include/Poco/Net/AbstractHTTPRequestHandler.h",
         "include/Poco/Net/DNS.h",
@@ -278,7 +272,7 @@ ch_cc_library(
         "include/Poco/Net/Throttler.h",
         "include/Poco/Net/WebSocket.h",
         "include/Poco/Net/WebSocketImpl.h",
-    ]),
+    ],
     additional_compiler_inputs = [
         "src/AbstractHTTPRequestHandler.cpp",
         "src/DNS.cpp",

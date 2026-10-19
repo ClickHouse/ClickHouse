@@ -254,6 +254,10 @@ def source_path(label):
         repo_label = '@' + spec['name'] + '//:'
         if label.startswith(repo_label):
             return prefix + '/' + label.removeprefix(repo_label)
+    main_label = label.removeprefix('@clickhouse')
+    if main_label.startswith('//') and ':' in main_label:
+        package, name = main_label[2:].split(':', 1)
+        return (package + '/' if package else '') + name
     return label.removeprefix('//:')
 
 

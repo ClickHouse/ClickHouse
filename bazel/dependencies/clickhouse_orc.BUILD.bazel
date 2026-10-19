@@ -230,7 +230,7 @@ ch_cc_library(
     ],
     deps = [
         "@clickhouse_google_protobuf//:_libprotobuf",
-        "@clickhouse//:_lz4",
+        "@clickhouse//contrib/lz4-cmake:_lz4",
         "@clickhouse_snappy//:_snappy",
         "@clickhouse_zstd//:_zstd",
     ],

@@ -1,8 +1,6 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:cmake_link.bzl", "cmake_link")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "CLICKHOUSE_WARNINGS", "cmake_prefix_maps", "llvm_toolchain_path", "repository_path")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "CLICKHOUSE_WARNINGS", "llvm_toolchain_path", "repository_path")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -431,7 +429,7 @@ ch_cc_library(
         "src/VarIterator.cpp",
         "src/Void.cpp",
     ],
-    hdrs = (select({
+    hdrs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:config/x86_64/base/base/GitHash.generated.cpp",
             "//bazel:config/x86_64/includes/configs/config_version.cpp",
@@ -698,7 +696,7 @@ ch_cc_library(
         "src/pcre_config.h",
         "src/pcre_internal.h",
         "src/ucp.h",
-    ]),
+    ],
     additional_compiler_inputs = [
         "src/DirectoryIterator_UNIX.cpp",
         "src/Environment_UNIX.cpp",
@@ -725,15 +723,15 @@ ch_cc_library(
         "src/Timezone_UNIX.cpp",
         "//base/poco/XML:src/xmltok_impl.c",
         "//base/poco/XML:src/xmltok_ns.c",
-        "//:src/Access/AccessRights.cpp",
-        "//:src/Common/Base58.cpp",
-        "//:src/Common/Hex.cpp",
-        "//:src/Functions/FunctionMD5.cpp",
-        "//:src/Functions/FunctionSHA1.cpp",
-        "//:src/Functions/FunctionsStringDistance.cpp",
-        "//:src/Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp",
-        "//:src/Storages/MergeTree/MergeTreeDataPartWriterWide.cpp",
-        "//:src/Storages/MergeTree/MergeTreeRangeReader.cpp",
+        "//src:Access/AccessRights.cpp",
+        "//src/Common:Base58.cpp",
+        "//src/Common:Hex.cpp",
+        "//src/Functions:FunctionMD5.cpp",
+        "//src/Functions:FunctionSHA1.cpp",
+        "//src/Functions:FunctionsStringDistance.cpp",
+        "//src:Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp",
+        "//src:Storages/MergeTree/MergeTreeDataPartWriterWide.cpp",
+        "//src:Storages/MergeTree/MergeTreeRangeReader.cpp",
         "src/AbstractObserver.cpp",
         "src/ActiveDispatcher.cpp",
         "src/ArchiveStrategy.cpp",
@@ -1105,7 +1103,7 @@ ch_cc_library(
         "@clickhouse_pocketfft//:pocketfft",
         "@clickhouse_sparsehash_c11//:sparsehash_c11",
         ":poco_foundation_headers",
-        "//:headers",
+        "//src:clickhouse_source_headers",
         "//base/glibc-compatibility:headers",
         "//base/glibc-rseq:headers",
         "//base/poco/JSON:headers",
@@ -1152,19 +1150,15 @@ ch_cc_library(
         "src/pcre_version.c",
         "src/pcre_xclass.c",
     ],
-    hdrs = (select({
-        "@platforms//cpu:x86_64": [
-            "//bazel:config/x86_64/includes/configs/config_version.cpp",
-        ],
-        "@platforms//cpu:aarch64": [
-            "//bazel:config/aarch64/includes/configs/config_version.cpp",
-        ],
+    hdrs = select({
+        "@platforms//cpu:x86_64": ["//bazel:config/x86_64/includes/configs/config_version.cpp"],
+        "@platforms//cpu:aarch64": ["//bazel:config/aarch64/includes/configs/config_version.cpp"],
     }) + [
         "src/pcre.h",
         "src/pcre_config.h",
         "src/pcre_internal.h",
         "src/ucp.h",
-    ]),
+    ],
     additional_compiler_inputs = [
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",

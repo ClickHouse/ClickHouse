@@ -1971,7 +1971,7 @@ ch_cc_library(
         "google/cloud/internal/tracing_rest_client.cc",
         "google/cloud/internal/tracing_rest_response.cc",
         "google/cloud/internal/unified_rest_credentials.cc",
-        "@clickhouse//:contrib/google-cloud-cpp-cmake/poco_rest_client.cc",
+        "@clickhouse//contrib:google-cloud-cpp-cmake/poco_rest_client.cc",
     ],
     hdrs = select({
         "@platforms//cpu:x86_64": [
@@ -1997,7 +1997,7 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     deps = (([] + [
-        "@clickhouse//:common",
+        "@clickhouse//base/base:common",
         ":google_cloud_cpp_common",
     ]) + [
         "@clickhouse_nlohmann_json//:nlohmann_json",

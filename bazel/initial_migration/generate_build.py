@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Generate native Bazel target data from both configured CMake File API graphs."""
 
+import ast
 import collections
 import hashlib
 import json
@@ -40,6 +41,20 @@ COMPILE_TYPES = {'STATIC_LIBRARY', 'OBJECT_LIBRARY', 'EXECUTABLE'}
 HEADER_SUFFIXES = {'.h', '.hh', '.hpp', '.hxx', '.inc', '.ipp', '.inl', '.tcc', '.def'}
 BCR_DEPENDENCIES = json.loads((ROOT / 'bazel/initial_migration/bcr_dependencies.json').read_text())
 LICENSES_OUTPUT = 'src/Storages/System/StorageSystemLicenses.generated.cpp'
+
+
+def llvm_source_overlays():
+    """Read ClickHouse source files supplied to the LLVM module extension."""
+    tree = ast.parse((ROOT / 'bazel/llvm.MODULE.bazel').read_text())
+    for stmt in tree.body:
+        if (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)
+                and isinstance(stmt.value.func, ast.Attribute)
+                and stmt.value.func.attr == 'from_archive'
+                and isinstance(stmt.value.func.value, ast.Name)
+                and stmt.value.func.value.id == 'llvm'):
+            files = next(kw.value for kw in stmt.value.keywords if kw.arg == 'files')
+            return {dest: source_path(label) for dest, label in ast.literal_eval(files).items()}
+    raise ValueError('Missing llvm.from_archive files in bazel/llvm.MODULE.bazel')
 BUILD_OPTIONS_OUTPUT = 'src/Storages/System/StorageSystemBuildOptions.generated.cpp'
 # CMake installs these headers unchanged beside the configured conf.h.
 # Keep the upstream source tree authoritative instead of checking in copies.
@@ -600,7 +615,7 @@ class Graph:
                     source = target['sources'][index]['path']
                     if source.startswith(llvm_targets.PREFIX + '/'):
                         self.parity_sources[module_root + source.removeprefix(llvm_targets.PREFIX)] = source
-        for destination, source in re.findall(r'"([^"]+)": "//:([^"]+)"', (ROOT / 'bazel/llvm.MODULE.bazel').read_text()):
+        for destination, source in llvm_source_overlays().items():
             self.parity_sources[module_root + '/' + destination] = source
         self.build_options.update({
             'template': 'config/' + self.arch + '/' + BUILD_OPTIONS_OUTPUT + '.in',
@@ -801,7 +816,7 @@ def main():
         '@platforms//cpu:' + arch: [target_label(name, owners) for name in sorted(graph.compiled) if owners[name]]
         for arch, graph in graphs.items()
     })})
-    llvm_overlay_inputs = set(re.findall(r'"//:([^\"]+)"', (ROOT / 'bazel/llvm.MODULE.bazel').read_text()))
+    llvm_overlay_inputs = set(llvm_source_overlays().values())
     rust_root_inputs = {label[3:] for config in rust_cxx.values()
                         for label in config['hdrs'] if label.startswith('//:')}
     root_exports = sorted(set().union(*(build.root_sources for build in builds.values()))
@@ -881,7 +896,7 @@ def main():
     # Capture CMake at repository scope, then render native Bazel packages.
     # Existing native BUILD files must not hide CMake inputs on a second run.
     from initial_migration.first_party_packages import Migration as NativePackages
-    native_packages = NativePackages(ROOT, stage='base', from_generator=True)
+    native_packages = NativePackages(ROOT, stage='all', from_generator=True)
     for path, content in native_packages.prepare().items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)

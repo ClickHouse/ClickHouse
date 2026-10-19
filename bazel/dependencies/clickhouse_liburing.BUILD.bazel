@@ -17,7 +17,7 @@ expand_template(
         "# cmakedefine LIBURING_CONFIG_HAS_OPEN_HOW": "/* #undef LIBURING_CONFIG_HAS_OPEN_HOW */",
         "# cmakedefine LIBURING_CONFIG_HAS_STATX": "/* #undef LIBURING_CONFIG_HAS_STATX */",
     },
-    template = "@clickhouse//:contrib/liburing-cmake/compat.h.in",
+    template = "@clickhouse//contrib:liburing-cmake/compat.h.in",
 )
 
 expand_template(
@@ -27,7 +27,7 @@ expand_template(
         "${LIBURING_VERSION_MAJOR}": "2",
         "${LIBURING_VERSION_MINOR}": "15",
     },
-    template = "@clickhouse//:contrib/liburing-cmake/io_uring_version.h.in",
+    template = "@clickhouse//contrib:liburing-cmake/io_uring_version.h.in",
 )
 
 ch_cc_library(

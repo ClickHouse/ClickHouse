@@ -1423,7 +1423,7 @@ _GENERATED_DEPS_2 = [
     "@clickhouse_double_conversion//:_double-conversion",
     "@clickhouse_flatbuffers//:_flatbuffers",
     "@clickhouse_google_protobuf//:_libprotobuf",
-    "@clickhouse//:_lz4",
+    "@clickhouse//contrib/lz4-cmake:_lz4",
     ":_orc",
     ":_parquet",
     "@clickhouse_snappy//:_snappy",

@@ -1,0 +1,15 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "autoconf_linux.h",
+    "osconf.h",
+    "profile.h",
+])
+
+cc_library(
+    name = "headers",
+    hdrs = glob(["**/*.h"]),
+    textual_hdrs = [],
+)

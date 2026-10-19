@@ -8,12 +8,12 @@ exports_files([
 ])
 
 _GENERATED_HEADER_INPUTS_0 = [
-    "@clickhouse//:base/base/defines.h",
-    "@clickhouse//:base/base/sanitizer_defs.h",
-    "@clickhouse//:base/base/scope_guard.h",
-    "@clickhouse//:base/base/strong_typedef.h",
-    "@clickhouse//:base/base/time.h",
-    "@clickhouse//:base/base/types.h",
+    "@clickhouse//base/base:defines.h",
+    "@clickhouse//base/base:sanitizer_defs.h",
+    "@clickhouse//base/base:scope_guard.h",
+    "@clickhouse//base/base:strong_typedef.h",
+    "@clickhouse//base/base:time.h",
+    "@clickhouse//base/base:types.h",
     "@clickhouse//:base/pcg-random/pcg_extras.hpp",
     "@clickhouse//:base/pcg-random/pcg_random.hpp",
     "@clickhouse//:base/pcg-random/pcg_uint128.hpp",
@@ -49,12 +49,12 @@ _GENERATED_HEADER_INPUTS_0 = [
     "@clickhouse//contrib/openssl-cmake:common/include/openssl/x509_vfy.h",
     "@clickhouse//contrib/openssl-cmake:common/include/openssl/x509v3.h",
     "@clickhouse//contrib/pdqsort:pdqsort.h",
-    "@clickhouse//:src/Common/CurrentMetrics.h",
-    "@clickhouse//:src/Common/Priority.h",
-    "@clickhouse//:src/Common/ThreadPool.h",
-    "@clickhouse//:src/Common/ThreadPool_fwd.h",
-    "@clickhouse//:src/Common/ThreadStackSize.h",
-    "@clickhouse//:src/Common/ThreadWithStackSize.h",
+    "@clickhouse//src/Common:CurrentMetrics.h",
+    "@clickhouse//src/Common:Priority.h",
+    "@clickhouse//src/Common:ThreadPool.h",
+    "@clickhouse//src/Common:ThreadPool_fwd.h",
+    "@clickhouse//src/Common:ThreadStackSize.h",
+    "@clickhouse//src/Common:ThreadWithStackSize.h",
 ]
 
 ch_cc_library(
@@ -281,6 +281,6 @@ ch_cc_library(
         "include/libnuraft",
         "include",
     ],
-    deps = ((["@clickhouse_boost//:_boost_coroutine"] + []) + ["@clickhouse//:common"]),
+    deps = ((["@clickhouse_boost//:_boost_coroutine"] + []) + ["@clickhouse//base/base:common"]),
     alwayslink = False,
 )

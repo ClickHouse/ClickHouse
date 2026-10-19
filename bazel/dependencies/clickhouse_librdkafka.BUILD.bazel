@@ -438,7 +438,7 @@ cc_library(
     name = "_rdkafka",
     deps = [] + [
         "@clickhouse_cyrus_sasl//:_sasl2",
-        "@clickhouse//:common",
+        "@clickhouse//base/base:common",
         ":_rdkafka__compile_0",
         ":_rdkafka__compile_1",
     ],

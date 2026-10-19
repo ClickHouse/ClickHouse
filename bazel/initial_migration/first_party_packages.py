@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from initial_migration.compact_build import Source, compact
 from initial_migration.repository_inputs import CC_HEADER_SUFFIXES, REPOSITORIES, ROOT
-from initial_migration.simplify_globs import GlobFiles
+from initial_migration.simplify_globs import GlobFiles, simplify_globs
 
 CPUS = ('x86_64', 'aarch64')
 COMPILERS = {'ch_cc_library', 'cc_library', 'cc_test', 'cc_binary'}
@@ -89,7 +89,7 @@ def git_inventory(root):
 
 
 def native_directory(directory):
-    return directory == 'src' or directory == 'base' or directory == 'programs' or (
+    return directory in {'src', 'base', 'programs', 'contrib'} or (
         directory.startswith(('src/', 'base/', 'programs/')) or
         directory.startswith('contrib/') and directory.split('/')[1] not in {
             value.split('/')[1] for value in REPOSITORIES
@@ -263,6 +263,26 @@ class Migration:
                 if not build.package and name in self.aliases:
                     continue
                 package = owners.get((build.package, logical_name(name)), build.package)
+                if self.stage == 'all' and not build.package:
+                    # These targets compile only generated/foreign files or
+                    # deliberately share sources with other CMake directories.
+                    # Name their actual CMake declaration rather than guessing
+                    # from an empty or repository-wide source LCA.
+                    declarations = {
+                        '_fuzzer': 'contrib/libfuzzer-cmake',
+                        '_fuzzer_no_main': 'contrib/libfuzzer-cmake',
+                        '_lz4': 'contrib/lz4-cmake',
+                        '_prometheus_protobufs': 'contrib/prometheus-protobufs-cmake',
+                        'clickhouse_grpc_protos': 'src/Server/grpc_protos',
+                        'clickhouse_common_io': 'src',
+                        'common': 'base/base',
+                        'contrib': 'contrib',
+                        'unit_tests_dbms': 'src',
+                        # Replace the transitional root input library with a
+                        # header-only aggregate alongside the src libraries.
+                        'headers': 'src',
+                    }
+                    package = declarations.get(logical_name(name), package)
                 # Published Poco include interfaces have no compiled files.
                 if name.startswith('poco_') and name.endswith('_headers'):
                     part = {
@@ -273,7 +293,7 @@ class Migration:
                         package = 'base/poco/' + part
                 if name in {'arrow_cmake_headers', 'librdkafka_cmake_headers', 'openssl_cmake_headers'}:
                     package = 'contrib/' + name.split('_')[0] + '-cmake'
-                if name == 'clickhouse' or name == 'unit_tests_dbms':
+                if name == 'clickhouse' or name == 'unit_tests_dbms' and call_name(call) == 'alias':
                     package = ''
                 if not self.selected(package):
                     package = build.package
@@ -312,6 +332,13 @@ class Migration:
         return max(packages, key=len, default='')
 
     @cache
+    def package_inventory(self, package):
+        return tuple(
+            posixpath.relpath(file, package or '.')
+            for file in self.files if self.file_package(file) == package
+        )
+
+    @cache
     def mapped(self, value, current, old_package='', cross_repository=False, source_file=True):
         """Resolve main labels, record exact cross-package file exports."""
         if value.startswith(':'):
@@ -333,6 +360,8 @@ class Migration:
             return actual
         target = self.target_packages.get((pkg, name))
         if target is not None:
+            if not pkg and name == 'headers' and target == 'src':
+                name = 'clickhouse_source_headers'
             return relative_label(target, name, current, repo)
         file = physical(pkg, name)
         if file in self.file_set:
@@ -468,6 +497,8 @@ class Migration:
                 for item in call.keywords:
                     if item.arg == 'name':
                         value = deepcopy(item.value)
+                        if not build.package and name == 'headers' and current == 'src':
+                            value = quoted('clickhouse_source_headers')
                     else:
                         value = self.transform(item.value, build, current, item.arg, headers)
                     kw.append(ast.keyword(arg=item.arg, value=value))
@@ -480,9 +511,15 @@ class Migration:
                         kw.append(ast.keyword(arg='deps', value=refs))
                 rebuilt = ast.Expr(value=ast.Call(func=deepcopy(call.func), args=deepcopy(call.args), keywords=kw))
                 self.rows[current].append(rebuilt)
+                if not build.package and name == 'unit_tests_dbms' and current == 'src':
+                    self.rows[''].append(expr_stmt(
+                        'alias(name="unit_tests_dbms",actual="//src:unit_tests_dbms")'))
                 if current != build.package:
                     self.stats['moved_targets'] += 1
         for package in self.header_packages:
+            if any(isinstance(row, ast.Expr) and ast.literal_eval(attributes(row.value)['name']) == 'headers'
+                   for row in self.rows[package]):
+                continue
             self.rows[package].append(expr_stmt(
                 'cc_library(name="headers", hdrs=glob(%s), textual_hdrs=glob(%s))' % (
                     json.dumps(['**/*' + suffix for suffix in CC_HEADER_SUFFIXES if suffix not in TEXTUAL]),
@@ -512,6 +549,18 @@ class Migration:
         }
         rules = {}
         for package, build in new_builds.items():
+            for node in ast.walk(build.source.module):
+                if call_name(node) != 'glob':
+                    continue
+                opts = attributes(node)
+                patterns = ast.literal_eval(node.args[0])
+                excluded = ast.literal_eval(opts['exclude']) if 'exclude' in opts else []
+                for pattern in patterns:
+                    if not build.globs.matching(pattern):
+                        raise ValueError(f'{build.path}:{node.lineno}: empty glob pattern {pattern}')
+                    self.stats['verified_glob_patterns'] += 1
+                if not build.globs.result(patterns, excluded):
+                    raise ValueError(f'{build.path}:{node.lineno}: empty glob result')
             for _, call in build.source.rules():
                 attrs = attributes(call)
                 name = ast.literal_eval(attrs['name'])
@@ -526,7 +575,9 @@ class Migration:
                 if not original.package and name in self.aliases:
                     continue
                 package = self.target_packages[original.package, name]
-                rebuilt, new_call, after = rules[package, name]
+                mapped_name = 'clickhouse_source_headers' if (
+                    not original.package and name == 'headers' and package == 'src') else name
+                rebuilt, new_call, after = rules[package, mapped_name]
                 if call_name(call) != call_name(new_call):
                     raise ValueError('Native rule changed kind: ' + name)
                 for cpu in CPUS:
@@ -545,6 +596,15 @@ class Migration:
                         'copts', 'linkopts', 'cmd', 'env'}:
                     if ast.dump(original.expand(before[field])) != ast.dump(rebuilt.expand(after[field])):
                         raise ValueError(f'{name} changed attribute {field}')
+                for field in {'copts', 'linkopts', 'env'} & before.keys():
+                    old_flags = original.expand(before[field])
+                    # A location macro may name a relocated target. It must
+                    # be the sole possible change within a compiler flag.
+                    for literal in ast.walk(old_flags):
+                        if isinstance(literal, ast.Constant) and isinstance(literal.value, str):
+                            literal.value = self.location(literal.value, package, original.package)
+                    if ast.dump(old_flags) != ast.dump(rebuilt.expand(after[field])):
+                        raise ValueError(f'{name} changed compile or link options in {field}')
                 self.stats['verified_native_rules'] += 1
         for arch in ('', '_aarch64'):
             path = self.root / ('bazel/rules/cmake_link_data' + arch + '.bzl')
@@ -558,6 +618,40 @@ class Migration:
             if new != expected:
                 raise ValueError(f'{path}: altered a CMake object count, archive or link sequence')
             self.stats['verified_link_plans'] += 1
+        for path, text in rendered.items():
+            origin = path.parent.relative_to(self.root).as_posix()
+            if origin == '.':
+                origin = ''
+            foreign = path.parent == self.root / 'bazel/dependencies'
+            source = Source(text)
+            for node in ast.walk(source.module):
+                if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
+                    continue
+                for value in [node.value, *[m[2] for m in LOCATION.finditer(node.value)]]:
+                    match = MAIN_LABEL.fullmatch(value)
+                    if not match or foreign and not match['repo']:
+                        continue
+                    # Also reject labels for unknown native packages: a
+                    # missing generated rule is not a source filename.
+                    build_file = self.root / match['pkg'] / 'BUILD.bazel'
+                    if (native_directory(match['pkg']) or not match['pkg']) and not (
+                            build_file in rendered or build_file.is_file()):
+                        raise ValueError(f'{path}:{node.lineno}: {value} refers to a missing package')
+                    file = physical(match['pkg'], match['name'])
+                    if file not in self.file_set:
+                        continue
+                    owner = self.file_package(file)
+                    build_file = self.root / owner / 'BUILD.bazel'
+                    if owner != match['pkg'] or not (
+                            build_file in rendered or build_file.is_file()):
+                        raise ValueError(f'{path}:{node.lineno}: {value} has no source package {owner}')
+                    # Only native BUILD files are replaced here. Existing
+                    # bazel/ and Rust BUILD files manage their own exports.
+                    if native_directory(owner) and (origin != owner or foreign):
+                        rel = file.removeprefix(owner + '/')
+                        if build_file in rendered and rel not in self.exports[owner]:
+                            raise ValueError(f'{path}:{node.lineno}: {value} is not exported by {owner}')
+                    self.stats['verified_source_labels'] += 1
 
     def rewrite_consumers(self):
         """Rewrite concrete labels in BUILD, module, rule, and runtime data."""
@@ -621,7 +715,17 @@ class Migration:
             if exported:
                 lines.append('exports_files(' + json.dumps(sorted(exported)) + ')')
             lines += [render(row) for row in self.rows[package]]
-            text = compact('\n\n'.join(lines) + '\n')
+            text = simplify_globs(
+                '\n\n'.join(lines) + '\n', self.package_inventory(package), self.stats,
+            )
+            # compact() preserves statement indentation. ast.unparse() places
+            # whole rules on one line, so it must be formatted first.
+            text = subprocess.run(
+                ['buildifier', '-config=' + str(self.root / '.buildifier.json'),
+                 '-type=build', '-mode=fix', '-lint=fix', '-warnings=load'], input=text, capture_output=True,
+                text=True, check=True, cwd=self.root,
+            ).stdout
+            text = compact(text)
             ast.parse(text)
             rendered[self.root / package / 'BUILD.bazel'] = text
         return rendered

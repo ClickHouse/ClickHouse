@@ -70,7 +70,7 @@ expand_template(
             "@LLVM_TARGET_ARCH@": "AArch64",
         },
     }),
-    template = "@clickhouse//:contrib/llvm-project-cmake/config/llvm-config.h.in",
+    template = "@clickhouse//contrib:llvm-project-cmake/config/llvm-config.h.in",
 )
 
 expand_template(
@@ -91,14 +91,14 @@ expand_template(
         "@HAVE_GETAUXVAL_DEFINE@": "#define HAVE_GETAUXVAL 1",
         "@HAVE_DECL_ARC4RANDOM_DEFINE@": "/* #undef HAVE_DECL_ARC4RANDOM */",
     },
-    template = "@clickhouse//:contrib/llvm-project-cmake/config/config.h.in",
+    template = "@clickhouse//contrib:llvm-project-cmake/config/config.h.in",
 )
 
 expand_template(
     name = "configure_llvm_include_llvm_Config_abi_breaking_h",
     out = "gen/llvm/include/llvm/Config/abi-breaking.h",
     substitutions = {},
-    template = "@clickhouse//:contrib/llvm-project-cmake/config/abi-breaking.h.in",
+    template = "@clickhouse//contrib:llvm-project-cmake/config/abi-breaking.h.in",
 )
 
 write_file(
@@ -4479,13 +4479,13 @@ copy_file(
 _GENERATED_HDRS_2 = [
     ":runtime_source_inputs",
     ":runtime_generated_headers",
-    "@clickhouse//:contrib/compiler-rt-cmake/xray_reject_modes.cpp",
+    "@clickhouse//contrib:compiler-rt-cmake/xray_reject_modes.cpp",
     "@clickhouse//contrib/libllvmlibc-cmake:string/aarch64_mem_functions.cpp",
     "@clickhouse//contrib/libllvmlibc-cmake:string/mem_functions.cpp",
     "@clickhouse//contrib/libllvmlibc-cmake:string/memmem.cpp",
     "@clickhouse//contrib/libllvmlibc-cmake:string/x86_64_mem_functions.cpp",
     "@clickhouse//contrib/libllvmlibc-cmake:string/x86_cpu_dispatch.h",
-    "@clickhouse//:contrib/libunwind-cmake/unwind-override.c",
+    "@clickhouse//contrib:libunwind-cmake/unwind-override.c",
 ]
 
 _GENERATED_LOCAL_DEFINES_2 = [
@@ -4956,13 +4956,13 @@ _GENERATED_HDRS_3 = select({
     "@platforms//cpu:aarch64": [
         ":runtime_source_inputs",
         ":runtime_generated_headers",
-        "@clickhouse//:contrib/compiler-rt-cmake/xray_reject_modes.cpp",
+        "@clickhouse//contrib:compiler-rt-cmake/xray_reject_modes.cpp",
         "@clickhouse//contrib/libllvmlibc-cmake:string/aarch64_mem_functions.cpp",
         "@clickhouse//contrib/libllvmlibc-cmake:string/mem_functions.cpp",
         "@clickhouse//contrib/libllvmlibc-cmake:string/memmem.cpp",
         "@clickhouse//contrib/libllvmlibc-cmake:string/x86_64_mem_functions.cpp",
         "@clickhouse//contrib/libllvmlibc-cmake:string/x86_cpu_dispatch.h",
-        "@clickhouse//:contrib/libunwind-cmake/unwind-override.c",
+        "@clickhouse//contrib:libunwind-cmake/unwind-override.c",
     ],
 })
 
@@ -10467,7 +10467,7 @@ cmake_runtime_objects(
         "compiler-rt/lib/sanitizer_common/sanitizer_posix_libcdep.cpp",
         "compiler-rt/lib/sanitizer_common/sanitizer_stoptheworld_linux_libcdep.cpp",
         "compiler-rt/lib/sanitizer_common/sanitizer_stoptheworld_netbsd_libcdep.cpp",
-        "@clickhouse//:contrib/compiler-rt-cmake/xray_reject_modes.cpp",
+        "@clickhouse//contrib:compiler-rt-cmake/xray_reject_modes.cpp",
     ],
     hdrs = _GENERATED_HDRS_2,
     arch = select({
@@ -11239,7 +11239,7 @@ cmake_runtime_objects(
         "libunwind/src/UnwindLevel1.c",
         "libunwind/src/UnwindLevel1-gcc-ext.c",
         "libunwind/src/Unwind-sjlj.c",
-        "@clickhouse//:contrib/libunwind-cmake/unwind-override.c",
+        "@clickhouse//contrib:libunwind-cmake/unwind-override.c",
     ],
     hdrs = _GENERATED_HDRS_2,
     arch = select({
