@@ -223,13 +223,10 @@ ALWAYS_INLINE inline char * writeUInt32Text(UInt32 value, char * p)
     /// next_four = n / 100 - 10000 * (n / 10^6), first_four = n / 10^6, last_two = n - 100 * (n / 100).
     /// On big-endian, the high half of a 64-bit lane is the first 32-bit lane.
     constexpr bool little_endian = std::endian::native == std::endian::little;
-    /// The zeros are explicit, so that the multiplication is `vpmuludq` (32 x 32 to 64 bits) also where this is inlined
-    /// into code that already knows `value` fits in 32 bits, and would otherwise lose that in the vector.
-    UInt64x2 wide;
-    if constexpr (little_endian)
-        wide = std::bit_cast<UInt64x2>(UInt32x4{value, 0, value, 0});
-    else
-        wide = std::bit_cast<UInt64x2>(UInt32x4{0, value, 0, value});
+    /// Converted from 32-bit lanes, so that the compiler knows the high halves are 0 and multiplies 32 x 32 to 64 bits
+    /// (`vpmuludq`, `umull`), also where this is inlined into code that already knows `value` fits in 32 bits.
+    using UInt32x2 = UInt32 __attribute__((vector_size(8)));
+    UInt64x2 wide = __builtin_convertvector(UInt32x2{value, value}, UInt64x2);
     UInt32x4 quotients = std::bit_cast<UInt32x4>((wide * UInt64x2{0x51eb851f, 0x431bde83}) >> UInt64x2{37, 50});
     UInt32x4 terms;
     UInt32x4 subtracted;
