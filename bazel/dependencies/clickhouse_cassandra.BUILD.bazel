@@ -31,7 +31,7 @@ expand_template(
 
 ch_cc_library(
     name = "_cassandra",
-    srcs = ([
+    srcs = (([
         "src/abstract_data.cpp",
         "src/address.cpp",
         "src/address_factory.cpp",
@@ -46,17 +46,12 @@ ch_cc_library(
         "src/client_insights.cpp",
         "src/cloud_secure_connection_config.cpp",
         "src/cluster.cpp",
-        "src/cluster_config.cpp",
-        "src/cluster_connector.cpp",
-        "src/cluster_metadata_resolver.cpp",
+    ] + glob(["src/cluster_*.cpp"]) + [
         "src/collection.cpp",
         "src/collection_iterator.cpp",
         "src/config.cpp",
         "src/connection.cpp",
-        "src/connection_pool.cpp",
-        "src/connection_pool_connector.cpp",
-        "src/connection_pool_manager.cpp",
-        "src/connection_pool_manager_initializer.cpp",
+    ] + glob(["src/connection_*.cpp"]) + [
         "src/connector.cpp",
         "src/control_connection.cpp",
         "src/control_connector.cpp",
@@ -66,18 +61,7 @@ ch_cc_library(
         "src/decoder.cpp",
         "src/delayed_connector.cpp",
         "src/driver_info.cpp",
-        "src/dse_auth.cpp",
-        "src/dse_batch_request.cpp",
-        "src/dse_cluster_config.cpp",
-        "src/dse_collection.cpp",
-        "src/dse_date_range.cpp",
-        "src/dse_line_string.cpp",
-        "src/dse_point.cpp",
-        "src/dse_polygon.cpp",
-        "src/dse_statement.cpp",
-        "src/dse_tuple.cpp",
-        "src/dse_user_type_value.cpp",
-        "src/dse_value.cpp",
+    ] + glob(["src/dse_*.cpp"]) + [
         "src/encode.cpp",
         "src/error_response.cpp",
         "src/event_loop.cpp",
@@ -100,9 +84,7 @@ ch_cc_library(
         "src/micro_timer.cpp",
         "src/murmur3.cpp",
         "src/pooled_connection.cpp",
-        "src/prepare_all_handler.cpp",
-        "src/prepare_host_handler.cpp",
-        "src/prepare_request.cpp",
+    ] + glob(["src/prepare_*.cpp"]) + [
         "src/prepared.cpp",
         "src/protocol.cpp",
         "src/query_request.cpp",
@@ -110,10 +92,7 @@ ch_cc_library(
         "src/reconnection_policy.cpp",
         "src/register_request.cpp",
         "src/request.cpp",
-        "src/request_callback.cpp",
-        "src/request_handler.cpp",
-        "src/request_processor.cpp",
-        "src/request_processor_initializer.cpp",
+    ] + glob(["src/request_*.cpp"]) + [
         "src/response.cpp",
         "src/result_metadata.cpp",
         "src/result_response.cpp",
@@ -134,9 +113,7 @@ ch_cc_library(
         "src/testing.cpp",
         "src/timer.cpp",
         "src/timestamp_generator.cpp",
-        "src/token_aware_policy.cpp",
-        "src/token_map.cpp",
-        "src/token_map_impl.cpp",
+    ] + glob(["src/token_*.cpp"]) + [
         "src/tracing_data_handler.cpp",
         "src/tuple.cpp",
         "src/user_type_field_iterator.cpp",
@@ -150,7 +127,7 @@ ch_cc_library(
         "src/wkt.cpp",
         "src/ssl/ssl_openssl_impl.cpp",
         "src/ssl/ring_buffer_bio.cpp",
-    ] + glob(
+    ]) + glob(
         [
             "src/**/*.h",
             "src/**/*.hpp",
@@ -231,7 +208,7 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
         "sparsehash=google",
     ],
-    local_includes = ([
+    local_includes = [
         "config/contrib/cassandra-cmake",
         "src/ssl",
         "src/third_party/curl",
@@ -240,10 +217,8 @@ ch_cc_library(
         "src/third_party/mt19937_64",
         "src/third_party/rapidjson/rapidjson",
         "src",
-    ] + ([
         "include",
-    ] + [
-    ])),
+    ],
     deps = [
         "@clickhouse_libuv//:_uv",
         ":_curl_hostcheck",

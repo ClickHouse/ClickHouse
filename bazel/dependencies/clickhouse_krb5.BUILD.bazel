@@ -83,7 +83,7 @@ copy_file(
 
 ch_cc_library(
     name = "_krb5",
-    srcs = ([
+    srcs = (([
         "src/util/et/et_name.c",
         "src/util/et/com_err.c",
         "src/util/et/error_message.c",
@@ -505,14 +505,11 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.c",
         "@clickhouse//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.c",
         "@clickhouse//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.c",
-        "src/lib/krb5/rcache/rc_base.c",
-        "src/lib/krb5/rcache/rc_dfl.c",
-        "src/lib/krb5/rcache/rc_file2.c",
-        "src/lib/krb5/rcache/rc_none.c",
+    ] + glob(["src/lib/krb5/rcache/rc_*.c"]) + [
         "src/lib/krb5/rcache/memrcache.c",
         "src/lib/krb5/unicode/ucdata/ucdata.c",
         "src/lib/krb5/unicode/ucstr.c",
-    ] + glob(["src/lib/krb5/asn.1/*.c"]) + [
+    ]) + glob(["src/lib/krb5/asn.1/*.c"]) + [
         "src/lib/krb5/krb5_libinit.c",
     ]) + glob(
         [
@@ -1081,7 +1078,6 @@ ch_cc_library(
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     includes = [
         "src/include",
-    ] + [
         "config/contrib/krb5-cmake/include",
     ],
     language = "C",

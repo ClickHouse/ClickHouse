@@ -197,15 +197,13 @@ _GENERATED_DEPS_0 = [
     "@lz4//:lz4_frame",
 ]
 
-_GENERATED_LOCAL_INCLUDES_0 = [
+_RDKAFKA_LOCAL_INCLUDES = [
     "src",
-] + [
     "config/contrib/librdkafka-cmake",
     repository_local_include(
         "$(GENDIR)/" + repository_path("contrib/zlib-ng") + "/config/contrib/zlib-ng-cmake",
         "contrib/librdkafka",
     ),
-] + [
     repository_local_include("base/poco/Net/include", "contrib/librdkafka"),
     repository_local_include("base/poco/Foundation/include", "contrib/librdkafka"),
     repository_local_include("base/poco/NetSSL_OpenSSL/include", "contrib/librdkafka"),
@@ -213,7 +211,7 @@ _GENERATED_LOCAL_INCLUDES_0 = [
 
 ch_cc_library(
     name = "_rdkafka__compile_0",
-    srcs = [
+    srcs = ([
         "src/cJSON.c",
         "src/crc32c.c",
         "src/rdaddr.c",
@@ -245,9 +243,7 @@ ch_cc_library(
         "src/rdkafka_metadata.c",
         "src/rdkafka_metadata_cache.c",
         "src/rdkafka_mock.c",
-        "src/rdkafka_mock_cgrp.c",
-        "src/rdkafka_mock_handlers.c",
-        "src/rdkafka_mock_sharegrp.c",
+    ] + glob(["src/rdkafka_mock_*.c"]) + [
         "src/rdkafka_msg.c",
         "src/rdkafka_msgset_reader.c",
         "src/rdkafka_msgset_writer.c",
@@ -288,9 +284,7 @@ ch_cc_library(
         "src/rdregex.c",
         "src/rdstring.c",
         "src/rdunittest.c",
-        "src/rdunittest_acknowledge.c",
-        "src/rdunittest_fetcher.c",
-        "src/rdunittest_msgset_errors.c",
+    ] + glob(["src/rdunittest_*.c"]) + [
         "src/rdvarint.c",
         "src/rdxxhash.c",
         "src/snappy.c",
@@ -303,7 +297,7 @@ ch_cc_library(
         "src/rdkafka_sasl_scram.c",
         "src/rdkafka_sasl_oauthbearer.c",
         "@clickhouse//contrib/librdkafka-cmake:rdhttp_poco_transport.h",
-    ],
+    ]),
     hdrs = ([
         "@clickhouse//bazel:gen/contrib/krb5-cmake/include/krb5/krb5.h",
         "@clickhouse//bazel:gen/contrib/krb5-cmake/include_private/asn1_err.h",
@@ -345,7 +339,7 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_generated_headers",
         "src/rdkafka_conf.c",
     ],
-    copts = ([
+    copts = [
         "-w",
         "-std=gnu11",
         "-fno-sanitize=undefined",
@@ -354,13 +348,12 @@ ch_cc_library(
         "-I",
         repository_path("contrib/zstd") + "/lib",
         "-I",
-    ] + [
         "$(GENDIR)/" + repository_path("contrib/cyrus-sasl") + "/config/contrib/cyrus-sasl-cmake",
-    ]),
+    ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _RDKAFKA_LOCAL_INCLUDES,
     deps = ["@lz4//:lz4_frame"] + [
         "@clickhouse//contrib/librdkafka-cmake:librdkafka_cmake_headers",
         "@clickhouse_krb5//:_krb5",
@@ -412,7 +405,7 @@ ch_cc_library(
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
     ] + _GENERATED_HEADER_INPUTS_0) + glob(["src/**/*.h"]),
     additional_compiler_inputs = ["src/rdkafka_conf.c"],
-    copts = ([
+    copts = [
         "-w",
         "-std=c++23",
         "-fno-sanitize=undefined",
@@ -421,11 +414,10 @@ ch_cc_library(
         "-I",
         repository_path("contrib/zstd") + "/lib",
         "-I",
-    ] + [
         "$(GENDIR)/" + repository_path("contrib/cyrus-sasl") + "/config/contrib/cyrus-sasl-cmake",
-    ]),
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _RDKAFKA_LOCAL_INCLUDES,
     deps = ["@lz4//:lz4_frame"] + [
         "@clickhouse//contrib/librdkafka-cmake:librdkafka_cmake_headers",
         "@clickhouse_krb5//:_krb5",

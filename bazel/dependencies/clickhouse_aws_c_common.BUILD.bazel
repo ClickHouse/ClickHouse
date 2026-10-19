@@ -35,7 +35,7 @@ ch_cc_library(
         "source/external/libcbor/cbor/common.c",
         "source/external/libcbor/cbor/encoding.c",
         "source/external/libcbor/cbor/floats_ctrls.c",
-    ] + glob(["source/external/libcbor/cbor/internal/*.c"]) + [
+    ] + glob(["source/external/libcbor/cbor/internal/*.c"]) + ([
         "source/external/libcbor/cbor/ints.c",
         "source/external/libcbor/cbor/maps.c",
         "source/external/libcbor/cbor/serialization.c",
@@ -51,14 +51,12 @@ ch_cc_library(
         "source/linked_hash_table.c",
         "source/linux/file_direct_io.c",
         "source/linux/system_info.c",
-        "source/log_channel.c",
-        "source/log_formatter.c",
-        "source/log_writer.c",
+    ] + glob(["source/log_*.c"]) + [
         "source/logging.c",
         "source/lru_cache.c",
         "source/math.c",
         "source/memtrace.c",
-    ] + glob(["source/posix/*.c"]) + [
+    ]) + glob(["source/posix/*.c"]) + [
         "source/priority_queue.c",
         "source/process_common.c",
         "source/ref_count.c",

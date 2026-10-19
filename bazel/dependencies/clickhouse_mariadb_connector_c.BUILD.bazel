@@ -267,7 +267,7 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_generated_headers",
         "plugins/pvio/pvio_plugin.def",
     ],
-    copts = ([
+    copts = [
         "-w",
         "-std=gnu11",
         "-D",
@@ -278,9 +278,8 @@ ch_cc_library(
         "THREAD",
         "-Wno-incompatible-pointer-types",
         "-I",
-    ] + [
         "$(GENDIR)/" + repository_path("contrib/mariadb-connector-c") + "/config/contrib/mariadb-connector-c-cmake/include-private",
-    ]),
+    ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = select({

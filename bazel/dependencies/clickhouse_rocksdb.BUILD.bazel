@@ -10,7 +10,7 @@ exports_files([
 ch_cc_library(
     name = "_rocksdb",
     srcs = select({
-        "@platforms//cpu:x86_64": ([
+        "@platforms//cpu:x86_64": (([
             "cache/cache.cc",
             "cache/cache_entry_roles.cc",
             "cache/cache_key.cc",
@@ -39,9 +39,7 @@ ch_cc_library(
             "db/blob/blob_file_meta.cc",
             "db/blob/blob_file_reader.cc",
             "db/blob/blob_garbage_meter.cc",
-            "db/blob/blob_log_format.cc",
-            "db/blob/blob_log_sequential_reader.cc",
-            "db/blob/blob_log_writer.cc",
+        ] + glob(["db/blob/blob_log_*.cc"]) + [
             "db/blob/blob_source.cc",
             "db/blob/prefetch_buffer_collection.cc",
             "db/builder.cc",
@@ -147,9 +145,7 @@ ch_cc_library(
             "logging/log_buffer.cc",
             "memory/arena.cc",
             "memory/concurrent_arena.cc",
-            "memory/jemalloc_nodump_allocator.cc",
-            "memory/memkind_kmem_allocator.cc",
-            "memory/memory_allocator.cc",
+        ] + glob(["memory/*_allocator.cc"]) + [
             "memtable/alloc_tracker.cc",
             "memtable/hash_linklist_rep.cc",
             "memtable/hash_skiplist_rep.cc",
@@ -218,7 +214,7 @@ ch_cc_library(
             "table/merging_iterator.cc",
             "table/meta_blocks.cc",
             "table/persistent_cache_helper.cc",
-        ] + glob(["table/plain/*.cc"]) + [
+        ]) + glob(["table/plain/*.cc"]) + ([
             "table/sst_file_dumper.cc",
             "table/sst_file_reader.cc",
             "table/sst_file_writer.cc",
@@ -287,9 +283,7 @@ ch_cc_library(
             "utilities/merge_operators/string_append/stringappend2.cc",
             "utilities/merge_operators/uint64add.cc",
             "utilities/object_registry.cc",
-            "utilities/persistent_cache/block_cache_tier.cc",
-            "utilities/persistent_cache/block_cache_tier_file.cc",
-            "utilities/persistent_cache/block_cache_tier_metadata.cc",
+        ] + glob(["utilities/persistent_cache/block_*.cc"]) + [
             "utilities/persistent_cache/persistent_cache_tier.cc",
             "utilities/persistent_cache/volatile_tier_impl.cc",
             "utilities/simulator_cache/cache_simulator.cc",
@@ -320,16 +314,13 @@ ch_cc_library(
             "utilities/wal_filter.cc",
             "utilities/write_batch_with_index/write_batch_with_index.cc",
             "utilities/write_batch_with_index/write_batch_with_index_internal.cc",
-        ] + glob(["utilities/transactions/lock/range/range_tree/lib/locktree/*.cc"]) + [
+        ]) + glob(["utilities/transactions/lock/range/range_tree/lib/locktree/*.cc"]) + ([
             "utilities/transactions/lock/range/range_tree/lib/standalone_port.cc",
             "utilities/transactions/lock/range/range_tree/lib/util/dbt.cc",
             "utilities/transactions/lock/range/range_tree/lib/util/memarena.cc",
             "@clickhouse//contrib:rocksdb-cmake/build_version.cc",
             "port/port_posix.cc",
-            "env/env_posix.cc",
-            "env/fs_posix.cc",
-            "env/io_posix.cc",
-        ]) + glob(
+        ] + glob(["env/*_posix.cc"]))) + glob(
             [
                 "**/*.h",
                 "**/*.inc",
@@ -456,7 +447,7 @@ ch_cc_library(
                 "include/rocksdb/write_buffer_manager.h",
             ],
         ),
-        "@platforms//cpu:aarch64": ([
+        "@platforms//cpu:aarch64": (([
             "cache/cache.cc",
             "cache/cache_entry_roles.cc",
             "cache/cache_key.cc",
@@ -485,9 +476,7 @@ ch_cc_library(
             "db/blob/blob_file_meta.cc",
             "db/blob/blob_file_reader.cc",
             "db/blob/blob_garbage_meter.cc",
-            "db/blob/blob_log_format.cc",
-            "db/blob/blob_log_sequential_reader.cc",
-            "db/blob/blob_log_writer.cc",
+        ] + glob(["db/blob/blob_log_*.cc"]) + [
             "db/blob/blob_source.cc",
             "db/blob/prefetch_buffer_collection.cc",
             "db/builder.cc",
@@ -593,9 +582,7 @@ ch_cc_library(
             "logging/log_buffer.cc",
             "memory/arena.cc",
             "memory/concurrent_arena.cc",
-            "memory/jemalloc_nodump_allocator.cc",
-            "memory/memkind_kmem_allocator.cc",
-            "memory/memory_allocator.cc",
+        ] + glob(["memory/*_allocator.cc"]) + [
             "memtable/alloc_tracker.cc",
             "memtable/hash_linklist_rep.cc",
             "memtable/hash_skiplist_rep.cc",
@@ -664,7 +651,7 @@ ch_cc_library(
             "table/merging_iterator.cc",
             "table/meta_blocks.cc",
             "table/persistent_cache_helper.cc",
-        ] + glob(["table/plain/*.cc"]) + [
+        ]) + glob(["table/plain/*.cc"]) + ([
             "table/sst_file_dumper.cc",
             "table/sst_file_reader.cc",
             "table/sst_file_writer.cc",
@@ -733,9 +720,7 @@ ch_cc_library(
             "utilities/merge_operators/string_append/stringappend2.cc",
             "utilities/merge_operators/uint64add.cc",
             "utilities/object_registry.cc",
-            "utilities/persistent_cache/block_cache_tier.cc",
-            "utilities/persistent_cache/block_cache_tier_file.cc",
-            "utilities/persistent_cache/block_cache_tier_metadata.cc",
+        ] + glob(["utilities/persistent_cache/block_*.cc"]) + [
             "utilities/persistent_cache/persistent_cache_tier.cc",
             "utilities/persistent_cache/volatile_tier_impl.cc",
             "utilities/simulator_cache/cache_simulator.cc",
@@ -766,17 +751,14 @@ ch_cc_library(
             "utilities/wal_filter.cc",
             "utilities/write_batch_with_index/write_batch_with_index.cc",
             "utilities/write_batch_with_index/write_batch_with_index_internal.cc",
-        ] + glob(["utilities/transactions/lock/range/range_tree/lib/locktree/*.cc"]) + [
+        ]) + glob(["utilities/transactions/lock/range/range_tree/lib/locktree/*.cc"]) + ([
             "utilities/transactions/lock/range/range_tree/lib/standalone_port.cc",
             "utilities/transactions/lock/range/range_tree/lib/util/dbt.cc",
             "utilities/transactions/lock/range/range_tree/lib/util/memarena.cc",
             "@clickhouse//contrib:rocksdb-cmake/build_version.cc",
             "util/crc32c_arm64.cc",
             "port/port_posix.cc",
-            "env/env_posix.cc",
-            "env/fs_posix.cc",
-            "env/io_posix.cc",
-        ]) + glob(
+        ] + glob(["env/*_posix.cc"]))) + glob(
             [
                 "**/*.h",
                 "**/*.inc",
@@ -990,7 +972,6 @@ ch_cc_library(
     local_includes = [
         ".",
         "include",
-    ] + [
         repository_local_include("contrib/jemalloc-cmake/include", "contrib/rocksdb"),
     ],
     deps = [

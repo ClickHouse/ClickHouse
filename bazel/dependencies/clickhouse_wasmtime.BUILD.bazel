@@ -43,7 +43,10 @@ expand_template(
 cc_library(
     name = "wasmtime_headers",
     hdrs = glob(["crates/c-api/include/**/*.h"]) + [":config/contrib/wasmtime/include/wasmtime/conf.h"],
-    includes = ["config/contrib/wasmtime/include"] + ["crates/c-api/include"],
+    includes = [
+        "config/contrib/wasmtime/include",
+        "crates/c-api/include",
+    ],
     textual_hdrs = glob(["crates/c-api/include/**/*.hh"]),
 )
 

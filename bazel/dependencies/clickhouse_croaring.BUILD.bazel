@@ -92,10 +92,9 @@ _GENERATED_LOCAL_DEFINES_0 = select({
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-_GENERATED_LOCAL_INCLUDES_0 = [
+_ROARING_LOCAL_INCLUDES = [
     "cpp",
     "include",
-] + [
 ]
 
 ch_cc_library(
@@ -228,7 +227,7 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "include/roaring",
-    ] + _GENERATED_LOCAL_INCLUDES_0,
+    ] + _ROARING_LOCAL_INCLUDES,
     deps = ((([
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_fmtlib//:_fmt",
@@ -375,7 +374,7 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "include/roaring",
-    ] + _GENERATED_LOCAL_INCLUDES_0,
+    ] + _ROARING_LOCAL_INCLUDES,
     deps = ((([
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_fmtlib//:_fmt",

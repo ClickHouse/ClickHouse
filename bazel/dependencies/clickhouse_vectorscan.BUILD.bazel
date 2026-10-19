@@ -29,7 +29,7 @@ _GENERATED_DEPS_0 = select({
     "@llvm-project//libunwind:headers",
 ]
 
-_GENERATED_LOCAL_INCLUDES_0 = [
+_VECTORSCAN_LOCAL_INCLUDES = [
     "src",
     repository_local_include("contrib/vectorscan-cmake/common", "contrib/vectorscan"),
     "include",
@@ -699,7 +699,7 @@ ch_cc_library(
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _VECTORSCAN_LOCAL_INCLUDES,
     deps = _GENERATED_DEPS_0 + [
         "@clickhouse_boost//:boost_headers",
     ],
@@ -712,7 +712,7 @@ ch_cc_library(
         "@platforms//cpu:x86_64": ([
             "src/grey.cpp",
             "src/hs.cpp",
-        ] + glob(["src/compiler/*.cpp"]) + [
+        ] + glob(["src/compiler/*.cpp"]) + ([
             "src/fdr/engine_description.cpp",
             "src/fdr/fdr_compile.cpp",
             "src/fdr/fdr_compile_util.cpp",
@@ -775,9 +775,7 @@ ch_cc_library(
             "src/nfagraph/ng_lbr.cpp",
             "src/nfagraph/ng_limex.cpp",
             "src/nfagraph/ng_limex_accel.cpp",
-            "src/nfagraph/ng_literal_analysis.cpp",
-            "src/nfagraph/ng_literal_component.cpp",
-            "src/nfagraph/ng_literal_decorated.cpp",
+        ] + glob(["src/nfagraph/ng_literal_*.cpp"]) + [
             "src/nfagraph/ng_mcclellan.cpp",
             "src/nfagraph/ng_misc_opt.cpp",
             "src/nfagraph/ng_netflow.cpp",
@@ -872,7 +870,7 @@ ch_cc_library(
             "src/util/ue2string.cpp",
             "src/util/supervector/arch/x86/impl.cpp",
             "@clickhouse//contrib/vectorscan-cmake:amd64/config.h",
-        ]) + glob(
+        ])) + glob(
             [
                 "include/**/*.hpp",
                 "src/compiler/**/*.h",
@@ -1268,7 +1266,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": ([
             "src/grey.cpp",
             "src/hs.cpp",
-        ] + glob(["src/compiler/*.cpp"]) + [
+        ] + glob(["src/compiler/*.cpp"]) + ([
             "src/fdr/engine_description.cpp",
             "src/fdr/fdr_compile.cpp",
             "src/fdr/fdr_compile_util.cpp",
@@ -1331,9 +1329,7 @@ ch_cc_library(
             "src/nfagraph/ng_lbr.cpp",
             "src/nfagraph/ng_limex.cpp",
             "src/nfagraph/ng_limex_accel.cpp",
-            "src/nfagraph/ng_literal_analysis.cpp",
-            "src/nfagraph/ng_literal_component.cpp",
-            "src/nfagraph/ng_literal_decorated.cpp",
+        ] + glob(["src/nfagraph/ng_literal_*.cpp"]) + [
             "src/nfagraph/ng_mcclellan.cpp",
             "src/nfagraph/ng_misc_opt.cpp",
             "src/nfagraph/ng_netflow.cpp",
@@ -1428,7 +1424,7 @@ ch_cc_library(
             "src/util/ue2string.cpp",
             "src/util/supervector/arch/arm/impl.cpp",
             "@clickhouse//contrib/vectorscan-cmake:aarch64/config.h",
-        ]) + glob(
+        ])) + glob(
             [
                 "include/**/*.hpp",
                 "src/compiler/**/*.h",
@@ -1859,7 +1855,7 @@ ch_cc_library(
         ],
     })),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _VECTORSCAN_LOCAL_INCLUDES,
     deps = _GENERATED_DEPS_0 + [
         "@clickhouse_boost//:boost_headers",
     ],
@@ -1913,7 +1909,7 @@ ch_cc_library(
         ],
     })),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _VECTORSCAN_LOCAL_INCLUDES,
     deps = _GENERATED_DEPS_0 + [
         "@clickhouse_boost//:boost_headers",
     ],

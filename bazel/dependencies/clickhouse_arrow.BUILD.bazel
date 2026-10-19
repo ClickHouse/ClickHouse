@@ -210,7 +210,7 @@ _GENERATED_TEXTUAL_HDRS_0 = [
     "@clickhouse//bazel:gen/contrib/arrow-cmake/orc_proto.pb.cc",
 ]
 
-_GENERATED_LOCAL_INCLUDES_1 = [
+_ARROW_LOCAL_INCLUDES = [
     repository_local_include("$(GENDIR)/bazel/gen/contrib/flatbuffers", "contrib/arrow"),
     repository_local_include("contrib/arrow-cmake/cpp/src", "contrib/arrow"),
     "cpp/src",
@@ -226,13 +226,12 @@ _GENERATED_LOCAL_INCLUDES_1 = [
         "$(GENDIR)/" + repository_path("contrib/orc") + "/config/contrib/orc/c++/include",
         "contrib/arrow",
     ),
-] + [
     repository_local_include("contrib/arrow-cmake/cpp/src/orc/c++/include", "contrib/arrow"),
 ]
 
 ch_cc_library(
     name = "_arrow__compile_0",
-    srcs = (([
+    srcs = ((([
         "cpp/src/arrow/util/compression_zstd.cc",
         "cpp/src/arrow/util/compression_zlib.cc",
         "cpp/src/arrow/util/compression_snappy.cc",
@@ -249,15 +248,7 @@ ch_cc_library(
         "cpp/src/arrow/array/array_nested.cc",
         "cpp/src/arrow/array/array_primitive.cc",
         "cpp/src/arrow/array/array_run_end.cc",
-        "cpp/src/arrow/array/builder_adaptive.cc",
-        "cpp/src/arrow/array/builder_base.cc",
-        "cpp/src/arrow/array/builder_binary.cc",
-        "cpp/src/arrow/array/builder_decimal.cc",
-        "cpp/src/arrow/array/builder_dict.cc",
-        "cpp/src/arrow/array/builder_nested.cc",
-        "cpp/src/arrow/array/builder_primitive.cc",
-        "cpp/src/arrow/array/builder_run_end.cc",
-        "cpp/src/arrow/array/builder_union.cc",
+    ] + glob(["cpp/src/arrow/array/builder_*.cc"]) + [
         "cpp/src/arrow/array/concatenate.cc",
         "cpp/src/arrow/array/data.cc",
         "cpp/src/arrow/array/diff.cc",
@@ -271,9 +262,7 @@ ch_cc_library(
         "cpp/src/arrow/chunk_resolver.cc",
         "cpp/src/arrow/chunked_array.cc",
         "cpp/src/arrow/compare.cc",
-        "cpp/src/arrow/compute/api_aggregate.cc",
-        "cpp/src/arrow/compute/api_scalar.cc",
-        "cpp/src/arrow/compute/api_vector.cc",
+    ] + glob(["cpp/src/arrow/compute/api_*.cc"]) + [
         "cpp/src/arrow/compute/cast.cc",
         "cpp/src/arrow/compute/exec.cc",
         "cpp/src/arrow/compute/expression.cc",
@@ -376,9 +365,7 @@ ch_cc_library(
         "cpp/src/arrow/table.cc",
         "cpp/src/arrow/table_builder.cc",
         "cpp/src/arrow/tensor.cc",
-        "cpp/src/arrow/tensor/coo_converter.cc",
-        "cpp/src/arrow/tensor/csf_converter.cc",
-        "cpp/src/arrow/tensor/csx_converter.cc",
+    ] + glob(["cpp/src/arrow/tensor/*_converter.cc"]) + [
         "cpp/src/arrow/type.cc",
         "cpp/src/arrow/type_traits.cc",
         "cpp/src/arrow/util/align_util.cc",
@@ -438,7 +425,7 @@ ch_cc_library(
         "cpp/src/arrow/util/value_parsing.cc",
         "cpp/src/arrow/vendored/base64.cpp",
         "cpp/src/arrow/vendored/datetime.cpp",
-    ] + glob(["cpp/src/arrow/vendored/double-conversion/*.cc"]) + [
+    ]) + glob(["cpp/src/arrow/vendored/double-conversion/*.cc"]) + [
         "cpp/src/arrow/visitor.cc",
     ]) + select({
         "@platforms//cpu:x86_64": [
@@ -931,15 +918,15 @@ ch_cc_library(
         "@clickhouse_libhdfs3//:_hdfs3",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_1,
+    local_includes = _ARROW_LOCAL_INCLUDES,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
-    deps = ([
+    deps = [
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_flatbuffers//:_flatbuffers",
         "@clickhouse_xsimd//:xsimd",
         "@clickhouse_orc//:_orc",
         ":arrow_source_headers",
-    ]),
+    ],
     alwayslink = False,
 )
 
@@ -964,7 +951,7 @@ ch_cc_library(
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
     ],
-    additional_compiler_inputs = ([
+    additional_compiler_inputs = [
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
         "cpp/src/arrow/vendored/uriparser/UriCommon.c",
@@ -978,7 +965,7 @@ ch_cc_library(
         "cpp/src/arrow/vendored/uriparser/UriRecompose.c",
         "cpp/src/arrow/vendored/uriparser/UriResolve.c",
         "cpp/src/arrow/vendored/uriparser/UriShorten.c",
-    ]),
+    ],
     copts = [
         "-w",
         "-std=gnu11",
@@ -989,15 +976,15 @@ ch_cc_library(
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_1,
+    local_includes = _ARROW_LOCAL_INCLUDES,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
-    deps = ([
+    deps = [
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_flatbuffers//:_flatbuffers",
         "@clickhouse_xsimd//:xsimd",
         "@clickhouse_orc//:_orc",
         ":arrow_source_headers",
-    ]),
+    ],
     alwayslink = False,
 )
 
@@ -1078,31 +1065,28 @@ ch_cc_library(
             "cpp/src/arrow/flight/types.cc",
         ],
     ),
-    copts = (([
+    copts = [
         "-w",
         "-std=c++23",
         "-I",
-    ] + [
         "$(GENDIR)/" + repository_path("contrib/arrow") + "/config/contrib/arrow-cmake/cpp/src",
         "-I",
         "$(GENDIR)/bazel/gen/contrib/arrow-cmake/cpp/src",
-    ]) + [
         "-I",
         repository_path("contrib/grpc") + "/include",
         "-I",
         repository_path("contrib/re2"),
-    ]),
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = ([
+    local_includes = [
         repository_local_include("$(GENDIR)/bazel/gen/contrib/flatbuffers", "contrib/arrow"),
         "cpp/src",
         repository_local_include(
             "$(GENDIR)/" + repository_path("contrib/orc") + "/config/contrib/orc/c++/include",
             "contrib/arrow",
         ),
-    ] + [
         repository_local_include("contrib/c-ares-cmake/linux", "contrib/arrow"),
-    ]),
+    ],
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc",
@@ -1156,7 +1140,7 @@ _GENERATED_LOCAL_DEFINES_1 = [
 
 ch_cc_library(
     name = "_parquet",
-    srcs = ([
+    srcs = (([
         "cpp/src/parquet/arrow/fuzz_internal.cc",
         "cpp/src/parquet/arrow/path_internal.cc",
         "cpp/src/parquet/arrow/reader.cc",
@@ -1177,9 +1161,7 @@ ch_cc_library(
         "cpp/src/parquet/encryption/encryption.cc",
         "cpp/src/parquet/encryption/encryption_internal.cc",
         "cpp/src/parquet/encryption/encryption_internal_nossl.cc",
-        "cpp/src/parquet/encryption/file_key_unwrapper.cc",
-        "cpp/src/parquet/encryption/file_key_wrapper.cc",
-        "cpp/src/parquet/encryption/file_system_key_material_store.cc",
+    ] + glob(["cpp/src/parquet/encryption/file_*.cc"]) + [
         "cpp/src/parquet/encryption/internal_file_decryptor.cc",
         "cpp/src/parquet/encryption/internal_file_encryptor.cc",
         "cpp/src/parquet/encryption/key_material.cc",
@@ -1212,7 +1194,7 @@ ch_cc_library(
         "cpp/src/parquet/types.cc",
         "cpp/src/parquet/xxhasher.cc",
         "cpp/src/generated/parquet_types.cpp",
-    ] + select({
+    ]) + select({
         "@platforms//cpu:x86_64": [
             "cpp/src/parquet/bloom_filter_avx2.cc",
         ],
@@ -1547,34 +1529,32 @@ _GENERATED_FEATURES_1 = [
     "-llvm_system_c_headers",
 ]
 
-_GENERATED_COPTS_0 = (([
+_PARQUET_COPTS = (([
     "--no-default-config",
     "-fdiagnostics-color=always",
     "-pipe",
-] + select({
+] + (select({
     "@platforms//cpu:x86_64": [
         "-march=x86-64-v3",
         "-mpclmul",
-        "-fasynchronous-unwind-tables",
-        "-fdebug-compilation-dir=.",
-        "-falign-functions=64",
-        "-falign-loops=32",
-        "-ffunction-sections",
-        "-fdata-sections",
-        "-faddrsig",
-        "-mbranches-within-32B-boundaries",
     ],
     "@platforms//cpu:aarch64": [
         "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-        "-fasynchronous-unwind-tables",
-        "-fdebug-compilation-dir=.",
-        "-falign-functions=64",
-        "-falign-loops=32",
-        "-ffunction-sections",
-        "-fdata-sections",
-        "-faddrsig",
     ],
-})) + [
+}) + [
+    "-fasynchronous-unwind-tables",
+    "-fdebug-compilation-dir=.",
+    "-falign-functions=64",
+    "-falign-loops=32",
+    "-ffunction-sections",
+    "-fdata-sections",
+    "-faddrsig",
+] + select({
+    "@platforms//cpu:x86_64": [
+        "-mbranches-within-32B-boundaries",
+    ],
+    "@platforms//cpu:aarch64": [],
+}))) + [
     "-fstack-protector-strong",
     "-fstack-clash-protection",
     "-ffp-contract=off",
@@ -1612,7 +1592,7 @@ _GENERATED_COPTS_0 = (([
     ],
 })
 
-_GENERATED_LOCAL_INCLUDES_0 = [
+_PARQUET_LOCAL_INCLUDES = [
     repository_local_include("$(GENDIR)/bazel/gen/contrib/flatbuffers", "contrib/arrow"),
     "cpp/src",
     repository_local_include(
@@ -1634,11 +1614,11 @@ cc_binary(
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [],
-    copts = _GENERATED_COPTS_0,
+    copts = _PARQUET_COPTS,
     features = _GENERATED_FEATURES_1,
     linkopts = _GENERATED_LINKOPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _PARQUET_LOCAL_INCLUDES,
     deps = ((_GENERATED_DEPS_2 + [
         "@clickhouse_boost//:boost_headers",
     ]) + [
@@ -1659,11 +1639,11 @@ cc_binary(
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [],
-    copts = _GENERATED_COPTS_0,
+    copts = _PARQUET_COPTS,
     features = _GENERATED_FEATURES_1,
     linkopts = _GENERATED_LINKOPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _PARQUET_LOCAL_INCLUDES,
     deps = ((_GENERATED_DEPS_2 + [
         "@clickhouse_boost//:boost_headers",
     ]) + [
@@ -1684,11 +1664,11 @@ cc_binary(
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
     ] + [],
-    copts = _GENERATED_COPTS_0,
+    copts = _PARQUET_COPTS,
     features = _GENERATED_FEATURES_1,
     linkopts = _GENERATED_LINKOPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _PARQUET_LOCAL_INCLUDES,
     deps = ((_GENERATED_DEPS_2 + [
         "@clickhouse_boost//:boost_headers",
     ]) + [

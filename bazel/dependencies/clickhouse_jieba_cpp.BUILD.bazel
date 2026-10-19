@@ -45,7 +45,6 @@ ch_cc_library(
     ],
     local_includes = [
         "data",
-    ] + [
         "include",
     ],
     deps = [

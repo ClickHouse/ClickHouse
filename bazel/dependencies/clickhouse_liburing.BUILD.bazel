@@ -65,7 +65,6 @@ ch_cc_library(
     includes = [
         "config/contrib/liburing/src/include-compat",
         "config/contrib/liburing/src/include",
-    ] + [
         "src/include",
     ],
     language = "C",

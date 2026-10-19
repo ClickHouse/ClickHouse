@@ -39,7 +39,7 @@ _GENERATED_LOCAL_DEFINES_0 = [
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-_GENERATED_COPTS_0 = [
+_GRPC_COPTS = [
     "-w",
     "-std=gnu11",
 ]
@@ -56,7 +56,7 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ],
-    copts = _GENERATED_COPTS_0,
+    copts = _GRPC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -206,22 +206,17 @@ _GENERATED_COPTS_2 = [
     repository_path("contrib/re2"),
 ]
 
-_GENERATED_LOCAL_INCLUDES_2 = [
+_GRPC_LOCAL_INCLUDES = [
     repository_local_include(
         "$(GENDIR)/" + repository_path("contrib/zlib-ng") + "/config/contrib/zlib-ng-cmake",
         "contrib/grpc",
     ),
-] + [
     repository_local_include("contrib/c-ares-cmake/linux", "contrib/grpc"),
 ]
 
 ch_cc_library(
     name = "grpc__compile_0",
-    srcs = ([
-        "src/core/call/call_arena_allocator.cc",
-        "src/core/call/call_filters.cc",
-        "src/core/call/call_spine.cc",
-        "src/core/call/call_state.cc",
+    srcs = ((glob(["src/core/call/call_*.cc"]) + [
         "src/core/call/client_call.cc",
         "src/core/call/interception_chain.cc",
         "src/core/call/message.cc",
@@ -238,35 +233,25 @@ ch_cc_library(
         "src/core/channelz/channelz.cc",
         "src/core/channelz/channelz_registry.cc",
         "src/core/channelz/text_encode.cc",
-    ] + glob(["src/core/channelz/v2tov1/*.cc"]) + [
+    ]) + glob(["src/core/channelz/v2tov1/*.cc"]) + ([
         "src/core/client_channel/backup_poller.cc",
         "src/core/client_channel/buffered_call.cc",
-        "src/core/client_channel/client_channel.cc",
-        "src/core/client_channel/client_channel_factory.cc",
-        "src/core/client_channel/client_channel_filter.cc",
-        "src/core/client_channel/client_channel_plugin.cc",
-        "src/core/client_channel/client_channel_service_config.cc",
+    ] + glob(["src/core/client_channel/client_*.cc"]) + [
         "src/core/client_channel/direct_channel.cc",
         "src/core/client_channel/dynamic_filters.cc",
         "src/core/client_channel/global_subchannel_pool.cc",
         "src/core/client_channel/lb_metadata.cc",
         "src/core/client_channel/load_balanced_call_destination.cc",
         "src/core/client_channel/local_subchannel_pool.cc",
-        "src/core/client_channel/retry_filter.cc",
-        "src/core/client_channel/retry_filter_legacy_call_data.cc",
-        "src/core/client_channel/retry_interceptor.cc",
-        "src/core/client_channel/retry_service_config.cc",
-        "src/core/client_channel/retry_throttle.cc",
+    ] + glob(["src/core/client_channel/retry_*.cc"]) + [
         "src/core/client_channel/subchannel.cc",
-        "src/core/client_channel/subchannel_pool_interface.cc",
-        "src/core/client_channel/subchannel_stream_client.cc",
-        "src/core/client_channel/subchannel_stream_limiter.cc",
+    ] + glob(["src/core/client_channel/subchannel_*.cc"]) + [
         "src/core/config/core_configuration.cc",
         "src/core/config/experiment_env_var.cc",
         "src/core/credentials/call/call_creds_registry_init.cc",
         "src/core/credentials/call/call_creds_util.cc",
         "src/core/credentials/call/composite/composite_call_credentials.cc",
-    ] + glob(["src/core/credentials/call/external/*.cc"]) + [
+    ]) + glob(["src/core/credentials/call/external/*.cc"]) + [
         "src/core/credentials/call/gcp_service_account_identity/gcp_service_account_identity_credentials.cc",
         "src/core/credentials/call/iam/iam_credentials.cc",
         "src/core/credentials/call/json_util.cc",
@@ -356,7 +341,7 @@ ch_cc_library(
         "src/core/handshaker/tcp_connect/tcp_connect_handshaker.cc",
         "src/core/lib/address_utils/parse_address.cc",
         "src/core/lib/address_utils/sockaddr_utils.cc",
-    ] + glob(["src/core/lib/channel/*.cc"]) + glob(["src/core/lib/compression/*.cc"]) + [
+    ] + glob(["src/core/lib/channel/*.cc"]) + glob(["src/core/lib/compression/*.cc"]) + ([
         "src/core/lib/debug/trace.cc",
         "src/core/lib/debug/trace_flags.cc",
         "src/core/lib/event_engine/ares_resolver.cc",
@@ -383,19 +368,17 @@ ch_cc_library(
         "src/core/lib/event_engine/posix_engine/timer_heap.cc",
         "src/core/lib/event_engine/posix_engine/timer_manager.cc",
         "src/core/lib/event_engine/posix_engine/traced_buffer_list.cc",
-        "src/core/lib/event_engine/posix_engine/wakeup_fd_eventfd.cc",
-        "src/core/lib/event_engine/posix_engine/wakeup_fd_pipe.cc",
-        "src/core/lib/event_engine/posix_engine/wakeup_fd_posix_default.cc",
+    ] + glob(["src/core/lib/event_engine/posix_engine/wakeup_*.cc"]) + [
         "src/core/lib/event_engine/resolved_address.cc",
         "src/core/lib/event_engine/shim.cc",
         "src/core/lib/event_engine/slice.cc",
         "src/core/lib/event_engine/slice_buffer.cc",
         "src/core/lib/event_engine/tcp_socket_utils.cc",
-    ] + glob(["src/core/lib/event_engine/thread_pool/*.cc"]) + [
+    ]) + glob(["src/core/lib/event_engine/thread_pool/*.cc"]) + [
         "src/core/lib/event_engine/thready_event_engine/thready_event_engine.cc",
         "src/core/lib/event_engine/time_util.cc",
         "src/core/lib/event_engine/utils.cc",
-    ] + glob(["src/core/lib/event_engine/windows/*.cc"]) + [
+    ] + glob(["src/core/lib/event_engine/windows/*.cc"]) + ([
         "src/core/lib/event_engine/work_queue/basic_work_queue.cc",
         "src/core/lib/experiments/config.cc",
         "src/core/lib/experiments/experiments.cc",
@@ -406,67 +389,31 @@ ch_cc_library(
         "src/core/lib/iomgr/combiner.cc",
         "src/core/lib/iomgr/dualstack_socket_posix.cc",
         "src/core/lib/iomgr/endpoint.cc",
-        "src/core/lib/iomgr/endpoint_cfstream.cc",
-        "src/core/lib/iomgr/endpoint_pair_posix.cc",
-        "src/core/lib/iomgr/endpoint_pair_windows.cc",
+    ] + glob(["src/core/lib/iomgr/endpoint_*.cc"]) + [
         "src/core/lib/iomgr/error.cc",
         "src/core/lib/iomgr/error_cfstream.cc",
-        "src/core/lib/iomgr/ev_apple.cc",
-        "src/core/lib/iomgr/ev_epoll1_linux.cc",
-        "src/core/lib/iomgr/ev_poll_posix.cc",
-        "src/core/lib/iomgr/ev_posix.cc",
-    ] + glob(["src/core/lib/iomgr/event_engine_shims/*.cc"]) + [
+    ] + glob(["src/core/lib/iomgr/ev_*.cc"])) + glob(["src/core/lib/iomgr/event_engine_shims/*.cc"]) + ([
         "src/core/lib/iomgr/exec_ctx.cc",
         "src/core/lib/iomgr/fork_posix.cc",
         "src/core/lib/iomgr/fork_windows.cc",
         "src/core/lib/iomgr/internal_errqueue.cc",
         "src/core/lib/iomgr/iocp_windows.cc",
         "src/core/lib/iomgr/iomgr.cc",
-        "src/core/lib/iomgr/iomgr_internal.cc",
-        "src/core/lib/iomgr/iomgr_posix.cc",
-        "src/core/lib/iomgr/iomgr_posix_cfstream.cc",
-        "src/core/lib/iomgr/iomgr_windows.cc",
+    ] + glob(["src/core/lib/iomgr/iomgr_*.cc"]) + [
         "src/core/lib/iomgr/lockfree_event.cc",
         "src/core/lib/iomgr/polling_entity.cc",
         "src/core/lib/iomgr/pollset.cc",
-        "src/core/lib/iomgr/pollset_set.cc",
-        "src/core/lib/iomgr/pollset_set_windows.cc",
-        "src/core/lib/iomgr/pollset_windows.cc",
-        "src/core/lib/iomgr/resolve_address.cc",
-        "src/core/lib/iomgr/resolve_address_posix.cc",
-        "src/core/lib/iomgr/resolve_address_windows.cc",
+    ] + glob(["src/core/lib/iomgr/pollset_*.cc"]) + glob(["src/core/lib/iomgr/resolve_*.cc"]) + [
         "src/core/lib/iomgr/sockaddr_utils_posix.cc",
-        "src/core/lib/iomgr/socket_factory_posix.cc",
-        "src/core/lib/iomgr/socket_mutator.cc",
-        "src/core/lib/iomgr/socket_utils_common_posix.cc",
-        "src/core/lib/iomgr/socket_utils_linux.cc",
-        "src/core/lib/iomgr/socket_utils_posix.cc",
-        "src/core/lib/iomgr/socket_utils_windows.cc",
-        "src/core/lib/iomgr/socket_windows.cc",
+    ] + glob(["src/core/lib/iomgr/socket_*.cc"]) + [
         "src/core/lib/iomgr/systemd_utils.cc",
-        "src/core/lib/iomgr/tcp_client.cc",
-        "src/core/lib/iomgr/tcp_client_cfstream.cc",
-        "src/core/lib/iomgr/tcp_client_posix.cc",
-        "src/core/lib/iomgr/tcp_client_windows.cc",
-        "src/core/lib/iomgr/tcp_posix.cc",
-        "src/core/lib/iomgr/tcp_server.cc",
-        "src/core/lib/iomgr/tcp_server_posix.cc",
-        "src/core/lib/iomgr/tcp_server_utils_posix_common.cc",
-        "src/core/lib/iomgr/tcp_server_utils_posix_ifaddrs.cc",
-        "src/core/lib/iomgr/tcp_server_utils_posix_noifaddrs.cc",
-        "src/core/lib/iomgr/tcp_server_windows.cc",
-        "src/core/lib/iomgr/tcp_windows.cc",
+    ] + glob(["src/core/lib/iomgr/tcp_*.cc"]) + [
         "src/core/lib/iomgr/timer.cc",
-        "src/core/lib/iomgr/timer_generic.cc",
-        "src/core/lib/iomgr/timer_heap.cc",
-        "src/core/lib/iomgr/timer_manager.cc",
+    ] + glob(["src/core/lib/iomgr/timer_*.cc"]) + [
         "src/core/lib/iomgr/unix_sockets_posix.cc",
         "src/core/lib/iomgr/unix_sockets_posix_noop.cc",
         "src/core/lib/iomgr/vsock.cc",
-        "src/core/lib/iomgr/wakeup_fd_eventfd.cc",
-        "src/core/lib/iomgr/wakeup_fd_nospecial.cc",
-        "src/core/lib/iomgr/wakeup_fd_pipe.cc",
-        "src/core/lib/iomgr/wakeup_fd_posix.cc",
+    ] + glob(["src/core/lib/iomgr/wakeup_*.cc"]) + [
         "src/core/lib/promise/activity.cc",
         "src/core/lib/promise/party.cc",
         "src/core/lib/promise/sleep.cc",
@@ -485,7 +432,7 @@ ch_cc_library(
         "src/core/lib/security/authorization/matchers.cc",
         "src/core/lib/security/authorization/rbac_policy.cc",
         "src/core/lib/security/authorization/stdout_logger.cc",
-    ] + glob(["src/core/lib/slice/*.cc"]) + glob(["src/core/lib/surface/*.cc"]) + [
+    ]) + glob(["src/core/lib/slice/*.cc"]) + glob(["src/core/lib/surface/*.cc"]) + [
         "src/core/lib/transport/bdp_estimator.cc",
         "src/core/lib/transport/call_final_info.cc",
         "src/core/lib/transport/connectivity_state.cc",
@@ -550,7 +497,7 @@ ch_cc_library(
         "src/core/tsi/fake_transport_security.cc",
         "src/core/tsi/local_transport_security.cc",
         "src/core/tsi/ssl/key_logging/ssl_key_logging.cc",
-    ] + glob(["src/core/tsi/ssl/session_cache/*.cc"]) + [
+    ] + glob(["src/core/tsi/ssl/session_cache/*.cc"]) + ([
         "src/core/tsi/ssl_transport_security.cc",
         "src/core/tsi/ssl_transport_security_utils.cc",
         "src/core/tsi/transport_security.cc",
@@ -559,13 +506,11 @@ ch_cc_library(
         "src/core/util/dump_args.cc",
         "src/core/util/event_log.cc",
         "src/core/util/gcp_metadata_query.cc",
-        "src/core/util/gethostname_fallback.cc",
-        "src/core/util/gethostname_host_name_max.cc",
-        "src/core/util/gethostname_sysconf.cc",
+    ] + glob(["src/core/util/gethostname_*.cc"]) + [
         "src/core/util/glob.cc",
         "src/core/util/grpc_if_nametoindex_posix.cc",
         "src/core/util/grpc_if_nametoindex_unsupported.cc",
-    ] + glob(["src/core/util/http_client/*.cc"]) + glob(["src/core/util/json/*.cc"]) + [
+    ]) + glob(["src/core/util/http_client/*.cc"]) + glob(["src/core/util/json/*.cc"]) + ([
         "src/core/util/latent_see.cc",
         "src/core/util/load_file.cc",
         "src/core/util/matchers.cc",
@@ -584,41 +529,7 @@ ch_cc_library(
         "src/core/util/work_serializer.cc",
         "src/core/xds/grpc/certificate_provider_store.cc",
         "src/core/xds/grpc/file_watcher_certificate_provider_factory.cc",
-        "src/core/xds/grpc/xds_audit_logger_registry.cc",
-        "src/core/xds/grpc/xds_bootstrap_grpc.cc",
-        "src/core/xds/grpc/xds_certificate_provider.cc",
-        "src/core/xds/grpc/xds_client_grpc.cc",
-        "src/core/xds/grpc/xds_cluster.cc",
-        "src/core/xds/grpc/xds_cluster_parser.cc",
-        "src/core/xds/grpc/xds_cluster_specifier_plugin.cc",
-        "src/core/xds/grpc/xds_common_types.cc",
-        "src/core/xds/grpc/xds_common_types_parser.cc",
-        "src/core/xds/grpc/xds_endpoint.cc",
-        "src/core/xds/grpc/xds_endpoint_parser.cc",
-        "src/core/xds/grpc/xds_health_status.cc",
-        "src/core/xds/grpc/xds_http_composite_filter.cc",
-        "src/core/xds/grpc/xds_http_fault_filter.cc",
-        "src/core/xds/grpc/xds_http_filter.cc",
-        "src/core/xds/grpc/xds_http_filter_registry.cc",
-        "src/core/xds/grpc/xds_http_gcp_authn_filter.cc",
-        "src/core/xds/grpc/xds_http_rbac_filter.cc",
-        "src/core/xds/grpc/xds_http_stateful_session_filter.cc",
-        "src/core/xds/grpc/xds_lb_policy_registry.cc",
-        "src/core/xds/grpc/xds_listener.cc",
-        "src/core/xds/grpc/xds_listener_parser.cc",
-        "src/core/xds/grpc/xds_matcher.cc",
-        "src/core/xds/grpc/xds_matcher_action.cc",
-        "src/core/xds/grpc/xds_matcher_context.cc",
-        "src/core/xds/grpc/xds_matcher_input.cc",
-        "src/core/xds/grpc/xds_matcher_parse.cc",
-        "src/core/xds/grpc/xds_metadata.cc",
-        "src/core/xds/grpc/xds_metadata_parser.cc",
-        "src/core/xds/grpc/xds_route_config.cc",
-        "src/core/xds/grpc/xds_route_config_parser.cc",
-        "src/core/xds/grpc/xds_routing.cc",
-        "src/core/xds/grpc/xds_server_grpc.cc",
-        "src/core/xds/grpc/xds_transport_grpc.cc",
-    ] + glob(["src/core/xds/xds_client/*.cc"])),
+    ] + glob(["src/core/xds/grpc/xds_*.cc"])) + glob(["src/core/xds/xds_client/*.cc"])),
     hdrs = ([
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
@@ -639,7 +550,7 @@ ch_cc_library(
         "third_party/upb",
         "third_party/utf8_range",
         "third_party/xxhash",
-    ] + _GENERATED_LOCAL_INCLUDES_2,
+    ] + _GRPC_LOCAL_INCLUDES,
     deps = ["@clickhouse_abseil_cpp//:abseil_cpp_headers"] + [
         "@clickhouse_c_ares//:_c-ares",
         "@clickhouse_openssl//:ssl",
@@ -733,13 +644,7 @@ ch_cc_library(
     ] + glob(["src/core/ext/upb-gen/envoy/type/matcher/v3/*.c"]) + [
         "src/core/ext/upb-gen/envoy/type/metadata/v3/metadata.upb_minitable.c",
         "src/core/ext/upb-gen/envoy/type/tracing/v3/custom_tag.upb_minitable.c",
-    ] + glob(["src/core/ext/upb-gen/envoy/type/v3/*.c"]) + [
-        "src/core/ext/upb-gen/google/api/annotations.upb_minitable.c",
-        "src/core/ext/upb-gen/google/api/expr/v1alpha1/checked.upb_minitable.c",
-        "src/core/ext/upb-gen/google/api/expr/v1alpha1/syntax.upb_minitable.c",
-        "src/core/ext/upb-gen/google/api/http.upb_minitable.c",
-        "src/core/ext/upb-gen/google/api/httpbody.upb_minitable.c",
-    ] + glob(["src/core/ext/upb-gen/google/protobuf/*.c"]) + [
+    ] + glob(["src/core/ext/upb-gen/envoy/type/v3/*.c"]) + glob(["src/core/ext/upb-gen/google/api/**/*.c"]) + glob(["src/core/ext/upb-gen/google/protobuf/*.c"]) + [
         "src/core/ext/upb-gen/google/rpc/status.upb_minitable.c",
     ] + glob(["src/core/ext/upb-gen/src/proto/grpc/gcp/*.c"]) + [
         "src/core/ext/upb-gen/src/proto/grpc/health/v1/health.upb_minitable.c",
@@ -806,13 +711,7 @@ ch_cc_library(
     ] + glob(["src/core/ext/upbdefs-gen/envoy/type/matcher/v3/*.c"]) + [
         "src/core/ext/upbdefs-gen/envoy/type/metadata/v3/metadata.upbdefs.c",
         "src/core/ext/upbdefs-gen/envoy/type/tracing/v3/custom_tag.upbdefs.c",
-    ] + glob(["src/core/ext/upbdefs-gen/envoy/type/v3/*.c"]) + [
-        "src/core/ext/upbdefs-gen/google/api/annotations.upbdefs.c",
-        "src/core/ext/upbdefs-gen/google/api/expr/v1alpha1/checked.upbdefs.c",
-        "src/core/ext/upbdefs-gen/google/api/expr/v1alpha1/syntax.upbdefs.c",
-        "src/core/ext/upbdefs-gen/google/api/http.upbdefs.c",
-        "src/core/ext/upbdefs-gen/google/api/httpbody.upbdefs.c",
-    ] + glob(["src/core/ext/upbdefs-gen/google/protobuf/*.c"]) + [
+    ] + glob(["src/core/ext/upbdefs-gen/envoy/type/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/google/api/**/*.c"]) + glob(["src/core/ext/upbdefs-gen/google/protobuf/*.c"]) + [
         "src/core/ext/upbdefs-gen/google/rpc/status.upbdefs.c",
         "src/core/ext/upbdefs-gen/src/proto/grpc/channelz/channelz.upbdefs.c",
     ] + glob(["src/core/ext/upbdefs-gen/src/proto/grpc/channelz/v2/*.c"]) + [
@@ -852,7 +751,7 @@ ch_cc_library(
         "third_party/upb",
         "third_party/utf8_range",
         "third_party/xxhash",
-    ] + _GENERATED_LOCAL_INCLUDES_2,
+    ] + _GRPC_LOCAL_INCLUDES,
     deps = ["@clickhouse_abseil_cpp//:abseil_cpp_headers"] + [
         "@clickhouse_c_ares//:_c-ares",
         "@clickhouse_openssl//:ssl",
@@ -884,19 +783,13 @@ _GENERATED_LOCAL_INCLUDES_3 = [
 
 ch_cc_library(
     name = "grpc++",
-    srcs = ([
+    srcs = (([
         "src/core/client_channel/virtual_channel.cc",
         "src/cpp/client/call_context_registry.cc",
         "src/cpp/client/call_credentials.cc",
         "src/cpp/client/channel_cc.cc",
         "src/cpp/client/channel_credentials.cc",
-        "src/cpp/client/client_callback.cc",
-        "src/cpp/client/client_context.cc",
-        "src/cpp/client/client_interceptor.cc",
-        "src/cpp/client/client_stats_interceptor.cc",
-        "src/cpp/client/create_channel.cc",
-        "src/cpp/client/create_channel_internal.cc",
-        "src/cpp/client/create_channel_posix.cc",
+    ] + glob(["src/cpp/client/client_*.cc"]) + glob(["src/cpp/client/create_*.cc"]) + [
         "src/cpp/client/global_callback_hook.cc",
         "src/cpp/client/insecure_credentials.cc",
         "src/cpp/client/secure_credentials.cc",
@@ -909,9 +802,7 @@ ch_cc_library(
         "src/cpp/common/rpc_method.cc",
         "src/cpp/common/secure_auth_context.cc",
         "src/cpp/common/secure_create_auth_context.cc",
-        "src/cpp/common/tls_certificate_provider.cc",
-        "src/cpp/common/tls_certificate_verifier.cc",
-        "src/cpp/common/tls_credentials_options.cc",
+    ] + glob(["src/cpp/common/tls_*.cc"]) + [
         "src/cpp/common/validate_service_config.cc",
         "src/cpp/common/version_cc.cc",
         "src/cpp/server/async_generic_service.cc",
@@ -919,15 +810,10 @@ ch_cc_library(
         "src/cpp/server/channel_argument_option.cc",
         "src/cpp/server/create_default_thread_pool.cc",
         "src/cpp/server/external_connection_acceptor_impl.cc",
-    ] + glob(["src/cpp/server/health/*.cc"]) + [
+    ]) + glob(["src/cpp/server/health/*.cc"]) + ([
         "src/cpp/server/insecure_server_credentials.cc",
         "src/cpp/server/secure_server_credentials.cc",
-        "src/cpp/server/server_builder.cc",
-        "src/cpp/server/server_callback.cc",
-        "src/cpp/server/server_cc.cc",
-        "src/cpp/server/server_context.cc",
-        "src/cpp/server/server_credentials.cc",
-        "src/cpp/server/server_posix.cc",
+    ] + glob(["src/cpp/server/server_*.cc"]) + [
         "src/cpp/server/xds_server_builder.cc",
         "src/cpp/server/xds_server_credentials.cc",
         "src/cpp/thread_manager/thread_manager.cc",
@@ -935,7 +821,7 @@ ch_cc_library(
         "src/cpp/util/status.cc",
         "src/cpp/util/string_ref.cc",
         "src/cpp/util/time_cc.cc",
-    ]),
+    ])),
     hdrs = [],
     copts = _GENERATED_COPTS_2,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
@@ -958,19 +844,13 @@ ch_cc_library(
 
 ch_cc_library(
     name = "grpc++_unsecure",
-    srcs = ([
+    srcs = (([
         "src/core/client_channel/virtual_channel.cc",
         "src/cpp/client/call_context_registry.cc",
         "src/cpp/client/call_credentials.cc",
         "src/cpp/client/channel_cc.cc",
         "src/cpp/client/channel_credentials.cc",
-        "src/cpp/client/client_callback.cc",
-        "src/cpp/client/client_context.cc",
-        "src/cpp/client/client_interceptor.cc",
-        "src/cpp/client/client_stats_interceptor.cc",
-        "src/cpp/client/create_channel.cc",
-        "src/cpp/client/create_channel_internal.cc",
-        "src/cpp/client/create_channel_posix.cc",
+    ] + glob(["src/cpp/client/client_*.cc"]) + glob(["src/cpp/client/create_*.cc"]) + [
         "src/cpp/client/global_callback_hook.cc",
         "src/cpp/client/insecure_credentials.cc",
         "src/cpp/common/alarm.cc",
@@ -986,20 +866,15 @@ ch_cc_library(
         "src/cpp/server/channel_argument_option.cc",
         "src/cpp/server/create_default_thread_pool.cc",
         "src/cpp/server/external_connection_acceptor_impl.cc",
-    ] + glob(["src/cpp/server/health/*.cc"]) + [
+    ]) + glob(["src/cpp/server/health/*.cc"]) + ([
         "src/cpp/server/insecure_server_credentials.cc",
-        "src/cpp/server/server_builder.cc",
-        "src/cpp/server/server_callback.cc",
-        "src/cpp/server/server_cc.cc",
-        "src/cpp/server/server_context.cc",
-        "src/cpp/server/server_credentials.cc",
-        "src/cpp/server/server_posix.cc",
+    ] + glob(["src/cpp/server/server_*.cc"]) + [
         "src/cpp/thread_manager/thread_manager.cc",
         "src/cpp/util/byte_buffer_cc.cc",
         "src/cpp/util/status.cc",
         "src/cpp/util/string_ref.cc",
         "src/cpp/util/time_cc.cc",
-    ]),
+    ])),
     hdrs = [],
     copts = _GENERATED_COPTS_1,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
@@ -1036,30 +911,28 @@ cc_binary(
         "--no-default-config",
         "-fdiagnostics-color=always",
         "-pipe",
-    ] + select({
+    ] + (select({
         "@platforms//cpu:x86_64": [
             "-march=x86-64-v3",
             "-mpclmul",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-mbranches-within-32B-boundaries",
         ],
         "@platforms//cpu:aarch64": [
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
         ],
-    })) + [
+    }) + [
+        "-fasynchronous-unwind-tables",
+        "-fdebug-compilation-dir=.",
+        "-falign-functions=64",
+        "-falign-loops=32",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-faddrsig",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "-mbranches-within-32B-boundaries",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }))) + [
         "-fstack-protector-strong",
         "-fstack-clash-protection",
         "-ffp-contract=off",
@@ -1313,11 +1186,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "grpc_unsecure__compile_0",
-    srcs = ([
-        "src/core/call/call_arena_allocator.cc",
-        "src/core/call/call_filters.cc",
-        "src/core/call/call_spine.cc",
-        "src/core/call/call_state.cc",
+    srcs = ((glob(["src/core/call/call_*.cc"]) + [
         "src/core/call/client_call.cc",
         "src/core/call/interception_chain.cc",
         "src/core/call/message.cc",
@@ -1336,39 +1205,23 @@ ch_cc_library(
         "src/core/channelz/text_encode.cc",
         "src/core/client_channel/backup_poller.cc",
         "src/core/client_channel/buffered_call.cc",
-        "src/core/client_channel/client_channel.cc",
-        "src/core/client_channel/client_channel_factory.cc",
-        "src/core/client_channel/client_channel_filter.cc",
-        "src/core/client_channel/client_channel_plugin.cc",
-        "src/core/client_channel/client_channel_service_config.cc",
+    ] + glob(["src/core/client_channel/client_*.cc"]) + [
         "src/core/client_channel/direct_channel.cc",
         "src/core/client_channel/dynamic_filters.cc",
         "src/core/client_channel/global_subchannel_pool.cc",
         "src/core/client_channel/lb_metadata.cc",
         "src/core/client_channel/load_balanced_call_destination.cc",
         "src/core/client_channel/local_subchannel_pool.cc",
-        "src/core/client_channel/retry_filter.cc",
-        "src/core/client_channel/retry_filter_legacy_call_data.cc",
-        "src/core/client_channel/retry_interceptor.cc",
-        "src/core/client_channel/retry_service_config.cc",
-        "src/core/client_channel/retry_throttle.cc",
+    ] + glob(["src/core/client_channel/retry_*.cc"]) + [
         "src/core/client_channel/subchannel.cc",
-        "src/core/client_channel/subchannel_pool_interface.cc",
-        "src/core/client_channel/subchannel_stream_client.cc",
-        "src/core/client_channel/subchannel_stream_limiter.cc",
+    ] + glob(["src/core/client_channel/subchannel_*.cc"]) + [
         "src/core/config/core_configuration.cc",
         "src/core/config/experiment_env_var.cc",
         "src/core/credentials/call/call_creds_util.cc",
         "src/core/credentials/call/composite/composite_call_credentials.cc",
         "src/core/credentials/call/json_util.cc",
         "src/core/credentials/call/plugin/plugin_credentials.cc",
-        "src/core/credentials/transport/alts/check_gcp_environment.cc",
-        "src/core/credentials/transport/alts/check_gcp_environment_linux.cc",
-        "src/core/credentials/transport/alts/check_gcp_environment_no_op.cc",
-        "src/core/credentials/transport/alts/check_gcp_environment_windows.cc",
-        "src/core/credentials/transport/alts/grpc_alts_credentials_client_options.cc",
-        "src/core/credentials/transport/alts/grpc_alts_credentials_options.cc",
-        "src/core/credentials/transport/alts/grpc_alts_credentials_server_options.cc",
+    ] + glob(["src/core/credentials/transport/alts/check_*.cc"]) + glob(["src/core/credentials/transport/alts/grpc_*.cc"]) + [
         "src/core/credentials/transport/composite/composite_channel_credentials.cc",
         "src/core/credentials/transport/fake/fake_credentials.cc",
         "src/core/credentials/transport/fake/fake_security_connector.cc",
@@ -1376,9 +1229,7 @@ ch_cc_library(
         "src/core/credentials/transport/insecure/insecure_security_connector.cc",
         "src/core/credentials/transport/security_connector.cc",
         "src/core/credentials/transport/tls/certificate_provider_registry.cc",
-        "src/core/credentials/transport/tls/load_system_roots_fallback.cc",
-        "src/core/credentials/transport/tls/load_system_roots_supported.cc",
-        "src/core/credentials/transport/tls/load_system_roots_windows.cc",
+    ] + glob(["src/core/credentials/transport/tls/load_*.cc"]) + [
         "src/core/credentials/transport/tls/tls_utils.cc",
         "src/core/credentials/transport/transport_credentials.cc",
         "src/core/ext/filters/backend_metrics/backend_metric_filter.cc",
@@ -1395,7 +1246,7 @@ ch_cc_library(
         "src/core/ext/transport/chttp2/chttp2_plugin.cc",
         "src/core/ext/transport/chttp2/client/chttp2_connector.cc",
         "src/core/ext/transport/chttp2/server/chttp2_server.cc",
-    ] + glob(["src/core/ext/transport/chttp2/transport/*.cc"]) + [
+    ]) + glob(["src/core/ext/transport/chttp2/transport/*.cc"]) + [
         "src/core/ext/transport/inproc/inproc_transport.cc",
         "src/core/ext/transport/inproc/legacy_inproc_transport.cc",
         "src/core/filter/auth/client_auth_filter.cc",
@@ -1434,7 +1285,7 @@ ch_cc_library(
         "src/core/handshaker/tcp_connect/tcp_connect_handshaker.cc",
         "src/core/lib/address_utils/parse_address.cc",
         "src/core/lib/address_utils/sockaddr_utils.cc",
-    ] + glob(["src/core/lib/channel/*.cc"]) + glob(["src/core/lib/compression/*.cc"]) + [
+    ] + glob(["src/core/lib/channel/*.cc"]) + glob(["src/core/lib/compression/*.cc"]) + ([
         "src/core/lib/debug/trace.cc",
         "src/core/lib/debug/trace_flags.cc",
         "src/core/lib/event_engine/ares_resolver.cc",
@@ -1461,19 +1312,17 @@ ch_cc_library(
         "src/core/lib/event_engine/posix_engine/timer_heap.cc",
         "src/core/lib/event_engine/posix_engine/timer_manager.cc",
         "src/core/lib/event_engine/posix_engine/traced_buffer_list.cc",
-        "src/core/lib/event_engine/posix_engine/wakeup_fd_eventfd.cc",
-        "src/core/lib/event_engine/posix_engine/wakeup_fd_pipe.cc",
-        "src/core/lib/event_engine/posix_engine/wakeup_fd_posix_default.cc",
+    ] + glob(["src/core/lib/event_engine/posix_engine/wakeup_*.cc"]) + [
         "src/core/lib/event_engine/resolved_address.cc",
         "src/core/lib/event_engine/shim.cc",
         "src/core/lib/event_engine/slice.cc",
         "src/core/lib/event_engine/slice_buffer.cc",
         "src/core/lib/event_engine/tcp_socket_utils.cc",
-    ] + glob(["src/core/lib/event_engine/thread_pool/*.cc"]) + [
+    ]) + glob(["src/core/lib/event_engine/thread_pool/*.cc"]) + [
         "src/core/lib/event_engine/thready_event_engine/thready_event_engine.cc",
         "src/core/lib/event_engine/time_util.cc",
         "src/core/lib/event_engine/utils.cc",
-    ] + glob(["src/core/lib/event_engine/windows/*.cc"]) + [
+    ] + glob(["src/core/lib/event_engine/windows/*.cc"]) + ([
         "src/core/lib/event_engine/work_queue/basic_work_queue.cc",
         "src/core/lib/experiments/config.cc",
         "src/core/lib/experiments/experiments.cc",
@@ -1484,67 +1333,31 @@ ch_cc_library(
         "src/core/lib/iomgr/combiner.cc",
         "src/core/lib/iomgr/dualstack_socket_posix.cc",
         "src/core/lib/iomgr/endpoint.cc",
-        "src/core/lib/iomgr/endpoint_cfstream.cc",
-        "src/core/lib/iomgr/endpoint_pair_posix.cc",
-        "src/core/lib/iomgr/endpoint_pair_windows.cc",
+    ] + glob(["src/core/lib/iomgr/endpoint_*.cc"]) + [
         "src/core/lib/iomgr/error.cc",
         "src/core/lib/iomgr/error_cfstream.cc",
-        "src/core/lib/iomgr/ev_apple.cc",
-        "src/core/lib/iomgr/ev_epoll1_linux.cc",
-        "src/core/lib/iomgr/ev_poll_posix.cc",
-        "src/core/lib/iomgr/ev_posix.cc",
-    ] + glob(["src/core/lib/iomgr/event_engine_shims/*.cc"]) + [
+    ] + glob(["src/core/lib/iomgr/ev_*.cc"])) + glob(["src/core/lib/iomgr/event_engine_shims/*.cc"]) + ([
         "src/core/lib/iomgr/exec_ctx.cc",
         "src/core/lib/iomgr/fork_posix.cc",
         "src/core/lib/iomgr/fork_windows.cc",
         "src/core/lib/iomgr/internal_errqueue.cc",
         "src/core/lib/iomgr/iocp_windows.cc",
         "src/core/lib/iomgr/iomgr.cc",
-        "src/core/lib/iomgr/iomgr_internal.cc",
-        "src/core/lib/iomgr/iomgr_posix.cc",
-        "src/core/lib/iomgr/iomgr_posix_cfstream.cc",
-        "src/core/lib/iomgr/iomgr_windows.cc",
+    ] + glob(["src/core/lib/iomgr/iomgr_*.cc"]) + [
         "src/core/lib/iomgr/lockfree_event.cc",
         "src/core/lib/iomgr/polling_entity.cc",
         "src/core/lib/iomgr/pollset.cc",
-        "src/core/lib/iomgr/pollset_set.cc",
-        "src/core/lib/iomgr/pollset_set_windows.cc",
-        "src/core/lib/iomgr/pollset_windows.cc",
-        "src/core/lib/iomgr/resolve_address.cc",
-        "src/core/lib/iomgr/resolve_address_posix.cc",
-        "src/core/lib/iomgr/resolve_address_windows.cc",
+    ] + glob(["src/core/lib/iomgr/pollset_*.cc"]) + glob(["src/core/lib/iomgr/resolve_*.cc"]) + [
         "src/core/lib/iomgr/sockaddr_utils_posix.cc",
-        "src/core/lib/iomgr/socket_factory_posix.cc",
-        "src/core/lib/iomgr/socket_mutator.cc",
-        "src/core/lib/iomgr/socket_utils_common_posix.cc",
-        "src/core/lib/iomgr/socket_utils_linux.cc",
-        "src/core/lib/iomgr/socket_utils_posix.cc",
-        "src/core/lib/iomgr/socket_utils_windows.cc",
-        "src/core/lib/iomgr/socket_windows.cc",
+    ] + glob(["src/core/lib/iomgr/socket_*.cc"]) + [
         "src/core/lib/iomgr/systemd_utils.cc",
-        "src/core/lib/iomgr/tcp_client.cc",
-        "src/core/lib/iomgr/tcp_client_cfstream.cc",
-        "src/core/lib/iomgr/tcp_client_posix.cc",
-        "src/core/lib/iomgr/tcp_client_windows.cc",
-        "src/core/lib/iomgr/tcp_posix.cc",
-        "src/core/lib/iomgr/tcp_server.cc",
-        "src/core/lib/iomgr/tcp_server_posix.cc",
-        "src/core/lib/iomgr/tcp_server_utils_posix_common.cc",
-        "src/core/lib/iomgr/tcp_server_utils_posix_ifaddrs.cc",
-        "src/core/lib/iomgr/tcp_server_utils_posix_noifaddrs.cc",
-        "src/core/lib/iomgr/tcp_server_windows.cc",
-        "src/core/lib/iomgr/tcp_windows.cc",
+    ] + glob(["src/core/lib/iomgr/tcp_*.cc"]) + [
         "src/core/lib/iomgr/timer.cc",
-        "src/core/lib/iomgr/timer_generic.cc",
-        "src/core/lib/iomgr/timer_heap.cc",
-        "src/core/lib/iomgr/timer_manager.cc",
+    ] + glob(["src/core/lib/iomgr/timer_*.cc"]) + [
         "src/core/lib/iomgr/unix_sockets_posix.cc",
         "src/core/lib/iomgr/unix_sockets_posix_noop.cc",
         "src/core/lib/iomgr/vsock.cc",
-        "src/core/lib/iomgr/wakeup_fd_eventfd.cc",
-        "src/core/lib/iomgr/wakeup_fd_nospecial.cc",
-        "src/core/lib/iomgr/wakeup_fd_pipe.cc",
-        "src/core/lib/iomgr/wakeup_fd_posix.cc",
+    ] + glob(["src/core/lib/iomgr/wakeup_*.cc"]) + [
         "src/core/lib/promise/activity.cc",
         "src/core/lib/promise/party.cc",
         "src/core/lib/promise/sleep.cc",
@@ -1558,7 +1371,7 @@ ch_cc_library(
         "src/core/lib/security/authorization/authorization_policy_provider_vtable.cc",
         "src/core/lib/security/authorization/evaluate_args.cc",
         "src/core/lib/security/authorization/grpc_server_authz_filter.cc",
-    ] + glob(["src/core/lib/slice/*.cc"]) + glob(["src/core/lib/surface/*.cc"]) + [
+    ]) + glob(["src/core/lib/slice/*.cc"]) + glob(["src/core/lib/surface/*.cc"]) + [
         "src/core/lib/transport/bdp_estimator.cc",
         "src/core/lib/transport/call_final_info.cc",
         "src/core/lib/transport/connectivity_state.cc",
@@ -1601,7 +1414,7 @@ ch_cc_library(
         "src/core/server/add_port.cc",
         "src/core/server/server.cc",
         "src/core/server/server_call_tracer_filter.cc",
-    ] + glob(["src/core/service_config/*.cc"]) + [
+    ] + glob(["src/core/service_config/*.cc"]) + ([
         "src/core/telemetry/call_tracer.cc",
         "src/core/telemetry/default_tcp_tracer.cc",
         "src/core/telemetry/histogram_view.cc",
@@ -1619,9 +1432,7 @@ ch_cc_library(
         "src/core/util/backoff.cc",
         "src/core/util/dump_args.cc",
         "src/core/util/event_log.cc",
-        "src/core/util/gethostname_fallback.cc",
-        "src/core/util/gethostname_host_name_max.cc",
-        "src/core/util/gethostname_sysconf.cc",
+    ] + glob(["src/core/util/gethostname_*.cc"]) + [
         "src/core/util/glob.cc",
         "src/core/util/grpc_if_nametoindex_posix.cc",
         "src/core/util/grpc_if_nametoindex_unsupported.cc",
@@ -1644,7 +1455,7 @@ ch_cc_library(
         "src/core/util/uuid_v4.cc",
         "src/core/util/validation_errors.cc",
         "src/core/util/work_serializer.cc",
-    ]),
+    ])),
     hdrs = [
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
@@ -1666,7 +1477,7 @@ ch_cc_library(
         "third_party/upb",
         "third_party/utf8_range",
         "third_party/xxhash",
-    ] + _GENERATED_LOCAL_INCLUDES_2,
+    ] + _GRPC_LOCAL_INCLUDES,
     deps = ["@clickhouse_abseil_cpp//:abseil_cpp_headers"] + [
         "@clickhouse_c_ares//:_c-ares",
     ],
@@ -1706,7 +1517,7 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ],
-    copts = _GENERATED_COPTS_0,
+    copts = _GRPC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
@@ -1719,7 +1530,7 @@ ch_cc_library(
         "third_party/upb",
         "third_party/utf8_range",
         "third_party/xxhash",
-    ] + _GENERATED_LOCAL_INCLUDES_2,
+    ] + _GRPC_LOCAL_INCLUDES,
     deps = ["@clickhouse_abseil_cpp//:abseil_cpp_headers"] + [
         "@clickhouse_c_ares//:_c-ares",
     ],
@@ -1761,7 +1572,7 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ],
-    copts = _GENERATED_COPTS_0,
+    copts = _GRPC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -1789,7 +1600,7 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ],
-    copts = _GENERATED_COPTS_0,
+    copts = _GRPC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -1826,7 +1637,7 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ],
-    copts = _GENERATED_COPTS_0,
+    copts = _GRPC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -1846,21 +1657,16 @@ ch_cc_library(
 
 ch_cc_library(
     name = "upb_mini_descriptor_lib",
-    srcs = [
-        "third_party/upb/upb/mini_descriptor/build_enum.c",
-        "third_party/upb/upb/mini_descriptor/decode.c",
-        "third_party/upb/upb/mini_descriptor/internal/base92.c",
-        "third_party/upb/upb/mini_descriptor/internal/encode.c",
-        "third_party/upb/upb/mini_descriptor/link.c",
+    srcs = (glob(["third_party/upb/upb/mini_descriptor/**/*.c"]) + [
         "third_party/upb/upb/wire/decode_fast/select.c",
         "third_party/upb/upb/wire/eps_copy_input_stream.c",
         "third_party/upb/upb/wire/reader.c",
-    ],
+    ]),
     additional_compiler_inputs = [
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ],
-    copts = _GENERATED_COPTS_0,
+    copts = _GRPC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -1896,7 +1702,7 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ],
-    copts = _GENERATED_COPTS_0,
+    copts = _GRPC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -1916,15 +1722,13 @@ ch_cc_library(
 
 ch_cc_library(
     name = "upb_reflection_lib",
-    srcs = [
+    srcs = ([
         "third_party/upb/upb/message/copy.c",
         "third_party/upb/upb/message/merge.c",
         "third_party/upb/upb/reflection/def_pool.c",
         "third_party/upb/upb/reflection/def_type.c",
         "third_party/upb/upb/reflection/desc_state.c",
-        "third_party/upb/upb/reflection/enum_def.c",
-        "third_party/upb/upb/reflection/enum_reserved_range.c",
-        "third_party/upb/upb/reflection/enum_value_def.c",
+    ] + glob(["third_party/upb/upb/reflection/enum_*.c"]) + [
         "third_party/upb/upb/reflection/extension_range.c",
         "third_party/upb/upb/reflection/field_def.c",
         "third_party/upb/upb/reflection/file_def.c",
@@ -1936,12 +1740,12 @@ ch_cc_library(
         "third_party/upb/upb/reflection/method_def.c",
         "third_party/upb/upb/reflection/oneof_def.c",
         "third_party/upb/upb/reflection/service_def.c",
-    ],
+    ]),
     additional_compiler_inputs = [
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ],
-    copts = _GENERATED_COPTS_0,
+    copts = _GRPC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -1972,7 +1776,7 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ],
-    copts = _GENERATED_COPTS_0,
+    copts = _GRPC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -2007,7 +1811,7 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ],
-    copts = _GENERATED_COPTS_0,
+    copts = _GRPC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -2045,7 +1849,7 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ],
-    copts = _GENERATED_COPTS_0,
+    copts = _GRPC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,

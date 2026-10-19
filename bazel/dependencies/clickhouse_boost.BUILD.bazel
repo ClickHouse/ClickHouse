@@ -21,7 +21,7 @@ _GENERATED_DEPS_0 = [
     "@llvm-project//libunwind:headers",
 ]
 
-_GENERATED_COPTS_0 = [
+_BOOST_COPTS = [
     "-w",
     "-std=c++23",
 ]
@@ -42,7 +42,7 @@ ch_cc_library(
         "libs/context/src/asm/ontop_x86_64_sysv_elf_gas.S",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _BOOST_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -57,16 +57,8 @@ ch_cc_library(
 ch_cc_library(
     name = "_boost_context__compile_1",
     srcs = select({
-        "@platforms//cpu:x86_64": [
-            "libs/context/src/asm/jump_x86_64_sysv_elf_gas.S",
-            "libs/context/src/asm/make_x86_64_sysv_elf_gas.S",
-            "libs/context/src/asm/ontop_x86_64_sysv_elf_gas.S",
-        ],
-        "@platforms//cpu:aarch64": [
-            "libs/context/src/asm/jump_arm64_aapcs_elf_gas.S",
-            "libs/context/src/asm/make_arm64_aapcs_elf_gas.S",
-            "libs/context/src/asm/ontop_arm64_aapcs_elf_gas.S",
-        ],
+        "@platforms//cpu:x86_64": glob(["libs/context/src/asm/*_64_sysv_elf_gas.S"]),
+        "@platforms//cpu:aarch64": glob(["libs/context/src/asm/*_arm64_aapcs_elf_gas.S"]),
     }),
     hdrs = glob(["libs/context/**/*.hpp"]),
     additional_compiler_inputs = ((["libs/context/src/asm/jump_i386_sysv_elf_gas.S"] + select({
@@ -121,7 +113,7 @@ ch_cc_library(
         "libs/coroutine/**/*.hpp",
     ]),
     copts = (
-        _GENERATED_COPTS_0
+        _BOOST_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -167,7 +159,7 @@ ch_cc_library(
         "libs/graph/**/*.hpp",
     ]),
     copts = (
-        _GENERATED_COPTS_0
+        _BOOST_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -309,7 +301,7 @@ ch_cc_library(
         "libs/regex/src/wide_posix_api.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _BOOST_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [

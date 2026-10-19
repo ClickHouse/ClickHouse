@@ -282,11 +282,10 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    local_includes = ([
+    local_includes = [
         "include",
-    ] + [
         "config/contrib/xgboost/dmlc-core",
-    ]),
+    ],
     deps = [":_dmlc_core"],
     alwayslink = False,
 )

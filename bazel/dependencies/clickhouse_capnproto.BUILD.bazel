@@ -13,7 +13,7 @@ _GENERATED_LOCAL_DEFINES_0 = [
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-_GENERATED_COPTS_0 = [
+_CAPNPROTO_COPTS = [
     "-w",
     "-std=c++17",
     "-fno-char8_t",
@@ -38,7 +38,7 @@ ch_cc_library(
         "c++/src/capnp/dynamic.c++",
         "c++/src/capnp/stringify.c++",
     ],
-    copts = _GENERATED_COPTS_0,
+    copts = _CAPNPROTO_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "c++/src",
@@ -62,7 +62,7 @@ ch_cc_library(
         "c++/src/capnp/schema-parser.c++",
         "c++/src/capnp/serialize-text.c++",
     ],
-    copts = _GENERATED_COPTS_0,
+    copts = _CAPNPROTO_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "c++/src",
@@ -99,7 +99,7 @@ ch_cc_library(
         "c++/src/kj/parse/char.c++",
     ],
     hdrs = glob(["c++/src/**/*.h"]),
-    copts = _GENERATED_COPTS_0,
+    copts = _CAPNPROTO_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "c++/src",

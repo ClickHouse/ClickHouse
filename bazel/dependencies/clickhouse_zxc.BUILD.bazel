@@ -6,7 +6,7 @@ exports_files([
     "LICENSE",
 ])
 
-_GENERATED_COPTS_0 = [
+_ZXC_COPTS = [
     "-w",
     "-std=gnu11",
 ]
@@ -26,7 +26,7 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ],
-    copts = _GENERATED_COPTS_0,
+    copts = _ZXC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = [
@@ -39,7 +39,6 @@ ch_cc_library(
     local_includes = [
         "src/lib",
         "src/lib/vendors",
-    ] + [
         "include",
     ],
     deps = (select({
@@ -80,7 +79,7 @@ _GENERATED_TARGET_COMPATIBLE_WITH_0 = select({
     ],
 })
 
-_GENERATED_SRCS_0 = select({
+_ZXC_COMPRESS_SRCS = select({
     "@platforms//cpu:x86_64": [
         "src/lib/zxc_compress.c",
     ],
@@ -101,7 +100,7 @@ _GENERATED_COPTS_1 = select({
 
 ch_cc_library(
     name = "_zxc_compress_avx2",
-    srcs = _GENERATED_SRCS_0,
+    srcs = _ZXC_COMPRESS_SRCS,
     hdrs = select({
         "@platforms//cpu:x86_64": glob([
             "include/**/*.h",
@@ -170,7 +169,7 @@ _GENERATED_COPTS_2 = select({
 
 ch_cc_library(
     name = "_zxc_compress_avx512",
-    srcs = _GENERATED_SRCS_0,
+    srcs = _ZXC_COMPRESS_SRCS,
     hdrs = select({
         "@platforms//cpu:x86_64": glob([
             "include/**/*.h",
@@ -232,7 +231,7 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ],
-    copts = _GENERATED_COPTS_0,
+    copts = _ZXC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_2,
@@ -244,7 +243,7 @@ ch_cc_library(
     alwayslink = True,
 )
 
-_GENERATED_SRCS_1 = select({
+_ZXC_DECOMPRESS_SRCS = select({
     "@platforms//cpu:x86_64": [
         "src/lib/zxc_decompress.c",
     ],
@@ -253,7 +252,7 @@ _GENERATED_SRCS_1 = select({
 
 ch_cc_library(
     name = "_zxc_decompress_avx2",
-    srcs = _GENERATED_SRCS_1,
+    srcs = _ZXC_DECOMPRESS_SRCS,
     hdrs = select({
         "@platforms//cpu:x86_64": glob([
             "include/**/*.h",
@@ -295,7 +294,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "_zxc_decompress_avx512",
-    srcs = _GENERATED_SRCS_1,
+    srcs = _ZXC_DECOMPRESS_SRCS,
     hdrs = select({
         "@platforms//cpu:x86_64": glob([
             "include/**/*.h",
@@ -348,7 +347,7 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ],
-    copts = _GENERATED_COPTS_0,
+    copts = _ZXC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_2,
@@ -360,7 +359,7 @@ ch_cc_library(
     alwayslink = True,
 )
 
-_GENERATED_SRCS_2 = select({
+_ZXC_HUFFMAN_SRCS = select({
     "@platforms//cpu:x86_64": [
         "src/lib/zxc_huffman.c",
     ],
@@ -369,7 +368,7 @@ _GENERATED_SRCS_2 = select({
 
 ch_cc_library(
     name = "_zxc_huffman_avx2",
-    srcs = _GENERATED_SRCS_2,
+    srcs = _ZXC_HUFFMAN_SRCS,
     hdrs = select({
         "@platforms//cpu:x86_64": glob([
             "include/**/*.h",
@@ -411,7 +410,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "_zxc_huffman_avx512",
-    srcs = _GENERATED_SRCS_2,
+    srcs = _ZXC_HUFFMAN_SRCS,
     hdrs = select({
         "@platforms//cpu:x86_64": glob([
             "include/**/*.h",
@@ -464,7 +463,7 @@ ch_cc_library(
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
     ],
-    copts = _GENERATED_COPTS_0,
+    copts = _ZXC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_2,

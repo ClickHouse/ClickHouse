@@ -100,7 +100,6 @@ ch_cc_library(
     ],
     includes = [
         "lib/cpp/src",
-    ] + [
         "config/contrib/thrift-cmake",
     ],
     local_defines = [

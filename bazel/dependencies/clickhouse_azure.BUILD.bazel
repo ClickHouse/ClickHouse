@@ -29,21 +29,7 @@ ch_cc_library(
         "sdk/core/azure-core/src/resource_identifier.cpp",
         "sdk/core/azure-core/src/tracing/tracing.cpp",
         "sdk/core/azure-core/src/uuid.cpp",
-    ] + glob(["sdk/identity/azure-identity/src/*.cpp"]) + [
-        "sdk/storage/azure-storage-blobs/src/append_blob_client.cpp",
-        "sdk/storage/azure-storage-blobs/src/blob_batch.cpp",
-        "sdk/storage/azure-storage-blobs/src/blob_client.cpp",
-        "sdk/storage/azure-storage-blobs/src/blob_container_client.cpp",
-        "sdk/storage/azure-storage-blobs/src/blob_lease_client.cpp",
-        "sdk/storage/azure-storage-blobs/src/blob_options.cpp",
-        "sdk/storage/azure-storage-blobs/src/blob_responses.cpp",
-        "sdk/storage/azure-storage-blobs/src/blob_sas_builder.cpp",
-        "sdk/storage/azure-storage-blobs/src/blob_service_client.cpp",
-        "sdk/storage/azure-storage-blobs/src/block_blob_client.cpp",
-        "sdk/storage/azure-storage-blobs/src/page_blob_client.cpp",
-        "sdk/storage/azure-storage-blobs/src/private/avro_parser.cpp",
-        "sdk/storage/azure-storage-blobs/src/rest_client.cpp",
-    ] + glob(["sdk/storage/azure-storage-common/src/*.cpp"]) + glob(["sdk/storage/azure-storage-files-datalake/src/*.cpp"])) + glob([
+    ] + glob(["sdk/identity/azure-identity/src/*.cpp"]) + glob(["sdk/storage/azure-storage-blobs/src/**/*.cpp"]) + glob(["sdk/storage/azure-storage-common/src/*.cpp"]) + glob(["sdk/storage/azure-storage-files-datalake/src/*.cpp"])) + glob([
         "sdk/core/azure-core/src/**/*.hpp",
         "sdk/identity/azure-identity/src/**/*.hpp",
         "sdk/storage/azure-storage-blobs/src/**/*.hpp",

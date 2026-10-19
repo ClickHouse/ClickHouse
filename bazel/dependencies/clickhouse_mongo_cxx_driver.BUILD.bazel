@@ -226,22 +226,21 @@ ch_cc_library(
         "-std=c++23",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = ([
+    local_includes = [
         "src/bsoncxx/include",
         "src/bsoncxx/include/bsoncxx/v_noabi",
         "src/bsoncxx/lib",
         "src/bsoncxx/lib/bsoncxx/v_noabi",
-    ] + [
         "config/contrib/mongo-cxx-driver/src/bsoncxx/lib",
         "config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi",
-    ]),
+    ],
     deps = ["@clickhouse_mongo_c_driver//:_libbson"],
     alwayslink = False,
 )
 
 ch_cc_library(
     name = "_mongocxx",
-    srcs = ([
+    srcs = (([
         "src/mongocxx/lib/mongocxx/private/mongoc.cpp",
         "src/mongocxx/lib/mongocxx/private/scoped_bson.cpp",
         "src/mongocxx/lib/mongocxx/v1/aggregate_options.cpp",
@@ -250,42 +249,28 @@ ch_cc_library(
         "src/mongocxx/lib/mongocxx/v1/bulk_write.cpp",
         "src/mongocxx/lib/mongocxx/v1/change_stream.cpp",
         "src/mongocxx/lib/mongocxx/v1/client.cpp",
-        "src/mongocxx/lib/mongocxx/v1/client_bulk_write.cpp",
-        "src/mongocxx/lib/mongocxx/v1/client_encryption.cpp",
-        "src/mongocxx/lib/mongocxx/v1/client_session.cpp",
+    ] + glob(["src/mongocxx/lib/mongocxx/v1/client_*.cpp"]) + [
         "src/mongocxx/lib/mongocxx/v1/collection.cpp",
-    ] + glob(["src/mongocxx/lib/mongocxx/v1/config/*.cpp"]) + [
+    ]) + glob(["src/mongocxx/lib/mongocxx/v1/config/*.cpp"]) + ([
         "src/mongocxx/lib/mongocxx/v1/count_options.cpp",
         "src/mongocxx/lib/mongocxx/v1/cursor.cpp",
         "src/mongocxx/lib/mongocxx/v1/data_key_options.cpp",
         "src/mongocxx/lib/mongocxx/v1/database.cpp",
-        "src/mongocxx/lib/mongocxx/v1/delete_many_options.cpp",
-        "src/mongocxx/lib/mongocxx/v1/delete_many_result.cpp",
-        "src/mongocxx/lib/mongocxx/v1/delete_one_options.cpp",
-        "src/mongocxx/lib/mongocxx/v1/delete_one_result.cpp",
+    ] + glob(["src/mongocxx/lib/mongocxx/v1/delete_*.cpp"]) + [
         "src/mongocxx/lib/mongocxx/v1/detail/postlude.cpp",
         "src/mongocxx/lib/mongocxx/v1/detail/prelude.cpp",
         "src/mongocxx/lib/mongocxx/v1/distinct_options.cpp",
         "src/mongocxx/lib/mongocxx/v1/encrypt_options.cpp",
         "src/mongocxx/lib/mongocxx/v1/estimated_document_count_options.cpp",
-    ] + glob(["src/mongocxx/lib/mongocxx/v1/events/*.cpp"]) + [
+    ]) + glob(["src/mongocxx/lib/mongocxx/v1/events/*.cpp"]) + ([
         "src/mongocxx/lib/mongocxx/v1/exception.cpp",
-        "src/mongocxx/lib/mongocxx/v1/find_one_and_delete_options.cpp",
-        "src/mongocxx/lib/mongocxx/v1/find_one_and_replace_options.cpp",
-        "src/mongocxx/lib/mongocxx/v1/find_one_and_update_options.cpp",
-        "src/mongocxx/lib/mongocxx/v1/find_options.cpp",
-    ] + glob(["src/mongocxx/lib/mongocxx/v1/gridfs/*.cpp"]) + [
+    ] + glob(["src/mongocxx/lib/mongocxx/v1/find_*.cpp"])) + glob(["src/mongocxx/lib/mongocxx/v1/gridfs/*.cpp"]) + ([
         "src/mongocxx/lib/mongocxx/v1/hint.cpp",
         "src/mongocxx/lib/mongocxx/v1/indexes.cpp",
-        "src/mongocxx/lib/mongocxx/v1/insert_many_options.cpp",
-        "src/mongocxx/lib/mongocxx/v1/insert_many_result.cpp",
-        "src/mongocxx/lib/mongocxx/v1/insert_one_options.cpp",
-        "src/mongocxx/lib/mongocxx/v1/insert_one_result.cpp",
+    ] + glob(["src/mongocxx/lib/mongocxx/v1/insert_*.cpp"]) + [
         "src/mongocxx/lib/mongocxx/v1/instance.cpp",
         "src/mongocxx/lib/mongocxx/v1/logger.cpp",
-        "src/mongocxx/lib/mongocxx/v1/oidc_callback.cpp",
-        "src/mongocxx/lib/mongocxx/v1/oidc_callback_params.cpp",
-        "src/mongocxx/lib/mongocxx/v1/oidc_credential.cpp",
+    ] + glob(["src/mongocxx/lib/mongocxx/v1/oidc_*.cpp"]) + [
         "src/mongocxx/lib/mongocxx/v1/pipeline.cpp",
         "src/mongocxx/lib/mongocxx/v1/pool.cpp",
         "src/mongocxx/lib/mongocxx/v1/range_options.cpp",
@@ -303,10 +288,7 @@ ch_cc_library(
         "src/mongocxx/lib/mongocxx/v1/text_options.cpp",
         "src/mongocxx/lib/mongocxx/v1/tls.cpp",
         "src/mongocxx/lib/mongocxx/v1/transaction_options.cpp",
-        "src/mongocxx/lib/mongocxx/v1/update_many_options.cpp",
-        "src/mongocxx/lib/mongocxx/v1/update_many_result.cpp",
-        "src/mongocxx/lib/mongocxx/v1/update_one_options.cpp",
-        "src/mongocxx/lib/mongocxx/v1/update_one_result.cpp",
+    ] + glob(["src/mongocxx/lib/mongocxx/v1/update_*.cpp"]) + [
         "src/mongocxx/lib/mongocxx/v1/uri.cpp",
         "src/mongocxx/lib/mongocxx/v1/write_concern.cpp",
         "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/bulk_write.cpp",
@@ -315,7 +297,7 @@ ch_cc_library(
         "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/client_encryption.cpp",
         "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/client_session.cpp",
         "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/collection.cpp",
-    ] + glob(["src/mongocxx/lib/mongocxx/v_noabi/mongocxx/config/*.cpp"]) + [
+    ]) + glob(["src/mongocxx/lib/mongocxx/v_noabi/mongocxx/config/*.cpp"]) + [
         "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/conversions.cpp",
         "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/cursor.cpp",
         "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/database.cpp",
@@ -325,56 +307,18 @@ ch_cc_library(
         "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/index_view.cpp",
         "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/instance.cpp",
         "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/logger.cpp",
-    ] + glob(["src/mongocxx/lib/mongocxx/v_noabi/mongocxx/model/*.cpp"]) + [
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/aggregate.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/apm.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/auto_encryption.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/bulk_write.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/change_stream.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/client.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/client_encryption.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/client_session.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/count.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/data_key.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/delete.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/distinct.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/encrypt.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/estimated_document_count.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/find.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/find_one_and_delete.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/find_one_and_replace.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/find_one_and_update.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/gridfs/bucket.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/gridfs/upload.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/index.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/index_view.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/insert.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/pool.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/range.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/replace.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/rewrap_many_datakey.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/server_api.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/tls.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/transaction.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/update.cpp",
+    ] + glob(["src/mongocxx/lib/mongocxx/v_noabi/mongocxx/model/*.cpp"]) + (glob(["src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/**/*.cpp"]) + [
         "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/pipeline.cpp",
         "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/pool.cpp",
         "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/read_concern.cpp",
         "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/read_preference.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/result/bulk_write.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/result/delete.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/result/gridfs/upload.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/result/insert_many.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/result/insert_one.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/result/replace_one.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/result/rewrap_many_datakey.cpp",
-        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/result/update.cpp",
+    ] + glob(["src/mongocxx/lib/mongocxx/v_noabi/mongocxx/result/**/*.cpp"]) + [
         "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/search_index_model.cpp",
         "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/search_index_view.cpp",
         "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/uri.cpp",
         "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/validation_criteria.cpp",
         "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/write_concern.cpp",
-    ]),
+    ])),
     hdrs = [
         ":config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/private/config/config.hh",
         ":config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/config/config.hpp",
@@ -394,12 +338,11 @@ ch_cc_library(
         repository_path("contrib/zstd") + "/lib",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = ([
+    local_includes = [
         "src/mongocxx/include",
         "src/mongocxx/include/mongocxx/v_noabi",
         "src/mongocxx/lib",
         "src/mongocxx/lib/mongocxx/v_noabi",
-    ] + [
         "config/contrib/mongo-cxx-driver/src/mongocxx/lib",
         "config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi",
         "src/bsoncxx/include",
@@ -412,7 +355,7 @@ ch_cc_library(
             "$(GENDIR)/" + repository_path("contrib/mongo-c-driver") + "/config/contrib/mongo-c-driver/src/libmongoc/src",
             "contrib/mongo-cxx-driver",
         ),
-    ]),
+    ],
     deps = [
         ":_bsoncxx",
         "@clickhouse_mongo_c_driver//:_libmongoc",

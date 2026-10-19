@@ -15,17 +15,13 @@ ch_cc_library(
         "src/liblzma/check/crc32_fast.c",
         "src/liblzma/check/crc64_fast.c",
         "src/liblzma/check/sha256.c",
-    ] + glob(["src/liblzma/common/*.c"]) + glob(["src/liblzma/delta/*.c"]) + glob(["src/liblzma/lz/*.c"]) + [
+    ] + glob(["src/liblzma/common/*.c"]) + glob(["src/liblzma/delta/*.c"]) + glob(["src/liblzma/lz/*.c"]) + ([
         "src/liblzma/lzma/fastpos_table.c",
         "src/liblzma/lzma/lzma2_decoder.c",
         "src/liblzma/lzma/lzma2_encoder.c",
-        "src/liblzma/lzma/lzma_decoder.c",
-        "src/liblzma/lzma/lzma_encoder.c",
-        "src/liblzma/lzma/lzma_encoder_optimum_fast.c",
-        "src/liblzma/lzma/lzma_encoder_optimum_normal.c",
-        "src/liblzma/lzma/lzma_encoder_presets.c",
+    ] + glob(["src/liblzma/lzma/lzma_*.c"]) + [
         "src/liblzma/rangecoder/price_table.c",
-    ] + glob(["src/liblzma/simple/*.c"])) + glob([
+    ]) + glob(["src/liblzma/simple/*.c"])) + glob([
         "src/common/**/*.h",
         "src/liblzma/check/**/*.h",
         "src/liblzma/check/**/*.inc",

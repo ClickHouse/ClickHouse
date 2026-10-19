@@ -1035,9 +1035,7 @@ cc_library(
     ],
     includes = [
         "llvm/include",
-    ] + [
         "gen/llvm/include",
-    ] + [
         "third-party/siphash/include",
     ],
     textual_hdrs = [
@@ -1083,32 +1081,29 @@ _GENERATED_ADDITIONAL_COMPILER_INPUTS_0 = [
     "@clickhouse_sysroot//:linux_compile_files",
 ]
 
-_GENERATED_COPTS_0 = [
+_LLVM_PROJECT_COPTS = [
     "-w",
     "-std=c++17",
     "-I",
     repository_path("contrib/llvm-project") + "/llvm/include",
     "-I",
+] + ([
+    "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/llvm/include",
+    "-I",
+    repository_path("contrib/llvm-project") + "/third-party/siphash/include",
+    "-I",
 ] + select({
     "@platforms//cpu:x86_64": [
-        "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/llvm/include",
-        "-I",
-        repository_path("contrib/llvm-project") + "/third-party/siphash/include",
-        "-I",
         "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/llvm/lib/Target/X86",
         "-I",
         repository_path("contrib/llvm-project") + "/llvm/lib/Target/X86",
     ],
     "@platforms//cpu:aarch64": [
-        "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/llvm/include",
-        "-I",
-        repository_path("contrib/llvm-project") + "/third-party/siphash/include",
-        "-I",
         "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/llvm/lib/Target/AArch64",
         "-I",
         repository_path("contrib/llvm-project") + "/llvm/lib/Target/AArch64",
     ],
-})
+}))
 
 _GENERATED_DEPS_3 = [
     ":llvm_headers",
@@ -1142,7 +1137,7 @@ ch_cc_library(
         "llvm/lib/Transforms/AggressiveInstCombine/TruncInstCombine.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMTransformUtils"],
@@ -1279,7 +1274,7 @@ ch_cc_library(
         "llvm/lib/Analysis/VectorUtils.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
@@ -1312,7 +1307,7 @@ ch_cc_library(
     name = "LLVMAsmParser",
     srcs = glob(["llvm/lib/AsmParser/*.cpp"]),
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMCore"],
@@ -1351,7 +1346,7 @@ ch_cc_library(
         "llvm/lib/CodeGen/AsmPrinter/WinException.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
@@ -1394,7 +1389,7 @@ ch_cc_library(
         "llvm/lib/BinaryFormat/XCOFF.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMSupport"],
@@ -1411,7 +1406,7 @@ ch_cc_library(
         "llvm/lib/Bitcode/Reader/ValueList.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMCore"],
@@ -1427,7 +1422,7 @@ ch_cc_library(
         "llvm/lib/Bitcode/Writer/ValueEnumerator.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMCore"],
@@ -1440,7 +1435,7 @@ ch_cc_library(
         "llvm/lib/Bitstream/Reader/BitstreamReader.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMSupport"],
@@ -1453,7 +1448,7 @@ ch_cc_library(
         "llvm/lib/Transforms/CFGuard/CFGuard.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMCore"],
@@ -1485,7 +1480,7 @@ ch_cc_library(
     name = "LLVMCGData",
     srcs = glob(["llvm/lib/CGData/*.cpp"]),
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMObject"],
@@ -1732,7 +1727,7 @@ ch_cc_library(
         "llvm/lib/CodeGen/XRayInstrumentation.cpp",
     ]),
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
@@ -1752,7 +1747,7 @@ ch_cc_library(
         "llvm/lib/CodeGenTypes/LowLevelType.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMSupport"],
@@ -1844,7 +1839,7 @@ ch_cc_library(
         "llvm/lib/IR/VFABIDemangler.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
@@ -1871,7 +1866,7 @@ ch_cc_library(
         "llvm/lib/Transforms/Coroutines/SuspendCrossingInfo.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMipo"],
@@ -1923,7 +1918,7 @@ ch_cc_library(
         "llvm/lib/DebugInfo/CodeView/TypeTableCollection.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMSupport"],
@@ -1964,7 +1959,7 @@ ch_cc_library(
         "llvm/lib/DebugInfo/DWARF/DWARFVerifier.cpp",
     ] + glob(["llvm/lib/DebugInfo/DWARF/LowLevel/*.cpp"])),
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMObject"],
@@ -1982,7 +1977,7 @@ ch_cc_library(
         "llvm/lib/Demangle/RustDemangle.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
@@ -2002,7 +1997,7 @@ ch_cc_library(
         "llvm/lib/ExecutionEngine/TargetSelect.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
@@ -2042,7 +2037,7 @@ ch_cc_library(
         "llvm/lib/Frontend/Atomic/Atomic.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMAnalysis"],
@@ -2053,7 +2048,7 @@ ch_cc_library(
     name = "LLVMFrontendHLSL",
     srcs = glob(["llvm/lib/Frontend/HLSL/*.cpp"]),
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMCore"],
@@ -2064,7 +2059,7 @@ ch_cc_library(
     name = "LLVMFrontendOffloading",
     srcs = glob(["llvm/lib/Frontend/Offloading/*.cpp"]),
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMCore"],
@@ -2075,7 +2070,7 @@ ch_cc_library(
     name = "LLVMFrontendOpenMP",
     srcs = glob(["llvm/lib/Frontend/OpenMP/*.cpp"]),
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
@@ -2153,7 +2148,7 @@ ch_cc_library(
         "llvm/lib/CodeGen/GlobalISel/Utils.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMCodeGen"],
@@ -2166,7 +2161,7 @@ ch_cc_library(
         "llvm/lib/Transforms/HipStdPar/HipStdPar.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMTransformUtils"],
@@ -2179,7 +2174,7 @@ ch_cc_library(
         "llvm/lib/IRPrinter/IRPrintingPasses.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMAnalysis"],
@@ -2192,7 +2187,7 @@ ch_cc_library(
         "llvm/lib/IRReader/IRReader.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
@@ -2206,7 +2201,7 @@ ch_cc_library(
     name = "LLVMInstCombine",
     srcs = glob(["llvm/lib/Transforms/InstCombine/*.cpp"]),
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMTransformUtils"],
@@ -2246,7 +2241,7 @@ ch_cc_library(
         "llvm/lib/Transforms/Instrumentation/ValueProfileCollector.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMTransformUtils"],
@@ -2260,7 +2255,7 @@ ch_cc_library(
         "llvm/lib/Linker/LinkModules.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMTransformUtils"],
@@ -2357,7 +2352,7 @@ ch_cc_library(
         "llvm/lib/MC/XCOFFObjectWriter.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
@@ -2387,7 +2382,7 @@ ch_cc_library(
     name = "LLVMMCDisassembler",
     srcs = glob(["llvm/lib/MC/MCDisassembler/*.cpp"]),
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMMC"],
@@ -2412,7 +2407,7 @@ ch_cc_library(
         "llvm/lib/MC/MCParser/XCOFFAsmParser.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMMC"],
@@ -2423,7 +2418,7 @@ ch_cc_library(
     name = "LLVMObjCARCOpts",
     srcs = glob(["llvm/lib/Transforms/ObjCARC/*.cpp"]),
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMTransformUtils"],
@@ -2471,7 +2466,7 @@ ch_cc_library(
         "llvm/lib/Object/XCOFFObjectFile.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
@@ -2516,7 +2511,7 @@ ch_cc_library(
         "llvm/lib/ObjectYAML/yaml2obj.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
@@ -2537,7 +2532,7 @@ ch_cc_library(
         "llvm/lib/Passes/StandardInstrumentations.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
@@ -2575,7 +2570,7 @@ ch_cc_library(
         "llvm/lib/ProfileData/SymbolRemappingReader.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMCore"],
@@ -2586,7 +2581,7 @@ ch_cc_library(
     name = "LLVMRemarks",
     srcs = glob(["llvm/lib/Remarks/*.cpp"]),
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMBitstreamReader"],
@@ -2606,7 +2601,7 @@ ch_cc_library(
         "llvm/lib/ExecutionEngine/RuntimeDyld/Targets/RuntimeDyldELFMips.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMObject"],
@@ -2617,7 +2612,7 @@ ch_cc_library(
     name = "LLVMSandboxIR",
     srcs = glob(["llvm/lib/SandboxIR/*.cpp"]),
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMCore"],
@@ -2710,7 +2705,7 @@ ch_cc_library(
         "llvm/lib/Transforms/Scalar/WarnMissedTransforms.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMTransformUtils"],
@@ -2748,7 +2743,7 @@ ch_cc_library(
         "llvm/lib/CodeGen/SelectionDAG/TargetLowering.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMCodeGen"],
@@ -2927,7 +2922,7 @@ ch_cc_library(
         "llvm/lib/Support/zOSLibFunctions.cpp",
     ]),
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
@@ -2952,26 +2947,23 @@ ch_cc_library(
         "-I",
         repository_path("contrib/llvm-project") + "/llvm/include",
         "-I",
+    ] + ([
+        "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/llvm/include",
+        "-I",
+        repository_path("contrib/llvm-project") + "/third-party/siphash/include",
+        "-I",
     ] + select({
         "@platforms//cpu:x86_64": [
-            "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/llvm/include",
-            "-I",
-            repository_path("contrib/llvm-project") + "/third-party/siphash/include",
-            "-I",
             "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/llvm/lib/Target/X86",
             "-I",
             repository_path("contrib/llvm-project") + "/llvm/lib/Target/X86",
         ],
         "@platforms//cpu:aarch64": [
-            "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/llvm/include",
-            "-I",
-            repository_path("contrib/llvm-project") + "/third-party/siphash/include",
-            "-I",
             "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/llvm/lib/Target/AArch64",
             "-I",
             repository_path("contrib/llvm-project") + "/llvm/lib/Target/AArch64",
         ],
-    })),
+    }))),
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -3144,7 +3136,7 @@ ch_cc_library(
         "llvm/lib/Target/TargetMachine.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMAnalysis"],
@@ -3171,7 +3163,7 @@ ch_cc_library(
         "llvm/lib/TargetParser/XtensaTargetParser.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMSupport"],
@@ -3198,7 +3190,7 @@ ch_cc_library(
         "llvm/lib/TextAPI/Utils.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
@@ -3307,7 +3299,7 @@ ch_cc_library(
         "llvm/lib/Transforms/Utils/VNCoercion.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMAnalysis"],
@@ -3346,7 +3338,7 @@ ch_cc_library(
         "llvm/lib/Transforms/Vectorize/VPlanVerifier.cpp",
     ]),
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMTransformUtils"],
@@ -3532,7 +3524,7 @@ ch_cc_library(
     name = "LLVMXRay",
     srcs = glob(["llvm/lib/XRay/*.cpp"]),
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMObject"],
@@ -3589,7 +3581,7 @@ ch_cc_library(
         "llvm/lib/Transforms/IPO/WholeProgramDevirt.cpp",
     ],
     copts = (
-        _GENERATED_COPTS_0
+        _LLVM_PROJECT_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
@@ -4552,101 +4544,115 @@ cmake_runtime_objects(
         "compiler-rt/lib/builtins/fixunssfdi.c",
         "compiler-rt/lib/builtins/fixunssfsi.c",
         "compiler-rt/lib/builtins/fixunssfti.c",
+    ] + (select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "compiler-rt/lib/builtins/floatdidf.c",
+            "compiler-rt/lib/builtins/floatdisf.c",
+        ],
+    }) + [
+        "compiler-rt/lib/builtins/floatsidf.c",
+        "compiler-rt/lib/builtins/floatsisf.c",
+        "compiler-rt/lib/builtins/floattidf.c",
+        "compiler-rt/lib/builtins/floattisf.c",
+    ] + select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "compiler-rt/lib/builtins/floatundidf.c",
+            "compiler-rt/lib/builtins/floatundisf.c",
+        ],
+    }) + [
+        "compiler-rt/lib/builtins/floatunsidf.c",
+        "compiler-rt/lib/builtins/floatunsisf.c",
+        "compiler-rt/lib/builtins/floatuntidf.c",
+        "compiler-rt/lib/builtins/floatuntisf.c",
+        "compiler-rt/lib/builtins/int_util.c",
+        "compiler-rt/lib/builtins/lshrdi3.c",
+        "compiler-rt/lib/builtins/lshrti3.c",
+        "compiler-rt/lib/builtins/moddi3.c",
+        "compiler-rt/lib/builtins/modsi3.c",
+        "compiler-rt/lib/builtins/modti3.c",
+        "compiler-rt/lib/builtins/muldc3.c",
+        "compiler-rt/lib/builtins/muldf3.c",
+        "compiler-rt/lib/builtins/muldi3.c",
+        "compiler-rt/lib/builtins/mulodi4.c",
+        "compiler-rt/lib/builtins/mulosi4.c",
+        "compiler-rt/lib/builtins/muloti4.c",
+        "compiler-rt/lib/builtins/mulsc3.c",
+        "compiler-rt/lib/builtins/mulsf3.c",
+        "compiler-rt/lib/builtins/multi3.c",
+        "compiler-rt/lib/builtins/mulvdi3.c",
+        "compiler-rt/lib/builtins/mulvsi3.c",
+        "compiler-rt/lib/builtins/mulvti3.c",
+        "compiler-rt/lib/builtins/negdf2.c",
+        "compiler-rt/lib/builtins/negdi2.c",
+        "compiler-rt/lib/builtins/negsf2.c",
+        "compiler-rt/lib/builtins/negti2.c",
+        "compiler-rt/lib/builtins/negvdi2.c",
+        "compiler-rt/lib/builtins/negvsi2.c",
+        "compiler-rt/lib/builtins/negvti2.c",
+        "compiler-rt/lib/builtins/os_version_check.c",
+        "compiler-rt/lib/builtins/paritydi2.c",
+        "compiler-rt/lib/builtins/paritysi2.c",
+        "compiler-rt/lib/builtins/parityti2.c",
+        "compiler-rt/lib/builtins/popcountdi2.c",
+        "compiler-rt/lib/builtins/popcountsi2.c",
+        "compiler-rt/lib/builtins/popcountti2.c",
+        "compiler-rt/lib/builtins/powidf2.c",
+        "compiler-rt/lib/builtins/powisf2.c",
+        "compiler-rt/lib/builtins/subdf3.c",
+        "compiler-rt/lib/builtins/subsf3.c",
+        "compiler-rt/lib/builtins/subvdi3.c",
+        "compiler-rt/lib/builtins/subvsi3.c",
+        "compiler-rt/lib/builtins/subvti3.c",
+        "compiler-rt/lib/builtins/trampoline_setup.c",
+        "compiler-rt/lib/builtins/truncdfhf2.c",
+        "compiler-rt/lib/builtins/truncdfsf2.c",
+        "compiler-rt/lib/builtins/truncsfhf2.c",
+        "compiler-rt/lib/builtins/ucmpdi2.c",
+        "compiler-rt/lib/builtins/ucmpti2.c",
+        "compiler-rt/lib/builtins/udivdi3.c",
+        "compiler-rt/lib/builtins/udivmoddi4.c",
+        "compiler-rt/lib/builtins/udivmodsi4.c",
+        "compiler-rt/lib/builtins/udivmodti4.c",
+        "compiler-rt/lib/builtins/udivsi3.c",
+        "compiler-rt/lib/builtins/udivti3.c",
+        "compiler-rt/lib/builtins/umoddi3.c",
+        "compiler-rt/lib/builtins/umodsi3.c",
+        "compiler-rt/lib/builtins/umodti3.c",
+        "compiler-rt/lib/builtins/emutls.c",
+        "compiler-rt/lib/builtins/enable_execute_stack.c",
+        "compiler-rt/lib/builtins/eprintf.c",
+        "compiler-rt/lib/builtins/gcc_personality_v0.c",
+        "compiler-rt/lib/builtins/clear_cache.c",
+        "compiler-rt/lib/builtins/addtf3.c",
+        "compiler-rt/lib/builtins/comparetf2.c",
+        "compiler-rt/lib/builtins/divtc3.c",
+        "compiler-rt/lib/builtins/divtf3.c",
+        "compiler-rt/lib/builtins/extenddftf2.c",
+        "compiler-rt/lib/builtins/extendhftf2.c",
+        "compiler-rt/lib/builtins/extendsftf2.c",
+        "compiler-rt/lib/builtins/fixtfdi.c",
+        "compiler-rt/lib/builtins/fixtfsi.c",
+        "compiler-rt/lib/builtins/fixtfti.c",
+        "compiler-rt/lib/builtins/fixunstfdi.c",
+        "compiler-rt/lib/builtins/fixunstfsi.c",
+        "compiler-rt/lib/builtins/fixunstfti.c",
+        "compiler-rt/lib/builtins/floatditf.c",
+        "compiler-rt/lib/builtins/floatsitf.c",
+        "compiler-rt/lib/builtins/floattitf.c",
+        "compiler-rt/lib/builtins/floatunditf.c",
+        "compiler-rt/lib/builtins/floatunsitf.c",
+        "compiler-rt/lib/builtins/floatuntitf.c",
+        "compiler-rt/lib/builtins/multc3.c",
+        "compiler-rt/lib/builtins/multf3.c",
+        "compiler-rt/lib/builtins/powitf2.c",
+        "compiler-rt/lib/builtins/subtf3.c",
+        "compiler-rt/lib/builtins/trunctfdf2.c",
+        "compiler-rt/lib/builtins/trunctfhf2.c",
+        "compiler-rt/lib/builtins/trunctfsf2.c",
     ] + select({
         "@platforms//cpu:x86_64": [
-            "compiler-rt/lib/builtins/floatsidf.c",
-            "compiler-rt/lib/builtins/floatsisf.c",
-            "compiler-rt/lib/builtins/floattidf.c",
-            "compiler-rt/lib/builtins/floattisf.c",
-            "compiler-rt/lib/builtins/floatunsidf.c",
-            "compiler-rt/lib/builtins/floatunsisf.c",
-            "compiler-rt/lib/builtins/floatuntidf.c",
-            "compiler-rt/lib/builtins/floatuntisf.c",
-            "compiler-rt/lib/builtins/int_util.c",
-            "compiler-rt/lib/builtins/lshrdi3.c",
-            "compiler-rt/lib/builtins/lshrti3.c",
-            "compiler-rt/lib/builtins/moddi3.c",
-            "compiler-rt/lib/builtins/modsi3.c",
-            "compiler-rt/lib/builtins/modti3.c",
-            "compiler-rt/lib/builtins/muldc3.c",
-            "compiler-rt/lib/builtins/muldf3.c",
-            "compiler-rt/lib/builtins/muldi3.c",
-            "compiler-rt/lib/builtins/mulodi4.c",
-            "compiler-rt/lib/builtins/mulosi4.c",
-            "compiler-rt/lib/builtins/muloti4.c",
-            "compiler-rt/lib/builtins/mulsc3.c",
-            "compiler-rt/lib/builtins/mulsf3.c",
-            "compiler-rt/lib/builtins/multi3.c",
-            "compiler-rt/lib/builtins/mulvdi3.c",
-            "compiler-rt/lib/builtins/mulvsi3.c",
-            "compiler-rt/lib/builtins/mulvti3.c",
-            "compiler-rt/lib/builtins/negdf2.c",
-            "compiler-rt/lib/builtins/negdi2.c",
-            "compiler-rt/lib/builtins/negsf2.c",
-            "compiler-rt/lib/builtins/negti2.c",
-            "compiler-rt/lib/builtins/negvdi2.c",
-            "compiler-rt/lib/builtins/negvsi2.c",
-            "compiler-rt/lib/builtins/negvti2.c",
-            "compiler-rt/lib/builtins/os_version_check.c",
-            "compiler-rt/lib/builtins/paritydi2.c",
-            "compiler-rt/lib/builtins/paritysi2.c",
-            "compiler-rt/lib/builtins/parityti2.c",
-            "compiler-rt/lib/builtins/popcountdi2.c",
-            "compiler-rt/lib/builtins/popcountsi2.c",
-            "compiler-rt/lib/builtins/popcountti2.c",
-            "compiler-rt/lib/builtins/powidf2.c",
-            "compiler-rt/lib/builtins/powisf2.c",
-            "compiler-rt/lib/builtins/subdf3.c",
-            "compiler-rt/lib/builtins/subsf3.c",
-            "compiler-rt/lib/builtins/subvdi3.c",
-            "compiler-rt/lib/builtins/subvsi3.c",
-            "compiler-rt/lib/builtins/subvti3.c",
-            "compiler-rt/lib/builtins/trampoline_setup.c",
-            "compiler-rt/lib/builtins/truncdfhf2.c",
-            "compiler-rt/lib/builtins/truncdfsf2.c",
-            "compiler-rt/lib/builtins/truncsfhf2.c",
-            "compiler-rt/lib/builtins/ucmpdi2.c",
-            "compiler-rt/lib/builtins/ucmpti2.c",
-            "compiler-rt/lib/builtins/udivdi3.c",
-            "compiler-rt/lib/builtins/udivmoddi4.c",
-            "compiler-rt/lib/builtins/udivmodsi4.c",
-            "compiler-rt/lib/builtins/udivmodti4.c",
-            "compiler-rt/lib/builtins/udivsi3.c",
-            "compiler-rt/lib/builtins/udivti3.c",
-            "compiler-rt/lib/builtins/umoddi3.c",
-            "compiler-rt/lib/builtins/umodsi3.c",
-            "compiler-rt/lib/builtins/umodti3.c",
-            "compiler-rt/lib/builtins/emutls.c",
-            "compiler-rt/lib/builtins/enable_execute_stack.c",
-            "compiler-rt/lib/builtins/eprintf.c",
-            "compiler-rt/lib/builtins/gcc_personality_v0.c",
-            "compiler-rt/lib/builtins/clear_cache.c",
-            "compiler-rt/lib/builtins/addtf3.c",
-            "compiler-rt/lib/builtins/comparetf2.c",
-            "compiler-rt/lib/builtins/divtc3.c",
-            "compiler-rt/lib/builtins/divtf3.c",
-            "compiler-rt/lib/builtins/extenddftf2.c",
-            "compiler-rt/lib/builtins/extendhftf2.c",
-            "compiler-rt/lib/builtins/extendsftf2.c",
-            "compiler-rt/lib/builtins/fixtfdi.c",
-            "compiler-rt/lib/builtins/fixtfsi.c",
-            "compiler-rt/lib/builtins/fixtfti.c",
-            "compiler-rt/lib/builtins/fixunstfdi.c",
-            "compiler-rt/lib/builtins/fixunstfsi.c",
-            "compiler-rt/lib/builtins/fixunstfti.c",
-            "compiler-rt/lib/builtins/floatditf.c",
-            "compiler-rt/lib/builtins/floatsitf.c",
-            "compiler-rt/lib/builtins/floattitf.c",
-            "compiler-rt/lib/builtins/floatunditf.c",
-            "compiler-rt/lib/builtins/floatunsitf.c",
-            "compiler-rt/lib/builtins/floatuntitf.c",
-            "compiler-rt/lib/builtins/multc3.c",
-            "compiler-rt/lib/builtins/multf3.c",
-            "compiler-rt/lib/builtins/powitf2.c",
-            "compiler-rt/lib/builtins/subtf3.c",
-            "compiler-rt/lib/builtins/trunctfdf2.c",
-            "compiler-rt/lib/builtins/trunctfhf2.c",
-            "compiler-rt/lib/builtins/trunctfsf2.c",
             "compiler-rt/lib/builtins/divxc3.c",
             "compiler-rt/lib/builtins/extendhfxf2.c",
             "compiler-rt/lib/builtins/extendxftf2.c",
@@ -4668,107 +4674,10 @@ cmake_runtime_objects(
             "compiler-rt/lib/builtins/x86_64/floatdixf.c",
         ],
         "@platforms//cpu:aarch64": [
-            "compiler-rt/lib/builtins/floatdidf.c",
-            "compiler-rt/lib/builtins/floatdisf.c",
-            "compiler-rt/lib/builtins/floatsidf.c",
-            "compiler-rt/lib/builtins/floatsisf.c",
-            "compiler-rt/lib/builtins/floattidf.c",
-            "compiler-rt/lib/builtins/floattisf.c",
-            "compiler-rt/lib/builtins/floatundidf.c",
-            "compiler-rt/lib/builtins/floatundisf.c",
-            "compiler-rt/lib/builtins/floatunsidf.c",
-            "compiler-rt/lib/builtins/floatunsisf.c",
-            "compiler-rt/lib/builtins/floatuntidf.c",
-            "compiler-rt/lib/builtins/floatuntisf.c",
-            "compiler-rt/lib/builtins/int_util.c",
-            "compiler-rt/lib/builtins/lshrdi3.c",
-            "compiler-rt/lib/builtins/lshrti3.c",
-            "compiler-rt/lib/builtins/moddi3.c",
-            "compiler-rt/lib/builtins/modsi3.c",
-            "compiler-rt/lib/builtins/modti3.c",
-            "compiler-rt/lib/builtins/muldc3.c",
-            "compiler-rt/lib/builtins/muldf3.c",
-            "compiler-rt/lib/builtins/muldi3.c",
-            "compiler-rt/lib/builtins/mulodi4.c",
-            "compiler-rt/lib/builtins/mulosi4.c",
-            "compiler-rt/lib/builtins/muloti4.c",
-            "compiler-rt/lib/builtins/mulsc3.c",
-            "compiler-rt/lib/builtins/mulsf3.c",
-            "compiler-rt/lib/builtins/multi3.c",
-            "compiler-rt/lib/builtins/mulvdi3.c",
-            "compiler-rt/lib/builtins/mulvsi3.c",
-            "compiler-rt/lib/builtins/mulvti3.c",
-            "compiler-rt/lib/builtins/negdf2.c",
-            "compiler-rt/lib/builtins/negdi2.c",
-            "compiler-rt/lib/builtins/negsf2.c",
-            "compiler-rt/lib/builtins/negti2.c",
-            "compiler-rt/lib/builtins/negvdi2.c",
-            "compiler-rt/lib/builtins/negvsi2.c",
-            "compiler-rt/lib/builtins/negvti2.c",
-            "compiler-rt/lib/builtins/os_version_check.c",
-            "compiler-rt/lib/builtins/paritydi2.c",
-            "compiler-rt/lib/builtins/paritysi2.c",
-            "compiler-rt/lib/builtins/parityti2.c",
-            "compiler-rt/lib/builtins/popcountdi2.c",
-            "compiler-rt/lib/builtins/popcountsi2.c",
-            "compiler-rt/lib/builtins/popcountti2.c",
-            "compiler-rt/lib/builtins/powidf2.c",
-            "compiler-rt/lib/builtins/powisf2.c",
-            "compiler-rt/lib/builtins/subdf3.c",
-            "compiler-rt/lib/builtins/subsf3.c",
-            "compiler-rt/lib/builtins/subvdi3.c",
-            "compiler-rt/lib/builtins/subvsi3.c",
-            "compiler-rt/lib/builtins/subvti3.c",
-            "compiler-rt/lib/builtins/trampoline_setup.c",
-            "compiler-rt/lib/builtins/truncdfhf2.c",
-            "compiler-rt/lib/builtins/truncdfsf2.c",
-            "compiler-rt/lib/builtins/truncsfhf2.c",
-            "compiler-rt/lib/builtins/ucmpdi2.c",
-            "compiler-rt/lib/builtins/ucmpti2.c",
-            "compiler-rt/lib/builtins/udivdi3.c",
-            "compiler-rt/lib/builtins/udivmoddi4.c",
-            "compiler-rt/lib/builtins/udivmodsi4.c",
-            "compiler-rt/lib/builtins/udivmodti4.c",
-            "compiler-rt/lib/builtins/udivsi3.c",
-            "compiler-rt/lib/builtins/udivti3.c",
-            "compiler-rt/lib/builtins/umoddi3.c",
-            "compiler-rt/lib/builtins/umodsi3.c",
-            "compiler-rt/lib/builtins/umodti3.c",
-            "compiler-rt/lib/builtins/emutls.c",
-            "compiler-rt/lib/builtins/enable_execute_stack.c",
-            "compiler-rt/lib/builtins/eprintf.c",
-            "compiler-rt/lib/builtins/gcc_personality_v0.c",
-            "compiler-rt/lib/builtins/clear_cache.c",
-            "compiler-rt/lib/builtins/addtf3.c",
-            "compiler-rt/lib/builtins/comparetf2.c",
-            "compiler-rt/lib/builtins/divtc3.c",
-            "compiler-rt/lib/builtins/divtf3.c",
-            "compiler-rt/lib/builtins/extenddftf2.c",
-            "compiler-rt/lib/builtins/extendhftf2.c",
-            "compiler-rt/lib/builtins/extendsftf2.c",
-            "compiler-rt/lib/builtins/fixtfdi.c",
-            "compiler-rt/lib/builtins/fixtfsi.c",
-            "compiler-rt/lib/builtins/fixtfti.c",
-            "compiler-rt/lib/builtins/fixunstfdi.c",
-            "compiler-rt/lib/builtins/fixunstfsi.c",
-            "compiler-rt/lib/builtins/fixunstfti.c",
-            "compiler-rt/lib/builtins/floatditf.c",
-            "compiler-rt/lib/builtins/floatsitf.c",
-            "compiler-rt/lib/builtins/floattitf.c",
-            "compiler-rt/lib/builtins/floatunditf.c",
-            "compiler-rt/lib/builtins/floatunsitf.c",
-            "compiler-rt/lib/builtins/floatuntitf.c",
-            "compiler-rt/lib/builtins/multc3.c",
-            "compiler-rt/lib/builtins/multf3.c",
-            "compiler-rt/lib/builtins/powitf2.c",
-            "compiler-rt/lib/builtins/subtf3.c",
-            "compiler-rt/lib/builtins/trunctfdf2.c",
-            "compiler-rt/lib/builtins/trunctfhf2.c",
-            "compiler-rt/lib/builtins/trunctfsf2.c",
             "compiler-rt/lib/builtins/cpu_model/aarch64.c",
             "compiler-rt/lib/builtins/aarch64/fp_mode.c",
         ],
-    }) + [
+    })) + [
         "compiler-rt/lib/builtins/extendbfsf2.c",
         "compiler-rt/lib/builtins/truncdfbf2.c",
         "compiler-rt/lib/builtins/truncxfbf2.c",
@@ -4782,55 +4691,36 @@ cmake_runtime_objects(
     }),
     copts = [
         "--no-default-config",
-    ] + select({
+    ] + (select({
         "@platforms//cpu:x86_64": [
             "-march=x86-64-v3",
             "-mpclmul",
-            "-std=c11",
-            "-D",
-            "OS_LINUX",
-            "-gz=zlib",
-            "-O3",
-            "-DNDEBUG",
-            "-fPIC",
-            "-fno-builtin",
-            "-fvisibility=hidden",
-            "-fomit-frame-pointer",
-            "-nostdinc++",
-            "-fno-sanitize=all",
-            "-w",
-            "-Werror",
-            "-I",
-            repository_path("contrib/llvm-project") + "/compiler-rt/lib/builtins",
-            "-I",
-            repository_path("contrib/llvm-project") + "/third-party/siphash/include",
-            "-I",
-            "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
         ],
         "@platforms//cpu:aarch64": [
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-            "-std=c11",
-            "-D",
-            "OS_LINUX",
-            "-gz=zlib",
-            "-O3",
-            "-DNDEBUG",
-            "-fPIC",
-            "-fno-builtin",
-            "-fvisibility=hidden",
-            "-fomit-frame-pointer",
-            "-nostdinc++",
-            "-fno-sanitize=all",
-            "-w",
-            "-Werror",
-            "-I",
-            repository_path("contrib/llvm-project") + "/compiler-rt/lib/builtins",
-            "-I",
-            repository_path("contrib/llvm-project") + "/third-party/siphash/include",
-            "-I",
-            "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
         ],
     }) + [
+        "-std=c11",
+        "-D",
+        "OS_LINUX",
+        "-gz=zlib",
+        "-O3",
+        "-DNDEBUG",
+        "-fPIC",
+        "-fno-builtin",
+        "-fvisibility=hidden",
+        "-fomit-frame-pointer",
+        "-nostdinc++",
+        "-fno-sanitize=all",
+        "-w",
+        "-Werror",
+        "-I",
+        repository_path("contrib/llvm-project") + "/compiler-rt/lib/builtins",
+        "-I",
+        repository_path("contrib/llvm-project") + "/third-party/siphash/include",
+        "-I",
+        "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
+    ]) + [
         "-I",
         repository_path("contrib/llvm-project") + "/libc",
         "-isystem",
@@ -4872,64 +4762,46 @@ cmake_runtime_objects(
     }),
     copts = [
         "--no-default-config",
-    ] + select({
+    ] + (select({
         "@platforms//cpu:x86_64": [
             "-march=x86-64-v3",
             "-mpclmul",
-            "-D",
-            "OS_LINUX",
-            "-gz=zlib",
-            "-O3",
-            "-DNDEBUG",
-            "-fPIC",
-            "-fno-builtin",
-            "-fvisibility=hidden",
-            "-fomit-frame-pointer",
-            "-nostdinc++",
-            "-fno-sanitize=all",
-            "-w",
-            "-Werror",
-            "-I",
-            repository_path("contrib/llvm-project") + "/compiler-rt/lib/builtins",
-            "-I",
-            repository_path("contrib/llvm-project") + "/third-party/siphash/include",
-            "-I",
-            "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
-            "-I",
-            repository_path("contrib/llvm-project") + "/libc",
-            "-isystem",
-            repository_path("contrib/llvm-project") + "/compiler-rt/include",
         ],
         "@platforms//cpu:aarch64": [
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
             "-std=c++17",
-            "-D",
-            "OS_LINUX",
-            "-gz=zlib",
-            "-O3",
-            "-DNDEBUG",
-            "-fPIC",
-            "-fno-builtin",
-            "-fvisibility=hidden",
-            "-fomit-frame-pointer",
-            "-nostdinc++",
-            "-fno-sanitize=all",
-            "-w",
-            "-Werror",
-            "-I",
-            repository_path("contrib/llvm-project") + "/compiler-rt/lib/builtins",
-            "-I",
-            repository_path("contrib/llvm-project") + "/third-party/siphash/include",
-            "-I",
-            "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
-            "-I",
-            repository_path("contrib/llvm-project") + "/libc",
-            "-isystem",
-            repository_path("contrib/llvm-project") + "/compiler-rt/include",
+        ],
+    }) + [
+        "-D",
+        "OS_LINUX",
+        "-gz=zlib",
+        "-O3",
+        "-DNDEBUG",
+        "-fPIC",
+        "-fno-builtin",
+        "-fvisibility=hidden",
+        "-fomit-frame-pointer",
+        "-nostdinc++",
+        "-fno-sanitize=all",
+        "-w",
+        "-Werror",
+        "-I",
+        repository_path("contrib/llvm-project") + "/compiler-rt/lib/builtins",
+        "-I",
+        repository_path("contrib/llvm-project") + "/third-party/siphash/include",
+        "-I",
+        "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
+        "-I",
+        repository_path("contrib/llvm-project") + "/libc",
+        "-isystem",
+        repository_path("contrib/llvm-project") + "/compiler-rt/include",
+    ] + select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
             "-isystem",
             repository_path("contrib/llvm-project") + "/libcxx/include",
         ],
-    }) + [
+    })) + [
         "-isystem",
         repository_path("contrib/llvm-project") + "/libcxxabi/include",
         "-isystem",
@@ -4966,7 +4838,7 @@ _GENERATED_HDRS_3 = select({
     ],
 })
 
-_GENERATED_COPTS_2 = select({
+_CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS = select({
     "@platforms//cpu:x86_64": [],
     "@platforms//cpu:aarch64": [
         "--no-default-config",
@@ -5016,7 +4888,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -5058,7 +4930,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -5100,7 +4972,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -5142,7 +5014,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -5184,7 +5056,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -5226,7 +5098,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -5268,7 +5140,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -5310,7 +5182,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -5352,7 +5224,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -5394,7 +5266,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -5436,7 +5308,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -5478,7 +5350,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -5520,7 +5392,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -5562,7 +5434,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -5604,7 +5476,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -5646,7 +5518,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -5688,7 +5560,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -5730,7 +5602,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -5772,7 +5644,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -5814,7 +5686,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -5856,7 +5728,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -5898,7 +5770,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -5940,7 +5812,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -5982,7 +5854,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -6024,7 +5896,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -6066,7 +5938,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -6108,7 +5980,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -6150,7 +6022,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -6192,7 +6064,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -6234,7 +6106,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -6276,7 +6148,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -6318,7 +6190,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -6360,7 +6232,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -6402,7 +6274,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -6444,7 +6316,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -6486,7 +6358,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -6528,7 +6400,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -6570,7 +6442,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -6612,7 +6484,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -6654,7 +6526,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -6696,7 +6568,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -6738,7 +6610,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -6780,7 +6652,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -6822,7 +6694,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -6864,7 +6736,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -6906,7 +6778,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -6948,7 +6820,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -6990,7 +6862,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -7032,7 +6904,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -7074,7 +6946,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -7116,7 +6988,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -7158,7 +7030,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -7200,7 +7072,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -7242,7 +7114,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -7284,7 +7156,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -7326,7 +7198,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -7368,7 +7240,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -7410,7 +7282,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -7452,7 +7324,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -7494,7 +7366,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -7536,7 +7408,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -7578,7 +7450,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -7620,7 +7492,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -7662,7 +7534,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -7704,7 +7576,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -7746,7 +7618,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -7788,7 +7660,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -7830,7 +7702,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -7872,7 +7744,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -7914,7 +7786,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -7956,7 +7828,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -7998,7 +7870,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -8040,7 +7912,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -8082,7 +7954,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -8124,7 +7996,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -8166,7 +8038,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -8208,7 +8080,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -8250,7 +8122,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -8292,7 +8164,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -8334,7 +8206,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -8376,7 +8248,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -8418,7 +8290,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -8460,7 +8332,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -8502,7 +8374,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -8544,7 +8416,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -8586,7 +8458,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -8628,7 +8500,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -8670,7 +8542,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -8712,7 +8584,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -8754,7 +8626,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -8796,7 +8668,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -8838,7 +8710,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -8880,7 +8752,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -8922,7 +8794,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -8964,7 +8836,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -9006,7 +8878,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -9048,7 +8920,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -9090,7 +8962,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -9132,7 +9004,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -9174,7 +9046,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -9216,7 +9088,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -9258,7 +9130,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -9300,7 +9172,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -9342,7 +9214,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -9384,7 +9256,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -9426,7 +9298,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -9468,7 +9340,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -9510,7 +9382,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -9552,7 +9424,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -9594,7 +9466,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -9636,7 +9508,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -9678,7 +9550,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -9720,7 +9592,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -9762,7 +9634,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -9804,7 +9676,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -9846,7 +9718,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -9888,7 +9760,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -9930,7 +9802,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -9972,7 +9844,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -10014,7 +9886,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -10056,7 +9928,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -10098,7 +9970,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -10140,7 +10012,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -10182,7 +10054,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -10224,7 +10096,7 @@ cmake_runtime_objects(
         "@platforms//cpu:x86_64": "x86_64",
         "@platforms//cpu:aarch64": "aarch64",
     }),
-    copts = _GENERATED_COPTS_2,
+    copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = select({
         "@platforms//cpu:x86_64": "C",
         "@platforms//cpu:aarch64": "ASM",
@@ -10476,63 +10348,40 @@ cmake_runtime_objects(
     }),
     copts = [
         "--no-default-config",
-    ] + select({
+    ] + (select({
         "@platforms//cpu:x86_64": [
             "-march=x86-64-v3",
             "-mpclmul",
-            "-std=c++23",
-            "-D",
-            "OS_LINUX",
-            "-gz=zlib",
-            "-O3",
-            "-DNDEBUG",
-            "-fPIC",
-            "-fno-builtin",
-            "-fno-exceptions",
-            "-fno-rtti",
-            "-fno-omit-frame-pointer",
-            "-funwind-tables",
-            "-fno-stack-protector",
-            "-fvisibility=hidden",
-            "-fno-sanitize=all",
-            "-w",
-            "-Werror",
-            "-nostdinc++",
-            "-I",
-            repository_path("contrib/llvm-project") + "/compiler-rt/lib",
-            "-I",
-            repository_path("contrib/llvm-project") + "/third-party/siphash/include",
-            "-I",
-            "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
         ],
         "@platforms//cpu:aarch64": [
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-            "-std=c++23",
-            "-D",
-            "OS_LINUX",
-            "-gz=zlib",
-            "-O3",
-            "-DNDEBUG",
-            "-fPIC",
-            "-fno-builtin",
-            "-fno-exceptions",
-            "-fno-rtti",
-            "-fno-omit-frame-pointer",
-            "-funwind-tables",
-            "-fno-stack-protector",
-            "-fvisibility=hidden",
-            "-fno-sanitize=all",
-            "-w",
-            "-Werror",
-            "-nostdinc++",
-            "-I",
-            repository_path("contrib/llvm-project") + "/compiler-rt/lib",
-            "-I",
-            repository_path("contrib/llvm-project") + "/third-party/siphash/include",
-            "-I",
-            "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
         ],
     }) + [
+        "-std=c++23",
+        "-D",
+        "OS_LINUX",
+        "-gz=zlib",
+        "-O3",
+        "-DNDEBUG",
+        "-fPIC",
+        "-fno-builtin",
+        "-fno-exceptions",
+        "-fno-rtti",
+        "-fno-omit-frame-pointer",
+        "-funwind-tables",
+        "-fno-stack-protector",
+        "-fvisibility=hidden",
+        "-fno-sanitize=all",
+        "-w",
+        "-Werror",
+        "-nostdinc++",
+        "-I",
+        repository_path("contrib/llvm-project") + "/compiler-rt/lib",
+        "-I",
+        repository_path("contrib/llvm-project") + "/third-party/siphash/include",
+        "-I",
+        "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
+    ]) + [
         "-I",
         repository_path("contrib/llvm-project") + "/libc",
         "-isystem",
@@ -10574,59 +10423,38 @@ cmake_runtime_objects(
     }),
     copts = [
         "--no-default-config",
-    ] + select({
+    ] + (select({
         "@platforms//cpu:x86_64": [
             "-march=x86-64-v3",
             "-mpclmul",
-            "-D",
-            "OS_LINUX",
-            "-gz=zlib",
-            "-O3",
-            "-DNDEBUG",
-            "-fPIC",
-            "-fno-builtin",
-            "-fno-exceptions",
-            "-fno-rtti",
-            "-fno-omit-frame-pointer",
-            "-funwind-tables",
-            "-fno-stack-protector",
-            "-fvisibility=hidden",
-            "-fno-sanitize=all",
-            "-w",
-            "-Werror",
-            "-I",
-            repository_path("contrib/llvm-project") + "/compiler-rt/lib",
-            "-I",
-            repository_path("contrib/llvm-project") + "/third-party/siphash/include",
-            "-I",
-            "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
         ],
         "@platforms//cpu:aarch64": [
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-            "-D",
-            "OS_LINUX",
-            "-gz=zlib",
-            "-O3",
-            "-DNDEBUG",
-            "-fPIC",
-            "-fno-builtin",
-            "-fno-exceptions",
-            "-fno-rtti",
-            "-fno-omit-frame-pointer",
-            "-funwind-tables",
-            "-fno-stack-protector",
-            "-fvisibility=hidden",
-            "-fno-sanitize=all",
-            "-w",
-            "-Werror",
-            "-I",
-            repository_path("contrib/llvm-project") + "/compiler-rt/lib",
-            "-I",
-            repository_path("contrib/llvm-project") + "/third-party/siphash/include",
-            "-I",
-            "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
         ],
     }) + [
+        "-D",
+        "OS_LINUX",
+        "-gz=zlib",
+        "-O3",
+        "-DNDEBUG",
+        "-fPIC",
+        "-fno-builtin",
+        "-fno-exceptions",
+        "-fno-rtti",
+        "-fno-omit-frame-pointer",
+        "-funwind-tables",
+        "-fno-stack-protector",
+        "-fvisibility=hidden",
+        "-fno-sanitize=all",
+        "-w",
+        "-Werror",
+        "-I",
+        repository_path("contrib/llvm-project") + "/compiler-rt/lib",
+        "-I",
+        repository_path("contrib/llvm-project") + "/third-party/siphash/include",
+        "-I",
+        "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
+    ]) + [
         "-I",
         repository_path("contrib/llvm-project") + "/libc",
         "-isystem",
@@ -10727,66 +10555,47 @@ cmake_runtime_objects(
         "--no-default-config",
         "-fdiagnostics-color=always",
         "-pipe",
-    ] + select({
+    ] + (select({
         "@platforms//cpu:x86_64": [
             "-march=x86-64-v3",
             "-mpclmul",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-mbranches-within-32B-boundaries",
-            "-fstack-protector-strong",
-            "-fstack-clash-protection",
-            "-ffp-contract=off",
-            "-fno-math-errno",
-            "-fdiagnostics-absolute-paths",
-            "-fstrict-vtable-pointers",
-            "-fPIE",
-            "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
-            "-O3",
-            "-DNDEBUG",
-            "-std=c++23",
-            "-D",
-            "OS_LINUX",
-            "-gz=zlib",
-            "-nostdinc++",
-            "-w",
-            "-I",
-            "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
         ],
         "@platforms//cpu:aarch64": [
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-fstack-protector-strong",
-            "-fstack-clash-protection",
-            "-ffp-contract=off",
-            "-fno-math-errno",
-            "-fdiagnostics-absolute-paths",
-            "-fstrict-vtable-pointers",
-            "-fPIE",
-            "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
-            "-O3",
-            "-DNDEBUG",
-            "-std=c++23",
-            "-D",
-            "OS_LINUX",
-            "-gz=zlib",
-            "-nostdinc++",
-            "-w",
-            "-I",
-            "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
         ],
     }) + [
+        "-fasynchronous-unwind-tables",
+        "-fdebug-compilation-dir=.",
+        "-falign-functions=64",
+        "-falign-loops=32",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-faddrsig",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "-mbranches-within-32B-boundaries",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }) + [
+        "-fstack-protector-strong",
+        "-fstack-clash-protection",
+        "-ffp-contract=off",
+        "-fno-math-errno",
+        "-fdiagnostics-absolute-paths",
+        "-fstrict-vtable-pointers",
+        "-fPIE",
+        "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
+        "-O3",
+        "-DNDEBUG",
+        "-std=c++23",
+        "-D",
+        "OS_LINUX",
+        "-gz=zlib",
+        "-nostdinc++",
+        "-w",
+        "-I",
+        "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
+    ]) + [
         "-I",
         repository_path("contrib/llvm-project") + "/libc",
         "-isystem",
@@ -10862,30 +10671,28 @@ cmake_runtime_objects(
         "--no-default-config",
         "-fdiagnostics-color=always",
         "-pipe",
-    ] + select({
+    ] + (select({
         "@platforms//cpu:x86_64": [
             "-march=x86-64-v3",
             "-mpclmul",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-mbranches-within-32B-boundaries",
         ],
         "@platforms//cpu:aarch64": [
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
         ],
     }) + [
+        "-fasynchronous-unwind-tables",
+        "-fdebug-compilation-dir=.",
+        "-falign-functions=64",
+        "-falign-loops=32",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-faddrsig",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "-mbranches-within-32B-boundaries",
+        ],
+        "@platforms//cpu:aarch64": [],
+    })) + [
         "-fstack-protector-strong",
         "-fstack-clash-protection",
         "-ffp-contract=off",
@@ -11005,78 +10812,53 @@ cmake_runtime_objects(
         "--no-default-config",
         "-fdiagnostics-color=always",
         "-pipe",
-    ] + select({
+    ] + (select({
         "@platforms//cpu:x86_64": [
             "-march=x86-64-v3",
             "-mpclmul",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-mbranches-within-32B-boundaries",
-            "-fstack-protector-strong",
-            "-fstack-clash-protection",
-            "-ffp-contract=off",
-            "-fno-math-errno",
-            "-fdiagnostics-absolute-paths",
-            "-fstrict-vtable-pointers",
-            "-fPIE",
-            "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
-            "-w",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-O3",
-            "-DNDEBUG",
-            "-std=c++23",
-            "-D",
-            "OS_LINUX",
-            "-gz=zlib",
-            "-ffreestanding",
-            "-fno-builtin",
-            "-Werror",
-            "-nostdinc++",
-            "-I",
-            "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
         ],
         "@platforms//cpu:aarch64": [
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-fstack-protector-strong",
-            "-fstack-clash-protection",
-            "-ffp-contract=off",
-            "-fno-math-errno",
-            "-fdiagnostics-absolute-paths",
-            "-fstrict-vtable-pointers",
-            "-fPIE",
-            "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
-            "-w",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-O3",
-            "-DNDEBUG",
-            "-std=c++23",
-            "-D",
-            "OS_LINUX",
-            "-gz=zlib",
-            "-ffreestanding",
-            "-fno-builtin",
-            "-Werror",
-            "-nostdinc++",
-            "-I",
-            "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
         ],
     }) + [
+        "-fasynchronous-unwind-tables",
+        "-fdebug-compilation-dir=.",
+        "-falign-functions=64",
+        "-falign-loops=32",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-faddrsig",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "-mbranches-within-32B-boundaries",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }) + [
+        "-fstack-protector-strong",
+        "-fstack-clash-protection",
+        "-ffp-contract=off",
+        "-fno-math-errno",
+        "-fdiagnostics-absolute-paths",
+        "-fstrict-vtable-pointers",
+        "-fPIE",
+        "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
+        "-w",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-faddrsig",
+        "-O3",
+        "-DNDEBUG",
+        "-std=c++23",
+        "-D",
+        "OS_LINUX",
+        "-gz=zlib",
+        "-ffreestanding",
+        "-fno-builtin",
+        "-Werror",
+        "-nostdinc++",
+        "-I",
+        "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
+    ]) + [
         "-isystem",
         repository_path("contrib/llvm-project") + "/libc",
         "-isystem",
@@ -11168,30 +10950,28 @@ cmake_runtime_objects(
         "--no-default-config",
         "-fdiagnostics-color=always",
         "-pipe",
-    ] + select({
+    ] + (select({
         "@platforms//cpu:x86_64": [
             "-march=x86-64-v3",
             "-mpclmul",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-mbranches-within-32B-boundaries",
         ],
         "@platforms//cpu:aarch64": [
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
         ],
     }) + [
+        "-fasynchronous-unwind-tables",
+        "-fdebug-compilation-dir=.",
+        "-falign-functions=64",
+        "-falign-loops=32",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-faddrsig",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "-mbranches-within-32B-boundaries",
+        ],
+        "@platforms//cpu:aarch64": [],
+    })) + [
         "-fstack-protector-strong",
         "-fstack-clash-protection",
         "-ffp-contract=off",
@@ -11250,30 +11030,28 @@ cmake_runtime_objects(
         "--no-default-config",
         "-fdiagnostics-color=always",
         "-pipe",
-    ] + select({
+    ] + (select({
         "@platforms//cpu:x86_64": [
             "-march=x86-64-v3",
             "-mpclmul",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-mbranches-within-32B-boundaries",
         ],
         "@platforms//cpu:aarch64": [
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
         ],
     }) + [
+        "-fasynchronous-unwind-tables",
+        "-fdebug-compilation-dir=.",
+        "-falign-functions=64",
+        "-falign-loops=32",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-faddrsig",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "-mbranches-within-32B-boundaries",
+        ],
+        "@platforms//cpu:aarch64": [],
+    })) + [
         "-fstack-protector-strong",
         "-fstack-clash-protection",
         "-ffp-contract=off",
@@ -11327,30 +11105,28 @@ cmake_runtime_objects(
         "--no-default-config",
         "-fdebug-compilation-dir=.",
         "-pipe",
-    ] + select({
+    ] + (select({
         "@platforms//cpu:x86_64": [
             "-march=x86-64-v3",
             "-mpclmul",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-mbranches-within-32B-boundaries",
         ],
         "@platforms//cpu:aarch64": [
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
         ],
     }) + [
+        "-fasynchronous-unwind-tables",
+        "-fdebug-compilation-dir=.",
+        "-falign-functions=64",
+        "-falign-loops=32",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-faddrsig",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "-mbranches-within-32B-boundaries",
+        ],
+        "@platforms//cpu:aarch64": [],
+    })) + [
         "-fstack-protector-strong",
         "-fstack-clash-protection",
         "-ffp-contract=off",

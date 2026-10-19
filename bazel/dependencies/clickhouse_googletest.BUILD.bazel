@@ -53,7 +53,6 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "googlemock",
-    ] + [
         "googlemock/include",
         "googletest/include",
     ],
@@ -130,7 +129,6 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "googletest",
-    ] + [
         "googletest/include",
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],

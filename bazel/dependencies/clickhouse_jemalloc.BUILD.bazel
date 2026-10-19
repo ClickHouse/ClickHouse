@@ -29,7 +29,7 @@ expand_template(
 
 ch_cc_library(
     name = "_jemalloc",
-    srcs = [
+    srcs = ([
         "src/arena.c",
         "src/background_thread.c",
         "src/base.c",
@@ -57,9 +57,7 @@ ch_cc_library(
         "src/fxp.c",
         "src/hook.c",
         "src/hpa.c",
-        "src/hpa_central.c",
-        "src/hpa_hooks.c",
-        "src/hpa_utils.c",
+    ] + glob(["src/hpa_*.c"]) + [
         "src/hpdata.c",
         "src/inspect.c",
         "src/jemalloc.c",
@@ -97,7 +95,7 @@ ch_cc_library(
         "src/tsd.c",
         "src/util.c",
         "src/witness.c",
-    ] + glob(["include/**/*.h"]),
+    ]) + glob(["include/**/*.h"]),
     hdrs = ([
         ":config/contrib/jemalloc-cmake/include_linux/jemalloc/internal/jemalloc_internal_defs.h",
     ] + [
@@ -129,13 +127,11 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    local_includes = ([
+    local_includes = [
         "include",
-    ] + ([
         repository_local_include("contrib/jemalloc-cmake/include", "contrib/jemalloc"),
-    ] + [
         "config/contrib/jemalloc-cmake/include_linux/jemalloc/internal",
-    ])),
+    ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
     alwayslink = False,
 )

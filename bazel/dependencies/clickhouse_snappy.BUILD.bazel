@@ -94,7 +94,6 @@ ch_cc_library(
     ],
     includes = [
         ".",
-    ] + [
         "config/contrib/snappy-cmake",
     ],
     local_defines = [

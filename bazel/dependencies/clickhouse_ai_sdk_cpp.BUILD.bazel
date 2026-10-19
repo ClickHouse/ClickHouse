@@ -6,7 +6,7 @@ exports_files([
     "LICENSE",
 ])
 
-_GENERATED_LOCAL_INCLUDES_0 = [
+_AI_SDK_CPP_LOCAL_INCLUDES = [
     "include",
     "src",
     "third_party/httplib-header-only",
@@ -51,7 +51,7 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _AI_SDK_CPP_LOCAL_INCLUDES,
     deps = [":_ai-sdk-cpp-core"],
     alwayslink = False,
 )
@@ -86,7 +86,7 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _AI_SDK_CPP_LOCAL_INCLUDES,
     deps = [
         "@clickhouse_brotli//:_brotli",
         "@clickhouse_openssl//:ssl",
@@ -118,7 +118,7 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _AI_SDK_CPP_LOCAL_INCLUDES,
     deps = [":_ai-sdk-cpp-core"],
     alwayslink = False,
 )

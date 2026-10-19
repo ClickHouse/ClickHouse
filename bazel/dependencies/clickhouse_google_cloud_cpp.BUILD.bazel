@@ -73,17 +73,16 @@ _GENERATED_LOCAL_DEFINES_0 = select({
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-_GENERATED_COPTS_0 = [
+_GOOGLE_CLOUD_CPP_COPTS = [
     "-w",
     "-std=c++23",
     "-I",
     repository_path("contrib/re2"),
 ]
 
-_GENERATED_LOCAL_INCLUDES_0 = [
+_GOOGLE_CLOUD_CPP_LOCAL_INCLUDES = [
     "config/contrib/google-cloud-cpp-cmake",
     repository_local_include("$(GENDIR)/bazel/gen/contrib/google-cloud-cpp-cmake", "contrib/google-cloud-cpp"),
-] + [
     repository_local_include("contrib/c-ares-cmake/linux", "contrib/google-cloud-cpp"),
 ]
 
@@ -98,9 +97,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc",
@@ -122,9 +121,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/auth.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc",
@@ -148,9 +147,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/backend.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/backend.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/backend.pb.cc",
@@ -170,9 +169,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/billing.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc",
@@ -205,9 +204,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/client.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/client.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/client.pb.cc",
@@ -229,9 +228,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/config_change.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/config_change.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/config_change.pb.cc",
@@ -251,9 +250,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/consumer.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/consumer.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/consumer.pb.cc",
@@ -273,9 +272,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/context.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/context.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/context.pb.cc",
@@ -295,9 +294,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/control.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/control.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/control.pb.cc",
@@ -319,9 +318,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/distribution.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc",
@@ -345,9 +344,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/documentation.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/documentation.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/documentation.pb.cc",
@@ -367,9 +366,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/endpoint.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc",
@@ -393,9 +392,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/error_reason.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/error_reason.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/error_reason.pb.cc",
@@ -415,9 +414,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/field_behavior.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/field_behavior.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/field_behavior.pb.cc",
@@ -437,9 +436,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/field_info.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/field_info.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/field_info.pb.cc",
@@ -459,9 +458,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/http.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/http.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/http.pb.cc",
@@ -481,9 +480,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/httpbody.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/httpbody.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/httpbody.pb.cc",
@@ -503,9 +502,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/label.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/label.pb.cc",
@@ -525,9 +524,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/launch_stage.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/launch_stage.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/launch_stage.pb.cc",
@@ -547,9 +546,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/log.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/label.pb.cc",
@@ -571,9 +570,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/logging.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc",
@@ -602,9 +601,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/metric.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/label.pb.cc",
@@ -631,9 +630,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/monitored_resource.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/label.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/label.pb.cc",
@@ -660,9 +659,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/monitoring.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc",
@@ -686,9 +685,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/policy.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/policy.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/policy.pb.cc",
@@ -708,9 +707,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/quota.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc",
@@ -734,9 +733,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/resource.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/resource.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/resource.pb.cc",
@@ -756,9 +755,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/routing.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/routing.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/routing.pb.cc",
@@ -778,9 +777,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/service.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc",
@@ -866,9 +865,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/source_info.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/source_info.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/source_info.pb.cc",
@@ -888,9 +887,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/system_parameter.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/system_parameter.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/system_parameter.pb.cc",
@@ -910,9 +909,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/usage.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc",
@@ -941,9 +940,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/visibility.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/visibility.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/visibility.pb.cc",
@@ -963,9 +962,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/cloud/common/operation_metadata.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/field_behavior.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/field_behavior.pb.cc",
@@ -987,9 +986,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/cloud/extended_operations.pb.cc",
@@ -1009,9 +1008,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/cloud/location/locations.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc",
@@ -1042,9 +1041,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/cloud/orgpolicy/v1/orgpolicy.pb.cc",
@@ -1070,9 +1069,8 @@ _GENERATED_COPTS_1 = [
 
 ch_cc_library(
     name = "google_cloud_cpp_common",
-    srcs = ([
+    srcs = [
         ":config/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-    ] + [
         "google/cloud/access_token.cc",
         "google/cloud/credentials.cc",
         "google/cloud/internal/api_client_header.cc",
@@ -1123,7 +1121,7 @@ ch_cc_library(
         "google/cloud/terminate_handler.cc",
         "google/cloud/tracing_options.cc",
         "google/cloud/version.cc",
-    ]),
+    ],
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -1330,13 +1328,11 @@ ch_cc_library(
         repository_path("contrib/re2"),
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = ([
+    local_includes = [
         ".",
-    ] + ([
         "config/contrib/google-cloud-cpp-cmake",
-    ] + [
         repository_local_include("$(GENDIR)/bazel/gen/contrib/google-cloud-cpp-cmake", "contrib/google-cloud-cpp"),
-    ])),
+    ],
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc",
@@ -1389,9 +1385,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/common.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/field_behavior.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/field_behavior.pb.cc",
@@ -1418,9 +1414,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/iam/credentials/v1/iamcredentials.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc",
@@ -1458,9 +1454,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/iam/v1/iam_policy.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc",
@@ -1504,9 +1500,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/iam/v1/options.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc",
@@ -1530,9 +1526,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/iam/v1/policy.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc",
@@ -1561,9 +1557,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/longrunning/operations.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc",
@@ -1679,9 +1675,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/rpc/code.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/rpc/code.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/rpc/code.pb.cc",
@@ -1701,9 +1697,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/rpc/context/attribute_context.pb.cc",
@@ -1723,9 +1719,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/rpc/error_details.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/rpc/error_details.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/rpc/error_details.pb.cc",
@@ -1745,9 +1741,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/rpc/status.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/rpc/error_details.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/rpc/error_details.pb.cc",
@@ -1760,7 +1756,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "google_cloud_cpp_storage",
-    srcs = [
+    srcs = ([
         "google/cloud/storage/auto_finalize.cc",
         "google/cloud/storage/bucket_access_control.cc",
         "google/cloud/storage/bucket_autoclass.cc",
@@ -1837,9 +1833,7 @@ ch_cc_library(
         "google/cloud/storage/internal/tracing_object_read_source.cc",
         "google/cloud/storage/internal/unified_rest_credentials.cc",
         "google/cloud/storage/lifecycle_rule.cc",
-        "google/cloud/storage/list_buckets_reader.cc",
-        "google/cloud/storage/list_hmac_keys_reader.cc",
-        "google/cloud/storage/list_objects_reader.cc",
+    ] + glob(["google/cloud/storage/*_reader.cc"]) + [
         "google/cloud/storage/notification_metadata.cc",
         "google/cloud/storage/oauth2/anonymous_credentials.cc",
         "google/cloud/storage/oauth2/authorized_user_credentials.cc",
@@ -1861,7 +1855,7 @@ ch_cc_library(
         "google/cloud/storage/version.cc",
         "google/cloud/storage/well_known_headers.cc",
         "google/cloud/storage/well_known_parameters.cc",
-    ],
+    ]),
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//bazel:config/x86_64/base/base/GitHash.generated.cpp",
@@ -1912,7 +1906,7 @@ ch_cc_library(
         repository_path("contrib/re2"),
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/api/annotations.pb.cc",
@@ -1960,9 +1954,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/calendar_period.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/calendar_period.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/calendar_period.pb.cc",
@@ -1982,9 +1976,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/color.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/color.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/color.pb.cc",
@@ -2004,9 +1998,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/date.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/date.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/date.pb.cc",
@@ -2026,9 +2020,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/datetime.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/datetime.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/datetime.pb.cc",
@@ -2048,9 +2042,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/dayofweek.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/dayofweek.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/dayofweek.pb.cc",
@@ -2070,9 +2064,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/decimal.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/decimal.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/decimal.pb.cc",
@@ -2092,9 +2086,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/expr.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/expr.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/expr.pb.cc",
@@ -2114,9 +2108,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/fraction.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/fraction.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/fraction.pb.cc",
@@ -2136,9 +2130,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/interval.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/interval.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/interval.pb.cc",
@@ -2158,9 +2152,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/latlng.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/latlng.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/latlng.pb.cc",
@@ -2180,9 +2174,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/localized_text.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/localized_text.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/localized_text.pb.cc",
@@ -2202,9 +2196,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/money.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/money.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/money.pb.cc",
@@ -2224,9 +2218,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/month.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/month.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/month.pb.cc",
@@ -2246,9 +2240,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/phone_number.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/phone_number.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/phone_number.pb.cc",
@@ -2268,9 +2262,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/postal_address.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/postal_address.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/postal_address.pb.cc",
@@ -2290,9 +2284,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/quaternion.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/quaternion.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/quaternion.pb.cc",
@@ -2312,9 +2306,9 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/timeofday.pb.h",
     ] + [
     ]),
-    copts = _GENERATED_COPTS_0,
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GENERATED_LOCAL_INCLUDES_0,
+    local_includes = _GOOGLE_CLOUD_CPP_LOCAL_INCLUDES,
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/timeofday.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/timeofday.pb.cc",

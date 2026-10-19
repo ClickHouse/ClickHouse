@@ -42,7 +42,6 @@ ch_cc_library(
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     includes = [
         ".",
-    ] + [
         "config/contrib/bzip2",
     ],
     language = "C",

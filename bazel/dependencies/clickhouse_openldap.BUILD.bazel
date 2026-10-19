@@ -10,7 +10,7 @@ exports_files([
 
 ch_cc_library(
     name = "_lber",
-    srcs = ([
+    srcs = [
         "libraries/liblber/assert.c",
         "libraries/liblber/decode.c",
         "libraries/liblber/encode.c",
@@ -21,9 +21,8 @@ ch_cc_library(
         "libraries/liblber/options.c",
         "libraries/liblber/sockbuf.c",
         "libraries/liblber/stdio.c",
-    ] + [
         "@clickhouse//bazel:gen/contrib/openldap-cmake/lber-version.c",
-    ]),
+    ],
     hdrs = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse//contrib/openldap-cmake:linux_x86_64/include/lber_types.h",
@@ -81,7 +80,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "_ldap",
-    srcs = [
+    srcs = ([
         "libraries/libldap/abandon.c",
         "libraries/libldap/account_usability.c",
         "libraries/libldap/add.c",
@@ -139,11 +138,7 @@ ch_cc_library(
         "libraries/libldap/stctrl.c",
         "libraries/libldap/string.c",
         "libraries/libldap/tavl.c",
-        "libraries/libldap/thr_debug.c",
-        "libraries/libldap/thr_nt.c",
-        "libraries/libldap/thr_posix.c",
-        "libraries/libldap/thr_pth.c",
-        "libraries/libldap/thr_thr.c",
+    ] + glob(["libraries/libldap/thr_*.c"]) + [
         "libraries/libldap/threads.c",
         "libraries/libldap/tls2.c",
         "libraries/libldap/tls_g.c",
@@ -160,7 +155,7 @@ ch_cc_library(
         "libraries/libldap/vlvctrl.c",
         "libraries/libldap/whoami.c",
         "@clickhouse//bazel:gen/contrib/openldap-cmake/ldap-version.c",
-    ] + glob(["libraries/libldap/**/*.h"]),
+    ]) + glob(["libraries/libldap/**/*.h"]),
     additional_compiler_inputs = [
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
