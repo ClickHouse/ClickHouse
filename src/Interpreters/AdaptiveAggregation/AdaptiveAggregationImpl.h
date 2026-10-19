@@ -506,6 +506,10 @@ struct AdaptiveAggregationProducer
     /// The current block's misses.
     AdaptiveMissBatch misses;
 
+    /// Whether the baseline would have converted the local table to two-level by now (see `executeOnBlock`). A
+    /// producer that never froze then converts its table at its finish.
+    bool baseline_converts_to_two_level = false;
+
     /// The producer's count bins when the aggregation prunes by the top-K, allocated by the first freeze and handed
     /// over at the finish.
     AdaptiveTopKCountBins count_bins;

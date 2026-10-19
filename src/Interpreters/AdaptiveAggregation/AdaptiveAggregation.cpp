@@ -322,6 +322,13 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
         if (local_variants.isConvertibleToTwoLevel())
             local_variants.convertToTwoLevel();
     }
+    else if (adaptive.baseline_converts_to_two_level && local_variants.isConvertibleToTwoLevel())
+    {
+        /// A table that never froze but outgrew the two-level thresholds through the memory of its states converts
+        /// here, in the producer's own thread, as the baseline's table would have during the aggregation. Otherwise an
+        /// aggregation in which no producer froze would merge its single-level tables in one thread.
+        local_variants.convertToTwoLevel();
+    }
 
     std::lock_guard lock(shared.producer_buffers_mutex);
     shared.estimated_merge_work += estimated_merge_work;

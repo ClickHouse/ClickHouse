@@ -2569,9 +2569,20 @@ bool Aggregator::executeOnBlock(Columns columns,
             return false;
 
         /// Unlike the baseline's table below, the table does not convert to two-level: a learning table stays within
-        /// its freeze bounds, and the merge converts the tables of an aggregation in which a producer froze. Over the
-        /// external-aggregation threshold the table is written to disk once the write frees enough memory, whether it
-        /// is learning or frozen, and its producer learns again.
+        /// its freeze bounds, and the merge converts the tables of an aggregation in which a producer froze. The
+        /// producer remembers whether the baseline would have converted it, though: the freeze bounds count the cells
+        /// and not the memory of the states, so a table of few keys with large states may never freeze, and it then
+        /// converts at the producer's finish (see `finishAdaptiveProducer`), so that the merge runs over the buckets in
+        /// parallel as with the feature off. Over the external-aggregation threshold the table is written to disk once
+        /// the write frees enough memory, whether it is learning or frozen, and its producer learns again.
+        if (!adaptive->baseline_converts_to_two_level)
+        {
+            const Int64 result_size_bytes = aggregator_tracker && params.use_aggregation_memory_tracker
+                ? aggregator_tracker->get()
+                : current_memory_usage - memory_usage_before_aggregation;
+            adaptive->baseline_converts_to_two_level = worthConvertToTwoLevel(
+                params.group_by_two_level_threshold, result_size, params.group_by_two_level_threshold_bytes, result_size_bytes);
+        }
         if (over_external_threshold && adaptiveTableWorthSpilling(result, *adaptive))
             spillAdaptiveTable(result, *adaptive, current_memory_usage + params.min_free_disk_space);
         return true;
