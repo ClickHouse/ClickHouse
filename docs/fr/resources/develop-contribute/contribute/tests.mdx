@@ -357,7 +357,7 @@ $ ./src/unit_tests_dbms --gtest_filter=LocalAddress*
 Les tests de performance permettent de mesurer et de comparer les performances de certaines parties isolées de ClickHouse à l’aide de requêtes synthétiques.
 Les tests de performance se trouvent dans `tests/performance/`.
 Chaque test est représenté par un fichier `.xml` contenant une description du cas de test.
-Les tests sont exécutés avec l’outil `docker/test/performance-comparison`. Consultez le fichier README pour savoir comment l’utiliser.
+Les tests sont exécutés par le job d’intégration continue `ci/jobs/performance_tests.py`, dans l’image `ci/docker/performance-comparison`.
 
 Chaque test exécute une ou plusieurs requêtes (éventuellement avec des combinaisons de paramètres) en boucle.
 
@@ -368,7 +368,7 @@ Il est toujours judicieux d’utiliser `perf top` ou d’autres outils `perf` pe
 ## Outils et scripts de test {#test-tools-and-scripts}
 
 Certains programmes du répertoire `tests` ne sont pas des tests à proprement parler, mais des outils de test.
-Par exemple, pour `Lexer`, il existe un outil `src/Parsers/tests/lexer` qui se contente d&#39;effectuer la tokenisation de stdin et d&#39;écrire le résultat en couleur sur stdout.
+Par exemple, pour `Lexer`, il existe un outil `src/Parsers/examples/lexer.cpp` qui se contente d&#39;effectuer la tokenisation de stdin et d&#39;écrire le résultat en couleur sur stdout.
 Vous pouvez utiliser ce type d&#39;outils comme exemples de code, ainsi que pour l&#39;exploration et les tests manuels.
 
 ## Tests divers {#miscellaneous-tests}
@@ -509,7 +509,7 @@ Les fuzzers ne sont pas compilés par défaut.
 Pour compiler les fuzzers, les options `-DENABLE_FUZZING=1` et `-DENABLE_TESTS=1` doivent toutes deux être définies.
 Nous recommandons de désactiver Jemalloc lors de la compilation des fuzzers.
 La configuration utilisée pour intégrer le fuzzing de ClickHouse à
-Google OSS-Fuzz se trouve dans `docker/fuzz`.
+Google OSS-Fuzz se trouve dans `tests/fuzz`.
 
 Nous utilisons également un test de fuzzing simple pour générer des requêtes SQL aléatoires et vérifier que le serveur ne s’arrête pas pendant leur exécution.
 Vous pouvez le trouver dans `00746_sql_fuzzy.python`.
@@ -592,7 +592,7 @@ ClickHouse fournit des outils de diagnostic qui aideront les ingénieurs d’exp
 
 Les règles de style de code sont décrites [ici](/fr/resources/develop-contribute/contribute/style).
 
-Pour détecter certaines violations courantes des règles de style, vous pouvez utiliser le script `utils/check-style`.
+Pour détecter certaines violations courantes des règles de style, vous pouvez utiliser le script `ci/jobs/scripts/check_style/check_cpp.sh`, ou exécuter localement l&#39;ensemble de la vérification de style avec `python -m ci.praktika run "Style check"`.
 
 Pour imposer un style correct à votre code, vous pouvez utiliser `clang-format`.
 Le fichier `.clang-format` se trouve à la racine du code source.

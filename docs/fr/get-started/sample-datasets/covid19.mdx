@@ -12,13 +12,13 @@ COVID-19 Open-Data vise à constituer la plus grande base de données épidémio
 
 Les détails sont disponibles sur GitHub [ici](https://github.com/GoogleCloudPlatform/covid-19-open-data).
 
-Il est facile d’insérer ces données dans ClickHouse...
+Vous pouvez facilement insérer ces données dans ClickHouse.
 
 <Note>
-  Les commandes suivantes ont été exécutées sur une instance de **production** de [ClickHouse Cloud](https://clickhouse.cloud). Vous pouvez aussi les exécuter facilement sur une installation locale.
+  Pour essayer ces commandes vous-même, vous pouvez vous inscrire à un [essai gratuit de ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-covid19) ou les exécuter sur une [instance ClickHouse auto-hébergée](/fr/get-started/setup/install).
 </Note>
 
-1. Voyons à quoi ressemblent les données :
+1. Voyons à quoi ressemblent les données :
 
 ```sql
 DESCRIBE url(
