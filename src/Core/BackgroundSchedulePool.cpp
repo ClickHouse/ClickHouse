@@ -479,14 +479,8 @@ BackgroundSchedulePool::TaskHolder BackgroundSchedulePool::createTask(const Stor
 template<typename T>
 UInt64 getFunctionID(const std::function<T> & func)
 {
-    /// Get a pointer to the task function and use it as an identifier of the task type
-    auto * func_ptr = func.template target<T *>();
-    if (func_ptr)
-        return reinterpret_cast<UInt64>(func_ptr);
-
-    /// Lambdas have weird types, and we cannot get a pointer. Let's use has of the lambda type name,
-    /// which is usually smth like "ZN2DB22BackgroundJobsAssignee5startEvE3" or "DB::BackgroundJobsAssignee::start()::$_0"
-    /// And it's a good identifier
+    /// The hash of the callable's type name identifies the task type without using an address, which is logged.
+    /// For a lambda it is usually smth like "ZN2DB22BackgroundJobsAssignee5startEvE3" or "DB::BackgroundJobsAssignee::start()::$_0".
     SipHash hash;
     hash.update(func.target_type().name());
     return hash.get64();
@@ -496,7 +490,6 @@ void BackgroundSchedulePool::scheduleTask(TaskInfo & task_info)
 {
     {
         std::lock_guard tasks_lock(tasks_mutex);
-        /// Get a pointer to the task function and use it as an identifier of the task type
         UInt64 task_type = getFunctionID(task_info.function);
         auto & group = task_groups[task_type];
         auto task_ptr = task_info.shared_from_this();

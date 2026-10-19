@@ -34,10 +34,11 @@ struct TraceLogElement
     UInt64 thread_id{};
     ThreadName thread_name = ThreadName::UNKNOWN;
     String query_id{};
+    /// Runtime addresses. `appendToBlock` stores them as `StackTrace::resolveAddressForStorage` does.
     std::vector<UInt64> trace{};
     /// Size in bytes for the memory trace types, zero for the others.
     Int64 size{};
-    /// Allocation ptr for TraceType::MemorySample.
+    /// Allocation ptr for TraceType::MemorySample. `appendToBlock` stores a keyed hash of it.
     UInt64 ptr{};
     /// For memory tracing
     std::optional<VariableContext> memory_context{};

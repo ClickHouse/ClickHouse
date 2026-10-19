@@ -120,6 +120,8 @@ public:
     /// Updates the input streams of the given step. Used during query plan optimizations.
     /// It won't do any validation of new streams, so it is your responsibility to ensure that this update doesn't break anything
     String getUniqID() const;
+    /// The number in `getUniqID`, unique within the query.
+    size_t getStepIndex() const { return step_index; }
 
     /// (e.g. you correctly remove / add columns).
     void updateInputHeaders(SharedHeaders input_headers_);

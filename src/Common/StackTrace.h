@@ -151,7 +151,8 @@ public:
 
     /// The form to store an address in a bare integer column: an address in the main executable
     /// becomes its file offset, which stays valid across restarts and hosts, while any other address
-    /// is kept as is, because a stored offset into a library reads as a main executable one.
+    /// becomes 0: an offset into a library would read as a main executable one, and the runtime
+    /// address must not be published. The slot is kept, so frame positions do not change.
     static UInt64 resolveAddressForStorage(const void * virtual_addr);
 
     void toStringEveryLine(std::function<void(std::string_view)> callback) const;
