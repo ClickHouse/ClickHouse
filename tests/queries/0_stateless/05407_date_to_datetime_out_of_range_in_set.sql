@@ -18,6 +18,17 @@ SELECT count() FROM t_date_to_datetime_in_set WHERE dt IN (toDate('2149-06-06'))
 SELECT count() FROM t_date_to_datetime_in_set WHERE dt NOT IN (toDate('2149-06-06'));
 SELECT count() FROM t_date_to_datetime_in_set WHERE dt = toDate('2149-06-06');
 
+-- Wrapping either side must not restore the match.
+DROP TABLE IF EXISTS t_date_to_datetime_in_set_wrapped;
+CREATE TABLE t_date_to_datetime_in_set_wrapped (dt Nullable(DateTime('UTC'))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_date_to_datetime_in_set_wrapped VALUES (2257290240), (1367256704), (0);
+SELECT count() FROM t_date_to_datetime_in_set_wrapped WHERE dt IN (toDate32('0000-01-01'));
+SELECT count() FROM t_date_to_datetime_in_set_wrapped WHERE dt IN (toDate('2149-06-06'));
+SELECT count() FROM t_date_to_datetime_in_set WHERE dt IN (toNullable(toDate32('0000-01-01')));
+SELECT count() FROM t_date_to_datetime_in_set WHERE dt IN (toLowCardinality(toDate('2149-06-06')));
+SELECT count() FROM t_date_to_datetime_in_set WHERE dt IN (toDate32('0000-01-01')::Dynamic);
+DROP TABLE t_date_to_datetime_in_set_wrapped;
+
 -- In-range values still match.
 SELECT count() FROM t_date_to_datetime_in_set WHERE dt IN (toDate32('1970-01-01'), toDate32('0000-01-01'), toDate('2149-06-06'));
 

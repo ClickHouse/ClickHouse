@@ -291,6 +291,14 @@ TEST(ConvertColumnToType, DateToDateTimeOutOfRange)
         EXPECT_EQ(convert("Date", Field(UInt64(49711)), "DateTime('UTC')", strict), nullptr);
         EXPECT_EQ(convert("Date", Field(UInt64(65535)), "DateTime('UTC')", strict), nullptr);
 
+        /// Wrapping the source or the target type must not bypass the check: these take the `Field` fallback.
+        EXPECT_EQ(convert("Nullable(Date32)", Field(Int64(-719528)), "DateTime('UTC')", strict), nullptr);
+        EXPECT_EQ(convert("Date32", Field(Int64(-719528)), "Nullable(DateTime('UTC'))", strict), nullptr);
+        EXPECT_EQ(convert("LowCardinality(Date)", Field(UInt64(65535)), "DateTime('UTC')", strict), nullptr);
+        EXPECT_EQ(convert("Date", Field(UInt64(65535)), "LowCardinality(Nullable(DateTime('UTC')))", strict), nullptr);
+        /// ... while an in-range value still converts through them.
+        EXPECT_NE(convert("Nullable(Date32)", Field(Int64(19000)), "Nullable(DateTime('UTC'))", strict), nullptr);
+
         /// A `Date` cannot go before the epoch: `fromDayNum(DayNum)` saturates, so 1970-01-01 in Berlin
         /// (local midnight -3600) stays representable.
         EXPECT_NE(convert("Date", Field(UInt64(0)), "DateTime('Europe/Berlin')", strict), nullptr);

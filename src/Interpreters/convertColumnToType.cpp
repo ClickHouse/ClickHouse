@@ -28,6 +28,8 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
+#include <limits>
+
 
 namespace DB
 {
@@ -343,6 +345,36 @@ void retagBoolInField(Field & field, const DataTypePtr & type)
     }
 }
 
+/// Whether a converted `DateTime` value - of `type`, looking through `Nullable`/`LowCardinality` - fits the
+/// `UInt32` storage of `DateTime`. `convertFieldToType` keeps the exact timestamp of a `Date`/`Date32` outside
+/// that range, and inserting it into a `DateTime` column would truncate it modulo 2^32, so such a value is not
+/// representable. This guards the `Field` fallback whatever wraps the source (`Nullable`, `LowCardinality`, the
+/// active alternative of `Dynamic`/`Variant`) or the target; the plain types take the same check in
+/// `tryConvertBetweenDateAndDateTimeColumnNative`. Composites are not covered: inside `Array`/`Tuple`/`Map`,
+/// `convertFieldToType` does not convert `Date` -> `DateTime` at all (pre-existing; the composite step of
+/// closing B3).
+bool dateTimeValueFitsStorage(const Field & field, const IDataType & type)
+{
+    if (field.isNull())
+        return true;
+
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
+        return dateTimeValueFitsStorage(field, *nullable->getNestedType());
+    if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type))
+        return dateTimeValueFitsStorage(field, *low_cardinality->getDictionaryType());
+
+    if (!WhichDataType(type).isDateTime())
+        return true;
+    if (field.getType() == Field::Types::Int64)
+    {
+        const Int64 seconds = field.safeGet<Int64>();
+        return seconds >= 0 && seconds <= static_cast<Int64>(std::numeric_limits<UInt32>::max());
+    }
+    if (field.getType() == Field::Types::UInt64)
+        return field.safeGet<UInt64>() <= std::numeric_limits<UInt32>::max();
+    return true;
+}
+
 /// The type of the alternative that row 0 of a `Variant`/`Dynamic` column occupies, else `from`. A
 /// genuine value of such a constant has that type rather than the carrier's - the carrier only records
 /// which alternative it is - and `convertFieldToType` keys its conversions on the source type (an `Enum`
@@ -428,6 +460,10 @@ ColumnPtr convertColumnToTypeOrNull(
         }
         return {};
     }
+
+    /// An out-of-range timestamp would be stored truncated; see `dateTimeValueFitsStorage`.
+    if (!dateTimeValueFitsStorage(converted, *to))
+        return {};
 
     auto column = to->createColumn();
     column->insert(converted);
