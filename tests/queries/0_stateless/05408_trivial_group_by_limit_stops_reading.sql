@@ -20,6 +20,11 @@ SETTINGS max_threads = 2, log_comment = 'gbl_stop_stream_without_rows' FORMAT Nu
 SELECT number % 5 FROM system.numbers GROUP BY number % 5 LIMIT 5
 SETTINGS max_threads = 1, log_comment = 'gbl_stop_exact_key_count' FORMAT Null;
 
+-- The same with external aggregation, which empties the table on every block.
+SELECT cityHash64(number % 5) AS k FROM system.numbers GROUP BY k LIMIT 5
+SETTINGS max_threads = 1, max_bytes_before_external_group_by = 1, group_by_two_level_threshold = 1,
+    log_comment = 'gbl_stop_exact_key_count_external' FORMAT Null;
+
 SELECT number FROM remote('127.0.0.{1,2}', system.numbers) GROUP BY number LIMIT 5
 SETTINGS log_comment = 'gbl_stop_distributed' FORMAT Null;
 

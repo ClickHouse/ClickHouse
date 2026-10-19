@@ -802,7 +802,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         }
 
         if (transform_params->params.stop_all_streams_at_max_rows_to_group_by)
-            addStopAllStreamsTransforms(pipeline);
+            addStopAllStreamsTransforms({&pipeline});
 
         size_t counter = 0;
         pipeline.addSimpleTransform(
@@ -1089,17 +1089,19 @@ QueryPipelineBuilderPtr AggregatingProjectionStep::updatePipeline(
         AggregatingTransformParamsPtr transform_params = std::make_shared<AggregatingTransformParams>(
             pipeline.getHeader(), std::move(params_copy), aggregator_list_ptr, final);
 
-        pipeline.resize(pipeline.getNumStreams(), true);
-
-        if (params.stop_all_streams_at_max_rows_to_group_by)
-            addStopAllStreamsTransforms(pipeline);
-
         pipeline.addSimpleTransform([&](const SharedHeader & header)
         {
             return std::make_shared<AggregatingTransform>(
                 header, transform_params, many_data, counter++, new_merge_threads, new_temporary_data_merge_threads);
         });
     };
+
+    normal_parts_pipeline->resize(normal_parts_pipeline->getNumStreams(), true);
+    projection_parts_pipeline->resize(projection_parts_pipeline->getNumStreams(), true);
+
+    /// Both pipelines feed one aggregation, so a stream that stops has to stop the streams of both.
+    if (params.stop_all_streams_at_max_rows_to_group_by)
+        addStopAllStreamsTransforms({normal_parts_pipeline.get(), projection_parts_pipeline.get()});
 
     build_aggregate_pipeline(*normal_parts_pipeline, false);
     build_aggregate_pipeline(*projection_parts_pipeline, true);

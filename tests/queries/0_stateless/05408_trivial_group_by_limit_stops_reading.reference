@@ -1,5 +1,6 @@
 gbl_stop_distributed	5	-
 gbl_stop_exact_key_count	5	-
+gbl_stop_exact_key_count_external	5	-
 gbl_stop_merge_tree	5	1
 gbl_stop_merge_tree_aggregate	5	0
 gbl_stop_serialized_plan	5	-

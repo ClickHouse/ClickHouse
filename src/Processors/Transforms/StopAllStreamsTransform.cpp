@@ -97,31 +97,50 @@ IProcessor::Status StopAllStreamsSignal::prepare()
     return Status::Finished;
 }
 
-void addStopAllStreamsTransforms(QueryPipelineBuilder & pipeline)
+void addStopAllStreamsTransforms(std::initializer_list<QueryPipelineBuilder *> pipelines)
 {
-    const size_t num_streams = pipeline.getNumStreams();
+    size_t num_streams = 0;
+    QueryPipelineBuilder * last_pipeline = nullptr;
+    for (auto * pipeline : pipelines)
+    {
+        num_streams += pipeline->getNumStreams();
+        if (pipeline->getNumStreams())
+            last_pipeline = pipeline;
+    }
+
     if (num_streams <= 1)
         return;
 
-    pipeline.transform([num_streams](const OutputPortRawPtrs & ports)
+    auto signal = std::make_shared<StopAllStreamsSignal>(num_streams);
+    auto signal_input = signal->getInputs().begin();
+    auto signal_output = signal->getOutputs().begin();
+
+    for (auto * pipeline : pipelines)
     {
-        auto signal = std::make_shared<StopAllStreamsSignal>(num_streams);
+        if (!pipeline->getNumStreams())
+            continue;
 
-        Processors processors;
-        auto signal_input = signal->getInputs().begin();
-        auto signal_output = signal->getOutputs().begin();
-        for (auto * port : ports)
-        {
-            auto transform = std::make_shared<StopAllStreamsTransform>(port->getSharedHeader());
-            connect(*port, transform->getInputs().front());
-            connect(transform->getOutputs().back(), *signal_input++);
-            connect(*signal_output++, transform->getInputs().back());
-            processors.push_back(std::move(transform));
-        }
+        /// The signal processor is added with the last pipeline, when all its ports are connected. It is
+        /// connected to the processors of the other pipelines too, which the port check does not allow.
+        pipeline->transform(
+            [&](const OutputPortRawPtrs & ports)
+            {
+                Processors processors;
+                for (auto * port : ports)
+                {
+                    auto transform = std::make_shared<StopAllStreamsTransform>(port->getSharedHeader());
+                    connect(*port, transform->getInputs().front());
+                    connect(transform->getOutputs().back(), *signal_input++);
+                    connect(*signal_output++, transform->getInputs().back());
+                    processors.push_back(std::move(transform));
+                }
 
-        processors.push_back(std::move(signal));
-        return processors;
-    });
+                if (pipeline == last_pipeline)
+                    processors.push_back(signal);
+                return processors;
+            },
+            /* check_ports= */ pipelines.size() == 1);
+    }
 }
 
 }

@@ -34,7 +34,8 @@ public:
     Status prepare() override;
 };
 
-/// Inserts a `StopAllStreamsTransform` into every stream of the pipeline, if there are several.
-void addStopAllStreamsTransforms(QueryPipelineBuilder & pipeline);
+/// Inserts a `StopAllStreamsTransform` into every stream of the pipelines, all connected to one
+/// `StopAllStreamsSignal`, if there are several streams in total.
+void addStopAllStreamsTransforms(std::initializer_list<QueryPipelineBuilder *> pipelines);
 
 }

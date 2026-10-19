@@ -1510,9 +1510,6 @@ void AggregatingTransform::consume(Chunk chunk)
         else
             capturePerStreamKeptKeysSeed();
     }
-
-    if (params->params.stop_all_streams_at_max_rows_to_group_by && variants.sizeWithoutOverflowRow() >= params->params.max_rows_to_group_by)
-        is_consume_finished = true;
 }
 
 void AggregatingTransform::capturePerStreamKeptKeysSeed()
