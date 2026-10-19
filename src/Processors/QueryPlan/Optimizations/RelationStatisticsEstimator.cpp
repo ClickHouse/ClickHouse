@@ -292,7 +292,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
         const bool exact = profile.rows == 0 || (!has_filter && !estimate->has_delete_files);
         return RelationStats{
-            .estimated_rows = profile.rows - estimate->deleted_rows,
+            .estimated_rows = profile.rows,
             .column_stats = profile.column_stats,
             .table_name = table_display_name,
             .imprecise_estimate = !exact,
