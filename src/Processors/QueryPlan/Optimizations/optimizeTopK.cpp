@@ -23,16 +23,9 @@
 namespace DB::QueryPlanOptimizations
 {
 
-/// True if the actions depend on the block they run on, which the threshold filter shrinks: a stateful
-/// function, or one not deterministic within a query (`blockSize`, `rand`, but not `today`).
-static bool dependsOnItsBlock(const ActionsDAG & actions)
+bool dependsOnItsBlock(const ActionsDAG & actions)
 {
-    for (const auto & node : actions.getNodes())
-        if (node.type == ActionsDAG::ActionType::FUNCTION
-            && (node.function_base->isStateful() || !node.function_base->isDeterministicInScopeOfQuery()))
-            return true;
-
-    return false;
+    return actions.hasNonDeterministicOrStatefulFunctions();
 }
 
 /// True if a value of this type can contain a floating-point number anywhere inside it - directly,
