@@ -5,6 +5,8 @@
 #include <Interpreters/Cache/PartAggregationCachePopulator.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/misc.h>
+#include <DataTypes/IDataType.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/ColumnsDescription.h>
@@ -51,6 +53,31 @@ static QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
         return findReadingStep(*node.children.front());
 
     return nullptr;
+}
+
+/// True when `dag` (including lambda bodies) depends on data that is not represented in its hash.
+/// `ActionsDAG::updateHash` does not hash the contents of an `IN` set: `ColumnSet` is a dummy column,
+/// and a set built from a subquery or a `Set`/`Join` table can change while the query text stays the
+/// same. `joinGet` and `dictGet` read external tables and dictionaries in the same way.
+static bool dependsOnUnhashedExternalData(const ActionsDAG & dag)
+{
+    auto reads_external_data = [](const IFunctionBase & function)
+    {
+        const auto & name = function.getName();
+        return functionIsInOrGlobalInOperator(name) || functionIsJoinGet(name) || functionIsDictGet(name);
+    };
+
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.result_type && WhichDataType(node.result_type).isSet())
+            return true;
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base && reads_external_data(*node.function_base))
+            return true;
+        if (ActionsDAG::hasUnsafeHiddenLambdaBody(node, reads_external_data))
+            return true;
+    }
+
+    return false;
 }
 
 /// Collect all ExpressionStep/FilterStep actions between AggregatingStep and ReadFromMergeTree.
@@ -255,12 +282,22 @@ void optimizeUsePartAggregationCache(
     /// `hasNonDeterministic` uses `IFunction::isDeterministic` (deterministic across queries), but
     /// some deterministic functions are still stateful because they have side effects or depend on
     /// external state. Both properties must therefore be rejected for this cross-query cache.
+    ///
+    /// Also skip when any key/filter expression uses an `IN` set, `joinGet` or `dictGet`
+    /// (see `dependsOnUnhashedExternalData`): `k IN (1)` and `k IN (2)` hash the same, and a set built
+    /// from a subquery changes with the data of another table, so the cache key would alias queries
+    /// that aggregate different rows.
     for (const auto & action : intermediate_actions)
-        if (action.actions->getActionsDAG().hasNonDeterministic() || action.actions->getActionsDAG().hasStatefulFunctions())
+    {
+        const auto & dag = action.actions->getActionsDAG();
+        if (dag.hasNonDeterministic() || dag.hasStatefulFunctions() || dependsOnUnhashedExternalData(dag))
             return;
+    }
 
     const auto & source_filter_dag = reading->getFilterActionsDAG();
-    if (source_filter_dag && (source_filter_dag->hasNonDeterministic() || source_filter_dag->hasStatefulFunctions()))
+    if (source_filter_dag
+        && (source_filter_dag->hasNonDeterministic() || source_filter_dag->hasStatefulFunctions()
+            || dependsOnUnhashedExternalData(*source_filter_dag)))
         return;
 
     /// The populator reads each part's data directly from storage with the storage columns that the
