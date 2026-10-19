@@ -653,12 +653,42 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & 
         }
     }
 
-    /// Create default names c1,c2,... for better exception messages.
-    /// The following rows are compared with the header candidate, so use its number of fields.
-    std::vector<String> default_colum_names;
-    default_colum_names.reserve(header_candidate_types.size());
-    for (size_t i = 0; i != header_candidate_types.size(); ++i)
-        default_colum_names.push_back("c" + std::to_string(i + 1));
+    /// Combine the types of two rows, allowing a different number of fields as in `IRowSchemaReader::readSchema`.
+    /// Default names c1,c2,... are used for better exception messages.
+    auto merge_row_types = [&](DataTypes & types, DataTypes & new_types, size_t row_number)
+    {
+        if (types.size() != new_types.size() && allowVariableNumberOfColumns())
+        {
+            size_t size = std::max(types.size(), new_types.size());
+            types.resize(size);
+            new_types.resize(size);
+        }
+
+        std::vector<String> default_column_names;
+        default_column_names.reserve(types.size());
+        for (size_t i = 0; i != types.size(); ++i)
+            default_column_names.push_back("c" + std::to_string(i + 1));
+        chooseResultColumnTypes(*this, types, new_types, getDefaultDataTypeForEscapingRule(FormatSettings::EscapingRule::CSV), default_column_names, row_number);
+    };
+
+    /// With a BOM, the first row read as data can contain non String elements, and the number of its fields
+    /// can differ from the header candidate. Combine the types of all rows read so far, as without header detection.
+    auto buffer_types_of_rows_read_as_data = [&]()
+    {
+        DataTypes result_types = first_row_types;
+        if (second_row_can_be_type_names)
+        {
+            DataTypes second_row_types_copy = second_row_types;
+            merge_row_types(result_types, second_row_types_copy, 2);
+        }
+        merge_row_types(result_types, data_types, row);
+        buffered_types = std::move(result_types);
+    };
+
+    /// With a BOM, the variants of the first row with and without the BOM can have a different number of fields,
+    /// for example, if a quoted name contains a delimiter. The variant without the BOM is a header only if
+    /// the following rows have the same number of fields, otherwise the first row is data.
+    const bool header_candidate_has_other_number_of_fields = first_row_without_bom && header_candidate_types.size() != first_row_types.size();
 
     while (true)
     {
@@ -666,6 +696,12 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & 
         /// with all String elements are most likely a header.
         if (haveNotStringAndNotNullType(data_types))
         {
+            if (header_candidate_has_other_number_of_fields && data_types.size() != header_candidate_types.size())
+            {
+                buffer_types_of_rows_read_as_data();
+                return;
+            }
+
             buffered_types = data_types;
             column_names = readNamesFromFields(header_candidate_values);
             if (second_row_can_be_type_names)
@@ -683,15 +719,7 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & 
             }
             else
             {
-                /// With a BOM, the first row read as data can contain non String elements.
-                /// Combine them with the types from the following rows, as without header detection.
-                DataTypes result_types = first_row_types;
-                std::vector<String> first_row_column_names;
-                first_row_column_names.reserve(first_row_types.size());
-                for (size_t i = 0; i != first_row_types.size(); ++i)
-                    first_row_column_names.push_back("c" + std::to_string(i + 1));
-                chooseResultColumnTypes(*this, result_types, data_types, getDefaultDataTypeForEscapingRule(FormatSettings::EscapingRule::CSV), first_row_column_names, row);
-                buffered_types = std::move(result_types);
+                buffer_types_of_rows_read_as_data();
             }
             return;
         }
@@ -708,7 +736,7 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & 
 
         ++row;
         /// Combine types from current row and from previous rows.
-        chooseResultColumnTypes(*this, data_types, *next_row_types_maybe, getDefaultDataTypeForEscapingRule(FormatSettings::EscapingRule::CSV), default_colum_names, row);
+        merge_row_types(data_types, *next_row_types_maybe, row);
     }
 }
 

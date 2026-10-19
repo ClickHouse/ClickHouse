@@ -41,3 +41,15 @@ a	b
 1	2
 a	b
 x	2
+c1	c2	c3	c4
+﻿"a	2020	b"	c
+1	2	3	4
+c1	c2	c3	c4
+﻿"a	2020	b"	c
+1	2	3	4
+c1	c2	c3	c4
+﻿"a	2020	b"	c
+x	y	z	\N
+c1	c2	c3	c4
+﻿"a	2020	b"	c
+x	y	z	\N
