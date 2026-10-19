@@ -3,6 +3,7 @@
 #if USE_PARQUET
 
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <IO/UncompressedCache.h>
 
 namespace CurrentMetrics
 {
@@ -36,7 +37,8 @@ ParquetMetadataCacheCell::ParquetMetadataCacheCell(parquet::format::FileMetaData
     , memory_bytes(calculateMemorySize() + SIZE_IN_MEMORY_OVERHEAD)
     /// Kept statistics may add a quarter of the footer's size to the cell, and at least 4 KiB for a small footer, so the
     /// cache limits still bound the cell. The columns kept first use up this budget for the lifetime of the cell.
-    , kept_statistics(std::make_shared<ParquetKeptStatistics>(std::max<size_t>(memory_bytes / 4, MIN_KEPT_STATISTICS_BYTES)))
+    , kept_statistics(std::allocate_shared<ParquetKeptStatistics>(
+          ServerOwnedCacheEntryAllocator<ParquetKeptStatistics>(), std::max<size_t>(memory_bytes / 4, MIN_KEPT_STATISTICS_BYTES)))
 {
 }
 size_t ParquetMetadataCacheCell::calculateMemorySize() const
@@ -109,6 +111,19 @@ size_t heapBytesOfField(const Field & field)
     return field.getType() == Field::Types::String ? field.safeGet<String>().size() : 0;
 }
 
+void deleteKeptRanges(const ParquetKeptStatistics::Ranges * ranges)
+{
+    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    delete ranges;
+}
+
+}
+
+/// Kept statistics are released like they are allocated, see `ParquetMetadataCache::keepStatistics`.
+ParquetKeptStatistics::~ParquetKeptStatistics()
+{
+    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    std::unordered_map<String, RangesPtr>().swap(ranges_by_column);
 }
 
 std::optional<ParquetKeptStatistics::Column> ParquetKeptStatistics::prepare(const String & column_key, const Ranges & ranges) const
@@ -123,7 +138,7 @@ std::optional<ParquetKeptStatistics::Column> ParquetKeptStatistics::prepare(cons
         if (total_bytes + bytes > max_bytes)
             return std::nullopt;
     }
-    return Column{column_key, std::make_shared<const Ranges>(ranges), bytes};
+    return Column{column_key, RangesPtr(new Ranges(ranges), deleteKeptRanges, ServerOwnedCacheEntryAllocator<Ranges>()), bytes};
 }
 
 bool ParquetKeptStatistics::add(Column column)
