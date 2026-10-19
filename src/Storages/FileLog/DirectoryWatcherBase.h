@@ -114,8 +114,13 @@ private:
     std::shared_ptr<DirectoryWatchReactor> reactor;
     /// Whether the reactor watches the directory. Not if it failed to add the watcher, then the watcher stays inert.
     bool registered = false;
+
     /// Whether the watcher has reported an event to `owner` that has not been committed yet.
     bool has_uncommitted_events = false;
+
+    /// Called by the `DirectoryWatchReactor` thread only, once after a batch of events or scans that reported events
+    /// to `owner`: hands them to `owner` at once and wakes up the reader thread.
+    void commitEvents();
 
 #if defined(OS_LINUX)
     /// Cookies of the `IN_MOVED_FROM` events that are waiting for their `IN_MOVED_TO`, the oldest evicted first.
@@ -142,7 +147,6 @@ private:
     void onPairingTimeout();
     /// The kernel has dropped the watch of the directory (`IN_IGNORED`), because it was deleted or unmounted.
     void onWatchRemoved();
-    void commitEvents();
 #elif defined(OS_DARWIN)
     /// The callbacks below are called by the `DirectoryWatchReactor` thread only.
     std::unique_ptr<DarwinDirectoryWatchState> watch_state;
@@ -153,7 +157,8 @@ private:
     /// Closes all the descriptors of the watcher.
     void stopWatching();
     /// An event of one of the descriptors registered with `DirectoryWatchReactor::watchVnode`. Reports a change of the
-    /// contents of a file at once, and schedules a scan for a change of the listing.
+    /// contents of a file at once, and schedules a scan for a change of the listing. The reactor commits the reported
+    /// events after the batch, as it does after `onTimer`.
     void onVnodeEvent(int fd, uint32_t fflags);
     /// Scans the directory and emits the events of what has changed since the last scan, once `nextScan` is due.
     void onTimer();
@@ -164,6 +169,9 @@ private:
     void syncFileWatches(std::map<std::string, UInt64> & files);
     /// Returns whether the directory changed during the scan, then the caller discards it.
     bool scanFilesAndUpdateWatches(std::map<std::string, UInt64> & current_files_inodes);
+    /// Reports the `deferred_modifications` under the names of the committed listing `current_files_inodes`, and
+    /// returns whether it reported any. The inodes the listing does not have anymore are dropped.
+    bool emitDeferredModifications(const std::map<std::string, UInt64> & current_files_inodes);
 #endif
 };
 

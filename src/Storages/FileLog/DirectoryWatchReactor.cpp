@@ -612,7 +612,12 @@ void DirectoryWatchReactor::runLoop()
         }
         for (WatcherRegistration * registration : due)
             watcherScan(*registration);
-        removeFailedWatchers();
+        commitTouchedWatchers();
+
+        /// A wake-up of the control pipe taken by `drainReadyEvents` during a scan. The commands are processed here,
+        /// out of any callback, and before the timeout is computed, so that the scan of an added watcher is not delayed.
+        if (std::exchange(commands_pending, false))
+            processCommands();
 
         /// Sleep until the earliest scan, or until an event or a command if no watcher has one.
         int timeout_ms = -1;
@@ -629,12 +634,11 @@ void DirectoryWatchReactor::runLoop()
             timeout_ms = static_cast<int>(std::max<std::chrono::milliseconds::rep>(remaining.count(), 0));
         }
 
-        bool has_commands = commands_pending;
-        commands_pending = false;
+        bool has_commands = false;
         const size_t ready = waitForEvents(events, timeout_ms, has_commands);
         for (size_t i = 0; i < ready; ++i)
             dispatch(*static_cast<WatcherRegistration *>(events[i].udata), static_cast<int>(events[i].ident), events[i].fflags);
-        removeFailedWatchers();
+        commitTouchedWatchers();
 
         if (has_commands)
             processCommands();
@@ -659,7 +663,32 @@ void DirectoryWatchReactor::watcherScan(WatcherRegistration & registration)
     {
         tryLogCurrentException(log, "Cannot scan the directory of a directory watcher, it is not watched anymore");
         failWatcher(registration);
+        return;
     }
+
+    touched_watchers.insert(&registration);
+}
+
+void DirectoryWatchReactor::commitTouchedWatchers()
+{
+    for (WatcherRegistration * registration : touched_watchers)
+    {
+        if (registration->failed)
+            continue;
+
+        try
+        {
+            registration->watcher->commitEvents();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Cannot commit the events of a directory watcher, it is not watched anymore");
+            failWatcher(*registration);
+        }
+    }
+    touched_watchers.clear();
+
+    removeFailedWatchers();
 }
 
 /// The watchers that failed are removed once nothing refers to their registrations anymore.
@@ -717,7 +746,10 @@ void DirectoryWatchReactor::dispatch(WatcherRegistration & registration, int fd,
         tryLogCurrentException(log, "Cannot process the events of a directory watcher, it is not watched anymore");
         /// Not removed here: the rest of the batch can still have events with this registration as the user data.
         failWatcher(registration);
+        return;
     }
+
+    touched_watchers.insert(&registration);
 }
 
 #endif

@@ -72,10 +72,18 @@ DirectoryWatcherBase::DirectoryWatcherBase(
         ///
         /// The vnode event of the directory says that an entry was added, removed or renamed, but not which one, and
         /// it does not fire on appends to the files inside. Those are reported by the descriptors of the files, which
-        /// `syncFileWatches` registers, and are reported as `DW_ITEM_MODIFIED` at once. The other events are used only to
+        /// `syncFileWatches` registers, and are reported as `DW_ITEM_MODIFIED` at once, unless a change of the listing or a
+        /// rename is pending: then the name of the descriptor may be stale (e.g. `a` renamed to `b` and recreated, and the
+        /// old inode appended to), and the modification is deferred to the scan, which reports it under the name of its
+        /// listing after the events of the change, in the same batch. The other events are used only to
         /// scan the directory at once (matching inotify's latency, which the no-sleep test sequences rely on), and the scan finds
-        /// out what has changed. The watcher also scans on a timer with a backoff, so that a failed scan is retried and a
-        /// change that no event reported is found anyway.
+        /// out what has changed. The watcher also scans on a timer:
+        /// - after a failed scan (e.g. `EMFILE`, or the directory being briefly recreated), to retry it. This is required:
+        ///   the failed pass may have left files without a watch, so the events that would trigger a retry may never come;
+        /// - after a successful scan, with a backoff from `poll_directory_watch_events_backoff_init` up to
+        ///   `poll_directory_watch_events_backoff_max`. This is only a safety net: on a local filesystem the events of the
+        ///   directory report every change of the listing, but kqueue does not see the changes made by other hosts on a
+        ///   network filesystem, and the scan finds them with a delay.
         ///
         /// Because the per-file `NOTE_DELETE` is load-bearing (see `DarwinDirectoryWatchState::deleted_files`), kqueue is
         /// required: we fail closed on any setup error (mirroring the Linux watcher, which throws when `inotify_init1`
@@ -206,19 +214,6 @@ void DirectoryWatcherBase::onWatchRemoved()
     owner.onError(Exception(ErrorCodes::IO_SETUP_ERROR, "Directory {} is not watched anymore: it was deleted or unmounted", path));
 }
 
-void DirectoryWatcherBase::commitEvents()
-{
-    if (!has_uncommitted_events)
-    {
-        return;
-    }
-    owner.commitEvents();
-    has_uncommitted_events = false;
-
-    /// Wake up reader thread
-    owner.storage.wakeUp();
-}
-
 #elif defined(OS_DARWIN)
 
 int DirectoryWatcherBase::directoryFd() const
@@ -257,6 +252,7 @@ void DirectoryWatcherBase::onVnodeEvent(int fd, uint32_t fflags)
         if (fflags & (NOTE_WRITE | NOTE_LINK | NOTE_RENAME | NOTE_DELETE))
         {
             watch_state->directory_changed = true;
+            watch_state->structural_change_pending = true;
             watch_state->next_scan = now;
         }
         return;
@@ -266,15 +262,25 @@ void DirectoryWatcherBase::onVnodeEvent(int fd, uint32_t fflags)
     if (name_it == watch_state->watched_names.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The directory watcher of {} got an event of descriptor {}, which it does not watch", path, fd);
 
+    /// Before the modification below: kqueue merges the flags of the events not read yet, so a rename and a write
+    /// after it can come in one event.
+    if (fflags & (NOTE_RENAME | NOTE_DELETE))
+        watch_state->structural_change_pending = true;
+
     /// The descriptor tells which file changed, so a change of its contents is reported at once, as inotify's
-    /// IN_MODIFY is, and needs no scan. Truncation may come as NOTE_ATTRIB only.
+    /// IN_MODIFY is, and needs no scan. Truncation may come as NOTE_ATTRIB only. While a structural change is pending,
+    /// the name of the descriptor may belong to another file now, so the modification is left to the scan.
     if ((fflags & (NOTE_WRITE | NOTE_EXTEND | NOTE_ATTRIB)) && (eventMask() & DW_ITEM_MODIFIED))
     {
-        has_uncommitted_events = true;
-        owner.onItemModified(DirectoryEvent(name_it->second, DW_ITEM_MODIFIED));
-        owner.commitEvents();
-        has_uncommitted_events = false;
-        owner.storage.wakeUp();
+        if (watch_state->structural_change_pending)
+        {
+            watch_state->deferred_modifications.insert(watch_state->watched_fds.at(name_it->second).inode);
+        }
+        else
+        {
+            owner.onItemModified(DirectoryEvent(name_it->second, DW_ITEM_MODIFIED));
+            has_uncommitted_events = true;
+        }
     }
     if (fflags & NOTE_RENAME)
     {
@@ -424,9 +430,30 @@ bool DirectoryWatcherBase::scanFilesAndUpdateWatches(std::map<std::string, UInt6
     /// before `syncFileWatches` closes their descriptors, which drops the events not read yet.
     reactor->drainReadyEvents();
     syncFileWatches(current_files_inodes);
-    /// did syncFileWatches close file descriptors before their events were read?
+    /// The directory may have changed between the listing and the opens of `syncFileWatches`, which would pin a watch
+    /// to another inode than the listed one. The events of the files whose descriptors it closed are dropped, but the
+    /// directory reports the change too, so discard the pass if it changed.
     reactor->drainReadyEvents();
     return std::exchange(watch_state->directory_changed, false);
+}
+
+bool DirectoryWatcherBase::emitDeferredModifications(const std::map<std::string, UInt64> & current_files_inodes)
+{
+    auto & deferred_modifications = watch_state->deferred_modifications;
+    if (deferred_modifications.empty())
+        return false;
+
+    /// A file that is not listed anymore was removed or moved out, which the events of the scan report.
+    bool emitted = false;
+    for (const auto & [name, inode] : current_files_inodes)
+    {
+        if (!deferred_modifications.contains(inode))
+            continue;
+        emitted = true;
+        owner.onItemModified(DirectoryEvent(name, DW_ITEM_MODIFIED));
+    }
+    deferred_modifications.clear();
+    return emitted;
 }
 
 void DirectoryWatcherBase::onTimer()
@@ -449,6 +476,10 @@ void DirectoryWatcherBase::onTimer()
                 watch_state->next_scan = now;
                 return;
             }
+            /// The baseline emits no events of the listing, but the files it watches may have been modified since.
+            if (emitDeferredModifications(current_files_inodes))
+                has_uncommitted_events = true;
+            watch_state->structural_change_pending = false;
             watch_state->setSnapshot(std::move(current_files_inodes));
         }
         catch (const std::exception & e)
@@ -605,14 +636,10 @@ void DirectoryWatcherBase::onTimer()
         if (is_rename(inode))
         {
             if (eventMask() & DW_ITEM_MOVED_FROM)
-            {
-                has_uncommitted_events = true;
                 owner.onItemMovedFrom(DirectoryEvent(name, DW_ITEM_MOVED_FROM, inode));
-            }
         }
         else if (eventMask() & DW_ITEM_REMOVED)
         {
-            has_uncommitted_events = true;
             owner.onItemRemoved(DirectoryEvent(name, DW_ITEM_REMOVED));
         }
     }
@@ -622,10 +649,7 @@ void DirectoryWatcherBase::onTimer()
     {
         changed = true;
         if (eventMask() & DW_ITEM_MOVED_TO)
-        {
-            has_uncommitted_events = true;
             owner.onItemMovedTo(DirectoryEvent(name, DW_ITEM_MOVED_TO, current_files_inodes.at(name)));
-        }
     }
 
     /// Arrived identities that are genuinely new (including a name whose inode was replaced).
@@ -635,23 +659,25 @@ void DirectoryWatcherBase::onTimer()
             continue;
         changed = true;
         if (eventMask() & DW_ITEM_ADDED)
-        {
-            has_uncommitted_events = true;
             owner.onItemAdded(DirectoryEvent(name, DW_ITEM_ADDED));
-        }
     }
 
-    owner.commitEvents();
-    has_uncommitted_events = false;
+    /// The modifications deferred while the change was pending, under the names of this listing and after the events
+    /// that renamed or replaced the files, in the same batch.
+    if (emitDeferredModifications(current_files_inodes))
+        changed = true;
+
     watch_state->setSnapshot(std::move(current_files_inodes));
     /// This pass committed successfully, so the deletes it collected have been applied; start the next
     /// pass with a clean set. (On a retried pass we return early, keeping them.)
     deleted_files.clear();
+    watch_state->structural_change_pending = false;
 
     if (changed)
     {
+        /// The reactor commits the events once the due scans are done.
+        has_uncommitted_events = true;
         watch_state->milliseconds_to_wait = (*settings)[FileLogSetting::poll_directory_watch_events_backoff_init].totalMilliseconds();
-        owner.storage.wakeUp();
     }
     else if (watch_state->milliseconds_to_wait < static_cast<uint64_t>((*settings)[FileLogSetting::poll_directory_watch_events_backoff_max].totalMilliseconds()))
     {
@@ -662,6 +688,19 @@ void DirectoryWatcherBase::onTimer()
 }
 
 #endif
+
+void DirectoryWatcherBase::commitEvents()
+{
+    if (!has_uncommitted_events)
+    {
+        return;
+    }
+    owner.commitEvents();
+    has_uncommitted_events = false;
+
+    /// Wake up reader thread
+    owner.storage.wakeUp();
+}
 
 DirectoryWatcherBase::~DirectoryWatcherBase()
 {

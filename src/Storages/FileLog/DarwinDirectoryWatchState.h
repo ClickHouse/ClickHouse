@@ -65,6 +65,16 @@ struct DarwinDirectoryWatchState
     /// uses it to learn whether the directory changed while it was being scanned, then the listing can not be trusted.
     bool directory_changed = false;
 
+    /// An event said that the listing, or the name of a watched file, may have changed, and no scan has committed it
+    /// yet. Until then `watched_names` may map a descriptor to a name that now belongs to another file.
+    bool structural_change_pending = false;
+
+    /// The inodes of the watched files whose contents changed while `structural_change_pending` was set. They are
+    /// reported by the scan that commits the change, under the names of its listing and after the events of the
+    /// change, so that a modification is never reported under a stale name. Keyed by inode, as the name is what may
+    /// be stale.
+    std::set<UInt64> deferred_modifications;
+
     /// Whether the first snapshot, the baseline of the files that already existed, has been taken. Until then
     /// the scans only take the snapshot and emit no events.
     bool has_snapshot = false;

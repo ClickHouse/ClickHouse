@@ -45,7 +45,8 @@ class DirectoryWatcherBase;
 /// watchers register the descriptors of their files (`watchVnode`), with the registration of the watcher as the user
 /// data of the event. The reactor hands the
 /// events to the owning watcher (`DirectoryWatcherBase::onVnodeEvent`), and the same single thread also scans the
-/// directories of the watchers when their scan is due (`DirectoryWatcherBase::onTimer`).
+/// directories of the watchers when their scan is due (`DirectoryWatcherBase::onTimer`). The events these report are
+/// committed once per watcher (`DirectoryWatcherBase::commitEvents`) after the due scans and after each batch of events.
 class DirectoryWatchReactor
 {
 public:
@@ -195,9 +196,17 @@ private:
     void dispatch(WatcherRegistration & registration, int fd, uint32_t fflags);
     size_t waitForEvents(std::array<struct kevent, max_events_per_wait> & events, int timeout_ms, bool & has_commands);
     void watcherScan(WatcherRegistration & registration);
+    /// Commits the events of `touched_watchers` after the due scans or a batch of events, and removes the watchers
+    /// that failed in them.
+    void commitTouchedWatchers();
     void removeFailedWatchers();
 
     int kqueue_fd = -1;
+
+    /// The watchers that reported events in the current scans or batch of events, to commit their events once. It is
+    /// empty between them, and kept to reuse its memory. A scan drains the events of all the watchers, so it can add
+    /// other watchers than the scanned one.
+    std::unordered_set<WatcherRegistration *> touched_watchers;
 
     /// `drainReadyEvents` has taken the wake-up of the control pipe, which is not reported again.
     bool commands_pending = false;
