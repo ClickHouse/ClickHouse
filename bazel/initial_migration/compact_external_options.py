@@ -16,12 +16,14 @@ from collections import Counter, defaultdict
 import copy
 from difflib import SequenceMatcher
 import gzip
+import io
 import json
 from pathlib import Path
 import posixpath
 import re
 import sys
 import subprocess
+import tokenize
 
 ROOT_DEFAULT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT_DEFAULT / 'bazel'))
@@ -255,6 +257,158 @@ def readable_names(text, spec_name, stats):
     return source.rewrite(edits), renamed
 
 
+def string_value(node):
+    return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
+
+
+def dictionary_pairs(value):
+    if not isinstance(value, ast.Dict):
+        return None
+    keys = [string_value(key) for key in value.keys]
+    # Neither repeated keys nor dict unpacking has an unambiguous literal
+    # insertion order to use in the template proof.
+    if None in keys or len(keys) != len(set(keys)):
+        return None
+    return list(zip(value.keys, value.values))
+
+
+def factor_substitutions(text, spec_name, stats):
+    """Share literal initial substitutions without moving replacements."""
+    source = Source(text)
+    reserved = {n.id for n in ast.walk(source.module) if isinstance(n, ast.Name)}
+    comments = [item for item in tokenize.generate_tokens(io.StringIO(text).readline)
+                if item.type == tokenize.COMMENT]
+    edits = []
+    names = set()
+
+    def token(value):
+        return re.sub(r'[^a-zA-Z0-9]+', '_', value).strip('_').upper()
+
+    def dictionary(values, indent):
+        pad = ' ' * indent
+        if not values:
+            return '{}'
+        return ('{\n' + ''.join(pad + '    ' + source.text(key) + ': '
+                               + source.text(value) + ',\n' for key, value in values)
+                + pad + '}')
+
+    for statement, rule in source.rules():
+        if function(rule) != 'expand_template':
+            continue
+        fields = attrs(rule)
+        name, output = string_value(fields.get('name')), string_value(fields.get('out'))
+        selected = fields.get('substitutions')
+        if (function(selected) != 'select' or len(selected.args) != 1 or selected.keywords
+                or name is None or output is None or 'template' not in fields):
+            continue
+        choices = dictionary_pairs(selected.args[0])
+        if choices is None or len(choices) != 2 or {string_value(k) for k, _ in choices} != set(CPUS):
+            continue
+        branches = [dictionary_pairs(choice) for _, choice in choices]
+        if any(branch is None for branch in branches):
+            continue
+        common = 0
+        while common < min(map(len, branches)):
+            pairs = [branch[common] for branch in branches]
+            if not all(ast_key(key) == ast_key(pairs[0][0])
+                       and ast_key(value) == ast_key(pairs[0][1]) for key, value in pairs):
+                break
+            # Do not hoist calls from configured values to file-loading time.
+            if string_value(pairs[0][1]) is None:
+                break
+            common += 1
+        # Three entries produce as many BUILD lines as the original branches.
+        if common < 4 or any(selected.lineno <= c.start[0] <= selected.end_lineno for c in comments):
+            continue
+        owner = spec_name.removeprefix('clickhouse_')
+        parent, filename = posixpath.split(output)
+        parent = posixpath.basename(parent)
+        if token(parent) in {token(owner), token(owner + '-cmake'), 'INCLUDE', 'INCLUDE_PUBLIC'}:
+            parent = ''
+        constant = '_' + '_'.join(token(p) for p in (owner, parent, filename, 'substitutions') if p)
+        if constant in reserved:
+            continue
+        indent = next(kw.col_offset for kw in rule.keywords if kw.arg == 'substitutions')
+        declaration = constant + ' = ' + dictionary(branches[0][:common], 0) + '\n\n'
+        rows = []
+        for (key, _), branch in zip(choices, branches):
+            rows.append(' ' * (indent + 4) + source.text(key) + ': ' + constant
+                        + ' | ' + dictionary(branch[common:], indent + 4) + ',\n')
+        replacement = 'select({\n' + ''.join(rows) + ' ' * indent + '})'
+        start, end = source.span(selected)
+        if end - start - len(replacement.encode()) - len(declaration.encode()) < 64:
+            continue
+        start_rule, _ = source.span(statement)
+        edits.extend(((start_rule, start_rule, declaration), (start, end, replacement)))
+        names.add(constant)
+        reserved.add(constant)
+        stats['template_selects_factored'] += 1
+        stats['template_initial_substitutions_shared'] += common
+    return source.rewrite(edits), names
+
+
+class OrderedTemplates(ast.NodeTransformer):
+    """Expand only introduced constants and compare ordered substitutions."""
+    def __init__(self, cpu, introduced):
+        self.cpu = cpu
+        self.introduced = introduced
+        self.definitions = {}
+        self.in_substitutions = False
+        self.ordered_entries = {}
+
+    def visit_Module(self, node):
+        statements = []
+        for statement in node.body:
+            if (isinstance(statement, ast.Assign) and len(statement.targets) == 1
+                    and isinstance(statement.targets[0], ast.Name)
+                    and statement.targets[0].id in self.introduced):
+                self.definitions[statement.targets[0].id] = statement.value
+            else:
+                statements.append(self.visit(statement))
+        node.body = statements
+        return node
+
+    def visit_Name(self, node):
+        if (self.in_substitutions and isinstance(node.ctx, ast.Load)
+                and node.id in self.definitions):
+            return self.visit(copy.deepcopy(self.definitions[node.id]))
+        return node
+
+    def visit_Call(self, node):
+        if function(node) == 'expand_template':
+            name = string_value(attrs(node).get('name'))
+            for kw in node.keywords:
+                if kw.arg == 'substitutions':
+                    self.in_substitutions = True
+                    kw.value = self.visit(kw.value)
+                    self.in_substitutions = False
+                    entries = dictionary_pairs(kw.value)
+                    if entries is not None:
+                        self.ordered_entries[name] = [
+                            (string_value(key), ast_key(value)) for key, value in entries
+                        ]
+            return node
+        node = self.generic_visit(node)
+        if (self.in_substitutions and function(node) == 'select'
+                and len(node.args) == 1 and not node.keywords):
+            pairs = dictionary_pairs(node.args[0])
+            if pairs is not None and {string_value(k) for k, _ in pairs} == set(CPUS):
+                return next(value for key, value in pairs if string_value(key) == self.cpu)
+        return node
+
+    def visit_BinOp(self, node):
+        node = self.generic_visit(node)
+        if self.in_substitutions and isinstance(node.op, ast.BitOr):
+            left, right = dictionary_pairs(node.left), dictionary_pairs(node.right)
+            if left is not None and right is not None:
+                left_keys = {string_value(k) for k, _ in left}
+                if left_keys & {string_value(k) for k, _ in right}:
+                    raise ValueError('Template dictionaries overlap; insertion order not proven')
+                return ast.Dict(keys=[k for k, _ in left + right],
+                                values=[v for _, v in left + right])
+        return node
+
+
 def source_globs(text, files, stats, examples):
     source = Source(text)
     rule_names = {kw.value.value for _, rule in source.rules() for kw in rule.keywords
@@ -425,12 +579,19 @@ class Verify(ast.NodeTransformer):
 
 def prove(before, after, files, renamed, path, stats):
     original_names = set(eligible_constants(Source(before)))
-    names = original_names | {name for name in renamed.values() if name}
+    # New template names map to themselves; readable_names() only renames
+    # _GENERATED_ native attributes, so it never produces a self-mapping.
+    template_names = {key for key, value in renamed.items() if key == value}
+    names = original_names | {name for name in renamed.values() if name and name not in template_names}
     for cpu in CPUS:
+        old_templates = OrderedTemplates(cpu, template_names)
+        new_templates = OrderedTemplates(cpu, template_names)
         old = Verify(cpu, files, names)
         new = Verify(cpu, files, names)
-        old_tree = old.visit(ast.parse(before))
-        new_tree = new.visit(ast.parse(after))
+        old_tree = old.visit(old_templates.visit(ast.parse(before)))
+        new_tree = new.visit(new_templates.visit(ast.parse(after)))
+        if old_templates.ordered_entries != new_templates.ordered_entries:
+            raise ValueError(f'{path}, {cpu}: ordered template substitutions changed')
         old_key, new_key = ast_key(old_tree), ast_key(new_tree)
         if old_key != new_key:
             for a, b in zip(old_tree.body, new_tree.body):
@@ -440,6 +601,8 @@ def prove(before, after, files, renamed, path, stats):
                     break
             raise ValueError(f'{path}, {cpu}: expanded BUILD changed')
         stats['native_rules_verified_two_cpus'] += old.rules_verified
+        stats['template_ordered_items_verified_two_cpus'] += sum(
+            len(items) for items in old_templates.ordered_entries.values())
         stats['extra_occurrences_in_one_tu_list_two_cpus'] += sum(old.tu_counts.values())
         stats['filenames_compiled_by_multiple_rules_two_cpus'] += sum(len(rules) > 1 for rules in old.tu_rules.values())
 
@@ -459,6 +622,8 @@ def compact(text, spec_name, files=None, stats=None, examples=None):
     if files is not None:
         after = source_globs(after, files, stats, examples)
     after, renamed = readable_names(after, spec_name, stats)
+    after, template_names = factor_substitutions(after, spec_name, stats)
+    renamed.update({name: name for name in template_names})
     prove(text, after, files, renamed, spec_name, stats)
     return after, renamed
 
