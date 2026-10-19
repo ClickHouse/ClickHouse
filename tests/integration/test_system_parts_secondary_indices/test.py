@@ -270,8 +270,8 @@ def test_packed_orphan_file(started_cluster):
     node.query("DROP TABLE t_packed_orphan SYNC")
 
 
-def rewrite_checksums_without_file(node, part_path, file_to_drop):
-    """Re-emit the part's `checksums.txt` without the entry for `file_to_drop`.
+def rewrite_checksums_without_file(node, part_path, *files_to_drop):
+    """Re-emit the part's `checksums.txt` without the entries for `files_to_drop`.
 
     Decompresses the version-4 body, parses the version-3 binary it holds, and
     re-emits the checksums as plain-text format version 2 (which the server still
@@ -320,7 +320,7 @@ def rewrite_checksums_without_file(node, part_path, file_to_drop):
             (name, file_size, hash_low, hash_high, is_compressed, uncompressed)
         )
 
-    entries = [e for e in entries if e[0] != file_to_drop]
+    entries = [e for e in entries if e[0] not in files_to_drop]
     v2 = "checksums format version: 2\n"
     v2 += f"{len(entries)} files:\n"
     for name, file_size, hash_low, hash_high, is_compressed, uncompressed in entries:
@@ -417,3 +417,73 @@ def test_missing_marks_file(started_cluster):
     assert "Granules: 1/20" not in plan, plan
 
     node.query("DROP TABLE t_missing_marks SYNC")
+
+
+def test_text_index_missing_substream_direct_read(started_cluster):
+    # A `text` index is stored as several substreams, and a part that lost one of them cannot
+    # serve the index. The planner still reads the `__text_index_*` virtual column directly when
+    # some other part holds a complete copy, so for the damaged part the reader has to fall back
+    # to the virtual column's default expression - which needs the indexed column to be read as
+    # well. The decision whether to inject that column must use the same gate as the reader
+    # (`IMergeTreeIndex::getDeserializedFormat`), otherwise the fallback has nothing to evaluate
+    # and the query silently returns no rows from that part.
+    node.query("DROP TABLE IF EXISTS t_text_missing_substream SYNC")
+    node.query("""
+        CREATE TABLE t_text_missing_substream
+        (
+            k UInt64,
+            s String,
+            INDEX idx_s s TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1
+        )
+        ENGINE = MergeTree PARTITION BY k % 2 ORDER BY k
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+                 index_granularity = 100, replace_long_file_name_to_hash = 0,
+                 packed_skip_index_max_bytes = 0,
+                 add_minmax_index_for_numeric_columns = 0
+        """)
+    node.query(
+        "INSERT INTO t_text_missing_substream SELECT number, concat('hello', number % 10, ' world') FROM numbers(1000)"
+    )
+
+    # All rows matching 'hello1' are in partition 1, the part damaged below.
+    query = "SELECT count() FROM t_text_missing_substream WHERE hasToken(s, 'hello1')"
+    assert node.query(query).strip() == "100"
+
+    part_path = node.query(
+        "SELECT path FROM system.parts WHERE database = 'default' AND table = 't_text_missing_substream' AND active AND partition = '1'"
+    ).strip()
+    assert part_path.startswith("/"), f"Path is relative: {part_path}"
+
+    node.query("SYSTEM STOP MERGES t_text_missing_substream")
+    node.query("DETACH TABLE t_text_missing_substream")
+
+    files_to_drop = ["skp_idx_idx_s.pst.idx", "skp_idx_idx_s.pst.cmrk2"]
+    rewrite_checksums_without_file(node, part_path, *files_to_drop)
+    for file_name in files_to_drop:
+        bash(node, f"rm {shlex.quote(part_path + file_name)}")
+
+    node.query("ATTACH TABLE t_text_missing_substream")
+
+    assert (
+        node.query("""
+            SELECT partition, secondary_indices_materialized
+            FROM system.parts
+            WHERE database = 'default' AND table = 't_text_missing_substream' AND active
+            ORDER BY partition
+            """)
+        == "0\t['idx_s']\n1\t[]\n"
+    )
+
+    # The other part keeps the index materialized, so direct read from the text index is planned.
+    plan = node.query(f"EXPLAIN actions = 1 {query}")
+    assert "__text_index_idx_s" in plan, plan
+
+    assert node.query(query).strip() == "100"
+    assert (
+        node.query(
+            "SELECT k FROM t_text_missing_substream WHERE hasToken(s, 'hello1') ORDER BY k LIMIT 3"
+        )
+        == "1\n11\n21\n"
+    )
+
+    node.query("DROP TABLE t_text_missing_substream SYNC")
