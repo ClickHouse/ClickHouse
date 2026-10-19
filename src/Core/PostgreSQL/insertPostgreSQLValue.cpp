@@ -66,19 +66,24 @@ void assertPostgreSQLDateTimeFullyParsed(ReadBuffer & in)
 
         auto read_two_digit_group = [&in]
         {
+            UInt8 group_value = 0;
             for (size_t i = 0; i < 2; ++i)
             {
                 if (in.eof() || !isNumericASCII(*in.position()))
                     throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse the time zone offset of a date and time value");
+                group_value = static_cast<UInt8>(group_value * 10 + (*in.position() - '0'));
                 ++in.position();
             }
+            return group_value;
         };
 
         read_two_digit_group();
+        /// Minutes and seconds of the offset: PostgreSQL never renders a value of 60 or more there.
         for (size_t group = 0; group < 2 && !in.eof() && *in.position() == ':'; ++group)
         {
             ++in.position();
-            read_two_digit_group();
+            if (read_two_digit_group() >= 60)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid minutes or seconds in the time zone offset of a date and time value");
         }
     }
 
