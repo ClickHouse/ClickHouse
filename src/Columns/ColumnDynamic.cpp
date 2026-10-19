@@ -138,8 +138,10 @@ void ColumnDynamic::createVariantInfo(const DataTypePtr & variant_type)
         variant_info.variant_name_to_discriminator[variant_name] = discr;
     }
 
-    if (!variant_info.variant_name_to_discriminator.contains(getSharedVariantTypeName()))
+    auto shared_variant_it = variant_info.variant_name_to_discriminator.find(getSharedVariantTypeName());
+    if (shared_variant_it == variant_info.variant_name_to_discriminator.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Variant in Dynamic column doesn't contain shared variant");
+    variant_info.shared_variant_discriminator = shared_variant_it->second;
 }
 
 bool ColumnDynamic::addNewVariant(const DataTypePtr & new_variant, const String & new_variant_name)
