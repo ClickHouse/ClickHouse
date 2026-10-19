@@ -3705,7 +3705,9 @@ public:
         /// The same handoff to a new file as in `StorageFile::write`: the data of a format that does not support
         /// appending cannot be added to a non-empty file, and with `engine_file_allow_create_multiple_files`
         /// the insert steps aside into the first free numbered name instead of failing. An insert split by size
-        /// then continues the numbering from there.
+        /// then continues the numbering from there. Such a file is new, so it is removed if the insert fails
+        /// before the file is finished, as in `StorageFile::write`.
+        bool first_path_is_published = true;
         std::error_code error_code;
         if (!truncate_on_insert
             && !FormatFactory::instance().checkIfFormatSupportAppend(format_name, context, format_settings)
@@ -3728,6 +3730,7 @@ public:
             }
             while (fs::exists(new_path));
             filepath = new_path;
+            first_path_is_published = false;
         }
 
         StorageFileSink::GetNextPathCallback get_next_path;
@@ -3766,7 +3769,9 @@ public:
             context,
             flags,
             split_on_write_by_size_bytes,
-            std::move(get_next_path));
+            std::move(get_next_path),
+            StorageFileSink::PublishPathCallback{},
+            first_path_is_published);
     }
 
 private:
