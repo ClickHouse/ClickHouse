@@ -50,6 +50,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
+#include <Common/maskURIPassword.h>
 
 #include <TableFunctions/TableFunctionURL.h>
 
@@ -994,7 +995,14 @@ namespace
             format = format_name;
         }
 
-        String getLastFilePath() const override { return current_url_option; }
+        String getLastFilePath() const override
+        {
+            /// `current_url_option` is kept raw for requests and schema cache keys, but the diagnostic
+            /// path can reach the client, server log and `system.query_log`, so mask credentials here.
+            String masked = current_url_option;
+            maskURICredentials(masked);
+            return masked;
+        }
 
         bool supportsLastReadBufferRecreation() const override { return true; }
 
