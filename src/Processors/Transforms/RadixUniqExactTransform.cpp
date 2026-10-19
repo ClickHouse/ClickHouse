@@ -397,13 +397,14 @@ public:
             size_t sampled_keys = 0;
             size_t sampled_distinct = 0;
             size_t num_sampled = 0;
+            syncBuffers(stream);
             for (; num_sampled < num_buckets && (sampled_keys < DEDUPLICATION_SAMPLE_KEYS || num_sampled < DEDUPLICATION_SAMPLE_BUFFERS);
                  ++num_sampled)
             {
                 auto & buffer = stream.local_buffers[num_sampled];
                 sampled_keys += buffer.size;
                 stream.num_buffered -= buffer.size;
-                deduplicateBuffer(stream, buffer);
+                deduplicateBuffer(stream, num_sampled);
                 stream.num_buffered += buffer.size;
                 sampled_distinct += buffer.size;
             }
@@ -571,6 +572,15 @@ private:
     /// The keys follow the header, aligned.
     static_assert(sizeof(Block) % alignof(Key) == 0);
 
+    /// Where the next key of a buffer is written. It is all that routing a key touches besides the key's slot, so the
+    /// cursors are kept apart from the buffers and more of them fit into the cache.
+    struct Cursor
+    {
+        Key * pos = nullptr;
+        Key * end = nullptr;
+    };
+
+    /// The size of the head block and of the buffer are up to date only after `syncBuffer`.
     struct Buffer
     {
         /// The most recent block, the only one that may be not full.
@@ -589,6 +599,7 @@ private:
         Mode mode = Mode::BoundedSet;
 
         std::vector<Buffer> local_buffers;
+        std::vector<Cursor> local_cursors;
         std::unique_ptr<Arena> arena = std::make_unique<Arena>(4096, 2, ARENA_LINEAR_GROWTH_THRESHOLD);
         std::array<Block *, MAX_BLOCK_CLASS + 1> free_blocks{};
 
@@ -644,7 +655,7 @@ private:
             return;
         }
 
-        push(stream, stream.local_buffers[bucketHash(key) >> (64 - bucket_bits)], key);
+        push(stream, bucketHash(key) >> (64 - bucket_bits), key);
         if (++stream.num_buffered > stream.deduplication_budget) [[unlikely]]
             deduplicateStream(stream);
     }
@@ -682,10 +693,9 @@ private:
 
     void pushMany(Stream & stream, const Key * keys, size_t num_keys)
     {
-        Buffer * buffers = stream.local_buffers.data();
         const size_t shift = 64 - bucket_bits;
         for (size_t i = 0; i < num_keys; ++i)
-            push(stream, buffers[bucketHash(keys[i]) >> shift], keys[i]);
+            push(stream, bucketHash(keys[i]) >> shift, keys[i]);
         stream.num_buffered += num_keys;
     }
 
@@ -700,25 +710,45 @@ private:
     void switchToRouting(Stream & stream)
     {
         stream.local_buffers.resize(num_buckets);
+        stream.local_cursors.resize(num_buckets);
         stream.mode = Mode::Routing;
-        stream.local_set.forEach([&](Key key) { push(stream, stream.local_buffers[bucketHash(key) >> (64 - bucket_bits)], key); });
+        stream.local_set.forEach([&](Key key) { push(stream, bucketHash(key) >> (64 - bucket_bits), key); });
+        syncBuffers(stream);
         for (auto & buffer : stream.local_buffers)
             buffer.num_distinct = buffer.size;
         stream.num_buffered = stream.local_set.size();
         stream.deduplication_budget = std::max(INITIAL_DEDUPLICATION_BUDGET, stream.num_buffered * FIRST_DEDUPLICATION_BUDGET_FACTOR);
     }
 
-    ALWAYS_INLINE static void push(Stream & stream, Buffer & buffer, Key key)
+    ALWAYS_INLINE static void push(Stream & stream, size_t bucket, Key key)
     {
-        if (!buffer.head || buffer.head->size == buffer.head->capacity()) [[unlikely]]
-            addBlock(stream, buffer);
-
-        buffer.head->keys()[buffer.head->size++] = key;
-        ++buffer.size;
+        Cursor & cursor = stream.local_cursors[bucket];
+        if (cursor.pos == cursor.end) [[unlikely]]
+            addBlock(stream, bucket);
+        *cursor.pos++ = key;
     }
 
-    static void addBlock(Stream & stream, Buffer & buffer)
+    /// Brings the size of the head block and of the buffer up to date with its cursor.
+    static void syncBuffer(Stream & stream, size_t bucket)
     {
+        Buffer & buffer = stream.local_buffers[bucket];
+        if (!buffer.head)
+            return;
+        const UInt32 head_size = static_cast<UInt32>(stream.local_cursors[bucket].pos - buffer.head->keys());
+        buffer.size += head_size - buffer.head->size;
+        buffer.head->size = head_size;
+    }
+
+    static void syncBuffers(Stream & stream)
+    {
+        for (size_t bucket = 0; bucket < stream.local_buffers.size(); ++bucket)
+            syncBuffer(stream, bucket);
+    }
+
+    static void addBlock(Stream & stream, size_t bucket)
+    {
+        syncBuffer(stream, bucket);
+        Buffer & buffer = stream.local_buffers[bucket];
         const UInt32 size_class = buffer.head ? std::min<UInt32>(buffer.head->size_class + 1, MAX_BLOCK_CLASS) : 0;
 
         Block * block = stream.free_blocks[size_class];
@@ -736,6 +766,7 @@ private:
         block->next = buffer.head;
         block->size = 0;
         buffer.head = block;
+        stream.local_cursors[bucket] = {block->keys(), block->keys() + block->capacity()};
     }
 
     /// Deduplicates the buffered keys of the stream once they exceed the budget. The keys of a sample of buffers are
@@ -755,11 +786,13 @@ private:
         for (; num_deduplicated < num_buckets && (sampled_keys < DEDUPLICATION_SAMPLE_KEYS || num_deduplicated < DEDUPLICATION_SAMPLE_BUFFERS);
              ++num_deduplicated)
         {
-            auto & buffer = stream.local_buffers[stream.next_sample_buffer];
+            const size_t bucket = stream.next_sample_buffer;
             stream.next_sample_buffer = (stream.next_sample_buffer + 1) % num_buckets;
+            syncBuffer(stream, bucket);
+            auto & buffer = stream.local_buffers[bucket];
             const size_t before = buffer.size;
             const size_t known_distinct = buffer.num_distinct;
-            deduplicateBuffer(stream, buffer);
+            deduplicateBuffer(stream, bucket);
             const size_t after = buffer.size;
 
             sampled_keys += before;
@@ -802,10 +835,12 @@ private:
 
         for (; num_deduplicated < num_buckets; ++num_deduplicated)
         {
-            auto & buffer = stream.local_buffers[stream.next_sample_buffer];
+            const size_t bucket = stream.next_sample_buffer;
             stream.next_sample_buffer = (stream.next_sample_buffer + 1) % num_buckets;
+            syncBuffer(stream, bucket);
+            auto & buffer = stream.local_buffers[bucket];
             stream.num_buffered -= buffer.size;
-            deduplicateBuffer(stream, buffer);
+            deduplicateBuffer(stream, bucket);
             stream.num_buffered += buffer.size;
         }
         stream.deduplication_budget = std::max(INITIAL_DEDUPLICATION_BUDGET, stream.num_buffered * DEDUPLICATION_BUDGET_FACTOR);
@@ -820,6 +855,7 @@ private:
         set.reset(std::bit_ceil(std::max<size_t>(estimated_size * 2, INITIAL_LOCAL_SET_CAPACITY)));
         stream.mode = Mode::UnboundedSet;
 
+        syncBuffers(stream);
         for (const auto & buffer : stream.local_buffers)
         {
             for (const Block * block = buffer.head; block; block = block->next)
@@ -830,14 +866,16 @@ private:
         }
 
         stream.local_buffers.clear();
+        stream.local_cursors.clear();
         stream.free_blocks = {};
         stream.arena = std::make_unique<Arena>(4096, 2, ARENA_LINEAR_GROWTH_THRESHOLD);
         stream.num_buffered = 0;
     }
 
-    /// Deduplicates the keys of the buffer.
-    static void deduplicateBuffer(Stream & stream, Buffer & buffer)
+    /// Deduplicates the keys of the buffer, whose size must be up to date (see `syncBuffer`).
+    static void deduplicateBuffer(Stream & stream, size_t bucket)
     {
+        Buffer & buffer = stream.local_buffers[bucket];
         if (buffer.size == 0)
             return;
 
@@ -858,7 +896,9 @@ private:
 
         buffer.head = nullptr;
         buffer.size = 0;
-        set.forEach([&](Key key) { push(stream, buffer, key); });
+        stream.local_cursors[bucket] = {};
+        set.forEach([&](Key key) { push(stream, bucket, key); });
+        syncBuffer(stream, bucket);
         buffer.num_distinct = buffer.size;
     }
 
