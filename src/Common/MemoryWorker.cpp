@@ -93,7 +93,8 @@ void readMetricsFromStatFile(
     ReadBufferFromFile & buf,
     Metrics & metrics,
     std::initializer_list<std::string_view> keys,
-    bool * warnings_printed)
+    bool * warnings_printed,
+    std::initializer_list<std::string_view> optional_keys = {})
 {
     /// Zero out existing values; keeps map nodes allocated for reuse.
     for (auto & [_, v] : metrics)
@@ -148,6 +149,11 @@ void readMetricsFromStatFile(
         /// (e.g. `CGroupMemoryInactiveFile` is omitted rather than published as 0).
         metrics.erase(*it);
 
+        /// An optional key may legitimately be absent (e.g. an older kernel does not expose `inactive_file`),
+        /// so it must not be logged as an error nor consume the single warning slot.
+        if (std::find(optional_keys.begin(), optional_keys.end(), *it) != optional_keys.end())
+            continue;
+
         if (print_warnings)
         {
             *warnings_printed = true;
@@ -176,7 +182,7 @@ struct CgroupsV1Reader : ICgroupsReader
         buf.rewind();
         /// Use total_inactive_file for cgroups v1 to get the hierarchical value
         /// (includes child cgroups), matching Kubernetes cadvisor behavior.
-        readMetricsFromStatFile(buf, metrics, {"rss", "total_inactive_file"}, &warnings_printed);
+        readMetricsFromStatFile(buf, metrics, {"rss", "total_inactive_file"}, &warnings_printed, {"total_inactive_file"});
 
         CgroupsMemoryUsageAndInactive result;
         result.usage = calculateUsage(metrics);
@@ -224,7 +230,7 @@ struct CgroupsV2Reader : ICgroupsReader
         std::lock_guard lock(mutex);
         stat_buf.rewind();
         readMetricsFromStatFile(
-            stat_buf, metrics, {"anon", "sock", "kernel", "slab_reclaimable", "inactive_file"}, &warnings_printed);
+            stat_buf, metrics, {"anon", "sock", "kernel", "slab_reclaimable", "inactive_file"}, &warnings_printed, {"inactive_file"});
 
         CgroupsMemoryUsageAndInactive result;
         result.usage = calculateUsage(metrics);
