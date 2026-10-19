@@ -133,6 +133,33 @@ promql_client -q "sort_by_label(lz, 'instance')"
 echo "-- sort_by_label_desc(lz, 'instance'): the order of Prometheus 3.5"
 promql_client -q "sort_by_label_desc(lz, 'instance')"
 
+echo "-- sort_by_label(up): no labels sorts by all labels, as in Prometheus"
+promql_client -q "sort_by_label(up)"
+
+echo "-- sort_by_label_desc(up): reverse of the above"
+promql_client -q "sort_by_label_desc(up)"
+
+echo "-- sort_by_label(mem): the series without 'dc' ends up last"
+promql_client -q "sort_by_label(mem)"
+
+echo "-- sort_by_label_desc(mem): reverse of the above"
+promql_client -q "sort_by_label_desc(mem)"
+
+echo "-- sort_by_label_desc(sort_by_label(lz, 'instance'), 'instance'): the outer sort starts from the inner order, as in Prometheus 3.5"
+promql_client -q "sort_by_label_desc(sort_by_label(lz, 'instance'), 'instance')"
+
+echo "-- sort_by_label(sort_by_label(lz, 'instance'), 'instance'): the order of Prometheus 3.5"
+promql_client -q "sort_by_label(sort_by_label(lz, 'instance'), 'instance')"
+
+echo "-- sort_by_label(sort_by_label_desc(lz, 'instance'), 'instance'): the order of Prometheus 3.5"
+promql_client -q "sort_by_label(sort_by_label_desc(lz, 'instance'), 'instance')"
+
+echo "-- sort_by_label(sort(lz), 'instance'): the order of Prometheus 3.5"
+promql_client -q "sort_by_label(sort(lz), 'instance')"
+
+echo "-- sort_by_label(abs(sort_desc(lz)), 'instance'): the order of Prometheus 3.5"
+promql_client -q "sort_by_label(abs(sort_desc(lz)), 'instance')"
+
 echo "-- abs(sort_by_label(mem, 'host')): abs() keeps the order fixed by sort_by_label()"
 promql_client -q "abs(sort_by_label(mem, 'host'))"
 
@@ -155,8 +182,8 @@ SELECT arrayMap(g -> timeSeriesExtractTag(g, 'host'),
         [timeSeriesTagsToGroup([('host', 'host10')]), timeSeriesTagsToGroup([('host', 'host9')]), timeSeriesTagsToGroup([('host', 'host1')])],
         ['host'], false)) AS hosts"
 
-echo "-- error: sort_by_label requires at least 2 arguments"
-promql_client -q "sort_by_label(up)" 2>&1 | grep -o "expects at least 2 arguments" | head -n 1
+echo "-- error: sort_by_label requires at least 1 argument"
+promql_client -q "sort_by_label()" 2>&1 | grep -o "expects at least 1 argument" | head -n 1
 
 echo "-- error: label arguments must be strings"
 promql_client -q "sort_by_label(up, 5)" 2>&1 | grep -o "of type STRING" | head -n 1

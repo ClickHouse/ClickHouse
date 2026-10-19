@@ -57,18 +57,41 @@ namespace
             std::move(sorted_pairs));
     }
 
-    /// Orders the groups for sort_by_label() / sort_by_label_desc() exactly like Prometheus:
-    /// timeSeriesSortGroupsByTags(groupArray(group), [<labels>], <descending>)
-    ASTPtr makeSortedGroupsByLabels(const std::vector<String> & labels, bool descending)
+    /// Orders the groups for sort_by_label() / sort_by_label_desc() exactly like Prometheus, with timeSeriesSortGroupsByTags();
+    /// with `has_input_rank` it starts from the order fixed by an inner sort*() call (`sort_rank`).
+    ASTPtr makeSortedGroupsByLabels(const std::vector<String> & labels, bool descending, bool has_input_rank)
     {
         Array label_names;
         for (const auto & label : labels)
             label_names.push_back(label);
 
+        if (!has_input_rank)
+        {
+            return makeASTFunction("timeSeriesSortGroupsByTags",
+                makeASTFunction("groupArray", make_intrusive<ASTIdentifier>(ColumnNames::Group)),
+                make_intrusive<ASTLiteral>(std::move(label_names)),
+                make_intrusive<ASTLiteral>(descending));
+        }
+
+        auto sort_input = makeASTFunction("groupArray",
+            makeASTFunction("tuple",
+                make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                makeASTFunction("CAST", make_intrusive<ASTIdentifier>(ColumnNames::SortRank), make_intrusive<ASTLiteral>(String{"Array(UInt64)"}))));
+        sort_input->setAlias("sort_input");
+
+        auto element = [](ASTPtr array, UInt64 index)
+        {
+            return makeASTFunction("arrayMap",
+                makeASTLambda({"t"},
+                    makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("t"), make_intrusive<ASTLiteral>(index))),
+                std::move(array));
+        };
+
         return makeASTFunction("timeSeriesSortGroupsByTags",
-            makeASTFunction("groupArray", make_intrusive<ASTIdentifier>(ColumnNames::Group)),
+            element(sort_input, 1),
             make_intrusive<ASTLiteral>(std::move(label_names)),
-            make_intrusive<ASTLiteral>(descending));
+            make_intrusive<ASTLiteral>(descending),
+            element(make_intrusive<ASTIdentifier>("sort_input"), 2));
     }
 
     /// Materializes `query` and makes `query_piece` continue from its `group` and `values` columns.
@@ -89,7 +112,8 @@ namespace
 
     /// Orders the vector at the sort*() call site: builds a subquery mapping each series (`sort_group`)
     /// to its position (`sort_rank`) in the required order, later applied by finalizeSQL().
-    void materializeSortRank(SQLQueryPiece & query_piece, ASTPtr && sorted_groups, ConverterContext & context)
+    void materializeSortRank(
+        SQLQueryPiece & query_piece, ASTPtr && sorted_groups, ConverterContext & context, const String & input_rank_subquery = {})
     {
         /// The other store methods hold at most one series, so there is nothing to order.
         if (query_piece.store_method != StoreMethod::VECTOR_GRID)
@@ -109,6 +133,17 @@ namespace
             builder.select_list.back()->setAlias(ColumnNames::SortedGroups);
 
             builder.from_table = vector_grid;
+
+            /// Gives `sorted_groups` the input order as `sort_rank`.
+            if (!input_rank_subquery.empty())
+            {
+                builder.join_table = input_rank_subquery;
+                builder.join_kind = JoinKind::Left;
+                builder.join_strictness = JoinStrictness::Any;
+                builder.join_on = makeASTFunction("equals",
+                    make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                    make_intrusive<ASTIdentifier>(ColumnNames::SortGroup));
+            }
 
             step1_query = builder.getSelectQuery();
         }
@@ -175,11 +210,11 @@ SQLQueryPiece applySortFunction(
 
     if (isSortByLabelFunction(function_name))
     {
-        /// sort_by_label(v instant-vector, label string, ...) requires the vector and at least one label.
-        if (arguments.size() < 2)
+        /// sort_by_label(v instant-vector, label string, ...) requires the vector; with no labels it sorts by all labels.
+        if (arguments.empty())
         {
             throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "Function '{}' expects at least 2 arguments (an instant vector and at least one label name), "
+                            "Function '{}' expects at least 1 argument (an instant vector and optional label names), "
                             "but was called with {} arguments",
                             function_name, arguments.size());
         }
@@ -208,9 +243,16 @@ SQLQueryPiece applySortFunction(
             labels.push_back(arguments[i].string_value);
         }
 
+        /// Prometheus sorts the vector in place, so an order fixed by an inner sort*() call is the starting point.
+        String input_rank_subquery = argument.sort_rank_subquery;
+
         /// sort_by_label() / sort_by_label_desc() do not change the values, they only order the vector, which must
         /// happen right at this call site: outer functions must see (and keep) the order produced here.
-        materializeSortRank(argument, makeSortedGroupsByLabels(labels, function_name == "sort_by_label_desc"), context);
+        materializeSortRank(
+            argument,
+            makeSortedGroupsByLabels(labels, function_name == "sort_by_label_desc", !input_rank_subquery.empty()),
+            context,
+            input_rank_subquery);
         argument.node = function_node;
         return std::move(argument);
     }

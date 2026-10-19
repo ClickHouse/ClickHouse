@@ -16,6 +16,7 @@
 #include <bit>
 #include <numeric>
 #include <optional>
+#include <span>
 
 
 namespace DB
@@ -25,6 +26,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
 namespace
@@ -397,7 +399,7 @@ private:
 
 }
 
-/// Function timeSeriesSortGroupsByTags(groups, tag_names, descending) orders groups like Prometheus's
+/// Function timeSeriesSortGroupsByTags(groups, tag_names, descending[, ranks]) orders groups like Prometheus's
 /// sort_by_label() (or sort_by_label_desc() if `descending` is true).
 class FunctionTimeSeriesSortGroupsByTags final : public IFunction
 {
@@ -409,7 +411,8 @@ public:
 
     String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 3; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
     /// The result depends on the tags stored in the query context, so it's deterministic only in the scope of the current query.
@@ -422,10 +425,10 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() != 3)
+        if (arguments.size() != 3 && arguments.size() != 4)
         {
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Function {} must be called with three arguments: {}(groups, tag_names, descending)",
+                            "Function {} must be called with three or four arguments: {}(groups, tag_names, descending[, ranks])",
                             name, name);
         }
 
@@ -440,6 +443,15 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument #3 of function {} has wrong type {}, it must be {}",
                             name, arguments[2].type, "Bool");
 
+        if (arguments.size() == 4)
+        {
+            const auto * ranks_type = typeid_cast<const DataTypeArray *>(arguments[3].type.get());
+            const auto * rank_type = ranks_type ? typeid_cast<const DataTypeArray *>(ranks_type->getNestedType().get()) : nullptr;
+            if (!rank_type || !isUInt64(rank_type->getNestedType()))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument #4 of function {} has wrong type {}, it must be {}",
+                                name, arguments[3].type, "Array(Array(UInt64))");
+        }
+
         return arguments[0].type;
     }
 
@@ -452,6 +464,17 @@ public:
         const auto & groups_array = assert_cast<const ColumnArray &>(*groups_column);
         const auto & groups = assert_cast<const ColumnUInt64 &>(groups_array.getData()).getData();
         const auto & offsets = groups_array.getOffsets();
+
+        /// The input order of the groups: ranks[i] is the position of groups[i] fixed by an inner sort*() call.
+        ColumnPtr ranks_column;
+        const ColumnArray * ranks_array = nullptr;
+        if (arguments.size() == 4)
+        {
+            ranks_column = arguments[3].column->convertToFullColumnIfConst();
+            ranks_array = &assert_cast<const ColumnArray &>(*ranks_column);
+            if (ranks_array->getOffsets() != offsets)
+                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Arguments #1 and #4 of function {} must have equal sizes", name);
+        }
 
         auto result_data = ColumnUInt64::create();
         result_data->reserve(groups.size());
@@ -485,10 +508,29 @@ public:
                 return descending ? -c : c;
             };
 
-            /// Prometheus sorts a vector that comes from storage ordered by tags.
+            /// Prometheus sorts the vector in place: start from the ranks of an inner sort, or from storage order (by tags).
             VectorWithMemoryTracking<size_t> order(tags.size());
             std::iota(order.begin(), order.end(), 0);
-            std::sort(order.begin(), order.end(), [&](size_t a, size_t b) { return compareTags(tags[a], tags[b]) < 0; });
+            if (ranks_array)
+            {
+                const auto & rank_offsets = assert_cast<const ColumnArray &>(ranks_array->getData()).getOffsets();
+                const auto & rank_data = assert_cast<const ColumnUInt64 &>(assert_cast<const ColumnArray &>(ranks_array->getData()).getData()).getData();
+                size_t first = offsets[row - 1];
+                auto rank = [&](size_t i)
+                {
+                    return std::span<const UInt64>(rank_data.data() + rank_offsets[first + i - 1], rank_data.data() + rank_offsets[first + i]);
+                };
+                std::sort(order.begin(), order.end(), [&](size_t a, size_t b)
+                {
+                    auto ra = rank(a);
+                    auto rb = rank(b);
+                    if (auto c = std::lexicographical_compare_three_way(ra.begin(), ra.end(), rb.begin(), rb.end()); c != 0)
+                        return c < 0;
+                    return compareTags(tags[a], tags[b]) < 0;
+                });
+            }
+            else
+                std::sort(order.begin(), order.end(), [&](size_t a, size_t b) { return compareTags(tags[a], tags[b]) < 0; });
 
             GoSort<decltype(cmp)>(order, cmp).sort();
 
@@ -511,11 +553,12 @@ REGISTER_FUNCTION(TimeSeriesSortGroupsByTags)
 Sorts an array of groups by the values of the specified tags in natural order, the way the PromQL functions
 `sort_by_label()` and `sort_by_label_desc()` of Prometheus 3.5 do. Groups with equal tag values are ordered by all their tags.
     )";
-    FunctionDocumentation::Syntax syntax = "timeSeriesSortGroupsByTags(groups, tag_names, descending)";
+    FunctionDocumentation::Syntax syntax = "timeSeriesSortGroupsByTags(groups, tag_names, descending[, ranks])";
     FunctionDocumentation::Arguments arguments = {
         {"groups", "Groups of tags.", {"Array(UInt64)"}},
         {"tag_names", "Names of the tags to sort by. A missing tag counts as an empty string.", {"const Array(String)"}},
-        {"descending", "Whether to sort in descending order.", {"const Bool"}}};
+        {"descending", "Whether to sort in descending order.", {"const Bool"}},
+        {"ranks", "Optional. The input order of the groups, as ranks compared lexicographically; by default the groups are first ordered by all their tags.", {"Array(Array(UInt64))"}}};
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the sorted groups.", {"Array(UInt64)"}};
     FunctionDocumentation::Examples examples = {
     {
