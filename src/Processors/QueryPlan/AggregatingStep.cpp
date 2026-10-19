@@ -34,6 +34,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MemoryBoundMerging.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
+#include <Processors/Transforms/StopAllStreamsTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
 #include <Common/typeid_cast.h>
@@ -800,6 +801,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             many_data->enableSharedKeptKeys();
         }
 
+        if (transform_params->params.stop_all_streams_at_max_rows_to_group_by)
+            addStopAllStreamsTransforms(pipeline);
+
         size_t counter = 0;
         pipeline.addSimpleTransform(
             [&](const SharedHeader & header)
@@ -1086,6 +1090,9 @@ QueryPipelineBuilderPtr AggregatingProjectionStep::updatePipeline(
             pipeline.getHeader(), std::move(params_copy), aggregator_list_ptr, final);
 
         pipeline.resize(pipeline.getNumStreams(), true);
+
+        if (params.stop_all_streams_at_max_rows_to_group_by)
+            addStopAllStreamsTransforms(pipeline);
 
         pipeline.addSimpleTransform([&](const SharedHeader & header)
         {

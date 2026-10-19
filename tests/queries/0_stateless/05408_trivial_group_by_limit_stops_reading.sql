@@ -11,6 +11,11 @@ SETTINGS max_threads = 1, log_comment = 'gbl_stop_single_thread' FORMAT Null;
 SELECT k FROM (SELECT number AS k FROM system.numbers UNION ALL SELECT 1 AS k FROM system.numbers) GROUP BY k LIMIT 5
 SETTINGS max_threads = 2, log_comment = 'gbl_stop_stream_with_single_key' FORMAT Null;
 
+-- The second stream filters out all its rows, so its aggregation never receives a chunk.
+SELECT k FROM (SELECT number AS k FROM system.numbers UNION ALL SELECT number AS k FROM system.numbers WHERE cityHash64(number) = 0)
+GROUP BY k LIMIT 5
+SETTINGS max_threads = 2, log_comment = 'gbl_stop_stream_without_rows' FORMAT Null;
+
 -- Exactly `LIMIT` distinct keys.
 SELECT number % 5 FROM system.numbers GROUP BY number % 5 LIMIT 5
 SETTINGS max_threads = 1, log_comment = 'gbl_stop_exact_key_count' FORMAT Null;
