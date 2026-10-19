@@ -123,6 +123,12 @@ using ColumnsCacheWriteBudgetPtr = std::shared_ptr<ColumnsCacheWriteBudget>;
 class IcebergMetadataFilesCache;
 class PaimonMetadataFilesCache;
 class ParquetMetadataCache;
+#if USE_GPU
+namespace GPU
+{
+class GPUDevice;
+}
+#endif
 class VectorSimilarityIndexCache;
 class TextIndexTokensCache;
 class TextIndexHeaderCache;
@@ -1669,6 +1675,14 @@ public:
         size_t num_shards);
     std::shared_ptr<PageCache> getPageCache() const;
     void clearPageCache() const;
+
+#if USE_GPU
+    /// Takes the GPU with the `gpu_*` server settings. It is called at the start of the server when `enable_gpu` is
+    /// set, before any query, and the device is released at shutdown.
+    void setGPU(const ServerSettings & server_settings);
+    /// Throws when `enable_gpu` is not set.
+    GPU::GPUDevice & getGPU() const;
+#endif
 
     void setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
     void updateMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
