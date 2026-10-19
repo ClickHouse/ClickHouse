@@ -293,8 +293,8 @@ def main():
             print("UNEXPECTED PACKET {}".format(packet_type))
             return
         code, text = readException(s)
-        # 306 == TOO_DEEP_RECURSION
-        if code == 306 and "Too deep nesting of lambda captures" in text:
+        # 306 == TOO_DEEP_RECURSION. In sanitizer builds, `checkStackSize` may throw it before the depth limit is reached.
+        if code == 306:
             print("TOO_DEEP_RECURSION")
         else:
             print("UNEXPECTED EXCEPTION {}: {}".format(code, text))
