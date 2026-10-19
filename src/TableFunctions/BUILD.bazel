@@ -1,5 +1,5 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "CLICKHOUSE_WARNINGS", "llvm_toolchain_path", "repository_path")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "llvm_toolchain_path", "repository_path")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -62,9 +62,6 @@ ch_cc_library(
         "registerTableFunctions.cpp",
         "Hive/TableFunctionHive.cpp",
     ],
-    hdrs = ([
-    ] + [
-    ]),
     additional_compiler_inputs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:gen/x86_64/contrib/clickstack-cmake/clickstack_compressed/404.html.gz",
@@ -525,19 +522,12 @@ ch_cc_library(
     ],
     clickhouse_code = True,
     copts = [
-        "-Wframe-larger-than=65536",
-    ] + CLICKHOUSE_WARNINGS + [
-        "-std=c++23",
         "-I",
         "$(GENDIR)/bazel/gen/includes/configs",
         "-I",
     ] + select({
-        "@platforms//cpu:x86_64": [
-            "$(GENDIR)/bazel/gen/x86_64/src",
-        ],
-        "@platforms//cpu:aarch64": [
-            "$(GENDIR)/bazel/gen/aarch64/src",
-        ],
+        "@platforms//cpu:x86_64": ["$(GENDIR)/bazel/gen/x86_64/src"],
+        "@platforms//cpu:aarch64": ["$(GENDIR)/bazel/gen/aarch64/src"],
     }) + [
         "-I",
         repository_path("contrib/libfiu") + "/libfiu",
@@ -845,13 +835,6 @@ ch_cc_library(
         "../../" + (llvm_toolchain_path() + "/libc"),
         "../../" + (llvm_toolchain_path() + "/compiler-rt/include"),
     ]),
-    textual_hdrs = [
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }),
     deps = select({
         "@platforms//cpu:x86_64": [
             "@llvm-project//compiler-rt:headers",

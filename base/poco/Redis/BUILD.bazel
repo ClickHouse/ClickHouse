@@ -1,5 +1,5 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "CLICKHOUSE_WARNINGS", "llvm_toolchain_path")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "llvm_toolchain_path")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -7,10 +7,8 @@ package(default_visibility = ["//visibility:public"])
 ch_cc_library(
     name = "_poco_redis",
     srcs = glob(["src/*.cpp"]),
-    hdrs = [],
     clickhouse_code = True,
-    copts = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [
-        "-std=c++23",
+    copts = [
         "-Wno-deprecated-dynamic-exception-spec",
         "-Wno-shadow",
         "-Wno-shorten-64-to-32",
@@ -18,7 +16,8 @@ ch_cc_library(
         "-Wno-zero-as-null-pointer-constant",
         "-Wno-implicit-int-conversion",
         "-I",
-    ] + ["$(GENDIR)/bazel/gen/includes/configs"],
+        "$(GENDIR)/bazel/gen/includes/configs",
+    ],
     local_defines = [
         "POCO_ENABLE_CPP11",
         "POCO_OS_FAMILY_UNIX",

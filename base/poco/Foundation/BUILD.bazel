@@ -215,8 +215,6 @@ ch_cc_library(
         "src/VarIterator.cpp",
         "src/Void.cpp",
     ],
-    hdrs = [
-    ],
     additional_compiler_inputs = [
         "src/DirectoryIterator_UNIX.cpp",
         "src/Environment_UNIX.cpp",
@@ -393,9 +391,6 @@ ch_cc_library(
     ],
     clickhouse_code = True,
     copts = [
-        "-Wframe-larger-than=65536",
-    ] + CLICKHOUSE_WARNINGS + [
-        "-std=c++23",
         "-Wno-array-bounds",
         "-Wno-atomic-implicit-seq-cst",
         "-Wno-cast-align",
@@ -620,7 +615,7 @@ ch_cc_library(
 ch_cc_library(
     name = "_poco_foundation_pcre",
     srcs = glob(["src/*.c"]),
-    hdrs = [] + [
+    hdrs = [
         "src/pcre.h",
         "src/pcre_config.h",
         "src/pcre_internal.h",

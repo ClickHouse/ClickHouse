@@ -1,13 +1,11 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "CLICKHOUSE_WARNINGS", "llvm_toolchain_path", "repository_path")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "llvm_toolchain_path", "repository_path")
 
 package(default_visibility = ["//visibility:public"])
 
 ch_cc_library(
     name = "clickhouse-extract-from-config-lib",
     srcs = ["ExtractFromConfig.cpp"],
-    hdrs = [
-    ],
     additional_compiler_inputs = [
         "//base/poco/Foundation:src/DirectoryIterator_UNIX.cpp",
         "//base/poco/Foundation:src/Environment_UNIX.cpp",
@@ -47,9 +45,6 @@ ch_cc_library(
     ],
     clickhouse_code = True,
     copts = [
-        "-Wframe-larger-than=65536",
-    ] + CLICKHOUSE_WARNINGS + [
-        "-std=c++23",
         "-I",
         "$(GENDIR)/bazel/gen/includes/configs",
         "-I",

@@ -7,7 +7,7 @@ package(default_visibility = ["//visibility:public"])
 ch_cc_library(
     name = "readpassphrase",
     srcs = ["readpassphrase.c"],
-    hdrs = [] + ["readpassphrase.h"],
+    hdrs = ["readpassphrase.h"],
     additional_compiler_inputs = [
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",

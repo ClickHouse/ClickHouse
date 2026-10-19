@@ -1014,6 +1014,11 @@ class BuildFile:
                             if clickhouse_code:
                                 start = value.index(CLICKHOUSE_CODE_FLAGS[0])
                                 value = value[:start] + value[start + len(CLICKHOUSE_CODE_FLAGS):]
+                                if language == 'CXX':
+                                    code_defaults = ['-Wframe-larger-than=65536'] + CLICKHOUSE_WARNINGS + ['-std=c++23']
+                                    if value[:len(code_defaults)] != code_defaults:
+                                        raise ValueError(f'{name} {arch}: ch_cc_library CXX flags are not the expected prefix')
+                                    value = value[len(code_defaults):]
                             if language in {'C', 'CXX'} and '-Weverything' in value:
                                 start = value.index('-Weverything')
                                 end = start + len(CLICKHOUSE_WARNINGS)

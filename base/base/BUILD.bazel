@@ -1,5 +1,5 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "CLICKHOUSE_WARNINGS", "llvm_toolchain_path", "repository_path")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "llvm_toolchain_path", "repository_path")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -36,15 +36,10 @@ ch_cc_library(
         "safeExit.cpp",
         "throwError.cpp",
         "Numa.cpp",
-    ] + ["//bazel:gen/base/base/GitHash.generated.cpp"] + ["wide_integer_to_string.cpp"],
-    hdrs = [
+        "//bazel:gen/base/base/GitHash.generated.cpp",
+        "wide_integer_to_string.cpp",
     ],
     clickhouse_code = True,
-    copts = [
-        "-Wframe-larger-than=65536",
-    ] + CLICKHOUSE_WARNINGS + [
-        "-std=c++23",
-    ],
     local_defines = [
         "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
         "BOOST_ASIO_STANDALONE=1",

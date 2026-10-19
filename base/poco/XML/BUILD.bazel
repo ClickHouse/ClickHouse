@@ -9,7 +9,7 @@ exports_files([
     "src/xmltok_ns.c",
 ])
 
-_GENERATED_HDRS_0 = [] + [
+_GENERATED_HDRS_0 = [
     "include/Poco/DOM/AbstractContainerNode.h",
     "include/Poco/DOM/AbstractNode.h",
     "include/Poco/DOM/Attr.h",
@@ -109,8 +109,7 @@ ch_cc_library(
     srcs = glob(["src/*.cpp"]),
     hdrs = _GENERATED_HDRS_0,
     clickhouse_code = True,
-    copts = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [
-        "-std=c++23",
+    copts = [
         "-Wno-c99-extensions",
         "-Wno-cast-qual",
         "-Wno-covered-switch-default",
@@ -134,7 +133,8 @@ ch_cc_library(
         "-Wno-unused-parameter",
         "-Wno-zero-as-null-pointer-constant",
         "-I",
-    ] + ["$(GENDIR)/bazel/gen/includes/configs"],
+        "$(GENDIR)/bazel/gen/includes/configs",
+    ],
     local_defines = [
         "POCO_ENABLE_CPP11",
         "POCO_OS_FAMILY_UNIX",

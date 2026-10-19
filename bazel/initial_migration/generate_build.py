@@ -897,7 +897,7 @@ def main():
     LlvmOutputs(ROOT).run(write=True)
     # Capture CMake at repository scope, then render native Bazel packages.
     # Existing native BUILD files must not hide CMake inputs on a second run.
-    from initial_migration.first_party_packages import Build, Migration as NativePackages
+    from initial_migration.first_party_packages import Build, Migration as NativePackages, native_directory
     native_packages = NativePackages(ROOT, stage='all', from_generator=True)
     native_builds = native_packages.prepare()
     for path, content in native_builds.items():
@@ -906,7 +906,7 @@ def main():
     from initial_migration.compact_external_options import (
         PackageFiles, compact as compact_external_options, format_and_prove, source_globs,
     )
-    from initial_migration.normalize_cpp_builds import normalize
+    from initial_migration.normalize_cpp_builds import normalize, prove
     for owner, spec in REPOSITORIES.items():
         path = ROOT / 'bazel/dependencies' / (spec['name'] + '.BUILD.bazel')
         if path.is_file():
@@ -927,6 +927,14 @@ def main():
         if after != before:
             path.write_text(format_and_prove(ROOT, before, after, str(path), files, {}))
     prune_native_exports(ROOT, write=True)
+    for path in native_builds:
+        package = path.parent.relative_to(ROOT).as_posix().removeprefix('.')
+        if path.name == 'BUILD.bazel' and (not package or native_directory(package)):
+            before = path.read_text()
+            after = normalize(before)
+            prove(before, after, path)
+            if after != before:
+                path.write_text(after)
     format_build_files()
     for arch, inventory in inventories.items():
         print(arch, inventory['native_targets'], 'native targets,', inventory['compile_actions'], 'compile actions')

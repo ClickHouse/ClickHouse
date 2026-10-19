@@ -1,5 +1,5 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "CLICKHOUSE_WARNINGS", "llvm_toolchain_path", "repository_path")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "llvm_toolchain_path", "repository_path")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -7,20 +7,16 @@ package(default_visibility = ["//visibility:public"])
 ch_cc_library(
     name = "clickhouse_antlr4_grammars",
     srcs = glob(["generated/antlr4_grammars/*.cpp"]),
-    hdrs = ([
-    ] + [
+    hdrs = [
         "generated/antlr4_grammars/PromQLLexer.h",
         "generated/antlr4_grammars/PromQLParser.h",
         "generated/antlr4_grammars/PromQLParserBaseListener.h",
         "generated/antlr4_grammars/PromQLParserBaseVisitor.h",
         "generated/antlr4_grammars/PromQLParserListener.h",
         "generated/antlr4_grammars/PromQLParserVisitor.h",
-    ]),
+    ],
     clickhouse_code = True,
     copts = [
-        "-Wframe-larger-than=65536",
-    ] + CLICKHOUSE_WARNINGS + [
-        "-std=c++23",
         "-w",
         "-fno-xray-instrument",
         "-I",

@@ -7,10 +7,8 @@ package(default_visibility = ["//visibility:public"])
 ch_cc_library(
     name = "_poco_json",
     srcs = glob(["src/*.cpp"]),
-    hdrs = [],
     clickhouse_code = True,
-    copts = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [
-        "-std=c++23",
+    copts = [
         "-Wno-deprecated-dynamic-exception-spec",
         "-Wno-sign-compare",
         "-Wno-suggest-destructor-override",
@@ -19,7 +17,8 @@ ch_cc_library(
         "-Wno-zero-as-null-pointer-constant",
         "-Wno-implicit-int-conversion",
         "-I",
-    ] + ["$(GENDIR)/bazel/gen/includes/configs"],
+        "$(GENDIR)/bazel/gen/includes/configs",
+    ],
     local_defines = [
         "POCO_ENABLE_CPP11",
         "POCO_OS_FAMILY_UNIX",
@@ -48,7 +47,7 @@ ch_cc_library(
 ch_cc_library(
     name = "_poco_json_pdjson",
     srcs = ["src/pdjson.c"],
-    hdrs = [] + ["src/pdjson.h"],
+    hdrs = ["src/pdjson.h"],
     additional_compiler_inputs = [
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",

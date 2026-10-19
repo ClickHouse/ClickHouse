@@ -1,5 +1,5 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "CLICKHOUSE_WARNINGS", "llvm_toolchain_path", "repository_path")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "llvm_toolchain_path", "repository_path")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -511,19 +511,12 @@ ch_cc_library(
     ] + ["main.cpp"],
     clickhouse_code = True,
     copts = [
-        "-Wframe-larger-than=65536",
-    ] + CLICKHOUSE_WARNINGS + [
-        "-std=c++23",
         "-I",
         "$(GENDIR)/bazel/gen/includes/configs",
         "-I",
     ] + select({
-        "@platforms//cpu:x86_64": [
-            "$(GENDIR)/bazel/gen/x86_64/src",
-        ],
-        "@platforms//cpu:aarch64": [
-            "$(GENDIR)/bazel/gen/aarch64/src",
-        ],
+        "@platforms//cpu:x86_64": ["$(GENDIR)/bazel/gen/x86_64/src"],
+        "@platforms//cpu:aarch64": ["$(GENDIR)/bazel/gen/aarch64/src"],
     }) + [
         "-I",
         repository_path("contrib/libfiu") + "/libfiu",
