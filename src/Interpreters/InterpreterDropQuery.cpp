@@ -14,6 +14,9 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageTableFunction.h>
+#include <Storages/StorageTableProxy.h>
+#include <Storages/StorageTimeSeries.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
@@ -221,7 +224,18 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             && std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= static_cast<double>(settings[Setting::ignore_drop_queries_probability]))
         {
             ast_drop_query.sync = false;
-            if (table->storesDataOnDisk())
+            /// A real DROP of an object storage, table function or non-truncatable table does not delete its data, so do not TRUNCATE it.
+            /// The proxy is checked first: its `supportsTruncate` resolves the table function.
+            auto keeps_data_on_drop = [](const IStorage & storage)
+            {
+                return storage.isObjectStorage() || typeid_cast<const StorageTableFunctionProxy *>(&storage) || !storage.supportsTruncate();
+            };
+            /// The TRUNCATE of a materialized view truncates its inner table.
+            StoragePtr inner_table;
+            if (materialized_view && materialized_view->hasInnerTable())
+                inner_table = materialized_view->tryGetTargetTable();
+
+            if (table->storesDataOnDisk() || keeps_data_on_drop(*table) || (inner_table && keeps_data_on_drop(*inner_table)))
             {
                 LOG_TEST(getLogger("InterpreterDropQuery"), "Ignore DROP TABLE query for table {}.{}", table_id.database_name, table_id.table_name);
                 return {};
@@ -326,14 +340,21 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             table->checkTableCanBeDropped(context_);
 
+            /// A `lazy_load_tables` database hands out a `StorageTableProxy`, which forwards `truncate` to
+            /// the nested storage, so the lock choice below has to be decided on that storage. `nested` is
+            /// already materialized: `checkTableCanBeDropped` above resolves it unconditionally.
+            StoragePtr table_to_classify = table;
+            if (const auto lazy_proxy = std::dynamic_pointer_cast<StorageTableProxy>(table))
+                table_to_classify = lazy_proxy->getNested();
+
             TableExclusiveLockHolder table_excl_lock;
             TableLockHolder table_shared_lock;
             /// MergeTree removes its data under its own locks, but the storage still must not be
             /// dropped or moved to another database meanwhile, the same as for ALTER TABLE ... DROP PARTITION.
             /// For the rest of tables types exclusive lock is needed
             /// An `Alias` runs the truncate on its target, so the exemption follows the target:
-            /// `isMergeTree()` resolves it, and is false while it is missing or not loaded yet.
-            if (table->isMergeTree())
+            /// `isMergeTree()` resolves it, and is false for a missing or non-MergeTree target.
+            if (table_to_classify->isMergeTree())
                 table_shared_lock = table->lockForShare(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
             else
                 table_excl_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -636,6 +657,23 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                         if (table_names_in_drop.contains(dep.getFullTableName()))
                             relevant_deps.push_back(dep);
                     local_graph.addDependencies(id, relevant_deps);
+                }
+
+                /// A `TimeSeries` table drops its inner tables in `dropInnerTableIfAny`, so they go first.
+                for (const auto & [id, _] : tables_to_drop)
+                {
+                    auto time_series
+                        = castStorage<StorageTimeSeries>(database->tryGetTable(id.getTableName(), table_context), DeferredTable::Skip);
+                    if (!time_series || !time_series->hasInnerTables())
+                        continue;
+                    for (auto target_kind : StorageTimeSeries::getTargetKinds())
+                    {
+                        if (!time_series->isInnerTable(target_kind))
+                            continue;
+                        auto inner_id = time_series->tryGetTargetTableID(target_kind, table_context);
+                        if (inner_id && table_names_in_drop.contains(inner_id.getFullTableName()))
+                            local_graph.addDependency(inner_id, id);
+                    }
                 }
 
                 auto sorted = local_graph.getTablesSortedByDependency();

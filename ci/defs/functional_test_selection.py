@@ -2,7 +2,7 @@ import re
 
 
 def targeted_variants(jobs, allow_failure=True):
-    """Run one repeated targeted check per build and settings configuration."""
+    """Run one targeted check per build and settings configuration."""
     variants = {}
     source_flavors = {}
     for job in jobs:

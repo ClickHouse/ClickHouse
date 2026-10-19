@@ -7,8 +7,11 @@
 1
 1
 -- clickhouse-client
-SETTING_CONSTRAINT_VIOLATION
+1
+1
 -- nested SETTINGS clause
-INCORRECT_QUERY
-INCORRECT_QUERY
+1
+1
+1
+-- HTTP
 1

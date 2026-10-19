@@ -20,13 +20,13 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
 
 هذا **الدليل موجّه لمستخدمي ClickHouse Cloud الحاليين**. إذا كنت جديدًا على ClickHouse Cloud، فنوصي بدليل [البدء](/ar/clickstack/getting-started/managed) الخاص بـ ClickStack المُدار.
 
-في نمط النشر هذا، تتم استضافة كلٍّ من ClickHouse وواجهة مستخدم ClickStack ‏(HyperDX) على ClickHouse Cloud، مما يقلّل عدد المكوّنات التي يحتاج المستخدم إلى استضافتها ذاتيًا.
+في نمط النشر هذا، تتم استضافة كلٍّ من ClickHouse وواجهة مستخدم ClickStack ‏(HyperDX) على ClickHouse Cloud، مما يقلّل عدد المكوّنات التي يحتاج المستخدم إلى استضافتها ذاتيًا.
 
 إلى جانب تقليل عبء إدارة البنية التحتية، يضمن نمط النشر هذا تكامل المصادقة مع ClickHouse Cloud SSO/SAML. وعلى عكس عمليات النشر المستضافة ذاتيًا، لا حاجة أيضًا إلى توفير مثيل MongoDB لتخزين حالة التطبيق — مثل لوحات المعلومات، وعمليات البحث المحفوظة، وإعدادات المستخدم، والتنبيهات. كما يستفيد المستخدمون من:
 
 * التوسّع التلقائي لقدرات الحوسبة بشكل مستقل عن التخزين
 * احتفاظ منخفض التكلفة وعمليًا غير محدود بالاعتماد على تخزين الكائنات
-* القدرة على عزل أحمال عمل القراءة والكتابة بشكل مستقل باستخدام Warehouses.
+* القدرة على [عزل أحمال عمل القراءة والكتابة بشكل مستقل](/ar/clickstack/managing/isolating-read-write) باستخدام مستودعات.
 * مصادقة مدمجة
 * نُسخ احتياطية مؤتمتة
 * ميزات الأمان والامتثال
@@ -137,7 +137,7 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
 
             إذا لم يكن لديك collector قيد التشغيل بالفعل، فابدأ بتشغيل واحد باتباع الخطوات أدناه. وإذا كانت لديك collectors موجودة، فستجد أيضًا مثالًا على التهيئة.
 
-            ### بدء تشغيل collector
+### بدء تشغيل collector
 
             يفترض ما يلي المسار الموصى به، وهو استخدام **توزيعة ClickStack من OpenTelemetry Collector**، التي تتضمن معالجة إضافية ومُحسّنة خصيصًا لـ ClickHouse Cloud. إذا كنت تريد استخدام OpenTelemetry Collector الخاص بك، فراجع [&quot;تهيئة collectors الموجودة.&quot;](#configure-existing-collectors-existing)
 
@@ -155,7 +155,7 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
 
             يؤدي تشغيل هذا الأمر الواحد إلى بدء ClickStack collector مع إتاحة نقاط نهاية OTLP على المنفذين 4317 ‏(gRPC) و4318 ‏(HTTP). إذا كانت لديك بالفعل إعدادات instrumentation ووكلاء OpenTelemetry، فيمكنك البدء فورًا في إرسال بيانات القياس عن بُعد إلى نقاط النهاية هذه.
 
-            ### تهيئة collectors الموجودة
+### تهيئة collectors الموجودة
 
             يمكنك أيضًا تهيئة OpenTelemetry Collectors الموجودة لديك أو استخدام التوزيعة الخاصة بك من الـ collector.
 
@@ -173,7 +173,7 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
 
             لمزيد من التفاصيل حول تهيئة OpenTelemetry Collectors، راجع [&quot;إدخال البيانات باستخدام OpenTelemetry.&quot;](/ar/clickstack/ingesting-data/opentelemetry)
 
-            ### بدء إدخال البيانات (اختياري)
+### بدء إدخال البيانات (اختياري)
 
             إذا كانت لديك تطبيقات أو بنية تحتية قائمة وتريد تزويدها بـ OpenTelemetry، فانتقل إلى الأدلة ذات الصلة المرتبطة من &quot;ربط تطبيق&quot;.
 
@@ -197,7 +197,7 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
 
             يفترض ما يلي أن لديك مثيلًا من Vector قيد التشغيل ومُهيّأ مسبقًا باستخدام ingest pipelines ويقوم بإرسال البيانات.
 
-            ### أنشئ قاعدة بيانات وجدولًا
+### أنشئ قاعدة بيانات وجدولًا
 
             يتطلب Vector تحديد جدول ومخطط قبل ingest البيانات.
 
@@ -289,9 +289,7 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
   ## مهام إضافية
 </div>
 
-<div id="configure-access">
-  ### منح حق الوصول إلى ClickStack المُدار
-</div>
+### منح حق الوصول إلى ClickStack المُدار {#configure-access}
 
 1. انتقل إلى الخدمة الخاصة بك في وحدة تحكم ClickHouse Cloud
 2. انتقل إلى **Settings** → **SQL Console Access**
@@ -331,13 +329,17 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
   #### الإعداد الموصى به
 </div>
 
-لتشغيل ClickStack على موارد compute للقراءة فقط:
+لتشغيل ClickStack على حوسبة للقراءة فقط:
 
-1. أنشئ أو حدِّد خدمة ClickHouse Cloud ضمن الـ warehouse ومُهيأة للقراءة فقط.
-2. في وحدة تحكم ClickHouse Cloud، حدِّد الخدمة المهيأة للقراءة فقط.
-3. شغِّل ClickStack من قائمة التنقل اليسرى.
+1. أنشئ أو حدِّد خدمة ClickHouse Cloud ضمن الـ مستودع ومُهيأة للقراءة فقط.
+2. في وحدة تحكم ClickHouse Cloud، حدِّد الخدمة المهيأة للقراءة فقط.
+3. شغِّل ClickStack من قائمة التنقل اليسرى.
 
 بمجرد تشغيله، سترتبط واجهة مستخدم ClickStack تلقائيًا بهذه الخدمة المهيأة للقراءة فقط.
+
+لاحظ أن لوحات المعلومات وعمليات البحث المحفوظة والتنبيهات والمصادر مقيَّدة بنطاق الخدمة التي شُغّل منها ClickStack، لذا فإن أي شيء محفوظ على خدمة أخرى داخل الـ مستودع لن يكون متاحًا هنا ويجب إنشاؤه من جديد. تُكتشف المصادر التي تستخدم مخطط OpenTelemetry القياسي تلقائيًا، ومن ثم يعمل البحث في تلك البيانات على الفور - أما المصادر المخصصة أو المهيأة يدويًا فلا تُكتشف تلقائيًا، ويجب إعدادها مرة أخرى.
+
+للحصول على الطوبولوجيا الكاملة - بما في ذلك إلى أين توجَّه عملية إدخال، وأي خدمة تُنفَّذ عليها أوامر DDL، وكيف تتصرف التنبيهات - راجع [&quot;عزل أعباء العمل الخاصة بالقراءة والكتابة&quot;](/ar/clickstack/managing/isolating-read-write).
 
 <div id="adding-data-sources">
   ### إضافة المزيد من مصادر البيانات
@@ -347,9 +349,7 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
 
 يوضح ما يلي كيف يمكن للمستخدمين إضافة مصادر بيانات إضافية بخلاف تلك التي تُضبط تلقائيًا.
 
-<div id="using-otel-schemas">
-  #### استخدام مخططات OpenTelemetry
-</div>
+#### استخدام مخططات OpenTelemetry {#using-otel-schemas}
 
 إذا كنت تستخدم OTel collector لإنشاء قاعدة البيانات والجداول داخل ClickHouse، فاترك جميع القيم الافتراضية كما هي في نموذج إنشاء المصدر، واملأ الحقل `Table` بالقيمة `otel_logs` لإنشاء مصدر سجلات. ينبغي اكتشاف جميع الإعدادات الأخرى تلقائيًا، ما يتيح لك النقر على `Save New Source`.
 
