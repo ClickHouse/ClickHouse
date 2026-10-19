@@ -47,7 +47,7 @@ rust_archive = rule(
         "src": attr.label(allow_single_file = [".a"]),
         "references": attr.label_list(providers = [CcInfo]),
         "keep_symbols": attr.string_list(),
-        "_processor": attr.label(default = "//bazel:process_rust_archive", executable = True, cfg = "exec"),
+        "_processor": attr.label(default = "//bazel/rules:process_rust_archive", executable = True, cfg = "exec"),
         "_localize_script": attr.label(default = "//:cmake/localize_rust_c_symbols.sh", allow_single_file = True),
         "_strip_script": attr.label(default = "//:cmake/strip_rust_symbols.sh", allow_single_file = True),
         "_libm": attr.label(default = "@clickhouse_sysroot//:linux_math_library", allow_single_file = True),

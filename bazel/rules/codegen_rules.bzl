@@ -1,5 +1,5 @@
-load("//bazel:codegen_actions.bzl", "codegen_for_arch")
-load("//bazel:repository_paths.bzl", "repository_path")
+load("//bazel/rules:codegen_actions.bzl", "codegen_for_arch")
+load("//bazel/rules:repository_paths.bzl", "repository_path")
 
 _SHARED_CODEGEN = {
 "src/Server/grpc_protos/clickhouse_grpc.pb.h": {
@@ -3469,10 +3469,10 @@ CODEGEN_RULES = {
       "gen/x86_64/contrib/libhdfs3-cmake/crc_iscsi_v_pcl.o.asm",
     ],
     "tools": [
-      "//bazel:prepare_hdfs_crc",
+      "//bazel/rules:prepare_hdfs_crc",
       "@nasm//:nasm",
     ],
-    "cmd": "$(execpath //bazel:prepare_hdfs_crc) $(execpath @clickhouse_libhdfs3//:src/common/crc_iscsi_v_pcl.asm) $(location gen/x86_64/contrib/libhdfs3-cmake/crc_iscsi_v_pcl.o.asm) && $(execpath @nasm//:nasm) -f elf64 -g -F dwarf -D LINUX -o $(location gen/x86_64/contrib/libhdfs3-cmake/crc_iscsi_v_pcl.o) $(location gen/x86_64/contrib/libhdfs3-cmake/crc_iscsi_v_pcl.o.asm)",
+    "cmd": "$(execpath //bazel/rules:prepare_hdfs_crc) $(execpath @clickhouse_libhdfs3//:src/common/crc_iscsi_v_pcl.asm) $(location gen/x86_64/contrib/libhdfs3-cmake/crc_iscsi_v_pcl.o.asm) && $(execpath @nasm//:nasm) -f elf64 -g -F dwarf -D LINUX -o $(location gen/x86_64/contrib/libhdfs3-cmake/crc_iscsi_v_pcl.o) $(location gen/x86_64/contrib/libhdfs3-cmake/crc_iscsi_v_pcl.o.asm)",
   },
 "generate_contrib_prometheus_protobufs_cmake_prompb_remote_pb_h": {
     "srcs": [
@@ -3879,9 +3879,9 @@ CODEGEN_RULES = {
       "gen/x86_64/contrib/sql-console-cmake/sql_console_compressed/third-party-licenses.json.gz",
     ],
     "tools": [
-      "//bazel:embed_resources",
+      "//bazel/rules:embed_resources",
     ],
-    "cmd": "execroot=$$PWD\n$(execpath //bazel:embed_resources) --source=\"$$execroot/" + repository_path("contrib/sql-console") + "/dist-standalone\" --output=$(BINDIR)/bazel/gen/x86_64/contrib/sql-console-cmake/SQLConsoleResources.generated.h --namespace=SQLConsole --compressed=sql_console_compressed",
+    "cmd": "execroot=$$PWD\n$(execpath //bazel/rules:embed_resources) --source=\"$$execroot/" + repository_path("contrib/sql-console") + "/dist-standalone\" --output=$(BINDIR)/bazel/gen/x86_64/contrib/sql-console-cmake/SQLConsoleResources.generated.h --namespace=SQLConsole --compressed=sql_console_compressed",
     "cmake_condition": "//bazel:use_cmake_metadata_x86_64",
     "cmake_cmd": " --cmake-gzip-mtime=1792282470",
   },
@@ -4216,9 +4216,9 @@ CODEGEN_RULES = {
       "gen/x86_64/contrib/clickstack-cmake/clickstack_compressed/trace/[traceId].html.gz",
     ],
     "tools": [
-      "//bazel:embed_resources",
+      "//bazel/rules:embed_resources",
     ],
-    "cmd": "execroot=$$PWD\n$(execpath //bazel:embed_resources) --source=\"$$execroot/" + repository_path("contrib/clickstack") + "/out\" --output=$(BINDIR)/bazel/gen/x86_64/contrib/clickstack-cmake/ClickStackResources.generated.h --namespace=ClickStack --compressed=clickstack_compressed",
+    "cmd": "execroot=$$PWD\n$(execpath //bazel/rules:embed_resources) --source=\"$$execroot/" + repository_path("contrib/clickstack") + "/out\" --output=$(BINDIR)/bazel/gen/x86_64/contrib/clickstack-cmake/ClickStackResources.generated.h --namespace=ClickStack --compressed=clickstack_compressed",
     "cmake_condition": "//bazel:use_cmake_metadata_x86_64",
     "cmake_cmd": " --cmake-gzip-mtime=1792282266",
   },
@@ -4285,9 +4285,9 @@ CODEGEN_RULES = {
       "gen/aarch64/contrib/sql-console-cmake/sql_console_compressed/third-party-licenses.json.gz",
     ],
     "tools": [
-      "//bazel:embed_resources",
+      "//bazel/rules:embed_resources",
     ],
-    "cmd": "execroot=$$PWD\n$(execpath //bazel:embed_resources) --source=\"$$execroot/" + repository_path("contrib/sql-console") + "/dist-standalone\" --output=$(BINDIR)/bazel/gen/aarch64/contrib/sql-console-cmake/SQLConsoleResources.generated.h --namespace=SQLConsole --compressed=sql_console_compressed",
+    "cmd": "execroot=$$PWD\n$(execpath //bazel/rules:embed_resources) --source=\"$$execroot/" + repository_path("contrib/sql-console") + "/dist-standalone\" --output=$(BINDIR)/bazel/gen/aarch64/contrib/sql-console-cmake/SQLConsoleResources.generated.h --namespace=SQLConsole --compressed=sql_console_compressed",
     "cmake_condition": "//bazel:use_cmake_metadata_aarch64",
     "cmake_cmd": " --cmake-gzip-mtime=1790945103",
   },
@@ -4622,9 +4622,9 @@ CODEGEN_RULES = {
       "gen/aarch64/contrib/clickstack-cmake/clickstack_compressed/trace/[traceId].html.gz",
     ],
     "tools": [
-      "//bazel:embed_resources",
+      "//bazel/rules:embed_resources",
     ],
-    "cmd": "execroot=$$PWD\n$(execpath //bazel:embed_resources) --source=\"$$execroot/" + repository_path("contrib/clickstack") + "/out\" --output=$(BINDIR)/bazel/gen/aarch64/contrib/clickstack-cmake/ClickStackResources.generated.h --namespace=ClickStack --compressed=clickstack_compressed",
+    "cmd": "execroot=$$PWD\n$(execpath //bazel/rules:embed_resources) --source=\"$$execroot/" + repository_path("contrib/clickstack") + "/out\" --output=$(BINDIR)/bazel/gen/aarch64/contrib/clickstack-cmake/ClickStackResources.generated.h --namespace=ClickStack --compressed=clickstack_compressed",
     "cmake_condition": "//bazel:use_cmake_metadata_aarch64",
     "cmake_cmd": " --cmake-gzip-mtime=1780518042",
   },
@@ -5880,8 +5880,8 @@ CODEGEN_RULES = {
       "gen/external/googleapis/src/googleapis_download/google/type/timeofday.proto",
     ],
     "tools": [
-      "//bazel:extract_archive",
+      "//bazel/rules:extract_archive",
     ],
-    "cmd": "$(execpath //bazel:extract_archive) --archive=$(execpath //:contrib/google-cloud-cpp-cmake/googleapis/e60db19f11f94175ac682c5898cce0f77cc508ea.tar.gz) --root=$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/ --strip-prefix=googleapis-e60db19f11f94175ac682c5898cce0f77cc508ea google/api/annotations.proto google/api/auth.proto google/api/backend.proto google/api/billing.proto google/api/client.proto google/api/config_change.proto google/api/consumer.proto google/api/context.proto google/api/control.proto google/api/distribution.proto google/api/documentation.proto google/api/endpoint.proto google/api/error_reason.proto google/api/field_behavior.proto google/api/field_info.proto google/api/http.proto google/api/httpbody.proto google/api/label.proto google/api/launch_stage.proto google/api/log.proto google/api/logging.proto google/api/metric.proto google/api/monitored_resource.proto google/api/monitoring.proto google/api/policy.proto google/api/quota.proto google/api/resource.proto google/api/routing.proto google/api/service.proto google/api/source_info.proto google/api/system_parameter.proto google/api/usage.proto google/api/visibility.proto google/cloud/common/operation_metadata.proto google/cloud/extended_operations.proto google/cloud/location/locations.proto google/cloud/orgpolicy/v1/orgpolicy.proto google/iam/credentials/v1/common.proto google/iam/credentials/v1/iamcredentials.proto google/iam/v1/iam_policy.proto google/iam/v1/options.proto google/iam/v1/policy.proto google/longrunning/operations.proto google/rpc/code.proto google/rpc/context/attribute_context.proto google/rpc/error_details.proto google/rpc/status.proto google/storage/v2/storage.proto google/type/calendar_period.proto google/type/color.proto google/type/date.proto google/type/datetime.proto google/type/dayofweek.proto google/type/decimal.proto google/type/expr.proto google/type/fraction.proto google/type/interval.proto google/type/latlng.proto google/type/localized_text.proto google/type/money.proto google/type/month.proto google/type/phone_number.proto google/type/postal_address.proto google/type/quaternion.proto google/type/timeofday.proto",
+    "cmd": "$(execpath //bazel/rules:extract_archive) --archive=$(execpath //:contrib/google-cloud-cpp-cmake/googleapis/e60db19f11f94175ac682c5898cce0f77cc508ea.tar.gz) --root=$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/ --strip-prefix=googleapis-e60db19f11f94175ac682c5898cce0f77cc508ea google/api/annotations.proto google/api/auth.proto google/api/backend.proto google/api/billing.proto google/api/client.proto google/api/config_change.proto google/api/consumer.proto google/api/context.proto google/api/control.proto google/api/distribution.proto google/api/documentation.proto google/api/endpoint.proto google/api/error_reason.proto google/api/field_behavior.proto google/api/field_info.proto google/api/http.proto google/api/httpbody.proto google/api/label.proto google/api/launch_stage.proto google/api/log.proto google/api/logging.proto google/api/metric.proto google/api/monitored_resource.proto google/api/monitoring.proto google/api/policy.proto google/api/quota.proto google/api/resource.proto google/api/routing.proto google/api/service.proto google/api/source_info.proto google/api/system_parameter.proto google/api/usage.proto google/api/visibility.proto google/cloud/common/operation_metadata.proto google/cloud/extended_operations.proto google/cloud/location/locations.proto google/cloud/orgpolicy/v1/orgpolicy.proto google/iam/credentials/v1/common.proto google/iam/credentials/v1/iamcredentials.proto google/iam/v1/iam_policy.proto google/iam/v1/options.proto google/iam/v1/policy.proto google/longrunning/operations.proto google/rpc/code.proto google/rpc/context/attribute_context.proto google/rpc/error_details.proto google/rpc/status.proto google/storage/v2/storage.proto google/type/calendar_period.proto google/type/color.proto google/type/date.proto google/type/datetime.proto google/type/dayofweek.proto google/type/decimal.proto google/type/expr.proto google/type/fraction.proto google/type/interval.proto google/type/latlng.proto google/type/localized_text.proto google/type/money.proto google/type/month.proto google/type/phone_number.proto google/type/postal_address.proto google/type/quaternion.proto google/type/timeofday.proto",
   },
 }

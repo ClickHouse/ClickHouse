@@ -154,8 +154,8 @@ def render_rules(rules):
     first_licenses = rules['generate_' + first_arch + '_licenses']
     license_inputs = dict(zip(first_licenses['source_paths'], first_licenses['srcs'], strict=True))
     text = [
-        'load("//bazel:codegen_actions.bzl", "codegen_for_arch")\n',
-        'load("//bazel:repository_paths.bzl", "repository_path")\n\n',
+        'load("//bazel/rules:codegen_actions.bzl", "codegen_for_arch")\n',
+        'load("//bazel/rules:repository_paths.bzl", "repository_path")\n\n',
         '_SHARED_CODEGEN = ' + starlark(shared) + '\n\n',
         '_LICENSE_INPUTS = ' + starlark(license_inputs) + '\n\n',
         'CODEGEN_RULES = {\n',
@@ -248,8 +248,8 @@ class Codegen:
             self.rules['generate_' + self.graph.arch + '_hdfs_crc'] = dict(
                 srcs=[source],
                 outs=[output, output + '.asm'],
-                tools=['//bazel:prepare_hdfs_crc', '@nasm//:nasm'],
-                cmd='$(execpath //bazel:prepare_hdfs_crc) $(execpath ' + source + ') '
+                tools=['//bazel/rules:prepare_hdfs_crc', '@nasm//:nasm'],
+                cmd='$(execpath //bazel/rules:prepare_hdfs_crc) $(execpath ' + source + ') '
                     '$(location ' + output + '.asm) && '
                     '$(execpath @nasm//:nasm) -f elf64 -g -F dwarf -D LINUX '
                     '-o $(location ' + output + ') $(location ' + output + '.asm)',
@@ -372,8 +372,8 @@ class Codegen:
         attrs = dict(
             srcs=[self.label(p.relative_to(self.root).as_posix()) for p in files],
             outs=[prefix + p for p in node['outputs']],
-            tools=['//bazel:embed_resources'],
-            cmd='execroot=$$PWD\n$(execpath //bazel:embed_resources) --source=' + self.shell_path(str(self.root / source))
+            tools=['//bazel/rules:embed_resources'],
+            cmd='execroot=$$PWD\n$(execpath //bazel/rules:embed_resources) --source=' + self.shell_path(str(self.root / source))
                 + ' --output=$(BINDIR)/bazel/' + prefix + output
                 + ' --namespace=' + namespace + ' --compressed=' + compressed,
         )
@@ -385,7 +385,7 @@ class Codegen:
         self.handled.update(node['outputs'])
 
     def licenses(self, output):
-        manifest = json.loads((self.root / 'bazel/initial_migration/license_manifest.json').read_text())
+        manifest = json.loads((self.root / 'bazel/rules/license_manifest.json').read_text())
         sources = {row[2].lstrip('/') for row in manifest}
         metadata_name = read_metadata(self.root)[self.graph.arch].get(
             'license_substitutions', 'license_substitutions_' + self.graph.arch + '.json',
@@ -431,8 +431,8 @@ class Codegen:
             self.rules['extract_googleapis_' + self.graph.arch] = dict(
                 srcs=[self.label(GOOGLEAPIS_ARCHIVE)],
                 outs=[prefix + n for n in sorted(self.googleapis_used)],
-                tools=['//bazel:extract_archive'],
-                cmd='$(execpath //bazel:extract_archive) --archive=$(execpath ' + self.label(GOOGLEAPIS_ARCHIVE) + ')'
+                tools=['//bazel/rules:extract_archive'],
+                cmd='$(execpath //bazel/rules:extract_archive) --archive=$(execpath ' + self.label(GOOGLEAPIS_ARCHIVE) + ')'
                     + ' --root=$(BINDIR)/bazel/' + prefix
                     + ' --strip-prefix=googleapis-' + GOOGLEAPIS_REVISION + ' '
                     + ' '.join(shlex.quote(n) for n in sorted(self.googleapis_used)),

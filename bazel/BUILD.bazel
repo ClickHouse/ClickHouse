@@ -1,15 +1,14 @@
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@rules_rs//rs/platforms:triples.bzl", "triple_to_constraint_set")
-load("//bazel/initial_migration:build_options_data.bzl", "BUILD_OPTIONS")
 load("//bazel/initial_migration:cmake_metadata.bzl", "CMAKE_METADATA")
 load("//bazel/initial_migration:cmake_toolchain.bzl", "cmake_toolchain")
-load("//bazel/initial_migration:codegen_rules.bzl", "CODEGEN_RULES")
 load("//bazel/initial_migration:native_cmake_reference.bzl", "native_cmake_reference")
 load("//bazel/initial_migration:native_stripped_hash.bzl", "native_stripped_hash")
-load(":build_options.bzl", "build_options")
-load(":codegen_actions.bzl", "declare_codegen")
+load("//bazel/rules:build_options.bzl", "build_options")
+load("//bazel/rules:build_options_data.bzl", "BUILD_OPTIONS")
+load("//bazel/rules:codegen_actions.bzl", "declare_codegen")
+load("//bazel/rules:codegen_rules.bzl", "CODEGEN_RULES")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -61,7 +60,6 @@ platform(
 )
 
 exports_files(glob([
-    "*.bzl",
     "*.MODULE.bazel",
     "config/**",
 ]))
@@ -174,12 +172,9 @@ native_stripped_hash(
 ]
 
 [
-    py_binary(
+    alias(
         name = name,
-        srcs = [name + ".py"],
-        # Tool startup must not write bytecode caches into its input tree.
-        interpreter_args = ["-B"],
-        python_version = "3.11",
+        actual = "//bazel/rules:" + name,
     )
     for name in [
         "prepare_hdfs_crc",

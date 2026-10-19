@@ -3,8 +3,8 @@
 load("@rules_cc//cc:action_names.bzl", "ACTION_NAMES")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain", "use_cc_toolchain")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
-load("//bazel/initial_migration:rust_archives.bzl", "RUST_ARCHIVES")
-load("//bazel/initial_migration:rust_cxx_flags.bzl", "RUST_CXX")
+load("//bazel/rules:rust_archives.bzl", "RUST_ARCHIVES")
+load("//bazel/rules:rust_cxx_flags.bzl", "RUST_CXX")
 
 def _cmake_cargo_impl(ctx):
     rust = ctx.toolchains["@rules_rust//rust:toolchain_type"]
@@ -148,7 +148,7 @@ cmake_cargo = rule(
         "cmake": attr.label(executable = True, cfg = "exec", allow_files = True),
         "cmake_files": attr.label(allow_files = True, cfg = "exec"),
         "_contrib_repositories": attr.label(
-            default = "//bazel/initial_migration:contrib_repositories.json",
+            default = "//bazel/rules:contrib_repositories.json",
             allow_single_file = True,
         ),
         # Additional Cargo path crates to record in the raw archive evidence.
@@ -173,7 +173,7 @@ cmake_cargo = rule(
         "_native_gcc_s": attr.label(default = "@llvm//runtimes/libunwind:gcc_s", allow_single_file = True, cfg = "exec"),
         "_native_glibc": attr.label(default = "@llvm//runtimes/glibc:glibc_library_search_directory", allow_single_file = True, cfg = "exec"),
         "_native_headers": attr.label(default = "@clickhouse_llvm_project//:runtime_source_inputs"),
-        "_driver": attr.label(default = "//bazel:cmake_cargo", executable = True, cfg = "exec"),
+        "_driver": attr.label(default = "//bazel/rules:cmake_cargo", executable = True, cfg = "exec"),
     },
     fragments = ["cpp"],
     toolchains = use_cc_toolchain() + ["@rules_rust//rust:toolchain_type"],

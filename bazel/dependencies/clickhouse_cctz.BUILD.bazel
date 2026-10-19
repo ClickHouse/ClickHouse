@@ -1,5 +1,5 @@
-load("@clickhouse//bazel:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel:repository_paths.bzl", "repository_path")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_path")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -1210,9 +1210,9 @@ genrule(
     name = "configure_TimeZones_generated_cpp",
     srcs = _GENERATED_SRCS_0,
     outs = ["config/contrib/cctz-cmake/TimeZones.generated.cpp"],
-    cmd = "$(execpath @clickhouse//bazel:generate_timezones) --output=$@ $(SRCS)",
+    cmd = "$(execpath @clickhouse//bazel/rules:generate_timezones) --output=$@ $(SRCS)",
     tools = [
-        "@clickhouse//bazel:generate_timezones",
+        "@clickhouse//bazel/rules:generate_timezones",
     ],
 )
 

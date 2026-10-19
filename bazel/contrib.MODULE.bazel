@@ -1,4 +1,4 @@
-contrib = use_extension("//bazel:repositories.bzl", "contrib")
+contrib = use_extension("//bazel/rules:repositories.bzl", "contrib")
 use_repo(
     contrib,
     "clickhouse_llvm_project",

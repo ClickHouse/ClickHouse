@@ -373,7 +373,7 @@ class AwsMigration:
                     and getattr(statement.value.func, 'id', '') == 'load'):
                 call = statement.value
                 if (len(call.args) > 1 and isinstance(call.args[0], ast.Constant)
-                        and call.args[0].value == '@clickhouse//bazel:repository_paths.bzl'
+                        and call.args[0].value == '@clickhouse//bazel/rules:repository_paths.bzl'
                         and not any(isinstance(n, ast.Constant) and n.value in used_names for n in call.args[1:])):
                     edits.append((*source.span(statement), ''))
         return source.rewrite(edits)

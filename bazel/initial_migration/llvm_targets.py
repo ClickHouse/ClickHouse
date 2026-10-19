@@ -496,7 +496,7 @@ def declare_from_references(root, references):
         raise ValueError(f'CMake AArch64 reference outline sources do not match recorded Ninja: '
                          f'{len(outline_generated)} sources, {len(outline_commands)} generators')
 
-    (root / 'bazel/initial_migration/rust_localization_data.bzl').write_text(
+    (root / 'bazel/rules/rust_localization_data.bzl').write_text(
         'RUST_LOCALIZATION_GROUPS = ' + json.dumps(rust_localization_groups, indent=4) + '\n')
     print('Embedded LLVM:', len(targets), 'CMake libraries;',
           ', '.join(a + ' ' + str(len(o)) + ' generated headers' for a, o in generated.items()))

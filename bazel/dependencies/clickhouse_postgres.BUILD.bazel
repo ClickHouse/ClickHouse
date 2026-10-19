@@ -1,5 +1,5 @@
-load("@clickhouse//bazel:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel:repository_paths.bzl", "repository_local_include")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_local_include")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])

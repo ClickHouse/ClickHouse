@@ -1,17 +1,11 @@
-"""CMake migration, parity checks and recorded data used by the Bazel build."""
+"""CMake migration, parity checks and CMake comparison snapshots."""
 
 load("@rules_python//python:py_binary.bzl", "py_binary")
 
 package(default_visibility = ["//visibility:public"])
 
 exports_files(
-    glob([
-        "*.bzl",
-        "license_substitutions_*.json",
-    ]) + [
-        "contrib_repositories.json",
-        "license_manifest.json",
-    ],
+    glob(["license_substitutions_*.json"]),
     visibility = ["//visibility:public"],
 )
 

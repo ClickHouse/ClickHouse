@@ -64,7 +64,7 @@ class Instantiate(ast.NodeTransformer):
 class Migration:
     def __init__(self, root):
         self.root = root
-        self.path = root / "bazel/initial_migration/codegen_rules.bzl"
+        self.path = root / "bazel/rules/codegen_rules.bzl"
         self.pairs = defaultdict(dict)
         self.output_paths = set()
         self.output_directories = set()

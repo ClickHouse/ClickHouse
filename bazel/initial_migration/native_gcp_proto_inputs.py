@@ -39,6 +39,15 @@ PROTO_IMPORT = re.compile(r'^\s*import\s+(?:public\s+|weak\s+)?["\']([^"\']+)["\
 def git_file(root, revision, filename):
     return subprocess.check_output(['git', 'show', revision + ':' + filename], cwd=root)
 
+def codegen_rules_filename(root, revision):
+    """Locate CODEGEN_RULES in either the current branch or a recorded proof."""
+    filename = 'bazel/rules/codegen_rules.bzl'
+    check = subprocess.run(['git', 'cat-file', '-e', revision + ':' + filename],
+                           cwd=root, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if check.returncode:
+        filename = 'bazel/initial_migration/codegen_rules.bzl'
+    return filename
+
 
 def string(node):
     """Evaluate only known generator string concatenations."""
@@ -87,7 +96,7 @@ class GoogleProtos:
                     self.schemas[member.name.split('/', 1)[1]] = (
                         archive.extractfile(member).read().decode())
 
-        source = git_file(root, revision, 'bazel/initial_migration/codegen_rules.bzl').decode()
+        source = git_file(root, revision, codegen_rules_filename(root, revision)).decode()
         tree = ast.parse(source)
         constants = {
             statement.targets[0].id: statement.value for statement in tree.body

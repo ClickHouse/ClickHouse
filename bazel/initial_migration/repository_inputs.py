@@ -13,7 +13,7 @@ import subprocess
 import tarfile
 
 ROOT = Path(__file__).resolve().parents[2]
-REPOSITORIES = json.loads((ROOT / 'bazel/initial_migration/contrib_repositories.json').read_text())
+REPOSITORIES = json.loads((ROOT / 'bazel/rules/contrib_repositories.json').read_text())
 EXPORTS = {path: set() for path in REPOSITORIES}
 # rules_cc's allowed header extensions (cc/private/cc_helper.bzl).
 CC_HEADER_SUFFIXES = ('.h', '.hh', '.hpp', '.ipp', '.hxx', '.h++',
@@ -182,7 +182,7 @@ def textual_source_names(owner):
     if owner is None:
         paths = subprocess.check_output(
             ['git', 'ls-files', '-z', '--', 'src', 'base', 'programs', 'contrib/*-cmake/**',
-             'bazel/config', 'bazel/initial_migration'], cwd=ROOT,
+             'bazel/config', 'bazel/rules', 'bazel/initial_migration'], cwd=ROOT,
         ).decode().split('\0')
         for path in paths:
             source = ROOT / path
@@ -235,6 +235,8 @@ def source_label(path):
         return '//rust/workspace:' + path.removeprefix('rust/workspace/')
     if path.startswith('bazel/initial_migration/'):
         return '//bazel/initial_migration:' + path.removeprefix('bazel/initial_migration/')
+    if path.startswith('bazel/rules/'):
+        return '//bazel/rules:' + path.removeprefix('bazel/rules/')
     if path.startswith('bazel/'):
         return '//bazel:' + path.removeprefix('bazel/')
     return '//:' + path
@@ -310,7 +312,7 @@ def cmake_has_source_prefix_map(fragments, source_root):
 
 def write_module():
     (ROOT / 'bazel/contrib.MODULE.bazel').write_text(
-        'contrib = use_extension("//bazel:repositories.bzl", "contrib")\n'
+        'contrib = use_extension("//bazel/rules:repositories.bzl", "contrib")\n'
         'use_repo(\n    contrib,\n' + ''.join(
             '    ' + json.dumps(name) + ',\n' for name in sorted(
                 [spec['name'] for spec in REPOSITORIES.values() if not spec.get('module')]
@@ -386,7 +388,7 @@ def write_overlays(builds, shared_inputs, system_repositories):
             text += '\n' + build.text()
         (directory / (spec['name'] + '.BUILD.bazel')).write_text(text)
     roots = {path: '@' + spec['name'] + '//:BUILD.bazel' for path, spec in REPOSITORIES.items()}
-    (ROOT / 'bazel/initial_migration/repository_labels.bzl').write_text(
+    (ROOT / 'bazel/rules/repository_labels.bzl').write_text(
         'REPOSITORIES = {\n' + ''.join(
             '    ' + json.dumps(path) + ': Label(' + json.dumps(label) + '),\n'
             for path, label in roots.items()) + '}\n')

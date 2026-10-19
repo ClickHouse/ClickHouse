@@ -80,7 +80,7 @@ def _license_substitutions(root, reference):
         offset = found.end()
     if body[offset:] != 'nullptr\n};\n':
         raise ValueError('Unparsed CMake license bytes after row ' + str(len(actual)))
-    expected = [tuple(row) for row in json.loads((root / 'bazel/initial_migration/license_manifest.json').read_text())]
+    expected = [tuple(row) for row in json.loads((root / 'bazel/rules/license_manifest.json').read_text())]
     substitutions = {}
     for kind, start, end, rstart, rend in difflib.SequenceMatcher(
             a=expected, b=actual, autojunk=False).get_opcodes():
@@ -183,7 +183,7 @@ def _llvm_reference(root, build, arch):
 
 
 def _full_reference(root, build, arch, metadata, check):
-    codegen_file = root / 'bazel/initial_migration/codegen_rules.bzl'
+    codegen_file = root / 'bazel/rules/codegen_rules.bzl'
     codegen = codegen_file.read_text()
     records = _codegen_records(codegen)
     with gzip.open(build / (LICENSES_OUTPUT + '.gz'), 'rb') as source:

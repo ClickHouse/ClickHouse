@@ -81,13 +81,13 @@ def global_compile_options():
 
 GLOBAL_COMPILE_OPTIONS = global_compile_options()
 CLICKHOUSE_WARNINGS = ast.literal_eval(next(
-    node.value for node in ast.parse((ROOT / 'bazel/repository_paths.bzl').read_text()).body
+    node.value for node in ast.parse((ROOT / 'bazel/rules/repository_paths.bzl').read_text()).body
     if isinstance(node, ast.Assign)
     and any(isinstance(name, ast.Name) and name.id == 'CLICKHOUSE_WARNINGS' for name in node.targets)
 ))
 _LIBRARY_FLAGS = {
     node.targets[0].id: ast.literal_eval(node.value)
-    for node in ast.parse((ROOT / 'bazel/ch_cc_library.bzl').read_text()).body
+    for node in ast.parse((ROOT / 'bazel/rules/ch_cc_library.bzl').read_text()).body
     if isinstance(node, ast.Assign)
 }
 CLICKHOUSE_TARGET_FLAGS = _LIBRARY_FLAGS['CLICKHOUSE_TARGET_FLAGS']
@@ -722,7 +722,7 @@ class BuildFile:
         if (kind == 'cc_library' and isinstance(copts, CMakeNativeCopts)
                 and all(group['language'] in GLOBAL_COMPILE_OPTIONS for group in copts.groups.values())):
             kind = 'ch_cc_library'
-            self.loads.setdefault('@clickhouse//bazel:ch_cc_library.bzl', set()).add(kind)
+            self.loads.setdefault('@clickhouse//bazel/rules:ch_cc_library.bzl', set()).add(kind)
             languages = {group['language'] for group in copts.groups.values()}
             if len(languages) != 1:
                 raise ValueError(f'{name}: expected one native compiler language, got {languages}')
@@ -774,11 +774,11 @@ class BuildFile:
         if kind in {'cc_library', 'cc_binary', 'cc_test', 'cc_import'}:
             self.loads.setdefault('@rules_cc//cc:' + kind + '.bzl', set()).add(kind)
         elif kind == 'nasm_objects':
-            self.loads.setdefault('@clickhouse//bazel:nasm.bzl', set()).add(kind)
+            self.loads.setdefault('@clickhouse//bazel/rules:nasm.bzl', set()).add(kind)
         elif kind == 'cmake_link':
-            self.loads.setdefault('@clickhouse//bazel:cmake_link.bzl', set()).add(kind)
+            self.loads.setdefault('@clickhouse//bazel/rules:cmake_link.bzl', set()).add(kind)
         elif kind == 'cmake_runtime_objects':
-            self.loads.setdefault('@clickhouse//bazel:cmake_runtime.bzl', set()).add(kind)
+            self.loads.setdefault('@clickhouse//bazel/rules:cmake_runtime.bzl', set()).add(kind)
         elif kind.startswith('perl_'):
             self.loads.setdefault('@rules_perl//perl:perl.bzl', set()).add(kind)
         elif kind in {'copy_file', 'expand_template', 'write_file'}:
@@ -1118,7 +1118,7 @@ class BuildFile:
         if any('CLICKHOUSE_WARNINGS' in rule for rule in self.rules):
             paths.add('CLICKHOUSE_WARNINGS')
         if paths:
-            loads['@clickhouse//bazel:repository_paths.bzl'] = paths
+            loads['@clickhouse//bazel/rules:repository_paths.bzl'] = paths
         return ''.join('load(' + json.dumps(path) + ', ' + ', '.join(map(json.dumps, sorted(names))) + ')\n'
                        for path, names in sorted(loads.items()))
 

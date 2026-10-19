@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from initial_migration.native_cc_inputs import FORCED, Sources, TUS
 from initial_migration.compact_build import Source, ast_key
-from initial_migration.native_gcp_proto_inputs import dictionary, git_file, string, strings
+from initial_migration.native_gcp_proto_inputs import codegen_rules_filename, dictionary, git_file, string, strings
 from initial_migration.native_public_includes import IncludeRewrite, directory, list_elements
 from initial_migration.prune_inherited_headers import (
     ARCHES, CC_COMPILERS, CC_PROVIDERS, Document, Graph, label,
@@ -60,14 +60,14 @@ class Package(Document):
 
 
 def load_documents(root, revision, inventories):
+    codegen = codegen_rules_filename(root, revision)
     raw = subprocess.check_output(
         ['git', 'archive', '--format=tar', revision, 'BUILD.bazel', 'bazel/BUILD.bazel',
-         'bazel/dependencies', 'bazel/initial_migration/codegen_rules.bzl'], cwd=root)
+         'bazel/dependencies', codegen], cwd=root)
     with tarfile.open(fileobj=io.BytesIO(raw)) as archive:
         files = {member.name: archive.extractfile(member).read().decode()
                  for member in archive.getmembers() if member.isfile() and
-                 (member.name in {'BUILD.bazel', 'bazel/BUILD.bazel',
-                                  'bazel/initial_migration/codegen_rules.bzl'}
+                 (member.name in {'BUILD.bazel', 'bazel/BUILD.bazel', codegen}
                   or member.name.endswith('.BUILD.bazel'))}
     names = ['BUILD.bazel', 'bazel/BUILD.bazel'] + sorted(
         name for name in files if name.endswith('.BUILD.bazel'))
@@ -122,7 +122,7 @@ class GeneratedIncludes(Graph):
                     for field in ('out', 'outs'):
                         for out in doc.labels(attrs.get(field), cpu):
                             self.declare(target, kind, out)
-        module = ast.parse(text['bazel/initial_migration/codegen_rules.bzl'])
+        module = ast.parse(text[codegen_rules_filename(root, revision)])
         constants = {statement.targets[0].id: statement.value for statement in module.body
                      if isinstance(statement, ast.Assign) and len(statement.targets) == 1
                      and isinstance(statement.targets[0], ast.Name)}

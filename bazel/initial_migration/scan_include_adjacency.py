@@ -427,7 +427,7 @@ def main():
         print(json.dumps(record, separators=(',', ':')), flush=True)
     if args.root_only:
         return
-    repositories = json.loads((args.root / 'bazel/initial_migration/contrib_repositories.json').read_text())
+    repositories = json.loads((args.root / 'bazel/rules/contrib_repositories.json').read_text())
     inventory = verified_inventory(args.inventory, repositories)
     selected = [(owner, spec) for owner, spec in repositories.items()
                 if spec['name'] not in SKIP and not spec.get('module')

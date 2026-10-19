@@ -5,6 +5,12 @@ third-party sources, so a Bazel build does not require initialized Git
 submodules. The compiler and LLVM libraries come from ClickHouse's LLVM fork
 at `86b7fe802669a4513da4931d909c36f4728729b9`; the compiler is built from source.
 
+The ClickHouse source and the CMake reference are pinned to upstream commit
+`6bb427c9a81459c2b9e7369ef6ed8a6e8680b0da`. The Bazel branch descends from
+that upstream commit. Comparisons against upstream must use that merge base;
+rebasing onto a different ClickHouse version requires recording a new CMake
+reference and repeating both binary comparisons.
+
 ```sh
 bazel build --config=x86_64 //:clickhouse
 bazel build --config=x86_64 //...
@@ -201,9 +207,9 @@ they do not depend on rerunning the unchanged CMake build for every Bazel edit.
 | Remove 41,115 captured data-file inputs from native libraries; declare all Sparsehash extensionless headers on their library | [f8f92940](https://app.buildbuddy.io/invocation/f8f92940-11fa-4d2d-9cd7-cebfd177bd72) | [f00daa53](https://app.buildbuddy.io/invocation/f00daa53-c3bb-40ab-9a1a-1752d59ce241) |
 | Inherit OpenSSL public include directories through reachable library dependencies in 21 external repositories | [4b04bcc0](https://app.buildbuddy.io/invocation/4b04bcc0-991a-45be-862d-f2f3b57308ad) | [08e21950](https://app.buildbuddy.io/invocation/08e21950-02d9-4a2e-93b5-415689aced47) |
 | Supply `libcxxabi_headers` through `implementation_deps` in 57 external repositories | [54a9bf39](https://app.buildbuddy.io/invocation/54a9bf39-85ad-4290-ba29-5a3ab6cea9ce) | [ffd6c028](https://app.buildbuddy.io/invocation/ffd6c028-a56c-41c0-af53-a37329fb6f20) |
-| Remove native data unreachable from compiled sources and published headers; prune 6,027 unused exports (`b7b771b50`) | [228e87ab](https://app.buildbuddy.io/invocation/228e87ab-f161-4d44-8f70-baa31de7cc13) | [5110ccb0](https://app.buildbuddy.io/invocation/5110ccb0-83fe-45c4-9117-37dd84bea1dd) |
-| Use local directory names for the 36 same-repository include expressions (`3a652da04`) | [61415215](https://app.buildbuddy.io/invocation/61415215-0c82-4ef5-8af1-4b908b6c5bf2) | [d4593dc6](https://app.buildbuddy.io/invocation/d4593dc6-a400-4dbb-851f-5d6d82ae4545) |
-| Publish AWS CRT public headers and includes through library dependencies; remove captured foreign inputs (`120811fec`) | [2dfd2546](https://app.buildbuddy.io/invocation/2dfd2546-fb33-4c2c-aa26-b4071cc47001) | [99f08d57](https://app.buildbuddy.io/invocation/99f08d57-c4bd-4651-97dc-b4fa86722c54) |
+| Remove native data unreachable from compiled sources and published headers; prune 6,027 unused exports (`dbef9b19a`) | [228e87ab](https://app.buildbuddy.io/invocation/228e87ab-f161-4d44-8f70-baa31de7cc13) | [5110ccb0](https://app.buildbuddy.io/invocation/5110ccb0-83fe-45c4-9117-37dd84bea1dd) |
+| Use local directory names for the 36 same-repository include expressions (`1793e1fa3`) | [61415215](https://app.buildbuddy.io/invocation/61415215-0c82-4ef5-8af1-4b908b6c5bf2) | [d4593dc6](https://app.buildbuddy.io/invocation/d4593dc6-a400-4dbb-851f-5d6d82ae4545) |
+| Publish AWS CRT public headers and includes through library dependencies; remove captured foreign inputs (`0e0832918`) | [2dfd2546](https://app.buildbuddy.io/invocation/2dfd2546-fb33-4c2c-aa26-b4071cc47001) | [99f08d57](https://app.buildbuddy.io/invocation/99f08d57-c4bd-4651-97dc-b4fa86722c54) |
 
 The external dependency ownership cleanup was also verified directly with
 normalized binaries on both platforms. The ARM comparison ran LLVM's strip
@@ -211,15 +217,23 @@ tool on an ARM64 executor against the recorded native CMake result.
 
 | Cleanup batch | x86-64 normalized SHA-256 | ARM64 normalized SHA-256 |
 | --- | --- | --- |
-| Native header ownership, private Asio, Arrow generation order, unused compiler inputs and banners (`23471423b`) | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/34e4eac9-d6c5-4499-9850-78f61eeba610) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/9ef5527b-d761-4f49-aff6-04d304a03c55) |
+| Native header ownership, private Asio, Arrow generation order, unused compiler inputs and banners (`66945d072`) | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/34e4eac9-d6c5-4499-9850-78f61eeba610) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/9ef5527b-d761-4f49-aff6-04d304a03c55) |
 | Remove unused NuRaft source inputs, inherit liburing generated headers, and remove unused BUILD imports | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/7538721e-11ac-4734-9be5-1958be61135e) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/f7b1b89a-4500-4659-bc34-dc7e697db713) |
-| Inherit duplicate public header globs; make Benchmark internal headers private; remove unused ICU data libc++abi inputs (`6a23198d6`) | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/80a15c31-222d-4c9e-a33a-d10599ad481b) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/37fd4325-f7a0-4a08-8491-2981f0a23ec9) |
-| Generate Google Cloud protos in configured Bazel output directories; remove unused Boost/Zstd/OpenSSL includes and make AI SDK, Cassandra, and Silk internal headers private (`5d25fa1bc`) | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/fa2ee870-e09c-4142-a37e-558a153ad250) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/43c5316a-714a-42c6-a427-df3fb5dc5963) |
-| Inherit transitive native dependencies; supply pinned sysroot inputs in `ch_cc_library`; order LLVM math before glibc compatibility in tool links (`8d05c3865`) | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/d719df32-51c2-427d-a882-57f75f3ed8c0) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/ec0d8a08-6749-4e83-b4c9-9c4ae1cfb53e) |
+| Inherit duplicate public header globs; make Benchmark internal headers private; remove unused ICU data libc++abi inputs (`9d2391a9c`) | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/80a15c31-222d-4c9e-a33a-d10599ad481b) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/37fd4325-f7a0-4a08-8491-2981f0a23ec9) |
+| Generate Google Cloud protos in configured Bazel output directories; remove unused Boost/Zstd/OpenSSL includes and make AI SDK, Cassandra, and Silk internal headers private (`7bbf9beb6`) | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/fa2ee870-e09c-4142-a37e-558a153ad250) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/43c5316a-714a-42c6-a427-df3fb5dc5963) |
+| Inherit transitive native dependencies; supply pinned sysroot inputs in `ch_cc_library`; order LLVM math before glibc compatibility in tool links (`ea59298f6`) | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/d719df32-51c2-427d-a882-57f75f3ed8c0) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/ec0d8a08-6749-4e83-b4c9-9c4ae1cfb53e) |
+| Remove copied source and CMake data from MeCab and other native compiler inputs; remove compiled sources from published generated headers (`7a6a69a2b`) | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/09c7cec2-cd43-4317-ad65-add19b754241) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/2f19e552-852a-4619-a220-716c609e7e55) |
+| Use configured external headers and code generation outputs; share zlib-ng labels in Minizip (`9e57d5fbc`) | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/e72f5480-fabe-434d-97b3-5a541f90d48e) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/5bfe2f5b-4ed1-4114-8401-028382499e18) |
+| Use configured LLVM runtime and TableGen outputs and retain architecture guards for ARM-only generators (`5897416a0`) | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/27f5abfe-bb95-47db-b88c-38879f820613) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/4caf665d-1c9c-479a-b9c3-f782147f5f74) |
+| Move ELF comparison, audit and CMake reference scripts into `bazel/initial_migration` (`ce068c5ec`) | [`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`](https://app.buildbuddy.io/invocation/5a194734-bc8e-4475-a4d9-7c8322c15126) | [`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`](https://app.buildbuddy.io/invocation/9b339263-77cc-4bc3-ae56-5bb39ab2920e) |
 
-Both x86-64 comparisons passed `cmp` and `PARITY_STATUS=0`; both ARM64
-comparisons reported `ARM_STRIPPED_STATUS=0`. Both batches also reproduced
+Every x86-64 comparison passed `cmp` and `PARITY_STATUS=0`; every ARM64
+comparison reported `ARM_STRIPPED_STATUS=0`. Each batch also reproduced
 the exact original Bazel ELF hashes from the preceding tables on both CPUs.
+The MeCab, configured external output, and LLVM output batches also built `@clickhouse_mecab//:_mecab`,
+`@clickhouse_minizip_ng//:_minizip`,
+`@clickhouse_google_cloud_cpp//:google_cloud_cpp_storage_protos`, and
+`@clickhouse_google_benchmark//:google_benchmark_main` on both CPUs.
 The Benchmark/ICU batch also built
 `@clickhouse_google_benchmark//:google_benchmark_main` on both CPUs, and
 reproduced both original Bazel ELF hashes.

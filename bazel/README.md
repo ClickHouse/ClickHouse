@@ -38,9 +38,9 @@ CMake targets and include directories to them. `initial_migration/any2bazel.json
 corresponding reference-target exclusions; these are module substitutions,
 not removed functionality.
 
-`initial_migration/contrib_repositories.json` records the 159 upstream submodule revisions,
+`rules/contrib_repositories.json` records the 159 upstream submodule revisions,
 official GitHub archive URLs, SHA-256 checksums, and archive prefixes.
-`repositories.bzl` fetches them with `http_archive`, except LLVM, which uses
+`rules/repositories.bzl` fetches them with `http_archive`, except LLVM, which uses
 hermetic-llvm's `llvm.from_archive`. Generated BUILD overlays
 under `bazel/dependencies` contain the dependency's `cc_library`, `cc_binary`,
 and assembly rules with ClickHouse's native build configuration. Sources
@@ -110,14 +110,21 @@ and kernel headers come from hermetic-llvm.
 ## Initial migration and validation
 
 The one-time BUILD generators, CMake reference builders, parity checks, and
-CMake/any2bazel data are in
-[`initial_migration/`](initial_migration/). Root and dependency BUILD files
-remain in their ordinary packages for direct maintenance. No generator runs
-during a normal Bazel build. The recorded linker order, configured compiler
-and license metadata, and Rust inventories remain consumed as static data;
-the Bazel rules and build-time tools that read those files remain in
-`bazel/`. Generation from both CMake reference graphs overwrites generated
-BUILD files, so run it only for an intentional migration refresh.
+CMake comparison snapshots are in [`initial_migration/`](initial_migration/).
+The active build rules and Python tools are in [`rules/`](rules/). The active
+rules read `rules/codegen_rules.bzl`, the link-order and Rust inventories,
+`rules/contrib_repositories.json`, and `rules/license_manifest.json`.
+These inputs are used by ordinary Bazel builds, so they live with the active
+rules. `initial_migration/cmake_metadata.bzl` and
+`initial_migration/license_substitutions_*.json` record values for the
+`--//bazel:cmake_metadata` comparison configuration.
+Arrow and both MongoDB drivers also read the recorded C++ compiler version
+from `initial_migration/cmake_metadata.bzl` when generating their headers.
+
+Root and dependency BUILD files remain in their ordinary packages for direct
+maintenance. BUILD-file generation from both CMake reference graphs
+overwrites generated BUILD files, so run it only for an intentional migration
+refresh.
 
 `initial_migration/configure_reference.py` configures both complete CMake graphs and invokes
 EngFlow/any2bazel's CMake extractor. `initial_migration/generate_build.py` translates the File
@@ -131,7 +138,7 @@ native libraries, including `-O3`, `-DNDEBUG`, and `-gz=zlib`.
 `OS_LINUX`, position independence, and diagnostics shared by C and C++ are
 also `common --copt` options. The generator recognizes both `-DOS_LINUX`
 and CMake's two-argument `-D OS_LINUX` spelling.
-`ch_cc_library.bzl` selects the base `-march` flags from the target platform's
+`rules/ch_cc_library.bzl` selects the base `-march` flags from the target platform's
 `@platforms//cpu` constraint. Its CPU flags precede the library's `copts`,
 so a later ISA override still wins. `clickhouse_code = True` adds the
 ClickHouse XRay settings, `-Wall`, and `-Wextra` only for CMake groups which
@@ -205,7 +212,7 @@ Reference configuration and regeneration still use upstream's initialized
 submodules (`git submodule update --init --recursive`). This is separate from
 the Bazel build's repository-rule acquisition.
 When updating a submodule, update its revision, archive URL, checksum, prefix,
-and removed BUILD-file list in `initial_migration/contrib_repositories.json` as well. Reconfigure
+and removed BUILD-file list in `rules/contrib_repositories.json` as well. Reconfigure
 both reference architectures and regenerate the overlays before validating
 the new dependency. The build generator consumes these pins; it does not
 discover new revisions or download archives.
@@ -309,7 +316,7 @@ the audit currently reports differences from CMake, so it does not establish
 complete action parity for the current port. The four LZ4 translation units
 are covered by the separate BCR equivalence check.
 
-HDFS's Yasm source is converted to NASM syntax by `prepare_hdfs_crc.py`.
+HDFS's Yasm source is converted to NASM syntax by `rules/prepare_hdfs_crc.py`.
 The conversion was validated against the original Yasm object: executable
 and data sections, relocation, and exported symbol matched, and the
 Bazel-produced object passed 29,952 comparisons with software CRC32C.

@@ -41,7 +41,7 @@ rust_cbindgen = rule(
         "vendor": attr.label(allow_single_file = True, mandatory = True),
         "headers": attr.string_dict(mandatory = True, doc = "cbindgen language to header filename, relative to the target name."),
         "cbindgen_tool": attr.label(executable = True, cfg = "exec", mandatory = True),
-        "_generator": attr.label(default = "//bazel:cbindgen", executable = True, cfg = "exec"),
+        "_generator": attr.label(default = "//bazel/rules:cbindgen", executable = True, cfg = "exec"),
     },
     toolchains = ["@rules_rust//rust:toolchain_type"],
 )

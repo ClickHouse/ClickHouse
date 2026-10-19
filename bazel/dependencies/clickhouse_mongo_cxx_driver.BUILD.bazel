@@ -1,6 +1,6 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
-load("@clickhouse//bazel:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel:repository_paths.bzl", "cmake_cxx_compiler_version", "repository_local_include", "repository_path")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_cxx_compiler_version", "repository_local_include", "repository_path")
 
 package(default_visibility = ["//visibility:public"])
 

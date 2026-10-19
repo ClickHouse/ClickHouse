@@ -94,7 +94,7 @@ class Sources:
     def known_generated_sources(self):
         """Account for source copies, rendered arrays and checked-in configs."""
         from initial_migration.scan_include_adjacency import includes
-        codegen = self.root / 'bazel/initial_migration/codegen_rules.bzl'
+        codegen = self.root / 'bazel/rules/codegen_rules.bzl'
         tree = ast.parse(codegen.read_text())
         for node in ast.walk(tree):
             if not isinstance(node, ast.Dict):
@@ -121,7 +121,7 @@ class Sources:
                         self.directives[dest] = self.directives[original]
                         self.source_copies[dest] = original
 
-        tree = ast.parse((self.root / 'bazel/initial_migration/build_options_data.bzl').read_text())
+        tree = ast.parse((self.root / 'bazel/rules/build_options_data.bzl').read_text())
         data = next(stmt.value for stmt in tree.body if isinstance(stmt, ast.Assign) and
                     any(isinstance(t, ast.Name) and t.id == 'BUILD_OPTIONS' for t in stmt.targets))
         for node in data.values:

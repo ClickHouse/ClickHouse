@@ -441,7 +441,7 @@ class ArchiveEvidence:
             'rust_target': target,
             'native_compilation': True,
             'rust_caller_flags': reference_rust,
-            'sanitizer_metadata': 'no-sanitizer (added by bazel/cmake_cargo.py)',
+            'sanitizer_metadata': 'no-sanitizer (added by bazel/rules/cmake_cargo.py)',
             'native_c_flags': values('--native-c-flag'),
             'native_cxx_flags': values('--native-cxx-flag'),
             'required_bridge_sources': sorted(bridge),

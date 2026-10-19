@@ -40,12 +40,12 @@ _licenses = rule(
         "source_paths": attr.string_list(),
         "out": attr.output(mandatory = True),
         "manifest": attr.label(
-            default = Label("//bazel/initial_migration:license_manifest.json"),
+            default = Label("//bazel/rules:license_manifest.json"),
             allow_single_file = True,
         ),
         "cmake_metadata": attr.label(allow_single_file = True),
         "_generator": attr.label(
-            default = Label("//bazel:generate_licenses"),
+            default = Label("//bazel/rules:generate_licenses"),
             executable = True,
             cfg = "exec",
         ),

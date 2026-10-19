@@ -35,7 +35,7 @@ _cargo_sources = repository_rule(
 )
 
 def _contrib_impl(module_ctx):
-    repositories = json.decode(module_ctx.read(Label("//bazel/initial_migration:contrib_repositories.json")))
+    repositories = json.decode(module_ctx.read(Label("//bazel/rules:contrib_repositories.json")))
     for repository in repositories.values():
         if repository.get("module"):
             continue

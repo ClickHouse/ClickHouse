@@ -1,4 +1,4 @@
-load("//bazel:repository_paths.bzl", "repository_path")
+load("//bazel/rules:repository_paths.bzl", "repository_path")
 BUILD_OPTIONS = {
   "x86_64": {
     "c_flags": [

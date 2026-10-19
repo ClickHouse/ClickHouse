@@ -27,7 +27,7 @@ from initial_migration.native_cc_dependencies import DependencyGraph
 from initial_migration.native_cc_inputs import FORCED, Sources, SPECIAL_REPOS, TUS
 from initial_migration.native_gcp_proto_inputs import (
     GCP, GRPC, GRPC_PLUGIN, PROTOBUF, PROTOC, PROTO_IMPORT,
-    GoogleProtos, dictionary, git_file, string, strings,
+    GoogleProtos, codegen_rules_filename, dictionary, git_file, string, strings,
 )
 from initial_migration.prune_inherited_headers import (
     ARCHES, CC_COMPILERS, CC_PROVIDERS, Document, Rewrite, label,
@@ -259,7 +259,7 @@ class NativeProtos(GoogleProtos):
                     if ref in sources.inventory:
                         self.regular_schemas[ref] = archive.extractfile(member).read().decode()
 
-        tree = ast.parse(git_file(root, revision, 'bazel/initial_migration/codegen_rules.bzl'))
+        tree = ast.parse(git_file(root, revision, codegen_rules_filename(root, revision)))
         constants = {
             stmt.targets[0].id: stmt.value for stmt in tree.body
             if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1

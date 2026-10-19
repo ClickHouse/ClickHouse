@@ -353,8 +353,8 @@ class Graph:
                 build.rule('genrule', name, {
                     'srcs': sources,
                     'outs': [output],
-                    'tools': ['@clickhouse//bazel:generate_timezones'],
-                    'cmd': '$(execpath @clickhouse//bazel:generate_timezones) --output=$@ $(SRCS)',
+                    'tools': ['@clickhouse//bazel/rules:generate_timezones'],
+                    'cmd': '$(execpath @clickhouse//bazel/rules:generate_timezones) --output=$@ $(SRCS)',
                 })
                 continue
             spec = self.configuration_rules[relative]
@@ -698,7 +698,7 @@ def main():
     license_manifest = [line.split('\t') for line in licenses.splitlines()]
     if any(len(row) != 3 for row in license_manifest):
         raise ValueError('Unexpected canonical license inventory format')
-    (ROOT / 'bazel/initial_migration/license_manifest.json').write_text(json.dumps(license_manifest, indent=2) + '\n')
+    (ROOT / 'bazel/rules/license_manifest.json').write_text(json.dumps(license_manifest, indent=2) + '\n')
     graphs = {arch: Graph(arch) for arch in ARCHES}
     owners = {}
     for graph in graphs.values():
@@ -808,16 +808,16 @@ def main():
                           | llvm_overlay_inputs | llvm_root_inputs | rust_root_inputs)
     (ROOT / 'BUILD.bazel').write_text(
         root.load_statements() +
-        'load("//bazel:root_inputs.bzl", "declare_inputs")\n\n'
+        'load("//bazel/rules:root_inputs.bzl", "declare_inputs")\n\n'
         'package(default_visibility = ["//visibility:public"])\n\n'
         'declare_inputs()\n\nexports_files(' + starlark(root_exports) + ')\n\n' + root.text())
     (ROOT / 'bazel/headers.bzl').unlink(missing_ok=True)
     (ROOT / 'bazel/initial_migration/coverage.json').write_text(json.dumps(inventories, indent=2) + '\n')
-    preamble = 'load("//bazel:repository_paths.bzl", "repository_path")\n'
-    (ROOT / 'bazel/initial_migration/codegen_rules.bzl').write_text(render_rules(codegen_rules))
-    (ROOT / 'bazel/initial_migration/build_options_data.bzl').write_text(preamble + 'BUILD_OPTIONS = ' + starlark(build_options) + '\n')
+    preamble = 'load("//bazel/rules:repository_paths.bzl", "repository_path")\n'
+    (ROOT / 'bazel/rules/codegen_rules.bzl').write_text(render_rules(codegen_rules))
+    (ROOT / 'bazel/rules/build_options_data.bzl').write_text(preamble + 'BUILD_OPTIONS = ' + starlark(build_options) + '\n')
     write_metadata(ROOT, cmake_metadata)
-    (ROOT / 'bazel/initial_migration/rust_cxx_flags.bzl').write_text(preamble + 'RUST_CXX = ' + starlark(rust_cxx) + '\n')
+    (ROOT / 'bazel/rules/rust_cxx_flags.bzl').write_text(preamble + 'RUST_CXX = ' + starlark(rust_cxx) + '\n')
     # An external cc_library otherwise exports a quote include root that takes
     # precedence over CMake's system include path. Preserve the system boundary
     # with rules_cc's standard feature where every reference use agrees.
