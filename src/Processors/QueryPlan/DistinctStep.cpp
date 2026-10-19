@@ -358,10 +358,14 @@ void DistinctStep::serializeSettings(QueryPlanSerializationSettings & plan_setti
 {
     settings.updatePlanSettings(plan_settings, version);
 
-    plan_settings[QueryPlanSerializationSetting::distinct_set_limit_for_enabling_bloom_filter] = set_limit_for_enabling_bloom_filter;
-    plan_settings[QueryPlanSerializationSetting::distinct_bloom_filter_bytes] = bloom_filter_bytes;
-    plan_settings[QueryPlanSerializationSetting::distinct_pass_ratio_threshold_for_disabling_bloom_filter] = pass_ratio_threshold_for_disabling_bloom_filter;
-    plan_settings[QueryPlanSerializationSetting::distinct_bloom_filter_max_ratio_of_set_bits] = max_ratio_of_set_bits_in_bloom_filter;
+    /// An older peer rejects unknown setting names; without them it runs the exact `DISTINCT` without the bloom filter.
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_DISTINCT_BLOOM_FILTER)
+    {
+        plan_settings[QueryPlanSerializationSetting::distinct_set_limit_for_enabling_bloom_filter] = set_limit_for_enabling_bloom_filter;
+        plan_settings[QueryPlanSerializationSetting::distinct_bloom_filter_bytes] = bloom_filter_bytes;
+        plan_settings[QueryPlanSerializationSetting::distinct_pass_ratio_threshold_for_disabling_bloom_filter] = pass_ratio_threshold_for_disabling_bloom_filter;
+        plan_settings[QueryPlanSerializationSetting::distinct_bloom_filter_max_ratio_of_set_bits] = max_ratio_of_set_bits_in_bloom_filter;
+    }
 }
 
 void DistinctStep::serialize(Serialization & ctx) const
