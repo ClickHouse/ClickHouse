@@ -53,7 +53,7 @@ private:
 class AvroDeserializer
 {
 public:
-    AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
+    AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_, std::unordered_map<String, String> original_field_names_ = {});
     AvroDeserializer(DataTypePtr data_type, const std::string & column_name, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
 
     /// Not movable: stored closures capture `this` and references into `symbolic_skip_fn_map`.
@@ -167,6 +167,9 @@ private:
     bool null_as_default = false;
 
     const FormatSettings & settings;
+
+    /// Avro field name -> original name, for top-level fields.
+    std::unordered_map<String, String> original_field_names;
 };
 
 class AvroRowInputFormat final : public IRowInputFormat

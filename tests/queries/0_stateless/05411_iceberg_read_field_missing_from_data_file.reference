@@ -27,3 +27,6 @@ Parquet	star	11	11	\N
 Parquet	star	12	12	\N
 after_optimize	5	5	26
 files_after_optimize	2	0
+escaped	1	a
+escaped	2	b
+escaped	3	c

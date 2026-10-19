@@ -62,4 +62,9 @@ ${LOCAL} --query "
     FROM system.iceberg_files WHERE database = currentDatabase() AND table = 't';
 "
 
+# With missing fields tolerated, a field stored under its escaped Avro name is read by its Iceberg name, not as a default.
+${CLICKHOUSE_LOCAL} --input_format_avro_allow_missing_fields=1 --query "
+    SELECT 'escaped', id, \`name.column\`
+    FROM file('${CURDIR}/data_avro/iceberg_escaped_field_name.avro', 'Avro', 'id Int32, \`name.column\` String') ORDER BY id"
+
 rm -rf "${TABLE_DIR}"

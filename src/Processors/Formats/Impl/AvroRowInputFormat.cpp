@@ -38,6 +38,9 @@
 #include <fmt/format.h>
 #include <Processors/Formats/Impl/AvroConfluentSchemaRegistry.h>
 #include <base/EnumReflection.h>
+#include <Poco/JSON/Array.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
 #include <Compiler.hh>
 #include <DataFile.hh>
 #include <Decoder.hh>
@@ -1151,7 +1154,17 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
         {
             const auto & field_node = node->leafAt(i);
             const auto & field_name = node->nameAt(i);
-            field_actions[i] = createAction(header, field_node, concatPath(current_path, field_name));
+            auto field_path = concatPath(current_path, field_name);
+            if (current_path.empty() && !header.has(field_path))
+            {
+                /// A column is read from one field only, so no other field may resolve to it.
+                auto it = original_field_names.find(field_name);
+                size_t other_field_index = 0;
+                if (it != original_field_names.end() && header.has(it->second) && !node->nameIndex(it->second, other_field_index)
+                    && !column_found[header.getPositionByName(it->second)])
+                    field_path = it->second;
+            }
+            field_actions[i] = createAction(header, field_node, field_path);
         }
         return AvroDeserializer::Action::recordAction(field_actions);
     }
@@ -1232,8 +1245,8 @@ AvroDeserializer::AvroDeserializer(DataTypePtr data_type, const std::string & co
 
 }
 
-AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_)
-    : null_as_default(null_as_default_), settings(settings_)
+AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_, std::unordered_map<String, String> original_field_names_)
+    : null_as_default(null_as_default_), settings(settings_), original_field_names(std::move(original_field_names_))
 {
     const auto & schema_root = schema.root();
     if (schema_root->type() != avro::AVRO_RECORD)
@@ -1274,12 +1287,52 @@ AvroRowInputFormat::AvroRowInputFormat(SharedHeader header_, ReadBuffer & in_, P
 {
 }
 
+namespace
+{
+
+/// Iceberg writes a field whose name is not a valid Avro name under an escaped name
+/// and keeps the original name in the `iceberg-field-name` property.
+std::unordered_map<String, String> getOriginalFieldNames(const std::map<std::string, std::vector<uint8_t>> & metadata)
+{
+    std::unordered_map<String, String> result;
+    auto it = metadata.find("avro.schema");
+    if (it == metadata.end())
+        return result;
+
+    String schema_json(it->second.begin(), it->second.end());
+    if (!schema_json.contains("iceberg-field-name"))
+        return result;
+
+    Poco::JSON::Parser parser;
+    auto root = parser.parse(schema_json);
+    if (root.type() != typeid(Poco::JSON::Object::Ptr))
+        return result;
+
+    auto fields = root.extract<Poco::JSON::Object::Ptr>()->getArray("fields");
+    if (!fields)
+        return result;
+
+    for (size_t i = 0; i < fields->size(); ++i)
+    {
+        auto field = fields->getObject(static_cast<unsigned>(i));
+        if (!field || !field->has("name") || !field->has("iceberg-field-name"))
+            continue;
+        auto original_name = field->get("iceberg-field-name");
+        if (original_name.isString())
+            result.emplace(field->getValue<String>("name"), original_name.extract<String>());
+    }
+    return result;
+}
+
+}
+
 void AvroRowInputFormat::readPrefix()
 {
     file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(
         std::make_unique<AvroInputStreamReadBufferAdapter>(*in), MAX_AVRO_SCHEMA_DEPTH);
     deserializer_ptr = std::make_unique<AvroDeserializer>(
-        output.getHeader(), file_reader_ptr->dataSchema(), format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings);
+        output.getHeader(), file_reader_ptr->dataSchema(), format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings,
+        getOriginalFieldNames(file_reader_ptr->metadata()));
     file_reader_ptr->init();
 }
 

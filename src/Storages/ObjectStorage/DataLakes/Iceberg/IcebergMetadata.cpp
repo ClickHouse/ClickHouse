@@ -591,7 +591,8 @@ bool IcebergMetadata::optimize(
         const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
         auto snapshots_info = getHistory(context);
         FormatSettings compaction_format_settings = format_settings ? *format_settings : getFormatSettings(context);
-        allowFieldsMissingFromDataFile(compaction_format_settings);
+        /// Compaction reads every data file under the current schema's names, and only Parquet resolves them by field id.
+        compaction_format_settings.parquet.allow_missing_columns = true;
         compactIcebergTable(
             snapshots_info,
             persistent_components,
