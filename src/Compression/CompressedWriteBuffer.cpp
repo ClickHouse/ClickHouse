@@ -39,7 +39,7 @@ void CompressedWriteBuffer::nextImpl()
       * Then we can write checksum and copy the temporary buffer into the output buffer.
       */
     const bool compress_in_place = out.available() >= compressed_reserve_size + sizeof(CityHash_v1_0_2::uint128);
-    char * compressed_ptr;
+    char * compressed_ptr = nullptr;
     if (compress_in_place)
     {
         compressed_ptr = out.position() + sizeof(CityHash_v1_0_2::uint128);
