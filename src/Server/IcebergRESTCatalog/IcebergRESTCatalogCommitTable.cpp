@@ -10,6 +10,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
+#include <algorithm>
 #include <expected>
 #include <functional>
 #include <set>
@@ -316,7 +317,8 @@ void applyTableUpdatesToJSON(Poco::JSON::Object & metadata, const Poco::JSON::Ar
     /// Read before the updates, which change the metadata in place.
     const auto previous_last_updated_ms = getInteger(metadata, f_last_updated_ms);
     /// Set before the updates, so set-snapshot-ref records the same time in the snapshot log.
-    metadata.set(f_last_updated_ms, nowMs());
+    /// Never earlier than the previous commit, because clocks differ between catalog servers and readers expect ordered history.
+    metadata.set(f_last_updated_ms, std::max(nowMs(), previous_last_updated_ms + 1));
 
     for (const auto & update : updates)
     {
