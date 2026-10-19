@@ -88,6 +88,7 @@ GTEST_TEST(FieldBinaryEncoding, WriteBinarySize)
     checkWriteBinarySize(IPv6(42));
     checkWriteBinarySize(Float64(42.42));
     checkWriteBinarySize(String("Hello, World!"));
+    checkWriteBinarySize(NumberLiteral("123456789012345678901234567890"));
     checkWriteBinarySize(Array({Field(UInt64(42)), Field(UInt64(43))}));
     checkWriteBinarySize(Tuple({Field(UInt64(42)), Field(Null()), Field(UUID(42)), Field(String("Hello, World!"))}));
     checkWriteBinarySize(Map({Tuple{Field(UInt64(42)), Field(String("str_42"))}, Tuple{Field(UInt64(43)), Field(String("str_43"))}}));

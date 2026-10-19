@@ -58,6 +58,7 @@ public:
     size_t operator() (const IPv4 &) const { return sizeof(IPv4); }
     size_t operator() (const IPv6 &) const { return sizeof(IPv6); }
     size_t operator() (const CustomType & x) const { return getStringBinarySize(x.getTypeName()) + getStringBinarySize(x.toString()); }
+    size_t operator() (const NumberLiteral & x) const { return getStringBinarySize(x.value); }
     size_t operator() (const DecimalField<Decimal32> &) const { return sizeof(Decimal32) + sizeof(UInt32); }
     size_t operator() (const DecimalField<Decimal64> &) const { return sizeof(Decimal64) + sizeof(UInt32); }
     size_t operator() (const DecimalField<Decimal128> &) const { return sizeof(Decimal128) + sizeof(UInt32); }
