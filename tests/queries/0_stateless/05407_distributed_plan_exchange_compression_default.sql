@@ -43,6 +43,7 @@ SET make_distributed_plan = 0;
 SYSTEM FLUSH LOGS query_log;
 
 -- The tasks of a run are the `query_log` rows whose `initial_query_id` is the query of that run.
+-- The runs are listed by name, because other queries of the test also have a `log_comment` that starts with `05407_`.
 CREATE VIEW v_exchange_codec_default AS
 SELECT runs.log_comment AS run,
     sum(tasks.ProfileEvents['StreamingExchangeSerializedBytes']) AS serialized_bytes,
@@ -51,7 +52,8 @@ FROM system.query_log AS tasks
 INNER JOIN (
     SELECT query_id, log_comment FROM system.query_log
     WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE AND current_database = currentDatabase()
-      AND log_comment LIKE '05407\\_%' AND type = 'QueryFinish') AS runs ON tasks.initial_query_id = runs.query_id
+      AND log_comment IN ('05407_default', '05407_empty_none', '05407_empty_lz4', '05407_none_zstd', '05407_zstd_exchange_level', '05407_compatibility_26_10')
+      AND type = 'QueryFinish') AS runs ON tasks.initial_query_id = runs.query_id
 WHERE tasks.event_date >= yesterday() AND tasks.event_time >= now() - INTERVAL 10 MINUTE
   AND tasks.type = 'QueryFinish' AND tasks.query_id != runs.query_id
 GROUP BY run;
