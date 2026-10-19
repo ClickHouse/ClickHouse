@@ -45,11 +45,11 @@ String getPrimaryIndexFileName(const IDataPartStorage & data_part_storage)
 }
 
 template <typename Columns>
-void dropPrimaryIndexSuffixColumns(size_t marks_count, Columns & index_columns, Float64 ratio_to_drop_suffix_columns)
+bool dropPrimaryIndexSuffixColumns(size_t marks_count, Columns & index_columns, Float64 ratio_to_drop_suffix_columns)
 {
     const size_t key_size = index_columns.size();
     if (marks_count == 0 || key_size <= 1 || ratio_to_drop_suffix_columns <= 0 || ratio_to_drop_suffix_columns >= 1)
-        return;
+        return false;
 
     for (size_t j = 0; j < key_size - 1; ++j)
     {
@@ -66,10 +66,11 @@ void dropPrimaryIndexSuffixColumns(size_t marks_count, Columns & index_columns, 
             break;
         }
     }
+    return true;
 }
 
-template void dropPrimaryIndexSuffixColumns<Columns>(size_t, Columns &, Float64);
-template void dropPrimaryIndexSuffixColumns<MutableColumns>(size_t, MutableColumns &, Float64);
+template bool dropPrimaryIndexSuffixColumns<Columns>(size_t, Columns &, Float64);
+template bool dropPrimaryIndexSuffixColumns<MutableColumns>(size_t, MutableColumns &, Float64);
 
 Columns loadPrimaryIndexFromStorage(
     const IDataPartStorage & data_part_storage,

@@ -1875,7 +1875,6 @@ void IMergeTreeDataPart::loadIndexGranularity()
 }
 
 
-template <typename Columns>
 void IMergeTreeDataPart::optimizeIndexColumns(size_t marks_count, Columns & index_columns) const
 {
     if (marks_count == 0)
@@ -1889,11 +1888,11 @@ void IMergeTreeDataPart::optimizeIndexColumns(size_t marks_count, Columns & inde
     if (info.isPatch())
         return;
 
-    dropPrimaryIndexSuffixColumns(
-        marks_count,
-        index_columns,
-        static_cast<Float64>((*storage.getSettings())[MergeTreeSetting::primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns]));
-    LOG_TEST(storage.log, "Loaded primary key index for part {}, {} columns are kept in memory", name, index_columns.size());
+    if (dropPrimaryIndexSuffixColumns(
+            marks_count,
+            index_columns,
+            static_cast<Float64>((*storage.getSettings())[MergeTreeSetting::primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns])))
+        LOG_TEST(storage.log, "Loaded primary key index for part {}, {} columns are kept in memory", name, index_columns.size());
 }
 
 std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
@@ -1917,6 +1916,7 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
         *storage.getSettings(),
         getReadSettings(),
         /*keep_all_columns=*/ info.isPatch());
+    chassert(loaded_index.empty() || index_granularity->getMarksCount() != 0 || isEmpty());
 
     LOG_TEST(storage.log, "Loaded primary key index for part {}, {} columns are kept in memory", name, loaded_index.size());
     return std::make_shared<Index>(std::move(loaded_index));
