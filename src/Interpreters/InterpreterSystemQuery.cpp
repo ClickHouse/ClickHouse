@@ -387,13 +387,12 @@ void InterpreterSystemQuery::startStopActionInDatabase(StorageActionBlockType ac
 
 static void reloadDictionaryFromSystemQuery(ExternalDictionariesLoader & loader, const ASTSystemQuery & query, ContextPtr context)
 {
-    if (query.database)
-    {
-        loader.reloadDictionary({query.getDatabase(), query.getTable()}, context);
-        return;
-    }
+    std::string resolved_name = query.database
+        ? loader.resolveDictionaryName(QualifiedTableName{query.getDatabase(), query.getTable()}, context)
+        : loader.resolveDictionaryName(query.getTable(), context);
 
-    loader.reloadDictionary(query.getTable(), context);
+    context->onQueryExecutionStarted();
+    loader.loadOrReload(resolved_name);
 }
 
 static void unloadDictionaryFromSystemQuery(ExternalDictionariesLoader & loader, const ASTSystemQuery & query, ContextPtr context)
@@ -1539,6 +1538,7 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
             table->is_being_restarted = false;
     });
     table->is_being_restarted = true;
+    getContext()->onQueryExecutionStarted();
     table->flushAndShutdown();
 
     /// The definition re-attached below was read back from this server's own metadata, so it must be
@@ -1724,7 +1724,6 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
     if (replica_names.empty())
         return;
 
-    getContext()->onQueryExecutionStarted();
     size_t threads = std::min(static_cast<size_t>(getNumberOfCPUCoresToUse()), replica_names.size());
     LOG_DEBUG(log, "Will restart {} replicas using {} threads", replica_names.size(), threads);
     ThreadPool pool(CurrentMetrics::RestartReplicaThreads, CurrentMetrics::RestartReplicaThreadsActive, CurrentMetrics::RestartReplicaThreadsScheduled, threads);

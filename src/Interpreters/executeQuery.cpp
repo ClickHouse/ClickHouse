@@ -4129,15 +4129,33 @@ std::future<void> executeQueryInBackground(std::string_view query, ContextMutabl
     auto background_context = Context::createCopy(context);
     background_context->makeQueryContext();
 
-    auto background_query_execution_started = std::make_shared<std::promise<void>>();
-    auto background_query_execution_started_fulfilled = std::make_shared<std::atomic<bool>>(false);
-    background_context->setQueryExecutionStartedCallback([background_query_execution_started, background_query_execution_started_fulfilled]
+    struct ExecutionStart
     {
-        if (!background_query_execution_started_fulfilled->exchange(true))
-            background_query_execution_started->set_value();
-    });
+        std::promise<void> promise;
+        std::atomic<bool> fulfilled{false};
 
-    context->getBackgroundQueryPool().scheduleOrThrow([query_text = String(query), background_context, background_query_execution_started, background_query_execution_started_fulfilled]
+        ~ExecutionStart()
+        {
+            setException(std::make_exception_ptr(Exception(ErrorCodes::ABORTED, "Server is shutting down")));
+        }
+
+        void setStarted()
+        {
+            if (!fulfilled.exchange(true))
+                promise.set_value();
+        }
+
+        void setException(std::exception_ptr exception)
+        {
+            if (!fulfilled.exchange(true))
+                promise.set_exception(exception);
+        }
+    };
+
+    auto background_query_execution_started = std::make_shared<ExecutionStart>();
+    background_context->setQueryExecutionStartedCallback([background_query_execution_started] { background_query_execution_started->setStarted(); });
+
+    context->getBackgroundQueryPool().scheduleOrThrow([query_text = String(query), background_context, background_query_execution_started]
     {
         try
         {
@@ -4180,12 +4198,11 @@ std::future<void> executeQueryInBackground(std::string_view query, ContextMutabl
         catch (...)
         {
             tryLogCurrentException("executeQueryInBackground");
-            if (!background_query_execution_started_fulfilled->exchange(true))
-                background_query_execution_started->set_exception(std::current_exception());
+            background_query_execution_started->setException(std::current_exception());
         }
     });
 
-    return background_query_execution_started->get_future();
+    return background_query_execution_started->promise.get_future();
 }
 
 void executeQuery(

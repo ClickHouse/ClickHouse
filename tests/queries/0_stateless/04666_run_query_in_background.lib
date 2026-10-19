@@ -88,6 +88,8 @@ function shared_native_and_http_tests()
     $run "DROP TABLE t SETTINGS max_table_size_to_drop = 1" | grep -o -m1 TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT
     $run "DELETE FROM t WHERE n = 1 SETTINGS enable_lightweight_delete = 0" | grep -o -m1 SUPPORT_IS_DISABLED
     $run "BACKUP TABLE t TO Disk('backups', 'unused') SETTINGS compression_level = 'abc'" | grep -o -m1 CANNOT_PARSE_INPUT_ASSERTION_FAILED
+    $run "SYSTEM RELOAD DICTIONARY d_missing" | grep -o -m1 BAD_ARGUMENTS
+    $run "SYSTEM RESTART REPLICA t" | grep -o -m1 BAD_ARGUMENTS
 
     echo '--- errors raised after the main work has started are only logged'
     local logged_id="logged_${run}_${CLICKHOUSE_DATABASE}"
