@@ -372,7 +372,9 @@ CREATE VIEW v_115999_viewed AS SELECT id, group_id, tags FROM t_115999_viewed;
 SELECT count() FROM v_115999_viewed AS v INNER JOIN t_115999_side AS b ON v.group_id = b.group_id
 WHERE hasAnyTokens(v.tags, ['alpha beta']) OR b.category = 'nonexistent'
 SETTINGS analyzer_inline_views = 1;
-SELECT count() FROM v_115999_viewed WHERE hasAnyTokens(tags, ['alpha beta']);
+-- The oracle reads the table, not the view: through an opaque view only the plan rewrite can supply the
+-- tokenizer, and whether it reaches that scan depends on the plan (it does not under parallel replicas).
+SELECT count() FROM t_115999_viewed WHERE hasAnyTokens(tags, ['alpha beta']);
 
 -- Tracked gap, prints 0 where the two above print 1: an opaque `StorageView` carries no index
 -- definitions, so the stranded predicate keeps the default tokenizer.
