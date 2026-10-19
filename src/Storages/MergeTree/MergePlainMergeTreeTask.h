@@ -84,7 +84,6 @@ private:
     Priority priority;
 
     std::function<void(const ExecutionStatus &)> write_part_log;
-    std::function<void()> transfer_profile_counters_to_initial_query;
     IExecutableTask::TaskResultCallback task_result_callback;
     MergeTaskPtr merge_task{nullptr};
 

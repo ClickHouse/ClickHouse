@@ -956,6 +956,38 @@ def assert_s3_cancelled(node, table, request):
     assert "ABORTED" in request.get_error()
 
 
+def test_kill_foreground_optimize_stops_s3_retries(s3_cancellation, broken_s3):
+    node, table = s3_cancellation
+    query_id = "cancel_optimize_" + uuid.uuid4().hex
+    node.query(
+        f"CREATE TABLE {table} (key UInt32, value String) ENGINE=MergeTree ORDER BY key "
+        "SETTINGS storage_policy='broken_s3_long_retries', "
+        "max_bytes_to_merge_at_max_space_in_pool=1, max_bytes_to_merge_at_min_space_in_pool=1"
+    )
+    # The size limits prevent background selection but do not restrict `OPTIMIZE FINAL`.
+    for offset in (0, 1000):
+        node.query(
+            f"INSERT INTO {table} SELECT number + {offset}, toString(number) FROM numbers(1000)"
+        )
+
+    broken_s3.reset()
+    broken_s3.setup_at_object_upload(action="internal_error", count=10000)
+    try:
+        request = node.get_query_request(
+            f"OPTIMIZE TABLE {table} FINAL", query_id=query_id, timeout=30
+        )
+        wait_for_s3_request(broken_s3, "object_upload", count=2)
+        node.query(f"KILL QUERY WHERE query_id='{query_id}' SYNC", timeout=20)
+        assert "QUERY_WAS_CANCELLED" in request.get_error()
+        assert node.query(
+            f"SELECT count() FROM system.merges WHERE database=currentDatabase() AND table='{table}'"
+        ).strip() == "0"
+        assert node.query(f"SELECT count(), sum(key) FROM {table}").strip() == "2000\t1999000"
+    finally:
+        broken_s3.reset()
+        node.query(f"KILL QUERY WHERE query_id='{query_id}' SYNC", timeout=30)
+
+
 @pytest.mark.parametrize("engine", ["MergeTree", "ReplicatedMergeTree('/cancel_teardown', 'r1')"])
 @pytest.mark.parametrize("recover", [True, False], ids=["recovery", "exhaustion"])
 def test_cancelled_merge_teardown_retries_multipart_abort(

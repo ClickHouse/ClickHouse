@@ -101,7 +101,8 @@ void MergePlainMergeTreeTask::prepare()
         storage.getStorageID(),
         future_part,
         task_context,
-        storage.merger_mutator.merges_blocker.getCancellationRequestPredicate(future_part->part_info.getPartitionId()));
+        storage.merger_mutator.merges_blocker.getCancellationRequestPredicate(future_part->part_info.getPartitionId()),
+        initial_query_group);
     ThreadGroupSwitcher preparation_group((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
 
     storage.writePartLog(
@@ -123,19 +124,6 @@ void MergePlainMergeTreeTask::prepare()
             std::move(profile_counters_snapshot),
             {},
             projections_duration_ms);
-    };
-
-    transfer_profile_counters_to_initial_query = [this, query_thread_group = std::move(initial_query_group)] ()
-    {
-        if (query_thread_group)
-        {
-            auto task_thread_group = (*merge_list_entry)->thread_group;
-            auto task_counters_snapshot = task_thread_group->performance_counters.getPartiallyAtomicSnapshot();
-
-            auto & query_counters = query_thread_group->performance_counters;
-            for (ProfileEvents::Event i = ProfileEvents::Event(0); i < ProfileEvents::end(); ++i)
-                query_counters.incrementNoTrace(i, task_counters_snapshot[i]);
-        }
     };
 
     merge_task = storage.merger_mutator.mergePartsToTemporaryPart(
@@ -194,7 +182,6 @@ void MergePlainMergeTreeTask::finish()
     write_part_log({});
 
     StorageMergeTree::incrementMergedPartsProfileEvent(new_part->getType());
-    transfer_profile_counters_to_initial_query();
 
     if (auto txn_ = txn_holder.getTransaction())
     {
