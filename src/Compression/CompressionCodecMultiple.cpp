@@ -5,10 +5,36 @@
 #include <Compression/CompressionFactory.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <Parsers/IAST.h>
+
+#include <limits>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_COMPRESS;
+}
+
+namespace
+{
+
+/// A codec never reserves less than its own input, so a result below the input means the UInt32
+/// arithmetic wrapped. The check does not depend on where inside the callee the wrap happened.
+UInt32 getCheckedReserveSize(const CompressionCodecPtr & codec, UInt32 size, size_t codec_index, size_t codecs_count)
+{
+    UInt32 reserve_size = codec->getCompressedReserveSize(size);
+    if (reserve_size < size)
+        throw Exception(ErrorCodes::CANNOT_COMPRESS,
+            "Too many codecs in the codec chain: the size reserved for compressing {} bytes overflows 4 GiB "
+            "at codec {} of {} ({}). Use fewer codecs.",
+            size, codec_index + 1, codecs_count, codec->getCodecDesc()->formatForErrorMessage());
+    return reserve_size;
+}
+
+}
 
 CompressionCodecMultiple::CompressionCodecMultiple(Codecs codecs_)
     : codecs(codecs_)
@@ -33,16 +59,36 @@ void CompressionCodecMultiple::updateHash(SipHash & hash) const
 
 UInt32 CompressionCodecMultiple::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
+    /// doCompressData stores the number of codecs in one byte, and doDecompressData reads it back
+    /// from there, so a longer chain would write a part that cannot be read.
+    if (codecs.size() > std::numeric_limits<UInt8>::max())
+        throw Exception(ErrorCodes::CANNOT_COMPRESS,
+            "Too many codecs in the codec chain: {}. The number of codecs is stored in one byte, "
+            "so at most {} are supported.",
+            codecs.size(), static_cast<size_t>(std::numeric_limits<UInt8>::max()));
+
     UInt32 compressed_size = uncompressed_size;
-    for (const auto & codec : codecs)
-        compressed_size = codec->getCompressedReserveSize(compressed_size);
+    for (size_t idx = 0; idx < codecs.size(); ++idx)
+        compressed_size = getCheckedReserveSize(codecs[idx], compressed_size, idx, codecs.size());
 
     ///    TotalCodecs  ByteForEachCodec       data
-    return static_cast<UInt32>(sizeof(UInt8) + codecs.size() + compressed_size);
+    size_t total_size = sizeof(UInt8) + codecs.size() + compressed_size;
+    /// getCompressedReserveSize adds getHeaderSize() to this in UInt32, so leave room for it.
+    static constexpr size_t max_total_size = std::numeric_limits<UInt32>::max() - ICompressionCodec::getHeaderSize();
+    if (total_size > max_total_size)
+        throw Exception(ErrorCodes::CANNOT_COMPRESS,
+            "Too many codecs in the codec chain: the size reserved for compressing {} bytes ({}) exceeds 4 GiB. "
+            "Use fewer codecs.",
+            uncompressed_size, total_size);
+
+    return static_cast<UInt32>(total_size);
 }
 
 UInt32 CompressionCodecMultiple::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
+    /// The caller sized dest from getMaxCompressedDataSize(source_size).
+    const UInt32 dest_size = getMaxCompressedDataSize(source_size);
+
     PODArray<char> compressed_buf;
     PODArray<char> uncompressed_buf(source, source + source_size);
 
@@ -53,7 +99,7 @@ UInt32 CompressionCodecMultiple::doCompressData(const char * source, UInt32 sour
     {
         const auto codec = codecs[idx];
         dest[codecs_byte_pos] = codec->getMethodByte();
-        compressed_buf.resize(codec->getCompressedReserveSize(source_size));
+        compressed_buf.resize(getCheckedReserveSize(codec, source_size, idx, codecs.size()));
 
         UInt32 size_compressed = codec->compress(uncompressed_buf.data(), source_size, compressed_buf.data());
 
@@ -61,9 +107,15 @@ UInt32 CompressionCodecMultiple::doCompressData(const char * source, UInt32 sour
         source_size = size_compressed;
     }
 
+    /// source_size is now each codec's actual output, computed independently of the bounds above.
+    size_t written_size = sizeof(UInt8) + codecs.size() + source_size;
+    if (written_size > dest_size)
+        throw Exception(ErrorCodes::CANNOT_COMPRESS,
+            "Compressed data of size {} does not fit the reserved buffer of size {}", written_size, dest_size);
+
     memcpy(&dest[1 + codecs.size()], uncompressed_buf.data(), source_size);
 
-    return static_cast<UInt32>(1 + codecs.size() + source_size);
+    return static_cast<UInt32>(written_size);
 }
 
 UInt32 CompressionCodecMultiple::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 decompressed_size) const
