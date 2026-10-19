@@ -315,10 +315,10 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(
 static void addPathAndFileToVirtualColumns(
     const Block & block,
     MutableColumns & columns,
+    const std::vector<size_t> & hive_column_positions,
     const String & path,
     size_t idx,
     const FormatSettings & format_settings,
-    bool parse_hive_columns,
     const String * file_name = nullptr)
 {
     if (block.has("_path"))
@@ -343,17 +343,14 @@ static void addPathAndFileToVirtualColumns(
         columns[block.getPositionByName("_file")]->insert(file);
     }
 
-    if (parse_hive_columns)
+    if (!hive_column_positions.empty())
     {
         const auto keys_and_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(path);
-        for (const auto & [key, value] : keys_and_values)
+        for (size_t pos : hive_column_positions)
         {
-            if (const auto * column = block.findByName(key))
-            {
-                ReadBufferFromString buf(value);
-                column->type->getDefaultSerialization()->deserializeWholeText(
-                    *columns[block.getPositionByName(column->name)], buf, format_settings);
-            }
+            const auto & column = block.getByPosition(pos);
+            ReadBufferFromString buf(HivePartitioningUtils::getHivePartitionValue(keys_and_values, column.name, path));
+            column.type->getDefaultSerialization()->deserializeWholeText(*columns[pos], buf, format_settings);
         }
     }
 
@@ -418,7 +415,15 @@ ColumnPtr getFilterByPathAndFileIndexes(
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
     const auto hive_format_settings = HivePartitioningUtils::buildHiveFormatSettings(format_settings, context);
-    const bool parse_hive_columns = context->getSettingsRef()[Setting::use_hive_partitioning] || !hive_columns.empty();
+
+    /// Every column besides `_path`, `_file` and `_idx` is a hive partition column.
+    std::vector<size_t> hive_column_positions;
+    for (size_t i = 0; i < block.columns(); ++i)
+    {
+        const auto & name = block.getByPosition(i).name;
+        if (name != "_path" && name != "_file" && name != "_idx")
+            hive_column_positions.push_back(i);
+    }
 
     /// Detach all block columns into mutable holders once, append all rows through them, and
     /// assign them back once. This keeps `IColumn::mutate` (and its recursive subcolumn re-wrapping
@@ -429,10 +434,10 @@ ColumnPtr getFilterByPathAndFileIndexes(
         addPathAndFileToVirtualColumns(
             block,
             columns,
+            hive_column_positions,
             paths[i],
             /* idx */i,
             hive_format_settings,
-            parse_hive_columns,
             file_names ? &(*file_names)[i] : nullptr);
     }
     block.setColumns(std::move(columns));
@@ -474,15 +479,9 @@ void addRequestedFileLikeStorageVirtualsToChunk(
     ContextPtr context,
     const std::optional<FormatSettings> & format_settings)
 {
-    HivePartitioningUtils::HivePartitioningKeysAndValues hive_map;
-    if (context->getSettingsRef()[Setting::use_hive_partitioning])
-        hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(virtual_values.path);
-
-    /// `hive_format_settings` is hoisted out of the loop because constructing it from `getFormatSettings(context)`
-    /// reads many settings, and the result is identical for every hive virtual column in `requested_virtual_columns`.
-    const auto hive_format_settings = hive_map.empty()
-        ? FormatSettings{}
-        : HivePartitioningUtils::buildHiveFormatSettings(format_settings, context);
+    /// Built on the first hive virtual column, then reused for the rest of `requested_virtual_columns`.
+    std::optional<HivePartitioningUtils::HivePartitioningKeysAndValues> hive_map;
+    std::optional<FormatSettings> hive_format_settings;
 
     for (const auto & virtual_column : requested_virtual_columns)
     {
@@ -631,12 +630,19 @@ void addRequestedFileLikeStorageVirtualsToChunk(
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
-        else if (auto it = hive_map.find(virtual_column.getNameInStorage()); it != hive_map.end())
+        else if (!isReaderOnlyVirtualColumn(virtual_column.name))
         {
+            /// Any other file-like virtual column is a hive partition column.
+            if (!hive_map)
+            {
+                hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(virtual_values.path);
+                hive_format_settings = HivePartitioningUtils::buildHiveFormatSettings(format_settings, context);
+            }
+            const auto value = HivePartitioningUtils::getHivePartitionValue(*hive_map, virtual_column.getNameInStorage(), virtual_values.path);
             chunk.addColumn(
                 virtual_column.type->createColumnConst(
                     chunk.getNumRows(),
-                    convertFieldToType(Field(String(it->second)), *virtual_column.type, nullptr, hive_format_settings))->convertToFullColumnIfConst());
+                    convertFieldToType(Field(String(value)), *virtual_column.type, nullptr, *hive_format_settings))->convertToFullColumnIfConst());
         }
     }
 }

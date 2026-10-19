@@ -16,6 +16,9 @@ using HivePartitioningKeysAndValues = MapWithMemoryTracking<std::string_view, st
 
 HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const std::string & path);
 
+/// Throws `INCORRECT_DATA` if `path` has no value for the hive partition column `column_name`.
+std::string_view getHivePartitionValue(const HivePartitioningKeysAndValues & hive_map, const std::string & column_name, const std::string & path);
+
 /// Builds `FormatSettings` tailored for parsing hive partition values from a path.
 /// Hive partition values are essentially a string-to-type cast, so we honour
 /// `cast_string_to_date_time_mode` (rather than `date_time_input_format`) and
