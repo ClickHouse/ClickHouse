@@ -1,0 +1,50 @@
+#!/usr/bin/expect -f
+
+# Ctrl-O with --enable-template-queries-search opens the template queries picker (skim, or a short
+# message when the build has no skim). Aborting it must leave the prompt usable and the line unchanged.
+# The picker itself cannot be driven by expect (skim dups the fd), so only the abort path is checked.
+# The same flow is valid without skim: the message is printed and the line is kept.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --enable-template-queries-search=1 --history_file=$history_file"
+expect ":) "
+
+# The query text differs from its result, so the echo of the typed line cannot match the expected output
+send -- "SELECT 'kept' || '_line'"
+
+# Ctrl-O (octal code of O is 017, see ascii(7))
+send -- "\017"
+# we cannot use "expect" for skim, since it dups the fd, and expect will not catch it
+sleep 1
+
+# Escape aborts the picker
+send -- "\033"
+sleep 1
+
+# the line survived: executing it prints the result, which is not present in the echo
+send -- "\r"
+expect "kept_line"
+expect ":) "
+
+send -- "exit\r"
+expect eof

@@ -1,6 +1,9 @@
 #pragma once
 
+#include <functional>
+#include <optional>
 #include <span>
+#include <vector>
 
 #include <Client/LineReader.h>
 #include <base/strong_typedef.h>
@@ -12,6 +15,13 @@ namespace DB
 class ReplxxLineReader : public LineReader
 {
 public:
+    /// A saved template query (a row of `system.template_queries`).
+    struct TemplateQuery
+    {
+        String name;
+        String query;
+    };
+
     struct Options
     {
         Suggest & suggest;
@@ -31,6 +41,9 @@ public:
         /// `clickhouse-disks` reuse this reader and have commands of their own, so a leading `/`
         /// means something else there (the beginning of a path).
         bool enable_slash_commands = false;
+        /// Loads the template queries from the server. When set, Ctrl-O opens a fuzzy search over
+        /// their names and inserts the chosen query into the prompt; when empty, Ctrl-O stays unbound.
+        std::function<std::vector<TemplateQuery>()> template_queries_loader = {};
         Patterns extenders;
         Patterns delimiters;
         std::span<char> word_break_characters;
@@ -68,6 +81,11 @@ private:
     /// `suppress_hints_once`): a selected entry must not pop hints by itself.
     replxx::Replxx::ACTION_RESULT historySearch(replxx::Replxx::ACTION action, char32_t code);
 
+    /// Ctrl-O handler: pick a template query by name and insert it into the current line. The
+    /// templates are loaded on the first use and cached for the session; on failure a short
+    /// message is printed and the line is left unchanged.
+    replxx::Replxx::ACTION_RESULT templateQuerySearch(char32_t code);
+
     /// After a line was displayed programmatically, pin its text so that any hint regeneration
     /// for it shows nothing (see `suppress_hints_for_text`).
     void suppressHintsForDisplayedLine();
@@ -103,6 +121,9 @@ private:
 
     std::string editor;
     bool overwrite_mode = false;
+
+    std::function<std::vector<TemplateQuery>()> template_queries_loader = {};
+    std::optional<std::vector<TemplateQuery>> template_queries_cache;
 
     /// As-you-type hint state (input-thread only). `hints_visible` is whether a hint with
     /// something to complete is currently shown. `hint_count` is how many hints are shown and
