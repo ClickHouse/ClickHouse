@@ -545,8 +545,14 @@ class BuildFile:
                 else:
                     for path in directory_sources(directory):
                         public = PUBLIC_HEADERS.get(owner)
+                        pqxx_wrapper = (
+                            owner == 'contrib/libpqxx'
+                            and path.rsplit('/', 1)[0] == owner + '/include/pqxx'
+                            and '.' not in path.rsplit('/', 1)[-1]
+                        )
                         if (not custom and public and path.startswith(public[0])
-                                and path.endswith(SOURCE_HEADER_SUFFIXES.get(owner, CC_HEADER_SUFFIXES))):
+                                and (path.endswith(SOURCE_HEADER_SUFFIXES.get(owner, CC_HEADER_SUFFIXES))
+                                     or pqxx_wrapper)):
                             fields['deps'].append('@' + REPOSITORIES[owner]['name'] + '//:' + public[1])
                             continue
                         # This pinned Abseil revision has no non-header

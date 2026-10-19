@@ -762,9 +762,12 @@ def main():
         build = builds.setdefault(owner, BuildFile(owner, owners, consumers, targets))
         patterns = [directory + '/**/*' + suffix for directory in directories
                     for suffix in SOURCE_HEADER_SUFFIXES.get(owner, CC_HEADER_SUFFIXES)]
-        build.rule('cc_library', SOURCE_HEADER_TARGETS[owner], {
-            'hdrs': Glob(patterns),
-        })
+        attrs = {'hdrs': Glob(patterns)}
+        if owner == 'contrib/libpqxx':
+            # The pinned include/pqxx extensionless files are the public
+            # wrapper headers, e.g. #include <pqxx/connection>.
+            attrs['textual_hdrs'] = Glob(['include/pqxx/*'], ['include/pqxx/*.*'])
+        build.rule('cc_library', SOURCE_HEADER_TARGETS[owner], attrs)
     external.declare(
         builds, lambda owner: BuildFile(owner, owners, consumers, targets, external_headers=external))
     # The public _lz4 wrapper serves rules_rs/BCR clients; the CMake link uses

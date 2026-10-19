@@ -198,8 +198,7 @@ class Rewrite:
 
     def covered(self, value, target, arches, field):
         candidate = label(value, self.doc.repo)
-        if (not arches or candidate in self.graph.rules
-                or not candidate.endswith((*CC_HEADER_SUFFIXES, '.th', '.defs'))):
+        if not arches or candidate in self.graph.rules:
             return False
         repo, separator, filename = candidate.partition('//:')
         owner = self.graph.documents.get(repo)
@@ -209,6 +208,14 @@ class Rewrite:
                 or self.owners and repo not in self.owners
                 or owner.files is None or filename not in owner.files):
             return False
+        if not candidate.endswith((*CC_HEADER_SUFFIXES, '.th', '.defs')):
+            # libpqxx's published extensionless wrappers contain #include
+            # directives and are declared as textual_hdrs by their owner.
+            provider = '@clickhouse_libpqxx//:libpqxx_headers'
+            if (repo != '@clickhouse_libpqxx' or not filename.startswith('include/pqxx/')
+                    or '.' in filename.removeprefix('include/pqxx/')
+                    or not all(candidate in self.graph.own_headers(provider, cpu) for cpu in arches)):
+                return False
         return all(candidate in self.graph.inherited(
             target, cpu, field in {'srcs', 'additional_compiler_inputs'}) for cpu in arches)
 
