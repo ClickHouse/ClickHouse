@@ -1694,10 +1694,19 @@ class JobConfigs:
                 "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
-                # Copied into the server config by `run-fuzzer.sh`
-                "./tests/config/users.d/ci_logs_sender.yaml",
                 "./ci/jobs/scripts/fuzzer/",
+                # Copied into the server config by `run-fuzzer.sh`
+                "./tests/config/config.d/clusters.xml",
                 "./tests/config/config.d/core_dump.yaml",
+                "./tests/config/config.d/jemalloc_enable_global_profiler.yaml",
+                "./tests/config/config.d/jemalloc_flush_profile.yaml",
+                "./tests/config/config.d/listen.xml",
+                "./tests/config/config.d/secure_ports.xml",
+                "./tests/config/config.d/ssl_certs.xml",
+                "./tests/config/config.d/test_cluster_with_incorrect_pw.xml",
+                "./tests/config/server.crt",
+                "./tests/config/server.key",
+                "./tests/config/users.d/ci_logs_sender.yaml",
                 "./ci/docker/fuzzer",
             ],
         ),
@@ -1744,10 +1753,19 @@ class JobConfigs:
                 "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
-                # Copied into the server config by `run-fuzzer.sh`
-                "./tests/config/users.d/ci_logs_sender.yaml",
                 "./ci/jobs/scripts/fuzzer/",
+                # Copied into the server config by `run-fuzzer.sh`
+                "./tests/config/config.d/clusters.xml",
                 "./tests/config/config.d/core_dump.yaml",
+                "./tests/config/config.d/jemalloc_enable_global_profiler.yaml",
+                "./tests/config/config.d/jemalloc_flush_profile.yaml",
+                "./tests/config/config.d/listen.xml",
+                "./tests/config/config.d/secure_ports.xml",
+                "./tests/config/config.d/ssl_certs.xml",
+                "./tests/config/config.d/test_cluster_with_incorrect_pw.xml",
+                "./tests/config/server.crt",
+                "./tests/config/server.key",
+                "./tests/config/users.d/ci_logs_sender.yaml",
                 "./ci/docker/fuzzer",
             ],
         ),
@@ -1779,10 +1797,19 @@ class JobConfigs:
                 "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
-                # Copied into the server config by `run-fuzzer.sh`
-                "./tests/config/users.d/ci_logs_sender.yaml",
                 "./ci/jobs/scripts/fuzzer/",
+                # Copied into the server config by `run-fuzzer.sh`
+                "./tests/config/config.d/clusters.xml",
                 "./tests/config/config.d/core_dump.yaml",
+                "./tests/config/config.d/jemalloc_enable_global_profiler.yaml",
+                "./tests/config/config.d/jemalloc_flush_profile.yaml",
+                "./tests/config/config.d/listen.xml",
+                "./tests/config/config.d/secure_ports.xml",
+                "./tests/config/config.d/ssl_certs.xml",
+                "./tests/config/config.d/test_cluster_with_incorrect_pw.xml",
+                "./tests/config/server.crt",
+                "./tests/config/server.key",
+                "./tests/config/users.d/ci_logs_sender.yaml",
                 "./ci/docker/fuzzer",
             ],
         ),
@@ -1813,7 +1840,8 @@ class JobConfigs:
         runs_on=["#from param"],
         command='python3 ./ci/jobs/performance_tests.py --test-options "{PARAMETER}"',
         # TODO: switch to stateless-test image
-        run_in_docker="clickhouse/performance-comparison",
+        # Default seccomp blocks `io_uring` (`io_uring.xml`)
+        run_in_docker="clickhouse/performance-comparison+--security-opt seccomp=unconfined",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./tests/performance/",
@@ -1858,7 +1886,8 @@ class JobConfigs:
         runs_on=["#from param"],
         command='python3 ./ci/jobs/performance_tests.py --test-options "{PARAMETER}"',
         # TODO: switch to stateless-test image
-        run_in_docker="clickhouse/performance-comparison",
+        # Default seccomp blocks `io_uring` (`io_uring.xml`)
+        run_in_docker="clickhouse/performance-comparison+--security-opt seccomp=unconfined",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./tests/performance/",
@@ -1922,6 +1951,18 @@ class JobConfigs:
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
             requires=[ArtifactNames.CH_ARM_RELEASE],
         ),
+    )
+    # No `requires`: the wrapper downloads both binaries from S3.
+    nightly_extended_performance_jobs = Job.Config(
+        name=JobNames.PERFORMANCE,
+        runs_on=RunnerLabels.ARM_MEDIUM_STORAGE,
+        command='python3 ./ci/jobs/nightly_extended_performance.py --test-options "{PARAMETER}"',
+        # Default seccomp blocks `io_uring` (`io_uring.xml`)
+        run_in_docker="clickhouse/performance-comparison+--security-opt seccomp=unconfined",
+        timeout=16 * 3600,
+        result_name_for_cidb="Tests",
+    ).parametrize(
+        *[Job.ParamSet(parameter=f"arm_release, master_head, nightly, {batch}/4") for batch in range(1, 5)]
     )
     docs_job_mintlify = Job.Config(
         name=JobNames.DOCS_MINTLIFY,

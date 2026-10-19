@@ -12,6 +12,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <unordered_set>
 #include <utility>
@@ -367,5 +368,33 @@ void collectNullRejectedColumnsFromJoinConditions(const JoinStepLogical & join, 
         }
     }
 }
+
+bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
+{
+    /// A STREAM read selects its parts and ranges during execution, so the range set captured
+    /// here is not the one that will be read.
+    if (reading->getQueryInfo().isStream())
+        return false;
+
+    /// Allow FINAL only for ReplacingMergeTree.
+    if (reading->isQueryWithFinal()
+        && reading->getMergeTreeData().merging_params.mode != MergeTreeData::MergingParams::Replacing)
+        return false;
+
+    if (reading->isQueryWithSampling())
+        return false;
+
+    if (reading->getMutationsSnapshot()->hasPatchParts())
+        return false;
+
+    /// A row is addressed by the virtual columns `_part_starting_offset` and `_part_offset`, which a column of the table
+    /// with the same name takes the place of: the second read would fetch the rows that column's values point to.
+    const auto & columns = reading->getStorageMetadata()->getColumns();
+    if (columns.has("_part_offset") || columns.has("_part_starting_offset"))
+        return false;
+
+    return true;
+}
+
 }
 }
