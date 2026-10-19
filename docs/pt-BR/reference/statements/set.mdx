@@ -28,9 +28,7 @@ SET force_index_by_date = 1
 SET force_index_by_date
 ```
 
-<div id="set-time-zone">
-  ## SET TIME ZONE
-</div>
+## SET TIME ZONE {#set-time-zone}
 
 ```sql
 SET TIME ZONE [=] 'timezone'
@@ -49,13 +47,11 @@ SET TIME ZONE 'America/New_York';
 SELECT getSetting('session_timezone');
 ```
 
-O valor de timezone deve ser um nome válido no [IANA Time Zone Database](https://www.iana.org/time-zones). Um nome de timezone inválido resultará em erro.
+O valor do fuso horário deve ser um nome listado em `system.time_zones` — do [IANA Time Zone Database](https://www.iana.org/time-zones) distribuído com o servidor — ou um deslocamento fixo no formato `Fixed/UTC±HH:MM:SS`. Qualquer outro valor, inclusive um nome presente apenas no banco de dados de fusos horários do sistema operacional, resulta em erro.
 
 Para mais informações sobre a configuração `session_timezone`, consulte [session&#95;timezone](/pt-BR/reference/settings/session-settings/other#session_timezone).
 
-<div id="setting-query-parameters">
-  ## Definindo parâmetros de consulta
-</div>
+## Definindo parâmetros de consulta {#setting-query-parameters}
 
 A instrução `SET` também pode ser usada para definir parâmetros de consulta, prefixando o nome do parâmetro com `param_`.
 Os parâmetros de consulta permitem escrever consultas genéricas com placeholders que são substituídos pelos valores reais no momento da execução.

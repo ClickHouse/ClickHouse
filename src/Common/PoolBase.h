@@ -15,6 +15,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/saturatedDuration.h>
@@ -114,7 +115,11 @@ private:
     using Objects = std::vector<std::shared_ptr<PooledObject>>;
 
 public:
-    virtual ~PoolBase() = default;
+    virtual ~PoolBase()
+    {
+        auto blocker = blockQueryTrackingIfPoolOutlivesQuery();
+        items.clear();
+    }
 
     /** Allocates the object. Wait for free object in pool for 'timeout'. With 'timeout' < 0, the timeout is infinite. */
     Entry get(Poco::Timespan::TimeDiff timeout)
@@ -140,16 +145,22 @@ public:
                         return makeEntry(*item);
                     }
 
-                    expireObject(item->object);
-                    item->object = allocObject();
+                    {
+                        auto blocker = blockQueryTrackingIfPoolOutlivesQuery();
+                        expireObject(item->object);
+                        item->object = allocObject();
+                    }
                     item->is_expired = false;
                     return makeEntry(*item);
                 }
             }
             if (items.size() < max_items)
             {
-                ObjectPtr object = allocObject();
-                auto & item = items.emplace_back(std::make_shared<PooledObject>(object));
+                PooledObject * item = nullptr;
+                {
+                    auto blocker = blockQueryTrackingIfPoolOutlivesQuery();
+                    item = items.emplace_back(std::make_shared<PooledObject>(allocObject())).get();
+                }
                 item->in_use = true;
                 return makeEntry(*item);
             }
@@ -198,6 +209,7 @@ public:
     {
         std::lock_guard lock(mutex);
 
+        auto blocker = blockQueryTrackingIfPoolOutlivesQuery();
         while (items.size() < count)
             items.emplace_back(std::make_shared<PooledObject>(allocObject()));
     }
@@ -222,14 +234,23 @@ private:
         return std::any_of(items.begin(), items.end(), [](const auto & item) { return !item->in_use; });
     }
 
+    /// A pooled object lives as long as the pool, so a long-lived pool does not charge it to the query that happens to create it.
+    std::optional<MemoryTrackerBlockerInThread> blockQueryTrackingIfPoolOutlivesQuery() const
+    {
+        if (!pool_outlives_query)
+            return {};
+        return std::optional<MemoryTrackerBlockerInThread>(std::in_place);
+    }
+
     Entry makeEntry(PooledObject & item)
     {
         bool * in_use = &item.in_use;
         return Entry(std::make_shared<typename Entry::PoolEntryHelper>(
             item.object.get(),
             &item.is_expired,
-            [this, in_use]
+            [this, in_use, object = item.object.get()]
             {
+                releaseObject(*object);
                 std::lock_guard lock(mutex);
                 *in_use = false;
                 available.notify_one();
@@ -238,6 +259,8 @@ private:
 
     /** The maximum size of the pool. */
     unsigned max_items;
+
+    const bool pool_outlives_query;
 
     /** Pool. */
     Objects items;
@@ -249,8 +272,8 @@ private:
 protected:
     LoggerPtr log;
 
-    PoolBase(unsigned max_items_, LoggerPtr log_)
-       : max_items(max_items_), log(log_)
+    PoolBase(unsigned max_items_, LoggerPtr log_, bool pool_outlives_query_)
+       : max_items(max_items_), pool_outlives_query(pool_outlives_query_), log(log_)
     {
         items.reserve(max_items);
     }
@@ -258,4 +281,6 @@ protected:
     /** Creates a new object to put into the pool. */
     virtual ObjectPtr allocObject() = 0;
     virtual void expireObject(ObjectPtr) {}
+    /// Called by the thread that used the object, when it gives it back.
+    virtual void releaseObject(Object &) noexcept {}
 };
