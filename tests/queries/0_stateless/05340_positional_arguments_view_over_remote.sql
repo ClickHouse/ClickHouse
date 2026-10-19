@@ -97,13 +97,20 @@ SELECT 'buffer over distributed';
 SELECT * FROM view(SELECT 5, k FROM remote('127.0.0.1', currentDatabase(), t_pos_buffer) ORDER BY ALL)
 SETTINGS prefer_localhost_replica = 1, enable_positional_arguments = 1;
 
--- Automatic parallel replicas re-analyzes a recursive CTE member from the AST printed from its query tree.
+-- Automatic parallel replicas re-analyzes a recursive CTE member from the AST printed from its query tree; the
+-- candidate plan must be built for the case to test that.
 SELECT 'recursive cte with automatic parallel replicas';
 WITH RECURSIVE r AS ((SELECT 5 AS c, k FROM t_pos ORDER BY ALL LIMIT 1) UNION ALL (SELECT c, k + 1 FROM r WHERE k < 2))
 SELECT * FROM r ORDER BY k
 SETTINGS enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1, parallel_replicas_local_plan = 1,
     parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'parallel_replicas',
-    automatic_parallel_replicas_min_bytes_per_replica = 0, enable_positional_arguments = 1;
+    automatic_parallel_replicas_min_bytes_per_replica = 0, enable_positional_arguments = 1,
+    automatic_parallel_replicas_remember_boundary = 0, log_comment = '05340_recursive_cte_auto_parallel_replicas';
+SYSTEM FLUSH LOGS query_log;
+SELECT ProfileEvents['AutomaticParallelReplicasProbePlansBuilt'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish'
+    AND log_comment = '05340_recursive_cte_auto_parallel_replicas';
 
 DROP TABLE t_pos_buffer;
 DROP TABLE t_pos_buffer_dist;
