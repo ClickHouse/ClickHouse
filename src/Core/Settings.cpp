@@ -6959,7 +6959,7 @@ Possible values:
     DECLARE_WITH_ALIAS(Bool, data_lake_delete_data_on_drop, false, R"(
 Whether to delete the underlying data files when dropping a data lake table. For catalog databases the catalog is asked to purge the data (`purgeRequested=true`); for self-managed `Iceberg` tables ClickHouse removes the files directly. Self-managed tables of other formats (`DeltaLake`, `Hudi`, `Paimon`) keep their files.
 )", 0, iceberg_delete_data_on_drop, \
-        {"26.10", false, false, "New setting that unifies dropping of data lake data; the released `iceberg_delete_data_on_drop` is kept as an alias for it."}) \
+        {"26.11", false, false, "New setting that unifies dropping of data lake data; the released `iceberg_delete_data_on_drop` is kept as an alias for it."}) \
     DECLARE(Int64, iceberg_expire_default_min_snapshots_to_keep, 1, R"(
 Default value for Iceberg table property `history.expire.min-snapshots-to-keep` used by `expire_snapshots` when that property is absent.
 )", 0, \
@@ -9854,7 +9854,7 @@ Cloud default value: `1`.
 Allow `CREATE TABLE`, `CREATE TABLE ... AS`, and `SHOW CREATE TABLE` in a `DataLakeCatalog` database to omit unsupported table properties, including explicitly specified and inherited properties. Supported properties are preserved. By default, properties that cannot be represented cause an exception.
 This setting does not suppress invalid expressions, unknown columns, invalid transform arguments, or incompatible storage engines, endpoints, and credentials.
 )", BETA, \
-        {"26.10", false, false, "New setting: allow `CREATE TABLE` and `SHOW CREATE TABLE` in a `DataLakeCatalog` to omit unsupported table properties."}) \
+        {"26.11", false, false, "New setting: allow `CREATE TABLE` and `SHOW CREATE TABLE` in a `DataLakeCatalog` to omit unsupported table properties."}) \
     DECLARE_WITH_ALIAS(Bool, allow_database_unity_catalog, false, R"(
 Allow database engine `DataLakeCatalog` with `catalog_type = 'unity'`
 
