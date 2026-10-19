@@ -2,7 +2,7 @@ SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
 SET optimize_use_projections = 0;
-SET exact_division_for_integers = 1;
+SET sql_compatible_division_for_integers = 1;
 
 CREATE TABLE division_exact_metadata
 (
@@ -18,7 +18,7 @@ ENGINE = MergeTree PARTITION BY x / 2 ORDER BY x / 2;
 INSERT INTO division_exact_metadata (x) VALUES (1), (3), (5), (7);
 SELECT count(), sum(d), sum(m), sum(k) FROM division_exact_metadata;
 DETACH TABLE division_exact_metadata;
-SET exact_division_for_integers = 0;
+SET sql_compatible_division_for_integers = 0;
 ATTACH TABLE division_exact_metadata;
 SELECT x, d, m, k FROM division_exact_metadata WHERE k >= 1 ORDER BY k, x SETTINGS force_primary_key = 1;
 INSERT INTO division_exact_metadata (x) VALUES (9);
@@ -46,7 +46,7 @@ ENGINE = MergeTree PARTITION BY x / 2 ORDER BY x / 2
 SETTINGS allow_floating_point_partition_key = 1;
 INSERT INTO division_legacy_metadata (x) VALUES (1), (3), (5), (7);
 DETACH TABLE division_legacy_metadata;
-SET exact_division_for_integers = 1;
+SET sql_compatible_division_for_integers = 1;
 ATTACH TABLE division_legacy_metadata;
 SELECT x, d, m, k FROM division_legacy_metadata WHERE k >= 1 ORDER BY k, x SETTINGS force_primary_key = 1;
 INSERT INTO division_legacy_metadata (x) VALUES (9);
@@ -60,14 +60,14 @@ DROP TABLE division_legacy_copy;
 
 -- New `ALTER` payloads use the DDL session's semantics, independently of the existing columns.
 ALTER TABLE division_legacy_metadata ADD COLUMN e Int64 DEFAULT x / 2;
-SET exact_division_for_integers = 0;
+SET sql_compatible_division_for_integers = 0;
 DETACH TABLE division_legacy_metadata;
 ATTACH TABLE division_legacy_metadata;
 INSERT INTO division_legacy_metadata (x) VALUES (11);
 SELECT d, e FROM division_legacy_metadata WHERE x = 11;
-SET exact_division_for_integers = 1;
+SET sql_compatible_division_for_integers = 1;
 ALTER TABLE division_legacy_metadata UPDATE e = x / 2 WHERE x = 11 SETTINGS mutations_sync = 2;
-SET exact_division_for_integers = 0;
+SET sql_compatible_division_for_integers = 0;
 SELECT d, e FROM division_legacy_metadata WHERE x = 11;
 
 DROP TABLE division_exact_metadata;

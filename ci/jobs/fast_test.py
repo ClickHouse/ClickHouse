@@ -39,7 +39,6 @@ def clone_submodules():
         "contrib/libdivide",
         "contrib/double-conversion",
         "contrib/llvm-project",
-        "contrib/optimized-routines",
         "contrib/lz4",
         "contrib/zstd",
         "contrib/zxc",
@@ -68,6 +67,7 @@ def clone_submodules():
         "contrib/musl",
         "contrib/heks",
         "contrib/sql-console",
+        "contrib/optimized-routines",
     ]
 
     res = Shell.check("git submodule sync", verbose=True, strict=True)
