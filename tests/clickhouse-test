@@ -2208,8 +2208,8 @@ class SettingsRandomizer:
         # Eager aggregation below a join in the Cascades optimizer - a rewrite, so any output change
         # is a bug.
         "cascades_aggregation_pushdown": lambda: random.random() > 0.05,
-        # Only changes when a dictionary is loaded, not what it returns.
-        "dictionary_lazy_load": lambda: random.choice(["auto", "0", "1"]),
+        # Not randomized: `dictionary_lazy_load` is read only from the `SETTINGS` of `CREATE DICTIONARY`,
+        # a session value has no effect.
         # Not randomized: a FIPS build rejects MD5 outright (`Requests.cpp`), so every test
         # touching S3 storage fails there, and an S3Express bucket rejects it too.
         # Iceberg manifest decode concurrency and the queue between the decode tasks and the
