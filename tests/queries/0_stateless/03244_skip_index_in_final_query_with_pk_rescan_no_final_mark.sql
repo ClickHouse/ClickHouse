@@ -36,3 +36,35 @@ INSERT INTO tab1(valueDate, bb_ticker, ric)
 SELECT * FROM tab1 FINAL WHERE ric = 'BOWNU.O';
 
 DROP TABLE tab1;
+
+-- A skip index on a column outside of the primary key, so the exact mode pass runs and meets the part without the final mark.
+-- It must keep the ranges selected by the primary key instead of reading the whole part.
+DROP TABLE IF EXISTS tab2;
+
+SET send_logs_level = 'fatal';
+
+CREATE TABLE tab2
+(
+ `valueDate` Date,
+ `bb_ticker` String,
+ `ric` String,
+ `val` UInt64,
+ `update_timestamp` DateTime,
+ INDEX tab2_val_idx val TYPE minmax GRANULARITY 1
+)
+ENGINE = ReplacingMergeTree(update_timestamp)
+PRIMARY KEY (valueDate, bb_ticker, ric)
+ORDER BY (valueDate, bb_ticker, ric)
+SETTINGS index_granularity = 111, index_granularity_bytes = 0, compress_primary_key = 0;
+
+SET send_logs_level = 'warning';
+
+SYSTEM STOP MERGES tab2;
+
+INSERT INTO tab2(valueDate, bb_ticker, ric, val)
+    SELECT today(), number%1111, number%111111, number
+    FROM numbers(1e4);
+
+SELECT count() FROM tab2 FINAL WHERE bb_ticker IN ('5', '700') AND val = 5 SETTINGS max_rows_to_read = 1000;
+
+DROP TABLE tab2;
