@@ -14,10 +14,6 @@ ch_cc_library(
         "src/metrohash128.cpp",
     ],
     hdrs = glob(["src/*.h"]),
-    additional_compiler_inputs = [
-        "src/metrohash64.cpp",
-        "src/metrohash128.cpp",
-    ],
     copts = [
         "-w",
         "-std=c++23",

@@ -11,7 +11,6 @@ ch_cc_library(
     name = "_bech32",
     srcs = ["src/bech32.cpp"],
     hdrs = ["include/bech32.h"],
-    additional_compiler_inputs = ["src/bech32.cpp"],
     copts = [
         "-w",
         "-std=c++23",

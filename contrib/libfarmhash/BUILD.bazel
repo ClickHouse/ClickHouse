@@ -11,7 +11,6 @@ ch_cc_library(
     name = "_farmhash",
     srcs = ["farmhash.cc"],
     hdrs = ["farmhash.h"],
-    additional_compiler_inputs = ["farmhash.cc"],
     copts = [
         "-w",
         "-std=c++23",

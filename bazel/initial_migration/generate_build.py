@@ -948,6 +948,12 @@ def main():
                 path.write_text(after)
     from initial_migration.base_cpp_dependencies import run as publish_base_cpp_dependencies
     publish_base_cpp_dependencies(ROOT, from_generator=True)
+    from initial_migration.web_resources import run as publish_web_resources
+    publish_web_resources(ROOT, write=True)
+    from initial_migration.prune_native_cpp_inputs import run as prune_native_cpp_inputs
+    prune_native_cpp_inputs(ROOT, write=True)
+    from initial_migration.native_proto_owners import transfer as publish_native_protos
+    publish_native_protos(ROOT, write=True)
     # Publishing base moves its BUILD file. Resolve globs against the final
     # package boundaries and retain the exact order of every original file.
     from initial_migration.first_party_packages import git_inventory
@@ -971,6 +977,20 @@ def main():
             after = source_globs(before, files, collections.Counter(), [], headers=True)
             if after != before:
                 path.write_text(format_and_prove(ROOT, before, after, str(path), files, {}, headers=True))
+    format_build_files()
+    # Factor formatted lists last: earlier normalization folds equal CPU
+    # branches and would discard required no-match errors.
+    from initial_migration.factor_build_selections import run as factor_build_selections
+    selection_builds = {
+        path for path in build_paths
+        if not (package := path.parent.relative_to(ROOT).as_posix().removeprefix('.'))
+        or native_directory(package)
+    }
+    selection_builds.update(
+        ROOT / 'bazel/dependencies' / (spec['name'] + '.BUILD.bazel')
+        for spec in REPOSITORIES.values()
+    )
+    factor_build_selections(ROOT, selection_builds)
     format_build_files()
     for arch, inventory in inventories.items():
         print(arch, inventory['native_targets'], 'native targets,', inventory['compile_actions'], 'compile actions')

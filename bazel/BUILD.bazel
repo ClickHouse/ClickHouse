@@ -251,3 +251,17 @@ native_stripped_hash(
         "aarch64",
     ]
 ]
+
+filegroup(
+    name = "web_ui_resources",
+    srcs = select({
+        "@platforms//cpu:x86_64": [
+            ":generate_x86_64_ClickStack",
+            ":generate_x86_64_SQLConsole",
+        ],
+        "@platforms//cpu:aarch64": [
+            ":generate_aarch64_ClickStack",
+            ":generate_aarch64_SQLConsole",
+        ],
+    }),
+)

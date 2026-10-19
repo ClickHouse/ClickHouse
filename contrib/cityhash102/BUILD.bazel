@@ -19,7 +19,6 @@ ch_cc_library(
         "include/city.h",
         "include/citycrc.h",
     ],
-    additional_compiler_inputs = ["src/city.cc"],
     copts = [
         "-w",
         "-std=c++23",

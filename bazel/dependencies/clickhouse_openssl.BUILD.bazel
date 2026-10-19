@@ -8,7 +8,7 @@ exports_files([
     "LICENSE.txt",
 ])
 
-_GENERATED_LOCAL_DEFINES_0 = select({
+_GENERATED_LOCAL_DEFINES_0 = (select({
     "@platforms//cpu:x86_64": [
         "AES_ASM",
         "BSAES_ASM",
@@ -16,63 +16,70 @@ _GENERATED_LOCAL_DEFINES_0 = select({
         "ECP_NISTZ256_ASM",
         "'ENGINESDIR=\"/usr/local/lib/engines-3\"'",
         "GHASH_ASM",
-        "KECCAK1600_ASM",
-        "L_ENDIAN",
-        "MD5_ASM",
-        "'MODULESDIR=\"/usr/local/lib/ossl-modules\"'",
-        "'OPENSSLDIR=\"/etc/ssl\"'",
-        "OPENSSL_BN_ASM_GF2m",
-        "OPENSSL_BN_ASM_MONT",
-        "OPENSSL_BN_ASM_MONT5",
-        "OPENSSL_CPUID_OBJ",
-        "OPENSSL_IA32_SSE2",
-        "OPENSSL_NO_DEPRECATED",
-        "OPENSSL_NO_ENGINE",
-        "OPENSSL_NO_KTLS",
-        "OPENSSL_NO_SRP",
-        "OPENSSL_PIC",
-        "OPENSSL_USE_NODELETE",
-        "POLY1305_ASM",
-        "RC4_ASM",
-        "SHA1_ASM",
-        "SHA256_ASM",
-        "SHA512_ASM",
-        "STATIC_LEGACY",
-        "STD_EXCEPTION_HAS_STACK_TRACE=1",
-        "VPAES_ASM",
-        "WHIRLPOOL_ASM",
-        "X25519_ASM",
     ],
     "@platforms//cpu:aarch64": [
         "BSAES_ASM",
         "ECP_NISTZ256_ASM",
         "ECP_SM2P256_ASM",
         "'ENGINESDIR=\"/usr/local/lib/engines-3\"'",
-        "KECCAK1600_ASM",
-        "L_ENDIAN",
-        "MD5_ASM",
-        "'MODULESDIR=\"/usr/local/lib/ossl-modules\"'",
-        "'OPENSSLDIR=\"/etc/ssl\"'",
+    ],
+}) + [
+    "KECCAK1600_ASM",
+    "L_ENDIAN",
+    "MD5_ASM",
+    "'MODULESDIR=\"/usr/local/lib/ossl-modules\"'",
+    "'OPENSSLDIR=\"/etc/ssl\"'",
+] + select({
+    "@platforms//cpu:x86_64": [
+        "OPENSSL_BN_ASM_GF2m",
+        "OPENSSL_BN_ASM_MONT",
+        "OPENSSL_BN_ASM_MONT5",
+        "OPENSSL_CPUID_OBJ",
+        "OPENSSL_IA32_SSE2",
+    ],
+    "@platforms//cpu:aarch64": [
         "OPENSSL_BN_ASM_MONT",
         "OPENSSL_CPUID_OBJ",
-        "OPENSSL_NO_DEPRECATED",
-        "OPENSSL_NO_ENGINE",
-        "OPENSSL_NO_KTLS",
-        "OPENSSL_NO_SRP",
-        "OPENSSL_PIC",
+    ],
+}) + [
+    "OPENSSL_NO_DEPRECATED",
+    "OPENSSL_NO_ENGINE",
+    "OPENSSL_NO_KTLS",
+    "OPENSSL_NO_SRP",
+    "OPENSSL_PIC",
+] + select({
+    "@platforms//cpu:x86_64": [
+        "OPENSSL_USE_NODELETE",
+        "POLY1305_ASM",
+        "RC4_ASM",
+    ],
+    "@platforms//cpu:aarch64": [
         "OPENSSL_SM3_ASM",
         "OPENSSL_USE_NODELETE",
         "POLY1305_ASM",
-        "SHA1_ASM",
-        "SHA256_ASM",
-        "SHA512_ASM",
-        "SM4_ASM",
-        "STATIC_LEGACY",
-        "STD_EXCEPTION_HAS_STACK_TRACE=1",
-        "VPAES_ASM",
-        "VPSM4_ASM",
     ],
 }) + [
+    "SHA1_ASM",
+    "SHA256_ASM",
+    "SHA512_ASM",
+] + select({
+    "@platforms//cpu:x86_64": [],
+    "@platforms//cpu:aarch64": [
+        "SM4_ASM",
+    ],
+}) + [
+    "STATIC_LEGACY",
+    "STD_EXCEPTION_HAS_STACK_TRACE=1",
+    "VPAES_ASM",
+] + select({
+    "@platforms//cpu:x86_64": [
+        "WHIRLPOOL_ASM",
+        "X25519_ASM",
+    ],
+    "@platforms//cpu:aarch64": [
+        "VPSM4_ASM",
+    ],
+})) + [
     "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
     "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
     "_LIBUNWIND_IS_NATIVE_ONLY",

@@ -10,10 +10,6 @@ ch_cc_library(
         "popcount.cpp",
     ],
     hdrs = glob(["*.h"]),
-    additional_compiler_inputs = [
-        "consistent_hashing.cpp",
-        "popcount.cpp",
-    ],
     copts = [
         "-w",
         "-std=c++23",

@@ -17,10 +17,6 @@ ch_cc_library(
         "include/MurmurHash2.h",
         "include/MurmurHash3.h",
     ],
-    additional_compiler_inputs = [
-        "src/MurmurHash2.cpp",
-        "src/MurmurHash3.cpp",
-    ],
     copts = [
         "-w",
         "-std=c++23",
