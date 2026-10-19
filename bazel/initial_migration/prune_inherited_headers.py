@@ -14,6 +14,7 @@ from functools import cache
 import gzip
 import json
 from pathlib import Path, PurePosixPath
+import subprocess
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -43,7 +44,7 @@ def label(value, repo):
 
 
 class Document:
-    def __init__(self, path, inventories=None, text=None):
+    def __init__(self, path, inventories=None, text=None, package='', files=None):
         self.path = path
         self.source = Source(path.read_text() if text is None else text)
         self.repo = '@clickhouse' if path.name == 'BUILD.bazel' else (
@@ -55,7 +56,8 @@ class Document:
         }
         self.owner = next((owner for owner, spec in REPOSITORIES.items()
                            if '@' + spec['name'] == self.repo), None)
-        inventory = (inventories or {}).get(self.owner)
+        self.package = package
+        inventory = (inventories or {}).get(self.owner) if files is None else files
         self.files = frozenset(inventory) if inventory is not None else None
         self.globs = GlobFiles(inventory) if inventory is not None else None
         self.glob_cache = {}
@@ -95,7 +97,13 @@ class Document:
         return []
 
     def labels(self, node, arch):
-        return {label(value, self.repo) for value in self.values(node, arch)}
+        return {self.reference(value) for value in self.values(node, arch)}
+
+    def reference(self, value):
+        if self.package:
+            from initial_migration.first_party_packages import canonical_dependency
+            return canonical_dependency(value, self.package, self.repo)
+        return label(value, self.repo)
 
 class Graph:
     def __init__(self, documents):
@@ -107,7 +115,7 @@ class Graph:
                 attrs = {kw.arg: kw.value for kw in call.keywords}
                 name = attrs['name']
                 if isinstance(name, ast.Constant) and isinstance(name.value, str):
-                    self.rules[label(':' + name.value, doc.repo)] = (
+                    self.rules[doc.reference(':' + name.value)] = (
                         doc, getattr(call.func, 'id', ''), attrs)
 
     @cache
@@ -275,7 +283,7 @@ class Rewrite:
                 name = attrs.get('name')
                 if (call.func.id in CC_COMPILERS and isinstance(name, ast.Constant)
                         and isinstance(name.value, str)):
-                    target = label(':' + name.value, self.doc.repo)
+                    target = self.doc.reference(':' + name.value)
                     for key, val in attrs.items():
                         self.walk(val, target, ARCHES, key if key in HEADER_FIELDS else None)
                     for arg in call.args:
@@ -338,6 +346,162 @@ def prune(root, inventories, *, write=False, consumers=(), owners=(), postgres_h
     print('Total:', dict(total), 'written' if write else 'no files written')
     print('Removed source-header literals by owner:', json.dumps(dict(removed_owners), sort_keys=True))
     return total, removed_owners
+
+
+class PublishedGraph(Graph):
+    """Typed public files, using the real main-repository Bazel packages."""
+
+    def __init__(self, root, documents):
+        super().__init__(documents)
+        from initial_migration.native_gcp_proto_inputs import dictionary, string, strings
+
+        self.packages = {(doc.repo, doc.package): doc for doc in documents}
+        self.outputs = {}
+        for target, (doc, kind, attrs) in self.rules.items():
+            if kind in CC_COMPILERS:
+                continue
+            for cpu in ARCHES:
+                for field in ('out', 'outs', 'output', 'outputs'):
+                    for ref in doc.labels(attrs.get(field), cpu):
+                        self.outputs.setdefault((ref, cpu), set()).add(target)
+        codegen = Source((root / 'bazel/rules/codegen_rules.bzl').read_text())
+        declarations = {stmt.targets[0].id: stmt.value for stmt in codegen.module.body
+                        if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1
+                        and isinstance(stmt.targets[0], ast.Name)}
+        shared = dictionary(declarations.get('_SHARED_CODEGEN'))
+        for name, data in dictionary(declarations.get('CODEGEN_RULES')).items():
+            arches = ARCHES
+            if (isinstance(data, ast.Call) and getattr(data.func, 'id', '') == 'codegen_for_arch'
+                    and len(data.args) == 2 and isinstance(data.args[0], ast.Subscript)):
+                arch = string(data.args[1])
+                data = shared.get(string(data.args[0].slice))
+                arches = (arch,) if arch in ARCHES else ()
+            attrs = dictionary(data)
+            for cpu in arches:
+                for path in strings(attrs.get('outs'), cpu):
+                    ref = '@clickhouse//bazel:' + path
+                    self.outputs.setdefault((ref, cpu), set()).add('@clickhouse//bazel:' + name)
+
+    @cache
+    def physical_file(self, ref, cpu):
+        if ref in self.rules:
+            return False
+        producers = self.outputs.get((ref, cpu))
+        if producers:
+            return len(producers) == 1
+        repo, sep, tail = ref.partition('//')
+        package, colon, name = tail.partition(':')
+        doc = self.packages.get((repo, package))
+        return bool(sep and colon and doc is not None and doc.files is not None and name in doc.files)
+
+    @cache
+    def own_headers(self, target, arch):
+        entry = self.rules.get(target)
+        if entry is None:
+            return frozenset()
+        doc, kind, attrs = entry
+        if kind not in CC_PROVIDERS:
+            return frozenset()
+        # rules_cc _compute_public_headers may create virtual header artifacts
+        # and new include roots for either attribute. Raw labels cannot prove
+        # the virtual artifacts or their include precedence.
+        if 'include_prefix' in attrs or 'strip_include_prefix' in attrs:
+            return frozenset()
+        return frozenset((field, ref) for field in ('hdrs', 'textual_hdrs')
+                         for ref in doc.labels(attrs.get(field), arch)
+                         if self.physical_file(ref, arch))
+
+
+class PublishedRewrite(Rewrite):
+    def covered(self, value, target, arches, field):
+        candidate = self.doc.reference(value)
+        if not arches or target not in self.graph.rules or field not in HEADER_FIELDS:
+            return False
+        _, _, attrs = self.graph.rules[target]
+        if 'include_prefix' in attrs or 'strip_include_prefix' in attrs:
+            return False
+        source_header = candidate.endswith((*CC_HEADER_SUFFIXES, '.th', '.defs', '.icc', '.cuh', '.tpp', '.def'))
+        proto_textual = field == 'textual_hdrs' and candidate.endswith(('.pb.cc', '.grpc.pb.cc'))
+        if not (source_header or proto_textual):
+            return False
+        if source_header and candidate.partition('//')[0] == self.doc.repo:
+            return False
+        for cpu in arches:
+            if not self.graph.physical_file(candidate, cpu):
+                return False
+            if proto_textual and (candidate, cpu) not in self.graph.outputs:
+                return False
+            # Never use implementation_deps to remove a public declaration.
+            # Keep the distinction between modular and textual public headers.
+            supplied = self.graph.inherited(target, cpu)
+            fields = (field,) if field in {'hdrs', 'textual_hdrs'} else ('hdrs', 'textual_hdrs')
+            if not any((kind, candidate) in supplied for kind in fields):
+                return False
+        return True
+
+
+def prune_published(root, inventories, *, consumers, write=False):
+    """Remove only exact public duplicates after native packages are rendered."""
+    from initial_migration.first_party_packages import Build, git_inventory
+
+    names = subprocess.check_output(
+        ['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard',
+         '--', 'BUILD.bazel', '**/BUILD.bazel'], cwd=root,
+    ).decode().split('\0')
+    main_paths = sorted({root / name for name in names if name and (root / name).is_file()})
+    packages = {path.parent.relative_to(root).as_posix().removeprefix('.') for path in main_paths}
+    files = git_inventory(root)
+    documents = []
+    for path in main_paths:
+        build = Build(root, path, files, packages)
+        documents.append(Document(path, inventories, package=build.package, files=build.inventory))
+    documents.extend(Document(path, inventories) for path in
+                     sorted((root / 'bazel/dependencies').glob('*.BUILD.bazel')))
+    graph = PublishedGraph(root, documents)
+    consumers = set(consumers)
+    changes, updated, total = {}, [], Counter()
+    for doc in documents:
+        if doc.repo not in consumers:
+            updated.append(doc)
+            continue
+        rewrite = PublishedRewrite(doc, graph)
+        text = rewrite.text()
+        if text != doc.source.bytes.decode():
+            changes[doc.path] = doc, text
+            total.update(rewrite.stats)
+            total['files'] += 1
+            updated.append(Document(doc.path, inventories, text, doc.package, doc.files))
+        else:
+            updated.append(doc)
+    final = PublishedGraph(root, updated)
+    # Every removed literal still has a public witness after all six overlays
+    # have been rewritten. This also prevents circular proofs between consumers
+    # that happened to repeat one another's captured file lists.
+    for path, (old, _) in changes.items():
+        doc = next(item for item in updated if item.path == path)
+        for (_, before), (_, after) in zip(old.source.rules(), doc.source.rules(), strict=True):
+            was = {kw.arg: kw.value for kw in before.keywords}
+            now = {kw.arg: kw.value for kw in after.keywords}
+            if getattr(before.func, 'id', '') not in CC_COMPILERS:
+                continue
+            target = old.reference(':' + ast.literal_eval(was['name']))
+            checker = PublishedRewrite(doc, final)
+            for field in HEADER_FIELDS:
+                for cpu in ARCHES:
+                    old_values = old.labels(was.get(field), cpu)
+                    new_values = doc.labels(now.get(field), cpu)
+                    if new_values - old_values:
+                        raise ValueError(f'{target} {cpu}: introduced {field} inputs')
+                    for ref in old_values - new_values:
+                        if not checker.covered(ref, target, (cpu,), field):
+                            raise ValueError(f'{target} {cpu}: lost public witness for {ref}')
+    if write:
+        for path, (doc, _) in changes.items():
+            if path.read_bytes() != doc.source.bytes:
+                raise ValueError('BUILD changed during pruning: ' + str(path))
+        for path, (_, text) in changes.items():
+            path.write_text(text)
+    return total
 
 
 def main():

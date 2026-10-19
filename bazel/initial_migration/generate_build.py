@@ -22,7 +22,7 @@ from initial_migration.configuration import read_configurations
 from initial_migration import llvm_targets
 from initial_migration.external_headers import HeaderLibraries
 from initial_migration.format_build_files import format_build_files
-from initial_migration.prune_inherited_headers import prune
+from initial_migration.prune_inherited_headers import prune, prune_published
 from initial_migration.prune_unused_exports import prune_unused_exports
 from initial_migration.build_file import (
     BuildFile, CMakeCxxCompilerVersion, Glob,
@@ -847,7 +847,8 @@ def main():
                         repository_includes[path].add(bool(include.get('isSystem')))
     system_repositories = {path for path, kinds in repository_includes.items() if kinds == {True}}
     write_overlays(builds, [codegen_rules, rust_cxx], system_repositories)
-    prune(ROOT, {owner: package_sources(owner) for owner in builds if owner in REPOSITORIES}, write=True)
+    repository_files = {owner: package_sources(owner) for owner in builds if owner in REPOSITORIES}
+    prune(ROOT, repository_files, write=True)
     prune_unused_exports(ROOT, write=True)
     parity_path = ROOT / 'bazel/initial_migration/any2bazel.json'
     parity = json.loads(parity_path.read_text())
@@ -901,6 +902,10 @@ def main():
     for path, content in native_packages.prepare().items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
+    prune_published(ROOT, repository_files, write=True, consumers={
+        '@clickhouse_' + name for name in
+        ('nuraft', 'grpc', 'librdkafka', 'croaring', 'arrow', 'google_cloud_cpp')
+    })
     from initial_migration.compact_external_options import compact as compact_external_options
     from initial_migration.normalize_cpp_builds import normalize
     for owner, spec in REPOSITORIES.items():

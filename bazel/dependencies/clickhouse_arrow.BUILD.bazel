@@ -189,7 +189,6 @@ _GENERATED_LOCAL_DEFINES_0 = select({
 ]
 
 _GENERATED_TEXTUAL_HDRS_0 = [
-    "@clickhouse//bazel:gen/contrib/arrow-cmake/orc_proto.pb.cc",
 ]
 
 _ARROW_LOCAL_INCLUDES = [
@@ -417,7 +416,6 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     })),
     hdrs = [
-        "@clickhouse//bazel:gen/contrib/arrow-cmake/orc_proto.pb.h",
         "@clickhouse//bazel:gen/contrib/flatbuffers/generated/File_generated.h",
         "@clickhouse//bazel:gen/contrib/flatbuffers/generated/Message_generated.h",
         "@clickhouse//bazel:gen/contrib/flatbuffers/generated/Schema_generated.h",
@@ -425,15 +423,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/flatbuffers/generated/Tensor_generated.h",
         "@clickhouse//bazel:gen/contrib/flatbuffers/generated/feather_generated.h",
         "@clickhouse_bzip2//:config/contrib/bzip2/bz_version.h",
-        "@clickhouse_orc//:config/contrib/orc/c++/include/Adaptor.hh",
-        "@clickhouse_snappy//:config/contrib/snappy-cmake/config.h",
-        "@clickhouse_snappy//:config/contrib/snappy-cmake/snappy-stubs-public.h",
-        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
-        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
-        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
         "@clickhouse//contrib/arrow-cmake:cpp/src/arrow/util/config.h",
         "@clickhouse//contrib/arrow-cmake:cpp/src/arrow/util/config_internal.h",
-        "@clickhouse//contrib/arrow-cmake:cpp/src/orc/c++/include/orc/orc-config.hh",
     ],
     additional_compiler_inputs = [
         "cpp/src/arrow/compute/kernels/aggregate_basic.inc.cc",
@@ -469,7 +460,6 @@ ch_cc_library(
         "cpp/src/arrow/vendored/musl/strptime.c",
     ] + glob(["cpp/src/arrow/vendored/uriparser/*.c"])),
     hdrs = [
-        "@clickhouse//bazel:gen/contrib/arrow-cmake/orc_proto.pb.h",
         "@clickhouse//bazel:gen/contrib/flatbuffers/generated/File_generated.h",
         "@clickhouse//bazel:gen/contrib/flatbuffers/generated/Message_generated.h",
         "@clickhouse//bazel:gen/contrib/flatbuffers/generated/Schema_generated.h",
@@ -477,12 +467,6 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/flatbuffers/generated/Tensor_generated.h",
         "@clickhouse//bazel:gen/contrib/flatbuffers/generated/feather_generated.h",
         "@clickhouse_bzip2//:config/contrib/bzip2/bz_version.h",
-        "@clickhouse_orc//:config/contrib/orc/c++/include/Adaptor.hh",
-        "@clickhouse_snappy//:config/contrib/snappy-cmake/config.h",
-        "@clickhouse_snappy//:config/contrib/snappy-cmake/snappy-stubs-public.h",
-        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
-        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
-        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
     ],
     additional_compiler_inputs = [
         "@clickhouse_llvm_project//:runtime_source_inputs",
@@ -624,7 +608,6 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc",
         "@clickhouse//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.grpc.pb.cc",
         "@clickhouse//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
-        "@clickhouse//bazel:gen/contrib/arrow-cmake/orc_proto.pb.cc",
     ],
     deps = [
         ":_arrow",
@@ -1006,7 +989,6 @@ cc_binary(
     name = "parquet_dump_schema",
     srcs = ([
         "cpp/tools/parquet/parquet_dump_schema.cc",
-        "@clickhouse//contrib/arrow-cmake:cpp/src/parquet/parquet_version.h",
     ] + glob(
         [
             "cpp/src/**/*.h",
@@ -1034,7 +1016,6 @@ cc_binary(
     name = "parquet_reader",
     srcs = ([
         "cpp/tools/parquet/parquet_reader.cc",
-        "@clickhouse//contrib/arrow-cmake:cpp/src/parquet/parquet_version.h",
     ] + glob(
         [
             "cpp/src/**/*.h",
@@ -1062,7 +1043,6 @@ cc_binary(
     name = "parquet_scan",
     srcs = ([
         "cpp/tools/parquet/parquet_scan.cc",
-        "@clickhouse//contrib/arrow-cmake:cpp/src/parquet/parquet_version.h",
     ] + glob(
         [
             "cpp/src/**/*.h",

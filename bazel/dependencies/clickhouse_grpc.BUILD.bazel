@@ -11,24 +11,6 @@ exports_files([
 ])
 
 _GENERATED_HEADER_INPUTS_2 = [
-    "@clickhouse//contrib/c-ares-cmake:linux/ares_build.h",
-    "@clickhouse//contrib/openssl-cmake:common/include/openssl/asn1.h",
-    "@clickhouse//contrib/openssl-cmake:common/include/openssl/bio.h",
-    "@clickhouse//contrib/openssl-cmake:common/include/openssl/comp.h",
-    "@clickhouse//contrib/openssl-cmake:common/include/openssl/conf.h",
-    "@clickhouse//contrib/openssl-cmake:common/include/openssl/configuration.h",
-    "@clickhouse//contrib/openssl-cmake:common/include/openssl/crypto.h",
-    "@clickhouse//contrib/openssl-cmake:common/include/openssl/ct.h",
-    "@clickhouse//contrib/openssl-cmake:common/include/openssl/err.h",
-    "@clickhouse//contrib/openssl-cmake:common/include/openssl/lhash.h",
-    "@clickhouse//contrib/openssl-cmake:common/include/openssl/opensslv.h",
-    "@clickhouse//contrib/openssl-cmake:common/include/openssl/pkcs7.h",
-    "@clickhouse//contrib/openssl-cmake:common/include/openssl/safestack.h",
-    "@clickhouse//contrib/openssl-cmake:common/include/openssl/ssl.h",
-    "@clickhouse//contrib/openssl-cmake:common/include/openssl/ui.h",
-    "@clickhouse//contrib/openssl-cmake:common/include/openssl/x509.h",
-    "@clickhouse//contrib/openssl-cmake:common/include/openssl/x509_vfy.h",
-    "@clickhouse//contrib/openssl-cmake:common/include/openssl/x509v3.h",
 ]
 
 _GENERATED_LOCAL_DEFINES_0 = [
@@ -1448,7 +1430,6 @@ ch_cc_library(
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-        "@clickhouse//contrib/c-ares-cmake:linux/ares_build.h",
     ] + glob([
         "**/*.h",
         "**/*.hpp",
@@ -1495,7 +1476,6 @@ ch_cc_library(
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-        "@clickhouse//contrib/c-ares-cmake:linux/ares_build.h",
     ] + glob([
         "**/*.h",
         "**/*.hpp",
