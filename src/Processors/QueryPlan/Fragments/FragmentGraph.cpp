@@ -59,41 +59,6 @@ void checkNotEmpty(const QueryPlan & plan, const String & stage_name)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The plan of stage {} is empty", stage_name);
 }
 
-const String * tryGetReceiveExchangeId(const IQueryPlanStep & step)
-{
-    if (const auto * shuffle = typeid_cast<const ShuffleReceiveStep *>(&step))
-        return &shuffle->getExchangeId();
-    if (const auto * gather = typeid_cast<const GatherReceiveStep *>(&step))
-        return &gather->getExchangeId();
-    if (const auto * broadcast = typeid_cast<const BroadcastReceiveStep *>(&step))
-        return &broadcast->getExchangeId();
-    return nullptr;
-}
-
-/// Checks that `plan` has exactly one receive step of `exchange_name`: a dependency of the cut plan without one is
-/// an inconsistent cut.
-void checkReceiveStep(const QueryPlan & plan, const String & stage_name, const String & exchange_name)
-{
-    size_t receive_steps = 0;
-    std::vector<const QueryPlan::Node *> stack{plan.getRootNode()};
-    while (!stack.empty())
-    {
-        const auto * node = stack.back();
-        stack.pop_back();
-
-        if (const auto * exchange_id = tryGetReceiveExchangeId(*node->step); exchange_id && *exchange_id == exchange_name)
-            ++receive_steps;
-        stack.insert(stack.end(), node->children.begin(), node->children.end());
-    }
-
-    if (receive_steps == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Stage {} depends on exchange {}, but has no receive step for it", stage_name, exchange_name);
-    if (receive_steps > 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Stage {} has more than one receive step for exchange {}", stage_name, exchange_name);
-}
-
 /// The estimated number of rows a producer fragment sends: the estimate of its root node,
 /// or of the input of its send step, because the send step is added by the cutter without an estimate.
 std::optional<UInt64> getEstimatedRows(const QueryPlan & plan)
@@ -244,14 +209,6 @@ TopologicalOrder sortTopologically(const FragmentGraph & graph)
     if (result.order.size() != num_fragments)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The fragment graph has a cycle");
 
-    /// The root is the fragment whose output nobody consumes: the result of the query.
-    size_t num_roots = 0;
-    for (size_t i = 0; i < num_fragments; ++i)
-        if (consumers[i].empty())
-            ++num_roots;
-    if (num_roots != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The fragment graph has {} root fragments, expected one", num_roots);
-
     return result;
 }
 
@@ -326,7 +283,6 @@ FragmentGraph buildFragmentGraph(const DistributedQueryPlan & distributed_plan)
             const auto & description = findDescription(distributed_plan, exchange_name);
 
             const auto kind = getExchangeKind(description);
-            checkReceiveStep(*graph.getFragment(consumer_id).plan, consumer_stage, exchange_name);
 
             graph.exchanges.push_back(FragmentExchange{
                 .id = description.id,

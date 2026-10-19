@@ -114,11 +114,11 @@ FragmentGraph buildFragmentGraph(const DistributedQueryPlan & distributed_plan);
 FragmentGraph buildSingleFragmentGraph(const QueryPlan & plan, std::optional<String> fallback_reason);
 
 /// Throws `LOGICAL_ERROR` unless the fragments and the exchanges are each in strictly ascending order of ids, every
-/// exchange goes from a known fragment to a known fragment, the graph is acyclic, and it has exactly one root: the
-/// fragment whose output no exchange reads, which produces the result of the query.
+/// exchange goes from a known fragment to a known fragment, and the graph is acyclic. Only what the renderers need is
+/// checked: an inconsistent cut is still shown as it is.
 void validateFragmentGraph(const FragmentGraph & graph);
 
-/// Fragment ids by topological level, ascending within a level: the first level are the leaves, the last the root.
+/// Fragment ids by topological level, ascending within a level: the first level are the leaves.
 /// A fragment is one level above its deepest producer. Computed on demand for the renderers; validates the graph.
 std::vector<std::vector<UInt32>> computeLevels(const FragmentGraph & graph);
 
