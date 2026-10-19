@@ -34,13 +34,13 @@ Kinesis ClickPipes は、ClickPipes UI を使用して手動でデプロイお�
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step1.webp" alt="データソースの種類を選択" size="lg" border />
 
-4. ClickPipe の名前、説明 (任意) 、IAM ロールまたは認証情報、そのほかの接続情報を入力します。
+4. ClickPipe の名前、説明 (任意) 、IAM role または認証情報、そのほかの接続情報を入力します。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="接続情報を入力" size="lg" border />
 
-5. Kinesis ストリーム、**Data format**、開始オフセットを選択します。`Protobuf` の場合は、`.proto` ファイルまたはシリアライズされた `FileDescriptorSet` (最大 768 KiB) をアップロードします。スキーマレジストリは不要です。
+5. Kinesis ストリーム、**Data format**、開始オフセットを選択します。Kinesis ClickPipes は JSON、Avro、Protobuf をサポートしています。`Protobuf` の場合は、`.proto` ファイルまたはシリアライズされた `FileDescriptorSet` (最大 768 KiB) をアップロードするか、AWS Glue Schema Registry を設定します。Avro の場合は、AWS Glue Schema Registry を設定します。アップロードした Protobuf スキーマとスキーマレジストリは併用しないでください。
 
-   UI には、選択した stream のサンプルデータが表示されます。**Use Kinesis Enhanced Fan-Out** はデフォルトで有効になっています。詳細は [Amazon Kinesis のドキュメント](https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html)を参照してください。
+   UI には、選択した ストリーム のサンプルデータが表示されます。**Use Kinesis Enhanced Fan-Out** はデフォルトで有効になっています。詳細は [Amazon Kinesis のドキュメント](https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html)を参照してください。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp" alt="データフォーマットと topic を設定" size="lg" border />
 
@@ -56,12 +56,12 @@ Kinesis ClickPipes は、ClickPipes UI を使用して手動でデプロイお�
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="既存の table を使用" size="lg" border />
 
-8. 最後に、内部 ClickPipes ユーザーの権限を設定できます。
+8. 最後に、内部 ClickPipes ユーザーのアクセス許可を設定できます。
 
-**Permissions:** ClickPipes は、宛先テーブルにデータを書き込むための専用ユーザーを作成します。カスタムロールまたは定義済みロールのいずれかを使って、この内部ユーザーに割り当てるロールを選択できます。
+**アクセス許可:** ClickPipes は、宛先テーブルにデータを書き込むための専用ユーザーを作成します。カスタムロールまたは定義済みロールのいずれかを使って、この内部ユーザーに割り当てるロールを選択できます。
 
 * `Full access`: クラスターへのフルアクセス権を持ちます。宛先テーブルで materialized view や Dictionary を使用する場合に便利です。
-  * `Only destination table`: 宛先テーブルに対する `INSERT` 権限のみを持ちます。
+  * `Only destination table`: 宛先テーブルに対する `INSERT` アクセス許可のみを持ちます。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Permissions" border />
 
@@ -86,7 +86,14 @@ Kinesis ClickPipes は、ClickPipes UI を使用して手動でデプロイお�
 対応フォーマットは以下のとおりです。
 
 * [JSON](/ja/reference/formats/JSON/JSON)
+* [Avro](/ja/reference/formats/Avro/AvroConfluent) (AWS Glue Schema Registry と併用)
 * [Protobuf](/ja/reference/formats/Protobuf/Protobuf)
+
+## AWS Glue Schema Registry {#aws-glue-schema-registry}
+
+Kinesis ClickPipes は、AWS Glue Schema Registry から Avro および Protobuf のスキーマを解決できます。ClickPipe の作成フローで **AWS Glue** を選択し、レジストリの AWS リージョンと名前を指定してください。必要に応じて、レジストリへのアクセスに使用する IAM role を指定することもできます。指定しない場合、ClickPipes は Kinesis ソースの IAM アイデンティティを使用します。このアイデンティティには `glue:GetSchemaVersion` のアクセス許可が必要です。
+
+これらのフィールドは、[OpenAPI](/ja/integrations/clickpipes/programmatic-access/openapi) または [Terraform](/ja/integrations/clickpipes/programmatic-access/terraform) から設定することもできます。必要な IAM ポリシーと設定の詳細については、[スキーマレジストリガイド](/ja/integrations/clickpipes/kafka/schema-registries#aws-glue-schema-registry)を参照してください。
 
 <div id="compression">
   ## 圧縮

@@ -421,7 +421,14 @@ std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskPacked::writeFile(
     }
 
     if (writer)
+    {
+        /// Rewrite an already written file as a disk does. For example, when a vertical merge writes no rows,
+        /// the writers of different subcolumns of `Nested` create the file with their shared offsets each.
+        if (mode == WriteMode::Rewrite)
+            return writer->rewriteFile(name, settings);
+
         return writer->writeFile(name, settings);
+    }
 
     throw Exception(ErrorCodes::NOT_INITIALIZED, "Cannot write file {} because writer is not initialized", name);
 }
