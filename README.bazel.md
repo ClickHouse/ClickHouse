@@ -151,6 +151,12 @@ table. [BuildBuddy d21148b0](https://app.buildbuddy.io/invocation/d21148b0-7ae9-
 ([Bazel build 9404f5b7](https://app.buildbuddy.io/invocation/9404f5b7-849b-4157-bb5b-6c8503712177))
 returned `PARITY_STRIPPED_CMP_STATUS=0` and `PARITY_STATUS=0`.
 
+The `local_includes` and direct header/input cleanup preserved every
+x86-64 hash in the table.
+[BuildBuddy 3437e0b1](https://app.buildbuddy.io/invocation/3437e0b1-34fb-4abc-a822-96b01516a54a)
+([Bazel build b7a16ab7](https://app.buildbuddy.io/invocation/b7a16ab7-5c75-4d7d-b581-f77247e39d6a))
+returned `PARITY_STRIPPED_CMP_STATUS=0` and `PARITY_STATUS=0`.
+
 The simplified generated configuration was verified in
 [BuildBuddy invocation c972df98](https://app.buildbuddy.io/invocation/c972df98-7d2d-4b65-ac42-5ebf5117b5a3)
 ([Bazel build](https://app.buildbuddy.io/invocation/7bbae2ed-c019-4a04-b07f-746a6570c815)).
@@ -292,6 +298,14 @@ every ARM64 hash in the table.
 [BuildBuddy 7978c989](https://app.buildbuddy.io/invocation/7978c989-9762-46ce-96e7-956313e499fe)
 ([Bazel build 26aa0801](https://app.buildbuddy.io/invocation/26aa0801-f625-4be7-9cdb-f4196ebb15ab))
 rechecked the native CMake reference and returned
+`PARITY_STRIPPED_CMP_STATUS=0` and `PARITY_STATUS=0`.
+
+The `local_includes` and direct header/input cleanup also preserved
+every ARM64 compiler, original ELF, plain-stripped and normalized hash
+in the table.
+[BuildBuddy 9539db98](https://app.buildbuddy.io/invocation/9539db98-6d61-483b-8796-d775d898288e)
+([Bazel build 079cc9b2](https://app.buildbuddy.io/invocation/079cc9b2-600f-49c4-950a-1a18c326e531))
+verified the native CMake reference and returned
 `PARITY_STRIPPED_CMP_STATUS=0` and `PARITY_STATUS=0`.
 
 The subsequent `ch_cc_library` and common optimization flags also preserved

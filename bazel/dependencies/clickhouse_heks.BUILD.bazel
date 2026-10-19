@@ -4,7 +4,8 @@ exports_files([
   "BUILD.bazel",
   "LICENSE"
 ])
-filegroup(
-    name = "headers_d1fd83c06646ed8f",
-    srcs = glob(["include/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
+
+exports_files([
+    "include/fast_hex/fast_hex.hpp",
+    "include/fast_hex/fast_hex_inline.hpp",
+])

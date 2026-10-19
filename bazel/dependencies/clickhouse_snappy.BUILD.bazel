@@ -8,10 +8,7 @@ exports_files([
   "BUILD.bazel",
   "COPYING"
 ])
-filegroup(
-    name = "headers_936173ad0494761b",
-    srcs = glob(["**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
+
 
 expand_template(
     name = "configure_x86_64_10b6a34990b4d31a",
@@ -103,22 +100,11 @@ ch_cc_library(
         ":snappy-stubs-internal.cc",
         ":snappy.cc",
     ],
-    copts = (
-[
+    copts = [
         "-w",
         "-std=c++23",
         "-nostdinc++",
-        "-isystem",
-        repository_path("contrib/snappy"),
-        "-isystem",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "$(GENDIR)/" + repository_path("contrib/snappy") + "/config/x86_64/contrib/snappy-cmake",
-        ],
-        "@platforms//cpu:aarch64": [
-            "$(GENDIR)/" + repository_path("contrib/snappy") + "/config/aarch64/contrib/snappy-cmake",
-        ],
-    }) + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
+    ] + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
         "x86_64": {
             "language": "CXX",
             "includes": [],
@@ -127,22 +113,61 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    })
-),
+    }),
+    local_includes = select({
+        "@platforms//cpu:x86_64": [
+        ".",
+        "config/x86_64/contrib/snappy-cmake",
+    ],
+        "@platforms//cpu:aarch64": [
+        ".",
+        "config/aarch64/contrib/snappy-cmake",
+    ],
+    }),
     hdrs = select({
         "@platforms//cpu:x86_64": [
-            ":config/x86_64/contrib/snappy-cmake/config.h",
-            ":config/x86_64/contrib/snappy-cmake/snappy-stubs-public.h",
-        ],
-        "@platforms//cpu:aarch64": [
-            ":config/aarch64/contrib/snappy-cmake/config.h",
-            ":config/aarch64/contrib/snappy-cmake/snappy-stubs-public.h",
-        ],
-    }) + [
-        ":headers_936173ad0494761b",
-    ] + [
+        ":config/x86_64/contrib/snappy-cmake/config.h",
+        ":config/x86_64/contrib/snappy-cmake/snappy-stubs-public.h",
         "@clickhouse_sysroot//:linux_native_headers",
-    ],
+    ] + glob([
+            "**/*.h",
+            "**/*.hh",
+            "**/*.hpp",
+            "**/*.ipp",
+            "**/*.hxx",
+            "**/*.h++",
+            "**/*.inc",
+            "**/*.inl",
+            "**/*.tlh",
+            "**/*.tli",
+            "**/*.H",
+            "**/*.tcc",
+        ], exclude = [
+            "**/BUILD",
+            "**/BUILD.bazel",
+        ], allow_empty = True),
+        "@platforms//cpu:aarch64": [
+        ":config/aarch64/contrib/snappy-cmake/config.h",
+        ":config/aarch64/contrib/snappy-cmake/snappy-stubs-public.h",
+        "@clickhouse_sysroot//:linux_native_headers",
+    ] + glob([
+            "**/*.h",
+            "**/*.hh",
+            "**/*.hpp",
+            "**/*.ipp",
+            "**/*.hxx",
+            "**/*.h++",
+            "**/*.inc",
+            "**/*.inl",
+            "**/*.tlh",
+            "**/*.tli",
+            "**/*.H",
+            "**/*.tcc",
+        ], exclude = [
+            "**/BUILD",
+            "**/BUILD.bazel",
+        ], allow_empty = True),
+    }),
     local_defines = [
         "HAVE_CONFIG_H",
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -160,10 +185,36 @@ ch_cc_library(
         "-default_compile_flags",
     ] + [
         "-llvm_system_c_headers",
-    ],
+    ] + ["system_include_paths"],
     alwayslink = False,
-    additional_compiler_inputs = [
+    additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
+    ] + glob([
+            "**",
+        ], exclude = [
+            "**/*.H",
+            "**/*.h",
+            "**/*.h++",
+            "**/*.hh",
+            "**/*.hpp",
+            "**/*.hxx",
+            "**/*.inc",
+            "**/*.inl",
+            "**/*.ipp",
+            "**/*.tcc",
+            "**/*.tlh",
+            "**/*.tli",
+            "**/BUILD",
+            "**/BUILD.bazel",
+            "snappy-c.cc",
+            "snappy-sinksource.cc",
+            "snappy-stubs-internal.cc",
+            "snappy.cc",
+        ], allow_empty = True)) + [
+        ":snappy-c.cc",
+        ":snappy-sinksource.cc",
+        ":snappy-stubs-internal.cc",
+        ":snappy.cc",
     ],
 )
 
@@ -178,3 +229,56 @@ cc_library(
         ":_snappy__compile_0",
     ],
 )
+
+exports_files([
+    ".bazelrc",
+    ".github/workflows/build.yml",
+    ".gitignore",
+    ".gitmodules",
+    "AUTHORS",
+    "CMakeLists.txt",
+    "CONTRIBUTING.md",
+    "MODULE.bazel",
+    "NEWS",
+    "README.md",
+    "WORKSPACE",
+    "WORKSPACE.bzlmod",
+    "cmake/SnappyConfig.cmake.in",
+    "cmake/config.h.in",
+    "docs/README.md",
+    "format_description.txt",
+    "framing_format.txt",
+    "snappy-c.cc",
+    "snappy-c.h",
+    "snappy-internal.h",
+    "snappy-sinksource.cc",
+    "snappy-sinksource.h",
+    "snappy-stubs-internal.cc",
+    "snappy-stubs-internal.h",
+    "snappy-stubs-public.h.in",
+    "snappy-test.cc",
+    "snappy-test.h",
+    "snappy.cc",
+    "snappy.h",
+    "snappy_benchmark.cc",
+    "snappy_compress_fuzzer.cc",
+    "snappy_test_data.cc",
+    "snappy_test_data.h",
+    "snappy_test_tool.cc",
+    "snappy_uncompress_fuzzer.cc",
+    "snappy_unittest.cc",
+    "testdata/alice29.txt",
+    "testdata/asyoulik.txt",
+    "testdata/baddata1.snappy",
+    "testdata/baddata2.snappy",
+    "testdata/baddata3.snappy",
+    "testdata/fireworks.jpeg",
+    "testdata/geo.protodata",
+    "testdata/html",
+    "testdata/html_x_4",
+    "testdata/kppkn.gtb",
+    "testdata/lcet10.txt",
+    "testdata/paper-100k.pdf",
+    "testdata/plrabn12.txt",
+    "testdata/urls.10K",
+])

@@ -605,14 +605,8 @@ exports_files([
   "testdata/zoneinfo/WET",
   "testdata/zoneinfo/Zulu"
 ])
-filegroup(
-    name = "headers_3db3dfe23706eb2f",
-    srcs = glob(["src/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_7764faaa786c9086",
-    srcs = glob(["include/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
+
+
 
 _GENERATED_SRCS_0 = [
         ":testdata/zoneinfo/Africa/Abidjan",
@@ -1265,7 +1259,23 @@ ch_cc_library(
         ":src/time_zone_lookup.cc",
         ":src/time_zone_posix.cc",
         ":src/zone_info_source.cc",
-    ],
+    ] + glob([
+            "src/**/*.h",
+            "src/**/*.hh",
+            "src/**/*.hpp",
+            "src/**/*.ipp",
+            "src/**/*.hxx",
+            "src/**/*.h++",
+            "src/**/*.inc",
+            "src/**/*.inl",
+            "src/**/*.tlh",
+            "src/**/*.tli",
+            "src/**/*.H",
+            "src/**/*.tcc",
+        ], exclude = [
+            "**/BUILD",
+            "**/BUILD.bazel",
+        ], allow_empty = True),
     copts = (
 [
         "-w",
@@ -1285,11 +1295,24 @@ ch_cc_library(
     })
 ),
     hdrs = [
-        ":headers_3db3dfe23706eb2f",
-        ":headers_7764faaa786c9086",
-    ] + [
         "@clickhouse_sysroot//:linux_native_headers",
-    ],
+    ] + glob([
+            "include/**/*.h",
+            "include/**/*.hh",
+            "include/**/*.hpp",
+            "include/**/*.ipp",
+            "include/**/*.hxx",
+            "include/**/*.h++",
+            "include/**/*.inc",
+            "include/**/*.inl",
+            "include/**/*.tlh",
+            "include/**/*.tli",
+            "include/**/*.H",
+            "include/**/*.tcc",
+        ], exclude = [
+            "**/BUILD",
+            "**/BUILD.bazel",
+        ], allow_empty = True),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = [
@@ -1299,8 +1322,59 @@ ch_cc_library(
         "-llvm_system_c_headers",
     ],
     alwayslink = False,
-    additional_compiler_inputs = [
+    additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
+    ] + glob([
+            "include/**",
+            "src/**",
+        ], exclude = [
+            "**/BUILD",
+            "**/BUILD.bazel",
+            "include/**/*.H",
+            "include/**/*.h",
+            "include/**/*.h++",
+            "include/**/*.hh",
+            "include/**/*.hpp",
+            "include/**/*.hxx",
+            "include/**/*.inc",
+            "include/**/*.inl",
+            "include/**/*.ipp",
+            "include/**/*.tcc",
+            "include/**/*.tlh",
+            "include/**/*.tli",
+            "src/**/*.H",
+            "src/**/*.h",
+            "src/**/*.h++",
+            "src/**/*.hh",
+            "src/**/*.hpp",
+            "src/**/*.hxx",
+            "src/**/*.inc",
+            "src/**/*.inl",
+            "src/**/*.ipp",
+            "src/**/*.tcc",
+            "src/**/*.tlh",
+            "src/**/*.tli",
+            "src/civil_time_detail.cc",
+            "src/time_zone_fixed.cc",
+            "src/time_zone_format.cc",
+            "src/time_zone_if.cc",
+            "src/time_zone_impl.cc",
+            "src/time_zone_info.cc",
+            "src/time_zone_libc.cc",
+            "src/time_zone_lookup.cc",
+            "src/time_zone_posix.cc",
+            "src/zone_info_source.cc",
+        ], allow_empty = True)) + [
+        ":src/civil_time_detail.cc",
+        ":src/time_zone_fixed.cc",
+        ":src/time_zone_format.cc",
+        ":src/time_zone_if.cc",
+        ":src/time_zone_impl.cc",
+        ":src/time_zone_info.cc",
+        ":src/time_zone_libc.cc",
+        ":src/time_zone_lookup.cc",
+        ":src/time_zone_posix.cc",
+        ":src/zone_info_source.cc",
     ],
 )
 
@@ -2579,3 +2653,10 @@ cc_library(
         ":tzdata__compile_0",
     ],
 )
+
+exports_files([
+    "include/cctz/civil_time.h",
+    "include/cctz/civil_time_detail.h",
+    "include/cctz/time_zone.h",
+    "include/cctz/zone_info_source.h",
+])

@@ -7,14 +7,8 @@ exports_files([
   "BUILD.bazel",
   "LICENSE-MIT"
 ])
-filegroup(
-    name = "headers_3a716c201469c92c",
-    srcs = glob(["include/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_f3c30fa74f63170e",
-    srcs = glob(["src/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
+
+
 
 ch_cc_library(
     name = "_idna__compile_0",
@@ -40,11 +34,24 @@ ch_cc_library(
     })
 ),
     hdrs = [
-        ":headers_3a716c201469c92c",
-        ":headers_f3c30fa74f63170e",
-    ] + [
         "@clickhouse_sysroot//:linux_native_headers",
-    ],
+    ] + glob([
+            "include/**/*.h",
+            "include/**/*.hh",
+            "include/**/*.hpp",
+            "include/**/*.ipp",
+            "include/**/*.hxx",
+            "include/**/*.h++",
+            "include/**/*.inc",
+            "include/**/*.inl",
+            "include/**/*.tlh",
+            "include/**/*.tli",
+            "include/**/*.H",
+            "include/**/*.tcc",
+        ], exclude = [
+            "**/BUILD",
+            "**/BUILD.bazel",
+        ], allow_empty = True),
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
@@ -63,8 +70,41 @@ ch_cc_library(
         "-llvm_system_c_headers",
     ],
     alwayslink = False,
-    additional_compiler_inputs = [
+    additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
+    ] + glob([
+            "include/**",
+            "src/**",
+        ], exclude = [
+            "**/BUILD",
+            "**/BUILD.bazel",
+            "include/**/*.H",
+            "include/**/*.h",
+            "include/**/*.h++",
+            "include/**/*.hh",
+            "include/**/*.hpp",
+            "include/**/*.hxx",
+            "include/**/*.inc",
+            "include/**/*.inl",
+            "include/**/*.ipp",
+            "include/**/*.tcc",
+            "include/**/*.tlh",
+            "include/**/*.tli",
+            "src/**/*.H",
+            "src/**/*.h",
+            "src/**/*.h++",
+            "src/**/*.hh",
+            "src/**/*.hpp",
+            "src/**/*.hxx",
+            "src/**/*.inc",
+            "src/**/*.inl",
+            "src/**/*.ipp",
+            "src/**/*.tcc",
+            "src/**/*.tlh",
+            "src/**/*.tli",
+            "src/idna.cpp",
+        ], allow_empty = True)) + [
+        ":src/idna.cpp",
     ],
 )
 
@@ -79,3 +119,15 @@ cc_library(
         ":_idna__compile_0",
     ],
 )
+
+exports_files([
+    "include/ada/idna/identifier.h",
+    "include/ada/idna/mapping.h",
+    "include/ada/idna/normalization.h",
+    "include/ada/idna/punycode.h",
+    "include/ada/idna/to_ascii.h",
+    "include/ada/idna/to_unicode.h",
+    "include/ada/idna/unicode_transcoding.h",
+    "include/ada/idna/validity.h",
+    "include/idna.h",
+])

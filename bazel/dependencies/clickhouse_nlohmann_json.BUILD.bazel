@@ -4,7 +4,8 @@ exports_files([
   "BUILD.bazel",
   "LICENSE.MIT"
 ])
-filegroup(
-    name = "headers_2712354e75ba49c5",
-    srcs = glob(["single_include/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
+
+exports_files([
+    "single_include/nlohmann/json.hpp",
+    "single_include/nlohmann/json_fwd.hpp",
+])

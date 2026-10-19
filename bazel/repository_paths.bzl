@@ -39,6 +39,18 @@ CLICKHOUSE_WARNINGS = [
 def repository_path(path):
     return _REPOSITORIES[path].workspace_root
 
+def repository_local_include(directory, owner = None):
+    """Express an execroot include relative to the cc rule's package."""
+    directory = directory.removeprefix("$(GENDIR)/")
+    if owner:
+        root = repository_path(owner)
+        if directory == root:
+            return "."
+        if directory.startswith(root + "/"):
+            return directory.removeprefix(root + "/")
+        return "../../" + directory
+    return directory
+
 def llvm_toolchain_path():
     return _LLVM_TOOLCHAIN_PATH
 

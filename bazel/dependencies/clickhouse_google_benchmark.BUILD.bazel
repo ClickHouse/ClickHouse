@@ -7,23 +7,12 @@ exports_files([
   "BUILD.bazel",
   "LICENSE"
 ])
-filegroup(
-    name = "headers_240d0472c52e8951",
-    srcs = glob(["src/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_5ede11dc93ca0f61",
-    srcs = glob(["include/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
 
 
 
-_GENERATED_HDRS_0 = [
-        ":headers_240d0472c52e8951",
-        ":headers_5ede11dc93ca0f61",
-    ] + [
-        "@clickhouse_sysroot//:linux_native_headers",
-    ]
+
+
+
 
 _GENERATED_LOCAL_DEFINES_0 = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -40,22 +29,7 @@ _GENERATED_DEPS_0 = [
 
 
 
-_GENERATED_COPTS_0 = [
-        "-w",
-        "-std=c++23",
-        "-nostdinc++",
-        "-isystem",
-        repository_path("contrib/google-benchmark") + "/include",
-    ] + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
-        "x86_64": {
-            "language": "CXX",
-            "includes": [],
-        },
-        "aarch64": {
-            "language": "CXX",
-            "includes": [],
-        },
-    })
+
 
 ch_cc_library(
     name = "google_benchmark__compile_0",
@@ -80,10 +54,54 @@ ch_cc_library(
         ":src/sysinfo.cc",
         ":src/timers.cc",
     ],
-    copts = (
-(_GENERATED_COPTS_0)
-),
-    hdrs = _GENERATED_HDRS_0,
+    copts = [
+        "-w",
+        "-std=c++23",
+        "-nostdinc++",
+    ] + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
+        "x86_64": {
+            "language": "CXX",
+            "includes": [],
+        },
+        "aarch64": {
+            "language": "CXX",
+            "includes": [],
+        },
+    }),
+    local_includes = [
+        "include",
+    ],
+    hdrs = [
+        "@clickhouse_sysroot//:linux_native_headers",
+    ] + glob([
+            "include/**/*.h",
+            "include/**/*.hh",
+            "include/**/*.hpp",
+            "include/**/*.ipp",
+            "include/**/*.hxx",
+            "include/**/*.h++",
+            "include/**/*.inc",
+            "include/**/*.inl",
+            "include/**/*.tlh",
+            "include/**/*.tli",
+            "include/**/*.H",
+            "include/**/*.tcc",
+            "src/**/*.h",
+            "src/**/*.hh",
+            "src/**/*.hpp",
+            "src/**/*.ipp",
+            "src/**/*.hxx",
+            "src/**/*.h++",
+            "src/**/*.inc",
+            "src/**/*.inl",
+            "src/**/*.tlh",
+            "src/**/*.tli",
+            "src/**/*.H",
+            "src/**/*.tcc",
+        ], exclude = [
+            "**/BUILD",
+            "**/BUILD.bazel",
+        ], allow_empty = True),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = [
@@ -91,10 +109,79 @@ ch_cc_library(
         "-default_compile_flags",
     ] + [
         "-llvm_system_c_headers",
-    ],
+    ] + ["system_include_paths"],
     alwayslink = False,
-    additional_compiler_inputs = [
+    additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
+    ] + glob([
+            "include/**",
+            "src/**",
+        ], exclude = [
+            "**/BUILD",
+            "**/BUILD.bazel",
+            "include/**/*.H",
+            "include/**/*.h",
+            "include/**/*.h++",
+            "include/**/*.hh",
+            "include/**/*.hpp",
+            "include/**/*.hxx",
+            "include/**/*.inc",
+            "include/**/*.inl",
+            "include/**/*.ipp",
+            "include/**/*.tcc",
+            "include/**/*.tlh",
+            "include/**/*.tli",
+            "src/**/*.H",
+            "src/**/*.h",
+            "src/**/*.h++",
+            "src/**/*.hh",
+            "src/**/*.hpp",
+            "src/**/*.hxx",
+            "src/**/*.inc",
+            "src/**/*.inl",
+            "src/**/*.ipp",
+            "src/**/*.tcc",
+            "src/**/*.tlh",
+            "src/**/*.tli",
+            "src/benchmark.cc",
+            "src/benchmark_api_internal.cc",
+            "src/benchmark_name.cc",
+            "src/benchmark_register.cc",
+            "src/benchmark_runner.cc",
+            "src/check.cc",
+            "src/colorprint.cc",
+            "src/commandlineflags.cc",
+            "src/complexity.cc",
+            "src/console_reporter.cc",
+            "src/counter.cc",
+            "src/csv_reporter.cc",
+            "src/json_reporter.cc",
+            "src/perf_counters.cc",
+            "src/reporter.cc",
+            "src/statistics.cc",
+            "src/string_util.cc",
+            "src/sysinfo.cc",
+            "src/timers.cc",
+        ], allow_empty = True)) + [
+        ":src/benchmark.cc",
+        ":src/benchmark_api_internal.cc",
+        ":src/benchmark_name.cc",
+        ":src/benchmark_register.cc",
+        ":src/benchmark_runner.cc",
+        ":src/check.cc",
+        ":src/colorprint.cc",
+        ":src/commandlineflags.cc",
+        ":src/complexity.cc",
+        ":src/console_reporter.cc",
+        ":src/counter.cc",
+        ":src/csv_reporter.cc",
+        ":src/json_reporter.cc",
+        ":src/perf_counters.cc",
+        ":src/reporter.cc",
+        ":src/statistics.cc",
+        ":src/string_util.cc",
+        ":src/sysinfo.cc",
+        ":src/timers.cc",
     ],
 )
 
@@ -115,10 +202,54 @@ ch_cc_library(
     srcs = [
         ":src/benchmark_main.cc",
     ],
-    copts = (
-(_GENERATED_COPTS_0)
-),
-    hdrs = _GENERATED_HDRS_0,
+    copts = [
+        "-w",
+        "-std=c++23",
+        "-nostdinc++",
+    ] + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
+        "x86_64": {
+            "language": "CXX",
+            "includes": [],
+        },
+        "aarch64": {
+            "language": "CXX",
+            "includes": [],
+        },
+    }),
+    local_includes = [
+        "include",
+    ],
+    hdrs = [
+        "@clickhouse_sysroot//:linux_native_headers",
+    ] + glob([
+            "include/**/*.h",
+            "include/**/*.hh",
+            "include/**/*.hpp",
+            "include/**/*.ipp",
+            "include/**/*.hxx",
+            "include/**/*.h++",
+            "include/**/*.inc",
+            "include/**/*.inl",
+            "include/**/*.tlh",
+            "include/**/*.tli",
+            "include/**/*.H",
+            "include/**/*.tcc",
+            "src/**/*.h",
+            "src/**/*.hh",
+            "src/**/*.hpp",
+            "src/**/*.ipp",
+            "src/**/*.hxx",
+            "src/**/*.h++",
+            "src/**/*.inc",
+            "src/**/*.inl",
+            "src/**/*.tlh",
+            "src/**/*.tli",
+            "src/**/*.H",
+            "src/**/*.tcc",
+        ], exclude = [
+            "**/BUILD",
+            "**/BUILD.bazel",
+        ], allow_empty = True),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
     features = [
@@ -126,10 +257,43 @@ ch_cc_library(
         "-default_compile_flags",
     ] + [
         "-llvm_system_c_headers",
-    ],
+    ] + ["system_include_paths"],
     alwayslink = False,
-    additional_compiler_inputs = [
+    additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
+    ] + glob([
+            "include/**",
+            "src/**",
+        ], exclude = [
+            "**/BUILD",
+            "**/BUILD.bazel",
+            "include/**/*.H",
+            "include/**/*.h",
+            "include/**/*.h++",
+            "include/**/*.hh",
+            "include/**/*.hpp",
+            "include/**/*.hxx",
+            "include/**/*.inc",
+            "include/**/*.inl",
+            "include/**/*.ipp",
+            "include/**/*.tcc",
+            "include/**/*.tlh",
+            "include/**/*.tli",
+            "src/**/*.H",
+            "src/**/*.h",
+            "src/**/*.h++",
+            "src/**/*.hh",
+            "src/**/*.hpp",
+            "src/**/*.hxx",
+            "src/**/*.inc",
+            "src/**/*.inl",
+            "src/**/*.ipp",
+            "src/**/*.tcc",
+            "src/**/*.tlh",
+            "src/**/*.tli",
+            "src/benchmark_main.cc",
+        ], allow_empty = True)) + [
+        ":src/benchmark_main.cc",
     ],
 )
 
@@ -145,3 +309,8 @@ cc_library(
         ":google_benchmark_main__compile_0",
     ],
 )
+
+exports_files([
+    "include/benchmark/benchmark.h",
+    "include/benchmark/export.h",
+])

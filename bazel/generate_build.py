@@ -21,7 +21,8 @@ from configuration import read_configurations
 import llvm_targets
 from build_file import BuildFile, CMakeCxxCompilerVersion, dependency_inputs, relocate_tools, select, starlark, target_label, target_owner
 from repository_inputs import (
-    REPOSITORIES, cmake_has_source_prefix_map, comparison_root, configuration_owner, execution_path, header_group, repository,
+    REPOSITORIES, cmake_has_source_prefix_map, comparison_root, configuration_owner, execution_path, repository,
+    HeaderDirectory, directory_sources, input_key,
     source_label, source_path, write_overlays,
 )
 
@@ -64,7 +65,7 @@ class Graph:
         self.build = ROOT / ('build_bazel_reference_' + arch)
         _, self.targets = read_file_api(self.build / '.cmake/api/v1/reply')
         self.config = ROOT / 'bazel/config' / arch
-        self.header_groups = {}
+        self.rust_headers = set()
         self.header_cache = {}
         self.include_cache = {}
         self.missing = set()
@@ -214,13 +215,7 @@ class Graph:
         if relative in visited:
             return []
         visited.add(relative)
-        external = header_group(relative)
-        if external:
-            result = [external]
-        else:
-            key = 'headers_' + hashlib.sha256(relative.encode()).hexdigest()[:16]
-            self.header_groups[key] = relative
-            result = [':' + key]
+        result = [HeaderDirectory(relative)]
         # Headers can themselves include siblings outside the -I directory:
         # OpenLDAP's ldap-int.h includes ../liblber/lber-int.h, for example.
         # Follow only existing quoted includes that escape this declared root.
@@ -237,7 +232,7 @@ class Graph:
             self.header_cache[relative] = sorted(dependencies)
         for dependency in self.header_cache[relative]:
             result.extend(self.headers(dependency, visited))
-        return sorted(set(result))
+        return sorted(set(result), key=input_key)
 
     def flags(self, fragments):
         result = []
@@ -283,7 +278,14 @@ class Graph:
                     copts.append(directory)
                     headers.update(self.headers(str(ROOT / directory)))
             result[field] = copts
-        return result | {'hdrs': sorted('//' + h if h.startswith(':') else h for h in headers)}
+        self.rust_headers = headers
+        labels = set()
+        for header in headers:
+            if isinstance(header, HeaderDirectory):
+                labels.update(source_label(file) for file in directory_sources(header.directory))
+            else:
+                labels.add(header)
+        return result | {'hdrs': sorted(labels)}
 
     def embedded_source(self, source, additional_inputs, flags):
         """Keep quoted #embed lookups inside Bazel's generated output tree.
@@ -492,9 +494,9 @@ class Graph:
                 # cc_library tokenizes defines with Bourne-shell rules. Preserve
                 # literal quotes (e.g. Cyrus SASL's CONFIGDIR="") through that step.
                 'local_defines': [shlex.quote(d['define'].replace(str(ROOT) + '/', '')) for d in cg.get('defines', [])],
-                'hdrs': sorted(hdrs),
+                'hdrs': sorted(hdrs, key=input_key),
                 'textual_hdrs': textual_hdrs,
-                'additional_compiler_inputs': sorted(set(additional_inputs)),
+                'additional_compiler_inputs': sorted(set(additional_inputs), key=input_key),
                 'native_cxx_includes': native_cxx_includes,
                 'deps': sorted(external_deps),
                 'language': cg['language'],
@@ -699,7 +701,6 @@ def main():
                 raise ValueError("Repository owner differs across architectures: " + name)
             owners[name] = owner
     inventories = {}
-    headers = {}
     codegen_rules = {}
     build_options = {}
     cmake_metadata = read_metadata(ROOT)
@@ -709,13 +710,28 @@ def main():
         graph = graphs[arch]
         inventories[arch] = graph.generate()
         rust_cxx[arch] = graph.rust_cxx_configuration()
-        headers.update(graph.header_groups)
         codegen_rules.update(graph.codegen.rules)
         build_options[arch] = graph.build_options
         cmake_metadata[arch]['build_options'] = build_options[arch].pop('cmake_substitutions')
         parity_sources.update(graph.parity_sources)
     codegen_rules = relocate_tools(codegen_rules, owners)
-    builds = {owner: BuildFile(owner, owners) for owner in {None, *owners.values()}}
+    # Count CMake target names across both platforms, not generated compile
+    # group names. A directory consumed only by one target is private.
+    native_lz4 = {arch: graph.target('_lz4', graph.targets['_lz4'], native=True)
+                  for arch, graph in graphs.items() if '_lz4' in graph.targets}
+    consumers = collections.defaultdict(set)
+    for arch, graph in graphs.items():
+        targets = dict(graph.generated_targets, _lz4=native_lz4.get(arch, {'groups': []}))
+        for name, target in targets.items():
+            for group in target['groups']:
+                for field in ('hdrs', 'additional_compiler_inputs'):
+                    for item in group.get(field, []):
+                        if isinstance(item, HeaderDirectory):
+                            consumers[item.directory].add(name)
+        for item in graph.rust_headers:
+            if isinstance(item, HeaderDirectory):
+                consumers[item.directory].add('rust_cxx')
+    builds = {owner: BuildFile(owner, owners, consumers) for owner in {None, *owners.values()}}
     for graph in graphs.values():
         graph.declare_configuration(builds, owners)
     for name, owner in sorted(owners.items()):
@@ -723,9 +739,8 @@ def main():
                                   for arch, graph in graphs.items() if name in graph.generated_targets})
     # The public _lz4 wrapper serves rules_rs/BCR clients; the CMake link uses
     # the original group's ordered objects from its own pinned repository.
-    lz4 = builds.setdefault('contrib/lz4', BuildFile('contrib/lz4', owners | {'_lz4': 'contrib/lz4'}))
-    lz4.target('_lz4', {arch: graph.target('_lz4', graph.targets['_lz4'], native=True)
-                        for arch, graph in graphs.items() if '_lz4' in graph.targets})
+    lz4 = builds.setdefault('contrib/lz4', BuildFile('contrib/lz4', owners | {'_lz4': 'contrib/lz4'}, consumers))
+    lz4.target('_lz4', native_lz4)
     llvm, llvm_native_targets, llvm_root_inputs = llvm_targets.declare_from_references(
         ROOT, {arch: graph.build for arch, graph in graphs.items()})
     builds[llvm_targets.PREFIX] = llvm
@@ -738,14 +753,16 @@ def main():
         for arch, graph in graphs.items()
     })})
     llvm_overlay_inputs = set(re.findall(r'"//:([^\"]+)"', (ROOT / 'bazel/llvm.MODULE.bazel').read_text()))
+    rust_root_inputs = {label[3:] for config in rust_cxx.values()
+                        for label in config['hdrs'] if label.startswith('//:')}
     root_exports = sorted(set().union(*(build.root_sources for build in builds.values()))
-                          | llvm_overlay_inputs | llvm_root_inputs)
+                          | llvm_overlay_inputs | llvm_root_inputs | rust_root_inputs)
     (ROOT / 'BUILD.bazel').write_text(
         '# Generated by bazel/generate_build.py.\n' + root.load_statements() +
         'load("//bazel:root_inputs.bzl", "declare_inputs")\n\n'
         'package(default_visibility = ["//visibility:public"])\n\n'
         'declare_inputs()\n\nexports_files(' + starlark(root_exports) + ')\n\n' + root.text())
-    (ROOT / 'bazel/headers.bzl').write_text('# Generated by bazel/generate_build.py.\nHEADER_DIRS = ' + starlark(dict(sorted(headers.items()))) + '\n')
+    (ROOT / 'bazel/headers.bzl').unlink(missing_ok=True)
     (ROOT / 'bazel/coverage.json').write_text(json.dumps(inventories, indent=2) + '\n')
     preamble = '# Generated by bazel/generate_build.py.\nload(":repository_paths.bzl", "repository_path")\n'
     (ROOT / 'bazel/codegen_rules.bzl').write_text(preamble + 'CODEGEN_RULES = ' + starlark(codegen_rules) + '\n')

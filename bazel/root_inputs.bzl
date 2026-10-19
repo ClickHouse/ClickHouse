@@ -1,7 +1,6 @@
 """First-party headers and generator inputs shared by native targets."""
 
 load(":codegen_rules.bzl", "CODEGEN_RULES")
-load(":headers.bzl", "HEADER_DIRS")
 
 def declare_inputs():
     native.exports_files(["cmake/localize_rust_c_symbols.sh", "cmake/strip_rust_symbols.sh"])
@@ -38,13 +37,3 @@ def declare_inputs():
         for src in attrs["srcs"]
         if src.startswith("//:")
     }))
-    for name, directory in HEADER_DIRS.items():
-        native.filegroup(
-            name = name,
-            srcs = native.glob(
-                [directory + "/**"],
-                exclude = [directory + "/**/BUILD", directory + "/**/BUILD.bazel"],
-                allow_empty = True,
-            ),
-        )
-

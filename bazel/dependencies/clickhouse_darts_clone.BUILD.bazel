@@ -4,7 +4,8 @@ exports_files([
   "BUILD.bazel",
   "COPYING.md"
 ])
-filegroup(
-    name = "headers_04e97e6eeafa177f",
-    srcs = glob(["include/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
+
+exports_files([
+    "include/Makefile.am",
+    "include/darts.h",
+])

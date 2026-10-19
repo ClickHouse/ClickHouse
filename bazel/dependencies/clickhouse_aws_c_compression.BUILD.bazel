@@ -7,11 +7,12 @@ exports_files([
   "source/huffman.c",
   "source/huffman_testing.c"
 ])
-filegroup(
-    name = "headers_3506397a2258627b",
-    srcs = glob(["include/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_850ab0ab0917ca65",
-    srcs = glob(["source/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
+
+exports_files([
+    "include/aws/compression/compression.h",
+    "include/aws/compression/exports.h",
+    "include/aws/compression/huffman.h",
+    "include/aws/compression/private/huffman_testing.h",
+    "source/huffman_generator/CMakeLists.txt",
+    "source/huffman_generator/generator.c",
+])

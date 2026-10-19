@@ -4,7 +4,15 @@ exports_files([
   "BUILD.bazel",
   "LICENSE-MIT"
 ])
-filegroup(
-    name = "headers_0be820ca05b2da65",
-    srcs = glob(["include/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
+
+exports_files([
+    "include/fast_float/ascii_number.h",
+    "include/fast_float/bigint.h",
+    "include/fast_float/constexpr_feature_detect.h",
+    "include/fast_float/decimal_to_binary.h",
+    "include/fast_float/digit_comparison.h",
+    "include/fast_float/fast_float.h",
+    "include/fast_float/fast_table.h",
+    "include/fast_float/float_common.h",
+    "include/fast_float/parse_number.h",
+])

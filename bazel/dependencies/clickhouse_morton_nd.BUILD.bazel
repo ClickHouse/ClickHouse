@@ -4,7 +4,8 @@ exports_files([
   "BUILD.bazel",
   "LICENSE"
 ])
-filegroup(
-    name = "headers_795fd87449a118dd",
-    srcs = glob(["include/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
+
+exports_files([
+    "include/morton-nd/mortonND_BMI2.h",
+    "include/morton-nd/mortonND_LUT.h",
+])

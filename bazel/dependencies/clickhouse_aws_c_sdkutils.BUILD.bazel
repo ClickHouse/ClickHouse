@@ -16,11 +16,16 @@ exports_files([
   "source/resource_name.c",
   "source/sdkutils.c"
 ])
-filegroup(
-    name = "headers_388afbb02d0224d6",
-    srcs = glob(["include/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_bf5d125f5970f275",
-    srcs = glob(["source/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
+
+exports_files([
+    "include/aws/sdkutils/aws_profile.h",
+    "include/aws/sdkutils/endpoints_bdd_engine.h",
+    "include/aws/sdkutils/endpoints_rule_engine.h",
+    "include/aws/sdkutils/exports.h",
+    "include/aws/sdkutils/partitions.h",
+    "include/aws/sdkutils/private/endpoints_regex.h",
+    "include/aws/sdkutils/private/endpoints_types_impl.h",
+    "include/aws/sdkutils/private/endpoints_util.h",
+    "include/aws/sdkutils/resource_name.h",
+    "include/aws/sdkutils/sdkutils.h",
+])

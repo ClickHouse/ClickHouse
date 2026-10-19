@@ -1,15 +1,129 @@
 """Map reference-checkout inputs to pinned Bazel source repositories."""
 
-import hashlib
+from dataclasses import dataclass
+from functools import cache
 import json
+import os
 from pathlib import Path
+import posixpath
 import re
 import shlex
+import subprocess
+import tarfile
 
 ROOT = Path(__file__).resolve().parents[1]
 REPOSITORIES = json.loads((ROOT / 'bazel/contrib_repositories.json').read_text())
 EXPORTS = {path: set() for path in REPOSITORIES}
-HEADER_GROUPS = {path: {} for path in REPOSITORIES}
+# rules_cc's allowed header extensions (cc/private/cc_helper.bzl).
+CC_HEADER_SUFFIXES = ('.h', '.hh', '.hpp', '.ipp', '.hxx', '.h++',
+                      '.inc', '.inl', '.tlh', '.tli', '.H', '.tcc')
+
+
+@dataclass(frozen=True)
+class HeaderDirectory:
+    directory: str
+
+
+def input_key(value):
+    return value.directory if isinstance(value, HeaderDirectory) else value
+
+
+def archive_link_status(members, removed=()):
+    """Resolve links inside an archive after the Bazel overlay removes files."""
+    removed = set(removed)
+    statuses = {}
+    for name, (kind, link) in members.items():
+        if kind not in {'symlink', 'hardlink'} or name in removed:
+            continue
+        path = name
+        seen = set()
+        for _ in range(64):
+            if path.startswith('/') or path == '..' or path.startswith('../'):
+                status = 'outside'
+                break
+            if path in seen:
+                status = 'cycle'
+                break
+            seen.add(path)
+            parts = path.split('/')
+            replaced = False
+            for count in range(1, len(parts) + 1):
+                prefix = '/'.join(parts[:count])
+                if prefix in removed:
+                    status = 'removed'
+                    break
+                member = members.get(prefix)
+                if member is None:
+                    status = 'missing'
+                    break
+                node_kind, target = member
+                if node_kind in {'symlink', 'hardlink'}:
+                    if node_kind == 'symlink':
+                        target = posixpath.join(posixpath.dirname(prefix), target)
+                    path = posixpath.normpath(posixpath.join(target, *parts[count:]))
+                    replaced = True
+                    break
+                if count != len(parts) and node_kind != 'directory':
+                    status = 'not-directory'
+                    break
+                if count == len(parts):
+                    status = node_kind
+            if not replaced:
+                break
+        else:
+            status = 'cycle'
+        statuses[name] = status
+    return statuses
+
+
+@cache
+def archived_sources(owner):
+    """Match the pinned http_archive, including Git export-ignore attributes."""
+    spec = REPOSITORIES[owner]
+    with subprocess.Popen(['git', '-C', str(ROOT / owner), 'archive', '--format=tar',
+                           spec['commit']], stdout=subprocess.PIPE) as process:
+        with tarfile.open(fileobj=process.stdout, mode='r|') as archive:
+            members = {}
+            for member in archive:
+                kind = ('file' if member.isfile() else 'directory' if member.isdir()
+                        else 'symlink' if member.issym() else 'hardlink' if member.islnk()
+                        else 'nonregular')
+                members[member.name.rstrip('/')] = (kind, member.linkname)
+        if process.wait():
+            raise ValueError('Cannot list pinned repository ' + owner + ' at ' + spec['commit'])
+    removed = set(spec['remove_build_files']) | {'.bazelignore'}
+    resolved = archive_link_status(members, removed)
+    return tuple(sorted(
+        name for name, (kind, _) in members.items()
+        if name not in removed and Path(name).name not in {'BUILD', 'BUILD.bazel'}
+        and (kind == 'file' or resolved.get(name) == 'file')
+    ))
+
+
+@cache
+def directory_sources(directory):
+    """List the same source inputs as Bazel glob, respecting root packages."""
+    owner = repository(directory)
+    if owner:
+        relative = directory.removeprefix(owner).lstrip('/')
+        prefix = relative + '/' if relative else ''
+        return tuple(owner + '/' + name for name in archived_sources(owner)
+                     if name.startswith(prefix))
+    result = []
+    start = ROOT / directory
+    if start != ROOT and any((start / build).is_file() for build in ('BUILD', 'BUILD.bazel')):
+        return ()
+    for parent, dirs, names in os.walk(start):
+        # Each child BUILD declares a Bazel package that a parent glob cannot
+        # traverse. contrib http_archives instead remove their BUILD files.
+        dirs[:] = sorted(d for d in dirs
+                         if not any((Path(parent) / d / build).is_file()
+                                    for build in ('BUILD', 'BUILD.bazel')))
+        for name in sorted(names):
+            if name not in {'BUILD', 'BUILD.bazel'} and (Path(parent) / name).is_file():
+                result.append((Path(parent) / name).relative_to(ROOT).as_posix())
+    return tuple(sorted(result))
+
 
 
 def repository(path):
@@ -62,15 +176,6 @@ def comparison_root(prefix):
     if REPOSITORIES[prefix].get('module') == 'llvm':
         return 'external/llvm++llvm+llvm-project'
     return 'external/+contrib+' + REPOSITORIES[prefix]['name']
-
-
-def header_group(directory):
-    prefix = repository(directory)
-    if not prefix:
-        return None
-    name = 'headers_' + hashlib.sha256(directory.encode()).hexdigest()[:16]
-    HEADER_GROUPS[prefix][name] = directory.removeprefix(prefix).lstrip('/')
-    return '@' + REPOSITORIES[prefix]['name'] + '//:' + name
 
 
 _SOURCE_ROOT = re.compile(
@@ -171,11 +276,6 @@ def write_overlays(builds, shared_inputs, system_repositories):
         features = ', features = ["external_include_paths"]' if prefix in system_repositories else ''
         text += 'package(default_visibility = ["//visibility:public"]' + features + ')\n'
         text += 'exports_files(' + json.dumps(sorted(EXPORTS[prefix] | {'BUILD.bazel'}), indent=2) + ')\n'
-        for name, relative in sorted(HEADER_GROUPS[prefix].items()):
-            pattern = relative + '/**' if relative else '**'
-            text += ('filegroup(\n    name = ' + json.dumps(name) + ',\n'
-                     '    srcs = glob([' + json.dumps(pattern) + '], '
-                     'exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),\n)\n')
         if build:
             text += '\n' + build.text()
         (directory / (spec['name'] + '.BUILD.bazel')).write_text(text)

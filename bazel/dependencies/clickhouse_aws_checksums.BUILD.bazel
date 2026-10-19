@@ -14,23 +14,19 @@ exports_files([
   "source/intel/asm/crc32c_sse42_asm.c",
   "source/xxhash.c"
 ])
-filegroup(
-    name = "headers_68858aae9f59e0e4",
-    srcs = glob(["source/intel/asm/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_897a3a68bdd18e2e",
-    srcs = glob(["source/arm/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_c429397fbc4f7e42",
-    srcs = glob(["source/external/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_cb0ecc7747995616",
-    srcs = glob(["source/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_fabfb79bff3e1042",
-    srcs = glob(["include/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
+
+exports_files([
+    "include/aws/checksums/checksums.h",
+    "include/aws/checksums/crc.h",
+    "include/aws/checksums/exports.h",
+    "include/aws/checksums/private/crc32_priv.h",
+    "include/aws/checksums/private/crc64_priv.h",
+    "include/aws/checksums/private/crc_util.h",
+    "include/aws/checksums/private/xxhash_priv.h",
+    "include/aws/checksums/xxhash.h",
+    "source/external/how_to_update.md",
+    "source/external/xxhash.h",
+    "source/intel/intrin/crc32c_sse42_avx512.c",
+    "source/intel/intrin/crc64nvme_avx512.c",
+    "source/intel/intrin/crc64nvme_clmul.c",
+])

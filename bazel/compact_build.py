@@ -15,13 +15,13 @@ from pathlib import Path
 ATTRIBUTES = {
     "srcs", "hdrs", "textual_hdrs", "additional_compiler_inputs", "deps",
     "copts", "local_defines", "defines", "features", "linkopts",
-    "target_compatible_with", "tools", "visibility", "includes", "data",
+    "target_compatible_with", "tools", "visibility", "includes", "local_includes", "data",
 }
 # These functions only calculate flags or repository roots.  In particular,
 # never hoist glob(), Label(), a macro invocation, or an unknown identifier.
 PURE_FUNCTIONS = {
     "select", "repository_path", "llvm_toolchain_path", "cmake_prefix_maps",
-    "cmake_native_compile_flags",
+    "cmake_native_compile_flags", "repository_local_include",
 }
 CONSTANT_PREFIX = "_GENERATED_"
 

@@ -7,14 +7,8 @@ exports_files([
   "BUILD.bazel",
   "LICENSE"
 ])
-filegroup(
-    name = "headers_926772174878f882",
-    srcs = glob(["double-conversion/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_d6b59dc5126af3de",
-    srcs = glob(["**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
+
+
 
 ch_cc_library(
     name = "_double-conversion__compile_0",
@@ -28,13 +22,10 @@ ch_cc_library(
         ":double-conversion/string-to-double.cc",
         ":double-conversion/strtod.cc",
     ],
-    copts = (
-[
+    copts = [
         "-w",
         "-std=c++23",
         "-nostdinc++",
-        "-isystem",
-        repository_path("contrib/double-conversion"),
     ] + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
         "x86_64": {
             "language": "CXX",
@@ -44,14 +35,29 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    })
-),
-    hdrs = [
-        ":headers_926772174878f882",
-        ":headers_d6b59dc5126af3de",
-    ] + [
-        "@clickhouse_sysroot//:linux_native_headers",
+    }),
+    local_includes = [
+        ".",
     ],
+    hdrs = [
+        "@clickhouse_sysroot//:linux_native_headers",
+    ] + glob([
+            "**/*.h",
+            "**/*.hh",
+            "**/*.hpp",
+            "**/*.ipp",
+            "**/*.hxx",
+            "**/*.h++",
+            "**/*.inc",
+            "**/*.inl",
+            "**/*.tlh",
+            "**/*.tli",
+            "**/*.H",
+            "**/*.tcc",
+        ], exclude = [
+            "**/BUILD",
+            "**/BUILD.bazel",
+        ], allow_empty = True),
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
@@ -68,10 +74,44 @@ ch_cc_library(
         "-default_compile_flags",
     ] + [
         "-llvm_system_c_headers",
-    ],
+    ] + ["system_include_paths"],
     alwayslink = False,
-    additional_compiler_inputs = [
+    additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
+    ] + glob([
+            "**",
+        ], exclude = [
+            "**/*.H",
+            "**/*.h",
+            "**/*.h++",
+            "**/*.hh",
+            "**/*.hpp",
+            "**/*.hxx",
+            "**/*.inc",
+            "**/*.inl",
+            "**/*.ipp",
+            "**/*.tcc",
+            "**/*.tlh",
+            "**/*.tli",
+            "**/BUILD",
+            "**/BUILD.bazel",
+            "double-conversion/bignum-dtoa.cc",
+            "double-conversion/bignum.cc",
+            "double-conversion/cached-powers.cc",
+            "double-conversion/double-to-string.cc",
+            "double-conversion/fast-dtoa.cc",
+            "double-conversion/fixed-dtoa.cc",
+            "double-conversion/string-to-double.cc",
+            "double-conversion/strtod.cc",
+        ], allow_empty = True)) + [
+        ":double-conversion/bignum-dtoa.cc",
+        ":double-conversion/bignum.cc",
+        ":double-conversion/cached-powers.cc",
+        ":double-conversion/double-to-string.cc",
+        ":double-conversion/fast-dtoa.cc",
+        ":double-conversion/fixed-dtoa.cc",
+        ":double-conversion/string-to-double.cc",
+        ":double-conversion/strtod.cc",
     ],
 )
 
@@ -86,3 +126,74 @@ cc_library(
         ":_double-conversion__compile_0",
     ],
 )
+
+exports_files([
+    ".github/dependabot.yml",
+    ".github/workflows/ci.yml",
+    ".github/workflows/cifuzz.yml",
+    ".github/workflows/scons.yml",
+    ".github/workflows/scorecard.yml",
+    ".gitignore",
+    "AUTHORS",
+    "CMakeLists.txt",
+    "COPYING",
+    "Changelog",
+    "MODULE.bazel",
+    "Makefile",
+    "README.md",
+    "SConstruct",
+    "WORKSPACE",
+    "cmake/Config.cmake.in",
+    "double-conversion.pc.in",
+    "double-conversion/.gitignore",
+    "double-conversion/SConscript",
+    "double-conversion/bignum-dtoa.cc",
+    "double-conversion/bignum-dtoa.h",
+    "double-conversion/bignum.cc",
+    "double-conversion/bignum.h",
+    "double-conversion/cached-powers.cc",
+    "double-conversion/cached-powers.h",
+    "double-conversion/diy-fp.h",
+    "double-conversion/double-conversion.h",
+    "double-conversion/double-to-string.cc",
+    "double-conversion/double-to-string.h",
+    "double-conversion/fast-dtoa.cc",
+    "double-conversion/fast-dtoa.h",
+    "double-conversion/fixed-dtoa.cc",
+    "double-conversion/fixed-dtoa.h",
+    "double-conversion/ieee.h",
+    "double-conversion/string-to-double.cc",
+    "double-conversion/string-to-double.h",
+    "double-conversion/strtod.cc",
+    "double-conversion/strtod.h",
+    "double-conversion/utils.h",
+    "msvc/double-conversion.sln",
+    "msvc/double-conversion.vcxproj",
+    "msvc/double-conversion.vcxproj.filters",
+    "msvc/run_tests/run_tests.vcxproj",
+    "msvc/run_tests/run_tests.vcxproj.filters",
+    "msvc/testrunner.cmd",
+    "test/CMakeLists.txt",
+    "test/cctest/CMakeLists.txt",
+    "test/cctest/SConscript",
+    "test/cctest/cctest.cc",
+    "test/cctest/cctest.h",
+    "test/cctest/checks.h",
+    "test/cctest/gay-fixed.cc",
+    "test/cctest/gay-fixed.h",
+    "test/cctest/gay-precision.cc",
+    "test/cctest/gay-precision.h",
+    "test/cctest/gay-shortest-single.cc",
+    "test/cctest/gay-shortest-single.h",
+    "test/cctest/gay-shortest.cc",
+    "test/cctest/gay-shortest.h",
+    "test/cctest/test-bignum-dtoa.cc",
+    "test/cctest/test-bignum.cc",
+    "test/cctest/test-conversions.cc",
+    "test/cctest/test-diy-fp.cc",
+    "test/cctest/test-dtoa.cc",
+    "test/cctest/test-fast-dtoa.cc",
+    "test/cctest/test-fixed-dtoa.cc",
+    "test/cctest/test-ieee.cc",
+    "test/cctest/test-strtod.cc",
+])

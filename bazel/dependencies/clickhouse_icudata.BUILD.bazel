@@ -5,7 +5,9 @@ exports_files([
   "LICENSE",
   "icudt78l_dat.S"
 ])
-filegroup(
-    name = "headers_b97c5d5c5622cefc",
-    srcs = glob(["**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
+
+exports_files([
+    "README.md",
+    "darwin/icudt78l_dat.S",
+    "icudt78b_dat.S",
+])

@@ -4,7 +4,13 @@ exports_files([
   "BUILD.bazel",
   "LICENSE"
 ])
-filegroup(
-    name = "headers_72a7a7396dc0a0b6",
-    srcs = glob(["include/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
+
+exports_files([
+    "include/fp16.h",
+    "include/fp16/__init__.py",
+    "include/fp16/avx.py",
+    "include/fp16/avx2.py",
+    "include/fp16/bitcasts.h",
+    "include/fp16/fp16.h",
+    "include/fp16/psimd.h",
+])

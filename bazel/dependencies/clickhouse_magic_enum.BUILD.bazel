@@ -4,7 +4,15 @@ exports_files([
   "BUILD.bazel",
   "LICENSE"
 ])
-filegroup(
-    name = "headers_f09fed8d532ac971",
-    srcs = glob(["include/magic_enum/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
+
+exports_files([
+    "include/magic_enum/magic_enum.hpp",
+    "include/magic_enum/magic_enum_all.hpp",
+    "include/magic_enum/magic_enum_containers.hpp",
+    "include/magic_enum/magic_enum_flags.hpp",
+    "include/magic_enum/magic_enum_format.hpp",
+    "include/magic_enum/magic_enum_fuse.hpp",
+    "include/magic_enum/magic_enum_iostream.hpp",
+    "include/magic_enum/magic_enum_switch.hpp",
+    "include/magic_enum/magic_enum_utility.hpp",
+])

@@ -23,19 +23,36 @@ exports_files([
   "source/unix/opensslcrypto_hash.c",
   "source/unix/opensslcrypto_hmac.c"
 ])
-filegroup(
-    name = "headers_443b948795965285",
-    srcs = glob(["source/shared/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_44d869f7a018c0f4",
-    srcs = glob(["source/unix/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_cf7b52e876967a42",
-    srcs = glob(["include/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_f7507f6bb58dba26",
-    srcs = glob(["source/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
+
+exports_files([
+    "include/aws/cal/cal.h",
+    "include/aws/cal/ecc.h",
+    "include/aws/cal/ed25519.h",
+    "include/aws/cal/exports.h",
+    "include/aws/cal/hash.h",
+    "include/aws/cal/hkdf.h",
+    "include/aws/cal/hmac.h",
+    "include/aws/cal/private/der.h",
+    "include/aws/cal/private/ecc.h",
+    "include/aws/cal/private/opensslcrypto_common.h",
+    "include/aws/cal/private/rsa.h",
+    "include/aws/cal/private/symmetric_cipher_priv.h",
+    "include/aws/cal/rsa.h",
+    "include/aws/cal/symmetric_cipher.h",
+    "source/darwin/common_cryptor_spi.h",
+    "source/darwin/commoncrypto_aes.c",
+    "source/darwin/commoncrypto_hmac.c",
+    "source/darwin/commoncrypto_md5.c",
+    "source/darwin/commoncrypto_platform_init.c",
+    "source/darwin/commoncrypto_sha1.c",
+    "source/darwin/commoncrypto_sha256.c",
+    "source/darwin/commoncrypto_sha512.c",
+    "source/darwin/securityframework_ecc.c",
+    "source/darwin/securityframework_rsa.c",
+    "source/windows/bcrypt_aes.c",
+    "source/windows/bcrypt_ecc.c",
+    "source/windows/bcrypt_hash.c",
+    "source/windows/bcrypt_hmac.c",
+    "source/windows/bcrypt_platform_init.c",
+    "source/windows/bcrypt_rsa.c",
+])

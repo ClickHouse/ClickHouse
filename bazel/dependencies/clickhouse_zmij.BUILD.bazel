@@ -7,23 +7,17 @@ exports_files([
   "BUILD.bazel",
   "LICENSE"
 ])
-filegroup(
-    name = "headers_a75178efc3c6e234",
-    srcs = glob(["**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
+
 
 ch_cc_library(
     name = "_zmij__compile_0",
     srcs = [
         ":zmij.cc",
     ],
-    copts = (
-[
+    copts = [
         "-w",
         "-std=c++23",
         "-nostdinc++",
-        "-isystem",
-        repository_path("contrib/zmij"),
     ] + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
         "x86_64": {
             "language": "CXX",
@@ -33,13 +27,29 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    })
-),
-    hdrs = [
-        ":headers_a75178efc3c6e234",
-    ] + [
-        "@clickhouse_sysroot//:linux_native_headers",
+    }),
+    local_includes = [
+        ".",
     ],
+    hdrs = [
+        "@clickhouse_sysroot//:linux_native_headers",
+    ] + glob([
+            "**/*.h",
+            "**/*.hh",
+            "**/*.hpp",
+            "**/*.ipp",
+            "**/*.hxx",
+            "**/*.h++",
+            "**/*.inc",
+            "**/*.inl",
+            "**/*.tlh",
+            "**/*.tli",
+            "**/*.H",
+            "**/*.tcc",
+        ], exclude = [
+            "**/BUILD",
+            "**/BUILD.bazel",
+        ], allow_empty = True),
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
@@ -56,10 +66,30 @@ ch_cc_library(
         "-default_compile_flags",
     ] + [
         "-llvm_system_c_headers",
-    ],
+    ] + ["system_include_paths"],
     alwayslink = False,
-    additional_compiler_inputs = [
+    additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
+    ] + glob([
+            "**",
+        ], exclude = [
+            "**/*.H",
+            "**/*.h",
+            "**/*.h++",
+            "**/*.hh",
+            "**/*.hpp",
+            "**/*.hxx",
+            "**/*.inc",
+            "**/*.inl",
+            "**/*.ipp",
+            "**/*.tcc",
+            "**/*.tlh",
+            "**/*.tli",
+            "**/BUILD",
+            "**/BUILD.bazel",
+            "zmij.cc",
+        ], allow_empty = True)) + [
+        ":zmij.cc",
     ],
 )
 
@@ -74,3 +104,41 @@ cc_library(
         ":_zmij__compile_0",
     ],
 )
+
+exports_files([
+    ".clang-format",
+    ".cmake-format",
+    ".github/workflows/ci.yml",
+    "CMakeLists.txt",
+    "README.md",
+    "example.cc",
+    "test/CMakeLists.txt",
+    "test/benchmark-all-commits.py",
+    "test/benchmark.cc",
+    "test/benchmark.h",
+    "test/double-check.cc",
+    "test/dragonbox/dragonbox.h",
+    "test/dragonbox/dragonbox_to_chars.cpp",
+    "test/dragonbox/dragonbox_to_chars.h",
+    "test/float-check.cc",
+    "test/fmt/base.h",
+    "test/fmt/format-inl.h",
+    "test/fmt/format.cc",
+    "test/fmt/format.h",
+    "test/gen-pow10.py",
+    "test/gtest/.clang-format",
+    "test/gtest/CMakeLists.txt",
+    "test/gtest/gmock-gtest-all.cc",
+    "test/gtest/gmock/gmock.h",
+    "test/gtest/gtest/gtest-spi.h",
+    "test/gtest/gtest/gtest.h",
+    "test/modular-search-test.cc",
+    "test/modular-search.h",
+    "test/pow10-test.cc",
+    "test/zmij-benchmark.cc",
+    "test/zmij-test.cc",
+    "zmij-c.h",
+    "zmij.c",
+    "zmij.cc",
+    "zmij.h",
+])

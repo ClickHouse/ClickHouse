@@ -4,7 +4,8 @@ exports_files([
   "BUILD.bazel",
   "LICENSE"
 ])
-filegroup(
-    name = "headers_c0687cf0d505ec04",
-    srcs = glob(["include/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
+
+exports_files([
+    "include/sqids/blocklist.hpp",
+    "include/sqids/sqids.hpp",
+])

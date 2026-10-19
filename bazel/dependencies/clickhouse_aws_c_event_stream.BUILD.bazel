@@ -9,11 +9,14 @@ exports_files([
   "source/event_stream_rpc_client.c",
   "source/event_stream_rpc_server.c"
 ])
-filegroup(
-    name = "headers_4ff2e79ad7b09c38",
-    srcs = glob(["source/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_9d8b291dd3c5aac9",
-    srcs = glob(["include/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
+
+exports_files([
+    "include/aws/event-stream/event_stream.h",
+    "include/aws/event-stream/event_stream_channel_handler.h",
+    "include/aws/event-stream/event_stream_exports.h",
+    "include/aws/event-stream/event_stream_rpc.h",
+    "include/aws/event-stream/event_stream_rpc_client.h",
+    "include/aws/event-stream/event_stream_rpc_server.h",
+    "include/aws/event-stream/private/event_stream_rpc_priv.h",
+    "include/aws/event-stream/private/event_stream_rpc_test_helper.h",
+])

@@ -39,39 +39,79 @@ exports_files([
   "source/io/TlsOptions.cpp",
   "source/io/Uri.cpp"
 ])
-filegroup(
-    name = "headers_00a4702bbf89af7d",
-    srcs = glob(["source/endpoints/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_405ee23d8f8811cf",
-    srcs = glob(["source/auth/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_43a6a627d1714f3d",
-    srcs = glob(["source/checksum/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_61f5b01b9f068361",
-    srcs = glob(["source/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_7cb099b35bbde141",
-    srcs = glob(["source/http/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_7dcacc03f081fc7b",
-    srcs = glob(["source/io/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_bc9194fc700d8a94",
-    srcs = glob(["source/crypto/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_cf128ff0bc85811f",
-    srcs = glob(["include/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_d763720128f6cb21",
-    srcs = glob(["source/cbor/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
+
+exports_files([
+    "include/aws/crt/Allocator.h",
+    "include/aws/crt/Api.h",
+    "include/aws/crt/DateTime.h",
+    "include/aws/crt/DnsUtils.h",
+    "include/aws/crt/Exports.h",
+    "include/aws/crt/ImdsClient.h",
+    "include/aws/crt/JsonObject.h",
+    "include/aws/crt/Optional.h",
+    "include/aws/crt/RefCounted.h",
+    "include/aws/crt/StlAllocator.h",
+    "include/aws/crt/StringUtils.h",
+    "include/aws/crt/StringView.h",
+    "include/aws/crt/TypeTraits.h",
+    "include/aws/crt/Types.h",
+    "include/aws/crt/UUID.h",
+    "include/aws/crt/Utility.h",
+    "include/aws/crt/Variant.h",
+    "include/aws/crt/auth/Credentials.h",
+    "include/aws/crt/auth/Signing.h",
+    "include/aws/crt/auth/Sigv4Signing.h",
+    "include/aws/crt/cbor/Cbor.h",
+    "include/aws/crt/checksum/CRC.h",
+    "include/aws/crt/checksum/XXHash.h",
+    "include/aws/crt/crypto/HKDF.h",
+    "include/aws/crt/crypto/HMAC.h",
+    "include/aws/crt/crypto/Hash.h",
+    "include/aws/crt/crypto/SecureRandom.h",
+    "include/aws/crt/crypto/SymmetricCipher.h",
+    "include/aws/crt/endpoints/BddEngine.h",
+    "include/aws/crt/endpoints/RuleEngine.h",
+    "include/aws/crt/http/HttpConnection.h",
+    "include/aws/crt/http/HttpConnectionManager.h",
+    "include/aws/crt/http/HttpProxyStrategy.h",
+    "include/aws/crt/http/HttpRequestResponse.h",
+    "include/aws/crt/io/Bootstrap.h",
+    "include/aws/crt/io/ChannelHandler.h",
+    "include/aws/crt/io/EventLoopGroup.h",
+    "include/aws/crt/io/HostResolver.h",
+    "include/aws/crt/io/Pkcs11.h",
+    "include/aws/crt/io/SocketOptions.h",
+    "include/aws/crt/io/Stream.h",
+    "include/aws/crt/io/TlsOptions.h",
+    "include/aws/crt/io/Uri.h",
+    "include/aws/crt/io/private/TlsMetrics.h",
+    "include/aws/crt/mqtt/IoTSDKMetrics.h",
+    "include/aws/crt/mqtt/Mqtt5Client.h",
+    "include/aws/crt/mqtt/Mqtt5Packets.h",
+    "include/aws/crt/mqtt/Mqtt5Types.h",
+    "include/aws/crt/mqtt/MqttClient.h",
+    "include/aws/crt/mqtt/MqttConnection.h",
+    "include/aws/crt/mqtt/MqttTypes.h",
+    "include/aws/crt/mqtt/private/IoTSDKMetricsPrivate.h",
+    "include/aws/crt/mqtt/private/Mqtt5ClientCore.h",
+    "include/aws/crt/mqtt/private/MqttConnectionCore.h",
+    "include/aws/crt/s3/S3.h",
+    "include/aws/crt/s3/S3BufferTicket.h",
+    "include/aws/iot/Mqtt5Client.h",
+    "include/aws/iot/MqttClient.h",
+    "include/aws/iot/MqttCommon.h",
+    "include/aws/iot/MqttRequestResponseClient.h",
+    "source/iot/Mqtt5Client.cpp",
+    "source/iot/MqttClient.cpp",
+    "source/iot/MqttCommon.cpp",
+    "source/iot/MqttRequestResponseClient.cpp",
+    "source/mqtt/IoTSDKMetrics.cpp",
+    "source/mqtt/Mqtt5Client.cpp",
+    "source/mqtt/Mqtt5ClientCore.cpp",
+    "source/mqtt/Mqtt5Packets.cpp",
+    "source/mqtt/MqttClient.cpp",
+    "source/mqtt/MqttConnection.cpp",
+    "source/mqtt/MqttConnectionCore.cpp",
+    "source/s3/S3.cpp",
+    "source/s3/S3BufferTicket.cpp",
+])

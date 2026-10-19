@@ -7,14 +7,8 @@ exports_files([
   "BUILD.bazel",
   "LICENSE.md"
 ])
-filegroup(
-    name = "headers_816a5bf5981264b1",
-    srcs = glob(["src/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_da490ae2bae04cce",
-    srcs = glob(["include/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
+
+
 
 ch_cc_library(
     name = "_replxx__compile_0",
@@ -29,14 +23,27 @@ ch_cc_library(
         ":src/replxx.cxx",
         ":src/util.cxx",
         ":src/wcwidth.cpp",
-    ],
-    copts = (
-[
+    ] + glob([
+            "src/**/*.h",
+            "src/**/*.hh",
+            "src/**/*.hpp",
+            "src/**/*.ipp",
+            "src/**/*.hxx",
+            "src/**/*.h++",
+            "src/**/*.inc",
+            "src/**/*.inl",
+            "src/**/*.tlh",
+            "src/**/*.tli",
+            "src/**/*.H",
+            "src/**/*.tcc",
+        ], exclude = [
+            "**/BUILD",
+            "**/BUILD.bazel",
+        ], allow_empty = True),
+    copts = [
         "-w",
         "-std=c++23",
         "-nostdinc++",
-        "-isystem",
-        repository_path("contrib/replxx") + "/include",
     ] + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
         "x86_64": {
             "language": "CXX",
@@ -46,14 +53,29 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    })
-),
-    hdrs = [
-        ":headers_816a5bf5981264b1",
-        ":headers_da490ae2bae04cce",
-    ] + [
-        "@clickhouse_sysroot//:linux_native_headers",
+    }),
+    local_includes = [
+        "include",
     ],
+    hdrs = [
+        "@clickhouse_sysroot//:linux_native_headers",
+    ] + glob([
+            "include/**/*.h",
+            "include/**/*.hh",
+            "include/**/*.hpp",
+            "include/**/*.ipp",
+            "include/**/*.hxx",
+            "include/**/*.h++",
+            "include/**/*.inc",
+            "include/**/*.inl",
+            "include/**/*.tlh",
+            "include/**/*.tli",
+            "include/**/*.H",
+            "include/**/*.tcc",
+        ], exclude = [
+            "**/BUILD",
+            "**/BUILD.bazel",
+        ], allow_empty = True),
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
@@ -70,10 +92,61 @@ ch_cc_library(
         "-default_compile_flags",
     ] + [
         "-llvm_system_c_headers",
-    ],
+    ] + ["system_include_paths"],
     alwayslink = False,
-    additional_compiler_inputs = [
+    additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
+    ] + glob([
+            "include/**",
+            "src/**",
+        ], exclude = [
+            "**/BUILD",
+            "**/BUILD.bazel",
+            "include/**/*.H",
+            "include/**/*.h",
+            "include/**/*.h++",
+            "include/**/*.hh",
+            "include/**/*.hpp",
+            "include/**/*.hxx",
+            "include/**/*.inc",
+            "include/**/*.inl",
+            "include/**/*.ipp",
+            "include/**/*.tcc",
+            "include/**/*.tlh",
+            "include/**/*.tli",
+            "src/**/*.H",
+            "src/**/*.h",
+            "src/**/*.h++",
+            "src/**/*.hh",
+            "src/**/*.hpp",
+            "src/**/*.hxx",
+            "src/**/*.inc",
+            "src/**/*.inl",
+            "src/**/*.ipp",
+            "src/**/*.tcc",
+            "src/**/*.tlh",
+            "src/**/*.tli",
+            "src/ConvertUTF.cpp",
+            "src/conversion.cxx",
+            "src/escape.cxx",
+            "src/history.cxx",
+            "src/prompt.cxx",
+            "src/replxx.cxx",
+            "src/replxx_impl.cxx",
+            "src/terminal.cxx",
+            "src/util.cxx",
+            "src/wcwidth.cpp",
+        ], allow_empty = True)) + [
+        ":src/conversion.cxx",
+        ":src/ConvertUTF.cpp",
+        ":src/escape.cxx",
+        ":src/history.cxx",
+        ":src/terminal.cxx",
+        ":src/prompt.cxx",
+        ":src/replxx_impl.cxx",
+        ":src/replxx.cxx",
+        ":src/util.cxx",
+        ":src/wcwidth.cpp",
     ],
 )
 
@@ -88,3 +161,8 @@ cc_library(
         ":_replxx__compile_0",
     ],
 )
+
+exports_files([
+    "include/replxx.h",
+    "include/replxx.hxx",
+])

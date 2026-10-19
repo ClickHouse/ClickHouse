@@ -41,11 +41,23 @@ exports_files([
   "source/token_provider_sso_profile.c",
   "source/token_provider_sso_session.c"
 ])
-filegroup(
-    name = "headers_2d71ce00a6ea1616",
-    srcs = glob(["include/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_ba6ea640f2d9bec3",
-    srcs = glob(["source/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
+
+exports_files([
+    "include/aws/auth/auth.h",
+    "include/aws/auth/aws_imds_client.h",
+    "include/aws/auth/credentials.h",
+    "include/aws/auth/exports.h",
+    "include/aws/auth/private/aws_http_credentials_provider.h",
+    "include/aws/auth/private/aws_profile.h",
+    "include/aws/auth/private/aws_signing.h",
+    "include/aws/auth/private/credentials_utils.h",
+    "include/aws/auth/private/key_derivation.h",
+    "include/aws/auth/private/login_token_utils.h",
+    "include/aws/auth/private/sigv4_http_request.h",
+    "include/aws/auth/private/sso_token_providers.h",
+    "include/aws/auth/private/sso_token_utils.h",
+    "include/aws/auth/signable.h",
+    "include/aws/auth/signing.h",
+    "include/aws/auth/signing_config.h",
+    "include/aws/auth/signing_result.h",
+])

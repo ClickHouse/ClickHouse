@@ -49,26 +49,11 @@ exports_files([
   "c++/src/sargs/TruthValue.cc",
   "proto/orc_proto.proto"
 ])
-filegroup(
-    name = "headers_4c49284139bdfa15",
-    srcs = glob(["c++/src/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_5fa3f11aad7386ac",
-    srcs = glob(["c++/include/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_914abea7695d5a7a",
-    srcs = glob(["c++/src/wrap/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_cfa45d21f4baa0a1",
-    srcs = glob(["c++/src/sargs/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_d52d8009c9724d34",
-    srcs = glob(["c++/src/io/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
+
+
+
+
+
 
 expand_template(
     name = "configure_x86_64_12e6f6bdb894c631",
@@ -105,3 +90,74 @@ expand_template(
         "#cmakedefine HAS_PREAD": "#define HAS_PREAD",
     },
 )
+
+exports_files([
+    "c++/include/CMakeLists.txt",
+    "c++/include/orc/BloomFilter.hh",
+    "c++/include/orc/ColumnPrinter.hh",
+    "c++/include/orc/Common.hh",
+    "c++/include/orc/Exceptions.hh",
+    "c++/include/orc/Geospatial.hh",
+    "c++/include/orc/Int128.hh",
+    "c++/include/orc/MemoryPool.hh",
+    "c++/include/orc/OrcFile.hh",
+    "c++/include/orc/Reader.hh",
+    "c++/include/orc/Statistics.hh",
+    "c++/include/orc/Type.hh",
+    "c++/include/orc/Vector.hh",
+    "c++/include/orc/Writer.hh",
+    "c++/include/orc/meson.build",
+    "c++/include/orc/orc-config.hh.in",
+    "c++/include/orc/sargs/Literal.hh",
+    "c++/include/orc/sargs/SearchArgument.hh",
+    "c++/include/orc/sargs/TruthValue.hh",
+    "c++/src/Adaptor.hh.in",
+    "c++/src/BitUnpackerAvx512.hh",
+    "c++/src/BlockBuffer.hh",
+    "c++/src/BloomFilter.hh",
+    "c++/src/Bpacking.hh",
+    "c++/src/BpackingAvx512.cc",
+    "c++/src/BpackingAvx512.hh",
+    "c++/src/BpackingDefault.hh",
+    "c++/src/ByteRLE.hh",
+    "c++/src/CMakeLists.txt",
+    "c++/src/ColumnReader.hh",
+    "c++/src/ColumnWriter.hh",
+    "c++/src/Compression.hh",
+    "c++/src/ConvertColumnReader.hh",
+    "c++/src/CpuInfoUtil.hh",
+    "c++/src/Dictionary.hh",
+    "c++/src/DictionaryLoader.hh",
+    "c++/src/Dispatch.hh",
+    "c++/src/Geospatial.hh",
+    "c++/src/LzoDecompressor.hh",
+    "c++/src/Murmur3.hh",
+    "c++/src/Options.hh",
+    "c++/src/OrcHdfsFile.cc",
+    "c++/src/RLE.hh",
+    "c++/src/RLEV2Util.hh",
+    "c++/src/RLEv1.hh",
+    "c++/src/RLEv2.hh",
+    "c++/src/Reader.hh",
+    "c++/src/SchemaEvolution.hh",
+    "c++/src/Statistics.hh",
+    "c++/src/StripeStream.hh",
+    "c++/src/Timezone.hh",
+    "c++/src/TypeImpl.hh",
+    "c++/src/Utils.hh",
+    "c++/src/io/Cache.hh",
+    "c++/src/io/InputStream.hh",
+    "c++/src/io/OutputStream.hh",
+    "c++/src/meson.build",
+    "c++/src/sargs/ExpressionTree.hh",
+    "c++/src/sargs/PredicateLeaf.hh",
+    "c++/src/sargs/SargsApplier.hh",
+    "c++/src/sargs/SearchArgument.hh",
+    "c++/src/wrap/coded-stream-wrapper.h",
+    "c++/src/wrap/gmock.h",
+    "c++/src/wrap/gtest-wrapper.h",
+    "c++/src/wrap/orc-proto-wrapper.cc",
+    "c++/src/wrap/orc-proto-wrapper.hh",
+    "c++/src/wrap/snappy-wrapper.h",
+    "c++/src/wrap/zero-copy-stream-wrapper.h",
+])

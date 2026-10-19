@@ -7,27 +7,34 @@ exports_files([
   "BUILD.bazel",
   "LICENSE"
 ])
-filegroup(
-    name = "headers_2524c989fbfe1d9f",
-    srcs = glob(["include/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
-filegroup(
-    name = "headers_eb968fad339e0faf",
-    srcs = glob(["src/**"], exclude = ["**/BUILD", "**/BUILD.bazel"], allow_empty = True),
-)
+
+
 
 ch_cc_library(
     name = "_lemmagen__compile_0",
     srcs = [
         ":src/RdrLemmatizer.cpp",
-    ],
-    copts = (
-[
+    ] + glob([
+            "src/**/*.h",
+            "src/**/*.hh",
+            "src/**/*.hpp",
+            "src/**/*.ipp",
+            "src/**/*.hxx",
+            "src/**/*.h++",
+            "src/**/*.inc",
+            "src/**/*.inl",
+            "src/**/*.tlh",
+            "src/**/*.tli",
+            "src/**/*.H",
+            "src/**/*.tcc",
+        ], exclude = [
+            "**/BUILD",
+            "**/BUILD.bazel",
+        ], allow_empty = True),
+    copts = [
         "-w",
         "-std=c++23",
         "-nostdinc++",
-        "-isystem",
-        repository_path("contrib/lemmagen-c") + "/include",
     ] + cmake_prefix_maps(["aarch64", "x86_64"]) + cmake_native_compile_flags({
         "x86_64": {
             "language": "CXX",
@@ -37,14 +44,29 @@ ch_cc_library(
             "language": "CXX",
             "includes": [],
         },
-    })
-),
-    hdrs = [
-        ":headers_2524c989fbfe1d9f",
-        ":headers_eb968fad339e0faf",
-    ] + [
-        "@clickhouse_sysroot//:linux_native_headers",
+    }),
+    local_includes = [
+        "include",
     ],
+    hdrs = [
+        "@clickhouse_sysroot//:linux_native_headers",
+    ] + glob([
+            "include/**/*.h",
+            "include/**/*.hh",
+            "include/**/*.hpp",
+            "include/**/*.ipp",
+            "include/**/*.hxx",
+            "include/**/*.h++",
+            "include/**/*.inc",
+            "include/**/*.inl",
+            "include/**/*.tlh",
+            "include/**/*.tli",
+            "include/**/*.H",
+            "include/**/*.tcc",
+        ], exclude = [
+            "**/BUILD",
+            "**/BUILD.bazel",
+        ], allow_empty = True),
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
@@ -61,10 +83,12 @@ ch_cc_library(
         "-default_compile_flags",
     ] + [
         "-llvm_system_c_headers",
-    ],
+    ] + ["system_include_paths"],
     alwayslink = False,
-    additional_compiler_inputs = [
+    additional_compiler_inputs = ([
         "@clickhouse_sysroot//:linux_compile_files",
+    ]) + [
+        ":src/RdrLemmatizer.cpp",
     ],
 )
 
@@ -79,3 +103,7 @@ cc_library(
         ":_lemmagen__compile_0",
     ],
 )
+
+exports_files([
+    "include/RdrLemmatizer.h",
+])

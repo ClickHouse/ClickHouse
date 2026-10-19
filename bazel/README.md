@@ -118,6 +118,25 @@ ClickHouse XRay settings, `-Wall`, and `-Wextra` only for CMake groups which
 originally requested all five flags. Other warning exceptions remain in
 `copts`. NASM, Cargo, custom runtime actions, and executable code generators
 keep their own compiler flags.
+
+CMake's system include directories in native C/C++/ASM rules are emitted as
+`local_includes`. The rules request `system_include_paths` so rules_cc
+passes these directories as system headers to Clang. These directories are
+local to the compiling target. Regular CMake `-I` directories remain in
+`copts` so Clang does not treat them as system headers.
+`repository_local_include` rebases foreign repository directories against
+the target's package; rules_cc supplies both source and generated directories.
+The custom NASM and CMake runtime rules construct their own commands and do
+not have rules_cc's `local_includes` attribute.
+
+Generated libraries list headers in `hdrs` when more than one CMake target
+uses the directory; private headers are in `srcs`. Local headers use
+`glob()`; foreign headers are explicit exported file labels from the pinned
+dependency. Non-header inputs stay in `additional_compiler_inputs` so
+textually included implementation files and embedded files are available
+without compiling additional translation units. The native reference's
+translation units and ordering remain authoritative.
+
 `compact_build.py` removes empty list additions and collapses identical
 x86-64/ARM64 `select()` lists. It retains differing or single-platform
 selections and verifies the expanded generated BUILD statements.
