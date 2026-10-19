@@ -229,7 +229,7 @@ std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std
 {
     const size_t cache_idx = fuelModeIndex(fuel_mode);
 
-    bool was_registered = false;
+    const auto module_path = getFilePath(module_name);
     {
         SharedLockGuard lock(modules_mutex);
 
@@ -238,10 +238,8 @@ std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std
         {
             if (auto module = it->second.ptrs[cache_idx].lock())
                 return {module, it->second.hash};
-            was_registered = true;
         }
 
-        auto module_path = getFilePath(module_name);
         if (!user_scripts_disk->existsFile(module_path))
             throw Exception(ErrorCodes::RESOURCE_NOT_FOUND, "WebAssembly module '{}' not found", module_name);
         if (auto res = validateModuleFile(user_scripts_disk, module_path); !res)
@@ -263,8 +261,10 @@ std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std
     UniqueLock lock(modules_mutex);
     auto it = modules.find(module_name);
 
-    /// The module was deleted while it was being compiled; do not bring its entry back.
-    if (it == modules.end() && was_registered)
+    /// The module may have been deleted while it was being compiled, including a module whose file was
+    /// not registered yet when the load started; do not bring its entry back. Deletion removes the file
+    /// under `modules_mutex`, so checking the file here is reliable.
+    if (it == modules.end() && !user_scripts_disk->existsFile(module_path))
         throw Exception(ErrorCodes::RESOURCE_NOT_FOUND, "WebAssembly module '{}' not found", module_name);
 
     if (it != modules.end())
