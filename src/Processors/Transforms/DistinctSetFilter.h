@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnNullable.h>
 #include <Core/ColumnNumbers.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/SetVariants.h>
@@ -147,13 +148,14 @@ public:
     /// follows `getKeyColumnsPositions`; with `Hash128`, it contains one `UInt128` fingerprint column.
     /// The returned columns own their values independently of the extractor. The table is released
     /// after its final key is materialized, or when the extractor is destroyed early.
-    /// Requires at least one retained key and `skip_null_keys_ = false`.
+    /// Requires at least one retained key and `skip_null_keys_ = false`: only external `DISTINCT` extracts
+    /// keys, and it keeps `NULL` keys as values.
     std::unique_ptr<KeyExtractor> extractKeys() &&;
 
     /// Normalizes input columns and initializes the set on first use, without inserting keys.
     /// Header constants stay compact because they cannot distinguish rows. The prepared chunk exposes
     /// the materialized memory of the remaining columns needed to estimate filtering copies.
-    /// Requires `hasKeyColumns` to be true and `skip_null_keys_ = false`.
+    /// Requires `hasKeyColumns` to be true.
     void prepareForInsert(Chunk & chunk);
 
     /// Estimates peak additional retained memory assuming every row in the prepared chunk is new.
@@ -163,8 +165,8 @@ public:
     size_t estimateGrowthMemory(const Chunk & chunk) const;
 
     /// Estimates peak workspace for packed keys, a copy of the prepared input, and top-level row masks.
-    /// Excludes retained set growth. Requires columns normalized by `prepareForInsert` and
-    /// `skip_null_keys_ = false`. Column-specific temporary allocations can exceed this estimate.
+    /// Excludes retained set growth. Requires columns normalized by `prepareForInsert`. Column-specific
+    /// temporary allocations can exceed this estimate.
     size_t estimateFilteringMemory(const Chunk & chunk) const;
 
     /// Inserts unseen keys and retains their first rows, preserving chunk information.
@@ -189,7 +191,8 @@ public:
     /// limits apply to the accepted prefix with the same semantics as `filter`. Method
     /// preparation still covers the whole chunk and must fit the caller's workspace budget. Dictionary
     /// masks are bypassed so an unprocessed suffix does not mark its indices as seen.
-    /// Requires columns normalized by `prepareForInsert` and `skip_null_keys_ = false`.
+    /// Requires columns normalized by `prepareForInsert` and `skip_null_keys_ = false`: only external
+    /// `DISTINCT` checks insertions, and it keeps `NULL` keys as values.
     FilterResult filterWithInsertionCheck(Chunk chunk, const InsertionCheck & can_insert);
 
     /// Whether a size limit with the 'break' overflow mode was reached: no new key can be added to the
@@ -197,8 +200,20 @@ public:
     bool isLimitReached() const { return limit_reached; }
 
 private:
+    /// The key columns as `filter` hashes them. In `skip_null_keys` mode, the `Nullable` key columns are
+    /// replaced by their nested columns, and `null_map` marks the rows with a `NULL` in any of them.
+    /// `filter`, `prepareForInsert` and the estimates all take the key columns from here, so the hash
+    /// method of the set and the estimates match the keys that `filter` inserts.
+    struct HashedKeyColumns
+    {
+        ColumnRawPtrs columns;
+        /// Owns `null_map` when it combines several `Nullable` key columns.
+        ColumnPtr null_map_holder;
+        ConstNullMapPtr null_map = nullptr;
+    };
+
     FilterResult filterImpl(Chunk chunk, const InsertionCheck * can_insert);
-    ColumnRawPtrs getKeyColumns(const Columns & columns) const;
+    HashedKeyColumns getHashedKeyColumns(const Columns & columns) const;
     void initialize(const ColumnRawPtrs & key_columns);
 
     const ColumnNumbers key_columns_pos;
