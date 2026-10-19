@@ -1,8 +1,6 @@
--- Naming the plan fragment that plan-based parallel replicas send to a replica must not run index
--- analysis, because index analysis enforces the read limits. A `count()` answered from partition
--- metadata reads one row and no marks, yet describing the fragment sized the whole partition and the
--- query failed with TOO_MANY_ROWS before a replica was even contacted. `max_rows_to_read_leaf`, which
--- applies to the replica's read, failed the same way and from the same place.
+-- `count()` from partition metadata reads no rows, so a tiny row limit must not fail it.
+-- With plan-based parallel replicas it did: dumping the plan fragment for the parallel replicas
+-- read step ran index analysis, and that enforces the limit.
 
 DROP TABLE IF EXISTS t_pr_dump_limits;
 
@@ -16,8 +14,6 @@ SET enable_parallel_replicas = 1, max_parallel_replicas = 3,
     parallel_replicas_for_non_replicated_merge_tree = 1,
     parallel_replicas_local_plan = 1,
     parallel_replicas_plan_based = 1;
--- The metadata shortcut is what makes the read trivial; the trivial-count optimization is off so the
--- count goes through the projection rather than around it.
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 1, optimize_trivial_count_query = 0;
 
 SELECT count() FROM t_pr_dump_limits WHERE p = '2020-09-01' SETTINGS max_rows_to_read = 1;
