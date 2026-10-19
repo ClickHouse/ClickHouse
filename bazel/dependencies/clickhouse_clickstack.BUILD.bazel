@@ -162,3 +162,12 @@ exports_files([
 ])
 
 exports_files([])
+
+exports_files([
+    "out/_next/static/chunks/pages/dashboards/[dashboardId]-260d165d9fd27129.js",
+    "out/_next/static/chunks/pages/search/[savedSearchId]-ee29994f5e149cf0.js",
+    "out/_next/static/chunks/pages/trace/[traceId]-f8491d14002831cb.js",
+    "out/dashboards/[dashboardId].html",
+    "out/search/[savedSearchId].html",
+    "out/trace/[traceId].html",
+])
