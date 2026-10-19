@@ -32,7 +32,7 @@ public:
         MergeTreeMapSerializationVersion serialization_version_,
         ColumnPtr key_,
         const DataTypePtr & nested_type_,
-        bool read_whole_map_ = false);
+        bool read_whole_map_);
 
     /// Does not support pooling because it stores runtime data (ColumnPtr key).
     bool supportsPooling() const override { return false; }
