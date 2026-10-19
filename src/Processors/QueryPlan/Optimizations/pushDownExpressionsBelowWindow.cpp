@@ -1,6 +1,7 @@
 #include <Core/Block.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
@@ -44,6 +45,15 @@ using NodeSet = std::unordered_set<const Node *>;
 /// A lower bound of the number of bytes a value of the column takes, for the types the optimization supports.
 /// As in `pushDownVolumeReducingFunctions`, composite types are not supported: a path of a composite type can share
 /// its payload with other expressions under a different nested column name.
+/// Whether a column of the type takes `getMaximumSizeOfValueInMemory` bytes per value at most. It is not so for
+/// many types with a maximum size of value: `LowCardinality` keeps indexes and a dictionary, `Variant` keeps
+/// discriminators and offsets.
+bool isStoredInFixedSize(const DataTypePtr & type)
+{
+    auto nested_type = removeNullable(type);
+    return nested_type->isValueRepresentedByNumber() || isFixedString(nested_type);
+}
+
 std::optional<size_t> getMinimumSizeOfValue(const DataTypePtr & type)
 {
     if (const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(type.get()))
@@ -188,13 +198,13 @@ void collectStorageNodes(const Node * node, NodeSet & storage_nodes)
     }
 }
 
-bool hasIdentifier(const ASTPtr & ast, const String & name)
+bool hasIdentifier(const ASTPtr & ast, const NameSet & names)
 {
-    if (const auto * identifier = ast->as<ASTIdentifier>(); identifier && identifier->name() == name)
+    if (const auto * identifier = ast->as<ASTIdentifier>(); identifier && names.contains(identifier->name()))
         return true;
 
     for (const auto & child : ast->children)
-        if (hasIdentifier(child, name))
+        if (hasIdentifier(child, names))
             return true;
 
     return false;
@@ -202,22 +212,33 @@ bool hasIdentifier(const ASTPtr & ast, const String & name)
 
 /// Whether the column `column_name` of a `MergeTree` read does not share memory with another column of it.
 /// A column missing in a part is filled with its default expression, which can return another column as is
-/// (`t String DEFAULT s`), and the `PREWHERE` and row policy actions can compute columns from the read ones.
+/// (`t String DEFAULT s`), also through other columns (`v String DEFAULT u`, `u String DEFAULT s`), and
+/// the `PREWHERE` and row policy actions can compute columns from the read ones.
 bool mergeTreeColumnHasOwnMemory(const ReadFromMergeTree & read, const String & column_name)
 {
     const auto & columns = read.getStorageMetadata()->getColumns();
     if (columns.getDefault(column_name))
         return false;
 
-    for (const auto & column : *read.getOutputHeader())
+    /// The columns whose default expressions read the column, directly or through other columns.
+    NameSet dependent_columns{column_name};
+    for (bool added = true; added;)
     {
-        if (column.name == column_name)
-            continue;
-
-        if (auto column_default = columns.getDefault(column.name); column_default && column_default->expression
-            && hasIdentifier(column_default->expression, column_name))
-            return false;
+        added = false;
+        for (const auto & column : columns)
+        {
+            if (!dependent_columns.contains(column.name) && column.default_desc.expression
+                && hasIdentifier(column.default_desc.expression, dependent_columns))
+            {
+                dependent_columns.insert(column.name);
+                added = true;
+            }
+        }
     }
+
+    for (const auto & column : *read.getOutputHeader())
+        if (column.name != column_name && dependent_columns.contains(column.name))
+            return false;
 
     std::vector<const ActionsDAG *> read_actions;
     for (const auto & row_level_filter : {read.getRowLevelFilter(), read.getDeferredRowLevelFilter()})
@@ -353,18 +374,32 @@ bool hasConstantFilter(const FilterStep & filter)
     return !filter_node || filter_node->column;
 }
 
+bool breaksOnOverflow(const SizeLimits & limits)
+{
+    return limits.overflow_mode == OverflowMode::BREAK && (limits.max_rows || limits.max_bytes);
+}
+
+bool breaksOnOverflow(const Aggregator::Params & params)
+{
+    return params.group_by_overflow_mode == OverflowMode::BREAK && params.max_rows_to_group_by;
+}
+
 /// Whether the steps above read all rows, so that the projection after the window functions is computed for all rows.
 /// Many steps can stop reading early: `LIMIT` (also `LIMIT BY` with constant keys, `LIMIT AFTER / UNTIL`,
 /// `DISTINCT ... LIMIT`, `ORDER BY ... LIMIT`, after which `liftUpFunctions` computes the expressions), `INTERSECT`
-/// or a `JOIN` with an empty side, a `Filter` with a constant `false` condition. So only the steps known to read
-/// all rows are accepted. An aggregation reads all rows, so the steps above it do not matter.
+/// or a `JOIN` with an empty side, a `Filter` with a constant `false` condition, a step with `overflow_mode = 'break'`
+/// (also set only for a subquery). So only the steps known to read all rows are accepted. An aggregation reads
+/// all rows, so the steps above it do not matter.
 bool stepsAboveReadAllRows(const Stack & stack)
 {
     for (auto it = stack.rbegin() + 1; it != stack.rend(); ++it)
     {
         const auto * step = it->node->step.get();
-        if (typeid_cast<const AggregatingStep *>(step) || typeid_cast<const MergingAggregatedStep *>(step))
-            return true;
+        if (const auto * aggregating = typeid_cast<const AggregatingStep *>(step))
+            return !breaksOnOverflow(aggregating->getParams());
+
+        if (const auto * merging_aggregated = typeid_cast<const MergingAggregatedStep *>(step))
+            return !breaksOnOverflow(merging_aggregated->getParams());
 
         if (const auto * filter = typeid_cast<const FilterStep *>(step))
         {
@@ -375,22 +410,23 @@ bool stepsAboveReadAllRows(const Stack & stack)
 
         if (const auto * sorting = typeid_cast<const SortingStep *>(step))
         {
-            if (sorting->getLimit())
+            if (sorting->getLimit() || breaksOnOverflow(sorting->getSettings().size_limits))
                 return false;
             continue;
         }
 
         if (const auto * distinct = typeid_cast<const DistinctStep *>(step))
         {
-            if (distinct->getLimitHint())
+            if (distinct->getLimitHint() || breaksOnOverflow(distinct->getSettings().set_size_limits))
                 return false;
             continue;
         }
 
+        /// The set-building steps are not accepted: the limits of a set are not known in the plan.
         if (typeid_cast<const ExpressionStep *>(step) || typeid_cast<const WindowStep *>(step) || typeid_cast<const UnionStep *>(step)
             || typeid_cast<const ArrayJoinStep *>(step) || typeid_cast<const OffsetStep *>(step) || typeid_cast<const ExtremesStep *>(step)
-            || typeid_cast<const FillingStep *>(step) || typeid_cast<const CreatingSetStep *>(step)
-            || typeid_cast<const CreatingSetsStep *>(step) || typeid_cast<const DelayedCreatingSetsStep *>(step))
+            || typeid_cast<const FillingStep *>(step) || typeid_cast<const CreatingSetsStep *>(step)
+            || typeid_cast<const DelayedCreatingSetsStep *>(step))
             continue;
 
         return false;
@@ -499,7 +535,7 @@ void tryPushDownExpressionsBelowWindow(const Stack & stack, QueryPlan::Nodes & n
             continue;
 
         auto minimum_size_of_input = getMinimumSizeOfValue(info.input->result_type);
-        if (!minimum_size_of_input || !node.result_type->haveMaximumSizeOfValue()
+        if (!minimum_size_of_input || !isStoredInFixedSize(node.result_type)
             || node.result_type->getMaximumSizeOfValueInMemory() > *minimum_size_of_input)
             continue;
 

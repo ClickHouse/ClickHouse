@@ -52,8 +52,17 @@ ok
 a column that may share memory with a default value of another column
 cityHash64
 Window
+cityHash64
+Window
 overflow mode break
 ok
+overflow mode break of a subquery
+ok
+results whose size of value does not bound their storage
+toLowCardinality
+Window
+CAST
+Window
 arrayJoin below the window functions
 1	1
 a table that keeps its columns in memory

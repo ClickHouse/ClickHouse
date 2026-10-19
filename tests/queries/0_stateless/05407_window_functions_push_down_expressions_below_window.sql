@@ -138,6 +138,17 @@ SELECT if(explain LIKE '%Window (%', 'Window', 'cityHash64') FROM
 )
 WHERE explain LIKE '%Window (%' OR explain LIKE '%FUNCTION cityHash64%';
 DROP TABLE t_window_push_down_default;
+CREATE TABLE t_window_push_down_default (s String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_window_push_down_default SELECT toString(number % 10) FROM numbers(10);
+ALTER TABLE t_window_push_down_default ADD COLUMN u String DEFAULT s;
+ALTER TABLE t_window_push_down_default ADD COLUMN v String DEFAULT u;
+SELECT if(explain LIKE '%Window (%', 'Window', 'cityHash64') FROM
+(
+    EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT v, cityHash64(s), count() OVER () FROM t_window_push_down_default
+)
+WHERE explain LIKE '%Window (%' OR explain LIKE '%FUNCTION cityHash64%';
+DROP TABLE t_window_push_down_default;
 
 SELECT 'overflow mode break';
 SELECT v, any(n) FROM (SELECT toUInt64(s) AS v, count() OVER () AS n FROM (SELECT if(number < 1000, toString(number), 'x') AS s FROM numbers(10000)))
@@ -147,6 +158,38 @@ SELECT DISTINCT v, n FROM (SELECT toUInt64(s) AS v, count() OVER () AS n FROM (S
 FORMAT Null
 SETTINGS max_threads = 1, max_block_size = 10, max_rows_in_distinct = 1, distinct_overflow_mode = 'break';
 SELECT 'ok';
+
+SELECT 'overflow mode break of a subquery';
+SELECT sum(v), sum(n) FROM
+(
+    SELECT v, any(n) AS n FROM (SELECT toUInt64(s) AS v, count() OVER () AS n FROM (SELECT if(number < 1000, toString(number), 'x') AS s FROM numbers(10000)))
+    GROUP BY v
+    SETTINGS max_rows_to_group_by = 1, group_by_overflow_mode = 'break'
+)
+FORMAT Null
+SETTINGS max_threads = 1, max_block_size = 10;
+SELECT count() FROM
+(
+    SELECT DISTINCT v, n FROM (SELECT toUInt64(s) AS v, count() OVER () AS n FROM (SELECT if(number < 1000, toString(number), 'x') AS s FROM numbers(10000)))
+    SETTINGS max_rows_in_distinct = 1, distinct_overflow_mode = 'break'
+)
+FORMAT Null
+SETTINGS max_threads = 1, max_block_size = 10;
+SELECT 'ok';
+
+SELECT 'results whose size of value does not bound their storage';
+SELECT if(explain LIKE '%Window (%', 'Window', 'toLowCardinality') FROM
+(
+    EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT toLowCardinality(s), count() OVER () FROM (SELECT reinterpretAsFixedString(number) AS s FROM numbers(10))
+)
+WHERE explain LIKE '%Window (%' OR explain LIKE '%FUNCTION toLowCardinality%';
+SELECT if(explain LIKE '%Window (%', 'Window', 'CAST') FROM
+(
+    EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT CAST(reinterpretAsUInt64(s), 'Variant(FixedString(1), UInt64)'), count() OVER () FROM (SELECT reinterpretAsFixedString(number) AS s FROM numbers(10))
+)
+WHERE explain LIKE '%Window (%' OR explain LIKE '%FUNCTION CAST(%';
 
 SELECT 'arrayJoin below the window functions';
 SELECT toUInt64(s), count() OVER ()
