@@ -693,12 +693,8 @@ void DatabaseOrdinary::loadTableLazy(
 
     ColumnsDescription columns;
     if (query.columns_list && query.columns_list->columns)
-    {
         columns = InterpreterCreateQuery::getColumnsDescription(
-            *query.columns_list->columns, local_context, mode);
-        InterpreterCreateQuery::applyCodecOnlyDeclarations(
-            query.columns_list->codec_declarations, columns, local_context, /* trusted_metadata = */ true);
-    }
+            *query.columns_list, local_context, mode);
 
     StorageID table_id(name.database, query.getTable(), query.uuid);
     String table_data_path = getTableDataPath(query);

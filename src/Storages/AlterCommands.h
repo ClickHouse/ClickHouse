@@ -87,6 +87,9 @@ struct AlterCommand
 
     String column_name;
 
+    /// For MODIFY_COLUMN of a subcolumn: its name relative to `column_name`, set by `prepare`. Empty for a column.
+    String subcolumn_name;
+
     /// For DROP/CLEAR COLUMN/INDEX ... IN PARTITION
     ASTPtr partition;
 
@@ -157,10 +160,6 @@ struct AlterCommand
 
     /// For ADD and MODIFY
     ASTPtr codec = nullptr;
-
-    /// Compound target of a type-less MODIFY ... CODEC/REMOVE CODEC operation.
-    /// It is resolved against the sequential working schema during validation/application.
-    ASTPtr codec_target = nullptr;
 
     /// For MODIFY SETTING or MODIFY COLUMN MODIFY SETTING
     SettingsChanges settings_changes;

@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ParallelSyncFiles.h>
+#include <Storages/SubcolumnCodecs.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Common/CurrentThread.h>
@@ -725,16 +726,7 @@ void MergeTreeDataPartWriterOnDisk::initStreamsIfNeeded()
     }
 
     for (const auto & column : columns_list)
-    {
-        const auto owner = column.getNameInStorage();
-        if (metadata_snapshot->columns.tryGet(owner))
-            addStreams(column, metadata_snapshot->columns.getCodecPolicy(owner));
-        else if (const auto * description = metadata_snapshot->virtuals.tryGetDescription(
-            owner, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
-            addStreams(column, ColumnCodecPolicyView(description->codec));
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", owner);
-    }
+        addStreams(column);
 
     streams_initialized = true;
 }
@@ -772,6 +764,37 @@ void MergeTreeDataPartWriterOnDisk::initColumnsSubstreamsIfNeeded()
         serialization->serializeBinaryBulkWithMultipleStreams(*column.column, column.column->size(), 0, serialize_settings, state);
         serialization->serializeBinaryBulkStateSuffix(serialize_settings, state);
     }
+}
+
+CompressionCodecPtr MergeTreeDataPartWriterOnDisk::getSubstreamCodec(
+    const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path) const
+{
+    const auto & column_name = name_and_type.getNameInStorage();
+    const ColumnDescription * column_desc = metadata_snapshot->columns.tryGet(column_name);
+    if (!column_desc)
+        column_desc = metadata_snapshot->virtuals.tryGetDescription(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader);
+    if (!column_desc)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
+
+    ASTPtr declared_codec_desc = getSubstreamCodecDescription(substream_path, *column_desc);
+    /// No declaration, or an explicit lone `CODEC(Default)`.
+    const bool use_default_codec = CompressionCodecFactory::isDefaultCodec(declared_codec_desc);
+    /// `default_codec` comes from `MergeTreeData::getCompressionCodecForPart` and already accounts for
+    /// the `default_compression_codec` setting and `TTL ... RECOMPRESS`, so it is not re-read from the settings here.
+    const ASTPtr & effective_codec_desc = declared_codec_desc ? declared_codec_desc : default_codec->getFullCodecDescription();
+
+    const auto & substream_type = substream_path.back().data.type;
+    /// The declared codec is meant for the values. Structural substreams keep only its generic codecs (`only_generic`).
+    /// The type is omitted so the codecs about to be dropped are not validated against it.
+    const bool is_data_substream = ISerialization::isSpecialCompressionAllowed(substream_path);
+    auto codec = CompressionCodecFactory::instance().get(
+        effective_codec_desc, is_data_substream ? substream_type.get() : nullptr, default_codec, /*only_generic=*/!is_data_substream);
+
+    /// Adaptive could pick an unencrypted codec for some blocks and drop the encryption. Thus skip adaptivity for an encrypting codec.
+    if (settings.apply_adaptive_codec && use_default_codec && !codec->isEncryption())
+        return std::make_shared<CompressionCodecAdaptive>(substream_type, codec);
+
+    return codec;
 }
 
 void MergeTreeDataPartWriterOnDisk::setVectorDimensionsIfNeeded(CompressionCodecPtr codec, const IColumn * column)

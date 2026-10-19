@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
-#include <Storages/ColumnCodecPolicy.h>
 #include <Formats/MarkInCompressedFile.h>
 
 
@@ -93,9 +92,7 @@ private:
         const NameAndTypePair & name_and_type,
         WrittenOffsetSubstreams & offset_substreams);
 
-    void addStreams(
-        const NameAndTypePair & name_and_type,
-        ColumnCodecPolicyView codec_policy) override;
+    void addStreams(const NameAndTypePair & name_and_type) override;
 
     /// The stream count is derived from the substreams inventory and read by addStreams(), so the
     /// three initializations must happen in this order.

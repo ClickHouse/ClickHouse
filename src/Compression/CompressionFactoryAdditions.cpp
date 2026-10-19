@@ -25,7 +25,6 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 
-#include <algorithm>
 #include <limits>
 
 
@@ -167,62 +166,6 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
 {
     const bool sanity_check = validation_settings.settings && !(*validation_settings.settings)[Setting::allow_suspicious_codecs];
     return validateCodecAndGetPreprocessedASTImpl(ast, column_type, validation_settings.settings, sanity_check);
-}
-
-void CompressionCodecFactory::validateCodecDeclaration(
-    const ASTPtr & ast, const CodecValidationSettings & validation_settings) const
-{
-    const auto * codec_function = ast ? ast->as<ASTFunction>() : nullptr;
-    if (!codec_function || codec_function->name != "CODEC" || !codec_function->arguments)
-        throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec declaration: {}", ast ? ast->formatForErrorMessage() : "null");
-
-    for (const auto & codec_ast : codec_function->arguments->children)
-    {
-        String family;
-        ASTPtr arguments;
-        if (const auto * identifier = codec_ast->as<ASTIdentifier>())
-            family = identifier->name();
-        else if (const auto * function = codec_ast->as<ASTFunction>())
-        {
-            family = function->name;
-            arguments = function->arguments;
-        }
-        else
-            throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST element for compression codec");
-
-        if (Poco::icompare(family, DEFAULT_CODEC_NAME) == 0)
-        {
-            if (arguments)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} codec cannot have arguments", DEFAULT_CODEC_NAME);
-            continue;
-        }
-        const auto registered = std::find_if(
-            family_name_with_codec.begin(), family_name_with_codec.end(),
-            [&](const auto & entry) { return Poco::icompare(entry.first, family) == 0; });
-        if (registered == family_name_with_codec.end())
-            throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family: {}", family);
-        family = registered->first;
-
-        if (validation_settings.settings)
-        {
-            const String setting_name = getGateSettingName(family);
-            const auto tier = getGateTier(setting_name);
-            if (tier && !validation_settings.settings->get(setting_name).safeGet<bool>())
-            {
-                std::string_view reason;
-                switch (*tier)
-                {
-                    case SettingsTierType::EXPERIMENTAL: reason = "is experimental and not meant to be used in production"; break;
-                    case SettingsTierType::BETA: reason = "is in beta and not yet recommended for production use"; break;
-                    case SettingsTierType::PRODUCTION:
-                    case SettingsTierType::PRIVATE_PREVIEW:
-                    case SettingsTierType::OBSOLETE: reason = "is disabled"; break;
-                }
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Codec {} {}. You can enable it with the '{}' setting", family, reason, setting_name);
-            }
-        }
-    }
 }
 
 ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(

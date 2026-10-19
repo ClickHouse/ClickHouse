@@ -452,7 +452,7 @@ StorageKeeperMap::StorageKeeperMap(
 
     WriteBufferFromOwnString out;
     out << "KeeperMap metadata format version: 1\n"
-        << "columns: " << metadata.columns.toStringWithCodecDeclarations(true)
+        << "columns: " << metadata.columns.toString(true)
         << "primary key: " << formatPrimaryKeyForMetadata(metadata.getPrimaryKey().expression_list_ast) << "\n";
     metadata_string = out.str();
 
@@ -769,8 +769,7 @@ bool StorageKeeperMap::isMetadataStringCompatible(
         auto zk_columns = ColumnsDescription::parse(zk_metadata_string.substr(metadata_format_version_prefix.size(), zk_pk_pos + 1 - metadata_format_version_prefix.size()));
 
         /// Comment may be added later with ALTER command, and since we don't update metadata during ALTER, we should not compare comments
-        columns_equal = zk_columns.toStringWithCodecDeclarations(false)
-            == local_columns.toStringWithCodecDeclarations(false);
+        columns_equal = zk_columns.toString(/*include_comments=*/ false) == local_columns.toString(/*include_comments=*/ false);
 
         auto zk_pk = zk_metadata_string.substr(zk_pk_pos + primary_key_header.size());
         auto local_pk = local_metadata_string.substr(local_pk_pos + primary_key_header.size());

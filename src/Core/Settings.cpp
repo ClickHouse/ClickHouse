@@ -10503,11 +10503,13 @@ Use `allow_nullable_tuple_in_extracted_subcolumns` to control whether extracted 
         {"26.9", false, true, "`Nullable(Tuple)` is now GA. This also applies to the alias `allow_experimental_nullable_tuple_type`."}, \
         {"26.6", false, false, "Nullable Tuple is now Beta. Added as an alias for 'allow_experimental_nullable_tuple_type'."}, \
         {"26.1", false, false, "New experimental setting. At the time the setting was named `allow_experimental_nullable_tuple_type`, which is now an alias of it."}) \
-    DECLARE(Bool, enable_tuple_element_codecs, false, R"(
-Allows creating, copying, adding, or changing `CODEC` declarations on stored `Tuple` elements.
-Existing Tuple-element codec metadata can still be replayed and declarations can be removed while this setting is disabled.
+    DECLARE(Bool, enable_subcolumn_codecs, false, R"(
+Allows declaring compression codecs for subcolumns of a column, such as elements of a `Tuple` or the keys and values of a `Map`,
+with `CODEC name (...)` entries in `CREATE TABLE` and with `ALTER TABLE ... MODIFY COLUMN name CODEC(...)`.
+Tables that already have such declarations work regardless of this setting, and the declarations can always be removed.
+A table with subcolumn codecs cannot be attached by a server of an older version.
 )", EXPERIMENTAL, \
-        {"26.11", false, false, "New setting to enable CODEC declarations on Tuple elements."}) \
+        {"26.11", false, false, "New setting to enable codec declarations for subcolumns."}) \
     DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0, \
         {"26.1", 8 * 1024 * 1024, 8 * 1024 * 1024, "New setting"}) \

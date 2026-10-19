@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
-#include <Storages/ColumnCodecPolicy.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <IO/PackedFilesWriter.h>
 #include <IO/WriteBufferFromFile.h>
@@ -105,10 +104,14 @@ protected:
     /// Get unique non ordered skip indices column.
     Names getSkipIndicesColumns() const;
 
-    virtual void addStreams(const NameAndTypePair & name_and_type, ColumnCodecPolicyView codec_policy) = 0;
+    virtual void addStreams(const NameAndTypePair & name_and_type) = 0;
 
     /// Per-column min_compress_block_size override if set, otherwise the table default.
     UInt64 getEffectiveMinCompressBlockSize(const NameAndTypePair & name_and_type) const;
+
+    /// Codec for one substream of a column: the codec declared for the column or for the subcolumn the substream
+    /// belongs to, otherwise the default codec of the part.
+    CompressionCodecPtr getSubstreamCodec(const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path) const;
 
     /// For some columns the set of streams may depend on the dynamic structure/statistics of the actual column.
     /// Before writing a block we need to prepare its columns, so they will always be serialized in the same

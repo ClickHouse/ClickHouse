@@ -3,7 +3,6 @@
 #include <map>
 
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
-#include <Storages/ColumnCodecPolicy.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
 
 
@@ -56,7 +55,7 @@ private:
 
     void addToChecksums(MergeTreeDataPartChecksums & checksums);
 
-    void addStreams(const NameAndTypePair & name_and_type, ColumnCodecPolicyView codec_policy) override;
+    void addStreams(const NameAndTypePair & name_and_type) override;
 
     ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const override;
 

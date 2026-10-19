@@ -242,23 +242,7 @@ StorageTimeSeries::StorageTimeSeries(
         /// However for ATTACH InterpreterCreateQuery doesn't normalize the create query,
         /// so `columns` can contain prealpha outer columns which we should upgrade.
         auto normalized_columns = InterpreterCreateQuery::getColumnsDescription(
-            *normalized_create_query->columns_list->columns, local_context, mode);
-        InterpreterCreateQuery::applyCodecOnlyDeclarations(
-            normalized_create_query->columns_list->codec_declarations,
-            normalized_columns,
-            local_context,
-            /* trusted_metadata = */ true);
-        /// TimeSeries normalization may rebuild ASTColumns. Preserve declarations supplied in
-        /// the already-normalized metadata argument even if that rewrite omitted the codec list;
-        /// the outer storage capability check will then reject this unsupported policy.
-        for (const auto & column : columns)
-        {
-            if (normalized_columns.tryGetTupleElementCodecs(column.name))
-                continue;
-            if (const auto * declarations = columns.tryGetTupleElementCodecs(column.name))
-                for (const auto & [path, codec] : *declarations)
-                    normalized_columns.setTupleElementCodec(column.name, path, codec);
-        }
+            *normalized_create_query->columns_list, local_context, mode);
         storage_metadata.setColumns(normalized_columns);
 
         /// The metadata must carry the whole `SETTINGS` clause because a settings alter changes that clause

@@ -45,9 +45,8 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSQLSecurity.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/ColumnCodecPath.h>
-#include <Storages/ColumnCodecValidation.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/SubcolumnCodecs.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -55,8 +54,6 @@
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 
-#include <compare>
-#include <map>
 #include <ranges>
 #include <vector>
 
@@ -65,10 +62,10 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool enable_json_lazy_type_hints;
-    extern const SettingsBool enable_tuple_element_codecs;
     extern const SettingsBool allow_metadata_only_named_tuple_alter;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_suspicious_ttl_expressions;
+    extern const SettingsBool enable_subcolumn_codecs;
     extern const SettingsBool flatten_nested;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -88,6 +85,7 @@ namespace ErrorCodes
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace MergeTreeSetting
@@ -360,17 +358,6 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         if (ast_col_decl.getCodec())
             command.codec = ast_col_decl.getCodec();
-
-        if (!ast_col_decl.getType()
-            && (ast_col_decl.getCodec() || command.to_remove == RemoveProperty::CODEC))
-        {
-            command.codec_target = ast_col_decl.codec_target ? ast_col_decl.codec_target->clone() : nullptr;
-            if (ast_col_decl.getDefaultExpression() || ast_col_decl.getComment() || ast_col_decl.getTTL()
-                || ast_col_decl.getSettings() || ast_col_decl.getStatisticsDesc()
-                || ast_col_decl.null_modifier || ast_col_decl.primary_key_specifier)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "A codec-only MODIFY COLUMN declaration cannot contain other column properties");
-        }
 
         if (ast_col_decl.getSettings())
             parseSettingsChangesAndResets(
@@ -776,65 +763,6 @@ static std::vector<ColumnDescription> columnsAddedByAlter(
     return columns_to_add;
 }
 
-static CodecDeclarationPaths getDeclarationsWithExpandedStreamCoverage(
-    const ColumnCodecPolicyView & before,
-    const ColumnCodecPolicyView & after,
-    const DataTypePtr & before_type,
-    const DataTypePtr & after_type)
-{
-    struct StreamIdentity
-    {
-        TupleCodecPath logical_path;
-        std::vector<std::pair<int, String>> serialization_path;
-        String leaf_type;
-        bool structural = false;
-        bool enters_map = false;
-
-        auto operator<=>(const StreamIdentity &) const = default;
-    };
-
-    using EffectiveDeclarations = std::map<StreamIdentity, TupleCodecPath>;
-    const auto collect = [](const ColumnCodecPolicyView & policy, const DataTypePtr & type)
-    {
-        EffectiveDeclarations declarations;
-        CodecStreamClassifier classifier(type);
-        type->getDefaultSerialization()->enumerateStreams(
-            [&](const ISerialization::SubstreamPath & path)
-            {
-                const auto stream = classifier.classify(path);
-                if (!stream)
-                    return;
-                const auto declaration = policy.find(stream->logical_path);
-                if (!declaration)
-                    return;
-
-                StreamIdentity identity{
-                    .logical_path = stream->logical_path,
-                    .serialization_path = {},
-                    .leaf_type = stream->leaf_type ? stream->leaf_type->getName() : String{},
-                    .structural = stream->structural,
-                    .enters_map = stream->enters_map,
-                };
-                identity.serialization_path.reserve(path.size());
-                for (const auto & entry : path)
-                    identity.serialization_path.emplace_back(static_cast<int>(entry.type), entry.name_of_substream);
-                declarations.emplace(std::move(identity), declaration->declaration_path);
-            }, type);
-        return declarations;
-    };
-
-    const auto before_declarations = collect(before, before_type);
-    const auto after_declarations = collect(after, after_type);
-    CodecDeclarationPaths result;
-    for (const auto & [stream, declaration_path] : after_declarations)
-    {
-        const auto previous = before_declarations.find(stream);
-        if (previous == before_declarations.end() || previous->second != declaration_path)
-            result.insert(declaration_path);
-    }
-    return result;
-}
-
 
 std::optional<AlterCommand> AlterCommand::extractSettingsResets()
 {
@@ -864,18 +792,18 @@ void AlterCommand::apply(
     const MergeTreeSettings * settings_defaults) const
 {
     /// Helper function for column existence check with IF EXISTS
-    auto should_skip_column_operation = [&]() -> bool {
-        return if_exists && !metadata.columns.has(column_name);
+    auto should_skip_column_operation = [&](const String & name) -> bool {
+        return if_exists && !metadata.columns.has(name);
     };
 
     /// validate() screens these column names too, but against a model that tracks only ADD/DROP/MODIFY/RENAME
     /// COLUMN - not MODIFY QUERY, which replaces a materialized view's columns with its new query's output.
     auto skip_absent_column_or_fail = [&](std::string_view action, const String & name) -> bool
     {
+        if (should_skip_column_operation(name))
+            return true;
         if (metadata.columns.has(name))
             return false;
-        if (if_exists)
-            return true;
 
         auto message = PreformattedMessage::create("Wrong column name. Cannot find column {} to {}", backQuote(name), action);
         metadata.columns.appendHintsMessage(message.text, name);
@@ -936,62 +864,43 @@ void AlterCommand::apply(
         /// Otherwise just clear data on disk
         if (!clear && !partition)
         {
-            if (should_skip_column_operation())
+            if (should_skip_column_operation(column_name))
                 return;
             metadata.columns.remove(column_name);
         }
     }
     else if (type == MODIFY_COLUMN)
     {
-        String modified_owner = column_name;
-        if (codec_target)
+        /// `prepare` resolves a subcolumn against the columns before the ALTER. A subcolumn of a column that a previous
+        /// command of the same ALTER adds or changes the type of is resolved here, against the columns so far.
+        String target_column = column_name;
+        String target_subcolumn = subcolumn_name;
+        if (target_subcolumn.empty() && !metadata.columns.has(column_name))
         {
-            const auto * target = codec_target->as<ASTIdentifier>();
-            if (!target)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Codec target is not an identifier");
-            std::optional<ResolvedCodecTarget> resolved_target;
-            try
+            if (auto subcolumn = metadata.columns.tryGetSubcolumn(column_name))
             {
-                resolved_target = resolveCodecTarget(metadata.columns, *target);
-            }
-            catch (const Exception & exception)
-            {
-                if (if_exists && exception.code() == ErrorCodes::BAD_ARGUMENTS)
-                    return;
-                throw;
-            }
-            const auto & resolved = *resolved_target;
-            modified_owner = resolved.owner_name;
-            if (!resolved.isRoot())
-            {
-                TupleElementCodecs elements;
-                if (const auto * stored = metadata.columns.tryGetTupleElementCodecs(modified_owner))
-                    elements = *stored;
-                if (to_remove == RemoveProperty::CODEC)
-                {
-                    if (!elements.erase(resolved.path))
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Tuple element {} doesn't have CODEC, cannot remove it", target->name());
-                }
-                else
-                    elements[resolved.path] = codec;
-
-                const auto & owner = metadata.columns.get(modified_owner);
-                auto normalized = validateColumnCodecPolicy(
-                    ColumnCodecPolicyView(owner.codec, &elements), owner.type, CodecValidationSettings::trusted());
-                metadata.columns.removeTupleElementCodecs(modified_owner);
-                for (const auto & [path, codec_ast] : normalized.elements)
-                    metadata.columns.setTupleElementCodec(modified_owner, path, codec_ast);
-                if (normalized.root)
-                    metadata.columns.modify(modified_owner, [&](ColumnDescription & column) { column.codec = normalized.root; });
-                return;
+                target_column = subcolumn->getNameInStorage();
+                target_subcolumn = subcolumn->getSubcolumnName();
             }
         }
 
-        if (skip_absent_column_or_fail("modify", modified_owner))
+        if (skip_absent_column_or_fail("modify", target_column))
             return;
-        metadata.columns.modify(modified_owner, after_column, first, [&](ColumnDescription & column)
+        metadata.columns.modify(target_column, after_column, first, [&](ColumnDescription & column)
         {
+            /// The result is validated by `validateColumnCodecs` after all commands are applied.
+            if (!target_subcolumn.empty())
+            {
+                if (to_remove == RemoveProperty::CODEC)
+                    column.subcolumn_codecs.erase(target_subcolumn);
+                else if (to_remove == RemoveProperty::NO_PROPERTY && codec)
+                    column.subcolumn_codecs.set(target_subcolumn, codec);
+                else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Only CODEC can be modified or removed for subcolumn {} of column {}",
+                        backQuote(target_subcolumn), backQuote(target_column));
+                return;
+            }
+
             if (to_remove == RemoveProperty::DEFAULT
                 || to_remove == RemoveProperty::MATERIALIZED
                 || to_remove == RemoveProperty::ALIAS)
@@ -1033,7 +942,7 @@ void AlterCommand::apply(
                     if (!column.statistics.empty())
                         column.statistics.data_type = data_type;
                     /// The type changed, so assume that implicit indices may change too
-                    metadata.dropImplicitIndicesForColumn(modified_owner);
+                    metadata.dropImplicitIndicesForColumn(column_name);
                     metadata.addImplicitIndicesForColumn(column, context);
                 }
 
@@ -1069,19 +978,6 @@ void AlterCommand::apply(
                 }
             }
         });
-
-        if (const auto * stored = metadata.columns.tryGetTupleElementCodecs(modified_owner))
-        {
-            TupleElementCodecs elements = *stored;
-            const auto & owner = metadata.columns.get(modified_owner);
-            auto normalized = validateColumnCodecPolicy(
-                ColumnCodecPolicyView(owner.codec, &elements), owner.type, CodecValidationSettings::trusted());
-            metadata.columns.removeTupleElementCodecs(modified_owner);
-            for (const auto & [path, codec_ast] : normalized.elements)
-                metadata.columns.setTupleElementCodec(modified_owner, path, codec_ast);
-            if (normalized.root)
-                metadata.columns.modify(modified_owner, [&](ColumnDescription & column) { column.codec = normalized.root; });
-        }
 
     }
     else if (type == MODIFY_ORDER_BY)
@@ -1458,7 +1354,7 @@ void AlterCommand::apply(
     }
     else if (type == RENAME_COLUMN)
     {
-        if (should_skip_column_operation())
+        if (should_skip_column_operation(column_name))
             return;
         metadata.columns.rename(column_name, rename_to);
         RenameColumnData rename_data{column_name, rename_to};
@@ -2071,6 +1967,19 @@ void AlterCommands::apply(
         }
     }
 
+    /// Changes in columns may make their codecs invalid.
+    if (columns_changed)
+    {
+        try
+        {
+            validateColumnCodecs(metadata_copy.columns, CodecValidationSettings::trusted());
+        }
+        catch (const Exception & exception)
+        {
+            throw Exception(exception.code(), "Cannot apply ALTER because the codecs of a column would become invalid: {}", exception.message());
+        }
+    }
+
     if (metadata_copy.table_ttl.definition_ast != nullptr)
     {
         try
@@ -2111,14 +2020,18 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
     {
         auto & command = (*this)[i];
         bool has_column = columns.has(command.column_name) || (share_nested_offsets && columns.hasNested(command.column_name));
-        if (command.codec_target)
-        {
-            /// Compound codec targets are resolved by validate()/apply() against their sequential
-            /// working schemas. prepare() deliberately does not expand preceding ADD COLUMN commands.
-            has_column = true;
-        }
         if (command.type == AlterCommand::MODIFY_COLUMN)
         {
+            if (!has_column)
+            {
+                if (auto subcolumn = columns.tryGetSubcolumn(command.column_name))
+                {
+                    command.column_name = subcolumn->getNameInStorage();
+                    command.subcolumn_name = subcolumn->getSubcolumnName();
+                    has_column = true;
+                }
+            }
+
             if (!has_column && command.if_exists)
                 command.ignore = true;
 
@@ -2278,6 +2191,40 @@ static String removePropertyHint(ColumnDefaultKind kind, const String & column_n
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid ColumnDefaultKind");
 }
 
+namespace
+{
+
+/// `MODIFY COLUMN <subcolumn> CODEC(...)` and `MODIFY COLUMN <subcolumn> REMOVE CODEC` are the only commands for a subcolumn.
+void validateSubcolumnCodecCommand(
+    const AlterCommand & command, const NameAndTypePair & subcolumn, const ColumnsDescription & columns, const StoragePtr & table, const ContextPtr & context)
+{
+    const bool only_codec = !command.data_type && !command.default_expression && !command.comment && !command.ttl
+        && command.settings_changes.empty() && command.settings_resets.empty() && !command.column_statistics_decl
+        && !command.add_enum_values && command.after_column.empty() && !command.first
+        && (command.to_remove == AlterCommand::RemoveProperty::NO_PROPERTY || command.to_remove == AlterCommand::RemoveProperty::CODEC)
+        && (command.codec || command.to_remove == AlterCommand::RemoveProperty::CODEC);
+    if (!only_codec)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only CODEC can be modified or removed for subcolumn {} of column {}",
+            backQuote(subcolumn.getSubcolumnName()), backQuote(subcolumn.getNameInStorage()));
+
+    if (!table->supportsSubcolumnCodecs())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Engine {} doesn't support codecs for subcolumns", table->getName());
+
+    if (command.to_remove == AlterCommand::RemoveProperty::CODEC)
+    {
+        if (!columns.get(subcolumn.getNameInStorage()).subcolumn_codecs.contains(subcolumn.getSubcolumnName()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Subcolumn {} doesn't have CODEC, cannot remove it", backQuote(command.column_name));
+        return;
+    }
+
+    if (!context->getSettingsRef()[Setting::enable_subcolumn_codecs])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Subcolumn codecs are experimental. Set enable_subcolumn_codecs = 1 to use them");
+
+    CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+        command.codec, subcolumn.type, CodecValidationSettings(context->getSettingsRef()));
+}
+
+}
 
 void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 {
@@ -2361,10 +2308,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     "Cannot add ephemeral column {}: it conflicts with a virtual column of the same name",
                     backQuote(column_name));
 
-            ASTPtr normalized_added_codec;
             if (command.codec)
             {
-                normalized_added_codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                     command.codec,
                     command.data_type,
                     codec_validation_settings);
@@ -2373,95 +2319,24 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             /// Advance the working snapshot with the exact columns apply() would materialize
             /// (flatten_nested expansion), not a synthetic top-level `n`, so a later command in the
             /// same ALTER that targets a real flattened child (e.g. RENAME COLUMN `n.b`) sees it.
-            ColumnDescription added_column(column_name, command.data_type);
-            added_column.codec = std::move(normalized_added_codec);
-            for (auto & col : columnsAddedByAlter(all_columns, std::move(added_column),
+            for (auto & col : columnsAddedByAlter(all_columns, ColumnDescription(column_name, command.data_type),
                                                   context, command.if_not_exists, share_nested))
                 all_columns.add(std::move(col));
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
         {
-            if (command.codec_target)
-            {
-                const auto * target = command.codec_target->as<ASTIdentifier>();
-                if (!target)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Codec target is not an identifier");
-                std::optional<ResolvedCodecTarget> resolved_target;
-                try
-                {
-                    resolved_target = resolveCodecTarget(all_columns, *target);
-                }
-                catch (const Exception & exception)
-                {
-                    if (command.if_exists && exception.code() == ErrorCodes::BAD_ARGUMENTS)
-                        continue;
-                    throw;
-                }
-                const auto & resolved = *resolved_target;
-                if (!resolved.isRoot())
-                {
-                    if (!table->supportsPerSubcolumnCodecs())
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                            "Storage {} does not support codecs on Tuple elements", table->getName());
-
-                    const auto & owner = all_columns.get(resolved.owner_name);
-                    if (owner.default_desc.kind == ColumnDefaultKind::Alias || owner.default_desc.kind == ColumnDefaultKind::Ephemeral)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "CODEC cannot be specified for non-stored column {}", resolved.owner_name);
-
-                    TupleElementCodecs elements;
-                    if (const auto * stored = all_columns.tryGetTupleElementCodecs(resolved.owner_name))
-                        elements = *stored;
-
-                    CodecDeclarationPaths declarations_to_validate;
-                    if (command.to_remove == AlterCommand::RemoveProperty::CODEC)
-                    {
-                        const TupleElementCodecs before_elements = elements;
-                        if (!elements.erase(resolved.path))
-                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Tuple element {} doesn't have CODEC, cannot remove it", target->name());
-                        declarations_to_validate = getDeclarationsWithExpandedStreamCoverage(
-                            ColumnCodecPolicyView(owner.codec, &before_elements),
-                            ColumnCodecPolicyView(owner.codec, &elements), owner.type, owner.type);
-                    }
-                    else
-                    {
-                        CompressionCodecFactory::instance().validateCodecDeclaration(
-                            command.codec, codec_validation_settings);
-                        const auto old = elements.find(resolved.path);
-                        const ASTPtr stored_declaration = old == elements.end() ? nullptr : old->second;
-                        elements[resolved.path] = command.codec;
-                        const auto comparison_policy = validateColumnCodecPolicy(
-                            ColumnCodecPolicyView(owner.codec, &elements), owner.type,
-                            CodecValidationSettings::trusted());
-                        const auto normalized = comparison_policy.elements.find(resolved.path);
-                        const bool changed = !stored_declaration
-                            || (stored_declaration->formatWithSecretsOneLine() != command.codec->formatWithSecretsOneLine()
-                                && (normalized == comparison_policy.elements.end()
-                                    || stored_declaration->formatWithSecretsOneLine()
-                                        != normalized->second->formatWithSecretsOneLine()));
-                        if (changed && !context->getSettingsRef()[Setting::enable_tuple_element_codecs])
-                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Tuple-element CODEC declarations are experimental. Set enable_tuple_element_codecs = 1 to enable them");
-                        if (changed)
-                            declarations_to_validate.insert(resolved.path);
-                    }
-
-                    auto normalized = validateColumnCodecPolicy(
-                        ColumnCodecPolicyView(owner.codec, &elements), owner.type,
-                        codec_validation_settings, &declarations_to_validate);
-                    all_columns.removeTupleElementCodecs(resolved.owner_name);
-                    for (const auto & [path, codec_ast] : normalized.elements)
-                        all_columns.setTupleElementCodec(resolved.owner_name, path, codec_ast);
-                    if (normalized.root)
-                        all_columns.modify(resolved.owner_name, [&](ColumnDescription & column) { column.codec = normalized.root; });
-                    modified_columns.emplace(resolved.owner_name);
-                    continue;
-                }
-            }
-
             if (!all_columns.has(column_name))
             {
+                if (auto subcolumn = all_columns.tryGetSubcolumn(column_name))
+                {
+                    if (renamed_columns.contains(subcolumn->getNameInStorage()))
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename and modify the same column {} "
+                                                                     "in a single ALTER query", backQuote(subcolumn->getNameInStorage()));
+                    validateSubcolumnCodecCommand(command, *subcolumn, all_columns, table, context);
+                    modified_columns.emplace(subcolumn->getNameInStorage());
+                    continue;
+                }
+
                 if (!command.if_exists)
                 {
                     throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Wrong column. Cannot find column {} to modify{}",
@@ -2487,17 +2362,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     && (command.default_kind == ColumnDefaultKind::Default || command.default_kind == ColumnDefaultKind::Materialized);
                 if (all_columns.hasAlias(column_name) && !becomes_physical)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
-                auto & factory = CompressionCodecFactory::instance();
-                factory.validateCodecDeclaration(command.codec, codec_validation_settings);
-                const auto resulting_type = command.data_type ? command.data_type : all_columns.get(column_name).type;
-                const auto normalized = factory.validateCodecAndGetPreprocessedAST(
-                    command.codec, resulting_type, CodecValidationSettings::trusted());
-                const auto & stored = all_columns.get(column_name).codec;
-                const bool changed = !stored
-                    || (stored->formatWithSecretsOneLine() != command.codec->formatWithSecretsOneLine()
-                        && stored->formatWithSecretsOneLine() != normalized->formatWithSecretsOneLine());
-                if (changed)
-                    factory.validateCodecAndGetPreprocessedAST(command.codec, resulting_type, codec_validation_settings);
+                /// The type is optional here, and a codec can resolve differently per type, so
+                /// validate against the type the column will have, as `apply` does.
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+                    command.codec,
+                    command.data_type ? command.data_type : all_columns.get(column_name).type,
+                    codec_validation_settings);
             }
             auto column_default = all_columns.getDefault(column_name);
             if (column_default)
@@ -2536,6 +2406,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             {
                 validateDataType(command.data_type, DataTypeValidationSettings(context->getSettingsRef()));
                 checkAllTypesAreAllowedInTable(NamesAndTypesList{{command.column_name, command.data_type}});
+
+                /// Later commands of the same ALTER, such as a codec for a subcolumn of the new type, see the new type.
+                all_columns.modify(column_name, [&](ColumnDescription & column) { column.type = command.data_type; });
             }
 
             if (command.isRemovingProperty())
@@ -2574,40 +2447,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         ErrorCodes::BAD_ARGUMENTS,
                         "Column {} doesn't have COMMENT, cannot remove it",
                         backQuote(column_name));
-            }
-
-            if (command.data_type || command.codec || command.to_remove == AlterCommand::RemoveProperty::CODEC)
-            {
-                const auto & current_owner = all_columns.get(column_name);
-                const auto old_elements = all_columns.tryGetTupleElementCodecs(column_name);
-                TupleElementCodecs elements = old_elements ? *old_elements : TupleElementCodecs{};
-                ASTPtr root = current_owner.codec;
-                if (command.codec)
-                    root = command.codec;
-                else if (command.to_remove == AlterCommand::RemoveProperty::CODEC)
-                    root.reset();
-                const auto resulting_type = command.data_type ? command.data_type : current_owner.type;
-
-                CodecDeclarationPaths declarations_to_validate;
-                if (command.data_type)
-                {
-                    const TupleElementCodecs previous_elements = elements;
-                    declarations_to_validate = getDeclarationsWithExpandedStreamCoverage(
-                        ColumnCodecPolicyView(current_owner.codec, &previous_elements),
-                        ColumnCodecPolicyView(root, &elements), current_owner.type, resulting_type);
-                }
-                auto normalized = validateColumnCodecPolicy(
-                    ColumnCodecPolicyView(root, &elements), resulting_type,
-                    codec_validation_settings, &declarations_to_validate);
-                all_columns.modify(column_name, [&](ColumnDescription & column)
-                {
-                    if (command.data_type)
-                        column.type = command.data_type;
-                    column.codec = normalized.root;
-                });
-                all_columns.removeTupleElementCodecs(column_name);
-                for (const auto & [path, codec_ast] : normalized.elements)
-                    all_columns.setTupleElementCodec(column_name, path, codec_ast);
             }
 
             modified_columns.emplace(column_name);

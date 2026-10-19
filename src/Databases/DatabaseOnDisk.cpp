@@ -149,17 +149,9 @@ std::pair<String, StoragePtr> createTableFromAST(
         auto table_function = factory.get(table_function_ast, context);
         ColumnsDescription columns;
         if (ast_create_query.columns_list && ast_create_query.columns_list->columns)
-        {
-            columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, mode);
-            InterpreterCreateQuery::applyCodecOnlyDeclarations(
-                ast_create_query.columns_list->codec_declarations, columns, context, /* trusted_metadata = */ true);
-        }
-        const bool has_tuple_element_codecs = columns.hasTupleElementCodecs();
+            columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list, context, mode);
         StoragePtr storage = table_function->execute(table_function_ast, context, ast_create_query.getTable(), std::move(columns));
         storage->renameInMemory(ast_create_query);
-        if (has_tuple_element_codecs && !storage->supportsPerSubcolumnCodecs())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Storage {} does not support codecs on Tuple elements", storage->getName());
 
         /// The comment is not passed to a table function (unlike a table engine), so it has to be
         /// applied to the storage explicitly when the definition is loaded back from the metadata.
@@ -200,9 +192,7 @@ std::pair<String, StoragePtr> createTableFromAST(
         }
         else
         {
-            columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, mode);
-            InterpreterCreateQuery::applyCodecOnlyDeclarations(
-                ast_create_query.columns_list->codec_declarations, columns, context, /* trusted_metadata = */ true);
+            columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list, context, mode);
             constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints, columns, context);
         }
     }
@@ -215,12 +205,9 @@ std::pair<String, StoragePtr> createTableFromAST(
     auto set_context = Context::createCopy(context);
     InterpreterSetQuery::applySettingsFromQuery(ast, set_context);
 
-    auto storage = StorageFactory::instance().get(
-        *ast, table_data_path_relative, context, context->getGlobalContext(), columns, constraints, mode);
-    if (columns.hasTupleElementCodecs() && !storage->supportsPerSubcolumnCodecs())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Storage {} does not support codecs on Tuple elements", storage->getName());
-    return {ast->getTable(), std::move(storage)};
+    return {
+        ast->getTable(),
+        StorageFactory::instance().get(*ast, table_data_path_relative, context, context->getGlobalContext(), columns, constraints, mode)};
 }
 
 

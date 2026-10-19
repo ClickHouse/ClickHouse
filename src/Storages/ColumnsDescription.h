@@ -6,9 +6,8 @@
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ColumnDefault.h>
-#include <Storages/ColumnCodecPath.h>
-#include <Storages/ColumnCodecPolicy.h>
 #include <Storages/StatisticsDescription.h>
+#include <Storages/SubcolumnCodecsDescription.h>
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
 #include <Common/SettingsChanges.h>
@@ -24,7 +23,6 @@
 #include <boost/multi_index_container.hpp>
 
 #include <optional>
-#include <memory>
 
 
 namespace DB
@@ -103,6 +101,7 @@ struct ColumnDescription
     ColumnDefault default_desc;
     String comment;
     ASTPtr codec;
+    SubcolumnCodecsDescription subcolumn_codecs;
     SettingsChanges settings;
     ASTPtr ttl;
     ColumnStatisticsDescription statistics;
@@ -121,7 +120,7 @@ struct ColumnDescription
     bool operator==(const ColumnDescription & other) const;
     bool operator!=(const ColumnDescription & other) const { return !(*this == other); }
 
-    void writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment) const;
+    void writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment, bool include_codec) const;
     void readText(ReadBuffer & buf);
 };
 
@@ -135,20 +134,9 @@ public:
     /// Mutable cache members (`get_cache_mutex`, `get_cache`) are non-copyable; define
     /// explicit copy / move. Copy discards the cache (it's reproducible); move steals it,
     /// because the cache content is consistent with the columns being transferred.
-    ColumnsDescription(const ColumnsDescription & other)
-        : IHints<>(other)
-        , columns(other.columns)
-        , subcolumns(other.subcolumns)
-        , tuple_element_codecs(cloneTupleElementCodecs(other.tuple_element_codecs))
-    {
-    }
+    ColumnsDescription(const ColumnsDescription & other) : IHints<>(other), columns(other.columns), subcolumns(other.subcolumns) {}
     ColumnsDescription(ColumnsDescription && other) noexcept
-        : columns(std::move(other.columns))
-        , subcolumns(std::move(other.subcolumns))
-        , tuple_element_codecs(std::move(other.tuple_element_codecs))
-        , get_cache(std::move(other.get_cache))
-    {
-    }
+        : columns(std::move(other.columns)), subcolumns(std::move(other.subcolumns)), get_cache(std::move(other.get_cache)) {}
     ColumnsDescription & operator=(const ColumnsDescription & other);
     ColumnsDescription & operator=(ColumnsDescription && other) noexcept;
 
@@ -176,10 +164,7 @@ public:
     /// NOTE Must correspond with Nested::flatten function.
     void flattenNested(); /// TODO: remove, insert already flattened Nested columns.
 
-    bool operator==(const ColumnsDescription & other) const
-    {
-        return toStringWithCodecDeclarations(false) == other.toStringWithCodecDeclarations(false);
-    }
+    bool operator==(const ColumnsDescription & other) const { return toString(false) == other.toString(false); }
     bool operator!=(const ColumnsDescription & other) const { return !(*this == other); }
 
     auto begin() const { return columns.begin(); }
@@ -258,6 +243,9 @@ public:
     std::optional<NameAndTypePair> tryGetColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
     std::optional<NameAndTypePair> tryGetColumn(const GetColumnsOptions & options, const String & column_name) const;
 
+    /// A subcolumn of any column by its full name (`payload.ts`). Nothing for the name of a column or for an unknown name.
+    std::optional<NameAndTypePair> tryGetSubcolumn(const String & subcolumn_name) const;
+
     std::optional<const ColumnDescription> tryGetColumnOrSubcolumnDescription(GetColumnsOptions::Kind kind, const String & column_name) const;
     std::optional<const ColumnDescription> tryGetColumnDescription(const GetColumnsOptions & options, const String & column_name) const;
 
@@ -266,7 +254,7 @@ public:
     bool hasDefaults() const;
     std::optional<ColumnDefault> getDefault(const String & column_name) const;
 
-    /// Does column has non default specified compression codec
+    /// Does column has non default specified compression codec, for the column itself or for any of its subcolumns
     bool hasCompressionCodec(const String & column_name) const;
 
     /// Does the column's compression codec pipeline contain a `Default` stage (`CODEC(Default)`,
@@ -276,18 +264,9 @@ public:
     /// non-default codec.
     bool hasExplicitDefaultCompressionCodec(const String & column_name) const;
 
-    bool hasTupleElementCodecs() const { return tuple_element_codecs && !tuple_element_codecs->empty(); }
-    const TupleElementCodecs * tryGetTupleElementCodecs(const String & owner) const;
-    ColumnCodecPolicyView getCodecPolicy(const String & owner) const;
-
-    void setTupleElementCodec(String owner, TupleCodecPath path, const ASTPtr & codec);
-    bool removeTupleElementCodec(const String & owner, const TupleCodecPath & path);
-    void removeTupleElementCodecs(const String & owner);
-
-    /// Historical physical representation used by data parts, query plans, and client schema transport.
-    String toString(bool include_comments) const;
-    /// Full table metadata including Tuple-element codec declarations.
-    String toStringWithCodecDeclarations(bool include_comments) const;
+    /// Subcolumn codecs are written as `CODEC name (...)` lines after the columns.
+    /// `include_codecs = false` is for readers that need only names, types and defaults, such as older clients.
+    String toString(bool include_comments, bool include_codecs = true) const;
     static ColumnsDescription parse(const String & str);
 
     size_t size() const
@@ -316,9 +295,6 @@ public:
             boost::multi_index::hashed_non_unique<boost::multi_index::const_mem_fun<NameAndTypePair, String, &NameAndTypePair::getNameInStorage>>>>;
 
 private:
-    static std::unique_ptr<TupleElementCodecsByColumn> cloneTupleElementCodecs(
-        const std::unique_ptr<TupleElementCodecsByColumn> & source);
-
     ColumnsContainer columns;
 
     /// Subcolumns are not nested columns.
@@ -329,10 +305,6 @@ private:
     ///
     /// While nested columns have form like foo.bar
     SubcolumnsContainter subcolumns;
-
-    /// Absent for the common root-only schema. Paths are relative to the owning
-    /// physical column and are always non-empty and canonical.
-    std::unique_ptr<TupleElementCodecsByColumn> tuple_element_codecs;
 
     void modifyColumnOrder(const String & column_name, const String & after_column, bool first);
     void addSubcolumnsToList(NamesAndTypesList & source_list, const GetColumnsOptions & options) const;
@@ -377,6 +349,12 @@ struct DefaultExpressionsInfo
     /// MATERIALIZED). ALIAS (read-time) and EPHEMERAL (a non-stored insert input) are not included.
     NameSet insert_time_default_columns;
 };
+
+/// If the column carries a `Quantized(...)` codec, attaches the serialization that writes the quantized companion stream
+/// and exposes the `<column>.quantized` subcolumn. `ColumnsDescription::add` does this itself; it is needed when
+/// the codec is set on a column that is already added. The customization is attached to this column's own
+/// (freshly parsed, non-shared) type instance, so it does not affect any other column of the same type.
+void attachQuantizeSerializationIfNeeded(ColumnDescription & column);
 
 /// Restore the Quantized(...) subcolumns on columns parsed from a part's columns.txt.
 void attachQuantizeSerializations(NamesAndTypesList & columns, const ColumnsDescription & metadata);

@@ -73,8 +73,6 @@ class ASTColumns : public IAST
 {
 public:
     ASTExpressionList * columns = nullptr;
-    /// Parsed codec-only declarations are kept out of the physical column list.
-    /// InterpreterCreateQuery will detach this list before storage-specific normalization.
     ASTExpressionList * codec_declarations = nullptr;
     ASTExpressionList * indices = nullptr;
     ASTExpressionList * constraints = nullptr;
@@ -93,11 +91,6 @@ public:
         return (!columns || columns->children.empty()) && (!codec_declarations || codec_declarations->children.empty())
             && (!indices || indices->children.empty()) && (!constraints || constraints->children.empty())
             && (!projections || projections->children.empty());
-    }
-
-    bool hasPhysicalColumns() const
-    {
-        return columns && !columns->children.empty();
     }
 
     void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override

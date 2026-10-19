@@ -14,8 +14,6 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Poco/String.h>
 
-#include <type_traits>
-
 
 namespace DB
 {
@@ -186,8 +184,6 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
 
     const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
     tryGetIdentifierNameInto(name, column_declaration->name);
-    if constexpr (std::is_same_v<NameParser, ParserCompoundIdentifier>)
-        column_declaration->codec_target = name->clone();
 
     /// This keyword may occur only in MODIFY COLUMN query. We check it here
     /// because ParserDataType parses types as an arbitrary identifiers and
@@ -504,6 +500,17 @@ protected:
 };
 
 
+/** CODEC name (codec, ...) for a column or a subcolumn.
+  * Fails on a column named `codec`, such as `codec Nullable(String)`, so that the column parser gets it.
+  */
+class ParserCodecDeclaration : public IParserBase
+{
+protected:
+    const char * getName() const override { return "codec declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
 /** name BY expr TYPE typename(arg1, arg2, ...) GRANULARITY value */
 class ParserIndexDeclaration : public IParserBase
 {
@@ -565,13 +572,6 @@ class ParserTablePropertyDeclaration : public IParserBase
 {
 protected:
     const char * getName() const override { return "table property (column, index, constraint) declaration"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-class ParserCodecOnlyDeclaration : public IParserBase
-{
-protected:
-    const char * getName() const override { return "codec-only column declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

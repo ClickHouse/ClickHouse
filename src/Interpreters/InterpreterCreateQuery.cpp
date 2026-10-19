@@ -1,5 +1,4 @@
 #include <array>
-#include <map>
 #include <memory>
 
 #include <filesystem>
@@ -38,6 +37,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTCodecDeclaration.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -56,11 +56,10 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/SubcolumnCodecs.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/ColumnCodecPath.h>
-#include <Storages/ColumnCodecValidation.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 
 #include <Interpreters/Context.h>
@@ -135,7 +134,7 @@ namespace Setting
     extern const SettingsBool enable_xgboost;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
-    extern const SettingsBool enable_tuple_element_codecs;
+    extern const SettingsBool enable_subcolumn_codecs;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
     extern const SettingsBool compatibility_ignore_collation_in_create_table;
@@ -606,25 +605,15 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
     return columns_list;
 }
 
-ASTPtr InterpreterCreateQuery::formatTupleElementCodecDeclarations(const ColumnsDescription & columns)
+ASTPtr InterpreterCreateQuery::formatCodecDeclarations(const ColumnsDescription & columns)
 {
-    auto declarations = make_intrusive<ASTExpressionList>();
+    auto res = make_intrusive<ASTExpressionList>();
+
     for (const auto & column : columns)
-    {
-        const auto * element_codecs = columns.tryGetTupleElementCodecs(column.name);
-        if (!element_codecs)
-            continue;
-        for (const auto & [path, codec] : *element_codecs)
-        {
-            std::vector<String> parts{column.name};
-            parts.insert(parts.end(), path.begin(), path.end());
-            auto declaration = make_intrusive<ASTColumnDeclaration>();
-            declaration->codec_target = make_intrusive<ASTIdentifier>(std::move(parts));
-            declaration->setCodec(codec->clone());
-            declarations->children.push_back(std::move(declaration));
-        }
-    }
-    return declarations;
+        for (const auto & [subcolumn_name, codec] : column.subcolumn_codecs)
+            res->children.push_back(make_intrusive<ASTCodecDeclaration>(column.name + "." + subcolumn_name, codec->clone()));
+
+    return res;
 }
 
 ASTPtr InterpreterCreateQuery::formatIndices(const IndicesDescription & indices)
@@ -713,9 +702,88 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
     return column_type;
 }
 
-ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
-    const ASTExpressionList & columns_ast, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup, bool check_defaults_over_virtual_columns)
+namespace
 {
+
+/// The gate guards only new declarations; tables that have them load, are restored and are altered without it.
+void checkSubcolumnCodecsAreEnabled(const ContextPtr & context, LoadingStrictnessLevel mode, bool is_restore_from_backup)
+{
+    if (mode == LoadingStrictnessLevel::CREATE && !is_restore_from_backup && !context->getSettingsRef()[Setting::enable_subcolumn_codecs])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Subcolumn codecs are experimental. Set enable_subcolumn_codecs = 1 to use them");
+}
+
+/// Applies the `CODEC name (...)` entries of a column list to the columns they name.
+void applyCodecDeclarations(
+    const ASTExpressionList & declarations,
+    ColumnsDescription & columns,
+    const ContextPtr & context,
+    LoadingStrictnessLevel mode,
+    bool is_restore_from_backup)
+{
+    const bool skip_checks = LoadingStrictnessLevel::SECONDARY_CREATE <= mode;
+    const CodecValidationSettings codec_validation_settings
+        = skip_checks ? CodecValidationSettings::trusted() : CodecValidationSettings(context->getSettingsRef());
+
+    /// The name is resolved as in a query: a column with this name wins, otherwise it is a subcolumn.
+    for (const auto & ast : declarations.children)
+    {
+        const auto & declaration = ast->as<const ASTCodecDeclaration &>();
+        auto target = columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), declaration.name);
+        if (!target)
+        {
+            /// An ALIAS column has no subcolumns, so the name of its element is not found.
+            for (size_t dot = declaration.name.find('.'); dot != String::npos; dot = declaration.name.find('.', dot + 1))
+                if (columns.hasAlias(declaration.name.substr(0, dot)))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
+
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot declare codec for {}: there is no such column or subcolumn{}",
+                backQuote(declaration.name), columns.getHintsMessage(declaration.name));
+        }
+
+        const String owner_name = target->getNameInStorage();
+        const auto & owner = columns.get(owner_name);
+        if (owner.default_desc.kind == ColumnDefaultKind::Alias)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
+
+        if (target->isSubcolumn())
+        {
+            checkSubcolumnCodecsAreEnabled(context, mode, is_restore_from_backup);
+            if (owner.subcolumn_codecs.contains(target->getSubcolumnName()))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Codec for subcolumn {} is declared more than once", backQuote(declaration.name));
+            columns.modify(owner_name, [&](ColumnDescription & column)
+            {
+                column.subcolumn_codecs.set(target->getSubcolumnName(), declaration.getCodec());
+            });
+        }
+        else
+        {
+            if (owner.codec)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec for column {} is declared more than once", backQuote(declaration.name));
+            /// The same as the inline clause of the column, validated the same way.
+            auto codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+                declaration.getCodec(), owner.type, codec_validation_settings);
+            columns.modify(owner_name, [&](ColumnDescription & column)
+            {
+                column.codec = codec;
+                /// The column was added without the codec, so what `add` does for a `Quantized` codec is done here.
+                attachQuantizeSerializationIfNeeded(column);
+            });
+        }
+    }
+
+    validateColumnCodecs(columns, codec_validation_settings);
+}
+
+}
+
+ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
+    const ASTColumns & columns_list, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup, bool check_defaults_over_virtual_columns)
+{
+    if (!columns_list.columns)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column list is empty");
+    const auto & columns_ast = *columns_list.columns;
+
     /// First, deduce implicit types.
 
     /** all default_expressions as a single expression list,
@@ -872,6 +940,9 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     if (mode <= LoadingStrictnessLevel::CREATE && !is_restore_from_backup && res.getInsertable().empty())
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without insertable columns");
 
+    if (columns_list.codec_declarations)
+        applyCodecDeclarations(*columns_list.codec_declarations, res, context_, mode, is_restore_from_backup);
+
     return res;
 }
 
@@ -936,117 +1007,6 @@ void throwIfTableFunctionCannotBeUsedToCreateTable(const ASTPtr & table_function
     throwIfNestedTableFunctionDependsOnCurrentUserGrants(table_function_ast, context);
 }
 
-void applyCodecOnlyDeclarationsImpl(
-    const ASTExpressionList * declarations,
-    ColumnsDescription & columns,
-    const ContextPtr & context,
-    bool trusted_metadata)
-{
-    if (!declarations)
-        return;
-
-    std::map<String, TupleElementCodecs> changed_elements;
-    const CodecValidationSettings settings = trusted_metadata
-        ? CodecValidationSettings::trusted()
-        : CodecValidationSettings(context->getSettingsRef());
-
-    for (const auto & ast : declarations->children)
-    {
-        const auto * declaration = ast->as<ASTColumnDeclaration>();
-        const auto * target = declaration && declaration->codec_target
-            ? declaration->codec_target->as<ASTIdentifier>() : nullptr;
-        if (!target || !declaration->getCodec() || declaration->getType()
-            || declaration->getDefaultExpression() || declaration->getComment()
-            || declaration->getStatisticsDesc() || declaration->getTTL()
-            || declaration->getCollation() || declaration->getSettings()
-            || declaration->default_specifier != ColumnDefaultSpecifier::Empty
-            || declaration->null_modifier || declaration->ephemeral_default
-            || declaration->primary_key_specifier)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid codec-only column declaration");
-
-        const auto resolved = resolveCodecTarget(columns, *target);
-        const auto & owner = columns.get(resolved.owner_name);
-        if (owner.default_desc.kind == ColumnDefaultKind::Alias || owner.default_desc.kind == ColumnDefaultKind::Ephemeral)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "CODEC cannot be specified for non-stored column {}", resolved.owner_name);
-
-        if (resolved.isRoot())
-        {
-            if (owner.codec)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Codec for physical column {} is declared more than once", resolved.owner_name);
-            auto normalized = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                declaration->getCodec(), owner.type, settings);
-            columns.modify(resolved.owner_name, [&](ColumnDescription & column) { column.codec = std::move(normalized); });
-            continue;
-        }
-
-        auto & owner_changes = changed_elements[resolved.owner_name];
-        if ((columns.tryGetTupleElementCodecs(resolved.owner_name)
-                && columns.tryGetTupleElementCodecs(resolved.owner_name)->contains(resolved.path))
-            || !owner_changes.emplace(resolved.path, declaration->getCodec()).second)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Codec for Tuple element {} is declared more than once", target->name());
-    }
-
-    for (const auto & [owner_name, additions] : changed_elements)
-    {
-        TupleElementCodecs complete;
-        if (const auto * stored = columns.tryGetTupleElementCodecs(owner_name))
-            complete = *stored;
-        complete.insert(additions.begin(), additions.end());
-        const auto & owner = columns.get(owner_name);
-        auto normalized = validateColumnCodecPolicy(
-            ColumnCodecPolicyView(owner.codec, &complete), owner.type, settings);
-        columns.removeTupleElementCodecs(owner_name);
-        for (const auto & [path, codec] : normalized.elements)
-            columns.setTupleElementCodec(owner_name, path, codec);
-        if (normalized.root)
-            columns.modify(owner_name, [&](ColumnDescription & column) { column.codec = normalized.root; });
-    }
-}
-
-void normalizeTupleElementCodecPolicies(
-    ColumnsDescription & columns,
-    const ContextPtr & context,
-    bool trusted_metadata)
-{
-    const CodecValidationSettings settings = trusted_metadata
-        ? CodecValidationSettings::trusted()
-        : CodecValidationSettings(context->getSettingsRef());
-    std::vector<String> owners;
-    for (const auto & column : columns)
-        if (columns.tryGetTupleElementCodecs(column.name))
-            owners.push_back(column.name);
-
-    for (const auto & owner_name : owners)
-    {
-        TupleElementCodecs elements = *columns.tryGetTupleElementCodecs(owner_name);
-        const auto & owner = columns.get(owner_name);
-        auto normalized = validateColumnCodecPolicy(
-            ColumnCodecPolicyView(owner.codec, &elements), owner.type, settings);
-        columns.removeTupleElementCodecs(owner_name);
-        for (const auto & [path, codec] : normalized.elements)
-            columns.setTupleElementCodec(owner_name, path, codec);
-        if (normalized.root)
-            columns.modify(owner_name, [&](ColumnDescription & column) { column.codec = normalized.root; });
-    }
-}
-
-void checkTupleElementCodecAdmission(
-    const ColumnsDescription & columns,
-    const ASTCreateQuery & create,
-    LoadingStrictnessLevel mode,
-    bool is_restore_from_backup,
-    const ContextPtr & context)
-{
-    if (columns.hasTupleElementCodecs()
-        && (isFreshTableDefinition(mode, create.attach_short_syntax) || is_restore_from_backup)
-        && !context->getSettingsRef()[Setting::enable_tuple_element_codecs])
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Tuple-element CODEC declarations are experimental. Set enable_tuple_element_codecs = 1 to enable them");
-}
-
 /// Whether `database_replicated_allow_only_replicated_engine` restricts the tables that `create` may define.
 bool isOnlyReplicatedEngineAllowed(const ASTCreateQuery & create, const DatabasePtr & database, const ContextPtr & context)
 {
@@ -1081,24 +1041,9 @@ void throwIfEngineIsUnknownAndNotGranted(
 
 }
 
-void InterpreterCreateQuery::applyCodecOnlyDeclarations(
-    const ASTExpressionList * declarations,
-    ColumnsDescription & columns,
-    const ContextPtr & query_context,
-    bool trusted_metadata)
-{
-    applyCodecOnlyDeclarationsImpl(declarations, columns, query_context, trusted_metadata);
-}
-
 InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery(
     ASTCreateQuery & create, LoadingStrictnessLevel mode)
 {
-    ASTPtr pending_codec_declarations;
-    if (create.columns_list && create.columns_list->codec_declarations)
-    {
-        pending_codec_declarations = create.columns_list->codec_declarations->clone();
-        create.columns_list->reset(create.columns_list->codec_declarations);
-    }
     /// CLONE AS only makes sense with a source table: the partition-attach step performed after table
     /// creation needs real partitions to copy. Reject CLONE AS SELECT / CLONE AS table_function for a
     /// fresh CREATE and for a user-supplied full ATTACH definition (an ATTACH that carries an explicit
@@ -1130,7 +1075,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     TableProperties properties;
     TableLockHolder as_storage_lock;
 
-    if (create.columns_list && create.columns_list->hasPhysicalColumns())
+    if (create.columns_list)
     {
         if (create.as_table_function && (create.columns_list->indices || create.columns_list->constraints))
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Indexes and constraints are not supported for table functions");
@@ -1146,8 +1091,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             const bool check_defaults_over_virtual_columns
                 = !(create.is_ordinary_view || create.is_materialized_view_with_external_target());
             properties.columns = getColumnsDescription(
-                *create.columns_list->columns, getContext(), mode, is_restore_from_backup, check_defaults_over_virtual_columns);
+                *create.columns_list, getContext(), mode, is_restore_from_backup, check_defaults_over_virtual_columns);
         }
+        else if (create.columns_list->codec_declarations)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec declarations require a list of columns");
 
         if (create.columns_list->indices)
         {
@@ -1198,6 +1145,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         as_storage_lock = as_storage->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
         auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
         properties.columns = as_storage_metadata->getColumns();
+
+        /// Copying subcolumn codecs is a new declaration of them.
+        for (const auto & column : properties.columns)
+            if (!column.subcolumn_codecs.empty())
+                checkSubcolumnCodecsAreEnabled(getContext(), mode, is_restore_from_backup);
 
         if (!create.comment && !as_storage_metadata->comment.empty())
             create.set(create.comment, make_intrusive<ASTLiteral>(as_storage_metadata->comment));
@@ -1413,22 +1365,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     else if (!StorageFactory::instance().getStorageFeatures(create.storage->engine->name).supports_schema_inference)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Incorrect CREATE query: required list of column descriptions or AS section or SELECT.");
 
-    /// Some engines infer their physical schema only in StorageFactory::get(). Keep the
-    /// declarations in the AST until that schema is available; all other inference paths have
-    /// completed above and can resolve them now.
-    const bool defer_codec_declarations = pending_codec_declarations && properties.columns.empty();
-    if (!defer_codec_declarations)
-    {
-        applyCodecOnlyDeclarationsImpl(
-            pending_codec_declarations ? pending_codec_declarations->as<ASTExpressionList>() : nullptr,
-            properties.columns,
-            getContext(),
-            !isFreshTableDefinition(mode, create.attach_short_syntax) && !is_restore_from_backup);
-        normalizeTupleElementCodecPolicies(
-            properties.columns, getContext(),
-            !isFreshTableDefinition(mode, create.attach_short_syntax) && !is_restore_from_backup);
-    }
-
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
     if (!create.columns_list)
         create.set(create.columns_list, make_intrusive<ASTColumns>());
@@ -1447,9 +1383,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     }
 
     ASTPtr new_columns = formatColumns(properties.columns);
-    ASTPtr new_codec_declarations = defer_codec_declarations
-        ? pending_codec_declarations
-        : formatTupleElementCodecDeclarations(properties.columns);
+    ASTPtr new_codec_declarations = formatCodecDeclarations(properties.columns);
     ASTPtr new_indices = formatIndices(properties.indices);
     ASTPtr new_constraints = formatConstraints(properties.constraints);
     ASTPtr new_projections = formatProjections(properties.projections);
@@ -2767,10 +2701,6 @@ try
 {
     validateVirtualColumns(storage, context);
     checkForUnsupportedColumns(storage, mode, context, is_temporary);
-    const auto metadata = storage.getInMemoryMetadataPtr(context, false);
-    if (metadata->getColumns().hasTupleElementCodecs() && !storage.supportsPerSubcolumnCodecs())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Storage {} does not support codecs on Tuple elements", storage.getName());
 }
 catch (...)
 {
@@ -2788,61 +2718,6 @@ catch (...)
     throw;
 }
 
-void applyDeferredCodecDeclarations(
-    ASTCreateQuery & create,
-    IStorage & storage,
-    LoadingStrictnessLevel mode,
-    bool is_restore_from_backup,
-    const ContextPtr & context)
-try
-{
-    if (!create.columns_list || !create.columns_list->codec_declarations)
-        return;
-
-    const auto metadata_snapshot = storage.getInMemoryMetadataPtr(context, false);
-    auto metadata = *metadata_snapshot;
-    applyCodecOnlyDeclarationsImpl(
-        create.columns_list->codec_declarations,
-        metadata.columns,
-        context,
-        !isFreshTableDefinition(mode, create.attach_short_syntax) && !is_restore_from_backup);
-    normalizeTupleElementCodecPolicies(
-        metadata.columns,
-        context,
-        !isFreshTableDefinition(mode, create.attach_short_syntax) && !is_restore_from_backup);
-
-    if (metadata.columns.hasTupleElementCodecs())
-    {
-        if (!storage.supportsPerSubcolumnCodecs())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Storage {} does not support codecs on Tuple elements", storage.getName());
-        checkTupleElementCodecAdmission(metadata.columns, create, mode, is_restore_from_backup, context);
-    }
-
-    storage.setInMemoryMetadata(metadata);
-    create.columns_list->setOrReplace(
-        create.columns_list->columns,
-        InterpreterCreateQuery::formatColumns(metadata.columns));
-    create.columns_list->setOrReplace(
-        create.columns_list->codec_declarations,
-        InterpreterCreateQuery::formatTupleElementCodecDeclarations(metadata.columns));
-}
-catch (...)
-{
-    if (mode <= LoadingStrictnessLevel::CREATE)
-    {
-        try
-        {
-            storage.drop();
-        }
-        catch (...)
-        {
-            tryLogCurrentException("applyDeferredCodecDeclarations");
-        }
-    }
-    throw;
-}
-
 }
 
 bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
@@ -2855,7 +2730,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             return false;
 
         checkTemporaryTablesLimit(getContext(), create.getTable());
-        checkTupleElementCodecAdmission(properties.columns, create, mode, is_restore_from_backup, getContext());
 
         DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
 
@@ -2870,10 +2744,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 properties.constraints,
                 mode,
                 is_restore_from_backup);
-            if (properties.columns.empty() && create.columns_list
-                && create.columns_list->codec_declarations
-                && !create.columns_list->codec_declarations->children.empty())
-                applyDeferredCodecDeclarations(create, *res, mode, is_restore_from_backup, getContext());
             validateStorage(*res, mode, getContext(), /*is_temporary=*/true);
             return res;
         };
@@ -2901,7 +2771,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// TODO Check structure of table
         if (create.if_not_exists)
             return false;
-        checkTupleElementCodecAdmission(properties.columns, create, mode, is_restore_from_backup, getContext());
         if (create.replace_view)
         {
             /// when executing CREATE OR REPLACE VIEW, drop current existing view
@@ -2952,8 +2821,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         if (mode <= LoadingStrictnessLevel::CREATE)
             database->checkTableNameLength(create.getTable());
     }
-
-    checkTupleElementCodecAdmission(properties.columns, create, mode, is_restore_from_backup, getContext());
 
     data_path = database->getTableDataPath(create);
     // When creating a table, when checking if the data path exists, it should use the local disk to check, not the database disk. Because the database disk stores metadata files only.
@@ -3108,10 +2975,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// If schema was inferred while storage creation, add columns description to create query.
         auto & create_query = query_ptr->as<ASTCreateQuery &>();
         addColumnsDescriptionToCreateQueryIfNecessary(create_query, res);
-        if (properties.columns.empty() && create_query.columns_list
-            && create_query.columns_list->codec_declarations
-            && !create_query.columns_list->codec_declarations->children.empty())
-            applyDeferredCodecDeclarations(create_query, *res, mode, is_restore_from_backup, getContext());
         /// Add any inferred engine args if needed. For example, data format for engines File/S3/URL/etc
         if (auto * engine_args = getEngineArgsFromCreateQuery(create_query))
             res->addInferredEngineArgsToCreateQuery(*engine_args, getContext());
@@ -3629,7 +3492,6 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
     /// Bare `REPLACE` requires the target to exist, so it never adds a table.
     if (create.create_or_replace)
         checkTemporaryTablesLimit(getContext(), create.getTable());
-    checkTupleElementCodecAdmission(properties.columns, create, mode, is_restore_from_backup, getContext());
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
 
@@ -3645,11 +3507,6 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
             properties.constraints,
             mode,
             is_restore_from_backup);
-        addColumnsDescriptionToCreateQueryIfNecessary(create, res);
-        if (properties.columns.empty() && create.columns_list
-            && create.columns_list->codec_declarations
-            && !create.columns_list->codec_declarations->children.empty())
-            applyDeferredCodecDeclarations(create, *res, mode, is_restore_from_backup, getContext());
         validateStorage(*res, mode, getContext(), /*is_temporary=*/true);
         return res;
     };
@@ -4391,7 +4248,7 @@ void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCr
 {
     if (create.is_dictionary
         || storage->getName() == "Alias"
-        || (create.columns_list && create.columns_list->hasPhysicalColumns()))
+        || (create.columns_list && create.columns_list->columns && !create.columns_list->columns->children.empty()))
         return;
 
     auto ast_storage = make_intrusive<ASTStorage>();

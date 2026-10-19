@@ -1,4 +1,5 @@
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTCodecDeclaration.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
@@ -100,7 +101,6 @@ void ASTColumns::readJSON(const Poco::JSON::Object & json)
     };
 
     readDeclarationList.operator()<ASTColumnDeclaration>("columns", columns);
-    readDeclarationList.operator()<ASTColumnDeclaration>("codec_declarations", codec_declarations);
 
     /// A column-level PRIMARY KEY is a parser-intermediate bit in a CREATE column list:
     /// `ParserTablePropertiesDeclarationList` transfers it into `primary_key_from_columns` (which
@@ -115,6 +115,7 @@ void ASTColumns::readJSON(const Poco::JSON::Object & json)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "A column-level 'primary_key_specifier' is not allowed in `Columns` during AST JSON deserialization");
 
+    readDeclarationList.operator()<ASTCodecDeclaration>("codec_declarations", codec_declarations);
     readDeclarationList.operator()<ASTIndexDeclaration>("indices", indices);
     readDeclarationList.operator()<ASTConstraintDeclaration>("constraints", constraints);
     readDeclarationList.operator()<ASTProjectionDeclaration>("projections", projections);
@@ -374,7 +375,7 @@ void ASTColumns::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
         for (const auto & declaration : codec_declarations->children)
         {
             auto elem = make_intrusive<ASTColumnsElement>();
-            elem->prefix = "";
+            elem->prefix = "CODEC";
             elem->set(elem->elem, declaration->clone());
             list.children.push_back(elem);
         }

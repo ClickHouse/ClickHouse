@@ -31,8 +31,6 @@ class ASTColumnDeclaration : public IAST
 {
 public:
     String name;
-    /// Preserved compound identifier for codec-only CREATE/ALTER declarations.
-    ASTPtr codec_target;
     ColumnDefaultSpecifier default_specifier = ColumnDefaultSpecifier::Empty;
 
     std::optional<bool> null_modifier;

@@ -14,7 +14,7 @@
 #include <Analyzer/TableNode.h>
 #include <Core/Settings.h>
 #include <Storages/StorageView.h>
-#include <Storages/ColumnCodecResolver.h>
+#include <Storages/SubcolumnCodecs.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -260,11 +260,7 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
     auto metadata_snapshot = table->getInMemoryMetadataPtr(query_context, false);
     const auto & column_descriptions = metadata_snapshot->getColumns();
     for (const auto & column : column_descriptions)
-    {
         columns.emplace_back(column);
-        if (const auto * declarations = column_descriptions.tryGetTupleElementCodecs(column.name))
-            tuple_element_codecs.emplace(column.name, *declarations);
-    }
 
     if (settings[Setting::describe_include_virtual_columns])
     {
@@ -320,10 +316,6 @@ void InterpreterDescribeQuery::addColumn(const ColumnDescription & column, bool 
 
 void InterpreterDescribeQuery::addSubcolumns(const ColumnDescription & column, bool is_virtual, MutableColumns & res_columns)
 {
-    const auto declarations = tuple_element_codecs.find(column.name);
-    ColumnCodecResolver codec_resolver(
-        ColumnCodecPolicyView(column.codec, declarations == tuple_element_codecs.end() ? nullptr : &declarations->second),
-        column.type, NameAndTypePair(column.name, column.type), nullptr);
     IDataType::forEachSubcolumn([&](const auto & path, const auto & name, const auto & data)
     {
         size_t i = 0;
@@ -342,10 +334,10 @@ void InterpreterDescribeQuery::addSubcolumns(const ColumnDescription & column, b
             res_columns[i++]->insertDefault();
             res_columns[i++]->insert(column.comment);
 
-            const auto resolved_codec = is_virtual || ISerialization::isEphemeralSubcolumn(path, path.size())
-                ? ASTPtr{} : codec_resolver.resolve(path).codec;
-            if (const auto * codec_function = resolved_codec ? resolved_codec->template as<ASTFunction>() : nullptr)
-                res_columns[i++]->insert(codec_function->arguments->formatForLogging());
+            ASTPtr codec = ISerialization::isSpecialCompressionAllowed(path)
+                ? getSubstreamCodecDescription(path, column) : nullptr;
+            if (codec)
+                res_columns[i++]->insert(codec->as<ASTFunction>()->arguments->formatForLogging());
             else
                 res_columns[i++]->insertDefault();
 
