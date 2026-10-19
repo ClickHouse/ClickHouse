@@ -3,6 +3,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFunction.h>
+#include <Columns/ColumnNothing.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -26,6 +27,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeMapHelpers.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -326,6 +328,18 @@ bool isSupportedLeafType(const IDataType & type)
         || typeid(type) == typeid(DataTypeUUID) || typeid(type) == typeid(DataTypeIPv4) || typeid(type) == typeid(DataTypeIPv6);
 }
 
+bool isNullableNothingType(const DataTypePtr & type)
+{
+    const auto * nullable_type = type ? typeid_cast<const DataTypeNullable *>(type.get()) : nullptr;
+    if (!nullable_type || type->getCustomName() || type->getCustomSerialization())
+        return false;
+
+    const auto & nested_type = nullable_type->getNestedType();
+    const IDataType * nested_type_raw = nested_type.get();
+    return nested_type_raw && typeid(*nested_type_raw) == typeid(DataTypeNothing)
+        && !nested_type->getCustomName() && !nested_type->getCustomSerialization();
+}
+
 bool isNativeBoolType(const IDataType & type)
 {
     if (typeid(type) != typeid(DataTypeUInt8))
@@ -396,6 +410,9 @@ bool sameType(const DataTypePtr & left, const DataTypePtr & right, ExpressionMat
         if (!left_type || !right_type)
             return false;
 
+        const IDataType * left_type_raw = left_type.get();
+        const IDataType * right_type_raw = right_type.get();
+
         const bool left_is_native_bool = isNativeBoolType(*left_type);
         const bool right_is_native_bool = isNativeBoolType(*right_type);
         if (left_is_native_bool || right_is_native_bool)
@@ -411,6 +428,37 @@ bool sameType(const DataTypePtr & left, const DataTypePtr & right, ExpressionMat
         /// Function-typed arguments carry lambda captures outside the ordinary child structure.
         if (typeid_cast<const DataTypeFunction *>(left_type.get()) || typeid_cast<const DataTypeFunction *>(right_type.get()))
             return false;
+
+        const auto * left_nullable_type = typeid_cast<const DataTypeNullable *>(left_type.get());
+        const auto * right_nullable_type = typeid_cast<const DataTypeNullable *>(right_type.get());
+        const IDataType * left_nullable_nested_type_raw = left_nullable_type
+            ? left_nullable_type->getNestedType().get() : nullptr;
+        const IDataType * right_nullable_nested_type_raw = right_nullable_type
+            ? right_nullable_type->getNestedType().get() : nullptr;
+        const bool left_nullable_nothing = left_nullable_type
+            && left_nullable_nested_type_raw
+            && typeid(*left_nullable_nested_type_raw) == typeid(DataTypeNothing);
+        const bool right_nullable_nothing = right_nullable_type
+            && right_nullable_nested_type_raw
+            && typeid(*right_nullable_nested_type_raw) == typeid(DataTypeNothing);
+        if (left_nullable_nothing || right_nullable_nothing)
+        {
+            if (!left_nullable_nothing || !right_nullable_nothing
+                || !isNullableNothingType(left_type) || !isNullableNothingType(right_type)
+                || !budget.consume())
+                return false;
+            continue;
+        }
+
+        const bool left_is_nothing = typeid(*left_type_raw) == typeid(DataTypeNothing);
+        const bool right_is_nothing = typeid(*right_type_raw) == typeid(DataTypeNothing);
+        if (left_is_nothing || right_is_nothing)
+        {
+            if (!left_is_nothing || !right_is_nothing
+                || left_type->getCustomSerialization() || right_type->getCustomSerialization())
+                return false;
+            continue;
+        }
 
         if (const auto * left_datetime64 = typeid_cast<const DataTypeDateTime64 *>(left_type.get()))
         {
@@ -488,8 +536,6 @@ bool sameType(const DataTypePtr & left, const DataTypePtr & right, ExpressionMat
             continue;
         }
 
-        const IDataType * left_type_raw = left_type.get();
-        const IDataType * right_type_raw = right_type.get();
         if (typeid(*left_type_raw) != typeid(*right_type_raw))
             return false;
 
@@ -810,6 +856,39 @@ bool compareSupportedConstantValues(
     const IColumn & right_data,
     ExpressionMatchBudget & budget)
 {
+    const bool left_is_nullable_nothing = isNullableNothingType(left_type);
+    const bool right_is_nullable_nothing = isNullableNothingType(right_type);
+    if (left_is_nullable_nothing || right_is_nullable_nothing)
+    {
+        if (!left_is_nullable_nothing || !right_is_nullable_nothing || !budget.consume(8))
+            return false;
+
+        const auto * left_nullable_column = typeid_cast<const ColumnNullable *>(&left_data);
+        const auto * right_nullable_column = typeid_cast<const ColumnNullable *>(&right_data);
+        if (!left_nullable_column || !right_nullable_column
+            || typeid(left_data) != typeid(ColumnNullable) || typeid(right_data) != typeid(ColumnNullable))
+            return false;
+
+        const IColumn * left_nested_column = left_nullable_column->getNestedColumnPtr().get();
+        const IColumn * right_nested_column = right_nullable_column->getNestedColumnPtr().get();
+        const IColumn * left_null_map_column = left_nullable_column->getNullMapColumnPtr().get();
+        const IColumn * right_null_map_column = right_nullable_column->getNullMapColumnPtr().get();
+        if (!left_nested_column || !right_nested_column || !left_null_map_column || !right_null_map_column
+            || typeid(*left_nested_column) != typeid(ColumnNothing)
+            || typeid(*right_nested_column) != typeid(ColumnNothing)
+            || typeid(*left_null_map_column) != typeid(ColumnUInt8)
+            || typeid(*right_null_map_column) != typeid(ColumnUInt8))
+            return false;
+
+        const auto & left_null_map = left_nullable_column->getNullMapData();
+        const auto & right_null_map = right_nullable_column->getNullMapData();
+        return left_nullable_column->size() == 1 && right_nullable_column->size() == 1
+            && left_nested_column->size() == 1 && right_nested_column->size() == 1
+            && left_null_map.size() == 1 && right_null_map.size() == 1
+            && left_null_map[0] == ColumnNullable::IS_NULL_MASK
+            && right_null_map[0] == ColumnNullable::IS_NULL_MASK;
+    }
+
     if (compareSupportedNumericConstant(left_type, right_type, left_data, right_data, budget))
         return true;
 

@@ -5,11 +5,16 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFunction.h>
+#include <Columns/ColumnNothing.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeFunction.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -162,6 +167,15 @@ bool canPruneLambdaInWithFunctionCount(size_t function_count)
         const ActionsDAG::Node * output = nullptr;
         for (size_t i = 0; i < function_count; ++i)
             output = &lambda_dag.addFunction(plus, {&lambda_argument, &one}, "unused_" + std::to_string(i));
+
+        /// Keep a native Nullable(Nothing) leaf in the matched body. In the oversized case it is
+        /// deliberately after the budget-consuming nodes, so exhaustion must decline the whole match.
+        const auto nullable_nothing_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+        const auto & null_constant = lambda_dag.addColumn(
+            nullable_nothing_type->createColumnConst(0, Field(Null())), nullable_nothing_type, "nullable_null", true);
+        const auto & is_null = lambda_dag.addFunction(
+            FunctionFactory::instance().get("isNull", context), {&null_constant}, "nullable_null_check");
+        output = &lambda_dag.addFunction(plus, {&lambda_argument, &is_null}, "nullable_result");
         lambda_dag.getOutputs().clear();
         lambda_dag.getOutputs().push_back(output);
         const auto return_name = output->result_name;
@@ -211,6 +225,13 @@ enum class TestLambdaCarrier
     FunctionCapture,
 };
 
+enum class TestIndexOutputName
+{
+    Canonical,
+    QueryNameCollision,
+    DistinctAlias,
+};
+
 struct TestLambdaSpec
 {
     TestLambdaCarrier carrier = TestLambdaCarrier::ColumnFunction;
@@ -237,6 +258,8 @@ struct TestLambdaInResult
     bool query_allows_constant_folding;
     bool index_allows_constant_folding;
     bool canonical_names_equal;
+    bool header_name_matches_query;
+    bool header_name_matches_index;
 };
 
 struct TestMappedLambda
@@ -384,7 +407,7 @@ TestMappedLambda addMappedArrayWithLambda(
 TestLambdaInResult canPruneLambdaInWithCarriers(
     const TestLambdaSpec & query_spec,
     const TestLambdaSpec & index_spec,
-    bool force_index_name_match = false)
+    TestIndexOutputName output_name_mode = TestIndexOutputName::Canonical)
 {
     tryRegisterFunctions();
     const auto context = getContext().context;
@@ -402,9 +425,21 @@ TestLambdaInResult canPruneLambdaInWithCarriers(
 
     const auto query_name = RPNBuilderTreeNode(&query_lambda_array, context).getColumnName();
     const auto index_name = RPNBuilderTreeNode(&index_lambda_array, context).getColumnName();
-    /// Most tests use the index's actual canonical name. Negative controls can deliberately collide
-    /// the header name so a mismatch must be rejected by the structural matcher itself.
-    const auto output_name = force_index_name_match ? query_name : index_name;
+    String output_name;
+    switch (output_name_mode)
+    {
+        case TestIndexOutputName::Canonical:
+            output_name = index_name;
+            break;
+        case TestIndexOutputName::QueryNameCollision:
+            /// Force the header lookup to succeed so negative controls reach structural comparison.
+            output_name = query_name;
+            break;
+        case TestIndexOutputName::DistinctAlias:
+            /// Force direct-IN's positional fallback while proving natural names remain unmodified.
+            output_name = "__distinct_test_index_alias";
+            break;
+    }
     const auto & index_output = index_dag.addAlias(index_lambda_array, output_name);
     index_dag.getOutputs().push_back(&index_output);
 
@@ -431,6 +466,194 @@ TestLambdaInResult canPruneLambdaInWithCarriers(
         .index_allows_constant_folding = getNativeLambdaCapture(*index_mapping.lambda)
             && getNativeLambdaCapture(*index_mapping.lambda)->allow_constant_folding,
         .canonical_names_equal = query_name == index_name,
+        .header_name_matches_query = header.has(query_name),
+        .header_name_matches_index = output_name == index_name,
+    };
+}
+
+enum class TestNullableNothingCustomization
+{
+    None,
+    WrapperName,
+    WrapperSerialization,
+    NestedName,
+    NestedSerialization,
+};
+
+DataTypePtr makeTestNullableNothingType(TestNullableNothingCustomization customization)
+{
+    auto nested_type = std::make_shared<DataTypeNothing>();
+    if (customization == TestNullableNothingCustomization::NestedName)
+        nested_type->setCustomization(std::make_unique<DataTypeCustomDesc>(
+            std::make_unique<DataTypeCustomFixedName>("CustomNothing")));
+    else if (customization == TestNullableNothingCustomization::NestedSerialization)
+        nested_type->setCustomization(std::make_unique<DataTypeCustomDesc>(nullptr, nested_type->getDefaultSerialization()));
+
+    auto nullable_type = std::make_shared<DataTypeNullable>(nested_type);
+    if (customization == TestNullableNothingCustomization::WrapperName)
+        nullable_type->setCustomization(std::make_unique<DataTypeCustomDesc>(
+            std::make_unique<DataTypeCustomFixedName>("CustomNullableNothing")));
+    else if (customization == TestNullableNothingCustomization::WrapperSerialization)
+        nullable_type->setCustomization(std::make_unique<DataTypeCustomDesc>(nullptr, nullable_type->getDefaultSerialization()));
+    return nullable_type;
+}
+
+ColumnConstPtr makeTestNullableConstant(const DataTypePtr & type, bool null_map_is_set)
+{
+    if (type->onlyNull() && !null_map_is_set)
+    {
+        auto nested_column = ColumnNothing::create(1);
+        auto null_map = ColumnUInt8::create();
+        null_map->getData().push_back(UInt8{0});
+        auto nullable_column = ColumnNullable::create(std::move(nested_column), std::move(null_map));
+        return ColumnConst::create(std::move(nullable_column), 0);
+    }
+
+    return type->createColumnConst(0, Field(Null()));
+}
+
+struct TestNullableNothingInResult
+{
+    bool can_prune;
+    bool query_is_null_function_reaches_leaf;
+    bool index_is_null_function_reaches_leaf;
+    bool query_has_native_nullable_nothing_column;
+    bool index_has_native_nullable_nothing_column;
+    bool query_null_map_is_set;
+    bool index_null_map_is_set;
+    bool query_leaf_has_custom_name;
+    bool index_leaf_has_custom_name;
+    bool query_leaf_has_custom_serialization;
+    bool index_leaf_has_custom_serialization;
+    bool query_nested_has_custom_name;
+    bool index_nested_has_custom_name;
+    bool query_nested_has_custom_serialization;
+    bool index_nested_has_custom_serialization;
+    bool query_is_nullable_string;
+    bool index_is_nullable_string;
+    bool canonical_names_equal;
+    bool header_name_matches_query;
+};
+
+TestNullableNothingInResult canPruneNullableNothingIn(
+    const DataTypePtr & query_null_type,
+    bool query_null_map_is_set,
+    const DataTypePtr & index_null_type,
+    bool index_null_map_is_set)
+{
+    tryRegisterFunctions();
+    const auto context = getContext().context;
+    const auto uint64_type = std::make_shared<DataTypeUInt64>();
+    const auto array_type = std::make_shared<DataTypeArray>(uint64_type);
+
+    const auto build_expression = [&](ActionsDAG & dag, const DataTypePtr & null_type, bool null_map_is_set, const String & prefix)
+    {
+        const auto & null_constant = dag.addColumn(
+            makeTestNullableConstant(null_type, null_map_is_set), null_type, "null_constant", true);
+        const auto & is_null = dag.addFunction(
+            FunctionFactory::instance().get("isNull", context), {&null_constant}, "is_null_value");
+        const auto & array_input = dag.addInput("a", array_type);
+        const auto & expression = dag.addFunction(
+            FunctionFactory::instance().get("if", context), {&is_null, &array_input, &array_input}, prefix + "result");
+        return std::tuple{&expression, &is_null, &null_constant};
+    };
+
+    ActionsDAG query_dag;
+    ActionsDAG index_dag;
+    const auto [query_expression, query_is_null, query_null_constant] =
+        build_expression(query_dag, query_null_type, query_null_map_is_set, "query_");
+    const auto [index_expression, index_is_null, index_null_constant] =
+        build_expression(index_dag, index_null_type, index_null_map_is_set, "index_");
+
+    const auto query_name = RPNBuilderTreeNode(query_expression, context).getColumnName();
+    const auto index_name = RPNBuilderTreeNode(index_expression, context).getColumnName();
+    /// Make direct-IN reach the structural comparison even when the natural names differ.
+    const String output_name = query_name;
+    const auto & index_output = index_dag.addAlias(*index_expression, output_name);
+    index_dag.getOutputs().push_back(&index_output);
+
+    auto set_value = array_type->createColumn();
+    set_value->insert(Field(Array{Field(UInt64(4))}));
+    ColumnsWithTypeAndName set_columns{{std::move(set_value), array_type, "value"}};
+    auto future_set = std::make_shared<FutureSetFromTuple>(
+        FutureSet::Hash{}, nullptr, std::move(set_columns), false, SizeLimits{});
+    const auto & set_node = query_dag.addColumn(
+        ColumnConst::create(ColumnSet::create(1, std::move(future_set)), 0), std::make_shared<DataTypeSet>(), "set");
+    const auto & predicate = query_dag.addFunction(
+        FunctionFactory::instance().get("in", context), {query_expression, &set_node}, "predicate");
+
+    Block header(ColumnsWithTypeAndName{{array_type->createColumn(), array_type, query_name}});
+    MergeTreeIndexConditionBloomFilter condition(&predicate, context, header, index_dag, 4, {}, {});
+
+    const auto inspect_leaf = [](const ActionsDAG::Node & root, const ActionsDAG::Node & is_null, const ActionsDAG::Node & leaf)
+    {
+        const bool reaches_leaf = root.type == ActionsDAG::ActionType::FUNCTION && root.children.size() == 3
+            && root.children[0] == &is_null && is_null.type == ActionsDAG::ActionType::FUNCTION
+            && is_null.children.size() == 1 && is_null.children[0] == &leaf
+            && leaf.type == ActionsDAG::ActionType::COLUMN && leaf.children.empty() && leaf.column;
+
+        const auto * nullable_type = typeid_cast<const DataTypeNullable *>(leaf.result_type.get());
+        const auto * constant = typeid_cast<const ColumnConst *>(leaf.column.get());
+        const auto * nullable_column = constant
+            ? typeid_cast<const ColumnNullable *>(&constant->getDataColumn())
+            : nullptr;
+        const IColumn * nested_column = nullable_column ? &nullable_column->getNestedColumn() : nullptr;
+        const auto null_map_column = nullable_column ? nullable_column->getNullMapColumnPtr() : ColumnPtr{};
+        const IColumn * null_map = null_map_column.get();
+        const auto * nested_nothing = nullable_type
+            ? typeid_cast<const DataTypeNothing *>(nullable_type->getNestedType().get())
+            : nullptr;
+        const auto * nested_string = nullable_type
+            ? typeid_cast<const DataTypeString *>(nullable_type->getNestedType().get())
+            : nullptr;
+        const bool native_nullable_nothing = nullable_type && nested_nothing && constant && nullable_column
+            && typeid(*nullable_type) == typeid(DataTypeNullable)
+            && typeid(*nested_nothing) == typeid(DataTypeNothing)
+            && typeid(*nullable_column) == typeid(ColumnNullable)
+            && nested_column && typeid(*nested_column) == typeid(ColumnNothing)
+            && null_map && typeid(*null_map) == typeid(ColumnUInt8)
+            && nullable_column->size() == 1 && nested_column->size() == 1
+            && nullable_column->getNullMapData().size() == 1;
+
+        return std::tuple{
+            reaches_leaf,
+            native_nullable_nothing,
+            native_nullable_nothing && nullable_column->getNullMapData()[0] == ColumnNullable::IS_NULL_MASK,
+            leaf.result_type && leaf.result_type->getCustomName(),
+            leaf.result_type && leaf.result_type->getCustomSerialization(),
+            nullable_type && nullable_type->getNestedType()->getCustomName(),
+            nullable_type && nullable_type->getNestedType()->getCustomSerialization(),
+            nullable_type && nested_string && typeid(*nullable_type) == typeid(DataTypeNullable)
+                && typeid(*nested_string) == typeid(DataTypeString)};
+    };
+
+    const auto [query_reaches_leaf, query_native_column, query_has_null, query_custom_name, query_custom_serialization,
+        query_nested_custom_name, query_nested_custom_serialization, query_is_nullable_string] =
+        inspect_leaf(*query_expression, *query_is_null, *query_null_constant);
+    const auto [index_reaches_leaf, index_native_column, index_has_null, index_custom_name, index_custom_serialization,
+        index_nested_custom_name, index_nested_custom_serialization, index_is_nullable_string] =
+        inspect_leaf(*index_expression, *index_is_null, *index_null_constant);
+
+    return {
+        .can_prune = !condition.alwaysUnknownOrTrue(),
+        .query_is_null_function_reaches_leaf = query_reaches_leaf,
+        .index_is_null_function_reaches_leaf = index_reaches_leaf,
+        .query_has_native_nullable_nothing_column = query_native_column,
+        .index_has_native_nullable_nothing_column = index_native_column,
+        .query_null_map_is_set = query_has_null,
+        .index_null_map_is_set = index_has_null,
+        .query_leaf_has_custom_name = query_custom_name,
+        .index_leaf_has_custom_name = index_custom_name,
+        .query_leaf_has_custom_serialization = query_custom_serialization,
+        .index_leaf_has_custom_serialization = index_custom_serialization,
+        .query_nested_has_custom_name = query_nested_custom_name,
+        .index_nested_has_custom_name = index_nested_custom_name,
+        .query_nested_has_custom_serialization = query_nested_custom_serialization,
+        .index_nested_has_custom_serialization = index_nested_custom_serialization,
+        .query_is_nullable_string = query_is_nullable_string,
+        .index_is_nullable_string = index_is_nullable_string,
+        .canonical_names_equal = query_name == index_name,
+        .header_name_matches_query = header.has(query_name),
     };
 }
 
@@ -710,24 +933,30 @@ TEST(MergeTreeIndexBloomFilter, MatchesNativeLambdaCarriersOnlyWhenEquivalent)
     captured_column_function_with_generated_name.capture_name = "__table1.offset_value";
     captured_column_function_with_generated_name.body_output_name = "query_result";
     const auto mixed_result = canPruneLambdaInWithCarriers(
-        captured_column_function_with_generated_name, captured_function_capture);
+        captured_column_function_with_generated_name,
+        captured_function_capture,
+        TestIndexOutputName::DistinctAlias);
     EXPECT_TRUE(mixed_result.query_is_column_function);
     EXPECT_TRUE(mixed_result.index_is_function_capture);
     EXPECT_TRUE(mixed_result.query_allows_constant_folding);
     EXPECT_FALSE(mixed_result.index_allows_constant_folding);
-    EXPECT_FALSE(mixed_result.canonical_names_equal);
+    EXPECT_TRUE(mixed_result.canonical_names_equal);
+    EXPECT_FALSE(mixed_result.header_name_matches_query);
+    EXPECT_FALSE(mixed_result.header_name_matches_index);
     EXPECT_TRUE(mixed_result.can_prune);
 
     auto different_capture = captured_column_function;
     different_capture.captured_value = 2;
-    const auto capture_result = canPruneLambdaInWithCarriers(captured_column_function, different_capture, true);
+    const auto capture_result = canPruneLambdaInWithCarriers(
+        captured_column_function, different_capture, TestIndexOutputName::QueryNameCollision);
     EXPECT_TRUE(capture_result.query_is_column_function);
     EXPECT_TRUE(capture_result.index_is_column_function);
     EXPECT_FALSE(capture_result.can_prune);
 
     auto different_body = equal_column_function;
     different_body.body_value = 2;
-    const auto body_result = canPruneLambdaInWithCarriers(equal_column_function, different_body, true);
+    const auto body_result = canPruneLambdaInWithCarriers(
+        equal_column_function, different_body, TestIndexOutputName::QueryNameCollision);
     EXPECT_TRUE(body_result.query_is_column_function);
     EXPECT_TRUE(body_result.index_is_column_function);
     EXPECT_FALSE(body_result.can_prune);
@@ -735,7 +964,9 @@ TEST(MergeTreeIndexBloomFilter, MatchesNativeLambdaCarriersOnlyWhenEquivalent)
     auto different_mixed_capture = captured_function_capture;
     different_mixed_capture.captured_value = 2;
     const auto mixed_capture_mismatch = canPruneLambdaInWithCarriers(
-        captured_column_function_with_generated_name, different_mixed_capture, true);
+        captured_column_function_with_generated_name,
+        different_mixed_capture,
+        TestIndexOutputName::QueryNameCollision);
     EXPECT_TRUE(mixed_capture_mismatch.query_is_column_function);
     EXPECT_TRUE(mixed_capture_mismatch.index_is_function_capture);
     EXPECT_FALSE(mixed_capture_mismatch.can_prune);
@@ -745,7 +976,8 @@ TEST(MergeTreeIndexBloomFilter, MatchesNativeLambdaCarriersOnlyWhenEquivalent)
         .body_value = 2,
         .body_output_name = "index_result",
     };
-    const auto mixed_body_mismatch = canPruneLambdaInWithCarriers(equal_column_function, different_mixed_body, true);
+    const auto mixed_body_mismatch = canPruneLambdaInWithCarriers(
+        equal_column_function, different_mixed_body, TestIndexOutputName::QueryNameCollision);
     EXPECT_TRUE(mixed_body_mismatch.query_is_column_function);
     EXPECT_TRUE(mixed_body_mismatch.index_is_function_capture);
     EXPECT_FALSE(mixed_body_mismatch.can_prune);
@@ -762,16 +994,23 @@ TEST(MergeTreeIndexBloomFilter, MatchesNativeLambdaCarriersOnlyWhenEquivalent)
     same_body_capture_index.capture_name = "offset_value";
     same_body_capture_index.outer_capture_name = "offset_value";
     same_body_capture_index.body_output_name = "index_result";
-    const auto same_input_capture = canPruneLambdaInWithCarriers(same_body_capture_by_input, same_body_capture_index);
+    const auto same_input_capture = canPruneLambdaInWithCarriers(
+        same_body_capture_by_input,
+        same_body_capture_index,
+        TestIndexOutputName::DistinctAlias);
     EXPECT_TRUE(same_input_capture.query_is_function_capture);
     EXPECT_TRUE(same_input_capture.index_is_function_capture);
-    EXPECT_FALSE(same_input_capture.canonical_names_equal);
+    EXPECT_TRUE(same_input_capture.canonical_names_equal);
+    EXPECT_FALSE(same_input_capture.header_name_matches_query);
+    EXPECT_FALSE(same_input_capture.header_name_matches_index);
     EXPECT_TRUE(same_input_capture.can_prune);
 
     auto different_outer_capture = same_body_capture_index;
     different_outer_capture.outer_capture_name = "other_offset_value";
     const auto input_capture_mismatch = canPruneLambdaInWithCarriers(
-        same_body_capture_by_input, different_outer_capture, true);
+        same_body_capture_by_input,
+        different_outer_capture,
+        TestIndexOutputName::QueryNameCollision);
     EXPECT_TRUE(input_capture_mismatch.query_is_function_capture);
     EXPECT_TRUE(input_capture_mismatch.index_is_function_capture);
     EXPECT_FALSE(input_capture_mismatch.can_prune);
@@ -779,14 +1018,16 @@ TEST(MergeTreeIndexBloomFilter, MatchesNativeLambdaCarriersOnlyWhenEquivalent)
     auto wrong_return_binding = equal_column_function;
     wrong_return_binding.override_return_name = true;
     wrong_return_binding.return_name_override = "different_result";
-    const auto wrong_return = canPruneLambdaInWithCarriers(equal_column_function, wrong_return_binding, true);
+    const auto wrong_return = canPruneLambdaInWithCarriers(
+        equal_column_function, wrong_return_binding, TestIndexOutputName::QueryNameCollision);
     EXPECT_TRUE(wrong_return.index_is_column_function);
     EXPECT_FALSE(wrong_return.can_prune);
 
     auto missing_return_binding = equal_column_function;
     missing_return_binding.override_return_name = true;
     missing_return_binding.return_name_override.clear();
-    const auto missing_return = canPruneLambdaInWithCarriers(equal_column_function, missing_return_binding, true);
+    const auto missing_return = canPruneLambdaInWithCarriers(
+        equal_column_function, missing_return_binding, TestIndexOutputName::QueryNameCollision);
     EXPECT_TRUE(missing_return.index_is_column_function);
     EXPECT_FALSE(missing_return.can_prune);
 
@@ -796,7 +1037,9 @@ TEST(MergeTreeIndexBloomFilter, MatchesNativeLambdaCarriersOnlyWhenEquivalent)
     auto missing_capture_input = captured_column_function;
     missing_capture_input.body_capture_input_name = "unbound_capture";
     const auto missing_capture = canPruneLambdaInWithCarriers(
-        captured_column_function, missing_capture_input, true);
+        captured_column_function,
+        missing_capture_input,
+        TestIndexOutputName::QueryNameCollision);
     EXPECT_TRUE(missing_capture.query_is_column_function);
     EXPECT_TRUE(missing_capture.index_is_column_function);
     EXPECT_FALSE(missing_capture.can_prune);
@@ -806,10 +1049,87 @@ TEST(MergeTreeIndexBloomFilter, MatchesNativeLambdaCarriersOnlyWhenEquivalent)
     auto duplicate_capture_argument_name = captured_column_function;
     duplicate_capture_argument_name.capture_name = "v";
     const auto ambiguous_capture = canPruneLambdaInWithCarriers(
-        captured_column_function, duplicate_capture_argument_name, true);
+        captured_column_function,
+        duplicate_capture_argument_name,
+        TestIndexOutputName::QueryNameCollision);
     EXPECT_TRUE(ambiguous_capture.query_is_column_function);
     EXPECT_TRUE(ambiguous_capture.index_is_column_function);
     EXPECT_FALSE(ambiguous_capture.can_prune);
+}
+
+TEST(MergeTreeIndexBloomFilter, MatchesOnlyEquivalentNativeNullableNothingConstants)
+{
+    const auto query_type = makeTestNullableNothingType(TestNullableNothingCustomization::None);
+    const auto index_type = makeTestNullableNothingType(TestNullableNothingCustomization::None);
+    ASSERT_NE(query_type.get(), index_type.get());
+
+    const auto equal_nulls = canPruneNullableNothingIn(query_type, true, index_type, true);
+    EXPECT_TRUE(equal_nulls.query_is_null_function_reaches_leaf);
+    EXPECT_TRUE(equal_nulls.index_is_null_function_reaches_leaf);
+    EXPECT_TRUE(equal_nulls.query_has_native_nullable_nothing_column);
+    EXPECT_TRUE(equal_nulls.index_has_native_nullable_nothing_column);
+    EXPECT_TRUE(equal_nulls.query_null_map_is_set);
+    EXPECT_TRUE(equal_nulls.index_null_map_is_set);
+    EXPECT_FALSE(equal_nulls.query_leaf_has_custom_name);
+    EXPECT_FALSE(equal_nulls.index_leaf_has_custom_name);
+    EXPECT_FALSE(equal_nulls.query_leaf_has_custom_serialization);
+    EXPECT_FALSE(equal_nulls.index_leaf_has_custom_serialization);
+    EXPECT_TRUE(equal_nulls.header_name_matches_query);
+    EXPECT_TRUE(equal_nulls.can_prune);
+
+    /// A native ColumnNullable with ColumnNothing storage but a zero null bit is not a valid
+    /// Nullable(Nothing) NULL value and must not compare equal to an actual NULL constant.
+    const auto non_null_payload = canPruneNullableNothingIn(query_type, false, index_type, true);
+    EXPECT_TRUE(non_null_payload.query_is_null_function_reaches_leaf);
+    EXPECT_TRUE(non_null_payload.index_is_null_function_reaches_leaf);
+    EXPECT_TRUE(non_null_payload.query_has_native_nullable_nothing_column);
+    EXPECT_TRUE(non_null_payload.index_has_native_nullable_nothing_column);
+    EXPECT_FALSE(non_null_payload.query_null_map_is_set);
+    EXPECT_TRUE(non_null_payload.index_null_map_is_set);
+    EXPECT_FALSE(non_null_payload.can_prune);
+
+    /// The same SQL NULL marker with a different nested type remains unsupported.
+    const auto nullable_string_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
+    const auto wrong_nested_type = canPruneNullableNothingIn(query_type, true, nullable_string_type, true);
+    EXPECT_TRUE(wrong_nested_type.query_is_null_function_reaches_leaf);
+    EXPECT_TRUE(wrong_nested_type.index_is_null_function_reaches_leaf);
+    EXPECT_TRUE(wrong_nested_type.query_has_native_nullable_nothing_column);
+    EXPECT_TRUE(wrong_nested_type.index_is_nullable_string);
+    EXPECT_FALSE(wrong_nested_type.can_prune);
+
+    const TestNullableNothingCustomization customizations[]{
+        TestNullableNothingCustomization::WrapperName,
+        TestNullableNothingCustomization::WrapperSerialization,
+        TestNullableNothingCustomization::NestedName,
+        TestNullableNothingCustomization::NestedSerialization,
+    };
+    for (const auto customization : customizations)
+    {
+        const auto customized_type = makeTestNullableNothingType(customization);
+        const auto customized = canPruneNullableNothingIn(query_type, true, customized_type, true);
+        EXPECT_TRUE(customized.query_is_null_function_reaches_leaf);
+        EXPECT_TRUE(customized.index_is_null_function_reaches_leaf);
+        EXPECT_TRUE(customized.index_has_native_nullable_nothing_column);
+        EXPECT_FALSE(customized.can_prune);
+
+        switch (customization)
+        {
+            case TestNullableNothingCustomization::WrapperName:
+                EXPECT_TRUE(customized.index_leaf_has_custom_name);
+                break;
+            case TestNullableNothingCustomization::WrapperSerialization:
+                EXPECT_TRUE(customized.index_leaf_has_custom_serialization);
+                break;
+            case TestNullableNothingCustomization::NestedName:
+                EXPECT_TRUE(customized.index_nested_has_custom_name);
+                break;
+            case TestNullableNothingCustomization::NestedSerialization:
+                EXPECT_TRUE(customized.index_nested_has_custom_serialization);
+                break;
+            case TestNullableNothingCustomization::None:
+                FAIL() << "The customized-type test list must not include the uncustomized type";
+        }
+    }
 }
 
 TEST(MergeTreeIndexBloomFilter, DeclinesNestedNativeLambdaInBodyAndCaptureExpressions)

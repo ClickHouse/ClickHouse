@@ -102,6 +102,27 @@ TEST(BloomFilterConversionMatching, DecimalToStringIgnoresInputParsingSettings)
     }
 }
 
+TEST(BloomFilterConversionMatching, NativeNumericToStringIgnoresInputParsingSettings)
+{
+    auto left_context = makeContextWithSetting("input_format_parallel_parsing", "0");
+    auto right_context = makeContextWithSetting("input_format_parallel_parsing", "1");
+    const std::vector<String> numeric_type_names{
+        "UInt8", "UInt16", "UInt32", "UInt64", "UInt128", "UInt256",
+        "Int8", "Int16", "Int32", "Int64", "Int128", "Int256",
+        "BFloat16", "Float32", "Float64",
+    };
+
+    for (const auto & type_name : numeric_type_names)
+    {
+        const auto numeric_type = getType(type_name);
+        auto left = buildFunctionBase("toString", left_context, {numeric_type});
+        auto right = buildFunctionBase("toString", right_context, {numeric_type});
+
+        ASSERT_NE(getFunctionHash(*left), getFunctionHash(*right)) << type_name;
+        EXPECT_TRUE(areNativeConversionsEquivalentForBloomFilterExpressionMatching(*left, *right)) << type_name;
+    }
+}
+
 TEST(BloomFilterConversionMatching, DecimalPrecisionAndScaleMustMatch)
 {
     auto context = makeContextWithSetting("input_format_parallel_parsing", "0");
@@ -140,7 +161,7 @@ TEST(BloomFilterConversionMatching, UnsupportedStringAndCustomSerializationPaths
         "date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands", "0");
     auto right_format_context = makeContextWithSetting(
         "date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands", "1");
-    const auto datetime64 = getType("DateTime64(3)");
+    const auto datetime64 = getType("DateTime64(6)");
     auto left_datetime_string = buildFunctionBase("toString", left_format_context, {datetime64});
     auto right_datetime_string = buildFunctionBase("toString", right_format_context, {datetime64});
 

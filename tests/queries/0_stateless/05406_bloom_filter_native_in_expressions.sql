@@ -579,3 +579,133 @@ DROP TABLE t_bf_post5_intermediate_expr;
 DROP TABLE t_bf_post5_array_slice_mismatch;
 DROP TABLE t_bf_post5_array_direct_in;
 DROP TABLE t_bf_post5_decimal_expr;
+-- Guard native conversion matching across irrelevant and value-affecting settings.
+SET explain_query_plan_default = 'legacy';
+SET use_skip_indexes = 1;
+SET use_skip_indexes_on_data_read = 0;
+SET use_query_condition_cache = 0;
+SET input_format_parallel_parsing = 1;
+SET date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = 0;
+
+CREATE TABLE t_bf_conversion_numeric_wide
+(
+    id UInt64,
+    u UInt64,
+    x Int256,
+    f Float64,
+    INDEX idx_uint64 toString(u) TYPE bloom_filter(0.000001) GRANULARITY 1,
+    INDEX idx_int256 toString(x) TYPE bloom_filter(0.000001) GRANULARITY 1,
+    INDEX idx_float64 toString(f) TYPE bloom_filter(0.000001) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_bf_conversion_numeric_wide
+SELECT number, number, toInt256(number), toFloat64(number) FROM numbers(16);
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_uint64') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, if(name_row > 0, name_row + 1, 1))) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'UInt64 toString IN changed unrelated setting uses index and prunes 1/16', name_row > 0 AND selected = 1 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_conversion_numeric_wide WHERE toString(u) IN ('3') SETTINGS input_format_parallel_parsing = 0);
+SELECT 'UInt64 toString IN changed unrelated setting preserves row', arraySort(groupArray(toUInt64(id))) = [toUInt64(3)]
+FROM t_bf_conversion_numeric_wide WHERE toString(u) IN ('3') SETTINGS input_format_parallel_parsing = 0;
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_int256') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, if(name_row > 0, name_row + 1, 1))) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'Int256 toString IN changed unrelated setting uses index and prunes 1/16', name_row > 0 AND selected = 1 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_conversion_numeric_wide WHERE toString(x) IN ('3') SETTINGS input_format_parallel_parsing = 0);
+SELECT 'Int256 toString IN changed unrelated setting preserves row', arraySort(groupArray(toUInt64(id))) = [toUInt64(3)]
+FROM t_bf_conversion_numeric_wide WHERE toString(x) IN ('3') SETTINGS input_format_parallel_parsing = 0;
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_float64') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, if(name_row > 0, name_row + 1, 1))) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'Float64 toString IN changed unrelated setting uses index and prunes 1/16', name_row > 0 AND selected = 1 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_conversion_numeric_wide WHERE toString(f) IN ('3') SETTINGS input_format_parallel_parsing = 0);
+SELECT 'Float64 toString IN changed unrelated setting preserves row', arraySort(groupArray(toUInt64(id))) = [toUInt64(3)]
+FROM t_bf_conversion_numeric_wide WHERE toString(f) IN ('3') SETTINGS input_format_parallel_parsing = 0;
+
+CREATE TABLE t_bf_conversion_datetime64
+(
+    id UInt64,
+    dt DateTime64(6),
+    INDEX idx_datetime64 toString(dt) TYPE bloom_filter(0.000001) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_bf_conversion_datetime64
+SELECT number, toDateTime64('2020-01-01 00:00:00.123000', 6) + toIntervalSecond(toInt64(number))
+FROM numbers(16);
+SET date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = 1;
+SELECT 'DateTime64 effective setting changes toString output', toString(dt) = '2020-01-01 00:00:00.123'
+FROM t_bf_conversion_datetime64 WHERE id = 0;
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_datetime64') > 0, plan) AS name_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'DateTime64 effective format mismatch declines index and reads 16/16', name_row = 0 AND selected = 16 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_conversion_datetime64 WHERE toString(dt) IN ('2020-01-01 00:00:00.123'));
+SELECT 'DateTime64 effective format mismatch preserves row', arraySort(groupArray(toUInt64(id))) = [toUInt64(0)]
+FROM t_bf_conversion_datetime64 WHERE toString(dt) IN ('2020-01-01 00:00:00.123');
+
+CREATE TABLE t_bf_conversion_nullable
+(
+    id UInt64,
+    s String,
+    INDEX idx_nullable_if if(id % 2, s, NULL) TYPE bloom_filter(0.000001) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_bf_conversion_nullable SELECT number, toString(number) FROM numbers(16);
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_nullable_if') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, if(name_row > 0, name_row + 1, 1))) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'Nullable if direct IN uses index and prunes 1/16', name_row > 0 AND selected = 1 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_conversion_nullable WHERE if(id % 2, s, NULL) IN ('3'));
+SELECT 'Nullable if direct IN preserves row', arraySort(groupArray(toUInt64(id))) = [toUInt64(3)]
+FROM t_bf_conversion_nullable WHERE if(id % 2, s, NULL) IN ('3');
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_nullable_if') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, if(name_row > 0, name_row + 1, 1))) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'Nullable if equality control uses index and prunes 1/16', name_row > 0 AND selected = 1 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_conversion_nullable WHERE if(id % 2, s, NULL) = '3');
+SELECT 'Nullable if equality control preserves row', arraySort(groupArray(toUInt64(id))) = [toUInt64(3)]
+FROM t_bf_conversion_nullable WHERE if(id % 2, s, NULL) = '3';
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_nullable_if') > 0, plan) AS name_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'Empty-string if expression declines NULL index and reads 16/16', name_row = 0 AND selected = 16 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_conversion_nullable WHERE if(id % 2, s, '') IN (''));
+SELECT 'Empty-string if expression preserves even rows', arraySort(groupArray(toUInt64(id))) = [toUInt64(0), toUInt64(2), toUInt64(4), toUInt64(6), toUInt64(8), toUInt64(10), toUInt64(12), toUInt64(14)]
+FROM t_bf_conversion_nullable WHERE if(id % 2, s, '') IN ('');
+
+SET date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = 0;
+DROP TABLE t_bf_conversion_numeric_wide;
+DROP TABLE t_bf_conversion_datetime64;
+DROP TABLE t_bf_conversion_nullable;

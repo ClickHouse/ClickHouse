@@ -3699,15 +3699,21 @@ bool areNativeConversionsEquivalentForBloomFilterExpressionMatching(const IFunct
 
     if (typeid(left_function) == typeid(detail::FunctionToString))
     {
-        return left_arguments.size() == 1 && right_arguments.size() == 1
-            && left_arguments[0] && right_arguments[0]
-            && isConcreteDecimalType(*left_arguments[0])
+        if (left_arguments.size() != 1 || right_arguments.size() != 1
+            || !left_arguments[0] || !right_arguments[0]
+            || !isConcreteDataType<DataTypeString>(*left_result)
+            || !isConcreteDataType<DataTypeString>(*right_result)
+            || !hasNoCustomConversionSerialization(*left_result)
+            || !hasNoCustomConversionSerialization(*right_result))
+            return false;
+
+        if (isAuditedPrimitiveNumericType(*left_arguments[0])
+            && isAuditedPrimitiveNumericType(*right_arguments[0]))
+            return haveEqualConcreteNonDecimalTypes(*left_arguments[0], *right_arguments[0]);
+
+        return isConcreteDecimalType(*left_arguments[0])
             && isConcreteDecimalType(*right_arguments[0])
-            && haveEqualConcreteDecimalTypes(*left_arguments[0], *right_arguments[0])
-            && isConcreteDataType<DataTypeString>(*left_result)
-            && isConcreteDataType<DataTypeString>(*right_result)
-            && hasNoCustomConversionSerialization(*left_result)
-            && hasNoCustomConversionSerialization(*right_result);
+            && haveEqualConcreteDecimalTypes(*left_arguments[0], *right_arguments[0]);
     }
 
     return false;

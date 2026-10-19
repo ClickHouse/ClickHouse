@@ -101,3 +101,18 @@ Decimal256 IN uses named index and prunes 1/16	1
 Decimal256 scale mismatch indexed rows preserve typed values	1
 Decimal256 scale mismatch full scan preserves typed values	1
 Decimal256 scale mismatch declines index and reads 16/16	1
+UInt64 toString IN changed unrelated setting uses index and prunes 1/16	1
+UInt64 toString IN changed unrelated setting preserves row	1
+Int256 toString IN changed unrelated setting uses index and prunes 1/16	1
+Int256 toString IN changed unrelated setting preserves row	1
+Float64 toString IN changed unrelated setting uses index and prunes 1/16	1
+Float64 toString IN changed unrelated setting preserves row	1
+DateTime64 effective setting changes toString output	1
+DateTime64 effective format mismatch declines index and reads 16/16	1
+DateTime64 effective format mismatch preserves row	1
+Nullable if direct IN uses index and prunes 1/16	1
+Nullable if direct IN preserves row	1
+Nullable if equality control uses index and prunes 1/16	1
+Nullable if equality control preserves row	1
+Empty-string if expression declines NULL index and reads 16/16	1
+Empty-string if expression preserves even rows	1
