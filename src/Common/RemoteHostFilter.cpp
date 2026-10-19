@@ -5,6 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/maskURIPassword.h>
 #include <Common/parseAddress.h>
+#include <Common/quoteString.h>
 #include <Common/re2.h>
 #include <IO/WriteHelpers.h>
 
@@ -36,6 +37,10 @@ bool RemoteHostFilter::checkURL(const Poco::URI & uri, bool throw_on_error) cons
 
 void RemoteHostFilter::checkHostAndPort(const std::string & host, const std::string & port) const
 {
+    /// Name resolution stops at a NUL, so it would connect to a prefix of the checked host.
+    if (host.find('\0') != std::string::npos)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected NUL character in host {}", quoteString(host));
+
     if (!checkForDirectEntry(host) &&
         !checkForDirectEntry(host + ":" + port))
         throw Exception(ErrorCodes::UNACCEPTABLE_URL, "URL \"{}:{}\" is not allowed in configuration file, "

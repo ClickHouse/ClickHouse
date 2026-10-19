@@ -559,3 +559,33 @@ def test_hive_catalog_host_filter_rejects_nul(start_cluster):
         assert "Connection refused" not in error, error
     finally:
         node1.query("DROP DATABASE IF EXISTS test_hive_host_filter_nul")
+
+
+def test_host_filter_rejects_nul(start_cluster):
+    def query_redis(node, host):
+        return node.query_and_get_error(
+            f"SELECT * FROM redis('{host}:1', 'k', 'k String, v String')"
+        )
+
+    expected = "Unexpected NUL character in host"
+
+    # Control: the suffix rule in `config_with_hosts.xml` admits this host, which then fails at name
+    # resolution; the bare address is refused.
+    assert "UNACCEPTABLE_URL" not in query_redis(node1, "redis.allowed.example")
+    assert "UNACCEPTABLE_URL" in query_redis(node1, "127.0.0.1")
+
+    # The rule matches the whole string, but name resolution stops at the NUL and would connect to
+    # 127.0.0.1. The host must be refused before any connection attempt.
+    error = query_redis(node1, "127.0.0.1\\0x.allowed.example")
+    assert "BAD_ARGUMENTS" in error and expected in error, error
+    assert "Connection refused" not in error, error
+
+    # The check is shared by every integration: without it, `remote` reads from 127.0.0.1.
+    error = node1.query_and_get_error(
+        "SELECT * FROM remote('127.0.0.1\\0x.allowed.example:9000', system.one)"
+    )
+    assert "BAD_ARGUMENTS" in error and expected in error, error
+
+    # A NUL is refused even without `remote_url_allow_hosts`.
+    error = query_redis(node4, "127.0.0.1\\0x.allowed.example")
+    assert "BAD_ARGUMENTS" in error and expected in error, error
