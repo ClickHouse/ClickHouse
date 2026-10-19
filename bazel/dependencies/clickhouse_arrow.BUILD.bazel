@@ -465,11 +465,7 @@ ch_cc_library(
         "@clickhouse//contrib/arrow-cmake:cpp/src/arrow/util/config.h",
         "@clickhouse//contrib/arrow-cmake:cpp/src/arrow/util/config_internal.h",
         "@clickhouse//contrib/arrow-cmake:cpp/src/orc/c++/include/orc/orc-config.hh",
-    ] + glob([
-        "cpp/src/**/*.h",
-        "cpp/src/**/*.hpp",
-        "cpp/src/**/*.tcc",
-    ]),
+    ],
     additional_compiler_inputs = (select({
         "@platforms//cpu:x86_64": glob(
             ["cpp/src/**"],
@@ -937,13 +933,12 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_1,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
-    deps = (([
+    deps = ([
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_flatbuffers//:_flatbuffers",
-    ] + [
         "@clickhouse_xsimd//:xsimd",
-    ]) + [
         "@clickhouse_orc//:_orc",
+        ":arrow_source_headers",
     ]),
     alwayslink = False,
 )
@@ -968,44 +963,10 @@ ch_cc_library(
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-    ] + glob([
-        "cpp/src/**/*.h",
-        "cpp/src/**/*.hpp",
-        "cpp/src/**/*.tcc",
-    ]),
-    additional_compiler_inputs = (([
+    ],
+    additional_compiler_inputs = ([
         "@clickhouse_llvm_project//:runtime_source_inputs",
         "@clickhouse_llvm_project//:runtime_generated_headers",
-    ] + (glob([
-        "cpp/src/**/*.build",
-        "cpp/src/**/*.cc",
-        "cpp/src/**/*.cpp",
-        "cpp/src/**/*.in",
-        "cpp/src/**/*.map",
-        "cpp/src/**/*.py",
-        "cpp/src/arrow/**/*.md",
-        "cpp/src/arrow/**/*.sh",
-        "cpp/src/arrow/flight/sql/odbc/install/mac/*.txt",
-        "cpp/src/arrow/util/*.cmake",
-    ]) + [
-        "cpp/src/arrow/flight/perf.proto",
-        "cpp/src/arrow/flight/sql/odbc/install/mac/postinstall",
-        "cpp/src/arrow/flight/sql/odbc/install/windows/arrow-flight-sql-odbc-patch.xml",
-        "cpp/src/arrow/flight/sql/odbc/install/windows/arrow-flight-sql-odbc.wxs",
-        "cpp/src/arrow/flight/sql/odbc/install/windows/arrow-wix-banner.bmp",
-        "cpp/src/arrow/flight/sql/odbc/odbc.def",
-        "cpp/src/arrow/flight/sql/odbc/tests/install_odbc.cmd",
-        "cpp/src/arrow/gpu/.gitignore",
-        "cpp/src/arrow/ipc/feather.fbs",
-        "cpp/src/arrow/util/io_util_test.manifest",
-        "cpp/src/arrow/util/io_util_test.rc",
-        "cpp/src/arrow/vendored/datetime/ios.mm",
-        "cpp/src/arrow/vendored/double-conversion/.gitignore",
-        "cpp/src/arrow/vendored/xxhash/xxhash.c",
-        "cpp/src/parquet/README",
-        "cpp/src/parquet/parquet.thrift",
-    ])) + [
-        "cpp/src/arrow/vendored/musl/strptime.c",
         "cpp/src/arrow/vendored/uriparser/UriCommon.c",
         "cpp/src/arrow/vendored/uriparser/UriCompare.c",
         "cpp/src/arrow/vendored/uriparser/UriEscape.c",
@@ -1030,13 +991,12 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GENERATED_LOCAL_INCLUDES_1,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
-    deps = (([
+    deps = ([
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_flatbuffers//:_flatbuffers",
-    ] + [
         "@clickhouse_xsimd//:xsimd",
-    ]) + [
         "@clickhouse_orc//:_orc",
+        ":arrow_source_headers",
     ]),
     alwayslink = False,
 )
@@ -1743,6 +1703,14 @@ cc_library(
         "@clickhouse//bazel:arrow_flatbuffer_headers",
         "@clickhouse//contrib/arrow-cmake:arrow_cmake_headers",
         ":arrow_source_headers",
+        "@clickhouse_abseil_cpp//:abseil_cpp_headers",
+        "@clickhouse_flatbuffers//:_flatbuffers",
+        "@clickhouse_google_protobuf//:_libprotobuf",
+        "@clickhouse_grpc//:address_sorting",
+        "@clickhouse_rapidjson//:rapidjson",
+        "@clickhouse_re2//:_re2",
+        "@clickhouse_thrift//:_thrift",
+        "@clickhouse_xsimd//:xsimd",
     ],
 )
 
@@ -1757,14 +1725,4 @@ cc_library(
         "cpp/src",
     ],
     visibility = ["//visibility:private"],
-    deps = [
-        "@clickhouse_abseil_cpp//:abseil_cpp_headers",
-        "@clickhouse_flatbuffers//:_flatbuffers",
-        "@clickhouse_google_protobuf//:_libprotobuf",
-        "@clickhouse_grpc//:address_sorting",
-        "@clickhouse_rapidjson//:rapidjson",
-        "@clickhouse_re2//:_re2",
-        "@clickhouse_thrift//:_thrift",
-        "@clickhouse_xsimd//:xsimd",
-    ],
 )
