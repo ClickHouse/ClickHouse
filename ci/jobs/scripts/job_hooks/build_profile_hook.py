@@ -25,14 +25,14 @@ build_dir = "./ci/tmp/build"
 _PROFILED_BUILDS = (
     "amd_release",
     "arm_release",
-    # The sccache-warmup build compiles master with the PR release build's
-    # exact cmake flags (no official-build flag, debug symbols stripped). Its
+    # The performance reference build compiles master exactly like a PR
+    # release build (no official-build flag, debug symbols stripped). Its
     # object sizes and compile traces are the only master data directly
     # comparable to a PR build, so the "Build profile diff" check baselines its
     # object-size and per-TU compile-time sections on it. The upload is reduced
     # (see check) and small: only TUs recompiled by the merged commits appear in
     # the trace.
-    "arm_release_pr_cache_warmup",
+    "arm_release_performance_reference",
     # "amd_debug",
     # "arm_debug",
     # "amd_binary",
@@ -66,13 +66,13 @@ _PROFILED_BUILDS_PR = ("arm_release",)
 _REQUIRED_ARTIFACTS = {
     "amd_release": ("profile.json", "binary_sizes.txt", "binary_symbols.txt"),
     "arm_release": ("profile.json", "binary_sizes.txt", "binary_symbols.txt"),
-    # The warmup build uploads the profile of its objects only
+    # The performance reference build uploads the profile of its objects only
     # (_OBJECTS_ONLY_BUILDS): no server-binary link trace, no symbols (the
     # per-object nm pass is skipped under LTO). On a master push where
     # every TU is an sccache hit even the time trace is legitimately empty -
     # a broken trace extractor is told apart from that case by
     # _verify_trace_extraction instead.
-    "arm_release_pr_cache_warmup": ("binary_sizes.txt",),
+    "arm_release_performance_reference": ("binary_sizes.txt",),
 }
 
 
@@ -150,7 +150,7 @@ _SIZE_ONLY_BINARIES = ("programs/clickhouse-stripped",)
 
 # These builds link the server binary only as the reference of the PR performance
 # comparison, so its link trace and symbols are kept out of their upload.
-_OBJECTS_ONLY_BUILDS = ("arm_release_pr_cache_warmup",)
+_OBJECTS_ONLY_BUILDS = ("arm_release_performance_reference",)
 
 
 def _any_line(artifact_file, matches):
@@ -291,7 +291,7 @@ def check():
         queries = LogClusterBuildProfileQueries(user=BUILD_PROFILE_USER)
 
         def insert_profile_data(build_name, start_time, file):
-            # On PRs and for the warmup build the time trace is uploaded
+            # On PRs and for the reference build the time trace is uploaded
             # reduced: only the event kinds the "Build profile diff" check
             # consumes. The bulk of a full trace is per-pass LLVM events from
             # the ThinLTO link, useless for the diff and too voluminous for
@@ -300,7 +300,7 @@ def check():
                 build_name=build_name,
                 start_time=start_time,
                 file=file,
-                reduced=is_pr or build_type == "arm_release_pr_cache_warmup",
+                reduced=is_pr or build_type == "arm_release_performance_reference",
             )
 
         # Listed in _UPLOAD_ORDER, which is also what the upload follows:

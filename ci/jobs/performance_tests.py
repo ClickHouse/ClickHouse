@@ -1574,23 +1574,23 @@ LOCAL_REFERENCE_FALLBACK_WARNING = (
 )
 
 
-# MasterCI builds these with the PR build flags. The official build keeps debug
+# MasterCI builds these exactly like a PR build. The official build keeps debug
 # info and sets the official-build flag, which change the code and move it.
-PR_FLAGS_BUILD_JOBS = {
-    "build_amd_release": f"{JobNames.BUILD} ({BuildTypes.AMD_RELEASE_PR_CACHE_WARMUP})",
-    "build_arm_release": f"{JobNames.BUILD} ({BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP})",
+PERFORMANCE_REFERENCE_BUILD_JOBS = {
+    "build_amd_release": f"{JobNames.BUILD} ({BuildTypes.AMD_RELEASE_PERFORMANCE_REFERENCE})",
+    "build_arm_release": f"{JobNames.BUILD} ({BuildTypes.ARM_RELEASE_PERFORMANCE_REFERENCE})",
 }
 
 
-def find_pr_flags_build(commits, build_type):
-    """The newest master build of `commits` made with the PR build flags and the index in `commits`
+def find_performance_reference_build(commits, build_type):
+    """The newest performance reference build of `commits` and the index in `commits`
     of the commit whose sources it was built from, or `(None, None)`.
 
     Commits before the first one with an official build are passed over, as in
     `find_master_build`. From that commit on, the walk goes further back only over
-    commits where `MasterCI` skipped the PR-flags build job: such a commit changed
+    commits where `MasterCI` skipped the reference build job: such a commit changed
     none of the job's inputs, so an older build has the same sources."""
-    job_name = PR_FLAGS_BUILD_JOBS[build_type]
+    job_name = PERFORMANCE_REFERENCE_BUILD_JOBS[build_type]
     official_index = None
     for index, sha in enumerate(commits):
         link, _ = find_master_build([sha], Utils.normalize_string(job_name))
@@ -1613,13 +1613,14 @@ def find_prev_build(info, build_type):
     if not commits and info.is_local_run:
         # for a local run let's check 50 commits
         commits = local_master_track_commits(50)
-    # A PR candidate is a PR-flags build. Private PR builds keep debug info.
+    # A PR candidate is compared with the performance reference build, made like
+    # it. Master runs compare official builds. Private PR builds keep debug info.
     if info.pr_number > 0 and info.repo_name == "ClickHouse/ClickHouse":
-        link, index = find_pr_flags_build(commits, build_type)
+        link, index = find_performance_reference_build(commits, build_type)
         if link:
-            print(f"Reference: build with the PR flags {link}")
+            print(f"Reference: performance reference build {link}")
             return link, commits[: index + 1]
-        print("WARNING: no master build with the PR build flags, the reference is the official build")
+        print("WARNING: no performance reference build, the reference is the official build")
     link, index = find_master_build(commits, build_type)
     if link or not info.is_local_run:
         return link, commits[: index + 1] if link else []

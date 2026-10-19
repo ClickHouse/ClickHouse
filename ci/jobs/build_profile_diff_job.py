@@ -21,8 +21,9 @@ official-build flag, so their object files, unstripped binaries and link times
 are incomparable to master's (observed on a no-op PR as an apparent -73%
 binary size and -39% link time):
 
-  * `Build (arm_release_pr_cache_warmup)` - the master sccache-warmup build,
-    compiled with exactly the PR flags, profiled for its object files only.
+  * `Build (arm_release_performance_reference)` - the warmup build below: a
+    master build made exactly like a PR build, which also fills the sccache,
+    profiled for its object files only.
     Baseline for object file sizes and per-TU compile times.
   * `Build (arm_release)` - the official master build. Baseline for the
     artifacts that do not depend on debug info: the stripped binary size and
@@ -84,10 +85,10 @@ from ci.praktika.result import Result
 from ci.praktika.utils import Utils
 
 CHECK_NAME = "arm_release"
-# The master sccache-warmup build: compiled with the PR build's exact cmake
-# flags (see PR_CACHE_WARMUP_BUILD_TYPES in build_clickhouse.py), so it is the
+# The master build made exactly like a PR build (see
+# PERFORMANCE_REFERENCE_TO_RELEASE in build_clickhouse.py), so it is the
 # comparable baseline for everything measured before linking.
-WARMUP_CHECK_NAME = "arm_release_pr_cache_warmup"
+WARMUP_CHECK_NAME = "arm_release_performance_reference"
 COMMENT_TAG = "build-profile-diff"
 
 BUILD_DIR = "./ci/tmp/build"
@@ -969,7 +970,7 @@ def compare_objects(db: Db, pr_side, base_side) -> Section:
 
     Only the object files the PR build produced are compared. The two builds do
     not have the same target set: the warmup build compiles every object-file
-    target ninja knows about (see PR_CACHE_WARMUP_BUILD_TYPES in
+    target ninja knows about (see PERFORMANCE_REFERENCE_TO_RELEASE in
     build_clickhouse.py), while a PR build only builds `clickhouse-bundle`, so
     hundreds of object files - `grpc_unsecure`, protobuf-lite, the gRPC half of
     google-cloud-cpp, the unit tests, the utils - exist on the warmup side alone.
