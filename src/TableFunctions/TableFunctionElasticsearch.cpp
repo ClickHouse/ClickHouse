@@ -13,6 +13,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -124,7 +126,12 @@ void TableFunctionElasticsearch::parseArguments(const ASTPtr & ast_function, Con
         break;
     }
 
+    const ASTs unevaluated_args = args;
     configuration = std::make_shared<ElasticsearchConfiguration>(ElasticsearchConfiguration::fromArguments(args, context));
+
+    auto & persisted_args = func_args.arguments->children;
+    for (size_t i = 0; i < args.size(); ++i)
+        std::ranges::replace(persisted_args, unevaluated_args[i], args[i]);
 }
 
 }
