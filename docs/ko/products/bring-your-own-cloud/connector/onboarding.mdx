@@ -23,17 +23,17 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 * 커넥터가 Linux VM에서 실행되는지, 아니면 클러스터 내에서 실행되는지 여부
 * 플랫폼 구성 요소용 노드 그룹
 * 서비스의 네임스페이스 접두사(기본값 `ns-`)
-* 클러스터가 ClickHouse 이미지를 가져오는 방식: ClickHouse Cloud가 사용자 계정을 위해 설정한 레지스트리 액세스를 통하는지, 아니면 자체 미러를 사용하는지
+* 클러스터가 ClickHouse image를 가져오는 방식: ClickHouse Cloud가 사용자 계정을 위해 설정한 레지스트리 액세스를 통하는지, 아니면 자체 미러를 사용하는지
 
-그러면 ClickHouse Cloud가 엔드포인트와 일회용 등록 토큰을 발급합니다. 이 토큰이 사용자의 환경을 식별하므로 등록 시 추가 ID가 필요하지 않습니다.
+그러면 ClickHouse Cloud가 엔드포인트, 일회용 등록 토큰, 그리고 ClickHouse 클러스터 차트의 ECR 리포지토리 ARN([Terraform 루트](/ko/products/bring-your-own-cloud/connector/terraform-aws)의 `chart_repository_arn` 입력값)을 발급합니다. Terraform으로 설치하는 경우에는 이 단계에서 플랫폼 bundle도 함께 받습니다. Helm에서는 `clicklink clctl init --managed --from-terraform --platform-bundle`로 이를 적용하고, VM에서는 등록 후 `clicklink clctl platform approve --bundle`로 적용합니다. 그 밖의 관리형 설치는 첫 bundle을 나중에 받습니다. 이 bundle은 실행기가 준비해 두며, [플랫폼 업데이트](/ko/products/bring-your-own-cloud/connector/platform-updates)에 설명된 대로 `clicklink clctl platform approve`로 적용합니다. `--no-managed`로 설치한 경우에는 bundle이 필요하지 않습니다. 이 토큰이 사용자의 환경을 식별하므로 등록 시 추가 ID가 필요하지 않습니다.
 
 ### 모든 설치에 공통 {#prerequisites-every-install}
 
 * **커넥터 v0.17.0 이상.** 이전 릴리스에는 관리형 모드, `platform` 명령어, `instances create`가 없습니다. 설치 프로그램은 `--version`을 전달하지 않는 한 최신 릴리스를 제공합니다.
 * **[등록](#registration) 과정에서 제공된 엔드포인트와 등록 토큰**.
 * **443 포트 egress**: `https://<subdomain>.<connector-domain>` 및 `https://<subdomain>.enroll.<connector-domain>`, 그리고 설치 시점에는 `releases.clicklink.clickhouse.com`과 Amazon ECR Public으로의 연결이 필요합니다. 관리형 모드에서는 플랫폼 동기화 또는 생성 작업이 ECR에서 차트를 가져올 때 실행기가 Amazon ECR 및 STS에도 접근합니다. 이 중 하나라도 연결할 수 없다면 [에어갭 및 미러 설치](#air-gapped-and-mirrored-installs)를 참조하십시오.
-* 관리형 모드에는 **Amazon EKS 클러스터**가 필요합니다. `init`은 그 외의 클러스터에서는 관리형 모드를 거부하며, 실행기 없이 설치하려면 `--no-managed`를 사용하도록 안내합니다.
-* **실행기 grant를 위한 클러스터 관리자 권한.** 이 권한 부여는 실행기를 사용자 접두사 하위의 네임스페이스로 제한하는 클러스터 역할, ClusterRoleBinding, ValidatingAdmissionPolicy를 생성합니다. Kubernetes에서는 `init`을 실행하는 데 사용하는 kubeconfig에 이 권한이 있어야 합니다. VM에서는 호스트의 kubeconfig에 이 권한이 있어야 하며, 호스트에 관리자 권한이 없으면 `init`이 권한을 가진 호스트에서 실행할 명령을 출력합니다.
+* 관리형 모드에는 **Amazon EKS 클러스터**가 필요합니다. `init`은 그 외의 클러스터에서는 관리형 모드를 거부하며, 실행기 없이 설치하려면 `--no-managed`를 사용하도록 안내합니다. [AWS에서 Terraform 사용](/ko/products/bring-your-own-cloud/connector/terraform-aws)에서는 새 클러스터용과 이미 운영 중인 클러스터용 루트 모듈을 제공하며, 그 위에 플랫폼 계층을 설치하는 `init` 명령어도 함께 안내합니다.
+* **실행기 권한 부여를 위한 클러스터 관리자 권한.** 이 권한 부여는 실행기를 사용자 접두사 하위의 네임스페이스로 제한하는 클러스터 역할, ClusterRoleBinding, ValidatingAdmissionPolicy를 생성합니다. Kubernetes에서는 `init`을 실행하는 데 사용하는 kubeconfig에 이 권한이 있어야 합니다. VM에서는 호스트의 kubeconfig에 이 권한이 있어야 하며, 호스트에 관리자 권한이 없으면 `init`이 권한을 가진 호스트에서 실행할 명령을 출력합니다.
 * **아직 ClickHouse가 없어야 합니다.** 관리형 설치는 서비스 없이 시작하며, 실행기가 생성한 서비스들이 스스로 등록됩니다. 관리형 모드에서 `init`은 사용자가 직접 운영하는 ClickHouse를 등록하지 않습니다(Kubernetes에서는 `--instance`와 `--instance-namespace`를 거부합니다). 이러한 클러스터를 관찰하려면 `--no-managed`로 별도의 커넥터 배포를 설치하십시오. `--ch-user-suffix`를 사용하면 두 배포가 커넥터의 USER 충돌 없이 하나의 instance를 공유할 수 있습니다. 해당 배포에는 연결할 수 있는 네이티브 listener가 필요합니다. 보안 포트 9440 또는 plaintext 포트 9000이며, Kubernetes에서는 자동으로 감지됩니다. 또한 provisioning을 위한 ClickHouse admin 액세스가 필요합니다. 비밀번호가 없는 `default` USER, `--ch-admin-password-stdin` 또는 프롬프트로 전달하는 password, 혹은 연산자 관리형 instance의 CR injection 중 하나를 사용합니다.
 * 릴리스 아티팩트를 내려받는 모든 환경에는 **cosign**이 필요합니다. 설치 프로그램은 항상 SHA-256 체크섬을 검증합니다. cosign이 설치되어 있으면 릴리스 서명도 함께 검증하며, `CLICKLINK_REQUIRE_COSIGN=1`이 설정된 경우 cosign 없이는 진행을 거부합니다.
 
