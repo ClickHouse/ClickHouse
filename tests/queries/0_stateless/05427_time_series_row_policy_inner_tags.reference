@@ -1,0 +1,70 @@
+--- ts: the tenant reads only its own series ---
+up	{'__name__':'up','instance':'a1','tenant':'a'}
+up	{'__name__':'up','instance':'a2','tenant':'a'}
+-- timeSeriesTags
+up	{'__name__':'up','instance':'a1','tenant':'a'}
+up	{'__name__':'up','instance':'a2','tenant':'a'}
+-- inner tags table
+up	{'__name__':'up','instance':'a1','tenant':'a'}
+up	{'__name__':'up','instance':'a2','tenant':'a'}
+-- prometheusQuery
+[('__name__','up'),('instance','a1'),('tenant','a')]	2023-11-14 22:13:20.000	1
+[('__name__','up'),('instance','a2'),('tenant','a')]	2023-11-14 22:13:20.000	0
+-- prometheusQueryRange
+[('__name__','up'),('instance','a1'),('tenant','a')]	[('2023-11-14 22:12:20.000',1),('2023-11-14 22:12:50.000',1),('2023-11-14 22:13:20.000',1)]
+[('__name__','up'),('instance','a2'),('tenant','a')]	[('2023-11-14 22:12:20.000',1),('2023-11-14 22:12:50.000',1),('2023-11-14 22:13:20.000',0)]
+-- promql dialect
+[]	2023-11-14 22:13:20.000	2
+-- samples table is not filtered
+10
+--- ts: the default user reads everything ---
+secret	{'__name__':'secret','secret_only':'yes','tenant':'b'}
+untagged	{'__name__':'untagged','instance':'z1'}
+up	{'__name__':'up','instance':'a1','tenant':'a'}
+up	{'__name__':'up','instance':'a2','tenant':'a'}
+up	{'__name__':'up','instance':'b1','tenant':'b'}
+5
+--- ts: the policy of the TimeSeries table is recorded for the PromQL query ---
+2
+['tenant_a ON <db>.ts']
+--- ts: a policy on the inner tags table combines with the inherited one ---
+up	{'__name__':'up','instance':'a1','tenant':'a'}
+up	{'__name__':'up','instance':'a2','tenant':'a'}
+2
+--- ts: a policy on a column the inner tags table lacks works for SELECT and fails closed for PromQL ---
+5
+--- ts_promoted: the tenant reads only its own series ---
+up	{'__name__':'up','instance':'a1','tenant':'a'}
+up	{'__name__':'up','instance':'a2','tenant':'a'}
+-- timeSeriesTags
+up	{'__name__':'up','instance':'a1','tenant':'a'}
+up	{'__name__':'up','instance':'a2','tenant':'a'}
+-- inner tags table
+up	{'__name__':'up','instance':'a1','tenant':'a'}
+up	{'__name__':'up','instance':'a2','tenant':'a'}
+-- prometheusQuery
+[('__name__','up'),('instance','a1'),('tenant','a')]	2023-11-14 22:13:20.000	1
+[('__name__','up'),('instance','a2'),('tenant','a')]	2023-11-14 22:13:20.000	0
+-- prometheusQueryRange
+[('__name__','up'),('instance','a1'),('tenant','a')]	[('2023-11-14 22:12:20.000',1),('2023-11-14 22:12:50.000',1),('2023-11-14 22:13:20.000',1)]
+[('__name__','up'),('instance','a2'),('tenant','a')]	[('2023-11-14 22:12:20.000',1),('2023-11-14 22:12:50.000',1),('2023-11-14 22:13:20.000',0)]
+-- promql dialect
+[]	2023-11-14 22:13:20.000	2
+-- samples table is not filtered
+10
+--- ts_promoted: the default user reads everything ---
+secret	{'__name__':'secret','secret_only':'yes','tenant':'b'}
+untagged	{'__name__':'untagged','instance':'z1'}
+up	{'__name__':'up','instance':'a1','tenant':'a'}
+up	{'__name__':'up','instance':'a2','tenant':'a'}
+up	{'__name__':'up','instance':'b1','tenant':'b'}
+5
+--- ts_promoted: the policy of the TimeSeries table is recorded for the PromQL query ---
+2
+['tenant_a ON <db>.ts_promoted']
+--- ts_promoted: a policy on the inner tags table combines with the inherited one ---
+up	{'__name__':'up','instance':'a1','tenant':'a'}
+up	{'__name__':'up','instance':'a2','tenant':'a'}
+2
+--- ts_promoted: a policy on a column the inner tags table lacks works for SELECT and fails closed for PromQL ---
+5
