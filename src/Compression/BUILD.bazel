@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -24,6 +23,12 @@ _PRIVATE_COMPRESSION_HEADERS = [
 ch_cc_library(
     name = "clickhouse_compression",
     srcs = glob(["*.cpp"]) + _PRIVATE_COMPRESSION_HEADERS,
+    hdrs = glob(
+        [
+            "**/*.h",
+        ],
+        exclude = _PRIVATE_COMPRESSION_HEADERS,
+    ),
     clickhouse_code = True,
     implementation_deps = [
         "//bazel:clickhouse_config_headers",
@@ -299,16 +304,8 @@ ch_cc_library(
         "@clickhouse_sz3//:sz3",
         "//contrib/sz3-cmake:headers",
         "//:headers",
+        "//src:headers",
+        "//src/Common",
+        "//base/poco/Util:_poco_util",
     ],
-)
-
-cc_library(
-    name = "headers",
-    hdrs = glob(
-        [
-            "**/*.h",
-        ],
-        exclude = _PRIVATE_COMPRESSION_HEADERS,
-    ),
-    deps = ["//base/poco/Util:_poco_util"],
 )

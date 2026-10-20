@@ -758,10 +758,28 @@ ch_cc_library(
     includes = ["src"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = ["."],
-    llvm_headers = True,
-    deps = [":_libprotobuf", ":_libprotoc__compile_1"],
-    implementation_deps = ["@clickhouse_zlib_ng//:_zlib"] + [
+    deps = [
+        ":_libprotobuf",
+        "@clickhouse_abseil_cpp//:absl_base_config",
+        "@clickhouse_abseil_cpp//:absl_log_internal_check_impl",
+        "@clickhouse_abseil_cpp//:absl_memory",
+        "@clickhouse_abseil_cpp//:absl_optional",
+        "@clickhouse_abseil_cpp//:absl_raw_hash_set",
+        "@clickhouse_abseil_cpp//:absl_span",
+        "@clickhouse_abseil_cpp//:absl_status",
+        "@clickhouse_abseil_cpp//:absl_statusor",
+        "@clickhouse_abseil_cpp//:absl_strings",
+        "@clickhouse_abseil_cpp//:absl_synchronization",
+    ],
+    implementation_deps = [
         "@clickhouse_abseil_cpp//:absl_log_globals",
+        ":_libprotoc__compile_1",
+        "@clickhouse_abseil_cpp//:absl_algorithm",
+        "@clickhouse_abseil_cpp//:absl_cord",
+        "@clickhouse_abseil_cpp//:absl_die_if_null",
+        "@clickhouse_abseil_cpp//:absl_function_ref",
+        "@clickhouse_abseil_cpp//:absl_log_severity",
+        "@clickhouse_abseil_cpp//:absl_str_format_internal",
     ],
 )
 
@@ -1047,7 +1065,18 @@ cc_binary(
         ".",
         "upb/reflection/cmake",
     ],
-    deps = [":_libprotobuf", ":_libprotoc", ":utf8_validity", "@clickhouse//base/glibc-compatibility", "@clickhouse_abseil_cpp//:absl_base_cpu_detect", "@clickhouse_abseil_cpp//:absl_examine_stack", "@clickhouse_abseil_cpp//:absl_exponential_biased", "@clickhouse_abseil_cpp//:absl_flags_private_handle_accessor", "@clickhouse_abseil_cpp//:absl_flags_program_name", "@clickhouse_abseil_cpp//:absl_graphcycles_internal", "@clickhouse_abseil_cpp//:absl_leak_check", "@clickhouse_abseil_cpp//:absl_log_globals", "@clickhouse_abseil_cpp//:absl_log_initialize", "@clickhouse_abseil_cpp//:absl_log_internal_fnmatch", "@clickhouse_abseil_cpp//:absl_log_internal_format", "@clickhouse_abseil_cpp//:absl_log_internal_globals", "@clickhouse_abseil_cpp//:absl_log_internal_log_sink_set", "@clickhouse_abseil_cpp//:absl_malloc_internal", "@clickhouse_abseil_cpp//:absl_stacktrace", "@clickhouse_abseil_cpp//:absl_strerror", "@clickhouse_abseil_cpp//:absl_symbolize", "@clickhouse_llvm_project//:clang_rt_builtins", "@clickhouse_llvm_project//:clang_rt_xray", "@clickhouse_llvm_project//:cxx", "@clickhouse_llvm_project//:cxxabi", "@clickhouse_llvm_project//:libllvmlibc", "@clickhouse_llvm_project//:unwind", "@clickhouse_zlib_ng//:_zlib", "@llvm-project//compiler-rt:headers", "@llvm-project//libc:libc_headers", "@llvm-project//libunwind:headers"],
+    deps = [
+        ":_libprotobuf",
+        ":_libprotoc__compile_0",
+        "@clickhouse//base/glibc-compatibility",
+        "@clickhouse_abseil_cpp//:absl_log_initialize",
+        "@clickhouse_llvm_project//:clang_rt_builtins",
+        "@clickhouse_llvm_project//:clang_rt_xray",
+        "@clickhouse_llvm_project//:cxx",
+        "@clickhouse_llvm_project//:cxxabi",
+        "@clickhouse_llvm_project//:libllvmlibc",
+        "@clickhouse_llvm_project//:unwind",
+    ],
 )
 
 _UTF8_COPTS = [
@@ -1065,6 +1094,7 @@ ch_cc_library(
     copts = _UTF8_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     language = "C",
+    libcxx_headers = False,
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )
 

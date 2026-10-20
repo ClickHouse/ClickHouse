@@ -50,6 +50,7 @@ ch_cc_library(
         ":absl_raw_logging_internal",
         ":absl_spinlock_wait",
         ":absl_type_traits",
+        ":absl_base_config",
     ],
 )
 
@@ -86,6 +87,7 @@ ch_cc_library(
     ],
     implementation_deps = [
         ":absl_bits",
+        ":absl_base",
     ],
 )
 
@@ -123,6 +125,25 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":absl_cordz_info",
+        ":absl_base",
+        ":absl_base_config",
+        ":absl_bits",
+        ":absl_compare",
+        ":absl_cord_internal",
+        ":absl_crc_cord_state",
+        ":absl_function_ref",
+        ":absl_hardening",
+        ":absl_optional",
+        ":absl_span",
+        ":absl_strings",
+        ":absl_type_traits",
+        ":absl_weakly_mixed_integer",
+    ],
+    implementation_deps = [
+        ":absl_crc32c",
+        ":absl_inlined_vector_internal",
+        ":absl_raw_logging_internal",
+        ":absl_strings_internal",
     ],
 )
 
@@ -151,6 +172,13 @@ ch_cc_library(
     deps = [
         ":absl_container_memory",
         ":absl_crc_cord_state",
+        ":absl_base",
+        ":absl_base_config",
+        ":absl_function_ref",
+        ":absl_inlined_vector_internal",
+        ":absl_raw_logging_internal",
+        ":absl_span",
+        ":absl_strings",
     ],
     implementation_deps = [
         ":absl_debugging_internal",
@@ -188,6 +216,7 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":absl_raw_logging_internal",
+        ":absl_base_config",
     ],
     implementation_deps = [
         ":absl_synchronization",
@@ -212,9 +241,14 @@ ch_cc_library(
         ":absl_cordz_functions",
         ":absl_cordz_handle",
         ":absl_synchronization",
+        ":absl_base_config",
+        ":absl_raw_logging_internal",
+        ":absl_span",
     ],
     implementation_deps = [
         ":absl_stacktrace",
+        ":absl_inlined_vector_internal",
+        ":absl_time",
     ],
 )
 
@@ -255,6 +289,9 @@ ch_cc_library(
     deps = [
         ":absl_crc_internal",
         ":absl_str_format_internal",
+        ":absl_base",
+        ":absl_base_config",
+        ":absl_strings",
     ],
     implementation_deps = [
         ":absl_base_cpu_detect",
@@ -273,6 +310,10 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":absl_crc32c",
+        ":absl_base_config",
+    ],
+    implementation_deps = [
+        ":absl_bits",
     ],
 )
 
@@ -297,6 +338,8 @@ ch_cc_library(
         ":absl_base_cpu_detect",
         ":absl_bits",
         ":absl_memory",
+        ":absl_base",
+        ":absl_raw_logging_internal",
     ],
 )
 
@@ -326,6 +369,7 @@ ch_cc_library(
     ],
     implementation_deps = [
         ":absl_bits",
+        ":absl_raw_logging_internal",
     ],
 )
 
@@ -368,6 +412,10 @@ ch_cc_library(
         ":absl_log_internal_conditions",
         ":absl_log_internal_message",
         ":absl_vlog_config_internal",
+        ":absl_base_config",
+    ],
+    implementation_deps = [
+        ":absl_strings",
     ],
 )
 
@@ -387,6 +435,7 @@ ch_cc_library(
     implementation_deps = [
         ":absl_stacktrace",
         ":absl_symbolize",
+        ":absl_raw_logging_internal",
     ],
 )
 
@@ -442,6 +491,7 @@ ch_cc_library(
         ":absl_flags_commandlineflag_internal",
         ":absl_optional",
         ":absl_strings",
+        ":absl_base_config",
     ],
 )
 
@@ -476,6 +526,7 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":absl_strings",
+        ":absl_base_config",
     ],
     implementation_deps = [
         ":absl_flags_program_name",
@@ -500,6 +551,17 @@ ch_cc_library(
         ":absl_flags_config",
         ":absl_flags_marshalling",
         ":absl_flags_reflection",
+        ":absl_base",
+        ":absl_base_config",
+        ":absl_flags_commandlineflag",
+        ":absl_flags_commandlineflag_internal",
+        ":absl_strings",
+        ":absl_synchronization",
+        ":absl_type_traits",
+        ":absl_utility",
+    ],
+    implementation_deps = [
+        ":absl_memory",
     ],
 )
 
@@ -516,9 +578,12 @@ ch_cc_library(
     deps = [
         ":absl_optional",
         ":absl_strings",
+        ":absl_base_config",
+        ":absl_int128",
     ],
     implementation_deps = [
         ":absl_str_format_internal",
+        ":absl_log_severity",
     ],
 )
 
@@ -556,6 +621,9 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":absl_flags_commandlineflag",
+        ":absl_base_config",
+        ":absl_flags_commandlineflag_internal",
+        ":absl_strings",
     ],
 )
 
@@ -572,6 +640,7 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":absl_strings",
+        ":absl_base_config",
     ],
     implementation_deps = [
         ":absl_synchronization",
@@ -592,10 +661,14 @@ ch_cc_library(
     deps = [
         ":absl_flags_commandlineflag",
         ":absl_raw_hash_set",
+        ":absl_base_config",
+        ":absl_flags_commandlineflag_internal",
+        ":absl_strings",
     ],
     implementation_deps = [
         ":absl_flags_config",
         ":absl_flags_private_handle_accessor",
+        ":absl_synchronization",
     ],
 )
 
@@ -655,6 +728,8 @@ ch_cc_library(
         ":absl_algorithm",
         ":absl_base",
         ":absl_malloc_internal",
+        ":absl_raw_logging_internal",
+        ":absl_spinlock_wait",
     ],
 )
 
@@ -694,6 +769,13 @@ ch_cc_library(
         ":absl_optional",
         ":absl_strings",
         ":absl_variant",
+        ":absl_base",
+        ":absl_base_config",
+        ":absl_bits",
+        ":absl_int128",
+        ":absl_type_traits",
+        ":absl_utility",
+        ":absl_weakly_mixed_integer",
     ],
 )
 
@@ -711,11 +793,16 @@ ch_cc_library(
     deps = [
         ":absl_sample_recorder",
         ":absl_utility",
+        ":absl_base",
+        ":absl_base_config",
+        ":absl_synchronization",
+        ":absl_time",
     ],
     implementation_deps = [
         ":absl_exponential_biased",
         ":absl_memory",
         ":absl_stacktrace",
+        ":absl_raw_logging_internal",
     ],
 )
 
@@ -752,6 +839,8 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":absl_time",
+        ":absl_base_config",
+        ":absl_raw_logging_internal",
     ],
 )
 
@@ -804,9 +893,13 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":absl_vlog_config_internal",
+        ":absl_base_config",
+        ":absl_log_severity",
+        ":absl_strings",
     ],
     implementation_deps = [
         ":absl_hash",
+        ":absl_raw_logging_internal",
     ],
 )
 
@@ -826,6 +919,7 @@ ch_cc_library(
     implementation_deps = [
         ":absl_log_globals",
         ":absl_log_internal_globals",
+        ":absl_time",
     ],
 )
 
@@ -842,6 +936,10 @@ ch_cc_library(
     deps = [
         ":absl_has_ostream_operator",
         ":absl_log_internal_message",
+        ":absl_base",
+        ":absl_base_config",
+        ":absl_log_internal_nullguard",
+        ":absl_strings",
     ],
     implementation_deps = [
         ":absl_leak_check",
@@ -879,6 +977,7 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":absl_strings",
+        ":absl_base_config",
     ],
 )
 
@@ -897,6 +996,10 @@ ch_cc_library(
         ":absl_log_internal_config",
         ":absl_span",
         ":absl_time",
+        ":absl_base_config",
+        ":absl_log_severity",
+        ":absl_strings",
+        ":absl_strings_internal",
     ],
     implementation_deps = [
         ":absl_log_internal_globals",
@@ -916,6 +1019,12 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":absl_time",
+        ":absl_base_config",
+        ":absl_log_severity",
+        ":absl_strings",
+    ],
+    implementation_deps = [
+        ":absl_raw_logging_internal",
     ],
 )
 
@@ -932,12 +1041,19 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":absl_log_sink",
+        ":absl_base_config",
+        ":absl_span",
     ],
     implementation_deps = [
         ":absl_cleanup_internal",
         ":absl_log_globals",
         ":absl_log_internal_globals",
         ":absl_synchronization",
+        ":absl_base",
+        ":absl_log_internal_config",
+        ":absl_log_severity",
+        ":absl_raw_logging_internal",
+        ":absl_strings",
     ],
 )
 
@@ -957,6 +1073,12 @@ ch_cc_library(
         ":absl_log_internal_nullguard",
         ":absl_log_internal_structured_proto",
         ":absl_log_sink",
+        ":absl_base_config",
+        ":absl_log_severity",
+        ":absl_source_location",
+        ":absl_span",
+        ":absl_strings",
+        ":absl_time",
     ],
     implementation_deps = [
         ":absl_examine_stack",
@@ -967,6 +1089,10 @@ ch_cc_library(
         ":absl_log_internal_globals",
         ":absl_log_internal_log_sink_set",
         ":absl_strerror",
+        ":absl_base",
+        ":absl_log_internal_proto",
+        ":absl_raw_logging_internal",
+        ":absl_strings_internal",
     ],
 )
 
@@ -1001,6 +1127,8 @@ ch_cc_library(
     deps = [
         ":absl_span",
         ":absl_strings",
+        ":absl_base",
+        ":absl_base_config",
     ],
 )
 

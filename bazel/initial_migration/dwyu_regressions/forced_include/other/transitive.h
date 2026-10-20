@@ -1,0 +1,4 @@
+#ifndef DWYU_FORCED_OTHER_H
+#define DWYU_FORCED_OTHER_H
+#define DWYU_FORCED_OTHER_VALUE 20
+#endif

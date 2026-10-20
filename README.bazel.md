@@ -106,7 +106,20 @@ consistent-hashing, farmhash, metrohash and MurmurHash libraries also passed
 on [7f243010](https://app.buildbuddy.io/invocation/a946eb68-b890-4f5d-842d-2efbb1b3901c).
 The same run found remaining DWYU findings in other libraries, so the overall
 DWYU command exited 1. The verified reports above each have no findings.
-These checks do not establish repository-wide DWYU cleanliness.
+Textual C++ fragments, preprocessed assembly and forced includes are checked
+in the context of the files that actually include them. Regression fixtures
+preserve real missing-private, missing-public and unused-dependency failures.
+The textual and toolchain regression fixtures passed on both
+[x86-64](https://app.buildbuddy.io/invocation/3d11a99b-d91a-4965-af52-d663f49ee3bb)
+and [ARM64](https://app.buildbuddy.io/invocation/9afcc10c-9ff8-46c5-b299-3245ae3a2458).
+The additional forced-include fixtures passed on
+[x86-64](https://app.buildbuddy.io/invocation/99601363-4f40-440a-9f78-b1f066d9ee02).
+A check of 75 affected libraries found 41 passing, 27 with dependency findings,
+and 7 with missing reports or preprocessing failures
+([94975f322](https://app.buildbuddy.io/invocation/3b6069e2-fa6d-4dfc-bedf-61cbaa72edda)).
+The compile failures in Config and DoubleConverter were fixed in the binary
+verification snapshot below. These checks do not establish repository-wide
+DWYU cleanliness.
 
 ## Binary comparison
 
@@ -153,6 +166,7 @@ CMake hash recorded below.
 | `eb7b5b543` (verification snapshot) | Use the compiled Cares, farmhash, metrohash, MurmurHash and bech32 libraries as header owners; keep every IO archive member in its original position; check standalone exported macros in DWYU | [1f816158](https://app.buildbuddy.io/invocation/1f816158-633c-42e4-a617-accce026ef07) | [bb3f2893](https://app.buildbuddy.io/invocation/bb3f2893-a634-4682-97fe-fc19082bb8b8) |
 | `064407cd4` (verification snapshot) | Get Mongo and libssh generated headers from their compiled owners instead of listing them in 21 first-party header sets; remove the empty TimeSeries and UniqTheta header targets | [467a5e89](https://app.buildbuddy.io/invocation/467a5e89-e915-4074-b1aa-160aae9c158b) | [76b13055](https://app.buildbuddy.io/invocation/76b13055-e8b7-4064-b98c-4e4b8a22e956) |
 | `b82e9b694` (verification snapshot) | Give Common, PromQL grammar and consistent hashing compiled header owners; remove NetSSL's remaining Common header dependencies, remove six unused LLVM header sets, and assign CRoaring C and C++ headers to their compiled libraries | [8a31eb38](https://app.buildbuddy.io/invocation/8a31eb38-7c4f-45ba-b1b3-bd281d93b095) | [3484d6a6](https://app.buildbuddy.io/invocation/3484d6a6-a321-4685-8e31-01192bb7c62f) |
+| `18908441f` (verification snapshot) | Fix Abseil, Protobuf and gRPC direct dependencies, simplify program and benchmark libraries, publish ZooKeeper and DoubleConverter headers from their compiled owners, and check textual and forced includes in DWYU | [2ae786c6](https://app.buildbuddy.io/invocation/2ae786c6-a98e-4363-bf08-43db93868729) | [464b86d1](https://app.buildbuddy.io/invocation/464b86d1-5f64-4dd8-b85c-34f33ba10385) |
 
 The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`

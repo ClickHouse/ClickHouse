@@ -565,7 +565,6 @@ ch_cc_library(
         "//src/AggregateFunctions:headers",
         "//src/Common/Config:headers",
         "//src/Common/ZooKeeper:headers",
-        "//src/Compression:headers",
         "//src/Daemon:headers",
         "//src/Functions:headers",
         "//src/Parsers:headers",
@@ -610,7 +609,6 @@ ch_cc_library(
         "@clickhouse_aws//:_aws",
         "@clickhouse_azure//:_azure_sdk",
         "@clickhouse_boost//:boost_headers",
-        "@clickhouse_double_conversion//:_double-conversion",
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse_libarchive//:_libarchive",
         "@clickhouse_openssl//:crypto",
@@ -634,5 +632,6 @@ ch_cc_library(
     ] + [
         "//base/poco/Foundation:_poco_foundation",
         "@clickhouse_fmtlib//:_fmt",
+        "@clickhouse_double_conversion//:_double-conversion",
     ],
 )

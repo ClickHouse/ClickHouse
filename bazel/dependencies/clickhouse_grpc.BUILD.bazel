@@ -518,7 +518,7 @@ ch_cc_library(
     srcs = glob(["third_party/address_sorting/*.c"]) + ["third_party/address_sorting/address_sorting_internal.h"],
     hdrs = ["third_party/address_sorting/include/address_sorting/address_sorting.h"],
     copts = _GRPC_COPTS,
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    implementation_deps = [],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -532,6 +532,7 @@ ch_cc_library(
         "third_party/xxhash",
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    libcxx_headers = False,
 )
 
 _GENERATED_COPTS_1 = [
@@ -653,13 +654,29 @@ ch_cc_library(
         "third_party/utf8_range",
         "third_party/xxhash",
     ],
-    deps = ["@clickhouse_abseil_cpp//:absl_flags_internal", "@clickhouse_abseil_cpp//:absl_random_distributions", "@clickhouse_abseil_cpp//:absl_random_internal_entropy_pool", "@clickhouse_abseil_cpp//:absl_random_seed_sequences", "@clickhouse_abseil_cpp//:absl_status"] + [
-        "@clickhouse_abseil_cpp//:absl_die_if_null",
+    deps = [
+        "@clickhouse_abseil_cpp//:absl_random_distributions",
+        "@clickhouse_abseil_cpp//:absl_random_seed_sequences",
+        "@clickhouse_abseil_cpp//:absl_status",
         "@clickhouse_abseil_cpp//:absl_log_internal_check_impl",
         "@clickhouse_abseil_cpp//:absl_statusor",
+        "@clickhouse_abseil_cpp//:absl_base_config",
+        "@clickhouse_abseil_cpp//:absl_bits",
+        "@clickhouse_abseil_cpp//:absl_function_ref",
+        "@clickhouse_abseil_cpp//:absl_optional",
+        "@clickhouse_abseil_cpp//:absl_span",
+        "@clickhouse_abseil_cpp//:absl_strings",
+        "@clickhouse_abseil_cpp//:absl_synchronization",
+        "@clickhouse_abseil_cpp//:absl_time",
+        "@clickhouse_abseil_cpp//:absl_utility",
     ],
     implementation_deps = [
         "@clickhouse_abseil_cpp//:absl_log_globals",
+        "@clickhouse_abseil_cpp//:absl_base",
+        "@clickhouse_abseil_cpp//:absl_die_if_null",
+        "@clickhouse_abseil_cpp//:absl_flags_internal",
+        "@clickhouse_abseil_cpp//:absl_flags_marshalling",
+        "@clickhouse_abseil_cpp//:absl_str_format_internal",
     ],
 )
 
@@ -1326,18 +1343,49 @@ ch_cc_library(
         "third_party/utf8_range",
         "third_party/xxhash",
     ],
-    deps = ["@clickhouse_c_ares//:_c-ares", "@clickhouse_openssl//:ssl", "@clickhouse_re2//:_re2", ":gpr", ":grpc__compile_1", ":upb_message_lib", ":upb_mini_descriptor_lib", ":upb_mini_table_lib", ":upb_reflection_lib", ":upb_textformat_lib"] + [
+    deps = [
+        "@clickhouse_openssl//:ssl",
+        ":gpr",
+        ":grpc__compile_1",
+        ":upb_message_lib",
+        ":upb_mini_descriptor_lib",
+        ":upb_mini_table_lib",
+        ":upb_reflection_lib",
+        ":upb_textformat_lib",
         "@clickhouse_abseil_cpp//:absl_random_random",
+        "@clickhouse_abseil_cpp//:absl_base_config",
+        "@clickhouse_abseil_cpp//:absl_bits",
+        "@clickhouse_abseil_cpp//:absl_die_if_null",
+        "@clickhouse_abseil_cpp//:absl_function_ref",
+        "@clickhouse_abseil_cpp//:absl_hash",
+        "@clickhouse_abseil_cpp//:absl_inlined_vector_internal",
+        "@clickhouse_abseil_cpp//:absl_log_internal_check_impl",
+        "@clickhouse_abseil_cpp//:absl_random_mocking_access",
+        "@clickhouse_abseil_cpp//:absl_raw_hash_set",
+        "@clickhouse_abseil_cpp//:absl_span",
+        "@clickhouse_abseil_cpp//:absl_status",
+        "@clickhouse_abseil_cpp//:absl_statusor",
+        "@clickhouse_abseil_cpp//:absl_str_format_internal",
+        "@clickhouse_abseil_cpp//:absl_strings",
+        "@clickhouse_abseil_cpp//:absl_time",
+        "@clickhouse_abseil_cpp//:absl_type_traits",
+        "@clickhouse_abseil_cpp//:absl_utility",
+        "@clickhouse_openssl//:crypto",
     ],
     implementation_deps = [
         "@clickhouse_zlib_ng//:_zlib",
-        "@clickhouse//contrib/c-ares-cmake:headers",
         ":address_sorting",
         ":upb_json_lib",
-    ] + [
         "@clickhouse_abseil_cpp//:absl_bind_front",
         "@clickhouse_abseil_cpp//:absl_cleanup_internal",
         "@clickhouse_abseil_cpp//:absl_log_globals",
+        "@clickhouse_abseil_cpp//:absl_algorithm",
+        "@clickhouse_abseil_cpp//:absl_cord",
+        "@clickhouse_abseil_cpp//:absl_memory",
+        "@clickhouse_abseil_cpp//:absl_optional",
+        "@clickhouse_abseil_cpp//:absl_random_distributions",
+        "@clickhouse_c_ares//:_c-ares",
+        "@clickhouse_re2//:_re2",
     ],
 )
 
@@ -1626,7 +1674,7 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    implementation_deps = [],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
@@ -1643,6 +1691,7 @@ ch_cc_library(
         ":upb_mini_table_lib",
         ":upb_reflection_lib",
     ],
+    libcxx_headers = False,
 )
 
 cc_library(
@@ -2018,6 +2067,8 @@ ch_cc_library(
     deps = [
         "@clickhouse_google_protobuf//:_libprotoc",
         ":grpc++",
+        "@clickhouse_google_protobuf//:_libprotobuf",
+        "@clickhouse_google_protobuf//:_libprotoc__compile_0",
     ],
 )
 
@@ -2532,7 +2583,7 @@ ch_cc_library(
     ],
     hdrs = _GRPC_GENERATED_PUBLIC_HEADERS,
     copts = _GRPC_COPTS,
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    implementation_deps = [],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
@@ -2549,6 +2600,7 @@ ch_cc_library(
         ":upb_mini_table_lib",
         ":upb_reflection_lib",
     ],
+    libcxx_headers = False,
 )
 
 cc_library(
@@ -2576,7 +2628,6 @@ ch_cc_library(
     ] + ["third_party/upb/upb/lex/strtod.h"],
     copts = _GRPC_COPTS,
     implementation_deps = [
-        "@clickhouse_llvm_project//:libcxxabi_headers",
         ":upb_message_lib",
         ":upb_mini_descriptor_lib",
         ":upb_wire_lib",
@@ -2594,7 +2645,6 @@ ch_cc_library(
         "third_party/xxhash",
     ],
     deps = [
-        ":utf8_range_lib",
         ":upb_mini_table_lib",
     ],
     hdrs = [
@@ -2602,6 +2652,7 @@ ch_cc_library(
         "third_party/upb/upb/lex/round_trip.h",
         "third_party/upb/upb/lex/unicode.h",
     ],
+    libcxx_headers = False,
 )
 
 ch_cc_library(
@@ -2612,10 +2663,10 @@ ch_cc_library(
     ] + ["third_party/upb/upb/json/decode.h"],
     copts = _GRPC_COPTS,
     implementation_deps = [
-        "@clickhouse_llvm_project//:libcxxabi_headers",
         ":upb_message_lib",
         ":upb_mini_descriptor_lib",
         ":upb_wire_lib",
+        ":upb",
     ],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -2630,7 +2681,6 @@ ch_cc_library(
         "third_party/xxhash",
     ],
     deps = [
-        ":upb",
         ":upb_reflection_lib",
         ":upb_mini_table_lib",
     ],
@@ -2638,6 +2688,7 @@ ch_cc_library(
         "third_party/upb/upb/json/encode.h",
         "third_party/upb/upb/port/vsnprintf_compat.h",
     ],
+    libcxx_headers = False,
 )
 
 ch_cc_library(
@@ -2653,7 +2704,7 @@ ch_cc_library(
         "third_party/upb/upb/message/message.c",
     ] + ["third_party/upb/upb/message/compat.h"],
     copts = _GRPC_COPTS,
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    implementation_deps = [],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2682,6 +2733,7 @@ ch_cc_library(
         "third_party/upb/upb/message/message.h",
         "third_party/upb/upb/message/value.h",
     ],
+    libcxx_headers = False,
 )
 
 ch_cc_library(
@@ -2700,7 +2752,6 @@ ch_cc_library(
     ],
     copts = _GRPC_COPTS,
     implementation_deps = [
-        "@clickhouse_llvm_project//:libcxxabi_headers",
         ":upb_message_lib",
     ],
     language = "C",
@@ -2726,6 +2777,7 @@ ch_cc_library(
         "third_party/upb/upb/mini_table/sub.h",
         "third_party/upb/upb/wire/decode_fast/combinations.h",
     ] + glob(["third_party/upb/upb/mini_descriptor/*.h"]),
+    libcxx_headers = False,
 )
 
 ch_cc_library(
@@ -2763,7 +2815,7 @@ ch_cc_library(
         "third_party/upb/upb/mem/**/*.h",
     ]),
     copts = _GRPC_COPTS,
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    implementation_deps = [],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2777,6 +2829,7 @@ ch_cc_library(
         "third_party/xxhash",
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    libcxx_headers = False,
 )
 
 ch_cc_library(
@@ -2819,7 +2872,7 @@ ch_cc_library(
         "third_party/upb/upb/reflection/message_reserved_range.h",
     ],
     copts = _GRPC_COPTS,
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    implementation_deps = [],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2866,6 +2919,7 @@ ch_cc_library(
         "third_party/upb/upb/reflection/stage0/google/protobuf/descriptor.upb.h",
         "third_party/upb/upb/wire/decode_fast/field_parsers.h",
     ],
+    libcxx_headers = False,
 )
 
 ch_cc_library(
@@ -2876,11 +2930,11 @@ ch_cc_library(
     ] + ["third_party/upb/upb/text/internal/encode.h"],
     copts = _GRPC_COPTS,
     implementation_deps = [
-        "@clickhouse_llvm_project//:libcxxabi_headers",
         ":upb_json_lib",
         ":upb_message_lib",
         ":upb_wire_lib",
         ":utf8_range_lib",
+        ":upb",
     ],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -2895,7 +2949,6 @@ ch_cc_library(
         "third_party/xxhash",
     ],
     deps = [
-        ":upb",
         ":upb_reflection_lib",
         ":upb_mini_table_lib",
     ],
@@ -2903,6 +2956,7 @@ ch_cc_library(
         "third_party/upb/upb/text/encode.h",
         "third_party/upb/upb/text/options.h",
     ],
+    libcxx_headers = False,
 )
 
 ch_cc_library(
@@ -2916,7 +2970,7 @@ ch_cc_library(
         "third_party/upb/upb/wire/reader.c",
     ] + ["third_party/upb/upb/message/internal/iterator.h"],
     copts = _GRPC_COPTS,
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    implementation_deps = [],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2944,6 +2998,7 @@ ch_cc_library(
         "third_party/upb/upb/wire/types.h",
         "third_party/upb/upb/wire/writer.h",
     ] + glob(["third_party/upb/upb/wire/internal/*.h"]),
+    libcxx_headers = False,
 )
 
 ch_cc_library(

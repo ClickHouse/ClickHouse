@@ -7,8 +7,10 @@ ch_cc_library(
     srcs = ["ExtractFromConfig.cpp"],
     clickhouse_code = True,
     implementation_deps = [
-        "//bazel:clickhouse_config_headers",
-        "//rust/workspace:pco_headers",
+        "//base/poco/Foundation:_poco_foundation",
+        "//base/poco/Util:_poco_util",
+        "//src/Common",
+        "//src/Common/ZooKeeper:clickhouse_common_zookeeper_base",
     ],
     link_runtime = True,
     local_defines = select({
@@ -76,7 +78,6 @@ ch_cc_library(
     ],
     local_includes = ["."],
     deps = [
-        "@llvm-project//third-party/siphash",
         "//src/Common/Config:clickhouse_common_config",
     ],
 )

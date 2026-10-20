@@ -821,6 +821,15 @@ ch_cc_library(
         ":google_cloud_cpp_iam_credentials_v1_iamcredentials_protos",
         ":google_cloud_cpp_iam_v1_iam_policy_protos",
         ":google_cloud_cpp_longrunning_operations_protos",
+        "@clickhouse_abseil_cpp//:absl_time",
+        "@clickhouse_google_protobuf//:_libprotobuf",
+        "@clickhouse_grpc//:grpc++",
+    ],
+    implementation_deps = [
+        "@clickhouse//bazel:google_rpc_error_details_cc_proto",
+        "@clickhouse//bazel:google_rpc_status_cc_proto",
+        "@clickhouse_abseil_cpp//:absl_optional",
+        "@clickhouse_abseil_cpp//:absl_strings",
     ],
 )
 
@@ -969,7 +978,13 @@ ch_cc_library(
         "google/cloud/internal/tracing_*.h",
     ]),
     copts = _GENERATED_COPTS_1,
-    implementation_deps = ["@clickhouse//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_0"],
+    implementation_deps = [
+        "@clickhouse//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_0",
+        "@clickhouse//base/poco/Foundation:_poco_foundation",
+        "@clickhouse//base/poco/Net:_poco_net",
+        "@clickhouse_abseil_cpp//:absl_time",
+        "@clickhouse_openssl//:crypto",
+    ],
     local_defines = [
         "POCO_ENABLE_CPP11",
         "POCO_OS_FAMILY_UNIX",
@@ -985,6 +1000,9 @@ ch_cc_library(
         ":google_cloud_cpp_common",
         "@clickhouse//base:common",
         "@clickhouse_nlohmann_json//:nlohmann_json",
+        "@clickhouse_abseil_cpp//:absl_function_ref",
+        "@clickhouse_abseil_cpp//:absl_optional",
+        "@clickhouse_abseil_cpp//:absl_strings",
     ],
 )
 

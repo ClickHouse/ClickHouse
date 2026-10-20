@@ -371,6 +371,7 @@ ch_cc_library(
         "ZooKeeperPathUtils.cpp",
         "ZooKeeperWithFaultInjection.cpp",
     ]) + glob(["KeeperClientCLI/*.cpp"]),
+    hdrs = ["ZooKeeperNodeCache.h"],
     clickhouse_code = True,
     implementation_deps = [
         "//bazel:clickhouse_config_headers",
@@ -578,7 +579,7 @@ ch_cc_library(
         "//base/widechar_width",
         "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
         "//:headers",
-    ],
+    ] + [":headers"],
 )
 
 ch_cc_library(
@@ -797,5 +798,8 @@ ch_cc_library(
 
 cc_library(
     name = "headers",
-    hdrs = glob(["**/*.h"]),
+    hdrs = glob(
+        ["**/*.h"],
+        exclude = ["ZooKeeperNodeCache.h"],
+    ),
 )

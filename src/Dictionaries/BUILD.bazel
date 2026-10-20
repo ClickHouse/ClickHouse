@@ -286,7 +286,7 @@ _GENERATED_DEPS_0 = select({
     "//src/Common/Config:headers",
     "//src/Common/ZooKeeper:headers",
     "//src/Common/mysqlxx:headers",
-    "//src/Compression:headers",
+    "//src/Compression:clickhouse_compression",
     "//src/Daemon:headers",
     "//src/Dictionaries/Embedded:clickhouse_dictionaries_embedded",
     "//src/Functions:headers",
