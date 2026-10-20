@@ -170,9 +170,16 @@ void checkMerge()
 
     const size_t n = 1ULL << (K + 2);
     const size_t sparse = 1ULL << (K - 4);
-    /// {lhs begin, lhs end, rhs begin, rhs end}; the union is contiguous.
+    /// {lhs begin, lhs end, rhs begin, rhs end}; the union is contiguous. Rhs raises many registers of lhs in some cases (the counts
+    /// are rebuilt) and few or none in the others (the counts are moved).
     const std::vector<std::array<size_t, 4>> cases{
-        {0, n, n, 2 * n}, {0, n, 0, n / 2}, {0, n, n / 2, n + n / 2}, {0, sparse, sparse, 2 * sparse}, {0, 0, 0, n}, {0, n, 0, 0}};
+        {0, n, n, 2 * n},
+        {0, n, 0, n / 2},
+        {0, n, n / 2, n + n / 2},
+        {0, sparse, sparse, 2 * sparse},
+        {0, 0, 0, n},
+        {0, n, 0, 0},
+        {0, n, n, n + sparse}};
 
     for (const auto & [lhs_begin, lhs_end, rhs_begin, rhs_end] : cases)
     {
@@ -232,19 +239,8 @@ void checkMergeCorruptedRegisters()
     using C = Counter<K, TrivialHash, HashValueType>;
     static constexpr size_t width = details::RankWidth<HashValueType>::get();
     static constexpr int max_rank = sizeof(HashValueType) * 8 - K + 1;
+    static constexpr size_t buckets = 1ULL << K;
     pcg64 rng(K + sizeof(HashValueType));
-
-    /// lhs holds registers above max_rank and a wrong count of max_rank, rhs only valid registers: like master, the merge
-    /// moves the counts of raised registers and keeps the rest of the counts of lhs.
-    std::vector<UInt8> lhs_registers(1ULL << K);
-    std::vector<UInt8> rhs_registers(1ULL << K);
-    std::vector<UInt8> max_registers(1ULL << K);
-    for (size_t bucket = 0; bucket < lhs_registers.size(); ++bucket)
-    {
-        lhs_registers[bucket] = static_cast<UInt8>(rng() % (1U << width));
-        rhs_registers[bucket] = static_cast<UInt8>(rng() % (max_rank + 1));
-        max_registers[bucket] = std::max(lhs_registers[bucket], rhs_registers[bucket]);
-    }
 
     auto read = [](const std::string & bytes)
     {
@@ -253,16 +249,74 @@ void checkMergeCorruptedRegisters()
         counter->read(in);
         return counter;
     };
+    auto random_registers = [&](UInt32 values, size_t step)
+    {
+        std::vector<UInt8> registers(buckets);
+        for (size_t bucket = 0; bucket < buckets; bucket += step)
+            registers[bucket] = static_cast<UInt8>(rng() % values);
+        return registers;
+    };
+    auto max_of = [](const std::vector<UInt8> & lhs, const std::vector<UInt8> & rhs)
+    {
+        std::vector<UInt8> result(buckets);
+        for (size_t bucket = 0; bucket < buckets; ++bucket)
+            result[bucket] = std::max(lhs[bucket], rhs[bucket]);
+        return result;
+    };
 
-    auto lhs = read(makeState<K, HashValueType>(lhs_registers, 7));
-    lhs->merge(*read(makeState<K, HashValueType>(rhs_registers)));
-    expectSameState(serialize(*lhs), makeState<K, HashValueType>(max_registers, 7));
+    /// lhs holds registers above max_rank and a wrong count of max_rank. When rhs raises few registers, like master, the merge
+    /// moves the counts of the raised registers and keeps the rest of the counts of lhs.
+    const auto corrupted = random_registers(1U << width, 4);
+    const auto sparse = random_registers(max_rank + 1, 16);
+    const auto dense = random_registers(max_rank + 1, 1);
+    auto lhs = read(makeState<K, HashValueType>(corrupted, 7));
+    lhs->merge(*read(makeState<K, HashValueType>(sparse)));
+    expectSameState(serialize(*lhs), makeState<K, HashValueType>(max_of(corrupted, sparse), 7));
+
+    /// When rhs raises many registers, the counts are rebuilt from the registers: registers above max_rank throw,
+    /// wrong counts are replaced.
+    lhs = read(makeState<K, HashValueType>(corrupted, 7));
+    EXPECT_THROW(lhs->merge(*read(makeState<K, HashValueType>(dense))), DB::Exception);
+    const auto valid = random_registers(max_rank + 1, 1);
+    lhs = read(makeState<K, HashValueType>(valid, 7));
+    lhs->merge(*read(makeState<K, HashValueType>(dense)));
+    expectSameState(serialize(*lhs), makeState<K, HashValueType>(max_of(valid, dense)));
 
     /// A register above max_rank that raises lhs would move a count out of [0, max_rank].
-    std::vector<UInt8> raising_registers(1ULL << K);
-    raising_registers.back() = max_rank + 1;
-    lhs = read(makeState<K, HashValueType>(std::vector<UInt8>(1ULL << K)));
-    EXPECT_THROW(lhs->merge(*read(makeState<K, HashValueType>(raising_registers))), DB::Exception);
+    for (const auto & registers : {std::vector<UInt8>(buckets), dense})
+    {
+        auto raising = registers;
+        raising.back() = max_rank + 1;
+        lhs = read(makeState<K, HashValueType>(std::vector<UInt8>(buckets)));
+        EXPECT_THROW(lhs->merge(*read(makeState<K, HashValueType>(raising))), DB::Exception);
+    }
+}
+
+template <UInt8 width>
+void checkMaxOfGroups()
+{
+    pcg64 rng(width);
+    static constexpr UInt64 field = (1ULL << width) - 1;
+    for (size_t n = 0; n < 100000; ++n)
+    {
+        UInt64 lhs = 0;
+        UInt64 rhs = 0;
+        UInt64 expected = 0;
+        UInt64 expected_raised = 0;
+        for (size_t i = 0; i < 8; ++i)
+        {
+            /// Edge values often, so that equal registers and the extremes are covered.
+            const UInt64 l = (n % 3 == 0) ? (rng() % 2) * field : rng() % (field + 1);
+            const UInt64 r = (n % 5 == 0) ? l : rng() % (field + 1);
+            lhs |= l << (i * width);
+            rhs |= r << (i * width);
+            expected |= std::max(l, r) << (i * width);
+            expected_raised |= static_cast<UInt64>(r > l) << i;
+        }
+        UInt64 raised = 0;
+        ASSERT_EQ(details::maxOfGroups<width>(lhs, rhs, raised), expected) << std::hex << lhs << " " << rhs;
+        ASSERT_EQ(raised, expected_raised) << std::hex << lhs << " " << rhs;
+    }
 }
 
 }
@@ -271,6 +325,12 @@ TEST(HyperLogLogCounter, DenominatorSize)
 {
     checkDenominatorSizes<UInt32>(std::make_integer_sequence<UInt8, 9>{});
     checkDenominatorSizes<UInt64>(std::make_integer_sequence<UInt8, 9>{});
+}
+
+TEST(HyperLogLogCounter, MaxOfGroups)
+{
+    checkMaxOfGroups<5>();
+    checkMaxOfGroups<6>();
 }
 
 TEST(HyperLogLogCounter, Merge)
