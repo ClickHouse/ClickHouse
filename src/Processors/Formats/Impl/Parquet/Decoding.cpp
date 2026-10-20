@@ -526,11 +526,9 @@ struct PlainStringDecoder : public PageDecoder
     IColumn::Offsets offsets;
     /// See PageDecoderInfo::makeDecoder. Used only when the converter is trivial.
     const StringValueFilter * value_filter = nullptr;
-    /// See `decodeWithBulkScan`.
     bool bulk_scan_enabled = false;
     bool bulk_scan_probed = false;
     std::vector<size_t> bulk_scan_matches;
-    /// Fewer values (e.g. a row range left by another PREWHERE step) are checked one by one, as without the bulk scan.
     static constexpr size_t MIN_VALUES_TO_BULK_SCAN = 128;
 
     PlainStringDecoder(std::span<const char> data_, std::shared_ptr<StringConverter> converter_, const StringValueFilter * value_filter_)
@@ -557,9 +555,8 @@ struct PlainStringDecoder : public PageDecoder
         }
     }
 
-    /// Decodes up to `num_values` values like `decode` without a row filter, checking the substring condition of `string_filter`
-    /// with one `findBulkScanMatches` per batch of values. Returns the number of decoded values: it stops early if the filter
-    /// disables itself or the scan stops paying off for this page.
+    /// Decodes up to `num_values` values like `decode` without a row filter, with one `findBulkScanMatches` per batch for the
+    /// substring condition. Returns the number decoded: fewer if the filter disables itself or the scan stops paying off.
     size_t decodeWithBulkScan(size_t num_values, ColumnString & col_str, const StringValueFilter & string_filter)
     {
         const bool has_other_conditions = string_filter.hasOtherConditions();
@@ -567,7 +564,6 @@ struct PlainStringDecoder : public PageDecoder
         size_t i = 0;
         while (i < num_values && bulk_scan_enabled && string_filter.isEnabled())
         {
-            /// The first batch of a page is small, to find out cheaply whether the scan pays off.
             const size_t max_batch = bulk_scan_probed ? StringValueFilter::MAX_VALUES_BETWEEN_STATS_UPDATES : MIN_VALUES_TO_BULK_SCAN;
             const size_t batch = std::min(num_values - i, max_batch);
             offsets.resize(batch);
