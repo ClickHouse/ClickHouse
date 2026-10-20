@@ -9976,7 +9976,7 @@ cc_library(
         ":libllvmlibc__runtime_objects_0",
     ],
     # Link LLVM math before the glibc-compatibility fallbacks reached through rseq.
-    deps = ["@clickhouse//base/glibc-rseq:glibc-rseq"],
+    deps = ["@clickhouse//base/glibc-rseq"],
     alwayslink = True,
 )
 

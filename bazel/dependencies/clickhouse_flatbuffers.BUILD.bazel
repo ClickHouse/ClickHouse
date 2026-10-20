@@ -267,7 +267,7 @@ cc_binary(
         ":_flatbuffers",
         "@clickhouse_llvm_project//:cxx",
         "@clickhouse_llvm_project//:cxxabi",
-        "@clickhouse//base/glibc-compatibility:glibc-compatibility",
+        "@clickhouse//base/glibc-compatibility",
         "@clickhouse_llvm_project//:unwind",
         "@llvm-project//compiler-rt:headers",
         "@llvm-project//libc:libc_headers",

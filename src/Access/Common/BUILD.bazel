@@ -11,7 +11,7 @@ ch_cc_library(
         ":headers",
         "//src/Common:headers",
         "//base:base_headers",
-        "//base/poco/Foundation:poco_foundation_headers",
+        "//base/poco/Foundation:_poco_foundation",
         "@clickhouse_fmtlib//:_fmt",
         "@clickhouse_aws//:_aws",
         "@clickhouse_azure//:_azure_sdk",
@@ -123,11 +123,11 @@ ch_cc_library(
         "@clickhouse_llvm_project//:clang_rt_builtins",
         "//base:common",
         "@clickhouse_openssl//:crypto",
-        "//base/glibc-compatibility:glibc-compatibility",
+        "//base/glibc-compatibility",
         "@clickhouse_openssl//:ssl",
         "@clickhouse_cctz//:tzdata",
         "@clickhouse_google_protobuf//:utf8_validity",
-        "//base/widechar_width:widechar_width",
+        "//base/widechar_width",
         "//src:headers",
     ],
     link_runtime = True,
@@ -200,4 +200,5 @@ ch_cc_library(
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
+    deps = ["//base/poco/Net:_poco_net"],
 )

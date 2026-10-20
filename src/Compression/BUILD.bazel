@@ -18,13 +18,12 @@ exports_files([
 ch_cc_library(
     name = "clickhouse_compression",
     srcs = glob(["*.cpp"]),
-    hdrs = [
-        "//rust/workspace:pco/include/pco.h",
-    ],
     clickhouse_code = True,
     implementation_deps = [
         "//bazel:clickhouse_config_headers",
         "//rust/workspace:pco_headers",
+        "//contrib/libdivide-cmake:headers",
+        "@clickhouse_libdivide//:libdivide",
     ],
     link_runtime = True,
     local_defines = select({
@@ -154,7 +153,7 @@ ch_cc_library(
     }) + [
         "@clickhouse_llvm_project//:LLVMXRay",
         "@clickhouse_llvm_project//:LLVMRemarks",
-        "@llvm-project//third-party/siphash:siphash",
+        "@llvm-project//third-party/siphash",
         "@lz4//:lz4_frame",
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_fmtlib//:_fmt",
@@ -285,11 +284,11 @@ ch_cc_library(
         "//src/Parsers:clickhouse_parsers",
         "//base:common",
         "@clickhouse_openssl//:crypto",
-        "//base/glibc-compatibility:glibc-compatibility",
+        "//base/glibc-compatibility",
         "@clickhouse_openssl//:ssl",
         "@clickhouse_cctz//:tzdata",
         "@clickhouse_google_protobuf//:utf8_validity",
-        "//base/widechar_width:widechar_width",
+        "//base/widechar_width",
         "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
         "@clickhouse_sz3//:sz3",
         "//contrib/sz3-cmake:headers",
@@ -300,4 +299,5 @@ ch_cc_library(
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
+    deps = ["//base/poco/Util:_poco_util"],
 )

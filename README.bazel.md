@@ -75,9 +75,9 @@ you are changing, for example:
 
 ```sh
 bazel build --config=cmake_match --config=dwyu \
-  //base/readpassphrase:readpassphrase @clickhouse_libuv//:_uv
+  //base/readpassphrase @clickhouse_libuv//:_uv
 bazel build --config=cmake_match_aarch64 --config=dwyu \
-  //base/readpassphrase:readpassphrase @clickhouse_libuv//:_uv
+  //base/readpassphrase @clickhouse_libuv//:_uv
 ```
 
 The aspect checks the requested C++ libraries and keeps going after findings,
@@ -126,6 +126,7 @@ CMake hash recorded below.
 | `7030218f2` (verification snapshot) | Replace raw include options with header dependencies across ClickHouse and external libraries; use protobuf 36.1 and the upstream Delta Cargo.lock | [990aaa99](https://app.buildbuddy.io/invocation/990aaa99-3fcd-4b07-97ab-ec7f82fbc252) | [09ba3815](https://app.buildbuddy.io/invocation/09ba3815-1d12-4485-a088-d5f9734a6a90) |
 | `af5de0992` (verification snapshot) | Use native C++ proto rules for all 65 Google Cloud protos and typed LLVM runtime includes, retaining protobuf archive order | [e1b2cf7a](https://app.buildbuddy.io/invocation/e1b2cf7a-8453-4e39-8f11-b03f7cf95366) | [3047e868](https://app.buildbuddy.io/invocation/3047e868-4a34-42a6-97ce-8931c754ddf7) |
 | `9b13f2efd` (verification snapshot) | Add development-only DWYU checks; remove 10 redundant header wrappers; make allocator, Access/Common, Poco and external dependencies private or direct at their owners | [8dfb9f12](https://app.buildbuddy.io/invocation/8dfb9f12-d2fc-499c-987a-2ba548367ee0) | [78d74d65](https://app.buildbuddy.io/invocation/78d74d65-3465-4f77-9ff9-674397a5b3c5) |
+| `15a331cc2` (verification snapshot) | Put Poco headers on their libraries; correct Poco dependency directions and remove 29 redundant header wrappers across all consumers; simplify equivalent Bazel labels repository-wide; fix public and private providers for c-ares, cityhash, sorting, and Poco | [904cb2e1](https://app.buildbuddy.io/invocation/904cb2e1-282c-4a8c-b491-5d938e61e1db) | [1f513462](https://app.buildbuddy.io/invocation/1f513462-5698-4a61-89f7-f87b05aff800) |
 
 The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`

@@ -86,7 +86,7 @@ ch_cc_library(
         "@clickhouse_llvm_project//:LLVMPasses",
         "@clickhouse_llvm_project//:LLVMSupport",
         "@clickhouse_llvm_project//:LLVMXRay",
-        "@llvm-project//third-party/siphash:siphash",
+        "@llvm-project//third-party/siphash",
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_fmtlib//:_fmt",
         "//src/Loggers:loggers",
@@ -98,4 +98,5 @@ ch_cc_library(
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
+    deps = ["//base/poco/Util:_poco_util"],
 )

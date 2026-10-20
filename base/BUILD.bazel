@@ -53,7 +53,12 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = ["//base/poco/Foundation:_poco_foundation"],
+    deps = [
+        "//base/poco/Foundation:_poco_foundation",
+        "//base/poco/Net:_poco_net",
+        "//base/poco/Util:_poco_util",
+        ":base_headers",
+    ],
 )
 
 ch_cc_library(
@@ -77,6 +82,16 @@ cc_library(
     name = "base_headers",
     hdrs = glob(["base/**/*.h"]),
     includes = ["."],
+    deps = [
+        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_fmtlib//:_fmt",
+        "@clickhouse_magic_enum//:magic_enum",
+        "@clickhouse_miniselect//:miniselect",
+        "//contrib/cityhash102:_cityhash",
+        "//contrib/driftsort:headers",
+        "//contrib/ipnsort:headers",
+        "//contrib/pdqsort:headers",
+    ],
 )
 
 cc_library(

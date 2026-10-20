@@ -1,5 +1,4 @@
 load("@clickhouse//base:poco/poco_cc_library.bzl", "poco_cc_library")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -7,8 +6,6 @@ exports_files([
     "src/xmltok_impl.c",
     "src/xmltok_ns.c",
 ])
-
-_GENERATED_HDRS_0 = glob(["**/*.h"])
 
 poco_cc_library(
     name = "_poco_xml",
@@ -37,7 +34,6 @@ poco_cc_library(
         "-Wno-unused-parameter",
         "-Wno-zero-as-null-pointer-constant",
     ],
-    implementation_deps = ["//src:clickhouse_common_io"],
     includes = ["include"],
     llvm_headers = False,
     local_defines = [
@@ -51,14 +47,16 @@ poco_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
         "_poco_xml",
     ],
-    source_headers = False,
-    deps = ["//base/poco/Foundation:poco_foundation_headers"],
+    deps = ["//base/poco/Foundation:_poco_foundation"],
 )
 
 poco_cc_library(
     name = "_poco_xml_expat",
-    srcs = glob(["src/*.c"]),
-    hdrs = _GENERATED_HDRS_0,
+    srcs = glob([
+        "src/*.c",
+        "src/*.h",
+        "include/Poco/XML/expat*.h",
+    ]),
     additional_compiler_inputs = [
         "src/xmltok_impl.c",
         "src/xmltok_ns.c",
@@ -76,7 +74,7 @@ poco_cc_library(
     ],
     implementation_deps = [
         "//bazel:clickhouse_config_headers",
-        "//base/poco/XML:headers",
+        "//base/poco/Foundation:_poco_foundation",
         "@llvm-project//libunwind:headers",
         "@llvm-project//libc:libc_headers",
         "@llvm-project//compiler-rt:headers",
@@ -92,23 +90,6 @@ poco_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
         "_poco_xml",
     ],
-    deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-        "//base/poco/Foundation:headers",
-    ],
-)
-
-cc_library(
-    name = "poco_xml_headers",
-    hdrs = glob(["include/**/*.h"]),
-    includes = ["include"],
-    deps = ["//base/poco/Foundation:poco_foundation_headers"],
-)
-
-cc_library(
-    name = "headers",
-    hdrs = glob(["**/*.h"]),
-    includes = [
-        "include",
-    ],
+    local_includes = ["include"],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )

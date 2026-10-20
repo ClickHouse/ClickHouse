@@ -202,11 +202,11 @@ ch_cc_library(
         "@clickhouse_llvm_project//:clang_rt_builtins",
         "//base:common",
         "@clickhouse_openssl//:crypto",
-        "//base/glibc-compatibility:glibc-compatibility",
+        "//base/glibc-compatibility",
         "@clickhouse_openssl//:ssl",
         "@clickhouse_cctz//:tzdata",
         "@clickhouse_google_protobuf//:utf8_validity",
-        "//base/widechar_width:widechar_width",
+        "//base/widechar_width",
         "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
         "//:headers",
         "//src:headers",
@@ -219,4 +219,5 @@ cc_library(
     includes = [
         ".",
     ],
+    deps = ["//base/poco/Util:_poco_util"],
 )

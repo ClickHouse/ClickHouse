@@ -21,5 +21,6 @@ def poco_cc_library(name, copts = [], language = "CXX", **kwargs):
         name = name,
         copts = copts,
         language = language,
+        source_headers = False,
         **kwargs
     )

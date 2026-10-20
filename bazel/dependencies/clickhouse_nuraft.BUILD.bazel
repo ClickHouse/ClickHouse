@@ -103,7 +103,7 @@ ch_cc_library(
         "@clickhouse//src:headers",
         "@clickhouse//base:base_headers",
         "@clickhouse//base:headers",
-        "@clickhouse//base/poco/Foundation:poco_foundation_headers",
+        "@clickhouse//base/poco/Foundation:_poco_foundation",
         "@clickhouse_boost//:boost_headers",
     ],
 )

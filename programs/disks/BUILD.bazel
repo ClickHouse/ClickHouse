@@ -129,7 +129,7 @@ ch_cc_library(
         "../../" + "bazel/gen",
     ],
     deps = [
-        "@llvm-project//third-party/siphash:siphash",
+        "@llvm-project//third-party/siphash",
         "//contrib/bech32:_bech32",
         "@clickhouse_cld2//:_cld2",
         "//contrib/libfarmhash:_farmhash",

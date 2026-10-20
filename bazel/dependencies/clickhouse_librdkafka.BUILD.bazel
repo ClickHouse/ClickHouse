@@ -202,7 +202,7 @@ ch_cc_library(
         "-fno-sanitize=undefined",
     ],
     implementation_deps = ([
-        "@clickhouse//base/poco/NetSSL_OpenSSL:poco_net_ssl_headers",
+        "@clickhouse//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_0",
         "@clickhouse_llvm_project//:libcxxabi_headers",
         "@clickhouse//contrib/librdkafka-cmake:headers",
     ]) + ["@clickhouse_zlib_ng//:_zlib", "@clickhouse_cyrus_sasl//:_sasl2"],
@@ -235,7 +235,7 @@ ch_cc_library(
         "-fno-sanitize=undefined",
     ],
     implementation_deps = ([
-        "@clickhouse//base/poco/NetSSL_OpenSSL:poco_net_ssl_headers",
+        "@clickhouse//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_0",
         "@clickhouse//contrib/librdkafka-cmake:headers",
     ]) + ["@clickhouse_zlib_ng//:_zlib", "@clickhouse_cyrus_sasl//:_sasl2"],
     local_defines = _RDKAFKA_LOCAL_DEFINES,

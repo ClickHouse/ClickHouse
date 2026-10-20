@@ -185,12 +185,12 @@ ch_cc_library(
         "@clickhouse_llvm_project//:clang_rt_builtins",
         "//base:common",
         "@clickhouse_openssl//:crypto",
-        "//base/glibc-compatibility:glibc-compatibility",
-        "//src/Common/mysqlxx:mysqlxx",
+        "//base/glibc-compatibility",
+        "//src/Common/mysqlxx",
         "@clickhouse_openssl//:ssl",
         "@clickhouse_cctz//:tzdata",
         "@clickhouse_google_protobuf//:utf8_validity",
-        "//base/widechar_width:widechar_width",
+        "//base/widechar_width",
         "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
         "//:headers",
     ],
@@ -199,4 +199,5 @@ ch_cc_library(
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
+    deps = ["//base/poco/Util:_poco_util"],
 )

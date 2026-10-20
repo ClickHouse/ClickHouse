@@ -38,7 +38,7 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = ["//base/glibc-compatibility:glibc-compatibility"],
+    deps = ["//base/glibc-compatibility"],
 )
 
 cc_library(

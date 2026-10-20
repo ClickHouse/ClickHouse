@@ -540,5 +540,8 @@ cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
     textual_hdrs = glob(["**/*.inc"]),
-    deps = ["//bazel:clickhouse_config_headers"],
+    deps = [
+        "//bazel:clickhouse_config_headers",
+        "//base/poco/Net:throttler",
+    ],
 )

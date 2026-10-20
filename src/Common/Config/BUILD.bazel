@@ -149,7 +149,7 @@ ch_cc_library(
     }) + [
         "@clickhouse_llvm_project//:LLVMXRay",
         "@clickhouse_llvm_project//:LLVMRemarks",
-        "@llvm-project//third-party/siphash:siphash",
+        "@llvm-project//third-party/siphash",
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_fmtlib//:_fmt",
         "@clickhouse_llvm_project//:LLVMAsmPrinter",
@@ -283,11 +283,11 @@ ch_cc_library(
         "//src/Parsers:clickhouse_parsers",
         "//base:common",
         "@clickhouse_openssl//:crypto",
-        "//base/glibc-compatibility:glibc-compatibility",
+        "//base/glibc-compatibility",
         "@clickhouse_openssl//:ssl",
         "@clickhouse_cctz//:tzdata",
         "@clickhouse_google_protobuf//:utf8_validity",
-        "//base/widechar_width:widechar_width",
+        "//base/widechar_width",
         "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
         "//:headers",
     ],
@@ -296,4 +296,8 @@ ch_cc_library(
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
+    deps = [
+        "//base/poco/Util:_poco_util",
+        "//base/poco/XML:_poco_xml",
+    ],
 )

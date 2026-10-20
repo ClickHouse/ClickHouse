@@ -132,7 +132,7 @@ ch_cc_library(
         "@clickhouse_abseil_cpp//:absl_time_zone",
         "@clickhouse_abseil_cpp//:absl_vlog_config_internal",
         "@clickhouse_llvm_project//:clang_rt_builtins",
-        "//base/glibc-compatibility:glibc-compatibility",
+        "//base/glibc-compatibility",
         "@clickhouse_google_protobuf//:utf8_validity",
     ],
 )

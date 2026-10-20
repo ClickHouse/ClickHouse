@@ -1,11 +1,11 @@
 load("@clickhouse//base:poco/poco_cc_library.bzl", "poco_cc_library")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
 poco_cc_library(
     name = "_poco_json",
     srcs = glob(["src/*.cpp"]),
+    hdrs = glob(["include/**/*.h"]),
     copts = [
         "-Wno-deprecated-dynamic-exception-spec",
         "-Wno-sign-compare",
@@ -15,7 +15,8 @@ poco_cc_library(
         "-Wno-zero-as-null-pointer-constant",
         "-Wno-implicit-int-conversion",
     ],
-    implementation_deps = ["//bazel:clickhouse_config_headers"],
+    implementation_deps = [":_poco_json_pdjson"],
+    includes = ["include"],
     local_defines = [
         "POCO_ENABLE_CPP11",
         "POCO_OS_FAMILY_UNIX",
@@ -24,7 +25,7 @@ poco_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = ["//base/poco/Net:_poco_net"],
+    deps = ["//base/poco/Foundation:_poco_foundation"],
 )
 
 poco_cc_library(
@@ -55,19 +56,4 @@ poco_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
-)
-
-cc_library(
-    name = "poco_json_headers",
-    hdrs = glob(["include/**/*.h"]),
-    includes = ["include"],
-    deps = ["//base/poco/Foundation:poco_foundation_headers"],
-)
-
-cc_library(
-    name = "headers",
-    hdrs = glob(["**/*.h"]),
-    includes = [
-        "include",
-    ],
 )

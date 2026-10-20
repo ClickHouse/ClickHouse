@@ -76,7 +76,7 @@ ch_cc_library(
     ],
     local_includes = ["."],
     deps = [
-        "@llvm-project//third-party/siphash:siphash",
+        "@llvm-project//third-party/siphash",
         "//src/Common/Config:clickhouse_common_config",
     ],
 )

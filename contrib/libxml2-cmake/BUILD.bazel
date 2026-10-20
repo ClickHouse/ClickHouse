@@ -8,11 +8,6 @@ exports_files([
 ])
 
 cc_library(
-    name = "headers",
-    hdrs = glob(["**/*.h"]),
-)
-
-cc_library(
     name = "libxml2_config_headers",
     hdrs = glob(["linux_x86_64/include/**/*.h"]),
     includes = ["linux_x86_64/include"],

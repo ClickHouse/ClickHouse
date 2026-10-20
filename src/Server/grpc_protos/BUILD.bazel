@@ -154,7 +154,7 @@ ch_cc_library(
         "@clickhouse_grpc//:address_sorting",
         "@clickhouse_llvm_project//:clang_rt_builtins",
         "@clickhouse_openssl//:crypto",
-        "//base/glibc-compatibility:glibc-compatibility",
+        "//base/glibc-compatibility",
         "@clickhouse_grpc//:gpr",
         "@clickhouse_grpc//:grpc",
         "@clickhouse_grpc//:grpc++",

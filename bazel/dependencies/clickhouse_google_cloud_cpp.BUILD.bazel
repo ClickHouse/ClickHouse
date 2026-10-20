@@ -854,13 +854,8 @@ ch_cc_library(
         "google/cloud/internal/unified_rest_credentials.cc",
         "@clickhouse//contrib:google-cloud-cpp-cmake/poco_rest_client.cc",
     ],
-    hdrs = [
-        "@clickhouse//bazel:gen/base/base/GitHash.generated.cpp",
-        "@clickhouse//bazel:gen/includes/configs/config_version.cpp",
-        "@clickhouse_cctz//:config/contrib/cctz-cmake/TimeZones.generated.cpp",
-        "@clickhouse_mariadb_connector_c//:config/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
-    ],
     copts = _GENERATED_COPTS_1,
+    implementation_deps = ["@clickhouse//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_0"],
     local_defines = [
         "POCO_ENABLE_CPP11",
         "POCO_OS_FAMILY_UNIX",

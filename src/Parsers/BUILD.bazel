@@ -232,11 +232,11 @@ ch_cc_library(
         "//src/Access/Common:clickhouse_common_access",
         "//base:common",
         "@clickhouse_openssl//:crypto",
-        "//base/glibc-compatibility:glibc-compatibility",
+        "//base/glibc-compatibility",
         "@clickhouse_openssl//:ssl",
         "@clickhouse_cctz//:tzdata",
         "@clickhouse_google_protobuf//:utf8_validity",
-        "//base/widechar_width:widechar_width",
+        "//base/widechar_width",
         "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
         "//:headers",
     ],
@@ -245,4 +245,5 @@ ch_cc_library(
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
+    deps = ["//base/poco/JSON:_poco_json"],
 )

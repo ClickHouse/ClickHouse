@@ -55,10 +55,7 @@ ch_cc_library(
         "src/lib/inet_net_pton.c",
         "src/lib/inet_ntop.c",
     ] + glob(["src/lib/legacy/*.c"]) + glob(["src/lib/record/*.c"]) + glob(["src/lib/str/*.c"]) + glob(["src/lib/util/*.c"]),
-    hdrs = [
-        "@clickhouse//contrib/c-ares-cmake:linux/ares_build.h",
-        "@clickhouse//contrib/c-ares-cmake:linux/ares_config.h",
-    ] + glob([
+    hdrs = glob([
         "include/**/*.h",
         "src/lib/**/*.h",
         "src/lib/**/*.inc",
@@ -67,7 +64,7 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
     ],
-    implementation_deps = (["@clickhouse_llvm_project//:libcxxabi_headers"]) + ["@clickhouse//contrib/c-ares-cmake:headers"],
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     includes = [
         "include",
         "src/lib",
@@ -84,5 +81,8 @@ ch_cc_library(
         "_POSIX_C_SOURCE=199309L",
         "_XOPEN_SOURCE=600",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = [
+        "@clickhouse_llvm_project//:clang_rt_builtins",
+        "@clickhouse//contrib/c-ares-cmake:headers",
+    ],
 )

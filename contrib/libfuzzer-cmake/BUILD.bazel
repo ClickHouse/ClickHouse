@@ -9,7 +9,7 @@ cc_library(
         "@clickhouse_llvm_project//:clang_rt_builtins",
         "@clickhouse_llvm_project//:cxx",
         "@clickhouse_llvm_project//:cxxabi",
-        "//base/glibc-compatibility:glibc-compatibility",
+        "//base/glibc-compatibility",
         "@clickhouse_llvm_project//:unwind",
         "@llvm-project//compiler-rt:fuzzer",
     ],
@@ -22,7 +22,7 @@ cc_library(
         "@clickhouse_llvm_project//:clang_rt_builtins",
         "@clickhouse_llvm_project//:cxx",
         "@clickhouse_llvm_project//:cxxabi",
-        "//base/glibc-compatibility:glibc-compatibility",
+        "//base/glibc-compatibility",
         "@clickhouse_llvm_project//:unwind",
     ],
 )

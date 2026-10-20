@@ -7,51 +7,6 @@ exports_files([
     "src/EmbeddedCertificates.cpp",
 ])
 
-_POCO_NET_SSL_HDRS = [
-    "//bazel:gen/base/base/GitHash.generated.cpp",
-    "@clickhouse_libssh//:config/contrib/libssh/include/libssh/libssh_version.h",
-    "@clickhouse_liburing//:config/contrib/liburing/src/include-compat/liburing/compat.h",
-    "@clickhouse_liburing//:config/contrib/liburing/src/include/liburing/io_uring_version.h",
-    "@clickhouse_snappy//:config/contrib/snappy-cmake/config.h",
-    "@clickhouse_snappy//:config/contrib/snappy-cmake/snappy-stubs-public.h",
-    "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
-    "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
-    "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-]
-
-_POCO_NET_SSL_DEPS = [
-    "@clickhouse_boost//:boost_headers",
-    "@clickhouse_fmtlib//:_fmt",
-    "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
-    "@clickhouse_fast_float//:fast_float",
-    "@clickhouse_jwt_cpp//:jwt_cpp",
-    "@clickhouse_libdivide//:libdivide",
-    "@clickhouse_magic_enum//:magic_enum",
-    "@clickhouse_miniselect//:miniselect",
-    "@clickhouse_msgpack_c//:msgpack_c",
-    "@clickhouse_pocketfft//:pocketfft",
-    "@clickhouse_sparsehash_c11//:sparsehash_c11",
-    "@clickhouse_abseil_cpp//:abseil_cpp_headers",
-    ":poco_net_ssl_headers",
-    "//base/glibc-compatibility:headers",
-    "//base/glibc-rseq:headers",
-    "//base/poco/Foundation:headers",
-    "//base/poco/JSON:headers",
-    "//base/poco/Net:headers",
-    "//base/poco/Redis:headers",
-    "//base/poco/Util:headers",
-    "//base/poco/XML:headers",
-    "//base/readpassphrase:readpassphrase",
-    "//base/widechar_width:headers",
-    "//contrib/cityhash102:headers",
-    "//contrib/driftsort:headers",
-    "//contrib/ipnsort:headers",
-    "//contrib/jemalloc-cmake:headers",
-    "//contrib/libdivide-cmake:headers",
-    "//contrib/openssl-cmake:headers",
-    "//contrib/pdqsort:headers",
-]
-
 poco_cc_library(
     name = "_poco_net_ssl__compile_0",
     srcs = ([
@@ -74,7 +29,7 @@ poco_cc_library(
         "src/Utility.cpp",
         "src/VerificationErrorArgs.cpp",
     ]),
-    hdrs = _POCO_NET_SSL_HDRS,
+    hdrs = glob(["include/**/*.h"]),
     copts = [
         "-Wno-cast-qual",
         "-Wno-covered-switch-default",
@@ -92,32 +47,12 @@ poco_cc_library(
         "-Wno-zero-as-null-pointer-constant",
     ],
     implementation_deps = [
-        "@clickhouse_openssl//:ssl",
-        "//bazel:clickhouse_config_headers",
-        "@clickhouse_cctz//:_cctz",
-        "@clickhouse_re2//:_re2",
-        "@clickhouse_libfiu//:_libfiu",
-        "@clickhouse_libssh//:_ssh",
-        "@clickhouse_zstd//:_zstd__compile_0",
-        "@clickhouse_crc32c//:_crc32c",
-        "@clickhouse_libarchive//:_libarchive",
-        "@clickhouse_replxx//:_replxx",
-        "@clickhouse_double_conversion//:_double-conversion",
-        "@clickhouse_zmij//:_zmij",
-        "@clickhouse_zlib_ng//:_zlib",
-        "@clickhouse_libdeflate//:_libdeflate",
-        "@clickhouse_xz//:_liblzma",
-        "@clickhouse_aws//:aws_headers",
-        "@clickhouse_aws_c_auth//:aws_c_auth_headers",
-        "@clickhouse_aws_crt_cpp//:aws_crt_cpp_headers",
-        "@clickhouse_aws_c_sdkutils//:aws_c_sdkutils_headers",
-        "@clickhouse_azure//:_azure_sdk",
-        "@clickhouse_snappy//:_snappy",
-        "@clickhouse_libbcrypt//:_bcrypt",
-        "@clickhouse_liburing//:_liburing",
-        "@clickhouse_simdutf//:_simdutf",
-        "@clickhouse_simdjson//:_simdjson",
-    ] + ["@clickhouse_google_protobuf//:_libprotobuf"],
+        "//base:base_headers",
+        "//src:headers",
+        "//src/Common:headers",
+        "@clickhouse_fmtlib//:_fmt",
+    ],
+    includes = ["include"],
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -180,13 +115,17 @@ poco_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = _POCO_NET_SSL_DEPS,
+    deps = [
+        "//base/poco/Foundation:_poco_foundation",
+        "//base/poco/Net:_poco_net",
+        "//base/poco/Util:_poco_util",
+        "@clickhouse_openssl//:ssl",
+    ],
 )
 
 poco_cc_library(
     name = "_poco_net_ssl__compile_1",
     srcs = ["//bazel:gen/embedded/base/poco/NetSSL_OpenSSL/src/EmbeddedCertificates.cpp"],
-    hdrs = _POCO_NET_SSL_HDRS,
     additional_compiler_inputs = ["//bazel:gen/embedded/contrib/grpc/etc/roots.pem"],
     copts = [
         "-Wno-cast-qual",
@@ -204,33 +143,7 @@ poco_cc_library(
         "-Wno-unused-parameter",
         "-Wno-zero-as-null-pointer-constant",
     ],
-    implementation_deps = [
-        "//bazel:clickhouse_config_headers",
-        "@clickhouse_cctz//:_cctz",
-        "@clickhouse_re2//:_re2",
-        "@clickhouse_libfiu//:_libfiu",
-        "@clickhouse_libssh//:_ssh",
-        "@clickhouse_zstd//:_zstd__compile_0",
-        "@clickhouse_crc32c//:_crc32c",
-        "@clickhouse_libarchive//:_libarchive",
-        "@clickhouse_replxx//:_replxx",
-        "@clickhouse_double_conversion//:_double-conversion",
-        "@clickhouse_zmij//:_zmij",
-        "@clickhouse_zlib_ng//:_zlib",
-        "@clickhouse_libdeflate//:_libdeflate",
-        "@clickhouse_xz//:_liblzma",
-        "@clickhouse_aws//:aws_headers",
-        "@clickhouse_aws_c_auth//:aws_c_auth_headers",
-        "@clickhouse_aws_crt_cpp//:aws_crt_cpp_headers",
-        "@clickhouse_aws_c_sdkutils//:aws_c_sdkutils_headers",
-        "@clickhouse_azure//:_azure_sdk",
-        "@clickhouse_snappy//:_snappy",
-        "@clickhouse_libbcrypt//:_bcrypt",
-        "@clickhouse_liburing//:_liburing",
-        "@clickhouse_simdutf//:_simdutf",
-        "@clickhouse_simdjson//:_simdjson",
-        "@clickhouse_google_protobuf//:_libprotobuf",
-    ],
+    implementation_deps = [":_poco_net_ssl__compile_0"],
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -294,33 +207,12 @@ poco_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = _POCO_NET_SSL_DEPS,
 )
 
 cc_library(
     name = "_poco_net_ssl",
     deps = [
-        "//base/poco/Util:_poco_util",
         ":_poco_net_ssl__compile_0",
         ":_poco_net_ssl__compile_1",
-    ],
-)
-
-cc_library(
-    name = "poco_net_ssl_headers",
-    hdrs = glob(["include/**/*.h"]),
-    includes = ["include"],
-    deps = [
-        "//contrib/openssl-cmake:openssl_cmake_headers",
-        "//base/poco/Net:poco_net_headers",
-        "//base/poco/Util:poco_util_headers",
-    ],
-)
-
-cc_library(
-    name = "headers",
-    hdrs = glob(["**/*.h"]),
-    includes = [
-        "include",
     ],
 )

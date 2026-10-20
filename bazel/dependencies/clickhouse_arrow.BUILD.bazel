@@ -639,7 +639,7 @@ _GENERATED_DEPS_2 = [
     "@clickhouse_openssl//:crypto",
     "@clickhouse_llvm_project//:cxx",
     "@clickhouse_llvm_project//:cxxabi",
-    "@clickhouse//base/glibc-compatibility:glibc-compatibility",
+    "@clickhouse//base/glibc-compatibility",
     "@clickhouse_openssl//:ssl",
     "@clickhouse_llvm_project//:unwind",
     "@clickhouse_google_protobuf//:utf8_validity",

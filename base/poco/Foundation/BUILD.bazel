@@ -1,5 +1,4 @@
 load("@clickhouse//base:poco/poco_cc_library.bzl", "poco_cc_library")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -169,6 +168,7 @@ poco_cc_library(
         "src/VarIterator.cpp",
         "src/Void.cpp",
     ]),
+    hdrs = glob(["include/**/*.h"]),
     additional_compiler_inputs = [
         "src/DirectoryIterator_UNIX.cpp",
         "src/Environment_UNIX.cpp",
@@ -226,9 +226,15 @@ poco_cc_library(
         "-Wno-implicit-int-conversion",
     ],
     implementation_deps = [
-        "//bazel:clickhouse_config_headers",
+        ":_poco_foundation_pcre",
+        "//base:base_headers",
+        "//base/poco/Net:throttler",
+        "//src:headers",
+        "//src/Common:headers",
+        "@clickhouse_boost//:boost_headers",
         "@clickhouse_double_conversion//:_double-conversion",
     ],
+    includes = ["include"],
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -295,8 +301,7 @@ poco_cc_library(
     ],
     deps = [
         "@lz4//:lz4_frame",
-        "//base/poco/JSON:_poco_json",
-        ":poco_foundation_headers",
+        "@clickhouse_zlib_ng//:_zlib",
     ],
 )
 
@@ -334,19 +339,4 @@ poco_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
-)
-
-cc_library(
-    name = "poco_foundation_headers",
-    hdrs = glob(["include/**/*.h"]),
-    includes = ["include"],
-    deps = ["@clickhouse_zlib_ng//:_zlib"],
-)
-
-cc_library(
-    name = "headers",
-    hdrs = glob(["**/*.h"]),
-    includes = [
-        "include",
-    ],
 )

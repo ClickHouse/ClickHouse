@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -19,7 +18,7 @@ ch_cc_library(
         "-w",
         "-std=c++23",
     ],
-    implementation_deps = ["//contrib/cityhash102:headers"],
+    includes = ["include"],
     link_runtime = True,
     llvm_headers = True,
     local_defines = [
@@ -31,12 +30,6 @@ ch_cc_library(
     local_includes = ["src"],
     deps = [
         "@clickhouse_llvm_project//:clang_rt_builtins",
-        "//base/glibc-compatibility:glibc-compatibility",
+        "//base/glibc-compatibility",
     ],
-)
-
-cc_library(
-    name = "headers",
-    hdrs = glob(["**/*.h"]),
-    includes = ["include"],
 )
