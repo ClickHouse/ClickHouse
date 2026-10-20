@@ -3420,12 +3420,75 @@ def test_whole_schema_database_restart_after_new_postgresql_table(started_cluste
     )
     assert "CANNOT_BACKUP_TABLE" in error and published_table in error, error
 
+    # A failed `ATTACH TABLE` of the published table must not make the backup omit it. `ATTACH TABLE`
+    # creates a temporary replication slot, so it fails while all replication slots are in use.
+    pg_manager.execute(
+        "SELECT current_setting('max_replication_slots')::int - (SELECT count(*) FROM pg_replication_slots)"
+    )
+    free_slots = pg_manager.cursor.fetchone()[0]
+    dummy_slots = [f"mpg_dummy_slot_{i}" for i in range(free_slots)]
+    try:
+        for slot in dummy_slots:
+            pg_manager.execute(f"SELECT pg_create_physical_replication_slot('{slot}')")
+        instance.query_and_get_error(f"ATTACH TABLE test_database.{published_table}")
+    finally:
+        for slot in dummy_slots:
+            pg_manager.execute(f"SELECT pg_drop_replication_slot('{slot}')")
+
+    error = instance.query_and_get_error(
+        "BACKUP DATABASE test_database TO Disk('backups', 'mpg_whole_schema_unmaterialized_backup_after_failed_attach')"
+    )
+    assert "CANNOT_BACKUP_TABLE" in error and published_table in error, error
+
     # The published table is added to replication with `ATTACH TABLE`.
     instance.query(f"ATTACH TABLE test_database.{published_table}")
     check_tables_are_synchronized(instance, published_table)
 
     pg_manager.drop_materialized_db()
     for table in (new_table, published_table):
+        pg_manager.execute(f"DROP TABLE {table}")
+
+
+def test_explicit_tables_list_backup_with_shared_publication(started_cluster):
+    # Two databases with explicit tables lists and unique replication consumer identifiers have separate
+    # replication slots, but share the publication. `ATTACH TABLE` on one of them adds the table to the
+    # shared publication. It is not a table of the other database, so after a restart the backup of the
+    # other database must not be refused because of it.
+    good = "shared_publication_good"
+    later = "shared_publication_later"
+    for table in (good, later):
+        pg_manager.create_postgres_table(table)
+        instance.query(
+            f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(5)"
+        )
+
+    databases = ("shared_publication_db1", "shared_publication_db2")
+    for database in databases:
+        pg_manager.create_materialized_db(
+            ip=started_cluster.postgres_ip,
+            port=started_cluster.postgres_port,
+            materialized_database=database,
+            settings=[
+                f"materialized_postgresql_tables_list = '{good}'",
+                "materialized_postgresql_use_unique_replication_consumer_identifier = 1",
+            ],
+        )
+        check_tables_are_synchronized(instance, good, materialized_database=database)
+
+    instance.query(f"ATTACH TABLE {databases[0]}.{later}")
+    check_tables_are_synchronized(instance, later, materialized_database=databases[0])
+
+    instance.restart_clickhouse()
+    for database in databases:
+        check_tables_are_synchronized(instance, good, materialized_database=database)
+
+    instance.query(
+        f"BACKUP DATABASE {databases[1]} TO Disk('backups', 'mpg_explicit_tables_list_shared_publication_backup')"
+    )
+
+    for database in databases:
+        pg_manager.drop_materialized_db(database)
+    for table in (good, later):
         pg_manager.execute(f"DROP TABLE {table}")
 
 

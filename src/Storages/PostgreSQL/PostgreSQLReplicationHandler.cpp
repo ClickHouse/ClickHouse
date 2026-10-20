@@ -50,6 +50,7 @@ namespace MaterializedPostgreSQLSetting
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_schema_list;
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_snapshot;
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_unmaterialized_tables_list;
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_tables_list_with_schema;
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_unique_replication_consumer_identifier;
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_extended_date_and_time_types;
@@ -270,6 +271,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     , max_block_size(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_max_block_size])
     , is_materialized_postgresql_database(is_materialized_postgresql_database_)
     , tables_list(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list])
+    , unmaterialized_tables_list(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_unmaterialized_tables_list])
     , schema_list(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_schema_list])
     , schema_as_a_part_of_table_name(!schema_list.empty() || replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list_with_schema])
     , use_extended_date_and_time_types(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_use_extended_date_and_time_types])
@@ -1414,15 +1416,24 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables(const std::se
 
                 /// `ATTACH TABLE` and `DETACH TABLE PERMANENTLY` of a whole-schema database persist the list of
                 /// the materialized tables, so a published table that was never materialized (for example, its
-                /// initial snapshot has failed) is not in the list. The user cannot change the list, and a detached
-                /// table is removed from the publication, so such a table is a published table that is neither
-                /// in the list nor has a nested table. Remember it, so that it is not silently omitted by `BACKUP`.
-                if (!nested_tables_on_disk.empty())
+                /// initial snapshot has failed) is not in the list. Such tables are persisted separately, in
+                /// `materialized_postgresql_unmaterialized_tables_list`. Remember the ones that are still published
+                /// and still not materialized, so that they are not silently omitted by `BACKUP`.
+                /// Other tables of the publication are not taken into account: the publication can be shared with
+                /// other consumers (see `materialized_postgresql_use_unique_replication_consumer_identifier`),
+                /// which can add their own tables to it.
+                if (!unmaterialized_tables_list.empty())
                 {
+                    Strings unmaterialized_tables;
+                    splitInto<','>(unmaterialized_tables, unmaterialized_tables_list);
                     const std::set<String> expected_tables_set(expected_tables.begin(), expected_tables.end());
-                    for (const auto & table_name : result_tables)
-                        if (!expected_tables_set.contains(table_name) && !nested_tables_on_disk.contains(table_name))
+                    for (auto & table_name : unmaterialized_tables)
+                    {
+                        boost::trim(table_name);
+                        if (!table_name.empty() && result_tables.contains(table_name)
+                            && !expected_tables_set.contains(table_name) && !nested_tables_on_disk.contains(table_name))
                             published_but_not_materialized.insert(table_name);
+                    }
                 }
 
                 NameSet diff;

@@ -49,6 +49,7 @@ namespace Setting
 namespace MaterializedPostgreSQLSetting
 {
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_unmaterialized_tables_list;
 }
 
 namespace FailPoints
@@ -237,7 +238,7 @@ void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges 
         if (!settings->has(change.name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine {} does not support setting `{}`", getEngineName(), change.name);
 
-        if (change.name == "materialized_postgresql_tables_list")
+        if (change.name == "materialized_postgresql_tables_list" || change.name == "materialized_postgresql_unmaterialized_tables_list")
         {
             if (!query_context->isInternalQuery())
                 throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Changing setting `{}` is not allowed", change.name);
@@ -259,7 +260,7 @@ void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges 
     bool need_update_on_disk = false;
     for (const auto & change : settings_changes)
     {
-        if (change.name == "materialized_postgresql_tables_list")
+        if (change.name == "materialized_postgresql_tables_list" || change.name == "materialized_postgresql_unmaterialized_tables_list")
         {
             need_update_on_disk = true;
         }
@@ -354,6 +355,27 @@ String DatabaseMaterializedPostgreSQL::getFormattedTablesList(const String & exc
 }
 
 
+void DatabaseMaterializedPostgreSQL::addUnmaterializedTablesListChange(SettingsChanges & changes, const String & except) const
+{
+    String unmaterialized_tables_list;
+    for (const auto & table_name : unmaterialized_published_tables)
+    {
+        if (table_name == except)
+            continue;
+
+        if (!unmaterialized_tables_list.empty())
+            unmaterialized_tables_list += ',';
+
+        unmaterialized_tables_list += table_name;
+    }
+
+    if (unmaterialized_tables_list.empty() && (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_unmaterialized_tables_list].value.empty())
+        return;
+
+    changes.emplace_back("materialized_postgresql_unmaterialized_tables_list", unmaterialized_tables_list);
+}
+
+
 ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
 {
     if (!local_context->hasQueryContext())
@@ -394,11 +416,11 @@ ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & ta
 }
 
 
-ASTPtr DatabaseMaterializedPostgreSQL::createAlterSettingsQuery(const SettingChange & new_setting)
+ASTPtr DatabaseMaterializedPostgreSQL::createAlterSettingsQuery(const SettingsChanges & new_settings)
 {
     auto set = make_intrusive<ASTSetQuery>();
     set->is_standalone = false;
-    set->changes = {new_setting};
+    set->changes = new_settings;
 
     auto command = make_intrusive<ASTAlterCommand>();
     command->type = ASTAlterCommand::Type::MODIFY_DATABASE_SETTING;
@@ -460,16 +482,18 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
 
         try
         {
-            auto tables_to_replicate = (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list].value;
-            if (tables_to_replicate.empty())
+            SettingsChanges new_settings;
             {
                 std::lock_guard tables_lock(tables_mutex);
-                tables_to_replicate = getFormattedTablesList();
-            }
+                auto tables_to_replicate = (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list].value;
+                if (tables_to_replicate.empty())
+                    tables_to_replicate = getFormattedTablesList();
 
-            /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
-            SettingChange new_setting("materialized_postgresql_tables_list", tables_to_replicate.empty() ? table_name : (tables_to_replicate + "," + table_name));
-            auto alter_query = createAlterSettingsQuery(new_setting);
+                /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
+                new_settings.emplace_back("materialized_postgresql_tables_list", tables_to_replicate.empty() ? table_name : (tables_to_replicate + "," + table_name));
+                addUnmaterializedTablesListChange(new_settings, table_name);
+            }
+            auto alter_query = createAlterSettingsQuery(new_settings);
 
             /// Executed without `tables_mutex`: the ALTER reaches `applySettingsChanges`, which takes
             /// `handler_mutex`, and the two mutexes must always be taken in that order.
@@ -479,11 +503,19 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
             {
                 std::lock_guard tables_lock(tables_mutex);
                 materialized_tables[table_name] = storage;
-                unmaterialized_published_tables.erase(table_name);
             }
 
-            std::lock_guard lock(handler_mutex);
-            replication_handler->addTableToReplication(dynamic_cast<StorageMaterializedPostgreSQL *>(storage.get()), table_name);
+            {
+                std::lock_guard lock(handler_mutex);
+                replication_handler->addTableToReplication(dynamic_cast<StorageMaterializedPostgreSQL *>(storage.get()), table_name);
+            }
+
+            /// Only after the replication of the table is set up: if it fails, the nested table is dropped below,
+            /// and `getTablesForBackup` must keep refusing to omit the table.
+            {
+                std::lock_guard tables_lock(tables_mutex);
+                unmaterialized_published_tables.erase(table_name);
+            }
         }
         catch (...)
         {
@@ -510,7 +542,7 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
     if (CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext())
     {
         StoragePtr table_to_delete;
-        String tables_to_replicate;
+        SettingsChanges new_settings;
         {
             std::lock_guard tables_lock(tables_mutex);
 
@@ -522,12 +554,13 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
                 throw Exception(ErrorCodes::UNKNOWN_TABLE, "Materialized table `{}` does not exist", table_name);
 
             table_to_delete = it->second;
-            tables_to_replicate = getFormattedTablesList(table_name);
+
+            /// The list of tables can be empty if postgres database had no tables when this database was created.
+            new_settings.emplace_back("materialized_postgresql_tables_list", getFormattedTablesList(table_name));
+            addUnmaterializedTablesListChange(new_settings, table_name);
         }
 
-        /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
-        SettingChange new_setting("materialized_postgresql_tables_list", tables_to_replicate);
-        auto alter_query = createAlterSettingsQuery(new_setting);
+        auto alter_query = createAlterSettingsQuery(new_settings);
 
         {
             auto current_context = Context::createCopy(getContext()->getGlobalContext());

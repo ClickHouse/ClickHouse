@@ -89,9 +89,13 @@ private:
     void tryStartSynchronization();
     void startSynchronization();
 
-    ASTPtr createAlterSettingsQuery(const SettingChange & new_setting);
+    ASTPtr createAlterSettingsQuery(const SettingsChanges & new_settings);
 
     String getFormattedTablesList(const String & except = {}) const TSA_REQUIRES(tables_mutex);
+
+    /// Adds the change of `materialized_postgresql_unmaterialized_tables_list` to persist `unmaterialized_published_tables`
+    /// (except `except`) together with `materialized_postgresql_tables_list`, if there is anything to persist or to clear.
+    void addUnmaterializedTablesListChange(SettingsChanges & changes, const String & except) const TSA_REQUIRES(tables_mutex);
 
     bool is_attach;
     String remote_database_name;

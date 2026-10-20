@@ -136,6 +136,10 @@ private:
     /// A coma-separated list of tables, which are going to be replicated for database engine. By default, a whole database is replicated.
     String tables_list;
 
+    /// The published tables of a whole-schema database that were never materialized, persisted together with `tables_list`
+    /// (see the setting `materialized_postgresql_unmaterialized_tables_list`).
+    String unmaterialized_tables_list;
+
     String schema_list;
 
     /// Schema can be as a part of table name, i.e. as a clickhouse table it is accessed like db.`schema.table`.
