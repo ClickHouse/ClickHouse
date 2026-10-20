@@ -1144,7 +1144,9 @@ private:
         }
         else
         {
-            LOG_WARNING(log, "Try to flush with empty state");
+            /// Nothing was appended since the open object was installed: right after startup, after a previous
+            /// flush (which resets `last_index_written`), or after `setFile`.
+            LOG_TRACE(log, "Flush S3 changelog with no records appended to the open object");
 
             /// Nothing was appended to the open object, so drop it rather than destroy a live writer below.
             if (write_buffer)
@@ -1169,6 +1171,11 @@ private:
 
         new_s3_description->path = s3_cur_path;
         current_file_description = new_s3_description;
+
+        /// Nothing is written into the fresh object yet. Keeping the last index of the previous object would let a
+        /// following empty `flush` reopen the object at `*last_index_written + 1`, undoing a `rotate` to a later
+        /// index (e.g. by `compact` on snapshot recovery), so the next append would be published under a stale range.
+        last_index_written.reset();
 
         LOG_TRACE(log, "Open new s3 buffer with path {}", s3_cur_path);
         write_buffer_in_progress_path = makeInProgressPath(s3_cur_path);
