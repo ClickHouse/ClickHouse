@@ -40,6 +40,18 @@ WHERE event_date >= yesterday() AND type != 'QueryStart' AND initial_query_id IN
     SELECT query_id FROM system.query_log
     WHERE event_date >= yesterday() AND current_database = currentDatabase() AND log_comment = '05404_pr' AND is_initial_query);
 
+-- Without a local plan on the initiator the followers analyze and check the limit themselves.
+SELECT sum(k) FROM t_skip_idx_partitions WHERE s = 'needle'
+SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+    parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_min_number_of_rows_per_replica = 0,
+    parallel_replicas_local_plan = 1, parallel_replicas_prefer_local_replica = 0,
+    parallel_replicas_index_analysis_only_on_coordinator = 1, parallel_replicas_support_projection = 0;
+SELECT sum(k) FROM t_skip_idx_partitions WHERE s = 'hay-1'
+SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+    parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_min_number_of_rows_per_replica = 0,
+    parallel_replicas_local_plan = 1, parallel_replicas_prefer_local_replica = 0,
+    parallel_replicas_index_analysis_only_on_coordinator = 1, parallel_replicas_support_projection = 0; -- { serverError TOO_MANY_PARTITIONS }
+
 -- The query-level setting takes precedence over the table one.
 ALTER TABLE t_skip_idx_partitions MODIFY SETTING max_partitions_to_read = 0;
 SELECT count() FROM t_skip_idx_partitions WHERE s = 'needle' SETTINGS max_partitions_to_read = 1;
