@@ -471,8 +471,12 @@ void HTTPHandler::processQuery(
     /// Set the connection of this request to active in `system.connections` until the request ends.
     /// The connection gets its registration on its first query. The registration stays until the socket closes.
     /// Between the requests, the connection is idle. See `HTTPConnectionRegistration`.
+    /// Refresh an existing registration also if `collect_connection_metrics` is `false` now.
+    /// The registry keeps such registrations and shows them again when the setting changes to `true`.
+    /// Thus, they must have the client properties and the state of the last request, not of a request before the change.
+    /// The setting controls only new registrations.
     HTTPConnectionRegistration * connection_registration = request.getConnectionRegistration();
-    if (connection_registration && ConnectionRegistry::instance().isEnabled())
+    if (connection_registration && (connection_registration->handle || ConnectionRegistry::instance().isEnabled()))
     {
         /// Each request sets the client properties again.
         /// A reverse proxy can send the requests of different clients and users on one keep-alive connection.
