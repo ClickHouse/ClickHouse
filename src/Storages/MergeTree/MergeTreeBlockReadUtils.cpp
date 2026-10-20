@@ -148,11 +148,20 @@ bool injectRequiredColumnsRecursively(
     /// don't need to add to required set.
     auto column_default = storage_snapshot->getDefault(column_name);
 
-    /// A subcolumn does not have its own default expression: it is extracted from the evaluated
-    /// default of the column in storage (see IMergeTreeReader::evaluateMissingDefaults),
-    /// so the columns required by that expression must be read as well.
-    if (!column_default && column_in_storage && column_in_storage->isSubcolumn())
-        column_default = storage_snapshot->getDefault(column_in_storage->getNameInStorage());
+    /// A subcolumn has no default of its own: it comes from the default of the column it belongs to
+    /// (see IMergeTreeReader::evaluateMissingDefaults), whatever the kind of that column, an ALIAS included.
+    if (!column_default)
+    {
+        for (auto [name_in_storage, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(column_name))
+        {
+            auto column_in_storage_of_any_kind = storage_snapshot->tryGetColumn(GetColumnsOptions::All, String(name_in_storage));
+            if (column_in_storage_of_any_kind && column_in_storage_of_any_kind->type->tryGetSubcolumnType(subcolumn_name))
+            {
+                column_default = storage_snapshot->getDefault(column_in_storage_of_any_kind->name);
+                break;
+            }
+        }
+    }
 
     ASTPtr default_expression = column_default.has_value() ? column_default->expression : nullptr;
     if (!default_expression)
