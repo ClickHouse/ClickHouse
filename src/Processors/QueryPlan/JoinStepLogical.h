@@ -265,6 +265,7 @@ public:
     /// runtime filter back.
     bool isRuntimeFilterSuppressedForSortedMerge() const { return runtime_filter_suppressed_for_sorted_merge; }
     void setRuntimeFilterSuppressedForSortedMerge() { runtime_filter_suppressed_for_sorted_merge = true; }
+    void resetRuntimeFilterSuppressedForSortedMerge() { runtime_filter_suppressed_for_sorted_merge = false; }
 
     UInt64 getJoinOutputCacheKey() const { return join_output_cache_key; }
     void setJoinOutputCacheKey(UInt64 join_output_cache_key_) { join_output_cache_key = join_output_cache_key_; }

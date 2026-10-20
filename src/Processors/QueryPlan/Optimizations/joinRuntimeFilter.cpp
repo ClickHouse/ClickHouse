@@ -367,6 +367,11 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// cannot be read in order, those algorithms are not selectable anyway, so the filter (and the erase)
     /// stays. The predicate is memoized on the step, and `buildPhysicalJoin` uses the same one, so the
     /// two passes cannot disagree.
+    ///
+    /// The suppression flag records only the latest decision: a join re-visited because of it (see
+    /// `optimizeTree`) that now gets its filter must not be visited again, or every later re-run would
+    /// plant one more `BuildRuntimeFilterStep` per key with a fresh rendezvous key.
+    join_step->resetRuntimeFilterSuppressedForSortedMerge();
     for (auto algorithm : join_algorithms)
     {
         if (supportsRuntimeFilterAndIsRunnable(algorithm, *join_step, can_run_grace_hash))
