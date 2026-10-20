@@ -121,7 +121,10 @@ public:
     /// the move out of it drops the UUID, while the rename interpreter only knows the names. Re-key the
     /// entries of the moved table to its new `StorageID` so that a later `DETACH`, `DROP` or `RENAME`
     /// still finds them.
-    void rekeyDependencies(const StorageID & from_table_id, const StorageID & to_table_id);
+    /// With `keep_source_as_detached`, the entries are also recorded as dependencies of a detached table under
+    /// the old name: a `RENAME` whose destination published the table and then threw leaves the source
+    /// metadata behind, and that metadata still references the collection.
+    void rekeyDependencies(const StorageID & from_table_id, const StorageID & to_table_id, bool keep_source_as_detached = false);
     std::vector<StorageID> getDependents(const String & collection_name) const;
     /// Whether any collection has a dependency recorded for exactly this `StorageID` - the database,
     /// the table name and the UUID all have to match. It tells apart a table that was renamed after

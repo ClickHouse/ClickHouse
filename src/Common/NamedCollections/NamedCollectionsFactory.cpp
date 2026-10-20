@@ -678,7 +678,7 @@ void NamedCollectionFactory::renameDependencies(const StorageID & from_table_id,
         dependencies.emplace(collection_name, std::move(table_id));
 }
 
-void NamedCollectionFactory::rekeyDependencies(const StorageID & from_table_id, const StorageID & to_table_id)
+void NamedCollectionFactory::rekeyDependencies(const StorageID & from_table_id, const StorageID & to_table_id, bool keep_source_as_detached)
 {
     std::lock_guard lock(mutex);
 
@@ -722,7 +722,11 @@ void NamedCollectionFactory::rekeyDependencies(const StorageID & from_table_id, 
     }
 
     for (const auto & collection_name : collection_names)
+    {
         dependencies.emplace(collection_name, to_table_id);
+        if (keep_source_as_detached)
+            detached_dependencies.emplace(collection_name, from_table_id.database_name, from_table_id.table_name);
+    }
 }
 
 bool NamedCollectionFactory::hasDependencyRegisteredFor(const StorageID & table_id) const

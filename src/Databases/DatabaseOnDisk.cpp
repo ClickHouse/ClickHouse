@@ -644,7 +644,24 @@ void DatabaseOnDisk::renameTable(
     }
 
     /// Now table data are moved to new database, so we must add metadata and attach table to new database
-    to_database.createTable(local_context, to_table_name, table, attach_query);
+    try
+    {
+        to_database.createTable(local_context, to_table_name, table, attach_query);
+    }
+    catch (...)
+    {
+        /// `createTable` can publish the table and its metadata in the destination and throw afterwards
+        /// (e.g. from `removeDetachedPermanentlyFlag`). The table then lives under its destination identity,
+        /// which neither the re-keying below nor the rename interpreter applies to the named collection
+        /// dependencies, while the source metadata file is left behind as well. Move the entries to the
+        /// published table and keep the source metadata protected like the one of a detached table:
+        /// otherwise `DROP NAMED COLLECTION` takes the entries for leftovers and drops a collection that
+        /// both definitions still reference.
+        if (to_database.tryGetTable(to_table_name, local_context) == table)
+            NamedCollectionFactory::instance().rekeyDependencies(
+                StorageID(getDatabaseName(), table_name, prev_uuid), table->getStorageID(), /*keep_source_as_detached=*/ true);
+        throw;
+    }
 
     /// A move between an `Ordinary` and an `Atomic` database changes the identity the named collection
     /// dependencies of the table are keyed by: the move into `Atomic` assigns a fresh UUID, the move out
