@@ -17,7 +17,11 @@ insert into num_1 select number * 2, toString(number * 2) from numbers(1e7);
 insert into num_2 select number * 3, -number from numbers(1.5e6);
 "
 
-PARALLEL_REPLICAS_SETTINGS="enable_parallel_replicas = 2, automatic_parallel_replicas_mode = 0, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost'"
+# The assertions below read the query text that was shipped to the replicas, which only the
+# query-based implementation produces; plan-based ships a serialized plan fragment. Pinned so
+# that this test keeps describing the implementation it was written for - the plan-based side is
+# covered by the `_pr_`/`pr_plan_based` tests.
+PARALLEL_REPLICAS_SETTINGS="enable_parallel_replicas = 2, automatic_parallel_replicas_mode = 0, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_plan_based = 0"
 
 ##############
 echo
