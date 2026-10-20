@@ -901,11 +901,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
 {
     factory.registerStorage("PostgreSQL", [](const StorageFactory::Arguments & args)
     {
-        /// A named collection may set the connection-pool parameters, and an explicit SETTINGS clause on the table takes
-        /// precedence over it. The parameters set by neither are taken from the query-level `postgresql_*` settings
-        /// (preserving the historical behaviour), unless the SETTINGS clause resets them with `name = DEFAULT`. A new table
-        /// stores those that differ from the defaults of the engine, so that it keeps them when it is attached again,
-        /// e.g. on server startup.
+        /// Precedence: the SETTINGS clause, the named collection, the session; a new table stores the values from the session.
         PostgreSQLSettings postgresql_settings;
 
         auto configuration = StoragePostgreSQL::getConfiguration(
@@ -913,16 +909,12 @@ void registerStoragePostgreSQL(StorageFactory & factory)
 
         postgresql_settings.loadFromQuery(*args.storage_def);
 
-        /// The values are stored for every definition this query brings: `CREATE`, an `ATTACH` with the full definition,
-        /// and the execution of a `CREATE` on the other replicas of a `Replicated` database. Unlike
-        /// `isFreshTableDefinition`, the latter counts: those replicas run the original query with the initiator's
-        /// settings, and store the values that the initiator's session sets, as the initiator does. Not for a definition
-        /// read from the stored metadata: on server startup, `UNDROP`, the recovery of a replica, or an `ATTACH` of a
-        /// detached table by its name. Nor for `RESTORE`, which creates the table with its definition from the backup and
-        /// rejects a table whose definition differs from it (`RestorerFromBackup::checkTable`).
+        /// Unlike `isFreshTableDefinition`, also on the other replicas of a `Replicated` database, which run the original query
+        /// with the initiator's settings. Not on `RESTORE`, which rejects a definition that differs from the backup.
         bool is_new_definition = !isLoadingFromExistingMetadata(args.mode) && !args.query.attach_short_syntax
             && !args.getLocalContext()->isRecoveryFromStoredMetadata() && !args.is_restore_from_backup;
-        postgresql_settings.loadFromQueryContext(*args.getLocalContext(), *args.storage_def, /* store_values */ is_new_definition);
+        postgresql_settings.loadFromQueryContext(
+            *args.getLocalContext(), args.storage_def->settings, is_new_definition ? args.storage_def : nullptr);
 
         if (!postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_size])
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "postgresql_connection_pool_size cannot be zero.");

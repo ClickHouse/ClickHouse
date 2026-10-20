@@ -69,47 +69,35 @@ void PostgreSQLSettings::loadFromQuery(ASTStorage & storage_def)
     }
 }
 
-void PostgreSQLSettings::loadFromQueryContext(const Context & context)
+void PostgreSQLSettings::loadFromQueryContext(const Context & context, const ASTSetQuery * settings, ASTStorage * store_into)
 {
-    loadFromQueryContextImpl(context, nullptr, false);
-}
-
-void PostgreSQLSettings::loadFromQueryContext(const Context & context, ASTStorage & storage_def, bool store_values)
-{
-    loadFromQueryContextImpl(context, &storage_def, store_values);
-}
-
-void PostgreSQLSettings::loadFromQueryContextImpl(const Context & context, ASTStorage * storage_def, bool store_values)
-{
-    const Settings & settings = context.getSettingsRef();
-    const auto * reset_settings = storage_def && storage_def->settings ? &storage_def->settings->default_settings : nullptr;
+    const Settings & query_settings = context.getSettingsRef();
 
     for (const auto & setting : impl->all())
     {
         const auto & name = setting.getName();
-        /// Set by a named collection or the SETTINGS clause, or reset there with `name = DEFAULT`.
-        if (setting.isValueChanged() || (reset_settings && std::ranges::contains(*reset_settings, name)))
+        if (setting.isValueChanged() || (settings && std::ranges::contains(settings->default_settings, name)))
             continue;
 
         /// A setting of the engine only, with no query-level counterpart to take the value from.
-        if (!settings.has(name))
+        if (!query_settings.has(name))
             continue;
 
         /// Not changed yet, so it holds the default of the engine.
         const Field default_value = setting.getValue();
-        Field value = settings.get(name);
+        Field value = query_settings.get(name);
         impl->set(name, value);
 
-        if (!store_values || value == default_value)
+        if (!store_into || value == default_value)
             continue;
 
-        if (!storage_def->settings)
+        if (!store_into->settings)
         {
             auto settings_ast = make_intrusive<ASTSetQuery>();
             settings_ast->is_standalone = false;
-            storage_def->set(storage_def->settings, settings_ast);
+            store_into->set(store_into->settings, settings_ast);
         }
-        storage_def->settings->changes.emplace_back(name, std::move(value));
+        store_into->settings->changes.emplace_back(name, std::move(value));
     }
 }
 
