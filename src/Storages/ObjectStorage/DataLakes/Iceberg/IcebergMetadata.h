@@ -260,6 +260,7 @@ private:
     ObjectIterator prepared_iterator;
     /// Reused by a retried drop(): the metadata listing these files may be partly deleted by then.
     std::optional<std::unordered_set<String>> files_to_drop;
+    std::unordered_set<String> data_files_to_drop;
 
     KeyDescription getSortingKey(ContextPtr local_context, Iceberg::TableStateSnapshot actual_table_state_snapshot) const;
 

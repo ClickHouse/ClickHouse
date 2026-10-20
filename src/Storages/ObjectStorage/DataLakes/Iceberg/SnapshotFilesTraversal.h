@@ -45,6 +45,8 @@ struct ReachableFilesResult
     /// Resolved storage path of the metadata file the traversal was rooted at. Two distinct
     /// files can share a version number, so identity of the root is this path, not the number.
     String metadata_path;
+    /// The subset of `files` listed in manifests: data and delete files.
+    std::unordered_set<String> data_files;
 };
 
 /// Collect all files reachable through the metadata graph.

@@ -1867,30 +1867,47 @@ void IcebergMetadata::drop(
     /// Only the files of this table: other tables can share its location.
     if (collect_files)
     {
+        /// Not read through the cache either, for the same reason.
+        auto uncached_components = persistent_components;
+        uncached_components.metadata_cache = nullptr;
         auto reachable = Iceberg::collectReachableFiles(
-            object_storage, persistent_components, data_lake_settings, context, log, catalog, storage_id.getTableName());
+            object_storage, uncached_components, data_lake_settings, context, log, catalog, storage_id.getTableName());
 
         auto read_metadata = [&](const String & path)
         {
             return getMetadataJSONObject(
-                path, object_storage, persistent_components.metadata_cache, context, log,
+                path, object_storage, /* metadata_cache */ nullptr, context, log,
                 getCompressionMethodFromMetadataFile(path), persistent_components.table_uuid);
         };
-        /// `metadata-log` can miss versions of the table, e.g. the one written by `CREATE`.
         auto root = read_metadata(reachable.metadata_path);
+        std::optional<String> root_uuid;
         if (root->has(Iceberg::f_table_uuid))
+            root_uuid = normalizeUuid(root->getValue<String>(Iceberg::f_table_uuid));
+        /// The latest metadata file at a location shared with other tables can be theirs.
+        if (!catalog && persistent_components.table_uuid && root_uuid != persistent_components.table_uuid)
         {
-            const String table_uuid = normalizeUuid(root->getValue<String>(Iceberg::f_table_uuid));
+            LOG_WARNING(
+                log,
+                "Keeping the files of the Iceberg table at '{}': its latest metadata file '{}' belongs to another table",
+                persistent_components.table_path,
+                reachable.metadata_path);
+            dropFromCatalog(context, catalog, storage_id);
+            return;
+        }
+        /// `metadata-log` can miss versions of the table, e.g. the one written by `CREATE`.
+        if (root_uuid)
+        {
             for (const auto & path : listFiles(*object_storage, persistent_components.table_path, "metadata", ".metadata.json"))
             {
                 if (reachable.files.contains(path))
                     continue;
                 auto metadata = read_metadata(path);
-                if (metadata->has(Iceberg::f_table_uuid) && normalizeUuid(metadata->getValue<String>(Iceberg::f_table_uuid)) == table_uuid)
+                if (metadata->has(Iceberg::f_table_uuid) && normalizeUuid(metadata->getValue<String>(Iceberg::f_table_uuid)) == *root_uuid)
                     reachable.files.insert(path);
             }
         }
         files_to_drop = std::move(reachable.files);
+        data_files_to_drop = std::move(reachable.data_files);
     }
     const auto & files = *files_to_drop;
 
@@ -1898,7 +1915,7 @@ void IcebergMetadata::drop(
     std::vector<String> metadata_files;
     for (const auto & file : files)
     {
-        if (file.ends_with(".parquet") || file.ends_with(".orc"))
+        if (data_files_to_drop.contains(file))
             remove_object(file, "data", /* after_catalog_drop */ false, FailPoints::iceberg_drop_first_data_delete_fail);
         else
             metadata_files.push_back(file);
