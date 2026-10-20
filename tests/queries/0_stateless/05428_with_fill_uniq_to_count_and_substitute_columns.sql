@@ -18,8 +18,8 @@ SETTINGS optimize_uniq_to_count = 1;
 SELECT uniq(a) FROM (SELECT DISTINCT a FROM values('a UInt64, b UInt64', (1, 0), (2, 2)) ORDER BY b WITH FILL FROM 0 TO 5)
 SETTINGS optimize_uniq_to_count = 1;
 
--- The skip is per query level: a subquery without WITH FILL is still rewritten.
-SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT 1 AS k, c FROM (SELECT uniq(a) AS c FROM (SELECT number AS a FROM numbers(5) GROUP BY a))
+-- The skip is per query level and needs WITH FILL: a subquery with a plain ORDER BY is still rewritten.
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT 1 AS k, c FROM (SELECT uniq(a) AS c FROM (SELECT number AS a FROM numbers(5) GROUP BY a ORDER BY a) ORDER BY c)
 ORDER BY k WITH FILL FROM 0 TO 3 INTERPOLATE (c AS c + 1)) WHERE explain LIKE '%function_name: count%'
 SETTINGS optimize_uniq_to_count = 1;
 
@@ -30,7 +30,7 @@ SELECT k, max(a) AS x FROM t_interpolate_substitute WHERE k < 100 GROUP BY k ORD
 SETTINGS convert_query_to_cnf = 1, optimize_substitute_columns = 1;
 SELECT a AS x FROM t_interpolate_substitute WHERE k < 100 ORDER BY x WITH FILL FROM 5 TO 8
 SETTINGS convert_query_to_cnf = 1, optimize_substitute_columns = 1;
-SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT k, x FROM (SELECT k, max(a) AS x FROM t_interpolate_substitute WHERE k < 100 GROUP BY k)
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT k, x FROM (SELECT k, max(a) AS x FROM t_interpolate_substitute WHERE k < 100 GROUP BY k ORDER BY k)
 ORDER BY k WITH FILL INTERPOLATE (x AS x + 100)) WHERE explain LIKE '%column_name: b,%'
 SETTINGS convert_query_to_cnf = 1, optimize_substitute_columns = 1;
 DROP TABLE t_interpolate_substitute;
