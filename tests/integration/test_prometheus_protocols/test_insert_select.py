@@ -70,8 +70,8 @@ def test_insert_with_metrics_metadata():
 
     # Check inner tables.
     assert node.query(
-        "SELECT metric_family_name, type, unit, help"
-        " FROM timeSeriesMetrics(prometheus)"
+        "SELECT metric_family, type, unit, help"
+        " FROM timeSeriesMetricFamilies(prometheus)"
     ) == TSV([["http_requests", "counter", "requests", "Total HTTP requests"]])
 
     assert node.query(
@@ -401,7 +401,7 @@ def test_select_with_row_policy():
 
 
 def test_select_final():
-    """The tags inner table is AggregatingMergeTree; until its parts merge, repeated inserts of one series
+    """The tags inner table is ReplacingMergeTree; until its parts merge, repeated inserts of one series
     leave duplicate rows. Without FINAL the read returns them as is (cheaper); with FINAL the series is
     returned exactly once. After the parts are merged both reads agree."""
     node.query("SYSTEM STOP MERGES")
@@ -411,6 +411,9 @@ def test_select_final():
             "INSERT INTO prometheus (metric_name, tags, samples) VALUES"
             " ('http_requests', {'job': 'api'}, [(toDateTime64(1000, 3), 1.0)])"
         )
+        # We clear the caches because otherwise the deduplication cache of the tags table
+        # makes the second insert skip the tags of the series.
+        node.query("SYSTEM CLEAR TIME SERIES CACHES prometheus")
         node.query(
             "INSERT INTO prometheus (metric_name, tags, samples) VALUES"
             " ('http_requests', {'job': 'api'}, [(toDateTime64(2000, 3), 2.0)])"

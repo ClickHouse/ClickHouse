@@ -39,9 +39,7 @@ SELECT toTypeName(INTERVAL 4 DAY)
 └──────────────────────────────┘
 ```
 
-<div id="usage-remarks">
-  ## 使用说明
-</div>
+## 使用说明 {#usage-remarks}
 
 您可以将 `Interval` 类型的值与 [Date](/zh/reference/data-types/date) 和 [DateTime](/zh/reference/data-types/datetime) 类型的值进行算术运算。例如，可以在当前时间上加 4 天：
 
@@ -89,9 +87,33 @@ SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
 └──────────────────────────────────────────────────────────────┘
 ```
 
-<div id="mixed-type-intervals">
-  ## 混合类型时间间隔
-</div>
+## 聚合 {#aggregation}
+
+对 `Interval` 列使用 `sum`、`avg`、`min`、`max` 和 `any` 时，返回相同类型的时间间隔。
+`sum` 会将单位数累加，`avg` 则对单位数求平均值，并将结果舍入为整数个
+单位：
+
+```sql
+SELECT
+    sum(duration) AS total_duration,
+    avg(duration) AS avg_duration,
+    toTypeName(total_duration)
+FROM VALUES('duration IntervalMillisecond',
+    toIntervalMillisecond(100), toIntervalMillisecond(200), toIntervalMillisecond(300))
+```
+
+```text
+┌─total_duration─┬─avg_duration─┬─toTypeName(total_duration)─┐
+│            600 │          200 │ IntervalMillisecond        │
+└────────────────┴──────────────┴────────────────────────────┘
+```
+
+不同单位的值在聚合前会先换算为共同的单位，因此
+一分钟加一秒得到 61 秒。`Month`、`Quarter` 和 `Year` 与更小的单位之间不存在共同
+单位 (一个月的天数并不固定) ，因此完全不能与
+这些单位混用。
+
+## 混合类型时间间隔 {#mixed-type-intervals}
 
 混合类型的时间间隔 (例如同时包含多个小时和多个分钟) 可以使用 `INTERVAL 'value' <from_kind> TO <to_kind>` 语法创建。
 结果是一个由两个或多个时间间隔组成的元组。
@@ -134,9 +156,9 @@ SELECT INTERVAL '+1:30' HOUR TO MINUTE;
 └────────────────────────────────────────────┘
 ```
 
-<div id="see-also">
-  ## 另请参阅
-</div>
+## 另请参阅 {#see-also}
 
 * [INTERVAL](/zh/reference/operators/index#interval) 运算符
 * [toInterval](/zh/reference/functions/regular-functions/type-conversion-functions#toIntervalYear) 类型转换函数
+* [avg](/zh/reference/functions/aggregate-functions/avg) 聚合函数
+* [sum](/zh/reference/functions/aggregate-functions/sum) 聚合函数

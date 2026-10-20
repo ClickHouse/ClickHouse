@@ -1,0 +1,13 @@
+1	JSON	{"a":1,"b":{"c":"x","d":{"e":true}}}
+2	JSON	{"f":[1,"s"]}
+3	Array(JSON)	['{"k":1}','{"k":2,"m":"z"}']
+4	Array(Dynamic)	['{"k":1}',2]
+5	JSON	{"arr":[{"x":1},{"y":{"z":2}}]}
+6	JSON	{}
+7	Int64	42
+8	Array(Dynamic)	[]
+--- paths ---
+1	{'a':'Int64','b.c':'String','b.d.e':'Bool'}
+2	{'f':'Array(Dynamic)'}
+5	{'arr':'Array(JSON)'}
+6	{}

@@ -34,6 +34,7 @@ protected:
     /// (see `IFunction::canThrow`). Once enough of them describe it on their own, the default
     /// should become the conservative `true` instead of that approximation.
     bool canThrow(const DataTypesWithConstInfo & arguments) const override { return function->canThrow(arguments); }
+    bool isDeterministicInScopeOfQuery() const override { return function->isDeterministicInScopeOfQuery(); }
 
 private:
     std::shared_ptr<IFunction> function;
@@ -48,6 +49,8 @@ public:
             : function(std::move(function_)), arguments(std::move(arguments_)), result_type(std::move(result_type_)) {}
 
     String getName() const override { return function->getName(); }
+
+    void updateHash(SipHash & hash) const override { function->updateHash(hash); }
 
     const DataTypes & getArgumentTypes() const override { return arguments; }
     const DataTypePtr & getResultType() const override { return result_type; }
@@ -106,6 +109,11 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & args) const override { return function->isSuitableForShortCircuitArgumentsExecution(args); }
 
+    /// Unlike `FunctionToExecutableFunctionAdaptor::canThrow`, it does not fall back to the approximation by
+    /// `isSuitableForShortCircuitArgumentsExecution`: it is used to reorder the arguments of `and`/`or`,
+    /// which must never introduce an exception.
+    bool canThrow(const DataTypesWithConstInfo & args) const override { return function->canThrowIfKnown(args).value_or(true); }
+
     bool isNameInsensitive() const override { return function->isNameInsensitive(); }
 
     bool hasInformationAboutMonotonicity() const override { return function->hasInformationAboutMonotonicity(); }
@@ -159,6 +167,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override { return function->getReturnTypeImpl(arguments); }
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override { return function->getReturnTypeImpl(arguments); }
+    String getSignatureString() const override { return function->getSignatureString(); }
+    int getWrongNumberOfArgumentsErrorCode(size_t number_of_arguments) const override
+    {
+        return function->getWrongNumberOfArgumentsErrorCode(number_of_arguments);
+    }
 
     bool useDefaultImplementationForNulls() const override { return function->useDefaultImplementationForNulls(); }
     bool useDefaultImplementationForNothing() const override { return function->useDefaultImplementationForNothing(); }

@@ -1,5 +1,5 @@
--- A TimeSeries table must register its external target tables as referential dependencies,
--- the same way a materialized view registers its external "TO" table. With
+-- A TimeSeries table of version 9 or earlier could have external target tables, and it must register them as referential
+-- dependencies, the same way a materialized view registers its external "TO" table. With
 -- check_referential_table_dependencies = 1 an external target table cannot be dropped
 -- while the TimeSeries table referencing it still exists.
 
@@ -8,6 +8,7 @@ SET allow_experimental_time_series_table = 1;
 DROP TABLE IF EXISTS ts;
 DROP TABLE IF EXISTS samples_table;
 DROP TABLE IF EXISTS tags_table;
+DROP TABLE IF EXISTS time_ranges_table;
 DROP TABLE IF EXISTS metrics_table;
 
 CREATE TABLE samples_table
@@ -21,21 +22,26 @@ CREATE TABLE tags_table
 (
     id UInt64,
     metric_name LowCardinality(String),
-    tags Map(LowCardinality(String), String),
+    tags Map(LowCardinality(String), String)
+) ENGINE = MergeTree() ORDER BY id;
+
+CREATE TABLE time_ranges_table
+(
+    id UInt64,
     min_time DateTime64(3),
     max_time DateTime64(3)
 ) ENGINE = MergeTree() ORDER BY id;
 
 CREATE TABLE metrics_table
 (
-    metric_family_name String,
+    metric_family String,
     type String,
     unit String,
     help String
-) ENGINE = ReplacingMergeTree ORDER BY metric_family_name;
+) ENGINE = ReplacingMergeTree ORDER BY metric_family;
 
-CREATE TABLE ts ENGINE = TimeSeries
-DATA samples_table TAGS tags_table METRICS metrics_table;
+CREATE TABLE ts ENGINE = TimeSeries SETTINGS version = 8
+DATA samples_table TAGS tags_table TIME RANGES time_ranges_table METRICS metrics_table;
 
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'ts';
 
@@ -44,16 +50,18 @@ SET check_referential_table_dependencies = 1;
 -- Each external target table is now a referential dependency of `ts`, so it can't be dropped.
 DROP TABLE samples_table; -- { serverError HAVE_DEPENDENT_OBJECTS }
 DROP TABLE tags_table; -- { serverError HAVE_DEPENDENT_OBJECTS }
+DROP TABLE time_ranges_table; -- { serverError HAVE_DEPENDENT_OBJECTS }
 DROP TABLE metrics_table; -- { serverError HAVE_DEPENDENT_OBJECTS }
 
 -- After dropping the TimeSeries table the dependencies are gone and the target tables can be dropped.
 DROP TABLE ts;
 DROP TABLE samples_table;
 DROP TABLE tags_table;
+DROP TABLE time_ranges_table;
 DROP TABLE metrics_table;
 
 SELECT count() FROM system.tables WHERE database = currentDatabase()
-    AND name IN ('ts', 'samples_table', 'tags_table', 'metrics_table');
+    AND name IN ('ts', 'samples_table', 'tags_table', 'time_ranges_table', 'metrics_table');
 
 -- The recent samples table is a target table too, so an external one is a referential dependency
 -- as well and is protected against DROP and RENAME the same way.
@@ -70,7 +78,7 @@ CREATE TABLE recent_table
 ) ENGINE = MergeTree() ORDER BY (id, timestamp);
 
 CREATE TABLE ts_recent ENGINE = TimeSeries
-SETTINGS recent_samples_ttl_seconds = 864000 RECENT SAMPLES recent_table;
+SETTINGS version = 8, recent_samples_ttl_seconds = 864000 RECENT SAMPLES recent_table;
 
 DROP TABLE recent_table; -- { serverError HAVE_DEPENDENT_OBJECTS }
 RENAME TABLE recent_table TO recent_table_renamed; -- { serverError HAVE_DEPENDENT_OBJECTS }

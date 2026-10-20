@@ -61,7 +61,10 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
         {
             /// A LIMIT above an ARRAY JOIN says nothing about the source row count.
             if (array_join_dags.empty())
-                source_step_with_filter->setLimit(limit_step->getLimitForSorting());
+            {
+                if (auto rows_to_read = limit_step->getLimitWithOffset())
+                    source_step_with_filter->setLimit(*rows_to_read);
+            }
             break;
         }
         else if (auto * expression_step = typeid_cast<ExpressionStep *>(iter->node->step.get()))
@@ -82,18 +85,10 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
         }
         else if (auto * array_join_step = typeid_cast<ArrayJoinStep *>(iter->node->step.get()))
         {
-            /// A plain ARRAY JOIN emits real elements only, so a condition on the element is one on the array too.
-            /// LEFT and unaligned joins pad empty or short arrays with defaults, so theirs is not.
-            if (array_join_step->isLeft() || array_join_step->isUnaligned())
+            auto dag = array_join_step->toActionsDAG();
+            if (!dag)
                 break;
-
-            auto & dag = array_join_dags.emplace_back(array_join_step->getInputHeaders().front()->getNamesAndTypesList());
-            for (const auto & name : array_join_step->getColumns())
-            {
-                /// The atom must be `arrayJoin(col)`, not something named like the array column; the alias just keeps the name.
-                dag.addOrReplaceInOutputs(dag.addAlias(dag.addArrayJoin(dag.findInOutputs(name), {}), name));
-            }
-            expression_dags.push_back(&dag);
+            expression_dags.push_back(&array_join_dags.emplace_back(std::move(*dag)));
 
             /// The fused element filter is just a filter right above the join.
             if (const auto & element_filter = array_join_step->getElementFilter())
