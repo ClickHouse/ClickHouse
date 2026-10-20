@@ -52,7 +52,7 @@ Ptr walk(Ptr node, const NormalizedPath & path)
 void traverseNode(const std::string & path, const FsNodePtr & start, const std::function<void(const std::string &, const FsNodePtr &)> & observe)
 {
     std::vector<std::pair<std::filesystem::path, FsNodePtr>> unvisited;
-    unvisited.emplace_back(path, start);
+    unvisited.emplace_back(pathFromString(path), start);
 
     while (!unvisited.empty())
     {
@@ -63,7 +63,7 @@ void traverseNode(const std::string & path, const FsNodePtr & start, const std::
 
         node->subdirectories.forEachChild([&](const auto & subdir, const auto & subnode)
         {
-            unvisited.emplace_back(node_path / subdir, subnode);
+            unvisited.emplace_back(node_path / pathFromString(subdir), subnode);
         });
     }
 }

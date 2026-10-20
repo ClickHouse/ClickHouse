@@ -48,7 +48,7 @@ void BackupImpl(
     for (auto it = src_disk->iterateDirectory(source_path); it->isValid(); it->next())
     {
         auto source = it->path();
-        auto destination = fs::path(destination_path) / it->name();
+        auto destination = pathFromString(destination_path) / pathFromString(it->name());
 
         if (!src_disk->existsDirectory(source))
         {

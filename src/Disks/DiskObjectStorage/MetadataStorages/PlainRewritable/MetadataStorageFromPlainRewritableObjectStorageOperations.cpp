@@ -437,8 +437,8 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute()
 
     for (const auto & [subdir, remote_info] : from_tree_info)
     {
-        auto sub_path_to = path_to / subdir / "";
-        auto sub_path_from = path_from / subdir / "";
+        auto sub_path_to = path_to / pathFromString(subdir) / "";
+        auto sub_path_from = path_from / pathFromString(subdir) / "";
 
         if (!remote_info.has_value())
         {
@@ -471,8 +471,8 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo()
     /// path is known here, so rewriting one that `execute` never reached costs a write and changes nothing.
     for (const auto & [subdir, remote_info] : from_tree_info)
     {
-        auto sub_path_to = path_to / subdir / "";
-        auto sub_path_from = path_from / subdir / "";
+        auto sub_path_to = path_to / pathFromString(subdir) / "";
+        auto sub_path_from = path_from / pathFromString(subdir) / "";
 
         if (!remote_info.has_value())
             continue;
