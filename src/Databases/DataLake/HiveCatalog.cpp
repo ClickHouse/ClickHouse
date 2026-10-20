@@ -81,36 +81,40 @@ HiveCatalog::HiveCatalog(const std::string & warehouse_, const std::string & bas
     , DB::WithContext(context_)
     , base_url(base_url_)
 {
-    std::lock_guard lock(client_mutex);
-    reconnectUnlocked();
+    auto connection = createConnection();
+    std::lock_guard lock(pool_mutex);
+    idle_connections.push_back(std::move(connection));
 }
 
-void HiveCatalog::reconnectUnlocked() const TSA_REQUIRES(client_mutex)
+HiveCatalog::Connection::~Connection()
 {
-    if (transport && transport->isOpen())
+    if (!transport || !transport->isOpen())
+        return;
+    try
     {
-        try
-        {
-            transport->close();
-        }
-        catch (const std::exception & ex)
-        {
-            LOG_TRACE(&Poco::Logger::get("HiveCatalog"), "Error closing transport: {}", ex.what());
-        }
+        transport->close();
     }
+    catch (const std::exception & ex)
+    {
+        LOG_TRACE(&Poco::Logger::get("HiveCatalog"), "Error closing transport: {}", ex.what());
+    }
+}
 
+HiveCatalog::ConnectionPtr HiveCatalog::createConnection() const
+{
     auto [host, port] = parseHostPort(base_url);
 
     /// Also rejects control characters such as NUL, which `getaddrinfo` would truncate the host at.
     getContext()->getRemoteHostFilter().checkAndGetCanonicalHostAndPort(
         host + ":" + std::to_string(port), static_cast<UInt16>(port), "Hive metastore address");
 
-    socket = std::make_shared<apache::thrift::transport::TSocket>(host, port);
-    transport = std::make_shared<apache::thrift::transport::TBufferedTransport>(socket);
-    protocol = std::make_shared<apache::thrift::protocol::TBinaryProtocol>(transport);
-    client = std::make_unique<Apache::Hadoop::Hive::ThriftHiveMetastoreClient>(protocol);
-
-    transport->open();
+    auto connection = std::make_unique<Connection>();
+    auto socket = std::make_shared<apache::thrift::transport::TSocket>(host, port);
+    connection->transport = std::make_shared<apache::thrift::transport::TBufferedTransport>(socket);
+    auto protocol = std::make_shared<apache::thrift::protocol::TBinaryProtocol>(connection->transport);
+    connection->client = std::make_unique<Apache::Hadoop::Hive::ThriftHiveMetastoreClient>(protocol);
+    connection->transport->open();
+    return connection;
 }
 
 template <typename Func>
@@ -121,32 +125,46 @@ void HiveCatalog::executeWithRetry(Func && func) const
 
     for (int i = 0; i < max_retries; ++i)
     {
-        std::unique_lock lock(client_mutex);
+        ConnectionPtr connection;
+        {
+            std::lock_guard lock(pool_mutex);
+            if (!idle_connections.empty())
+            {
+                connection = std::move(idle_connections.back());
+                idle_connections.pop_back();
+            }
+        }
 
         try
         {
-            func();
-            return;
+            if (!connection)
+                connection = createConnection();
+            func(*connection->client);
         }
         catch (apache::thrift::transport::TTransportException & e)
         {
             last_err_msg = e.what();
-
-            try
+            LOG_TRACE(&Poco::Logger::get("HiveCatalog"), "Hive Metastore request failed in iteration {}/{} with error: {}", i, max_retries, e.what());
+            std::vector<ConnectionPtr> stale_connections;
             {
-                reconnectUnlocked();
+                std::lock_guard lock(pool_mutex);
+                stale_connections.swap(idle_connections);
             }
-            catch (const DB::Exception &)
-            {
-                /// Non-transient (e.g. `UNACCEPTABLE_URL` from `remote_url_allow_hosts`), retrying cannot help.
-                throw;
-            }
-            catch (const std::exception & ex)
-            {
-                LOG_TRACE(
-                    &Poco::Logger::get("HiveCatalog"), "Reconnect failed in iteration {}/{} with error: {}", i, max_retries, ex.what());
-            }
+            continue;
         }
+        catch (const apache::thrift::TException &)
+        {
+            if (connection)
+            {
+                std::lock_guard lock(pool_mutex);
+                idle_connections.push_back(std::move(connection));
+            }
+            throw;
+        }
+
+        std::lock_guard lock(pool_mutex);
+        idle_connections.push_back(std::move(connection));
+        return;
     }
 
     throw DB::Exception(
@@ -162,7 +180,7 @@ bool HiveCatalog::empty() const
 
     std::vector<std::string> result;
 
-    executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_all_databases(result); });
+    executeWithRetry([&](Apache::Hadoop::Hive::ThriftHiveMetastoreClient & client) { client.get_all_databases(result); });
     return result.empty();
 }
 
@@ -171,12 +189,12 @@ CatalogTables HiveCatalog::getTables() const
     CatalogTables result;
     DB::Names databases;
 
-    executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_all_databases(databases); });
+    executeWithRetry([&](Apache::Hadoop::Hive::ThriftHiveMetastoreClient & client) { client.get_all_databases(databases); });
 
     for (const auto & db : databases)
     {
         DB::Names current_tables;
-        executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_all_tables(current_tables, db); });
+        executeWithRetry([&](Apache::Hadoop::Hive::ThriftHiveMetastoreClient & client) { client.get_all_tables(current_tables, db); });
         /// A Hive catalog used with the Iceberg engine lists only Iceberg tables, so they are readable.
         for (const auto & table : current_tables)
             result.push_back(CatalogTable{.name = db + "." + table});
@@ -188,7 +206,7 @@ DataLake::ICatalog::Namespaces HiveCatalog::getNamespaces() const
 {
     /// HMS databases are flat — they cannot contain nested namespaces.
     DB::Names databases;
-    executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_all_databases(databases); });
+    executeWithRetry([&](Apache::Hadoop::Hive::ThriftHiveMetastoreClient & client) { client.get_all_databases(databases); });
     return databases;
 }
 
@@ -197,7 +215,7 @@ CatalogTables HiveCatalog::listTablesInNamespaceDirect(const std::string & names
     DB::Names current_tables;
     /// Retry transient `TTransportException` (same wrapper as `getTables`) rather
     /// than letting it bubble up and become an empty table list.
-    executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_all_tables(current_tables, namespace_name); });
+    executeWithRetry([&](Apache::Hadoop::Hive::ThriftHiveMetastoreClient & client) { client.get_all_tables(current_tables, namespace_name); });
     /// A Hive catalog used with the Iceberg engine lists only Iceberg tables, so they are readable.
     CatalogTables result;
     result.reserve(current_tables.size());
@@ -210,7 +228,7 @@ bool HiveCatalog::existsTable(const std::string & namespace_name, const std::str
 {
     Apache::Hadoop::Hive::Table table;
 
-    executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_table(table, namespace_name, table_name); });
+    executeWithRetry([&](Apache::Hadoop::Hive::ThriftHiveMetastoreClient & client) { client.get_table(table, namespace_name, table_name); });
 
     if (table.tableName.empty())
         return false;
@@ -228,7 +246,7 @@ bool HiveCatalog::tryGetTableMetadata(const std::string & namespace_name, const 
 {
     Apache::Hadoop::Hive::Table table;
 
-    executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_table(table, namespace_name, table_name); });
+    executeWithRetry([&](Apache::Hadoop::Hive::ThriftHiveMetastoreClient & client) { client.get_table(table, namespace_name, table_name); });
 
     if (table.tableName.empty())
         return false;

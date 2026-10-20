@@ -51,7 +51,17 @@ public:
     DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::ICEBERG; }
 
 private:
-    void reconnectUnlocked() const TSA_REQUIRES(client_mutex);
+    /// A Thrift transport is not thread-safe, so each connection is used by one thread at a time.
+    struct Connection
+    {
+        std::shared_ptr<apache::thrift::transport::TTransport> transport;
+        std::unique_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> client;
+
+        ~Connection();
+    };
+    using ConnectionPtr = std::unique_ptr<Connection>;
+
+    ConnectionPtr createConnection() const;
 
     template <typename Func>
     void executeWithRetry(Func && func) const;
@@ -60,16 +70,8 @@ private:
 
     String base_url;
 
-    mutable std::shared_ptr<apache::thrift::transport::TTransport> socket;
-    mutable std::shared_ptr<apache::thrift::transport::TTransport> transport;
-    mutable std::shared_ptr<apache::thrift::protocol::TBinaryProtocol> protocol;
-     /// Somehow API of apache::thrift::transport::TBufferBase is not thread-safe.
-     /// Database Datalake can call this function from multiple threads, so we need to protect
-     /// access to the client.
-    mutable std::mutex client_mutex;
-
-    mutable std::unique_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> client TSA_GUARDED_BY(client_mutex);
-
+    mutable std::mutex pool_mutex;
+    mutable std::vector<ConnectionPtr> idle_connections TSA_GUARDED_BY(pool_mutex);
 };
 
 }
