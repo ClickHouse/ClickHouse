@@ -104,7 +104,7 @@ bool ProjectionDescription::canProvideParentColumn(const String & column_name) c
     if (sample_block.findColumnOrSubcolumnByName(column_name))
         return true;
 
-    /// read as `_parent_part_offset`
+    /// A projection part stores the parent's `_part_offset` as `_parent_part_offset`.
     if (column_name == "_part_offset")
         return with_parent_part_offset;
 
