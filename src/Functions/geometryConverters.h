@@ -284,7 +284,7 @@ public:
         return geometries[row];
     }
 
-    /// The work of visiting the geometry of `row`, in `CancellationBudget` units. A constant is counted once.
+    /// The work of visiting the geometry of `row`, in `CancellationBudget` units.
     size_t units(size_t row) const
     {
         return is_const ? constant_units : countUnits(geometries[row]);
@@ -304,8 +304,7 @@ private:
     size_t constant_units = 0;
 };
 
-/// Calls `f` with the corrected geometries of every row. A constant geometry is used by every row, so the work of
-/// a block is not bounded by its size: the loop observes cancellation in proportion to the points and parts it visits.
+/// Calls `f` with the corrected geometries of every row, observing cancellation in proportion to the points and parts visited.
 template <typename LeftConverter, typename RightConverter, typename F>
 void forEachCorrectedGeometryPair(
     const ColumnPtr & left_column, const ColumnPtr & right_column, size_t input_rows_count, const char * function_name, F && f)
