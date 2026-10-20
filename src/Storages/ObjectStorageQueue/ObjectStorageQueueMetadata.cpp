@@ -137,11 +137,13 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , keeper_multiread_batch_size(keeper_multiread_batch_size_)
     , cleanup_processed_files(isUnordered(mode) && table_metadata.hasTrackedFilesLimit())
     /// Two independent reasons to sweep `/failed`, and either one on its own is enough: the
-    /// count-based `tracked_files_limit`, and the time-based `failed_files_ttl_sec`. They are separate
-    /// controls, so this is a union rather than a choice between them.
+    /// count-based `tracked_files_limit`, and the time-based TTL (`failed_files_ttl_sec` in unordered mode,
+    /// `tracked_file_ttl_sec` in ordered mode). They are separate controls, so this is a union rather than a
+    /// choice between them.
     ///
     /// `tracked_files_limit` alone, not `hasTrackedFilesLimit`: the latter is also true for
-    /// `tracked_files_ttl_sec`, which is the retention of `/processed` and says nothing about `/failed`.
+    /// `tracked_files_ttl_sec`, which is the retention of `/processed` and says nothing about `/failed` in
+    /// unordered mode.
     /// Mirrors the per-run decision in `cleanupThreadFuncImpl`, so this coarse "could this table ever
     /// need a sweep" answer cannot disagree with what a run actually does.
     , cleanup_failed_files(
@@ -1378,7 +1380,8 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
         /// need a sweep" answer that `startup` uses.
         const bool sweep_processed = isUnordered(mode) && table_metadata.hasTrackedFilesLimit();
         /// `/failed` has two independent controls, and each trims by its own criterion: the count-based
-        /// `tracked_files_limit`, and the time-based `failed_files_ttl_sec`. They are deliberately not
+        /// `tracked_files_limit`, and the time-based TTL (`failed_files_ttl_sec` in unordered mode,
+        /// `tracked_file_ttl_sec` in ordered mode). They are deliberately not
         /// collapsed into one call - neither overrides the other, and a table may have either, both or
         /// neither. Both passes run under the same cleanup lock this function already holds.
         ///
@@ -1400,8 +1403,9 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
             if (sweep_processed)
                 cleanupTrackedNodes(zk_client, zookeeper_path / "processed", "processed", table_metadata.tracked_files_ttl_sec, table_metadata.tracked_files_limit);
 
-            /// Count-only, with no TTL of its own: `/failed` expires by `failed_files_ttl_sec` and by
-            /// nothing else. Passing `tracked_files_ttl_sec` here would keep `/processed` retention
+            /// Count-only, with no TTL of its own: the time-based pass below trims `/failed` by
+            /// `failed_files_ttl_sec` (unordered) or `tracked_file_ttl_sec` (ordered). Passing
+            /// `tracked_files_ttl_sec` here in unordered mode would keep `/processed` retention
             /// trimming `/failed` behind the new setting's back, which is exactly what this setting
             /// exists to separate - and for a table old enough to inherit the legacy fallback it would
             /// scan the whole subtree twice per run with the same TTL.
