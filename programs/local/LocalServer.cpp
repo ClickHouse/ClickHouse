@@ -1316,6 +1316,25 @@ void LocalServer::connect()
 }
 
 
+bool LocalServer::executeInitialTableQuery(const String & initial_query)
+{
+    /// The initial CREATE is hidden from query timing output.
+    bool print_time_to_stderr = getClientConfiguration().getBool("print-time-to-stderr", false);
+    getClientConfiguration().setBool("print-time-to-stderr", false);
+    SCOPE_EXIT({ getClientConfiguration().setBool("print-time-to-stderr", print_time_to_stderr); });
+    return processQueryText(initial_query);
+}
+
+bool LocalServer::beforeExecutingCommandLineQueries()
+{
+    if (!deferred_implicit_stdin_table)
+        return true;
+
+    const auto & [table_name, initial_query] = *deferred_implicit_stdin_table;
+    client_context->setSetting("implicit_table_at_top_level", table_name);
+    return executeInitialTableQuery(initial_query);
+}
+
 int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
@@ -1424,21 +1443,23 @@ try
     }
 
     auto [table_name, initial_query] = getInitialCreateTableQuery();
-    if (!table_name.empty())
+
+    /// Query files must behave as they do without --query: do not expose the inferred stdin table until they finish.
+    /// Explicit initial tables are still created before processing query files.
+    const bool defer_implicit_stdin_table = !table_name.empty() && !queries.empty() && !queries_files.empty()
+        && !getClientConfiguration().has("table-structure")
+        && !getClientConfiguration().has("table-file")
+        && !getClientConfiguration().has("table-data-format");
+
+    if (defer_implicit_stdin_table)
+        deferred_implicit_stdin_table.emplace(table_name, initial_query);
+    else if (!table_name.empty())
         client_context->setSetting("implicit_table_at_top_level", table_name);
 
     connect();
 
-    if (!table_name.empty())
-    {
-        // Set option to false for hidden query to prevent double-printing time
-        bool orig_print_time_to_stderr = getClientConfiguration().getBool("print-time-to-stderr", false);
-        getClientConfiguration().setBool("print-time-to-stderr", false);
-
-        processQueryText(initial_query);
-
-        getClientConfiguration().setBool("print-time-to-stderr", orig_print_time_to_stderr);
-    }
+    if (!table_name.empty() && !defer_implicit_stdin_table)
+        executeInitialTableQuery(initial_query);
 
 #if USE_FUZZING_MODE
     runLibFuzzer();
@@ -2314,6 +2335,8 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
     {
         if (!queries.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--copy' and '--query' cannot be specified at the same time");
+        if (!queries_files.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--copy' and '--queries-file' cannot be specified at the same time");
         queries.emplace_back("SELECT * FROM table");
     }
 }

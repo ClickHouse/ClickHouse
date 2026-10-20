@@ -67,6 +67,7 @@ protected:
                         const std::vector<Arguments> &, const std::vector<Arguments> &) override;
 
     void processConfig() override;
+    bool beforeExecutingCommandLineQueries() override;
     void readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &, std::vector<Arguments> &) override;
 
     void updateLoggerLevel(const String & logs_level) override;
@@ -80,6 +81,7 @@ private:
       * Returns empty strings if it cannot compose that query.
       */
     std::pair<std::string, std::string> getInitialCreateTableQuery();
+    bool executeInitialTableQuery(const String & initial_query);
 
     void tryInitPath();
     void setupUsers();
@@ -128,6 +130,7 @@ private:
 
     std::optional<StatusFile> status;
     std::optional<std::filesystem::path> temporary_directory_to_delete;
+    std::optional<std::pair<String, String>> deferred_implicit_stdin_table;
 
     std::unique_ptr<ReadBufferFromFile> input;
 

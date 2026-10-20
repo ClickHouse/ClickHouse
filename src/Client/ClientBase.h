@@ -120,6 +120,8 @@ public:
 protected:
     void runInteractive();
     void runNonInteractive();
+    /// Hook for clients that need to initialize state between query files and --query.
+    virtual bool beforeExecutingCommandLineQueries() { return true; }
 
     char * argv0 = nullptr;
     String app_name; /// Application name for help messages (e.g., "clickhouse client" or "clickhouse-client")

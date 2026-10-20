@@ -4675,8 +4675,8 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
 
         ("proto_caps", po::value<std::string>(), "Enable/disable chunked protocol: chunked_optional, notchunked, notchunked_optional, send_chunked, send_chunked_optional, send_notchunked, send_notchunked_optional, recv_chunked, recv_chunked_optional, recv_notchunked, recv_notchunked_optional")
 
-        ("query,q", po::value<std::vector<std::string>>()->multitoken(), R"(Query. Can be specified multiple times (--query "SELECT 1" --query "SELECT 2") or once with multiple semicolon-separated queries (--query "SELECT 1; SELECT 2;"). In the latter case, INSERT queries with non-VALUE format must be separated by empty lines.)")
-        ("queries-file", po::value<std::vector<std::string>>()->multitoken(), "File path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
+        ("query,q", po::value<std::vector<std::string>>()->multitoken(), R"(Query. Can be specified multiple times (--query "SELECT 1" --query "SELECT 2") or once with multiple semicolon-separated queries (--query "SELECT 1; SELECT 2;"). In the latter case, INSERT queries with non-VALUE format must be separated by empty lines. In clickhouse-local, --queries-file inputs run first regardless of command-line order.)")
+        ("queries-file", po::value<std::vector<std::string>>()->multitoken(), "File path with queries to execute; multiple files can be specified (--queries-file file1 file2...). In clickhouse-local, all query files run before --query regardless of argument order; clickhouse-client rejects combining these options.")
         ("multiquery,n", "Obsolete, does nothing")
         ("multiline,m", "If specified, allow multi-line queries (Enter does not send the query)")
         ("database,d", po::value<std::string>(), "Database")
@@ -5394,8 +5394,9 @@ void ClientBase::runNonInteractive()
                 return;
         }
 
-        /// clickhouse-local can execute --query after all --queries-file inputs.
-        if (queries.empty())
+        /// clickhouse-local runs all query files before --query regardless of argument order.
+        /// clickhouse-client still rejects this combination in Client::processConfig().
+        if (queries.empty() || !beforeExecutingCommandLineQueries())
             return;
     }
 

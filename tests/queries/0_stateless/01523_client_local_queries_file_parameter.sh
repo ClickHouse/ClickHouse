@@ -36,6 +36,22 @@ printf "%s\n" "CREATE FUNCTION f_01523 AS (x) -> x + 1;" "SELECT 'first file';" 
 printf "%s\n" "SELECT 'second file';" > "$SECOND_SQL_FILE_NAME"
 $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" --queries-file="$SECOND_SQL_FILE_NAME" -q "SELECT f_01523(41);" < /dev/null
 
+# Query files and --query keep their own ordering, regardless of interleaving on the command line.
+echo "SELECT 'first file';" > "$TEMP_SQL_FILE_NAME"
+echo "SELECT 'second file';" > "$SECOND_SQL_FILE_NAME"
+$CLICKHOUSE_LOCAL -q "SELECT 'first query';" --queries-file="$TEMP_SQL_FILE_NAME" -q "SELECT 'second query';" --queries-file="$SECOND_SQL_FILE_NAME" < /dev/null
+
+# Redirected stdin must not become an implicit table until after query files finish.
+STDIN_DATA_FILE_NAME="${TEMP_SQL_FILE_NAME}.data"
+printf '1,2\n3,4\n5,6\n' > "$STDIN_DATA_FILE_NAME"
+echo "SELECT count();" > "$TEMP_SQL_FILE_NAME"
+$CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" < "$STDIN_DATA_FILE_NAME"
+$CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" -q "SELECT count();" < "$STDIN_DATA_FILE_NAME"
+$CLICKHOUSE_LOCAL -q "SELECT count();" --queries-file="$TEMP_SQL_FILE_NAME" < "$STDIN_DATA_FILE_NAME"
+
+# --copy is a format-conversion shortcut, not a second query mode for --queries-file.
+$CLICKHOUSE_LOCAL --copy --queries-file="$TEMP_SQL_FILE_NAME" --input-format CSV < "$STDIN_DATA_FILE_NAME" 2>&1 | grep -o 'BAD_ARGUMENTS'
+
 # Errors in a query file must stop execution before --query.
 echo "SELECT throwIf(1, 'file failed');" > "$TEMP_SQL_FILE_NAME"
 if output=$($CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" -q "SELECT 'trailing query';" < /dev/null 2>&1); then
@@ -46,4 +62,4 @@ else
     echo "unexpected output"
 fi
 
-rm "$TEMP_SQL_FILE_NAME" "$SECOND_SQL_FILE_NAME"
+rm "$TEMP_SQL_FILE_NAME" "$SECOND_SQL_FILE_NAME" "$STDIN_DATA_FILE_NAME"
