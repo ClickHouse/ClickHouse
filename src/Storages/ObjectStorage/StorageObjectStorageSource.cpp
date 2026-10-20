@@ -45,6 +45,7 @@
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/DeletionVectorTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
@@ -216,6 +217,7 @@ namespace Setting
     extern const SettingsBool table_engine_read_through_distributed_cache;
     extern const SettingsUInt64 s3_path_filter_limit;
     extern const SettingsBool use_parquet_metadata_cache;
+    extern const SettingsBool use_columns_cache;
     extern const SettingsBool s3_validate_etag_on_read;
     extern const SettingsBool azure_validate_etag_on_read;
 }
@@ -1592,13 +1594,23 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         logIcebergFileStats(object_info, log);
 
         InputFormatPtr input_format;
-        if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache]
+        /// The metadata of the object identifies its version for the Parquet metadata cache and
+        /// for the columns cache.
+        if ((context_->getSettingsRef()[Setting::use_parquet_metadata_cache] || context_->getSettingsRef()[Setting::use_columns_cache])
             && (Poco::toLower(format_name) == "parquet")
             && object_info->getObjectMetadata()->isEtagUsableAsCacheKey())
         {
             std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
             if (object_info->isArchive())
                 object_with_metadata->relative_path = getArchiveEntryKey(object_info->getPath(), object_info->archive_entry_index);
+            /// The relative path alone does not identify the object: another bucket, container or
+            /// endpoint can have an object with the same key and version token.
+            if (auto table_uuid = getColumnsCacheTableUUIDOfExternalFile(storage_id))
+            {
+                object_with_metadata->path_for_content_cache = getUniqueStoragePathIdentifier(*configuration, *object_info);
+                object_with_metadata->storage_type_for_content_cache = configuration->getType();
+                object_with_metadata->table_uuid_for_content_cache = *table_uuid;
+            }
             input_format = FormatFactory::instance().getInputWithMetadata(
                 format_name,
                 *read_buf,
@@ -2511,9 +2523,16 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
     if (!is_archive)
         return object_info;
 
-    auto [path_to_archive, path_in_archive] = getURIAndArchivePattern(object_info->getPath());
+    const auto path = object_info->getPath();
+    auto [path_to_archive, path_in_archive] = getURIAndArchivePattern(path);
     if (!path_in_archive.has_value())
-        return object_info;
+    {
+        /// `ObjectInfoInArchive::getPath` gives `<archive>::` for an archive entry without a name.
+        if (!path.ends_with("::"))
+            return object_info;
+        path_to_archive = path.substr(0, path.size() - 2);
+        path_in_archive.emplace();
+    }
 
     return createObjectInfoInArchive(
         path_to_archive,
