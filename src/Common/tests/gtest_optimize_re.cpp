@@ -35,6 +35,10 @@ TEST(OptimizeRE, analyze)
     test_f("(?i:bob)x", "", {}, false, false, false);
     /// A capture nested in a non-capturing group, or one preceding it, is still a capture.
     test_f("(?i:(b))x", "", {}, false, true, false);
+    test_f("(?i)(bob|alice)", "", {});
+    test_f("(?i:bob|alice)", "", {});
+    test_f("(?i)(DENIED|REFUSED)", "", {});
+    test_f("(?i)denied|refused", "", {});
     test_f("(a)(?:b)c", "abc", {}, false, true, true);
     test_f("(?ssss", "");
     test_f("[asdf]ss(?:ss)ss", "ssssss");
