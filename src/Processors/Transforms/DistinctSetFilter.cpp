@@ -272,8 +272,9 @@ namespace
 /// rows are inserted into the set). `mask[i] == 0` marks rows excluded from the deduplication - known
 /// duplicates by the `LowCardinality` dictionary index, or `NULL`-key rows in the `skip_null_keys` mode -
 /// which are never inserted; `mask` may be `nullptr`.
+/// Returns the number of input rows processed: all of them, or the prefix before the observed cancellation.
 template <typename Method>
-void buildDistinctFilter(
+size_t buildDistinctFilter(
     Method & method,
     const ColumnRawPtrs & key_columns,
     const Sizes & key_sizes,
@@ -297,7 +298,7 @@ void buildDistinctFilter(
                 /// Zero the unprocessed tail so the filter still holds exactly one `1` per row
                 /// inserted into the set below, keeping the `num_selected` accounting consistent.
                 std::fill(filter.begin() + begin, filter.end(), 0);
-                return;
+                return begin;
             }
 
             const size_t end = std::min(begin + CANCELLATION_POLL_ROWS, rows);
@@ -325,7 +326,7 @@ void buildDistinctFilter(
                     "Cancelled while hashing rows without a mask"))
             {
                 std::fill(filter.begin() + begin, filter.end(), 0);
-                return;
+                return begin;
             }
 
             const size_t end = std::min(begin + CANCELLATION_POLL_ROWS, rows);
@@ -339,6 +340,8 @@ void buildDistinctFilter(
             }
         }
     }
+
+    return rows;
 }
 
 /// Keep checked insertion out of line to leave the bulk-insertion loop's generated code compact.
@@ -685,8 +688,16 @@ DistinctSetFilter::FilterResult DistinctSetFilter::filterImpl(Chunk chunk, const
             processed_rows = buildDistinctFilterWithInsertionCheck(
                 method, column_ptrs, key_sizes, filter_values, num_rows, *data, *can_insert);
         else
-            buildDistinctFilter(method, column_ptrs, key_sizes, filter_values, num_rows, *data, mask, cancellation_flag);
+            processed_rows = buildDistinctFilter(
+                method, column_ptrs, key_sizes, filter_values, num_rows, *data, mask, cancellation_flag);
     });
+
+    /// The bulk path abandons the rest of the chunk once it observes a cancellation. Its caller
+    /// (`DistinctTransform`) drops the returned chunk as soon as it sees the same flag, so filtering the
+    /// columns here would only allocate copies that are thrown away. The insertion-check path has no
+    /// cancellation flag: `ExternalDistinctTransform` must keep the accepted prefix to spill it.
+    if (isCancelled(cancellation_flag))
+        return {{}, processed_rows};
 
     const auto new_set_size = data->getTotalRowCount();
     const size_t num_selected = new_set_size - old_set_size;

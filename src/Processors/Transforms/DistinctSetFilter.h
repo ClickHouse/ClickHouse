@@ -183,6 +183,8 @@ public:
     /// exception when exceeded; `BREAK` retains the crossing chunk and sets `isLimitReached`, so the
     /// caller must stop reading and return the partial result.
     /// In `skip_null_keys` mode, rows with a `NULL` key component are dropped. The result can be empty.
+    /// With a `cancellation_flag`, an observed cancellation abandons the rest of the chunk and returns an
+    /// empty chunk: the caller drops it anyway, so the output columns are not filtered.
     /// Requires `hasKeyColumns` to be true.
     Chunk filter(Chunk chunk);
 
