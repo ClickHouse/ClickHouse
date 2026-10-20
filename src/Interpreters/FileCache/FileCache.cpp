@@ -2180,7 +2180,7 @@ void FileCache::loadMetadataImpl()
 {
     auto parse_user = [&](const fs::path & path) -> std::optional<OriginInfo>
     {
-        auto filename = path.filename().string();
+        auto filename = pathToGenericString(path.filename());
 
         auto pos = filename.find_last_of('.');
         if (pos == std::string::npos)
@@ -2216,7 +2216,7 @@ void FileCache::loadMetadataImpl()
                 }
                 else
                 {
-                    user_it = fs::directory_iterator{metadata.getBaseDirectory()};
+                    user_it = fs::directory_iterator{pathFromString(metadata.getBaseDirectory())};
                     initialized = true;
                 }
 
@@ -2231,7 +2231,7 @@ void FileCache::loadMetadataImpl()
                     /// Only client directories are loaded from here. Ignore files: a server of
                     /// another version may keep files of its own next to them, and opening one
                     /// as a directory would fail the whole load.
-                    const auto entry = user_it->path().filename().string();
+                    const auto entry = pathToGenericString(user_it->path().filename());
                     if (entry != "status")
                         LOG_WARNING(log, "Ignoring file {} in {}", entry, metadata.getBaseDirectory());
                     continue;
@@ -2252,7 +2252,7 @@ void FileCache::loadMetadataImpl()
                 }
                 else
                 {
-                    LOG_WARNING(log, "Unexpected file format: {}", user_it->path().string());
+                    LOG_WARNING(log, "Unexpected file format: {}", pathToGenericString(user_it->path()));
                     continue;
                 }
             }
@@ -2289,7 +2289,7 @@ void FileCache::loadMetadataImpl()
                     return std::nullopt;
 
                 auto type = key_types_to_load[key_type_index];
-                auto dir_path = fs::path(metadata.getBaseDirectory()).append(getKeyTypePrefix(type));
+                auto dir_path = pathFromString(metadata.getBaseDirectory()).append(getKeyTypePrefix(type));
                 origin.segment_type = type;
                 key_type_index++;
 
