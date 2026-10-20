@@ -16,6 +16,7 @@
 #include <Common/FailPoint.h>
 #include <Common/ProfileTracesBlocker.h>
 #include <Common/assert_cast.h>
+#include <base/scope_guard.h>
 
 namespace DB
 {
@@ -95,7 +96,7 @@ void IFramingFormat::onPayload(FramedPacketKind kind)
     flushOut();
     if (profile_traces_queue)
     {
-        ProfileTracesBlocker blocker;
+        ProfileTracesStreamBlocker blocker;
         pumpProfileTraces(/*force=*/ false);
     }
 }
@@ -111,7 +112,7 @@ void IFramingFormat::onProgress(const Progress & progress)
     flushOut();
     if (profile_traces_queue)
     {
-        ProfileTracesBlocker blocker;
+        ProfileTracesStreamBlocker blocker;
         pumpProfileTraces(/*force=*/ false);
     }
 }
@@ -149,7 +150,7 @@ void IFramingFormat::finalize()
     pumpProfileEvents(/*force=*/ true);
     if (profile_traces_queue)
     {
-        ProfileTracesBlocker blocker;
+        ProfileTracesStreamBlocker blocker;
         pumpProfileTraces(/*force=*/ true);
     }
 
@@ -313,8 +314,10 @@ void IFramingFormat::pumpProfileEvents(bool force)
 
 void IFramingFormat::pumpProfileTraces(bool force)
 {
-    /// The caller's guard also suppresses samples from this function's entry and return paths.
-    chassert(ProfileTracesBlocker::isBlocked());
+    /// The caller's guard suppresses delivery of the samples taken in this function, including the
+    /// waiting and the writes to a possibly slow client. It is the lighter guard that may span them:
+    /// memory accounting stays enabled for the packet serialization and output.
+    chassert(ProfileTracesStreamBlocker::isBlocked());
 
     if (!profile_traces_queue)
         return;
@@ -331,6 +334,12 @@ void IFramingFormat::pumpProfileTraces(bool force)
     do
     {
         Block block = profile_traces_queue->getBlock();
+        /// The block was allocated with memory tracking blocked (see `getBlock`), so it is freed the
+        /// same way, also when writing it throws.
+        SCOPE_EXIT({
+            ProfileTracesBlocker blocker;
+            block = {};
+        });
         if (block.rows() == 0)
             break;
         emitToOut([&] { writeProfileTracesPacket(block); });

@@ -2100,7 +2100,8 @@ void TCPHandler::sendPendingProfileTraces(QueryState & state, bool finish)
             out->sync();
 
         {
-            ProfileTracesBlocker blocker;
+            /// Writing to the socket may wait for a slow client, so only the lighter guard spans it.
+            ProfileTracesStreamBlocker blocker;
             sendProfileTraces(state, block);
         }
         first_block = false;
@@ -2111,7 +2112,7 @@ void TCPHandler::sendPendingProfileTraces(QueryState & state, bool finish)
 void TCPHandler::sendProfileTraces(QueryState & state, const Block & block)
 {
     /// The caller's guard also covers the function entry, socket flush and return.
-    chassert(ProfileTracesBlocker::isBlocked());
+    chassert(ProfileTracesStreamBlocker::isBlocked());
 
     if (!state.profile_traces_block_out)
     {
