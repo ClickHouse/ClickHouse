@@ -75,7 +75,8 @@ Aggregator::Params makeParams(const Names & keys, const AggregateDescriptions & 
         /*enable_adaptive_aggregator_=*/false,
         /*adaptive_aggregator_freeze_threshold_=*/0,
         /*adaptive_aggregator_freeze_threshold_bytes_=*/0,
-        /*use_aggregation_memory_tracker_=*/true);
+        /*use_aggregation_memory_tracker_=*/true,
+        /*group_by_each_block_no_merge_=*/false);
 }
 
 /// Renders one finalized chunk as "key[,key]" -> "value[,value]" rows.
