@@ -609,17 +609,23 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
 
         is_aggregate = query_node.hasGroupBy() || hasAggregateFunctionNodes(query_tree);
 
+        ConvertToASTOptions ast_options;
+        ast_options.fully_qualified_identifiers = false;
+
         /// Expand aliases in projection ORDER BY using the Analyzer-resolved query tree.
         /// cloneToASTSelect() appends the ORDER BY expression as the last SELECT child,
         /// so the last resolved projection column has aliases fully expanded.
         if (projection_order_by)
         {
             auto & projection_nodes = query_node.getProjection().getNodes();
-            ConvertToASTOptions ast_options;
-            ast_options.fully_qualified_identifiers = false;
             projection_order_by = projection_nodes.back()->toAST(ast_options);
             projection_order_by->setAlias({});
         }
+
+        /// An identifier in `WHERE` may refer to an alias of the query, not to the column: the rows are filtered
+        /// by the resolved `WHERE`, in which a substituted alias keeps its name.
+        if (result.where_clause_ast)
+            result.where_clause_ast = query_node.getWhere()->toAST(ast_options);
     }
 
     /// With `WHERE` the query runs to `WithMergeableState`, whose header holds the results of the `SELECT` expressions,

@@ -28,3 +28,7 @@ projection columns	t_with	_parent_part_offset, k, v
 unsorted parts	t_alias	0
 unsorted parts	t_replace	0
 unsorted parts	t_with	0
+alias in where	1	90
+alias in where, no projection	1	90
+alias in where, aggregate	1
+alias in where, aggregate, no projection	1

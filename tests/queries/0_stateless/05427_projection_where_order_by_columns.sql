@@ -13,6 +13,8 @@ DROP TABLE IF EXISTS t_intdiv;
 DROP TABLE IF EXISTS t_alias;
 DROP TABLE IF EXISTS t_replace;
 DROP TABLE IF EXISTS t_with;
+DROP TABLE IF EXISTS t_alias_where;
+DROP TABLE IF EXISTS t_alias_where_agg;
 
 -- The `ORDER BY` columns are not selected: every `INSERT` used to fail with `UNKNOWN_IDENTIFIER`.
 CREATE TABLE t_offsets (k UInt64, v UInt64, s String) ENGINE = MergeTree ORDER BY k;
@@ -138,6 +140,20 @@ FROM
 )
 GROUP BY table ORDER BY table;
 
+-- A `WHERE` that reads such an alias filters by `100 - v`, so it does not cover a query filter on the column `v`.
+CREATE TABLE t_alias_where (k UInt64, v UInt64, PROJECTION p (SELECT k, 100 - v AS v WHERE v = 90 ORDER BY (v, k)))
+ENGINE = MergeTree ORDER BY k;
+CREATE TABLE t_alias_where_agg (k UInt64, v UInt64, PROJECTION p (SELECT 100 - v AS v, count() WHERE v = 90 GROUP BY v))
+ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_alias_where VALUES (10, 10), (11, 10), (90, 90);
+INSERT INTO t_alias_where_agg VALUES (10, 10), (11, 10), (90, 90);
+OPTIMIZE TABLE t_alias_where FINAL;
+
+SELECT 'alias in where', count(), sum(k) FROM t_alias_where WHERE v = 90;
+SELECT 'alias in where, no projection', count(), sum(k) FROM t_alias_where WHERE v = 90 SETTINGS optimize_use_projections = 0;
+SELECT 'alias in where, aggregate', count() FROM t_alias_where_agg WHERE v = 90;
+SELECT 'alias in where, aggregate, no projection', count() FROM t_alias_where_agg WHERE v = 90 SETTINGS optimize_use_projections = 0;
+
 DROP TABLE t_offsets;
 DROP TABLE t_select_k;
 DROP TABLE t_tuple;
@@ -147,3 +163,5 @@ DROP TABLE t_intdiv;
 DROP TABLE t_alias;
 DROP TABLE t_replace;
 DROP TABLE t_with;
+DROP TABLE t_alias_where;
+DROP TABLE t_alias_where_agg;
