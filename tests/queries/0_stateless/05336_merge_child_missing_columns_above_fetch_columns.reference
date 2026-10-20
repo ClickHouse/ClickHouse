@@ -39,6 +39,12 @@ null	11	1
 key	1	6	1
 key	10	1	1
 key	11	1	1
+const	1	1	1	Asia/Tokyo5
+const	10	1	1	Asia/Tokyo0
+const	11	1	1	Asia/Tokyo0
+const	1	1	1	Asia/Tokyo5
+const	10	1	1	Asia/Tokyo0
+const	11	1	1	Asia/Tokyo0
 complete	0	0	2
 buffer	0	0	3
 buffer fuse	47	15.666666666666666

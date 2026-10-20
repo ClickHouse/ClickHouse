@@ -1427,7 +1427,9 @@ void collectLeafColumnActionNames(
 /// True if `node`'s value depends on which server evaluates it: a function that is not deterministic (`rand`, `now`,
 /// ...), or a `ConstantNode` the analyzer produced by folding a server-local call (`hostName`, `tcpPort`, ...), which
 /// the fold marks non-deterministic while a plain literal stays deterministic.
-bool containsNonDeterministicFunction(const QueryTreeNodePtr & node)
+/// With `allow_folded_constants` every constant is accepted, for an expression of the query itself: its constants were
+/// folded once for the whole query, while an `ALIAS` body runs on the server that reads the row.
+bool containsNonDeterministicFunction(const QueryTreeNodePtr & node, bool allow_folded_constants = false)
 {
     if (!node)
         return false;
@@ -1437,11 +1439,11 @@ bool containsNonDeterministicFunction(const QueryTreeNodePtr & node)
             return true;
 
     if (const auto * constant_node = node->as<ConstantNode>())
-        if (!constant_node->isDeterministic())
+        if (!allow_folded_constants && !constant_node->isDeterministic())
             return true;
 
     for (const auto & child : node->getChildren())
-        if (containsNonDeterministicFunction(child))
+        if (containsNonDeterministicFunction(child, allow_folded_constants))
             return true;
 
     return false;
@@ -1516,16 +1518,17 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
         return {};
 
     std::unordered_map<String, String> identifier_to_inlined_name;
-    std::unordered_map<String, QueryTreeNodePtr> identifier_to_computed_expression;
+    std::unordered_map<String, QueryTreeNodePtr> identifier_to_alias_expression;
+    std::unordered_map<String, QueryTreeNodePtr> identifier_to_rewritten_expression;
     std::unordered_set<String> genuine_qualifier_tails;
     {
         QueryTreeNodePtr query_tree_for_visit = query_tree;
-        CollectInlinedAliasExpressionsVisitor alias_visitor(*planner_context, identifier_to_computed_expression);
-        alias_visitor.visit(query_tree_for_visit);
-
         CollectAliasNameTranslationVisitor visitor(
-            *planner_context, identifier_to_inlined_name, rewrite_for_shard, identifier_to_computed_expression);
+            *planner_context, identifier_to_inlined_name, rewrite_for_shard, identifier_to_rewritten_expression);
         visitor.visit(query_tree_for_visit);
+
+        CollectInlinedAliasExpressionsVisitor alias_visitor(*planner_context, identifier_to_alias_expression);
+        alias_visitor.visit(query_tree_for_visit);
 
         CollectGenuineQualifierTailsVisitor tails_visitor(*planner_context, genuine_qualifier_tails);
         tails_visitor.visit(query_tree_for_visit);
@@ -1589,17 +1592,20 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
         /// An `ALIAS` whose declared type differs from its body's inlines to `_CAST(<body>, '<Type>')`, and one over an
         /// expression to that expression; neither is a column the shard emits at a mergeable-state boundary. The body's
         /// leaves are raw columns the shard does send, so evaluate the body here instead of looking the column up.
-        auto alias_it = identifier_to_computed_expression.find(expected_name);
-        if (alias_it == identifier_to_computed_expression.end())
+        auto alias_it = identifier_to_alias_expression.find(expected_name);
+        auto rewritten_it = identifier_to_rewritten_expression.find(expected_name);
+        const bool is_rewritten = alias_it == identifier_to_alias_expression.end();
+        if (is_rewritten && rewritten_it == identifier_to_rewritten_expression.end())
             return {}; /// Cannot explain this column; let the caller fall back to its default reconciliation.
+        auto expression = is_rewritten ? rewritten_it->second : alias_it->second;
 
         /// Evaluating the body here reproduces what the shard would have computed only while the body is a function of
         /// the shard's columns alone. One whose value depends on the evaluating server would take this server's value.
-        if (containsNonDeterministicFunction(alias_it->second))
+        if (containsNonDeterministicFunction(expression, /*allow_folded_constants=*/is_rewritten))
             return {};
 
         shard_index_for_expected[i] = computed_from_expression;
-        expression_for_expected[i] = alias_it->second;
+        expression_for_expected[i] = std::move(expression);
         collapse_detected = true;
     }
 

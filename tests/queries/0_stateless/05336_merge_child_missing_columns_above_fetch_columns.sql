@@ -48,6 +48,10 @@ SELECT 'null', id, n.null FROM merge(currentDatabase(), '^t_(a|dist_b)$') ORDER 
 SELECT 'null', id, n.null FROM merge(currentDatabase(), '^t_(dist_a|b)$') ORDER BY id;
 SELECT 'key', id, a + 1 AS y, count() FROM merge(currentDatabase(), '^t_(dist_a|b)$') GROUP BY id, y ORDER BY id;
 
+-- An expression over a missing column and a constant folded for the whole query.
+SELECT 'const', id, now() + a > '2000-01-01 00:00:00', today() + a > '2000-01-01', concat(timezone(), toString(a)) FROM merge(currentDatabase(), '^t_(a|dist_b)$') ORDER BY id SETTINGS session_timezone = 'Asia/Tokyo';
+SELECT 'const', id, now() + a > '2000-01-01 00:00:00', today() + a > '2000-01-01', concat(timezone(), toString(a)) FROM merge(currentDatabase(), '^t_(dist_a|b)$') ORDER BY id SETTINGS session_timezone = 'Asia/Tokyo';
+
 -- A `Merge` table with a single `Distributed` child is read at `Complete`.
 CREATE TABLE t_m1 (id UInt64, a UInt8, b UInt8) ENGINE = Merge(currentDatabase(), '^t_dist_b$');
 SELECT 'complete', min(a), min(b), count() FROM t_m1;
