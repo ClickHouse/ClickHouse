@@ -1,5 +1,6 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- Tag no-parallel: the failpoint is server-wide.
+-- Tag no-fasttest: tests that must run alone are kept out of the fast test.
 -- Random settings limits: use_lightweight_primary_key_index_analysis=(1, None)
 -- A parallel replicas follower skips its own index analysis, so the input of its read-time skip-index
 -- evaluation must be the ranges analyzed on the initiator: it must not select more marks than a single-node read.
