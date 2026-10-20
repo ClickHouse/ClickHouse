@@ -367,8 +367,7 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
         is_order_by_all == rhs_typed.is_order_by_all &&
         is_limit_by_all == rhs_typed.is_limit_by_all &&
         projection_columns == rhs_typed.projection_columns &&
-        settings_changes == rhs_typed.settings_changes &&
-        settings_contributed_names == rhs_typed.settings_contributed_names;
+        settings_changes == rhs_typed.settings_changes;
 }
 
 void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) const
@@ -427,13 +426,6 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
         state.update(setting_change_value_dump.size());
         state.update(setting_change_value_dump);
     }
-
-    state.update(settings_contributed_names.size());
-    for (const auto & contributed_name : settings_contributed_names)
-    {
-        state.update(contributed_name.size());
-        state.update(contributed_name);
-    }
 }
 
 QueryTreeNodePtr QueryNode::cloneImpl() const
@@ -456,7 +448,6 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->cte_name = cte_name;
     result_query_node->projection_columns = projection_columns;
     result_query_node->settings_changes = settings_changes;
-    result_query_node->settings_contributed_names = settings_contributed_names;
     result_query_node->projection_aliases_to_override = projection_aliases_to_override;
 
     return result_query_node;
