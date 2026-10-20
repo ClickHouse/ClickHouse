@@ -51,7 +51,7 @@ void StorageSystemFormats::fillData(MutableColumns & res_columns, ContextPtr con
         bool has_schema_inference = creators.schema_reader_creator != nullptr;
         bool has_external_schema = creators.external_schema_reader_creator != nullptr;
         bool prefers_large_blocks = creators.prefers_large_blocks;
-        bool supports_append = creators.append_support_checker && creators.append_support_checker(settings);
+        bool supports_append = has_output_format && FormatFactory::instance().checkIfFormatSupportAppend(format_name, context, settings);
         bool supports_subset_of_columns = creators.subset_of_columns_support_checker && creators.subset_of_columns_support_checker(settings);
 
         res_columns[0]->insert(format_name);
