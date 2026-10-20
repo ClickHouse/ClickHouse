@@ -61,9 +61,8 @@ SELECT count() FROM t_minmax_nan_mixed WHERE val = 1.0 SETTINGS use_skip_indexes
 -- `ORDER BY val DESC LIMIT 1` reaches two independently gated TopK mechanisms: plan-time granule
 -- ordering and the read-time threshold tracker. Both are admitted if either gate is on, so the oracle
 -- has to turn off both, and pin both on for the other arm because both gates are randomized. Both
--- arms also answer 200 when neither mechanism runs, so assert which one does: a float sort column
--- keeps the threshold filter but gets no granule ordering, because a stored bound cannot place a NaN
--- where ORDER BY does.
+-- arms also answer 200 when neither mechanism runs, so assert which one does: under DESC a float sort
+-- column keeps the threshold filter but gets no granule ordering, because a stored max can be NaN.
 SELECT val FROM t_minmax_nan_mixed ORDER BY val DESC LIMIT 1
 SETTINGS use_skip_indexes_for_top_k = 1, use_top_k_dynamic_filtering = 1;
 SELECT val FROM t_minmax_nan_mixed ORDER BY val DESC LIMIT 1

@@ -3186,16 +3186,12 @@ void ReadFromMergeTree::buildIndexes(
                     return false;
 
                 /// The skip-index top-k path ranks granules via raw Field comparison
-                /// (MinMaxGranuleItem::operator<), which does not respect nulls_direction or
-                /// collation and compares Float64 with a hardcoded NaN-last hint. Only allow types
-                /// where raw Field ordering matches the ORDER BY semantics. This check is reached
-                /// even for types tryOptimizeTopK refused a skip index for.
+                /// (MinMaxGranuleItem::operator<) which does not respect nulls_direction
+                /// or collation. Only allow types where raw Field ordering matches
+                /// the ORDER BY semantics.
                 /// TODO: generalize MinMaxGranuleItem comparison and getTopKMarks to use
-                /// nulls_direction/collator, and record NaN presence in the index itself
-                /// (getExtremes reports a NaN extreme only for an all-NaN granule), so this
-                /// restriction can be lifted.
+                /// nulls_direction/collator so this restriction can be lifted.
                 if (top_k_filter_info->data_type->isNullable()
-                    || hasTypeThatCanContainFloat(top_k_filter_info->data_type)
                     || !top_k_filter_info->data_type->isValueRepresentedByNumber())
                     return false;
 
@@ -3205,10 +3201,13 @@ void ReadFromMergeTree::buildIndexes(
 
                 /// The `minmax` index leaves NaN out of the granule bounds. That is harmless while NaN ranks last,
                 /// but under NULLS FIRST a granule whose finite values are all beyond the threshold would be
-                /// skipped together with the NaN rows it holds, which rank before the threshold.
-                if (top_k_filter_info->threshold_tracker
-                    && isFloat(removeLowCardinality(top_k_filter_info->data_type))
-                    && top_k_filter_info->threshold_tracker->getNullsDirection() != top_k_filter_info->threshold_tracker->getDirection())
+                /// skipped together with the NaN rows it holds, which rank before the threshold. The max is also
+                /// NaN for an all-NaN granule and for an index granule merging an all-NaN range with finite ones,
+                /// which a DESC ranking puts first and a DESC threshold skips. So a float key needs ASC NULLS LAST;
+                /// without a threshold tracker, tryOptimizeTopK has already checked NULLS FIRST.
+                if (hasTypeThatCanContainFloat(top_k_filter_info->data_type)
+                    && (top_k_filter_info->direction != 1
+                        || (top_k_filter_info->threshold_tracker && top_k_filter_info->threshold_tracker->getNullsDirection() != 1)))
                     return false;
 
                 return true;

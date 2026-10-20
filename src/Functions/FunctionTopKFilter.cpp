@@ -42,15 +42,6 @@ bool hasEmptyTuple(const DataTypePtr & type)
     return false;
 }
 
-/// `lessOrEquals` and `greaterOrEquals` are false for NaN, while the sort places NaN first or last by
-/// `nulls_direction`, so the comparison functions would drop NaN rows that rank before the threshold.
-/// The column comparison path places NaN the way the sort does. Container types (`Tuple`, `Array`,
-/// `Map`) compare their elements lexicographically, so a float anywhere inside them matters too.
-bool hasFloatingPoint(const DataTypePtr & type)
-{
-    return anyInTypeTree(*type, [](const IDataType & node) { return isFloat(node); });
-}
-
 /// A `NULL` nested inside a container type (e.g. `Tuple(Nullable(UInt32))`) makes the comparison functions
 /// return `Nullable(UInt8)` and ignores `nulls_direction`; the column comparison path handles both.
 bool hasNestedNullable(const DataTypePtr & type)
@@ -128,14 +119,11 @@ public:
             auto current_threshold = threshold_tracker->getValue();
             auto data_type = arguments[0].type;
 
-            /// executeVectorized is only valid when the comparison orders values the way ORDER BY
-            /// does, and lessOrEquals/greaterOrEquals do not: depending on the type they either
-            /// reject a NaN row in both directions or put NULLs and NaNs at a fixed end whatever
-            /// nulls_direction says.
-            if (collator || data_type->isNullable() || hasEmptyTuple(data_type)
-                || hasFloatingPoint(data_type) || hasNestedNullable(data_type)
-                || (nulls_direction == -1 && hasTypeThatCanContainNulls(data_type))
-                || hasRuntimeTypedType(data_type))
+            /// `lessOrEquals` and `greaterOrEquals` do not place NaN by `nulls_direction` (a NaN scalar fails both,
+            /// a NaN inside an `Array` compares as greatest), so they would drop NaN rows that rank before the
+            /// threshold. The column comparison path places NaN the way the sort does.
+            if (collator || data_type->isNullable() || isDynamic(data_type) || isVariant(data_type) || hasEmptyTuple(data_type)
+                || hasTypeThatCanContainFloat(data_type) || hasNestedNullable(data_type))
                 return executeGeneral(arguments[0], current_threshold, data_type, input_rows_count);
 
             return executeVectorized(arguments[0], current_threshold, data_type, input_rows_count);

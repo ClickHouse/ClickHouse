@@ -53,26 +53,14 @@ bool hasTypeThatCanContainNulls(const DataTypePtr & type)
     return false;
 }
 
-namespace
-{
-
-bool isRuntimeTyped(const IDataType & type)
-{
-    WhichDataType which(type);
-    /// Object/JSON, Variant and Dynamic hold types the static type does not expose.
-    return which.isObject() || which.isVariant() || which.isDynamic();
-}
-
-}
-
 bool hasTypeThatCanContainFloat(const DataTypePtr & type)
 {
-    return anyInTypeTree(*type, [](const IDataType & node) { return WhichDataType(node).isFloat(); });
+    return anyInTypeTree(*type, [](const IDataType & node) { return isFloat(node); });
 }
 
 bool hasRuntimeTypedType(const DataTypePtr & type)
 {
-    return anyInTypeTree(*type, [](const IDataType & node) { return isRuntimeTyped(node); });
+    return anyInTypeTree(*type, [](const IDataType & node) { return isObject(node) || isVariant(node) || isDynamic(node); });
 }
 
 }

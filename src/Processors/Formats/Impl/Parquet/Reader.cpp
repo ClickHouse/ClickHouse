@@ -15,7 +15,7 @@
 #include <Columns/FilterDescription.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/TypeTree.h>
+#include <DataTypes/hasNullable.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/checkStackSize.h>
 #include <Formats/FormatFilterInfo.h>
@@ -422,8 +422,7 @@ std::optional<Range> Reader::getTopKSortColumnRange(const parq::RowGroup & meta)
         /// for NaN values, min and max should be ignored"), while `ORDER BY` sorts `nan` together
         /// with the NULLs. So, exactly like a chunk that may contain nulls, a floating-point chunk
         /// that may contain a `nan` is not bounded by its statistics and cannot be skipped by them.
-        bool can_contain_float = anyInTypeTree(*output_block_type_ptr, [](const IDataType & node) { return isFloat(node); });
-        if (can_contain_float)
+        if (hasTypeThatCanContainFloat(output_block_type_ptr))
             return std::nullopt;
 
         /// Parquet orders `UUID` statistics bytewise (parquet.thrift gives the `UUID` logical type
