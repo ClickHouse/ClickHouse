@@ -27,6 +27,8 @@ THERE_IS_NO_SESSION
 ACCESS_DENIED
 ACCESS_DENIED
 ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
 --- errors raised inside the interpreter before the main work are returned synchronously
 BAD_ARGUMENTS
 CANNOT_UPDATE_COLUMN
