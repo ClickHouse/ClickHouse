@@ -132,9 +132,10 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// know the name and has no block nested loop join: it rejects a join without equality keys by itself.
 /// Version 20 also registers the `MergeRuntimeFilters` step and adds the `join_runtime_filter_exact_bytes_limit`
 /// plan setting.
-/// Version 21 adds the `enable_join_in_memory_compression` and `join_in_memory_compression_min_bytes`
-/// join step settings. A peer below it does not know the names, so they are not written towards it,
-/// and it runs the join without in-memory compression.
+/// Version 21 adds the `min_bytes_before_external_group_by` plan setting, and the
+/// `enable_join_in_memory_compression` and `join_in_memory_compression_min_bytes` join step settings.
+/// A peer below it does not know the join names, so they are not written towards it, and it runs the
+/// join without in-memory compression.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -226,6 +227,7 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TO
 /// `join_in_memory_compression_min_bytes`. Below it, the names are not written: the older peer runs the
 /// join without in-memory compression, which changes only its memory usage, not the result.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_IN_MEMORY_COMPRESSION = 21;
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MIN_BYTES_BEFORE_EXTERNAL_GROUP_BY = 21;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.
