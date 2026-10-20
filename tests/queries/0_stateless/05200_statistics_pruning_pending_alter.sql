@@ -193,7 +193,7 @@ DROP TABLE IF EXISTS t_05200_done;
 CREATE TABLE t_05200_done (x UInt64 STATISTICS(basic), spare UInt64) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS index_granularity = 10;
 
-INSERT INTO t_05200_done SELECT number, number FROM numbers(10000);
+INSERT INTO t_05200_done SELECT number, number FROM numbers(10000) SETTINGS materialize_statistics_on_insert = 1;
 
 SELECT 'pruned by statistics before the drop', count() > 0
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_05200_done WHERE x = 20000 SETTINGS use_statistics_for_part_pruning = 1)
