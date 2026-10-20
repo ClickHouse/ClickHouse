@@ -75,6 +75,10 @@ String getLegacyAsynchronousMetricName(const String & metric, const String & key
 /// representation and/or removes the key-value one. Families with no legacy name are left as they are.
 void applyAsynchronousMetricsKeyValuesMode(AsynchronousMetricValues & values, AsynchronousMetricsKeyValuesMode mode);
 
+/// The frequency of every CPU core in MHz, keyed by the core number, read from the contents of `/proc/cpuinfo`.
+/// Lines that do not parse are skipped.
+AsynchronousMetricKeyValues readCPUFrequenciesFromProcCPUInfo(ReadBuffer & in);
+
 struct ProtocolServerMetrics
 {
     String port_name;
