@@ -1543,15 +1543,6 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                         throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                             "Column '{}' is participating in ORDER BY expression and can't be INTERPOLATE output", name);
 
-            auto find_target_column = [&](const String & column_name) -> const ActionsDAG::Node &
-            {
-                for (const auto * input_node : interpolate_actions_dag.getInputs())
-                    if (input_node->result_name == column_name)
-                        return *input_node;
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "INTERPOLATE target column {} is not present in the block {}",
-                    column_name, query_plan.getCurrentHeader()->dumpNames());
-            };
-
             /// A later item resolves names against every node of the DAG, so the conversions and outputs are added after all items are visited.
             std::vector<std::tuple<const ActionsDAG::Node *, DataTypePtr, String>> interpolated_columns;
 
@@ -1573,14 +1564,21 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
 
                 ColumnNodePtrWithHashSet empty_correlated_columns_set;
                 PlannerActionsVisitor planner_actions_visitor(planner_context, empty_correlated_columns_set);
+                auto [expression_to_interpolate_expression_nodes, expression_to_interpolate_correlated_subtrees] = planner_actions_visitor.visit(interpolate_actions_dag,
+                    interpolate_node_typed.getExpression());
+                expression_to_interpolate_correlated_subtrees.assertEmpty("in expression to interpolate");
+                if (expression_to_interpolate_expression_nodes.size() != 1)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression to interpolate expected to have single action node");
+
                 auto [interpolate_expression_nodes, interpolate_correlated_subtrees] = planner_actions_visitor.visit(interpolate_actions_dag,
                     interpolate_expression_node);
                 interpolate_correlated_subtrees.assertEmpty("in interpolate expression");
                 if (interpolate_expression_nodes.size() != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interpolate expression expected to have single action node");
 
+                const auto * expression_to_interpolate = expression_to_interpolate_expression_nodes[0];
                 const auto * interpolate_expression = interpolate_expression_nodes[0];
-                interpolated_columns.emplace_back(interpolate_expression, find_target_column(column_name).result_type, column_name);
+                interpolated_columns.emplace_back(interpolate_expression, expression_to_interpolate->result_type, column_name);
             }
 
             for (const auto & [interpolate_expression, target_type, target_name] : interpolated_columns)
