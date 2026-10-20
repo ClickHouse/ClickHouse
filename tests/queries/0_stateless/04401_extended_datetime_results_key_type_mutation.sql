@@ -195,6 +195,31 @@ SELECT count() FROM tck SETTINGS max_parallel_replicas = 2, allow_experimental_p
 
 DROP TABLE tck;
 
+-- Nor is a key rejected for what only a storage key may not have (a Variant result, a subquery): both
+-- offsets succeed and together read every row.
+DROP TABLE IF EXISTS tcv;
+CREATE TABLE tcv (x Variant(UInt32, UInt64), v UInt32) ENGINE = MergeTree() ORDER BY v SETTINGS allow_suspicious_variant_types = 1;
+INSERT INTO tcv SELECT toUInt32(number), toUInt32(number) FROM numbers(1, 4);
+
+SELECT arraySort(groupArray(v)) FROM tcv SETTINGS max_parallel_replicas = 2, allow_experimental_parallel_reading_from_replicas = 1,
+  parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'x',
+  parallel_replicas_count = 2, parallel_replica_offset = 0,
+  parallel_replicas_for_non_replicated_merge_tree = 0;
+SELECT arraySort(groupArray(v)) FROM tcv SETTINGS max_parallel_replicas = 2, allow_experimental_parallel_reading_from_replicas = 1,
+  parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'x',
+  parallel_replicas_count = 2, parallel_replica_offset = 1,
+  parallel_replicas_for_non_replicated_merge_tree = 0;
+SELECT arraySort(groupArray(v)) FROM tcv SETTINGS max_parallel_replicas = 2, allow_experimental_parallel_reading_from_replicas = 1,
+  parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'v + (SELECT 0)',
+  parallel_replicas_count = 2, parallel_replica_offset = 0,
+  parallel_replicas_for_non_replicated_merge_tree = 0;
+SELECT arraySort(groupArray(v)) FROM tcv SETTINGS max_parallel_replicas = 2, allow_experimental_parallel_reading_from_replicas = 1,
+  parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'v + (SELECT 0)',
+  parallel_replicas_count = 2, parallel_replica_offset = 1,
+  parallel_replicas_for_non_replicated_merge_tree = 0;
+
+DROP TABLE tcv;
+
 -- The same class of bug is reachable through every session setting that changes the RESULT TYPE of a
 -- key expression, not only enable_extended_results_for_datetime_functions / cast_keep_nullable. Five
 -- more such settings are neutralized in createKeyExpressionContext; each is exercised below with the

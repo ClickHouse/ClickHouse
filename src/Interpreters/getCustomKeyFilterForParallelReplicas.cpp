@@ -28,6 +28,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int INVALID_SETTING_VALUE;
     extern const int UNKNOWN_IDENTIFIER;
@@ -58,10 +59,11 @@ ASTPtr getCustomKeyFilterForParallelReplica(
         }
         catch (const Exception & e)
         {
-            /// A key that does not name its columns the way the column list does (a qualified `db.t.id`, an
-            /// alias column) is resolved later, against the table expression of the query. This filter needs
-            /// no type of its own, so such a key stays the analyzer's to resolve or to reject.
-            if (e.code() != ErrorCodes::UNKNOWN_IDENTIFIER)
+            /// getKeyFromAST also applies storage-key rules this filter does not need: physical column names only
+            /// (not `db.t.id` or an alias column), no subqueries, no Variant/Dynamic/JSON result. A key refused by
+            /// one of them is left to the analyzer to resolve or to reject.
+            if (e.code() != ErrorCodes::UNKNOWN_IDENTIFIER && e.code() != ErrorCodes::BAD_ARGUMENTS
+                && e.code() != ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY)
                 throw;
         }
 
