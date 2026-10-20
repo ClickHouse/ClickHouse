@@ -46,23 +46,26 @@ namespace FailPoints
 }
 namespace
 {
-    /// Covered by USER AUTHENTICATION permission.
-    /// Note, that new account mutation fields must be added here as well.
+    /// Keep new account-property fields here so both self-service privileges reject them.
+    bool hasAccountPropertyChanges(const ASTCreateUserQuery & query)
+    {
+        return query.new_name
+            || query.hosts || query.add_hosts || query.remove_hosts
+            || query.roles || query.default_roles
+            || query.settings || query.alter_settings
+            || query.grantees || query.default_database
+            || query.global_valid_until;
+    }
+
+    /// Whether the authentication changes are covered by `ALTER USER SELF AUTHENTICATION`.
     bool isAuthenticationOnlyAlter(const ASTCreateUserQuery & query)
     {
         if (!query.alter || query.attach)
             return false;
 
         /// Clause presence requires full `ALTER_USER`, including empty clauses and `NONE`.
-        if (query.new_name
-            || query.hosts || query.add_hosts || query.remove_hosts
-            || query.roles || query.default_roles
-            || query.settings || query.alter_settings
-            || query.grantees || query.default_database
-            || query.global_valid_until)
-        {
+        if (hasAccountPropertyChanges(query))
             return false;
-        }
 
         for (const auto & method : query.authentication_methods)
         {
@@ -342,8 +345,7 @@ namespace
         /// The user-level `VALID UNTIL` (`global_valid_until`) is rejected because it re-dates the
         /// pre-existing authentication methods of the account too. A deadline which belongs to the added
         /// method itself lives in `ASTAuthenticationData::valid_until` and is what `CREATE TOKEN` uses.
-        if (query.new_name || query.hosts || query.add_hosts || query.remove_hosts || query.roles || query.default_roles
-            || query.settings || query.alter_settings || query.grantees || query.default_database || query.global_valid_until)
+        if (hasAccountPropertyChanges(query))
             return false;
 
         const auto names = query.names->toStrings();
