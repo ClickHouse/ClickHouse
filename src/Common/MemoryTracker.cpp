@@ -1010,8 +1010,6 @@ void MemoryTracker::updateRSS(Int64 rss_)
 
 void MemoryTracker::updateAllocated(Int64 allocated_, bool log_change)
 {
-    /// Everything allocated and freed since the last tick went into `amount` and not into the
-    /// corrected value we replace it with, so carry that net change over to the plain counter.
     Int64 new_amount = 0;
     Int64 current_amount = 0;
     {
@@ -1026,6 +1024,8 @@ void MemoryTracker::updateAllocated(Int64 allocated_, bool log_change)
             ReadableSize(current_amount),
             ReadableSize(new_amount));
 
+    /// Everything allocated and freed since the last tick went into `amount` and not into the
+    /// corrected value we replace it with, so carry that net change over to the plain counter.
     total_memory_tracker.uncorrected_amount += (current_amount - total_memory_tracker.last_corrected_amount);
     total_memory_tracker.last_corrected_amount = new_amount;
     CurrentMetrics::set(CurrentMetrics::MemoryTrackingUncorrected, total_memory_tracker.uncorrected_amount);
