@@ -143,7 +143,7 @@ ch_cc_library(
         "cpp/**/*.hh",
         "include/**/*.h",
     ]),
-    copts = ([
+    copts = [
         "-w",
         "-std=gnu11",
         "-I",
@@ -151,9 +151,7 @@ ch_cc_library(
         "-I",
         "base",
         "-I",
-    ] + [
         "$(GENDIR)/bazel/gen/base",
-    ] + [
         "-I",
         repository_path("contrib/cctz") + "/include",
         "-I",
@@ -170,7 +168,7 @@ ch_cc_library(
         repository_path("contrib/crc32c") + "/include",
         "-I",
         repository_path("contrib/libarchive") + "/libarchive",
-    ]),
+    ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -246,7 +244,7 @@ ch_cc_library(
         "cpp/**/*.hh",
         "include/**/*.h",
     ]),
-    copts = ([
+    copts = [
         "-w",
         "-std=gnu11",
         "-include",
@@ -256,9 +254,7 @@ ch_cc_library(
         "-I",
         "base",
         "-I",
-    ] + [
         "$(GENDIR)/bazel/gen/base",
-    ] + [
         "-I",
         repository_path("contrib/cctz") + "/include",
         "-I",
@@ -275,7 +271,7 @@ ch_cc_library(
         repository_path("contrib/crc32c") + "/include",
         "-I",
         repository_path("contrib/libarchive") + "/libarchive",
-    ]),
+    ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,

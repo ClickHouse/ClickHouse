@@ -32,9 +32,6 @@ ch_cc_library(
         ".",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_raw_logging_internal",
         ":absl_spinlock_wait",
@@ -48,9 +45,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_base"],
 )
 
@@ -61,9 +55,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_base"],
 )
 
@@ -74,9 +65,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         "@clickhouse_llvm_project//:clang_rt_builtins",
         ":abseil_cpp_headers",
@@ -91,9 +79,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_cordz_info"],
 )
 
@@ -109,9 +94,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_crc_cord_state",
         ":absl_debugging_internal",
@@ -125,9 +107,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_exponential_biased",
         ":absl_raw_logging_internal",
@@ -141,9 +120,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_synchronization"],
 )
 
@@ -154,9 +130,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_cord_internal",
         ":absl_cordz_functions",
@@ -171,9 +144,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_cordz_info"],
 )
 
@@ -187,9 +157,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_crc_internal",
         ":absl_str_format_internal",
@@ -203,9 +170,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_crc32c"],
 )
 
@@ -217,9 +181,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_base_cpu_detect"],
 )
 
@@ -234,9 +195,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_raw_logging_internal"],
 )
 
@@ -248,9 +206,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_base"],
 )
 
@@ -261,9 +216,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_log_internal_conditions",
         ":absl_log_internal_message",
@@ -277,9 +229,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_stacktrace",
         ":absl_symbolize",
@@ -293,9 +242,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         "@clickhouse_llvm_project//:clang_rt_builtins",
         ":abseil_cpp_headers",
@@ -309,9 +255,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_examine_stack"],
 )
 
@@ -322,9 +265,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_flags_commandlineflag_internal",
         ":absl_strings",
@@ -338,9 +278,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         "@clickhouse_llvm_project//:clang_rt_builtins",
         ":abseil_cpp_headers",
@@ -354,9 +291,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_flags_program_name"],
 )
 
@@ -367,9 +301,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_flags_commandlineflag",
         ":absl_flags_config",
@@ -384,9 +315,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_str_format_internal"],
 )
 
@@ -397,9 +325,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_flags_usage"],
 )
 
@@ -410,9 +335,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_flags_commandlineflag"],
 )
 
@@ -423,9 +345,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_synchronization"],
 )
 
@@ -436,9 +355,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_cord",
         ":absl_flags_config",
@@ -454,9 +370,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_flags_usage_internal"],
 )
 
@@ -467,9 +380,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_flags_internal",
         ":absl_flags_reflection",
@@ -483,9 +393,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_malloc_internal"],
 )
 
@@ -496,9 +403,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         "@clickhouse_llvm_project//:clang_rt_builtins",
         ":abseil_cpp_headers",
@@ -512,9 +416,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_city",
         ":absl_strings",
@@ -529,9 +430,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_exponential_biased",
         ":absl_synchronization",
@@ -545,9 +443,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         "@clickhouse_llvm_project//:clang_rt_builtins",
         ":abseil_cpp_headers",
@@ -561,9 +456,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_time"],
 )
 
@@ -574,9 +466,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         "@clickhouse_llvm_project//:clang_rt_builtins",
         ":abseil_cpp_headers",
@@ -590,9 +479,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_flags_internal",
         ":absl_flags_reflection",
@@ -607,9 +493,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_hash",
         ":absl_vlog_config_internal",
@@ -623,9 +506,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_log_globals",
         ":absl_log_internal_globals",
@@ -639,9 +519,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_log_internal_message"],
 )
 
@@ -652,9 +529,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_base"],
 )
 
@@ -665,9 +539,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_strings"],
 )
 
@@ -678,9 +549,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_log_internal_globals",
         ":absl_str_format_internal",
@@ -694,9 +562,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_time"],
 )
 
@@ -707,9 +572,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_log_globals",
         ":absl_log_internal_globals",
@@ -724,9 +586,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_examine_stack",
         ":absl_leak_check",
@@ -745,9 +604,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         "@clickhouse_llvm_project//:clang_rt_builtins",
         ":abseil_cpp_headers",
@@ -761,9 +617,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_strings"],
 )
 
@@ -774,9 +627,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_log_internal_proto"],
 )
 
@@ -787,9 +637,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         "@clickhouse_llvm_project//:clang_rt_builtins",
         ":abseil_cpp_headers",
@@ -803,9 +650,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_time"],
 )
 
@@ -816,9 +660,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_base"],
 )
 
@@ -829,9 +670,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_exponential_biased"],
 )
 
@@ -843,9 +681,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_strings"],
 )
 
@@ -857,9 +692,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_str_format_internal"],
 )
 
@@ -870,9 +702,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_random_internal_randen",
         ":absl_random_internal_seed_material",
@@ -888,9 +717,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         "@clickhouse_llvm_project//:clang_rt_builtins",
         ":abseil_cpp_headers",
@@ -904,9 +730,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_random_internal_randen_hwaes",
         ":absl_random_internal_randen_slow",
@@ -920,9 +743,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_random_internal_randen_hwaes_impl"],
 )
 
@@ -933,9 +753,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_random_internal_platform"],
 )
 
@@ -946,9 +763,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_random_internal_platform"],
 )
 
@@ -959,9 +773,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_strings"],
 )
 
@@ -972,9 +783,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         "@clickhouse_llvm_project//:clang_rt_builtins",
         ":abseil_cpp_headers",
@@ -988,9 +796,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_random_internal_seed_material",
         ":absl_random_seed_gen_exception",
@@ -1004,9 +809,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_hash",
         ":absl_hashtablez_sampler",
@@ -1020,9 +822,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_log_severity"],
 )
 
@@ -1033,9 +832,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_raw_logging_internal"],
 )
 
@@ -1046,9 +842,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         "@clickhouse_llvm_project//:clang_rt_builtins",
         ":abseil_cpp_headers",
@@ -1069,9 +862,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_debugging_internal",
         ":absl_malloc_internal",
@@ -1087,9 +877,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_cord",
         ":absl_strerror",
@@ -1103,9 +890,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_status"],
 )
 
@@ -1121,9 +905,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_strings"],
 )
 
@@ -1134,9 +915,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         "@clickhouse_llvm_project//:clang_rt_builtins",
         ":abseil_cpp_headers",
@@ -1163,9 +941,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_hardening",
         ":absl_int128",
@@ -1183,9 +958,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_base"],
 )
 
@@ -1196,9 +968,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_debugging_internal",
         ":absl_demangle_internal",
@@ -1225,9 +994,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_graphcycles_internal",
         ":absl_kernel_timeout_internal",
@@ -1243,9 +1009,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":absl_raw_logging_internal"],
 )
 
@@ -1260,9 +1023,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_civil_time",
         ":absl_strings",
@@ -1285,9 +1045,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         "@clickhouse_llvm_project//:clang_rt_builtins",
         ":abseil_cpp_headers",
@@ -1301,9 +1058,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":absl_log_internal_fnmatch",
         ":absl_synchronization",

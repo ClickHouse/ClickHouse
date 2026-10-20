@@ -1056,8 +1056,6 @@ ch_cc_library(
         "config/contrib/google-cloud-cpp-cmake",
         repository_local_include("$(GENDIR)/bazel/gen/contrib/google-cloud-cpp-cmake", "contrib/google-cloud-cpp"),
     ],
-    textual_hdrs = [
-    ],
     deps = [
         ":google_cloud_cpp_common",
         ":google_cloud_cpp_iam_credentials_v1_iamcredentials_protos",

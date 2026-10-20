@@ -221,7 +221,6 @@ ch_cc_library(
     ],
     local_includes = [
         "../../../src",
-        "../..",
         "../../../bazel/gen/base",
         "../../pcg-random",
     ] + _GENERATED_LOCAL_INCLUDES_0,
@@ -374,7 +373,6 @@ ch_cc_library(
     ],
     local_includes = [
         "../../../src",
-        "../..",
         "../../../bazel/gen/base",
         "../../pcg-random",
     ] + _GENERATED_LOCAL_INCLUDES_0,

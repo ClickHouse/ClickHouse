@@ -53,10 +53,6 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
         "_poco_xml",
     ],
-    local_includes = [
-        "../../../" + "base/poco/XML/include",
-        "../../../" + "base/poco/Foundation/include",
-    ],
     deps = [
         "//src:clickhouse_common_io",
         ":poco_xml_headers",

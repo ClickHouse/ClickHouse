@@ -32,10 +32,6 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = [
-        "../../../" + "base/poco/Util/include",
-        "../../../" + "base/poco/JSON/include",
-        "../../../" + "base/poco/Foundation/include",
-        "../../../" + "base/poco/XML/include",
         "../../../" + "base/poco/Net/include",
     ],
     deps = [

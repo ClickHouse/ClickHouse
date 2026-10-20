@@ -790,7 +790,6 @@ ch_cc_library(
     copts = _GENERATED_COPTS_2,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
-        "include",
         ".",
         "third_party/address_sorting/include",
         "src/core/ext/upb-gen",
@@ -1027,8 +1026,6 @@ cc_binary(
         "-lpthread",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    local_includes = [
-    ],
     deps = [
         "@clickhouse_llvm_project//:clang_rt_builtins",
         "@clickhouse_llvm_project//:clang_rt_xray",

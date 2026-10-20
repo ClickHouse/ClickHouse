@@ -515,7 +515,12 @@ def source_globs(text, files, stats, examples, *, headers=False):
     for field, value, indent, rule_name in native_values(source, attributes, kinds):
         if field in fields:
             visit(value, indent, rule_name)
-    return source.rewrite(edits)
+    result = source.rewrite(edits)
+    if headers:
+        # Header globs are evaluated when the BUILD loads, including files
+        # where the header pass did not replace any literal list.
+        prove(text, result, files, {}, 'native header globs', stats, headers=True)
+    return result
 
 
 class Verify(ast.NodeTransformer):
@@ -529,6 +534,7 @@ class Verify(ast.NodeTransformer):
         self.attributes = HEADER_ATTRIBUTES if headers else ATTRIBUTES
         self.kinds = CC_COMPILERS if headers else NATIVE
         self.file_fields = {'srcs', 'hdrs', 'textual_hdrs'} if headers else {'srcs'}
+        self.check_header_globs = headers
         self.tu_counts = Counter()
         self.tu_rules = defaultdict(set)
         self.rules_verified = 0
@@ -605,8 +611,14 @@ class Verify(ast.NodeTransformer):
                     return node
                 if (excluded_dirs and isinstance(patterns, list) and isinstance(exclude, list)
                         and all(isinstance(p, str) for p in [*patterns, *exclude])):
-                    return ast.List(elts=[ast.Constant(p) for p in self.files.result(patterns, exclude)],
-                                    ctx=ast.Load())
+                    matched = self.files.result(patterns, exclude)
+                    if self.check_header_globs:
+                        allow_empty = ast.literal_eval(options['allow_empty']) if 'allow_empty' in options else False
+                        if not allow_empty:
+                            empty_patterns = [pattern for pattern in patterns if not self.files.matching(pattern)]
+                            if empty_patterns or not matched:
+                                raise ValueError('strict glob has no match: ' + repr(empty_patterns or patterns))
+                    return ast.List(elts=[ast.Constant(p) for p in matched], ctx=ast.Load())
         return node
 
 

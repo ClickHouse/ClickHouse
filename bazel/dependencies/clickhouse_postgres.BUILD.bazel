@@ -107,8 +107,6 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = [
-        "src/interfaces/libpq",
-        "src/include",
         repository_local_include("contrib/postgres-cmake", "contrib/postgres"),
     ],
     deps = [":postgres_headers"],

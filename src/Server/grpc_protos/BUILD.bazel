@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_path")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -86,19 +85,7 @@ ch_cc_library(
         "@platforms//cpu:x86_64": ["../../../" + "bazel/gen/x86_64/src/Server/grpc_protos"],
         "@platforms//cpu:aarch64": ["../../../" + "bazel/gen/aarch64/src/Server/grpc_protos"],
     }) + [
-        "../../../" + (repository_path("contrib/grpc") + "/include"),
-        "../../../" + repository_path("contrib/zlib-ng"),
-        "../../../" + (repository_path("contrib/zlib-ng") + "/config/contrib/zlib-ng-cmake"),
-    ] + [
-        "../../../" + repository_path("contrib/abseil-cpp"),
-        "../../../" + (repository_path("contrib/c-ares") + "/src/lib/include"),
-        "../../../" + (repository_path("contrib/c-ares") + "/src/lib"),
-        "../../../" + (repository_path("contrib/c-ares") + "/include"),
         "../../../" + "contrib/c-ares-cmake/linux",
-        "../../../" + "contrib/openssl-cmake/common/include",
-        "../../../" + (repository_path("contrib/openssl") + "/include"),
-        "../../../" + (repository_path("contrib/google-protobuf") + "/src"),
-        "../../../" + (repository_path("contrib/google-protobuf") + "/third_party/utf8_range"),
     ],
     textual_hdrs = select({
         "@platforms//cpu:x86_64": [

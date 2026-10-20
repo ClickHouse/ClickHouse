@@ -977,6 +977,8 @@ def main():
             after = source_globs(before, files, collections.Counter(), [], headers=True)
             if after != before:
                 path.write_text(format_and_prove(ROOT, before, after, str(path), files, {}, headers=True))
+    from initial_migration.native_include_deps import run as prune_native_include_deps
+    prune_native_include_deps(ROOT, write=True)
     format_build_files()
     # Factor formatted lists last: earlier normalization folds equal CPU
     # branches and would discard required no-match errors.

@@ -101,7 +101,6 @@ _GENERATED_LOCAL_DEFINES_0 = (select({
 ]
 
 _RDKAFKA_LOCAL_INCLUDES = [
-    "src",
     "config/contrib/librdkafka-cmake",
     repository_local_include(
         "$(GENDIR)/" + repository_path("contrib/zlib-ng") + "/config/contrib/zlib-ng-cmake",

@@ -206,12 +206,8 @@ ch_cc_library(
         "src/libmongoc/src",
         "config/contrib/mongo-c-driver/src/libmongoc/src",
         "src/libmongoc/src/mongoc",
-        "src/common/src",
         "src/utf8proc-2.11.3",
         "src/uthash",
-        "src/libbson/src",
-        "config/contrib/mongo-c-driver/src/libbson/src",
-        "config/contrib/mongo-c-driver/src/common/src",
     ],
     textual_hdrs = ["src/libmongoc/src/mongoc/mongoc-counters.defs"],
     deps = [

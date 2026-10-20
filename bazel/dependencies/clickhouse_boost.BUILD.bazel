@@ -41,9 +41,6 @@ ch_cc_library(
     ),
     llvm_headers = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = _GENERATED_DEPS_0 + [
         ":boost_headers",
     ],
@@ -78,9 +75,6 @@ ch_cc_library(
     language = "ASM",
     llvm_headers = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = _GENERATED_DEPS_0 + [
         ":boost_headers",
     ],
@@ -110,9 +104,6 @@ ch_cc_library(
         _BOOST_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":_boost_context"],
 )
 
@@ -130,9 +121,6 @@ ch_cc_library(
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
-    local_includes = [
-        ".",
     ],
     deps = [
         ":boost_headers",
@@ -154,9 +142,6 @@ ch_cc_library(
         _BOOST_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [":_boost_regex"],
 )
 
@@ -241,9 +226,6 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":boost_headers",
         "@clickhouse_zlib_ng//:_zlib",
@@ -261,9 +243,6 @@ ch_cc_library(
         "-std=c++23",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":boost_headers",
         "@clickhouse_llvm_project//:clang_rt_builtins",
@@ -285,9 +264,6 @@ ch_cc_library(
         _BOOST_COPTS
     ),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        ".",
-    ],
     deps = [
         ":boost_headers",
         "@clickhouse_llvm_project//:clang_rt_builtins",
