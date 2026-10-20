@@ -490,7 +490,7 @@ std::shared_ptr<QueryIdHolder> ReadFromMergeTree::AnalysisResult::checkLimits(
     auto max_partitions_to_read = getMaxPartitionsToRead(settings, data_settings_);
     /// Without its own analysis a follower would count parts that the coordinator never assigns to it.
     /// The initiator checks the limit on the coordinator's analysis.
-    if (max_partitions_to_read > 0 && !index_analysis_on_coordinator)
+    if (max_partitions_to_read > 0 && !index_analysis_was_already_done_on_initiator)
     {
         std::set<String> partitions;
         for (const auto & part_with_ranges : parts_with_ranges)
@@ -3740,7 +3740,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         // Skip index analysis and return parts with all marks
         // The coordinator will choose ranges to read for workers based on index analysis on its side
         result.parts_with_ranges = std::move(res_parts);
-        result.index_analysis_on_coordinator = true;
+        result.index_analysis_was_already_done_on_initiator = true;
         result.key_condition_not_applied = indexes->key_condition;
     }
     else
