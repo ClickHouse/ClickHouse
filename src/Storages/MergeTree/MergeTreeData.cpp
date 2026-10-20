@@ -10573,6 +10573,15 @@ static bool isVariantOrDynamic(const DataTypePtr & type)
     return type && (isVariant(type) || isDynamic(type));
 }
 
+/// The active type of a `Variant` or `Dynamic` value nested in the active value of another one is not recovered,
+/// and without it the value can be converted to the partition key with the wrong layout (e.g. `UUID` for `UUID2`).
+[[noreturn]] static void throwNestedVariantOrDynamicPartitionValue(const ASTPtr & partition_value_ast)
+{
+    throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+        "Partition value {} has a Variant or Dynamic value nested in another Variant or Dynamic value, which is not supported",
+        partition_value_ast->formatForErrorMessage());
+}
+
 /// Converts one field of a partition value to the type of the partition key column.
 ///
 /// Text parsing of the date and time types is lenient: a day or a time of day that does not exist rolls over
@@ -10855,6 +10864,12 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         /// `Field` representation but a different value layout, e.g. a typed `UUID` constant targeting a `UUID2` key.
         auto [partition_key_value, partition_key_value_type] = evaluateConstantExpression(partition_value_ast, local_context);
 
+        /// A `Variant` or `Dynamic` constant carries its active value under the declared type, so recover the active
+        /// type first: it can be a tuple (e.g. `Variant(Tuple(UUID2), String)`) whose element types are needed below.
+        const bool value_is_in_carrier = isVariantOrDynamic(partition_key_value_type);
+        if (value_is_in_carrier)
+            partition_key_value_type = getActiveTypeOfPartitionValue(evaluateConstantExpressionAsColumn(partition_value_ast, local_context), {});
+
         /// A cast of a one-element tuple (e.g. a substituted query parameter of type `Tuple(T)`)
         /// evaluates to a tuple; unwrap it, unless the partition key column itself is a tuple.
         if (partition_key_value.getType() == Field::Types::Tuple && !isTuple(key_sample_block.getByPosition(0).type))
@@ -10868,11 +10883,11 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
             const auto * tuple_type = typeid_cast<const DataTypeTuple *>(partition_key_value_type.get());
             partition_key_value_type = (tuple_type && tuple_type->getElements().size() == 1) ? tuple_type->getElements()[0] : nullptr;
             if (isVariantOrDynamic(partition_key_value_type))
+            {
+                if (value_is_in_carrier)
+                    throwNestedVariantOrDynamicPartitionValue(partition_value_ast);
                 partition_key_value_type = getActiveTypeOfPartitionValue(evaluateConstantExpressionAsColumn(partition_value_ast, local_context), 0);
-        }
-        else if (isVariantOrDynamic(partition_key_value_type))
-        {
-            partition_key_value_type = getActiveTypeOfPartitionValue(evaluateConstantExpressionAsColumn(partition_value_ast, local_context), {});
+            }
         }
 
         partition_row[0] = convertPartitionFieldToType(partition_key_value, key_sample_block.getByPosition(0).type, partition_key_value_type.get());
@@ -10881,6 +10896,10 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     {
         /// Complex key, need to evaluate, untuple and cast
         auto [partition_key_value, partition_key_value_type] = evaluateConstantExpression(partition_value_ast, local_context);
+        /// The same for a whole tuple carried by a `Variant` or `Dynamic` constant.
+        const bool value_is_in_carrier = isVariantOrDynamic(partition_key_value_type);
+        if (value_is_in_carrier)
+            partition_key_value_type = getActiveTypeOfPartitionValue(evaluateConstantExpressionAsColumn(partition_value_ast, local_context), {});
         if (partition_key_value.getType() != Field::Types::Tuple)
             throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
                             "Expected tuple for complex partition key, got {}", partition_key_value.getTypeName());
@@ -10902,6 +10921,8 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
             DataTypePtr element_type = tuple_type ? tuple_type->getElements()[i] : nullptr;
             if (isVariantOrDynamic(element_type))
             {
+                if (value_is_in_carrier)
+                    throwNestedVariantOrDynamicPartitionValue(partition_value_ast);
                 if (!partition_key_column)
                     partition_key_column.emplace(evaluateConstantExpressionAsColumn(partition_value_ast, local_context));
                 element_type = getActiveTypeOfPartitionValue(*partition_key_column, i);

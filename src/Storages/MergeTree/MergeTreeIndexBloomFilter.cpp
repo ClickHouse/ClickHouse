@@ -1245,7 +1245,15 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 return true;
             }
 
-            auto converted_field = convertFieldToType(value_field, *actual_type, removeNullable(removeLowCardinality(value_type)).get());
+            /// A `Variant` or `Dynamic` constant carries its active value under the declared type, so the layout of
+            /// a `UUID` / `UUID2` value is unknown: hashing the other layout could skip matching granules.
+            const auto value_type_decayed = removeNullable(removeLowCardinality(value_type));
+            const auto actual_type_decayed = removeNullable(removeLowCardinality(actual_type));
+            if ((isVariant(value_type_decayed) || isDynamic(value_type_decayed))
+                && (isUUID(actual_type_decayed) || isUUID2(actual_type_decayed)))
+                return false;
+
+            auto converted_field = convertFieldToType(value_field, *actual_type, value_type_decayed.get());
             if (converted_field.isNull())
                 return false;
 

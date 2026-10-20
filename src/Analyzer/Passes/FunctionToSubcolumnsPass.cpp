@@ -422,6 +422,9 @@ void optimizeFunctionArrayElementForMap(QueryTreeNodePtr & node, FunctionNode & 
     const auto constant_type_decayed = removeNullable(removeLowCardinality(second_argument_constant_node->getResultType()));
     if ((isUUID(key_type_decayed) && isUUID2(constant_type_decayed)) || (isUUID2(key_type_decayed) && isUUID(constant_type_decayed)))
         key_value = convertFieldToType(key_value, *key_type_decayed, constant_type_decayed.get());
+    /// A `Variant` or `Dynamic` constant carries its active value under the declared type, so its layout is unknown.
+    if ((isUUID(key_type_decayed) || isUUID2(key_type_decayed)) && (isVariant(constant_type_decayed) || isDynamic(constant_type_decayed)))
+        return;
 
     if (isEnum(key_type))
     {
