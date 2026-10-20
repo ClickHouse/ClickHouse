@@ -163,8 +163,8 @@ def test_on_cluster_unique_replication_consumer(started_cluster):
     cursor.execute(f"DELETE FROM {table} WHERE key >= 40 AND key < 50")
     check_tables_are_synchronized(node1, table)
     check_tables_are_synchronized(node2, table)
-    assert 1040 == int(node1.query(f"SELECT count() FROM test_database.{table}"))
-    assert 1040 == int(node2.query(f"SELECT count() FROM test_database.{table}"))
+    assert 1040 == int(node1.query(f"SELECT count() FROM (SELECT * FROM test_database.{table})"))
+    assert 1040 == int(node2.query(f"SELECT count() FROM (SELECT * FROM test_database.{table})"))
     assert slots == get_replication_slots()
 
     # Dropping the database on the cluster removes both per-replica slots and publications.
