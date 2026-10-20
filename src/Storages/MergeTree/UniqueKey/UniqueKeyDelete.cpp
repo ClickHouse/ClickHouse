@@ -4,15 +4,16 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/misc.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -58,6 +59,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int TIMEOUT_EXCEEDED;
 }
 
@@ -102,40 +104,23 @@ std::vector<String> partitionsToVisit(const MergeTreeData & storage, const ASTDe
     return {partition_ids->begin(), partition_ids->end()};
 }
 
-/// A limit in `break` or `any` mode ends a predicate subquery early without an error, and an incomplete set
-/// under `NOT IN` matches rows it should not. The scan makes every such limit throw instead.
-const Strings & overflowModeSettings()
+/// The predicate reads only the deleted table: a subquery, or a table on the right of `IN`, brings in SQL with its
+/// own settings, whose limits could end it early and leave a `NOT IN` set incomplete.
+void throwIfPredicateReadsTables(const IAST & ast)
 {
-    static const Strings names = []
-    {
-        Strings result;
-        for (const auto name : Settings().getAllRegisteredNames())
-            if (name.ends_with("_overflow_mode") || name.ends_with("_overflow_mode_leaf"))
-                result.emplace_back(name);
-        return result;
-    }();
-    return names;
-}
+    if (ast.as<ASTSubquery>())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "DELETE on a UNIQUE KEY table does not support subqueries");
 
-/// The `SETTINGS` of the predicate's own subqueries override the scan context's. Appended last, so a `profile`
-/// earlier in the same clause cannot bring a `break` mode back. A table function's `SETTINGS` are its own.
-void makeOverflowModesThrow(IAST & ast)
-{
-    ASTPtr settings;
-    if (const auto * select = ast.as<ASTSelectQuery>())
-        settings = select->settings();
-    else if (const auto * select_with_union = ast.as<ASTSelectWithUnionQuery>())
-        settings = select_with_union->settings_ast;
-
-    if (settings)
+    if (const auto * function = ast.as<ASTFunction>();
+        function && functionIsInOrGlobalInOperator(function->name) && function->arguments && function->arguments->children.size() == 2)
     {
-        auto & changes = settings->as<ASTSetQuery &>().changes;
-        changes.removeSettings(overflowModeSettings());
-        for (const auto & name : overflowModeSettings())
-            changes.emplace_back(name, Field("throw"));
+        const auto & rhs = function->arguments->children[1];
+        if (rhs->as<ASTIdentifier>() || rhs->as<ASTTableIdentifier>())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "DELETE on a UNIQUE KEY table does not support a table on the right of `{}`", function->name);
     }
+
     for (const auto & child : ast.children)
-        makeOverflowModesThrow(*child);
+        throwIfPredicateReadsTables(*child);
 }
 
 /// `READ_COLUMN _part, _part_offset` plus an `UPDATE _row_exists = 0 IN PARTITION ID ... WHERE <predicate>`
@@ -171,9 +156,7 @@ MutationCommands scanCommands(
     alter->type = ASTAlterCommand::UPDATE;
     alter->update_assignments = alter->children.emplace_back(std::move(assignments)).get();
     alter->partition = alter->children.emplace_back(std::move(partition)).get();
-    auto predicate = query.predicate->clone();
-    makeOverflowModesThrow(*predicate);
-    alter->predicate = alter->children.emplace_back(std::move(predicate)).get();
+    alter->predicate = alter->children.emplace_back(query.predicate->clone()).get();
 
     const auto & settings = context->getSettingsRef();
     commands.push_back(*MutationCommand::parse(
@@ -210,8 +193,7 @@ struct DeleteStatement
     const LoggerPtr log;
 
     /// The rows of one partition the predicate matches at `txn`'s snapshot. Scanned like a lightweight
-    /// update: the storage is read directly, so only `ALTER DELETE` is checked, and the predicate's own
-    /// subqueries still check `SELECT` on what they read.
+    /// update: the storage is read directly, so only `ALTER DELETE` is checked.
     DeleteRowsByPart findRowsInPartition(const MergeTreeTransactionPtr & txn, const String & partition_id) const
     {
         auto scan_context = Context::createCopy(query_context);
@@ -221,8 +203,6 @@ struct DeleteStatement
         /// The DELETE ignores the query's read limits; in `throw` mode the scan's index analysis would check them.
         for (const auto * name : {"max_rows_to_read", "max_bytes_to_read", "max_rows_to_read_leaf", "max_bytes_to_read_leaf"})
             scan_context->setSetting(name, Field(UInt64(0)));
-        for (const auto & name : overflowModeSettings())
-            scan_context->setSetting(name, Field("throw"));
 
         MutationsInterpreter::Settings settings(/*can_execute_=*/true);
         settings.return_mutated_rows = true;
@@ -309,6 +289,8 @@ void StorageMergeTree::deleteByUniqueKey(const ASTPtr & query_ptr, ContextPtr qu
     throwIfInsideTransaction(query_context->getCurrentTransaction(), "DELETE");
 
     const auto & query = query_ptr->as<ASTDeleteQuery &>();
+    throwIfPredicateReadsTables(*query.predicate);
+
     const DeleteStatement statement{
         .storage = *this,
         .query = query,

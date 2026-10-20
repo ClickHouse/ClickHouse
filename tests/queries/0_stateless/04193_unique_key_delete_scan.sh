@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-ordinary-database, no-replicated-database, no-shared-merge-tree
 # UNIQUE KEY DELETE: what its scan reads, with whose rights, and that it never stops early.
-#   1. rights: `ALTER DELETE` alone is enough, a subquery on an unreadable table is still refused
+#   1. rights: `ALTER DELETE` alone is enough
 #   2. IN PARTITION: only the named partitions lose rows
 #   3. snapshot: a row already dead is neither matched nor counted again
 #   4. skip index: the scan drops granules by the table's skip index, like a plain read
 #   5. read limit: under break-mode `max_rows_to_read`, every matching row still dies
 #   6. time limit: a soft timeout fails the DELETE instead of committing part of it
-#   7. database: an unqualified table in the predicate is read from the deleted table's database
-#   8. CTE: a CTE in the predicate is read, not a table of the same name
-#   9. subquery limit: a break-mode limit never truncates a predicate subquery
+#   7. simple predicate: one that reads another table is refused
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -18,14 +16,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --enable_unique_key 1 --optimize_trivial_count_query 0 --optimize_use_implicit_projections 0"
 USER="u_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
-# 1. rights: red if the scan checks `SELECT` on the table (`delete_without_select` fails), or
-# lets the predicate read a table the user cannot (`subquery_refused 0`).
+# 1. rights: red if the scan checks `SELECT` on the table (`delete_without_select` fails).
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS uk_rights"
-$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS uk_secret"
 $CLICKHOUSE_CLIENT --query "CREATE TABLE uk_rights (id UInt64) ENGINE = MergeTree ORDER BY id UNIQUE KEY (id)"
-$CLICKHOUSE_CLIENT --query "CREATE TABLE uk_secret (id UInt64) ENGINE = MergeTree ORDER BY id"
 $CLICKHOUSE_CLIENT --query "INSERT INTO uk_rights SELECT number FROM numbers(10)"
-$CLICKHOUSE_CLIENT --query "INSERT INTO uk_secret VALUES (7)"
 
 $CLICKHOUSE_CLIENT --query "DROP USER IF EXISTS $USER"
 $CLICKHOUSE_CLIENT --query "CREATE USER $USER IDENTIFIED WITH no_password"
@@ -33,14 +27,10 @@ $CLICKHOUSE_CLIENT --query "GRANT ALTER DELETE ON ${CLICKHOUSE_DATABASE}.uk_righ
 
 $CLICKHOUSE_CLIENT --user "$USER" --query "DELETE FROM ${CLICKHOUSE_DATABASE}.uk_rights WHERE id < 3" \
     && echo "delete_without_select 1" || echo "delete_without_select 0"
-$CLICKHOUSE_CLIENT --user "$USER" --query "
-    DELETE FROM ${CLICKHOUSE_DATABASE}.uk_rights WHERE id IN (SELECT id FROM ${CLICKHOUSE_DATABASE}.uk_secret)
-" 2>&1 | grep -q "ACCESS_DENIED" && echo "subquery_refused 1" || echo "subquery_refused 0"
 $CLICKHOUSE_CLIENT --query "SELECT 'rights_survivors', groupArray(id) FROM (SELECT id FROM uk_rights ORDER BY id)"
 
 $CLICKHOUSE_CLIENT --query "DROP USER $USER"
 $CLICKHOUSE_CLIENT --query "DROP TABLE uk_rights"
-$CLICKHOUSE_CLIENT --query "DROP TABLE uk_secret"
 
 # 2. IN PARTITION: red if the clause is refused, or ignored so the other partitions lose rows too.
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS uk_in_partition"
@@ -151,75 +141,25 @@ $CLICKHOUSE_CLIENT --query "SELECT 'time_after_timeout', count() FROM uk_del_tim
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE uk_del_timelimit"
 
-# 7. database: red if an unqualified table in the predicate is read from the session's database instead
-# of the deleted table's, so id 1 dies (`db_survivors 2`).
-OTHER_DB="${CLICKHOUSE_DATABASE}_other"
-$CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS ${OTHER_DB}"
-$CLICKHOUSE_CLIENT --query "CREATE DATABASE ${OTHER_DB}"
-$CLICKHOUSE_CLIENT --query "CREATE TABLE ${OTHER_DB}.uk_keys (id UInt64) ENGINE = MergeTree ORDER BY id"
-$CLICKHOUSE_CLIENT --query "CREATE TABLE uk_keys (id UInt64) ENGINE = MergeTree ORDER BY id"
-$CLICKHOUSE_CLIENT --query "CREATE TABLE uk_del_db (id UInt64) ENGINE = MergeTree ORDER BY id UNIQUE KEY (id)"
-$CLICKHOUSE_CLIENT --query "INSERT INTO ${OTHER_DB}.uk_keys VALUES (1)"
-$CLICKHOUSE_CLIENT --query "INSERT INTO uk_keys VALUES (2)"
-$CLICKHOUSE_CLIENT --query "INSERT INTO uk_del_db VALUES (1), (2)"
+# 7. simple predicate: red if a predicate reading another table runs (`refused ... 0`, rows die).
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS uk_del_simple"
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS uk_simple_keys"
+$CLICKHOUSE_CLIENT --query "CREATE TABLE uk_del_simple (id UInt64) ENGINE = MergeTree ORDER BY id UNIQUE KEY (id)"
+$CLICKHOUSE_CLIENT --query "CREATE TABLE uk_simple_keys (id UInt64) ENGINE = MergeTree ORDER BY id"
+$CLICKHOUSE_CLIENT --query "INSERT INTO uk_del_simple SELECT number FROM numbers(100)"
+$CLICKHOUSE_CLIENT --query "INSERT INTO uk_simple_keys VALUES (1)"
 
-$CLICKHOUSE_CLIENT --query "USE ${OTHER_DB}; DELETE FROM ${CLICKHOUSE_DATABASE}.uk_del_db WHERE id IN (SELECT id FROM uk_keys)"
-$CLICKHOUSE_CLIENT --query "SELECT 'db_survivors', id FROM uk_del_db ORDER BY id"
+for case in \
+    "in_subquery:id IN (SELECT id FROM uk_simple_keys)" \
+    "in_table:id IN uk_simple_keys" \
+    "scalar_subquery:id = (SELECT max(id) FROM uk_simple_keys)" \
+    "exists:EXISTS (SELECT 1 FROM uk_simple_keys)"
+do
+    $CLICKHOUSE_CLIENT --query "DELETE FROM uk_del_simple WHERE ${case#*:}" 2>&1 \
+        | grep -q "SUPPORT_IS_DISABLED" && echo "refused ${case%%:*} 1" || echo "refused ${case%%:*} 0"
+done
 
-$CLICKHOUSE_CLIENT --query "DROP TABLE uk_del_db"
-$CLICKHOUSE_CLIENT --query "DROP TABLE uk_keys"
-$CLICKHOUSE_CLIENT --query "DROP DATABASE ${OTHER_DB}"
+$CLICKHOUSE_CLIENT --query "SELECT 'simple_survivors', count() FROM uk_del_simple"
 
-# 8. CTE: red if the predicate reads the physical `uk_cte_keys` instead of the CTE of that name,
-# so id 2 dies (`cte_survivors 1`).
-$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS uk_del_cte"
-$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS uk_cte_keys"
-$CLICKHOUSE_CLIENT --query "CREATE TABLE uk_del_cte (id UInt64) ENGINE = MergeTree ORDER BY id UNIQUE KEY (id)"
-$CLICKHOUSE_CLIENT --query "CREATE TABLE uk_cte_keys (id UInt64) ENGINE = MergeTree ORDER BY id"
-$CLICKHOUSE_CLIENT --query "INSERT INTO uk_del_cte VALUES (1), (2)"
-$CLICKHOUSE_CLIENT --query "INSERT INTO uk_cte_keys VALUES (2)"
-
-$CLICKHOUSE_CLIENT --query "DELETE FROM uk_del_cte WHERE id IN (WITH uk_cte_keys AS (SELECT toUInt64(1) AS id) SELECT id FROM uk_cte_keys)"
-$CLICKHOUSE_CLIENT --query "SELECT 'cte_survivors', id FROM uk_del_cte ORDER BY id"
-
-$CLICKHOUSE_CLIENT --query "DROP TABLE uk_del_cte"
-$CLICKHOUSE_CLIENT --query "DROP TABLE uk_cte_keys"
-
-# 9. subquery limit: red if the subquery stops at the limit and `NOT IN` takes its partial set, so every row
-# but one dies: a read limit and a set limit on the DELETE, then a read limit in the subquery's own `SETTINGS`.
-$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS uk_del_notin"
-$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS uk_notin_keys"
-$CLICKHOUSE_CLIENT --query "CREATE TABLE uk_del_notin (id UInt64) ENGINE = MergeTree ORDER BY id UNIQUE KEY (id)"
-$CLICKHOUSE_CLIENT --query "CREATE TABLE uk_notin_keys (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1"
-$CLICKHOUSE_CLIENT --query "INSERT INTO uk_del_notin SELECT number FROM numbers(100)"
-$CLICKHOUSE_CLIENT --query "INSERT INTO uk_notin_keys SELECT number FROM numbers(100)"
-
-$CLICKHOUSE_CLIENT --max_rows_to_read 1 --read_overflow_mode break --max_block_size 1 --max_threads 1 \
-    --use_query_cache 0 --use_query_condition_cache 0 --use_index_for_in_with_subqueries 0 \
-    --query "DELETE FROM uk_del_notin WHERE id NOT IN (SELECT id FROM uk_notin_keys)"
-$CLICKHOUSE_CLIENT --query "SELECT 'read_limit_subquery_survivors', count() FROM uk_del_notin"
-
-$CLICKHOUSE_CLIENT --query "INSERT INTO uk_del_notin SELECT number FROM numbers(100)"
-$CLICKHOUSE_CLIENT --max_rows_in_set 1 --set_overflow_mode break --max_block_size 1 --max_threads 1 \
-    --use_query_cache 0 --use_query_condition_cache 0 --use_index_for_in_with_subqueries 0 \
-    --query "DELETE FROM uk_del_notin WHERE id NOT IN (SELECT id FROM uk_notin_keys)" 2>&1 \
-    | grep -q "SET_SIZE_LIMIT_EXCEEDED" && echo "set_limit_fails_delete 1" || echo "set_limit_fails_delete 0"
-$CLICKHOUSE_CLIENT --query "SELECT 'set_limit_subquery_survivors', count() FROM uk_del_notin"
-
-$CLICKHOUSE_CLIENT --query "INSERT INTO uk_del_notin SELECT number FROM numbers(100)"
-$CLICKHOUSE_CLIENT --query "
-    DELETE FROM uk_del_notin WHERE id NOT IN (
-        SELECT id FROM uk_notin_keys
-        SETTINGS max_rows_to_read = 1, read_overflow_mode = 'break', max_block_size = 1, max_threads = 1,
-                 use_query_condition_cache = 0, use_index_for_in_with_subqueries = 0)" 2>&1 \
-    | grep -q "TOO_MANY_ROWS" && echo "inner_limit_fails_delete 1" || echo "inner_limit_fails_delete 0"
-$CLICKHOUSE_CLIENT --query "SELECT 'inner_limit_subquery_survivors', count() FROM uk_del_notin"
-
-# A table function's own `SETTINGS` are not query settings and stay untouched.
-$CLICKHOUSE_CLIENT --query "
-    DELETE FROM uk_del_notin WHERE id IN (
-        SELECT 1000 + a FROM generateRandom('a UInt8', 1, 10, 2, SETTINGS null_ratio = 0) LIMIT 3)"
-$CLICKHOUSE_CLIENT --query "SELECT 'table_function_settings_survivors', count() FROM uk_del_notin"
-
-$CLICKHOUSE_CLIENT --query "DROP TABLE uk_del_notin"
-$CLICKHOUSE_CLIENT --query "DROP TABLE uk_notin_keys"
+$CLICKHOUSE_CLIENT --query "DROP TABLE uk_del_simple"
+$CLICKHOUSE_CLIENT --query "DROP TABLE uk_simple_keys"

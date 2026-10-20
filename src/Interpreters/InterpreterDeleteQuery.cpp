@@ -10,10 +10,8 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/ExpandedASTBudget.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterUpdateQuery.h>
@@ -42,7 +40,6 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsLightweightDeleteMode lightweight_delete_mode;
     extern const SettingsBool enable_lightweight_update;
-    extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
 }
@@ -138,14 +135,6 @@ BlockIO InterpreterDeleteQuery::execute()
     {
         if (!delete_query.cluster.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "DELETE ... ON CLUSTER is not supported on UNIQUE KEY tables");
-
-        /// The scan runs in the session's context, so qualify the predicate's tables with the deleted table's database.
-        /// CTEs are expanded first so a CTE name is not qualified as a table.
-        auto & predicate = query_ptr->as<ASTDeleteQuery &>().predicate;
-        ExpandedASTBudget expansion_budget(settings[Setting::max_expanded_ast_elements], *query_ptr);
-        ApplyWithSubqueryVisitor::visit(predicate, getContext(), expansion_budget);
-        AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
-        visitor.visit(predicate);
 
         /// A lazy stand-in neither forwards `deleteByUniqueKey` nor shares its lock with the loaded table.
         auto resolved_table_lock = resolved_table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
