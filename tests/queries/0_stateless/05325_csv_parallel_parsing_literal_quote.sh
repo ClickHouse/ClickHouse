@@ -33,15 +33,20 @@ do
     ${CLICKHOUSE_CLIENT} -q "SELECT 'count_after_space', ${parallel}, count() FROM file('${unique_name}/quoted_after_space.csv', 'CSV', 'a String, b String') SETTINGS input_format_parallel_parsing = ${parallel}, ${SETTINGS}"
 done
 
-# With `input_format_csv_allow_whitespace_or_tab_as_delimiter = 1` spaces are not skipped before a field,
-# so `, "x` is an unquoted field starting with a space and the `"` is a literal character.
-printf 'a, "x\nb,y\n' > "${tmp_dir}/ws_delimiter_literal_quote.csv"
-WS_SETTINGS="input_format_csv_allow_whitespace_or_tab_as_delimiter = 1, ${SETTINGS}"
+
+# Spaces before a quoted field are skipped by the parser for non-string columns even with trimming disabled,
+# and a field may start with a single quote when `format_csv_allow_single_quotes` is enabled.
+printf ' "[1,\n2,\n3,\n4]"\n' > "${tmp_dir}/array_after_space.csv"
+printf "'\"x\ny\nz\nw\"'\n" > "${tmp_dir}/single_quoted.csv"
+ARR_SETTINGS="input_format_csv_trim_whitespaces = 0, use_cache_for_count_from_files = 0, ${SETTINGS}"
+SQ_SETTINGS="format_csv_allow_single_quotes = 1, use_cache_for_count_from_files = 0, ${SETTINGS}"
 
 for parallel in 0 1
 do
-    ${CLICKHOUSE_CLIENT} -q "SELECT 'ws_literal_quote', ${parallel}, a, b FROM file('${unique_name}/ws_delimiter_literal_quote.csv', 'CSV', 'a String, b String') ORDER BY a SETTINGS input_format_parallel_parsing = ${parallel}, ${WS_SETTINGS}"
-    ${CLICKHOUSE_CLIENT} -q "SELECT 'count_ws_literal_quote', ${parallel}, count() FROM file('${unique_name}/ws_delimiter_literal_quote.csv', 'CSV', 'a String, b String') SETTINGS input_format_parallel_parsing = ${parallel}, ${WS_SETTINGS}"
+    ${CLICKHOUSE_CLIENT} -q "SELECT 'array_after_space', ${parallel}, s FROM file('${unique_name}/array_after_space.csv', 'CSV', 's Array(UInt8)') SETTINGS input_format_parallel_parsing = ${parallel}, ${ARR_SETTINGS}"
+    ${CLICKHOUSE_CLIENT} -q "SELECT 'single_quoted', ${parallel}, s FROM file('${unique_name}/single_quoted.csv', 'CSV', 's String') SETTINGS input_format_parallel_parsing = ${parallel}, ${SQ_SETTINGS}"
+    ${CLICKHOUSE_CLIENT} -q "SELECT 'count_array_after_space', ${parallel}, count() FROM file('${unique_name}/array_after_space.csv', 'CSV', 's Array(UInt8)') SETTINGS input_format_parallel_parsing = ${parallel}, ${ARR_SETTINGS}"
+    ${CLICKHOUSE_CLIENT} -q "SELECT 'count_single_quoted', ${parallel}, count() FROM file('${unique_name}/single_quoted.csv', 'CSV', 's String') SETTINGS input_format_parallel_parsing = ${parallel}, ${SQ_SETTINGS}"
 done
 
 rm -rf "${tmp_dir:?}"

@@ -161,12 +161,15 @@ void CSVFormatReader::skipRow()
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
 
             /// The last non-whitespace byte skipped above tells whether the next `"` starts a field.
+            /// Spaces and tabs are always skipped: whether the parser skips them depends on the column type,
+            /// which is unknown here, so treating a `"` after them as a quote start keeps the old behaviour.
             for (const char * p = pos; p > span_start; --p)
             {
                 char c = *(p - 1);
-                if (c != format_settings.csv.delimiter && format_settings.csv.trim_whitespaces && !format_settings.csv.allow_whitespace_or_tab_as_delimiter && (c == ' ' || c == '\t'))
+                if (c != format_settings.csv.delimiter && (c == ' ' || c == '\t'))
                     continue;
-                at_field_start = (c == format_settings.csv.delimiter);
+                at_field_start = (c == format_settings.csv.delimiter || c == format_settings.csv.tuple_delimiter
+                                  || (format_settings.csv.allow_single_quotes && c == '\''));
                 break;
             }
 
@@ -882,12 +885,15 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
 
             /// The last non-whitespace byte skipped above tells whether the next `"` starts a field.
+            /// Spaces and tabs are always skipped: whether the parser skips them depends on the column type,
+            /// which is unknown here, so treating a `"` after them as a quote start keeps the old behaviour.
             for (const char * p = pos; p > span_start; --p)
             {
                 char c = *(p - 1);
-                if (c != settings.csv.delimiter && settings.csv.trim_whitespaces && !settings.csv.allow_whitespace_or_tab_as_delimiter && (c == ' ' || c == '\t'))
+                if (c != settings.csv.delimiter && (c == ' ' || c == '\t'))
                     continue;
-                at_field_start = (c == settings.csv.delimiter);
+                at_field_start = (c == settings.csv.delimiter || c == settings.csv.tuple_delimiter
+                                  || (settings.csv.allow_single_quotes && c == '\''));
                 break;
             }
 

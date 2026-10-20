@@ -14,9 +14,11 @@ count_after_space	0	1
 count_literal	1	2
 count_after_delimiter	1	2
 count_after_space	1	1
-ws_literal_quote	0	a	 "x
-ws_literal_quote	0	b	y
-count_ws_literal_quote	0	2
-ws_literal_quote	1	a	 "x
-ws_literal_quote	1	b	y
-count_ws_literal_quote	1	2
+array_after_space	0	[1,2,3,4]
+single_quoted	0	"x\ny\nz\nw"
+count_array_after_space	0	1
+count_single_quoted	0	1
+array_after_space	1	[1,2,3,4]
+single_quoted	1	"x\ny\nz\nw"
+count_array_after_space	1	1
+count_single_quoted	1	1
