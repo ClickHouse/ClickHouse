@@ -120,6 +120,15 @@ public:
     bool isGranted(const AccessRightsElement & element) const;
     bool isGranted(const AccessRightsElements & elements) const;
 
+    /// Whether `flags` are granted on `column` through inheritance only: the result ignores a grant or revoke made on
+    /// this exact column name, i.e. it is what the name would get if it had never been named in GRANT or REVOKE.
+    bool isGrantedInherited(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const;
+
+    /// Whether a grant on some column name that starts with `prefix` gives `flags` that the name does not inherit, see
+    /// `isGrantedInherited`. With the prefix `c.` it finds a grant on the exact name of a subcolumn of the column `c`.
+    bool hasExplicitGrantOnColumnsWithPrefix(
+        const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view prefix) const;
+
     bool isGrantedWildcard(const AccessFlags & flags) const;
     bool isGrantedWildcard(const AccessFlags & flags, std::string_view database) const;
     bool isGrantedWildcard(const AccessFlags & flags, std::string_view database, std::string_view table) const;

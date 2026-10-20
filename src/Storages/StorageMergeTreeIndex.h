@@ -44,6 +44,9 @@ private:
     bool with_marks;
     bool with_minmax;
 
+    /// The source metadata `key_sample_block` and `minmax_sample_block` are built from. The access check in `readImpl`
+    /// resolves subcolumns against it, so it authorizes the columns this storage actually returns.
+    StorageMetadataPtr source_metadata_snapshot;
     MergeTreeData::DataPartsVector data_parts;
     SharedHeader key_sample_block;
     SharedHeader minmax_sample_block;
