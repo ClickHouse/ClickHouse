@@ -339,6 +339,30 @@ ASTPtr UnionNode::toASTImpl(const ConvertToASTOptions & options) const
     select_with_union_query->children.push_back(getQueriesNode()->toAST(options));
     select_with_union_query->list_of_selects = select_with_union_query->children.back();
 
+    /// Every `QueryNode` is converted to a `ASTSelectWithUnionQuery` wrapping its `ASTSelectQuery`, which is
+    /// formatted in parentheses, and a parenthesized SELECT keeps its `SETTINGS` clause to itself
+    /// (see `ParserUnionQueryElement`). So if the clause of the last arm is the union's own trailing clause,
+    /// leave the arm bare, so that it is read back as the clause of the whole union.
+    if (hasSettingsChanges())
+    {
+        auto & arms = select_with_union_query->list_of_selects->children;
+        const auto * last_arm = arms.empty() ? nullptr : arms.back()->as<ASTSelectWithUnionQuery>();
+        if (last_arm && last_arm->list_of_selects && last_arm->list_of_selects->children.size() == 1)
+        {
+            const auto & last_select_ast = last_arm->list_of_selects->children.front();
+            const auto * last_select = last_select_ast->as<ASTSelectQuery>();
+            const auto * last_settings = last_select && last_select->settings() ? last_select->settings()->as<ASTSetQuery>() : nullptr;
+            if (last_settings
+                && last_settings->changes == settings_changes
+                && last_settings->default_settings == default_settings
+                && last_settings->query_parameters == query_parameters)
+            {
+                ASTPtr bare_select = last_select_ast;
+                arms.back() = std::move(bare_select);
+            }
+        }
+    }
+
     ASTPtr result_query = std::move(select_with_union_query);
     bool set_subquery_cte_name = options.set_subquery_cte_name;
 

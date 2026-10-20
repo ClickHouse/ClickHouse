@@ -88,6 +88,34 @@ SELECT n FROM
     (SELECT NULL IN (NULL) AS n UNION ALL SELECT NULL IN (NULL) AS n SETTINGS transform_null_in = 1)
 )
 ORDER BY n NULLS FIRST;
+-- So does a parenthesized single `SELECT`, also when `INTERSECT` / `EXCEPT` nests it as the last operand.
+SELECT * FROM
+(
+    SELECT getSetting('transform_null_in') AS x
+    UNION ALL
+    SELECT false
+    INTERSECT ALL
+    (SELECT true SETTINGS transform_null_in = 1)
+);
+SELECT x FROM
+(
+    SELECT getSetting('transform_null_in') AS x
+    UNION ALL
+    (SELECT getSetting('transform_null_in') AS x SETTINGS transform_null_in = 1)
+)
+ORDER BY x;
+SELECT getSetting('transform_null_in') AS x INTERSECT ALL (SELECT false AS x SETTINGS transform_null_in = 1);
+-- Without the parentheses, the trailing clause applies to the whole union.
+SELECT x FROM
+(
+    SELECT getSetting('transform_null_in') AS x
+    UNION ALL
+    SELECT getSetting('transform_null_in') AS x SETTINGS transform_null_in = 1
+)
+ORDER BY x;
+-- Both scopes are kept in the query sent to a remote server.
+SELECT x FROM remote('127.0.0.1', view(SELECT getSetting('transform_null_in') AS x UNION ALL (SELECT getSetting('transform_null_in') AS x SETTINGS transform_null_in = 1))) ORDER BY x;
+SELECT x FROM remote('127.0.0.1', view(SELECT getSetting('transform_null_in') AS x UNION ALL SELECT getSetting('transform_null_in') AS x SETTINGS transform_null_in = 1)) ORDER BY x;
 SET transform_null_in = DEFAULT;
 
 -- Both query-level clauses of a union bind query parameters for every arm, in the order they are applied.
