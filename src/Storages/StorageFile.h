@@ -116,6 +116,7 @@ public:
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
     bool storesDataOnDisk() const override;
+    bool hasUnreplicatedTableDataOnDisk() const override;
     Strings getDataPaths() const override;
 
     std::optional<UInt128> getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const override;

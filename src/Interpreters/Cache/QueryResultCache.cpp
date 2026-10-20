@@ -1510,6 +1510,11 @@ void QueryResultCacheWriter::buffer(Chunk && chunk, ChunkType chunk_type)
     }
 }
 
+void QueryResultCacheWriter::markResultIncomplete()
+{
+    result_is_incomplete = true;
+}
+
 void QueryResultCacheWriter::finalizeWrite()
 {
     if (skip_insert)
@@ -1526,6 +1531,12 @@ void QueryResultCacheWriter::finalizeWrite()
     std::lock_guard lock(mutex);
 
     /// Check some reasons why the entry must not be cached:
+
+    if (result_is_incomplete)
+    {
+        LOG_TRACE(logger, "Skipped insert because the query result is incomplete (a consumer stopped reading it before the end), query: {}", doubleQuoteString(key.query_string));
+        return;
+    }
 
     /// For `query_cache_use_only_when_data_was_not_changed`: now that the pipeline has finished reading the
     /// source tables, verify they are still in the state encoded in the cache key. If a referenced table

@@ -57,7 +57,8 @@ public:
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
-    const MemorySettings & getMemorySettingsRef() const { return *memory_settings; }
+    /// A snapshot: `ALTER ... MODIFY SETTING` installs a new version instead of changing this one, so hold it while reading.
+    MultiVersion<MemorySettings>::Version getMemorySettings() const { return memory_settings.get(); }
 
     void readImpl(
         QueryPlan & query_plan,
@@ -227,7 +228,7 @@ private:
     /// Table data belongs to the server: what this drops is not credited to the query, what it keeps is left to the server.
     void setData(std::unique_ptr<BlocksWithCounts> new_data);
 
-    std::unique_ptr<MemorySettings> memory_settings;
+    MultiVersion<MemorySettings> memory_settings;
 
     friend class ReadFromMemoryStorageStep;
 };
