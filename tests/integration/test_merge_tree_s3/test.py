@@ -1143,12 +1143,14 @@ def test_partition_cancellation_is_isolated(s3_cancellation, broken_s3):
     ).strip()
     copy_sources = []
     for partition in (0, 1):
+        # A logical file can span several objects. Block only one copy per partition.
         remote_paths = (
             node.query(
                 "SELECT remote_path FROM system.remote_data_paths "
                 "WHERE disk_name='broken_s3_long_retries' "
                 f"AND local_path LIKE '%{table_uuid}%' "
-                f"AND local_path LIKE '%/{partition}_%/data.bin'"
+                f"AND local_path LIKE '%/{partition}_%/data.bin' "
+                "ORDER BY remote_path LIMIT 1"
             )
             .strip()
             .splitlines()
