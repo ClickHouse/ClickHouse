@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemPartsColumns.h>
-#include <algorithm>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
@@ -429,10 +428,6 @@ void StorageSystemPartsColumns::processNextStorage(
 
                 /// Skip ephemeral subcolumns that don't store any real data.
                 if (ISerialization::isEphemeralSubcolumn(subpath, subpath.size()))
-                    return;
-
-                /// A SHARED path of JSON lies in the typed shared data with every other one and has no files of its own.
-                if (std::ranges::any_of(subpath, [](const auto & elem) { return elem.type == ISerialization::Substream::ObjectTypedSharedDataPath; }))
                     return;
 
                 subcolumn_names.push_back(name);

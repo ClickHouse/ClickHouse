@@ -122,9 +122,9 @@ n.k.size0	UInt64						1
 4	p4	s4	[0]	[104]	204	[[0]]	[[4]]	[0]
 5	p5	s5	[0,1]	[105]	\N	[[0,1]]	[[5,6]]	[0,1]
 -- system tables
-t_mixed	json	['a']
+t_mixed	json	['a','b','b.size','c','c.size0']
 t_plain	json	['a','b','b.size','c','c.size0']
-t_shared	json	[]
+t_shared	json	['a','b','b.size','c','c.size0']
 object_typed_shared_data_serialization_version	v1
 -- functions over the type
 {"a":0,"b":"","c":[],"d":0}	['a','b','c','d']	0	1
