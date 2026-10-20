@@ -239,13 +239,13 @@ TEST_F(JoinStepLogicalReorderBoundaryRoundTrip, StepVersionZeroNeitherWritesNorR
 
 /// The registry picks the step version from the plan version negotiated with the peer, for every
 /// instance of the step, and refuses a version it does not know rather than misparsing it. Plan
-/// version 19 is the one a released 26.9 peer speaks, so such a peer must still get version 0.
+/// version 20 is the one a released 26.10 peer speaks, so such a peer must still get version 0.
 TEST_F(JoinStepLogicalReorderBoundaryRoundTrip, JoinStepVersionFollowsThePlanVersion)
 {
     QueryPlanStepRegistry registry;
     registerJoinStep(registry);
 
-    EXPECT_EQ(registry.versionToWrite("Join", 19), 0u);
+    EXPECT_EQ(registry.versionToWrite("Join", 20), 0u);
     EXPECT_EQ(registry.versionToWrite("Join", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_REORDER_BOUNDARY), 1u);
 
     EXPECT_NO_THROW(registry.checkVersionReadable("Join", 0));

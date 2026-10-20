@@ -615,15 +615,6 @@ DataTypePtr AggregateFunctionTuple::getNormalizedStateType() const
     return std::make_shared<DataTypeAggregateFunction>(std::move(normalized_function), nested_normalized_state_types, Array{});
 }
 
-bool AggregateFunctionTuple::shouldPrintParametersWithTypes() const
-{
-    /// The elements share one printed parameter list, so a single element that needs typed
-    /// parameters decides the spelling for all of them. The base implementation delegates through
-    /// the singular `getNestedFunction()`, which this combinator has no single answer for.
-    return std::ranges::any_of(
-        nested_functions, [](const auto & nested) { return nested->shouldPrintParametersWithTypes(); });
-}
-
 bool AggregateFunctionTuple::isOnlyWindowFunction() const
 {
     return std::ranges::any_of(nested_functions, [](const auto & nested) { return nested->isOnlyWindowFunction(); });

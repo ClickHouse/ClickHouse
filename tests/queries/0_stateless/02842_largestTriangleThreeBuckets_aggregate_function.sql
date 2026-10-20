@@ -65,4 +65,16 @@ SETTINGS legacy_array_join_function_nondeterministic_evaluation = 1;
 
 SELECT largestTriangleThreeBuckets(1)(0, '1900-01-01 00:00:00'::DateTime64);
 
+-- The maximum DateTime64(9) tick rounds up to 2^63 when the aggregate state widens it to Float64; narrowing it back must saturate, not wrap.
+-- session_timezone is pinned in both queries because the result type drops the argument timezone, so rendering would follow the randomized session one.
+SELECT largestTriangleThreeBuckets(1)(fromUnixTimestamp64Nano(9223372036854775807, 'UTC'), 1) SETTINGS session_timezone = 'UTC';
+-- Control: a large tick that is exactly representable in Float64 must be returned unchanged.
+SELECT largestTriangleThreeBuckets(1)(fromUnixTimestamp64Nano(4611686018427387904, 'UTC'), 1) SETTINGS session_timezone = 'UTC';
+-- A state holding a coordinate that no value of the argument type converts to is rejected; 2^63, the state of the maximum tick, and a negative Date32 tick are accepted.
+SELECT finalizeAggregation(CAST(unhex('0101000000000000F07F000000000000F03F') AS AggregateFunction(largestTriangleThreeBuckets(1), DateTime64(9), Float64))); -- { serverError INCORRECT_DATA }
+SELECT finalizeAggregation(CAST(unhex('0101000000000000F03F00000000000014C0') AS AggregateFunction(largestTriangleThreeBuckets(1), Float64, Date))); -- { serverError INCORRECT_DATA }
+SELECT finalizeAggregation(CAST(unhex('0101000000000000F83F000000000000F03F') AS AggregateFunction(largestTriangleThreeBuckets(1), DateTime, Float64))); -- { serverError INCORRECT_DATA }
+SELECT finalizeAggregation(CAST(unhex('0101000000000000E043000000000000F03F') AS AggregateFunction(largestTriangleThreeBuckets(1), DateTime64(9), Float64))) SETTINGS session_timezone = 'UTC';
+SELECT finalizeAggregation(CAST(unhex(hex(largestTriangleThreeBucketsState(1)(toDate32('1900-01-01'), 1))) AS AggregateFunction(largestTriangleThreeBuckets(1), Date32, UInt8)));
+
 DROP TABLE largestTriangleTreeBucketsBucketSizeTest;
