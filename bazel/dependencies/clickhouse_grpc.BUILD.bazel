@@ -2062,14 +2062,17 @@ ch_cc_library(
 ch_cc_library(
     name = "grpc_unsecure__compile_0",
     implementation_deps = [
-        "@clickhouse//contrib/c-ares-cmake:headers",
         "@clickhouse_zlib_ng//:_zlib",
         ":address_sorting",
-        ":upb_json_lib",
-    ] + [
         "@clickhouse_abseil_cpp//:absl_bind_front",
         "@clickhouse_abseil_cpp//:absl_cleanup_internal",
         "@clickhouse_abseil_cpp//:absl_log_globals",
+        "@clickhouse_abseil_cpp//:absl_algorithm",
+        "@clickhouse_abseil_cpp//:absl_cord",
+        "@clickhouse_abseil_cpp//:absl_memory",
+        "@clickhouse_abseil_cpp//:absl_optional",
+        "@clickhouse_abseil_cpp//:absl_random_distributions",
+        "@clickhouse_c_ares//:_c-ares",
     ],
     srcs = glob(["src/core/call/call_*.cc"]) + ([
         "src/core/call/client_call.cc",
@@ -2525,7 +2528,6 @@ ch_cc_library(
         "third_party/xxhash",
     ],
     deps = [
-        "@clickhouse_c_ares//:_c-ares",
         ":gpr",
         ":grpc_unsecure__compile_1",
         ":upb_message_lib",
@@ -2536,6 +2538,21 @@ ch_cc_library(
         "@clickhouse_abseil_cpp//:absl_random_random",
         "@clickhouse_abseil_cpp//:absl_die_if_null",
         "@clickhouse_abseil_cpp//:absl_raw_hash_set",
+        "@clickhouse_abseil_cpp//:absl_base_config",
+        "@clickhouse_abseil_cpp//:absl_bits",
+        "@clickhouse_abseil_cpp//:absl_function_ref",
+        "@clickhouse_abseil_cpp//:absl_hash",
+        "@clickhouse_abseil_cpp//:absl_inlined_vector_internal",
+        "@clickhouse_abseil_cpp//:absl_log_internal_check_impl",
+        "@clickhouse_abseil_cpp//:absl_random_mocking_access",
+        "@clickhouse_abseil_cpp//:absl_span",
+        "@clickhouse_abseil_cpp//:absl_status",
+        "@clickhouse_abseil_cpp//:absl_statusor",
+        "@clickhouse_abseil_cpp//:absl_str_format_internal",
+        "@clickhouse_abseil_cpp//:absl_strings",
+        "@clickhouse_abseil_cpp//:absl_time",
+        "@clickhouse_abseil_cpp//:absl_type_traits",
+        "@clickhouse_abseil_cpp//:absl_utility",
     ],
 )
 
