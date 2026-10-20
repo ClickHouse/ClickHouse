@@ -1494,7 +1494,7 @@ size_t Aggregator::adaptivePressurePartBytes() const
     /// An eighth of the threshold, so that the residue, the batch a sweep claims, the table it
     /// drains that batch into and the writes in flight all fit inside it several times over.
     /// The floor keeps a part worth a file when the threshold itself is small.
-    return std::max(params.max_bytes_before_external_group_by / 8, adaptive_pressure_min_part_bytes);
+    return std::max({params.max_bytes_before_external_group_by / 8, adaptive_pressure_min_part_bytes, params.min_bytes_before_external_group_by});
 }
 
 /// The hash-table cell of the drain table's variant: what one record occupies in the table's
