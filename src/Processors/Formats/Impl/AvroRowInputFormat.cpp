@@ -1163,7 +1163,6 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
                 unbound_renamed_fields.push_back(i);
         }
 
-        /// A field stored under an escaped name fills the column of its original name only if no other field fills it.
         for (int i : unbound_renamed_fields)
         {
             const auto & original_name = original_field_names.at(node->nameAt(i));
