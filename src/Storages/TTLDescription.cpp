@@ -1725,6 +1725,27 @@ std::optional<time_t> tryComputeConstantTTLDelta(
     if (common::subOverflow(new_shift->offset_seconds, old_shift->offset_seconds, delta))
         return {};
 
+    /// A `DateTime64` with a fractional scale is converted to the stored whole-second timestamps by
+    /// dividing its ticks, which truncates toward zero: down for a positive value and up for a negative
+    /// one. Adding a whole number of seconds commutes with that truncation only when the exact value stays
+    /// on the same side of zero, so e.g. `-1.5` stored as `-1` shifted by `2` is `0.5`, stored as `0`, not
+    /// `1`. A stored timestamp `s >= 1` means the exact value is at least `s`, and `s <= -1` means it is at
+    /// most `s`, so requiring the old and the shifted bounds to be on the same strict side of zero proves
+    /// the shift for every row. A stored `0` may come from either side and is never shifted.
+    if (which.isDateTime64() && assert_cast<const DataTypeDateTime64 &>(*column_type).getScale() > 0)
+    {
+        Int64 shifted_min = 0;
+        Int64 shifted_max = 0;
+        if (common::addOverflow(static_cast<Int64>(old_ttl_min), delta, shifted_min)
+            || common::addOverflow(static_cast<Int64>(old_ttl_max), delta, shifted_max))
+            return {};
+
+        const bool all_positive = old_ttl_min >= 1 && shifted_min >= 1;
+        const bool all_negative = old_ttl_max <= -1 && shifted_max <= -1;
+        if (!all_positive && !all_negative)
+            return {};
+    }
+
     return delta;
 }
 
