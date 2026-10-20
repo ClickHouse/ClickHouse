@@ -15,6 +15,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/TransactionID.h>
 #include <Common/logger_useful.h>
 #include <base/scope_guard.h>
@@ -27,6 +28,11 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 extern const int CANNOT_OPEN_FILE;
 extern const int NOT_IMPLEMENTED;
+}
+
+namespace FailPoints
+{
+extern const char version_metadata_store_pause_before_rename[];
 }
 
 namespace MergeTreeSetting
@@ -401,6 +407,7 @@ void VersionMetadataOnDisk::storeInfoToDataPartStorage(
         SyncGuardPtr sync_guard;
         if ((*mt_data.getSettings())[MergeTreeSetting::fsync_part_directory])
             sync_guard = data_part_storage.getDirectorySyncGuard();
+        FailPointInjection::pauseFailPoint(FailPoints::version_metadata_store_pause_before_rename);
         data_part_storage.replaceFile(tmp_filename, filename);
     }
     catch (...)
