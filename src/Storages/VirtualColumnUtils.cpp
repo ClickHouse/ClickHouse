@@ -414,6 +414,12 @@ ColumnPtr getFilterByPathAndFileIndexes(
 
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
+    /// Keep only the columns that the filter reads: a path that the filter skips can have no value for another hive column.
+    const NameSet required_columns = actions->getRequiredColumnsWithTypes().getNameSet();
+    for (const auto & name : block.getNames())
+        if (name != "_idx" && !required_columns.contains(name))
+            block.erase(name);
+
     const auto hive_format_settings = HivePartitioningUtils::buildHiveFormatSettings(format_settings, context);
 
     /// All columns except `_path`, `_file` and `_idx` are hive partition columns.
