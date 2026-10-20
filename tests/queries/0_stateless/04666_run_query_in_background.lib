@@ -82,6 +82,13 @@ function shared_native_and_http_tests()
     echo "replaced with rows"
     $CLICKHOUSE_CLIENT -q "DROP TABLE t_ctas_slow_${run}"
 
+    echo '--- EXECUTE AS CREATE TABLE AS SELECT returns as soon as the SELECT has started'
+    out=$($run "EXECUTE AS default CREATE TABLE t_ctas_slow_${run} ENGINE = MergeTree ORDER BY n AS $slow_select" "execute_as_$ctas_id")
+    [[ -z "$out" ]] && echo "no output"
+    wait_for "count() = 1 FROM system.processes WHERE query_id = 'execute_as_$ctas_id'"
+    wait_for "count() = 100 FROM t_ctas_slow_${run}"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE t_ctas_slow_${run}"
+
     echo '--- enabling the setting for a whole session is rejected'
     $run "SET run_query_in_background = 1" "" 0 | grep -o -m1 "run_query_in_background cannot be changed with SET"
 
