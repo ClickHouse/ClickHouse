@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_path")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -85,59 +84,25 @@ _GENERATED_LOCAL_DEFINES_0 = [
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-_GENERATED_LOCAL_INCLUDES_0 = [
-    "../../../" + (repository_path("contrib/orc") + "/config/contrib/orc/c++/include"),
-    "../../../" + (repository_path("contrib/librdkafka") + "/config/contrib/librdkafka-cmake"),
-    "../../../" + (repository_path("contrib/mongo-c-driver") + "/config/contrib/mongo-c-driver/src/libmongoc/src"),
-    "../../../" + (repository_path("contrib/mongo-cxx-driver") + "/src/bsoncxx/lib/bsoncxx/v_noabi"),
-    "../../../" + (repository_path("contrib/mongo-cxx-driver") + "/config/contrib/mongo-cxx-driver/src/bsoncxx/lib"),
-    "../../../" + (repository_path("contrib/mongo-cxx-driver") + "/config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi"),
-    "../../../" + (repository_path("contrib/mongo-cxx-driver") + "/config/contrib/mongo-cxx-driver/src/mongocxx/lib"),
-    "../../../" + (repository_path("contrib/mongo-cxx-driver") + "/config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi"),
-    "../../../" + (repository_path("contrib/mariadb-connector-c") + "/config/contrib/mariadb-connector-c-cmake/include-public"),
-    "../../../" + "bazel/gen/src/Server/grpc_protos",
-    "../../../" + "contrib/s2geometry-cmake",
-    "../../../" + (repository_path("contrib/libpqxx") + "/config/contrib/libpqxx-cmake"),
-    "../../../" + "bazel/gen/contrib/prometheus-protobufs-cmake",
-    "../../../" + repository_path("contrib/google-cloud-cpp"),
-    "../../../" + (repository_path("contrib/google-cloud-cpp") + "/config/contrib/google-cloud-cpp-cmake"),
-    "../../../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
-    "../../../" + (repository_path("contrib/grpc") + "/spm-cpp-include"),
-    "../../../" + "bazel/gen",
-    "../../../" + "bazel/gen/contrib/flatbuffers",
-    "../../../" + (repository_path("contrib/llvm-project") + "/llvm/include"),
-]
-
 ch_cc_library(
     name = "benchmark_radix_sort_objects",
     srcs = ["radix_sort.cpp"],
     clickhouse_code = True,
-    copts = [
-        "-I",
-        "$(GENDIR)/bazel/gen/includes/configs",
-        "-I",
-        "$(GENDIR)/bazel/gen/src",
-        "-I",
-        repository_path("contrib/libfiu") + "/libfiu",
-        "-I",
-        "$(GENDIR)/" + repository_path("contrib/libssh") + "/config/contrib/libssh/include",
-        "-I",
-        repository_path("contrib/libarchive") + "/libarchive",
-        "-I",
-        "rust/workspace/pco/include",
-        "-I",
-        "rust/workspace/skim/include",
-        "-I",
-        "$(GENDIR)/" + repository_path("contrib/arrow") + "/config/contrib/arrow-cmake/cpp/src",
-        "-I",
-        "$(GENDIR)/bazel/gen/contrib/arrow-cmake/cpp/src",
-    ],
-    implementation_deps = ["@clickhouse_google_benchmark//:google_benchmark"],
+    implementation_deps = [
+        "@clickhouse_google_benchmark//:google_benchmark",
+        "//bazel:clickhouse_config_headers",
+        "//bazel:clickhouse_grpc_headers",
+        "//rust/workspace:pco_headers",
+        "//rust/workspace:skim_headers",
+        "//bazel:arrow_flight_generated_headers",
+        "//bazel:arrow_flatbuffer_headers",
+    ] + ["@clickhouse_arrow//:arrow_headers"],
     link_runtime = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
-        "../../../bazel/gen/base",
-    ] + _GENERATED_LOCAL_INCLUDES_0,
+        "../../../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
+        "../../../" + "bazel/gen",
+    ],
     deps = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -456,11 +421,10 @@ ch_cc_library(
     name = "benchmark_sched_getcpu_objects",
     srcs = ["sched_getcpu.cpp"],
     clickhouse_code = True,
-    copts = [
-        "-I",
-        "$(GENDIR)/bazel/gen/includes/configs",
+    implementation_deps = [
+        "@clickhouse_google_benchmark//:google_benchmark",
+        "//bazel:clickhouse_config_headers",
     ],
-    implementation_deps = ["@clickhouse_google_benchmark//:google_benchmark"],
     link_runtime = True,
     local_defines = [
         "ENABLE_MULTITARGET_CODE=1",
@@ -666,23 +630,12 @@ ch_cc_library(
     name = "benchmark_stack_trace_objects",
     srcs = ["stack_trace.cpp"],
     clickhouse_code = True,
-    copts = [
-        "-I",
-        "$(GENDIR)/bazel/gen/includes/configs",
-        "-I",
-        repository_path("contrib/libfiu") + "/libfiu",
-        "-I",
-        "$(GENDIR)/" + repository_path("contrib/libssh") + "/config/contrib/libssh/include",
-        "-I",
-        repository_path("contrib/libarchive") + "/libarchive",
+    implementation_deps = [
+        "@clickhouse_google_benchmark//:google_benchmark",
+        "//bazel:clickhouse_config_headers",
     ],
-    implementation_deps = ["@clickhouse_google_benchmark//:google_benchmark"],
     link_runtime = True,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    local_includes = [
-        "../../../bazel/gen/base",
-    ] + [
-    ],
     deps = _GENERATED_DEPS_1,
     alwayslink = True,
 )
@@ -691,19 +644,10 @@ ch_cc_library(
     name = "integer_hash_tables_and_hashes_objects",
     srcs = ["integer_hash_tables_and_hashes.cpp"],
     clickhouse_code = True,
-    copts = [
-        "-I",
-        "$(GENDIR)/bazel/gen/includes/configs",
-        "-I",
-        repository_path("contrib/libfiu") + "/libfiu",
-        "-I",
-        "$(GENDIR)/" + repository_path("contrib/libssh") + "/config/contrib/libssh/include",
-        "-I",
-        repository_path("contrib/libarchive") + "/libarchive",
-        "-I",
-        "contrib/libfarmhash",
+    implementation_deps = [
+        "@clickhouse_google_benchmark//:google_benchmark",
+        "//bazel:clickhouse_config_headers",
     ],
-    implementation_deps = ["@clickhouse_google_benchmark//:google_benchmark"],
     link_runtime = True,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
@@ -768,9 +712,6 @@ ch_cc_library(
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
-    local_includes = [
-        "../../../bazel/gen/base",
     ],
     deps = [
         "@clickhouse_boost//:boost_headers",
@@ -904,11 +845,10 @@ ch_cc_library(
     name = "orc_string_dictionary_objects",
     srcs = ["orc_string_dictionary.cpp"],
     clickhouse_code = True,
-    copts = [
-        "-I",
-        "$(GENDIR)/bazel/gen/includes/configs",
+    implementation_deps = [
+        "@clickhouse_google_benchmark//:google_benchmark",
+        "//bazel:clickhouse_config_headers",
     ],
-    implementation_deps = ["@clickhouse_google_benchmark//:google_benchmark"],
     link_runtime = True,
     local_defines = [
         "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
@@ -923,9 +863,6 @@ ch_cc_library(
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
-    local_includes = [
-        "../../../bazel/gen/base",
     ],
     deps = [
         "@clickhouse_boost//:boost_headers",
@@ -1053,23 +990,12 @@ ch_cc_library(
     name = "profile_events_objects",
     srcs = ["profile_events.cpp"],
     clickhouse_code = True,
-    copts = [
-        "-I",
-        "$(GENDIR)/bazel/gen/includes/configs",
-        "-I",
-        repository_path("contrib/libfiu") + "/libfiu",
-        "-I",
-        "$(GENDIR)/" + repository_path("contrib/libssh") + "/config/contrib/libssh/include",
-        "-I",
-        repository_path("contrib/libarchive") + "/libarchive",
+    implementation_deps = [
+        "@clickhouse_google_benchmark//:google_benchmark",
+        "//bazel:clickhouse_config_headers",
     ],
-    implementation_deps = ["@clickhouse_google_benchmark//:google_benchmark"],
     link_runtime = True,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    local_includes = [
-        "../../../bazel/gen/base",
-    ] + [
-    ],
     deps = _GENERATED_DEPS_1,
     alwayslink = True,
 )
@@ -1078,32 +1004,21 @@ ch_cc_library(
     name = "wrap_in_nullable_objects",
     srcs = ["wrap_in_nullable.cpp"],
     clickhouse_code = True,
-    copts = [
-        "-I",
-        "$(GENDIR)/bazel/gen/includes/configs",
-        "-I",
-        "$(GENDIR)/bazel/gen/src",
-        "-I",
-        repository_path("contrib/libfiu") + "/libfiu",
-        "-I",
-        "$(GENDIR)/" + repository_path("contrib/libssh") + "/config/contrib/libssh/include",
-        "-I",
-        repository_path("contrib/libarchive") + "/libarchive",
-        "-I",
-        "rust/workspace/pco/include",
-        "-I",
-        "rust/workspace/skim/include",
-        "-I",
-        "$(GENDIR)/" + repository_path("contrib/arrow") + "/config/contrib/arrow-cmake/cpp/src",
-        "-I",
-        "$(GENDIR)/bazel/gen/contrib/arrow-cmake/cpp/src",
-    ],
-    implementation_deps = ["@clickhouse_google_benchmark//:google_benchmark"],
+    implementation_deps = [
+        "@clickhouse_google_benchmark//:google_benchmark",
+        "//bazel:clickhouse_config_headers",
+        "//bazel:clickhouse_grpc_headers",
+        "//rust/workspace:pco_headers",
+        "//rust/workspace:skim_headers",
+        "//bazel:arrow_flight_generated_headers",
+        "//bazel:arrow_flatbuffer_headers",
+    ] + ["@clickhouse_arrow//:arrow_headers"],
     link_runtime = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
-        "../../../bazel/gen/base",
-    ] + _GENERATED_LOCAL_INCLUDES_0,
+        "../../../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
+        "../../../" + "bazel/gen",
+    ],
     deps = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [

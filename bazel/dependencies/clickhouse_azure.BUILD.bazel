@@ -45,8 +45,6 @@ ch_cc_library(
     copts = [
         "-w",
         "-std=c++23",
-        "-I",
-        "contrib/libxml2-cmake/linux_x86_64/include",
     ],
     includes = [
         "sdk/core/azure-core/inc",
@@ -66,4 +64,5 @@ ch_cc_library(
         "@clickhouse_libxml2//:_libxml2",
         "@clickhouse_openssl//:ssl",
     ],
+    implementation_deps = ["@clickhouse//contrib/libxml2-cmake:libxml2_config_headers"],
 )

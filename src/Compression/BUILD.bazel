@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_path")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -23,17 +22,9 @@ ch_cc_library(
         "//rust/workspace:pco/include/pco.h",
     ],
     clickhouse_code = True,
-    copts = [
-        "-I",
-        "$(GENDIR)/bazel/gen/includes/configs",
-        "-I",
-        "rust/workspace/pco/include",
-        "-I",
-        repository_path("contrib/libfiu") + "/libfiu",
-        "-I",
-        "$(GENDIR)/" + repository_path("contrib/libssh") + "/config/contrib/libssh/include",
-        "-I",
-        repository_path("contrib/libarchive") + "/libarchive",
+    implementation_deps = [
+        "//bazel:clickhouse_config_headers",
+        "//rust/workspace:pco_headers",
     ],
     link_runtime = True,
     local_defines = select({
@@ -100,10 +91,6 @@ ch_cc_library(
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
-    local_includes = [
-        "../../bazel/gen/base",
-        "../../" + (repository_path("contrib/llvm-project") + "/llvm/include"),
     ],
     deps = select({
         "@platforms//cpu:x86_64": [],

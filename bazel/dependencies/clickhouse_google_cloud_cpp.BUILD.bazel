@@ -11,16 +11,15 @@ exports_files([
 expand_template(
     name = "configure_internal_build_info_cc",
     out = "config/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-    substitutions = select({
+    substitutions = {
+        "@GOOGLE_CLOUD_CPP_BUILD_METADATA@": "",
+        "@CMAKE_CXX_FLAGS@": "",
+    } | select({
         "@platforms//cpu:x86_64": {
             "${CMAKE_CXX_FLAGS_${GOOGLE_CLOUD_CPP_BUILD_TYPE_UPPER}}": "--gcc-toolchain=cmake/linux/../../contrib/sysroot/linux-x86_64 --no-default-config -fdiagnostics-color=always  -pipe -march=x86-64-v3 -mpclmul -fasynchronous-unwind-tables -fdebug-compilation-dir=. -ffile-prefix-map== -falign-functions=64 -falign-loops=32 -ffunction-sections -fdata-sections -faddrsig -mbranches-within-32B-boundaries -fstack-protector-strong -fstack-clash-protection -ffp-contract=off -fno-math-errno  -fdiagnostics-absolute-paths -fstrict-vtable-pointers -fPIE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST -w -ffunction-sections -fdata-sections -faddrsig -O3 -DNDEBUG",
-            "@GOOGLE_CLOUD_CPP_BUILD_METADATA@": "",
-            "@CMAKE_CXX_FLAGS@": "",
         },
         "@platforms//cpu:aarch64": {
             "${CMAKE_CXX_FLAGS_${GOOGLE_CLOUD_CPP_BUILD_TYPE_UPPER}}": "--gcc-toolchain=cmake/linux/../../contrib/sysroot/linux-aarch64 --no-default-config -fdiagnostics-color=always  -pipe -march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16 -fasynchronous-unwind-tables -fdebug-compilation-dir=. -ffile-prefix-map== -falign-functions=64 -falign-loops=32 -ffunction-sections -fdata-sections -faddrsig -fstack-protector-strong -fstack-clash-protection -ffp-contract=off -fno-math-errno  -fdiagnostics-absolute-paths -fstrict-vtable-pointers -fPIE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST -w -ffunction-sections -fdata-sections -faddrsig -O3 -DNDEBUG",
-            "@GOOGLE_CLOUD_CPP_BUILD_METADATA@": "",
-            "@CMAKE_CXX_FLAGS@": "",
         },
     }),
     template = ":google/cloud/internal/build_info.cc.in",
@@ -1305,17 +1304,18 @@ ch_cc_library(
 ch_cc_library(
     name = "google_cloud_cpp_type_date_protos",
     srcs = [
-        "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/date.pb.cc",
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/date.grpc.pb.cc",
     ],
     hdrs = [
         "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/date.grpc.pb.h",
-        "@clickhouse//bazel:gen/contrib/google-cloud-cpp-cmake/google/type/date.pb.h",
     ],
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GOOGLE_CLOUD_CPP_PROTO_INCLUDES,
-    deps = ["@clickhouse_grpc//:grpc++"],
+    deps = [
+        "@clickhouse//bazel:google_type_date_cc_proto",
+        "@clickhouse_grpc//:grpc++",
+    ],
 )
 
 ch_cc_library(

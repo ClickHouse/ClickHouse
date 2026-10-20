@@ -35,10 +35,8 @@ ch_cc_library(
         "-w",
         "-std=c++23",
         "-Wno-register",
-        "-I",
-        "contrib/MeCab-cmake",
     ],
-    implementation_deps = ["@clickhouse//contrib/MeCab-cmake:headers"],
+    implementation_deps = ["@clickhouse//contrib/MeCab-cmake:mecab_config_headers"],
     includes = [
         "mecab/src",
     ],

@@ -19,6 +19,7 @@ ch_cc_library(
         "-w",
         "-std=c++23",
     ],
+    implementation_deps = ["//contrib/cityhash102:headers"],
     link_runtime = True,
     llvm_headers = True,
     local_defines = [
@@ -27,10 +28,7 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    local_includes = [
-        "include",
-        "src",
-    ],
+    local_includes = ["src"],
     deps = [
         "@clickhouse_llvm_project//:clang_rt_builtins",
         "//base/glibc-compatibility:glibc-compatibility",

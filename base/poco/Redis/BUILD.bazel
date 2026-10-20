@@ -13,9 +13,8 @@ poco_cc_library(
         "-Wno-sign-compare",
         "-Wno-zero-as-null-pointer-constant",
         "-Wno-implicit-int-conversion",
-        "-I",
-        "$(GENDIR)/bazel/gen/includes/configs",
     ],
+    implementation_deps = ["//bazel:clickhouse_config_headers"],
     link_runtime = True,
     local_defines = [
         "POCO_ENABLE_CPP11",

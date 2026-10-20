@@ -1,5 +1,6 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -21,6 +22,12 @@ expand_template(
         "${DMLC_CMAKE_LITTLE_ENDIAN}": "1",
     },
     template = "@clickhouse_dmlc_core//:cmake/build_config.h.in",
+)
+
+cc_library(
+    name = "dmlc_config_headers",
+    hdrs = [":configure_dmlc_core_dmlc_build_config_h"],
+    includes = ["config/contrib/xgboost/dmlc-core"],
 )
 
 alias(

@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_path")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -20,22 +19,8 @@ ch_cc_library(
     copts = [
         "-w",
         "-std=c++23",
-        "-I",
-        "src",
-        "-I",
-        "base",
-        "-I",
-        "$(GENDIR)/bazel/gen/base",
-        "-I",
-        "base/pcg-random",
-        "-I",
-        repository_path("contrib/libfiu") + "/libfiu",
-        "-I",
-        "$(GENDIR)/" + repository_path("contrib/libssh") + "/config/contrib/libssh/include",
-        "-I",
-        repository_path("contrib/libarchive") + "/libarchive",
     ],
-    implementation_deps = ["@clickhouse_boost//:boost_asio_headers"],
+    implementation_deps = (["@clickhouse_boost//:boost_asio_headers"]) + ["@clickhouse//src:headers", "@clickhouse//base:base_headers", "@clickhouse_libfiu//:_libfiu", "@clickhouse_libssh//:_ssh", "@clickhouse_libarchive//:_libarchive"],
     includes = [
         "include",
     ],

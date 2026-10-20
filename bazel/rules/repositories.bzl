@@ -22,6 +22,23 @@ def _cargo_sources_impl(ctx):
                     ctx.file(destination + "/" + entry.basename, ctx.read(entry), executable = False)
                 else:
                     ctx.symlink(entry, destination + "/" + entry.basename)
+
+    # rules_rs uses the lockfile's workspace root to select Cargo.toml features.
+    # All actual crate pins come from ClickHouse's pinned Delta Kernel checkout.
+    delta_lock = ctx.read(ctx.attr.delta_lock)
+    delta_root = """
+[[package]]
+name = "clickhouse-delta-kernel-rs-dependencies"
+version = "0.0.0"
+dependencies = ["delta_kernel_ffi"]
+"""
+    if delta_root not in delta_lock:
+        if '\nname = "clickhouse-delta-kernel-rs-dependencies"\n' in delta_lock:
+            fail("Delta Kernel Cargo.lock already defines a different ClickHouse workspace root")
+        if delta_lock.count('\nname = "delta_kernel_ffi"\n') != 1:
+            fail("Delta Kernel Cargo.lock must pin a single delta_kernel_ffi version")
+        delta_lock += delta_root
+    ctx.file("bazel/rust/delta-kernel-rs/Cargo.lock", delta_lock, executable = False)
     ctx.file("BUILD.bazel", "")
     ctx.file("rust/workspace/BUILD.bazel", 'exports_files(["Cargo.toml", "Cargo.lock"])\n')
     ctx.file("bazel/rust/BUILD.bazel", 'exports_files(glob(["*/Cargo.toml", "*/Cargo.lock"]))\n')
@@ -31,6 +48,7 @@ _cargo_sources = repository_rule(
     attrs = {
         "files": attr.label_keyed_string_dict(),
         "directories": attr.label_keyed_string_dict(),
+        "delta_lock": attr.label(mandatory = True),
     },
 )
 
@@ -39,12 +57,15 @@ def _contrib_impl(module_ctx):
     for repository in repositories.values():
         if repository.get("module"):
             continue
+
         # The generated native rules preserve ClickHouse's configuration.
         # Remove upstream package boundaries and discovery exclusions so the
         # overlay sees the same inputs as ClickHouse's CMake configuration.
         # http_archive installs our root BUILD.bazel before patch_cmds run.
         remove = [".bazelignore"] + [
-            path for path in repository["remove_build_files"] if path != "BUILD.bazel"
+            path
+            for path in repository["remove_build_files"]
+            if path != "BUILD.bazel"
         ]
         if repository["name"] == "clickhouse_rust_vendor":
             # Cargo checks every file listed in each vendored crate checksum.
@@ -72,6 +93,7 @@ def _contrib_impl(module_ctx):
         )
     _cargo_sources(
         name = "clickhouse_cargo_sources",
+        delta_lock = Label("@" + repositories["contrib/delta-kernel-rs"]["name"] + "//:Cargo.lock"),
         files = {
             Label("//rust/workspace:Cargo.toml"): "rust/workspace/Cargo.toml",
             Label("//rust/workspace:Cargo.lock"): "rust/workspace/Cargo.lock",

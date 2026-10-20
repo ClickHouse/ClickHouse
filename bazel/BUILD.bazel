@@ -1,5 +1,9 @@
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
+load("@protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("@protobuf//bazel/toolchains:proto_lang_toolchain.bzl", "proto_lang_toolchain")
+load("@protobuf//bazel/toolchains:proto_toolchain.bzl", "proto_toolchain")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_rs//rs/platforms:triples.bzl", "triple_to_constraint_set")
 load("//bazel/initial_migration:cmake_metadata.bzl", "CMAKE_METADATA")
@@ -13,6 +17,37 @@ load("//bazel/rules:codegen_rules.bzl", "CODEGEN_RULES")
 load("//bazel/rules/clickstack:embed.bzl", "embed_clickstack")
 
 package(default_visibility = ["//visibility:public"])
+
+proto_toolchain(
+    name = "clickhouse_proto",
+    exec_compatible_with = ["@platforms//os:linux"],
+    proto_compiler = "@clickhouse_google_protobuf//:protoc",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+proto_lang_toolchain(
+    name = "clickhouse_cc_proto",
+    command_line = "--cpp_out=$(OUT)",
+    output_files = "multiple",
+    runtime = "@clickhouse_google_protobuf//:_libprotobuf",
+    target_compatible_with = ["@platforms//os:linux"],
+    toolchain_type = "@protobuf//bazel/private:cc_toolchain_type",
+)
+
+proto_library(
+    name = "google_type_date_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/type/date.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_type_date_cc_proto",
+    deps = [":google_type_date_proto"],
+)
 
 copy_file(
     name = "configure_git_hash",
@@ -60,13 +95,92 @@ cc_library(
         ":configure_clickhouse_config",
         ":configure_clickhouse_tools",
     ],
-    includes = ["gen/includes/configs"],
+    features = ["-system_include_paths"],
+    strip_include_prefix = "gen/includes/configs",
+)
+
+cc_library(
+    name = "clickhouse_grpc_headers",
+    hdrs = [
+        "gen/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.h",
+        "gen/src/Server/grpc_protos/clickhouse_grpc.pb.h",
+    ],
+    includes = [
+        "gen/src",
+        "gen/src/Server/grpc_protos",
+    ],
+    deps = [
+        "@clickhouse_google_protobuf//:_libprotobuf",
+        "@clickhouse_grpc//:grpc++",
+    ],
 )
 
 cc_library(
     name = "krb5_generated_headers",
     hdrs = ["gen/contrib/krb5-cmake/include/krb5/krb5.h"],
     includes = ["gen/contrib/krb5-cmake/include"],
+)
+
+cc_library(
+    name = "krb5_private_generated_headers",
+    hdrs = [
+        "gen/contrib/krb5-cmake/include_private/asn1_err.h",
+        "gen/contrib/krb5-cmake/include_private/errmap.h",
+        "gen/contrib/krb5-cmake/include_private/error_map.h",
+        "gen/contrib/krb5-cmake/include_private/gssapi_err_generic.h",
+        "gen/contrib/krb5-cmake/include_private/gssapi_err_krb5.h",
+        "gen/contrib/krb5-cmake/include_private/k5e1_err.h",
+        "gen/contrib/krb5-cmake/include_private/kdb5_err.h",
+        "gen/contrib/krb5-cmake/include_private/krb524_err.h",
+        "gen/contrib/krb5-cmake/include_private/krb5_err.h",
+        "gen/contrib/krb5-cmake/include_private/kv5m_err.h",
+        "gen/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.h",
+        "gen/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.h",
+        "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.h",
+        "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.h",
+        "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.h",
+        "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.h",
+        "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.h",
+        "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.h",
+        "gen/contrib/krb5-cmake/include_private/prof_err.h",
+        "gen/contrib/krb5-cmake/include_private/util/profile/prof_err.h",
+    ],
+    includes = ["gen/contrib/krb5-cmake/include_private"],
+)
+
+cc_library(
+    name = "prometheus_proto_headers",
+    hdrs = [
+        "gen/contrib/prometheus-protobufs-cmake/gogoproto/gogo.pb.h",
+        "gen/contrib/prometheus-protobufs-cmake/prompb/remote.pb.h",
+        "gen/contrib/prometheus-protobufs-cmake/prompb/types.pb.h",
+    ],
+    includes = ["gen/contrib/prometheus-protobufs-cmake"],
+    visibility = ["//contrib/prometheus-protobufs-cmake:__pkg__"],
+    deps = ["@clickhouse_google_protobuf//:_libprotobuf"],
+)
+
+cc_library(
+    name = "orc_proto_headers",
+    hdrs = ["gen/contrib/arrow-cmake/orc_proto.pb.h"],
+    includes = ["gen/contrib/arrow-cmake"],
+    deps = ["@clickhouse_google_protobuf//:_libprotobuf"],
+)
+
+cc_library(
+    name = "hdfs3_proto_headers",
+    hdrs = [
+        "gen/contrib/libhdfs3-cmake/ClientDatanodeProtocol.pb.h",
+        "gen/contrib/libhdfs3-cmake/ClientNamenodeProtocol.pb.h",
+        "gen/contrib/libhdfs3-cmake/IpcConnectionContext.pb.h",
+        "gen/contrib/libhdfs3-cmake/ProtobufRpcEngine.pb.h",
+        "gen/contrib/libhdfs3-cmake/RpcHeader.pb.h",
+        "gen/contrib/libhdfs3-cmake/Security.pb.h",
+        "gen/contrib/libhdfs3-cmake/datatransfer.pb.h",
+        "gen/contrib/libhdfs3-cmake/hdfs.pb.h",
+    ],
+    includes = ["gen/contrib/libhdfs3-cmake"],
+    deps = ["@clickhouse_google_protobuf//:_libprotobuf"],
 )
 
 cc_library(

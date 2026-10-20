@@ -44,12 +44,10 @@ ch_cc_library(
     copts = [
         "-w",
         "-std=gnu11",
-        "-I",
-        "contrib/cyrus-sasl-cmake",
     ],
     implementation_deps = [
         "@clickhouse_llvm_project//:libcxxabi_headers",
-        "@clickhouse//contrib/cyrus-sasl-cmake:headers",
+        "@clickhouse//contrib/cyrus-sasl-cmake:cyrus_sasl_config_headers",
     ],
     language = "C",
     local_defines = [
@@ -64,8 +62,8 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
+    includes = ["config/contrib/cyrus-sasl-cmake"],
     local_includes = [
-        "config/contrib/cyrus-sasl-cmake",
         "plugins",
         ".",
         "include",

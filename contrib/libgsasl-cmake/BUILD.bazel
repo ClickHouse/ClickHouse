@@ -8,3 +8,9 @@ cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
 )
+
+cc_library(
+    name = "libgsasl_config_headers",
+    hdrs = ["linux_x86_64/include/config.h"],
+    includes = ["linux_x86_64/include"],
+)

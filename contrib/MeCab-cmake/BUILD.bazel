@@ -8,3 +8,9 @@ cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
 )
+
+cc_library(
+    name = "mecab_config_headers",
+    hdrs = ["config.h"],
+    includes = ["."],
+)

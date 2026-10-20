@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_path")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -15,9 +14,6 @@ ch_cc_library(
     copts = [
         "-w",
         "-std=c++23",
-        # queue.cpp includes "queue.h"; CppKafka's header must precede system headers.
-        "-I",
-        repository_path("contrib/cppkafka") + "/include/cppkafka",
     ],
     includes = ["include"],
     local_defines = [
@@ -30,4 +26,5 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     deps = ["@clickhouse_librdkafka//:_rdkafka"],
+    local_includes = ["include/cppkafka"],
 )

@@ -1,5 +1,4 @@
 load("@clickhouse//base:poco/poco_cc_library.bzl", "poco_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "llvm_toolchain_path", "repository_path")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -15,9 +14,8 @@ poco_cc_library(
         "-Wno-unused-parameter",
         "-Wno-zero-as-null-pointer-constant",
         "-Wno-implicit-int-conversion",
-        "-I",
-        "$(GENDIR)/bazel/gen/includes/configs",
     ],
+    implementation_deps = ["//bazel:clickhouse_config_headers"],
     local_defines = [
         "POCO_ENABLE_CPP11",
         "POCO_OS_FAMILY_UNIX",
@@ -41,8 +39,13 @@ poco_cc_library(
         "-Wno-shorten-64-to-32",
         "-Wno-unreachable-code-return",
         "-Wno-implicit-int-conversion",
-        "-I",
-        "$(GENDIR)/bazel/gen/includes/configs",
+    ],
+    implementation_deps = [
+        "//bazel:clickhouse_config_headers",
+        "@llvm-project//libunwind:headers",
+        "@llvm-project//libc:libc_headers",
+        "@llvm-project//compiler-rt:headers",
+        "@clickhouse_llvm_project//:libcxxabi_headers",
     ],
     language = "C",
     local_defines = [
@@ -50,12 +53,6 @@ poco_cc_library(
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
-    local_includes = [
-        "../../../" + (llvm_toolchain_path() + "/libunwind/include"),
-        "../../../" + (llvm_toolchain_path() + "/libc"),
-        "../../../" + (llvm_toolchain_path() + "/compiler-rt/include"),
-        "../../../" + (repository_path("contrib/llvm-project") + "/libcxxabi/include"),
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )

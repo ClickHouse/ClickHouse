@@ -36,11 +36,8 @@ expand_template(
 
 ch_cc_library(
     name = "_libpqxx",
-    srcs = glob(["src/*.cxx"]) + glob(["src/**/*.hxx"]),
-    hdrs = [
-        ":config/contrib/libpqxx-cmake/pqxx/config-internal-compiler.h",
-        ":config/contrib/libpqxx-cmake/pqxx/config-public-compiler.h",
-    ],
+    srcs = (glob(["src/*.cxx"]) + glob(["src/**/*.hxx"])) + [":config/contrib/libpqxx-cmake/pqxx/config-internal-compiler.h"],
+    hdrs = [":config/contrib/libpqxx-cmake/pqxx/config-public-compiler.h"],
     copts = [
         "-w",
         "-std=c++23",
@@ -51,11 +48,9 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    local_includes = [
-        "config/contrib/libpqxx-cmake",
-    ],
     deps = [
         ":libpqxx_headers",
         "@clickhouse_postgres//:_libpq",
     ],
+    includes = ["config/contrib/libpqxx-cmake"],
 )

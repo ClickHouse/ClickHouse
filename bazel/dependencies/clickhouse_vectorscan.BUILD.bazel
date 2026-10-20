@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_local_include")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -24,6 +23,7 @@ _VECTORSCAN_DEPS = select({
         "@clickhouse_sysroot//:linux_aarch64_hwcap",
     ],
 }) + [
+    "@clickhouse//contrib/vectorscan-cmake:headers",
     "@llvm-project//compiler-rt:headers",
     "@llvm-project//libc:libc_headers",
     "@llvm-project//libunwind:headers",
@@ -31,7 +31,6 @@ _VECTORSCAN_DEPS = select({
 
 _VECTORSCAN_LOCAL_INCLUDES = [
     "src",
-    repository_local_include("contrib/vectorscan-cmake/common", "contrib/vectorscan"),
     "include",
 ]
 
@@ -62,7 +61,7 @@ ch_cc_library(
             "@clickhouse//contrib/vectorscan-cmake:aarch64/config.h",
         ],
     }) + glob(["include/**/*.hpp"]),
-    hdrs = ["@clickhouse//contrib/vectorscan-cmake:common/hs_version.h"] + glob([
+    hdrs = glob([
         "src/**/*.h",
         "src/**/*.hpp",
     ]),
@@ -73,20 +72,8 @@ ch_cc_library(
         "src/util/supervector/arch/x86/impl.cpp",
         "src/rose/match.c",
     ],
-    copts = [
-        "-w",
-        "-std=gnu11",
-        "-g1",
-        "-I",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "contrib/vectorscan-cmake/amd64",
-        ],
-        "@platforms//cpu:aarch64": [
-            "contrib/vectorscan-cmake/aarch64",
-        ],
-    }),
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    copts = ["-w", "-std=gnu11", "-g1"],
+    implementation_deps = (["@clickhouse_llvm_project//:libcxxabi_headers"]) + ["@clickhouse//contrib/vectorscan-cmake:vectorscan_config_headers"],
     includes = [
         "src",
     ],
@@ -269,7 +256,7 @@ ch_cc_library(
             "@clickhouse//contrib/vectorscan-cmake:aarch64/config.h",
         ],
     }) + glob(["include/**/*.hpp"]),
-    hdrs = ["@clickhouse//contrib/vectorscan-cmake:common/hs_version.h"] + glob([
+    hdrs = glob([
         "src/**/*.h",
         "src/**/*.hpp",
     ]),
@@ -292,24 +279,13 @@ ch_cc_library(
             "src/util/supervector/arch/arm/impl.cpp",
         ],
     }),
-    copts = [
-        "-w",
-        "-std=c++17",
-        "-g1",
-        "-I",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "contrib/vectorscan-cmake/amd64",
-        ],
-        "@platforms//cpu:aarch64": [
-            "contrib/vectorscan-cmake/aarch64",
-        ],
-    }),
+    copts = ["-w", "-std=c++17", "-g1"],
     local_defines = _VECTORSCAN_LOCAL_DEFINES,
     local_includes = _VECTORSCAN_LOCAL_INCLUDES,
     deps = _VECTORSCAN_DEPS + [
         "@clickhouse_boost//:boost_headers",
     ],
+    implementation_deps = ["@clickhouse//contrib/vectorscan-cmake:vectorscan_config_headers"],
 )
 
 ch_cc_library(
@@ -326,7 +302,7 @@ ch_cc_library(
             "@clickhouse//contrib/vectorscan-cmake:aarch64/config.h",
         ] + glob(["include/**/*.hpp"]),
     }),
-    hdrs = ["@clickhouse//contrib/vectorscan-cmake:common/hs_version.h"] + glob([
+    hdrs = glob([
         "src/**/*.h",
         "src/**/*.hpp",
     ]),
@@ -344,13 +320,9 @@ ch_cc_library(
         "-funsigned-char",
     ] + select({
         "@platforms//cpu:x86_64": [
-            "-I",
-            "contrib/vectorscan-cmake/amd64",
         ],
         "@platforms//cpu:aarch64": [
             "-Wno-c++11-narrowing",
-            "-I",
-            "contrib/vectorscan-cmake/aarch64",
         ],
     }),
     local_defines = _VECTORSCAN_LOCAL_DEFINES,
@@ -358,6 +330,7 @@ ch_cc_library(
     deps = _VECTORSCAN_DEPS + [
         "@clickhouse_boost//:boost_headers",
     ],
+    implementation_deps = ["@clickhouse//contrib/vectorscan-cmake:vectorscan_config_headers"],
 )
 
 cc_library(

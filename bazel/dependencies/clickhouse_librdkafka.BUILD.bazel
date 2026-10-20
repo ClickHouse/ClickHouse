@@ -1,6 +1,5 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_local_include", "repository_path")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -102,10 +101,7 @@ _RDKAFKA_LOCAL_DEFINES = select({
 
 _RDKAFKA_LOCAL_INCLUDES = [
     "config/contrib/librdkafka-cmake",
-    repository_local_include(
-        "$(GENDIR)/" + repository_path("contrib/zlib-ng") + "/config/contrib/zlib-ng-cmake",
-        "contrib/librdkafka",
-    ),
+    "src",
 ]
 
 ch_cc_library(
@@ -204,14 +200,12 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
         "-fno-sanitize=undefined",
-        "-I",
-        "$(GENDIR)/" + repository_path("contrib/cyrus-sasl") + "/config/contrib/cyrus-sasl-cmake",
     ],
-    implementation_deps = [
+    implementation_deps = ([
         "@clickhouse//base/poco/NetSSL_OpenSSL:poco_net_ssl_headers",
         "@clickhouse_llvm_project//:libcxxabi_headers",
         "@clickhouse//contrib/librdkafka-cmake:headers",
-    ],
+    ]) + ["@clickhouse_zlib_ng//:_zlib", "@clickhouse_cyrus_sasl//:_sasl2"],
     language = "C",
     local_defines = _RDKAFKA_LOCAL_DEFINES,
     local_includes = _RDKAFKA_LOCAL_INCLUDES,
@@ -239,13 +233,11 @@ ch_cc_library(
         "-w",
         "-std=c++23",
         "-fno-sanitize=undefined",
-        "-I",
-        "$(GENDIR)/" + repository_path("contrib/cyrus-sasl") + "/config/contrib/cyrus-sasl-cmake",
     ],
-    implementation_deps = [
+    implementation_deps = ([
         "@clickhouse//base/poco/NetSSL_OpenSSL:poco_net_ssl_headers",
         "@clickhouse//contrib/librdkafka-cmake:headers",
-    ],
+    ]) + ["@clickhouse_zlib_ng//:_zlib", "@clickhouse_cyrus_sasl//:_sasl2"],
     local_defines = _RDKAFKA_LOCAL_DEFINES,
     local_includes = _RDKAFKA_LOCAL_INCLUDES,
     deps = [
@@ -269,5 +261,5 @@ cc_library(
 cc_library(
     name = "librdkafka_native_headers",
     hdrs = ["src/rdkafka.h"],
-    includes = ["src"],
+    strip_include_prefix = "src",
 )

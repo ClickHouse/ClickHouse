@@ -5,7 +5,7 @@ bazel_dep(name = "llvm", version = "0.8.24")
 bazel_dep(name = "lz4", version = "1.10.0.bcr.2")
 bazel_dep(name = "nasm", version = "2.16.03.bcr.4")
 bazel_dep(name = "platforms", version = "1.1.0")
-bazel_dep(name = "protobuf", version = "33.4")
+bazel_dep(name = "protobuf", version = "36.1")
 bazel_dep(name = "rules_cc", version = "0.2.26")
 bazel_dep(name = "rules_perl", version = "1.1.1")
 bazel_dep(name = "rules_python", version = "1.8.0")
@@ -78,6 +78,11 @@ single_version_override(
 include("//bazel:llvm.MODULE.bazel")
 
 register_toolchains("@llvm//toolchain:all")
+
+register_toolchains(
+    "//bazel:clickhouse_proto_toolchain",
+    "//bazel:clickhouse_cc_proto_toolchain",
+)
 
 rust_toolchains = use_extension("@rules_rs//rs/toolchains:module_extension.bzl", "toolchains")
 rust_toolchains.toolchain(

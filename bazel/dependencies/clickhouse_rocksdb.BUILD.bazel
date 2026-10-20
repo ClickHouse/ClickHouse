@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_local_include")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -476,7 +475,6 @@ ch_cc_library(
     ],
     local_includes = [
         ".",
-        repository_local_include("contrib/jemalloc-cmake/include", "contrib/rocksdb"),
     ],
     deps = [
         "@clickhouse_jemalloc//:_jemalloc",
@@ -486,4 +484,5 @@ ch_cc_library(
         "@clickhouse_zlib_ng//:_zlib",
         "@clickhouse_zstd//:_zstd",
     ],
+    implementation_deps = ["@clickhouse//contrib/jemalloc-cmake:headers"],
 )

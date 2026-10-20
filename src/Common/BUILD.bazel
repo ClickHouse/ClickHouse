@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_path")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -636,23 +635,10 @@ ch_cc_library(
     name = "clickhouse_malloc",
     srcs = ["malloc.cpp"],
     clickhouse_code = True,
-    copts = [
-        "-fno-builtin",
-        "-I",
-        "$(GENDIR)/bazel/gen/includes/configs",
-        "-I",
-        repository_path("contrib/libfiu") + "/libfiu",
-        "-I",
-        "$(GENDIR)/" + repository_path("contrib/libssh") + "/config/contrib/libssh/include",
-        "-I",
-        repository_path("contrib/libarchive") + "/libarchive",
-    ],
+    copts = ["-fno-builtin"],
+    implementation_deps = ["//bazel:clickhouse_config_headers"],
     link_runtime = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        "../../bazel/gen/base",
-    ] + [
-    ],
     textual_hdrs = _GENERATED_HDRS_0,
     deps = _GENERATED_DEPS_0,
     alwayslink = True,
@@ -662,22 +648,9 @@ ch_cc_library(
     name = "clickhouse_new_delete",
     srcs = ["AllocationInterceptors.cpp"],
     clickhouse_code = True,
-    copts = [
-        "-I",
-        "$(GENDIR)/bazel/gen/includes/configs",
-        "-I",
-        repository_path("contrib/libfiu") + "/libfiu",
-        "-I",
-        "$(GENDIR)/" + repository_path("contrib/libssh") + "/config/contrib/libssh/include",
-        "-I",
-        repository_path("contrib/libarchive") + "/libarchive",
-    ],
+    implementation_deps = ["//bazel:clickhouse_config_headers"],
     link_runtime = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        "../../bazel/gen/base",
-    ] + [
-    ],
     textual_hdrs = _GENERATED_HDRS_0,
     deps = _GENERATED_DEPS_0,
 )

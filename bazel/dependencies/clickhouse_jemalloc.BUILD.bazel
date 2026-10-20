@@ -1,6 +1,5 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_local_include")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -11,12 +10,11 @@ exports_files([
 expand_template(
     name = "configure_include_linux_jemalloc_internal_jemalloc_internal_defs_h",
     out = "config/contrib/jemalloc-cmake/include_linux/jemalloc/internal/jemalloc_internal_defs.h",
-    substitutions = select({
-        "@platforms//cpu:x86_64": {
-            "@JEMALLOC_CONFIG_MALLOC_CONF@": "percpu_arena:percpu,oversize_threshold:67108864,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:true,prof_thread_active_init:false,background_thread:true,lg_extent_max_active_fit:6",
-        },
+    substitutions = {
+        "@JEMALLOC_CONFIG_MALLOC_CONF@": "percpu_arena:percpu,oversize_threshold:67108864,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:true,prof_thread_active_init:false,background_thread:true,lg_extent_max_active_fit:6",
+    } | select({
+        "@platforms//cpu:x86_64": {},
         "@platforms//cpu:aarch64": {
-            "@JEMALLOC_CONFIG_MALLOC_CONF@": "percpu_arena:percpu,oversize_threshold:67108864,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:true,prof_thread_active_init:false,background_thread:true,lg_extent_max_active_fit:6",
             "@JEMALLOC_LG_HUGEPAGE@": "29",
             "@JEMALLOC_LG_PAGE@": "16",
         },
@@ -95,17 +93,8 @@ ch_cc_library(
         "src/tsd.c",
         "src/util.c",
         "src/witness.c",
-    ] + glob(["include/**/*.h"]),
-    hdrs = [
         ":config/contrib/jemalloc-cmake/include_linux/jemalloc/internal/jemalloc_internal_defs.h",
-        "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/internal/jemalloc_preamble.h",
-        "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc.h",
-        "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc_defs.h",
-        "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc_macros.h",
-        "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc_protos.h",
-        "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc_rename.h",
-        "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc_typedefs.h",
-    ],
+    ] + glob(["include/**/*.h"]),
     copts = [
         "-w",
         "-std=gnu11",
@@ -124,8 +113,10 @@ ch_cc_library(
     ],
     local_includes = [
         "include",
-        repository_local_include("contrib/jemalloc-cmake/include", "contrib/jemalloc"),
         "config/contrib/jemalloc-cmake/include_linux/jemalloc/internal",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = [
+        "@clickhouse//contrib/jemalloc-cmake:headers",
+        "@clickhouse_llvm_project//:clang_rt_builtins",
+    ],
 )

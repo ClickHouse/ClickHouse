@@ -8,36 +8,33 @@ exports_files([
     "LICENSE.txt",
 ])
 
-_AWS_COMMON_CONFIG_H_SUBSTITUTIONS = {
-    "#cmakedefine AWS_HAVE_GCC_OVERFLOW_MATH_EXTENSIONS": "/* #undef AWS_HAVE_GCC_OVERFLOW_MATH_EXTENSIONS */",
-    "#cmakedefine AWS_HAVE_POSIX_LARGE_FILE_SUPPORT": "/* #undef AWS_HAVE_POSIX_LARGE_FILE_SUPPORT */",
-    "#cmakedefine AWS_HAVE_MM256_EXTRACT_EPI64": "/* #undef AWS_HAVE_MM256_EXTRACT_EPI64 */",
-    "#cmakedefine AWS_HAVE_MSVC_INTRINSICS_X64": "/* #undef AWS_HAVE_MSVC_INTRINSICS_X64 */",
-    "#cmakedefine AWS_HAVE_AVX512_INTRINSICS": "/* #undef AWS_HAVE_AVX512_INTRINSICS */",
-    "#cmakedefine AWS_HAVE_AVX2_INTRINSICS": "/* #undef AWS_HAVE_AVX2_INTRINSICS */",
-    "#cmakedefine AWS_HAVE_LINUX_IF_LINK_H": "/* #undef AWS_HAVE_LINUX_IF_LINK_H */",
-    "#cmakedefine AWS_HAVE_GCC_INLINE_ASM": "#define AWS_HAVE_GCC_INLINE_ASM",
-    "#cmakedefine AWS_HAVE_WINAPI_DESKTOP": "/* #undef AWS_HAVE_WINAPI_DESKTOP */",
-    "#cmakedefine AWS_USE_CPU_EXTENSIONS": "/* #undef AWS_USE_CPU_EXTENSIONS */",
-    "#cmakedefine AWS_ARCH_INTEL_X64": "/* #undef AWS_ARCH_INTEL_X64 */",
-    "#cmakedefine AWS_HAVE_ARM32_CRC": "/* #undef AWS_HAVE_ARM32_CRC */",
-    "#cmakedefine AWS_HAVE_EXECINFO": "/* #undef AWS_HAVE_EXECINFO */",
-    "#cmakedefine AWS_HAVE_ARMv8_1": "/* #undef AWS_HAVE_ARMv8_1 */",
-}
-
 expand_template(
     name = "configure_include_aws_common_config_h",
     out = "config/contrib/aws-cmake/include/aws/common/config.h",
-    substitutions = select({
-        "@platforms//cpu:x86_64": _AWS_COMMON_CONFIG_H_SUBSTITUTIONS | {
+    substitutions = {
+        "#cmakedefine AWS_HAVE_GCC_OVERFLOW_MATH_EXTENSIONS": "/* #undef AWS_HAVE_GCC_OVERFLOW_MATH_EXTENSIONS */",
+        "#cmakedefine AWS_HAVE_POSIX_LARGE_FILE_SUPPORT": "/* #undef AWS_HAVE_POSIX_LARGE_FILE_SUPPORT */",
+        "#cmakedefine AWS_HAVE_MM256_EXTRACT_EPI64": "/* #undef AWS_HAVE_MM256_EXTRACT_EPI64 */",
+        "#cmakedefine AWS_HAVE_MSVC_INTRINSICS_X64": "/* #undef AWS_HAVE_MSVC_INTRINSICS_X64 */",
+        "#cmakedefine AWS_HAVE_AVX512_INTRINSICS": "/* #undef AWS_HAVE_AVX512_INTRINSICS */",
+        "#cmakedefine AWS_HAVE_AVX2_INTRINSICS": "/* #undef AWS_HAVE_AVX2_INTRINSICS */",
+        "#cmakedefine AWS_HAVE_LINUX_IF_LINK_H": "/* #undef AWS_HAVE_LINUX_IF_LINK_H */",
+        "#cmakedefine AWS_HAVE_GCC_INLINE_ASM": "#define AWS_HAVE_GCC_INLINE_ASM",
+        "#cmakedefine AWS_HAVE_WINAPI_DESKTOP": "/* #undef AWS_HAVE_WINAPI_DESKTOP */",
+        "#cmakedefine AWS_USE_CPU_EXTENSIONS": "/* #undef AWS_USE_CPU_EXTENSIONS */",
+        "#cmakedefine AWS_ARCH_INTEL_X64": "/* #undef AWS_ARCH_INTEL_X64 */",
+        "#cmakedefine AWS_HAVE_ARM32_CRC": "/* #undef AWS_HAVE_ARM32_CRC */",
+        "#cmakedefine AWS_HAVE_EXECINFO": "/* #undef AWS_HAVE_EXECINFO */",
+        "#cmakedefine AWS_HAVE_ARMv8_1": "/* #undef AWS_HAVE_ARMv8_1 */",
+        "#cmakedefine AWS_HAVE_CLMUL": "/* #undef AWS_HAVE_CLMUL */",
+    } | select({
+        "@platforms//cpu:x86_64": {
             "#cmakedefine AWS_ARCH_ARM64": "/* #undef AWS_ARCH_ARM64 */",
             "#cmakedefine AWS_ARCH_INTEL": "#define AWS_ARCH_INTEL",
-            "#cmakedefine AWS_HAVE_CLMUL": "/* #undef AWS_HAVE_CLMUL */",
         },
-        "@platforms//cpu:aarch64": _AWS_COMMON_CONFIG_H_SUBSTITUTIONS | {
+        "@platforms//cpu:aarch64": {
             "#cmakedefine AWS_ARCH_ARM64": "#define AWS_ARCH_ARM64",
             "#cmakedefine AWS_ARCH_INTEL": "/* #undef AWS_ARCH_INTEL */",
-            "#cmakedefine AWS_HAVE_CLMUL": "/* #undef AWS_HAVE_CLMUL */",
         },
     }),
     template = "@clickhouse_aws_c_common//:include/aws/common/config.h.in",
@@ -52,21 +49,19 @@ expand_template(
     template = ":src/aws-cpp-sdk-core/include/aws/core/SDKConfig.h.in",
 )
 
-_AWS_CRT_CONFIG_H_SUBSTITUTIONS = {
-    "@AWS_CRT_CPP_VERSION_MAJOR@": "0",
-    "@AWS_CRT_CPP_VERSION_MINOR@": "43",
-    "@AWS_CRT_CPP_VERSION_PATCH@": "8",
-    "@FULL_VERSION@": "0.43.8-clickhouse",
-}
-
 expand_template(
     name = "configure_include_aws_crt_Config_h",
     out = "config/contrib/aws-cmake/include/aws/crt/Config.h",
-    substitutions = select({
-        "@platforms//cpu:x86_64": _AWS_CRT_CONFIG_H_SUBSTITUTIONS | {
+    substitutions = {
+        "@AWS_CRT_CPP_VERSION_MAJOR@": "0",
+        "@AWS_CRT_CPP_VERSION_MINOR@": "43",
+        "@AWS_CRT_CPP_VERSION_PATCH@": "8",
+        "@FULL_VERSION@": "0.43.8-clickhouse",
+    } | select({
+        "@platforms//cpu:x86_64": {
             "@GIT_HASH@": "8b819009ee01311c3ec6767472a85b82a5f35b7c",
         },
-        "@platforms//cpu:aarch64": _AWS_CRT_CONFIG_H_SUBSTITUTIONS | {
+        "@platforms//cpu:aarch64": {
             "@GIT_HASH@": "6bb427c9a81459c2b9e7369ef6ed8a6e8680b0da",
         },
     }),

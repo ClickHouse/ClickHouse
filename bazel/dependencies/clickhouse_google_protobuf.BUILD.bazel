@@ -1,5 +1,5 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_prefix_maps", "repository_local_include", "repository_path")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_prefix_maps", "repository_path")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
@@ -166,14 +166,6 @@ _GENERATED_LOCAL_DEFINES_0 = select({
 _GOOGLE_PROTOBUF_LOCAL_INCLUDES = [
     "src",
     "third_party/utf8_range",
-    repository_local_include(
-        repository_path("contrib/zlib-ng"),
-        "contrib/google-protobuf",
-    ),
-    repository_local_include(
-        "$(GENDIR)/" + repository_path("contrib/zlib-ng") + "/config/contrib/zlib-ng-cmake",
-        "contrib/google-protobuf",
-    ),
 ]
 
 ch_cc_library(
@@ -462,6 +454,7 @@ ch_cc_library(
         "upb/reflection/cmake",
     ] + _GOOGLE_PROTOBUF_LOCAL_INCLUDES,
     deps = [] + ["@clickhouse_abseil_cpp//:abseil_cpp_headers"],
+    implementation_deps = ["@clickhouse_zlib_ng//:_zlib"],
 )
 
 ch_cc_library(
@@ -602,10 +595,6 @@ cc_binary(
         "-gz=zlib",
         "-Werror",
         "-nostdinc++",
-        "-I",
-        repository_path("contrib/google-protobuf"),
-        "-I",
-        repository_path("contrib/google-protobuf") + "/upb/reflection/cmake",
     ] + cmake_prefix_maps([
         "aarch64",
         "x86_64",
@@ -702,7 +691,7 @@ cc_binary(
         "-lpthread",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _GOOGLE_PROTOBUF_LOCAL_INCLUDES,
+    local_includes = (_GOOGLE_PROTOBUF_LOCAL_INCLUDES) + [".", "upb/reflection/cmake"],
     deps = [
         "@clickhouse_llvm_project//:clang_rt_builtins",
         "@clickhouse_llvm_project//:clang_rt_xray",

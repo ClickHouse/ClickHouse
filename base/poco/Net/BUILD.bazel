@@ -29,9 +29,8 @@ poco_cc_library(
         "-Wno-zero-as-null-pointer-constant",
         "-Wno-implicit-int-conversion",
         "-Wno-implicit-int-float-conversion",
-        "-I",
-        "$(GENDIR)/bazel/gen/includes/configs",
     ],
+    implementation_deps = ["//bazel:clickhouse_config_headers"],
     local_defines = [
         "POCO_ENABLE_CPP11",
         "POCO_HAVE_FD_EPOLL",

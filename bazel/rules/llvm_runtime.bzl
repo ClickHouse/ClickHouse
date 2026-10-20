@@ -1,5 +1,6 @@
 """Compile ClickHouse's runtime sources with their CMake flags and Bazel's Clang."""
 
+load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@rules_cc//cc:action_names.bzl", "ACTION_NAMES")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain", "use_cc_toolchain")
@@ -52,12 +53,16 @@ def _llvm_runtime_objects_impl(ctx):
         ctx.expand_make_variables("copts", ctx.expand_location(option, targets = labels), {})
         for option in ctx.attr.copts
     ]
+    include_flags = []
+    for directory in ctx.attr.local_includes:
+        include_dir = paths.join(ctx.label.workspace_root, ctx.label.package, directory)
+        include_flags.extend(["-I", include_dir, "-I", paths.join(ctx.bin_dir.path, include_dir)])
     flags = [
         "--target=" + triple,
         "--sysroot=" + gcc_root + "/" + triple + "/libc",
         "--gcc-toolchain=" + gcc_root,
         _resource_dir(ctx, toolchain, features, action),
-    ] + ["-D" + define for define in ctx.attr.local_defines] + copts
+    ] + ["-D" + define for define in ctx.attr.local_defines] + include_flags + copts
     if ctx.attr._cmake_metadata[BuildSettingInfo].value and ctx.attr.reference_source_root:
         # These CMake groups lack -ffile-prefix-map. Their absolute __FILE__
         # strings are part of the executable and must use the recorded root.
@@ -97,6 +102,7 @@ llvm_runtime_objects = rule(
         "hdrs": attr.label_list(allow_files = True),
         "copts": attr.string_list(),
         "local_defines": attr.string_list(),
+        "local_includes": attr.string_list(doc = "Private package-relative source and generated include directories."),
         "language": attr.string(values = ["C", "CXX", "ASM"], mandatory = True),
         "arch": attr.string(values = ["x86_64", "aarch64"], mandatory = True),
         "reference_source_root": attr.string(),

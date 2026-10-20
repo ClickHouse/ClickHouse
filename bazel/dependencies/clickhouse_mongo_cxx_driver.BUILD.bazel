@@ -1,6 +1,6 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_cxx_compiler_version", "repository_local_include", "repository_path")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_cxx_compiler_version")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -88,18 +88,16 @@ expand_template(
 expand_template(
     name = "configure_src_mongocxx_lib_mongocxx_private_config_config_hh",
     out = "config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/private/config/config.hh",
-    substitutions = select({
+    substitutions = {
+        "#cmakedefine MONGOCXX_COMPILER_ID \"${MONGOCXX_COMPILER_ID}\"": "#define MONGOCXX_COMPILER_ID \"Clang\"",
+        "#cmakedefine MONGOCXX_ENABLE_SSL": "#define MONGOCXX_ENABLE_SSL",
+        "@MONGOC_REQUIRED_VERSION@": "",
+    } | select({
         "@platforms//cpu:x86_64": {
             "#cmakedefine MONGOCXX_COMPILER_VERSION \"${MONGOCXX_COMPILER_VERSION}\"": "#define MONGOCXX_COMPILER_VERSION \"" + cmake_cxx_compiler_version("x86_64") + "\"",
-            "#cmakedefine MONGOCXX_COMPILER_ID \"${MONGOCXX_COMPILER_ID}\"": "#define MONGOCXX_COMPILER_ID \"Clang\"",
-            "#cmakedefine MONGOCXX_ENABLE_SSL": "#define MONGOCXX_ENABLE_SSL",
-            "@MONGOC_REQUIRED_VERSION@": "",
         },
         "@platforms//cpu:aarch64": {
             "#cmakedefine MONGOCXX_COMPILER_VERSION \"${MONGOCXX_COMPILER_VERSION}\"": "#define MONGOCXX_COMPILER_VERSION \"" + cmake_cxx_compiler_version("aarch64") + "\"",
-            "#cmakedefine MONGOCXX_COMPILER_ID \"${MONGOCXX_COMPILER_ID}\"": "#define MONGOCXX_COMPILER_ID \"Clang\"",
-            "#cmakedefine MONGOCXX_ENABLE_SSL": "#define MONGOCXX_ENABLE_SSL",
-            "@MONGOC_REQUIRED_VERSION@": "",
         },
     }),
     template = ":src/mongocxx/lib/mongocxx/private/config/config.hh.in",
@@ -202,9 +200,9 @@ ch_cc_library(
         "src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/types/bson_value/view.cpp",
         "src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/validate.cpp",
         "src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/vector.cpp",
+        ":config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/private/config/config.hh",
     ],
     hdrs = [
-        ":config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/private/config/config.hh",
         ":config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/config/config.hpp",
         ":config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/config/version.hpp",
         ":config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/fwd.hpp",
@@ -223,13 +221,11 @@ ch_cc_library(
         "src/bsoncxx/include",
         "src/bsoncxx/include/bsoncxx/v_noabi",
         "src/bsoncxx/lib",
-    ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
         "src/bsoncxx/lib/bsoncxx/v_noabi",
         "config/contrib/mongo-cxx-driver/src/bsoncxx/lib",
         "config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi",
     ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = ["@clickhouse_mongo_c_driver//:_libbson"],
 )
 
@@ -238,9 +234,9 @@ ch_cc_library(
     srcs = ([
         "src/mongocxx/lib/mongocxx/private/mongoc.cpp",
         "src/mongocxx/lib/mongocxx/private/scoped_bson.cpp",
+        ":config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/private/config/config.hh",
     ] + glob(["src/mongocxx/lib/mongocxx/v1/**/*.cpp"]) + glob(["src/mongocxx/lib/mongocxx/v_noabi/mongocxx/**/*.cpp"])),
     hdrs = [
-        ":config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/private/config/config.hh",
         ":config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/config/config.hpp",
         ":config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/config/version.hpp",
         ":config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/fwd.hpp",
@@ -260,19 +256,10 @@ ch_cc_library(
         "src/mongocxx/include/mongocxx/v_noabi",
         "src/mongocxx/lib",
         "src/mongocxx/lib/mongocxx/v_noabi",
-    ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
         "config/contrib/mongo-cxx-driver/src/mongocxx/lib",
         "config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi",
-        "src/bsoncxx/lib/bsoncxx/v_noabi",
-        "config/contrib/mongo-cxx-driver/src/bsoncxx/lib",
-        "config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi",
-        repository_local_include(
-            "$(GENDIR)/" + repository_path("contrib/mongo-c-driver") + "/config/contrib/mongo-c-driver/src/libmongoc/src",
-            "contrib/mongo-cxx-driver",
-        ),
     ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":_bsoncxx",
         "@clickhouse_mongo_c_driver//:_libmongoc",

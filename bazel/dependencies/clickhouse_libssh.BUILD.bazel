@@ -103,19 +103,8 @@ ch_cc_library(
         "include/**/*.h",
         "include/**/*.hpp",
     ]),
-    copts = [
-        "-w",
-        "-std=gnu11",
-        "-I",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "contrib/libssh-cmake/linux/x86-64",
-        ],
-        "@platforms//cpu:aarch64": [
-            "contrib/libssh-cmake/linux/aarch64",
-        ],
-    }),
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    copts = ["-w", "-std=gnu11"],
+    implementation_deps = (["@clickhouse_llvm_project//:libcxxabi_headers"]) + ["@clickhouse//contrib/libssh-cmake:libssh_config_headers"],
     includes = [
         "include",
         "config/contrib/libssh/include",

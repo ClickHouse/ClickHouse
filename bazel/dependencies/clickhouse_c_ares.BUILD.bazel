@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_local_include")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -68,7 +67,7 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    implementation_deps = (["@clickhouse_llvm_project//:libcxxabi_headers"]) + ["@clickhouse//contrib/c-ares-cmake:headers"],
     includes = [
         "include",
         "src/lib",
@@ -84,9 +83,6 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
         "_POSIX_C_SOURCE=199309L",
         "_XOPEN_SOURCE=600",
-    ],
-    local_includes = [
-        repository_local_include("contrib/c-ares-cmake/linux", "contrib/c-ares"),
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )

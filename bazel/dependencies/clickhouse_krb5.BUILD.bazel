@@ -828,10 +828,8 @@ ch_cc_library(
         "-std=gnu11",
         "-iquote",
         "$(GENDIR)/" + repository_path("contrib/krb5") + "/config/contrib/krb5-cmake/include_private",
-        "-I",
-        "$(GENDIR)/bazel/gen/contrib/krb5-cmake/include_private",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    implementation_deps = (["@clickhouse_llvm_project//:libcxxabi_headers"]) + ["@clickhouse//bazel:krb5_private_generated_headers"],
     includes = [
         "src/include",
         "config/contrib/krb5-cmake/include",

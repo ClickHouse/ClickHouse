@@ -4318,8 +4318,6 @@ CODEGEN_RULES = {
             "//bazel:gen/external/googleapis/src/googleapis_download/google/type/date.proto",
         ],
         "outs": [
-            "gen/contrib/google-cloud-cpp-cmake/google/type/date.pb.cc",
-            "gen/contrib/google-cloud-cpp-cmake/google/type/date.pb.h",
             "gen/contrib/google-cloud-cpp-cmake/google/type/date.grpc.pb.cc",
             "gen/contrib/google-cloud-cpp-cmake/google/type/date.grpc.pb.h",
         ],
@@ -4327,7 +4325,7 @@ CODEGEN_RULES = {
             "@clickhouse_grpc//:grpc_cpp_plugin",
             "@clickhouse_google_protobuf//:protoc",
         ],
-        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" \"--cpp_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/type/date.proto\"",
+        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake/google/type\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" \"--grpc_out=$$execroot/$(BINDIR)/bazel/gen/contrib/google-cloud-cpp-cmake\" --proto_path \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download\" --proto_path \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/$(BINDIR)/bazel/gen/external/googleapis/src/googleapis_download/google/type/date.proto\"",
     },
     "generate_googleapis_google_type_datetime": {
         "srcs": [

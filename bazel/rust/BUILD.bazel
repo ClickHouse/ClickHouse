@@ -102,6 +102,13 @@ rust_cbindgen(
     vendor = "@clickhouse_rust_vendor//:sources",
 )
 
+cc_library(
+    name = "delta_kernel_ffi_headers",
+    hdrs = [":delta_ffi_headers"],
+    includes = ["delta_ffi_headers"],
+    visibility = ["//src:__pkg__"],
+)
+
 rust_static_library(
     name = "delta_kernel_ffi",
     srcs = ["delta.rs"],

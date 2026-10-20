@@ -40,3 +40,11 @@ cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
 )
+
+cc_library(
+    name = "functions_hashing_headers",
+    hdrs = glob(["include/*.h"]),
+    features = ["-system_include_paths"],
+    strip_include_prefix = "include",
+    visibility = ["//src/Functions:__pkg__"],
+)

@@ -51,10 +51,8 @@ ch_cc_library(
     copts = [
         "-w",
         "-std=gnu11",
-        "-I",
-        "contrib/libgsasl-cmake/linux_x86_64/include",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    implementation_deps = (["@clickhouse_llvm_project//:libcxxabi_headers"]) + ["@clickhouse//contrib/libgsasl-cmake:libgsasl_config_headers"],
     includes = [
         "src",
     ],
@@ -75,6 +73,5 @@ ch_cc_library(
     ],
     deps = [
         "@clickhouse_krb5//:_krb5",
-        "@clickhouse//contrib/libgsasl-cmake:headers",
     ],
 )

@@ -421,7 +421,8 @@ CMAKE_LINK = {
     "//src/Functions/array:clickhouse_functions_array__compile_2",
     "//src/Functions/array:clickhouse_functions_array__compile_3",
     "//src/Functions/TimeSeries:clickhouse_functions_time_series",
-    "//src/Functions/UniqTheta:clickhouse_functions_uniqtheta"
+    "//src/Functions/UniqTheta:clickhouse_functions_uniqtheta",
+    "//bazel:google_type_date_cc_proto"
   ],
   "expected_objects": [
     170,
@@ -653,7 +654,7 @@ CMAKE_LINK = {
     2,
     2,
     2,
-    2,
+    1,
     2,
     1,
     25,
@@ -842,6 +843,7 @@ CMAKE_LINK = {
     2,
     1,
     20,
+    1,
     1
   ],
   "archives": [
@@ -2254,7 +2256,7 @@ CMAKE_LINK = {
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_api_http_protos.a"
     },
     {
-      "file": 229,
+      "objects": [[419, 0, 1], [229, 0, 1]],
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_type_date_protos.a"
     },
     {

@@ -53,10 +53,8 @@ ch_cc_library(
     copts = [
         "-w",
         "-std=gnu11",
-        "-I",
-        "contrib/libxml2-cmake/linux_x86_64/include",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    implementation_deps = (["@clickhouse_llvm_project//:libcxxabi_headers"]) + ["@clickhouse//contrib/libxml2-cmake:libxml2_config_headers"],
     includes = [
         "include",
     ],
@@ -108,6 +106,5 @@ ch_cc_library(
     ],
     deps = [
         "@clickhouse_zlib_ng//:_zlib",
-        "@clickhouse//contrib/libxml2-cmake:headers",
     ],
 )

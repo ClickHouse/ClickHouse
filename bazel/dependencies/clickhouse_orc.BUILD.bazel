@@ -1,6 +1,6 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_local_include", "repository_path")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_path")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -146,15 +146,7 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    local_includes = [
-        repository_local_include(
-            "$(GENDIR)/" + repository_path("contrib/orc") + "/config/contrib/orc/c++/include",
-            "contrib/orc",
-        ),
-        repository_local_include("contrib/arrow-cmake/cpp/src/orc/c++/include", "contrib/orc"),
-        "c++/src",
-        repository_local_include("$(GENDIR)/bazel/gen/contrib/arrow-cmake", "contrib/orc"),
-    ],
+    local_includes = ["config/contrib/orc/c++/include", "c++/src"],
     textual_hdrs = [
         "@clickhouse//bazel:gen/contrib/arrow-cmake/orc_proto.pb.cc",
     ],
@@ -165,4 +157,5 @@ ch_cc_library(
         "@clickhouse_zstd//:_zstd",
         "@clickhouse//contrib/arrow-cmake:headers",
     ],
+    implementation_deps = ["@clickhouse//contrib/arrow-cmake:arrow_cmake_headers", "@clickhouse//bazel:orc_proto_headers"],
 )

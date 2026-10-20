@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_local_include", "repository_path")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -65,11 +64,6 @@ ch_cc_library(
         "_XOPEN_SOURCE=700",
         "__USE_XOPEN2K8",
     ],
-    local_includes = [
-        repository_local_include(
-            repository_path("contrib/xgboost") + "/config/contrib/xgboost/dmlc-core",
-            "contrib/dmlc-core",
-        ),
-    ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    implementation_deps = ["@clickhouse_xgboost//:dmlc_config_headers"],
 )

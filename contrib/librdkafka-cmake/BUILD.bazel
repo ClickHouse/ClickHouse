@@ -12,15 +12,13 @@ exports_files([
 cc_library(
     name = "librdkafka_cmake_headers",
     hdrs = glob(["include/**/*.h"]),
-    includes = ["include"],
+    strip_include_prefix = "include",
     deps = ["@clickhouse_librdkafka//:librdkafka_native_headers"],
 )
 
 cc_library(
     name = "headers",
-    hdrs = glob(["**/*.h"]),
-    includes = [
-        "include",
-        ".",
-    ],
+    hdrs = glob(["*.h"]),
+    includes = ["."],
+    deps = [":librdkafka_cmake_headers"],
 )

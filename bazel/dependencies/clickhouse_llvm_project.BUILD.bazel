@@ -57,6 +57,15 @@ copy_file(
     out = "gen/libcxx/include/c++/v1/__config_site",
 )
 
+cc_library(
+    name = "libcxx_config_headers",
+    hdrs = [
+        ":configure_libcxx_include_c_v1___assertion_handler",
+        ":configure_libcxx_include_c_v1___config_site",
+    ],
+    includes = ["gen/libcxx/include/c++/v1"],
+)
+
 expand_template(
     name = "configure_llvm_include_llvm_Config_llvm_config_h",
     out = "gen/llvm/include/llvm/Config/llvm-config.h",
@@ -1075,25 +1084,7 @@ _LLVMSUPPORT_DEPS = [
 _LLVM_PROJECT_COPTS = [
     "-w",
     "-std=c++17",
-    "-I",
-    repository_path("contrib/llvm-project") + "/llvm/include",
-    "-I",
-    "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/llvm/include",
-    "-I",
-    repository_path("contrib/llvm-project") + "/third-party/siphash/include",
-    "-I",
-] + select({
-    "@platforms//cpu:x86_64": [
-        "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/llvm/lib/Target/X86",
-        "-I",
-        repository_path("contrib/llvm-project") + "/llvm/lib/Target/X86",
-    ],
-    "@platforms//cpu:aarch64": [
-        "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/llvm/lib/Target/AArch64",
-        "-I",
-        repository_path("contrib/llvm-project") + "/llvm/lib/Target/AArch64",
-    ],
-})
+]
 
 ch_cc_library(
     name = "LLVMAggressiveInstCombine",
@@ -2680,25 +2671,7 @@ ch_cc_library(
     copts = [
         "-w",
         "-std=gnu11",
-        "-I",
-        repository_path("contrib/llvm-project") + "/llvm/include",
-        "-I",
-        "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/llvm/include",
-        "-I",
-        repository_path("contrib/llvm-project") + "/third-party/siphash/include",
-        "-I",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/llvm/lib/Target/X86",
-            "-I",
-            repository_path("contrib/llvm-project") + "/llvm/lib/Target/X86",
-        ],
-        "@platforms//cpu:aarch64": [
-            "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/llvm/lib/Target/AArch64",
-            "-I",
-            repository_path("contrib/llvm-project") + "/llvm/lib/Target/AArch64",
-        ],
-    }),
+    ],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2755,21 +2728,6 @@ ch_cc_library(
     arches = [
         "x86_64",
     ],
-    copts = select({
-        "@platforms//cpu:x86_64": [
-            "-I",
-            repository_path("contrib/llvm-project") + "/llvm/include",
-            "-I",
-            "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/llvm/include",
-            "-I",
-            repository_path("contrib/llvm-project") + "/third-party/siphash/include",
-            "-I",
-            "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/llvm/lib/Target/X86",
-            "-I",
-            repository_path("contrib/llvm-project") + "/llvm/lib/Target/X86",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
     language = "ASM",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = select({
@@ -2803,16 +2761,6 @@ ch_cc_library(
         "@platforms//cpu:x86_64": [
             "-mavx512f",
             "-mavx512vl",
-            "-I",
-            repository_path("contrib/llvm-project") + "/llvm/include",
-            "-I",
-            "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/llvm/include",
-            "-I",
-            repository_path("contrib/llvm-project") + "/third-party/siphash/include",
-            "-I",
-            "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/llvm/lib/Target/X86",
-            "-I",
-            repository_path("contrib/llvm-project") + "/llvm/lib/Target/X86",
         ],
         "@platforms//cpu:aarch64": [],
     }),
@@ -3055,20 +3003,7 @@ _GENERATED_TARGET_COMPATIBLE_WITH_0 = select({
 })
 
 _GENERATED_COPTS_1 = select({
-    "@platforms//cpu:x86_64": [
-        "-w",
-        "-std=c++17",
-        "-I",
-        repository_path("contrib/llvm-project") + "/llvm/include",
-        "-I",
-        "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/llvm/include",
-        "-I",
-        repository_path("contrib/llvm-project") + "/third-party/siphash/include",
-        "-I",
-        "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/llvm/lib/Target/X86",
-        "-I",
-        repository_path("contrib/llvm-project") + "/llvm/lib/Target/X86",
-    ],
+    "@platforms//cpu:x86_64": _LLVM_PROJECT_COPTS,
     "@platforms//cpu:aarch64": [],
 })
 
@@ -3146,6 +3081,10 @@ ch_cc_library(
     copts =
         _GENERATED_COPTS_1,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
+    local_includes = [
+        "gen/llvm/lib/Target/X86",
+        "llvm/lib/Target/X86",
+    ],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     deps = [
         ":LLVMGlobalISel",
@@ -3184,6 +3123,10 @@ ch_cc_library(
     copts =
         _GENERATED_COPTS_1,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
+    local_includes = [
+        "gen/llvm/lib/Target/X86",
+        "llvm/lib/Target/X86",
+    ],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     deps = [
         ":LLVMMCDisassembler",
@@ -3205,6 +3148,10 @@ ch_cc_library(
     copts =
         _GENERATED_COPTS_1,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
+    local_includes = [
+        "gen/llvm/lib/Target/X86",
+        "llvm/lib/Target/X86",
+    ],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     deps = [":LLVMMC"],
 )
@@ -4178,6 +4125,18 @@ _RUNTIME_ARCH = select({
     "@platforms//cpu:aarch64": "aarch64",
 })
 
+_CLANG_RT_BUILTINS_LOCAL_INCLUDES = [
+    "compiler-rt/lib/builtins",
+    "third-party/siphash/include",
+    "gen/libcxx/include/c++/v1",
+    "libc",
+]
+
+_CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES = select({
+    "@platforms//cpu:x86_64": [],
+    "@platforms//cpu:aarch64": _CLANG_RT_BUILTINS_LOCAL_INCLUDES,
+})
+
 llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_0",
     srcs = [
@@ -4401,14 +4360,6 @@ llvm_runtime_objects(
         "-fno-sanitize=all",
         "-w",
         "-Werror",
-        "-I",
-        repository_path("contrib/llvm-project") + "/compiler-rt/lib/builtins",
-        "-I",
-        repository_path("contrib/llvm-project") + "/third-party/siphash/include",
-        "-I",
-        "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
-        "-I",
-        repository_path("contrib/llvm-project") + "/libc",
         "-isystem",
         repository_path("contrib/llvm-project") + "/compiler-rt/include",
         "-isystem",
@@ -4417,6 +4368,7 @@ llvm_runtime_objects(
         repository_path("contrib/llvm-project") + "/libunwind/include",
     ],
     language = "C",
+    local_includes = _CLANG_RT_BUILTINS_LOCAL_INCLUDES,
     local_defines = _GENERATED_LOCAL_DEFINES_2,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
 )
@@ -4468,14 +4420,6 @@ llvm_runtime_objects(
         "-fno-sanitize=all",
         "-w",
         "-Werror",
-        "-I",
-        repository_path("contrib/llvm-project") + "/compiler-rt/lib/builtins",
-        "-I",
-        repository_path("contrib/llvm-project") + "/third-party/siphash/include",
-        "-I",
-        "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
-        "-I",
-        repository_path("contrib/llvm-project") + "/libc",
         "-isystem",
         repository_path("contrib/llvm-project") + "/compiler-rt/include",
     ] + select({
@@ -4494,6 +4438,7 @@ llvm_runtime_objects(
         "@platforms//cpu:x86_64": "ASM",
         "@platforms//cpu:aarch64": "CXX",
     }),
+    local_includes = _CLANG_RT_BUILTINS_LOCAL_INCLUDES,
     local_defines = _GENERATED_LOCAL_DEFINES_2,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
 )
@@ -4539,16 +4484,6 @@ _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS = select({
         "-fno-sanitize=all",
         "-w",
         "-Werror",
-        "-I",
-        repository_path("contrib/llvm-project") + "/compiler-rt/lib/builtins",
-        "-I",
-        repository_path("contrib/llvm-project") + "/compiler-rt/lib/builtins",
-        "-I",
-        repository_path("contrib/llvm-project") + "/third-party/siphash/include",
-        "-I",
-        "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
-        "-I",
-        repository_path("contrib/llvm-project") + "/libc",
         "-isystem",
         repository_path("contrib/llvm-project") + "/compiler-rt/include",
         "-isystem",
@@ -4570,6 +4505,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -4606,6 +4542,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -4642,6 +4579,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -4678,6 +4616,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -4714,6 +4653,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -4750,6 +4690,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -4786,6 +4727,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -4822,6 +4764,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -4858,6 +4801,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -4894,6 +4838,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -4930,6 +4875,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -4966,6 +4912,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5002,6 +4949,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5038,6 +4986,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5074,6 +5023,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5110,6 +5060,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5146,6 +5097,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5182,6 +5134,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5218,6 +5171,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5254,6 +5208,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5290,6 +5245,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5326,6 +5282,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5362,6 +5319,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5398,6 +5356,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5434,6 +5393,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5470,6 +5430,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5506,6 +5467,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5542,6 +5504,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5578,6 +5541,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5614,6 +5578,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5650,6 +5615,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5686,6 +5652,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5722,6 +5689,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5758,6 +5726,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5794,6 +5763,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5830,6 +5800,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5866,6 +5837,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5902,6 +5874,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5938,6 +5911,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5974,6 +5948,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6010,6 +5985,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6046,6 +6022,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6082,6 +6059,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6118,6 +6096,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6154,6 +6133,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6190,6 +6170,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6226,6 +6207,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6262,6 +6244,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6298,6 +6281,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6334,6 +6318,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6370,6 +6355,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6406,6 +6392,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6442,6 +6429,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6478,6 +6466,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6514,6 +6503,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6550,6 +6540,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6586,6 +6577,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6622,6 +6614,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6658,6 +6651,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6694,6 +6688,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6730,6 +6725,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6766,6 +6762,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6802,6 +6799,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6838,6 +6836,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6874,6 +6873,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6910,6 +6910,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6946,6 +6947,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6982,6 +6984,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7018,6 +7021,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7054,6 +7058,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7090,6 +7095,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7126,6 +7132,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7162,6 +7169,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7198,6 +7206,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7234,6 +7243,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7270,6 +7280,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7306,6 +7317,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7342,6 +7354,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7378,6 +7391,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7414,6 +7428,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7450,6 +7465,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7486,6 +7502,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7522,6 +7539,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7558,6 +7576,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7594,6 +7613,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7630,6 +7650,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7666,6 +7687,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7702,6 +7724,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7738,6 +7761,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7774,6 +7798,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7810,6 +7835,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7846,6 +7872,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7882,6 +7909,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7918,6 +7946,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7954,6 +7983,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7990,6 +8020,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8026,6 +8057,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8062,6 +8094,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8098,6 +8131,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8134,6 +8168,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8170,6 +8205,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8206,6 +8242,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8242,6 +8279,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8278,6 +8316,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8314,6 +8353,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8350,6 +8390,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8386,6 +8427,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8422,6 +8464,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8458,6 +8501,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8494,6 +8538,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8530,6 +8575,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8566,6 +8612,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8602,6 +8649,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8638,6 +8686,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8674,6 +8723,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8710,6 +8760,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8746,6 +8797,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8782,6 +8834,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8818,6 +8871,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8854,6 +8908,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8890,6 +8945,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8926,6 +8982,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8962,6 +9019,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8998,6 +9056,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -9034,6 +9093,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -9305,14 +9365,6 @@ llvm_runtime_objects(
         "-w",
         "-Werror",
         "-nostdinc++",
-        "-I",
-        repository_path("contrib/llvm-project") + "/compiler-rt/lib",
-        "-I",
-        repository_path("contrib/llvm-project") + "/third-party/siphash/include",
-        "-I",
-        "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
-        "-I",
-        repository_path("contrib/llvm-project") + "/libc",
         "-isystem",
         repository_path("contrib/llvm-project") + "/compiler-rt/include",
         "-isystem",
@@ -9323,6 +9375,12 @@ llvm_runtime_objects(
         repository_path("contrib/llvm-project") + "/libunwind/include",
     ],
     language = "CXX",
+    local_includes = [
+        "compiler-rt/lib",
+        "third-party/siphash/include",
+        "gen/libcxx/include/c++/v1",
+        "libc",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_3,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
 )
@@ -9374,14 +9432,6 @@ llvm_runtime_objects(
         "-fno-sanitize=all",
         "-w",
         "-Werror",
-        "-I",
-        repository_path("contrib/llvm-project") + "/compiler-rt/lib",
-        "-I",
-        repository_path("contrib/llvm-project") + "/third-party/siphash/include",
-        "-I",
-        "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
-        "-I",
-        repository_path("contrib/llvm-project") + "/libc",
         "-isystem",
         repository_path("contrib/llvm-project") + "/compiler-rt/include",
         "-isystem",
@@ -9390,6 +9440,12 @@ llvm_runtime_objects(
         repository_path("contrib/llvm-project") + "/libunwind/include",
     ],
     language = "ASM",
+    local_includes = [
+        "compiler-rt/lib",
+        "third-party/siphash/include",
+        "gen/libcxx/include/c++/v1",
+        "libc",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_3,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
 )
@@ -9515,11 +9571,7 @@ llvm_runtime_objects(
         "-gz=zlib",
         "-nostdinc++",
         "-w",
-        "-I",
-        "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
     ]) + [
-        "-I",
-        repository_path("contrib/llvm-project") + "/libc",
         "-isystem",
         repository_path("contrib/llvm-project") + "/libcxx/include",
         "-isystem",
@@ -9535,6 +9587,10 @@ llvm_runtime_objects(
         "x86_64",
     ]),
     language = "CXX",
+    local_includes = [
+        "gen/libcxx/include/c++/v1",
+        "libc",
+    ],
     local_defines = [
         "LIBCXX_BUILDING_LIBCXXABI",
         "LIBC_NAMESPACE=__llvm_libc",
@@ -9770,8 +9826,6 @@ llvm_runtime_objects(
         "-fno-builtin",
         "-Werror",
         "-nostdinc++",
-        "-I",
-        "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
     ]) + [
         "-isystem",
         repository_path("contrib/llvm-project") + "/libc",
@@ -9788,6 +9842,7 @@ llvm_runtime_objects(
         "x86_64",
     ]),
     language = "CXX",
+    local_includes = ["gen/libcxx/include/c++/v1"],
     local_defines = [
         "LIBC_COPT_PUBLIC_PACKAGING=1",
         "LIBC_ERRNO_MODE=6",
@@ -10106,20 +10161,7 @@ _GENERATED_TARGET_COMPATIBLE_WITH_1 = select({
 
 _GENERATED_COPTS_3 = select({
     "@platforms//cpu:x86_64": [],
-    "@platforms//cpu:aarch64": [
-        "-w",
-        "-std=c++17",
-        "-I",
-        repository_path("contrib/llvm-project") + "/llvm/include",
-        "-I",
-        "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/llvm/include",
-        "-I",
-        repository_path("contrib/llvm-project") + "/third-party/siphash/include",
-        "-I",
-        "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/llvm/lib/Target/AArch64",
-        "-I",
-        repository_path("contrib/llvm-project") + "/llvm/lib/Target/AArch64",
-    ],
+    "@platforms//cpu:aarch64": _LLVM_PROJECT_COPTS,
 })
 
 ch_cc_library(
@@ -10188,6 +10230,10 @@ ch_cc_library(
     copts =
         _GENERATED_COPTS_3,
     local_defines = _GENERATED_LOCAL_DEFINES_5,
+    local_includes = [
+        "gen/llvm/lib/Target/AArch64",
+        "llvm/lib/Target/AArch64",
+    ],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_1,
     deps = [
         ":LLVMGlobalISel",
@@ -10223,6 +10269,10 @@ ch_cc_library(
     copts =
         _GENERATED_COPTS_3,
     local_defines = _GENERATED_LOCAL_DEFINES_5,
+    local_includes = [
+        "gen/llvm/lib/Target/AArch64",
+        "llvm/lib/Target/AArch64",
+    ],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_1,
     deps = [
         ":LLVMMCDisassembler",
@@ -10244,6 +10294,10 @@ ch_cc_library(
     copts =
         _GENERATED_COPTS_3,
     local_defines = _GENERATED_LOCAL_DEFINES_5,
+    local_includes = [
+        "gen/llvm/lib/Target/AArch64",
+        "llvm/lib/Target/AArch64",
+    ],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_1,
     deps = [":LLVMMC"],
 )

@@ -1,5 +1,5 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_prefix_maps", "repository_local_include", "repository_path")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_prefix_maps", "repository_path")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
@@ -173,14 +173,6 @@ _GENERATED_LOCAL_DEFINES_1 = select({
 _GENERATED_COPTS_2 = [
     "-w",
     "-std=c++17",
-]
-
-_GRPC_LOCAL_INCLUDES = [
-    repository_local_include(
-        "$(GENDIR)/" + repository_path("contrib/zlib-ng") + "/config/contrib/zlib-ng-cmake",
-        "contrib/grpc",
-    ),
-    repository_local_include("contrib/c-ares-cmake/linux", "contrib/grpc"),
 ]
 
 ch_cc_library(
@@ -452,13 +444,14 @@ ch_cc_library(
         "third_party/upb",
         "third_party/utf8_range",
         "third_party/xxhash",
-    ] + _GRPC_LOCAL_INCLUDES,
+    ],
     deps = [
         "@clickhouse_abseil_cpp//:abseil_cpp_headers",
         "@clickhouse_c_ares//:_c-ares",
         "@clickhouse_openssl//:ssl",
         "@clickhouse_re2//:_re2",
     ],
+    implementation_deps = ["@clickhouse_zlib_ng//:_zlib", "@clickhouse//contrib/c-ares-cmake:headers"],
 )
 
 ch_cc_library(
@@ -637,6 +630,8 @@ ch_cc_library(
     implementation_deps = [
         "@clickhouse_re2//:_re2",
         "@clickhouse_llvm_project//:libcxxabi_headers",
+        "@clickhouse//contrib/c-ares-cmake:headers",
+        "@clickhouse_zlib_ng//:_zlib",
     ],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
@@ -649,7 +644,7 @@ ch_cc_library(
         "third_party/upb",
         "third_party/utf8_range",
         "third_party/xxhash",
-    ] + _GRPC_LOCAL_INCLUDES,
+    ],
     deps = [
         "@clickhouse_abseil_cpp//:abseil_cpp_headers",
         "@clickhouse_c_ares//:_c-ares",
@@ -674,12 +669,9 @@ cc_library(
     ],
 )
 
-_GENERATED_LOCAL_INCLUDES_3 = [
-    repository_local_include("contrib/c-ares-cmake/linux", "contrib/grpc"),
-]
-
 ch_cc_library(
     name = "grpc++",
+    implementation_deps = ["@clickhouse//contrib/c-ares-cmake:headers"],
     srcs = [
         "src/core/client_channel/virtual_channel.cc",
         "src/cpp/client/call_context_registry.cc",
@@ -729,7 +721,7 @@ ch_cc_library(
         "third_party/upb",
         "third_party/utf8_range",
         "third_party/xxhash",
-    ] + _GENERATED_LOCAL_INCLUDES_3,
+    ],
     deps = [
         "@clickhouse_google_protobuf//:_libprotobuf",
         ":grpc",
@@ -738,6 +730,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "grpc++_unsecure",
+    implementation_deps = ["@clickhouse//contrib/c-ares-cmake:headers"],
     srcs = [
         "src/core/client_channel/virtual_channel.cc",
         "src/cpp/client/call_context_registry.cc",
@@ -780,7 +773,7 @@ ch_cc_library(
         "third_party/upb",
         "third_party/utf8_range",
         "third_party/xxhash",
-    ] + _GENERATED_LOCAL_INCLUDES_3,
+    ],
     deps = [
         "@clickhouse_google_protobuf//:_libprotobuf",
         ":grpc_unsecure",
@@ -841,22 +834,6 @@ cc_binary(
         "-gz=zlib",
         "-Werror",
         "-nostdinc++",
-        "-I",
-        repository_path("contrib/grpc"),
-        "-I",
-        repository_path("contrib/grpc") + "/include",
-        "-I",
-        repository_path("contrib/grpc") + "/third_party/address_sorting/include",
-        "-I",
-        repository_path("contrib/grpc") + "/src/core/ext/upb-gen",
-        "-I",
-        repository_path("contrib/grpc") + "/src/core/ext/upbdefs-gen",
-        "-I",
-        repository_path("contrib/grpc") + "/third_party/upb",
-        "-I",
-        repository_path("contrib/grpc") + "/third_party/utf8_range",
-        "-I",
-        repository_path("contrib/grpc") + "/third_party/xxhash",
     ] + cmake_prefix_maps([
         "aarch64",
         "x86_64",
@@ -1033,6 +1010,7 @@ cc_binary(
         "@llvm-project//libunwind:headers",
         "@clickhouse_abseil_cpp//:abseil_cpp_headers",
     ],
+    local_includes = [".", "include", "third_party/address_sorting/include", "src/core/ext/upb-gen", "src/core/ext/upbdefs-gen", "third_party/upb", "third_party/utf8_range", "third_party/xxhash"],
 )
 
 ch_cc_library(
@@ -1069,6 +1047,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "grpc_unsecure__compile_0",
+    implementation_deps = ["@clickhouse//contrib/c-ares-cmake:headers", "@clickhouse_zlib_ng//:_zlib"],
     srcs = glob(["src/core/call/call_*.cc"]) + ([
         "src/core/call/client_call.cc",
         "src/core/call/interception_chain.cc",
@@ -1324,7 +1303,7 @@ ch_cc_library(
         "third_party/upb",
         "third_party/utf8_range",
         "third_party/xxhash",
-    ] + _GRPC_LOCAL_INCLUDES,
+    ],
     deps = [
         "@clickhouse_abseil_cpp//:abseil_cpp_headers",
         "@clickhouse_c_ares//:_c-ares",
@@ -1363,6 +1342,8 @@ ch_cc_library(
     implementation_deps = [
         "@clickhouse_c_ares//:_c-ares",
         "@clickhouse_llvm_project//:libcxxabi_headers",
+        "@clickhouse//contrib/c-ares-cmake:headers",
+        "@clickhouse_zlib_ng//:_zlib",
     ],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
@@ -1375,7 +1356,7 @@ ch_cc_library(
         "third_party/upb",
         "third_party/utf8_range",
         "third_party/xxhash",
-    ] + _GRPC_LOCAL_INCLUDES,
+    ],
     deps = [
         "@clickhouse_abseil_cpp//:abseil_cpp_headers",
     ],
