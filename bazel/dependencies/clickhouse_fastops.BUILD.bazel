@@ -12,23 +12,26 @@ ch_cc_library(
     srcs = ["fastops/fastops.cpp"] + select({
         "@platforms//cpu:x86_64": ["fastops/avx2/ops_avx2.cpp"],
         "@platforms//cpu:aarch64": ["fastops/neon/ops_neon.cpp"],
+    }) + [
+        "fastops/core/FastIntrinsics.h",
+        "fastops/core/SIMDFunctions.h",
+    ] + select({
+        "@platforms//cpu:x86_64": ["fastops/avx2/ops_avx2.h"],
+        "@platforms//cpu:aarch64": ["fastops/neon/ops_neon.h"],
     }),
-    hdrs = glob([
-        "**/*.h",
-        "**/*.hpp",
-    ]),
+    hdrs = ["fastops/fastops.h"],
     copts = [
         "-w",
         "-std=c++23",
     ],
-    llvm_headers = True,
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"] + select({
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    implementation_deps = select({
         "@platforms//cpu:aarch64": [":_fastops_sve"],
         "//conditions:default": [],
     }),
@@ -36,10 +39,12 @@ ch_cc_library(
 
 ch_cc_library(
     name = "_fastops_sve",
-    srcs = ["fastops/sve/ops_sve.cpp"] + glob([
-        "**/*.h",
-        "**/*.hpp",
-    ]),
+    srcs = [
+        "fastops/sve/ops_sve.cpp",
+        "fastops/core/FastIntrinsics.h",
+        "fastops/core/SIMDFunctions.h",
+    ],
+    hdrs = ["fastops/sve/ops_sve.h"],
     arches = ["aarch64"],
     copts = [
         "-w",
@@ -57,9 +62,4 @@ ch_cc_library(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     visibility = ["@clickhouse//:__pkg__"],
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
-    ],
 )

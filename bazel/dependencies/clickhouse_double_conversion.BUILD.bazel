@@ -12,7 +12,7 @@ exports_files([
 ch_cc_library(
     name = "_double-conversion",
     srcs = glob(["double-conversion/*.cc"]),
-    hdrs = glob(["**/*.h"]),
+    hdrs = glob(["double-conversion/*.h"]),
     copts = [
         "-w",
         "-std=c++23",

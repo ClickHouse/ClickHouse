@@ -9,6 +9,8 @@ ch_cc_library(
     ] + glob(["**/*.h"]),
     clickhouse_code = True,
     implementation_deps = [
+        "//base:common",
+        "@clickhouse_azure//:_azure_sdk",
         "//bazel:clickhouse_config_headers",
         "//src/Common/Config:clickhouse_common_config",
         "//base:base_headers",
@@ -107,7 +109,6 @@ ch_cc_library(
         "../../" + "bazel/gen",
     ],
     deps = [
-        "@llvm-project//third-party/siphash",
         "//programs/server:clickhouse-server-lib",
         "//base/readpassphrase",
     ],

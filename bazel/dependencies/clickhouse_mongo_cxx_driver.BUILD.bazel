@@ -175,6 +175,32 @@ _GENERATED_LOCAL_DEFINES_0 = [
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
+_BSONCXX_SHARED_HEADERS = [
+    "src/bsoncxx/lib/bsoncxx/private/bson.hh",
+    "src/bsoncxx/lib/bsoncxx/private/immortal.hh",
+    "src/bsoncxx/lib/bsoncxx/private/macros.hh",
+    "src/bsoncxx/lib/bsoncxx/private/make_unique.hh",
+    "src/bsoncxx/lib/bsoncxx/private/suppress_deprecation_warnings.hh",
+    "src/bsoncxx/lib/bsoncxx/private/type_traits.hh",
+    "src/bsoncxx/lib/bsoncxx/v1/types/value.hh",
+]
+
+_BSONCXX_TEXTUAL_HEADERS = [
+    "src/bsoncxx/include/bsoncxx/v1/detail/postlude.hpp",
+    "src/bsoncxx/include/bsoncxx/v1/detail/prelude.hpp",
+    "src/bsoncxx/include/bsoncxx/v_noabi/bsoncxx/config/postlude.hpp",
+    "src/bsoncxx/include/bsoncxx/v_noabi/bsoncxx/config/prelude.hpp",
+    "src/bsoncxx/include/bsoncxx/v_noabi/bsoncxx/enums/binary_sub_type.hpp",
+    "src/bsoncxx/include/bsoncxx/v_noabi/bsoncxx/enums/type.hpp",
+]
+
+_MONGOCXX_TEXTUAL_HEADERS = [
+    "src/mongocxx/include/mongocxx/v1/detail/postlude.hpp",
+    "src/mongocxx/include/mongocxx/v1/detail/prelude.hpp",
+    "src/mongocxx/include/mongocxx/v_noabi/mongocxx/config/postlude.hpp",
+    "src/mongocxx/include/mongocxx/v_noabi/mongocxx/config/prelude.hpp",
+]
+
 ch_cc_library(
     name = "_bsoncxx",
     srcs = glob([
@@ -200,8 +226,10 @@ ch_cc_library(
         "src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/types/bson_value/view.cpp",
         "src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/validate.cpp",
         "src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/vector.cpp",
-        ":config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/private/config/config.hh",
-    ],
+    ] + glob(
+        ["src/bsoncxx/lib/**/*.hh"],
+        exclude = _BSONCXX_SHARED_HEADERS + ["src/bsoncxx/lib/bsoncxx/private/helpers.hh"],
+    ),
     hdrs = [
         ":config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/config/config.hpp",
         ":config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/config/version.hpp",
@@ -209,10 +237,11 @@ ch_cc_library(
         ":config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/config/config.hpp",
         ":config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/fwd.hpp",
         ":config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/v1/config/export.hpp",
-    ] + glob([
-        "src/bsoncxx/include/**/*.hpp",
-        "src/bsoncxx/lib/**/*.hh",
-    ]),
+    ] + glob(
+        ["src/bsoncxx/include/**/*.hpp"],
+        exclude = _BSONCXX_TEXTUAL_HEADERS + ["src/bsoncxx/include/bsoncxx/docs/**"],
+    ) + _BSONCXX_SHARED_HEADERS,
+    textual_hdrs = _BSONCXX_TEXTUAL_HEADERS,
     copts = [
         "-w",
         "-std=c++23",
@@ -235,7 +264,10 @@ ch_cc_library(
         "src/mongocxx/lib/mongocxx/private/mongoc.cpp",
         "src/mongocxx/lib/mongocxx/private/scoped_bson.cpp",
         ":config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/private/config/config.hh",
-    ] + glob(["src/mongocxx/lib/mongocxx/v1/**/*.cpp"]) + glob(["src/mongocxx/lib/mongocxx/v_noabi/mongocxx/**/*.cpp"])),
+    ] + glob(["src/mongocxx/lib/mongocxx/v1/**/*.cpp"]) + glob(["src/mongocxx/lib/mongocxx/v_noabi/mongocxx/**/*.cpp"])) + glob(
+        ["src/mongocxx/lib/**/*.hh"],
+        exclude = ["src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/apm.hh"],
+    ),
     hdrs = [
         ":config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/config/config.hpp",
         ":config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/config/version.hpp",
@@ -243,10 +275,11 @@ ch_cc_library(
         ":config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/config/config.hpp",
         ":config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/fwd.hpp",
         ":config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/v1/config/export.hpp",
-    ] + glob([
-        "src/mongocxx/include/**/*.hpp",
-        "src/mongocxx/lib/**/*.hh",
-    ]),
+    ] + glob(
+        ["src/mongocxx/include/**/*.hpp"],
+        exclude = _MONGOCXX_TEXTUAL_HEADERS + ["src/mongocxx/include/mongocxx/docs/**"],
+    ),
+    textual_hdrs = _MONGOCXX_TEXTUAL_HEADERS,
     copts = [
         "-w",
         "-std=c++23",
@@ -260,8 +293,9 @@ ch_cc_library(
         "config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":_bsoncxx",
+    deps = [":_bsoncxx"],
+    implementation_deps = [
+        "@clickhouse_mongo_c_driver//:_libbson",
         "@clickhouse_mongo_c_driver//:_libmongoc",
     ],
 )

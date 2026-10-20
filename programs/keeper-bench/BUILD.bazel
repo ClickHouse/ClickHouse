@@ -17,6 +17,7 @@ ch_cc_library(
     ] + glob(["**/*.h"]),
     clickhouse_code = True,
     implementation_deps = [
+        "@clickhouse_rapidjson//:rapidjson",
         "//src/Common/Config:clickhouse_common_config",
         "//base:base_headers",
         "//base:pcg_random",
@@ -116,7 +117,6 @@ ch_cc_library(
         "../../" + "bazel/gen",
     ],
     deps = [
-        "@llvm-project//third-party/siphash",
         "//contrib/bech32:_bech32",
         "@clickhouse_cld2//:_cld2",
         "//contrib/libfarmhash:_farmhash",

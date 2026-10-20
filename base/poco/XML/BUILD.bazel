@@ -2,11 +2,6 @@ load("@clickhouse//base:poco/poco_cc_library.bzl", "poco_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "src/xmltok_impl.c",
-    "src/xmltok_ns.c",
-])
-
 poco_cc_library(
     name = "_poco_xml",
     srcs = glob(["src/*.cpp"]) + glob(
@@ -72,7 +67,7 @@ poco_cc_library(
             "src/siphash.h",
         ],
     ),
-    additional_compiler_inputs = [
+    textual_hdrs = [
         "src/xmltok_impl.c",
         "src/xmltok_ns.c",
     ],
@@ -88,14 +83,11 @@ poco_cc_library(
         "-Wno-implicit-int-conversion",
     ],
     implementation_deps = [
-        "//bazel:clickhouse_config_headers",
         "//base/poco/Foundation:_poco_foundation",
-        "@llvm-project//libunwind:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//compiler-rt:headers",
-        "@clickhouse_llvm_project//:libcxxabi_headers",
     ],
     language = "C",
+    libcxx_headers = False,
+    llvm_headers = False,
     local_defines = [
         "PRIVATE",
         "STD_EXCEPTION_HAS_STACK_TRACE=1",

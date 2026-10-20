@@ -13,10 +13,13 @@ ch_cc_library(
     clickhouse_code = True,
     features = ["-static_link_cpp_runtimes"],
     implementation_deps = [
+        "//base:base_headers",
+        "//src/Common",
         "//bazel:clickhouse_config_headers",
     ],
     link_runtime = True,
     llvm_headers = False,
+    source_headers = False,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -121,8 +124,5 @@ ch_cc_library(
         "//bazel/rust:pco_cc",
         "//bazel/rust:delta_kernel_ffi_cc",
         "//bazel/rust:chdig_cc",
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
     ],
 )

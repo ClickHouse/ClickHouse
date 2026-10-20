@@ -2,32 +2,6 @@ load("@clickhouse//base:poco/poco_cc_library.bzl", "poco_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "src/DirectoryIterator_UNIX.cpp",
-    "src/Environment_UNIX.cpp",
-    "src/Event_POSIX.cpp",
-    "src/FPEnvironment_C99.cpp",
-    "src/FPEnvironment_SUN.cpp",
-    "src/FileStream_POSIX.cpp",
-    "src/File_UNIX.cpp",
-    "src/LogFile_STD.cpp",
-    "src/Mutex_POSIX.cpp",
-    "src/NamedEvent_Android.cpp",
-    "src/NamedEvent_UNIX.cpp",
-    "src/NamedMutex_Android.cpp",
-    "src/NamedMutex_UNIX.cpp",
-    "src/Path_UNIX.cpp",
-    "src/PipeImpl_POSIX.cpp",
-    "src/Process_UNIX.cpp",
-    "src/RWLock_Android.cpp",
-    "src/RWLock_POSIX.cpp",
-    "src/Semaphore_POSIX.cpp",
-    "src/SharedLibrary_UNIX.cpp",
-    "src/SharedMemory_POSIX.cpp",
-    "src/Thread_POSIX.cpp",
-    "src/Timezone_UNIX.cpp",
-])
-
 _FOUNDATION_COPTS = [
     "-Wno-array-bounds",
     "-Wno-atomic-implicit-seq-cst",
@@ -264,25 +238,29 @@ poco_cc_library(
         "src/VarIterator.cpp",
         "src/Void.cpp",
     ]),
-    hdrs = glob(["include/**/*.h"]),
-    additional_compiler_inputs = [
+    hdrs = glob(
+        ["include/**/*.h"],
+        exclude = [
+            "include/Poco/FPEnvironment_SUN.h",
+            "include/Poco/NamedEvent_Android.h",
+            "include/Poco/NamedMutex_Android.h",
+            "include/Poco/RWLock_Android.h",
+        ],
+    ),
+    textual_hdrs = [
         "src/DirectoryIterator_UNIX.cpp",
         "src/Environment_UNIX.cpp",
         "src/Event_POSIX.cpp",
         "src/FPEnvironment_C99.cpp",
-        "src/FPEnvironment_SUN.cpp",
         "src/FileStream_POSIX.cpp",
         "src/File_UNIX.cpp",
         "src/LogFile_STD.cpp",
         "src/Mutex_POSIX.cpp",
-        "src/NamedEvent_Android.cpp",
         "src/NamedEvent_UNIX.cpp",
-        "src/NamedMutex_Android.cpp",
         "src/NamedMutex_UNIX.cpp",
         "src/Path_UNIX.cpp",
         "src/PipeImpl_POSIX.cpp",
         "src/Process_UNIX.cpp",
-        "src/RWLock_Android.cpp",
         "src/RWLock_POSIX.cpp",
         "src/Semaphore_POSIX.cpp",
         "src/SharedLibrary_UNIX.cpp",
@@ -298,6 +276,7 @@ poco_cc_library(
     includes = ["include"],
     local_defines = _FOUNDATION_DEFINES,
     deps = [
+        "@lz4//:lz4",
         "@lz4//:lz4_frame",
         "@clickhouse_zlib_ng//:_zlib",
     ],
@@ -339,13 +318,10 @@ poco_cc_library(
         "-Wno-disabled-macro-expansion",
     ],
     implementation_deps = [
-        "//bazel:clickhouse_config_headers",
-        "@llvm-project//libunwind:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//compiler-rt:headers",
-        "@clickhouse_llvm_project//:libcxxabi_headers",
     ],
     language = "C",
+    libcxx_headers = False,
+    llvm_headers = False,
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",

@@ -39,6 +39,9 @@ ch_cc_library(
     additional_compiler_inputs = ["//bazel:gen/embedded/programs/server/embedded.xml"],
     clickhouse_code = True,
     implementation_deps = [
+        "//base:common",
+        "@clickhouse_azure//:_azure_sdk",
+        "//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_0",
         "//bazel:clickhouse_config_headers",
         "//src/Common/ZooKeeper:clickhouse_common_zookeeper_base",
         "//src/Common/Config:clickhouse_common_config",
@@ -138,7 +141,6 @@ ch_cc_library(
         "../../" + "bazel/gen",
     ],
     deps = [
-        "@llvm-project//third-party/siphash",
         "//contrib/bech32:_bech32",
         "@clickhouse_cld2//:_cld2",
         "//contrib/libfarmhash:_farmhash",

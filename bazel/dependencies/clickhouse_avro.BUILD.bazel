@@ -30,7 +30,8 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = [
+    deps = ["@clickhouse_boost//:boost_headers"],
+    implementation_deps = [
         "@clickhouse_boost//:_boost_iostreams",
         "@clickhouse_snappy//:_snappy",
     ],

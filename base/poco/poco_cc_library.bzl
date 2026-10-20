@@ -12,7 +12,7 @@ def poco_cc_library(name, copts = [], language = "CXX", **kwargs):
             "-fxray-instrumentation-bundle=function",
             "-Wframe-larger-than=65536",
         ] + CLICKHOUSE_WARNINGS + ["-std=gnu11"] + copts
-        kwargs["llvm_headers"] = True
+        kwargs.setdefault("llvm_headers", True)
         kwargs["link_runtime"] = True
     else:
         kwargs["clickhouse_code"] = True

@@ -191,6 +191,7 @@ CMake hash recorded below.
 | `1727c9490` (verification snapshot) | DWYU Clang guarded-header attribution and consumer checks | [6e83876d](https://app.buildbuddy.io/invocation/6e83876d-27cb-4314-b3c4-0d5cef4b660d) | [350cdec5](https://app.buildbuddy.io/invocation/350cdec5-eeaf-4af6-92c6-3047187d8b02) |
 | `081e42f92` (verification snapshot) | Remove four GCP dependencies verified by native isolated links | [93141dec](https://app.buildbuddy.io/invocation/93141dec-b288-485b-9e0f-fa1601abfa81) | [5649d2b1](https://app.buildbuddy.io/invocation/5649d2b1-0450-4495-b813-aecd5757e09f) |
 | `cc5b05740` (verification snapshot) | C++ library ownership: Cap'n Proto, gtest, ANTLR, Minizip, WordNet and other dependencies | [0fbd854d](https://app.buildbuddy.io/invocation/0fbd854d-aa33-44bb-92a7-b92f1dc5ccc1) | [858f9a68](https://app.buildbuddy.io/invocation/858f9a68-849b-475f-8e01-54666a79367e) |
+| `fd40501a2` (verification snapshot) | Native C++ header ownership; Poco Foundation/XML and program deps; Avro public/private deps | [8edb9851](https://app.buildbuddy.io/invocation/8edb9851-f92a-4ae4-b8fd-06fef6688e42) | [818fcf79](https://app.buildbuddy.io/invocation/818fcf79-ae68-4ec8-8ad5-165c79f83cfa) |
 
 The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`

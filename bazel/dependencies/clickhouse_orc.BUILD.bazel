@@ -63,13 +63,21 @@ ch_cc_library(
         "c++/src/TypeImpl.cc",
         "c++/src/Vector.cc",
         "c++/src/Writer.cc",
-    ] + glob(["c++/src/io/*.cc"]))) + glob(["c++/src/sargs/*.cc"]) + glob([
-        "c++/src/*.hh",
-        "c++/src/io/*.hh",
-        "c++/src/sargs/*.hh",
-        "c++/src/wrap/*.h",
-        "c++/src/wrap/*.hh",
-    ]),
+    ] + glob(["c++/src/io/*.cc"]))) + glob(["c++/src/sargs/*.cc"]) + glob(
+        [
+            "c++/src/*.hh",
+            "c++/src/io/*.hh",
+            "c++/src/sargs/*.hh",
+            "c++/src/wrap/*.h",
+            "c++/src/wrap/*.hh",
+        ],
+        exclude = [
+            "c++/src/BitUnpackerAvx512.hh",
+            "c++/src/BpackingAvx512.hh",
+            "c++/src/wrap/gmock.h",
+            "c++/src/wrap/gtest-wrapper.h",
+        ],
+    ),
     hdrs = [
         "@clickhouse//bazel:gen/contrib/arrow-cmake/orc_proto.pb.h",
         ":config/contrib/orc/c++/include/Adaptor.hh",
@@ -153,9 +161,15 @@ ch_cc_library(
     deps = [
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse//contrib/lz4-cmake:_lz4",
-        "@clickhouse_snappy//:_snappy",
         "@clickhouse_zstd//:_zstd",
         "@clickhouse//contrib/arrow-cmake:headers",
     ],
-    implementation_deps = ["@clickhouse//contrib/arrow-cmake:arrow_cmake_headers", "@clickhouse//bazel:orc_proto_headers"],
+    implementation_deps = [
+        "@lz4//:lz4",
+        "@clickhouse_snappy//:_snappy",
+        "@clickhouse_zlib_ng//:_zlib",
+        "@clickhouse_zstd//:_zstd__compile_0",
+        "@clickhouse//contrib/arrow-cmake:arrow_cmake_headers",
+        "@clickhouse//bazel:orc_proto_headers",
+    ],
 )

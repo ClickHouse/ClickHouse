@@ -90,16 +90,30 @@ ch_cc_library(
         "lib/cpp/src/thrift/concurrency/Monitor.cpp",
         "lib/cpp/src/thrift/concurrency/Mutex.cpp",
     ],
-    hdrs = [":config/contrib/thrift-cmake/thrift/config.h"] + glob([
-        "lib/cpp/src/**/*.h",
-        "lib/cpp/src/**/*.tcc",
-    ]),
+    hdrs = [":config/contrib/thrift-cmake/thrift/config.h"] + glob(
+        ["lib/cpp/src/**/*.h", "lib/cpp/src/**/*.tcc"],
+        exclude = [
+            "lib/cpp/src/thrift/windows/**",
+            "lib/cpp/src/thrift/qt/**",
+            "lib/cpp/src/thrift/async/TEvhttp*.h",
+            "lib/cpp/src/thrift/server/TNonblockingServer.h",
+            "lib/cpp/src/thrift/transport/TNonblockingSSLServerSocket.h",
+            "lib/cpp/src/thrift/transport/TNonblockingServerSocket.h",
+            "lib/cpp/src/thrift/transport/TNonblockingServerTransport.h",
+            "lib/cpp/src/thrift/protocol/THeaderProtocol.h",
+            "lib/cpp/src/thrift/transport/THeaderTransport.h",
+            "lib/cpp/src/thrift/transport/TZlibTransport.h",
+            "lib/cpp/src/thrift/transport/TPipe.h",
+            "lib/cpp/src/thrift/transport/TPipeServer.h",
+        ],
+    ),
     copts = [
         "-w",
         "-std=c++23",
     ],
     includes = [
         "lib/cpp/src",
+        "lib/cpp/src/thrift",
         "config/contrib/thrift-cmake",
     ],
     local_defines = [
@@ -113,6 +127,7 @@ ch_cc_library(
     ],
     deps = [
         "@clickhouse_boost//:boost_headers",
+        "@clickhouse_openssl//:crypto",
         "@clickhouse_openssl//:ssl",
     ],
 )
