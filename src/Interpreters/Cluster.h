@@ -53,7 +53,7 @@ using HostsByShard = std::vector<Strings>;
 struct ClusterConnectionParameters
 {
     const String & username;
-    const String & password;
+    std::string_view password;
     UInt16 clickhouse_port;
     bool treat_local_as_remote;
     bool treat_local_port_as_remote;
@@ -61,7 +61,7 @@ struct ClusterConnectionParameters
     const String & bind_host;
     Priority priority{1};
     String cluster_name;
-    String cluster_secret;
+    std::string_view cluster_secret;
 };
 
 /// Cluster contains connection pools to each node
@@ -184,7 +184,7 @@ public:
 
         /// For inter-server authorization
         String cluster;
-        String cluster_secret;
+        SecretString cluster_secret;
 
         UInt32 shard_index{}; /// shard serial number in configuration file, starting from 1.
         UInt32 replica_index{}; /// replica serial number in this shard, starting from 1; zero means no replicas.
