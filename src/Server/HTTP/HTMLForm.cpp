@@ -411,18 +411,47 @@ std::string HTMLForm::MultipartReadBuffer::readLine(bool append_crlf, bool conte
             /// the limit are allowed only while the line keeps matching that prefix, so the slack
             /// past the limit is bounded by the actually matched prefix, and an attacker cannot
             /// weaken the limit for arbitrary content by choosing a long boundary.
+            /// Past the boundary itself, only what RFC 2046 allows on a delimiter line may follow:
+            /// the "--" of the close delimiter and then linear whitespace (transport padding).
+            /// Otherwise any suffix of a line starting with the boundary would be accepted up to the
+            /// structural limit and then discarded together with the boundary line, which would let
+            /// a client smuggle bytes past the content limit.
+            auto is_valid_delimiter_suffix_byte = [this, &line](size_t pos)
+            {
+                const size_t suffix_pos = pos - boundary_line.size();
+                const bool close_delimiter = line[boundary_line.size()] == '-';
+                const char c = line[pos];
+                if (c == '-')
+                    return suffix_pos == 0 || (suffix_pos == 1 && close_delimiter);
+                if (c == ' ' || c == '\t')
+                    return !(suffix_pos == 1 && close_delimiter);
+                return false;
+            };
+
             bool is_boundary_line_prefix = false;
             if (line.size() == max_content_line_size + 1)
+            {
                 /// The first byte past the limit: validate the whole line accumulated so far.
-                is_boundary_line_prefix = line.size() <= boundary_line.size()
-                    ? boundary_line.starts_with(line)
-                    : line.starts_with(boundary_line);
+                if (line.size() <= boundary_line.size())
+                {
+                    is_boundary_line_prefix = boundary_line.starts_with(line);
+                }
+                else
+                {
+                    is_boundary_line_prefix = line.starts_with(boundary_line);
+                    for (size_t pos = boundary_line.size(); is_boundary_line_prefix && pos < line.size(); ++pos)
+                        is_boundary_line_prefix = is_valid_delimiter_suffix_byte(pos);
+                }
+            }
             else
+            {
                 /// Subsequent bytes: the preceding bytes were validated by the previous calls
                 /// (this function is called after every appended byte), so it's enough to check
                 /// the byte just appended.
                 is_boundary_line_prefix = line.size() > boundary_line.size()
-                    || line.back() == boundary_line[line.size() - 1];
+                    ? is_valid_delimiter_suffix_byte(line.size() - 1)
+                    : line.back() == boundary_line[line.size() - 1];
+            }
 
             /// A boundary line past the structural limit was already rejected above.
             if (!is_boundary_line_prefix)

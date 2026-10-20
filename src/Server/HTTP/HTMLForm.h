@@ -188,7 +188,8 @@ private:
     const std::string boundary_line;
     /// Maximum size of a buffered content line, 0 means no limit (see HTMLForm::applyBodyLimits).
     /// The boundary line that terminates the part may outgrow this limit; readLine allows that
-    /// only while the line keeps matching |boundary_line|.
+    /// only while the line keeps matching |boundary_line| followed by what RFC 2046 allows on a
+    /// delimiter line (the "--" of the close delimiter and linear whitespace).
     const size_t max_content_line_size;
     /// Maximum size of a buffered boundary or header line, 0 means no limit.
     const size_t max_syntax_line_size;
