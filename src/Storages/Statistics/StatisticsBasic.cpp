@@ -308,6 +308,9 @@ void StatisticsBasic::copyStructureFrom(const IStatistics & other)
     const auto * other_basic = typeid_cast<const StatisticsBasic *>(&other);
     if (!other_basic)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot copy the structure of Basic statistics from a different type");
+    /// The flags `isCompatibleWith` compares; a summary built without string lengths (see `build`) differs from its type.
+    tracks_numeric = other_basic->tracks_numeric;
+    tracks_string = other_basic->tracks_string;
     has_default_count = other_basic->has_default_count;
 }
 
