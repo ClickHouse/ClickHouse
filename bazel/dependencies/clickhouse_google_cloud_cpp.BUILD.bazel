@@ -1012,7 +1012,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "google_cloud_cpp_grpc_utils",
-    srcs = [
+    srcs = ([
         "google/cloud/completion_queue.cc",
         "google/cloud/connection_options.cc",
         "google/cloud/grpc_error_delegate.cc",
@@ -1024,14 +1024,10 @@ ch_cc_library(
         "google/cloud/internal/debug_string_status.cc",
         "google/cloud/internal/default_completion_queue_impl.cc",
         "google/cloud/internal/extract_long_running_result.cc",
-        "google/cloud/internal/grpc_access_token_authentication.cc",
-        "google/cloud/internal/grpc_api_key_authentication.cc",
-        "google/cloud/internal/grpc_async_access_token_cache.cc",
-        "google/cloud/internal/grpc_channel_credentials_authentication.cc",
-        "google/cloud/internal/grpc_impersonate_service_account.cc",
-        "google/cloud/internal/grpc_opentelemetry.cc",
-        "google/cloud/internal/grpc_request_metadata.cc",
-        "google/cloud/internal/grpc_service_account_authentication.cc",
+    ] + glob(
+        ["google/cloud/internal/grpc_*.cc"],
+        exclude = ["**/*_test.cc"],
+    ) + [
         "google/cloud/internal/log_wrapper.cc",
         "google/cloud/internal/minimal_iam_credentials_stub.cc",
         "google/cloud/internal/populate_grpc_options.cc",
@@ -1039,7 +1035,7 @@ ch_cc_library(
         "google/cloud/internal/streaming_write_rpc_impl.cc",
         "google/cloud/internal/time_utils.cc",
         "google/cloud/internal/unified_grpc_credentials.cc",
-    ],
+    ]),
     hdrs = [
         "@clickhouse//bazel:gen/base/base/GitHash.generated.cpp",
         "@clickhouse//bazel:gen/includes/configs/config_version.cpp",
@@ -1206,7 +1202,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "google_cloud_cpp_rest_internal",
-    srcs = [
+    srcs = ([
         "google/cloud/internal/binary_data_as_debug_string.cc",
         "google/cloud/internal/external_account_source_format.cc",
         "google/cloud/internal/external_account_token_source_aws.cc",
@@ -1214,24 +1210,10 @@ ch_cc_library(
         "google/cloud/internal/external_account_token_source_url.cc",
         "google/cloud/internal/json_parsing.cc",
         "google/cloud/internal/make_jwt_assertion.cc",
-        "google/cloud/internal/oauth2_access_token_credentials.cc",
-        "google/cloud/internal/oauth2_anonymous_credentials.cc",
-        "google/cloud/internal/oauth2_api_key_credentials.cc",
-        "google/cloud/internal/oauth2_authorized_user_credentials.cc",
-        "google/cloud/internal/oauth2_cached_credentials.cc",
-        "google/cloud/internal/oauth2_compute_engine_credentials.cc",
-        "google/cloud/internal/oauth2_credentials.cc",
-        "google/cloud/internal/oauth2_decorate_credentials.cc",
-        "google/cloud/internal/oauth2_error_credentials.cc",
-        "google/cloud/internal/oauth2_external_account_credentials.cc",
-        "google/cloud/internal/oauth2_google_application_default_credentials_file.cc",
-        "google/cloud/internal/oauth2_google_credentials.cc",
-        "google/cloud/internal/oauth2_impersonate_service_account_credentials.cc",
-        "google/cloud/internal/oauth2_logging_credentials.cc",
-        "google/cloud/internal/oauth2_minimal_iam_credentials_rest.cc",
-        "google/cloud/internal/oauth2_refreshing_credentials_wrapper.cc",
-        "google/cloud/internal/oauth2_service_account_credentials.cc",
-        "google/cloud/internal/oauth2_universe_domain.cc",
+    ] + glob(
+        ["google/cloud/internal/oauth2_*.cc"],
+        exclude = ["**/*_test.cc"],
+    ) + [
         "google/cloud/internal/openssl/parse_service_account_p12_file.cc",
         "google/cloud/internal/openssl/sign_using_sha256.cc",
         "google/cloud/internal/populate_rest_options.cc",
@@ -1248,7 +1230,7 @@ ch_cc_library(
         "google/cloud/internal/tracing_rest_response.cc",
         "google/cloud/internal/unified_rest_credentials.cc",
         "@clickhouse//contrib:google-cloud-cpp-cmake/poco_rest_client.cc",
-    ],
+    ]),
     hdrs = [
         "@clickhouse//bazel:gen/base/base/GitHash.generated.cpp",
         "@clickhouse//bazel:gen/includes/configs/config_version.cpp",
@@ -1356,19 +1338,12 @@ ch_cc_library(
 
 ch_cc_library(
     name = "google_cloud_cpp_storage",
-    srcs = [
+    srcs = ([
         "google/cloud/storage/auto_finalize.cc",
-        "google/cloud/storage/bucket_access_control.cc",
-        "google/cloud/storage/bucket_autoclass.cc",
-        "google/cloud/storage/bucket_cors_entry.cc",
-        "google/cloud/storage/bucket_custom_placement_config.cc",
-        "google/cloud/storage/bucket_hierarchical_namespace.cc",
-        "google/cloud/storage/bucket_iam_configuration.cc",
-        "google/cloud/storage/bucket_logging.cc",
-        "google/cloud/storage/bucket_metadata.cc",
-        "google/cloud/storage/bucket_object_retention.cc",
-        "google/cloud/storage/bucket_retention_policy.cc",
-        "google/cloud/storage/bucket_soft_delete_policy.cc",
+    ] + glob(
+        ["google/cloud/storage/bucket_*.cc"],
+        exclude = ["**/*_test.cc"],
+    ) + [
         "google/cloud/storage/client.cc",
         "google/cloud/storage/client_options.cc",
         "google/cloud/storage/hashing_options.cc",
@@ -1409,12 +1384,10 @@ ch_cc_library(
         "google/cloud/storage/internal/metadata_parser.cc",
         "google/cloud/storage/internal/notification_metadata_parser.cc",
         "google/cloud/storage/internal/notification_requests.cc",
-        "google/cloud/storage/internal/object_access_control_parser.cc",
-        "google/cloud/storage/internal/object_acl_requests.cc",
-        "google/cloud/storage/internal/object_metadata_parser.cc",
-        "google/cloud/storage/internal/object_read_streambuf.cc",
-        "google/cloud/storage/internal/object_requests.cc",
-        "google/cloud/storage/internal/object_write_streambuf.cc",
+    ] + glob(
+        ["google/cloud/storage/internal/object_*.cc"],
+        exclude = ["**/*_test.cc"],
+    ) + [
         "google/cloud/storage/internal/openssl/hash_function_impl.cc",
         "google/cloud/storage/internal/patch_builder.cc",
         "google/cloud/storage/internal/patch_builder_details.cc",
@@ -1433,29 +1406,22 @@ ch_cc_library(
         "google/cloud/storage/internal/tracing_object_read_source.cc",
         "google/cloud/storage/internal/unified_rest_credentials.cc",
         "google/cloud/storage/lifecycle_rule.cc",
-    ] + glob(["google/cloud/storage/*_reader.cc"]) + [
+    ]) + glob(["google/cloud/storage/*_reader.cc"]) + ([
         "google/cloud/storage/notification_metadata.cc",
-        "google/cloud/storage/oauth2/anonymous_credentials.cc",
-        "google/cloud/storage/oauth2/authorized_user_credentials.cc",
-        "google/cloud/storage/oauth2/compute_engine_credentials.cc",
-        "google/cloud/storage/oauth2/credentials.cc",
-        "google/cloud/storage/oauth2/google_application_default_credentials_file.cc",
-        "google/cloud/storage/oauth2/google_credentials.cc",
-        "google/cloud/storage/oauth2/refreshing_credentials_wrapper.cc",
-        "google/cloud/storage/oauth2/service_account_credentials.cc",
-        "google/cloud/storage/object_access_control.cc",
-        "google/cloud/storage/object_metadata.cc",
-        "google/cloud/storage/object_read_stream.cc",
-        "google/cloud/storage/object_retention.cc",
-        "google/cloud/storage/object_rewriter.cc",
-        "google/cloud/storage/object_write_stream.cc",
+    ] + glob(
+        ["google/cloud/storage/oauth2/*.cc"],
+        exclude = ["**/*_test.cc"],
+    ) + glob(
+        ["google/cloud/storage/object_*.cc"],
+        exclude = ["**/*_test.cc"],
+    ) + [
         "google/cloud/storage/parallel_upload.cc",
         "google/cloud/storage/policy_document.cc",
         "google/cloud/storage/service_account.cc",
         "google/cloud/storage/version.cc",
         "google/cloud/storage/well_known_headers.cc",
         "google/cloud/storage/well_known_parameters.cc",
-    ],
+    ]),
     hdrs = [
         "@clickhouse//bazel:gen/base/base/GitHash.generated.cpp",
         "@clickhouse//bazel:gen/includes/configs/config_version.cpp",

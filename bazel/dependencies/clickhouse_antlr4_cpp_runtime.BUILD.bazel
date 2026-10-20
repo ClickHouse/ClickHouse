@@ -8,9 +8,7 @@ exports_files([
 
 ch_cc_library(
     name = "_ch_contrib_antlr4_cpp_runtime",
-    srcs = glob(["runtime/Cpp/runtime/src/*.cpp"]) + glob(["runtime/Cpp/runtime/src/atn/*.cpp"]) + glob(["runtime/Cpp/runtime/src/dfa/*.cpp"]) + [
-        "runtime/Cpp/runtime/src/internal/Synchronization.cpp",
-    ] + glob(["runtime/Cpp/runtime/src/misc/*.cpp"]) + glob(["runtime/Cpp/runtime/src/support/*.cpp"]) + glob(["runtime/Cpp/runtime/src/tree/*.cpp"]) + glob(["runtime/Cpp/runtime/src/tree/pattern/*.cpp"]) + glob(["runtime/Cpp/runtime/src/tree/xpath/*.cpp"]),
+    srcs = glob(["runtime/Cpp/runtime/src/**/*.cpp"]),
     hdrs = glob(["runtime/Cpp/runtime/src/**/*.h"]),
     copts =
         [

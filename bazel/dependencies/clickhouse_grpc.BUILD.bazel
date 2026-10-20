@@ -188,7 +188,7 @@ _GRPC_LOCAL_INCLUDES = [
 
 ch_cc_library(
     name = "grpc__compile_0",
-    srcs = glob(["src/core/call/call_*.cc"]) + [
+    srcs = (glob(["src/core/call/call_*.cc"]) + [
         "src/core/call/client_call.cc",
         "src/core/call/interception_chain.cc",
         "src/core/call/message.cc",
@@ -205,7 +205,7 @@ ch_cc_library(
         "src/core/channelz/channelz.cc",
         "src/core/channelz/channelz_registry.cc",
         "src/core/channelz/text_encode.cc",
-    ] + glob(["src/core/channelz/v2tov1/*.cc"]) + ([
+    ] + glob(["src/core/channelz/v2tov1/*.cc"]) + [
         "src/core/client_channel/backup_poller.cc",
         "src/core/client_channel/buffered_call.cc",
     ] + glob(["src/core/client_channel/client_*.cc"]) + [
@@ -220,21 +220,7 @@ ch_cc_library(
     ] + glob(["src/core/client_channel/subchannel_*.cc"]) + [
         "src/core/config/core_configuration.cc",
         "src/core/config/experiment_env_var.cc",
-        "src/core/credentials/call/call_creds_registry_init.cc",
-        "src/core/credentials/call/call_creds_util.cc",
-        "src/core/credentials/call/composite/composite_call_credentials.cc",
-    ]) + glob(["src/core/credentials/call/external/*.cc"]) + [
-        "src/core/credentials/call/gcp_service_account_identity/gcp_service_account_identity_credentials.cc",
-        "src/core/credentials/call/iam/iam_credentials.cc",
-        "src/core/credentials/call/json_util.cc",
-    ] + glob(["src/core/credentials/call/jwt/*.cc"]) + [
-        "src/core/credentials/call/jwt_token_file/jwt_token_file_call_credentials.cc",
-        "src/core/credentials/call/jwt_util.cc",
-        "src/core/credentials/call/oauth2/oauth2_credentials.cc",
-        "src/core/credentials/call/plugin/plugin_credentials.cc",
-        "src/core/credentials/call/regional_access_boundary_fetcher.cc",
-        "src/core/credentials/call/token_fetcher/token_fetcher_credentials.cc",
-    ] + glob(["src/core/credentials/transport/alts/*.cc"]) + [
+    ] + glob(["src/core/credentials/call/**/*.cc"]) + glob(["src/core/credentials/transport/alts/*.cc"]) + [
         "src/core/credentials/transport/channel_creds_registry_init.cc",
         "src/core/credentials/transport/composite/composite_channel_credentials.cc",
         "src/core/credentials/transport/fake/fake_credentials.cc",
@@ -313,7 +299,7 @@ ch_cc_library(
         "src/core/handshaker/tcp_connect/tcp_connect_handshaker.cc",
         "src/core/lib/address_utils/parse_address.cc",
         "src/core/lib/address_utils/sockaddr_utils.cc",
-    ] + glob(["src/core/lib/channel/*.cc"]) + glob(["src/core/lib/compression/*.cc"]) + ([
+    ] + glob(["src/core/lib/channel/*.cc"]) + glob(["src/core/lib/compression/*.cc"]) + [
         "src/core/lib/debug/trace.cc",
         "src/core/lib/debug/trace_flags.cc",
         "src/core/lib/event_engine/ares_resolver.cc",
@@ -346,46 +332,15 @@ ch_cc_library(
         "src/core/lib/event_engine/slice.cc",
         "src/core/lib/event_engine/slice_buffer.cc",
         "src/core/lib/event_engine/tcp_socket_utils.cc",
-    ]) + glob(["src/core/lib/event_engine/thread_pool/*.cc"]) + [
+    ] + glob(["src/core/lib/event_engine/thread_pool/*.cc"]) + [
         "src/core/lib/event_engine/thready_event_engine/thready_event_engine.cc",
         "src/core/lib/event_engine/time_util.cc",
         "src/core/lib/event_engine/utils.cc",
-    ] + glob(["src/core/lib/event_engine/windows/*.cc"]) + ([
+    ] + glob(["src/core/lib/event_engine/windows/*.cc"]) + [
         "src/core/lib/event_engine/work_queue/basic_work_queue.cc",
         "src/core/lib/experiments/config.cc",
         "src/core/lib/experiments/experiments.cc",
-        "src/core/lib/iomgr/buffer_list.cc",
-        "src/core/lib/iomgr/call_combiner.cc",
-        "src/core/lib/iomgr/cfstream_handle.cc",
-        "src/core/lib/iomgr/closure.cc",
-        "src/core/lib/iomgr/combiner.cc",
-        "src/core/lib/iomgr/dualstack_socket_posix.cc",
-        "src/core/lib/iomgr/endpoint.cc",
-    ] + glob(["src/core/lib/iomgr/endpoint_*.cc"]) + [
-        "src/core/lib/iomgr/error.cc",
-        "src/core/lib/iomgr/error_cfstream.cc",
-    ] + glob(["src/core/lib/iomgr/ev_*.cc"])) + glob(["src/core/lib/iomgr/event_engine_shims/*.cc"]) + ([
-        "src/core/lib/iomgr/exec_ctx.cc",
-        "src/core/lib/iomgr/fork_posix.cc",
-        "src/core/lib/iomgr/fork_windows.cc",
-        "src/core/lib/iomgr/internal_errqueue.cc",
-        "src/core/lib/iomgr/iocp_windows.cc",
-        "src/core/lib/iomgr/iomgr.cc",
-    ] + glob(["src/core/lib/iomgr/iomgr_*.cc"]) + [
-        "src/core/lib/iomgr/lockfree_event.cc",
-        "src/core/lib/iomgr/polling_entity.cc",
-        "src/core/lib/iomgr/pollset.cc",
-    ] + glob(["src/core/lib/iomgr/pollset_*.cc"]) + glob(["src/core/lib/iomgr/resolve_*.cc"]) + [
-        "src/core/lib/iomgr/sockaddr_utils_posix.cc",
-    ] + glob(["src/core/lib/iomgr/socket_*.cc"]) + [
-        "src/core/lib/iomgr/systemd_utils.cc",
-    ] + glob(["src/core/lib/iomgr/tcp_*.cc"]) + [
-        "src/core/lib/iomgr/timer.cc",
-    ] + glob(["src/core/lib/iomgr/timer_*.cc"]) + [
-        "src/core/lib/iomgr/unix_sockets_posix.cc",
-        "src/core/lib/iomgr/unix_sockets_posix_noop.cc",
-        "src/core/lib/iomgr/vsock.cc",
-    ] + glob(["src/core/lib/iomgr/wakeup_*.cc"]) + [
+    ] + glob(["src/core/lib/iomgr/**/*.cc"]) + [
         "src/core/lib/promise/activity.cc",
         "src/core/lib/promise/party.cc",
         "src/core/lib/promise/sleep.cc",
@@ -404,7 +359,7 @@ ch_cc_library(
         "src/core/lib/security/authorization/matchers.cc",
         "src/core/lib/security/authorization/rbac_policy.cc",
         "src/core/lib/security/authorization/stdout_logger.cc",
-    ]) + glob(["src/core/lib/slice/*.cc"]) + glob(["src/core/lib/surface/*.cc"]) + [
+    ] + glob(["src/core/lib/slice/*.cc"]) + glob(["src/core/lib/surface/*.cc"]) + [
         "src/core/lib/transport/bdp_estimator.cc",
         "src/core/lib/transport/call_final_info.cc",
         "src/core/lib/transport/connectivity_state.cc",
@@ -413,25 +368,7 @@ ch_cc_library(
         "src/core/lib/transport/timeout_encoding.cc",
         "src/core/lib/transport/transport.cc",
         "src/core/lib/transport/transport_op_string.cc",
-        "src/core/load_balancing/address_filtering.cc",
-        "src/core/load_balancing/backend_metric_parser.cc",
-        "src/core/load_balancing/child_policy_handler.cc",
-        "src/core/load_balancing/endpoint_list.cc",
-    ] + glob(["src/core/load_balancing/grpclb/*.cc"]) + [
-        "src/core/load_balancing/health_check_client.cc",
-        "src/core/load_balancing/lb_policy.cc",
-        "src/core/load_balancing/lb_policy_registry.cc",
-        "src/core/load_balancing/oob_backend_metric.cc",
-        "src/core/load_balancing/outlier_detection/outlier_detection.cc",
-        "src/core/load_balancing/pick_first/pick_first.cc",
-        "src/core/load_balancing/priority/priority.cc",
-        "src/core/load_balancing/ring_hash/ring_hash.cc",
-        "src/core/load_balancing/rls/rls.cc",
-        "src/core/load_balancing/round_robin/round_robin.cc",
-        "src/core/load_balancing/weighted_round_robin/static_stride_scheduler.cc",
-        "src/core/load_balancing/weighted_round_robin/weighted_round_robin.cc",
-        "src/core/load_balancing/weighted_target/weighted_target.cc",
-    ] + glob(["src/core/load_balancing/xds/*.cc"]) + [
+    ] + glob(["src/core/load_balancing/**/*.cc"]) + [
         "src/core/plugin_registry/grpc_plugin_registry.cc",
         "src/core/plugin_registry/grpc_plugin_registry_extra.cc",
     ] + glob(["src/core/resolver/dns/c_ares/*.cc"]) + [
@@ -469,7 +406,7 @@ ch_cc_library(
         "src/core/tsi/fake_transport_security.cc",
         "src/core/tsi/local_transport_security.cc",
         "src/core/tsi/ssl/key_logging/ssl_key_logging.cc",
-    ] + glob(["src/core/tsi/ssl/session_cache/*.cc"]) + ([
+    ] + glob(["src/core/tsi/ssl/session_cache/*.cc"]) + [
         "src/core/tsi/ssl_transport_security.cc",
         "src/core/tsi/ssl_transport_security_utils.cc",
         "src/core/tsi/transport_security.cc",
@@ -482,7 +419,7 @@ ch_cc_library(
         "src/core/util/glob.cc",
         "src/core/util/grpc_if_nametoindex_posix.cc",
         "src/core/util/grpc_if_nametoindex_unsupported.cc",
-    ]) + glob(["src/core/util/http_client/*.cc"]) + glob(["src/core/util/json/*.cc"]) + ([
+    ] + glob(["src/core/util/http_client/*.cc"]) + glob(["src/core/util/json/*.cc"]) + [
         "src/core/util/latent_see.cc",
         "src/core/util/load_file.cc",
         "src/core/util/matchers.cc",
@@ -501,7 +438,7 @@ ch_cc_library(
         "src/core/util/work_serializer.cc",
         "src/core/xds/grpc/certificate_provider_store.cc",
         "src/core/xds/grpc/file_watcher_certificate_provider_factory.cc",
-    ] + glob(["src/core/xds/grpc/xds_*.cc"])) + glob(["src/core/xds/xds_client/*.cc"]),
+    ] + glob(["src/core/xds/grpc/xds_*.cc"]) + glob(["src/core/xds/xds_client/*.cc"])),
     hdrs = [
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
@@ -533,7 +470,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "grpc__compile_1",
-    srcs = [
+    srcs = ([
         "src/core/ext/upb-gen/cel/expr/checked.upb_minitable.c",
         "src/core/ext/upb-gen/cel/expr/syntax.upb_minitable.c",
         "src/core/ext/upb-gen/envoy/config/common/mutation_rules/v3/mutation_rules.upb_minitable.c",
@@ -685,12 +622,11 @@ ch_cc_library(
         "src/core/ext/upbdefs-gen/envoy/type/tracing/v3/custom_tag.upbdefs.c",
     ] + glob(["src/core/ext/upbdefs-gen/envoy/type/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/google/api/**/*.c"]) + glob(["src/core/ext/upbdefs-gen/google/protobuf/*.c"]) + [
         "src/core/ext/upbdefs-gen/google/rpc/status.upbdefs.c",
-        "src/core/ext/upbdefs-gen/src/proto/grpc/channelz/channelz.upbdefs.c",
-    ] + glob(["src/core/ext/upbdefs-gen/src/proto/grpc/channelz/v2/*.c"]) + [
+    ] + glob(["src/core/ext/upbdefs-gen/src/proto/grpc/channelz/**/*.c"]) + [
         "src/core/ext/upbdefs-gen/src/proto/grpc/lookup/v1/rls_config.upbdefs.c",
     ] + glob(["src/core/ext/upbdefs-gen/udpa/annotations/*.c"]) + [
         "src/core/ext/upbdefs-gen/validate/validate.upbdefs.c",
-    ] + glob(["src/core/ext/upbdefs-gen/xds/annotations/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/xds/core/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/xds/type/matcher/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/xds/type/v3/*.c"]),
+    ] + glob(["src/core/ext/upbdefs-gen/xds/annotations/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/xds/core/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/xds/type/matcher/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/xds/type/v3/*.c"])),
     hdrs = [
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
@@ -1143,7 +1079,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "grpc_unsecure__compile_0",
-    srcs = glob(["src/core/call/call_*.cc"]) + [
+    srcs = (glob(["src/core/call/call_*.cc"]) + [
         "src/core/call/client_call.cc",
         "src/core/call/interception_chain.cc",
         "src/core/call/message.cc",
@@ -1242,7 +1178,7 @@ ch_cc_library(
         "src/core/handshaker/tcp_connect/tcp_connect_handshaker.cc",
         "src/core/lib/address_utils/parse_address.cc",
         "src/core/lib/address_utils/sockaddr_utils.cc",
-    ] + glob(["src/core/lib/channel/*.cc"]) + glob(["src/core/lib/compression/*.cc"]) + ([
+    ] + glob(["src/core/lib/channel/*.cc"]) + glob(["src/core/lib/compression/*.cc"]) + [
         "src/core/lib/debug/trace.cc",
         "src/core/lib/debug/trace_flags.cc",
         "src/core/lib/event_engine/ares_resolver.cc",
@@ -1275,46 +1211,15 @@ ch_cc_library(
         "src/core/lib/event_engine/slice.cc",
         "src/core/lib/event_engine/slice_buffer.cc",
         "src/core/lib/event_engine/tcp_socket_utils.cc",
-    ]) + glob(["src/core/lib/event_engine/thread_pool/*.cc"]) + [
+    ] + glob(["src/core/lib/event_engine/thread_pool/*.cc"]) + [
         "src/core/lib/event_engine/thready_event_engine/thready_event_engine.cc",
         "src/core/lib/event_engine/time_util.cc",
         "src/core/lib/event_engine/utils.cc",
-    ] + glob(["src/core/lib/event_engine/windows/*.cc"]) + ([
+    ] + glob(["src/core/lib/event_engine/windows/*.cc"]) + [
         "src/core/lib/event_engine/work_queue/basic_work_queue.cc",
         "src/core/lib/experiments/config.cc",
         "src/core/lib/experiments/experiments.cc",
-        "src/core/lib/iomgr/buffer_list.cc",
-        "src/core/lib/iomgr/call_combiner.cc",
-        "src/core/lib/iomgr/cfstream_handle.cc",
-        "src/core/lib/iomgr/closure.cc",
-        "src/core/lib/iomgr/combiner.cc",
-        "src/core/lib/iomgr/dualstack_socket_posix.cc",
-        "src/core/lib/iomgr/endpoint.cc",
-    ] + glob(["src/core/lib/iomgr/endpoint_*.cc"]) + [
-        "src/core/lib/iomgr/error.cc",
-        "src/core/lib/iomgr/error_cfstream.cc",
-    ] + glob(["src/core/lib/iomgr/ev_*.cc"])) + glob(["src/core/lib/iomgr/event_engine_shims/*.cc"]) + ([
-        "src/core/lib/iomgr/exec_ctx.cc",
-        "src/core/lib/iomgr/fork_posix.cc",
-        "src/core/lib/iomgr/fork_windows.cc",
-        "src/core/lib/iomgr/internal_errqueue.cc",
-        "src/core/lib/iomgr/iocp_windows.cc",
-        "src/core/lib/iomgr/iomgr.cc",
-    ] + glob(["src/core/lib/iomgr/iomgr_*.cc"]) + [
-        "src/core/lib/iomgr/lockfree_event.cc",
-        "src/core/lib/iomgr/polling_entity.cc",
-        "src/core/lib/iomgr/pollset.cc",
-    ] + glob(["src/core/lib/iomgr/pollset_*.cc"]) + glob(["src/core/lib/iomgr/resolve_*.cc"]) + [
-        "src/core/lib/iomgr/sockaddr_utils_posix.cc",
-    ] + glob(["src/core/lib/iomgr/socket_*.cc"]) + [
-        "src/core/lib/iomgr/systemd_utils.cc",
-    ] + glob(["src/core/lib/iomgr/tcp_*.cc"]) + [
-        "src/core/lib/iomgr/timer.cc",
-    ] + glob(["src/core/lib/iomgr/timer_*.cc"]) + [
-        "src/core/lib/iomgr/unix_sockets_posix.cc",
-        "src/core/lib/iomgr/unix_sockets_posix_noop.cc",
-        "src/core/lib/iomgr/vsock.cc",
-    ] + glob(["src/core/lib/iomgr/wakeup_*.cc"]) + [
+    ] + glob(["src/core/lib/iomgr/**/*.cc"]) + [
         "src/core/lib/promise/activity.cc",
         "src/core/lib/promise/party.cc",
         "src/core/lib/promise/sleep.cc",
@@ -1328,7 +1233,7 @@ ch_cc_library(
         "src/core/lib/security/authorization/authorization_policy_provider_vtable.cc",
         "src/core/lib/security/authorization/evaluate_args.cc",
         "src/core/lib/security/authorization/grpc_server_authz_filter.cc",
-    ]) + glob(["src/core/lib/slice/*.cc"]) + glob(["src/core/lib/surface/*.cc"]) + [
+    ] + glob(["src/core/lib/slice/*.cc"]) + glob(["src/core/lib/surface/*.cc"]) + [
         "src/core/lib/transport/bdp_estimator.cc",
         "src/core/lib/transport/call_final_info.cc",
         "src/core/lib/transport/connectivity_state.cc",
@@ -1371,7 +1276,7 @@ ch_cc_library(
         "src/core/server/add_port.cc",
         "src/core/server/server.cc",
         "src/core/server/server_call_tracer_filter.cc",
-    ] + glob(["src/core/service_config/*.cc"]) + ([
+    ] + glob(["src/core/service_config/*.cc"]) + [
         "src/core/telemetry/call_tracer.cc",
         "src/core/telemetry/default_tcp_tracer.cc",
         "src/core/telemetry/histogram_view.cc",

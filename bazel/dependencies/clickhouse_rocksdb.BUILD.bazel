@@ -39,7 +39,7 @@ ch_cc_library(
             "db/blob/blob_file_meta.cc",
             "db/blob/blob_file_reader.cc",
             "db/blob/blob_garbage_meter.cc",
-        ] + glob(["db/blob/blob_log_*.cc"]) + [
+        ] + glob(["db/blob/blob_log_*.cc"]) + ([
             "db/blob/blob_source.cc",
             "db/blob/prefetch_buffer_collection.cc",
             "db/builder.cc",
@@ -129,23 +129,16 @@ ch_cc_library(
             "env/fs_remap.cc",
             "env/mock_env.cc",
             "env/unique_id_gen.cc",
-            "file/delete_scheduler.cc",
-            "file/file_prefetch_buffer.cc",
-            "file/file_util.cc",
-            "file/filename.cc",
-            "file/line_file_reader.cc",
-            "file/random_access_file_reader.cc",
-            "file/read_write_util.cc",
-            "file/readahead_raf.cc",
-            "file/sequence_file_reader.cc",
-            "file/sst_file_manager_impl.cc",
-            "file/writable_file_writer.cc",
+        ] + glob(
+            ["file/*.cc"],
+            exclude = ["**/*_test.cc"],
+        ) + [
             "logging/auto_roll_logger.cc",
             "logging/event_logger.cc",
             "logging/log_buffer.cc",
             "memory/arena.cc",
             "memory/concurrent_arena.cc",
-        ] + glob(["memory/*_allocator.cc"]) + [
+        ]) + glob(["memory/*_allocator.cc"]) + ([
             "memtable/alloc_tracker.cc",
             "memtable/hash_linklist_rep.cc",
             "memtable/hash_skiplist_rep.cc",
@@ -166,28 +159,20 @@ ch_cc_library(
             "monitoring/thread_status_updater.cc",
             "monitoring/thread_status_util.cc",
             "monitoring/thread_status_util_debug.cc",
-            "options/cf_options.cc",
-            "options/configurable.cc",
-            "options/customizable.cc",
-            "options/db_options.cc",
-            "options/offpeak_time_info.cc",
-            "options/options.cc",
-            "options/options_helper.cc",
-            "options/options_parser.cc",
+        ] + glob(
+            ["options/*.cc"],
+            exclude = ["**/*_test.cc"],
+        ) + [
             "port/mmap.cc",
             "port/stack_trace.cc",
             "table/adaptive/adaptive_table_factory.cc",
             "table/block_based/binary_search_index_reader.cc",
             "table/block_based/multi_scan_index_iterator.cc",
             "table/block_based/block.cc",
-            "table/block_based/block_based_table_builder.cc",
-            "table/block_based/block_based_table_factory.cc",
-            "table/block_based/block_based_table_iterator.cc",
-            "table/block_based/block_based_table_reader.cc",
-            "table/block_based/block_builder.cc",
-            "table/block_based/block_cache.cc",
-            "table/block_based/block_prefetcher.cc",
-            "table/block_based/block_prefix_index.cc",
+        ] + glob(
+            ["table/block_based/block_*.cc"],
+            exclude = ["**/*_test.cc"],
+        ) + [
             "table/block_based/data_block_footer.cc",
             "table/block_based/data_block_hash_index.cc",
             "table/block_based/filter_block_reader_common.cc",
@@ -214,7 +199,7 @@ ch_cc_library(
             "table/merging_iterator.cc",
             "table/meta_blocks.cc",
             "table/persistent_cache_helper.cc",
-        ] + glob(["table/plain/*.cc"]) + ([
+        ]) + glob(["table/plain/*.cc"]) + (([
             "table/sst_file_dumper.cc",
             "table/sst_file_reader.cc",
             "table/sst_file_writer.cc",
@@ -275,15 +260,12 @@ ch_cc_library(
             "utilities/env_timed.cc",
             "utilities/leveldb_options/leveldb_options.cc",
             "utilities/merge_operators.cc",
-            "utilities/merge_operators/bytesxor.cc",
-            "utilities/merge_operators/max.cc",
-            "utilities/merge_operators/put.cc",
-            "utilities/merge_operators/sortlist.cc",
-            "utilities/merge_operators/string_append/stringappend.cc",
-            "utilities/merge_operators/string_append/stringappend2.cc",
-            "utilities/merge_operators/uint64add.cc",
+        ] + glob(
+            ["utilities/merge_operators/**/*.cc"],
+            exclude = ["**/*_test.cc"],
+        ) + [
             "utilities/object_registry.cc",
-        ] + glob(["utilities/persistent_cache/block_*.cc"]) + [
+        ]) + glob(["utilities/persistent_cache/block_*.cc"]) + [
             "utilities/persistent_cache/persistent_cache_tier.cc",
             "utilities/persistent_cache/volatile_tier_impl.cc",
             "utilities/simulator_cache/cache_simulator.cc",
@@ -476,7 +458,7 @@ ch_cc_library(
             "db/blob/blob_file_meta.cc",
             "db/blob/blob_file_reader.cc",
             "db/blob/blob_garbage_meter.cc",
-        ] + glob(["db/blob/blob_log_*.cc"]) + [
+        ] + glob(["db/blob/blob_log_*.cc"]) + ([
             "db/blob/blob_source.cc",
             "db/blob/prefetch_buffer_collection.cc",
             "db/builder.cc",
@@ -566,23 +548,16 @@ ch_cc_library(
             "env/fs_remap.cc",
             "env/mock_env.cc",
             "env/unique_id_gen.cc",
-            "file/delete_scheduler.cc",
-            "file/file_prefetch_buffer.cc",
-            "file/file_util.cc",
-            "file/filename.cc",
-            "file/line_file_reader.cc",
-            "file/random_access_file_reader.cc",
-            "file/read_write_util.cc",
-            "file/readahead_raf.cc",
-            "file/sequence_file_reader.cc",
-            "file/sst_file_manager_impl.cc",
-            "file/writable_file_writer.cc",
+        ] + glob(
+            ["file/*.cc"],
+            exclude = ["**/*_test.cc"],
+        ) + [
             "logging/auto_roll_logger.cc",
             "logging/event_logger.cc",
             "logging/log_buffer.cc",
             "memory/arena.cc",
             "memory/concurrent_arena.cc",
-        ] + glob(["memory/*_allocator.cc"]) + [
+        ]) + glob(["memory/*_allocator.cc"]) + ([
             "memtable/alloc_tracker.cc",
             "memtable/hash_linklist_rep.cc",
             "memtable/hash_skiplist_rep.cc",
@@ -603,28 +578,20 @@ ch_cc_library(
             "monitoring/thread_status_updater.cc",
             "monitoring/thread_status_util.cc",
             "monitoring/thread_status_util_debug.cc",
-            "options/cf_options.cc",
-            "options/configurable.cc",
-            "options/customizable.cc",
-            "options/db_options.cc",
-            "options/offpeak_time_info.cc",
-            "options/options.cc",
-            "options/options_helper.cc",
-            "options/options_parser.cc",
+        ] + glob(
+            ["options/*.cc"],
+            exclude = ["**/*_test.cc"],
+        ) + [
             "port/mmap.cc",
             "port/stack_trace.cc",
             "table/adaptive/adaptive_table_factory.cc",
             "table/block_based/binary_search_index_reader.cc",
             "table/block_based/multi_scan_index_iterator.cc",
             "table/block_based/block.cc",
-            "table/block_based/block_based_table_builder.cc",
-            "table/block_based/block_based_table_factory.cc",
-            "table/block_based/block_based_table_iterator.cc",
-            "table/block_based/block_based_table_reader.cc",
-            "table/block_based/block_builder.cc",
-            "table/block_based/block_cache.cc",
-            "table/block_based/block_prefetcher.cc",
-            "table/block_based/block_prefix_index.cc",
+        ] + glob(
+            ["table/block_based/block_*.cc"],
+            exclude = ["**/*_test.cc"],
+        ) + [
             "table/block_based/data_block_footer.cc",
             "table/block_based/data_block_hash_index.cc",
             "table/block_based/filter_block_reader_common.cc",
@@ -651,7 +618,7 @@ ch_cc_library(
             "table/merging_iterator.cc",
             "table/meta_blocks.cc",
             "table/persistent_cache_helper.cc",
-        ] + glob(["table/plain/*.cc"]) + ([
+        ]) + glob(["table/plain/*.cc"]) + (([
             "table/sst_file_dumper.cc",
             "table/sst_file_reader.cc",
             "table/sst_file_writer.cc",
@@ -712,15 +679,12 @@ ch_cc_library(
             "utilities/env_timed.cc",
             "utilities/leveldb_options/leveldb_options.cc",
             "utilities/merge_operators.cc",
-            "utilities/merge_operators/bytesxor.cc",
-            "utilities/merge_operators/max.cc",
-            "utilities/merge_operators/put.cc",
-            "utilities/merge_operators/sortlist.cc",
-            "utilities/merge_operators/string_append/stringappend.cc",
-            "utilities/merge_operators/string_append/stringappend2.cc",
-            "utilities/merge_operators/uint64add.cc",
+        ] + glob(
+            ["utilities/merge_operators/**/*.cc"],
+            exclude = ["**/*_test.cc"],
+        ) + [
             "utilities/object_registry.cc",
-        ] + glob(["utilities/persistent_cache/block_*.cc"]) + [
+        ]) + glob(["utilities/persistent_cache/block_*.cc"]) + [
             "utilities/persistent_cache/persistent_cache_tier.cc",
             "utilities/persistent_cache/volatile_tier_impl.cc",
             "utilities/simulator_cache/cache_simulator.cc",

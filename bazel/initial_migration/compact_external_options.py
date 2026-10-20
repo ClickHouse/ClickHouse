@@ -83,13 +83,22 @@ def load_package_files(facts_dir, owner, spec):
                        ('commit', spec['commit']), ('sha256', spec['sha256'])):
         if data.get(key) != value:
             raise ValueError(f'{receipt}: expected {key}={value}, found {data.get(key)!r}')
-    if not data.get('stats', {}).get('inventory_checked'):
-        return None
-    # scan_include_adjacency validated every nested BUILD against the removal list.
+    # The scanner verifies the compressed archive SHA256 before publishing a
+    # v3 receipt. inventory_checked only records comparison with an older
+    # inventory, which is not available for every pinned archive.
+    stats = data.get('stats', {})
     inventory = set(data['inventory'])
+    scanned = set(data['files'])
+    unscanned = {item for items in data['unscanned'].values() for item in items}
+    if (scanned & unscanned or scanned | unscanned != inventory
+            or stats.get('inventory_files') != len(inventory)
+            or stats.get('compressed_bytes', 0) <= 0):
+        raise ValueError(f'{receipt}: source inventory receipt inconsistent')
+    # scan_include_adjacency validated every nested BUILD against the removal list.
     remaining_builds = {s for s in inventory if posixpath.basename(s) in {'BUILD', 'BUILD.bazel'}}
     if remaining_builds - {'BUILD.bazel'}:
         raise ValueError(f'{receipt}: remaining nested BUILD files: {sorted(remaining_builds)}')
+    inventory.add('BUILD.bazel')
     return PackageFiles(inventory)
 
 
@@ -393,7 +402,8 @@ class OrderedTemplates(ast.NodeTransformer):
         if (self.in_substitutions and function(node) == 'select'
                 and len(node.args) == 1 and not node.keywords):
             pairs = dictionary_pairs(node.args[0])
-            if pairs is not None and {string_value(k) for k, _ in pairs} == set(CPUS):
+            if (pairs is not None and self.cpu in CPUS
+                    and {string_value(k) for k, _ in pairs} == set(CPUS)):
                 return next(value for key, value in pairs if string_value(key) == self.cpu)
         return node
 
@@ -410,7 +420,7 @@ class OrderedTemplates(ast.NodeTransformer):
         return node
 
 
-def source_globs(text, files, stats, examples, *, headers=False):
+def source_globs(text, files, stats, examples, *, headers=False, source_tests=False):
     """Replace contiguous exact-order files; header mode never moves attributes."""
     source = Source(text)
     if headers:
@@ -476,23 +486,39 @@ def source_globs(text, files, stats, examples, *, headers=False):
                     continue
                 matches = []
                 for pattern in set(patterns(filename)):
-                    found = files.result((pattern,), ())
+                    excluded = ()
+                    if source_tests and not headers:
+                        suffix = posixpath.splitext(filename)[1]
+                        tests = tuple('**/' + name + suffix for name in (
+                            '*_test', '*_benchmark', 'test_*',
+                        ))
+                        matched = files.matching(pattern)
+                        excluded = tuple(p for p in tests if matched & files.matching(p))
+                    found = files.result((pattern,), excluded)
                     count = len(found)
-                    if count >= 3 and count <= len(values) - index and values[index:index+count] == found:
+                    # An excluded glob takes more lines than a plain glob.
+                    minimum = 5 + len(excluded) if excluded else 3
+                    if count >= minimum and count <= len(values) - index and values[index:index+count] == found:
                         if headers:
                             # Prefer include/Poco/Net/*.h over **/*.h when
                             # both currently name the same files.
                             matches.append((count, pattern.split('*', 1)[0].count('/'),
                                             '**' not in pattern, -len(pattern), pattern))
                         else:
-                            matches.append((count, -len(pattern), pattern))
+                            expression_size = len(pattern) + sum(map(len, excluded))
+                            matches.append((count, -expression_size, pattern, excluded))
                 if not matches:
                     index += 1
                     continue
-                count, *_, pattern = max(matches)
+                if headers:
+                    count, *_, pattern = max(matches)
+                    excluded = ()
+                else:
+                    count, _, pattern, excluded = max(matches)
                 if index > emitted:
                     parts.append(render_list(source, node.elts[emitted:index], indent))
-                parts.append('glob(' + json.dumps([pattern]) + ')')
+                options = ', exclude = ' + json.dumps(excluded) if excluded else ''
+                parts.append('glob(' + json.dumps([pattern]) + options + ')')
                 category = 'header' if headers else 'source'
                 stats[category + '_globs_added'] += 1
                 stats[category + '_files_in_new_globs'] += count
@@ -521,6 +547,107 @@ def source_globs(text, files, stats, examples, *, headers=False):
         # where the header pass did not replace any literal list.
         prove(text, result, files, {}, 'native header globs', stats, headers=True)
     return result
+
+
+def compact_source_glob_runs(text, files, stats, examples):
+    """Reconsider adjacent srcs lists and existing globs in source ordinal order."""
+    source = Source(text)
+    edits = []
+
+    def source_files(node):
+        if isinstance(node, ast.List):
+            return tuple(source.text(item) for item in node.elts)
+        if function(node) != 'glob' or len(node.args) != 1:
+            return None
+        options = attrs(node)
+        if set(options) - {'exclude', 'allow_empty', 'exclude_directories'}:
+            return None
+        try:
+            patterns = ast.literal_eval(node.args[0])
+            excluded = ast.literal_eval(options['exclude']) if 'exclude' in options else []
+            allow_empty = ast.literal_eval(options['allow_empty']) if 'allow_empty' in options else False
+            exclude_dirs = ast.literal_eval(options['exclude_directories']) if 'exclude_directories' in options else True
+        except (ValueError, TypeError):
+            return None
+        if (not exclude_dirs or not isinstance(patterns, list) or not isinstance(excluded, list)
+                or not all(isinstance(p, str) for p in [*patterns, *excluded])):
+            return None
+        filenames = files.result(patterns, excluded)
+        if not allow_empty and (not filenames or any(not files.matching(p) for p in patterns)):
+            raise ValueError(f'strict source glob has no match: {patterns}, exclude = {excluded}')
+        if any(posixpath.splitext(path)[1] not in SOURCE_SUFFIXES for path in filenames):
+            return None
+        return tuple(json.dumps(path) for path in filenames)
+
+    def parts(node):
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            return parts(node.left) + parts(node.right)
+        return [node]
+
+    def visit(node, indent, rule_name):
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            inputs = parts(node)
+            pending, output = [], []
+            changed = False
+
+            def emit():
+                nonlocal changed
+                original = ' + '.join(source.text(p) for p, _ in pending)
+                if (len(pending) > 1 and any(function(p) == 'glob' for p, _ in pending)
+                        and '#' not in original):
+                    filenames = [name for _, values in pending for name in values]
+                    literal = '[\n' + ''.join(
+                        ' ' * (indent + 4) + value + ',\n' for value in filenames
+                    ) + ' ' * indent + ']'
+                    fragment = f'cc_library(name = {json.dumps(rule_name)},\n    srcs = {literal},\n)\n'
+                    result = source_globs(fragment, files, Counter(), [], source_tests=True)
+                    compacted = Source(result)
+                    call = next(compacted.rules())[1]
+                    replacement = compacted.text(attrs(call)['srcs'])
+                    old_key = ast_key(ast.parse(original, mode='eval'))
+                    new_key = ast_key(ast.parse(replacement, mode='eval'))
+                    if old_key != new_key and len(original.encode()) - len(replacement.encode()) >= 64:
+                        output.append(replacement)
+                        stats['joined_srcs_groups'] += 1
+                        changed = True
+                        pending.clear()
+                        return
+                output.extend(source.text(p) for p, _ in pending)
+                pending.clear()
+
+            for item in inputs:
+                filenames = source_files(item)
+                if filenames is None:
+                    emit()
+                    output.append(source.text(item))
+                else:
+                    pending.append((item, filenames))
+            emit()
+            if changed:
+                edits.append((*source.span(node), '(' + ' + '.join(output) + ')'))
+            else:
+                for item in inputs:
+                    if function(item) == 'select':
+                        visit(item, indent, rule_name)
+        elif function(node) == 'select' and len(node.args) == 1 and isinstance(node.args[0], ast.Dict):
+            for value in node.args[0].values:
+                visit(value, indent + 4, rule_name)
+
+    for field, value, indent, rule_name in native_values(source):
+        if field == 'srcs':
+            visit(value, indent, rule_name)
+    return source.rewrite(edits)
+
+
+def external_source_globs(text, files, stats, examples):
+    """Compact external TU lists, retaining every original file's ordinal."""
+    after = text
+    while True:
+        before = after
+        after = source_globs(before, files, stats, examples, source_tests=True)
+        after = compact_source_glob_runs(after, files, stats, examples)
+        if after == before:
+            return after
 
 
 class Verify(ast.NodeTransformer):
@@ -630,7 +757,7 @@ def prove(before, after, files, renamed, path, stats, *, headers=False):
     # _GENERATED_ native attributes, so it never produces a self-mapping.
     template_names = {key for key, value in renamed.items() if key == value}
     names = original_names | {name for name in renamed.values() if name and name not in template_names}
-    cpus = (*CPUS, '//conditions:default') if headers else CPUS
+    cpus = (*CPUS, '//conditions:default')
     for cpu in cpus:
         old_templates = OrderedTemplates(cpu, template_names)
         new_templates = OrderedTemplates(cpu, template_names)
@@ -648,7 +775,7 @@ def prove(before, after, files, renamed, path, stats, *, headers=False):
                     print('AFTER', ast.unparse(b)[:1500], file=sys.stderr)
                     break
             raise ValueError(f'{path}, {cpu}: expanded BUILD changed')
-        count_key = 'three_configs' if headers else 'two_cpus'
+        count_key = 'three_configs'
         stats['native_rules_verified_' + count_key] += old.rules_verified
         stats['template_ordered_items_verified_' + count_key] += sum(
             len(items) for items in old_templates.ordered_entries.values())
@@ -670,7 +797,7 @@ def compact(text, spec_name, files=None, stats=None, examples=None):
             break
         after = joined
     if files is not None:
-        after = source_globs(after, files, stats, examples)
+        after = external_source_globs(after, files, stats, examples)
     after, renamed = readable_names(after, spec_name, stats)
     after, template_names = factor_substitutions(after, spec_name, stats)
     renamed.update({name: name for name in template_names})

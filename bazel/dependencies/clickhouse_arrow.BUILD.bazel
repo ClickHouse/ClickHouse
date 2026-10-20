@@ -209,7 +209,7 @@ _ARROW_LOCAL_INCLUDES = [
 
 ch_cc_library(
     name = "_arrow__compile_0",
-    srcs = [
+    srcs = ([
         "cpp/src/arrow/util/compression_zstd.cc",
         "cpp/src/arrow/util/compression_zlib.cc",
         "cpp/src/arrow/util/compression_snappy.cc",
@@ -219,20 +219,10 @@ ch_cc_library(
         "cpp/src/arrow/adapters/orc/adapter.cc",
         "cpp/src/arrow/adapters/orc/options.cc",
         "cpp/src/arrow/adapters/orc/util.cc",
-        "cpp/src/arrow/array/array_base.cc",
-        "cpp/src/arrow/array/array_binary.cc",
-        "cpp/src/arrow/array/array_decimal.cc",
-        "cpp/src/arrow/array/array_dict.cc",
-        "cpp/src/arrow/array/array_nested.cc",
-        "cpp/src/arrow/array/array_primitive.cc",
-        "cpp/src/arrow/array/array_run_end.cc",
-    ] + glob(["cpp/src/arrow/array/builder_*.cc"]) + [
-        "cpp/src/arrow/array/concatenate.cc",
-        "cpp/src/arrow/array/data.cc",
-        "cpp/src/arrow/array/diff.cc",
-        "cpp/src/arrow/array/statistics.cc",
-        "cpp/src/arrow/array/util.cc",
-        "cpp/src/arrow/array/validate.cc",
+    ] + glob(
+        ["cpp/src/arrow/array/*.cc"],
+        exclude = ["**/*_test.cc"],
+    ) + [
         "cpp/src/arrow/buffer.cc",
         "cpp/src/arrow/builder.cc",
         "cpp/src/arrow/c/bridge.cc",
@@ -255,27 +245,13 @@ ch_cc_library(
         "cpp/src/arrow/compute/kernels/codegen_internal.cc",
         "cpp/src/arrow/compute/kernels/hash_aggregate.cc",
         "cpp/src/arrow/compute/kernels/ree_util_internal.cc",
-        "cpp/src/arrow/compute/kernels/scalar_arithmetic.cc",
-        "cpp/src/arrow/compute/kernels/scalar_boolean.cc",
-        "cpp/src/arrow/compute/kernels/scalar_cast_boolean.cc",
-        "cpp/src/arrow/compute/kernels/scalar_cast_dictionary.cc",
-        "cpp/src/arrow/compute/kernels/scalar_cast_extension.cc",
-        "cpp/src/arrow/compute/kernels/scalar_cast_internal.cc",
-        "cpp/src/arrow/compute/kernels/scalar_cast_nested.cc",
-        "cpp/src/arrow/compute/kernels/scalar_cast_numeric.cc",
-        "cpp/src/arrow/compute/kernels/scalar_cast_string.cc",
-        "cpp/src/arrow/compute/kernels/scalar_cast_temporal.cc",
-        "cpp/src/arrow/compute/kernels/scalar_compare.cc",
-        "cpp/src/arrow/compute/kernels/scalar_if_else.cc",
-        "cpp/src/arrow/compute/kernels/scalar_nested.cc",
-        "cpp/src/arrow/compute/kernels/scalar_random.cc",
-        "cpp/src/arrow/compute/kernels/scalar_round.cc",
-        "cpp/src/arrow/compute/kernels/scalar_set_lookup.cc",
-        "cpp/src/arrow/compute/kernels/scalar_string_ascii.cc",
-        "cpp/src/arrow/compute/kernels/scalar_string_utf8.cc",
-        "cpp/src/arrow/compute/kernels/scalar_temporal_binary.cc",
-        "cpp/src/arrow/compute/kernels/scalar_temporal_unary.cc",
-        "cpp/src/arrow/compute/kernels/scalar_validity.cc",
+    ] + glob(
+        ["cpp/src/arrow/compute/kernels/scalar_*.cc"],
+        exclude = [
+            "**/*_test.cc",
+            "**/*_benchmark.cc",
+        ],
+    ) + [
         "cpp/src/arrow/compute/kernels/temporal_internal.cc",
         "cpp/src/arrow/compute/kernels/util_internal.cc",
         "cpp/src/arrow/compute/kernels/vector_array_sort.cc",
@@ -313,17 +289,14 @@ ch_cc_library(
         "cpp/src/arrow/extension/parquet_variant.cc",
         "cpp/src/arrow/extension/uuid.cc",
         "cpp/src/arrow/integration/c_data_integration_internal.cc",
-        "cpp/src/arrow/io/buffered.cc",
-        "cpp/src/arrow/io/caching.cc",
-        "cpp/src/arrow/io/compressed.cc",
-        "cpp/src/arrow/io/file.cc",
-        "cpp/src/arrow/io/hdfs.cc",
-        "cpp/src/arrow/io/hdfs_internal.cc",
-        "cpp/src/arrow/io/interfaces.cc",
-        "cpp/src/arrow/io/memory.cc",
-        "cpp/src/arrow/io/slow.cc",
-        "cpp/src/arrow/io/stdio.cc",
-        "cpp/src/arrow/io/transform.cc",
+    ] + glob(
+        ["cpp/src/arrow/io/*.cc"],
+        exclude = [
+            "**/*_test.cc",
+            "**/*_benchmark.cc",
+            "**/test_*.cc",
+        ],
+    ) + [
         "cpp/src/arrow/ipc/dictionary.cc",
         "cpp/src/arrow/ipc/feather.cc",
         "cpp/src/arrow/ipc/file_to_stream.cc",
@@ -411,7 +384,7 @@ ch_cc_library(
             "cpp/src/arrow/util/byte_stream_split_internal_avx2.cc",
         ],
         "@platforms//cpu:aarch64": [],
-    }),
+    })),
     hdrs = [
         "@clickhouse//bazel:gen/contrib/flatbuffers/generated/File_generated.h",
         "@clickhouse//bazel:gen/contrib/flatbuffers/generated/Message_generated.h",
@@ -649,7 +622,7 @@ _GENERATED_LOCAL_DEFINES_1 = [
 
 ch_cc_library(
     name = "_parquet",
-    srcs = [
+    srcs = ([
         "cpp/src/parquet/arrow/fuzz_internal.cc",
         "cpp/src/parquet/arrow/path_internal.cc",
         "cpp/src/parquet/arrow/reader.cc",
@@ -666,20 +639,13 @@ ch_cc_library(
         "cpp/src/parquet/column_writer.cc",
         "cpp/src/parquet/decoder.cc",
         "cpp/src/parquet/encoder.cc",
-        "cpp/src/parquet/encryption/crypto_factory.cc",
-        "cpp/src/parquet/encryption/encryption.cc",
-        "cpp/src/parquet/encryption/encryption_internal.cc",
-        "cpp/src/parquet/encryption/encryption_internal_nossl.cc",
-    ] + glob(["cpp/src/parquet/encryption/file_*.cc"]) + [
-        "cpp/src/parquet/encryption/internal_file_decryptor.cc",
-        "cpp/src/parquet/encryption/internal_file_encryptor.cc",
-        "cpp/src/parquet/encryption/key_material.cc",
-        "cpp/src/parquet/encryption/key_metadata.cc",
-        "cpp/src/parquet/encryption/key_toolkit.cc",
-        "cpp/src/parquet/encryption/key_toolkit_internal.cc",
-        "cpp/src/parquet/encryption/kms_client.cc",
-        "cpp/src/parquet/encryption/local_wrap_kms_client.cc",
-        "cpp/src/parquet/encryption/openssl_internal.cc",
+    ] + glob(
+        ["cpp/src/parquet/encryption/*.cc"],
+        exclude = [
+            "**/*_test.cc",
+            "**/test_*.cc",
+        ],
+    ) + [
         "cpp/src/parquet/exception.cc",
         "cpp/src/parquet/file_reader.cc",
         "cpp/src/parquet/file_writer.cc",
@@ -708,7 +674,7 @@ ch_cc_library(
             "cpp/src/parquet/bloom_filter_avx2.cc",
         ],
         "@platforms//cpu:aarch64": [],
-    }),
+    })),
     copts = [
         "-w",
         "-std=c++23",

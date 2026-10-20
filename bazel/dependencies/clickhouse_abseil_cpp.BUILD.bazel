@@ -895,14 +895,10 @@ ch_cc_library(
 
 ch_cc_library(
     name = "absl_str_format_internal",
-    srcs = [
-        "absl/strings/internal/str_format/arg.cc",
-        "absl/strings/internal/str_format/bind.cc",
-        "absl/strings/internal/str_format/extension.cc",
-        "absl/strings/internal/str_format/float_conversion.cc",
-        "absl/strings/internal/str_format/output.cc",
-        "absl/strings/internal/str_format/parser.cc",
-    ],
+    srcs = glob(
+        ["absl/strings/internal/str_format/*.cc"],
+        exclude = ["**/*_test.cc"],
+    ),
     copts = _ABSL_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":absl_strings"],

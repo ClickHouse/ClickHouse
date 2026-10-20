@@ -180,7 +180,7 @@ _GOOGLE_PROTOBUF_LOCAL_INCLUDES = [
 
 ch_cc_library(
     name = "_libprotobuf",
-    srcs = [
+    srcs = ([
         "src/google/protobuf/any_lite.cc",
         "src/google/protobuf/arena.cc",
         "src/google/protobuf/arena_align.cc",
@@ -237,13 +237,10 @@ ch_cc_library(
         "src/google/protobuf/io/strtod.cc",
         "src/google/protobuf/io/tokenizer.cc",
         "src/google/protobuf/io/zero_copy_sink.cc",
-        "src/google/protobuf/json/internal/lexer.cc",
-        "src/google/protobuf/json/internal/message_path.cc",
-        "src/google/protobuf/json/internal/parser.cc",
-        "src/google/protobuf/json/internal/unparser.cc",
-        "src/google/protobuf/json/internal/untyped_message.cc",
-        "src/google/protobuf/json/internal/writer.cc",
-        "src/google/protobuf/json/internal/zero_copy_buffered_stream.cc",
+    ] + glob(
+        ["src/google/protobuf/json/internal/*.cc"],
+        exclude = ["**/*_test.cc"],
+    ) + [
         "src/google/protobuf/json/json.cc",
         "src/google/protobuf/json_enumvalue_options.pb.cc",
         "src/google/protobuf/map_field.cc",
@@ -266,7 +263,7 @@ ch_cc_library(
         "src/google/protobuf/util/time_util.cc",
         "src/google/protobuf/util/type_resolver_util.cc",
         "src/google/protobuf/wire_format.cc",
-    ],
+    ]),
     copts = [
         "-w",
         "-std=c++17",

@@ -105,7 +105,7 @@ _CRYPTO_LOCAL_INCLUDES = select({
 ch_cc_library(
     name = "crypto__compile_0",
     srcs = select({
-        "@platforms//cpu:x86_64": [
+        "@platforms//cpu:x86_64": ([
             "@clickhouse//contrib/openssl-cmake:common/providers/der_digests_gen.c",
             "@clickhouse//contrib/openssl-cmake:common/providers/der_dsa_gen.c",
             "@clickhouse//contrib/openssl-cmake:common/providers/der_ec_gen.c",
@@ -169,12 +169,12 @@ ch_cc_library(
             "crypto/cmac/cmac.c",
         ] + glob(["crypto/cmp/*.c"]) + glob(["crypto/cms/*.c"]) + glob(["crypto/comp/*.c"]) + [
             "crypto/comp_methods.c",
-        ] + glob(["crypto/conf/*.c"]) + ([
+        ] + glob(["crypto/conf/*.c"]) + [
             "crypto/context.c",
         ] + glob(["crypto/core_*.c"]) + [
             "crypto/cpt_err.c",
             "crypto/cpuid.c",
-        ]) + glob(["crypto/crmf/*.c"]) + [
+        ] + glob(["crypto/crmf/*.c"]) + [
             "crypto/cryptlib.c",
         ] + glob(["crypto/ct/*.c"]) + [
             "crypto/ctype.c",
@@ -206,7 +206,7 @@ ch_cc_library(
             "crypto/ec/curve25519.c",
             "crypto/ec/curve448/arch_32/f_impl32.c",
             "crypto/ec/curve448/arch_64/f_impl64.c",
-        ] + glob(["crypto/ec/curve448/*.c"]) + ([
+        ] + glob(["crypto/ec/curve448/*.c"]) + [
             "crypto/ec/ec2_oct.c",
             "crypto/ec/ec2_smpl.c",
         ] + glob(["crypto/ec/ec_*.c"]) + [
@@ -221,7 +221,7 @@ ch_cc_library(
             "crypto/ec/ecx_backend.c",
             "crypto/ec/ecx_key.c",
             "crypto/ec/ecx_meth.c",
-        ]) + glob(["crypto/encode_decode/*.c"]) + glob(["crypto/err/*.c"]) + glob(["crypto/ess/*.c"]) + ([
+        ] + glob(["crypto/encode_decode/*.c"]) + glob(["crypto/err/*.c"]) + glob(["crypto/ess/*.c"]) + [
             "crypto/evp/asymcipher.c",
         ] + glob(["crypto/evp/bio_*.c"]) + [
             "crypto/evp/c_allc.c",
@@ -270,7 +270,7 @@ ch_cc_library(
             "crypto/evp/signature.c",
             "crypto/evp/skeymgmt_meth.c",
             "crypto/ex_data.c",
-        ]) + glob(["crypto/ffc/*.c"]) + [
+        ] + glob(["crypto/ffc/*.c"]) + [
             "crypto/getenv.c",
             "crypto/hashtable/hashfunc.c",
             "crypto/hashtable/hashtable.c",
@@ -304,7 +304,7 @@ ch_cc_library(
             "crypto/passphrase.c",
         ] + glob(["crypto/pem/*.c"]) + glob(["crypto/pkcs12/*.c"]) + glob(["crypto/pkcs7/*.c"]) + [
             "crypto/poly1305/poly1305.c",
-        ] + glob(["crypto/property/*.c"]) + ([
+        ] + glob(["crypto/property/*.c"]) + [
             "crypto/provider.c",
         ] + glob(["crypto/provider_*.c"]) + [
             "crypto/punycode.c",
@@ -317,7 +317,7 @@ ch_cc_library(
             "crypto/rand/rand_uniform.c",
             "crypto/rand/randfile.c",
             "crypto/rbtree/rbtree.c",
-        ]) + glob(["crypto/rc2/*.c"]) + [
+        ] + glob(["crypto/rc2/*.c"]) + [
             "crypto/ripemd/rmd_dgst.c",
             "crypto/ripemd/rmd_one.c",
             "crypto/rsa/rsa_ameth.c",
@@ -366,16 +366,12 @@ ch_cc_library(
             "crypto/store/store_meth.c",
             "crypto/store/store_result.c",
             "crypto/store/store_strings.c",
-            "crypto/thread/api.c",
-            "crypto/thread/arch.c",
-        ] + glob(["crypto/thread/arch/*.c"]) + ([
-            "crypto/thread/internal.c",
-        ] + glob(["crypto/threads_*.c"]) + [
+        ] + glob(["crypto/thread/**/*.c"]) + glob(["crypto/threads_*.c"]) + [
             "crypto/time.c",
             "crypto/trace.c",
-        ]) + glob(["crypto/ts/*.c"]) + [
+        ] + glob(["crypto/ts/*.c"]) + [
             "crypto/txt_db/txt_db.c",
-        ] + glob(["crypto/ui/*.c"]) + ([
+        ] + glob(["crypto/ui/*.c"]) + [
             "crypto/uid.c",
             "crypto/whrlpool/wp_dgst.c",
         ] + glob(["crypto/x509/by_*.c"]) + glob(["crypto/x509/pcy_*.c"]) + glob(["crypto/x509/t_*.c"]) + glob(["crypto/x509/v3_*.c"]) + [
@@ -397,7 +393,7 @@ ch_cc_library(
             "providers/baseprov.c",
             "providers/common/bio_prov.c",
             "providers/common/capabilities.c",
-        ]) + glob(["providers/common/der/*.c"]) + ([
+        ] + glob(["providers/common/der/*.c"]) + [
             "providers/common/digest_to_nid.c",
         ] + glob(["providers/common/provider_*.c"]) + [
             "providers/common/securitycheck.c",
@@ -451,7 +447,7 @@ ch_cc_library(
             "providers/implementations/digests/sha3_prov.c",
             "providers/implementations/digests/sm3_prov.c",
             "providers/implementations/digests/wp_prov.c",
-        ]) + glob(["providers/implementations/encode_decode/*.c"]) + glob(["providers/implementations/exchange/*.c"]) + glob(["providers/implementations/kdfs/*.c"]) + glob(["providers/implementations/kem/*.c"]) + ([
+        ] + glob(["providers/implementations/encode_decode/*.c"]) + glob(["providers/implementations/exchange/*.c"]) + glob(["providers/implementations/kdfs/*.c"]) + glob(["providers/implementations/kem/*.c"]) + [
             "providers/implementations/keymgmt/dh_kmgmt.c",
             "providers/implementations/keymgmt/dsa_kmgmt.c",
             "providers/implementations/keymgmt/ec_kmgmt.c",
@@ -474,7 +470,7 @@ ch_cc_library(
             "providers/implementations/rands/seeding/rand_unix.c",
             "providers/implementations/rands/seeding/rand_win.c",
             "providers/implementations/rands/test_rng.c",
-        ]) + glob(["providers/implementations/signature/*.c"]) + [
+        ] + glob(["providers/implementations/signature/*.c"]) + [
             "providers/implementations/skeymgmt/aes_skmgmt.c",
             "providers/implementations/skeymgmt/generic.c",
             "providers/implementations/storemgmt/file_store.c",
@@ -489,8 +485,8 @@ ch_cc_library(
             "crypto/bn/rsaz_exp_x2.c",
             "crypto/ec/ecp_nistz256.c",
             "@clickhouse//contrib/openssl-cmake:linux_x86_64/include_private/buildinf.h",
-        ],
-        "@platforms//cpu:aarch64": [
+        ]),
+        "@platforms//cpu:aarch64": ([
             "@clickhouse//contrib/openssl-cmake:common/providers/der_digests_gen.c",
             "@clickhouse//contrib/openssl-cmake:common/providers/der_dsa_gen.c",
             "@clickhouse//contrib/openssl-cmake:common/providers/der_ec_gen.c",
@@ -554,12 +550,12 @@ ch_cc_library(
             "crypto/cmac/cmac.c",
         ] + glob(["crypto/cmp/*.c"]) + glob(["crypto/cms/*.c"]) + glob(["crypto/comp/*.c"]) + [
             "crypto/comp_methods.c",
-        ] + glob(["crypto/conf/*.c"]) + ([
+        ] + glob(["crypto/conf/*.c"]) + [
             "crypto/context.c",
         ] + glob(["crypto/core_*.c"]) + [
             "crypto/cpt_err.c",
             "crypto/cpuid.c",
-        ]) + glob(["crypto/crmf/*.c"]) + [
+        ] + glob(["crypto/crmf/*.c"]) + [
             "crypto/cryptlib.c",
         ] + glob(["crypto/ct/*.c"]) + [
             "crypto/ctype.c",
@@ -591,7 +587,7 @@ ch_cc_library(
             "crypto/ec/curve25519.c",
             "crypto/ec/curve448/arch_32/f_impl32.c",
             "crypto/ec/curve448/arch_64/f_impl64.c",
-        ] + glob(["crypto/ec/curve448/*.c"]) + ([
+        ] + glob(["crypto/ec/curve448/*.c"]) + [
             "crypto/ec/ec2_oct.c",
             "crypto/ec/ec2_smpl.c",
         ] + glob(["crypto/ec/ec_*.c"]) + [
@@ -606,7 +602,7 @@ ch_cc_library(
             "crypto/ec/ecx_backend.c",
             "crypto/ec/ecx_key.c",
             "crypto/ec/ecx_meth.c",
-        ]) + glob(["crypto/encode_decode/*.c"]) + glob(["crypto/err/*.c"]) + glob(["crypto/ess/*.c"]) + ([
+        ] + glob(["crypto/encode_decode/*.c"]) + glob(["crypto/err/*.c"]) + glob(["crypto/ess/*.c"]) + [
             "crypto/evp/asymcipher.c",
         ] + glob(["crypto/evp/bio_*.c"]) + [
             "crypto/evp/c_allc.c",
@@ -655,7 +651,7 @@ ch_cc_library(
             "crypto/evp/signature.c",
             "crypto/evp/skeymgmt_meth.c",
             "crypto/ex_data.c",
-        ]) + glob(["crypto/ffc/*.c"]) + [
+        ] + glob(["crypto/ffc/*.c"]) + [
             "crypto/getenv.c",
             "crypto/hashtable/hashfunc.c",
             "crypto/hashtable/hashtable.c",
@@ -689,7 +685,7 @@ ch_cc_library(
             "crypto/passphrase.c",
         ] + glob(["crypto/pem/*.c"]) + glob(["crypto/pkcs12/*.c"]) + glob(["crypto/pkcs7/*.c"]) + [
             "crypto/poly1305/poly1305.c",
-        ] + glob(["crypto/property/*.c"]) + ([
+        ] + glob(["crypto/property/*.c"]) + [
             "crypto/provider.c",
         ] + glob(["crypto/provider_*.c"]) + [
             "crypto/punycode.c",
@@ -702,7 +698,7 @@ ch_cc_library(
             "crypto/rand/rand_uniform.c",
             "crypto/rand/randfile.c",
             "crypto/rbtree/rbtree.c",
-        ]) + glob(["crypto/rc2/*.c"]) + [
+        ] + glob(["crypto/rc2/*.c"]) + [
             "crypto/ripemd/rmd_dgst.c",
             "crypto/ripemd/rmd_one.c",
             "crypto/rsa/rsa_ameth.c",
@@ -751,16 +747,12 @@ ch_cc_library(
             "crypto/store/store_meth.c",
             "crypto/store/store_result.c",
             "crypto/store/store_strings.c",
-            "crypto/thread/api.c",
-            "crypto/thread/arch.c",
-        ] + glob(["crypto/thread/arch/*.c"]) + ([
-            "crypto/thread/internal.c",
-        ] + glob(["crypto/threads_*.c"]) + [
+        ] + glob(["crypto/thread/**/*.c"]) + glob(["crypto/threads_*.c"]) + [
             "crypto/time.c",
             "crypto/trace.c",
-        ]) + glob(["crypto/ts/*.c"]) + [
+        ] + glob(["crypto/ts/*.c"]) + [
             "crypto/txt_db/txt_db.c",
-        ] + glob(["crypto/ui/*.c"]) + ([
+        ] + glob(["crypto/ui/*.c"]) + [
             "crypto/uid.c",
             "crypto/whrlpool/wp_dgst.c",
         ] + glob(["crypto/x509/by_*.c"]) + glob(["crypto/x509/pcy_*.c"]) + glob(["crypto/x509/t_*.c"]) + glob(["crypto/x509/v3_*.c"]) + [
@@ -782,7 +774,7 @@ ch_cc_library(
             "providers/baseprov.c",
             "providers/common/bio_prov.c",
             "providers/common/capabilities.c",
-        ]) + glob(["providers/common/der/*.c"]) + ([
+        ] + glob(["providers/common/der/*.c"]) + [
             "providers/common/digest_to_nid.c",
         ] + glob(["providers/common/provider_*.c"]) + [
             "providers/common/securitycheck.c",
@@ -836,7 +828,7 @@ ch_cc_library(
             "providers/implementations/digests/sha3_prov.c",
             "providers/implementations/digests/sm3_prov.c",
             "providers/implementations/digests/wp_prov.c",
-        ]) + glob(["providers/implementations/encode_decode/*.c"]) + glob(["providers/implementations/exchange/*.c"]) + glob(["providers/implementations/kdfs/*.c"]) + glob(["providers/implementations/kem/*.c"]) + ([
+        ] + glob(["providers/implementations/encode_decode/*.c"]) + glob(["providers/implementations/exchange/*.c"]) + glob(["providers/implementations/kdfs/*.c"]) + glob(["providers/implementations/kem/*.c"]) + [
             "providers/implementations/keymgmt/dh_kmgmt.c",
             "providers/implementations/keymgmt/dsa_kmgmt.c",
             "providers/implementations/keymgmt/ec_kmgmt.c",
@@ -859,7 +851,7 @@ ch_cc_library(
             "providers/implementations/rands/seeding/rand_unix.c",
             "providers/implementations/rands/seeding/rand_win.c",
             "providers/implementations/rands/test_rng.c",
-        ]) + glob(["providers/implementations/signature/*.c"]) + [
+        ] + glob(["providers/implementations/signature/*.c"]) + [
             "providers/implementations/skeymgmt/aes_skmgmt.c",
             "providers/implementations/skeymgmt/generic.c",
             "providers/implementations/storemgmt/file_store.c",
@@ -884,7 +876,7 @@ ch_cc_library(
             "crypto/rc4/rc4_skey.c",
             "crypto/whrlpool/wp_block.c",
             "@clickhouse//contrib/openssl-cmake:linux_aarch64/include_private/buildinf.h",
-        ],
+        ]),
     }),
     hdrs = glob([
         "**/*.h",
