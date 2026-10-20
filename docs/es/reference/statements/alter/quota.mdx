@@ -19,8 +19,7 @@ ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
     [IPV4_PREFIX_BITS number]
     [IPV6_PREFIX_BITS number]
     [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
-        {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time | queries_per_normalized_hash} = number } [,...] |
-        NO LIMITS | TRACKING ONLY} [,...]]
+        {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time | written_bytes | written_rows | failed_sequential_authentications | queries_per_normalized_hash} = number } [,...] | NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
 
@@ -28,7 +27,7 @@ Las claves `user_name`, `ip_address`, `forwarded_ip_address`, `client_key`, `cli
 
 Las opciones `IPV4_PREFIX_BITS` y `IPV6_PREFIX_BITS` solo se pueden usar cuando `KEYED BY` es `ip_address` o `forwarded_ip_address`. Corresponden al campo de la tabla [system.quotas](/es/reference/system-tables/quotas).
 
-Los parámetros `queries`, `query_selects`, `query_inserts`, `errors`, `result_rows`, `result_bytes`, `read_rows`, `read_bytes`, `execution_time`, `queries_per_normalized_hash` corresponden a los campos de la tabla [system.quotas&#95;usage](/es/reference/system-tables/quotas_usage).
+Los parámetros `queries`, `query_selects`, `query_inserts`, `errors`, `result_rows`, `result_bytes`, `read_rows`, `read_bytes`, `execution_time`, `written_bytes`, `written_rows`, `failed_sequential_authentications`, `queries_per_normalized_hash` corresponden a los campos de la tabla [system.quotas&#95;usage](/es/reference/system-tables/quotas_usage).
 
 La cláusula `ON CLUSTER` permite crear quotas en un clúster; consulte [Distributed DDL](/es/reference/statements/distributed-ddl).
 

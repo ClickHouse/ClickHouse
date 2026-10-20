@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 Cette page présente les projections, leur utilisation et les différentes options disponibles pour les gérer.
 
-<div id="overview">
-  ## Vue d’ensemble des projections
-</div>
+## Vue d’ensemble des projections {#overview}
 
 Les projections stockent les données dans un format qui optimise l’exécution des requêtes. Cette fonctionnalité est utile pour :
 
@@ -30,13 +28,9 @@ Vous pouvez définir une ou plusieurs projections pour une table et, lors de l�
 
 Vous trouverez plus de détails techniques sur le fonctionnement interne des projections sur cette [page](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections).
 
-<div id="examples">
-  ## Utilisation des projections
-</div>
+## Utilisation des projections {#examples}
 
-<div id="example-filtering-without-using-primary-keys">
-  ### Exemple de filtrage sans utiliser de clés primaires
-</div>
+### Exemple de filtrage sans utiliser de clés primaires {#example-filtering-without-using-primary-keys}
 
 Création de la table :
 
@@ -91,9 +85,7 @@ Pour vérifier qu’une requête utilise bien la projection, nous pouvons consul
 SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
 ```
 
-<div id="example-pre-aggregation-query">
-  ### Exemple de requête de pré-agrégation
-</div>
+### Exemple de requête de pré-agrégation {#example-pre-aggregation-query}
 
 Créez la table avec la projection `projection_visits_by_user` :
 
@@ -173,9 +165,7 @@ Il sera vide si aucune projection n’a été utilisée :
 SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
 ```
 
-<div id="projection-indexes">
-  ### Création et utilisation d’index de projection
-</div>
+### Création et utilisation d’index de projection {#projection-indexes}
 
 Création d’un [index de projection](/fr/reference/engines/table-engines/mergetree-family/mergetree#projection-index) :
 
@@ -236,9 +226,7 @@ WHERE _part_starting_offset + _part_offset IN (
 SETTINGS enable_shared_storage_snapshot_in_query = 1
 ```
 
-<div id="example-projection-with-where">
-  ### Exemple de projection avec clause `WHERE`
-</div>
+### Exemple de projection avec clause `WHERE` {#example-projection-with-where}
 
 Les projections peuvent inclure une clause `WHERE` pour ne stocker qu’un sous-ensemble de lignes. Cela est utile lorsque les requêtes filtrent fréquemment selon un prédicat connu : la projection ne matérialise que les lignes correspondantes, ce qui réduit le stockage et améliore les performances des requêtes.
 
@@ -287,15 +275,11 @@ SELECT time, message FROM events WHERE event_type = 'click';
 
 La vérification d’implication est conservatrice — elle s’appuie sur une correspondance exacte des conjonctions dans la forme canonique de l’expression. Elle peut passer à côté de certaines optimisations valides (par ex., les implications sur des plages de valeurs), mais elle ne produira jamais de résultats incorrects.
 
-<div id="manipulating-projections">
-  ## Gestion des projections
-</div>
+## Gestion des projections {#manipulating-projections}
 
 Les opérations suivantes sur les [projections](/fr/reference/engines/table-engines/mergetree-family/mergetree#projections) sont disponibles :
 
-<div id="add-projection">
-  ### ADD PROJECTION
-</div>
+### ADD PROJECTION {#add-projection}
 
 Utilisez l’instruction ci-dessous pour ajouter une description de projection aux métadonnées d’une table :
 
@@ -311,9 +295,7 @@ ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name (
   Lorsqu’une projection définit une clause `WHERE`, seules les lignes qui correspondent au prédicat sont matérialisées. L’optimiseur peut utiliser une telle projection lorsque la clause `WHERE` de la requête implique logiquement celle de la projection et que cette projection est avantageuse pour le plan de requête. Cela s’applique aussi bien aux projections normales qu’aux projections d’agrégation.
 </Note>
 
-<div id="with-settings">
-  #### Clause `WITH SETTINGS`
-</div>
+#### Clause `WITH SETTINGS` {#with-settings}
 
 `WITH SETTINGS` définit des **paramètres de projection** qui personnalisent la façon dont la projection stocke les données (par exemple, `index_granularity` ou `index_granularity_bytes`).
 Ils correspondent directement aux **paramètres de table MergeTree**, mais s&#39;appliquent **uniquement à cette projection**.
@@ -332,29 +314,28 @@ ADD PROJECTION p (
 
 Les paramètres de projection prévalent sur les paramètres effectifs de la table pour la projection, sous réserve des règles de validation (par ex., les remplacements invalides ou incompatibles seront rejetés).
 
-<div id="modify-projection">
-  ### MODIFY PROJECTION
-</div>
+### MODIFY PROJECTION {#modify-projection}
 
-Utilisez l’instruction ci-dessous pour modifier la clause [`WITH SETTINGS`](#with-settings) d’une projection existante sans reconstruire ses données :
+Utilisez l’instruction ci-dessous pour modifier la clause [`WITH SETTINGS`](#with-settings) d’une projection existante sans reconstruire ses données :
 
 ```sql
 ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] [ORDER BY] ) WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)
 ```
 
-Pour un [index de projection](/fr/reference/engines/table-engines/mergetree-family/mergetree#projection-index), indiquez de nouveau la déclaration `INDEX` plutôt que la requête `SELECT` :
+Pour un [index de projection](/fr/reference/engines/table-engines/mergetree-family/mergetree#projection-index), indiquez de nouveau la déclaration `INDEX` plutôt que la requête `SELECT` :
 
 ```sql
 ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name INDEX <index_expr> TYPE <index_type> WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)
 ```
 
 L&#39;instruction reprend la définition complète de la projection, mais seule la clause `WITH SETTINGS` peut différer de la définition existante.
-La requête de projection elle-même (ou, pour un index de projection, l&#39;expression et le type de l&#39;index) doit rester identique, car les parts existantes stockent des données construites à partir de celle-ci ; pour la modifier, utilisez [`DROP PROJECTION`](#drop-projection), suivi de [`ADD PROJECTION`](#add-projection).
+La requête de projection elle-même (ou, pour un index de projection, l&#39;expression et le type de l&#39;index) doit rester identique, car les parts existantes stockent des données construites à partir de celle-ci ; pour la modifier, utilisez [`DROP PROJECTION`](#drop-projection), suivi de [`ADD PROJECTION`](#add-projection).
 
-La commande modifie uniquement les métadonnées de la table et ne réécrit aucune donnée : les parts existantes conservent les paramètres avec lesquels elles ont été écrites, tandis que celles créées par de futurs inserts et fusions utilisent les nouveaux paramètres.
-Pour reconstruire les parties existantes avec les nouveaux paramètres, exécutez [`MATERIALIZE PROJECTION`](#materialize-projection).
+La commande modifie uniquement les métadonnées de la table et ne réécrit aucune donnée : les parts existantes conservent les paramètres avec lesquels elles ont été écrites, tandis que celles créées par de futurs inserts et fusions utilisent les nouveaux paramètres.
+[`MATERIALIZE PROJECTION`](#materialize-projection) n&#39;applique pas non plus les nouveaux paramètres aux parts existantes : elle construit la projection uniquement dans les parts où elle est absente ou endommagée, et laisse inchangées les parts de projection déjà existantes.
+Pour reconstruire les parts existantes avec les nouveaux paramètres, exécutez [`CLEAR PROJECTION`](#clear-projection) suivi de [`MATERIALIZE PROJECTION`](#materialize-projection), ou fusionnez les parts, par exemple avec [`OPTIMIZE TABLE ... FINAL`](/fr/reference/statements/optimize).
 
-Exemple :
+Exemple :
 
 ```sql
 ALTER TABLE t
@@ -365,9 +346,7 @@ MODIFY PROJECTION p (
 );
 ```
 
-<div id="drop-projection">
-  ### DROP PROJECTION
-</div>
+### DROP PROJECTION {#drop-projection}
 
 Utilisez l&#39;instruction ci-dessous pour supprimer la description d&#39;une projection des métadonnées d&#39;une table et supprimer les fichiers de projection sur le disque.
 Cela est implémenté sous la forme d&#39;une [mutation](/fr/reference/statements/alter/index#mutations).
@@ -376,20 +355,17 @@ Cela est implémenté sous la forme d&#39;une [mutation](/fr/reference/statement
 ALTER TABLE [db.]name [ON CLUSTER cluster] DROP PROJECTION [IF EXISTS] name
 ```
 
-<div id="materialize-projection">
-  ### MATERIALIZE PROJECTION
-</div>
+### MATERIALIZE PROJECTION {#materialize-projection}
 
-Utilisez l’instruction ci-dessous pour reconstruire la projection `name` dans la partition `partition_name`.
+Utilisez l’instruction ci-dessous pour construire la projection `name` dans les parts où elle est manquante ou corrompue, éventuellement uniquement dans la partition `partition_name`.
+Les parts qui contiennent déjà la projection ne sont pas modifiées, même si les paramètres de la projection ont été changés avec [`MODIFY PROJECTION`](#modify-projection) après leur écriture ; pour les reconstruire, exécutez d’abord [`CLEAR PROJECTION`](#clear-projection).
 Cette opération est implémentée sous forme de [mutation](/fr/reference/statements/alter/index#mutations).
 
 ```sql
 ALTER TABLE [db.]table [ON CLUSTER cluster] MATERIALIZE PROJECTION [IF EXISTS] name [IN PARTITION partition_name]
 ```
 
-<div id="clear-projection">
-  ### CLEAR PROJECTION
-</div>
+### CLEAR PROJECTION {#clear-projection}
 
 Utilisez l’instruction ci-dessous pour supprimer les fichiers de projection sur disque sans supprimer leur description.
 Cette opération est implémentée sous forme de [mutation](/fr/reference/statements/alter/index#mutations).
@@ -405,9 +381,7 @@ De plus, elles sont répliquées et synchronisent les métadonnées des projecti
   La manipulation des projections n’est prise en charge que pour les tables utilisant le moteur [`*MergeTree`](/fr/reference/engines/table-engines/mergetree-family/mergetree) (y compris les variantes [répliquées](/fr/reference/engines/table-engines/mergetree-family/replication)).
 </Note>
 
-<div id="control-projections-merges">
-  ### Contrôler le comportement de fusion des projections
-</div>
+### Contrôler le comportement de fusion des projections {#control-projections-merges}
 
 Lorsque vous exécutez une requête, ClickHouse choisit de lire soit dans la table d’origine, soit dans l’une de ses projections.
 Cette décision est prise individuellement pour chaque part de la table.
@@ -435,9 +409,7 @@ Voici les valeurs possibles pour `deduplicate_merge_projection_mode` et `lightwe
 * `drop` : les parts de projection affectées sont supprimées. Les requêtes reviennent alors à la part de la table d’origine pour les projections affectées.
 * `rebuild` : la part de projection affectée est reconstruite afin de rester cohérente avec les données de la part de la table d’origine.
 
-<div id="limitations">
-  ## Limites
-</div>
+## Limites {#limitations}
 
 Il n’est pas possible d’utiliser une colonne `ALIAS` dans la clause `ORDER BY` d’une projection. Par exemple :
 
@@ -478,9 +450,7 @@ CREATE TABLE t
 ENGINE = MergeTree ORDER BY id;
 ```
 
-<div id="see-also">
-  ## Voir aussi
-</div>
+## Voir aussi {#see-also}
 
 * [&quot;Contrôle des projections lors des fusions&quot; (article de blog)](https://clickhouse.com/blog/clickhouse-release-24-08#control-of-projections-during-merges)
 * [&quot;Projections&quot; (guide)](/fr/concepts/features/projections/projections#using-projections-to-speed-up-UK-price-paid)

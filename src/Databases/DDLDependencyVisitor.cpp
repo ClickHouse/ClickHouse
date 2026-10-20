@@ -43,8 +43,8 @@ namespace
     {
         friend void tryVisitNestedSelect(const String & query, DDLDependencyVisitorData & data);
     public:
-        DDLDependencyVisitorData(const ContextPtr & global_context_, const QualifiedTableName & table_name_, const ASTPtr & ast_, const String & current_database_, bool can_throw_, bool validate_current_database_)
-            : create_query(ast_), table_name(table_name_), default_database(global_context_->getCurrentDatabase()), current_database(current_database_), global_context(global_context_), can_throw(can_throw_), validate_current_database(validate_current_database_)
+        DDLDependencyVisitorData(const ContextPtr & global_context_, const QualifiedTableName & table_name_, const ASTPtr & ast_, const String & current_database_, bool can_throw_, bool validate_current_database_, size_t max_expanded_ast_elements_)
+            : create_query(ast_), table_name(table_name_), default_database(global_context_->getCurrentDatabase()), current_database(current_database_), global_context(global_context_), can_throw(can_throw_), validate_current_database(validate_current_database_), max_expanded_ast_elements(max_expanded_ast_elements_)
         {
         }
 
@@ -98,6 +98,7 @@ namespace
         TableNamesSet dependencies;
         bool can_throw;
         bool validate_current_database;
+        size_t max_expanded_ast_elements;
         std::optional<StorageID> mv_to_dependency;
         std::optional<StorageID> mv_from_dependency;
 
@@ -133,6 +134,7 @@ namespace
                     else if (target.kind == ViewTarget::Kind::Samples
                         || target.kind == ViewTarget::Kind::RecentSamples
                         || target.kind == ViewTarget::Kind::Tags
+                        || target.kind == ViewTarget::Kind::TimeRanges
                         || target.kind == ViewTarget::Kind::MetricFamilies)
                     {
                         /// External target tables of a TimeSeries table are referential dependencies.
@@ -171,7 +173,9 @@ namespace
                     if (create.is_materialized_view)
                     {
                         auto select_copy = create.select->clone();
-                        ApplyWithSubqueryVisitor::visit(select_copy);
+                        /// The limit comes from the context of the query creating the view. A definition loaded
+                        /// from metadata was bounded when it was created, so it is not limited here.
+                        ApplyWithSubqueryVisitor::visit(select_copy, max_expanded_ast_elements);
 
                         /// Use the database where the materialized view is created to resolve nested views.
                         /// The database name can be empty when the AST has been mutated by SharedDatabaseCatalog::serializeCreateQuery
@@ -319,9 +323,10 @@ namespace
             }
             else if (functionIsInOrGlobalInOperator(function.name))
             {
-                /// x IN table_name.
+                /// x IN table_name. A literal, as in x IN ('db.table'), is a set of values, not a table name.
                 /// We set evaluate=false here because we don't want to evaluate a subquery in "x IN subquery".
-                addQualifiedNameFromArgument(function, 1, /* evaluate= */ false);
+                if (function.arguments && function.arguments->children.size() > 1 && !function.arguments->children[1]->as<ASTLiteral>())
+                    addQualifiedNameFromArgument(function, 1, /* evaluate= */ false);
             }
             else if (function.name == "dictionary")
             {
@@ -437,7 +442,8 @@ namespace
                 /// We're just searching for dependencies here, it's not safe to execute subqueries now.
                 /// Use copy of the global_context and set current database, because expressions can contain currentDatabase() function.
                 ContextMutablePtr global_context_copy = Context::createCopy(global_context);
-                global_context_copy->setCurrentDatabase(current_database);
+                if (!current_database.empty())
+                    global_context_copy->setCurrentDatabase(current_database);
                 auto evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(arg, global_context_copy);
                 const auto * literal = evaluated->as<ASTLiteral>();
                 if (!literal || (literal->value.getType() != Field::Types::String))
@@ -598,9 +604,9 @@ namespace
 }
 
 
-CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database, bool can_throw, bool validate_current_database)
+CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database, bool can_throw, bool validate_current_database, size_t max_expanded_ast_elements)
 {
-    DDLDependencyVisitor::Data data{global_global_context, table_name, ast, current_database, can_throw, validate_current_database};
+    DDLDependencyVisitor::Data data{global_global_context, table_name, ast, current_database, can_throw, validate_current_database, max_expanded_ast_elements};
     DDLDependencyVisitor::Visitor visitor{data};
     visitor.visit(ast);
     return {data.getDependencies(), data.getMvToDependency(), data.getMvFromDependency()};
@@ -608,7 +614,7 @@ CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global
 
 TableNamesSet getDependenciesFromDictionaryNestedSelectQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & select_query, const String & current_database, bool can_throw)
 {
-    DDLDependencyVisitor::Data data{global_context, table_name, ast, current_database, can_throw, /*validate_current_database=*/true};
+    DDLDependencyVisitor::Data data{global_context, table_name, ast, current_database, can_throw, /*validate_current_database=*/true, /*max_expanded_ast_elements=*/0};
     tryVisitNestedSelect(select_query, data);
     return std::move(data).getDependencies();
 }
