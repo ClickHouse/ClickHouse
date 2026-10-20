@@ -17,6 +17,7 @@ INSERT INTO t_proj_offset SELECT number, 1000 - number FROM numbers(64);
 SELECT _part_offset, _part_granule_offset FROM t_proj_offset WHERE key = 3 SETTINGS prefer_optimize_projection = 1;
 SELECT sum(key) FROM t_proj_offset WHERE _part_offset = 3 SETTINGS prefer_optimize_projection = 1;
 SELECT _part_offset FROM t_proj_offset WHERE key = 3 SETTINGS force_optimize_projection = 1; -- { serverError PROJECTION_NOT_USED }
+SELECT _part_granule_offset FROM t_proj_offset WHERE key = 3 SETTINGS force_optimize_projection = 1; -- { serverError PROJECTION_NOT_USED }
 -- the projection's part filtering must not prune by its own offsets either (a key set, so the exclusion search is used)
 SELECT key FROM t_proj_offset WHERE val IN (997, 950) AND _part_offset = 3 SETTINGS optimize_use_projection_filtering = 1;
 
@@ -68,6 +69,10 @@ SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, index_g
 INSERT INTO t_proj_lwu_v1 SELECT number, if(number % 2, 1, -1), 'old' FROM numbers(10);
 INSERT INTO t_proj_lwu_v2 SELECT number, if(number % 2, 1, -1), 'old' FROM numbers(10);
 INSERT INTO t_proj_lwu_rmt SELECT number, if(number % 2, 1, -1), 'old' FROM numbers(10);
+
+-- each of these reads only one virtual the projection does not store
+SELECT _block_number FROM t_proj_lwu_v2 WHERE v > 0 SETTINGS force_optimize_projection = 1; -- { serverError PROJECTION_NOT_USED }
+SELECT _block_offset FROM t_proj_lwu_v2 WHERE v > 0 SETTINGS force_optimize_projection = 1; -- { serverError PROJECTION_NOT_USED }
 
 UPDATE t_proj_lwu_v1 SET s = 'new' WHERE v > 0;
 UPDATE t_proj_lwu_v2 SET s = 'new' WHERE v > 0;
