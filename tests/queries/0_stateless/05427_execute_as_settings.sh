@@ -102,6 +102,7 @@ run "$GW" -q "EXECUTE AS ${QEMPTY} SELECT getSetting('SQL_tenant') = ''"
 run "$GW" -q "EXECUTE AS ${QTWO} SETTINGS SQL_tenant = 'acme' SELECT 1"
 run "$GW" -q "EXECUTE AS default SETTINGS SQL_${S} = 'acme' SELECT 1"
 run "$GW" -q "EXECUTE AS ${QRO2} SETTINGS SQL_tenant = 'acme' SELECT 1"
+run "$GW" -q "EXECUTE AS ${QRO2} SELECT isNull(getSetting('SQL_x')) SETTINGS SQL_x = NULL"
 run "$GW" -q "EXECUTE AS ${QROLE} SETTINGS SQL_tenant = 'acme' ${READ}"
 run "$GW" -q "EXECUTE AS ${QRO} SETTINGS SQL_tenant = 'acme' ${READ}"
 run "$GW" -q "SELECT formatQuery('EXECUTE AS u SETTINGS SQL_a = \'x\', SQL_b = 1 SELECT 1')"
@@ -109,6 +110,7 @@ run "$GW" -q "SELECT formatQuery('EXECUTE AS u SETTINGS SQL_a = \'x\'')"
 
 echo "-- query form, attempts to change the value"
 run "$GW" -q "EXECUTE AS ${QU} SETTINGS SQL_tenant = 'acme' ${READ} SETTINGS SQL_tenant = 'other'"
+run "$GW" -q "EXECUTE AS ${QU} SETTINGS SQL_tenant = 'acme' ${READ} SETTINGS SQL_tenant = NULL"
 run "$GW" -q "EXECUTE AS ${QU} SETTINGS SQL_tenant = 'acme' ${READ} FORMAT TSV SETTINGS SQL_tenant = 'other'"
 run "$GW" -q "EXECUTE AS ${QU} SETTINGS SQL_tenant = 'acme' SELECT arraySort(groupArray(v)) FROM (SELECT * FROM t SETTINGS SQL_tenant = 'other')"
 for profile in "$P_OTHER" "$P_WRITABLE" "$P_OTHER_WRITABLE"; do
@@ -127,6 +129,7 @@ EXECUTE AS ${QU} SETTINGS SQL_tenant = 'acme';
 SELECT currentUser() = '${QU}', getSetting('SQL_tenant');
 SET SQL_tenant = 'other';
 SET SQL_tenant = DEFAULT;
+SET SQL_tenant = NULL;
 SET profile = '${P_OTHER}';
 SET profile = '${P_WRITABLE}';
 SET profile = '${P_OTHER_WRITABLE}';
@@ -148,6 +151,7 @@ run "$GW" -q "EXECUTE AS ${QU} SETTINGS SQL_tenant = 'acme'; EXECUTE AS ${QV} SE
 run "$GW" -q "EXECUTE AS ${QU} SETTINGS SQL_tenant = 'acme'; EXECUTE AS ${QW}; EXECUTE AS ${QV}; SELECT currentUser() = '${QV}', getSetting('SQL_tenant')"
 run "$GW" -q "EXECUTE AS ${QU} SETTINGS SQL_tenant = 'acme'; EXECUTE AS ${QV} SELECT currentUser() = '${QV}', getSetting('SQL_tenant'); EXECUTE AS ${QW} SELECT 1"
 run "$QS" -q "EXECUTE AS ${QV} SETTINGS SQL_tenant = 'other' SELECT 1"
+run "$QS" -q "EXECUTE AS ${QV} SETTINGS SQL_tenant = NULL SELECT 1"
 run "$QS" -q "EXECUTE AS ${QV} SETTINGS SQL_tenant = 'acme' ${READ}"
 
 echo "-- distributed"
