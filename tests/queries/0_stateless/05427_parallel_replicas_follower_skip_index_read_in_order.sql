@@ -10,6 +10,11 @@ SET use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
 -- The CI profile's max_rows_to_read with read_overflow_mode = 'throw' turns the data-read path off.
 SET max_rows_to_read = 0, max_rows_to_read_leaf = 0;
 SET use_query_condition_cache = 0;
+SET max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+    parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_min_number_of_rows_per_replica = 0,
+    parallel_replicas_local_plan = 1, parallel_replicas_index_analysis_only_on_coordinator = 1;
+-- Small `merge_tree_min_*_for_concurrent_read` let the initiator split the part between the streams.
+SET max_threads = 4, optimize_read_in_order = 1, merge_tree_min_rows_for_concurrent_read = 640, merge_tree_min_bytes_for_concurrent_read = 1;
 
 DROP TABLE IF EXISTS t_pr_follower_skip_idx_in_order;
 
@@ -26,35 +31,22 @@ SELECT count(), sum(k) FROM t_pr_follower_skip_idx_in_order WHERE v = 42 SETTING
 -- Slow down the initiator's local replica, so it does not take all the work before the followers announce.
 SYSTEM ENABLE FAILPOINT slowdown_parallel_replicas_local_plan_read;
 
--- Small `merge_tree_min_*_for_concurrent_read` let the initiator split the part between the streams.
 SELECT count(), sum(k) FROM
 (
     SELECT k FROM t_pr_follower_skip_idx_in_order WHERE v = 42 ORDER BY k
-    SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
-        parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_min_number_of_rows_per_replica = 0,
-        parallel_replicas_local_plan = 1, parallel_replicas_index_analysis_only_on_coordinator = 1,
-        parallel_replicas_plan_based = 0, max_threads = 4, optimize_read_in_order = 1,
-        merge_tree_min_rows_for_concurrent_read = 640, merge_tree_min_bytes_for_concurrent_read = 1
+    SETTINGS enable_parallel_replicas = 1, parallel_replicas_plan_based = 0
 );
 
 SELECT count(), sum(k) FROM
 (
     SELECT k FROM t_pr_follower_skip_idx_in_order WHERE v = 42 ORDER BY k DESC
-    SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
-        parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_min_number_of_rows_per_replica = 0,
-        parallel_replicas_local_plan = 1, parallel_replicas_index_analysis_only_on_coordinator = 1,
-        parallel_replicas_plan_based = 0, max_threads = 4, optimize_read_in_order = 1,
-        merge_tree_min_rows_for_concurrent_read = 640, merge_tree_min_bytes_for_concurrent_read = 1
+    SETTINGS enable_parallel_replicas = 1, parallel_replicas_plan_based = 0
 );
 
 SELECT count(), sum(k) FROM
 (
     SELECT k FROM t_pr_follower_skip_idx_in_order WHERE v = 42 ORDER BY k
-    SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
-        parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_min_number_of_rows_per_replica = 0,
-        parallel_replicas_local_plan = 1, parallel_replicas_index_analysis_only_on_coordinator = 1,
-        parallel_replicas_plan_based = 1, max_threads = 4, optimize_read_in_order = 1,
-        merge_tree_min_rows_for_concurrent_read = 640, merge_tree_min_bytes_for_concurrent_read = 1
+    SETTINGS enable_parallel_replicas = 1, parallel_replicas_plan_based = 1
 );
 
 SYSTEM DISABLE FAILPOINT slowdown_parallel_replicas_local_plan_read;
