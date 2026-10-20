@@ -858,6 +858,75 @@ TEST(Statistics, BasicDefaultCountRoundTrip)
     }
 }
 
+/// The selectivity estimator accumulates the statistics of the parts into a copy made by `cloneEmpty`. The copy
+/// must keep the structure of `basic` statistics deserialized from an older format without a default-value count:
+/// otherwise it gets a fabricated exact count of zero defaults, and the following parts with the same old statistics
+/// are discarded as incompatible.
+TEST(Statistics, BasicWithoutDefaultCountCloneEmpty)
+{
+    tryRegisterFunctions();
+
+    auto data_type = std::make_shared<DataTypeInt32>();
+    constexpr UInt8 numeric_min_max = 1u << 0;
+
+    /// `basic` statistics of 1000 rows with the given min and max, as written by 26.7 (`V4`) for a non-`Nullable` column.
+    auto load_legacy = [&](Int64 min, Int64 max)
+    {
+        String payload;
+        {
+            WriteBufferFromString buf(payload);
+            writeIntBinary(static_cast<UInt64>(1000), buf); /// row_count
+            writeIntBinary(numeric_min_max, buf);
+            writeFieldBinary(Field(min), buf);
+            writeFieldBinary(Field(max), buf);
+            buf.finalize();
+        }
+
+        String file;
+        {
+            WriteBufferFromString buf(file);
+            writeIntBinary(static_cast<UInt16>(4), buf); /// StatisticsFileVersion::V4
+            writeIntBinary(static_cast<UInt64>(1ULL << static_cast<UInt8>(StatisticsType::Basic)), buf);
+            writeStringBinary(data_type->getName(), buf);
+            writeIntBinary(static_cast<UInt64>(1000), buf); /// rows
+            writeIntBinary(static_cast<UInt64>(payload.size()), buf);
+            buf.write(payload.data(), payload.size());
+            buf.finalize();
+        }
+
+        ReadBufferFromString rb(file);
+        return ColumnStatistics::deserialize(rb, data_type);
+    };
+
+    auto part1 = load_legacy(0, 999);
+    auto part2 = load_legacy(1000, 1999);
+
+    auto accumulated = part1->cloneEmpty();
+    EXPECT_TRUE(accumulated->structureEquals(*part1));
+    accumulated->merge(part1);
+    EXPECT_FALSE(accumulated->getEstimate().estimated_default_count.has_value());
+    EXPECT_FALSE(accumulated->estimateEqual(Field(Int64(0))).has_value());
+
+    EXPECT_TRUE(accumulated->structureEquals(*part2));
+    accumulated->merge(part2);
+    auto estimate = accumulated->getEstimate();
+    ASSERT_TRUE(estimate.estimated_min.has_value());
+    ASSERT_TRUE(estimate.estimated_max.has_value());
+    EXPECT_EQ(*estimate.estimated_min, Field(Int64(0)));
+    EXPECT_EQ(*estimate.estimated_max, Field(Int64(1999)));
+
+    /// The same through the estimator: `x = 0` is not estimated as matching no rows, and both parts are used.
+    ConditionSelectivityEstimatorBuilder builder(getContext().context);
+    builder.addStatistics("x", part1);
+    builder.incrementRowCount(1000);
+    builder.addStatistics("x", part2);
+    builder.incrementRowCount(1000);
+    auto estimator = builder.getEstimator();
+    NamesAndTypesList columns{{"x", data_type}};
+    EXPECT_GT(estimateRowsFor(estimator, "x = 0", columns), 0u);
+    EXPECT_NEAR(static_cast<double>(estimateRowsFor(estimator, "x < 1500", columns)), 1500.0, 20.0);
+}
+
 TEST(Statistics, BasicDefaultCountArray)
 {
     auto data_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
