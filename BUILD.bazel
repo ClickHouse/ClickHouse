@@ -7,13 +7,7 @@ exports_files([
     "cmake/generate_export_header.h.in",
     "cmake/localize_rust_c_symbols.sh",
     "cmake/strip_rust_symbols.sh",
-    "utils/list-licenses/Apache-2.0.txt",
-    "utils/list-licenses/BSD-3-Clause.txt",
-    "utils/list-licenses/BSL-1.0.txt",
-    "utils/list-licenses/ISC.txt",
-    "utils/list-licenses/MIT.txt",
-    "utils/list-licenses/MPL-2.0.txt",
-])
+] + glob(["utils/list-licenses/*.txt"]))
 
 cmake_link(
     name = "clickhouse",
