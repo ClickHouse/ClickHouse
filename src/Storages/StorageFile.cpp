@@ -374,7 +374,20 @@ std::vector<std::string> listFilesWithRegexpMatching(
         /// (e.g. `{top,top}.tsv` or `{a*,*}`) keep their pre-existing behavior of reading the
         /// same concrete file once per alternative, rather than being silently collapsed.
         std::unordered_set<std::string> matched_paths;
-        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, matched_paths, false, 0);
+
+        /// The walker lists `path_for_ls` and matches the pattern below it, so start it from the
+        /// root of the pattern. On Windows the root carries the drive (`C:/`), which listing from a
+        /// bare `/` would drop; on other platforms it is `/` itself.
+        String path_for_ls = "/";
+        String pattern = for_match_expanded;
+        const String root = pathToGenericString(pathFromString(for_match_expanded).root_path());
+        if (root.size() > 1 && root.ends_with('/') && pattern.starts_with(root))
+        {
+            path_for_ls = root;
+            pattern = pattern.substr(root.size() - 1);
+        }
+
+        listFilesWithRegexpMatchingImpl(path_for_ls, pattern, total_bytes_to_read, result, matched_paths, false, 0);
     }
 
     return result;
@@ -1986,7 +1999,7 @@ Chunk StorageFileSource::generate()
                     if (current_path.empty())
                         return {};
 
-                    if (!existsOrFileNameTooLong([&] { return fs::exists(current_path); }))
+                    if (!existsOrFileNameTooLong([&] { return fs::exists(pathFromString(current_path)); }))
                     {
                         if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
                         {
