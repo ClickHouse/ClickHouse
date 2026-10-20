@@ -153,6 +153,8 @@ The default is an in-memory database. Pass `path="/data/my_chdb"` or use `dsn="c
 
 Both synchronous and asynchronous HTTP clients retry eligible reads after certain remote connection closes and HTTP 429, 503, or 504 responses. For `query`, its specialized query methods, `raw_query`, and `raw_stream`, `query_retries` sets the number of additional attempts. Eligible reads allow at least one retry after a remote close, even when `query_retries=0`. A read sent through `command` can retry once after a remote close, but does not use the `query_retries` budget or retry those HTTP statuses.
 
+Before retrying an HTTP 429, 503, or 504 response, both clients wait `0.1 * attempt` seconds, with `attempt` starting at 1, and close the failed response.
+
 A connection that closes after the HTTP status line or progress headers, before ClickHouse sends the final response headers, follows the same remote-close policy.
 
 The client recognizes read statements such as `SELECT`, `SHOW`, `DESCRIBE`, and `EXISTS`, including supported `WITH` and `EXPLAIN` forms. SQL that it cannot recognize as a read is not retried after these failures. Statements with `PARALLEL WITH`, `INTO OUTFILE`, or multiple statements are also excluded.
