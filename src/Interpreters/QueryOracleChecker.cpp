@@ -1173,15 +1173,60 @@ bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr
     return anyChild(ast, [&](const ASTPtr & child) { return referencesUnscreenedDefinitionAnywhere(child, context, depth); });
 }
 
-/// Appends each `MergeTree` table a read of `ast` reaches, followed by its active part names. Parts
-/// are immutable and a part name is never reused in a table, so an unchanged list means unchanged data.
-/// `APPLY` members are not walked: the `WITH` expansion does not reach them, so a name there may be a CTE.
-void collectReadParts(const ASTPtr & ast, const ContextPtr & context, Strings & parts, size_t depth = 0)
+void removeWithClauses(const ASTPtr & ast)
+{
+    if (auto * select = ast->as<ASTSelectQuery>())
+        select->setExpression(ASTSelectQuery::Expression::WITH, {});
+    for (const auto & child : ast->children)
+        removeWithClauses(child);
+}
+
+/// A copy of `ast` in which every reference to a common table expression (and every `IN` operand naming
+/// a `WITH` alias) is replaced by its definition, as the query's own `WITH` processing does.
+/// The `WITH` clauses are then dropped, so a table read only through a `WITH` alias is not recorded.
+ASTPtr expandWithElements(const ASTPtr & ast, const ContextPtr & context)
+{
+    ASTPtr expanded = ast->clone();
+    const auto & settings = context->getSettingsRef();
+    if (settings[Setting::enable_global_with_statement])
+        ApplyWithGlobalVisitor::visit(expanded, settings[Setting::max_expanded_ast_elements]);
+    ExpandedASTBudget budget(settings[Setting::max_expanded_ast_elements], *expanded);
+    ApplyWithSubqueryVisitor::visit(expanded, context, budget);
+    removeWithClauses(expanded);
+    return expanded;
+}
+
+/// The aliases of the table expressions of one `FROM`, except an unqualified table aliased as its own name.
+/// A table name in that `FROM` resolves to such an alias before the database catalog.
+NameSet getTableExpressionAliases(const ASTTablesInSelectQuery & tables)
+{
+    NameSet aliases;
+    for (const auto & element : tables.children)
+    {
+        const auto * table_element = element->as<ASTTablesInSelectQueryElement>();
+        if (!table_element || !table_element->table_expression)
+            continue;
+        for (const auto & child : table_element->table_expression->children)
+        {
+            const String alias = child->tryGetAlias();
+            const auto * table_id = child->as<ASTTableIdentifier>();
+            if (!alias.empty() && !(table_id && !table_id->compound() && table_id->shortName() == alias))
+                aliases.insert(alias);
+        }
+    }
+    return aliases;
+}
+
+/// Appends each `MergeTree` table a read of `ast` (an `expandWithElements` output) reaches, then its active part
+/// names: parts are immutable and their names are never reused, so an unchanged list means unchanged data.
+/// Not recorded: `APPLY` members (not reached by the `WITH` expansion) and a name as an `IN` operand (may be a column).
+void collectReadParts(const ASTPtr & ast, const ContextPtr & context, Strings & parts, size_t depth = 0, const NameSet & from_aliases = {})
 {
     if (!ast || depth > MAX_DEFINITION_SCREEN_DEPTH)
         return;
 
-    if (const auto * table_id = ast->as<ASTTableIdentifier>())
+    if (const auto * table_id = ast->as<ASTTableIdentifier>();
+        table_id && (table_id->compound() || !from_aliases.contains(table_id->shortName())))
     {
         const StorageID resolved = context->tryResolveStorageID(StorageID{table_id->getDatabaseName(), table_id->shortName()});
         if (auto storage = resolved ? DatabaseCatalog::instance().tryGetTable(resolved, context) : nullptr)
@@ -1197,43 +1242,21 @@ void collectReadParts(const ASTPtr & ast, const ContextPtr & context, Strings & 
             else if (storage->getName() == "View")
             {
                 const auto metadata = storage->getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
-                collectReadParts(metadata->getSelectQuery().inner_query, context, parts, depth + 1);
+                collectReadParts(expandWithElements(metadata->getSelectQuery().inner_query, context), context, parts, depth + 1);
             }
         }
     }
 
-    if (const auto * func = ast->as<ASTFunction>();
-        func && functionIsInOrGlobalInOperator(func->name) && func->arguments && func->arguments->children.size() > 1)
+    if (const auto * tables = ast->as<ASTTablesInSelectQuery>())
     {
-        if (const auto * identifier = func->arguments->children[1]->as<ASTIdentifier>())
-            collectReadParts(identifier->createTable(), context, parts, depth);
+        const NameSet aliases = getTableExpressionAliases(*tables);
+        for (const auto & child : ast->children)
+            collectReadParts(child, context, parts, depth, aliases);
+        return;
     }
 
     for (const auto & child : ast->children)
-        collectReadParts(child, context, parts, depth);
-}
-
-void removeWithClauses(const ASTPtr & ast)
-{
-    if (auto * select = ast->as<ASTSelectQuery>())
-        select->setExpression(ASTSelectQuery::Expression::WITH, {});
-    for (const auto & child : ast->children)
-        removeWithClauses(child);
-}
-
-/// A copy of `ast` in which each table identifier names a table: every reference to a common table expression
-/// (and every `IN` operand naming a `WITH` alias) is replaced by its definition, as the query's own `WITH` processing does.
-/// The `WITH` clauses are then dropped, so a table read only through a `WITH` alias is not recorded.
-ASTPtr expandWithElements(const ASTPtr & ast, const ContextPtr & context)
-{
-    ASTPtr expanded = ast->clone();
-    const auto & settings = context->getSettingsRef();
-    if (settings[Setting::enable_global_with_statement])
-        ApplyWithGlobalVisitor::visit(expanded, settings[Setting::max_expanded_ast_elements]);
-    ExpandedASTBudget budget(settings[Setting::max_expanded_ast_elements], *expanded);
-    ApplyWithSubqueryVisitor::visit(expanded, context, budget);
-    removeWithClauses(expanded);
-    return expanded;
+        collectReadParts(child, context, parts, depth, from_aliases);
 }
 
 /// Safer replacement for `GetAggregatesVisitor` when scanning fuzzer-mutated
