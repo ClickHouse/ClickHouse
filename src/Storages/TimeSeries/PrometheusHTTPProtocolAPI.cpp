@@ -157,13 +157,17 @@ PrometheusQueryTree::MatcherList parseInstantSelectorMatchers(const String & mat
     return matchers;
 }
 
-ASTPtr makeSelectFromTagsTable(const StorageID & tags_table_id, const ASTs & select_list)
+/// `SELECT tags, metric_name, <tag column>, ... FROM <tags>`: the stored columns `timeSeriesTagsToMap` reads.
+/// The projection has no aliases, so the matchers in the WHERE clause can only bind to the columns of the table.
+ASTPtr makeSelectFromTagsTable(const StorageID & tags_table_id, const std::unordered_map<String, String> & column_name_by_tag_name)
 {
     auto select_query = make_intrusive<ASTSelectQuery>();
 
     auto select_list_exp = make_intrusive<ASTExpressionList>();
-    for (const auto & expr : select_list)
-        select_list_exp->children.push_back(expr->clone());
+    select_list_exp->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags));
+    select_list_exp->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
+    for (const auto & [tag_name, column_name] : column_name_by_tag_name)
+        select_list_exp->children.push_back(make_intrusive<ASTIdentifier>(column_name));
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list_exp));
 
     auto tables = make_intrusive<ASTTablesInSelectQuery>();
@@ -660,7 +664,6 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
 
 
 ASTPtr PrometheusHTTPProtocolAPI::makeFilteredTagsUnionQuery(
-    const ASTs & select_list,
     const Strings & match_params,
     const String & start_param,
     const String & end_param)
@@ -678,7 +681,7 @@ ASTPtr PrometheusHTTPProtocolAPI::makeFilteredTagsUnionQuery(
     for (const auto & match_param : selectors)
     {
         auto matchers = parseInstantSelectorMatchers(match_param, scan.time_scale);
-        auto select_query = makeSelectFromTagsTable(scan.tags_table_id, select_list);
+        auto select_query = makeSelectFromTagsTable(scan.tags_table_id, scan.column_name_by_tag_name);
         StorageTimeSeriesSelector::addTagsTableFilter(
             select_query, *time_series_storage, *scan.time_series_settings, matchers, scan.column_name_by_tag_name,
             scan.min_time, scan.max_time, scan.table_timestamp_type, scan.time_scale, getContext());
@@ -956,19 +959,18 @@ void PrometheusHTTPProtocolAPI::getLabels(
     UInt64 limit,
     QueryFinishCallback query_finish_callback)
 {
-    /// SELECT arraySort(groupUniqArrayArray(keys)) AS labels FROM (
-    ///     SELECT mapKeys(timeSeriesTagsToMap(tags, '__name__', metric_name, ...)) FROM <tags> WHERE ...
+    /// SELECT arraySort(groupUniqArrayArray(mapKeys(timeSeriesTagsToMap(tags, '__name__', metric_name, ...)))) AS labels FROM (
+    ///     SELECT tags, metric_name, ... FROM <tags> WHERE ...
     /// )
-    auto keys_expression = makeASTFunction(
-        "mapKeys",
-        makeTagsMapPerRowExpression(
-            StorageTimeSeriesSelector::makeColumnNameByTagNameMap(*time_series_storage->getStorageSettings())));
-    keys_expression->setAlias("keys");
-    auto source_query = makeFilteredTagsUnionQuery({keys_expression}, match_params, start_param, end_param);
-
     auto labels_expression = makeASTFunction(
         "arraySort",
-        makeASTFunction("groupUniqArrayArray", make_intrusive<ASTIdentifier>("keys")));
+        makeASTFunction(
+            "groupUniqArrayArray",
+            makeASTFunction(
+                "mapKeys",
+                makeTagsMapPerRowExpression(
+                    StorageTimeSeriesSelector::makeColumnNameByTagNameMap(*time_series_storage->getStorageSettings())))));
+    auto source_query = makeFilteredTagsUnionQuery(match_params, start_param, end_param);
 
     getLabelsOrLabelValues(response, std::move(labels_expression), std::move(source_query), limit, query_finish_callback);
 }
@@ -988,21 +990,20 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
     if (label_name.empty() || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(label_name.data()), label_name.size()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid label name {}", quoteString(label_name_param));
 
-    /// SELECT arraySort(arrayFilter(x -> x != '', groupUniqArray(label))) AS labels FROM (
-    ///     SELECT coalesce(nullIf(metric_name | <tag column>, ''), tags[label]) | tags[label] AS label FROM <tags> WHERE ...
+    /// SELECT arraySort(arrayFilter(x -> x != '', groupUniqArray(timeSeriesTagsToMap(tags, '__name__', metric_name, ...)[<label>]))) AS labels FROM (
+    ///     SELECT tags, metric_name, ... FROM <tags> WHERE ...
     /// )
     /// An empty value means an absent label in Prometheus, so it's never returned.
-    auto value_expression = makeLabelValuePerRowExpression(
-        label_name, StorageTimeSeriesSelector::makeColumnNameByTagNameMap(*time_series_storage->getStorageSettings()));
-    value_expression->setAlias("label");
-    auto source_query = makeFilteredTagsUnionQuery({value_expression}, match_params, start_param, end_param);
-
     auto values_expression = makeASTFunction(
         "arraySort",
         makeASTFunction(
             "arrayFilter",
             makeASTLambda({"x"}, makeASTFunction("notEquals", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(String{}))),
-            makeASTFunction("groupUniqArray", make_intrusive<ASTIdentifier>("label"))));
+            makeASTFunction(
+                "groupUniqArray",
+                makeLabelValuePerRowExpression(
+                    label_name, StorageTimeSeriesSelector::makeColumnNameByTagNameMap(*time_series_storage->getStorageSettings())))));
+    auto source_query = makeFilteredTagsUnionQuery(match_params, start_param, end_param);
 
     getLabelsOrLabelValues(response, std::move(values_expression), std::move(source_query), limit, query_finish_callback);
 }
@@ -1022,6 +1023,8 @@ void PrometheusHTTPProtocolAPI::getLabelsOrLabelValues(
 
     auto query_context = Context::createCopy(getContext());
     StorageTimeSeriesSelector::applySettingsForSelectIDsQuery(*query_context);
+    /// A dedicated tag column may share its name with the `labels` alias of the aggregate: the column must win.
+    query_context->setSetting("prefer_column_name_to_alias", true);
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, serverGeneratedQueryFlags(), QueryProcessingStage::Complete);
 
     try

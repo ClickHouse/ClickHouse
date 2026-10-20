@@ -81,7 +81,12 @@ def setup():
             "CREATE TABLE prometheus_no_bounds ENGINE=TimeSeries "
             "SETTINGS store_time_ranges = 0"
         )
-        node.query("CREATE TABLE prometheus_edge ENGINE=TimeSeries")
+        # Dedicated columns named like the identifiers of the generated query: a matcher on such a tag
+        # must still read the column.
+        node.query(
+            "CREATE TABLE prometheus_edge ENGINE=TimeSeries "
+            "SETTINGS tags_to_columns = {'job': 'label', 'zone': 'keys', 'rack': 'labels'}"
+        )
         node.query(
             "INSERT INTO prometheus_no_bounds (metric_name, tags, samples) VALUES "
             "('cpu_usage', {'host': 'server1'}, [(toDateTime64(1000, 3), 0.5)])"
@@ -89,6 +94,10 @@ def setup():
         node.query(
             "INSERT INTO FUNCTION timeSeriesTags(prometheus_edge) (metric_name, tags) VALUES "
             "('metric', {'empty_tag': '', 'present_tag': 'value'})"
+        )
+        node.query(
+            "INSERT INTO FUNCTION timeSeriesTags(prometheus_edge) (metric_name, tags, label, keys, labels) VALUES "
+            "('alias_metric', {'team': 'west'}, 'west', 'z', 'r')"
         )
         send_test_data()
         assert_eq_with_retry(node, "SELECT count() > 0 FROM timeSeriesData(prometheus)", "1")
@@ -104,10 +113,16 @@ def test_labels_returns_all_label_names_sorted():
 
 
 def test_labels_omits_empty_tag_values():
-    assert get_json_from_api("/edge/api/v1/labels")["data"] == [
+    assert get_json_from_api("/edge/api/v1/labels", params={"match[]": "metric"})["data"] == [
         "__name__",
         "present_tag",
     ]
+
+
+@pytest.mark.parametrize("selector", ['{job="west"}', '{zone="z"}', '{rack="r"}'])
+def test_labels_dedicated_column_named_like_query_identifier(selector):
+    data = get_json_from_api("/edge/api/v1/labels", params={"match[]": selector})["data"]
+    assert data == ["__name__", "job", "rack", "team", "zone"]
 
 
 def test_labels_match_selector_filters():

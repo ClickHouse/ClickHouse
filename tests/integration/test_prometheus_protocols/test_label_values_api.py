@@ -83,9 +83,11 @@ def setup():
             "CREATE TABLE prometheus_no_bounds ENGINE=TimeSeries "
             "SETTINGS store_time_ranges = 0"
         )
+        # Dedicated columns named like the identifiers of the generated query: a matcher on such a tag
+        # must still read the column.
         node.query(
             "CREATE TABLE prometheus_edge ENGINE=TimeSeries "
-            "SETTINGS tags_to_columns = {'job': 'job_column'}"
+            "SETTINGS tags_to_columns = {'job': 'job_column', 'host': 'label', 'zone': 'keys', 'rack': 'labels'}"
         )
         node.query(
             "INSERT INTO prometheus_no_bounds (metric_name, tags, samples) VALUES "
@@ -104,6 +106,10 @@ def setup():
         node.query(
             "INSERT INTO FUNCTION timeSeriesTags(prometheus_edge) (metric_name, tags, job_column) VALUES "
             "('metric', {'job': 'map-job'}, 'column-job')"
+        )
+        node.query(
+            "INSERT INTO FUNCTION timeSeriesTags(prometheus_edge) (metric_name, tags, label, keys, labels) VALUES "
+            "('alias_metric', {'team': 'west'}, 'h', 'z', 'r')"
         )
         # Timestamps are whole seconds: each series has one sample, at the second given by its `sample_time` label.
         node.query(
@@ -162,6 +168,19 @@ def test_label_values_metric_name_stored_only_in_dedicated_column():
 
 def test_label_values_rejects_conflicting_tag_sources():
     get_bad_data_from_api("/edge/api/v1/label/job/values")
+
+
+@pytest.mark.parametrize(
+    "label_name,selector,expected",
+    [
+        ("host", '{team="west"}', ["h"]),
+        ("zone", '{host="h"}', ["z"]),
+        ("rack", '{zone="z"}', ["r"]),
+    ],
+)
+def test_label_values_dedicated_column_named_like_query_identifier(label_name, selector, expected):
+    data = get_json_from_api(f"/edge/api/v1/label/{label_name}/values", params={"match[]": selector})["data"]
+    assert data == expected
 
 
 def test_label_values_unknown_label_returns_empty():

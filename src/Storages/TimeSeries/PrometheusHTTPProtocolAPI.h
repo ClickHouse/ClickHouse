@@ -98,8 +98,8 @@ private:
     /// with their tags registered for timeSeriesIdToTags.
     ASTPtr makeSeriesIDsQuery(const Strings & match_params, const String & start_param, const String & end_param);
 
-    /// UNION ALL of `SELECT <select_list> FROM <tags> WHERE <matchers and time bounds>` for each `match[]` selector.
-    ASTPtr makeFilteredTagsUnionQuery(const ASTs & select_list, const Strings & match_params, const String & start_param, const String & end_param);
+    /// UNION ALL of `SELECT tags, metric_name, <tag columns> FROM <tags> WHERE <matchers and time bounds>` for each `match[]` selector.
+    ASTPtr makeFilteredTagsUnionQuery(const Strings & match_params, const String & start_param, const String & end_param);
 
     /// Shared implementation of getLabels and getLabelValues: executes a query aggregating `array_expression`
     /// (a sorted array of unique strings) over `source_query` and writes the result as a JSON array, capped by `limit`
