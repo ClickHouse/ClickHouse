@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
@@ -30,27 +31,6 @@ namespace DB::QueryPlanOptimizations
 {
 
 using StepStack = std::vector<IQueryPlanStep *>;
-
-static bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
-{
-    /// A STREAM read selects its parts and ranges during execution, so the range set captured
-    /// here is not the one that will be read.
-    if (reading->getQueryInfo().isStream())
-        return false;
-
-    /// Allow FINAL only for ReplacingMergeTree.
-    if (reading->isQueryWithFinal()
-        && reading->getMergeTreeData().merging_params.mode != MergeTreeData::MergingParams::Replacing)
-        return false;
-
-    if (reading->isQueryWithSampling())
-        return false;
-
-    if (reading->getMutationsSnapshot()->hasPatchParts())
-        return false;
-
-    return true;
-}
 
 /// Returns two vectors of total size equal to the number of columns in the header.
 /// The first vector (size of `inputs.size()`) contains positions of the inputs in the header.
@@ -386,9 +366,9 @@ static SplitFilterResult splitFilterStep(const FilterStep & filter_step, const s
 
 static ActionsDAG calculateGlobalOffset(ReadFromMergeTree & reading_step)
 {
-    bool added_part_starting_offset = false;
-    bool added_part_offset = false;
-    reading_step.addStartingPartOffsetAndPartOffset(added_part_starting_offset, added_part_offset);
+    const auto part_offset_columns = reading_step.addStartingPartOffsetAndPartOffset();
+    const bool added_part_starting_offset = part_offset_columns.added_part_starting_offset;
+    const bool added_part_offset = part_offset_columns.added_part_offset;
     ActionsDAG dag;
     DataTypePtr uint64_type = std::make_shared<DataTypeUInt64>();
     dag.addInput("_part_starting_offset", uint64_type);
