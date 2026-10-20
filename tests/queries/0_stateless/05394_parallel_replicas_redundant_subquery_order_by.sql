@@ -26,6 +26,21 @@ SELECT sum(cityHash64(key, value)) FROM (SELECT key, value FROM t_pr_order WHERE
 SELECT sum(cityHash64(key, value)) FROM (SELECT key, value FROM t_pr_order WHERE value % 7 = 1 ORDER BY key)
 SETTINGS enable_parallel_replicas = 0;
 
+SELECT 'automatic parallel replicas match the plan and collect statistics for it';
+-- Matching failed on the sorting the replicas plan kept (`Cannot find step with matching hash`),
+-- and then no statistics were collected.
+SELECT sum(cityHash64(key, value)) FROM (SELECT key, value FROM t_pr_order WHERE value % 7 = 1 ORDER BY key)
+FORMAT Null
+SETTINGS automatic_parallel_replicas_mode = 2, log_comment = '05394_automatic';
+
+SYSTEM FLUSH LOGS query_log;
+SELECT
+    ProfileEvents['RuntimeDataflowStatisticsInputBytes'] > 0,
+    ProfileEvents['RuntimeDataflowStatisticsOutputBytes'] > 0
+FROM system.query_log
+WHERE event_date >= yesterday() AND current_database = currentDatabase()
+    AND log_comment = '05394_automatic' AND type = 'QueryFinish';
+
 SELECT 'the sorting is not removed without query_plan_remove_redundant_sorting';
 SELECT countIf(explain LIKE '%ReadFromRemoteParallelReplicas%Query: SELECT sum(%') AS replicas_aggregate
 FROM (EXPLAIN SELECT sum(cityHash64(key, value)) FROM (SELECT key, value FROM t_pr_order WHERE value % 7 = 1 ORDER BY key))
