@@ -100,6 +100,8 @@ SELECT isNull(parseDateTimeOrNull('2024-0:-06', '%F', 'UTC'));
 SELECT isNull(parseDateTimeOrNull('202:-11-06', '%F', 'UTC'));
 SELECT isNull(parseDateTimeOrNull('0:/06/24', '%D', 'UTC'));
 SELECT isNull(parseDateTimeOrNull('11/06/2:', '%D', 'UTC'));
+SELECT isNull(parseDateTimeOrNull('2024-10', '%F', 'UTC'));
+SELECT isNull(parseDateTimeOrNull('11/06', '%D', 'UTC'));
 SELECT isNull(parseDateTime64OrNull('2024-0:-06', '%F', 'UTC'));
 SELECT isNull(parseDateTime64OrNull('0:/06/24', '%D', 'UTC'));
 SELECT isNull(parseDateTimeOrNull('0:', '%m', 'UTC'));
@@ -110,7 +112,10 @@ SELECT isNull(parseDateTimeOrNull('0:', '%H', 'UTC'));
 SELECT isNull(parseDateTimeOrNull('0:', '%i', 'UTC'));
 SELECT isNull(parseDateTimeOrNull('+0:00', '%z', 'UTC'));
 SELECT isNull(parseDateTimeOrNull('0:', '%e', 'UTC')) SETTINGS parsedatetime_e_requires_space_padding = 1;
+SELECT isNull(parseDateTimeOrNull('a9', '%e', 'UTC')) SETTINGS parsedatetime_e_requires_space_padding = 1;
+SELECT isNull(parseDateTimeOrNull('9:', '%e', 'UTC')) SETTINGS parsedatetime_e_requires_space_padding = 1;
 SELECT parseDateTime(' 9', '%e', 'UTC') = toDateTime('2000-01-09 00:00:00', 'UTC') SETTINGS parsedatetime_e_requires_space_padding = 1;
+SELECT parseDateTime('19', '%e', 'UTC') = toDateTime('2000-01-19 00:00:00', 'UTC') SETTINGS parsedatetime_e_requires_space_padding = 1;
 SELECT parseDateTimeOrZero('2024-0:-06', '%F', 'UTC') = toDateTime('1970-01-01 00:00:00', 'UTC');
 SELECT parseDateTime('2024-0:-06', '%F', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
 SELECT parseDateTime64('11/06/2:', '%D', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
