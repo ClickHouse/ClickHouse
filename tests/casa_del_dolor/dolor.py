@@ -456,19 +456,20 @@ def dolor_cleanup() -> bool:
             client.process.wait()
         logger.info(f"Load generator exited with code: {client.process.returncode}")
 
-    # Before the cluster: the background worker and an in-flight Spark request still use the servers
-    if catalog_server is not None:
-        try:
-            close_spark_http_server(catalog_server)
-        except Exception:
-            logger.exception("Failed to close the Spark HTTP server")
-            cleanup_ok = False
     if cluster is not None:
         # Raises on a sanitizer report, a logical error or a fatal message in the server logs
         try:
             cluster.shutdown(kill=True, ignore_fatal=False)
         except Exception:
             logger.exception("Cluster shutdown failed or found a problem")
+            cleanup_ok = False
+    # After the cluster: closing waits for in-flight Spark requests, which stopping the servers releases.
+    # Done first, a stalled request would keep the containers running and their logs unchecked.
+    if catalog_server is not None:
+        try:
+            close_spark_http_server(catalog_server)
+        except Exception:
+            logger.exception("Failed to close the Spark HTTP server")
             cleanup_ok = False
 
     files = list(keeper_configs)
