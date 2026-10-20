@@ -2,7 +2,9 @@ import sys
 from pathlib import Path
 
 from ci.defs.defs import JobNames
-from ci.jobs.scripts.docker_server.docker_library import changed_tests
+from ci.jobs.scripts.docker_server.docker_library import (
+    changed_tests as changed_docker_tests,
+)
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
@@ -217,7 +219,7 @@ def check():
     has_ft = has_new_functional_tests(changed_files)
     has_it = has_new_integration_tests(changed_files)
     has_docker = has_new_integration_test_docker_images(changed_files)
-    has_docker_server = bool(changed_tests(changed_files))
+    has_docker_server = bool(changed_docker_tests(changed_files))
 
     # Branching by what kinds of new tests the PR adds. The structure
     # below is deliberately mutually exclusive on the FT/IT-vs-rest axis
