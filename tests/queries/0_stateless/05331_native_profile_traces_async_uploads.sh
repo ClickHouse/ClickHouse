@@ -101,7 +101,12 @@ try:
         if not wait:
             control(f"SYSTEM FLUSH ASYNC INSERT QUEUE {qualified_table}")
         expected_sum = rows * (rows - 1) // 2
-        assert control(f"SELECT count(), sum(c0), sum(c63) FROM {qualified_table} FORMAT TSV") == f"{rows}\t{expected_sum}\t{expected_sum}"
+        inserted = control(f"SELECT count(), sum(c0), sum(c63) FROM {qualified_table} FORMAT TSV")
+        if inserted != f"{rows}\t{expected_sum}\t{expected_sum}":
+            control("SYSTEM FLUSH LOGS asynchronous_insert_log")
+            raise AssertionError((wait, inserted, control(
+                f"SELECT status, exception, rows, flush_query_id FROM system.asynchronous_insert_log "
+                f"WHERE event_date >= yesterday() AND query_id = '{query_id}' FORMAT TSV")))
         control(f"TRUNCATE TABLE {qualified_table}")
         print(f"wait_for_async_insert={wait}: terminal progress, profile events and traces precede completion")
 finally:
