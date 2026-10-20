@@ -51,18 +51,20 @@ SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['SelectedMarks'] > 0 FROM system.query_log
 WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish' AND log_comment = '05401_single';
 
+-- A follower that got no work before the local replica finished is cancelled, and one that read nothing selects no
+-- marks, so either passes: the timing decides how often a follower reads, not whether the check is correct.
+WITH (
+    SELECT ProfileEvents['SelectedMarks'] FROM system.query_log
+    WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish' AND log_comment = '05401_single'
+) AS single_marks
 SELECT
-    replaceOne(log_comment, '05401_', '') AS mode,
-    max(ProfileEvents['SelectedMarks']) <= (
-        SELECT ProfileEvents['SelectedMarks'] FROM system.query_log
-        WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish' AND log_comment = '05401_single')
+    maxIf(ProfileEvents['SelectedMarks'], log_comment = '05401_query_based') <= single_marks,
+    maxIf(ProfileEvents['SelectedMarks'], log_comment = '05401_plan_based') <= single_marks
 FROM system.query_log
 WHERE event_date >= yesterday() AND type = 'QueryFinish' AND NOT is_initial_query
     AND initial_query_id IN (
         SELECT query_id FROM system.query_log
         WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query
-            AND log_comment IN ('05401_query_based', '05401_plan_based'))
-GROUP BY mode
-ORDER BY mode;
+            AND log_comment IN ('05401_query_based', '05401_plan_based'));
 
 DROP TABLE t_pr_follower_skip_idx;

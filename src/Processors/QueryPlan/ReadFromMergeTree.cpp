@@ -671,7 +671,7 @@ static void setAnalyzedSkipIndexReadRanges(
         const auto & info = is_projection ? part.parent_part->info : part.data_part->info;
         const String & projection_name = is_projection ? part.data_part->name : "";
         if (auto it = analyzed_ranges.find({info, projection_name}); it != analyzed_ranges.end())
-            index_build_context.setReadRanges(part.part_index_in_query, *it->second);
+            index_build_context.addAnalyzedReadRanges(part.part_index_in_query, *it->second);
     }
 }
 

@@ -9,6 +9,8 @@
 #include <Processors/Chunk.h>
 #include <Interpreters/SetSpillable.h>
 
+#include <unordered_set>
+
 namespace DB
 {
 
@@ -92,8 +94,11 @@ struct MergeTreeIndexBuildContext
     RangesByIndex read_ranges;
 
     /// Set on a parallel replicas replica that skipped its own index analysis: `read_ranges` are whole parts until
-    /// `setReadRanges` replaces them with the ranges analyzed on the initiator.
+    /// `addAnalyzedReadRanges` replaces them with the ranges analyzed on the initiator.
     bool read_ranges_are_whole_parts = false;
+
+    /// Parts whose `read_ranges` were replaced by `addAnalyzedReadRanges`.
+    std::unordered_set<size_t> parts_with_analyzed_ranges;
 
     /// For each part, stores a set of read ranges grouped by projection.
     const ProjectionRangesByIndex projection_read_ranges;
@@ -113,8 +118,10 @@ struct MergeTreeIndexBuildContext
 
     MergeTreeIndexReadResultPtr getPreparedIndexReadResult(const MergeTreeReadTask & task) const;
 
-    /// Replaces the ranges the skip indexes of a part are evaluated over. Must be called before the first read task exists.
-    void setReadRanges(size_t part_index, MarkRanges ranges);
+    /// Replaces the whole-part ranges the skip indexes of a part are evaluated over with the analyzed ones. Later calls
+    /// for the same part extend them: an in-order read splits a part between streams that share this context, and each
+    /// stream receives only its own ranges. Must be called before the first read task exists.
+    void addAnalyzedReadRanges(size_t part_index, const MarkRanges & ranges);
 };
 
 using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;

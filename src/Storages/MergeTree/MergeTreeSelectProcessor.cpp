@@ -151,9 +151,25 @@ MergeTreeIndexBuildContext::MergeTreeIndexBuildContext(
     chassert(index_reader_pool);
 }
 
-void MergeTreeIndexBuildContext::setReadRanges(size_t part_index, MarkRanges ranges)
+void MergeTreeIndexBuildContext::addAnalyzedReadRanges(size_t part_index, const MarkRanges & ranges)
 {
-    read_ranges.at(part_index).ranges = std::move(ranges);
+    auto & part_ranges = read_ranges.at(part_index).ranges;
+    if (parts_with_analyzed_ranges.insert(part_index).second)
+        part_ranges.clear();
+
+    for (const auto & range : ranges)
+        part_ranges.push_back(range);
+    std::sort(part_ranges.begin(), part_ranges.end());
+
+    MarkRanges merged;
+    for (const auto & range : part_ranges)
+    {
+        if (!merged.empty() && merged.back().end >= range.begin)
+            merged.back().end = std::max(merged.back().end, range.end);
+        else
+            merged.push_back(range);
+    }
+    part_ranges = std::move(merged);
 }
 
 MergeTreeIndexReadResultPtr MergeTreeIndexBuildContext::getPreparedIndexReadResult(const MergeTreeReadTask & task) const
