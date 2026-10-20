@@ -112,13 +112,7 @@ void registerTableFunctionTimeSeries(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Samples>>(
         {.description = R"DOCS_MD(
 `timeSeriesSamples(db_name.time_series_table)` - Returns the [samples](/reference/engines/table-engines/integrations/time-series#samples-table) table
-used by table `db_name.time_series_table` whose table engine is [TimeSeries](/reference/engines/table-engines/integrations/time-series):
-
-```sql
-CREATE TABLE db_name.time_series_table ENGINE=TimeSeries SAMPLES samples_table
-```
-
-The function also works if the _samples_ table is inner:
+used by table `db_name.time_series_table` whose table engine is [TimeSeries](/reference/engines/table-engines/integrations/time-series), for example:
 
 ```sql
 CREATE TABLE db_name.time_series_table ENGINE=TimeSeries SAMPLES INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
@@ -142,13 +136,7 @@ The function `timeSeriesSamples` has an alias `timeSeriesData` which is kept for
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Tags>>(
         {.description = R"DOCS_MD(
 `timeSeriesTags(db_name.time_series_table)` - Returns the [tags](/reference/engines/table-engines/integrations/time-series#tags-table) table
-used by table `db_name.time_series_table` whose table engine is the [TimeSeries](/reference/engines/table-engines/integrations/time-series) engine:
-
-```sql
-CREATE TABLE db_name.time_series_table ENGINE=TimeSeries TAGS tags_table
-```
-
-The function also works if the _tags_ table is inner:
+used by table `db_name.time_series_table` whose table engine is the [TimeSeries](/reference/engines/table-engines/integrations/time-series) engine, for example:
 
 ```sql
 CREATE TABLE db_name.time_series_table ENGINE=TimeSeries TAGS INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
@@ -166,13 +154,7 @@ SELECT * FROM timeSeriesTags('db_name', 'time_series_table');
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::TimeRanges>>(
         {.description = R"DOCS_MD(
 `timeSeriesTimeRanges(db_name.time_series_table)` - Returns the [time ranges](/reference/engines/table-engines/integrations/time-series#time-ranges-table) table
-used by table `db_name.time_series_table` whose table engine is the [TimeSeries](/reference/engines/table-engines/integrations/time-series) engine:
-
-```sql
-CREATE TABLE db_name.time_series_table ENGINE=TimeSeries TIME RANGES time_ranges_table
-```
-
-The function also works if the _time ranges_ table is inner:
+used by table `db_name.time_series_table` whose table engine is the [TimeSeries](/reference/engines/table-engines/integrations/time-series) engine, for example:
 
 ```sql
 CREATE TABLE db_name.time_series_table ENGINE=TimeSeries TIME RANGES INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
@@ -196,13 +178,7 @@ in the [tags](/reference/engines/table-engines/integrations/time-series#tags-tab
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::MetricFamilies>>(
         {.description = R"DOCS_MD(
 `timeSeriesMetricFamilies(db_name.time_series_table)` - Returns the [metric families](/reference/engines/table-engines/integrations/time-series#metric-families-table) table
-used by table `db_name.time_series_table` whose table engine is the [TimeSeries](/reference/engines/table-engines/integrations/time-series) engine:
-
-```sql
-CREATE TABLE db_name.time_series_table ENGINE=TimeSeries METRIC FAMILIES metric_families_table
-```
-
-The function also works if the _metric families_ table is inner:
+used by table `db_name.time_series_table` whose table engine is the [TimeSeries](/reference/engines/table-engines/integrations/time-series) engine, for example:
 
 ```sql
 CREATE TABLE db_name.time_series_table ENGINE=TimeSeries METRIC FAMILIES INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
