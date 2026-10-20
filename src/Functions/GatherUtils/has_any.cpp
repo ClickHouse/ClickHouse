@@ -17,7 +17,7 @@ constexpr size_t min_needles_for_lookup = 4;
 /// Hashing a longer string can cost more than the comparisons that the set saves.
 constexpr size_t max_needle_size = 256;
 
-/// The generic path may settle a row in one comparison, so the set must pay off over enough rows.
+/// Without the set a row may be settled by one comparison, so the set must pay off over enough rows.
 bool needleSetPaysOff(const ColumnString & needle_column, const GenericArraySlice & needles, size_t rows)
 {
     size_t min_rows = 4 * needles.size;
@@ -34,7 +34,6 @@ bool needleSetPaysOff(const ColumnString & needle_column, const GenericArraySlic
     return true;
 }
 
-/// Compares every element with each needle in the order of the generic path, without its virtual calls.
 void hasAnyStringByComparison(const ColumnString & haystack, const ColumnArray::Offsets & offsets,
     const ColumnString & needle_column, const GenericArraySlice & needles, UInt8 * result, size_t size)
 {
