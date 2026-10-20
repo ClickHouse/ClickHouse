@@ -129,8 +129,8 @@ public:
         else
             argument_node = function_node->getArguments().getNodes()[2];
 
-        /// The planner reads a constant equal to a `Nullable` ROLLUP, CUBE or GROUPING SETS key from that key's column,
-        /// so such a key does not become a constant.
+        /// After aggregation the planner finds a `Nullable` ROLLUP, CUBE or GROUPING SETS key by name, both for the key's copies
+        /// and for equal constants, so such a key does not become a constant.
         if (argument_node->getNodeType() == QueryTreeNodeType::CONSTANT && folding.nullable_keys.contains(node))
             return;
 
