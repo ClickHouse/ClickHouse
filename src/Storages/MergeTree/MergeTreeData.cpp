@@ -9058,8 +9058,12 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPar
             /// The copy has the same sizes, so it takes the place of the original if that one is not accounted for yet.
             {
                 std::lock_guard sizes_lock(columns_and_secondary_indices_sizes_mutex);
-                if (parts_with_unaccounted_sizes.erase(original_active_part))
-                    parts_with_unaccounted_sizes.insert(part_copy);
+                /// Reuse the node, so there is no allocation that could throw after the original is taken out.
+                if (auto node = parts_with_unaccounted_sizes.extract(original_active_part))
+                {
+                    node.value() = part_copy;
+                    parts_with_unaccounted_sizes.insert(std::move(node));
+                }
             }
 
             modifyPartState(original_active_part, DataPartState::DeleteOnDestroy, lock);
@@ -9269,12 +9273,20 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedL
 {
     if (are_columns_and_secondary_indices_sizes_calculated)
     {
-        /// Account for the parts committed since the last call. A contribution is added one column at a
-        /// time, so if adding it throws, the totals are left partially updated and must be rebuilt.
+        if (parts_with_unaccounted_sizes.empty())
+            return;
+
+        /// Account for the parts committed since the last call. They are owned here, so the parts lock is
+        /// released: computing the sizes of a part can read it (see below). A contribution is added one column
+        /// at a time, so if adding one throws, the totals are left partially updated and the next reader
+        /// rebuilds them.
+        auto parts = std::exchange(parts_with_unaccounted_sizes, {});
         are_columns_and_secondary_indices_sizes_calculated = false;
-        for (const auto & part : parts_with_unaccounted_sizes)
+        parts_lock.unlock();
+
+        for (const auto & part : parts)
             addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
-        parts_with_unaccounted_sizes.clear();
+
         are_columns_and_secondary_indices_sizes_calculated = true;
         return;
     }
