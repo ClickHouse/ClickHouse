@@ -366,7 +366,10 @@ class RequestHandler(BaseHTTPRequestHandler):
         if path == "/data/cross_origin_redirect/":
             host = self.headers.get("Host", "resolver:8087").split(":", 1)[0]
             self.send_response(302)
-            self.send_header("Location", f"http://{host}:8088/data/cross_origin_target/")
+            self.send_header(
+                "Location",
+                f"http://redirect_user:redirect_pass@{host}:8088/data/cross_origin_target/",
+            )
             self.end_headers()
             return
         if path == "/data/redirect_target/":
