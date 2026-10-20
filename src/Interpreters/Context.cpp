@@ -2599,7 +2599,7 @@ std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
             initial_user_id = getAccessControl().find<User>(client_info.initial_user);
 
         return ContextAccessParams{
-            user_id, full_access, /* use_default_roles= */ false, current_roles, external_roles, authentication_grants, *settings, current_database.getFullName(), client_info, initial_user_id};
+            user_id, full_access, /* use_default_roles= */ false, current_roles, external_roles, authentication_grants, *settings, current_database, client_info, initial_user_id};
     };
 
     /// Check if the current access rights are still valid, otherwise get parameters for recalculating access rights.
@@ -4136,7 +4136,7 @@ void Context::setCurrentDatabaseWithLock(CurrentDatabaseInfo database_info, cons
 
 void Context::setCurrentDatabase(const String & name)
 {
-    const auto info = CurrentDatabaseInfo(name);
+    auto info = CurrentDatabaseInfo(name);
 
     /// a quoted spelling resolved to another name: constraints on `database` must see what is selected
     if (info.getFullName() != name)
@@ -4149,7 +4149,7 @@ void Context::setCurrentDatabase(const String & name)
     DatabaseCatalog::instance().assertDatabaseAndNamespacesExist(info);
 
     std::lock_guard lock(mutex);
-    setCurrentDatabaseWithLock(info, lock);
+    setCurrentDatabaseWithLock(std::move(info), lock);
 }
 
 void Context::setCurrentDatabase(const CurrentDatabaseInfo & database_info)

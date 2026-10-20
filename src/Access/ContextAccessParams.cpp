@@ -25,7 +25,7 @@ ContextAccessParams::ContextAccessParams(
     const std::shared_ptr<const std::vector<UUID>> & external_roles_,
     const std::shared_ptr<const AccessRightsElements> & authentication_grants_,
     const Settings & settings_,
-    const String & current_database_,
+    const CurrentDatabaseInfo & current_database_,
     const ClientInfo & client_info_,
     const std::optional<UUID> & initial_user_id_)
     : user_id(user_id_)
@@ -88,7 +88,7 @@ String ContextAccessParams::toString() const
     if (allow_introspection)
         out << separator() << "allow_introspection = " << allow_introspection;
     if (!current_database.empty())
-        out << separator() << "current_database = " << current_database;
+        out << separator() << "current_database = " << current_database.getFullName();
     out << separator() << "interface = " << magic_enum::enum_name(interface);
     if (http_method != ClientInfo::HTTPMethod::UNKNOWN)
         out << separator() << "http_method = " << magic_enum::enum_name(http_method);

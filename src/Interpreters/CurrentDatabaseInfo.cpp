@@ -3,6 +3,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
+#include <fmt/format.h>
+
 
 namespace DB
 {
@@ -38,6 +40,24 @@ CurrentDatabaseInfo::CurrentDatabaseInfo(String full_name_)
     /// a leading or trailing dot separates nothing
     if (dot != String::npos && dot != 0 && dot + 1 != value.size())
         separator_idx = dot;
+}
+
+std::pair<String, String> CurrentDatabaseInfo::rebase(const String & unqualified_table_name) const
+{
+    return
+    {
+        String(getDatabasePart()),
+        hasSchema() ? fmt::format("{}.{}", getSchemaPart(), unqualified_table_name) : unqualified_table_name
+    };
+}
+
+std::pair<String, String> CurrentDatabaseInfo::rebase(std::string_view unqualified_table_name) const
+{
+    return
+    {
+        String(getDatabasePart()),
+        hasSchema() ? fmt::format("{}.{}", getSchemaPart(), unqualified_table_name) : String(unqualified_table_name)
+    };
 }
 
 CurrentDatabaseInfo CurrentDatabaseInfo::fromOnlyDatabaseName(String database)

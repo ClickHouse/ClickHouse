@@ -918,14 +918,12 @@ bool ContextAccess::checkAccessImpl(const ContextPtr & context, const AccessFlag
         /// targets live in the physical database under namespace-qualified table names
         if constexpr (sizeof...(args) > 0)
         {
-            if (context && params.current_database.find('.') != String::npos)
+            if (params.current_database.hasSchema())
             {
-                const auto info = context->getCurrentDatabase();
-                if (info.hasSchema() && params.current_database == info.getFullName())
-                    return checkAccessImplWithTablePrefix<throw_if_denied, grant_option, wildcard>(context, flags, info, args...);
+                return checkAccessImplWithTablePrefix<throw_if_denied, grant_option, wildcard>(context, flags, params.current_database, args...);
             }
         }
-        return checkAccessImplHelper<throw_if_denied, grant_option, wildcard>(context, flags, std::string_view{params.current_database}, args...);
+        return checkAccessImplHelper<throw_if_denied, grant_option, wildcard>(context, flags, std::string_view{params.current_database.getDatabasePart()}, args...);
     }
     return checkAccessImplHelper<throw_if_denied, grant_option, wildcard>(context, flags, database, args...);
 }
@@ -935,9 +933,12 @@ bool ContextAccess::checkAccessImplWithTablePrefix(
     const ContextPtr & context, const AccessFlags & flags, const CurrentDatabaseInfo & database_info,
     std::string_view table, const Args &... args) const
 {
-    const String prefixed_table = String(database_info.getSchemaPart()) + "." + String(table);
-    return checkAccessImplHelper<throw_if_denied, grant_option, wildcard>(
-        context, flags, database_info.getDatabasePart(), std::string_view{prefixed_table}, args...);
+    // If both database and table names are empty, we should just check access to the current database (not schema)
+    if (table.empty())
+        return checkAccessImplHelper<throw_if_denied, grant_option, wildcard>(context, flags, database_info.getDatabasePart(), table, args...);
+
+    auto [database_name, table_name] = database_info.rebase(table);
+    return checkAccessImplHelper<throw_if_denied, grant_option, wildcard>(context, flags, database_name, table_name, args...);
 }
 
 template <bool throw_if_denied, bool grant_option, bool wildcard>
