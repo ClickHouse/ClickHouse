@@ -5,6 +5,7 @@
       "pages": [
         "pt-BR/guides/clickhouse/index",
         "pt-BR/guides/clickhouse/kusto-query-language",
+        "pt-BR/guides/clickhouse/logsql",
         {
           "group": "Formatos de dados",
           "pages": [
@@ -104,7 +105,7 @@
         },
         "pt-BR/guides/oss/update",
         {
-          "group": "Boas práticas para OSS",
+          "group": "Melhores práticas para OSS",
           "pages": [
             "pt-BR/guides/oss/best-practices/sizing-and-hardware-recommendations",
             "pt-BR/guides/oss/best-practices/tips"
@@ -112,7 +113,7 @@
         },
         {
           "expanded": false,
-          "group": "Implantação e escalabilidade",
+          "group": "Implantação e escalonamento",
           "pages": [
             "pt-BR/guides/oss/deployment-and-scaling/terminology",
             "pt-BR/guides/oss/deployment-and-scaling/shards",

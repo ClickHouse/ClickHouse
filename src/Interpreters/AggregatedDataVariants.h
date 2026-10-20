@@ -9,6 +9,8 @@
 #include <boost/noncopyable.hpp>
 
 
+class MemoryTracker;
+
 namespace DB
 {
 
@@ -49,6 +51,10 @@ struct AggregatedDataVariants : private boost::noncopyable
     using Arenas = std::vector<ArenaPtr>;
     Arenas aggregates_pools;
     Arena * aggregates_pool{};    /// The pool that is currently used for allocation.
+
+    /// Accounts for the whole state of this table, including memory that aggregate
+    /// states allocate outside the arenas. Attached by the aggregator on the first block.
+    std::unique_ptr<MemoryTracker> memory_tracker;
 
     /** Specialization for the case when there are no keys, and for keys not fitted into max_rows_to_group_by.
       */
@@ -497,6 +503,9 @@ struct AggregatedDataVariants : private boost::noncopyable
     /// Memory held by the variants: the arenas (keys and states) plus the active method's
     /// hash-table buffer, which dominates for inline states over fixed keys.
     size_t allocatedBytes() const;
+    /// Tracked size of the state; without a tracker (merge-only aggregation) only arenas and
+    /// hash table are known.
+    size_t memoryUsage() const;
 
     /// The adaptive bucket-parallel merge's per-bucket arenas, populated on the merge
     /// destination when the merge sources are created. Deliberately outside
@@ -518,8 +527,16 @@ struct AggregatedDataVariants : private boost::noncopyable
     static bool isConvertibleToTwoLevel(Type type);
     void convertToTwoLevel();
     bool isLowCardinality() const;
+    /// Serialized hash methods; `Aggregator` passes non-nullable `LowCardinality` key columns
+    /// to them without materializing full columns first.
+    bool isSerialized() const;
     static ColumnsHashing::HashMethodContextPtr createCache(Type type, const ColumnsHashing::HashMethodContextSettings & settings);
     bool topKHeapEverRejected() const;
+    /// Whether the active method's top-K heap is inactive for the block about to be processed: it has
+    /// already frozen, or `Aggregator::executeImpl` will certainly freeze it before processing row 0 of
+    /// that block (see `TopKAggregationHeapBase::willBeInactive`). Conservative: when the shared-boundary
+    /// exchange may still keep the heap running, the heap is reported as active.
+    bool topKHeapInactive() const;
 
     /** Select the aggregation method based on the number and types of keys. */
     static Type chooseMethod(const Block & header, const Names & keys, Sizes & out_key_sizes);

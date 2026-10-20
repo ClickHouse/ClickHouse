@@ -62,7 +62,9 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     <Info>
       **ローカルLLMを使用する場合**
 
-      APIキーがない場合は、Ollama のようなローカルLLMを使用できます。方法については、後の手順 [&quot;Install Ollama&quot;](#add-local-llm-using-ollama) で説明します。ここでは .env ファイルは変更せず、そのまま次の手順に進んでください。
+      APIキーがない場合は、Ollama のようなローカルLLMを使用できます。方法については、
+      後の手順 [&quot;Install Ollama&quot;](#add-local-llm-using-ollama) で説明します。ここでは
+      .env ファイルは変更せず、そのまま次の手順に進んでください。
     </Info>
   </Step>
 
@@ -105,7 +107,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     独自のデータを確認したい場合は、ご自身の ClickHouse Cloud サービスの[ホスト、ユーザー名、パスワード](/ja/get-started/setup/cloud#connect-with-your-app)を使用できます。
 
-    <Card title="ClickHouse Cloud を使い始める" href="https://cloud.clickhouse.com/" icon="cloud">
+    <Card title="ClickHouse Cloud を使い始める" href="https://clickhouse.cloud/signUp?loc=docs-guides-use-cases-ai-ml-mcp-librechat" icon="cloud">
       まだ Cloud アカウントをお持ちでない場合は、今すぐ ClickHouse Cloud を使い始めると、300 ドル分のクレジットを受け取れます。30 日間の無料トライアル終了後は、従量課金制プランに移行するか、使用量ベースの割引の詳細についてお問い合わせください。詳しくは料金ページをご覧ください。
     </Card>
   </Step>
@@ -136,7 +138,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   </Step>
 
   <Step title="Ollama を使ってローカル LLM を追加する (任意)" id="add-local-llm-using-ollama">
-    ### Ollama をインストールする
+### Ollama をインストールする {#install-ollama}
 
     [Ollama のウェブサイト](https://ollama.com/download) にアクセスし、お使いのシステム向けの Ollama をインストールします。
 
@@ -150,7 +152,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     モデルの一覧は、[Ollama library](https://ollama.com/library)を参照してください
 
-    ### librechat.yaml で Ollama を設定する
+### librechat.yaml で Ollama を設定する {#configure-ollama-in-librechat-yaml}
 
     モデルのダウンロードが完了したら、`librechat.yaml` で設定します。
 

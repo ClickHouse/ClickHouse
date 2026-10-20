@@ -7,17 +7,13 @@ doc_type: 'reference'
 keywords: ['PostgreSQL', 'Postgres', 'FDW', 'foreign data wrapper', 'pg_clickhouse', 'extensão']
 ---
 
-<div id="description">
-  ## Descrição
-</div>
+## Descrição {#description}
 
 pg&#95;clickhouse é uma extensão do PostgreSQL que permite executar consultas remotamente
 em bancos de dados do ClickHouse, incluindo um [foreign data wrapper]. É compatível
-com o PostgreSQL 13 ou superior e o ClickHouse 23.3 ou superior.
+com o PostgreSQL 14 ou superior e o ClickHouse 23.3 ou superior.
 
-<div id="getting-started">
-  ## Primeiros passos
-</div>
+## Primeiros passos {#getting-started}
 
 A forma mais simples de testar o pg&#95;clickhouse é usar a [imagem Docker], que contém
 a imagem Docker padrão do PostgreSQL com as extensões pg&#95;clickhouse e [re2][extensão
@@ -31,9 +27,7 @@ docker exec -it pg_clickhouse psql -U postgres
 
 Consulte o [tutorial](/pt-BR/products/managed-postgres/extensions/pg_clickhouse/tutorial) para começar a importar tabelas do ClickHouse e delegar consultas ao ClickHouse.
 
-<div id="usage">
-  ## Uso
-</div>
+## Uso {#usage}
 
 ```sql
 CREATE EXTENSION pg_clickhouse;
@@ -45,9 +39,7 @@ CREATE SCHEMA taxi;
 IMPORT FOREIGN SCHEMA taxi FROM SERVER taxi_srv INTO taxi;
 ```
 
-<div id="versioning-policy">
-  ## Política de versionamento
-</div>
+## Política de versionamento {#versioning-policy}
 
 pg&#95;clickhouse segue o [Versionamento Semântico] em suas versões públicas.
 
@@ -74,15 +66,11 @@ virá acompanhada de scripts de atualização SQL, e todos os bancos de dados ex
 a extensão deverão executar `ALTER EXTENSION pg_clickhouse UPDATE` para aproveitar
 a atualização.
 
-<div id="ddl-sql-reference">
-  ## Referência de SQL DDL
-</div>
+## Referência de SQL DDL {#ddl-sql-reference}
 
 As expressões SQL [DDL] a seguir usam o pg&#95;clickhouse.
 
-<div id="create-extension">
-  ### CREATE EXTENSION
-</div>
+### CREATE EXTENSION {#create-extension}
 
 Use [CREATE EXTENSION] para adicionar a extensão pg&#95;clickhouse a um banco de dados:
 
@@ -97,9 +85,7 @@ CREATE SCHEMA ch;
 CREATE EXTENSION pg_clickhouse WITH SCHEMA ch;
 ```
 
-<div id="alter-extension">
-  ### ALTER EXTENSION
-</div>
+### ALTER EXTENSION {#alter-extension}
 
 Use [ALTER EXTENSION] para modificar a extensão pg&#95;clickhouse. Exemplos:
 
@@ -116,9 +102,7 @@ Use [ALTER EXTENSION] para modificar a extensão pg&#95;clickhouse. Exemplos:
   ALTER EXTENSION pg_clickhouse SET SCHEMA ch;
   ```
 
-<div id="drop-extension">
-  ### DROP EXTENSION
-</div>
+### DROP EXTENSION {#drop-extension}
 
 Use [DROP EXTENSION] para remover pg&#95;clickhouse de um banco de dados:
 
@@ -133,9 +117,7 @@ a cláusula `CASCADE` para removê-los também:
 DROP EXTENSION pg_clickhouse CASCADE;
 ```
 
-<div id="create-server">
-  ### CREATE SERVER
-</div>
+### CREATE SERVER {#create-server}
 
 Use [CREATE SERVER] para criar um servidor externo que se conecta a um servidor
 ClickHouse. Exemplo:
@@ -170,10 +152,16 @@ As opções compatíveis são:
     (&quot;http&quot;) ou 9440 (&quot;binary&quot;).
   * `off` (ou `false`/`no`/`0`): nunca usa TLS. O padrão de `port` é 8123
     (&quot;http&quot;) ou 9000 (&quot;binary&quot;).
+* `encoding_check`: Define como tratar caracteres inválidos segundo a
+  [codificação do banco de dados] ao converter valores String e JSON do ClickHouse. Uma
+  entre:
+  * `fail` (padrão): gera um erro
+  * `remove` remove os bytes inválidos
+  * `replace`: na codificação UTF-8, substitui os bytes inválidos pelo
+    caractere de substituição Unicode (`�`); equivale a `remove` nas demais codificações
+  * `truncate` trunca o texto no primeiro byte inválido
 
-<div id="alter-server">
-  ### ALTER SERVER
-</div>
+### ALTER SERVER {#alter-server}
 
 Use [ALTER SERVER] para modificar um servidor externo. Exemplo:
 
@@ -183,9 +171,7 @@ ALTER SERVER taxi_srv OPTIONS (SET driver 'http');
 
 As opções são as mesmas do [CREATE SERVER](#create-server).
 
-<div id="drop-server">
-  ### DROP SERVER
-</div>
+### DROP SERVER {#drop-server}
 
 Use o [DROP SERVER] para remover um servidor externo:
 
@@ -200,9 +186,7 @@ também remover essas dependências:
 DROP SERVER taxi_srv CASCADE;
 ```
 
-<div id="create-user-mapping">
-  ### CREATE USER MAPPING
-</div>
+### CREATE USER MAPPING {#create-user-mapping}
 
 Use [CREATE USER MAPPING] para mapear um usuário do PostgreSQL a um usuário do ClickHouse. Por
 exemplo, para mapear o usuário atual do PostgreSQL ao usuário remoto do ClickHouse ao
@@ -218,9 +202,7 @@ As opções compatíveis são:
 * `user`: O nome do usuário do ClickHouse. O valor padrão é &quot;default&quot;.
 * `password`: A senha do usuário do ClickHouse.
 
-<div id="alter-user-mapping">
-  ### ALTER USER MAPPING
-</div>
+### ALTER USER MAPPING {#alter-user-mapping}
 
 Use [ALTER USER MAPPING] para alterar a definição de um mapeamento de usuário:
 
@@ -231,9 +213,7 @@ ALTER USER MAPPING FOR CURRENT_USER SERVER taxi_srv
 
 As opções são as mesmas de [CREATE USER MAPPING](#create-user-mapping).
 
-<div id="drop-user-mapping">
-  ### DROP USER MAPPING
-</div>
+### DROP USER MAPPING {#drop-user-mapping}
 
 Use o comando [DROP USER MAPPING] para remover um mapeamento de usuário:
 
@@ -241,9 +221,7 @@ Use o comando [DROP USER MAPPING] para remover um mapeamento de usuário:
 DROP USER MAPPING FOR CURRENT_USER SERVER taxi_srv;
 ```
 
-<div id="import-foreign-schema">
-  ### IMPORT FOREIGN SCHEMA
-</div>
+### IMPORT FOREIGN SCHEMA {#import-foreign-schema}
 
 Use [IMPORT FOREIGN SCHEMA] para importar todas as tabelas definidas em um banco de dados do ClickHouse como tabelas externas em um esquema do PostgreSQL:
 
@@ -271,6 +249,35 @@ as tabelas externas. As colunas serão definidas usando os [tipos de dados
 suportados](#data-types) e, quando isso for detectável, as opções suportadas por [CREATE
 FOREIGN TABLE](#create-foreign-table).
 
+Alguns pontos a considerar:
+
+* As colunas importadas mantêm o modificador de tipo do tipo do ClickHouse, inclusive
+  os que estão dentro de `Array`s. Ou seja, `Array(Decimal(12,6))` é importado como
+  `numeric(12,6)[]`.
+
+* Colunas `Nullable` são importadas sem `NOT NULL`; já `Nullable` dentro de um `Array`
+  não tem esse efeito, pois arrays do PostgreSQL sempre permitem elementos NULL.
+
+* Colunas `AggregateFunction` e `SimpleAggregateFunction` são importadas sem
+  `NOT NULL`, independentemente da declaração no ClickHouse; consulte [Colunas de estado e `NOT
+  NULL`](#state-columns-and-not-null).
+
+* Colunas `Tuple` são importadas como `text[]`. Colunas `Map` e colunas `Nested`
+  criadas com `flatten_nested=0` são importadas como `text[][]`. Cada conversão emite
+  um `NOTICE`. O pseudotipo `record` do PostgreSQL não pode definir uma coluna de tabela;
+  por isso, cada tupla se torna um array de valores, cada map se torna um
+  array bidimensional de pares chave-valor e cada valor Nested se torna um
+  array bidimensional de linhas. Para ler campos como registros, altere a coluna
+  para um array de um tipo composto correspondente; consulte [Mapeamentos manuais de
+  tipos](#manual-type-mappings) para ver um exemplo.
+
+* Colunas `DateTime64` e `Time64` com precisão maior que 6
+  (microssegundos) também geram um `NOTICE`, já que o PostgreSQL limita a precisão a
+  `timestamp(6)` e `time(6)`.
+
+* Tipos de coluna sem equivalente no PostgreSQL, incluindo o tipo legado
+  `Object('json')`, anterior ao `JSON` do ClickHouse, geram um erro.
+
 <Tip>
   **Preservação de maiúsculas e minúsculas em identificadores importados**
 
@@ -286,7 +293,7 @@ FOREIGN TABLE](#create-foreign-table).
   ```sql
   CREATE OR REPLACE TABLE test
   (
-      id UInt64,
+      id Int64,
       Name TEXT,
       updatedAt DateTime DEFAULT now()
   )
@@ -315,9 +322,7 @@ FOREIGN TABLE](#create-foreign-table).
   sem distinção entre maiúsculas e minúsculas), use [CREATE FOREIGN TABLE](#create-foreign-table).
 </Tip>
 
-<div id="create-foreign-table">
-  ### CREATE FOREIGN TABLE
-</div>
+### CREATE FOREIGN TABLE {#create-foreign-table}
 
 Use [CREATE FOREIGN TABLE] para criar uma tabela externa capaz de consultar dados de
 um banco de dados do ClickHouse:
@@ -339,7 +344,7 @@ As opções de tabela compatíveis são:
 * `database`: O nome do banco de dados remoto. O padrão é o banco de dados
   definido para o servidor externo.
 * `table_name`: O nome da tabela remota. O padrão é o nome especificado
-  para a foreign table.
+  para a tabela externa.
 * `engine`: O [engine da tabela] usado pela tabela ClickHouse. Para
   `CollapsingMergeTree()` e `AggregatingMergeTree()`, o pg&#95;clickhouse
   aplica automaticamente os parâmetros às expressões de função executadas na
@@ -365,7 +370,9 @@ de cada coluna. As opções de coluna compatíveis são:
   coluna do [tipo AggregateFunction]. Mapeie o tipo de dado para o tipo do ClickHouse
   passado à função e especifique o nome da função de agregação por meio
   da opção de coluna apropriada; o pg&#95;clickhouse acrescentará automaticamente
-  `Merge` à função de agregação usada para avaliar a coluna.
+  `Merge` à função de agregação usada para avaliar a coluna. Declare a coluna
+  como anulável para evitar os problemas descritos em [Colunas de estado e `NOT
+  NULL`](#state-columns-and-not-null).
 
   ```sql
   CREATE FOREIGN TABLE test (
@@ -380,9 +387,87 @@ de cada coluna. As opções de coluna compatíveis são:
   tipo do ClickHouse passado à função e especifique o nome da
   função de agregação por meio da opção de coluna apropriada.
 
-<div id="alter-foreign-table">
-  ### ALTER FOREIGN TABLE
-</div>
+#### Colunas de estado e `NOT NULL` {#state-columns-and-not-null}
+
+Mantenha as colunas `AggregateFunction` e `SimpleAggregateFunction` como anuláveis.
+O PostgreSQL 19 converte `count(column)` em `count(*)` para colunas de estado `NOT NULL`,
+o que faz com que sejam contadas linhas em vez de mesclados os estados.
+
+Considere uma tabela do ClickHouse que armazena um estado `count` por usuário, sendo cada estado gerado
+a partir de 1.000 eventos:
+
+```sql
+CREATE TABLE hits (
+    user_id UInt64,
+    hits    AggregateFunction(count)
+) ENGINE = AggregatingMergeTree() ORDER BY user_id;
+```
+
+Com `NOT NULL`, o PostgreSQL conta os estados, o que resulta em uma contagem inválida:
+
+```sql
+CREATE FOREIGN TABLE hits (
+    user_id bigint NOT NULL,
+    hits    bigint NOT NULL OPTIONS(AggregateFunction 'count')
+) SERVER clickhouse_srv;
+```
+
+```pgsql
+try=# EXPLAIN (VERBOSE, COSTS OFF)
+       SELECT user_id, count(hits) FROM hits GROUP BY user_id;
+                                 QUERY PLAN
+----------------------------------------------------------------------------
+ Foreign Scan
+   Output: user_id, (count(*))
+   Relations: Aggregate on (hits)
+   Remote SQL: SELECT user_id, count(*) FROM "default".hits GROUP BY user_id
+(4 rows)
+
+try=# SELECT user_id, count(hits) FROM hits GROUP BY user_id;
+ user_id | count
+---------+-------
+       1 |     1
+(1 row)
+```
+
+Sem `NOT NULL`, o pg&#95;clickhouse usa `countMerge()` para mesclar os estados, obtendo
+a contagem correta de `1000`:
+
+```sql
+CREATE FOREIGN TABLE hits (
+    user_id bigint NOT NULL,
+    hits    bigint OPTIONS(AggregateFunction 'count')
+) SERVER clickhouse_srv;
+```
+
+```pgsql
+try=# EXPLAIN (VERBOSE, COSTS OFF)
+       SELECT user_id, count(hits) FROM hits GROUP BY user_id;
+                                     QUERY PLAN
+------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: user_id, (count(hits))
+   Relations: Aggregate on (hits)
+   Remote SQL: SELECT user_id, countMerge(hits) FROM "default".hits GROUP BY user_id
+(4 rows)
+
+try=# SELECT user_id, count(hits) FROM hits GROUP BY user_id;
+ user_id | count
+---------+-------
+       1 |  1000
+(1 row)
+```
+
+Use `ALTER FOREIGN TABLE` para remover a restrição de uma tabela externa existente:
+
+```sql
+ALTER FOREIGN TABLE hits ALTER COLUMN hits DROP NOT NULL;
+```
+
+`NOT NULL` afeta apenas o PostgreSQL. Por isso, o [IMPORT FOREIGN
+SCHEMA](#import-foreign-schema) importa as colunas de estado como anuláveis.
+
+### ALTER FOREIGN TABLE {#alter-foreign-table}
 
 Use [ALTER FOREIGN TABLE] para alterar a definição de uma tabela externa:
 
@@ -393,9 +478,7 @@ ALTER TABLE table ALTER COLUMN b OPTIONS (SET AggregateFunction 'count');
 As opções de tabela e coluna suportadas são as mesmas do [CREATE FOREIGN
 TABLE].
 
-<div id="drop-foreign-table">
-  ### DROP FOREIGN TABLE
-</div>
+### DROP FOREIGN TABLE {#drop-foreign-table}
 
 Use [DROP FOREIGN TABLE] para remover uma tabela externa:
 
@@ -410,9 +493,7 @@ Use a cláusula `CASCADE` para removê-los também:
 DROP FOREIGN TABLE acts CASCADE;
 ```
 
-<div id="dml-sql-reference">
-  ## Referência de SQL DML
-</div>
+## Referência de SQL DML {#dml-sql-reference}
 
 As expressões [DML] em SQL abaixo podem usar pg&#95;clickhouse. Os exemplos dependem
 destas tabelas do ClickHouse:
@@ -439,9 +520,7 @@ CREATE TABLE nodes (
   PRIMARY KEY node_id;
 ```
 
-<div id="explain">
-  ### EXPLAIN
-</div>
+### EXPLAIN {#explain}
 
 O comando [EXPLAIN] funciona como esperado, mas a opção `VERBOSE` aciona a emissão da consulta &quot;Remote SQL&quot; do ClickHouse:
 
@@ -462,9 +541,7 @@ try=# EXPLAIN (VERBOSE)
 Esta consulta é repassada ao ClickHouse por meio de um nó de plano &quot;Foreign Scan&quot;, o
 SQL remoto.
 
-<div id="select">
-  ### SELECT
-</div>
+### SELECT {#select}
 
 Use a instrução [SELECT] para executar consultas em tabelas pg&#95;clickhouse,
 assim como em qualquer outra tabela:
@@ -605,11 +682,9 @@ O nó &quot;Foreign Scan&quot; agora faz o pushdown da agregação por `node_id`
 o número de linhas que precisam ser trazidas de volta para o Postgres de 1000 (todas
 elas) para apenas 8, uma para cada nó.
 
-<div id="partitioned-tables">
-  ### Tabelas particionadas
-</div>
+### Tabelas particionadas {#partitioned-tables}
 
-Uma [tabela particionada] do PostgreSQL pode combinar partições locais com partições externas
+Uma [tabela particionada] do PostgreSQL pode combinar partições locais com partições estrangeiras
 armazenadas no ClickHouse. Uma configuração comum transfere dados mais antigos para o
 ClickHouse, enquanto os dados mais recentes permanecem no PostgreSQL:
 
@@ -620,24 +695,24 @@ CREATE TABLE events (id int, ts date, val int, amt float8)
 -- 2023 data lives on ClickHouse
 CREATE FOREIGN TABLE events_2023 PARTITION OF events
     FOR VALUES FROM ('2023-01-01') TO ('2024-01-01')
-    SERVER ch_svr OPTIONS (table_name 'events');
+    SERVER ch_srv OPTIONS (table_name 'events');
 
 -- 2024 data stays local
 CREATE TABLE events_2024 PARTITION OF events
     FOR VALUES FROM ('2024-01-01') TO ('2025-01-01');
 ```
 
-Para ver um exemplo de como mover dados de partições locais para partições externas, consulte
+Para ver um exemplo de como mover dados de partições locais para partições estrangeiras, consulte
 [offload-partition.sql].
 
-Agregações que abrangem partições locais e externas exigem a [agregação por
+Agregações que abrangem partições locais e estrangeiras exigem a [agregação por
 partição], que o PostgreSQL desativa por padrão:
 
 ```pgsql
 SET enable_partitionwise_aggregate = on;
 ```
 
-Com `enable_partitionwise_aggregate` ativado, o PostgreSQL calcula um *agregado
+Com `enable_partitionwise_aggregate` ativado, o PostgreSQL calcula uma *agregação
 parcial* abaixo de `Append`, e um *agregado de finalização* acima combina esses
 parciais no resultado. O pg&#95;clickhouse envia o parcial da partição estrangeira
 ao ClickHouse:
@@ -660,9 +735,7 @@ try=# EXPLAIN (VERBOSE, COSTS OFF)
                      Output: events_1.val, events_1.ts
 ```
 
-<div id="when-partial-aggregates-push-down">
-  #### Quando agregações parciais são enviadas ao destino
-</div>
+#### Quando agregações parciais são enviadas ao destino {#when-partial-aggregates-push-down}
 
 O PostgreSQL representa uma agregação parcial como um *estado de transição* que a
 etapa de finalização combina entre as partições. O pg&#95;clickhouse pode enviar a
@@ -678,9 +751,7 @@ agregação parcial de uma partição ao destino somente quando puder expressá-
 
 `FILTER (WHERE …)` é enviado ao destino com essas funções de agregação.
 
-<div id="when-they-fall-back">
-  #### Quando usam uma alternativa
-</div>
+#### Quando usam uma alternativa {#when-they-fall-back}
 
 Agregações cujo estado de transição é o tipo opaco `internal` do PostgreSQL não têm
 representação portátil; por isso, a partição estrangeira busca suas linhas
@@ -688,9 +759,7 @@ e as agrega localmente. Isso abrange tudo o que usa `numeric`, além de
 `avg(bigint)` e `avg(interval)`. Agregações `DISTINCT`, de conjunto ordenado e variádicas
 também usam uma alternativa.
 
-<div id="prepare-execute-deallocate">
-  ### PREPARE, EXECUTE, DEALLOCATE
-</div>
+### PREPARE, EXECUTE, DEALLOCATE {#prepare-execute-deallocate}
 
 A partir da v0.1.2, o pg&#95;clickhouse oferece suporte a consultas parametrizadas, criadas principalmente
 com o comando [PREPARE]:
@@ -737,7 +806,6 @@ Observe que ele enviou os valores de data completos, e não os placeholders de p
 Isso se aplica às cinco primeiras requisições, como descrito nas notas do PostgreSQL
 [sobre PREPARE]. Na sexta execução, ele envia os [parâmetros de consulta] no estilo
 `{param:type}` do ClickHouse:
-parameters:
 
 ```pgsql
                                                                                                          QUERY PLAN
@@ -756,9 +824,7 @@ try=# DEALLOCATE avg_durations_between_dates;
 DEALLOCATE
 ```
 
-<div id="insert">
-  ### INSERT
-</div>
+### INSERT {#insert}
 
 Use o comando [INSERT] para inserir valores em uma tabela remota do ClickHouse:
 
@@ -771,9 +837,7 @@ VALUES (9,  'Augustin Gamarra', 'us-west-2', 'amd64', 'Linux')
 INSERT 0 3
 ```
 
-<div id="copy">
-  ### COPY
-</div>
+### COPY {#copy}
 
 Use o comando [COPY] para inserir um lote de linhas em uma tabela remota do ClickHouse:
 
@@ -791,9 +855,7 @@ try=# COPY logs FROM stdin CSV;
 > pg&#95;clickhouse ainda não implementou suporte à API de inserção em lote do FDW do PostgreSQL. Portanto, [COPY] atualmente usa instruções [INSERT](#insert) para
 > inserir registros. Isso será aprimorado em uma versão futura.
 
-<div id="load">
-  ### LOAD
-</div>
+### LOAD {#load}
 
 Use [LOAD] para carregar a biblioteca compartilhada pg&#95;clickhouse:
 
@@ -809,15 +871,11 @@ tables etc.) for usado.
 A única situação em que pode ser útil usar [LOAD] pg&#95;clickhouse é para [SET](#set)
 os parâmetros do pg&#95;clickhouse antes de executar consultas que dependam deles.
 
-<div id="set">
-  ### SET
-</div>
+### SET {#set}
 
 Use [SET] para definir os parâmetros personalizados de configuração do pg&#95;clickhouse.
 
-<div id="pg_clickhousesession_settings">
-  #### `pg_clickhouse.session_settings`
-</div>
+#### `pg_clickhouse.session_settings` {#pg_clickhousesession_settings}
 
 O parâmetro `pg_clickhouse.session_settings` configura as [configurações
 do ClickHouse] a serem aplicadas às consultas subsequentes. Exemplo:
@@ -893,9 +951,7 @@ Observe que o pg&#95;clickhouse deve ser carregado antes de definir
 `pg_clickhouse.session_settings`; use [pré-carregamento de biblioteca compartilhada] ou
 simplesmente use um dos objetos da extensão para garantir que ele seja carregado.
 
-<div id="pg_clickhousepushdown_regex">
-  #### `pg_clickhouse.pushdown_regex`
-</div>
+#### `pg_clickhouse.pushdown_regex` {#pg_clickhousepushdown_regex}
 
 O parâmetro `pg_clickhouse.pushdown_regex` controla se o pg&#95;clickhouse
 faz pushdown de funções e operadores de expressão regular. Isso ocorre por padrão;
@@ -907,9 +963,7 @@ SET pg_clickhouse.pushdown_regex = 'false';
 
 Consulte [Expressões regulares](#regular-expressions) para obter mais detalhes.
 
-<div id="alter-role">
-  ### ALTER ROLE
-</div>
+### ALTER ROLE {#alter-role}
 
 Use o comando `SET` de [ALTER ROLE]&#39;s para [pré-carregar](#preloading) o pg&#95;clickhouse
 e/ou [SET](#set) seus parâmetros para roles específicos:
@@ -933,16 +987,12 @@ try=# ALTER ROLE CURRENT_USER RESET pg_clickhouse.session_settings;
 ALTER ROLE
 ```
 
-<div id="preloading">
-  ## Pré-carregamento
-</div>
+## Pré-carregamento {#preloading}
 
 Se toda ou quase toda conexão com o Postgres precisar usar o pg&#95;clickhouse,
 considere usar o [pré-carregamento de biblioteca compartilhada] para carregá-lo automaticamente:
 
-<div id="session_preload_libraries">
-  ### `session_preload_libraries`
-</div>
+### `session_preload_libraries` {#session_preload_libraries}
 
 Carrega a biblioteca compartilhada a cada nova conexão com o PostgreSQL:
 
@@ -954,9 +1004,7 @@ session_preload_libraries = pg_clickhouse
 se reconectar. Também pode ser configurado para usuários ou roles específicos por meio de [ALTER
 ROLE](#alter-role).
 
-<div id="shared_preload_libraries">
-  ### `shared_preload_libraries`
-</div>
+### `shared_preload_libraries` {#shared_preload_libraries}
 
 Carrega a biblioteca compartilhada no processo principal do PostgreSQL durante a inicialização:
 
@@ -967,48 +1015,111 @@ shared_preload_libraries = pg_clickhouse
 Útil para economizar memória e reduzir a sobrecarga em cada sessão, mas exige que o
 cluster seja reiniciado quando a biblioteca for atualizada.
 
-<div id="data-types">
-  ## Tipos de dados
-</div>
+## Tipos de dados {#data-types}
 
-O pg&#95;clickhouse mapeia os seguintes tipos de dados do ClickHouse para tipos de
-dados do PostgreSQL. [IMPORT FOREIGN SCHEMA](#import-foreign-schema) usa o primeiro tipo do
-PostgreSQL para a coluna ao importar colunas; tipos adicionais podem ser usados em
-instruções [CREATE FOREIGN TABLE](#create-foreign-table):
+Esta tabela apresenta o mapeamento preferencial dos tipos de dados do ClickHouse para os do
+PostgreSQL. [IMPORT FOREIGN SCHEMA](#import-foreign-schema) usa esses mapeamentos e
+deriva os modificadores de tipo e as dimensões de array apropriados. Use [CREATE
+FOREIGN TABLE](#create-foreign-table) para declarar tipos alternativos do PostgreSQL.
 
-| ClickHouse | PostgreSQL       | Observações                             |
-| ---------- | ---------------- | --------------------------------------- |
-| Bool       | boolean          |                                         |
-| Date       | date             |                                         |
-| Date32     | date             |                                         |
-| DateTime   | timestamptz      |                                         |
-| Decimal    | numeric          |                                         |
-| Float32    | real             |                                         |
-| Float64    | double precision |                                         |
-| IPv4       | inet             |                                         |
-| IPv6       | inet             |                                         |
-| Int16      | smallint         |                                         |
-| Int32      | integer          |                                         |
-| Int64      | bigint           |                                         |
-| Int8       | smallint         |                                         |
-| JSON       | jsonb, json      |                                         |
-| String     | text, bytea      |                                         |
-| UInt16     | integer          |                                         |
-| UInt32     | bigint           |                                         |
-| UInt64     | bigint           | Erro para valores &gt; máximo de BIGINT |
-| UInt8      | smallint         |                                         |
-| UUID       | uuid             |                                         |
+Os destinos de leitura adicionais listam as conversões compatíveis com o driver `binary` além dos
+casts explícitos do PostgreSQL. Células vazias continuam permitindo esses casts. Os valores precisam
+caber nos tipos de destino. Esses destinos se referem a leituras; as gravações seguem regras de
+conversão próprias.
 
-Qualquer coluna também pode ser lida como `text`, `varchar` ou outro tipo de string. O valor
-assume o tipo PostgreSQL acima e é então renderizado pela função de saída
-desse tipo. Valores UInt64 acima do máximo de bigint ainda geram erro; portanto, renderize-os
-com a função `toString()` do ClickHouse.
+| ClickHouse                   | PostgreSQL padrão           | Destinos de leitura adicionais                     | Observações                                                              |
+| ---------------------------- | --------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------ |
+| Array(T)                     | T[]                         |                                                    | Um tipo de array do PG por nível de aninhamento                          |
+| BFloat16                     | real                        |                                                    |                                                                          |
+| Bool                         | boolean                     |                                                    |                                                                          |
+| Date                         | date                        |                                                    |                                                                          |
+| Date32                       | date                        |                                                    |                                                                          |
+| DateTime                     | timestamp with time zone    | time                                               |                                                                          |
+| DateTime64(P)                | timestamp(P) with time zone | time                                               | P acima de 6 é limitado a 6                                              |
+| Decimal(P,S)                 | numeric(P,S)                | xid8, oid8                                         |                                                                          |
+| Decimal32(S)                 | numeric(9,S)                | xid8, oid8                                         |                                                                          |
+| Decimal64(S)                 | numeric(18,S)               | xid8, oid8                                         |                                                                          |
+| Decimal128(S)                | numeric(38,S)               | xid8, oid8                                         |                                                                          |
+| Decimal256(S)                | numeric(76,S)               | xid8, oid8                                         |                                                                          |
+| Enum8                        | text                        | bytea; tipos compatíveis com a entrada             | Decodifica o rótulo; enums do PG com rótulos correspondentes são aceitos |
+| Enum16                       | text                        | bytea; tipos compatíveis com a entrada             | Decodifica o rótulo; enums do PG com rótulos correspondentes são aceitos |
+| FixedString(N)               | text                        | bytea; tipos compatíveis com a entrada             | Somente bytea preserva os NULs finais                                    |
+| Float32                      | real                        |                                                    |                                                                          |
+| Float64                      | double precision            |                                                    |                                                                          |
+| IPv4                         | inet                        |                                                    |                                                                          |
+| IPv6                         | inet                        |                                                    |                                                                          |
+| Int8                         | smallint                    | boolean                                            | Zero é false; qualquer valor diferente de zero é true                    |
+| Int16                        | smallint                    | boolean                                            | Zero é false; qualquer valor diferente de zero é true                    |
+| Int32                        | integer                     |                                                    |                                                                          |
+| Int64                        | bigint                      |                                                    |                                                                          |
+| Int128                       | numeric(39,0)               | xid8, oid8                                         |                                                                          |
+| Int256                       | numeric(77,0)               | xid8, oid8                                         |                                                                          |
+| IntervalDay                  | interval                    | smallint, integer, bigint                          | Inteiros recebem a quantidade de unidades                                |
+| IntervalHour                 | interval                    | smallint, integer, bigint                          | Inteiros recebem a quantidade de unidades                                |
+| IntervalMicrosecond          | interval                    | smallint, integer, bigint                          | Inteiros recebem a quantidade de unidades                                |
+| IntervalMillisecond          | interval                    | smallint, integer, bigint                          | Inteiros recebem a quantidade de unidades                                |
+| IntervalMinute               | interval                    | smallint, integer, bigint                          | Inteiros recebem a quantidade de unidades                                |
+| IntervalMonth                | interval                    | smallint, integer, bigint                          | Inteiros recebem a contagem de unidades                                  |
+| IntervalNanosecond           | interval                    | smallint, integer, bigint                          | Inteiros preservam ns; interval trunca para us                           |
+| IntervalQuarter              | interval                    | smallint, integer, bigint                          | Inteiros recebem a contagem de unidades                                  |
+| IntervalSecond               | interval                    | smallint, integer, bigint                          | Inteiros recebem a contagem de unidades                                  |
+| IntervalWeek                 | interval                    | smallint, integer, bigint                          | Inteiros recebem a contagem de unidades                                  |
+| IntervalYear                 | interval                    | smallint, integer, bigint                          | Inteiros recebem a contagem de unidades                                  |
+| JSON                         | jsonb                       | json, text, bytea; tipos compatíveis com a entrada | jsonb normaliza o documento                                              |
+| LineString                   | path                        | lseg                                               | lseg exige dois pontos                                                   |
+| LowCardinality(T)            | T                           |                                                    |                                                                          |
+| Map(K,V)                     | text[][]                    | composite[], T[][], text                           | Uma linha de itens de texto por par                                      |
+| MultiLineString              | path[]                      |                                                    |                                                                          |
+| MultiPolygon                 | polygon[][]                 |                                                    |                                                                          |
+| Nested(...)                  | text[][]                    | composite[], T[][], text                           | Uma linha de itens de texto por linha aninhada                           |
+| Nullable(T)                  | T                           |                                                    | A coluna é importada sem NOT NULL                                        |
+| Point                        | point                       |                                                    |                                                                          |
+| Polygon                      | polygon[]                   |                                                    |                                                                          |
+| Ring                         | polygon                     | lseg                                               | lseg exige dois pontos                                                   |
+| SimpleAggregateFunction(f,T) | T                           |                                                    | Armazena os valores como T                                               |
+| String                       | text                        | bytea; tipos compatíveis com a entrada             | bytea preserva os bytes brutos                                           |
+| Time                         | time without time zone      |                                                    |                                                                          |
+| Time64(P)                    | time(P) without time zone   |                                                    | P acima de 6 é limitado a 6                                              |
+| Tuple(...)                   | text[]                      | composite, T[], text; box, circle, line            | Os campos viram itens de texto                                           |
+| UInt8                        | smallint                    | boolean                                            | Zero é false; qualquer valor diferente de zero é true                    |
+| UInt16                       | integer                     |                                                    |                                                                          |
+| UInt32                       | bigint                      |                                                    |                                                                          |
+| UInt64                       | numeric(20,0)               | xid8, oid8                                         |                                                                          |
+| UInt128                      | numeric(39,0)               | xid8, oid8                                         |                                                                          |
+| UInt256                      | numeric(78,0)               | xid8, oid8                                         |                                                                          |
+| UUID                         | uuid                        |                                                    |                                                                          |
 
-Notas e detalhes adicionais vêm a seguir.
+Qualquer coluna também pode ser lida como `text`, `varchar` ou outro tipo string. O valor
+assume o tipo PostgreSQL indicado acima e, em seguida, é renderizado pela função de saída
+desse tipo. Uma string do ClickHouse lida como tipo texto é validada em relação à
+codificação do banco de dados; assim, bytes que o PostgreSQL não consegue ler geram um erro. Declare uma
+coluna `String`, `FixedString`, `Enum` ou `JSON` como [BYTEA] para ler seus bytes exatamente como o
+ClickHouse os gravou.
 
-<div id="bytea">
-  ### BYTEA
-</div>
+Tipos compatíveis com entrada podem ler strings usando a respectiva função de entrada do PostgreSQL.
+Tipos compostos devem ter os mesmos campos, na mesma ordem. Para ler uma tupla
+como array, cada campo deve poder ser convertido para o tipo de elemento do array, e nenhum campo
+pode ser, ele próprio, um array.
+
+Quando lidos como arrays, `Map` usa uma linha por par chave-valor e `Nested` usa
+uma linha por registro aninhado. Para ler uma tupla como `box`, forneça dois pontos; para
+`circle`, forneça um ponto e um raio; para `line`, forneça três coeficientes.
+
+Confira a seguir observações e detalhes adicionais.
+
+### Coerção de tipos {#type-coercion}
+
+Com o driver `binary`, tipos escalares alternativos usam as conversões explícitas
+do PostgreSQL quando disponíveis, e os elementos de array são convertidos para o
+tipo de elemento declarado. Conversões sem suporte e valores fora do intervalo geram erros.
+
+Com qualquer um dos drivers, mapeie os tipos `Interval` do ClickHouse para `smallint`, `integer`
+ou `bigint` para ler e gravar a quantidade de suas unidades. Por exemplo, um valor
+`IntervalDay` igual a `3` é mapeado para o inteiro `3`. Mapear
+`IntervalNanosecond` para `bigint` preserva os nanossegundos, enquanto o mapeamento para
+`interval` trunca o valor para microssegundos.
+
+### BYTEA {#bytea}
 
 O ClickHouse não oferece um equivalente ao tipo [BYTEA] do PostgreSQL, mas
 permite que quaisquer bytes sejam armazenados no tipo [String]. Em geral, strings
@@ -1051,8 +1162,9 @@ Essa consulta `SELECT` final produzirá:
 (4 rows)
 ```
 
-Observe que, se houver bytes nulos nas colunas do ClickHouse, uma tabela
-estrangeira que utilize colunas [TEXT] não exibirá os valores corretos:
+Uma tabela estrangeira que utilize colunas [TEXT] geralmente não consegue ler esses valores como
+texto, porque o pg&#95;clickhouse valida os bytes do ClickHouse com base na codificação do banco
+de dados:
 
 ```sql
 -- Create foreign table with TEXT columns.
@@ -1069,18 +1181,11 @@ SELECT c1, encode(c2::bytea, 'hex'), encode(c3::bytea, 'hex') FROM texts ORDER B
 Saída:
 
 ```pgsql
- c1 |                          encode                          |              encode
-----+----------------------------------------------------------+----------------------------------
-  1 | 1bf7f0cc821d31178616a55a8e0c52677735397cdde6f4153a9fd3d7 | ae3b28cde02542f81acce8783245430d
-  2 | 5f6e9e12cd8592712e638016f4b1a2e73230ee40db498c0f0b1dc841 | 23e7c6cacb8383f878ad093b
-  3 | 53ac2c1fa83c8f64603fe9568d883331                         | 7e969132fc656148b97b6a2ee8bc83c1
-  4 | 4e3c2e4cb7542a45173a8dac939ddc4bc75202e342ebc769b0f5da2f | 8ef30f44c65480d12b650ab6b2b04245
-(4 rows)
+ERROR:  invalid byte sequence for encoding "UTF8": 0xf7 0xf0 0xcc 0x82
 ```
 
-Observe que as linhas dois e três contêm valores truncados. Isso ocorre porque
-o PostgreSQL depende de strings terminadas em nul e não oferece suporte a nuls em suas
-strings.
+Um digest contém bytes arbitrários, que raramente formam texto válido. O PostgreSQL também
+reserva o caractere nul, de modo que uma coluna [TEXT] nunca consegue ler uma string do ClickHouse que o contenha.
 
 A tentativa de inserir valores binários em colunas [TEXT] será bem-sucedida e funcionará
 conforme esperado:
@@ -1122,87 +1227,273 @@ Mas lê-los como [BYTEA] não funcionará:
 (4 rows)
 ```
 
+Uma coluna `FixedString(N)` preenche valores curtos com bytes nulos. Uma coluna de texto
+descarta esse preenchimento final, enquanto uma coluna [BYTEA] preserva todos os bytes.
+
 <Tip>
   Em geral, use colunas [TEXT] apenas para strings codificadas e colunas [BYTEA]
   apenas para dados binários, e nunca alterne entre elas.
 </Tip>
 
-<div id="function-and-operator-reference">
-  ## Referência de funções e operadores
-</div>
+### Tipos compostos {#composite-types}
 
-<div id="functions">
-  ### Funções
-</div>
+#### Array {#array}
 
-Essas funções fornecem a interface para executar consultas em um banco de dados ClickHouse.
+Os [Array]s do ClickHouse são mapeados diretamente para arrays do PostgreSQL, com semântica
+equivalente. A principal diferença é que, no Postgres, arrays multidimensionais precisam
+ter expressões de array com dimensões correspondentes. Tentar ler um
+array do ClickHouse com dimensões diferentes, como `[[1], [2,3]]`,
+gera um erro.
 
-<div id="clickhouse_raw_query">
-  #### `clickhouse_raw_query`
-</div>
-
-<Warning>
-  Obsoleta: `clickhouse_raw_query()` emite um aviso de descontinuação e será
-  removida no próximo lançamento. Use [`clickhouse_query`](#clickhouse_query) para
-  ler linhas e [`clickhouse_perform`](#clickhouse_perform) para executar instruções
-  que não retornam nenhum valor. Ambas reutilizam o driver, as credenciais, o banco de
-  dados e o cache de conexão de um servidor configurado, em vez de uma string de conexão ad hoc.
-</Warning>
+O acesso por índice de array faz pushdown quando apropriado, inclusive o acesso
+por índice multidimensional. Exemplos:
 
 ```sql
-SELECT clickhouse_raw_query(
-    'CREATE TABLE t1 (x String) ENGINE = Memory',
-    'host=localhost port=8123'
-);
+SELECT * FROM things where tags[1] = 'foo';
+SELECT * FROM things where pairs[1][2] = 'bar';
 ```
 
-Conecte-se a um serviço ClickHouse, execute uma única consulta e desconecte-se. O segundo argumento opcional especifica uma string de
-conexão cujo padrão é `host=localhost port=8123`. Os parâmetros de conexão
-compatíveis são:
-
-* `driver`: O driver de conexão a usar, &quot;http&quot; ou &quot;binary&quot;; o padrão é &quot;http&quot;
-* `host`: O host ao qual se conectar; obrigatório.
-* `port`: A porta à qual se conectar. O padrão é `8123` para o driver &quot;http&quot; ou
-  `9000` para o driver &quot;binary&quot;, mudando para `8443` ou `9440`, respectivamente,
-  quando `host` é um host do ClickHouse Cloud
-* `dbname`: O nome do banco de dados ao qual se conectar.
-* `username`: O nome de usuário com o qual se conectar; o padrão é `default`
-* `password`: A senha usada para autenticação; o padrão é não usar senha
-
-Ambos os drivers retornam linhas separadas por tabulação (nulos como `\N`), mas suas
-representações de valores diferem: o driver &quot;http&quot; retorna literalmente a formatação
-TSV do próprio ClickHouse, enquanto o driver &quot;binary&quot; passa cada valor pela função de
-saída do PostgreSQL.
-
-Por padrão, nenhuma role tem acesso `EXECUTE` a esta função; considere [GRANT] conceder
-acesso somente a roles que realmente precisem executar consultas ad hoc no ClickHouse,
-por exemplo, uma role administrativa dedicada do ClickHouse:
-
-Útil para consultas que não retornam registros, mas as consultas que retornam valores
-serão retornadas como um único valor de texto:
+Fatiamentos de array também fazem pushdown por meio da função [arraySlice], embora
+o acesso a fatiamentos multidimensionais ainda não seja compatível:
 
 ```sql
-SELECT clickhouse_raw_query(
-    'SELECT schema_name, schema_owner from information_schema.schemata',
-    'host=localhost port=8123'
-);
+SELECT id, vals FROM t1 WHERE vals[1:2] = ARRAY[10,20];
+SELECT id, vals FROM t1 WHERE vals[1:2][2] = 20; -- currently fails
 ```
 
-```sql
-      clickhouse_raw_query
----------------------------------
- INFORMATION_SCHEMA      default+
- default default                +
- git     default                +
- information_schema      default+
- system  default                +
+#### Map {#map}
 
+O PostgreSQL não oferece nenhum tipo correspondente ao tipo [Map] do ClickHouse.
+Por isso, o pg&#95;clickhouse mapeia colunas [Map] para `text[][]`, em que cada par
+chave-valor é representado como um array próprio. O [IMPORT FOREIGN SCHEMA](#import-foreign-schema) utiliza
+esse mapeamento. Também é possível fazer `INSERT` de maps como arrays. Por exemplo:
+
+```sql
+-- Create ClickHouse table with Map column.
+CALL clickhouse_perform('ch_srv', $$
+    CREATE TABLE maps (
+        c1 Int32,
+        c2 Map(String, Int64)
+    ) ENGINE = MergeTree ORDER BY (c1);
+$$);
+
+-- Import text[][] column, then insert two pairs.
+IMPORT FOREIGN SCHEMA ch LIMIT TO (maps) FROM SERVER ch_srv INTO public;
+INSERT INTO maps VALUES (1, ARRAY[['a', '1'], ['b', '2']]);
+```
+
+```pgsql
+try=# SELECT * FROM maps;
+ c1 |      c2
+----+---------------
+  1 | {{a,1},{b,2}}
 (1 row)
 ```
 
-<div id="clickhouse_server_version">
-  #### `clickhouse_server_version`
-</div>
+Cada array aninhado deve conter exatamente dois valores de texto. Valores incompatíveis
+com os tipos de chave ou de valor correspondentes no ClickHouse geram um erro.
+
+<Note>
+  Inserir um `Map` requer o driver `binary`, que obtém os tipos de coluna
+  do servidor ClickHouse. O driver `http` não faz isso e, por isso, não dispõe das
+  informações necessárias para formatar e inserir o valor adequado.
+</Note>
+
+#### Tuple {#tuple}
+
+Da mesma forma, colunas [Tuple] do ClickHouse são mapeadas para `text[]` e aceitam `INSERT`s
+por meio do driver binário. `IMPORT FOREIGN SCHEMA` emite um `NOTICE` sempre que
+realiza esse tipo de mapeamento.
+
+#### Nested {#nested}
+
+Por padrão, o ClickHouse divide uma coluna `Nested` em uma coluna `Array` por
+campo (`flatten_nested=1`). O `IMPORT FOREIGN SCHEMA` lê essas colunas do
+catálogo `system.columns` do ClickHouse e cria colunas de array separadas no PostgreSQL,
+preservando nomes com ponto, como `items.a` e `items.b`. Por exemplo,
+considere esta tabela estrangeira:
+
+```sql
+-- Create ClickHouse table with flattened Nested column.
+CALL clickhouse_perform('ch_srv', $$
+    CREATE TABLE ch.nests (
+        c1 Int32,
+        c2 Nested(id Int64, name String)
+    ) ENGINE = MergeTree ORDER BY (c1)
+$$);
+
+-- Import text[][] column, then insert two pairs.
+IMPORT FOREIGN SCHEMA ch LIMIT TO (nests) FROM SERVER ch_srv INTO public;
+```
+
+O schema importado tem três colunas em vez de duas:
+
+```
+                   Foreign table "public.nests"
+ Column  |   Type   | Collation | Nullable | Default | FDW options
+---------+----------+-----------+----------+---------+-------------
+ c1      | integer  |           | not null |         |
+ c2.id   | bigint[] |           | not null |         |
+ c2.name | text[]   |           | not null |         |
+```
+
+Consulte as colunas aninhadas colocando os nomes das colunas entre aspas duplas, por exemplo:
+
+```sql
+SELECT ci, "c2.id" FROM nests;
+```
+
+E filtrar valores em uma cláusula `WHERE` usando os recursos comuns de arrays,
+incluindo a sintaxe de subscrito de array:
+
+```sql
+SELECT * FROM nests
+ WHERE "c2.id[2]" = '2' OR '12' = ANY("c2.id");
+```
+
+Uma coluna [Nested] criada com `flatten_nested=0` é mapeada para um array com um
+item para cada linha aninhada. Cada item do array contém os valores dessa linha:
+
+```sql
+-- Create ClickHouse table with unflattened Nested column.
+CALL clickhouse_perform('ch_srv', $$
+    CREATE TABLE nests (
+        c1 Int32,
+        c2 Nested(id Int64, name String)
+    ) ENGINE = MergeTree ORDER BY (c1) SETTINGS flatten_nested=0
+$$);
+
+-- Import text[][] column, then insert two pairs.
+IMPORT FOREIGN SCHEMA ch LIMIT TO (nests) FROM SERVER ch_srv INTO public;
+```
+
+Agora, o schema resultante é:
+
+```
+                  Foreign table "public.nests"
+ Column |  Type   | Collation | Nullable | Default | FDW options
+--------+---------+-----------+----------+---------+-------------
+ c1     | integer |           | not null |         |
+ c2     | text[]  |           | not null |         |
+```
+
+Monte os registros aninhados em um array bidimensional, com valores de texto formatados
+de acordo com cada tipo definido pela coluna do ClickHouse. Para
+`c2 Nested(id Int64, name String)` neste exemplo, ficaria assim:
+
+```sql
+INSERT INTO nests
+VALUES (1, ARRAY[['42', 'Arthur'], ['99', 'Barbara']]);
+```
+
+No entanto, o pushdown de colunas `text[][]` para tipos Nested falha:
+
+```pgsql
+SELECT * FROM nests WHERE c2[1][1] = '42`
+ERROR:  pg_clickhouse: DB::Exception: First argument for function 'arrayElement' must be array, got 'Tuple(serial UInt32, order_id String)' instead
+```
+
+Isso ocorre porque o pg&#95;clickhouse não consegue distinguir uma coluna de array de texto mapeada para uma
+coluna de array do ClickHouse de uma mapeada para uma coluna Nested e, portanto, não consegue reescrevê-la
+na sintaxe Nested do ClickHouse.
+
+No entanto, um array de um tipo composto correspondente também pode mapear esses itens (consulte
+[Mapeamentos manuais de tipos](#manual-type-mappings) para mais detalhes). Nesse caso,
+o pushdown funciona desde que os nomes dos campos do tipo composto sejam idênticos aos nomes dos campos
+do Nested:
+
+```sql
+SELECT * FROM nests WHERE c2[1].id = 42;
+```
+
+### Mapeamentos manuais de tipos {#manual-type-mappings}
+
+`IMPORT FOREIGN SCHEMA` usa tipos genéricos do PostgreSQL. Por exemplo,
+considere uma tabela do ClickHouse com colunas [Enum], [Tuple], `Map` e
+[Nested] não achatadas (`flatten_nested = 0`), como:
+
+```sql
+CALL clickhouse_perform('ch_srv', $$
+    CREATE TABLE events (
+      id     UInt32,
+      status Enum8('new' = 1, 'done' = 2),
+      point  Tuple(Int32, Int32),
+      labels Map(String, Int64),
+      items  Nested(id Int32, name String)
+    ) ORDER BY id SETTINGS flatten_nested = 0
+$$);
+
+CALL clickhouse_perform('ch_srv', $$
+    INSERT INTO events
+    VALUES(1, 'new', tuple(3, 4), {'k1': 5, 'k2': 6}, [tuple(100, 'xx')])
+$$);
+```
+
+Para preservar a estrutura ou restringir os valores, defina tipos compostos ou enum
+do PostgreSQL e crie uma tabela estrangeira manualmente:
+
+```sql
+CREATE TYPE event_status AS ENUM ('new', 'done');
+CREATE TYPE event_point AS (x integer, y integer);
+CREATE TYPE event_label AS (key text, value bigint);
+CREATE TYPE event_item AS (id integer, name text);
+
+CREATE FOREIGN TABLE events (
+    id     bigint,
+    status event_status,
+    point  event_point,
+    labels event_label[],
+    items  event_item[]
+) SERVER clickhouse_srv;
+```
+
+<Tip>
+  Sempre use labels de enum e nomes de campos de tipos compostos idênticos aos
+  labels de enum do ClickHouse e aos nomes de campos de `Nested` ou `Tuple`, para garantir que
+  o pushdown especifique os nomes corretos.
+</Tip>
+
+A ordem e os tipos dos campos compostos devem corresponder às declarações do ClickHouse. As chaves
+e os valores de [Map] passam a ser o primeiro e o segundo campos, respectivamente (`key` e `value`, neste
+caso). `Nested` e `Map` passam a ser arrays de compostos, enquanto `Tuple`
+se torna um único valor composto:
+
+```pgsql
+SELECT * FROM events ORDER BY id;
+ id | status | point |       labels        |          items
+----+--------+-------+---------------------+-------------------------
+  1 | new    | (3,4) | {"(k1,5)","(k2,6)"} | {"(100,xx)","(101,yy)"}
+(1 row)
+```
+
+Claro que você também pode usar os nomes dos campos do tipo composto, tanto em uma lista `SELECT`:
+
+```pgsql
+SELECT (point).x,       (point).y,
+       (labels[1]).key, (labels[1]).value,
+       (items[1]).id,   (items[1]).name
+  FROM events ORDER BY id;
+ x | y | key | value | id  | name
+---+---+-----+-------+-----+------
+ 3 | 4 | k1  |     5 | 100 | xx
+```
+
+E também para tipos [Nested] em uma cláusula `WHERE` --- desde que os nomes dos campos sejam
+idênticos:
+
+```sql
+SELECT * FROM events WHERE items[1].name = 'xx';
+```
+
+Ainda não há suporte para `INSERT` usando esses tipos compostos.
+
+## Referência de funções e operadores {#function-and-operator-reference}
+
+### Funções {#functions}
+
+Essas funções fornecem a interface para executar consultas em um banco de dados ClickHouse.
+
+#### `clickhouse_server_version` {#clickhouse_server_version}
 
 ```sql
 SELECT clickhouse_server_version('taxi_srv');
@@ -1223,9 +1514,7 @@ Lê a versão do handshake da conexão do protocolo nativo ou, via HTTP,
 por meio de uma única consulta `SELECT version()`, e a armazena em cache durante toda a
 vida da conexão.
 
-<div id="clickhouse_query">
-  #### `clickhouse_query`
-</div>
+#### `clickhouse_query` {#clickhouse_query}
 
 ```sql
 SELECT * FROM clickhouse_query(
@@ -1254,9 +1543,7 @@ da função.
 GRANT EXECUTE ON FUNCTION clickhouse_query(text, text) TO ch_admin;
 ```
 
-<div id="clickhouse_perform">
-  #### `clickhouse_perform`
-</div>
+#### `clickhouse_perform` {#clickhouse_perform}
 
 ```sql
 CALL clickhouse_perform(
@@ -1268,8 +1555,8 @@ CALL clickhouse_perform(
 Execute uma instrução em um servidor estrangeiro já configurado e descarte
 qualquer resultado. Use-a para instruções que não retornam linhas, como DDL, para as quais
 [`clickhouse_query`](#clickhouse_query) não tem formato de resultado a declarar. Ela
-resolve o servidor da mesma forma que `clickhouse_query`, reutilizando o `driver`,
-as credenciais, o banco de dados e o cache de conexão.
+resolve o servidor da mesma forma que `clickhouse_query`, reutilizando o
+`driver`, as credenciais, o banco de dados e o cache de conexão.
 
 Por ser um procedimento, deve ser invocada com [CALL], e não com `SELECT`, e não retorna
 linhas. Nenhuma role tem acesso a `EXECUTE` por padrão; conceda `GRANT` a uma role para permitir o
@@ -1279,9 +1566,7 @@ uso do procedimento.
 GRANT EXECUTE ON PROCEDURE clickhouse_perform(text, text) TO ch_admin;
 ```
 
-<div id="pushdown-functions">
-  ### Funções com pushdown
-</div>
+### Funções com pushdown {#pushdown-functions}
 
 pg&#95;clickhouse faz pushdown de um subconjunto das funções nativas do PostgreSQL usadas
 em condicionais (cláusulas `HAVING` e `WHERE`). Esse subconjunto corresponde aos equivalentes
@@ -1290,7 +1575,7 @@ no ClickHouse, da seguinte forma:
 * `abs`: [abs](/pt-BR/reference/functions/regular-functions/arithmetic-functions#abs)
 * `factorial`: [factorial](/pt-BR/reference/functions/regular-functions/math-functions#factorial)
 * `mod` (int2/int4/int8/numeric): [módulo](/pt-BR/reference/functions/regular-functions/arithmetic-functions#modulo)
-* `pow` &amp; `power` (float8/numeric): [pow](/pt-BR/reference/functions/regular-functions/math-functions#pow)
+* `pow` &amp; `power` (float8, não numeric): [pow](https://clickhouse.com/docs/sql-reference/functions/math-functions#pow)
 * `round`: [round](/pt-BR/reference/functions/regular-functions/rounding-functions#round)
 * `sin`, `cos`, `tan`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `asinh`, `degrees`, `radians`, `pi`: [funções matemáticas do ClickHouse](/pt-BR/reference/functions/regular-functions/math-functions)
   com o mesmo nome. `asin`, `acos`, `atanh`, `acosh` não são delegadas: o PG
@@ -1329,7 +1614,10 @@ no ClickHouse, da seguinte forma:
 * `array_append`: [arrayPushBack](/pt-BR/reference/functions/regular-functions/array-functions#arrayPushBack)
 * `array_prepend`: [arrayPushFront](/pt-BR/reference/functions/regular-functions/array-functions#arrayPushFront)
 * `array_remove`: [arrayRemove](/pt-BR/reference/functions/regular-functions/array-functions#arrayRemove)
-* `cardinality`: [length](reference/functions/regular-functions/array-functions#length)
+* `cardinality`: [arrayFlattenedLength](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayFlattenedLength)
+  no ClickHouse 26.9+; caso contrário,
+  [length](https://clickhouse.com/docs/sql-reference/functions/array-functions#length),
+  que conta apenas o array externo
 * `array_length(array, 1)`: `nullIf(length(array), 0)`
 * `array_length` &amp; `cardinality`: [comprimento](/pt-BR/reference/functions/regular-functions/array-functions#length)
 * `array_to_string`: [arrayStringConcat](/pt-BR/reference/functions/regular-functions/array-functions#arrayStringConcat)
@@ -1362,6 +1650,8 @@ no ClickHouse, da seguinte forma:
 * `regexp_replace`: [replaceRegexpOne](/pt-BR/reference/functions/regular-functions/string-replace-functions#replaceRegexpOne) ou [replaceRegexpOne](/pt-BR/reference/functions/regular-functions/string-replace-functions#replaceRegexpAll) quando a flag `g` estiver presente
 * `regexp_split_to_array`: [splitByRegexp](/pt-BR/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)
 * `md5`: [MD5](/pt-BR/reference/functions/regular-functions/hash-functions#MD5)
+* `sha224`, `sha256`, `sha384` e `sha512`: as
+  [funções SHA](https://clickhouse.com/docs/sql-reference/functions/hash-functions#sha224) correspondentes do ClickHouse
 * `encode(bytea, fmt)` quando `fmt` é uma string constant (sem distinção entre maiúsculas e minúsculas):
   * `encode(bytea, 'hex')`: [hex](/pt-BR/reference/functions/regular-functions/encoding-functions#hex)
     envolvido por [lower](/pt-BR/reference/functions/regular-functions/string-functions#lower),
@@ -1403,9 +1693,7 @@ no ClickHouse, da seguinte forma:
 * `CURRENT_ROLE`: Passado como valor de uma função do PostgreSQL.
 * `SESSION_USER`: Passado como valor de uma função do PostgreSQL.
 
-<div id="pushdown-operators">
-  ### Operadores de pushdown
-</div>
+### Operadores de pushdown {#pushdown-operators}
 
 * Fatiamento de Array (`arr[L:U]`): [arraySlice](/pt-BR/reference/functions/regular-functions/array-functions#arraySlice)
 * `@>` (array contém): [hasAll](/pt-BR/reference/functions/regular-functions/array-functions#hasAll)
@@ -1418,32 +1706,29 @@ no ClickHouse, da seguinte forma:
 * `->>` (extrai elemento de JSON/JSONB como texto): [sintaxe de subcoluna](/pt-BR/reference/data-types/newjson#reading-json-paths-as-sub-columns)
 * `->` (extrai JSON/JSONB): [toJSONString](/pt-BR/reference/functions/regular-functions/json-functions#toJSONString) + [sintaxe de subcoluna](/pt-BR/reference/data-types/newjson#reading-json-paths-as-sub-columns)
 
-<div id="in-and-null-semantics">
-  ### Semântica de IN e NULL
-</div>
+### Semântica de IN e NULL {#in-and-null-semantics}
 
 O ClickHouse avalia `IN` com lógica de dois valores: quando a busca não encontra
 correspondência, retorna `0`, mesmo que haja um NULL envolvido, enquanto o PostgreSQL retorna
 NULL. Para preservar a semântica do PostgreSQL, o pg&#95;clickhouse faz pushdown incondicionalmente da família
-`IN` sobre uma lista ou array constante (`IN`, `NOT IN`, `= ANY`, `= ALL`,
-`<> ANY`, `<> ALL`): usa a forma nativa ou mais econômica quando consegue
-provar que nem o valor pesquisado nem um elemento do array podem ser NULL, ou, caso contrário,
-uma forma `CASE` com proteções, que verifica valores NULL em tempo de execução e
-calcula a resposta exata de três valores do PostgreSQL (TRUE, FALSE, NULL) em
-todos os contextos, inclusive em posições de valor, como em uma lista `SELECT` ou
-em `GROUP BY`.
+`IN` sobre uma lista ou array constante (`IN`, `NOT IN`, `= ANY`, `= ALL`, `<>
+ANY`, `<> ALL`): usa a forma nativa ou mais econômica quando consegue provar
+que nem o valor pesquisado nem um elemento do array podem ser NULL, ou, caso contrário, uma forma `CASE` com proteções,
+que verifica valores NULL em tempo de execução e calcula
+a resposta exata de três valores do PostgreSQL (TRUE, FALSE, NULL) em todos os contextos,
+inclusive em posições de valor, como em uma lista `SELECT` ou em `GROUP BY`.
 
 Um filtro `NOT IN (SELECT ...)` sobre colunas Nullable também recebe pushdown,
 sendo reconvertido com proteções compensatórias que preservam o comportamento do PostgreSQL: um conjunto
-que contém um NULL desqualifica todas as linhas, e um valor pesquisado NULL passa apenas
-contra um conjunto vazio. Cada proteção é omitida quando uma declaração `NOT NULL`
-prova que ela é desnecessária. Ao contrário das formas de array acima, essa proteção se
-aplica somente em uma condição de filtro simples (ou sob `NOT`); ainda não fazemos pushdown de
-`IN (SELECT ...)` (em uma posição de valor), nem de corpos de subconsulta
-agrupados ou agregados. Declarar colunas como `NOT NULL` maximiza o pushdown, pois permite enviar a forma mais econômica
-sem proteções; [IMPORT FOREIGN SCHEMA] faz isso automaticamente para
-colunas do ClickHouse que não são `Nullable`. A prova considera constantes não NULL,
-colunas `NOT NULL` e aritmética básica (`+`, `-`, `*`, `-` unário) sobre elas.
+que contém um NULL desqualifica todas as linhas, e um valor pesquisado NULL passa apenas contra
+um conjunto vazio. Cada proteção é omitida quando uma declaração `NOT NULL` prova que ela é
+desnecessária. Ao contrário das formas de array acima, essa proteção se aplica somente em uma condição de
+filtro simples (ou sob `NOT`); ainda não fazemos pushdown de `IN (SELECT ...)`
+(em uma posição de valor), nem de corpos de subconsulta agrupados ou agregados. Declarar
+colunas como `NOT NULL` maximiza o pushdown, pois permite enviar a forma mais econômica
+sem proteções; [IMPORT FOREIGN SCHEMA] faz isso automaticamente para colunas do ClickHouse que não são `Nullable`.
+A prova considera constantes não NULL, colunas `NOT NULL`
+e aritmética básica (`+`, `-`, `*`, `-` unário) sobre elas.
 
 Essas regras pressupõem o valor padrão do ClickHouse `transform_null_in = 0`, que
 o pg&#95;clickhouse define em cada consulta por meio do valor padrão do
@@ -1451,25 +1736,19 @@ parâmetro [`pg_clickhouse.session_settings`](#pg_clickhousesession_settings),
 impedindo que um perfil de servidor do ClickHouse o altere silenciosamente. Definir
 `transform_null_in = 1` quebra a semântica de todos os `IN` com pushdown.
 
-<div id="custom-functions">
-  ### Funções personalizadas
-</div>
+### Funções personalizadas {#custom-functions}
 
 Estas funções personalizadas criadas por pg&#95;clickhouse permitem o pushdown de consultas externas para determinadas funções do ClickHouse que não têm equivalentes no PostgreSQL. Se
 alguma dessas funções não puder ser processada via pushdown, será gerada uma exceção.
 
 * [dictGet](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictget-dictgetordefault-dictgetornull)
 
-<div id="extension-pushdown">
-  ### Pushdown de extensões
-</div>
+### Pushdown de extensões {#extension-pushdown}
 
 O pg&#95;clickhouse reconhece funções de algumas extensões principais e de terceiros,
 fazendo o pushdown delas para seus equivalentes no ClickHouse.
 
-<div id="re2">
-  #### re2
-</div>
+#### re2 {#re2}
 
 Todos os operadores e funções da [extensão re2] são convertidos 1:1 para o ClickHouse:
 
@@ -1487,26 +1766,27 @@ Todos os operadores e funções da [extensão re2] são convertidos 1:1 para o C
 * `re2multimatchanyindex` → [multiMatchAnyIndex](/pt-BR/reference/functions/regular-functions/string-search-functions#multiMatchAnyIndex)
 * `re2multimatchallindices` → [multiMatchAllIndices](/pt-BR/reference/functions/regular-functions/string-search-functions#multiMatchAllIndices)
 
-<div id="intarray">
-  #### intarray
-</div>
+#### intarray {#intarray}
 
 Uma função [intarray] pode fazer pushdown para o ClickHouse:
 
 * `idx` → [indexOf](/pt-BR/reference/functions/regular-functions/array-functions#indexOf)
 
-<div id="fuzzystrmatch">
-  #### fuzzystrmatch
-</div>
+#### fuzzystrmatch {#fuzzystrmatch}
 
 Duas funções [fuzzystrmatch] podem ser executadas no ClickHouse:
 
 * `soundex`: [soundex](/pt-BR/reference/functions/regular-functions/string-functions#soundex)
 * `levenshtein` (2 argumentos): [editDistanceUTF8](/pt-BR/reference/functions/regular-functions/string-functions#editDistanceUTF8)
 
-<div id="pushdown-casts">
-  ### Casts com pushdown
-</div>
+#### pgcyrpto {#pgcrypto}
+
+* `digest(text, text)` e `digest(bytea, text)`: [função de hash](https://clickhouse.com/docs/sql-reference/functions/hash-functions)
+  correspondente do ClickHouse
+  quando o algoritmo é uma constante `md5`, `sha1`, `sha224`,
+  `sha256`, `sha384` ou `sha512` (sem diferenciar maiúsculas de minúsculas).
+
+### Casts com pushdown {#pushdown-casts}
 
 O pg&#95;clickhouse faz pushdown de casts como `CAST(x AS bigint)` para
 tipos de dados compatíveis. Para tipos incompatíveis, o pushdown falha; se `x`, neste
@@ -1522,9 +1802,7 @@ executadas com pushdown.
 * [toUInt64](/pt-BR/reference/functions/regular-functions/type-conversion-functions#touint64)
 * [toUInt128](/pt-BR/reference/functions/regular-functions/type-conversion-functions#touint128)
 
-<div id="pushdown-aggregates">
-  ### Funções de agregação com pushdown
-</div>
+### Funções de agregação com pushdown {#pushdown-aggregates}
 
 Estas funções de agregação do PostgreSQL oferecem suporte a pushdown para o ClickHouse.
 
@@ -1549,9 +1827,7 @@ Estas funções de agregação do PostgreSQL oferecem suporte a pushdown para o 
 * [var&#95;op](/pt-BR/reference/functions/aggregate-functions/varPop)
 * [var&#95;samp /variance](/pt-BR/reference/functions/aggregate-functions/varSamp)
 
-<div id="custom-aggregates">
-  ### Agregações personalizadas
-</div>
+### Agregações personalizadas {#custom-aggregates}
 
 Estas funções de agregação personalizadas criadas por pg&#95;clickhouse fornecem
 pushdown de consultas externas para algumas funções de agregação do ClickHouse sem
@@ -1569,9 +1845,7 @@ será gerada uma exceção.
 * [quantile](/pt-BR/reference/functions/aggregate-functions/quantile)
 * [quantileExact](/pt-BR/reference/functions/aggregate-functions/quantileExact)
 
-<div id="pushdown-ordered-set-aggregates">
-  ### Agregações ordered-set com pushdown
-</div>
+### Agregações ordered-set com pushdown {#pushdown-ordered-set-aggregates}
 
 Estas [funções de agregação de conjunto ordenado] são mapeadas para [funções de agregação
 paramétricas] do ClickHouse, passando o *argumento direto* como parâmetro e
@@ -1595,7 +1869,7 @@ não têm suporte e gerarão um erro.
 * `percentile_disc(double)`: [quantileExactLow](https://clickhouse.com/docs/reference/functions/aggregate-functions/quantileExactLow)
 * `percentile_disc(double[])`: [quantilesExactLow](https://clickhouse.com/docs/reference/functions/aggregate-functions/quantilesExactLow)
 
-### Agregações ordered-set personalizadas
+### Agregações ordered-set personalizadas {#custom-ordered-set-aggregates}
 
 Estas [funções de agregação de conjunto ordenado] personalizadas, criadas pelo pg&#95;clickhouse,
 oferecem pushdown de consultas externas para determinadas [funções de agregação
@@ -1605,9 +1879,7 @@ exceção.
 * `quantile(double)`: [quantile](/pt-BR/reference/functions/aggregate-functions/quantile)
 * `quantileExact(double)`: [quantileExact](/pt-BR/reference/functions/aggregate-functions/quantileExact)
 
-<div id="custom-ordered-set-aggregates">
-  ### Agregados personalizados de conjunto ordenado
-</div>
+### Agregados personalizados de conjunto ordenado {#custom-ordered-set-aggregates-2}
 
 Estas [funções de agregação de conjunto ordenado] personalizadas, criadas pelo pg&#95;clickhouse,
 permitem o pushdown de consultas externas para funções de [agregação paramétricas] selecionadas do ClickHouse.
@@ -1617,13 +1889,11 @@ exceção.
 * [quantile](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantile)
 * [quantileExact](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantileexact)
 
-<div id="pushdown-window-functions">
-  ### Funções de janela com pushdown
-</div>
+### Funções de janela com pushdown {#pushdown-window-functions}
 
-Estas [funções de janela] do PostgreSQL são executadas no ClickHouse com cláusulas `OVER
-(PARTITION BY ... ORDER BY ...)`, incluindo especificações de frame quando
-aplicável.
+Estas [funções de janela] do PostgreSQL fazem pushdown para o ClickHouse com cláusulas
+`OVER (PARTITION BY ... ORDER BY ...)`, incluindo especificações de frame
+quando aplicável.
 
 * [row&#95;number](https://clickhouse.com/docs/reference/functions/window-functions/row_number)
 * [rank](https://clickhouse.com/docs/reference/functions/window-functions/rank)
@@ -1642,13 +1912,9 @@ As funções de ranking (`row_number`, `rank`, `dense_rank`, `ntile`, `cume_dist
 `percent_rank`) omitem a cláusula de frame durante o pushdown porque o ClickHouse
 rejeita especificações de frame nessas funções.
 
-<div id="compatibility-notes">
-  ## Notas de compatibilidade
-</div>
+## Notas de compatibilidade {#compatibility-notes}
 
-<div id="regular-expressions">
-  ### Expressões regulares
-</div>
+### Expressões regulares {#regular-expressions}
 
 Embora o pg&#95;clickhouse faça pushdown de expressões regulares para equivalentes no ClickHouse
 quando [pg&#95;clickhouse.pushdown&#95;regex](#pg_clickhousepushdown_regex) é true (o
@@ -1743,25 +2009,21 @@ que expressões regulares do Postgres façam pushdown para o ClickHouse e usar a
 [extensão re2], para a qual o pg&#95;clickhouse oferece suporte a [pushdown direto](#re2) de
 expressões regulares [RE2] compatíveis com o ClickHouse.
 
-<div id="to_char">
-  ### `to_char()`
-</div>
+### `to_char()` {#to_char}
 
-O [`to_char()`] do PostgreSQL para `timestamp` e `timestamp with time zone`
-só é enviado ao ClickHouse [formatDateTime] quando o argumento de formato
-é uma constante de string não `NULL` em que cada palavra-chave do PostgreSQL tem um
-equivalente idêntico byte a byte no ClickHouse. Se o formato for dinâmico
-(não for uma `Const`) ou contiver qualquer palavra-chave ou modificador sem suporte, a
-chamada recorre à avaliação local no PostgreSQL — o pushdown nunca é
-tentado com uma tradução parcial, para que a saída permaneça compatível com o PostgreSQL.
+O [`to_char()`] do PostgreSQL para `timestamp` e `timestamp with time zone` só
+faz pushdown para o ClickHouse [formatDateTime] quando o argumento de formato é uma
+constante de string não `NULL` em que cada palavra-chave do PostgreSQL tem um
+equivalente idêntico byte a byte no ClickHouse. Se o formato for dinâmico ou contiver qualquer
+palavra-chave ou modificador sem suporte, a chamada recorre à avaliação local no
+PostgreSQL. O pg&#95;clickhouse nunca faz pushdown de uma tradução parcial, para que a saída
+permaneça compatível.
 
 As variantes de `to_char()` com dois argumentos aplicadas a `numeric`, `interval` e outros
-tipos que não sejam timestamp nunca usam pushdown; o [formatDateTime] do ClickHouse apenas
-formata valores de data e hora.
+tipos que não sejam timestamp nunca usam pushdown; o [formatDateTime] do ClickHouse apenas formata
+valores de data e hora.
 
-<div id="translated-keywords">
-  #### Palavras-chave traduzidas
-</div>
+#### Palavras-chave traduzidas {#translated-keywords}
 
 | PostgreSQL                 | ClickHouse | Significado                                             |
 | -------------------------- | ---------- | ------------------------------------------------------- |
@@ -1779,24 +2041,18 @@ formata valores de data e hora.
 | `Dy`                       | `%a`       | nome abreviado do dia da semana, por exemplo, `Mon`     |
 | `AM`, `PM`                 | `%p`       | indicador de meridiano, sempre em maiúsculas            |
 
-<div id="quoted-text-and-literals">
-  #### Texto entre aspas e literais
-</div>
+#### Texto entre aspas e literais {#quoted-text-and-literals}
 
-O texto entre `"..."` é passado literalmente, com qualquer `%` literal
-duplicado como `%%` para escapar o prefixo de especificador do ClickHouse. Um `\"` fora das
-aspas também é passado como um literal `"`. Dentro de `"..."`, a barra invertida
-escapa apenas `"`; outras sequências com barra invertida são tratadas como texto literal.
+O texto entre `"..."` é passado literalmente, com qualquer `%` literal duplicado
+como `%%` para escapar o prefixo de especificador do ClickHouse. Um `\"` fora das aspas também
+é passado como um literal `"`. Dentro de `"..."`, a barra invertida escapa apenas `"`;
+outras sequências com barra invertida são tratadas como texto literal.
 
-<div id="authors">
-  ## Autores
-</div>
+## Autores {#authors}
 
 [David E. Wheeler](https://justatheory.com/)
 
-<div id="copyright">
-  ## Direitos autorais
-</div>
+## Direitos autorais {#copyright}
 
 Copyright (c) 2025-2026, ClickHouse
 
@@ -1820,7 +2076,7 @@ Copyright (c) 2025-2026, ClickHouse
 
 [CREATE SERVER]: https://www.postgresql.org/docs/current/sql-createserver.html "Documentação do PostgreSQL: CREATE SERVER"
 
-[CALL]: https://www.postgresql.org/docs/current/sql-call.html "Documentação do PostgreSQL: CALL"
+[database encoding]: https://www.postgresql.org/docs/current/multibyte.html "Documentação do PostgreSQL: Suporte a conjuntos de caracteres"
 
 [ALTER SERVER]: https://www.postgresql.org/docs/current/sql-alterserver.html "Documentação do PostgreSQL: ALTER SERVER"
 
@@ -1878,7 +2134,7 @@ Copyright (c) 2025-2026, ClickHouse
 
 [shared library preloading]: https://www.postgresql.org/docs/current/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-PRELOAD "Documentação do PostgreSQL: Pré-carregamento de biblioteca compartilhada"
 
-[funções de agregação ordered-set]: https://www.postgresql.org/docs/current/functions-aggregate.html#FUNCTIONS-ORDEREDSET-TABLE
+[funções de agregação de conjunto ordenado]: https://www.postgresql.org/docs/current/functions-aggregate.html#FUNCTIONS-ORDEREDSET-TABLE
 
 [funções de agregação paramétricas]: /reference/functions/aggregate-functions/parametric-functions
 
@@ -1898,24 +2154,28 @@ Copyright (c) 2025-2026, ClickHouse
 
 [GRANT]: https://www.postgresql.org/docs/current/sql-grant.html "Documentação do PostgreSQL: GRANT"
 
-[String]: /reference/data-types/string "Documentação do ClickHouse: String"
+[composite type]: https://www.postgresql.org/docs/current/rowtypes.html#ROWTYPES-DECLARING "Documentação do PostgreSQL: Declaração de tipos compostos"
 
-[TEXT]: https://www.postgresql.org/docs/current/datatype-character.html "Documentação do PostgreSQL: Tipos de caracteres"
+[CALL]: https://www.postgresql.org/docs/current/sql-call.html "Documentação do PostgreSQL: CALL"
 
-[window functions]: https://www.postgresql.org/docs/current/functions-window.html "Documentação do PostgreSQL: Funções de janela"
-
-[POSIX Regular Expressions]: https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-POSIX-REGEXP "Documentação do PostgreSQL: Expressões regulares POSIX"
-
-[Postgres flags]: https://www.postgresql.org/docs/current/functions-matching.html#POSIX-EMBEDDED-OPTIONS-TABLE "Documentação do PostgreSQL: Letras de opções embutidas do ARE"
-
-[RE2]: https://github.com/google/re2/wiki/Syntax "Sintaxe do RE2"
-
-[re2 extension]: https://github.com/ClickHouse/pg_re2 "pg_re2: funções de regex compatíveis com ClickHouse usando RE2"
-
-[intarray]: https://www.postgresql.org/docs/current/intarray.html "Documentação do PostgreSQL: intarray"
-
-[fuzzystrmatch]: https://www.postgresql.org/docs/current/fuzzystrmatch.html "Documentação do PostgreSQL: fuzzystrmatch"
-
-[`to_char()`]: https://www.postgresql.org/docs/current/functions-formatting.html "Documentação do PostgreSQL: Funções de formatação de tipos de dados"
-
-[formatDateTime]: /reference/functions/regular-functions/date-time-functions#formatDateTime "Documentação do ClickHouse: formatDateTime"
+[Array] https://clickhouse.com/docs/reference/data-types/array
+&quot;Documentação do ClickHouse: Array(T)&quot;
+[Map]: https://clickhouse.com/docs/sql-reference/data-types/map
+&quot;Documentação do ClickHouse: Map&quot;
+[Tuple]: https://clickhouse.com/docs/reference/data-types/tuple
+&quot;Documentação do ClickHouse: Tuple(T1, T2, ...)&quot;
+[Nested]: https://clickhouse.com/docs/sql-reference/data-types/nested-data-structures/nested
+&quot;Documentação do ClickHouse: Nested&quot;
+[Enum]: https://clickhouse.com/docs/reference/data-types/enum
+&quot;Documentação do ClickHouse: Enum&quot;
+[String]: /reference/data-types/string &quot;Documentação do ClickHouse: String&quot;
+[TEXT]: https://www.postgresql.org/docs/current/datatype-character.html &quot;Documentação do PostgreSQL: Tipos de caracteres&quot;
+[window functions]: https://www.postgresql.org/docs/current/functions-window.html &quot;Documentação do PostgreSQL: Funções de janela&quot;
+[POSIX Regular Expressions]: https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-POSIX-REGEXP &quot;Documentação do PostgreSQL: Expressões regulares POSIX&quot;
+[Postgres flags]: https://www.postgresql.org/docs/current/functions-matching.html#POSIX-EMBEDDED-OPTIONS-TABLE &quot;Documentação do PostgreSQL: Letras de opções embutidas do ARE&quot;
+[RE2]: https://github.com/google/re2/wiki/Syntax &quot;Sintaxe do RE2&quot;
+[re2 extension]: https://github.com/ClickHouse/pg&#95;re2 &quot;pg&#95;re2: funções de regex compatíveis com ClickHouse usando RE2&quot;
+[intarray]: https://www.postgresql.org/docs/current/intarray.html &quot;Documentação do PostgreSQL: intarray&quot;
+[fuzzystrmatch]: https://www.postgresql.org/docs/current/fuzzystrmatch.html &quot;Documentação do PostgreSQL: fuzzystrmatch&quot;
+[`to_char()`]: https://www.postgresql.org/docs/current/functions-formatting.html &quot;Documentação do PostgreSQL: Funções de formatação de tipos de dados&quot;
+[formatDateTime]: /reference/functions/regular-functions/date-time-functions#formatDateTime &quot;Documentação do ClickHouse: formatDateTime&quot;

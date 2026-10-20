@@ -180,6 +180,10 @@ timeout 10m clickhouse-client --query="SELECT 'Tables count:', count() FROM syst
     clickhouse stop --force
 )
 
+# A query can outlive the stress phase and hold its table locks until it ends (one that reads an unreachable S3
+# endpoint retries for tens of minutes). The replica restarts below need their tables exclusively, so cancel them.
+timeout 2m clickhouse-client --query "KILL QUERY WHERE 1 SYNC" ||:
+
 # Kill the mutations that the stress phase left unfinished, before the server is upgraded.
 #
 # Several tests deliberately start a mutation that can never succeed - `toUInt32` of a non-numeric
@@ -196,6 +200,18 @@ timeout 10m clickhouse-client --query="SELECT 'Tables count:', count() FROM syst
 # upgraded server nothing to resume retires the whole class at once, and makes the scan stricter: a
 # mutation error after the upgrade becomes an anomaly instead of an expected message to be filtered.
 echo "Kill the mutations left unfinished by the stress phase"
+
+# Killing a mutation leaves the MUTATE_PART entries that replicas queued or are still logging for it. The
+# replicas that may hold them are listed before the kill, for the drain after it.
+mutation_replicas=$(timeout 1m clickhouse-client --query "
+    SELECT DISTINCT base64Encode(database), base64Encode(table)
+    FROM system.replicas
+    WHERE (zookeeper_name, zookeeper_path) IN (
+        SELECT zookeeper_name, zookeeper_path FROM system.replicas WHERE (database, table) IN (
+            SELECT database, table FROM system.mutations WHERE NOT is_done
+            UNION ALL
+            SELECT database, table FROM system.replication_queue WHERE type = 'MUTATE_PART'))
+    FORMAT TSV" 2>> /test_output/undrained_mutation_errors.txt) || mutation_replicas=unknown
 
 timeout 1m clickhouse-client --query "
     SELECT database, table, mutation_id, command, parts_to_do, latest_fail_error_code_name, latest_fail_reason
@@ -319,10 +335,86 @@ else
     echo -e "Cannot count the mutations left unfinished by the stress phase$FAIL" >> /test_output/test_results.tsv
 fi
 
+# A MUTATE_PART entry of a killed mutation runs without commands and clones its source part, which fails the
+# checksum check after the upgrade where another replica had applied the mutation (a test stopped merges on this
+# replica only). Restarting the replicas listed above waits out their merge selection and drops the tests' stops,
+# as the upgrade restart would, so the old server runs these entries instead.
+drain_deadline=$((SECONDS + 180))
+
+function run_on_mutation_replicas()
+{
+    local encoded_database encoded_table database table failed=0
+    while IFS=$'\t' read -r encoded_database encoded_table
+    do
+        [ -n "$encoded_database" ] || continue
+        database=$(base64 -d <<< "$encoded_database")
+        table=$(base64 -d <<< "$encoded_table")
+        if [ "$SECONDS" -ge "$drain_deadline" ]
+        then
+            echo "The deadline passed before $database.$table" >> /test_output/undrained_mutation_errors.txt
+            return 1
+        fi
+        timeout 1m clickhouse-client --param_database="$database" --param_table="$table" --query "$1" \
+            2>> /test_output/undrained_mutation_errors.txt \
+            || { failed=1; echo "Failed on $database.$table" >> /test_output/undrained_mutation_errors.txt; }
+    done <<< "$mutation_replicas"
+    return $failed
+}
+
+drain_failed=0
+queued_mutation_entries=0
+if [ "$mutation_replicas" = unknown ]
+then
+    drain_failed=1
+elif [ -n "$mutation_replicas" ]
+then
+    # A restart returns after the first initialization attempt, whether it succeeded or not.
+    run_on_mutation_replicas "
+        SYSTEM RESTART REPLICA {database:Identifier}.{table:Identifier};
+        SELECT throwIf(count() != 1, 'The replica is missing or read-only after SYSTEM RESTART REPLICA')
+        FROM system.replicas WHERE database = {database:String} AND table = {table:String} AND NOT is_readonly
+        FORMAT Null" || drain_failed=1
+
+    # Only after the last restart can no replica log another MUTATE_PART for a killed mutation.
+    run_on_mutation_replicas "SYSTEM SYNC REPLICA {database:Identifier}.{table:Identifier} PULL" || drain_failed=1
+
+    wait_deadline=$((SECONDS + 60))
+    while :
+    do
+        # Read-only replicas count too: their queue survives into the upgraded server.
+        queued_mutation_entries=$(timeout 10s clickhouse-client --query "
+            SELECT count() FROM system.replication_queue WHERE type = 'MUTATE_PART'") \
+            || { drain_failed=1; break; }
+        if [ "$queued_mutation_entries" = 0 ] || [ "$SECONDS" -ge "$wait_deadline" ]
+        then
+            break
+        fi
+        sleep 1
+    done
+fi
+
+if [ "$drain_failed" != 0 ]
+then
+    echo -e "Cannot run the mutation entries left behind by the killed mutations (see undrained_mutation_errors.txt)$FAIL$(head_escaped /test_output/undrained_mutation_errors.txt)" >> /test_output/test_results.tsv
+fi
+if [ "$queued_mutation_entries" != 0 ]
+then
+    timeout 10s clickhouse-client --query "
+        SELECT queue.database, queue.table, queue.replica_name, replica.is_readonly, queue.new_part_name,
+            queue.num_tries, queue.last_exception, queue.postpone_reason
+        FROM system.replication_queue AS queue
+        LEFT JOIN system.replicas AS replica ON replica.database = queue.database AND replica.table = queue.table
+        WHERE queue.type = 'MUTATE_PART'
+        ORDER BY queue.database, queue.table, queue.new_part_name
+        FORMAT Vertical" > /test_output/undrained_mutation_entries.txt ||:
+fi
+
 # The reports are only interesting when there was something to kill, or something left after it
 [ -s /test_output/unfinished_mutations.txt ] || rm -f /test_output/unfinished_mutations.txt
 [ -s /test_output/unkilled_mutations.txt ] || rm -f /test_output/unkilled_mutations.txt
 [ -s /test_output/unkilled_mutation_errors.txt ] || rm -f /test_output/unkilled_mutation_errors.txt
+[ -s /test_output/undrained_mutation_entries.txt ] || rm -f /test_output/undrained_mutation_entries.txt
+[ -s /test_output/undrained_mutation_errors.txt ] || rm -f /test_output/undrained_mutation_errors.txt
 
 # A mutation submitted to the old server and finished by the new one is a real part of the upgrade
 # contract - a submitted mutation is persisted and continues to execute after a restart - and the kill
@@ -349,9 +441,89 @@ else
     echo -e "Cannot submit the mutation that has to survive the upgrade$FAIL" >> /test_output/test_results.tsv
 fi
 
+# Drop the row policies left by the stress phase whose filter cannot be applied to a table they cover, and keep the
+# rest: the upgraded server has to load and apply them. The stress runner stops test files before their last statement
+# and runs many tests in one database (`--database=test_N`), so the `ON db.*` policy of one test can outlive it over
+# the tables of other tests, which lack its columns. Every read of such a table fails on the filter, on the old server
+# already, and on the upgraded one so does the load of an eager dictionary over it.
+echo "Drop the row policies that cannot be applied to a table they cover"
+
+: > /test_output/unchecked_row_policy_errors.txt
+: > /test_output/undropped_row_policy_errors.txt
+row_policy_check_failed=0
+row_policy_drop_failed=0
+if timeout 1m clickhouse-client --query "
+        SELECT id FROM system.row_policies WHERE storage != 'users_xml' AND select_filter IS NOT NULL" > /tmp/row_policy_ids.txt
+then
+    while read -r row_policy_id
+    do
+        # `DESCRIBE` of `view()` only analyzes the query: apart from those in table function arguments, the subqueries
+        # of the filter do not run, so the row policies of the tables they read cannot fail this check. Unqualified
+        # tables of the filter resolve in the current database, so use the policy's one, where its test reads the table.
+        if ! timeout 1m clickhouse-client --param_id="$row_policy_id" --query "
+                SELECT format('USE {0}{1}{0}; DESCRIBE TABLE view(SELECT 1 FROM {0}{1}{0}.{0}{2}{0} WHERE {3});', char(96),
+                    replaceAll(replaceAll(t.database, char(92), char(92, 92)), char(96), char(92, 96)),
+                    replaceAll(replaceAll(t.name, char(92), char(92, 92)), char(96), char(92, 96)),
+                    p.select_filter)
+                FROM system.row_policies AS p
+                INNER JOIN system.tables AS t ON t.database = p.database AND (p.table = '' OR t.name = p.table)
+                WHERE p.id = {id:UUID}
+                FORMAT TSVRaw" > /tmp/row_policy_check.sql 2>> /test_output/unchecked_row_policy_errors.txt
+        then
+            row_policy_check_failed=1
+            continue
+        fi
+        timeout 5m clickhouse-client --queries-file /tmp/row_policy_check.sql > /dev/null 2> /tmp/row_policy_check_errors.txt \
+            && continue
+        # Only the server failing to analyze the filter shows that it cannot be applied: an unknown column, table,
+        # database or function, a wrong type or number of arguments or columns, or an invalid constant. A resource
+        # limit, a timeout, a lost connection or an error that depends on the reader (access, settings) does not.
+        if ! grep -qE '^Code: (6|20|36|38|41|42|43|44|46|47|53|59|60|69|81|153|184|190|386|407|675)\. DB::Exception: Received from ' \
+            /tmp/row_policy_check_errors.txt
+        then
+            cat /tmp/row_policy_check_errors.txt >> /test_output/unchecked_row_policy_errors.txt
+            row_policy_check_failed=1
+            continue
+        fi
+        cat /tmp/row_policy_check_errors.txt >> /test_output/dropped_row_policies.txt
+        if timeout 1m clickhouse-client --param_id="$row_policy_id" --query "
+            SELECT 'DROP ROW POLICY IF EXISTS ' || name || ';' FROM system.row_policies WHERE id = {id:UUID}
+            FORMAT TSVRaw" > /tmp/drop_row_policy.sql
+        then
+            cat /tmp/drop_row_policy.sql >> /test_output/dropped_row_policies.txt
+            timeout 1m clickhouse-client --queries-file /tmp/drop_row_policy.sql \
+                2>> /test_output/undropped_row_policy_errors.txt || row_policy_drop_failed=1
+        else
+            row_policy_drop_failed=1
+        fi
+    done < /tmp/row_policy_ids.txt
+else
+    echo -e "Cannot list the row policies left by the stress phase$FAIL" >> /test_output/test_results.tsv
+fi
+
+if [ "$row_policy_check_failed" != 0 ]
+then
+    echo -e "Cannot check whether the row policies can be applied (see unchecked_row_policy_errors.txt)$FAIL$(head_escaped /test_output/unchecked_row_policy_errors.txt)" >> /test_output/test_results.tsv
+fi
+if [ "$row_policy_drop_failed" != 0 ] || [ -s /test_output/undropped_row_policy_errors.txt ]
+then
+    echo -e "Cannot drop the row policies that cannot be applied (see undropped_row_policy_errors.txt)$FAIL$(head_escaped /test_output/undropped_row_policy_errors.txt)" >> /test_output/test_results.tsv
+fi
+
+[ -s /test_output/dropped_row_policies.txt ] || rm -f /test_output/dropped_row_policies.txt
+[ -s /test_output/unchecked_row_policy_errors.txt ] || rm -f /test_output/unchecked_row_policy_errors.txt
+[ -s /test_output/undropped_row_policy_errors.txt ] || rm -f /test_output/undropped_row_policy_errors.txt
+
 # Use bigger timeout for previous version and disable additional hang check
 stop_server 300 false || (echo "Failed to stop server" && exit 1)
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
+
+# Profiles of the previous release can only be symbolized with its binary; keep them apart so
+# collect_jemalloc_profiles renders a profile of the new server with the new binary.
+if compgen -G "$JEMALLOC_PROFILES_DIR/*.heap" > /dev/null; then
+    mkdir -p "$JEMALLOC_PROFILES_DIR/previous_release"
+    mv "$JEMALLOC_PROFILES_DIR"/*.heap "$JEMALLOC_PROFILES_DIR/previous_release/"
+fi
 
 # Install and start new server
 install_packages $PACKAGES_DIR
@@ -390,6 +562,7 @@ then
   LEFT JOIN old_settings ON new_settings.name = old_settings.name
   WHERE (old_value IS NULL OR new_value != old_value)
       AND NOT (old_value IS NOT NULL AND new_value LIKE 'auto(%' AND old_value = concat('''', new_value, ''''))
+      AND new_settings.alias_for = ''
       AND (name NOT IN (
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
@@ -591,6 +764,9 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       phase are killed before the upgrade (the `KILL MUTATION` loop above), so the upgraded server has
 #       none to resume and a mutation error here is a real finding. Do not allow-list a new one - when a
 #       test's intentionally broken mutation reaches this scan again, it is that kill step that is wrong.
+# Row-policy errors are absent for the same reason: the row policies whose filter cannot be applied to a table they
+#       cover are dropped before the upgrade. When a leftover policy's error reaches this scan, it is that drop step
+#       that is wrong.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
 # `Azure::Storage::StorageException.*Not found address of host` is a transient Azure blob DNS resolution failure
@@ -612,6 +788,14 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       them and logs this per table instead of refusing to start, which is what #115941 made it do on purpose.
 #       Requires the `StorageKeeperMap` logger AND the backquoted fixture-table prefix, so the same message on any
 #       other KeeperMap table - the shape a real metadata-compatibility regression takes - still fails this job.
+# `shard_1.data` + `ReplicatedMergeTreeAttachThread` + a read-only initialization on an empty `columns` znode is
+#       `02980_dist_insert_readonly_replica` breaking it on purpose; an injected fault can stop the file before its
+#       final `DROP DATABASE`. Other tables and error codes still fail; a `columns` value cut inside its header does not.
+# `Query memory tracker: fault injected` is the stress phase's own fault injection (`memory_tracker_fault_probability`
+#       of stress worker 1) reaching the upgraded server with the work the stress phase left behind: a distributed
+#       DDL entry (e.g. an `ON CLUSTER` `BACKUP`) and a pending batch of a `Distributed` table both keep the settings
+#       of the query that created them and run again after the restart. Nothing enables fault injection on the
+#       upgraded server itself, so this message is never a compatibility signal, whichever component logs it.
 # `SystemLogQueue` + `Queue had been full` overflow happens under heavy stress test load and is not a
 #       compatibility bug. Filtered via regex in the secondary pipe below to require both the component name
 #       AND the specific overflow phrase together (the log format is `SystemLogQueue (system.<table>): Queue
@@ -812,12 +996,14 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed" \
            -e "No stream (ba1.bin) file checksum for column b" \
            -e "Exception during get topic partitions from Kafka: Local: Broker transport failure" \
+           -e "Query memory tracker: fault injected" \
     /test_output/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
     | grep -av -e "Error on initialization of rdb_test_.*Mapping for table with UUID=.*already exists.*TABLE_ALREADY_EXISTS" \
     | grep -av -e "Azure::Storage::StorageException.*Not found address of host" \
     | grep -av -e "Cluster: Code: 198.*Not found address of host: \(.\)\1\{63,\}" \
     | grep -av -e "StorageKeeperMap (.*\.\`05024_keeper_map_parenthesized_metadata.*Failed to activate table because of invalid metadata in ZooKeeper" \
+    | grep -av -e "<Error> shard_1\.data (ReplicatedMergeTreeAttachThread): Initialization failed, table will remain readonly\. Error: Code: 27\. DB::Exception: Cannot parse input: expected 'columns format version: 1.n' at end of stream" \
     | grep -av -e "SystemLogQueue.*Queue had been full" \
     | grep -av -e "TraceCollector.*CANNOT_READ_FROM_FILE_DESCRIPTOR" \
     | grep -av -e "while loading statistics.*ILLEGAL_STATISTICS" \
@@ -857,5 +1043,7 @@ check_logs_for_critical_errors
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 
 collect_query_and_trace_logs
+# Only the upgraded server's log: the previous release's profiles were moved aside above.
+collect_jemalloc_profiles /var/log/clickhouse-server/clickhouse-server.upgrade.log
 
 mv /var/log/clickhouse-server/stderr.log /test_output/

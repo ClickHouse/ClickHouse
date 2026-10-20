@@ -2,7 +2,9 @@
 
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Processors/IProcessor.h>
+#include <Processors/SpillableAdapter.h>
 #include <Processors/Transforms/DistinctSetFilter.h>
+#include <Processors/Transforms/DistinctSetMemoryTracker.h>
 #include <Processors/Transforms/DistinctSpillLayout.h>
 #include <Processors/Transforms/SortingTransform.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -38,9 +40,13 @@ class DistinctSortedTransform;
 /// When input order must be preserved, `DistinctSpillLayout` attaches arrival numbers to spilled rows.
 /// After merging and deduplication, `MergeSortingTransform` restores that order and can itself spill.
 /// Otherwise, rows follow the spill comparison order, which is fingerprint order for generic keys.
+/// Scheduler requests synchronously write unconnected runs and release their memory before returning;
+/// their readers are attached at the next pipeline update.
 class ExternalDistinctTransform final : public IProcessor
 {
 public:
+    /// A non-null `shared_set_bytes_` reports memory snapshots to `DistinctLimitsCheckingTransform`, which
+    /// enforces the limits across all streams. In that mode, `set_size_limits_` must be unlimited.
     ExternalDistinctTransform(
         SharedHeader header_,
         const SizeLimits & set_size_limits_,
@@ -51,7 +57,8 @@ public:
         size_t min_free_disk_space_,
         size_t max_block_size_rows_,
         size_t preferred_block_bytes_,
-        bool preserve_input_order_);
+        bool preserve_input_order_,
+        DistinctSetMemoryTracker::SharedCounter shared_set_bytes_ = nullptr);
 
     ~ExternalDistinctTransform() override;
 
@@ -61,13 +68,26 @@ public:
     void work() override;
     PipelineUpdate updatePipeline() override;
 
+    std::span<ISpillable * const> getSpillables() override { return {&spillable_ptr, 1}; }
+    ProcessorMemoryStats getMemoryStats() const;
+    size_t spill(size_t at_least_bytes);
+    const TemporaryDataOnDiskScope * getSpillScope() const { return tmp_data.get(); }
+
 private:
+    SpillableAdapter<ExternalDistinctTransform> spillable{*this};
+    ISpillable * const spillable_ptr = &spillable;
+
     struct Hashing
     {
         Hashing(const Block & header, const Names & columns, const SizeLimits & limits)
             : set(header, columns, limits)
         {
         }
+
+        /// Memory charged to the global `max_bytes_in_distinct` check. A set without keys counts as empty,
+        /// like in a serial `DISTINCT` that checks limits only after inserting keys: otherwise the
+        /// preallocated hash table of a transform that spills before hashing would exceed tiny limits.
+        size_t getRetainedSetBytes() const { return set.getTotalRowCount() ? set.getTotalByteCount() : 0; }
 
         DistinctSetFilter set;
         /// EOF is observed in `prepare`, but releasing the set belongs to `work`.
@@ -201,6 +221,8 @@ private:
         Finishing>;
 
     Status prepareInput();
+    CollectingInput * getCollectingInput();
+    const CollectingInput * getCollectingInput() const;
     Status prepareCollectingInput(CollectingInput & collecting);
     Status prepareRunWrite(RunWriteProgress & progress, OutputPort & output);
     Status prepareSuppressionWrite(WritingSuppressionRun & writing);
@@ -229,10 +251,15 @@ private:
         SharedHeader header, Chunks chunks, size_t bytes, const SortDescription & description, MergeSorter::Mode mode);
     PreparedMerge prepareMerge();
     void connectMerge(PreparedMerge & prepared, Processors & processors);
+    void connectRunSource(PreparedRun & prepared, Processors & processors);
     OutputPort & connectRun(PreparedRun & prepared, Processors & processors);
+    /// Drain an unconnected run on the calling thread, transferring its finalized file to the reader.
+    void spillRun(PreparedRun run);
     /// Returns the minimum run size, also used by the sort that restores input order.
     size_t minBytesInRun() const;
 
+    /// Outlives the state that owns the set and its suppression-key extractor.
+    DistinctSetMemoryTracker set_memory;
     State state;
     const UInt64 limit_hint;
     const SizeLimits set_size_limits;
@@ -247,6 +274,8 @@ private:
 
     /// Tracks connected merge inputs until tail attachment or early termination closes registration.
     std::optional<MergeRegistration> merge_registration;
+    /// Scheduler-driven spilling releases memory before returning; completed readers are connected later.
+    std::vector<PreparedRun> spilled_runs;
     size_t temporary_files_num = 0;
     /// Run output sizes estimate the memory needed to read all files concurrently during merging.
     size_t estimated_file_read_memory = 0;
