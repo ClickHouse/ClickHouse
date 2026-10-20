@@ -54,6 +54,8 @@ struct SortAnalysisResult
     ActionsAndProjectInputsFlagPtr before_interpolate_actions;
     /// INTERPOLATE target name -> name of the column `before_interpolate_actions` interpolates for it.
     NameToNameMap interpolated_column_names;
+    /// INTERPOLATE target name -> name of its column in the `FillingStep` header; the target name unless another column has it.
+    NameToNameMap interpolate_target_column_names;
 };
 
 struct LimitByAnalysisResult
