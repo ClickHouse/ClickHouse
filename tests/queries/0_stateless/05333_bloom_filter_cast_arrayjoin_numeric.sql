@@ -242,10 +242,12 @@ SELECT 'UInt64 numeric constant append selective needle preserves typed rows',
 WITH
     groupArray(explain) AS plan,
     arrayFirstIndex(x -> position(x, 'Name: idx_nums_constant') > 0, plan) AS name_row,
-    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1)) AS granules_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
     toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
     toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
-SELECT 'UInt64 numeric constant append selective needle prunes 1/16', name_row > 0 AND selected = 1 AND total = 16
+SELECT 'UInt64 numeric constant append selective needle declines named index, reads 16/16',
+       name_row = 0 AND primary_key_row > 0 AND selected = 16 AND total = 16
 FROM (EXPLAIN indexes = 1 SELECT id, value FROM t_bf_cast_numeric
       ARRAY JOIN arrayConcat(arrayDistinct(nums), [toUInt64(999)]) AS value
       WHERE value IN (toUInt64(103))
@@ -499,10 +501,12 @@ SELECT 'DateTime64 array wrapper selective needle preserves typed rows',
 WITH
     groupArray(explain) AS plan,
     arrayFirstIndex(x -> position(x, 'Name: idx_fixed_dt64_values') > 0, plan) AS name_row,
-    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1)) AS granules_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
     toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
     toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
-SELECT 'DateTime64 array wrapper selective needle prunes 1/16', name_row > 0 AND selected = 1 AND total = 16
+SELECT 'DateTime64 array wrapper selective needle declines named index, reads 16/16',
+       name_row = 0 AND primary_key_row > 0 AND selected = 16 AND total = 16
 FROM (EXPLAIN indexes = 1 SELECT id, value FROM t_bf_fixed_array_wrappers
       ARRAY JOIN arrayConcat(arrayDistinct(dt_values), [toDateTime64('2020-01-01 00:00:00.999', 3, 'UTC')]) AS value
       WHERE value IN (toDateTime64('2020-01-01 00:00:00.103', 3, 'UTC'))
@@ -558,10 +562,12 @@ SELECT 'UUID array wrapper selective needle preserves typed rows',
 WITH
     groupArray(explain) AS plan,
     arrayFirstIndex(x -> position(x, 'Name: idx_fixed_uuid_values') > 0, plan) AS name_row,
-    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1)) AS granules_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
     toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
     toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
-SELECT 'UUID array wrapper selective needle prunes 1/16', name_row > 0 AND selected = 1 AND total = 16
+SELECT 'UUID array wrapper selective needle declines named index, reads 16/16',
+       name_row = 0 AND primary_key_row > 0 AND selected = 16 AND total = 16
 FROM (EXPLAIN indexes = 1 SELECT id, value FROM t_bf_fixed_array_wrappers
       ARRAY JOIN arrayConcat(arrayDistinct(uuid_values), [toUUID('00000000-0000-0000-0000-000000000999')]) AS value
       WHERE value IN (toUUID('00000000-0000-0000-0000-000000000103'))
@@ -626,10 +632,12 @@ SELECT 'FixedString(4) constant append preserves typed padded rows',
 WITH
     groupArray(explain) AS plan,
     arrayFirstIndex(x -> position(x, 'Name: idx_fixed_string_values') > 0, plan) AS name_row,
-    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1, 128)) AS granules_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1, 128)) AS granules_row,
     toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
     toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
-SELECT 'FixedString(4) constant append prunes 1/16', toUInt8(name_row > 0 AND selected = 1 AND total = 16)
+SELECT 'FixedString(4) constant append declines named index, reads 16/16',
+       toUInt8(name_row = 0 AND primary_key_row > 0 AND selected = 16 AND total = 16)
 FROM (EXPLAIN indexes = 1
       SELECT id, value
       FROM t_bf_fixed_array_wrappers

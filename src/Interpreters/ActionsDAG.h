@@ -104,6 +104,8 @@ public:
         ExecutableFunctionPtr function;
         /// If function is a compiled statement.
         bool is_function_compiled = false;
+        /// Set when constant folding erases edges to a function; transient analysis metadata, not serialized or hashed.
+        bool has_folded_function = false;
 
         /// It is a constant calculated from deterministic functions (See IFunction::isDeterministic).
         /// This property is kept after constant folding of non-deterministic functions like 'now', 'today'.

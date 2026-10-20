@@ -1112,6 +1112,14 @@ bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
                 /// constant like any other, and a FUNCTION node left behind would cross plan steps as a column.
                 if (allow_constant_folding && node->column && (!node->children.empty() || WhichDataType(node->result_type).isFunction()))
                 {
+                    /// Preserve function ancestry before this fold erases the child edges.
+                    node->has_folded_function = node->has_folded_function || node->type == ActionsDAG::ActionType::FUNCTION;
+                    for (const auto * child : node->children)
+                    {
+                        if (child->type == ActionsDAG::ActionType::FUNCTION || child->has_folded_function)
+                            node->has_folded_function = true;
+                    }
+
                     node->type = ActionsDAG::ActionType::COLUMN;
                     node->children.clear();
                     node->is_deterministic_constant = !non_deterministic_nodes.contains(node);

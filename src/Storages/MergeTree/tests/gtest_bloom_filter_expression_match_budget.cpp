@@ -103,6 +103,72 @@ bool canPruneSafeColumnWithIndexCast(
     return !condition.alwaysUnknownOrTrue();
 }
 
+bool canPruneWithFloatOutput(const DataTypePtr & source_type, const Field & source_value, bool use_cast, bool add_plus)
+{
+    tryRegisterFunctions();
+    const auto context = getContext().context;
+    const auto uint64_type = std::make_shared<DataTypeUInt64>();
+    const auto float64_type = std::make_shared<DataTypeFloat64>();
+    const auto string_type = std::make_shared<DataTypeString>();
+    EXPECT_FALSE(add_plus && !use_cast);
+
+    ActionsDAG query_dag;
+    const auto & query_input = query_dag.addInput("x", uint64_type);
+    const auto & query_value = query_dag.addColumn(uint64_type->createColumnConst(0, Field(UInt64(1))), uint64_type, "query_value", true);
+    const auto & predicate
+        = query_dag.addFunction(FunctionFactory::instance().get("equals", context), {&query_input, &query_value}, "predicate");
+
+    ActionsDAG index_dag;
+    const auto & index_input = index_dag.addInput("x", uint64_type);
+    const ActionsDAG::Node * cast_node = nullptr;
+    const ActionsDAG::Node * folded_node = nullptr;
+    if (use_cast)
+    {
+        const auto & source_literal
+            = index_dag.addColumn(source_type->createColumnConst(0, source_value), source_type, "source_literal", true);
+        const auto & target_type
+            = index_dag.addColumn(string_type->createColumnConst(0, Field(String("Float64"))), string_type, "target_type", true);
+        cast_node = &index_dag.addFunction(
+            FunctionFactory::instance().get("CAST", context), {&source_literal, &target_type}, add_plus ? "constant_cast" : "folded_value");
+        folded_node = cast_node;
+    }
+    else
+        folded_node = &index_dag.addColumn(source_type->createColumnConst(0, source_value), source_type, "folded_value", true);
+
+    if (add_plus)
+    {
+        const auto & zero = index_dag.addColumn(float64_type->createColumnConst(0, Field(Float64(0))), float64_type, "zero", true);
+        folded_node = &index_dag.addFunction(FunctionFactory::instance().get("plus", context), {folded_node, &zero}, "folded_plus");
+    }
+
+    index_dag.getOutputs().clear();
+    index_dag.getOutputs().push_back(&index_input);
+    index_dag.getOutputs().push_back(folded_node);
+    index_dag.removeUnusedActions();
+
+    EXPECT_EQ(index_dag.getOutputs()[1], folded_node);
+    EXPECT_EQ(index_dag.getOutputs()[1]->result_name, folded_node->result_name);
+    const auto expect_folded_column = [](const ActionsDAG::Node & node, bool has_conversion)
+    {
+        EXPECT_EQ(node.type, ActionsDAG::ActionType::COLUMN);
+        EXPECT_NE(node.column, nullptr);
+        if (has_conversion)
+            EXPECT_NE(node.function_base, nullptr);
+        else
+            EXPECT_EQ(node.function_base, nullptr);
+        EXPECT_TRUE(node.children.empty());
+    };
+    expect_folded_column(*folded_node, use_cast);
+
+    Block header(
+        ColumnsWithTypeAndName{
+            {uint64_type->createColumn(), uint64_type, "x"},
+            {float64_type->createColumn(), float64_type, folded_node->result_name},
+        });
+    MergeTreeIndexConditionBloomFilter condition(&predicate, context, header, index_dag, 4, {}, {});
+    return !condition.alwaysUnknownOrTrue();
+}
+
 bool canPruneSafeColumnWithDateTimeConversion(const String & function_name, const DataTypePtr & source_type, bool include_timezone = false)
 {
     tryRegisterFunctions();
@@ -1632,6 +1698,149 @@ TEST(MergeTreeIndexBloomFilter, AppliesClosedSafeLeafPolicyToNativeCasts)
 
     const auto same_named_destination = std::make_shared<DataTypeTuple>(DataTypes{float64_type, string_type}, Strings{"a", "b"});
     EXPECT_TRUE(canPruneSafeColumnWithIndexCast(named_source, same_named_destination));
+}
+
+TEST(MergeTreeIndexBloomFilter, DeclinesConstantFoldedFloatCastsWithoutConversionProvenance)
+{
+    const auto string_type = std::make_shared<DataTypeString>();
+    const auto uint64_type = std::make_shared<DataTypeUInt64>();
+    const auto float64_type = std::make_shared<DataTypeFloat64>();
+
+    /// removeUnusedActions turns folded CAST and plus nodes into COLUMN nodes while retaining
+    /// function_base. Keep those nodes as direct outputs so the constructor sees that provenance.
+    EXPECT_FALSE(canPruneWithFloatOutput(string_type, Field(String("0.1e-5")), true, false));
+    EXPECT_FALSE(canPruneWithFloatOutput(string_type, Field(String("0.1e-5")), true, true));
+    EXPECT_FALSE(canPruneWithFloatOutput(uint64_type, Field(UInt64(1)), true, false));
+
+    /// A plain constant has no conversion provenance and must preserve the safe x=1 pruning path.
+    EXPECT_TRUE(canPruneWithFloatOutput(float64_type, Field(Float64(1)), false, false));
+}
+
+TEST(MergeTreeIndexBloomFilter, PreservesFunctionProvenanceAcrossConstantFoldAndClone)
+{
+    tryRegisterFunctions();
+    const auto context = getContext().context;
+    const auto uint64_type = std::make_shared<DataTypeUInt64>();
+    const auto string_type = std::make_shared<DataTypeString>();
+    const auto float64_type = std::make_shared<DataTypeFloat64>();
+    const auto date_type = std::make_shared<DataTypeDate>();
+
+    ActionsDAG query_dag;
+    const auto & query_input = query_dag.addInput("x", uint64_type);
+    const auto & query_value = query_dag.addColumn(uint64_type->createColumnConst(0, Field(UInt64(1))), uint64_type, "query_value", true);
+    const auto & predicate
+        = query_dag.addFunction(FunctionFactory::instance().get("equals", context), {&query_input, &query_value}, "predicate");
+
+    const auto always_unknown = [&](const ActionsDAG & index_dag, const DataTypePtr & value_type, const String & value_name)
+    {
+        Block header(
+            ColumnsWithTypeAndName{
+                {uint64_type->createColumn(), uint64_type, "x"},
+                {value_type->createColumn(), value_type, value_name},
+            });
+        MergeTreeIndexConditionBloomFilter condition(&predicate, context, header, index_dag, 4, {}, {});
+        return condition.alwaysUnknownOrTrue();
+    };
+
+    const auto add_cast = [&](ActionsDAG & dag, const ActionsDAG::Node & source, const String & result_name) -> const ActionsDAG::Node &
+    {
+        const auto & target_type
+            = dag.addColumn(string_type->createColumnConst(0, Field(String("Float64"))), string_type, "target_type", true);
+        return dag.addFunction(FunctionFactory::instance().get("CAST", context), {&source, &target_type}, result_name);
+    };
+
+    ActionsDAG direct_cast_dag;
+    const auto & direct_input = direct_cast_dag.addInput("x", uint64_type);
+    const auto & direct_source
+        = direct_cast_dag.addColumn(string_type->createColumnConst(0, Field(String("0.1e-5"))), string_type, "source", true);
+    const auto & direct_cast = add_cast(direct_cast_dag, direct_source, "direct_cast");
+    direct_cast_dag.getOutputs() = {&direct_input, &direct_cast};
+    direct_cast_dag.removeUnusedActions();
+    const auto * direct_output = direct_cast_dag.getOutputs()[1];
+    EXPECT_EQ(direct_output->type, ActionsDAG::ActionType::COLUMN);
+    EXPECT_NE(direct_output->function_base, nullptr);
+    EXPECT_TRUE(direct_output->children.empty());
+    EXPECT_TRUE(direct_output->has_folded_function) << "direct CAST";
+    EXPECT_TRUE(always_unknown(direct_cast_dag, float64_type, direct_output->result_name));
+
+    ActionsDAG nested_plus_dag;
+    const auto & nested_input = nested_plus_dag.addInput("x", uint64_type);
+    const auto & nested_source
+        = nested_plus_dag.addColumn(string_type->createColumnConst(0, Field(String("0.1e-5"))), string_type, "source", true);
+    const auto & nested_cast = add_cast(nested_plus_dag, nested_source, "nested_cast");
+    const auto & zero = nested_plus_dag.addColumn(float64_type->createColumnConst(0, Field(Float64(0))), float64_type, "zero", true);
+    const auto & nested_plus
+        = nested_plus_dag.addFunction(FunctionFactory::instance().get("plus", context), {&nested_cast, &zero}, "nested_plus");
+    nested_plus_dag.getOutputs() = {&nested_input, &nested_plus};
+    nested_plus_dag.removeUnusedActions();
+    const auto * nested_output = nested_plus_dag.getOutputs()[1];
+    EXPECT_EQ(nested_output->type, ActionsDAG::ActionType::COLUMN);
+    EXPECT_NE(nested_output->function_base, nullptr);
+    EXPECT_TRUE(nested_output->children.empty());
+    EXPECT_TRUE(nested_output->has_folded_function) << "nested plus";
+    EXPECT_TRUE(always_unknown(nested_plus_dag, float64_type, nested_output->result_name));
+
+    ActionsDAG alias_dag;
+    const auto & alias_input = alias_dag.addInput("x", uint64_type);
+    const auto & alias_source
+        = alias_dag.addColumn(string_type->createColumnConst(0, Field(String("0.1e-5"))), string_type, "source", true);
+    const auto & alias_cast = add_cast(alias_dag, alias_source, "alias_cast");
+    const auto & first_alias = alias_dag.addAlias(alias_cast, "first_alias");
+    const auto & second_alias = alias_dag.addAlias(first_alias, "second_alias");
+    alias_dag.getOutputs() = {&alias_input, &second_alias};
+    alias_dag.removeUnusedActions();
+    const auto * alias_output = alias_dag.getOutputs()[1];
+    EXPECT_EQ(alias_output->type, ActionsDAG::ActionType::COLUMN);
+    EXPECT_NE(alias_output->column, nullptr);
+    EXPECT_TRUE(alias_output->children.empty());
+    EXPECT_TRUE(alias_output->has_folded_function) << "CAST hidden under alias chain";
+    EXPECT_TRUE(always_unknown(alias_dag, float64_type, alias_output->result_name)) << "folded alias must not permit pruning";
+
+    auto clone = alias_dag.clone();
+    const auto * cloned_alias_output = clone.getOutputs()[1];
+    EXPECT_TRUE(cloned_alias_output->has_folded_function) << "ordinary DAG clone";
+    EXPECT_TRUE(always_unknown(clone, float64_type, cloned_alias_output->result_name));
+
+    auto * mutable_alias_output = const_cast<ActionsDAG::Node *>(alias_output);
+    const auto original_marker = mutable_alias_output->has_folded_function;
+    const auto original_hash = mutable_alias_output->getHash();
+    mutable_alias_output->has_folded_function = !original_marker;
+    EXPECT_EQ(mutable_alias_output->getHash(), original_hash) << "transient provenance must not affect DAG identity";
+    mutable_alias_output->has_folded_function = original_marker;
+
+    ActionsDAG today_dag;
+    const auto & today_input = today_dag.addInput("x", uint64_type);
+    const auto & today_function = today_dag.addFunction(FunctionFactory::instance().get("today", context), {}, "today");
+    const auto & today_alias = today_dag.addAlias(today_function, "today_alias");
+    const auto & today_alias_chain = today_dag.addAlias(today_alias, "today_alias_chain");
+    today_dag.getOutputs() = {&today_input, &today_alias_chain};
+    today_dag.removeUnusedActions();
+    const auto * today_output = today_dag.getOutputs()[1];
+    EXPECT_EQ(today_output->type, ActionsDAG::ActionType::COLUMN);
+    EXPECT_NE(today_output->column, nullptr);
+    EXPECT_TRUE(today_output->children.empty());
+    EXPECT_TRUE(today_output->has_folded_function) << "zero-argument today() hidden under aliases";
+    EXPECT_TRUE(always_unknown(today_dag, date_type, today_output->result_name))
+        << "zero-argument function provenance must not permit pruning";
+
+    auto today_clone = today_dag.clone();
+    const auto * cloned_today_output = today_clone.getOutputs()[1];
+    EXPECT_TRUE(cloned_today_output->has_folded_function) << "zero-argument alias marker survives clone";
+    EXPECT_TRUE(always_unknown(today_clone, date_type, cloned_today_output->result_name));
+
+    ActionsDAG literal_alias_dag;
+    const auto & literal_input = literal_alias_dag.addInput("x", uint64_type);
+    const auto & literal
+        = literal_alias_dag.addColumn(float64_type->createColumnConst(0, Field(Float64(1))), float64_type, "literal", true);
+    const auto & literal_alias = literal_alias_dag.addAlias(literal, "literal_alias");
+    literal_alias_dag.getOutputs() = {&literal_input, &literal_alias};
+    literal_alias_dag.removeUnusedActions();
+    const auto * literal_output = literal_alias_dag.getOutputs()[1];
+    EXPECT_EQ(literal_output->type, ActionsDAG::ActionType::COLUMN);
+    EXPECT_EQ(literal_output->function_base, nullptr);
+    EXPECT_FALSE(literal_output->has_folded_function) << "an alias of a plain literal has no function provenance";
+    EXPECT_FALSE(always_unknown(literal_alias_dag, float64_type, literal_output->result_name));
+    EXPECT_TRUE(canPruneWithFloatOutput(float64_type, Field(Float64(1)), false, false));
 }
 
 TEST(MergeTreeIndexBloomFilter, DeclinesSettingsCapturingConversionsOutsideClosedWhitelist)

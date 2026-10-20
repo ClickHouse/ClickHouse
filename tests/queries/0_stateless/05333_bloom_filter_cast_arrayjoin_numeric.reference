@@ -23,7 +23,7 @@ UInt64 to Int64 array coercion declines idx_nums_numeric	1
 UInt64 nullable array wrapper preserves rows	1
 UInt64 nullable array wrapper declines idx_nums_numeric	1
 UInt64 numeric constant append selective needle preserves typed rows	1
-UInt64 numeric constant append selective needle prunes 1/16	1
+UInt64 numeric constant append selective needle declines named index, reads 16/16	1
 UInt64 numeric constant mismatch preserves typed rows	1
 UInt64 numeric constant mismatch declines idx_nums_constant, reads 16/16	1
 signedzero expression returns UInt64 and preserves matching row	1
@@ -39,17 +39,17 @@ DateTime64(7) CAST-to-String four format flags full OFF/ON typed rows	1
 DateTime64(7) trailing-zero mismatch full OFF/ON typed rows	1
 DateTime64(7) trailing-zero mismatch declines idx_dt64_cast_text, reads 16/16	1
 DateTime64 array wrapper selective needle preserves typed rows	1
-DateTime64 array wrapper selective needle prunes 1/16	1
+DateTime64 array wrapper selective needle declines named index, reads 16/16	1
 DateTime64 array wrapper mismatch full scan preserves complete typed rows	1
 DateTime64 array wrapper mismatch indexed read preserves complete typed rows	1
 DateTime64 array wrapper mismatch declines named index, reads 16/16	1
 UUID array wrapper selective needle preserves typed rows	1
-UUID array wrapper selective needle prunes 1/16	1
+UUID array wrapper selective needle declines named index, reads 16/16	1
 UUID array wrapper mismatch full scan preserves complete typed rows	1
 UUID array wrapper mismatch indexed read preserves complete typed rows	1
 UUID array wrapper mismatch declines named index, reads 16/16	1
 FixedString(4) constant append preserves typed padded rows	1
-FixedString(4) constant append prunes 1/16	1
+FixedString(4) constant append declines named index, reads 16/16	1
 FixedString(4) unequal-byte append preserves all typed rows	1
 FixedString(4) unequal-byte append declines index and reads 16/16	1
 FixedString(4) embedded-NUL unequal suffix preserves all typed rows	1

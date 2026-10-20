@@ -704,6 +704,11 @@ bool isBloomIndexExpressionContextStable(const ActionsDAG & indexed_expression_d
                     return false;
             }
         }
+        else if (node->type == ActionsDAG::ActionType::COLUMN && (node->has_folded_function || node->function_base))
+        {
+            /// A scalar COLUMN with folded function ancestry has lost argument edges, so context stability cannot be proved.
+            return false;
+        }
         else if (
             node->type != ActionsDAG::ActionType::INPUT && node->type != ActionsDAG::ActionType::COLUMN
             && node->type != ActionsDAG::ActionType::ALIAS && node->type != ActionsDAG::ActionType::ARRAY_JOIN
