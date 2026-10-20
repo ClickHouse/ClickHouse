@@ -108,6 +108,8 @@ public:
 
     StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache) const override;
 
+    void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
+
     void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,

@@ -74,6 +74,8 @@ public:
 
     StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache) const override;
 
+    void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
+
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -155,6 +157,9 @@ private:
     using SourceMetadata = std::unordered_map<
         StorageID, InferredSourceMetadata, StorageID::DatabaseAndTableNameAndUUIDHash, StorageID::DatabaseAndTableNameAndUUIDEqual>;
     SourceMetadata inferred_source_metadata;
+
+    /// The analyzer does not refresh a table function, so a `merge` table function that inferred its structure refreshes the children in `read`.
+    const bool refresh_children_in_read = false;
 
     template <typename F>
     StoragePtr traverseTablesUntil(F && predicate) const;
