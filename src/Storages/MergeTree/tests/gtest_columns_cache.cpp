@@ -743,3 +743,46 @@ TEST(ColumnsCache, EvictionDuringTheResidencyCheckLeavesNoIndexBehind)
     /// No entry of the part is in the cache, so neither is the part in the index.
     EXPECT_FALSE(cache.containsPart(c.table_uuid, c.part));
 }
+
+TEST(ColumnsCache, WriteDuringClearAllLeavesNoIndexBehind)
+{
+    /// Large enough for several shards; nothing is allocated for the size.
+    const size_t max_size = size_t(1) << 30;
+    auto cache = makeCache(max_size);
+    const size_t num_shards = ColumnsCache::numberOfShards(max_size);
+    ASSERT_GT(num_shards, 1u);
+    TestColumn old_column(UUIDHelpers::generateV4(), "part_1", "col");
+    TestColumn kept(UUIDHelpers::generateV4(), "part_2", "col");
+    TestColumn dropped(UUIDHelpers::generateV4(), "part_3", "col");
+
+    const auto old_generation = cache.getInvalidationGeneration(old_column.table_uuid);
+    for (size_t stripe = 0; stripe < 32; ++stripe)
+        cache.setMany({makeEntry(old_column, stripe, stripe * 8, stripe * 8 + 8)}, old_generation);
+
+    /// The stripes of a column that go to the given shard, or to the other shards.
+    auto stripes = [&](const TestColumn & c, bool in_first_shard)
+    {
+        std::vector<ColumnsCache::MappedPtr> entries;
+        for (size_t stripe = 0; entries.size() < 4; ++stripe)
+            if ((ColumnsCacheKeyHash{}(ColumnsCacheKey{c.identity, stripe}) % num_shards == 0) == in_first_shard)
+                entries.push_back(makeEntry(c, stripe, stripe * 8, stripe * 8 + 8));
+        return entries;
+    };
+
+    /// A write that started after the drop lands after its first shard is cleared: its entries in that
+    /// shard stay, the others are cleared with the rest of the shards, and so must be their stripes.
+    cache.on_shard_cleared_for_test = [&](size_t shard_index)
+    {
+        if (shard_index != 0)
+            return;
+        EXPECT_GT(cache.setMany(stripes(kept, true), cache.getInvalidationGeneration(kept.table_uuid)), 0u);
+        EXPECT_GT(cache.setMany(stripes(dropped, false), cache.getInvalidationGeneration(dropped.table_uuid)), 0u);
+    };
+    cache.clearAll();
+    cache.on_shard_cleared_for_test = nullptr;
+
+    EXPECT_EQ(cache.count(), 4u);
+    EXPECT_FALSE(cache.containsPart(old_column.table_uuid, old_column.part));
+    EXPECT_TRUE(cache.containsPart(kept.table_uuid, kept.part));
+    EXPECT_FALSE(cache.containsPart(dropped.table_uuid, dropped.part));
+}

@@ -332,6 +332,10 @@ public:
     /// recorded its stripe again, before it checks the next one. Another thread can evict entries there.
     std::function<void()> on_residency_checked_for_test;
 
+    /// Test seam: `clearAll` calls this after it has cleared a shard and erased its stripes from the
+    /// index, before it clears the next one. A write can record stripes there.
+    std::function<void(size_t)> on_shard_cleared_for_test;
+
 private:
     using Base = CacheBase<ColumnsCacheKey, ColumnsCacheEntry, ColumnsCacheKeyHash, ColumnsCacheWeightFunction>;
 

@@ -588,7 +588,6 @@ void ColumnsCache::clearAll()
         /// The new cache-wide stamp already invalidates every token captured so far, so the
         /// per-table stamps can be reclaimed instead of being kept forever.
         table_generations.clear();
-        part_index.clear();
     }
 
     recent_admitted.store(0, std::memory_order_relaxed);
@@ -597,8 +596,41 @@ void ColumnsCache::clearAll()
 
     /// A write that started before the stamp was advanced cannot land after this point:
     /// `setMany` checks the stamp again once its entries are in and removes them if it changed.
-    for (auto & shard : shards)
-        shard->clear();
+    ///
+    /// The cache policies clear a shard without the eviction callback, so the stripes of the shard are
+    /// erased from the index together with it, under the mutex of the shard and then `index_mutex`.
+    /// A write that started after the stamp was advanced may record stripes at any time: those of a
+    /// shard cleared before are kept with their entries, those of a shard cleared after go with them.
+    /// Erased all at once before the shards, the index would keep the stripes recorded in between
+    /// for entries that the clearing of their shards removes.
+    for (size_t shard_index = 0; shard_index < shards.size(); ++shard_index)
+    {
+        shards[shard_index]->clearAndThen([&]
+        {
+            std::lock_guard lock(index_mutex);
+            for (auto part_it = part_index.begin(); part_it != part_index.end();)
+            {
+                for (auto column_it = part_it->second.begin(); column_it != part_it->second.end();)
+                {
+                    std::erase_if(column_it->second, [&](size_t stripe)
+                    {
+                        return shardIndex(Key{column_it->first, stripe}) == shard_index;
+                    });
+                    if (column_it->second.empty())
+                        column_it = part_it->second.erase(column_it);
+                    else
+                        ++column_it;
+                }
+                if (part_it->second.empty())
+                    part_it = part_index.erase(part_it);
+                else
+                    ++part_it;
+            }
+        });
+
+        if (on_shard_cleared_for_test)
+            on_shard_cleared_for_test(shard_index);
+    }
 }
 
 void ColumnsCache::setShardsMaxSize(size_t total_max_size_in_bytes)

@@ -263,11 +263,20 @@ public:
 
     void clear()
     {
+        clearAndThen([] {});
+    }
+
+    /// Like `clear`, and calls func() under the mutex of the cache right after, so that nothing is inserted
+    /// in between. The cache policy removes the entries without calling `onEntryRemoval`.
+    template <typename Func>
+    void clearAndThen(Func && func)
+    {
         std::lock_guard lock(mutex);
         insert_tokens.clear();
         hits = 0;
         misses = 0;
         cache_policy->clear();
+        func();
     }
 
     void remove(const Key & key)
