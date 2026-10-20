@@ -215,6 +215,10 @@ public:
         bool has_exact_ranges = false;
         /// `ranges` exclude `exact_ranges`: their rows are counted from the primary key without being read.
         bool exact_ranges_excluded = false;
+        /// The filter constrains the primary key of the analyzed parts (the same criterion the
+        /// `force_primary_key` check uses). A projection whose own key is not used may not serve
+        /// the read.
+        bool pk_condition_useful = false;
         /// Set when the read skipped its own index analysis (a parallel replicas follower): its ranges are whole parts,
         /// not narrowed by this condition.
         ConditionTemplate<KeyCondition>::Ptr key_condition_not_applied;
@@ -240,6 +244,7 @@ public:
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
             , exact_ranges_excluded(other.exact_ranges_excluded)
+            , pk_condition_useful(other.pk_condition_useful)
             , key_condition_not_applied(other.key_condition_not_applied)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
@@ -262,6 +267,7 @@ public:
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
             , exact_ranges_excluded(other.exact_ranges_excluded)
+            , pk_condition_useful(other.pk_condition_useful)
             , key_condition_not_applied(std::move(other.key_condition_not_applied))
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
