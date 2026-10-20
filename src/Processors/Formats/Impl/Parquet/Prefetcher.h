@@ -91,8 +91,7 @@ private:
 
         std::atomic<State> state {State::HasRange};
 
-        /// Whether this range can be piggy-backed to nearby other reads.
-        std::atomic<bool> allow_incidental_read {true};
+        std::atomic<bool> likely_to_be_used {true};
 
         Task * task = nullptr; // if HasTask
         size_t range_set_idx = 0;
