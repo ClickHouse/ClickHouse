@@ -156,6 +156,30 @@ constexpr UInt32 WALLABY_MAX_SAMPLES = 256;
 template <typename T>
 constexpr UInt32 exceptionCost() { return sizeof(UInt16) + sizeof(T); }
 
+/// The serialized stream of a numeric column and every multi-byte field of the format are
+/// little-endian regardless of the host. The bit-packed lanes are arrays of words of type `T`,
+/// so they are converted word by word; on little-endian hosts both helpers are a plain copy.
+/// `bytes` is a multiple of `sizeof(T)` for every bit width (a vector packs 1024 values).
+template <typename T>
+void storeWordsLittleEndian(char * out, const T * words, size_t bytes)
+{
+    if constexpr (std::endian::native == std::endian::little)
+        memcpy(out, words, bytes);
+    else
+        for (size_t i = 0; i < bytes / sizeof(T); ++i)
+            unalignedStoreLittleEndian<T>(out + i * sizeof(T), words[i]);
+}
+
+template <typename T>
+void loadWordsLittleEndian(T * words, const char * src, size_t bytes)
+{
+    if constexpr (std::endian::native == std::endian::little)
+        memcpy(words, src, bytes);
+    else
+        for (size_t i = 0; i < bytes / sizeof(T); ++i)
+            words[i] = unalignedLoadLittleEndian<T>(src + i * sizeof(T));
+}
+
 /// The decimal scale is signed (negative scales divide the values by a power of ten, shrinking
 /// integers that end in decimal zeros); the format stores it biased into an unsigned byte.
 constexpr Int32 WALLABY_ALPHA_BIAS = 32;
@@ -1550,9 +1574,9 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     out += sizeof(SignedType);
     unalignedStoreLittleEndian<UInt16>(out, static_cast<UInt16>(write_exception_count));
     out += sizeof(UInt16);
-    memcpy(out, packed.data(), packed_bytes);
+    storeWordsLittleEndian<T>(out, packed.data(), packed_bytes);
     out += packed_bytes;
-    memcpy(out, adjustment_packed.data(), adjustment_bytes);
+    storeWordsLittleEndian<T>(out, adjustment_packed.data(), adjustment_bytes);
     out += adjustment_bytes;
     for (UInt32 i = 0; i < write_exception_count; ++i)
     {
@@ -1820,7 +1844,7 @@ void decodeXor(const char * payload, UInt32 payload_size, char * out, UInt32 cou
     /// reads its own output back (the previous value and the ring live in locals).
     const auto emit = [out](UInt32 position, T value) ALWAYS_INLINE
     {
-        unalignedStore<T>(out + static_cast<size_t>(position) * sizeof(T), value);
+        unalignedStoreLittleEndian<T>(out + static_cast<size_t>(position) * sizeof(T), value);
     };
 
     BitReader reader(payload, payload_size);
@@ -1958,7 +1982,8 @@ UInt32 compressImpl(const char * source, UInt32 values_count, char * dest)
     while (processed < values_count)
     {
         const UInt32 count = std::min<UInt32>(WALLABY_VECTOR_VALUES, values_count - processed);
-        memcpy(words.data(), source + static_cast<size_t>(processed) * sizeof(T), static_cast<size_t>(count) * sizeof(T));
+        const char * const vector_source = source + static_cast<size_t>(processed) * sizeof(T);
+        loadWordsLittleEndian<T>(words.data(), vector_source, static_cast<size_t>(count) * sizeof(T));
         memcpy(values.data(), words.data(), static_cast<size_t>(count) * sizeof(T));
 
         UInt32 differing = 0;
@@ -2034,7 +2059,8 @@ UInt32 compressImpl(const char * source, UInt32 values_count, char * dest)
         else
         {
             *out++ = static_cast<char>(VectorMode::Raw);
-            memcpy(out, words.data(), raw_size);
+            /// `RAW` keeps the serialized bytes verbatim.
+            memcpy(out, vector_source, raw_size);
             out += raw_size;
             previous_winner = VectorMode::Raw;
             previous_alpha.reset();
@@ -2075,7 +2101,7 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
     char * out = dest;
     const auto emit = [&out](UInt32 position, T value) ALWAYS_INLINE
     {
-        unalignedStore<T>(out + static_cast<size_t>(position) * sizeof(T), value);
+        unalignedStoreLittleEndian<T>(out + static_cast<size_t>(position) * sizeof(T), value);
     };
 
     UInt32 produced = 0;
@@ -2118,14 +2144,14 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
 
                 const UInt32 packed_bytes = Compression::FFOR::calculateBitpackedBytes(bits);
                 require(packed_bytes);
-                memcpy(lanes.data(), src, packed_bytes);
+                loadWordsLittleEndian<T>(lanes.data(), src, packed_bytes);
                 src += packed_bytes;
 
                 const UInt32 adjustment_bytes = Compression::FFOR::calculateBitpackedBytes(adjustment_bits);
                 require(adjustment_bytes);
                 if (adjustment_bits > 0)
                 {
-                    memcpy(adjustment_lanes.data(), src, adjustment_bytes);
+                    loadWordsLittleEndian<T>(adjustment_lanes.data(), src, adjustment_bytes);
                     Compression::FFOR::bitUnpack(adjustment_lanes.data(), adjustments.data(), adjustment_bits, T{0});
                 }
                 src += adjustment_bytes;
