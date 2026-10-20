@@ -1,18 +1,17 @@
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <atomic>
+#include <charconv>
 #include <chrono>
 #include <climits>
 #include <condition_variable>
 #include <csignal>
-#include <cstdlib>
-#include <cstring>
+#include <filesystem>
 #include <future>
 #include <mutex>
 #include <optional>
 #include <thread>
 
-#include <dirent.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 
@@ -967,53 +966,20 @@ SocketBufferOptions buffersTheKernelKeeps(UInt64 sndbuf, UInt64 rcvbuf)
     return client_options;
 }
 
-int compareDirectoryEntries(const dirent ** left, const dirent ** right)
-{
-    return std::strcmp((*left)->d_name, (*right)->d_name);
-}
-
 /// Connected sockets whose local or peer port is `port`. The listening socket has no peer.
-/// `scandir` snapshots the directory, so the walk stays valid while the exchange pipelines run.
 std::vector<SocketBufferOptions> connectedSocketBuffers(UInt16 port)
 {
     std::vector<SocketBufferOptions> found;
 
-    dirent ** entries = nullptr;
-    int count = scandir("/proc/self/fd", &entries, nullptr, compareDirectoryEntries);
-    if (count < 0)
+    const std::string fd_dir = std::filesystem::exists("/proc/self/fd") ? "/proc/self/fd" : "/dev/fd";
+    std::error_code error;
+    for (auto it = std::filesystem::directory_iterator(fd_dir, error); !error && it != std::filesystem::directory_iterator(); it.increment(error))
     {
-        entries = nullptr;
-        count = scandir("/dev/fd", &entries, nullptr, compareDirectoryEntries);
-    }
-    if (count < 0)
-        return found;
-
-    struct FreeEntries
-    {
-        dirent ** entries;
-        int count;
-
-        ~FreeEntries()
-        {
-            for (int index = 0; index < count; ++index)
-                std::free(entries[index]);
-            std::free(entries);
-        }
-    };
-    const FreeEntries free_entries{entries, count};
-
-    for (int index = 0; index < count; ++index)
-    {
-        const dirent * entry = entries[index];
-        if (entry->d_name[0] == '.')
+        const std::string name = it->path().filename().string();
+        int fd = -1;
+        const auto [parse_end, parse_error] = std::from_chars(name.data(), name.data() + name.size(), fd);
+        if (parse_error != std::errc() || parse_end != name.data() + name.size())
             continue;
-
-        char * end = nullptr;
-        const Int64 fd_value = std::strtoll(entry->d_name, &end, 10);
-        if (!end || *end != '\0' || fd_value < 0 || fd_value > INT_MAX)
-            continue;
-
-        const int fd = static_cast<int>(fd_value);
 
         sockaddr_storage local{};
         socklen_t local_len = sizeof(local);
@@ -1136,51 +1102,53 @@ std::vector<SocketBufferOptions> exchangeSocketBuffers()
         receiver_finished.store(true);
     });
 
-    struct FinishExchange
+    std::vector<SocketBufferOptions> open_sockets;
     {
-        std::shared_ptr<HoldSecondChunk> hold;
-        std::thread * sender = nullptr;
-        std::thread * receiver = nullptr;
-
-        ~FinishExchange()
+        /// On any exit path, releases the held chunk so both pipelines finish, then joins them.
+        struct FinishExchange
         {
-            if (hold)
+            std::shared_ptr<HoldSecondChunk> hold;
+            std::thread & sender;
+            std::thread & receiver;
+
+            ~FinishExchange()
+            {
                 hold->release();
-            if (sender && sender->joinable())
-                sender->join();
-            if (receiver && receiver->joinable())
-                receiver->join();
-        }
-    } finish{hold, &sender, &receiver};
+                sender.join();
+                receiver.join();
+            }
+        } finish{hold, sender, receiver};
 
-    std::vector<SocketBufferOptions> found;
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-    while (std::chrono::steady_clock::now() < deadline)
-    {
-        if (eventCount(ProfileEvents::StreamingExchangeSendBytes) > sent_before)
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+        while (std::chrono::steady_clock::now() < deadline)
         {
-            found = connectedSocketBuffers(port);
-            if (found.size() >= 2)
+            if (eventCount(ProfileEvents::StreamingExchangeSendBytes) > sent_before)
+            {
+                open_sockets = connectedSocketBuffers(port);
+                if (open_sockets.size() >= 2)
+                    break;
+            }
+            if (sender_finished.load() && receiver_finished.load())
                 break;
+            std::this_thread::yield();
         }
-        if (sender_finished.load() && receiver_finished.load())
-            break;
-        std::this_thread::yield();
     }
-
-    /// Copy before releasing: the release lets both pipelines finish and close the sockets.
-    const std::vector<SocketBufferOptions> open_sockets = found;
-    if (hold)
-        hold->release();
-    sender.join();
-    receiver.join();
-    finish.sender = nullptr;
-    finish.receiver = nullptr;
 
     EXPECT_EQ(sending_code, std::nullopt);
     EXPECT_EQ(receiving_code, std::nullopt);
     return open_sockets;
 }
+
+/// Restores the published socket buffer sizes when the test exits.
+struct RestoreBufferSizes
+{
+    const StreamingExchangeProtocol::SocketBufferSizes saved = StreamingExchangeProtocol::getSocketBufferSizes();
+
+    ~RestoreBufferSizes()
+    {
+        StreamingExchangeProtocol::setSocketBufferSizes(saved.sndbuf, saved.rcvbuf);
+    }
+};
 
 }
 
@@ -1240,16 +1208,7 @@ TEST(StreamingExchangeTransport, ConfiguredBuffersReachNewConnections)
 {
     MainThreadStatus::getInstance();
 
-    const auto saved = StreamingExchangeProtocol::getSocketBufferSizes();
-    struct RestoreBufferSizes
-    {
-        StreamingExchangeProtocol::SocketBufferSizes saved;
-
-        ~RestoreBufferSizes()
-        {
-            StreamingExchangeProtocol::setSocketBufferSizes(saved.sndbuf, saved.rcvbuf);
-        }
-    } restore{saved};
+    const RestoreBufferSizes restore;
 
     const SocketBufferOptions kernel_defaults = buffersTheKernelKeeps(0, 0);
     UInt64 sndbuf = 65536;
@@ -1285,16 +1244,7 @@ TEST(StreamingExchangeTransport, ConfiguredBuffersReachNewConnections)
 
 TEST(StreamingExchangeTransport, BufferSizesAboveIntMaxAreRejected)
 {
-    const auto saved = StreamingExchangeProtocol::getSocketBufferSizes();
-    struct RestoreBufferSizes
-    {
-        StreamingExchangeProtocol::SocketBufferSizes saved;
-
-        ~RestoreBufferSizes()
-        {
-            StreamingExchangeProtocol::setSocketBufferSizes(saved.sndbuf, saved.rcvbuf);
-        }
-    } restore{saved};
+    const RestoreBufferSizes restore;
 
     StreamingExchangeProtocol::setSocketBufferSizes(65536, 32768);
     const auto published = StreamingExchangeProtocol::getSocketBufferSizes();
