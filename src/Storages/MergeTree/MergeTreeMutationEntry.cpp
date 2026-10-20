@@ -58,6 +58,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
     , is_temp(true)
     , tid(tid_)
 {
+    affected_rows_by_command.resize(commands->size());
     try
     {
         auto out = disk->writeFile(std::filesystem::path(path_prefix) / file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
@@ -138,6 +139,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
     *buf >> "commands: ";
     commands->readText(*buf, false);
     *buf >> "\n";
+    affected_rows_by_command.resize(commands->size());
 
     if (buf->eof())
     {
@@ -168,6 +170,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MergeTreeMutationEntry && other) 
     , is_temp(std::exchange(other.is_temp, false))
     , is_registered(std::exchange(other.is_registered, false))
     , is_done(other.is_done)
+    , affected_rows_by_command(std::move(other.affected_rows_by_command))
     , block_number(other.block_number)
     , latest_failed_part(std::move(other.latest_failed_part))
     , latest_failed_part_info(std::move(other.latest_failed_part_info))
