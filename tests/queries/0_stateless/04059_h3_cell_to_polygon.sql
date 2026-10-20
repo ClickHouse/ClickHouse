@@ -44,8 +44,23 @@ SELECT count() = 2 FROM
 );
 
 SELECT
-    isNull(h3CellToPolygon(CAST(NULL AS Nullable(UInt64)))),
+    h3CellToPolygon(CAST(NULL AS Nullable(UInt64))) = [],
     isNull(h3CellToBoundaryWKT(CAST(NULL AS Nullable(UInt64))));
+
+-- A mixed Nullable column must skip validation on NULL rows, not substitute invalid H3 index 0.
+SELECT
+    count() = 3,
+    countIf(length(h3CellToPolygon(h)) = 0) = 1,
+    countIf(length(h3CellToPolygon(h)[1]) = 7) = 2,
+    countIf(isNull(h3CellToBoundaryWKT(h))) = 1
+FROM
+(
+    SELECT if(number = 1, CAST(NULL AS Nullable(UInt64)), toNullable(toUInt64(599686042433355775))) AS h
+    FROM numbers(3)
+);
+
+-- An actual invalid index still throws when carried in a Nullable column.
+SELECT h3CellToPolygon(CAST(toUInt64(0) AS Nullable(UInt64))); -- { serverError INCORRECT_DATA }
 
 -- Invalid cells throw by default, or produce default values with the setting.
 SELECT h3CellToPolygon(toUInt64(0)); -- { serverError INCORRECT_DATA }

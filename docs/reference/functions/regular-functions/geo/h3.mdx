@@ -286,6 +286,7 @@ h3CellToPolygon(h3Index)
 **Returned value**
 
 - A `Polygon` containing one closed ring. Invalid cells throw `INCORRECT_DATA` by default, or return an empty polygon (`[]`) when `functions_h3_default_if_invalid = 1`.
+- `NULL` inputs of type `Nullable(UInt64)` produce an empty polygon (`[]`), because `Polygon` cannot be nullable. The WKT function preserves `NULL` instead.
 
 **Example**
 

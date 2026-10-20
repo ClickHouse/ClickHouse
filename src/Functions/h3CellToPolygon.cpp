@@ -3,6 +3,7 @@
 #if USE_H3
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
@@ -48,12 +49,16 @@ public:
     bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override { return "(UInt64) -> Polygon"; }
+    // Polygon cannot be nullable, so handle null rows as empty polygons ourselves.
+    bool useDefaultImplementationForNulls() const override { return false; }
+    String getSignatureString() const override { return "(MaybeNullable(UInt64)) -> Polygon"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto full_column = arguments[0].column->convertToFullColumnIfConst();
-        const auto * column = checkAndGetColumn<ColumnUInt64>(full_column.get());
+        const auto * nullable_column = checkAndGetColumn<ColumnNullable>(full_column.get());
+        const auto * column = checkAndGetColumn<ColumnUInt64>(
+            nullable_column ? &nullable_column->getNestedColumn() : full_column.get());
         if (!column)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -68,6 +73,12 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
+            if (nullable_column && nullable_column->isNullAt(row))
+            {
+                polygon_offsets->getData()[row] = ring_offsets->size();
+                continue;
+            }
+
             CellBoundary boundary{};
             if (getCellBoundary(column->getData()[row], validator, boundary))
             {
