@@ -609,7 +609,11 @@ static std::optional<UInt128> computeReferencedTablesModificationHashImpl(ASTPtr
 }
 
 static bool collectFiltersFromQuerySettings(
-    const IAST & ast, const Settings & settings, ASTs & filter_asts, const NameSet * additional_table_filters_matchable_names = nullptr);
+    const IAST & ast,
+    const Settings & settings,
+    ASTs & filter_asts,
+    const NameSet * additional_table_filters_matchable_names = nullptr,
+    bool fail_on_profile = true);
 
 /// Parses the filter expressions a query inherits from settings rather than from its own text:
 /// every value of `additional_table_filters` and the `additional_result_filter` expression. They are
@@ -763,12 +767,17 @@ static bool collectNamesMatchableByAdditionalTableFiltersImpl(ASTPtr ast, const 
 /// `parseFilterASTsInjectedFromSettings`. A collected filter can carry filters of its own in the `SETTINGS`
 /// clause of a subquery, so it is walked the same way. With `additional_table_filters_matchable_names`, only
 /// the `additional_table_filters` entries keyed by one of these names are collected. Returns false when one
-/// cannot be parsed or has an unexpected shape, or when a `SETTINGS` clause applies a settings `profile`.
+/// cannot be parsed or has an unexpected shape, or, with `fail_on_profile`, when a `SETTINGS` clause applies
+/// a settings `profile`.
 static bool collectFiltersFromQuerySettings(
-    const IAST & ast, const Settings & settings, ASTs & filter_asts, const NameSet * additional_table_filters_matchable_names)
+    const IAST & ast,
+    const Settings & settings,
+    ASTs & filter_asts,
+    const NameSet * additional_table_filters_matchable_names,
+    bool fail_on_profile)
 {
     for (const auto & child : ast.children)
-        if (!collectFiltersFromQuerySettings(*child, settings, filter_asts, additional_table_filters_matchable_names))
+        if (!collectFiltersFromQuerySettings(*child, settings, filter_asts, additional_table_filters_matchable_names, fail_on_profile))
             return false;
 
     const auto * set_query = ast.as<ASTSetQuery>();
@@ -789,14 +798,14 @@ static bool collectFiltersFromQuerySettings(
                 settings[Setting::max_parser_depth],
                 settings[Setting::max_parser_backtracks]);
             filter_asts.push_back(filter_ast);
-            return collectFiltersFromQuerySettings(*filter_ast, settings, filter_asts, additional_table_filters_matchable_names);
+            return collectFiltersFromQuerySettings(*filter_ast, settings, filter_asts, additional_table_filters_matchable_names, fail_on_profile);
         };
 
         for (const auto & change : set_query->changes)
         {
             /// `profile` applies the settings of a settings profile to this scope, which can include filters
             /// that neither the query text nor the outer context shows. They cannot be analyzed here.
-            if (change.name == "profile")
+            if (fail_on_profile && change.name == "profile")
                 return false;
             if (change.name == "additional_result_filter")
             {
@@ -1018,8 +1027,12 @@ bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, QueryResultCa
         ASTs asts_to_check{ast};
         if (!parseFilterASTsInjectedFromSettings(context, asts_to_check, matchable_names_ptr))
             return false; /// A filter we cannot parse cannot be checked - fail closed.
-        /// The same applies to the filters in the query's own `SETTINGS` clauses, e.g. of a subquery.
-        if (!collectFiltersFromQuerySettings(*ast, settings, asts_to_check, matchable_names_ptr))
+        /// The same applies to the filters in the query's own `SETTINGS` clauses, e.g. of a subquery. A settings
+        /// `profile` applied by such a clause does not make the query uncachable here: the ordinary query cache
+        /// does not see the filters of the profiles applied by the user's context either, and the non-determinism
+        /// check below judges `obfuscate` by the seed the profile sets. The consistency check
+        /// (`query_cache_use_only_when_data_was_not_changed`) fails closed for such a profile on its own.
+        if (!collectFiltersFromQuerySettings(*ast, settings, asts_to_check, matchable_names_ptr, /*fail_on_profile=*/ false))
             return false;
 
         bool ast_contains_nondeterministic_functions = false;
