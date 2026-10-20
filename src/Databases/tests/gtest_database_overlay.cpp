@@ -51,3 +51,17 @@ TEST(DatabaseOverlay, DetachedTablesReportOverlayNameNotMemberName)
     }
     EXPECT_TRUE(found) << "Detached table was not found via the overlay's iterator";
 }
+
+/// `InterpreterCreateQuery` asks the outer database whether a full `ATTACH` may reuse a detached name,
+/// so the overlay must report the answer of the member that `createTable` writes to.
+TEST(DatabaseOverlay, CanReattachTableWithFullDefinitionFollowsWritableMember)
+{
+    const ContextPtr context = getContext().context;
+
+    DatabaseOverlay empty_overlay("overlay_without_members", context);
+    EXPECT_TRUE(empty_overlay.canReattachTableWithFullDefinition());
+
+    DatabaseOverlay overlay("overlay_with_memory_member", context);
+    overlay.registerNextDatabase(std::make_shared<DatabaseMemory>("overlay_memory_member", context));
+    EXPECT_FALSE(overlay.canReattachTableWithFullDefinition());
+}

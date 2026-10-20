@@ -17,8 +17,6 @@ const ReleaseSchedule = ({ releases = [] }) => {
     borderLeft: "1px solid rgba(128, 128, 128, 0.35)",
     paddingLeft: 16,
   };
-  const assetBase = typeof window !== "undefined" && window.location.pathname.startsWith("/docs") ? "/docs" : "";
-  const withBase = (path) => path && path.startsWith("/") ? assetBase + path : path;
 
   const StatusIndicator = ({ status }) => {
     const color =
@@ -50,18 +48,20 @@ const ReleaseSchedule = ({ releases = [] }) => {
       <colgroup span={2} />
       <colgroup span={2} />
       <colgroup span={2} />
+      <colgroup />
       <thead>
         <tr>
           <th rowSpan={2} scope="col">Version</th>
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
-            <a href={withBase("/products/cloud/features/admin-features/upgrades#fast-release-channel-early-upgrades")}>Fast Channel</a>
+            <a href="/products/cloud/features/admin-features/upgrades#fast-release-channel-early-upgrades">Fast Channel</a>
           </th>
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
-            <a href={withBase("/products/cloud/features/admin-features/upgrades#regular-release-channel")}>Regular Channel</a>
+            <a href="/products/cloud/features/admin-features/upgrades#regular-release-channel">Regular Channel</a>
           </th>
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
-            <a href={withBase("/products/cloud/features/admin-features/upgrades#slow-release-channel-deferred-upgrades")}>Slow Channel</a>
+            <a href="/products/cloud/features/admin-features/upgrades#slow-release-channel-deferred-upgrades">Slow Channel</a>
           </th>
+          <th rowSpan={2} scope="col" style={groupStartStyle}>EOL date</th>
         </tr>
         <tr>
           <th scope="col" style={groupStartStyle}>Start</th>
@@ -108,6 +108,7 @@ const ReleaseSchedule = ({ releases = [] }) => {
                   <td><DateCell date={release.slow_end_date} status={release.slow_progress} /></td>
                 </>
               )}
+              <td style={groupStartStyle}><DateCell date={release.eol_date} /></td>
             </tr>
           );
         })}

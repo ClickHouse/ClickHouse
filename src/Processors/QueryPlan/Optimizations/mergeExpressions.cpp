@@ -3,6 +3,8 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/FilterDescription.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
 
@@ -62,18 +64,10 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
             && (parent_actions.hasStatefulFunctions() || dagContainsNonDeterministicFunction(parent_actions)))
             return 0;
 
-        /// Propagate the flag from either side: if the child is a discarding step (or any
-        /// step whose inputs must not be stripped), the merged step must keep the same
-        /// invariant, otherwise `removeUnusedColumns` would prune the inherited inputs and
-        /// trigger an infinite loop with re-inserted discarding steps.
-        const bool prevent_input_removal = child_expr->isInputRemovalPrevented() || parent_expr->isInputRemovalPrevented();
-
         auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
 
         auto expr = std::make_unique<ExpressionStep>(child_expr->getInputHeaders().front(), std::move(merged));
         expr->setStepDescription(mergeStepDescriptions(parent_expr->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
-        if (prevent_input_removal)
-            expr->setPreventInputRemoval();
 
         parent_node->step = std::move(expr);
         parent_node->children.swap(child_node->children);
@@ -90,8 +84,6 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
             && (parent_actions.hasStatefulFunctions() || dagContainsNonDeterministicFunction(parent_actions)))
             return 0;
 
-        const bool prevent_input_removal = child_expr->isInputRemovalPrevented() || parent_filter->isInputRemovalPrevented();
-
         auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
         /// merge can drag materialize wrappers from a UNION child into the filter (#78166); folding through
         /// them is left to the `FilterStep` constructor below, which does it after `deduplicateSubtrees` -
@@ -104,8 +96,6 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
             parent_filter->getFilterColumnName(),
             parent_filter->removesFilterColumn());
         filter->setStepDescription(mergeStepDescriptions(parent_filter->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
-        if (prevent_input_removal)
-            filter->setPreventInputRemoval();
 
         parent_node->step = std::move(filter);
         parent_node->children.swap(child_node->children);
@@ -166,6 +156,27 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
     }
 
     return 0;
+}
+
+/// an always-true `FilterStep` stays above a join and splits the join graph
+size_t tryReplaceAlwaysTrueFilter(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings &)
+{
+    auto * filter = typeid_cast<FilterStep *>(node->step.get());
+    if (!filter || !filter->removesFilterColumn())
+        return 0;
+
+    auto & dag = filter->getExpression();
+    const auto & filter_column_name = filter->getFilterColumnName();
+    const auto & filter_node = dag.findInOutputs(filter_column_name);
+    if (filter_node.type != ActionsDAG::ActionType::COLUMN || !ConstantFilterDescription(*filter_node.column).always_true)
+        return 0;
+
+    dag.removeUnusedResult(filter_column_name);
+    dag.removeUnusedActions(false, false);
+    auto expression = std::make_unique<ExpressionStep>(filter->getInputHeaders().front(), std::move(dag));
+    expression->setStepDescription(*filter);
+    node->step = std::move(expression);
+    return 1;
 }
 
 }

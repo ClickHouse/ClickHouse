@@ -62,7 +62,7 @@ Useful to customize query behavior depending on the invoked handler.
     FunctionDocumentation::Arguments arguments = {};
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the current handler name.", {"String"}};
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT currentHandler()", ""}};
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 6};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
