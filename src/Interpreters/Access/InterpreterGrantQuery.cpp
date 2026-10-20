@@ -7,6 +7,7 @@
 #include <Access/Role.h>
 #include <Access/RolesOrUsersSet.h>
 #include <Access/User.h>
+#include <Core/ServerSettings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Interpreters/QueryLog.h>
@@ -17,11 +18,17 @@
 
 namespace DB
 {
+namespace ServerSetting
+{
+    extern const ServerSettingsBool experimental_self_service_password_change;
+}
+
 namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -429,6 +436,35 @@ BlockIO InterpreterGrantQuery::execute()
     const auto updated_query = removeOnClusterClauseIfNeeded(query_ptr, getContext());
     auto & query = updated_query->as<ASTGrantQuery &>();
 
+    const bool self_authentication_management_enabled
+        = getContext()->getServerSettings()[ServerSetting::experimental_self_service_password_change];
+    const AccessFlags self_authentication = AccessType::ALTER_USER_SELF_AUTHENTICATION;
+    const auto exclude_self_authentication = [&](AccessRightsElements & elements)
+    {
+        for (auto & element : elements)
+            element.access_flags -= self_authentication;
+    };
+    if (!self_authentication_management_enabled)
+    {
+        /// The parser keeps each named privilege/group in its own element, even in mixed lists.
+        /// Check before scope filtering and reject explicit selections even if a copy would be empty.
+        if (std::any_of(query.access_rights_elements.begin(), query.access_rights_elements.end(), [&](const auto & element)
+            {
+                return element.access_flags == self_authentication;
+            }))
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Granting or revoking ALTER USER SELF AUTHENTICATION requires the server setting "
+                "experimental_self_service_password_change to be enabled");
+
+        /// A remote enabled executor would reconstruct an unfiltered implicit revoke from this option.
+        if (query.replace_access && !query.cluster.empty())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Distributed WITH REPLACE OPTION requires experimental_self_service_password_change to be enabled");
+
+        /// Normalize the AST too: enabled DDL workers must receive the filtered request.
+        exclude_self_authentication(query.access_rights_elements);
+    }
+
     query.replaceCurrentUserTag(getContext()->getUserName());
     query.access_rights_elements.eraseNotGrantable();
 
@@ -463,6 +499,8 @@ BlockIO InterpreterGrantQuery::execute()
     AccessRightsElements elements_to_grant;
     AccessRightsElements elements_to_revoke;
     collectAccessRightsElementsToGrantOrRevoke(query, elements_to_grant, elements_to_revoke);
+    if (!self_authentication_management_enabled)
+        exclude_self_authentication(elements_to_revoke); /// Includes implicit revokes from `WITH REPLACE OPTION`.
 
     std::vector<UUID> roles_to_grant;
     RolesOrUsersSet roles_to_revoke;
@@ -486,6 +524,10 @@ BlockIO InterpreterGrantQuery::execute()
     elements_to_grant.replaceEmptyDatabase(current_database);
     elements_to_revoke.replaceEmptyDatabase(current_database);
     query.access_rights_elements.replaceEmptyDatabase(current_database);
+
+    AccessRights new_rights;
+    if (query.current_grants)
+        calculateCurrentGrantRightsWithIntersection(new_rights, current_user_access, elements_to_grant);
 
     /// Executing on cluster.
     if (!query.cluster.empty())
@@ -511,10 +553,6 @@ BlockIO InterpreterGrantQuery::execute()
 
     if (need_check_grantees_are_allowed)
         current_user_access->checkGranteesAreAllowed(grantees);
-
-    AccessRights new_rights;
-    if (query.current_grants)
-        calculateCurrentGrantRightsWithIntersection(new_rights, current_user_access, elements_to_grant);
 
     /// Update roles and users listed in `grantees`.
     auto update_func = [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr

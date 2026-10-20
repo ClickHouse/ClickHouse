@@ -801,7 +801,19 @@ The `CREATE TOKEN` privilege allows a user to add an authentication method to it
 
 #### Self-service authentication {#self-service-authentication}
 
-`ALTER USER SELF AUTHENTICATION` permits a user to replace, add, or reset authentication methods on their own account. It is a global privilege attached to the recipient, rather than a privilege on a target user name. Its standalone syntax has no object-target `ON` clause:
+`ALTER USER SELF AUTHENTICATION` permits a user to replace, add, or reset authentication methods on their own account. It is a global privilege attached to the recipient, rather than a privilege on a target user name. Its standalone syntax has no object-target `ON` clause.
+
+Granting or revoking this privilege requires the experimental server setting `experimental_self_service_password_change` (default `false`, restart required).
+Explicit requests are rejected while disabled, including grant-option changes, mixed lists, and explicit current-grants selections, even if nothing would be copied.
+While disabled, ordinary `ALL`, `ACCESS MANAGEMENT`, and broad current-grants copying remain available but omit this privilege from the request.
+Group revokes preserve any existing self-service grant and its grant option. Other requested privileges follow their normal rules.
+When enabled, these groups include the privilege normally, and group revokes may remove it.
+For privilege grants, local `WITH REPLACE OPTION` also preserves the bit while disabled; distributed `WITH REPLACE OPTION` requires enabling the setting.
+Existing direct and role-derived grants remain effective when the setting is disabled. Loading, restoring, replicating, and displaying them remain supported.
+Enable the setting on participating executors for distributed grant/revoke statements. Disabling it is not a downgrade procedure:
+before downgrade, enable it for cleanup, remove the privilege from users, roles, and configuration, and verify that persisted definitions contain no new keyword.
+
+For example:
 
 ```sql
 GRANT ALTER USER SELF AUTHENTICATION TO alice;

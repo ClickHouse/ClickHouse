@@ -1238,6 +1238,9 @@ ALTER USER alice ADD IDENTIFIED WITH sha256_password BY 'additional_password';
 ALTER USER alice RESET AUTHENTICATION METHODS TO NEW;
 ```
 
+Granting or revoking `ALTER USER SELF AUTHENTICATION` requires the experimental server setting `experimental_self_service_password_change`
+(default `false`, restart required). Existing grants continue to authorize changes while the setting is disabled.
+
 An authentication change authorized by `ALTER USER SELF AUTHENTICATION` must target only the current user and omit `IN <storage>`.
 This privilege alone does not authorize `VALID UNTIL` or `VALID FOR`. `CREATE TOKEN` independently permits adding authentication methods with
 method-local expiry. Changing user-level expiry or other account properties requires `ALTER USER`, including statements that also change authentication.
