@@ -27,8 +27,10 @@ class StorageTableFunctionProxy final : public StorageProxy
 {
 public:
     StorageTableFunctionProxy(const StorageID & table_id_, GetNestedStorageFunc get_nested_,
-            ColumnsDescription cached_columns, bool add_conversion_ = true, bool is_data_lake_ = false)
+            ColumnsDescription cached_columns, bool add_conversion_ = true, bool is_data_lake_ = false,
+            bool has_unreplicated_table_data_on_disk_ = false)
     : StorageProxy(table_id_), get_nested(std::move(get_nested_)), add_conversion(add_conversion_), is_data_lake(is_data_lake_)
+    , has_unreplicated_table_data_on_disk(has_unreplicated_table_data_on_disk_)
     {
         StorageInMemoryMetadata cached_metadata;
         cached_metadata.setColumns(std::move(cached_columns));
@@ -68,6 +70,8 @@ public:
     /// Avoid loading nested table by returning nullptr/false for all table functions.
     StoragePolicyPtr getStoragePolicy() const override { return nullptr; }
     bool storesDataOnDisk() const override { return false; }
+    /// Reported by the table function itself, so that the check does not execute it.
+    bool hasUnreplicatedTableDataOnDisk() const override { return has_unreplicated_table_data_on_disk; }
     bool supportsReplication() const override { return false; }
 
     /// A table function that has not been resolved yet holds no data and has started no background
@@ -306,6 +310,7 @@ private:
     mutable StoragePtr nested;
     const bool add_conversion;
     const bool is_data_lake;
+    const bool has_unreplicated_table_data_on_disk;
 };
 
 }
