@@ -16,6 +16,7 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/MemoryTrackerSwitcher.h>
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/ProfileEvents.h>
@@ -358,6 +359,40 @@ TEST(MemoryTracker, FailedSpeculativeReservationLeavesCorrectionUntouched)
 
     MemoryTracker::updateAllocated(measured_amount, /*log_change=*/ false);
     EXPECT_LE(std::abs(total_memory_tracker.get() - measured_amount), GLOBAL_TOLERANCE);
+}
+
+TEST(MemoryTracker, SwitcherDoesNotSetAsideDeferredMemory)
+{
+    /// `additional_memory_tracking_per_thread` covers one buffer of deferred allocations per
+    /// thread. `MemoryTrackerSwitcher` (e.g. in `Aggregator::executeOnBlock`) must not keep the
+    /// bytes deferred before the switch unreported while the switched scope defers more.
+    MemoryTracker process(&total_memory_tracker, VariableContext::Process, false);
+    MemoryTracker switched(&total_memory_tracker, VariableContext::Process, false);
+
+    std::thread([&]
+    {
+        DB::ThreadStatus thread_status;
+        thread_status.memory_tracker.setParent(&process);
+        thread_status.untracked_memory_limit = 4 * MB;
+
+        std::ignore = CurrentMemoryTracker::alloc(3 * MB);
+        {
+            DB::MemoryTrackerSwitcher switcher(&switched);
+            /// The bytes deferred before the switch are reported to the previous parent.
+            EXPECT_EQ(process.get(), 3 * MB);
+            EXPECT_EQ(thread_status.untracked_memory.load(), 0);
+
+            std::ignore = CurrentMemoryTracker::alloc(3 * MB);
+            EXPECT_EQ(process.get() + switched.get() + thread_status.untracked_memory.load(), 6 * MB);
+            EXPECT_LE(thread_status.untracked_memory.load(), thread_status.untracked_memory_limit);
+            std::ignore = CurrentMemoryTracker::free(3 * MB);
+        }
+        EXPECT_EQ(switched.get(), 0);
+
+        std::ignore = CurrentMemoryTracker::free(3 * MB);
+        DB::CurrentThread::flushUntrackedMemory();
+        EXPECT_EQ(process.get(), 0);
+    }).join();
 }
 
 TEST(MemoryTracker, SpeculativeReservationOutlivesNonNestedGuards)
