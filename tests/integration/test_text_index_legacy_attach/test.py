@@ -40,19 +40,24 @@ def test_legacy_nested_string_index_attaches(started_cluster):
     node.query(f"DROP TABLE IF EXISTS {table} SYNC")
     try:
         node.query(f"CREATE TABLE {table} (t Array(Array(String))) ENGINE = MergeTree ORDER BY tuple()")
-        node.query(f"INSERT INTO {table} VALUES ([['old']])")
+        node.query(f"INSERT INTO {table} SELECT [['old']]")
         add_legacy_text_index(table, "Array(Array(String))")
 
         assert node.query(
             f"SELECT count() FROM system.data_skipping_indices WHERE database = 'default' AND table = '{table}' AND name = 'idx'"
         ) == "1\n"
-        assert "NOT_IMPLEMENTED" in node.query_and_get_error(f"INSERT INTO {table} VALUES ([['new']])")
+        assert "NOT_IMPLEMENTED" in node.query_and_get_error(f"INSERT INTO {table} SELECT [['new']]")
 
         # An unrelated ALTER revalidates every index of the table, including the inherited legacy one.
         node.query(f"ALTER TABLE {table} ADD COLUMN n UInt8 DEFAULT 0")
 
+        # Replacing the index is a new declaration, even when it reuses the same name.
+        assert "BAD_ARGUMENTS" in node.query_and_get_error(
+            f"ALTER TABLE {table} DROP INDEX idx, ADD INDEX idx t TYPE text(tokenizer = 'splitByNonAlpha')"
+        )
+
         node.query(f"ALTER TABLE {table} DROP INDEX idx")
-        node.query(f"INSERT INTO {table} VALUES ([['new']])")
+        node.query(f"INSERT INTO {table} (t) SELECT [['new']]")
         assert node.query(f"SELECT count() FROM {table}") == "2\n"
     finally:
         node.query(f"DROP TABLE IF EXISTS {table} SYNC")
@@ -68,12 +73,18 @@ def test_legacy_nested_fixed_string_index_attaches(started_cluster):
         assert node.query(
             f"SELECT count() FROM system.data_skipping_indices WHERE database = 'default' AND table = '{table}' AND name = 'idx'"
         ) == "1\n"
+
+        # Changing the indexed column's type is not an inherited definition: the new base type
+        # is rejected even though the old multidimensional `text` index also fails validation.
+        assert "BAD_ARGUMENTS" in node.query_and_get_error(
+            f"ALTER TABLE {table} MODIFY COLUMN t Array(Array(UInt8))"
+        )
+
         node.query(f"ALTER TABLE {table} ADD COLUMN n UInt8 DEFAULT 0")
-        node.query(f"INSERT INTO {table} VALUES ([['abcdefgh', 'ijklmnop']], 1)")
+        node.query(f"INSERT INTO {table} SELECT [['abcdefgh', 'ijklmnop']], 1")
         node.query(f"DETACH TABLE {table} SYNC")
         node.query(f"ATTACH TABLE {table}")
-        node.query(f"INSERT INTO {table} VALUES ([['qrstuvwx', 'yzabcdef']], 2)")
+        node.query(f"INSERT INTO {table} SELECT [['qrstuvwx', 'yzabcdef']], 2")
         assert node.query(f"SELECT count() FROM {table}") == "2\n"
     finally:
         node.query(f"DROP TABLE IF EXISTS {table} SYNC")
-
