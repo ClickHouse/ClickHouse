@@ -11,6 +11,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 S=${CLICKHOUSE_DATABASE}
 GW="gw_${S}"; QU="qu_${S}"; QV="qv_${S}"; QW="qw_${S}"; QRO="qro_${S}"; QRO2="qro2_${S}"
 QROLE="qrole_${S}"; QVAL="qval_${S}"; QS="qs_${S}"; R_LOCK="r_lock_${S}"
+QEMPTY="qempty_${S}"; QTWO="qtwo_${S}"; P_EMPTY="p_empty_${S}"; QMT="qmt_${S}"; P_MT="p_mt_${S}"
 P_LOCK="p_lock_${S}"; P_OTHER="p_other_${S}"; P_WRITABLE="p_writable_${S}"
 P_OTHER_WRITABLE="p_other_writable_${S}"; P_VALUELESS="p_valueless_${S}"; P_DEFAULT="p_default_${S}"
 READERS="${QU}, ${QV}, ${QW}, ${QRO}, ${QRO2}, ${QROLE}, ${QVAL}, ${QS}"
@@ -19,9 +20,9 @@ function cleanup()
 {
     $CLICKHOUSE_CLIENT -m -q "
         DROP ROW POLICY IF EXISTS rp ON ${S}.t;
-        DROP USER IF EXISTS ${GW}, ${READERS};
+        DROP USER IF EXISTS ${GW}, ${READERS}, ${QEMPTY}, ${QTWO}, ${QMT};
         DROP ROLE IF EXISTS ${R_LOCK};
-        DROP SETTINGS PROFILE IF EXISTS ${P_LOCK}, ${P_OTHER}, ${P_WRITABLE}, ${P_OTHER_WRITABLE}, ${P_VALUELESS}, ${P_DEFAULT};
+        DROP SETTINGS PROFILE IF EXISTS ${P_LOCK}, ${P_OTHER}, ${P_WRITABLE}, ${P_OTHER_WRITABLE}, ${P_VALUELESS}, ${P_DEFAULT}, ${P_EMPTY}, ${P_MT};
     "
 }
 cleanup
@@ -49,6 +50,11 @@ CREATE USER ${QRO2} SETTINGS readonly = 1;
 CREATE USER ${QROLE};
 GRANT ${R_LOCK} TO ${QROLE};
 CREATE USER ${QVAL} SETTINGS SQL_tenant = 'globex' CONST;
+CREATE SETTINGS PROFILE ${P_EMPTY} SETTINGS SQL_tenant = '';
+CREATE USER ${QEMPTY} SETTINGS SQL_tenant = '' CONST;
+CREATE USER ${QTWO} SETTINGS PROFILE ${P_LOCK}, PROFILE ${P_EMPTY};
+CREATE SETTINGS PROFILE ${P_MT} SETTINGS merge_tree_index_granularity CONST;
+CREATE USER ${QMT} SETTINGS PROFILE ${P_MT};
 CREATE USER ${QS} IDENTIFIED WITH no_password SETTINGS SQL_tenant = 'acme' CONST;
 
 GRANT IMPERSONATE ON ${QU} TO ${GW};
@@ -58,6 +64,9 @@ GRANT IMPERSONATE ON ${QRO} TO ${GW};
 GRANT IMPERSONATE ON ${QRO2} TO ${GW};
 GRANT IMPERSONATE ON ${QROLE} TO ${GW};
 GRANT IMPERSONATE ON ${QVAL} TO ${GW};
+GRANT IMPERSONATE ON ${QEMPTY} TO ${GW};
+GRANT IMPERSONATE ON ${QTWO} TO ${GW};
+GRANT IMPERSONATE ON ${QMT} TO ${GW};
 GRANT IMPERSONATE ON default TO ${GW};
 GRANT SELECT ON ${S}.* TO ${READERS};
 CREATE ROW POLICY rp ON t USING tenant = getSetting('SQL_tenant') TO ${READERS};
@@ -82,11 +91,15 @@ run "$GW" -q "EXECUTE AS ${QU} SETTINGS SQL_tenant = 'acme' ${READ}"
 run "$GW" -q "EXECUTE AS ${QU} ${READ}"
 run "$GW" -q "EXECUTE AS ${QU} SETTINGS SQL_tenant = 'acme', SQL_tenant = 'acme' SELECT 1"
 run "$GW" -q "EXECUTE AS ${QU} SETTINGS max_threads = 1 SELECT 1"
+run "$GW" -q "EXECUTE AS ${QMT} SETTINGS merge_tree_index_granularity = 1 SELECT 1"
 run "$GW" -q "SELECT formatQuery('EXECUTE AS u SETTINGS SQL_tenant = DEFAULT SELECT 1')"
 run "$GW" -q "SELECT formatQuery('EXECUTE AS u SETTINGS SQL_tenant = {p:String} SELECT 1')"
 run "$GW" -q "SELECT formatQuery('EXECUTE AS u SETTINGS SQL_tenant SELECT 1')"
 run "$GW" -q "EXECUTE AS ${QW} SETTINGS SQL_tenant = 'acme' SELECT 1"
 run "$GW" -q "EXECUTE AS ${QVAL} SETTINGS SQL_tenant = 'acme' SELECT 1"
+run "$GW" -q "EXECUTE AS ${QEMPTY} SETTINGS SQL_tenant = 'acme' SELECT 1"
+run "$GW" -q "EXECUTE AS ${QEMPTY} SELECT getSetting('SQL_tenant') = ''"
+run "$GW" -q "EXECUTE AS ${QTWO} SETTINGS SQL_tenant = 'acme' SELECT 1"
 run "$GW" -q "EXECUTE AS default SETTINGS SQL_${S} = 'acme' SELECT 1"
 run "$GW" -q "EXECUTE AS ${QRO2} SETTINGS SQL_tenant = 'acme' SELECT 1"
 run "$GW" -q "EXECUTE AS ${QROLE} SETTINGS SQL_tenant = 'acme' ${READ}"

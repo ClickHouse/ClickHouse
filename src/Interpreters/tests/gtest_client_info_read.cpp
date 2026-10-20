@@ -394,13 +394,29 @@ TEST(ClientInfoRead, CurrentRolesRoundTripsTriState)
 static String makeClientInfoWireWithOversizedRoles(UInt64 declared_roles, UInt64 declared_name_size)
 {
     String wire = makeFullClientInfoWire(ClientInfo::QueryKind::SECONDARY_QUERY, "127.0.0.1:9000");
-    /// Drop the trailing `have_current_roles = no`.
-    wire.pop_back();
+    /// Drop the trailing `have_current_roles = no` and `have_execute_as_settings = no`.
+    wire.resize(wire.size() - 2);
 
     WriteBufferFromString buf(wire, AppendModeTag{});
     writeBinary(static_cast<UInt8>(1), buf);
     writeVarUInt(declared_roles, buf);
     if (declared_roles)
+        writeVarUInt(declared_name_size, buf);
+    buf.finalize();
+    return wire;
+}
+
+/// The same for `execute_as_settings`, the field after `current_roles`.
+static String makeClientInfoWireWithOversizedExecuteAsSettings(UInt64 declared_settings, UInt64 declared_name_size)
+{
+    String wire = makeFullClientInfoWire(ClientInfo::QueryKind::SECONDARY_QUERY, "127.0.0.1:9000");
+    /// Drop the trailing `have_execute_as_settings = no`.
+    wire.pop_back();
+
+    WriteBufferFromString buf(wire, AppendModeTag{});
+    writeBinary(static_cast<UInt8>(1), buf);
+    writeVarUInt(declared_settings, buf);
+    if (declared_settings)
         writeVarUInt(declared_name_size, buf);
     buf.finalize();
     return wire;
@@ -431,6 +447,37 @@ TEST(ClientInfoRead, CurrentRoleNameSizeIsBounded)
     {
         info.read(in, DBMS_TCP_PROTOCOL_VERSION);
         FAIL() << "a role name of a gigabyte was accepted";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::TOO_LARGE_STRING_SIZE) << e.displayText();
+    }
+}
+
+TEST(ClientInfoRead, ExecuteAsSettingsCountIsBounded)
+{
+    ClientInfo info;
+    ReadBufferFromOwnString in(makeClientInfoWireWithOversizedExecuteAsSettings(1ULL << 30, 0));
+    try
+    {
+        info.read(in, DBMS_TCP_PROTOCOL_VERSION);
+        FAIL() << "an EXECUTE AS settings count of a gigabyte was accepted";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::TOO_LARGE_ARRAY_SIZE) << e.displayText();
+        EXPECT_NE(e.message().find("EXECUTE AS"), std::string::npos) << e.displayText();
+    }
+}
+
+TEST(ClientInfoRead, ExecuteAsSettingNameSizeIsBounded)
+{
+    ClientInfo info;
+    ReadBufferFromOwnString in(makeClientInfoWireWithOversizedExecuteAsSettings(1, 1ULL << 30));
+    try
+    {
+        info.read(in, DBMS_TCP_PROTOCOL_VERSION);
+        FAIL() << "an EXECUTE AS setting name of a gigabyte was accepted";
     }
     catch (const Exception & e)
     {

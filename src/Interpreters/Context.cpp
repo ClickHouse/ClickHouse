@@ -2418,7 +2418,7 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
         std::unordered_set<std::string_view> names;
         for (const auto & change : *execute_as_settings_)
         {
-            if (Settings::hasBuiltin(change.name))
+            if (settingIsBuiltin(change.name))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS, "EXECUTE AS ... SETTINGS accepts only custom settings, {} is a builtin one", backQuote(change.name));
             access_control.checkSettingNameIsAllowed(change.name);
