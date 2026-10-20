@@ -419,8 +419,3 @@ ch_cc_library(
     ],
     alwayslink = True,
 )
-
-cc_library(
-    name = "headers",
-    hdrs = [],
-)
