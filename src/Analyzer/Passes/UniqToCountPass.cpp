@@ -136,6 +136,10 @@ public:
         if (!query_node)
             return;
 
+        /// The planner matches an INTERPOLATE target to its result column by expression, and the target is a copy of it.
+        if (query_node->hasInterpolate())
+            return;
+
         /// Check that query has only single table expression which is subquery
         auto * subquery_node = query_node->getJoinTreeNode()->as<QueryNode>();
         if (!subquery_node)
