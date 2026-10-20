@@ -147,7 +147,9 @@ BlockIO InterpreterDeleteQuery::execute()
         AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
         visitor.visit(predicate);
 
-        table->deleteByUniqueKey(query_ptr, getContext());
+        /// A lazy stand-in neither forwards `deleteByUniqueKey` nor shares its lock with the loaded table.
+        auto resolved_table_lock = resolved_table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+        resolved_table->deleteByUniqueKey(query_ptr, getContext());
         return {};
     }
 

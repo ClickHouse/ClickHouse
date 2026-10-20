@@ -3,6 +3,7 @@
 --   1. explicit transaction: a DELETE inside a transaction is refused and changes nothing
 --   2. Alias: a DELETE through an Alias table deletes from the table it points to
 --   3. shadowed virtual column: a table column named `_part_offset`, `_part` or `_partition_id` refuses the DELETE
+--   4. lazy table: a DELETE reaches a table whose database loads it lazily, directly and through an Alias
 
 SET enable_unique_key = 1;
 SET allow_experimental_alias_table_engine = 1;
@@ -83,3 +84,25 @@ SELECT 'shadow_partition' AS step, id FROM uk_shadow_partition ORDER BY id;  -- 
 DROP TABLE uk_shadow_offset;
 DROP TABLE uk_shadow_part;
 DROP TABLE uk_shadow_partition;
+
+-- 4. lazy table: red if the DELETE goes to the catalog's stand-in, which refuses it (SUPPORT_IS_DISABLED).
+-- Each DELETE follows a re-attach, which is what puts a stand-in in the catalog.
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic SETTINGS lazy_load_tables = 1;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.uk_lazy (id UInt64) ENGINE = MergeTree UNIQUE KEY (id) ORDER BY (id);
+CREATE TABLE uk_lazy_alias ENGINE = Alias({CLICKHOUSE_DATABASE_1:String}, 'uk_lazy');
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.uk_lazy VALUES (1), (2), (3);
+
+DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+SELECT 'lazy_stand_in' AS step, engine FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 'uk_lazy';
+DELETE FROM {CLICKHOUSE_DATABASE_1:Identifier}.uk_lazy WHERE id = 1;
+
+DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+DELETE FROM uk_lazy_alias WHERE id = 2;
+
+SELECT 'lazy_survivors' AS step, id FROM {CLICKHOUSE_DATABASE_1:Identifier}.uk_lazy ORDER BY id;  -- 3
+
+DROP TABLE uk_lazy_alias;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
