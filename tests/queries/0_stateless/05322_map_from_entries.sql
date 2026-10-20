@@ -163,3 +163,90 @@ FORMAT TabSeparatedRaw;
 
 -- NULL entries are invalid even when both fields of the tuple are nullable.
 SELECT mapFromEntries(CAST([NULL], 'Array(Nullable(Tuple(Nullable(String), Nullable(UInt8))))')); -- { serverError BAD_ARGUMENTS }
+
+-- Dynamic and Variant keys can contain NULL without Nullable wrappers.
+SELECT length(mapKeys(mapFromEntries(CAST([('a', 1)], 'Array(Tuple(Dynamic, UInt8))'))))
+SETTINGS allow_experimental_dynamic_type = 1
+FORMAT TabSeparatedRaw;
+SELECT mapFromEntries(CAST([('a', 1), (NULL, 2)], 'Array(Tuple(Dynamic, UInt8))'))
+SETTINGS allow_experimental_dynamic_type = 1; -- { serverError BAD_ARGUMENTS }
+
+SELECT length(mapKeys(mapFromEntries(CAST([('a', 1)], 'Array(Tuple(Variant(String, UInt64), UInt8))'))))
+SETTINGS allow_experimental_variant_type = 1
+FORMAT TabSeparatedRaw;
+SELECT mapFromEntries(CAST([('a', 1), (NULL, 2)], 'Array(Tuple(Variant(String, UInt64), UInt8))'))
+SETTINGS allow_experimental_variant_type = 1; -- { serverError BAD_ARGUMENTS }
+
+-- Throwing NULL-entry and NULL-key checks must not inspect rows removed by lazy ARRAY JOIN.
+SELECT mapFromEntries(entries)
+FROM
+(
+    SELECT entries
+    FROM
+    (
+        SELECT
+            if(number = 0,
+                CAST([('a', number)], 'Array(Nullable(Tuple(String, UInt64)))'),
+                CAST([NULL], 'Array(Nullable(Tuple(String, UInt64)))')) AS entries,
+            if(number = 0, [1, 2, 3], []) AS r
+        FROM numbers(2)
+    ) ARRAY JOIN r
+    LIMIT 3
+)
+SETTINGS enable_lazy_columns_replication = 0, max_threads = 1, enable_parallel_replicas = 0, compile_expressions = 0
+FORMAT TabSeparatedRaw;
+
+SELECT mapFromEntries(entries)
+FROM
+(
+    SELECT entries
+    FROM
+    (
+        SELECT
+            if(number = 0,
+                CAST([('a', number)], 'Array(Nullable(Tuple(String, UInt64)))'),
+                CAST([NULL], 'Array(Nullable(Tuple(String, UInt64)))')) AS entries,
+            if(number = 0, [1, 2, 3], []) AS r
+        FROM numbers(2)
+    ) ARRAY JOIN r
+    LIMIT 3
+)
+SETTINGS enable_lazy_columns_replication = 1, max_threads = 1, enable_parallel_replicas = 0, compile_expressions = 0
+FORMAT TabSeparatedRaw;
+
+-- The same holds for nullable keys from unused rows.
+SELECT mapFromEntries(entries)
+FROM
+(
+    SELECT entries
+    FROM
+    (
+        SELECT
+            if(number = 0,
+                CAST([('a', number)], 'Array(Tuple(Nullable(String), UInt64))'),
+                CAST([(NULL, number)], 'Array(Tuple(Nullable(String), UInt64))')) AS entries,
+            if(number = 0, [1, 2, 3], []) AS r
+        FROM numbers(2)
+    ) ARRAY JOIN r
+    LIMIT 3
+)
+SETTINGS enable_lazy_columns_replication = 0, max_threads = 1, enable_parallel_replicas = 0, compile_expressions = 0
+FORMAT TabSeparatedRaw;
+
+SELECT mapFromEntries(entries)
+FROM
+(
+    SELECT entries
+    FROM
+    (
+        SELECT
+            if(number = 0,
+                CAST([('a', number)], 'Array(Tuple(Nullable(String), UInt64))'),
+                CAST([(NULL, number)], 'Array(Tuple(Nullable(String), UInt64))')) AS entries,
+            if(number = 0, [1, 2, 3], []) AS r
+        FROM numbers(2)
+    ) ARRAY JOIN r
+    LIMIT 3
+)
+SETTINGS enable_lazy_columns_replication = 1, max_threads = 1, enable_parallel_replicas = 0, compile_expressions = 0
+FORMAT TabSeparatedRaw;

@@ -1,9 +1,11 @@
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -323,6 +325,27 @@ std::pair<ColumnPtr, ColumnPtr> extractMapEntryColumns(
     return {std::move(keys), std::move(values)};
 }
 
+/// Dynamic and Variant can store NULL keys without a Nullable wrapper.
+/// Check their discriminators only in mapFromEntries, preserving mapFromArrays behavior.
+void validateMapFromEntriesVariantKeys(const IColumn & keys, const String & function_name)
+{
+    const ColumnVariant * variant = checkAndGetColumn<ColumnVariant>(&keys);
+    if (const auto * dynamic = checkAndGetColumn<ColumnDynamic>(&keys))
+        variant = &dynamic->getVariantColumn();
+
+    if (!variant)
+        return;
+
+    for (const auto discriminator : variant->getLocalDiscriminators())
+    {
+        if (discriminator == ColumnVariant::NULL_DISCRIMINATOR)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The nested column of first argument in function {} must not contain NULLs",
+                function_name);
+    }
+}
+
 /// mapFromEntries(entries) creates a map from an array of key-value tuples.
 class FunctionMapFromEntries final : public IFunction
 {
@@ -334,6 +357,8 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
+    /// Invalid keys and entries raise errors for individual rows.
+    std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool useDefaultImplementationForNulls() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -402,6 +427,7 @@ public:
 
         auto [keys, values] = extractMapEntryColumns(*entries, nested_type, getName());
         keys = normalizeMapKeyColumn(std::move(keys), getName());
+        validateMapFromEntriesVariantKeys(*keys, getName());
         return ColumnMap::create(keys, values, offsets);
     }
 };
