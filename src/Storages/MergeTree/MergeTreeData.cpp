@@ -8423,16 +8423,32 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr 
     /// by a transaction that is not committed yet, or committed after the snapshot of this one, the same as
     /// a regular read does. A part replaced by a background merge or mutation gets a non-transactional removal,
     /// which is visible to any snapshot, so such a part is no longer visible and is declined the same way.
+    /// The invariant above does not hold for a visible part that is not active: a mutation is marked as done
+    /// regardless of it, so its commands can be removed from the history while the part still needs them.
+    /// Such a part is accepted only if no mutation with a higher version than its data version was removed.
+    /// The removed version is read after the snapshot, so a mutation removed before the snapshot is accounted.
     const auto txn = query_context->getCurrentTransaction();
+    const Int64 max_removed_mutation_version = getMaxRemovedMutationVersion();
     for (const auto & part : parts)
     {
+        bool is_active = part->getState() == DataPartState::Active;
         bool still_visible = txn
             ? part->version->isVisible(txn->getSnapshot(), txn->tid)
-            : part->getState() == DataPartState::Active;
+            : is_active;
 
         if (!still_visible)
         {
             LOG_DEBUG(log, "No defaultness stats for column {}: part {} is no longer visible", column_name, part->name);
+            return std::nullopt;
+        }
+
+        if (!is_active && part->info.getDataVersion() < max_removed_mutation_version)
+        {
+            LOG_DEBUG(
+                log,
+                "No defaultness stats for column {}: part {} is not active, and a mutation with version {} "
+                "that may be required for it was removed from the history",
+                column_name, part->name, max_removed_mutation_version);
             return std::nullopt;
         }
     }

@@ -1470,6 +1470,12 @@ public:
     /// Returns a snapshot of mutations that probably will be applied on the fly to parts during reading.
     virtual MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const = 0;
 
+    /// Returns the maximum version of a finished mutation that was removed from the history of mutations
+    /// (see `finished_mutations_to_keep`). The commands of such a mutation are no longer in the snapshot
+    /// of mutations, even for a part with a lower data version that is still visible to a transaction.
+    /// The default is the maximum value, which means that the history may be incomplete for any part.
+    virtual Int64 getMaxRemovedMutationVersion() const { return std::numeric_limits<Int64>::max(); }
+
     /// Per-partition promoters for streaming reads.
     virtual CursorPromotersMap buildPromoters() = 0;
     void triggerStreamingSubscriptionEnrichment() const;

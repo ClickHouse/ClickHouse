@@ -3120,6 +3120,9 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove mutation {}, because transaction {} is not committed. It's a bug",
                                 it->first, tid);
 
+            if (static_cast<Int64>(it->first) > max_removed_mutation_version.load())
+                max_removed_mutation_version.store(static_cast<Int64>(it->first));
+
             mutations_to_delete.push_back(std::move(it->second));
             it = current_mutations_by_version.erase(it);
         }
