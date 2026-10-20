@@ -744,10 +744,13 @@ while all_running and (not reached_limit):
 
     while all_running and (not reached_limit) and start < finish:
         if client.process.poll() is not None:
+            # Not "exited with code": `lacasadeldolor_job.py` parses that line from the teardown.
+            logger.info(f"{generator.name} stopped during the workload")
             all_running = False
         for server in servers:
             pid = server.get_process_pid("clickhouse")
             if pid is None:
+                logger.info(f"The server {server.name} stopped during the workload")
                 all_running = False
         reached_limit = test_limit is not None and time.time() >= test_limit
         if reached_limit:
@@ -795,7 +798,8 @@ while all_running and (not reached_limit):
                 # `False` (not an exception) means it was already gone: `start_clickhouse`
                 # below would then wipe `clickhouse_exec_id`/`clickhouse_last_exit_code`
                 # before teardown can classify the death. Not falsy - the escalation path
-                # returns `None` too, so it is read off the flag below instead.
+                # returns `None` too, so it is read off the flag below instead. Not a failure by
+                # itself: teardown judges the death by its exit code, which an OOM kill passes.
                 logger.error(
                     f"The server {next_pick.name} was already gone before the scheduled restart could stop it"
                 )
@@ -821,8 +825,12 @@ while all_running and (not reached_limit):
                 good_exit = False
                 all_running = False
         except Exception as ex:
-            logger.error(f"Failed to stop ClickHouse: {ex}")
-            logger.info(f"The server {next_pick.name} is not running")
+            # The server may have stopped cleanly before the exception, so teardown would pass it.
+            logger.error(
+                f"Server {next_pick.name} failed to stop during a scheduled restart: {ex}"
+            )
+            logger.info(f"Ending the run after the failed restart of {next_pick.name}")
+            good_exit = False
             all_running = False
         time.sleep(SERVER_SETTLE_SLEEP_SECONDS)
         # Replace server binary, using a new temporary symlink
@@ -860,7 +868,7 @@ while all_running and (not reached_limit):
                 logger.error(
                     f"Server {next_pick.name} failed to start during a scheduled restart: {ex}"
                 )
-                logger.info(f"The server {next_pick.name} is not running")
+                logger.info(f"Ending the run after the failed restart of {next_pick.name}")
                 good_exit = False
                 all_running = False
             if all_running and args.with_leak_detection and next_pick.name == "node0":

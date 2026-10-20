@@ -38,6 +38,7 @@ FORCED_STOP_MESSAGE = "did not shut down gracefully and had to be force killed"
 START_FAILED_MESSAGE = "failed to start during a scheduled restart"
 DOLOR_FAILURES = (
     (FORCED_STOP_MESSAGE, "Server shutdown"),
+    ("failed to stop during a scheduled restart", "Server shutdown"),
     ("still running after a stop attempt", "Server shutdown"),
     ("Exit code unaccounted for", "Server shutdown"),
     (START_FAILED_MESSAGE, "Server startup"),
