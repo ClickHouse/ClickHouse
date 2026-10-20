@@ -36,6 +36,10 @@ SELECT
     countIf(length(h3CellToPolygon(h)[1]) = length(h3ToGeoBoundary(h)) + 1) = 12
 FROM (SELECT arrayJoin(h3GetPentagonIndexes(toUInt8(0))) AS h);
 
+-- The precise WKT boundary should reproduce pentagon vertices as well.
+SELECT countIf(readWKTPolygon(h3CellToBoundaryWKT(h)) = h3CellToPolygon(h)) = 12
+FROM (SELECT arrayJoin(h3GetPentagonIndexes(toUInt8(0))) AS h);
+
 -- Constants, LowCardinality, and Nullable inputs.
 SELECT count() = 2 FROM
 (
@@ -64,6 +68,11 @@ FROM
 
 -- An actual invalid index still throws when carried in a Nullable column.
 SELECT h3CellToPolygon(CAST(toUInt64(0) AS Nullable(UInt64))); -- { serverError INCORRECT_DATA }
+SELECT h3CellToBoundaryWKT(CAST(toUInt64(0) AS Nullable(UInt64))); -- { serverError INCORRECT_DATA }
+
+-- Wrong input types are rejected during function resolution.
+SELECT h3CellToPolygon('invalid'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT h3CellToBoundaryWKT('invalid'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- Invalid cells throw by default, or produce default values with the setting.
 SELECT h3CellToPolygon(toUInt64(0)); -- { serverError INCORRECT_DATA }

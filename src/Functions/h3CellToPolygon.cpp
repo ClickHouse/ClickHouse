@@ -12,6 +12,8 @@
 
 #include <fmt/format.h>
 
+#include <iterator>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -35,6 +37,43 @@ bool getCellBoundary(H3Index h3index, const H3Validator & validator, CellBoundar
     return true;
 }
 
+/// Both output formats use the same closed ring and coordinate order.
+template <typename F>
+void forEachClosedBoundaryPoint(const CellBoundary & boundary, F && append)
+{
+    for (int vertex = 0; vertex <= boundary.numVerts; ++vertex)
+    {
+        const auto & point = boundary.verts[vertex == boundary.numVerts ? 0 : vertex];
+        append(radsToDegs(point.lng), radsToDegs(point.lat));
+    }
+}
+
+/// Keep the materialized input alive while using its UInt64 values and optional NULL map.
+struct H3CellColumn
+{
+    ColumnPtr full_column;
+    const ColumnUInt64 * indices;
+    const ColumnNullable * nullable;
+
+    bool isNullAt(size_t row) const { return nullable && nullable->isNullAt(row); }
+};
+
+H3CellColumn getH3CellColumn(const ColumnsWithTypeAndName & arguments, const char * function_name)
+{
+    auto full_column = arguments[0].column->convertToFullColumnIfConst();
+    const auto * nullable = checkAndGetColumn<ColumnNullable>(full_column.get());
+    const auto * indices = checkAndGetColumn<ColumnUInt64>(
+        nullable ? &nullable->getNestedColumn() : full_column.get());
+    if (!indices)
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Illegal type {} of argument 1 of function {}. Must be UInt64.",
+            arguments[0].type->getName(),
+            function_name);
+
+    return {std::move(full_column), indices, nullable};
+}
+
 class FunctionH3CellToPolygon final : public IFunction
 {
 public:
@@ -49,7 +88,7 @@ public:
     bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    // Polygon cannot be nullable, so handle null rows as empty polygons ourselves.
+    /// Polygon cannot be nullable, so represent NULL input rows as empty polygons.
     bool useDefaultImplementationForNulls() const override { return false; }
     String getSignatureString() const override { return "(MaybeNullable(UInt64) | NULL) -> Polygon"; }
 
@@ -58,39 +97,30 @@ public:
         if (arguments[0].type->onlyNull())
             return result_type->createColumn()->cloneResized(input_rows_count);
 
-        const auto full_column = arguments[0].column->convertToFullColumnIfConst();
-        const auto * nullable_column = checkAndGetColumn<ColumnNullable>(full_column.get());
-        const auto * column = checkAndGetColumn<ColumnUInt64>(
-            nullable_column ? &nullable_column->getNestedColumn() : full_column.get());
-        if (!column)
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal type {} of argument 1 of function {}. Must be UInt64.",
-                arguments[0].type->getName(),
-                getName());
+        const auto cells = getH3CellColumn(arguments, name);
 
         auto longitude = ColumnFloat64::create();
         auto latitude = ColumnFloat64::create();
         auto ring_offsets = ColumnArray::ColumnOffsets::create();
+        ring_offsets->reserve(input_rows_count);
         auto polygon_offsets = ColumnArray::ColumnOffsets::create(input_rows_count);
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            if (nullable_column && nullable_column->isNullAt(row))
+            if (cells.isNullAt(row))
             {
                 polygon_offsets->getData()[row] = ring_offsets->size();
                 continue;
             }
 
             CellBoundary boundary{};
-            if (getCellBoundary(column->getData()[row], validator, boundary))
+            if (getCellBoundary(cells.indices->getData()[row], validator, boundary))
             {
-                for (int vertex = 0; vertex <= boundary.numVerts; ++vertex)
+                forEachClosedBoundaryPoint(boundary, [&](double lon, double lat)
                 {
-                    const auto & point = boundary.verts[vertex == boundary.numVerts ? 0 : vertex];
-                    longitude->insert(radsToDegs(point.lng));
-                    latitude->insert(radsToDegs(point.lat));
-                }
+                    longitude->insert(lon);
+                    latitude->insert(lat);
+                });
                 ring_offsets->getData().push_back(longitude->size());
             }
 
@@ -126,35 +156,29 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto full_column = arguments[0].column->convertToFullColumnIfConst();
-        const auto * column = checkAndGetColumn<ColumnUInt64>(full_column.get());
-        if (!column)
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal type {} of argument 1 of function {}. Must be UInt64.",
-                arguments[0].type->getName(),
-                getName());
-
+        const auto cells = getH3CellColumn(arguments, name);
         auto result = ColumnString::create();
         result->reserve(input_rows_count);
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             CellBoundary boundary{};
-            if (!getCellBoundary(column->getData()[row], validator, boundary))
+            if (cells.isNullAt(row) || !getCellBoundary(cells.indices->getData()[row], validator, boundary))
             {
                 result->insertDefault();
                 continue;
             }
 
             String wkt = "POLYGON((";
-            for (int vertex = 0; vertex <= boundary.numVerts; ++vertex)
+            wkt.reserve(256);
+            bool first = true;
+            forEachClosedBoundaryPoint(boundary, [&](double lon, double lat)
             {
-                const auto & point = boundary.verts[vertex == boundary.numVerts ? 0 : vertex];
-                if (vertex)
+                if (!first)
                     wkt += ", ";
-                wkt += fmt::format("{:.17g} {:.17g}", radsToDegs(point.lng), radsToDegs(point.lat));
-            }
+                first = false;
+                fmt::format_to(std::back_inserter(wkt), "{:.17g} {:.17g}", lon, lat);
+            });
             wkt += "))";
             result->insertData(wkt.data(), wkt.size());
         }

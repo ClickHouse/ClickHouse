@@ -271,7 +271,7 @@ SELECT h3ToGeoBoundary(644325524701193974) AS coordinates;
 
 Returns a closed H3 cell boundary as a [Polygon](/sql-reference/data-types/geo#polygon). The polygon contains one outer ring of `(longitude, latitude)` pairs in degrees, with the first point repeated at the end of the ring.
 
-Unlike [`h3ToGeoBoundary`](#h3togeoboundary), the coordinates are always ordered `(longitude, latitude)` and are not affected by `h3togeo_lon_lat_result_order`.
+Unlike [`h3ToGeoBoundary`](#h3togeoboundary), which returns `(latitude, longitude)`, this function returns `(longitude, latitude)`. The `h3togeo_lon_lat_result_order` setting applies to `h3ToGeo` and does not change this function.
 
 **Syntax**
 
