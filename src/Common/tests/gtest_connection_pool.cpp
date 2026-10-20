@@ -6,6 +6,7 @@
 #include <Common/HTTPConnectionInfo.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/HostResolvePool.h>
+#include <Common/RemoteProxyConfigurationResolver.h>
 #include <Common/Throttler.h>
 #include <Common/ThreadStatus.h>
 #include <base/scope_guard.h>
@@ -954,6 +955,39 @@ TEST_F(ConnectionPoolTest, ConnectionInfoIgnoresHelperRequests)
         auto info = DB::takeCurrentHTTPConnectionInfo();
         ASSERT_TRUE(info.has_value);
         ASSERT_EQ(4, info.requests_served);
+    }
+}
+
+/// The remote proxy resolver sends its own pooled request from inside the S3 client, before the
+/// object request's transport attempt is counted. When the lookup times out, the S3 call fails without
+/// sending the object request, and the read path still writes an error row for the blob. That row must
+/// not carry the resolver's connection - and neither must a row whose lookup succeeded.
+TEST_F(ConnectionPoolTest, ConnectionInfoIgnoresProxyResolverRequests)
+{
+    DB::RemoteProxyHostFetcherImpl fetcher;
+    auto uri = Poco::URI(getServerUrl() + "/proxy");
+
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        ASSERT_NO_THROW(fetcher.fetch(uri, timeouts));
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+
+    {
+        /// A connect attempt of the object request failed, and its retry looks the proxy up again.
+        DB::HTTPConnectionInfoScope scope(true);
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ true);
+        ASSERT_NO_THROW(fetcher.fetch(uri, timeouts));
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+
+    setSlowDown(2);
+    timeouts.withReceiveTimeout(1);
+
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        ASSERT_ANY_THROW(fetcher.fetch(uri, timeouts));
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
     }
 }
 

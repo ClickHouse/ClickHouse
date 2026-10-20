@@ -104,6 +104,10 @@ void beginHTTPConnectionInfoRequest()
     if (transport_attempt_pending)
     {
         transport_attempt_pending = false;
+        /// The pending attempt may have failed while connecting and never reached this point, leaving
+        /// the flag to a helper request - such as a proxy lookup - made on the way to its retry.
+        if (helper_requests)
+            current_request_publishes = false;
         return;
     }
 
