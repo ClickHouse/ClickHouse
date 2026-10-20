@@ -342,11 +342,13 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
     if (!endpoint.sas_auth.empty())
         set_option("azure_storage_sas_key", endpoint.sas_auth);
 
-    /// A connection string may carry neither a key nor a SAS token; the kernel would then use the managed identity.
+    /// Given no key or SAS token, the kernel would use the managed identity. A connection string without them is
+    /// anonymous for the Azure SDK, so it is unsigned whatever the session; the helper outlives the session that built it.
     const bool has_credential = std::ranges::any_of(options, [](const auto & option)
         { return option.first == "azure_storage_account_key" || option.first == "azure_storage_sas_key"; });
+    const bool is_connection_string = std::holds_alternative<DB::AzureBlobStorage::ConnectionString>(connection_params.auth_method);
 
-    if (drop_credentials || (connection_params.forbid_implicit_credentials && !has_credential))
+    if (drop_credentials || (!has_credential && (is_connection_string || connection_params.forbid_implicit_credentials)))
         set_option("azure_skip_signature", "true");
 
     /// If the configuration carries an endpoint URL, pass it to the kernel explicitly, which

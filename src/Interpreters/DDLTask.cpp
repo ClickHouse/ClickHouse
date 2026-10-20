@@ -152,6 +152,10 @@ void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
             "http_allow_filters_as_unrecognized_url_parameters", "implicit_table_at_top_level"};
         for (const auto * name : initiator_only_settings)
             settings->removeSetting(name);
+
+        /// Forwarded under its old name, which hosts of an older version know too; newer hosts resolve it as an alias.
+        if (auto * change = settings->tryGetChange("allow_server_credentials_in_user_queries"))
+            change->name = "s3_allow_server_credentials_in_user_queries";
     }
 }
 

@@ -103,6 +103,13 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self._storage_request()
 
     def do_POST(self):
+        # A blob batch, such as the deletes of `TRUNCATE`, is recorded like the other storage requests and denied.
+        if "comp=batch" in self.path:
+            self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            storage_log.append({"method": self.command, "path": self.path, "authorization": "Authorization" in self.headers})
+            self._send(403, "")
+            return
+
         # Azure front ends reject body-carrying requests without `Content-Length`
         # with `411 Length Required` (the request body has no framing otherwise).
         # Mimic that instead of tolerating the missing header, so a transport

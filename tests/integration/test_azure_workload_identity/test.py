@@ -129,3 +129,24 @@ def test_table_created_with_opt_in_serves_no_restricted_session(started_cluster)
     assert any(hit["authorization"] for hit in allowed_hits)
 
     node.query("DROP TABLE t_opt_in SYNC")
+
+
+def test_truncate_follows_the_session(started_cluster):
+    """`TRUNCATE` deletes blobs with the client of the truncating session, not with one an opted-in session left."""
+
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    allow = {"allow_server_credentials_in_user_queries": 1}
+    node.query("DROP TABLE IF EXISTS t_truncate SYNC")
+    node.query(
+        f"CREATE TABLE t_truncate (c UInt64) ENGINE = AzureBlobStorage('https://127.0.0.1:{TOKEN_PORT}/account', 'cont', 'data.csv', 'CSV')",
+        settings=allow,
+    )
+
+    # The mock storage denies the delete batch, so the query fails after the request is recorded.
+    before = len(get_storage_hits(started_cluster))
+    node.query_and_get_error("TRUNCATE TABLE t_truncate", settings={"azure_sdk_max_retries": 0})
+    deletes = [hit for hit in get_storage_hits(started_cluster)[before:] if "comp=batch" in hit["path"]]
+    assert deletes
+    assert not any(hit["authorization"] for hit in deletes)
+
+    node.query("DROP TABLE t_truncate SYNC")

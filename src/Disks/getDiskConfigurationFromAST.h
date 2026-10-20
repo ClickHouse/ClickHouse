@@ -32,6 +32,8 @@ struct DynamicS3DiskCredentialInfo
     bool load_anonymously = false;
     /// The AST used `include`, so the resolved credentials' provenance cannot be trusted.
     bool has_include = false;
+    /// A value is substituted later from `from_env` or `from_zk`, so it is still empty here.
+    bool has_substituted_value = false;
     /// The pre-resolution check exempted this disk from the restriction (e.g. a server-internal
     /// `system`-database disk, or a persisted `_server_credentials_allowed` marker), so the post-`include`
     /// re-check must not re-apply it.

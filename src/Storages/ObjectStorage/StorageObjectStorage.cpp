@@ -959,7 +959,7 @@ bool StorageObjectStorage::optimize(
 void StorageObjectStorage::truncate(
     const ASTPtr & /* query */,
     const StorageMetadataPtr & /* metadata_snapshot */,
-    ContextPtr /* context */,
+    ContextPtr local_context,
     TableExclusiveLockHolder & /* table_holder */)
 {
     const auto path = configuration->getRawPath();
@@ -992,6 +992,10 @@ void StorageObjectStorage::truncate(
             "Truncate is not supported for partitioned tables, the path is '{}'",
             path.path);
     }
+
+    /// The credentials of the client follow the session that truncates, as for `write`.
+    if (!is_table_function)
+        configuration->update(object_storage, local_context);
 
     StoredObjects objects;
     for (const auto & key : configuration->getPaths())

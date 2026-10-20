@@ -18,6 +18,8 @@ TABLE="azure_hardening_${DB}"
 DISK_TABLE="azure_hardening_disk_${DB}"
 OPT_IN_TABLE="azure_hardening_opt_in_${DB}"
 QUEUE="azure_hardening_queue_${DB}"
+FROM_ZK_TABLE="azure_hardening_from_zk_${DB}"
+ZK_PATH="/clickhouse/test_azure_hardening_${DB}"
 
 # The Azure SDK attaches a bearer token only to an `https` endpoint.
 URL="https://localhost:11111/${DB}"
@@ -36,6 +38,7 @@ cleanup() {
         DROP TABLE IF EXISTS ${DISK_TABLE} SYNC;
         DROP TABLE IF EXISTS ${OPT_IN_TABLE} SYNC;
         DROP TABLE IF EXISTS ${QUEUE} SYNC;
+        DROP TABLE IF EXISTS ${FROM_ZK_TABLE} SYNC;
         DROP NAMED COLLECTION IF EXISTS ${NC_URL_ONLY};
         DROP NAMED COLLECTION IF EXISTS ${NC_ACCOUNT_KEY};
     " 2>/dev/null
@@ -125,6 +128,14 @@ $CLICKHOUSE_CLIENT --allow_server_credentials_in_user_queries=1 -m -q "
 $CLICKHOUSE_CLIENT -q "
     ALTER TABLE ${QUEUE} MODIFY SETTING after_processing_move_connection_string = '${URL}'; -- { serverError ACCESS_DENIED }
 "
+
+# The endpoint of an opted-in disk may come from `from_zk`, which is substituted only after the opt-in is recorded.
+$CLICKHOUSE_CLIENT -q "INSERT INTO system.zookeeper (path, name, value) VALUES ('${ZK_PATH}', 'url', '${DISK_URL}')"
+$CLICKHOUSE_CLIENT --allow_server_credentials_in_user_queries=1 --dynamic_disk_allow_from_zk=1 -q "
+    CREATE TABLE ${FROM_ZK_TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS disk = disk(type = azure_blob_storage, storage_account_url = 'from_zk ${ZK_PATH}/url', container_name = 'cont',
+            readonly = 1, container_already_exists = 1, skip_access_check = 1)"
+echo "opt-in recorded for a from_zk disk: $($CLICKHOUSE_CLIENT -q "SHOW CREATE TABLE ${FROM_ZK_TABLE}" | grep -c '_azure_server_credentials_allowed')"
 
 # Permitted: explicit credentials read and write for real.
 echo "connection string: $($CLICKHOUSE_CLIENT -q "

@@ -83,6 +83,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     bool type_is_object_storage = false;
     bool has_explicit_non_s3_object_storage_type = false;
     bool has_include = false;
+    bool has_substituted_value = false;
     bool has_indirect_auth_field = false;
     bool has_access_key_id = false;
     bool has_secret_access_key = false;
@@ -140,6 +141,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         auto value_str = convertFieldToString(value->as<ASTLiteral>()->value);
 
         const bool indirect = is_indirect_value(value_str);
+        has_substituted_value |= indirect;
         if (indirect && is_s3_credential_or_auth_field(key))
             has_indirect_auth_field = true;
 
@@ -255,6 +257,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     if (info)
     {
         info->has_include = has_include;
+        info->has_substituted_value = has_substituted_value;
         info->ast_has_explicit_key_pair = has_explicit_credentials;
         info->ast_has_no_sign_request = has_no_sign_request;
         info->ast_has_use_environment_credentials_off = allowed_anonymous;

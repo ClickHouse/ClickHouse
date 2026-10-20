@@ -218,10 +218,12 @@ public:
                 make_intrusive<ASTIdentifier>("_server_credentials_allowed"),
                 make_intrusive<ASTLiteral>(static_cast<UInt64>(1))));
 
-        /// An `include` is resolved only later and may supply the Azure backend, so such a disk is marked as S3 marks it.
+        /// `include`, `from_env` and `from_zk` are resolved only later and may supply the Azure backend, so such a disk
+        /// is marked without being parsed, as S3 marks it.
         Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
         config->load(xml_document);
-        if (!data.context->shouldRestrictUserQueryS3Credentials() && (info.has_include || azureDiskUsesServerIdentity(*config)))
+        if (!data.context->shouldRestrictUserQueryS3Credentials()
+            && (info.has_include || info.has_substituted_value || azureDiskUsesServerIdentity(*config)))
             args.push_back(makeASTFunction(
                 "equals",
                 make_intrusive<ASTIdentifier>(AZURE_SERVER_CREDENTIALS_MARKER),

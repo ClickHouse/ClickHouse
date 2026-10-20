@@ -282,8 +282,8 @@ TEST(DeltaLakeAzureKernelHelper, EmptyConnectionStringWithoutSasSkipsSignature)
     ASSERT_EQ(*skip_signature, "true");
 }
 
-/// With the opt-in, a keyless connection string keeps the kernel's own credential resolution.
-TEST(DeltaLakeAzureKernelHelper, KeylessConnectionStringWithOptInIsSigned)
+/// A keyless connection string is unsigned even with the opt-in: the Azure SDK treats it as anonymous.
+TEST(DeltaLakeAzureKernelHelper, KeylessConnectionStringWithOptInIsUnsigned)
 {
     DB::AzureBlobStorage::ConnectionParams params;
     const std::string connection_string = "AccountName=testaccount;BlobEndpoint=https://endpoint.example;";
@@ -294,7 +294,9 @@ TEST(DeltaLakeAzureKernelHelper, KeylessConnectionStringWithOptInIsSigned)
 
     const auto options = DeltaLake::getAzureBuilderOptions(params);
 
-    ASSERT_FALSE(findBuilderOption(options, "azure_skip_signature").has_value());
+    const auto skip_signature = findBuilderOption(options, "azure_skip_signature");
+    ASSERT_TRUE(skip_signature.has_value());
+    ASSERT_EQ(*skip_signature, "true");
 }
 
 #endif
