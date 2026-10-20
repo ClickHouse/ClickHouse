@@ -358,9 +358,8 @@ ArrowType parseType(const flatbuf::Field & field)
 ArrowSchema parseSchema(const flatbuf::Schema & schema)
 {
     ArrowSchema result;
+    /// Big-endian buffers are converted by `RecordBatchDecoder::convertBuffersFromBigEndian`.
     result.little_endian = schema.endianness() == flatbuf::Endianness_Little;
-    if (!result.little_endian)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Big-endian Arrow IPC streams are not supported by the native reader");
 
     const auto * fields = schema.fields();
     if (fields)
