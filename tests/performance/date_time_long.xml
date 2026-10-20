@@ -26,7 +26,7 @@
                <value>toStartOfYear</value>
                <value>toStartOfISOYear</value>
 
-               <value>toTime</value>
+               <value>toTimeWithFixedDate</value>
 
                <value>toRelativeYearNum</value>
                <value>toRelativeMonthNum</value>

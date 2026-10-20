@@ -295,7 +295,7 @@ bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
     return true;
 }
 
-std::unique_ptr<LazilyReadFromObjectStorage> ReadFromObjectStorageStep::keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_names)
+NameSet ReadFromObjectStorageStep::getNamesToKeepInMainRead(const NameSet & required_names) const
 {
     /// A row policy is not part of `info`, but the source evaluates it in the main pass via
     /// `FormatFilterInfo`, so its input columns must not be deferred to the lazy branch.
@@ -303,8 +303,25 @@ std::unique_ptr<LazilyReadFromObjectStorage> ReadFromObjectStorageStep::keepOnly
     if (query_info.row_level_filter)
         for (const auto & column : query_info.row_level_filter->actions.getRequiredColumns())
             names_to_keep.insert(column.name);
+    return names_to_keep;
+}
 
-    auto lazy_info = splitLazilyReadColumnsFromFormatInfo(info, names_to_keep);
+NameSet ReadFromObjectStorageStep::getLazilyReadColumns(const NameSet & required_names) const
+{
+    /// The split works on the info in place, so ask it on a copy.
+    auto main_info = info;
+    const auto lazy_info = splitLazilyReadColumnsFromFormatInfo(main_info, getNamesToKeepInMainRead(required_names));
+
+    NameSet lazy_names;
+    if (lazy_info)
+        for (const auto & column : lazy_info->source_header)
+            lazy_names.insert(column.name);
+    return lazy_names;
+}
+
+std::unique_ptr<LazilyReadFromObjectStorage> ReadFromObjectStorageStep::keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_names)
+{
+    auto lazy_info = splitLazilyReadColumnsFromFormatInfo(info, getNamesToKeepInMainRead(required_names));
     if (!lazy_info)
         return {};
 

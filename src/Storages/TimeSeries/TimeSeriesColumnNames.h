@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Parsers/Prometheus/TimeSeriesVersion.h>
 
 
 namespace DB
@@ -25,7 +25,8 @@ struct TimeSeriesColumnNames
     /// and without the metric name, so reading must be able to handle both cases.)
     static constexpr const char * Tags = "tags";
 
-    /// Contains the time range of a time series.
+    /// The "time ranges" table contains the time range of each time series
+    /// (tables of earlier versions kept these columns in the "tags" table):
     static constexpr const char * MinTime = "min_time";
     static constexpr const char * MaxTime = "max_time";
 
@@ -45,9 +46,11 @@ struct TimeSeriesColumnNames
     static constexpr const char * Group = "group";
     static constexpr const char * NewGroup = "new_group";
     static constexpr const char * OriginalGroup = "original_group";
+    static constexpr const char * ExtraLabelsGroup = "extra_labels_group";
     static constexpr const char * JoinGroup = "join_group";
     static constexpr const char * JoinPresence = "join_presence";
     static constexpr const char * Values = "values";
+    static constexpr const char * ValueCounts = "value_counts";
     static constexpr const char * SelectedGroups = "selected_groups";
     static constexpr const char * StepsMask = "steps_mask";
 
