@@ -13,27 +13,23 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="allow_statistics">
-  ## allow_statistics
-</div>
+## allow_statistics {#allow_statistics}
 
 **Псевдонимы**: `allow_experimental_statistics`
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "1"},{"label": "Статистика столбцов теперь имеет статус GA"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "1"},{"label": "Статистика столбцов теперь имеет статус GA. Это также относится к псевдониму `allow_experimental_statistics`."}]}, {"id": "row-2","items": [{"label": "24.6"},{"label": "0"},{"label": "Настройка была переименована. Предыдущее название — `allow_experimental_statistic`. Тогда настройка называлась `allow_experimental_statistics`; теперь это её псевдоним."}]}]} />
 
 Позволяет задавать столбцы со [статистикой](/ru/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) и [управлять статистикой](/ru/reference/engines/table-engines/mergetree-family/mergetree#column-statistics).
 
-<div id="allow_statistics_optimize">
-  ## allow_statistics_optimize
-</div>
+## allow_statistics_optimize {#allow_statistics_optimize}
 
 **Псевдонимы**: `allow_statistic_optimize`
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "Эта оптимизация включена по умолчанию."}]}, {"id": "row-2","items": [{"label": "24.6"},{"label": "0"},{"label": "Параметр был переименован. Предыдущее имя — `allow_statistic_optimize`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "Эта оптимизация включена по умолчанию. Это также относится к псевдониму `allow_statistic_optimize`."}]}, {"id": "row-2","items": [{"label": "24.6"},{"label": "0"},{"label": "Параметр был переименован. Предыдущее имя — `allow_statistic_optimize`."}]}]} />
 
 Разрешает использовать статистику для оптимизации запросов
 

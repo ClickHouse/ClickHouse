@@ -11,6 +11,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageLoop.h>
+#include <Storages/StorageProxy.h>
 #include <TableFunctions/registerTableFunctions.h>
 
 namespace DB
@@ -41,6 +42,15 @@ namespace DB
             std::string loop_database_name;
             std::string loop_table_name;
         };
+
+        /// Otherwise a data lake table reports the schema of the snapshot pinned by its last direct query.
+        /// An `Alias` whose target was dropped reports no columns instead, so it is not refreshed.
+        void refreshExternalMetadata(const StoragePtr & storage, const ContextPtr & context)
+        {
+            if (const auto * alias = storage->as<StorageAlias>(); alias && !alias->tryGetTargetTable())
+                return;
+            resolveStorageProxyLoading(storage)->updateExternalDynamicMetadataIfExists(context);
+        }
 
     }
 
@@ -121,6 +131,7 @@ namespace DB
 
         checkSourceStorageAccess(context, storage, StorageID{database_name, loop_table_name}, AccessType::SHOW_COLUMNS);
 
+        refreshExternalMetadata(storage, context);
         auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
         return metadata_snapshot->getColumns();
     }
@@ -154,6 +165,9 @@ namespace DB
                     ErrorCodes::ACCESS_DENIED,
                     "Not enough privileges to read the table that {} points to",
                     StorageID{database_name, loop_table_name}.getNameForLogs());
+
+            /// `StorageLoop` takes its columns from this table's metadata.
+            refreshExternalMetadata(storage, context);
         }
         else
         {

@@ -17,6 +17,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <Common/assert_cast.h>
 #include <Common/ErrnoException.h>
+#include <Common/quoteString.h>
 #include <base/range.h>
 #include <Common/logger_useful.h>
 
@@ -34,6 +35,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_OPEN_FILE;
+    extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int POSTGRESQL_CONNECTION_FAILURE;
     extern const int TOO_MANY_COLUMNS;
 }
@@ -67,9 +69,11 @@ PostgreSQLSource<T>::PostgreSQLSource(
     postgres::ConnectionHolderPtr connection_holder_,
     const std::string & query_str_,
     SharedHeader sample_block,
-    UInt64 max_block_size_)
+    UInt64 max_block_size_,
+    const String & structure_hint_)
     : ISource(std::make_shared<const Block>(sample_block->cloneEmpty()))
     , max_block_size(max_block_size_)
+    , structure_hint(structure_hint_)
     , connection_holder(std::move(connection_holder_))
     , query_str(query_str_)
 {
@@ -253,7 +257,7 @@ Chunk PostgreSQLSource<T>::generate()
 
     while (!isCancelled() && !stop_requested.load())
     {
-        const std::vector<pqxx::zview> * row{nullptr};
+        const std::vector<pqxx::zview> * row{nullptr}; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `pqxx::stream_from::read_row` returns a std::vector owned by the library
         try
         {
             row = stream->read_row();
@@ -270,10 +274,15 @@ Chunk PostgreSQLSource<T>::generate()
         if (!row)
             break;
 
-        if (row->size() > description.sample_block.columns())
-            throw Exception(ErrorCodes::TOO_MANY_COLUMNS,
-                            "Row has too many columns: {}, expected structure: {}",
-                            row->size(), description.sample_block.dumpStructure());
+        if (row->size() != description.sample_block.columns())
+            throw Exception(
+                row->size() > description.sample_block.columns() ? ErrorCodes::TOO_MANY_COLUMNS
+                                                                  : ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
+                "Row has {} columns instead of {}, expected structure: {}{}",
+                row->size(),
+                description.sample_block.columns(),
+                description.sample_block.dumpStructure(),
+                structure_hint.empty() ? "" : ": " + structure_hint);
 
         for (const auto idx : collections::range(0, row->size()))
         {
@@ -282,21 +291,33 @@ Chunk PostgreSQLSource<T>::generate()
             /// if got NULL type, then pqxx::zview will return nullptr in c_str()
             if ((*row)[idx].c_str())
             {
-                if (description.types[idx].second)
+                try
                 {
-                    ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[idx]);
-                    const auto & data_type = assert_cast<const DataTypeNullable &>(*sample.type);
+                    if (description.types[idx].second)
+                    {
+                        ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[idx]);
+                        const auto & data_type = assert_cast<const DataTypeNullable &>(*sample.type);
 
-                    insertPostgreSQLValue(
-                            column_nullable.getNestedColumn(), (*row)[idx],
-                            description.types[idx].first, data_type.getNestedType(), array_info, idx);
+                        insertPostgreSQLValue(
+                                column_nullable.getNestedColumn(), (*row)[idx],
+                                description.types[idx].first, data_type.getNestedType(), array_info, idx);
 
-                    column_nullable.getNullMapData().emplace_back(false);
+                        column_nullable.getNullMapData().emplace_back(false);
+                    }
+                    else
+                    {
+                        insertPostgreSQLValue(
+                                *columns[idx], (*row)[idx], description.types[idx].first, sample.type, array_info, idx);
+                    }
                 }
-                else
+                catch (Exception & e)
                 {
-                    insertPostgreSQLValue(
-                            *columns[idx], (*row)[idx], description.types[idx].first, sample.type, array_info, idx);
+                    /// Name the destination column, so a result whose columns are in the wrong order
+                    /// does not read as bad data. Keeps the error code intact.
+                    e.addMessage("while reading column {} of the result into {}", idx + 1, backQuote(sample.name));
+                    if (!structure_hint.empty())
+                        e.addMessage(structure_hint);
+                    throw;
                 }
             }
             else

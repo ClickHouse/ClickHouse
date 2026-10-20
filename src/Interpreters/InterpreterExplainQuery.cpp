@@ -74,7 +74,7 @@
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Interpreters/HypotheticalObjectStore.h>
-#include <Storages/MergeTree/WhatIfIndexEstimator.h>
+#include <Storages/MergeTree/WhatIfEstimator.h>
 
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
@@ -972,7 +972,7 @@ struct InterpreterExplainQuery::AnalyzedInnerQuery
 {
     QueryPlan plan;
     ContextPtr context;
-    std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> parallel_replicas_builder;
+    QueryPlanWithParallelReplicasBuilder parallel_replicas_builder;
     bool ignore_quota = false;
     bool ignore_limits = false;
     UInt64 planning_ns = 0;
@@ -1370,7 +1370,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (!dynamic_cast<const ASTSelectWithUnionQuery *>(query_ast.get()))
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN WHATIF query");
 
-            auto whatif_result = estimateHypotheticalIndexes(query_ast, query_context, ast.getSettings());
+            auto whatif_result = estimateHypotheticalObjects(query_ast, query_context, ast.getSettings());
             whatif_result.format(buf);
             break;
         }
