@@ -68,9 +68,16 @@ bool pathStartsWith(const String & path, const String & prefix_path);
 /// (Path is made absolute and normalized.)
 bool fileOrSymlinkPathStartsWith(const String & path, const String & prefix_path);
 
+/// Makes `path` absolute and resolves every symlink in it, including a dangling one: unlike
+/// `std::filesystem::weakly_canonical`, a symlink whose target does not exist is replaced by its target,
+/// so the result names the file that opening `path` with `O_CREAT` would create.
+/// Components that do not exist are appended lexically. Sets `ec` on an error (e.g. a symlink loop).
+std::filesystem::path canonicalPathFollowingDanglingSymlinks(const std::filesystem::path & path, std::error_code & ec);
+
 /// Returns true if the resolved path is inside the resolved prefix path.
 /// Unlike `fileOrSymlinkPathStartsWith`, this rejects symlinks that point outside
-/// the prefix. Returns false when either path cannot be resolved or contains an embedded NUL.
+/// the prefix, including dangling ones (see `canonicalPathFollowingDanglingSymlinks`).
+/// Returns false when either path cannot be resolved or contains an embedded NUL.
 bool weaklyCanonicalPathStartsWith(const String & path, const String & prefix_path);
 
 size_t getSizeFromFileDescriptor(int fd, const String & file_name = "");

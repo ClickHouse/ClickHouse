@@ -627,29 +627,49 @@ String normalizeDiskRelativePath(const String & input)
 /// segments, but cannot detect an in-root symlink (e.g. `<disk_root>/link -> /etc`)
 /// being used as `link/passwd` to escape the disk root.
 ///
-/// For object-storage disks there is no symlink concept in the user-visible
-/// namespace, so the check trivially passes.
+/// The check applies to every disk whose user-visible paths are filesystem paths under
+/// `disk->getPath()`: a local disk, and a `local_blob_storage` object storage with `plain`
+/// metadata, which follows filesystem symlinks too. The check must hold for such a disk
+/// even when the backend has its own boundary, because that boundary is the whole disk,
+/// while a `SubdirectoryDiskWrapper` confines user files to a subdirectory of it. For other
+/// object-storage disks there is no symlink concept in the user-visible namespace, so the
+/// check trivially passes.
 bool isDiskRelativePathInsideRoot(const DiskPtr & disk, const String & relative_path)
 {
-    if (disk->getDataSourceDescription().type != DataSourceType::Local)
+    const auto description = disk->getDataSourceDescription();
+    const bool paths_are_filesystem_paths = description.type == DataSourceType::Local
+        || (description.type == DataSourceType::ObjectStorage
+            && description.object_storage_type == ObjectStorageType::Local
+            && description.metadata_type == MetadataStorageType::Plain);
+    if (!paths_are_filesystem_paths)
         return true;
 
-    /// `fs::weakly_canonical` resolves symlinks for the longest existing prefix of the
-    /// path and lexically appends the rest. We invoke it explicitly here (rather than
-    /// relying on `pathStartsWith` calling `fs::relative` internally) so the
-    /// symlink-resolution step is visible at the call site - the security property
-    /// of this check should not depend on subtle library behavior of `fs::relative`.
+    /// Resolve every symlink explicitly here (rather than relying on `pathStartsWith`
+    /// calling `fs::relative` internally) so the symlink-resolution step is visible at the
+    /// call site. Unlike `fs::weakly_canonical`, a dangling symlink is also resolved: writing
+    /// to `<disk_root>/out.csv -> /outside/new.csv` would create the outside target.
     std::error_code ec;
     const fs::path disk_path(disk->getPath());
-    const fs::path resolved_root = fs::weakly_canonical(disk_path, ec);
+    const fs::path resolved_root = canonicalPathFollowingDanglingSymlinks(disk_path, ec);
     if (ec)
         return false;
-    const fs::path resolved = fs::weakly_canonical(disk_path / relative_path, ec);
+    const fs::path resolved = canonicalPathFollowingDanglingSymlinks(disk_path / relative_path, ec);
     if (ec)
         return false;
     /// Both paths are now in canonical form (symlinks resolved); a string-prefix
     /// containment check on the canonical paths is sufficient and unambiguous.
     return pathStartsWith(resolved, resolved_root);
+}
+
+ReadSettings getUserFilesDiskReadSettings(ReadSettings settings)
+{
+    settings.use_page_cache_for_disks_without_file_cache = false;
+    settings.use_page_cache_with_distributed_cache = false;
+    settings.use_page_cache_for_local_disks = false;
+    settings.use_page_cache_for_object_storage = false;
+    if (settings.local_fs_settings.method == LocalFSReadMethod::mmap)
+        settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    return settings;
 }
 
 namespace
@@ -1348,7 +1368,7 @@ std::unique_ptr<ReadBuffer> createReadBufferFromDisk(
 {
     CompressionMethod method = chooseCompressionMethod(current_path, compression_method);
 
-    ReadSettings read_settings = context->getReadSettings();
+    ReadSettings read_settings = getUserFilesDiskReadSettings(context->getReadSettings());
     std::unique_ptr<ReadBuffer> nested_buffer = disk->readFile(current_path, read_settings);
 
     const auto & file_settings = context->getSettingsRef();
@@ -2349,11 +2369,19 @@ String StorageFileSource::FilesIterator::next()
 
         /// With a `user_files_policy` volume the initiator sends the path relative to the root of
         /// its disk, because the backing path of the disk (e.g. the local directory of
-        /// `DiskEncrypted` or of a cache) can differ between servers. Resolve it against the disk
-        /// of this server, which `Context::setUserFilesPolicy` guarantees to be the only one.
+        /// `DiskEncrypted` or of a cache) can differ between servers. Without a policy it sends an
+        /// absolute path. So a relative path is resolved against the user files directory of this
+        /// server - the root of its disk, which `Context::setUserFilesPolicy` guarantees to be the
+        /// only one, or `user_files_path` - and an absolute path is taken as is, whether this server
+        /// has a policy or not. Then a cluster where only some of the servers have a policy works.
         String path = task->path;
-        if (user_files_volume)
-            path = getDiskPathWithSlash(user_files_volume->getDisks().front()) + path;
+        if (!path.starts_with('/'))
+        {
+            if (user_files_volume)
+                path = getDiskPathWithSlash(user_files_volume->getDisks().front()) + path;
+            else
+                path = (fs::path(getContext()->getUserFilesPath()) / path).string();
+        }
 
         /// The read task may come from a client impersonating an initiator server, so validate the path.
         checkCreationIsAllowedResolvingDotDot(getContext(), getContext()->getUserFilesPath(), path, /*can_be_directory=*/ true);
@@ -2472,6 +2500,14 @@ void StorageFileSource::beforeDestroy()
                 // Checking access rights. The path is the one the rename will operate on, so a `..` in
                 // it must be resolved and not folded lexically.
                 checkCreationIsAllowedResolvingDotDot(getContext(), getContext()->getUserFilesPath(), file_path.string(), true);
+
+                /// The check above is lexical apart from `..`. Under `user_files_policy` the destination must also
+                /// stay inside the disk root once symlinks are resolved: `FileRenamer` allows slashes, so with
+                /// `<disk_root>/escape -> /outside` the rule `escape/%a` would move the file outside.
+                if (storage->user_files_volume && !getContext()->isUserFilesPath(file_path.string()))
+                    throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                        "File `{}` resolves outside user files directory `{}` after symlink resolution",
+                        file_path.string(), getContext()->getUserFilesPath());
 
                 // Checking an existing of new file
                 if (fs::exists(file_path))
@@ -4065,8 +4101,10 @@ public:
                 }
             }
             do_not_write_prefix = (mode == WriteMode::Append) && existing_size != 0;
+            /// Pass the write settings of the query, so that e.g. `max_remote_write_network_bandwidth`
+            /// and `s3_allow_parallel_part_upload` apply to a remote disk.
             naked_buffer = user_files_disk->writeFile(
-                user_files_disk_relative_path, DBMS_DEFAULT_BUFFER_SIZE, mode);
+                user_files_disk_relative_path, DBMS_DEFAULT_BUFFER_SIZE, mode, getContext()->getWriteSettings());
         }
         else
         {
@@ -4128,6 +4166,8 @@ private:
             writer->flush();
             writer->finalize();
             write_buf->finalize();
+            if (on_finalized)
+                on_finalized();
         }
         catch (...)
         {
@@ -4169,6 +4209,10 @@ private:
     RWLockImpl::LockHolder lock;
     DiskPtr user_files_disk; /// When set, write through this disk.
     String user_files_disk_relative_path; /// Disk-relative form of `path`, used for disk I/O.
+
+public:
+    /// Called after the file has been written and finalized successfully.
+    std::function<void()> on_finalized;
 };
 
 class PartitionedStorageFileSink : public PartitionedSink
@@ -4434,8 +4478,22 @@ SinkToStoragePtr StorageFile::write(
     /// A reader that cannot stat a path throws, so `paths` may only name the file once it exists.
     if (path_to_publish)
     {
-        std::lock_guard paths_lock{paths_mutex};
-        paths.push_back(std::move(*path_to_publish));
+        if (write_disk)
+        {
+            /// A disk may create the file only when the write buffer is finalized (e.g. an object
+            /// storage publishes the object then), and not at all when the insert fails, so publish
+            /// the path only after a successful write.
+            sink->on_finalized = [storage = std::static_pointer_cast<StorageFile>(shared_from_this()), new_path = std::move(*path_to_publish)]
+            {
+                std::lock_guard paths_lock{storage->paths_mutex};
+                storage->paths.push_back(new_path);
+            };
+        }
+        else
+        {
+            std::lock_guard paths_lock{paths_mutex};
+            paths.push_back(std::move(*path_to_publish));
+        }
     }
 
     return sink;

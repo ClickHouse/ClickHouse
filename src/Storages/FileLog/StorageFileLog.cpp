@@ -335,6 +335,20 @@ void StorageFileLog::loadMetaFiles(bool attach)
     }
 }
 
+bool StorageFileLog::isDataFileAllowed(const String & file_path) const
+{
+    /// Under `user_files_policy` the user files directory is a boundary that symlinks must not escape, so a file
+    /// found in the directory, e.g. `logs/leak.log -> /outside/secret`, is checked like the configured path.
+    /// Without a policy, admin-managed symlinks inside `user_files_path` are allowed, as for the configured path.
+    if (!getContext()->getUserFilesVolume())
+        return true;
+    if (getContext()->isUserFilesPath(file_path))
+        return true;
+    LOG_WARNING(log, "File {} resolves outside `user_files_path` ({}) after symlink resolution, it will not be read",
+        file_path, getContext()->getUserFilesPath());
+    return false;
+}
+
 void StorageFileLog::loadFiles()
 {
     auto absolute_path = std::filesystem::absolute(path);
@@ -378,7 +392,7 @@ void StorageFileLog::loadFiles()
         /// Just consider file with depth 1
         for (const auto & dir_entry : std::filesystem::directory_iterator{root_data_path})
         {
-            if (!dir_entry.is_regular_file())
+            if (!dir_entry.is_regular_file() || !isDataFileAllowed(dir_entry.path()))
                 continue;
             String file_name = dir_entry.path().filename();
             struct stat file_stat{};
@@ -1355,7 +1369,7 @@ bool StorageFileLog::updateFileInfos()
                     break;
                 /// Check if it is a regular file, and new file may be renamed or removed.
                 /// Another name of a file that is still read here (a hard link) is not read again.
-                if (!std::filesystem::is_regular_file(file_path) || !fileNameMatches(file_name)
+                if (!std::filesystem::is_regular_file(file_path) || !isDataFileAllowed(file_path) || !fileNameMatches(file_name)
                     || isReadUnderOtherName(file_name, getInode(file_path)))
                 {
                     name_is_read[file_name] = false;
@@ -1416,7 +1430,7 @@ bool StorageFileLog::updateFileInfos()
                     break;
                 /// Similar to DW_ITEM_ADDED, but if it removed from an old file
                 /// should obtain old meta file and rename meta file
-                if (std::filesystem::is_regular_file(file_path))
+                if (std::filesystem::is_regular_file(file_path) && isDataFileAllowed(file_path))
                 {
                     auto inode = getInode(file_path);
 

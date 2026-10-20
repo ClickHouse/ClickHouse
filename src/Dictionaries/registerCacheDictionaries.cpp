@@ -225,7 +225,11 @@ DictionaryPtr createCacheDictionaryLayout(
     else
     {
         auto storage_configuration = parseSSDCacheStorageConfiguration(config, full_name, layout_type, dictionary_layout_prefix, dict_lifetime);
-        if (created_from_ddl && !global_context->isUserFilesPath(storage_configuration.file_path))
+        /// `SSDCacheFileBuffer` opens the path with the `.bin` extension appended (with `O_TRUNC`),
+        /// so check that path too: `<user_files>/cache.bin` may be a symlink to a file outside.
+        if (created_from_ddl
+            && (!global_context->isUserFilesPath(storage_configuration.file_path)
+                || !global_context->isUserFilesPath(storage_configuration.file_path + SSDCacheFileBuffer<SSDCacheSimpleKey>::BIN_FILE_EXT)))
             throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside user files path", storage_configuration.file_path);
 
         /// `SSDCacheDictionaryStorage` opens `storage_configuration.file_path` via

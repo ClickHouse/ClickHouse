@@ -1562,3 +1562,100 @@ def test_distributed_format_allowed_on_plain_local_disk():
         "SELECT * FROM file('distributed_missing.bin', 'Distributed')"
     )
     assert "Distributed format is not supported" not in err, err
+
+
+def test_local_write_through_dangling_symlink_rejected():
+    """A dangling in-root symlink is resolved by the containment check: writing through
+    `<disk_root>/out.csv -> /outside/new.csv` would otherwise create the outside target."""
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "rm -rf /tmp/dangling_target && mkdir -p /tmp/dangling_target && "
+            "ln -snf /tmp/dangling_target/new.csv /test_user_files_disk1/dangling.csv",
+        ]
+    )
+    try:
+        err = node_local.query_and_get_error(
+            "INSERT INTO FUNCTION file('dangling.csv', 'CSV', 'x UInt64') SELECT 1"
+        )
+        assert "DATABASE_ACCESS_DENIED" in err, err
+        assert (
+            node_local.exec_in_container(
+                ["bash", "-c", "test -e /tmp/dangling_target/new.csv && echo exists || echo absent"]
+            ).strip()
+            == "absent"
+        )
+    finally:
+        node_local.exec_in_container(
+            ["bash", "-c", "rm -rf /test_user_files_disk1/dangling.csv /tmp/dangling_target"]
+        )
+
+
+def test_local_rename_after_processing_destination_through_symlink_rejected():
+    """The destination of `rename_files_after_processing` must stay inside the disk root once
+    symlinks are resolved: the rule may contain slashes and name an in-root symlink."""
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "rm -rf /tmp/rename_target && mkdir -p /tmp/rename_target && "
+            "ln -snf /tmp/rename_target /test_user_files_disk1/rename_escape && "
+            "echo 1 > /test_user_files_disk1/rename_src.csv",
+        ]
+    )
+    try:
+        node_local.query(
+            "SELECT * FROM file('rename_src.csv', 'CSV', 'x UInt64') "
+            "SETTINGS rename_files_after_processing = 'rename_escape/%a'"
+        )
+        assert (
+            node_local.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    "ls /tmp/rename_target; test -e /test_user_files_disk1/rename_src.csv && echo kept",
+                ]
+            ).strip()
+            == "kept"
+        )
+    finally:
+        node_local.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "rm -rf /test_user_files_disk1/rename_escape /test_user_files_disk1/rename_src.csv /tmp/rename_target",
+            ]
+        )
+
+
+def test_local_filelog_skips_child_symlink_outside_disk():
+    """`FileLog` checks every file it finds in the directory, not only the configured path."""
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "rm -rf /test_user_files_disk1/filelog_dir && mkdir -p /test_user_files_disk1/filelog_dir && "
+            "echo inside > /test_user_files_disk1/filelog_dir/ok.log && "
+            "echo secret > /tmp/filelog_secret.log && "
+            "ln -snf /tmp/filelog_secret.log /test_user_files_disk1/filelog_dir/leak.log",
+        ]
+    )
+    try:
+        node_local.query(
+            "CREATE TABLE filelog_child_symlink (line String) ENGINE = FileLog('filelog_dir', 'LineAsString')"
+        )
+        result = node_local.query(
+            "SELECT line FROM filelog_child_symlink ORDER BY line "
+            "SETTINGS stream_like_engine_allow_direct_select = 1"
+        )
+        assert result.strip() == "inside", result
+    finally:
+        node_local.query("DROP TABLE IF EXISTS filelog_child_symlink SYNC")
+        node_local.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "rm -rf /test_user_files_disk1/filelog_dir /tmp/filelog_secret.log",
+            ]
+        )

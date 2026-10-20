@@ -78,6 +78,13 @@ InputFormatErrorsLogger::InputFormatErrorsLogger(const ContextPtr & context) : m
     {
         errors_file_path += "_new";
     }
+
+    /// The name was changed after the check above, so check the name that is actually opened.
+    if (context->getApplicationType() == Context::ApplicationType::SERVER && !context->isUserFilesPath(errors_file_path))
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                        "Cannot log errors in path `{}`, because it is not inside user files path",
+                        errors_file_path);
+
     write_buf = std::make_shared<WriteBufferFromFile>(errors_file_path);
 
     header = Block{

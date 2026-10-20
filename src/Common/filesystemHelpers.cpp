@@ -4,6 +4,7 @@
 #    include <mntent.h>
 #    include <sys/sysmacros.h>
 #endif
+#include <algorithm>
 #include <cerrno>
 #include <Poco/Timestamp.h>
 #include <filesystem>
@@ -289,6 +290,80 @@ bool fileOrSymlinkPathStartsWith(const String & path, const String & prefix_path
     return fileOrSymlinkPathStartsWith(filesystem_path, filesystem_prefix_path);
 }
 
+fs::path canonicalPathFollowingDanglingSymlinks(const fs::path & path, std::error_code & ec)
+{
+    ec.clear();
+    const fs::path absolute_path = fs::absolute(path, ec);
+    if (ec)
+        return {};
+
+    /// Components still to be processed, the next one at the back.
+    std::vector<fs::path> pending;
+    for (const auto & component : absolute_path.relative_path())
+        pending.push_back(component);
+    std::reverse(pending.begin(), pending.end());
+
+    /// The same limit as `MAXSYMLINKS` on Linux.
+    static constexpr size_t max_symlinks_to_follow = 40;
+    size_t symlinks_followed = 0;
+
+    fs::path result = absolute_path.root_path();
+    while (!pending.empty())
+    {
+        fs::path component = std::move(pending.back());
+        pending.pop_back();
+
+        if (component.empty() || component == ".")
+            continue;
+
+        if (component == "..")
+        {
+            /// `result` has its symlinks resolved, so its lexical parent is its physical parent.
+            result = result.parent_path();
+            continue;
+        }
+
+        fs::path candidate = result / component;
+        const auto status = fs::symlink_status(candidate, ec);
+        if (status.type() == fs::file_type::not_found)
+        {
+            /// A missing component (or a component under a non-directory) is appended lexically,
+            /// like `fs::weakly_canonical` does.
+            ec.clear();
+            result = std::move(candidate);
+            continue;
+        }
+        if (ec)
+            return {};
+
+        if (status.type() == fs::file_type::symlink)
+        {
+            if (++symlinks_followed > max_symlinks_to_follow)
+            {
+                ec = std::make_error_code(std::errc::too_many_symbolic_link_levels);
+                return {};
+            }
+
+            const fs::path target = fs::read_symlink(candidate, ec);
+            if (ec)
+                return {};
+
+            if (target.is_absolute())
+                result = target.root_path();
+
+            std::vector<fs::path> target_components;
+            for (const auto & target_component : target.relative_path())
+                target_components.push_back(target_component);
+            pending.insert(pending.end(), target_components.rbegin(), target_components.rend());
+            continue;
+        }
+
+        result = std::move(candidate);
+    }
+
+    return result;
+}
+
 bool weaklyCanonicalPathStartsWith(const String & path, const String & prefix_path)
 {
     /// libc truncates a path at an embedded NUL, so the path checked here would not be the one opened later.
@@ -296,11 +371,11 @@ bool weaklyCanonicalPathStartsWith(const String & path, const String & prefix_pa
         return false;
 
     std::error_code ec;
-    const auto resolved_path = fs::weakly_canonical(path, ec);
+    const auto resolved_path = canonicalPathFollowingDanglingSymlinks(path, ec);
     if (ec)
         return false;
 
-    const auto resolved_prefix_path = fs::weakly_canonical(prefix_path, ec);
+    const auto resolved_prefix_path = canonicalPathFollowingDanglingSymlinks(prefix_path, ec);
     if (ec)
         return false;
 

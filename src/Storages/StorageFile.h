@@ -46,10 +46,18 @@ std::pair<DiskPtr, String> splitUserFilesAbsolutePath(const String & absolute_pa
 bool userFilesPathExists(const String & absolute_path, const Disks & disks);
 
 /// Returns whether the disk-relative path stays inside the disk root after symlink
-/// resolution. For object-storage disks (no user-visible symlinks) this trivially
-/// returns true. Use as a symlink-aware access boundary check before reading or
+/// resolution, including a dangling symlink. For object-storage disks with no
+/// user-visible symlinks this trivially returns true (a `local_blob_storage` disk
+/// with `plain` metadata follows symlinks, so it is checked like a local disk). Use as a symlink-aware access boundary check before reading or
 /// writing through `IDisk` when the absolute path was supplied by the user.
 bool isDiskRelativePathInsideRoot(const DiskPtr & disk, const String & relative_path);
+
+/// Adjusts read settings for reading a user file through a `user_files_policy` disk. User files
+/// are mutable: `file` and `File` rewrite them in place, and so can anyone with access to the disk.
+/// The userspace page cache identifies a local file only by its path, so it would return stale bytes
+/// after a rewrite, and a concurrent truncation of a file read with `mmap` raises `SIGBUS`. Hence the
+/// page cache is disabled and `mmap` is replaced by `pread`, as the legacy local-file path does.
+ReadSettings getUserFilesDiskReadSettings(ReadSettings settings);
 
 class StorageFile final : public IStorage
 {

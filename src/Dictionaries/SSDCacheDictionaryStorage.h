@@ -457,9 +457,9 @@ private:
 template <typename SSDCacheKeyType>
 class SSDCacheFileBuffer : private boost::noncopyable
 {
-    static constexpr auto BIN_FILE_EXT = ".bin";
-
 public:
+    /// Appended to the configured path to get the name of the file that is opened.
+    static constexpr auto BIN_FILE_EXT = ".bin";
 
     using KeyType = typename SSDCacheKeyType::KeyType;
 

@@ -12,6 +12,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Storages/StorageFile.h>
 #include <filesystem>
 #include <Functions/FunctionHelpers.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -135,33 +136,10 @@ public:
                 return normalized;
             };
 
-            /// Symlink-aware containment check. The lexical pass above blocks `..`,
-            /// but cannot detect an in-root symlink (e.g. `<disk_root>/link -> /etc`)
-            /// being used as `link/passwd` to escape the disk root. Object-storage
-            /// disks have no symlink concept in the user-visible namespace, so the
-            /// check trivially passes for them.
-            ///
-            /// `fs::weakly_canonical` resolves symlinks for the longest existing
-            /// prefix of the path and lexically appends the rest. We invoke it
-            /// explicitly so the symlink-resolution step is visible at the call site -
-            /// the security property of this check should not depend on subtle library
-            /// behavior of `fs::relative` (which `pathStartsWith` would otherwise call
-            /// internally).
-            auto path_is_inside_disk_root = [](const DiskPtr & d, const String & rel) -> bool
-            {
-                if (d->getDataSourceDescription().type != DataSourceType::Local)
-                    return true;
-                std::error_code ec;
-                const fs::path disk_path(d->getPath());
-                const fs::path resolved_root = fs::weakly_canonical(disk_path, ec);
-                if (ec)
-                    return false;
-                const fs::path resolved = fs::weakly_canonical(disk_path / rel, ec);
-                if (ec)
-                    return false;
-                return pathStartsWith(resolved, resolved_root);
-            };
-
+            /// The lexical pass of `normalize_relative` blocks `..`, but cannot detect an in-root
+            /// symlink (e.g. `<disk_root>/link -> /etc`) used as `link/passwd` to escape the disk
+            /// root. `isDiskRelativePathInsideRoot` checks that and is shared with `StorageFile`,
+            /// so the scalar `file` and the `file` table function agree.
             for (size_t row = 0; row < input_rows_count; ++row)
             {
                 std::string_view filename = column_src->getDataAt(row);
@@ -199,7 +177,7 @@ public:
                             throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                                 "Absolute path '{}' is not inside any user files disk", String(filename));
                         relative_path = normalize_relative(file_path_str.substr(best_prefix_size));
-                        if (!path_is_inside_disk_root(found_disk, relative_path))
+                        if (!isDiskRelativePathInsideRoot(found_disk, relative_path))
                             throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                                 "Path `{}` resolves outside user files disk root after symlink resolution",
                                 String(filename));
@@ -217,7 +195,7 @@ public:
                         if (!disks.empty())
                         {
                             const auto & disk = disks.front();
-                            if (!path_is_inside_disk_root(disk, relative_path))
+                            if (!isDiskRelativePathInsideRoot(disk, relative_path))
                                 throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                                     "Path `{}` resolves outside user files disk root after symlink resolution",
                                     String(filename));
@@ -228,7 +206,9 @@ public:
                     if (!found_disk)
                         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File not found on any user files disk");
 
-                    auto read_settings = context->getReadSettings();
+                    /// `context` is the global context; take the settings of the current query, so that
+                    /// its limits (e.g. `max_remote_read_network_bandwidth`) and throttlers apply.
+                    auto read_settings = getUserFilesDiskReadSettings(DB::getReadSettings());
                     auto in = found_disk->readFile(relative_path, read_settings);
                     auto out = WriteBufferFromVector<ColumnString::Chars>(res_chars, AppendModeTag{});
                     copyData(*in, out);

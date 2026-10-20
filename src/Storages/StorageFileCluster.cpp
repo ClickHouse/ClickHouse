@@ -12,6 +12,7 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
+#include <Disks/DiskType.h>
 #include <Storages/StorageFileCluster.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageFile.h>
@@ -150,7 +151,11 @@ RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(
     /// through `IStorageCluster::read`, so this is the one place every path shares.
     checkWriteAccessIfFilesAreRenamed(context);
 
-    auto iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, std::nullopt, predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), hive_partition_columns_to_read_from_file_path, context,
+    /// On a plain local `user_files_policy` disk `_path` is the path on the disk of the server that reads the file,
+    /// and the root of the disk can differ between the workers and this server. So the files are not filtered by
+    /// `_path` here, with the root of this server: the workers materialize `_path` and the query filters by it.
+    const bool path_depends_on_server = user_files_volume && isPlainLocalDisk(*user_files_volume->getDisks().front());
+    auto iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, std::nullopt, path_depends_on_server ? nullptr : predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), hive_partition_columns_to_read_from_file_path, context,
         /*distributed_processing_=*/ false, /*archive_member_path_=*/ String{}, user_files_volume);
     auto next_callback = [iter = std::move(iterator), volume = user_files_volume](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
     {
