@@ -1925,9 +1925,10 @@ public:
 
     void start()
     {
-        startReceivingNewCalls();
-
         /// We run queue in a separate thread.
+        /// The thread is started before any request is registered in the completion queue: if the
+        /// global pool cannot provide a worker, the queue is still empty, so it can be shut down and
+        /// destroyed without draining (gRPC requires a drained queue before its destruction).
         auto runner_function = [this]
         {
             try
@@ -1940,6 +1941,10 @@ public:
             }
         };
         queue_thread = ThreadFromGlobalPool{ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, runner_function};
+
+        /// `CompletionQueue::Next` in the queue thread waits until the first request is registered here.
+        /// If this throws, `~Runner` shuts down the queue and joins the queue thread, which drains it.
+        startReceivingNewCalls();
     }
 
     void stop()
