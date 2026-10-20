@@ -13,6 +13,9 @@
 #include <sys/resource.h>
 #include <sys/types.h>
 #include <sys/ioctl.h>
+#ifdef __sun
+#include <sys/filio.h>  // illumos defines FIONREAD in sys/filio.h, not sys/ioctl.h
+#endif
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <poll.h>
