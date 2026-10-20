@@ -298,23 +298,19 @@ public:
         auto & streaming = checkedStreamingState(state);
         for (const auto & pending : streaming.pending_external_bucket.buckets)
         {
-            Summary current_summary;
-            pending.getMapped().forEachSample([&current_summary](TimestampType timestamp, ValueType value)
-            {
-                current_summary.addSample(timestamp, value);
-            });
-
-            if (current_summary.count == 0)
-                continue;
-
             auto & stored = streaming.summaries[pending.getKey()];
-            if (stored.count != 0 && stored.last_timestamp >= current_summary.first_timestamp)
-                throw Exception(
-                    ErrorCodes::INCORRECT_DATA,
-                    "Ordered raw PromQL rate buckets overlap at timestamps {} and {}; exact compaction is unavailable",
-                    static_cast<Int64>(stored.last_timestamp),
-                    static_cast<Int64>(current_summary.first_timestamp));
-            stored.merge(current_summary);
+            pending.getMapped().forEachSample([&stored](TimestampType timestamp, ValueType value)
+            {
+                if (stored.count != 0 && stored.last_timestamp >= timestamp)
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Ordered raw PromQL rate buckets overlap at timestamps {} and {}; exact compaction is unavailable",
+                        static_cast<Int64>(stored.last_timestamp),
+                        static_cast<Int64>(timestamp));
+
+                /// Preserve the materialized path's sample order: regrouping reset additions changes `Float64` rounding.
+                stored.addSample(timestamp, value);
+            });
         }
         streaming.pending_external_bucket.buckets.clear();
     }

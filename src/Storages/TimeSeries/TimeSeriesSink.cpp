@@ -827,9 +827,8 @@ std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipe
     pipeline->executor = std::make_unique<PushingPipelineExecutor>(pipeline->io.pipeline);
 
     const Block & target_header = pipeline->executor->getHeader();
-    if (time_series_storage.getVersion() >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES
-        && (kind == ViewTarget::Tags || kind == ViewTarget::TimeRanges
-            || kind == ViewTarget::Samples || kind == ViewTarget::RecentSamples))
+    if (kind == ViewTarget::Tags || kind == ViewTarget::TimeRanges
+        || kind == ViewTarget::Samples || kind == ViewTarget::RecentSamples)
     {
         /// Legacy all-external definitions may not declare an ID type. Preserve the shared ID representation
         /// in the actual bound INSERT pipelines instead of allowing the converting actions to narrow it.

@@ -39,6 +39,8 @@ k4	2
 3
 --- a failed insert does not fill the cache ---
 1
+--- a partition-rejected insert does not fill the cache ---
+2
 --- two tables have separate caches for a shared external metric families table ---
 2
 --- the tags table of version 7 or earlier is not deduplicated if min_time and max_time are stored ---

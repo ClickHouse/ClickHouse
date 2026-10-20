@@ -30,7 +30,7 @@ using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 /// Sink for inserting data into the TimeSeries table engine.
 /// Transforms outer columns (samples, metric_name, tags, metric_family, type, unit, help)
 /// into blocks for the target tables (Tags, TimeRanges, Samples, RecentSamples, MetricFamilies).
-/// Versions 0 through 9 keep the one-sample-per-row representation; version 10 stores sorted
+/// Versions 0 through 10 keep the one-sample-per-row representation; version 11 stores sorted
 /// and deduplicated samples in time buckets.
 class TimeSeriesSink : public SinkToStorage, WithContext
 {

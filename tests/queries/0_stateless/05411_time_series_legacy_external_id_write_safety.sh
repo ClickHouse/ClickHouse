@@ -39,10 +39,8 @@ assert_no_id_setting()
 create_samples()
 {
     query "CREATE TABLE $1
-        (id $2, samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(DateTime64(3), Float64))),
-         bucket DateTime64(3), min_time SimpleAggregateFunction(min, DateTime64(3)),
-         max_time SimpleAggregateFunction(max, DateTime64(3)))
-        ENGINE = AggregatingMergeTree ORDER BY (id, bucket)"
+        (id $2, timestamp DateTime64(3), value Float64)
+        ENGINE = MergeTree ORDER BY (id, timestamp)"
 }
 create_tags()
 {
@@ -93,7 +91,7 @@ for kind in samples recent time_ranges tags; do
         (metric_family String, type LowCardinality(String), unit LowCardinality(String), help String) ENGINE = Memory"
     attach_uuid=$(query 'SELECT generateUUIDv4()')
     query "ATTACH TABLE ${owner} UUID '${attach_uuid}' ENGINE = TimeSeries
-        SETTINGS version = 10, recent_samples_ttl_seconds = 864000, store_time_ranges = 1
+        SETTINGS version = 9, recent_samples_ttl_seconds = 864000, store_time_ranges = 1
         SAMPLES ${samples} RECENT SAMPLES ${recent} TAGS ${tags} TIME RANGES ${time_ranges}
         METRIC FAMILIES ${metrics}" --send_logs_level=error
     assert_no_id_setting "$owner"
@@ -132,7 +130,7 @@ for kind in samples recent time_ranges tags; do
     assert_one "SELECT count() = 1 AND min(id) = 4294967297 AND max(id) = 4294967297 FROM ${tags}"
     assert_one "SELECT count() = 1 AND min(id) = 4294967297 AND max(id) = 4294967297 FROM ${time_ranges}"
     for physical in "$samples" "$recent"; do
-        assert_one "SELECT min(id) = 4294967297 AND max(id) = 4294967297 AND sum(length(samples)) = 1 FROM ${physical}"
+        assert_one "SELECT min(id) = 4294967297 AND max(id) = 4294967297 AND count() = 1 FROM ${physical}"
     done
     assert_no_id_setting "$owner"
     echo "legacy ${kind} same-type replacement: high ID preserved, no ID pin"

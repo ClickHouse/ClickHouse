@@ -5,6 +5,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
@@ -640,6 +641,65 @@ TEST_P(PromQLRangeSumByStepTest, BuildsAndRunsSingleStreamPipeline)
     ASSERT_TRUE(executor.pull(output));
     ASSERT_EQ(output.getNumRows(), 1);
     ASSERT_FALSE(executor.pull(output));
+}
+
+TEST_P(PromQLRangeSumByStepTest, SingleOrderedStreamAcceptsSparseUInt64Identifiers)
+{
+    const auto samples_type = makeSamplesType();
+    const auto header = makeOrderedInputHeader(samples_type);
+    auto collector = std::make_shared<Collector>();
+    auto ids = ColumnUInt64::create();
+    ids->insertValue(0);
+    ids->insertValue(1);
+    VectorWithMemoryTracking<TagsPtr> tags{makeTags("a", "zero"), makeTags("a", "one")};
+    collector->storeTags(std::move(ids), tags);
+    const auto rate_function = makeRateFunction(samples_type);
+    const auto sum_function = makeSumFunction(rate_function, GetParam());
+
+    auto execute = [&](bool sparse)
+    {
+        auto input = makeOrderedSamplesChunk(
+            samples_type, {0, 0, 0, 1}, {0, 1, 2, 0},
+            {{{0, 0.0}}, {{10, 10.0}}, {{20, 20.0}}, {{0, 0.0}, {10, 10.0}, {20, 20.0}}});
+        if (sparse)
+        {
+            auto values = ColumnUInt64::create();
+            values->insertValue(0);
+            values->insertValue(1);
+            auto offsets = ColumnUInt64::create();
+            offsets->insertValue(3);
+            auto columns = input.detachColumns();
+            columns[0] = ColumnSparse::create(std::move(values), std::move(offsets), 4);
+            input.setColumns(std::move(columns), 4);
+        }
+        Chunks chunks;
+        chunks.emplace_back(std::move(input));
+        auto builder = std::make_unique<QueryPipelineBuilder>();
+        builder->init(Pipe(std::make_shared<ChunksSource>(header, std::move(chunks))));
+        PromQLRangeSumByStep step(
+            header, collector, rate_function, sum_function, Strings{"namespace"},
+            /*max_samples_per_series=*/1024, /*max_output_groups=*/1024, /*max_output_block_size=*/1024);
+        QueryPipelineBuilders inputs;
+        inputs.emplace_back(std::move(builder));
+        BuildQueryPipelineSettings settings(getContext().context);
+        auto result = step.updatePipeline(std::move(inputs), settings);
+        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*result));
+        PullingPipelineExecutor executor(pipeline);
+        Chunk output;
+        EXPECT_TRUE(executor.pull(output));
+        Chunk extra;
+        EXPECT_FALSE(executor.pull(extra));
+        return output;
+    };
+
+    const auto expected = execute(/*sparse=*/false);
+    ASSERT_EQ(expected.getNumRows(), 1);
+    checkRateRow(assert_cast<const ColumnArray &>(*expected.getColumns().at(1)), 0, 1.0, 2.0);
+    const auto actual = execute(/*sparse=*/true);
+    ASSERT_EQ(actual.getNumRows(), expected.getNumRows());
+    ASSERT_EQ(actual.getNumColumns(), expected.getNumColumns());
+    for (size_t column = 0; column < expected.getNumColumns(); ++column)
+        EXPECT_EQ(expected.getColumns()[column]->compareAt(0, 0, *actual.getColumns()[column], 1), 0);
 }
 
 TEST_P(PromQLRangeSumByStepTest, MergesSortedInputStreamsBeforeNativeKernel)

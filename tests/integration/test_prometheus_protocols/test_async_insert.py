@@ -35,7 +35,7 @@ def cleanup_after_test():
         yield
     finally:
         node.query("DROP TABLE IF EXISTS prometheus SYNC")
-        node.query("DROP TABLE IF EXISTS samples SYNC")
+        node.query("DROP TABLE IF EXISTS samples_legacy SYNC")
 
 
 def get_async_insert_query_count():
@@ -126,13 +126,34 @@ def test_async_insert_acknowledged_after_flush():
 
 
 def test_async_insert_no_acknowledgement_on_failure():
+    # Version 11 stores each time bucket as a row. A 1-second bucket step makes these two
+    # samples land in distinct partitions, so the request's one-partition limit rejects it.
     node.query(
-        "CREATE TABLE samples (id UUID, "
-        "samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))), "
-        "bucket DateTime64(3), min_time SimpleAggregateFunction(min, DateTime64(3)), max_time SimpleAggregateFunction(max, DateTime64(3)), "
-        "CONSTRAINT reject_all CHECK empty(samples)) ENGINE=AggregatingMergeTree ORDER BY (id, bucket)"
+        "CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS version=11, samples_bucket_step_seconds=1 "
+        "SAMPLES INNER ENGINE=AggregatingMergeTree PARTITION BY bucket ORDER BY (id, bucket)"
     )
-    node.query("CREATE TABLE prometheus ENGINE=TimeSeries DATA samples")
+
+    time_series = [({"__name__": "async_metric"}, {1724112000: 1.5, 1724112001: 2.5})]
+    response = get_response_to_remote_write(
+        node.ip_address,
+        9093,
+        "/write?async_insert=1&max_partitions_per_insert_block=1",
+        convert_time_series_to_protobuf(time_series),
+    )
+
+    assert not response.ok
+    assert "TOO_MANY_PARTS" in response.text
+    assert node.query("SELECT count() FROM timeSeriesSamples(prometheus)") == "0\n"
+
+
+def test_async_insert_no_acknowledgement_on_constraint_failure():
+    node.query(
+        "CREATE TABLE samples_legacy (id UUID, timestamp DateTime64(3), value Float64, "
+        "CONSTRAINT reject_positive CHECK value < 0) ENGINE=MergeTree ORDER BY (id, timestamp)"
+    )
+    node.query(
+        "CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS version=9 SAMPLES samples_legacy"
+    )
 
     time_series = [({"__name__": "async_metric"}, {1724112000: 1.5})]
     response = get_response_to_remote_write(
@@ -144,7 +165,7 @@ def test_async_insert_no_acknowledgement_on_failure():
 
     assert not response.ok
     assert "VIOLATED_CONSTRAINT" in response.text
-    assert node.query("SELECT count() FROM samples") == "0\n"
+    assert node.query("SELECT count() FROM samples_legacy") == "0\n"
 
 
 def test_async_insert_flush_timeout_returns_503():

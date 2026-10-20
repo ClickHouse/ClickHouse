@@ -1032,6 +1032,62 @@ TEST(PromQLRangeRateStep, FusedRawCompactsAcrossInternalBucketsAndPreservesReset
     checkRateRow(values, 0, 6.0, 1.5);
 }
 
+TEST(PromQLRangeRateStep, FusedRawPreservesOrderedFloat64ResetsAcrossPhysicalBuckets)
+{
+    const auto samples_type = makeSamplesType();
+    const auto header = makeInputHeader(samples_type, TimeSeriesColumnNames::Samples);
+    const auto collector = makeCollector({{1, "requests_total", "a", "one"}});
+    const auto make_rate_function = []
+    {
+        Array parameters{UInt64{100}, UInt64{200}, UInt64{100}, UInt64{100}};
+        return std::make_shared<AggregateFunctionTimeseriesRateToGrid<UInt32, Float64>>(
+            DataTypes{std::make_shared<DataTypeUInt32>(), std::make_shared<DataTypeFloat64>()},
+            parameters, UInt32{100}, UInt32{200}, Int32{100}, Int32{100}, 0, 0);
+    };
+
+    /// Both physical buckets feed one internal rate bucket. Each small reset
+    /// must be added to `2^53` separately, as in the ordinary aggregate path.
+    std::vector<Chunks> source_chunks(2);
+    source_chunks[0].emplace_back(makeSamplesChunk(
+        samples_type, {1}, {0}, {{{1, 9007199254740992.0}, {2, 0.0}}}));
+    source_chunks[1].emplace_back(makeSamplesChunk(
+        samples_type, {1}, {50}, {{{51, 1.0}, {52, 0.0}}}));
+    source_chunks[1].emplace_back(makeSamplesChunk(
+        samples_type, {1}, {50}, {{{53, 1.0}, {54, 0.0}}}));
+
+    const Field raw_min_time{UInt64{0}};
+    const Field raw_max_time{UInt64{200}};
+    auto expected = pullAllOutputChunks(makeMaterializedMergePipeline(
+        header,
+        cloneSourceChunks(source_chunks),
+        collector,
+        make_rate_function(),
+        /*max_samples_per_series=*/16,
+        /*max_output_block_size=*/1,
+        raw_min_time,
+        raw_max_time));
+    ASSERT_EQ(expected.size(), 1);
+    ASSERT_EQ(expected.front().getNumRows(), 1);
+    const auto & arrays = assert_cast<const ColumnArray &>(*expected.front().getColumns().at(1));
+    const auto & nullable = assert_cast<const ColumnNullable &>(arrays.getData());
+    const auto & values = assert_cast<const ColumnFloat64 &>(nullable.getNestedColumn());
+    ASSERT_EQ(arrays.getOffsets()[0], 2);
+    ASSERT_EQ(nullable.getNullMapData()[0], 0);
+    EXPECT_EQ(values.getElement(0), 0.0);
+    EXPECT_EQ(nullable.getNullMapData()[1], 1);
+
+    auto actual = pullAllOutputChunks(makeFusedMergePipeline(
+        header,
+        std::move(source_chunks),
+        collector,
+        make_rate_function(),
+        /*max_samples_per_series=*/16,
+        /*max_output_block_size=*/1,
+        raw_min_time,
+        raw_max_time));
+    expectEquivalentOutput(expected, actual);
+}
+
 TEST(PromQLRangeRateStep, FusedRawEmptyRowsDoNotRegisterSeries)
 {
     const auto samples_type = makeSamplesType();

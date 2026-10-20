@@ -338,11 +338,11 @@ namespace
     ///     SELECT id, _CAST(samples, '<time_series type>') AS time_series
     ///     FROM <samples>
     /// ) AS __samples
-    /// or with `FINAL` (the rows of the same bucket are merged, the same as a merge of the table does)
+    /// or with `FINAL` (all bucket rows are merged into one row per series)
     /// (
     ///     SELECT id, _CAST(timeSeriesGroupArray(samples), '<time_series type>') AS time_series
     ///     FROM <samples>
-    ///     GROUP BY id, bucket
+    ///     GROUP BY id
     /// ) AS __samples
     /// The cast drops the names of the tuple elements which the `samples` column has.
     ///
@@ -369,7 +369,6 @@ namespace
             {
                 samples = makeASTFunction("timeSeriesGroupArray", std::move(samples));
                 group_by->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
-                group_by->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Bucket));
             }
             time_series = makeASTFunction(
                 "_CAST", std::move(samples), make_intrusive<ASTLiteral>(samples_outer_column_name_and_type.type->getName()));
@@ -758,9 +757,9 @@ ASTPtr makeASTSelectFromTimeSeries(
 
     auto storage_settings = storage.getStorageSettings();
 
-    /// With `FINAL` the read deduplicates unmerged "tags" parts (`LIMIT 1 BY id`) and merges unmerged rows of the same
-    /// bucket of the "samples" table, so the result is the same as after a merge of the inner tables: a series is
-    /// returned once per bucket. Without it the read is cheaper, but a series inserted repeatedly may be returned
+    /// With `FINAL` the read deduplicates unmerged "tags" parts (`LIMIT 1 BY id`) and merges unmerged "samples" rows
+    /// across buckets, so the result is one logical row per series, independent of the selected columns. Without it
+    /// the read is cheaper, but a series inserted repeatedly may be returned
     /// once per unmerged part until a background merge collapses them.
     bool final = query_info.isFinal();
 

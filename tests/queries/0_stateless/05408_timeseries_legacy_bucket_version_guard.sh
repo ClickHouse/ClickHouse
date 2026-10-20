@@ -52,7 +52,7 @@ function expect_bucket_rejection()
         echo "${label}: unexpectedly succeeded" >&2
         return 1
     fi
-    if [[ "$output" != *"bucketed samples require version 10"* ]]; then
+    if [[ "$output" != *"bucketed samples require version 11"* ]]; then
         echo "${label}: unexpected exception: ${output}" >&2
         return 1
     fi

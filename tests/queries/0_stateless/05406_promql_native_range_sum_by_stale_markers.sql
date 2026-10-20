@@ -24,7 +24,7 @@ SET enable_promql_native_raw_samples = 0;
 DROP TABLE IF EXISTS promql_native_range_sum_by_stale_markers;
 
 CREATE TABLE promql_native_range_sum_by_stale_markers ENGINE = TimeSeries
-SETTINGS version = 10, samples_index_granularity = 1, recent_samples_ttl_seconds = 0;
+SETTINGS version = 11, samples_index_granularity = 1, recent_samples_ttl_seconds = 0;
 
 -- The two `stale` series have distinct full label sets but one output group.
 -- Only the exact Prometheus stale payload is omitted; the ordinary NaN is data.
@@ -148,7 +148,7 @@ DROP TABLE promql_native_range_sum_by_stale_markers SYNC;
 DROP TABLE IF EXISTS promql_native_range_sum_by_stale_lanes;
 
 CREATE TABLE promql_native_range_sum_by_stale_lanes ENGINE = TimeSeries
-SETTINGS version = 10, samples_index_granularity = 1, recent_samples_ttl_seconds = 0;
+SETTINGS version = 11, samples_index_granularity = 1, recent_samples_ttl_seconds = 0;
 
 INSERT INTO promql_native_range_sum_by_stale_lanes (metric_name, tags, samples) VALUES
     ('m', map('instance', 'shared', 'source', 'a'),

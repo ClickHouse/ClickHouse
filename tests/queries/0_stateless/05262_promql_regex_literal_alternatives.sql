@@ -45,10 +45,12 @@ SELECT groupArray(value) FROM (SELECT value FROM prometheusQuery(rx, 'a_total{jo
 SELECT groupArray(value) FROM (SELECT value FROM prometheusQuery(rx, 'a_total{job=~"(my|)web"}', 1000) ORDER BY value);
 
 SELECT '-- metric name alternatives equal the union of two equality selectors and use the primary key';
-SELECT arraySort(groupArray((id, timestamp, value))) = (SELECT arraySort(groupArray((id, timestamp, value))) FROM (
-        SELECT * FROM timeSeriesSelector(rx, 'a_total', 0, 2000) UNION ALL SELECT * FROM timeSeriesSelector(rx, 'b_total', 0, 2000))),
-    arraySort(groupArray(value))
-FROM timeSeriesSelector(rx, '{__name__=~"a_total|b_total"}', 0, 2000);
+SELECT arraySort(groupArray((id, sample.1, sample.2))) = (SELECT arraySort(groupArray((id, sample.1, sample.2))) FROM (
+        SELECT id, arrayJoin(time_series) AS sample FROM timeSeriesSelector(rx, 'a_total', 0, 2000)
+        UNION ALL
+        SELECT id, arrayJoin(time_series) AS sample FROM timeSeriesSelector(rx, 'b_total', 0, 2000))),
+    arraySort(groupArray(sample.2))
+FROM (SELECT id, arrayJoin(time_series) AS sample FROM timeSeriesSelector(rx, '{__name__=~"a_total|b_total"}', 0, 2000));
 SELECT count() FROM timeSeriesSelector(rx, '{__name__=~"a_total|b_total"}', 0, 2000) SETTINGS force_primary_key = 1;
 SELECT count() FROM timeSeriesSelector(rx, '{__name__=~"(a_total)|(b_total)"}', 0, 2000) SETTINGS force_primary_key = 1;
 SELECT count() FROM timeSeriesSelector(rx, '{__name__!~"a_total|b_total", job="api"}', 0, 2000);

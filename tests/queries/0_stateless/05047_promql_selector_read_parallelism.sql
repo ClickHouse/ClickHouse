@@ -1,9 +1,9 @@
 -- Tags: no-fasttest, no-parallel-replicas, no-object-storage, no-random-settings, no-random-merge-tree-settings
 
+DROP TABLE IF EXISTS prometheus;
+DROP TABLE IF EXISTS samples_table;
 DROP TABLE IF EXISTS tags_table;
 DROP TABLE IF EXISTS time_ranges_table;
-DROP TABLE IF EXISTS samples_table;
-DROP TABLE IF EXISTS prometheus;
 
 SET session_timezone = 'UTC';
 SET allow_experimental_time_series_table = 1;
@@ -23,25 +23,21 @@ CREATE TABLE time_ranges_table
     max_time DateTime64(3)
 ) ENGINE = MergeTree() ORDER BY id;
 
--- A row of the samples table contains the samples of one series within a 60-second bucket.
 CREATE TABLE samples_table
 (
     id UInt64,
-    samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))),
-    bucket DateTime64(3),
-    min_time SimpleAggregateFunction(min, DateTime64(3)),
-    max_time SimpleAggregateFunction(max, DateTime64(3))
-) ENGINE = AggregatingMergeTree() ORDER BY (id, bucket)
-SETTINGS index_granularity = 64, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+    timestamp DateTime64(3),
+    value Float64
+) ENGINE = MergeTree() ORDER BY (id, timestamp)
+SETTINGS index_granularity = 32768, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 
-CREATE TABLE prometheus ENGINE = TimeSeries SETTINGS version = 10, samples_bucket_step_seconds = 60
+CREATE TABLE prometheus ENGINE = TimeSeries SETTINGS version = 9
 SAMPLES samples_table TAGS tags_table TIME RANGES time_ranges_table;
 
 INSERT INTO prometheus (metric_name, tags, samples) VALUES ('m', map('host', 'h1'), [(toDateTime64(0, 3), 0)]);
 INSERT INTO samples_table
-    SELECT (SELECT id FROM tags_table LIMIT 1), timeSeriesGroupArray(toDateTime64(number, 3), toFloat64(number)),
-           toDateTime(intDiv(number, 60) * 60), min(toDateTime64(number, 3)), max(toDateTime64(number, 3))
-    FROM numbers(720000) GROUP BY intDiv(number, 60);
+    SELECT (SELECT id FROM tags_table LIMIT 1), toDateTime64(number, 3), toFloat64(number)
+    FROM numbers(720000);
 INSERT INTO time_ranges_table SELECT (SELECT id FROM tags_table LIMIT 1), toDateTime64(0, 3), toDateTime64(720000, 3);
 OPTIMIZE TABLE samples_table FINAL;
 
@@ -56,11 +52,11 @@ SELECT sum(explain LIKE '%MergeTreeSelect%') = 1 AS has_single_read,
 FROM (EXPLAIN PIPELINE SELECT count() FROM timeSeriesSelector(prometheus, 'm{host="h1"}', 0, 720000)
       SETTINGS merge_tree_min_bytes_for_concurrent_read = 251658240, merge_tree_min_rows_for_concurrent_read = 163840);
 
-SELECT sum(length(time_series)), sum(arraySum(x -> x.2, time_series)) FROM timeSeriesSelector(prometheus, 'm{host="h1"}', 0, 720000);
-SELECT sum(length(time_series)), sum(arraySum(x -> x.2, time_series)) FROM timeSeriesSelector(prometheus, 'm{host="h1"}', 0, 720000)
+SELECT count(), sum(value) FROM timeSeriesSelector(prometheus, 'm{host="h1"}', 0, 720000);
+SELECT count(), sum(value) FROM timeSeriesSelector(prometheus, 'm{host="h1"}', 0, 720000)
 SETTINGS merge_tree_min_bytes_for_concurrent_read = 251658240, merge_tree_min_rows_for_concurrent_read = 163840;
 
 DROP TABLE prometheus;
 DROP TABLE samples_table;
-DROP TABLE time_ranges_table;
 DROP TABLE tags_table;
+DROP TABLE time_ranges_table;

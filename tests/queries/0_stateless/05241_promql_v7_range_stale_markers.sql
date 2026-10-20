@@ -8,7 +8,7 @@ SET session_timezone = 'UTC';
 
 CREATE TABLE promql_v7_range_stale_markers
 ENGINE = TimeSeries
-SETTINGS version = 10, recent_samples_ttl_seconds = 0;
+SETTINGS version = 11, recent_samples_ttl_seconds = 0;
 
 INSERT INTO promql_v7_range_stale_markers (metric_name, tags, samples)
 SELECT 'm', map('job', 'api'),

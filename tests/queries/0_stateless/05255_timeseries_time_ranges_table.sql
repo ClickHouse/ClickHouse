@@ -1,13 +1,13 @@
 -- Tags: no-fasttest, no-parallel-replicas
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
--- Tag no-parallel-replicas: table functions like `timeSeriesTimeRanges` read the inner tables directly and don't work
--- with parallel replicas.
+-- Tag no-parallel-replicas: every parallel replica reads all rows of the table behind `timeSeriesTimeRanges`, so each row
+-- is returned once per replica until https://github.com/ClickHouse/ClickHouse/pull/119350 is merged.
 --
 -- A TimeSeries table stores the time range of each time series in the "time ranges" target table,
 -- tables of version 7 or earlier store it in the columns `min_time` and `max_time` of the "tags" table (see TimeSeriesVersion.h).
 -- The generation of the definition is covered by the unit test gtest_normalize_time_series_definition.cpp,
 -- this test checks the write path and which tables the selector reads; the filtering of time series by their time ranges
--- is checked in 05255_timeseries_external_time_ranges_table.sql.
+-- is checked in 05255_timeseries_time_ranges_filter.sql.
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
@@ -32,10 +32,10 @@ SELECT '-- a second insert extends the time range';
 INSERT INTO ts (metric_name, tags, samples) VALUES ('m', map('host', 'h1'), [(toDateTime64(500, 3), 0.), (toDateTime64(1500, 3), 4.)]);
 
 SELECT '-- a selector returns the samples of the matching time series in the time range, the ranges of a time series are not merged yet';
-SELECT count() FROM timeSeriesSelector(ts, 'm', 0, 2500) SETTINGS log_comment = 'ts_m';
-SELECT count() FROM timeSeriesSelector(ts, 'm{host="h1"}', 0, 2500) SETTINGS log_comment = 'ts_m_h1';
+SELECT sum(length(time_series)) FROM timeSeriesSelector(ts, 'm', 0, 2500) SETTINGS log_comment = 'ts_m';
+SELECT sum(length(time_series)) FROM timeSeriesSelector(ts, 'm{host="h1"}', 0, 2500) SETTINGS log_comment = 'ts_m_h1';
 -- In [0, 1500] the only time series failing the matcher (h2) has no samples, so the probe decides that the selector matches the whole metric.
-SELECT count() FROM timeSeriesSelector(ts, 'm{host="h1"}', 0, 1500) SETTINGS log_comment = 'ts_m_h1_1500';
+SELECT sum(length(time_series)) FROM timeSeriesSelector(ts, 'm{host="h1"}', 0, 1500) SETTINGS log_comment = 'ts_m_h1_1500';
 
 SELECT '-- the ranges of a time series are merged into one';
 OPTIMIZE TABLE ts FINAL;
@@ -49,10 +49,10 @@ INSERT INTO ts_no_ranges (metric_name, tags, samples) VALUES
     ('m', map('host', 'h2'), [(toDateTime64(2000, 3), 3.)]),
     ('m', map('host', 'h3'), []);
 INSERT INTO ts_no_ranges (metric_name, tags, samples) VALUES ('m', map('host', 'h1'), [(toDateTime64(500, 3), 0.), (toDateTime64(1500, 3), 4.)]);
-SELECT count() FROM timeSeriesSelector(ts_no_ranges, 'm', 0, 2500) SETTINGS log_comment = 'ts_no_ranges_m';
-SELECT count() FROM timeSeriesSelector(ts_no_ranges, 'm{host="h1"}', 0, 2500) SETTINGS log_comment = 'ts_no_ranges_m_h1';
+SELECT sum(length(time_series)) FROM timeSeriesSelector(ts_no_ranges, 'm', 0, 2500) SETTINGS log_comment = 'ts_no_ranges_m';
+SELECT sum(length(time_series)) FROM timeSeriesSelector(ts_no_ranges, 'm{host="h1"}', 0, 2500) SETTINGS log_comment = 'ts_no_ranges_m_h1';
 -- Without stored time ranges the probe has no time information, so h2 stays a counterexample in [0, 1500] and the selector is not treated as matching the whole metric.
-SELECT count() FROM timeSeriesSelector(ts_no_ranges, 'm{host="h1"}', 0, 1500) SETTINGS log_comment = 'ts_no_ranges_m_h1_1500';
+SELECT sum(length(time_series)) FROM timeSeriesSelector(ts_no_ranges, 'm{host="h1"}', 0, 1500) SETTINGS log_comment = 'ts_no_ranges_m_h1_1500';
 
 SELECT '-- a TIME RANGES clause requires store_time_ranges to be enabled and is rejected for version 7 or earlier';
 CREATE TABLE ts_bad ENGINE = TimeSeries SETTINGS store_time_ranges = 0 TIME RANGES INNER ENGINE = AggregatingMergeTree ORDER BY id; -- { serverError INCORRECT_QUERY }

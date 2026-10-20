@@ -1,7 +1,7 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 
--- Since version 10 of the TimeSeries table engine a row of the samples table contains the samples of one series
+-- Since version 11 of the TimeSeries table engine a row of the samples table contains the samples of one series
 -- within one time bucket: the columns `samples` (a sorted array of tuples (timestamp, value)), `bucket`, `min_time`, `max_time`.
 
 SET allow_experimental_time_series_table = 1;
@@ -25,24 +25,33 @@ SELECT t.tags['env'] AS env, s.bucket, s.samples, s.min_time, s.max_time
 FROM timeSeriesSamples(ts) AS s JOIN timeSeriesTags(ts) AS t ON s.id = t.id
 ORDER BY env, s.bucket;
 
-SELECT '-- reading the TimeSeries table returns a row per bucket, the rows of a series can be merged with timeSeriesGroupArray';
+SELECT '-- reading the TimeSeries table returns one row per series with FINAL, independently of projected columns';
 
 SELECT metric_name, tags, samples FROM ts ORDER BY tags, samples;
 SELECT metric_name, tags, timeSeriesGroupArray(samples) FROM ts FINAL GROUP BY metric_name, tags ORDER BY tags;
+SELECT count() FROM ts FINAL;
+SELECT count(), sum(length(samples)) FROM ts FINAL;
+SELECT count() FROM (SELECT tags FROM ts FINAL);
 
 SELECT '-- the rows of the same bucket are merged by the engine';
 
 INSERT INTO ts (metric_name, tags, samples) VALUES ('m', map('env', 'prod'), [(toDateTime64(150, 3), 1.5), (toDateTime64(100, 3), 1.)]);
 SELECT count() FROM timeSeriesSamples(ts);
-SELECT '-- without FINAL the rows of the unmerged parts are returned as they are, with FINAL the rows of the same bucket are merged';
+SELECT '-- without FINAL the rows of the unmerged parts are returned as they are; FINAL merges every bucket into one series row';
 SELECT metric_name, tags, samples FROM ts ORDER BY tags, samples;
 SELECT metric_name, tags, samples FROM ts FINAL ORDER BY tags, samples;
+SELECT count() FROM ts FINAL;
+SELECT count(), sum(length(samples)) FROM ts FINAL;
+SELECT count() FROM (SELECT tags FROM ts FINAL);
 SELECT '-- timeSeriesSelector and PromQL merge the rows of the unmerged parts too (the greatest value wins for the duplicate timestamp 100)';
 SELECT timeSeriesGroupArray(time_series) FROM timeSeriesSelector(ts, 'm{env="prod"}', 0, 200) GROUP BY id;
 SELECT * FROM prometheusQuery(ts, 'm{env="prod"}[5m]', 200);
 
 OPTIMIZE TABLE ts FINAL;
 SELECT count() FROM timeSeriesSamples(ts);
+SELECT count() FROM ts FINAL;
+SELECT count(), sum(length(samples)) FROM ts FINAL;
+SELECT count() FROM (SELECT tags FROM ts FINAL);
 SELECT t.tags['env'] AS env, s.bucket, s.samples, s.min_time, s.max_time
 FROM timeSeriesSamples(ts) AS s JOIN timeSeriesTags(ts) AS t ON s.id = t.id
 WHERE s.bucket = toDateTime64(0, 3)
@@ -123,30 +132,38 @@ SELECT '-- an external samples table can use plain types';
 
 DROP TABLE IF EXISTS ts_ext;
 DROP TABLE IF EXISTS ext_samples;
-CREATE TABLE ext_samples (id UUID, samples Array(Tuple(DateTime64(3), Float64)), bucket DateTime64(3), min_time DateTime64(3), max_time DateTime64(3))
-ENGINE = MergeTree ORDER BY (id, bucket);
-CREATE TABLE ts_ext ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0 SAMPLES ext_samples TAGS INNER COLUMNS (id UUID);
+CREATE TABLE ext_samples (id UUID, timestamp DateTime64(3), value Float64)
+ENGINE = MergeTree ORDER BY (id, timestamp);
+CREATE TABLE ts_ext ENGINE = TimeSeries SETTINGS version = 9, recent_samples_ttl_seconds = 0 SAMPLES ext_samples TAGS INNER COLUMNS (id UUID);
 INSERT INTO ts_ext (metric_name, tags, samples) VALUES ('m', map(), [(toDateTime64(4000, 3), 1.), (toDateTime64(100, 3), 2.)]);
-SELECT bucket, samples, min_time, max_time FROM ext_samples ORDER BY bucket;
+SELECT timestamp, value FROM ext_samples ORDER BY timestamp;
 SELECT * FROM prometheusQuery(ts_ext, 'm', 4100) ORDER BY ALL;
 DROP TABLE ts_ext;
 DROP TABLE ext_samples;
 
-SELECT '-- an external samples table of a wrong layout is rejected';
+SELECT '-- version 11 rejects external samples targets';
 
 DROP TABLE IF EXISTS ext_bad;
 CREATE TABLE ext_bad (id UUID, timestamp DateTime64(3), value Float64) ENGINE = MergeTree ORDER BY (id, timestamp);
-CREATE TABLE ts_bad ENGINE = TimeSeries SAMPLES ext_bad TAGS INNER COLUMNS (id UUID); -- { serverError INCORRECT_QUERY }
+CREATE TABLE ts_bad ENGINE = TimeSeries SETTINGS version = 11 SAMPLES ext_bad TAGS INNER COLUMNS (id UUID); -- { serverError INCORRECT_QUERY }
 DROP TABLE ext_bad;
-CREATE TABLE ext_bad (id UUID, samples Array(Tuple(DateTime64(3), Float64)), bucket DateTime64(3)) ENGINE = MergeTree ORDER BY (id, bucket);
-CREATE TABLE ts_bad ENGINE = TimeSeries SAMPLES ext_bad TAGS INNER COLUMNS (id UUID); -- { serverError THERE_IS_NO_COLUMN }
+
+SELECT '-- legacy external samples targets reject missing and incompatible scalar columns';
+
+CREATE TABLE ext_bad (id UUID, timestamp DateTime64(3)) ENGINE = MergeTree ORDER BY (id, timestamp);
+CREATE TABLE ts_bad ENGINE = TimeSeries SETTINGS version = 9 SAMPLES ext_bad TAGS INNER COLUMNS (id UUID); -- { serverError THERE_IS_NO_COLUMN }
 DROP TABLE ext_bad;
-CREATE TABLE ext_bad (id UUID, samples Array(Tuple(DateTime64(3), Float64)), bucket String, min_time DateTime64(3), max_time DateTime64(3)) ENGINE = MergeTree ORDER BY (id, bucket);
-CREATE TABLE ts_bad ENGINE = TimeSeries SAMPLES ext_bad TAGS INNER COLUMNS (id UUID); -- { serverError BAD_TYPE_OF_FIELD }
+CREATE TABLE ext_bad (id UUID, timestamp String, value Float64) ENGINE = MergeTree ORDER BY (id, timestamp);
+CREATE TABLE ts_bad ENGINE = TimeSeries SETTINGS version = 9 SAMPLES ext_bad TAGS INNER COLUMNS (id UUID); -- { serverError BAD_TYPE_OF_FIELD }
 DROP TABLE ext_bad;
-CREATE TABLE ext_bad (id UUID, samples Array(Tuple(DateTime64(3), Float32)), bucket DateTime64(3), min_time DateTime64(3), max_time DateTime64(3)) ENGINE = MergeTree ORDER BY (id, bucket);
-CREATE TABLE ts_bad (samples Array(Tuple(DateTime64(3), Float64))) ENGINE = TimeSeries SAMPLES ext_bad TAGS INNER COLUMNS (id UUID); -- { serverError BAD_TYPE_OF_FIELD }
+CREATE TABLE ext_bad (id UUID, timestamp DateTime64(3), value Float32) ENGINE = MergeTree ORDER BY (id, timestamp);
+CREATE TABLE ts_bad (samples Array(Tuple(DateTime64(3), Float64))) ENGINE = TimeSeries SETTINGS version = 9 SAMPLES ext_bad TAGS INNER COLUMNS (id UUID); -- { serverError BAD_TYPE_OF_FIELD }
 DROP TABLE ext_bad;
+
+SELECT '-- bucketed inner target column types are also checked';
+
+CREATE TABLE ts_bad ENGINE = TimeSeries SETTINGS version = 11
+SAMPLES INNER COLUMNS (samples Array(Tuple(DateTime64(3), Float64)), bucket String, min_time DateTime64(3), max_time DateTime64(3)); -- { serverError BAD_TYPE_OF_FIELD }
 
 SELECT '-- a table created AS a table of an older version gets the new layout with the same types';
 

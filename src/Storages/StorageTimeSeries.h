@@ -188,6 +188,11 @@ private:
         const ContextPtr & local_context,
         bool bypass_metadata_cache = false) const;
 
+    void validateLegacyTargetIdType(
+        ViewTarget::Kind target_kind,
+        const StoragePtr & target_table,
+        const ContextPtr & local_context) const;
+
     StorageMetadataPtr getValidatedBucketedSamplesTargetMetadata(
         ViewTarget::Kind target_kind,
         const StoragePtr & expected_table,

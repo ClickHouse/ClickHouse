@@ -7,6 +7,7 @@
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <Processors/Transforms/PromQLColumnHelpers.h>
 #include <Processors/Transforms/PromQLRangeRateTransform.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
@@ -187,7 +188,7 @@ void PromQLRangeSumByTransform::startSeries(const IColumn & id_column, size_t ro
     chassert(!rate_state_created);
     chassert(current_id->empty());
 
-    current_id->insertFrom(id_column, row);
+    insertPromQLColumnValue(*current_id, id_column, row);
     current_output_group = projectGroup(full_group);
     rate_function->create(rate_place.data());
     rate_state_created = true;

@@ -11,7 +11,7 @@ struct TimeSeriesColumnNames
     /// The "samples" table contains time series:
     static constexpr const char * ID = "id";
 
-    /// In version 10, a row of the "samples" table contains samples of one time series within one time bucket
+    /// In version 11, a row of the "samples" table contains samples of one time series within one time bucket
     /// as a sorted array of tuples (timestamp, value); "bucket" is the start of the bucket.
     static constexpr const char * Bucket = "bucket";
 
@@ -33,7 +33,7 @@ struct TimeSeriesColumnNames
     static constexpr const char * Tags = "tags";
 
     /// The "time ranges" table contains the time range of each time series
-    /// (tables of versions before 8 kept these columns in the "tags" table; version 10 also has them per sample bucket):
+    /// (tables of versions before 8 kept these columns in the "tags" table; version 11 also has them per sample bucket):
     static constexpr const char * MinTime = "min_time";
     static constexpr const char * MaxTime = "max_time";
 

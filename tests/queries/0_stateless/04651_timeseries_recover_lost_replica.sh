@@ -11,9 +11,26 @@
 #                           (same reason as 04341).
 # Tag no-fasttest: Fast test has no Keeper (same reason as 04341).
 #
-# Control and regression cases for diverged `TimeSeries` tables with external and inner targets.
-# The external control uses bucketed samples; the inner regression preserves the version 7 row
-# layout. Version 9 inner-target recovery is covered separately.
+# Regression test for: a diverged TimeSeries table wedges DatabaseReplicated::recoverLostReplica
+# forever, so the replica never finishes recovery and the database stays unusable.
+#
+# Recovery drops a table that does not store data on disk (DatabaseReplicated.cpp, the
+# `drop_broken_tables || !table->storesDataOnDisk()` branch). StorageTimeSeries has no
+# storesDataOnDisk override, so a diverged TimeSeries table takes that branch. The inner-table
+# special case right below it used to name only MaterializedView, and it is the
+# only place in recovery that hands a ZooKeeperMetadataTransaction to the inner DROP. Without it
+# the inner DROP was deferred to the background dropTableFinally task, which has no transaction,
+# so the DROP was re-routed into the replicated DDL log and rejected with
+# `It's not initial query. ON CLUSTER is not allowed for Replicated database.` (Code 80) forever,
+# and waitTableFinallyDropped never returned.
+#
+# Expected (after fix):  the replica recovers, the TimeSeries table and its inner tables are
+#                        back, the inner tables were really dropped and re-created (so they are
+#                        empty again), and no Code 80 inner-drop rejection is logged.
+# Observed (before fix): recovery never completes -- the outer table is gone while its
+#                        orphaned inner tables remain, and DatabaseCatalog logs
+#                        `Cannot drop table <db>.ts (<uuid>). Will retry later.: Code: 80 ...`
+#                        every 5 seconds.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -95,12 +112,8 @@ ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${DB} ENGINE = Replicated('${ZK_PATH}',
 # it is the control case.
 # ---------------------------------------------------------------------------------------------
 
-${CLIENT} -q "CREATE TABLE ${DB}.ext_data (id UUID,
-                  samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))),
-                  bucket DateTime64(3),
-                  min_time SimpleAggregateFunction(min, DateTime64(3)),
-                  max_time SimpleAggregateFunction(max, DateTime64(3)))
-              ENGINE = ReplicatedAggregatingMergeTree ORDER BY (id, bucket)"
+${CLIENT} -q "CREATE TABLE ${DB}.ext_data (id UUID, timestamp DateTime64(3), value Float64)
+              ENGINE = ReplicatedMergeTree ORDER BY (id, timestamp)"
 ${CLIENT} -q "CREATE TABLE ${DB}.ext_tags (
                   id UUID,
                   metric_name LowCardinality(String),
@@ -112,7 +125,7 @@ ${CLIENT} -q "CREATE TABLE ${DB}.ext_metrics (metric_family String, type LowCard
               ENGINE = ReplicatedReplacingMergeTree ORDER BY metric_family"
 ${CLIENT} --allow_experimental_time_series_table=1 \
     -q "CREATE TABLE ${DB}.ts_ext ENGINE = TimeSeries
-        DATA ${DB}.ext_data TAGS ${DB}.ext_tags METRICS ${DB}.ext_metrics"
+        DATA ${DB}.ext_data TAGS ${DB}.ext_tags METRICS ${DB}.ext_metrics SETTINGS version = 9"
 
 diverge_from_keeper ts_ext
 force_recovery

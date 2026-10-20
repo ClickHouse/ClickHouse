@@ -61,11 +61,9 @@ create_samples_target()
     query "CREATE TABLE $1
         (
             id $2,
-            samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(DateTime64(3), Float64))),
-            bucket DateTime64(3),
-            min_time SimpleAggregateFunction(min, DateTime64(3)),
-            max_time SimpleAggregateFunction(max, DateTime64(3))
-        ) ENGINE = AggregatingMergeTree ORDER BY (id, bucket)"
+            timestamp DateTime64(3),
+            value Float64
+        ) ENGINE = MergeTree ORDER BY (id, timestamp)"
 }
 
 for kind in samples recent; do
@@ -82,7 +80,7 @@ for kind in samples recent; do
     create_samples_target "$samples" UInt64
     create_samples_target "$recent" UInt64
     query "CREATE TABLE ${owner} ENGINE = TimeSeries
-        SETTINGS version = 10, recent_samples_ttl_seconds = 864000, store_time_ranges = 0
+        SETTINGS version = 9, recent_samples_ttl_seconds = 864000, store_time_ranges = 0
         SAMPLES ${samples} RECENT SAMPLES ${recent}
         TAGS INNER COLUMNS (id UInt64 DEFAULT toUInt64(4294967297))"
     assert_no_id_setting "$owner"
@@ -91,7 +89,7 @@ for kind in samples recent; do
     create_samples_target "$target" UInt32
     read_query="SELECT samples FROM ${owner} FORMAT Null"
     if [[ "$kind" == recent ]]; then
-        read_query="SELECT time_series FROM timeSeriesSelector(${owner}, 'm',
+        read_query="SELECT value FROM timeSeriesSelector(${owner}, 'm',
             now64(3) - INTERVAL 1 HOUR, now64(3) + INTERVAL 1 MINUTE)
             SETTINGS time_series_prefer_recent_samples_table = 1 FORMAT Null"
         query "SELECT samples FROM ${owner} FORMAT Null"
@@ -121,7 +119,7 @@ for kind in samples recent; do
     assert_one "SELECT count() = 1 AND min(id) = 4294967297 AND max(id) = 4294967297
         FROM timeSeriesTags(${owner})"
     for physical in "$samples" "$recent"; do
-        assert_one "SELECT min(id) = 4294967297 AND max(id) = 4294967297 AND sum(length(samples)) = 1
+        assert_one "SELECT min(id) = 4294967297 AND max(id) = 4294967297 AND count() = 1
             FROM ${physical}"
     done
     echo "${kind} same-type replacement: high ID preserved"
@@ -142,7 +140,7 @@ query "CREATE TABLE ${metrics}
     (metric_family String, type LowCardinality(String), unit LowCardinality(String), help String) ENGINE = Memory"
 attach_uuid=$(query 'SELECT generateUUIDv4()')
 query "ATTACH TABLE ${owner} UUID '${attach_uuid}' ENGINE = TimeSeries
-    SETTINGS version = 10, recent_samples_ttl_seconds = 0, store_time_ranges = 0
+    SETTINGS version = 9, recent_samples_ttl_seconds = 0, store_time_ranges = 0
     SAMPLES ${samples} TAGS ${tags} METRIC FAMILIES ${metrics}" --send_logs_level=error
 assert_no_id_setting "$owner"
 echo 'legacy full ATTACH: no ID pin'
@@ -162,6 +160,6 @@ done
 query "INSERT INTO ${owner} (metric_name, tags, samples)
     VALUES ('m', map(), [(now64(3), 1.)])"
 query "SELECT samples FROM ${owner} FORMAT Null"
-assert_one "SELECT min(id) = 4294967297 AND max(id) = 4294967297 AND sum(length(samples)) = 1 FROM ${samples}"
+assert_one "SELECT min(id) = 4294967297 AND max(id) = 4294967297 AND count() = 1 FROM ${samples}"
 assert_no_id_setting "$owner"
 echo 'legacy restored targets: high ID preserved'

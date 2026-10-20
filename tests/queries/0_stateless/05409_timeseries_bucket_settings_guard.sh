@@ -37,17 +37,17 @@ for setting in samples_bucket_step_seconds recent_samples_bucket_step_seconds; d
         attach_uuid=$(${CLICKHOUSE_CLIENT} -q 'SELECT generateUUIDv4()')
         expect_rejection "CREATE ${setting}=${value}" "$setting" 'must be in the range [1, 4294967295]' "
             CREATE TABLE ${table} ENGINE = TimeSeries
-            SETTINGS version = 10, ${setting} = ${value}"
+            SETTINGS version = 11, ${setting} = ${value}"
         expect_rejection "full ATTACH ${setting}=${value}" "$setting" 'must be in the range [1, 4294967295]' "
             ATTACH TABLE ${table} UUID '${attach_uuid}' ENGINE = TimeSeries
-            SETTINGS version = 10, ${setting} = ${value}"
+            SETTINGS version = 11, ${setting} = ${value}"
     done
 done
 
 table="${prefix}_step_boundary"
 tables+=("$table")
 ${CLICKHOUSE_CLIENT} --allow_experimental_time_series_table=1 -q "
-    CREATE TABLE ${table} ENGINE = TimeSeries SETTINGS version = 10,
+    CREATE TABLE ${table} ENGINE = TimeSeries SETTINGS version = 11,
         samples_bucket_step_seconds = 4294967295, recent_samples_bucket_step_seconds = 4294967295"
 echo 'maximum bucket steps: accepted'
 
@@ -56,7 +56,7 @@ tables+=("$table")
 attach_uuid=$(${CLICKHOUSE_CLIENT} -q 'SELECT generateUUIDv4()')
 expect_rejection 'CREATE TTL overflow' recent_samples_ttl_seconds 'must not exceed 9223372036854775807' "
     CREATE TABLE ${table} ENGINE = TimeSeries
-    SETTINGS version = 10, recent_samples_ttl_seconds = 9223372036854775808"
+    SETTINGS version = 11, recent_samples_ttl_seconds = 9223372036854775808"
 expect_rejection 'full ATTACH TTL overflow' recent_samples_ttl_seconds 'must not exceed 9223372036854775807' "
     ATTACH TABLE ${table} UUID '${attach_uuid}' ENGINE = TimeSeries
-    SETTINGS version = 10, recent_samples_ttl_seconds = 9223372036854775808"
+    SETTINGS version = 11, recent_samples_ttl_seconds = 9223372036854775808"

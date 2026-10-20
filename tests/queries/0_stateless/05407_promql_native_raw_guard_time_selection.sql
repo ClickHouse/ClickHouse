@@ -20,7 +20,7 @@ SET short_circuit_function_evaluation = 'disable';
 DROP TABLE IF EXISTS promql_native_raw_guard_time_selection;
 
 CREATE TABLE promql_native_raw_guard_time_selection ENGINE = TimeSeries
-SETTINGS version = 10, samples_bucket_step_seconds = 60, samples_index_granularity = 8192,
+SETTINGS version = 11, samples_bucket_step_seconds = 60, samples_index_granularity = 8192,
     samples_index_granularity_bytes = 0, recent_samples_ttl_seconds = 0
 SAMPLES INNER ENGINE = AggregatingMergeTree
 SETTINGS min_bytes_for_wide_part = 0;

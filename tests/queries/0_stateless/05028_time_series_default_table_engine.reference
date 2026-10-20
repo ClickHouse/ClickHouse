@@ -14,7 +14,7 @@ recentsamples	MergeTree
 samples	MergeTree
 tags	ReplacingMergeTree
 timeranges	AggregatingMergeTree
--- version 10, default_table_engine = MergeTree generates bucketed samples engines
+-- version 11, default_table_engine = MergeTree generates bucketed samples engines
 metricfamilies	ReplacingMergeTree
 recentsamples	AggregatingMergeTree
 samples	AggregatingMergeTree
@@ -36,7 +36,7 @@ recentsamples	ReplicatedMergeTree
 samples	ReplicatedMergeTree
 tags	ReplicatedReplacingMergeTree
 timeranges	ReplicatedAggregatingMergeTree
--- version 10, default_table_engine = ReplicatedMergeTree generates replicated bucketed samples engines
+-- version 11, default_table_engine = ReplicatedMergeTree generates replicated bucketed samples engines
 metricfamilies	ReplicatedReplacingMergeTree
 recentsamples	ReplicatedAggregatingMergeTree
 samples	ReplicatedAggregatingMergeTree
