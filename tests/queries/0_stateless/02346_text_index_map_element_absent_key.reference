@@ -18,3 +18,6 @@ S7 arrayElement	1
 S8 oracle	1
 S8 rows	1
 S8 prunes	1
+S9 hasAnyTokens	[2]
+S9 hasAllTokens	[2]
+S9 hasPhrase	[2]

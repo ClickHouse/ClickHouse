@@ -2085,7 +2085,7 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTre
     if (!parsed)
         return false;
     auto & [map_column_name, serialized_key] = *parsed;
-    return header.has(fmt::format("mapValues({})", map_column_name));
+    return hasIndexForColumn(fmt::format("mapValues({})", map_column_name));
 }
 
 bool MergeTreeIndexConditionText::traverseMapElementValueNode(

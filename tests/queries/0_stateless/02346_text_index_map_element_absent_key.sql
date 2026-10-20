@@ -83,8 +83,22 @@ SELECT 'S8 oracle', count() FROM t_arr WHERE m['k'] ILIKE concat('%', char(0), c
 SELECT 'S8 rows', count() FROM t_arr WHERE m['k'] ILIKE concat('%', char(0), char(0), char(0), char(0), '%');
 SELECT 'S8 prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arr WHERE m['k'] ILIKE '%zzzz%') WHERE explain LIKE '%Granules: 0/2%';
 
+DROP TABLE IF EXISTS t_post;
+CREATE TABLE t_post (id UInt32, m Map(String, FixedString(5)),
+                     INDEX tix mapValues(m) TYPE text(tokenizer = splitByString(['abc']), postprocessor = if(match(mapValues(m), '^[a-z]+$'), mapValues(m), 'x')))
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO t_post VALUES (1, map('k', 'hello')), (2, map('k', '12345'));
+
+-- S9: the token searches apply the index postprocessor, which maps both the needle's five NUL bytes and
+-- `12345` to `x`, so row 2 matches. The default holds the needle, and the index must still be used, or
+-- the postprocessor is not applied and row 2 is lost.
+SELECT 'S9 hasAnyTokens', groupArray(id) FROM (SELECT id FROM t_post WHERE hasAnyTokens(m['k'], concat(repeat(char(0), 5), 'abc'), 'splitByString([\'abc\'])') ORDER BY id);
+SELECT 'S9 hasAllTokens', groupArray(id) FROM (SELECT id FROM t_post WHERE hasAllTokens(m['k'], concat(repeat(char(0), 5), 'abc'), 'splitByString([\'abc\'])') ORDER BY id);
+SELECT 'S9 hasPhrase', groupArray(id) FROM (SELECT id FROM t_post WHERE hasPhrase(m['k'], concat(repeat(char(0), 5), 'abc'), 'splitByString([\'abc\'])') ORDER BY id);
+
 DROP TABLE t_fs;
 DROP TABLE t_str;
 DROP TABLE t_null;
 DROP TABLE t_dyn;
 DROP TABLE t_arr;
+DROP TABLE t_post;
