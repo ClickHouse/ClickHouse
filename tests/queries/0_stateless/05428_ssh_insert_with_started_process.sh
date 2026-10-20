@@ -71,10 +71,12 @@ exec 3>"$FIFO"
 # The INSERT starts once its input has data.
 echo 1 >&3
 wait_running 1
+echo "$running"
 
 # A new pool, so that the next query starts its process while the session of the INSERT exists.
-${CLICKHOUSE_CLIENT} --query "SYSTEM RELOAD DICTIONARY executable_pool_simple_implicit_key"
-${CLICKHOUSE_CLIENT} --query "SELECT dictGet('executable_pool_simple_implicit_key', 'a', toUInt64(1))"
+# No other parallel test reloads this dictionary.
+${CLICKHOUSE_CLIENT} --query "SYSTEM RELOAD DICTIONARY executable_pool_complex_implicit_key"
+${CLICKHOUSE_CLIENT} --query "SELECT dictGet('executable_pool_complex_implicit_key', 'a', ('1', '1'))"
 
 # The end of the input must reach the INSERT although the process started above is still running.
 exec 3>&-
@@ -83,7 +85,7 @@ echo "$running"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM t"
 
 # A new pool stops the process started above, so that no session stays stuck after a failure.
-${CLICKHOUSE_CLIENT} --query "SYSTEM RELOAD DICTIONARY executable_pool_simple_implicit_key"
+${CLICKHOUSE_CLIENT} --query "SYSTEM RELOAD DICTIONARY executable_pool_complex_implicit_key"
 kill "$SSH_PID" 2>/dev/null
 wait "$SSH_PID" 2>/dev/null
 wait_running 0
