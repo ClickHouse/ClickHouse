@@ -1,0 +1,23 @@
+dot
+10	45
+b1
+b2
+BAD_ARGUMENTS
+dotdot
+10	45
+b1
+b2
+BAD_ARGUMENTS
+relative
+10	45
+b1
+b2
+BAD_ARGUMENTS
+relative_data_path
+10	45
+b1
+b2
+BAD_ARGUMENTS
+overlapping
+b3
+BAD_ARGUMENTS

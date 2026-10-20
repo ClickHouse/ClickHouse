@@ -529,19 +529,15 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_CFI],
         ),
     )
-    # sccache-warmup builds (MasterCI only): compile amd_release / arm_release
-    # with the PR release builds' cmake flags (see PR_CACHE_WARMUP_BUILD_TYPES
-    # in build_clickhouse.py) while keeping the shared sccache read-write. This
-    # populates the cache so that read-only PR release builds get cache hits.
-    # They provide no artifacts. The build profile hook runs so that the
-    # "Build profile diff" check gets a master baseline built with the PR
-    # flags - the arm warmup's object sizes and compile traces are the only
-    # master data directly comparable to a PR build (official master builds
-    # keep debug symbols, PR builds strip them). The hook uploads only for the
-    # arm variant (see _PROFILED_BUILDS in build_profile_hook.py).
-    sccache_warmup_build_jobs = [
+    # MasterCI only: master release builds made exactly like a PR release build
+    # (see PERFORMANCE_REFERENCE_TO_RELEASE in build_clickhouse.py). Their server
+    # binary is the reference of the PR performance comparison, their compilation
+    # fills the shared sccache that PR builds read, and the arm one gives the
+    # "Build profile diff" check its master baseline for object sizes and compile
+    # times (see _PROFILED_BUILDS in build_profile_hook.py).
+    performance_reference_build_jobs = [
         job.set_command(f"{job.command} --build-examples")
-        if f"({BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP})" in job.name
+        if f"({BuildTypes.ARM_RELEASE_PERFORMANCE_REFERENCE})" in job.name
         else job
         for job in common_build_job_config.set_post_hooks(
             post_hooks=[
@@ -549,12 +545,14 @@ class JobConfigs:
             ],
         ).parametrize(
             Job.ParamSet(
-                parameter=BuildTypes.AMD_RELEASE_PR_CACHE_WARMUP,
+                parameter=BuildTypes.AMD_RELEASE_PERFORMANCE_REFERENCE,
+                provides=[ArtifactNames.CH_AMD_RELEASE_PERFORMANCE_REFERENCE],
                 runs_on=RunnerLabels.ARM_LARGE,
                 timeout=3 * 3600,
             ),
             Job.ParamSet(
-                parameter=BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP,
+                parameter=BuildTypes.ARM_RELEASE_PERFORMANCE_REFERENCE,
+                provides=[ArtifactNames.CH_ARM_RELEASE_PERFORMANCE_REFERENCE],
                 runs_on=RunnerLabels.ARM_LARGE,
             ),
         )
@@ -1694,10 +1692,19 @@ class JobConfigs:
                 "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
-                # Copied into the server config by `run-fuzzer.sh`
-                "./tests/config/users.d/ci_logs_sender.yaml",
                 "./ci/jobs/scripts/fuzzer/",
+                # Copied into the server config by `run-fuzzer.sh`
+                "./tests/config/config.d/clusters.xml",
                 "./tests/config/config.d/core_dump.yaml",
+                "./tests/config/config.d/jemalloc_enable_global_profiler.yaml",
+                "./tests/config/config.d/jemalloc_flush_profile.yaml",
+                "./tests/config/config.d/listen.xml",
+                "./tests/config/config.d/secure_ports.xml",
+                "./tests/config/config.d/ssl_certs.xml",
+                "./tests/config/config.d/test_cluster_with_incorrect_pw.xml",
+                "./tests/config/server.crt",
+                "./tests/config/server.key",
+                "./tests/config/users.d/ci_logs_sender.yaml",
                 "./ci/docker/fuzzer",
             ],
         ),
@@ -1744,10 +1751,19 @@ class JobConfigs:
                 "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
-                # Copied into the server config by `run-fuzzer.sh`
-                "./tests/config/users.d/ci_logs_sender.yaml",
                 "./ci/jobs/scripts/fuzzer/",
+                # Copied into the server config by `run-fuzzer.sh`
+                "./tests/config/config.d/clusters.xml",
                 "./tests/config/config.d/core_dump.yaml",
+                "./tests/config/config.d/jemalloc_enable_global_profiler.yaml",
+                "./tests/config/config.d/jemalloc_flush_profile.yaml",
+                "./tests/config/config.d/listen.xml",
+                "./tests/config/config.d/secure_ports.xml",
+                "./tests/config/config.d/ssl_certs.xml",
+                "./tests/config/config.d/test_cluster_with_incorrect_pw.xml",
+                "./tests/config/server.crt",
+                "./tests/config/server.key",
+                "./tests/config/users.d/ci_logs_sender.yaml",
                 "./ci/docker/fuzzer",
             ],
         ),
@@ -1779,10 +1795,19 @@ class JobConfigs:
                 "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
-                # Copied into the server config by `run-fuzzer.sh`
-                "./tests/config/users.d/ci_logs_sender.yaml",
                 "./ci/jobs/scripts/fuzzer/",
+                # Copied into the server config by `run-fuzzer.sh`
+                "./tests/config/config.d/clusters.xml",
                 "./tests/config/config.d/core_dump.yaml",
+                "./tests/config/config.d/jemalloc_enable_global_profiler.yaml",
+                "./tests/config/config.d/jemalloc_flush_profile.yaml",
+                "./tests/config/config.d/listen.xml",
+                "./tests/config/config.d/secure_ports.xml",
+                "./tests/config/config.d/ssl_certs.xml",
+                "./tests/config/config.d/test_cluster_with_incorrect_pw.xml",
+                "./tests/config/server.crt",
+                "./tests/config/server.key",
+                "./tests/config/users.d/ci_logs_sender.yaml",
                 "./ci/docker/fuzzer",
             ],
         ),
@@ -1813,7 +1838,8 @@ class JobConfigs:
         runs_on=["#from param"],
         command='python3 ./ci/jobs/performance_tests.py --test-options "{PARAMETER}"',
         # TODO: switch to stateless-test image
-        run_in_docker="clickhouse/performance-comparison",
+        # Default seccomp blocks `io_uring` (`io_uring.xml`)
+        run_in_docker="clickhouse/performance-comparison+--security-opt seccomp=unconfined",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./tests/performance/",
@@ -1858,7 +1884,8 @@ class JobConfigs:
         runs_on=["#from param"],
         command='python3 ./ci/jobs/performance_tests.py --test-options "{PARAMETER}"',
         # TODO: switch to stateless-test image
-        run_in_docker="clickhouse/performance-comparison",
+        # Default seccomp blocks `io_uring` (`io_uring.xml`)
+        run_in_docker="clickhouse/performance-comparison+--security-opt seccomp=unconfined",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./tests/performance/",
@@ -1922,6 +1949,18 @@ class JobConfigs:
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
             requires=[ArtifactNames.CH_ARM_RELEASE],
         ),
+    )
+    # No `requires`: the wrapper downloads both binaries from S3.
+    nightly_extended_performance_jobs = Job.Config(
+        name=JobNames.PERFORMANCE,
+        runs_on=RunnerLabels.ARM_MEDIUM_STORAGE,
+        command='python3 ./ci/jobs/nightly_extended_performance.py --test-options "{PARAMETER}"',
+        # Default seccomp blocks `io_uring` (`io_uring.xml`)
+        run_in_docker="clickhouse/performance-comparison+--security-opt seccomp=unconfined",
+        timeout=16 * 3600,
+        result_name_for_cidb="Tests",
+    ).parametrize(
+        *[Job.ParamSet(parameter=f"arm_release, master_head, nightly, {batch}/4") for batch in range(1, 5)]
     )
     docs_job_mintlify = Job.Config(
         name=JobNames.DOCS_MINTLIFY,
