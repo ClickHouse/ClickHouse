@@ -190,6 +190,11 @@ bool PeekableReadBuffer::nextImpl()
         }
     }
 
+    /// A failed EOF probe must not discard the last internal buffer: row-format
+    /// diagnostics may still need its contents to locate a bad final row.
+    if (!res && !checkpoint)
+        return false;
+
     /// Switch to reading from sub_buf (or just update it if already switched)
     Buffer & sub_working = sub_buf->buffer();
     BufferBase::set(sub_working.begin(), sub_working.size(), sub_buf->offset());

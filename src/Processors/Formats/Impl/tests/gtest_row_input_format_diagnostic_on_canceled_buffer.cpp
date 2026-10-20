@@ -1,10 +1,14 @@
 #include <gtest/gtest.h>
 
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
+#include <Processors/Formats/Impl/CSVRowInputFormat.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBuffer.h>
+#include <IO/ReadBufferFromString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
 
 using namespace DB;
 
@@ -113,4 +117,63 @@ TEST(RowInputFormatDiagnostics, CanceledBufferDoesNotAbortWithAllowErrors)
 
     /// Must throw a regular exception, not abort the process.
     EXPECT_THROW(format.read(), Exception);
+}
+
+/// The final invalid row must have the same per-column diagnostic with or without
+/// a terminating newline. Test both formats and a preceding valid row.
+TEST(RowInputFormatDiagnostics, InvalidLastRowWithoutTrailingNewline)
+{
+    Block header;
+    header.insert({ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "id"});
+    header.insert({ColumnString::create(), std::make_shared<DataTypeString>(), "name"});
+    const auto shared_header = std::make_shared<const Block>(header);
+
+    RowInputFormatParams params;
+    params.max_block_size_rows = 100;
+    FormatSettings format_settings;
+
+    for (bool csv : {false, true})
+    {
+        for (bool preceding_row : {false, true})
+        {
+            for (bool trailing_newline : {false, true})
+            {
+                std::string payload;
+                if (preceding_row)
+                    payload = csv ? "1,Alice\n" : "1\tAlice\n";
+                payload += csv ? "x,Bob" : "x\tBob";
+                if (trailing_newline)
+                    payload += '\n';
+
+                ReadBufferFromString buf(payload);
+                auto check_diagnostic = [&](auto & format)
+                {
+                    try
+                    {
+                        format.read();
+                        ADD_FAILURE() << "Expected a parse error for " << payload;
+                    }
+                    catch (const Exception & e)
+                    {
+                        const auto & message = e.message();
+                        EXPECT_NE(message.find(preceding_row ? "Row 2" : "Row 1"), std::string::npos);
+                        EXPECT_NE(message.find("Column 0"), std::string::npos);
+                        EXPECT_NE(message.find("type: UInt8"), std::string::npos);
+                        EXPECT_EQ(message.find("Could not print diagnostic info"), std::string::npos);
+                    }
+                };
+
+                if (csv)
+                {
+                    CSVRowInputFormat format(shared_header, buf, params, false, false, format_settings);
+                    check_diagnostic(format);
+                }
+                else
+                {
+                    TabSeparatedRowInputFormat format(shared_header, buf, params, false, false, false, format_settings);
+                    check_diagnostic(format);
+                }
+            }
+        }
+    }
 }
