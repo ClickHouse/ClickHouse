@@ -1,0 +1,6 @@
+no_limit	3000000
+limit	1000
+order_by_limit	1000
+04604 limit	0	1
+04604 no_limit	1	0
+04604 order_by_limit	0	1

@@ -386,6 +386,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"enable_hash_join_row_store", trueOrFalseSetting},
        {"enable_identifier_resolve_cache", trueOrFalseSetting},
        {"enable_join_fixed_hash_table_conversion", trueOrFalseSetting},
+       {"enable_hash_join_deferred_build", trueOrFalseSetting},
        {"enable_join_key_only_hash_tables", trueOrFalseSetting},
        {"enable_join_runtime_filters", trueOrFalseSetting},
        {"enable_join_runtime_filters_index_analysis", trueOrFalseSetting},

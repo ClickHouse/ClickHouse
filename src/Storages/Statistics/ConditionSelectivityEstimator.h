@@ -21,6 +21,9 @@ struct ColumnStats
     std::optional<Field> max_value = {};
     /// Fraction of NULL values; unset when unknown.
     std::optional<Float64> null_fraction = {};
+    /// Whether `num_distinct_values` is the `uniq` statistic of a whole table, with no filter, limit or function of
+    /// the values in between. A hash join on such a column does not defer its build, see `TableJoin::rightKeyDistinctValuesFromUniq`.
+    bool num_distinct_values_from_uniq = false;
 };
 
 struct RelationProfile

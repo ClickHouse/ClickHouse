@@ -102,6 +102,7 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
         for (auto & [_, stats] : column_stats)
             stats.num_distinct_values = std::min(stats.num_distinct_values, *cardinality_);
     }
+    QueryPlanOptimizations::clearDistinctValuesFromUniq(column_stats);
 }
 
 bool DPJoinEntry::isLeaf() const { return !left && !right; }

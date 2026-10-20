@@ -310,6 +310,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         if (!estimated.estimated_rows || estimated.estimated_rows > limit)
             estimated.estimated_rows = limit;
         clearColumnValueRanges(estimated.column_stats);
+        clearDistinctValuesFromUniq(estimated.column_stats);
         return estimated;
     }
 
@@ -327,6 +328,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
         auto stats = estimateReadRowsCount(*node.children.front(), predicate, for_runtime_filter_transport);
         remapColumnStats(stats.column_stats, filter_step->getExpression());
+        clearDistinctValuesFromUniq(stats.column_stats);
         return stats;
     }
 
@@ -356,6 +358,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             if (!stats.estimated_rows || stats.estimated_rows > sorting_step->getLimit())
                 stats.estimated_rows = sorting_step->getLimit();
             clearColumnValueRanges(stats.column_stats);
+            clearDistinctValuesFromUniq(stats.column_stats);
         }
         return stats;
     }

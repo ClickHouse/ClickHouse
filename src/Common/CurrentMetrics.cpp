@@ -165,6 +165,9 @@
     M(DestroyAggregatesThreads, "Number of threads in the thread pool for destroy aggregate states.") \
     M(DestroyAggregatesThreadsActive, "Number of threads in the thread pool for destroy aggregate states running a task.") \
     M(DestroyAggregatesThreadsScheduled, "Number of queued or active jobs in the thread pool for destroy aggregate states.") \
+    M(HashJoinBuildThreads, "Number of threads in the thread pool that inserts the right table of a deferred hash join build.") \
+    M(HashJoinBuildThreadsActive, "Number of threads in the thread pool that inserts the right table of a deferred hash join build running a task.") \
+    M(HashJoinBuildThreadsScheduled, "Number of queued or active jobs in the thread pool that inserts the right table of a deferred hash join build.") \
     M(HashJoinDestroyThreads, "Number of threads in the thread pool for destroying the right table of a hash join.") \
     M(HashJoinDestroyThreadsActive, "Number of threads in the thread pool for destroying the right table of a hash join running a task.") \
     M(HashJoinDestroyThreadsScheduled, "Number of queued or active jobs in the thread pool for destroying the right table of a hash join.") \

@@ -1208,6 +1208,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
             || (params.rhs_size_estimation && row_store_output
                 && static_cast<double>(*row_store_output) >= static_cast<double>(*params.rhs_size_estimation) * row_store_ratio));
     table_join->setRowStoreEnabled(enable_row_store);
+    table_join->setRightKeyDistinctValuesFromUniq(params.rhs_key_distinct_values_from_uniq);
 
     /// A known-empty right side counts as 0 rows for the joins that then return nothing and stop reading the left side.
     /// The other kinds still probe every left row, and the parallel layout spreads that probe over more streams.
@@ -1251,11 +1252,17 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 params.grace_hash_join_max_buckets,
                 build_layout,
                 stats_collecting_params,
-                params.join_any_take_last_row);
+                params.join_any_take_last_row,
+                /*allow_deferred_build_=*/true);
         }
 
         return HashJoin::create(
-            table_join, right_table_expression_header, build_layout, params.join_any_take_last_row, stats_collecting_params);
+            table_join,
+            right_table_expression_header,
+            build_layout,
+            params.join_any_take_last_row,
+            stats_collecting_params,
+            /*allow_deferred_build_=*/true);
     }
 
     /// `parallel_full_sorting_merge` uses the same `FullSortingMergeJoin`; the optimizer turns it into a
@@ -1312,14 +1319,20 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 params.grace_hash_join_max_buckets,
                 build_layout,
                 stats_collecting_params,
-                params.join_any_take_last_row);
+                params.join_any_take_last_row,
+                /*allow_deferred_build_=*/true);
         }
 
         if (MergeJoin::isSupported(table_join))
             return std::make_shared<JoinSwitcher>(
                 table_join, right_table_expression_header, params.join_any_take_last_row, stats_collecting_params);
         return HashJoin::create(
-            table_join, right_table_expression_header, build_layout, params.join_any_take_last_row, stats_collecting_params);
+            table_join,
+            right_table_expression_header,
+            build_layout,
+            params.join_any_take_last_row,
+            stats_collecting_params,
+            /*allow_deferred_build_=*/true);
     }
 
     return nullptr;

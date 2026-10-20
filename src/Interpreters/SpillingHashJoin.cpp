@@ -37,7 +37,8 @@ SpillingHashJoin::SpillingHashJoin(
     size_t max_num_buckets_,
     HashJoinBuildLayout build_layout_,
     const HashJoinStatsCollectingParams & stats_collecting_params_,
-    bool any_take_last_row_)
+    bool any_take_last_row_,
+    bool allow_deferred_build_)
     : log(getLogger("SpillingHashJoin"))
     , table_join(std::move(table_join_))
     , left_sample_block(std::move(left_sample_block_))
@@ -48,7 +49,8 @@ SpillingHashJoin::SpillingHashJoin(
     , any_take_last_row(any_take_last_row_)
     , max_bytes_before_external_join(table_join->maxBytesBeforeExternalJoin())
 {
-    hash_join = HashJoin::create(table_join, right_sample_block_, build_layout_, any_take_last_row, stats_collecting_params_);
+    hash_join = HashJoin::create(
+        table_join, right_sample_block_, build_layout_, any_take_last_row, stats_collecting_params_, allow_deferred_build_);
     /// Until the build phase ends this join may have to hand its right blocks to `GraceHashJoin`.
     hash_join->keepRightBlocksForAnotherAlgorithm();
     supports_parallel_non_joined_blocks_processing = hash_join->supportParallelNonJoinedBlocksProcessing();
@@ -123,7 +125,17 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, Join
     /// the switch the live buffer (already at half) plus the conversion peak still fit under the
     /// configured cap.
     if (hash_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
+    {
         switchToGraceHashJoin(context);
+    }
+    /// A deferred build holds only the stored blocks; its maps are allocated when the blocks are inserted. The check above
+    /// keeps room to convert the stored blocks, and this one keeps the maps of the inserts under the threshold.
+    else if (hash_join->defersBuild()
+             && hash_join->getProjectedBuildBytes(/*all_blocks_stored=*/false) >= max_bytes_before_external_join)
+    {
+        LOG_DEBUG(log, "The projected size of the deferred build reached the spill threshold while the right blocks arrive");
+        switchToGraceHashJoin(context);
+    }
 
     /// Re-check: we may have just switched.
     if (state.load(std::memory_order_acquire) != State::COLLECTING)
@@ -167,6 +179,13 @@ ProcessorMemoryStats SpillingHashJoin::getMemoryStats() const
     res.spillable_memory_bytes = hash_join->getTotalByteCount();
     /// The released blocks stay alive while the grace join re-inserts them.
     res.need_reserved_memory_bytes = res.spillable_memory_bytes;
+    /// A deferred build allocates its maps only when it inserts the stored blocks. So it needs the bytes of the maps,
+    /// and spilling it pays off only when they do not fit.
+    if (hash_join->defersBuild())
+    {
+        const auto projected_bytes = static_cast<Int64>(hash_join->getProjectedBuildBytes(/*all_blocks_stored=*/false));
+        res.need_reserved_memory_bytes = std::max<Int64>(projected_bytes - res.spillable_memory_bytes, 0);
+    }
     return res;
 }
 
@@ -270,6 +289,15 @@ void SpillingHashJoin::onBuildPhaseFinish()
 {
     throwIfSwitchFailed();
 
+    if (state.load(std::memory_order_acquire) == State::COLLECTING && hash_join->defersBuild())
+    {
+        /// `FillingRightJoinSideTransform` calls this from `prepare`. So both the conversion to `GraceHashJoin` and the
+        /// inserts of the deferred build run in `runPostBuildPhase`. Until then the memory spill scheduler can still
+        /// switch the join.
+        finish_deferred_build = true;
+        return;
+    }
+
     if (state.load(std::memory_order_acquire) == State::COLLECTING)
     {
         /// Safety net for the terminal block: the proactive pre-insert check in `addBlockToJoin`
@@ -309,13 +337,44 @@ void SpillingHashJoin::onProbePhaseFinish(std::optional<size_t> matched_right_ro
 
 bool SpillingHashJoin::hasPostBuildPhase() const
 {
-    /// `FillingRightJoinSideTransform` asks this right after `onBuildPhaseFinish`, so `chosen_join`
-    /// is already set. Stay defensive anyway: with no chosen join there is nothing to post-process.
-    return chosen_join && chosen_join->hasPostBuildPhase();
+    /// `FillingRightJoinSideTransform` asks this right after `onBuildPhaseFinish`, which sets `chosen_join`
+    /// unless a deferred build finishes in `runPostBuildPhase`. Stay defensive anyway: with no chosen join
+    /// there is nothing to post-process.
+    return finish_deferred_build || (chosen_join && chosen_join->hasPostBuildPhase());
 }
 
 void SpillingHashJoin::runPostBuildPhase()
 {
+    if (finish_deferred_build)
+    {
+        finish_deferred_build = false;
+        /// The memory spill scheduler may have switched the join since `onBuildPhaseFinish`, and that switch may have failed.
+        throwIfSwitchFailed();
+        if (state.load(std::memory_order_acquire) == State::COLLECTING)
+        {
+            const size_t projected_bytes = hash_join->getProjectedBuildBytes(/*all_blocks_stored=*/true);
+            if (projected_bytes >= max_bytes_before_external_join)
+            {
+                LOG_DEBUG(
+                    log,
+                    "The projected size of the deferred build, {} bytes, reached the spill threshold at the end of the build",
+                    projected_bytes);
+                switchToGraceHashJoin(JoinBuildContext::serial());
+            }
+            else
+            {
+                LOG_DEBUG(log, "The deferred build fits in memory ({} bytes projected), promoting HashJoin", projected_bytes);
+                chosen_join = hash_join;
+                state.store(State::IN_MEMORY_JOIN, std::memory_order_release);
+            }
+        }
+
+        chosen_join->onBuildPhaseFinish();
+        if (chosen_join->hasPostBuildPhase())
+            chosen_join->runPostBuildPhase();
+        return;
+    }
+
     if (chosen_join)
         chosen_join->runPostBuildPhase();
 }

@@ -13,6 +13,8 @@
 #include <IO/WriteBuffer.h>
 
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <bit>
 #include <cmath>
 #include <cstring>
@@ -318,6 +320,19 @@ UInt64 maxOfGroups(UInt64 lhs, UInt64 rhs, UInt64 & raised)
     return max_even | max_odd << width;
 }
 
+/// One byte per rank, for `HyperLogLogRegisters::Bytes`. On cache lines of its own: the change flag next to it is
+/// written by the thread that reads the ranks.
+template <size_t size>
+struct alignas(64) ByteRankStore
+{
+    UInt8 ranks[size] = {};
+};
+
+/// Takes no space where `HyperLogLogCounter` has no change flag.
+struct NoChangeFlag
+{
+};
+
 }
 
 
@@ -328,6 +343,18 @@ enum class HyperLogLogMode : uint8_t
     LinearCounting, /// LinearCounting error correction.
     BiasCorrected,  /// HyperLogLog++ error correction.
     FullFeatured    /// LinearCounting or HyperLogLog++ error correction (depending).
+};
+
+/// Sets how HyperLogLog class stores its ranks.
+enum class HyperLogLogRegisters : uint8_t
+{
+    /// `CompactArray` of `rank_width`-bit ranks. Every insert that raises a rank also updates the denominator and the
+    /// number of zero ranks.
+    Packed,
+    /// One byte per rank, written with relaxed atomic stores, so that `mergeLive` can read the ranks while one thread
+    /// inserts. `size` computes the denominator and the number of zero ranks from the ranks. Only `FullFeatured` with a
+    /// trivial bias estimator, and no serialization.
+    Bytes,
 };
 
 /// Estimation of number of unique values using HyperLogLog algorithm.
@@ -347,7 +374,10 @@ template <
     typename DenominatorType = double,
     typename BiasEstimator = TrivialBiasEstimator,
     HyperLogLogMode mode = HyperLogLogMode::FullFeatured,
-    DenominatorMode denominator_mode = DenominatorMode::StableIfBig>
+    DenominatorMode denominator_mode = DenominatorMode::StableIfBig,
+    HyperLogLogRegisters registers = HyperLogLogRegisters::Packed,
+    /// Whether `takeChanged` tells if an insert raised a rank. Only with `HyperLogLogRegisters::Bytes`.
+    bool track_changes = false>
 class HyperLogLogCounter : private Hash
 {
 private:
@@ -359,8 +389,20 @@ private:
     static constexpr size_t register_values = 1ULL << rank_width;
     static constexpr UInt64 register_mask = register_values - 1;
 
+    /// Normalizing factor for harmonic mean.
+    static constexpr double alpha_m =
+        bucket_count == 2 ? 0.351 :
+        bucket_count == 4 ? 0.532 :
+        bucket_count == 8 ? 0.626 :
+        bucket_count == 16 ? 0.673 :
+        bucket_count == 32 ? 0.697 :
+        bucket_count == 64 ? 0.709 : 0.7213 / (1 + 1.079 / bucket_count);
+
     using Value = UInt64;
-    using RankStore = DB::CompactArray<HashValueType, rank_width, bucket_count>;
+    using RankStore = std::conditional_t<
+        registers == HyperLogLogRegisters::Packed,
+        DB::CompactArray<HashValueType, rank_width, bucket_count>,
+        details::ByteRankStore<bucket_count>>;
 
 public:
     using value_type = Value;
@@ -387,15 +429,6 @@ public:
 
     UInt64 size() const
     {
-        /// Normalizing factor for harmonic mean.
-        static constexpr double alpha_m =
-            bucket_count == 2 ? 0.351 :
-            bucket_count == 4 ? 0.532 :
-            bucket_count == 8 ? 0.626 :
-            bucket_count == 16 ? 0.673 :
-            bucket_count == 32 ? 0.697 :
-            bucket_count == 64 ? 0.709 : 0.7213 / (1 + 1.079 / bucket_count);
-
         /// Harmonic mean for all buckets of 2^rank values is: bucket_count / ∑ 2^-rank_i,
         /// where ∑ 2^-rank_i - is denominator.
 
@@ -527,6 +560,73 @@ public:
         rank_store.writeText(out);
     }
 
+    /// Reads the ranks with plain loads, so no insert may run concurrently. The correction is the one that
+    /// `fixRawEstimate` applies for `FullFeatured` with a trivial bias estimator.
+    UInt64 size() const
+    requires (registers == HyperLogLogRegisters::Bytes)
+    {
+        static_assert(
+            mode == HyperLogLogMode::FullFeatured && BiasEstimator::isTrivial(),
+            "The byte ranks implement only FullFeatured with a trivial bias estimator");
+
+        double inverse_sum = 0;
+        size_t zero_ranks = 0;
+        for (const UInt8 rank : rank_store.ranks)
+        {
+            inverse_sum += inverse_powers[rank];
+            zero_ranks += rank == 0;
+        }
+
+        double estimate = alpha_m * bucket_count * bucket_count / inverse_sum;
+        if (estimate <= 2.5 * bucket_count && zero_ranks != 0)
+            estimate = bucket_count * (log_lut.getLog(bucket_count) - log_lut.getLog(zero_ranks));
+
+        return static_cast<UInt64>(estimate + 0.5); /// NOLINT
+    }
+
+    /// No insert into `rhs` may run concurrently.
+    void merge(const HyperLogLogCounter & rhs)
+    requires (registers == HyperLogLogRegisters::Bytes)
+    {
+        for (size_t bucket = 0; bucket < bucket_count; ++bucket)
+        {
+            const UInt8 rhs_rank = rhs.rank_store.ranks[bucket];
+            if (rhs_rank > rank_store.ranks[bucket])
+                rank_store.ranks[bucket] = rhs_rank;
+        }
+    }
+
+    /// `merge` while one thread may insert into `rhs`. Each rank of `rhs` is read with a relaxed atomic load, so the
+    /// value read lies between that rank at the start and at the end of the call. The result is not a snapshot of
+    /// `rhs` at any moment, and a rise that the call misses is left to a later call: `takeChanged` of `rhs` tells when.
+    void mergeLive(const HyperLogLogCounter & rhs)
+    requires (registers == HyperLogLogRegisters::Bytes)
+    {
+        for (size_t bucket = 0; bucket < bucket_count; ++bucket)
+        {
+            /// `rhs` is not a const object, only a const reference to one.
+            const UInt8 rhs_rank = std::atomic_ref(const_cast<UInt8 &>(rhs.rank_store.ranks[bucket])).load(std::memory_order_relaxed);
+            if (rhs_rank > rank_store.ranks[bucket])
+                rank_store.ranks[bucket] = rhs_rank;
+        }
+    }
+
+    /// Whether an insert raised a rank since the previous call. Acquire, so that a `mergeLive` that reads this counter
+    /// after a call that returned true sees every rise made before the flag was set.
+    bool takeChanged()
+    requires track_changes
+    {
+        return changed.exchange(false, std::memory_order_acquire);
+    }
+
+    void prefetch(Value value) const requires (registers == HyperLogLogRegisters::Bytes) = delete;
+    void read(DB::ReadBuffer & in) requires (registers == HyperLogLogRegisters::Bytes) = delete;
+    static void skip(DB::ReadBuffer & in) requires (registers == HyperLogLogRegisters::Bytes) = delete;
+    void write(DB::WriteBuffer & out) const requires (registers == HyperLogLogRegisters::Bytes) = delete;
+    void readText(DB::ReadBuffer & in) requires (registers == HyperLogLogRegisters::Bytes) = delete;
+    static void skipText(DB::ReadBuffer & in) requires (registers == HyperLogLogRegisters::Bytes) = delete;
+    void writeText(DB::WriteBuffer & out) const requires (registers == HyperLogLogRegisters::Bytes) = delete;
+
 private:
     /// Extract subset of bits in [begin, end[ range.
     HashValueType extractBitSequence(HashValueType val, UInt8 begin, UInt8 end) const
@@ -553,6 +653,19 @@ private:
         /// NOTE: this should be OK, since value is the same as key for HLL.
         return static_cast<HashValueType>(
             Hash::operator()(static_cast<Key>(key)));
+    }
+
+    /// The `HyperLogLogRegisters::Bytes` version: the store is atomic, because `mergeLive` may read the rank meanwhile.
+    void ALWAYS_INLINE update(HashValueType bucket, UInt8 rank)
+    requires (registers == HyperLogLogRegisters::Bytes)
+    {
+        std::atomic_ref stored_rank(rank_store.ranks[bucket]);
+        if (rank > stored_rank.load(std::memory_order_relaxed))
+        {
+            stored_rank.store(rank, std::memory_order_relaxed);
+            if constexpr (track_changes)
+                changed.store(true, std::memory_order_release);
+        }
     }
 
     /// Update maximum rank for current bucket.
@@ -781,6 +894,19 @@ private:
     static constexpr int max_rank = sizeof(HashValueType) * 8 - precision + 1;
     static constexpr UInt64 max_valid_rank = max_rank;
 
+    /// 2^-rank for every rank, for `HyperLogLogRegisters::Bytes`.
+    static constexpr auto inverse_powers = []
+    {
+        std::array<double, max_rank + 1> result{};
+        double inverse_power = 1.0;
+        for (auto & value : result)
+        {
+            value = inverse_power;
+            inverse_power /= 2;
+        }
+        return result;
+    }();
+
     RankStore rank_store;
 
     /// Expression's denominator for HyperLogLog algorithm.
@@ -791,10 +917,14 @@ private:
     using ZerosCounterType = typename details::MinCounterType<bucket_count>::Type;
     ZerosCounterType zeros = bucket_count;
 
+    /// Set by an insert that raises a rank, and cleared by `takeChanged`.
+    [[no_unique_address]] std::conditional_t<track_changes, std::atomic<bool>, details::NoChangeFlag> changed{};
+
     static details::LogLUT<precision> log_lut;
 
     /// Checks.
     static_assert(precision < (sizeof(HashValueType) * 8), "Invalid parameter value");
+    static_assert(!track_changes || registers == HyperLogLogRegisters::Bytes, "The change flag needs the byte ranks");
 };
 
 
@@ -808,7 +938,9 @@ template
     typename DenominatorType,
     typename BiasEstimator,
     HyperLogLogMode mode,
-    DenominatorMode denominator_mode
+    DenominatorMode denominator_mode,
+    HyperLogLogRegisters registers,
+    bool track_changes
 >
 details::LogLUT<precision> HyperLogLogCounter
 <
@@ -819,7 +951,9 @@ details::LogLUT<precision> HyperLogLogCounter
     DenominatorType,
     BiasEstimator,
     mode,
-    denominator_mode
+    denominator_mode,
+    registers,
+    track_changes
 >::log_lut;
 
 
