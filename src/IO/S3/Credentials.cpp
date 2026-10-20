@@ -687,7 +687,8 @@ void AWSInstanceProfileCredentialsProvider::Reload()
     if (new_credentials.IsEmpty())
     {
         ProfileEvents::increment(ProfileEvents::S3CredentialsIMDSErrors);
-        LOG_WARNING(logger, "Got empty credentials from EC2 Metadata Service");
+        /// Normal outside of EC2, so not a warning.
+        LOG_INFO(logger, "Got empty credentials from EC2 Metadata Service");
     }
     else
     {
@@ -1249,7 +1250,8 @@ Aws::Auth::AWSCredentials S3CredentialsProviderChain::GetAWSCredentials()
     if (!GetProviders().empty())
     {
         ProfileEvents::increment(ProfileEvents::S3CredentialsProviderChainEmpty);
-        LOG_WARNING(LogFrequencyLimiter(logger, 10), "No AWS credentials provider in the chain returned credentials, requests will be sent unsigned");
+        /// Normal outside of AWS (e.g. a public bucket with `use_environment_credentials`), so not a warning.
+        LOG_INFO(LogFrequencyLimiter(logger, 10), "No AWS credentials provider in the chain returned credentials, requests will be sent unsigned");
     }
 
     return {};
