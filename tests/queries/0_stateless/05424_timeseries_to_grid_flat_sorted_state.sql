@@ -3,7 +3,8 @@
 -- In-order input and shuffled input, including one duplicate timestamp, must agree for every
 -- timeSeries*ToGrid function. A dense step puts about one sample in each bucket. A sparse step
 -- leaves most buckets empty. A merge of one sorted partial state and one unsorted partial state
--- must equal the aggregation of the whole series.
+-- must equal the aggregation of the whole series. Many descending one-sample partial states
+-- must equal one in-order aggregation.
 
 SET allow_experimental_time_series_aggregate_functions = 1;
 
@@ -127,5 +128,23 @@ FROM
         )
         ORDER BY ord
     )
+)
+SETTINGS max_threads = 1;
+
+SELECT 'many descending one-sample states equal one in-order aggregation:';
+
+SELECT
+    [
+        timeSeriesCountToGridMerge(0, 40, 1, 1)(st)
+            = (SELECT timeSeriesCountToGrid(0, 40, 1, 1)(toUInt32(number + 1), toFloat64(number + 1)) FROM numbers(40)),
+        timeSeriesRateToGridMerge(0, 40, 1, 1)(st_rate)
+            = (SELECT timeSeriesRateToGrid(0, 40, 1, 1)(toUInt32(number + 1), toFloat64(number + 1)) FROM numbers(40))
+    ]
+FROM
+(
+    SELECT
+        initializeAggregation('timeSeriesCountToGridState(0, 40, 1, 1)', toUInt32(40 - number), toFloat64(40 - number)) AS st,
+        initializeAggregation('timeSeriesRateToGridState(0, 40, 1, 1)', toUInt32(40 - number), toFloat64(40 - number)) AS st_rate
+    FROM numbers(40)
 )
 SETTINGS max_threads = 1;

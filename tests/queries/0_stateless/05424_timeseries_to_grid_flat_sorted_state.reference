@@ -4,3 +4,5 @@ sparse step, in-order input equals shuffled input:
 [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
 merge of a sorted partial state and an unsorted partial state:
 [1,1]
+many descending one-sample states equal one in-order aggregation:
+[1,1]

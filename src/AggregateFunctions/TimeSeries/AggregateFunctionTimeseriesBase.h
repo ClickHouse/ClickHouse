@@ -349,7 +349,7 @@ public:
     {
         if constexpr (use_flat_sorted_samples)
         {
-            data(place)->buckets.merge(data(rhs)->buckets);
+            data(place)->buckets.appendUnsorted(data(rhs)->buckets);
         }
         else
         {

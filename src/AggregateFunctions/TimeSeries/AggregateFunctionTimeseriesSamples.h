@@ -130,6 +130,26 @@ public:
         buffer = std::move(merged);
     }
 
+    /// Appends samples and leaves ordering to `ensureSorted`. A strictly later sorted range keeps `sorted`.
+    void appendUnsorted(const AggregateFunctionTimeseriesSamples & other)
+    {
+        if (other.buffer.empty())
+            return;
+
+        if (buffer.empty())
+        {
+            buffer = other.buffer;
+            sorted = other.sorted;
+            return;
+        }
+
+        /// `sorted` means strictly increasing, so an equal timestamp stays unsorted until a later sort.
+        const bool in_order = sorted && other.sorted && buffer.back().first < other.buffer.front().first;
+        buffer.insert(buffer.end(), other.buffer.begin(), other.buffer.end());
+        if (!in_order)
+            sorted = false;
+    }
+
     void serialize(WriteBuffer & buf) const
     {
         /// A rare unsorted state is serialized from a sorted copy, so the state is not mutated behind `const`.

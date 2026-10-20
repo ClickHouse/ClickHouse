@@ -1,0 +1,15 @@
+<test>
+    <settings>
+        <allow_experimental_time_series_aggregate_functions>1</allow_experimental_time_series_aggregate_functions>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!--
+        Merge of many one-sample partial states of timeSeriesCountToGrid.
+        The first query sends timestamps in descending order.
+        The second query interleaves low and high timestamps.
+    -->
+
+    <query>SELECT length(timeSeriesCountToGridMerge(0, 20000, 1, 1)(st)) FROM (SELECT initializeAggregation('timeSeriesCountToGridState(0, 20000, 1, 1)', toUInt32(20000 - number), toFloat64(1)) AS st FROM numbers(20000)) FORMAT Null</query>
+    <query>SELECT length(timeSeriesCountToGridMerge(0, 20000, 1, 1)(st)) FROM (SELECT initializeAggregation('timeSeriesCountToGridState(0, 20000, 1, 1)', toUInt32(if(number % 2 = 0, intDiv(number, 2) + 1, 20000 - intDiv(number, 2))), toFloat64(1)) AS st FROM numbers(20000)) FORMAT Null</query>
+</test>
