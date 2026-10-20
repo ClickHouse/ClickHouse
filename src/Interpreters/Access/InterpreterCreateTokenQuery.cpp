@@ -3,6 +3,7 @@
 #include <Interpreters/Access/InterpreterCreateTokenQuery.h>
 
 #include <Access/AuthenticationData.h>
+#include <Access/ContextAccess.h>
 #include <Access/Common/AuthenticationType.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsDateTime.h>
@@ -195,6 +196,14 @@ BlockIO InterpreterCreateTokenQuery::execute()
     const String user_name = getContext()->getUserName();
     if (user_name.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "CREATE TOKEN is executed in a context which has no current user");
+
+    /// Authorize the command independently of its lifetime. A non-expiring generated addition
+    /// also qualifies for self-service, but that privilege alone must not authorize `CREATE TOKEN`.
+    auto access = getContext()->getAccess();
+    if (access->getAccessRightsWithImplicit()->isGranted(AccessType::ALTER_USER, user_name))
+        access->checkAccess(AccessType::ALTER_USER, user_name);
+    else
+        access->checkAccess(AccessType::CREATE_TOKEN);
 
     /// Before the statement changes anything: a token which cannot be shown to the user must not be
     /// created at all (see `checkRequestedOutputFormat`).
