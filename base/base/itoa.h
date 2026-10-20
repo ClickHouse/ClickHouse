@@ -87,6 +87,10 @@ namespace itoa_impl
 /// `value` is below 65536. One 8-byte store whatever the length.
 ALWAYS_INLINE inline char * writeUInt16Text(UInt32 value, char * p)
 {
+    /// As in `writeUInt32Text`: short values usually come in runs, where this branch is predicted.
+    if (value < 256)
+        return writeUInt8Text(value, p);
+
     /// [n / 10000][n / 1000][n / 100][n / 10][n], a byte apart, all computed from `n` directly. The larger quotients
     /// overflow into the following bytes, so they are added, not OR-ed.
     /// The first three in one vector multiplication. Each lane divides by multiplying with a rounded-up reciprocal,
