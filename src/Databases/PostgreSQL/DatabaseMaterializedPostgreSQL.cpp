@@ -1079,6 +1079,8 @@ A `CREATE ... ON CLUSTER` query assigns the same ClickHouse UUID to the database
 
 The setting is written explicitly into the definition of a newly created database or table. A database or table created by an older version does not have it in its definition and is treated as if it is set to `0`, so it continues to use its existing replication slot and publication.
 
+The server UUID is written into the definition as well, in the setting `materialized_postgresql_unique_replication_consumer_server_uuid`, so the names of the replication slot and the publication do not change if the server UUID is regenerated (for example, if the `uuid` file in the server data directory is lost). This setting is not supposed to be set manually.
+
 ### `materialized_postgresql_use_extended_date_and_time_types` {#materialized-postgresql-use-extended-date-and-time-types}
 
 Map the PostgreSQL `date` and `timestamp`/`timestamptz` types to ClickHouse `Date32` and `DateTime64`, which cover the wider value range of the PostgreSQL types. Default: `1`.

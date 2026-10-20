@@ -3,7 +3,6 @@
 
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/ServerUUID.h>
 #include <Core/UUID.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
@@ -55,6 +54,7 @@ namespace MaterializedPostgreSQLSetting
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_tables_list_with_schema;
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_unique_replication_consumer_identifier;
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_unique_replication_consumer_identifier_mixed_with_server_uuid;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_unique_replication_consumer_server_uuid;
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_extended_date_and_time_types;
 }
 
@@ -184,9 +184,16 @@ namespace
     /// to the object on every replica, so all replicas would use the same replication slot and publication
     /// (see https://github.com/ClickHouse/ClickHouse/issues/58726). Mixing in the persistent `ServerUUID` makes it unique
     /// per server. The combination is hashed back into a UUID to stay within the PostgreSQL identifier length limit.
-    String getUniqueReplicationIdentifierMixedWithServerUUID(const String & clickhouse_uuid)
+    /// The server UUID is taken from the definition of the object, where it is written on creation, so that the names
+    /// do not change if `ServerUUID` is regenerated.
+    String getUniqueReplicationIdentifierMixedWithServerUUID(
+        const String & clickhouse_uuid, const MaterializedPostgreSQLSettings & replication_settings)
     {
-        return normalizeReplicationSlot(toString(UUIDHelpers::makeUUIDv4FromHash(fmt::format("{}_{}", clickhouse_uuid, toString(ServerUUID::get())))));
+        const String & server_uuid = replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_unique_replication_consumer_server_uuid];
+        if (server_uuid.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Setting `materialized_postgresql_unique_replication_consumer_server_uuid` is not set for a unique replication consumer identifier");
+        return normalizeReplicationSlot(toString(UUIDHelpers::makeUUIDv4FromHash(fmt::format("{}_{}", clickhouse_uuid, server_uuid))));
     }
 
     String getPublicationName(
@@ -197,7 +204,7 @@ namespace
         const MaterializedPostgreSQLSettings & replication_settings)
     {
         if (useUniqueReplicationConsumerIdentifierMixedWithServerUUID(replication_settings))
-            return fmt::format("{}_ch_publication", getUniqueReplicationIdentifierMixedWithServerUUID(clickhouse_uuid));
+            return fmt::format("{}_ch_publication", getUniqueReplicationIdentifierMixedWithServerUUID(clickhouse_uuid, replication_settings));
 
         /// The publication name preserves the case of the database/table name. It is created via
         /// `CREATE PUBLICATION "<name>"` (case-preserving) and looked up by exact `pubname` match,
@@ -255,7 +262,7 @@ namespace
         if (slot_name.empty())
         {
             if (useUniqueReplicationConsumerIdentifierMixedWithServerUUID(replication_settings))
-                slot_name = getUniqueReplicationIdentifierMixedWithServerUUID(clickhouse_uuid);
+                slot_name = getUniqueReplicationIdentifierMixedWithServerUUID(clickhouse_uuid, replication_settings);
             else if (replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_use_unique_replication_consumer_identifier])
                 slot_name = clickhouse_uuid;
             else if (!isDefaultPostgreSQLSchema(postgres_schema))

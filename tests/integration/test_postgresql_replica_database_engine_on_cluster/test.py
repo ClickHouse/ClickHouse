@@ -130,21 +130,41 @@ def test_on_cluster_unique_replication_consumer(started_cluster):
     assert 2 == count_publications()
     slots = get_replication_slots()
 
-    # The setting is written into the definition of a new database, so the identity survives a restart.
+    # The setting and the server UUID are written into the definition of a new database,
+    # so the identity survives a restart, even if the server UUID is regenerated.
+    server_uuid = node1.query("SELECT serverUUID()").strip()
+    create_query = node1.query("SHOW CREATE DATABASE test_database")
     assert (
         "materialized_postgresql_use_unique_replication_consumer_identifier_mixed_with_server_uuid = true"
-        in node1.query("SHOW CREATE DATABASE test_database")
+        in create_query
     )
-    node1.restart_clickhouse()
+    assert (
+        f"materialized_postgresql_unique_replication_consumer_server_uuid = \\'{server_uuid}\\'"
+        in create_query
+    )
 
-    # New changes reach both replicas.
+    node1.stop_clickhouse()
+    node1.exec_in_container(["bash", "-c", "rm /var/lib/clickhouse/uuid"])
+    node1.start_clickhouse()
+    assert server_uuid != node1.query("SELECT serverUUID()").strip()
+
+    # New changes reach both replicas through the same replication slots: an update or a delete
+    # would be lost if a replica created a new replication slot and reloaded the snapshot.
     node1.query(
         f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(1000, 1000)"
     )
+    cursor = get_postgres_conn(
+        ip=cluster.postgres_ip,
+        port=cluster.postgres_port,
+        database=True,
+        database_name="postgres_database",
+    ).cursor()
+    cursor.execute(f"UPDATE {table} SET value = value + 1 WHERE key < 10")
+    cursor.execute(f"DELETE FROM {table} WHERE key >= 40 AND key < 50")
     check_tables_are_synchronized(node1, table)
     check_tables_are_synchronized(node2, table)
-    assert 1050 == int(node1.query(f"SELECT count() FROM test_database.{table}"))
-    assert 1050 == int(node2.query(f"SELECT count() FROM test_database.{table}"))
+    assert 1040 == int(node1.query(f"SELECT count() FROM test_database.{table}"))
+    assert 1040 == int(node2.query(f"SELECT count() FROM test_database.{table}"))
     assert slots == get_replication_slots()
 
     # Dropping the database on the cluster removes both per-replica slots and publications.
