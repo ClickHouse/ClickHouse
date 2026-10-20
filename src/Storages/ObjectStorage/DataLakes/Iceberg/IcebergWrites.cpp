@@ -1122,7 +1122,7 @@ void generateManifestList(
         if (version == 1)
         {
             setVersionedField(entry, added_files_count, Iceberg::f_added_files_count);
-            setVersionedField(entry, std::stoi(summary->getValue<String>(Iceberg::f_total_data_files)), Iceberg::f_existing_files_count);
+            setVersionedField(entry, 0, Iceberg::f_existing_files_count);
             setVersionedField(entry, 0, Iceberg::f_deleted_files_count);
             if (summary->has(Iceberg::f_added_position_deletes))
                 setVersionedField(entry, summary->getValue<Int64>(Iceberg::f_added_position_deletes), Iceberg::f_deleted_rows_count);
