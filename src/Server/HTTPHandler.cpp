@@ -85,6 +85,7 @@ namespace Setting
     extern const SettingsBool http_wait_end_of_query;
     extern const SettingsBool http_write_exception_in_output_format;
     extern const SettingsInt64 http_zlib_compression_level;
+    extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 input_format_max_block_wait_ms;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 readonly;
@@ -724,6 +725,15 @@ void HTTPHandler::processQuery(
     bool enable_http_compression = params.getParsedLast<bool>("enable_http_compression", settings[Setting::enable_http_compression]);
     Int64 http_zlib_compression_level
         = params.getParsed<Int64>("http_zlib_compression_level", settings[Setting::http_zlib_compression_level]);
+    /// `http_zlib_compression_level` is for the zlib-based methods only. Other methods have their own ranges
+    /// and meanings of levels (e.g. `lz4` switches to the slow high-compression mode starting from level 2),
+    /// so they use the generic `output_format_compression_level`.
+    auto compression_level_for_method = [&](CompressionMethod method)
+    {
+        if (method == CompressionMethod::Gzip || method == CompressionMethod::Zlib)
+            return static_cast<int>(http_zlib_compression_level);
+        return static_cast<int>(settings[Setting::output_format_compression_level]);
+    };
     /// HTTP `Content-Encoding: snappy` is standardized to use the snappy framing format,
     /// independent of the user-tunable `snappy_mode` (which controls generic `file()`/`url()` reads).
     auto snappy_mode = SnappyMode::Framed;
@@ -742,7 +752,7 @@ void HTTPHandler::processQuery(
         used_output.wrap_compressed_holder = wrapWriteBufferWithCompressionMethod(
             used_output.out.get(),
             http_response_compression_method,
-            static_cast<int>(http_zlib_compression_level),
+            compression_level_for_method(http_response_compression_method),
             0,
             snappy_mode,
             DBMS_DEFAULT_BUFFER_SIZE,
@@ -768,7 +778,7 @@ void HTTPHandler::processQuery(
             used_output.generic_compression_holder = wrapWriteBufferWithCompressionMethod(
                 used_output.out.get(),
                 response_compression_method,
-                static_cast<int>(http_zlib_compression_level),
+                compression_level_for_method(response_compression_method),
                 0,
                 settings[Setting::snappy_mode],
                 DBMS_DEFAULT_BUFFER_SIZE,
@@ -1051,11 +1061,13 @@ void HTTPHandler::processQuery(
 
     if (!settings[Setting::run_query_in_background] && settings[Setting::readonly] > 0 && settings[Setting::cancel_http_readonly_queries_on_client_close])
     {
-        append_callback([&context, &request](const Progress &)
+        /// Assume that at the point this method is called no one is reading data from the socket any more:
+        /// should be true for read-only queries.
+        auto client_connected = [&request] { return request.checkPeerConnected(); };
+        context->setClientConnectedCallback(client_connected);
+        append_callback([&context, client_connected](const Progress &)
         {
-            /// Assume that at the point this method is called no one is reading data from the socket any more:
-            /// should be true for read-only queries.
-            if (!request.checkPeerConnected())
+            if (!client_connected())
                 context->killCurrentQuery();
         });
     }

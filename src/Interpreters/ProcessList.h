@@ -80,6 +80,7 @@ struct QueryStatusInfo
     size_t written_bytes;
     Int64 memory_usage;
     Int64 peak_memory_usage;
+    Int64 spillable_memory_bytes;
     ClientInfo client_info;
     bool is_cancelled;
     CancelReason cancel_reason;
@@ -116,7 +117,8 @@ protected:
 
     /// Acquired workload resources
     QuerySlotPtr query_slot;
-    MemoryReservationPtr memory_reservation;
+    mutable std::mutex memory_reservation_mutex;
+    MemoryReservationPtr memory_reservation TSA_GUARDED_BY(memory_reservation_mutex);
 
     /// Info about all threads involved in query execution
     ThreadGroupPtr thread_group;
@@ -211,6 +213,7 @@ protected:
     std::optional<CurrentMetrics::Increment> num_non_internal_queries_increment;
 
     bool is_internal;
+    const bool is_ddl_or_on_cluster_internal;
 public:
     QueryStatus(
         ContextPtr context_,
@@ -250,6 +253,7 @@ public:
 
     MemoryReservation * getMemoryReservation() const
     {
+        std::lock_guard lock(memory_reservation_mutex);
         return memory_reservation.get();
     }
 
@@ -601,7 +605,8 @@ public:
     /// was given exactly this pair; queries from other interfaces never match.
     CancellationCode sendCancelToPostgreSQLQuery(Int32 process_id, UInt32 secret_key);
 
-    void killAllQueries();
+    /// With except_ddl_backups_and_restores, BACKUP and RESTORE parts of ON CLUSTER operations run by the DDL worker are not cancelled.
+    void killAllQueries(bool except_ddl_backups_and_restores = false);
 };
 
 }
