@@ -2,15 +2,17 @@
 -- `id_generator` setting copied from the old table, while a generator written in the query itself is materialized.
 -- See https://github.com/ClickHouse/ClickHouse/pull/110084
 
+-- The `id_type` and `id_generator` settings apply to tables of version 9 or earlier only.
+
 SET allow_experimental_time_series_table = 1;
 
 SET uuid_type_version = 1;
-CREATE TABLE ts_old ENGINE = TimeSeries SETTINGS id_type = 'UInt64',
+CREATE TABLE ts_old ENGINE = TimeSeries SETTINGS version = 9, id_type = 'UInt64',
     id_generator = 'plus(sipHash64(metric_name, all_tags), CAST(\'00000000-0000-0001-0000-000000000000\', \'UUID\') < CAST(\'00000000-0000-0000-0000-000000000002\', \'UUID\'))';
 
 SET uuid_type_version = 2;
-CREATE TABLE ts_copy AS ts_old;
-CREATE TABLE ts_new ENGINE = TimeSeries SETTINGS id_type = 'UInt64',
+CREATE TABLE ts_copy AS ts_old ENGINE = TimeSeries SETTINGS version = 9;
+CREATE TABLE ts_new ENGINE = TimeSeries SETTINGS version = 9, id_type = 'UInt64',
     id_generator = 'plus(sipHash64(metric_name, all_tags), CAST(\'00000000-0000-0001-0000-000000000000\', \'UUID\') < CAST(\'00000000-0000-0000-0000-000000000002\', \'UUID\'))';
 
 SELECT name, extract(create_table_query, 'id_generator = (\'(?:[^\'\\\\]|\\\\.)*\')')
