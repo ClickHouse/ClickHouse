@@ -108,7 +108,15 @@ public:
     virtual ~ClientBase();
 
     bool tryStopQuery() { return query_interrupt_handler.tryStop(); }
-    void stopQuery() { query_interrupt_handler.stop(); }
+    /// Latch a received interrupt before disarming the handler: `setupSignalHandler` (e.g. after
+    /// the pager finishes in `resetOutput`) stops the handler before the query's own scope guard
+    /// gets the chance to record the signal, and the post-query epilogue relies on it.
+    void stopQuery()
+    {
+        if (query_interrupt_handler.receivedSignalCount() > 0)
+            query_received_interrupt = true;
+        query_interrupt_handler.stop();
+    }
 
     ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements, const char * raw_query_begin = nullptr);
     /// Returns true if query succeeded
