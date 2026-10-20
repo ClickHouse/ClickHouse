@@ -145,6 +145,10 @@ public:
         if (!subquery_node)
             return;
 
+        /// WITH FILL adds rows to the subquery result after GROUP BY and DISTINCT, so its rows are not distinct.
+        if (hasWithFill(*subquery_node))
+            return;
+
         /// Check that query has only single node in projection
         auto & projection_nodes = query_node->getProjection().getNodes();
         if (projection_nodes.size() != 1)

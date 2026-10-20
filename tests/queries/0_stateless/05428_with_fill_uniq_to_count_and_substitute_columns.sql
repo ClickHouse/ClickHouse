@@ -12,6 +12,12 @@ SETTINGS optimize_uniq_to_count = 1;
 SELECT uniq(a) AS x FROM (SELECT number AS a FROM numbers(3) GROUP BY a) ORDER BY x WITH FILL FROM 0 TO 5
 SETTINGS optimize_uniq_to_count = 1;
 
+-- WITH FILL in the subquery adds rows that repeat a value of the uniq argument.
+SELECT uniq(a) FROM (SELECT a, max(b) AS m FROM values('a UInt64, b UInt64', (1, 0), (2, 2)) GROUP BY a ORDER BY m WITH FILL FROM 0 TO 5)
+SETTINGS optimize_uniq_to_count = 1;
+SELECT uniq(a) FROM (SELECT DISTINCT a FROM values('a UInt64, b UInt64', (1, 0), (2, 2)) ORDER BY b WITH FILL FROM 0 TO 5)
+SETTINGS optimize_uniq_to_count = 1;
+
 -- The skip is per query level: a subquery without WITH FILL is still rewritten.
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT 1 AS k, c FROM (SELECT uniq(a) AS c FROM (SELECT number AS a FROM numbers(5) GROUP BY a))
 ORDER BY k WITH FILL FROM 0 TO 3 INTERPOLATE (c AS c + 1)) WHERE explain LIKE '%function_name: count%'
