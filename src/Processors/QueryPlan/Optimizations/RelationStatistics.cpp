@@ -71,15 +71,23 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
             stats.avg_bytes = 0;
         /// The value range and NULL set survive only lineage known to pass the value through
         /// unchanged; unlike NDV, they do not survive a generic deterministic function (e.g. `negate(k)`)
-        /// or a `CAST`, which may rewrite NULL rows into real values.
+        /// or a `CAST`, which may rewrite NULL rows into real values. There NDV is only an upper
+        /// bound, not a `uniq` statistic.
         if (output_lineage.input->kind == ActionsDAGLineageKind::DistinctValuesBound)
         {
             stats.min_value.reset();
             stats.max_value.reset();
             stats.null_fraction.reset();
+            stats.num_distinct_values_from_uniq = false;
         }
         mapped[outputs[output_lineage.output_position]->result_name] = stats;
     }
+}
+
+void clearDistinctValuesFromUniq(std::unordered_map<String, ColumnStats> & column_stats)
+{
+    for (auto & [_, stats] : column_stats)
+        stats.num_distinct_values_from_uniq = false;
 }
 
 UInt64 toUInt64Saturating(Float64 estimate)
