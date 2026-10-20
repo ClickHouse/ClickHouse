@@ -271,7 +271,7 @@ SELECT h3ToGeoBoundary(644325524701193974) AS coordinates;
 
 Returns a closed H3 cell boundary as a [Polygon](/sql-reference/data-types/geo#polygon). The polygon contains one outer ring of `(longitude, latitude)` pairs in degrees, with the first point repeated at the end of the ring.
 
-Unlike [`h3ToGeoBoundary`](#h3togeoboundary), which returns `(latitude, longitude)`, this function returns `(longitude, latitude)`. The `h3togeo_lon_lat_result_order` setting applies to `h3ToGeo` and does not change this function.
+Unlike [`h3ToGeoBoundary`](#h3togeoboundary), which returns `(latitude, longitude)`, this function returns `(longitude, latitude)`. Neither boundary function is affected by `h3togeo_lon_lat_result_order`, which controls `h3ToGeo`.
 
 **Syntax**
 
@@ -318,6 +318,7 @@ h3_cell_to_boundary_wkt(h3Index)
 **Returned value**
 
 - A `String` containing a WKT `POLYGON`. Invalid cells throw `INCORRECT_DATA` by default, or return an empty string when `functions_h3_default_if_invalid = 1`.
+- `NULL` inputs return `NULL` (`Nullable(String)`), unlike `h3CellToPolygon`, which returns an empty polygon.
 
 **Example**
 

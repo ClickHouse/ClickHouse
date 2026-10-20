@@ -104,6 +104,8 @@ public:
         auto ring_offsets = ColumnArray::ColumnOffsets::create();
         ring_offsets->reserve(input_rows_count);
         auto polygon_offsets = ColumnArray::ColumnOffsets::create(input_rows_count);
+        auto & longitude_data = longitude->getData();
+        auto & latitude_data = latitude->getData();
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
@@ -118,10 +120,10 @@ public:
             {
                 forEachClosedBoundaryPoint(boundary, [&](double lon, double lat)
                 {
-                    longitude->insert(lon);
-                    latitude->insert(lat);
+                    longitude_data.push_back(lon);
+                    latitude_data.push_back(lat);
                 });
-                ring_offsets->getData().push_back(longitude->size());
+                ring_offsets->getData().push_back(longitude_data.size());
             }
 
             polygon_offsets->getData()[row] = ring_offsets->size();
@@ -170,7 +172,7 @@ public:
             }
 
             String wkt = "POLYGON((";
-            wkt.reserve(256);
+            wkt.reserve(12 + static_cast<size_t>(boundary.numVerts + 1) * 48);
             bool first = true;
             forEachClosedBoundaryPoint(boundary, [&](double lon, double lat)
             {

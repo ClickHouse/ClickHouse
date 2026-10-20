@@ -22,7 +22,14 @@ SELECT
     boundary_wkt = h3_cell_to_boundary_wkt(h),
     readWKTPolygon(boundary_wkt) = h3CellToPolygon(h);
 
--- The new function always uses (lon, lat), regardless of the h3ToGeo setting.
+-- Both boundary functions ignore the h3ToGeo coordinate-order setting.
+SET h3togeo_lon_lat_result_order = 0;
+
+WITH
+    toUInt64(599686042433355775) AS h,
+    h3CellToPolygon(h) AS polygon
+SELECT arrayPopBack(polygon[1]) = arrayMap(p -> (p.2, p.1), h3ToGeoBoundary(h));
+
 SET h3togeo_lon_lat_result_order = 1;
 
 WITH
@@ -83,3 +90,19 @@ SET functions_h3_default_if_invalid = 1;
 SELECT
     h3CellToPolygon(toUInt64(0)) = [],
     h3CellToBoundaryWKT(toUInt64(0)) = '';
+
+-- Interleave valid, NULL, and invalid cells in one block with permissive validation.
+SELECT
+    count() = 4,
+    countIf(length(h3CellToPolygon(h)) = 1) = 2,
+    countIf(h3CellToPolygon(h) = []) = 2,
+    countIf(h3CellToBoundaryWKT(h) = '') = 1,
+    countIf(isNull(h3CellToBoundaryWKT(h))) = 1
+FROM
+(
+    SELECT multiIf(
+        number = 1, CAST(NULL AS Nullable(UInt64)),
+        number = 2, toNullable(toUInt64(0)),
+        toNullable(toUInt64(599686042433355775))) AS h
+    FROM numbers(4)
+);
