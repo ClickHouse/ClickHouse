@@ -193,6 +193,7 @@ function makeElement(tag) {
             if (requested) throw new Error('Notebook result stub cannot render profile traces');
             el._flame_requested = false;
         },
+        abandonProfileTraces() {},
         update() { return true; },
         updateRaw() {},
         renderError() {},

@@ -2885,6 +2885,15 @@ class QueryProgressElement extends HTMLElement
         this._flameToggle.style.display = 'inline-block';
     }
 
+    /// Hide the Flame toggle again (see `abandonProfileTraces`), returning to the result view if the
+    /// flame view was the active one.
+    hideFlameToggle()
+    {
+        if (this._view === 'flame')
+            this._toggleView('flame');
+        this._flameToggle.style.display = 'none';
+    }
+
     /// Hide all view toggles and return to the result view (used when a new query starts).
     resetViewToggles()
     {
@@ -7595,6 +7604,24 @@ class QueryResultElement extends HTMLElement
     {
         this._flame_requested = requested;
         if (requested) this._markFlameAvailable();
+    }
+
+    /// Undo `startProfileTraces` for a request that never reached a profiling-capable response: `fetch`
+    /// failed before any response arrived (network, CORS), or the server answered with a plain HTTP
+    /// error instead of an event stream (e.g. authentication failure). No query ran and no trace stream
+    /// existed, so the result must not offer - or persist - a Flame pane saying that no samples arrived.
+    abandonProfileTraces()
+    {
+        if (!this._flame_requested || this._flame_data.types.size > 0)
+            return;
+        this._flame_requested = false;
+        const cell = this._ownerCell;
+        if (cell)
+        {
+            cell.flameAvailable = false;
+            if (!cellOwnsChrome(cell)) return;
+        }
+        progressEl.hideFlameToggle();
     }
 
     appendProfileTraces(traces)
@@ -12544,6 +12571,7 @@ async function postImpl(cell, posted_request_num, query, targetResultEl, abortCo
             return { format, reply, display_error, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind, exception_carrier };
         } else if (!response.ok) {
             is_error = true;
+            targetResultEl.abandonProfileTraces();
             reply = await response.text();
             if (posted_request_num != tab.reqNum) { return { cancelled: true }; }
 
@@ -12947,6 +12975,9 @@ async function postImpl(cell, posted_request_num, query, targetResultEl, abortCo
         if (posted_request_num != tab.reqNum) { return { cancelled: true }; }
 
         console.log(e);
+        /// `fetch` itself failed: the request never reached a server that could stream profile traces.
+        if (response === undefined)
+            targetResultEl.abandonProfileTraces();
         /// A transport failure (`Network error` / `Query was cancelled` / any other thrown error) can
         /// strike mid-stream, after the table/raw branch already flushed partial output into
         /// `targetResultEl` — and into `reply`, which still holds the streamed body so far. Keep that

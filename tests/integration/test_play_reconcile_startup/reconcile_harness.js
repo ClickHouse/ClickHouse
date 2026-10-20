@@ -208,6 +208,7 @@ function makeElement(tag) {
         _rowNumberOffset() { return 0; },
         start() {},
         startProfileTraces() {},
+        abandonProfileTraces() {},
         finish() {},
         updateProgress() {},
         updateText() {},
@@ -479,7 +480,7 @@ function makeContext({ href, historyState, seedTabs, seedMeta, openDelayMs, wasm
             });
             if (tag !== 'query-result') return el;
             const prototype = vm.runInContext('QueryResultElement.prototype', sandbox);
-            for (const name of ['clear', '_markFlameAvailable', 'startProfileTraces', 'appendProfileTraces', '_showFlameGraph'])
+            for (const name of ['clear', '_markFlameAvailable', 'startProfileTraces', 'abandonProfileTraces', 'appendProfileTraces', '_showFlameGraph'])
                 el[name] = prototype[name];
             for (const field of ['_dataTable', '_graph', '_chart', '_dataUnparsed', '_error', '_dataDiv', '_pager', '_logsContent',
                 '_flameGraph', '_flameStatus', '_flameHost', '_flameType', '_flamePeriod', '_metricsTable', '_metricsBody',
@@ -496,6 +497,7 @@ function makeContext({ href, historyState, seedTabs, seedMeta, openDelayMs, wasm
             return el;
         };
         document.getElementById('query-progress').showFlameToggle = () => {};
+        document.getElementById('query-progress').hideFlameToggle = () => {};
         document.getElementById('query-progress').clearBar = () => {};
     }
     return { sandbox, stores, stats };
