@@ -153,6 +153,19 @@ void addDefaultRequiredExpressionsRecursively(
         default_expr_list_accum->children.emplace_back(setAlias(expr, required_column_name));
         added_columns.emplace(required_column_name);
     }
+    else
+    {
+        /// The expression reads a subcolumn (`j.a`, `arr.size0`); the column it belongs to is what has to be present.
+        for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(required_column_name))
+        {
+            const auto * column = columns.tryGet(String(column_name));
+            if (!column || !column->type->tryGetSubcolumnType(subcolumn_name))
+                continue;
+
+            addDefaultRequiredExpressionsRecursively(block, column->name, column->type, columns, default_expr_list_accum, added_columns, /*null_as_default=*/ false);
+            break;
+        }
+    }
 }
 
 
