@@ -556,8 +556,11 @@ void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescriptio
 
     addPerStreamLimitByIfNeeded(pipeline, result_sort_desc);
 
-    /// If there are several streams, then we merge them into one
-    if (pipeline.getNumStreams() > 1 && (partition_by_description.empty() || pipeline.getNumThreads() == 1))
+    /// If there are several streams, then we merge them into one.
+    /// An all-constant description orders nothing, and a merge would wait on inputs a shared upstream may block,
+    /// so such streams are only resized.
+    const bool merge_needed = pipeline.getNumStreams() > 1 && (partition_by_description.empty() || pipeline.getNumThreads() == 1);
+    if (merge_needed && !sortDescriptionIsAllConstant(result_sort_desc, *pipeline.getSharedHeader()))
     {
         sorting_stage = collector.detachProcessors(static_cast<size_t>(SortingStage::Sort));
         auto transform = std::make_shared<MergingSortedTransform>(
@@ -577,11 +580,19 @@ void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescriptio
         merge_streams = collector.detachProcessors(static_cast<size_t>(SortingStage::MergeStreams));
 
     }
-    else if (apply_virtual_row_conversions)
+    else
     {
-        pipeline.addSimpleTransform(RemoveVirtualRowTransform::create);
+        if (apply_virtual_row_conversions)
+            pipeline.addSimpleTransform(RemoveVirtualRowTransform::create);
+
         auto tail = collector.detachProcessors(static_cast<size_t>(SortingStage::Sort));
         sorting_stage.insert(sorting_stage.end(), tail.begin(), tail.end());
+
+        if (merge_needed)
+        {
+            pipeline.resize(1);
+            merge_streams = collector.detachProcessors(static_cast<size_t>(SortingStage::MergeStreams));
+        }
     }
 }
 
