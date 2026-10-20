@@ -109,7 +109,10 @@ ENGINE = MergeTree ORDER BY k; -- { serverError ILLEGAL_PROJECTION }
 CREATE TABLE t_alias (k UInt64, v UInt64, s String) ENGINE = MergeTree ORDER BY k;
 ALTER TABLE t_alias ADD PROJECTION p (SELECT k WHERE (v + 1 AS v) > 3 ORDER BY v); -- { serverError ILLEGAL_PROJECTION }
 ALTER TABLE t_alias ADD PROJECTION p (WITH v + 1 AS v SELECT _part_offset WHERE s = 'a' ORDER BY (v, k)); -- { serverError ILLEGAL_PROJECTION }
-ALTER TABLE t_alias ADD PROJECTION p (SELECT _part_offset, v + 1 AS w WHERE s IN (SELECT 'a' AS v) ORDER BY (w, k));
+-- An alias inside a nested query does not replace a column. With parallel replicas the definition would replace
+-- this subquery with a temporary table name in the stored projection query.
+ALTER TABLE t_alias ADD PROJECTION p (SELECT _part_offset, v + 1 AS w WHERE s IN (SELECT 'a' AS v) ORDER BY (w, k))
+SETTINGS enable_parallel_replicas = 0;
 INSERT INTO t_alias SELECT number, number % 10, if(number % 2 = 0, 'a', 'b') FROM numbers(1000);
 
 SELECT 'projection rows', sum(rows) FROM system.projection_parts WHERE database = currentDatabase() AND active AND table = 't_alias';
