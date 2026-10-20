@@ -49,6 +49,7 @@
 #include <Interpreters/DeadLetterQueue.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TextLog.h>
+#include <Interpreters/TraceCollector.h>
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/ZooKeeperLog.h>
@@ -659,6 +660,10 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
         if (text_log)
             flushAsyncTextLogsIfPossible();
 
+        /// Not at shutdown (`ignore_errors`), which a stuck collector would delay.
+        if (trace_log && !ignore_errors)
+            TraceCollector::flush();
+
         for (auto * log : getAllLogs())
         {
             log->flushBufferToLog(std::chrono::system_clock::now());
@@ -723,6 +728,8 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
 
             if (log == text_log.get())
                 flushAsyncTextLogsIfPossible();
+            else if (log == trace_log.get())
+                TraceCollector::flush();
 
             log->flushBufferToLog(std::chrono::system_clock::now());
 
