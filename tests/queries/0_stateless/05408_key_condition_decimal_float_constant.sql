@@ -7,6 +7,9 @@ SET use_query_condition_cache = 0, use_statistics_for_part_pruning = 0;
 
 DROP TABLE IF EXISTS t_decimal_float_key;
 DROP TABLE IF EXISTS t_decimal_float_minmax;
+DROP TABLE IF EXISTS t_decimal_float_expression_key;
+DROP TABLE IF EXISTS t_decimal_float_expression_minmax;
+DROP TABLE IF EXISTS t_datetime64_float_key;
 
 CREATE TABLE t_decimal_float_key (d Decimal(38, 18), ts UInt32)
 ENGINE = MergeTree ORDER BY (d, ts) SETTINGS index_granularity = 1;
@@ -37,5 +40,38 @@ SELECT count() FROM t_decimal_float_minmax WHERE d = toFloat64(1);
 SELECT count() FROM t_decimal_float_minmax WHERE d = CAST(toFloat32(1) AS Dynamic);
 SELECT count() FROM t_decimal_float_minmax WHERE d = toFloat32(1) SETTINGS use_skip_indexes = 0;
 
+-- A function of the column as the key: its monotonic chain would cast the constant to the `Decimal` argument too.
+SELECT 'key expression';
+
+CREATE TABLE t_decimal_float_expression_key (d Decimal(38, 18), ts UInt32)
+ENGINE = MergeTree ORDER BY toFloat64(d) SETTINGS index_granularity = 1;
+
+INSERT INTO t_decimal_float_expression_key SELECT d, ts FROM t_decimal_float_key;
+
+SELECT arraySort(groupArray(ts)) FROM t_decimal_float_expression_key WHERE d = toFloat32(1);
+-- Casting the constant also threw: "Conversion from BFloat16 to Decimal is not implemented".
+SELECT count() FROM t_decimal_float_expression_key WHERE d = toBFloat16(1);
+
+CREATE TABLE t_decimal_float_expression_minmax (d Decimal(38, 18), ts UInt32, INDEX i toFloat64(d) TYPE minmax)
+ENGINE = MergeTree ORDER BY ts SETTINGS index_granularity = 1;
+
+INSERT INTO t_decimal_float_expression_minmax SELECT d, ts FROM t_decimal_float_key;
+
+SELECT count() FROM t_decimal_float_expression_minmax WHERE d = toFloat32(1);
+
+-- `DateTime64` is compared with a float as `Float64` as well, where values nanoseconds apart are equal.
+SELECT 'DateTime64';
+
+CREATE TABLE t_datetime64_float_key (d DateTime64(9, 'UTC'), ts UInt32)
+ENGINE = MergeTree ORDER BY (d, ts) SETTINGS index_granularity = 1;
+
+INSERT INTO t_datetime64_float_key VALUES ('2026-01-01 00:00:00', 10), ('2026-01-01 00:00:00.000000001', 20), ('2026-01-01 00:00:00.000000002', 30), ('2026-01-01 00:00:02', 40);
+
+SELECT arraySort(groupArray(ts)) FROM t_datetime64_float_key WHERE d = toFloat64(1767225600);
+SELECT arraySort(groupArray(ts)) FROM t_datetime64_float_key WHERE d <= toFloat64(1767225600);
+
 DROP TABLE t_decimal_float_key;
 DROP TABLE t_decimal_float_minmax;
+DROP TABLE t_decimal_float_expression_key;
+DROP TABLE t_decimal_float_expression_minmax;
+DROP TABLE t_datetime64_float_key;

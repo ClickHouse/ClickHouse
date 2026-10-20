@@ -2309,6 +2309,17 @@ static bool fixedStringConstantLosesPadding(
     return !fixed_string_input_type || fixed_string_input_type->getN() < constant_bytes.size();
 }
 
+/// A float and a `Decimal`, `DateTime64` or `Time64` value are compared as `Float64` (see `FunctionsComparison.h`),
+/// where many values of such a type equal the same float. Casting the float constant to such a key expression input
+/// names a single key point instead, which misses those values, and the cast itself can be inexact: `toFloat32(1)`
+/// becomes `0.99999998430674944` in `Decimal(38, 18)`. `Float32` is stored as `Float64` in a `Field`, also inside
+/// a `Dynamic` constant.
+static bool floatConstantIsComparedAsFloat64(const Field & value, const IDataType & key_expression_input_type)
+{
+    return anyFieldSatisfies(value, [](const Field & field) { return field.getType() == Field::Types::Float64; })
+        && anyInTypeTree(key_expression_input_type, [](const IDataType & type) { return isColumnedAsDecimal(type); });
+}
+
 /// Over a type of consecutive integers (the integers, `Date`, `Date32` and `DateTime`), the strict
 /// comparison `x < c` matches the same rows as `x <= c - 1`, and `x > c` the same as `x >= c + 1`. This
 /// replaces the constant `c` of such a comparison with that inclusive bound, where `x` has the type
@@ -2400,6 +2411,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
             /// The chain casts the constant to the argument type of its first function.
             const auto transform_input_type = getArgumentTypeOfMonotonicFunction(*chain.functions_chain.front());
             if (fixedStringConstantLosesPadding(value, is_fixed_string, transform_input_type)
+                || floatConstantIsComparedAsFloat64(value, *transform_input_type)
                 || !tryNormalizeTextConstantForZonelessDateTimeInput(transform_input_type, normalized_constant))
                 continue;
             makeStrictBoundInclusive(func_name, transform_input_type, normalized_constant);
@@ -3148,23 +3160,11 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
     const Field value = (*constant.column)[0];
     const bool is_fixed_string = isFixedStringConstant(value, *constant.column, constant.type);
 
-    /// `Float32` is stored as `Float64` in a `Field`, also inside a `Dynamic` constant.
-    const bool constant_holds_float
-        = anyFieldSatisfies(value, [](const Field & field) { return field.getType() == Field::Types::Float64; });
-
     for (auto & candidate : dags)
     {
         /// The DAG casts the constant to its input type.
-        if (fixedStringConstantLosesPadding(value, is_fixed_string, candidate.dag.input_type))
-            continue;
-
-        /// A float and a `Decimal` are compared as `Float64` (see `FunctionsComparison.h`), where many
-        /// `Decimal` values equal the same float. Casting the constant to a `Decimal` input names a single
-        /// key point instead, which misses those values, and the cast itself can be inexact: `toFloat32(1)`
-        /// becomes `0.99999998430674944` in `Decimal(38, 18)`. The direct match declines this pair as well,
-        /// because `Decimal` and `Float` have no common supertype.
-        if (constant_holds_float
-            && anyInTypeTree(*candidate.dag.input_type, [](const IDataType & type) { return isDecimal(type); }))
+        if (fixedStringConstantLosesPadding(value, is_fixed_string, candidate.dag.input_type)
+            || floatConstantIsComparedAsFloat64(value, *candidate.dag.input_type))
             continue;
 
         auto normalized_constant = constant;
