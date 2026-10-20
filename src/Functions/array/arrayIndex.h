@@ -783,6 +783,10 @@ private:
             DataTypePtr array_target_type = std::make_shared<DataTypeArray>(inner_target_type);
             arguments[0].column = castColumn(arguments[0], array_target_type);
             arguments[0].type = std::move(array_target_type);
+            /// The cast between the layouts does not preserve the order, so the array may no longer be sorted.
+            /// Materialize a constant array to skip the binary search of the constant path of `indexOfAssumeSorted`.
+            if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>)
+                arguments[0].column = arguments[0].column->convertToFullColumnIfConst();
         }
         if (!arg_target_type->equals(*arguments[1].type))
         {
