@@ -471,3 +471,41 @@ TEST(ReadPlan, FrontierAdvancingDuringRunAtNeverYieldsEmptyFetch)
     const auto * fetch = as<ReadPlan::Fetch>(run);
     ASSERT_TRUE(fetch == nullptr || fetch->range.size > 0);
 }
+
+TEST(ReadPlan, OnlyPassedWritersRunTheirDropAction)
+{
+    /// The cursor passes a writer only through `dropBefore`: `dropAfter`, `reset` and a writer that still
+    /// holds the cursor run nothing.
+    class DroppingWriter : public MockWriter
+    {
+    public:
+        DroppingWriter(ByteRange r_, std::vector<size_t> & dropped_) : MockWriter(r_), dropped(dropped_) {}
+        std::function<void()> takeDropAfterPass() override
+        {
+            return [&log = dropped, offset = range().offset] { log.push_back(offset); };
+        }
+    private:
+        std::vector<size_t> & dropped;
+    };
+
+    std::vector<size_t> dropped;
+    std::vector<CacheResolution> cells;
+    for (size_t offset : {0, 4, 8})
+    {
+        CacheResolution c;
+        c.kind = CacheResolution::Kind::Miss;
+        c.range = {offset, 4};
+        c.writer = std::make_unique<DroppingWriter>(ByteRange{offset, 4}, dropped);
+        cells.push_back(std::move(c));
+    }
+    ReadPlan plan;
+    plan.reset(0);
+    plan.extend(12, tiers(tier(CacheTier::FilesystemCache, std::move(cells))));
+
+    plan.dropBefore(6);   /// passes [0, 4), stops inside [4, 8)
+    EXPECT_EQ(dropped, std::vector<size_t>{0});
+    plan.dropAfter(8);    /// releases [8, 12) without passing it
+    plan.reset(20);       /// releases [4, 8) without passing it
+    EXPECT_EQ(dropped, std::vector<size_t>{0});
+}
+

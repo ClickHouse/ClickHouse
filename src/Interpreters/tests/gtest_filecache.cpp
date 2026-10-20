@@ -57,6 +57,7 @@
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/BoundedReadBuffer.h>
+#include <IO/DiskCacheProvider.h>
 #include <Interpreters/FileCache/WriteBufferToFileSegment.h>
 
 #include <Disks/SingleDiskVolume.h>
@@ -4374,3 +4375,83 @@ TEST_F(FileCacheTest, CachedReadBufferConcurrentReadBigAtUnknownFileSize)
             ASSERT_EQ(errors[t], "") << "thread " << t << ", iteration " << iteration;
     }
 }
+
+namespace
+{
+
+/// Without a holder: releasing one on the downloader's thread would complete the segment.
+ChainedBuffers bytesAt(size_t offset, const String & data)
+{
+    auto block = std::make_shared<OwnedChainedBuffer>(data.size());
+    memcpy(block->data(), data.data(), data.size());
+    ChainedBuffers chain;
+    chain.append(ChainedBufferNode{std::move(block), 0, data.size(), offset});
+    return chain;
+}
+
+}
+
+TEST_F(FileCacheTest, DiskCacheProviderTemporaryModeDropsUnusedSegments)
+{
+    /// In the temporary-cache mode a segment that the reader filled from its start leaves the cache once the
+    /// reader passes it, unless another reader still holds it. A finished read of another reader does not keep it.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+    FileCacheSettings settings;
+    settings[FileCacheSetting::max_size] = 10_KiB;
+    settings[FileCacheSetting::max_file_segment_size] = 1_KiB;
+    settings[FileCacheSetting::boundary_alignment] = 1_KiB;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+    auto cache = std::make_shared<FileCache>("disk_cache_provider_temporary", settings);
+    cache->initialize();
+
+    const String data(1_KiB, 'x');
+    FilesystemCacheSettings temporary_settings;
+    temporary_settings.read_if_exists_otherwise_bypass = true;
+    temporary_settings.cache_temporarily = true;
+    DiskCacheProvider temporary(cache, temporary_settings);
+    DiskCacheProvider regular(cache, FilesystemCacheSettings{});
+
+    /// Fills the segment through a temporary writer and returns the writer's drop action.
+    auto fill = [&](const StoredObject & object)
+    {
+        auto cells = temporary.resolve(object, 0, ByteRange{0, data.size()});
+        CacheWriter & writer = *cells.back().writer;
+        auto role = writer.takeFillRole();
+        writer.write(bytesAt(0, data), role);
+        role.reset();
+        return writer.takeDropAfterPass();
+    };
+    auto cached = [&](const StoredObject & object)
+    {
+        /// `get` returns a detached placeholder when nothing is cached.
+        auto holder = cache->get(FileCacheKey::fromPath(object.remote_path), 0, data.size(), 0, FileCache::getCommonOrigin().user_id);
+        return !holder->front().isDetached();
+    };
+
+    const StoredObject unused("temporary_unused", "", data.size());
+    auto drop = fill(unused);
+    ASSERT_TRUE(drop);
+    drop();
+    EXPECT_FALSE(cached(unused));
+
+    const StoredObject read_by_other("temporary_read_by_other", "", data.size());
+    drop = fill(read_by_other);
+    {
+        auto cells = regular.resolve(read_by_other, 0, ByteRange{0, data.size()});
+        EXPECT_EQ(cells.front().reader->read(ByteRange{0, data.size()}).totalBytes(), data.size());
+    }
+    drop();
+    EXPECT_FALSE(cached(read_by_other));
+
+    const StoredObject held_by_other("temporary_held_by_other", "", data.size());
+    drop = fill(held_by_other);
+    {
+        auto cells = regular.resolve(held_by_other, 0, ByteRange{0, data.size()});
+        drop();
+    }
+    EXPECT_TRUE(cached(held_by_other));
+}
+
