@@ -3807,6 +3807,84 @@ TEST_F(FileCacheTest, SLRUDowngradeRollbackResetsEvictingOnSkippedFinalization)
     }
 }
 
+TEST_F(FileCacheTest, SLRUCollectForProtectedQueueWithoutReservee)
+{
+    /// A caller that cannot pass the reservee names its queue with `reservee_queue_type`.
+    /// With a full protected queue, both `collectEvictionInfo` and `collectCandidatesForEviction`
+    /// must make room in protected by a downgrade, and must not measure probationary, which has room.
+    ServerUUID::setRandomForUnitTests();
+
+    const size_t max_size = 20;
+    const size_t max_elements = 10;
+    const double slru_size_ratio = 0.5; /// protected 10/5, probationary 10/5
+    SLRUFileCachePriority priority(IFileCachePriority::QueueType::Main, max_size, max_elements, slru_size_ratio, "test_slru_protected_without_reservee");
+
+    const std::string cache_path = caches_dir / "test_slru_protected_without_reservee";
+    fs::create_directories(cache_path);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
+
+    const auto key = DB::FileCacheKey::fromPath("slru_protected_without_reservee_key");
+    const auto & origin = FileCache::getCommonOrigin();
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
+
+    CacheStateGuard state_guard;
+
+    auto add_segment = [&](size_t offset, size_t size, IFileCachePriority::QueueEntryType queue_type)
+    {
+        IFileCachePriority::IteratorPtr it;
+        {
+            auto state_lock = state_guard.lock();
+            auto lock = priority.getPriorityGuardForTests().writeLock();
+            it = priority.addForRestore(key_metadata, offset, size, queue_type, lock, &state_lock);
+        }
+        auto path = cache_metadata.getFileSegmentPath(key, offset, FileSegmentKind::Regular, origin);
+        if (std::filesystem::exists(path))
+            std::filesystem::remove(path);
+        std::filesystem::create_directories(std::filesystem::path(path).parent_path());
+        std::string data(size, '0');
+        WriteBufferFromFile wb(path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+        DB::writeString(data, wb);
+        wb.finalize();
+        auto file_segment = std::make_shared<FileSegment>(
+            key, offset, size, FileSegment::State::DOWNLOADED,
+            CreateFileSegmentSettings{}, false, nullptr, key_metadata, it);
+        LockedKey(key_metadata).emplace(offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment)));
+    };
+
+    /// Protected is full (5 + 5 bytes), probationary has room (3 of 10 bytes).
+    add_segment(0, 5, IFileCachePriority::QueueEntryType::SLRU_Protected);
+    add_segment(5, 5, IFileCachePriority::QueueEntryType::SLRU_Protected);
+    add_segment(10, 3, IFileCachePriority::QueueEntryType::SLRU_Probationary);
+    ASSERT_EQ(priority.getProtectedSize(state_guard.lock()), 10);
+    ASSERT_EQ(priority.getProbationarySize(state_guard.lock()), 3);
+
+    EvictionInfoPtr eviction_info = priority.collectEvictionInfo(
+        /* size */ 2, /* elements */ 0, /* reservee */ nullptr,
+        /* is_total_space_cleanup */ false, origin, state_guard.lock(),
+        IFileCachePriority::QueueEntryType::SLRU_Protected);
+    ASSERT_TRUE(eviction_info->requiresEviction());
+
+    FileCacheReserveStat stat;
+    EvictionCandidates evicted(IFileCachePriority::OnEvictCallback{});
+    ASSERT_TRUE(priority.collectCandidatesForEviction(
+        *eviction_info, stat, evicted, /* reservee */ nullptr,
+        IFileCachePriority::EvictionCursor::FromHead, /* max_candidates_size */ 0,
+        /* is_total_space_cleanup */ false, origin, state_guard,
+        IFileCachePriority::QueueEntryType::SLRU_Protected));
+
+    evicted.evict();
+    evicted.afterEvictWrite();
+    {
+        auto lock = state_guard.lock();
+        eviction_info->releaseHoldSpace(lock);
+        evicted.afterEvictState(lock);
+
+        /// The oldest protected entry moved to probationary, so protected has room for the 2 bytes.
+        EXPECT_LE(priority.getProtectedSize(lock) + 2, priority.getProtectedSizeLimit(lock));
+        EXPECT_EQ(priority.getProbationarySize(lock), 8);
+    }
+}
+
 TEST_F(FileCacheTest, SplitSLRUTotalSpaceCleanupSystemOnly)
 {
     /// Regression for the default split-cache config (SLRU inner priorities). When only the
