@@ -10564,7 +10564,7 @@ Enables the `ALP` compression codec.
     DECLARE(Bool, enable_bytestreamsplit_codec, false, R"(
 Allows using the experimental `ByteStreamSplit` compression codec.
 )", EXPERIMENTAL, \
-        {"26.10", false, false, "New setting to enable the experimental `ByteStreamSplit` compression codec individually, without the `allow_experimental_codecs`."}) \
+        {"26.11", false, false, "New setting to enable the experimental `ByteStreamSplit` compression codec individually, without the `allow_experimental_codecs`."}) \
     DECLARE(Bool, enable_pco_codec, false, R"(
 Enables the `PCO` compression codec.
 )", BETA, \
