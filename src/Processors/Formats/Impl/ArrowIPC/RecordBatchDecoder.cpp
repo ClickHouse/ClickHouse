@@ -31,6 +31,8 @@
 #include <Common/DateLUTImpl.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Core/UUID.h>
+#include <base/scope_guard.h>
+#include <base/unaligned.h>
 #include <boost/algorithm/string/case_conv.hpp>
 
 #include <algorithm>
@@ -615,6 +617,69 @@ size_t requiredBytes(size_t count, size_t elem_size)
             ErrorCodes::INCORRECT_DATA,
             "Arrow IPC buffer size overflows: {} elements of {} bytes each", count, elem_size);
     return bytes;
+}
+
+/// How `convertBuffersFromBigEndian` turns the elements of a big-endian buffer into the little-endian
+/// layout the decoder reads.
+enum class ByteSwap
+{
+    /// Bytes rather than numbers: fixed-size binary values.
+    None,
+    /// Each element is one integer or floating-point value; decimals are reversed whole as well.
+    Elements,
+    /// Each element is a sequence of 32-bit integers: day-time intervals.
+    Int32Elements,
+    /// A 32-bit month count, a 32-bit day count and a 64-bit nanosecond count.
+    MonthDayNano,
+    /// A 32-bit length, then either up to 12 inline bytes or a 4-byte prefix, a 32-bit buffer index and a
+    /// 32-bit offset.
+    BinaryView,
+};
+
+void reverseBytes(char * value, size_t size)
+{
+    std::reverse(value, value + size);
+}
+
+/// Byte-swaps every complete `width`-byte element of `slice` in place. A big-endian batch's buffers live in
+/// the decoder's `decompressed_body` (see `prepareBuffers`), so the slice is writable.
+void swapFromBigEndian(const RecordBatchDecoder::Slice & slice, size_t width, ByteSwap swap)
+{
+    if (swap == ByteSwap::None || width <= 1 || slice.length <= 0)
+        return;
+    char * data = const_cast<char *>(slice.ptr);
+    const size_t size = static_cast<size_t>(slice.length) / width * width;
+    for (size_t pos = 0; pos < size; pos += width)
+    {
+        char * value = data + pos;
+        switch (swap)
+        {
+            case ByteSwap::None:
+                break;
+            case ByteSwap::Elements:
+                reverseBytes(value, width);
+                break;
+            case ByteSwap::Int32Elements:
+                for (size_t part = 0; part + sizeof(Int32) <= width; part += sizeof(Int32))
+                    reverseBytes(value + part, sizeof(Int32));
+                break;
+            case ByteSwap::MonthDayNano:
+                reverseBytes(value, sizeof(Int32));
+                reverseBytes(value + 4, sizeof(Int32));
+                reverseBytes(value + 8, sizeof(Int64));
+                break;
+            case ByteSwap::BinaryView:
+                reverseBytes(value, sizeof(Int32));
+                /// Longer values are stored out of line: the prefix stays as bytes, the buffer index and
+                /// the offset are integers.
+                if (unalignedLoadLittleEndian<Int32>(value) > 12)
+                {
+                    reverseBytes(value + 8, sizeof(Int32));
+                    reverseBytes(value + 12, sizeof(Int32));
+                }
+                break;
+        }
+    }
 }
 
 size_t dictionaryIndexByteWidth(int bits)
@@ -1850,11 +1915,13 @@ void RecordBatchDecoder::advanceField(const ArrowField & field, bool validate_le
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC field node has a negative length {}", node.length());
     const size_t rows = validate_lengths ? static_cast<size_t>(node.length()) : 0;
 
-    auto consume_buffer = [&](size_t count, size_t width, const char * what)
+    auto consume_buffer = [&](size_t count, size_t width, const char * what, ByteSwap swap = ByteSwap::Elements)
     {
         const Slice buffer = nextBuffer();
         if (validate_lengths)
             checkBufferSize(buffer, requiredBytes(count, width), what);
+        if (swap_from_big_endian)
+            swapFromBigEndian(buffer, width, swap);
     };
     auto consume_validity = [&]
     {
@@ -1873,7 +1940,7 @@ void RecordBatchDecoder::advanceField(const ArrowField & field, bool validate_le
     if (field.dictionary)
     {
         consume_validity();
-        const size_t width = validate_lengths ? dictionaryIndexByteWidth(field.dictionary->index_bit_width) : 0;
+        const size_t width = validate_lengths || swap_from_big_endian ? dictionaryIndexByteWidth(field.dictionary->index_bit_width) : 0;
         consume_buffer(rows, width, "dictionary indices");
         return;
     }
@@ -1943,11 +2010,13 @@ void RecordBatchDecoder::advanceField(const ArrowField & field, bool validate_le
         {
             const size_t width = type.unit == flatbuf::IntervalUnit_YEAR_MONTH ? 4
                 : type.unit == flatbuf::IntervalUnit_DAY_TIME ? 8 : 16;
-            consume_buffer(rows, width, "interval");
+            const ByteSwap swap = type.unit == flatbuf::IntervalUnit_YEAR_MONTH ? ByteSwap::Elements
+                : type.unit == flatbuf::IntervalUnit_DAY_TIME ? ByteSwap::Int32Elements : ByteSwap::MonthDayNano;
+            consume_buffer(rows, width, "interval", swap);
             break;
         }
         case TypeKind::FixedSizeBinary:
-            consume_buffer(rows, type.byte_width, "fixed_size_binary");
+            consume_buffer(rows, type.byte_width, "fixed_size_binary", ByteSwap::None);
             break;
         case TypeKind::Utf8:
         case TypeKind::LargeUtf8:
@@ -1962,7 +2031,7 @@ void RecordBatchDecoder::advanceField(const ArrowField & field, bool validate_le
         case TypeKind::BinaryView:
         case TypeKind::Utf8View:
         {
-            consume_buffer(rows, 16, "binary view");
+            consume_buffer(rows, 16, "binary view", ByteSwap::BinaryView);
             const Int64 num_data = variadic_index < variadic_counts.size() ? variadic_counts[variadic_index] : 0;
             ++variadic_index;
             if (validate_lengths && static_cast<size_t>(num_data) > buffer_slices.size() - buffer_index)
@@ -2013,6 +2082,17 @@ void RecordBatchDecoder::advanceField(const ArrowField & field, bool validate_le
     }
 }
 
+void RecordBatchDecoder::convertBuffersFromBigEndian(const ArrowField * fields, size_t count)
+{
+    swap_from_big_endian = true;
+    SCOPE_EXIT({ swap_from_big_endian = false; });
+    for (size_t i = 0; i < count; ++i)
+        advanceField(fields[i]);
+    node_index = 0;
+    buffer_index = 0;
+    variadic_index = 0;
+}
+
 RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeBatch(
     const flatbuf::RecordBatch & batch, const PODArray<char> & body,
     const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields,
@@ -2020,6 +2100,8 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeBatch(
     const VectorWithMemoryTracking<char> * reachable_buffers)
 {
     beginBatch(batch, body, reachable_buffers, target_types_);
+    if (!schema.little_endian)
+        convertBuffersFromBigEndian(schema.fields.data(), schema.fields.size());
 
     DecodedColumns result;
     result.reserve(schema.fields.size());
@@ -2047,6 +2129,8 @@ DictionaryRegistry::Values RecordBatchDecoder::decodeDictionaryValues(
     const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_)
 {
     beginBatch(batch, body, /*reachable_buffers=*/nullptr, target_types_);
+    if (!schema.little_endian)
+        convertBuffersFromBigEndian(&value_field, 1);
     expectNextNodeLength(static_cast<size_t>(batch.length()), fmt::format("column '{}'", value_field.name));
     ColumnUInt8::Ptr null_map;
     DecodedColumn values = decodeBatchColumn(value_field, use.hint, use.position.path, use.position.list_depth, &null_map);
@@ -2222,6 +2306,16 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
             const char * ptr = buffer->length() > 0 ? body.data() + buffer->offset() : nullptr;
             buffer_slices.push_back(Slice{ptr, buffer->length()});
             total_buffer_bytes += static_cast<size_t>(buffer->length());
+        }
+        /// `convertBuffersFromBigEndian` byte-swaps a big-endian batch in place, and the body belongs to the
+        /// caller. Copy the whole body once (copying each buffer could multiply the size when malformed
+        /// buffers overlap) and point the slices into the copy; offsets keep their 8-byte alignment.
+        if (!schema.little_endian)
+        {
+            decompressed_body.assign(body.begin(), body.end());
+            for (Slice & slice : buffer_slices)
+                if (slice.ptr)
+                    slice.ptr = decompressed_body.data() + (slice.ptr - body.data());
         }
         return;
     }

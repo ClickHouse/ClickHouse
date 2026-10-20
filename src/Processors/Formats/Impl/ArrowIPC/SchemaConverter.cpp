@@ -358,9 +358,8 @@ ArrowType parseType(const flatbuf::Field & field)
 ArrowSchema parseSchema(const flatbuf::Schema & schema)
 {
     ArrowSchema result;
+    /// Big-endian buffers are converted by `RecordBatchDecoder::convertBuffersFromBigEndian`.
     result.little_endian = schema.endianness() == flatbuf::Endianness_Little;
-    if (!result.little_endian)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Big-endian Arrow IPC streams are not supported by the native reader");
 
     const auto * fields = schema.fields();
     if (fields)
@@ -1196,8 +1195,7 @@ DataTypePtr fieldToCHType(
             /// `Nullable(Nothing)` (the library reader wraps its `Nothing` column the same way because the
             /// field's null count is non-zero); the all-null `Nullable` then casts to the requested target
             /// as NULLs (or column DEFAULTs with `null_as_default`). Return directly — it is already
-            /// nullable. Schema inference keeps the flag off and, matching the library reader, treats it as
-            /// an unsupported type (`UNKNOWN_TYPE`, so `*_skip_columns_*_in_schema_inference` can drop it).
+            /// nullable. Schema inference infers the same type.
             if (allow_null_type)
                 return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
             throw Exception(

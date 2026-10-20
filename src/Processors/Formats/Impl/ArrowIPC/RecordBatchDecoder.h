@@ -305,6 +305,10 @@ private:
     /// materializing its data. With `validate_lengths`, checks buffer sizes and row-aligned child
     /// lengths before decoding. Otherwise, skips unrequested values without reading their buffers.
     void advanceField(const ArrowField & field, bool validate_lengths = false);
+    /// Converts the buffers of `fields` in the current batch from big-endian to little-endian in place: walks
+    /// them in layout order with `advanceField`, which byte-swaps every buffer it passes, then rewinds the
+    /// cursors. `prepareBuffers` has already copied a big-endian batch's buffers into `decompressed_body`.
+    void convertBuffersFromBigEndian(const ArrowField * fields, size_t count);
     ColumnPtr decodeInner(
         const ArrowField & field, size_t rows, const DataTypePtr & target_hint, const String & path,
         size_t list_depth, const InvisibleRowsMask * invisible_rows);
@@ -388,6 +392,8 @@ private:
     /// For BinaryView/Utf8View columns: the per-field count of variadic data buffers.
     VectorWithMemoryTracking<Int64> variadic_counts;
     size_t variadic_index = 0;
+    /// Set during `convertBuffersFromBigEndian`: `advanceField` byte-swaps the buffers it passes.
+    bool swap_from_big_endian = false;
 };
 
 }
