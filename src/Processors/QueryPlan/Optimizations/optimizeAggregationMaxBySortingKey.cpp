@@ -5,8 +5,10 @@
 #include <Core/Settings.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/TypeTree.h>
+#include <Functions/FunctionFactory.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTFunction.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -90,8 +92,8 @@ namespace DB::QueryPlanOptimizations
 /// - `argMin`/`argMax` of a `Nullable` value, which ignore the rows where it is NULL;
 /// - a filter on the witness rows when a primary key column may contain NULL;
 /// - `LIMIT BY` whose length plus offset overflows (`LIMIT -n OFFSET m BY`), or with `arrayJoin` above the sorting;
-/// - stateful functions (`rowNumberInAllBlocks`, `runningDifference`, ...) before the aggregation or the `LIMIT BY`,
-///   whose values depend on all rows they process.
+/// - stateful functions (`rowNumberInAllBlocks`, `runningDifference`, ...) before the aggregation or the `LIMIT BY`, or
+///   in a default expression of the table, whose values depend on all rows they process.
 
 /// The order and equality of the primary index must agree with the aggregation. `Nullable`: `max` and `min`
 /// ignore NULLs, which sort at an end of the run. Floating point: NaN has no consistent order, and `-0` and `+0`
@@ -143,6 +145,20 @@ static bool dependsOnlyOn(const ActionsDAG::Node * predicate, const NameSet & co
             stack.push_back(child);
     }
     return true;
+}
+
+/// Whether the expression calls a stateful function (`rowNumberInAllBlocks`, `runningDifference`, ...).
+static bool hasStatefulFunction(const ASTPtr & ast, const ContextPtr & context)
+{
+    if (const auto * function = ast->as<ASTFunction>())
+    {
+        if (auto resolver = FunctionFactory::instance().tryGet(function->name, context); resolver && resolver->isStateful())
+            return true;
+    }
+    for (const auto & child : ast->children)
+        if (hasStatefulFunction(child, context))
+            return true;
+    return false;
 }
 
 /// Aggregate functions whose result depends only on the set of distinct values of their arguments, not on how
@@ -276,6 +292,12 @@ static void tryApply(
     const auto table_metadata = reading->getMergeTreeData().getInMemoryMetadataPtr(reading->getContext(), /*bypass_metadata_cache=*/ false);
     if (metadata->hasUniqueKey() || table_metadata->hasUniqueKey())
         return;
+    /// A column that a part does not have (e.g. added by `ALTER TABLE ... ADD COLUMN` and not materialized) is computed
+    /// by the reader from its default expression, which is not in `query.dag`. The default expressions of all columns
+    /// are checked, which also covers defaults that use other columns with defaults.
+    for (const auto & [name, column_default] : table_metadata->getColumns().getDefaults())
+        if (column_default.expression && hasStatefulFunction(column_default.expression, reading->getContext()))
+            return;
     const auto & sorting_key = metadata->getSortingKey();
     const auto & primary_key = metadata->getPrimaryKey();
 
