@@ -1454,6 +1454,11 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.8",
         {
+            {"enable_row_mask_update_coalescing", false, true, "Enable row-mask update coalescing by default"},
+            {"max_row_mask_update_coalescing_keys", 256, 256, "New setting"},
+            {"max_row_mask_update_coalescing_key_bytes", 64 * 1024, 64 * 1024, "New setting"},
+            {"max_row_mask_update_coalescing_commands", 4096, 4096, "New setting"},
+            {"max_row_mask_update_coalescing_ast_bytes", 1024 * 1024, 1024 * 1024, "New setting"},
             {"shared_merge_tree_use_blobs_list_for_parts", false, false, "New setting which stores a SharedMergeTree part's per-file blob map in one consolidated Keeper node instead of one node per file"},
             {"shared_merge_tree_blobs_list_inline_file_max_bytes", 0, 0, "New setting which stores small files of a blob-list part inline in the consolidated blobs.list instead of separate blobs"},
             {"merge_use_batch_sorting_queue", false, false, "New setting to use the batch sorting queue for ordinary `MergeTree` merges."},

@@ -200,7 +200,7 @@ static const ASTLiteral * getSingletonUInt128ArrayJoin(const ASTPtr & rhs)
         || select->group_by_with_totals || select->group_by_with_rollup
         || select->group_by_with_cube || select->group_by_with_constant_keys
         || select->group_by_with_grouping_sets || select->order_by_all
-        || select->limit_with_ties || select->limit_by_all || select->limit_after_all)
+        || select->limit_with_ties || select->limit_by_all)
         return nullptr;
 
     const auto * projections = select->select()->as<ASTExpressionList>();
@@ -4318,6 +4318,7 @@ bool MutateTask::prepare()
             *commands_for_execution,
             ctx->for_interpreter,
             unused_file_renames,
+            suitable_for_ttl_optimization,
             ctx->log);
     }
 
