@@ -17,6 +17,7 @@
 #include <IO/S3Defines.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
+#include <Server/ConnectionRegistry.h>
 #include <Storages/MarkCache.h>
 #include <limits>
 #include <Storages/MergeTree/ColumnsCache.h>
@@ -1257,6 +1258,26 @@ Possible values:
 )", 0) \
     DECLARE(UInt64, total_memory_profiler_sample_min_allocation_size, 0, R"(Collect random allocations of size greater or equal than specified value with probability equal to `total_memory_profiler_sample_probability`. 0 means disabled. You may want to set 'max_untracked_memory' to 0 to make this threshold to work as expected.)", 0) \
     DECLARE(UInt64, total_memory_profiler_sample_max_allocation_size, 0, R"(Collect random allocations of size less or equal than specified value with probability equal to `total_memory_profiler_sample_probability`. 0 means disabled. You may want to set 'max_untracked_memory' to 0 to make this threshold to work as expected.)", 0) \
+    DECLARE(Bool, collect_connection_metrics, false, R"(Enables the collection of connections for the `system.connections` table. This table shows the connections of the native TCP and HTTP query interfaces. It does not show connections of MySQL, PostgreSQL, gRPC, or other protocols.
+
+When you set this setting to `true`, the server keeps a list of connections in memory:
+- The server adds a native TCP connection to the list after authentication.
+- The server adds an HTTP connection to the list when the connection gets its first query.
+- The server removes a connection from the list when the connection closes. Between the requests, an HTTP keep-alive connection has the status `idle`.
+
+Each connection and each query has a small synchronization cost. Thus, the default value is `false`.
+
+A user without the `SHOW CONNECTIONS` privilege sees only the connections of this user.
+
+You can change this setting without a restart. When you change it to `false`, `system.connections` becomes empty and the server stops the registration of new connections. When you change it to `true`, an open connection shows in `system.connections` on its next query.
+
+Example configuration:
+
+```xml
+<collect_connection_metrics>true</collect_connection_metrics>
+```
+
+See also: `system.connections`, `system.processes`.)", 0) \
     DECLARE(Bool, user_profile_events_per_cpu, true, R"(Shard per-user `ProfileEvents` counters per CPU to avoid cross-CPU cache-line contention under high thread counts. Each user pays `getNumCPUs() * num_events * sizeof(atomic)` of memory (hundreds of KiB on machines with many cores). Disable to fall back to a single shared atomic per event per user, trading throughput for memory.)", 0) \
     DECLARE(Bool, validate_tcp_client_information, false, R"(Determines whether validation of client information is enabled when a query packet is received.
 
@@ -3744,6 +3765,8 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"asynchronous_metrics_key_values_mode",
              {SettingFieldAsynchronousMetricsKeyValuesMode(getAsynchronousMetricsKeyValuesMode(context->getConfigRef())).toString(),
               ChangeableWithoutRestart::Yes}},
+
+            {"collect_connection_metrics", {ConnectionRegistry::instance().isEnabled() ? "1" : "0", ChangeableWithoutRestart::Yes}},
 
             {"max_table_size_to_drop", {std::to_string(context->getMaxTableSizeToDrop()), ChangeableWithoutRestart::Yes}},
             {"max_named_collection_num_to_warn", {std::to_string(context->getMaxNamedCollectionNumToWarn()), ChangeableWithoutRestart::Yes}},
