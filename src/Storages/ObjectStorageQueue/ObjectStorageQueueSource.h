@@ -237,6 +237,8 @@ public:
         /// TSA does not understand the `std::unique_lock` needed by the condition variable.
         enum class OrderingDomainGate { Proceed, Blocked, BehindReplay, Shutdown };
         OrderingDomainGate waitOrderingDomainGate(const std::string & path) TSA_NO_THREAD_SAFETY_ANALYSIS;
+        /// Ordered mode only. Waits until the set-processing outcomes of all handed-out files are known.
+        void waitAllSetProcessingResolved() TSA_NO_THREAD_SAFETY_ANALYSIS;
 
         std::pair<ObjectInfoPtr, FileMetadataPtr> next();
         void filterProcessableFiles(ObjectInfos & objects) TSA_REQUIRES(next_mutex);
@@ -267,8 +269,8 @@ public:
         /// Is glob_iterator finished?
         std::atomic_bool iterator_finished = false;
 
-        /// Set when a bucket lock refresh or release fails (e.g. lost ownership):
-        /// next() stops returning keys, isFinished returns true.
+        /// Set when a bucket lock refresh or release fails (e.g. lost ownership), or, in Ordered mode,
+        /// when preparing a batch of files fails: next() stops returning keys, isFinished returns true.
         std::atomic_bool iterator_invalidated = false;
 
         /// Only for processing without buckets.

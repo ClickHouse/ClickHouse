@@ -178,14 +178,23 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
 
 bool ObjectStorageQueueSource::FileIterator::isFinished()
 {
-    if (iterator_invalidated)
-        return true;
+    if (!iterator_invalidated)
+    {
+        std::lock_guard lock(mutex);
+        LOG_TEST(log, "Iterator finished: {}, objects to retry: {}", iterator_finished.load(), objects_to_retry.size());
+        if (!iterator_finished
+            || !std::all_of(keys_cache_per_bucket.begin(), keys_cache_per_bucket.end(), [](const auto & v) { return v.second->keys.empty(); })
+            || !objects_to_retry.empty())
+            return false;
+    }
 
-    std::lock_guard lock(mutex);
-    LOG_TEST(log, "Iterator finished: {}, objects to retry: {}", iterator_finished.load(), objects_to_retry.size());
-    return iterator_finished
-        && std::all_of(keys_cache_per_bucket.begin(), keys_cache_per_bucket.end(), [](const auto & v) { return v.second->keys.empty(); })
-        && objects_to_retry.empty();
+    /// Ordered mode: a file handed out by this iterator can still turn out to be foreign-held.
+    /// The streaming task replaces a finished iterator, and the replacement does not know about
+    /// such a file: it could commit a later file of the domain and advance the `processed` pointer
+    /// past it. Wait for the outcomes, after which `inheritForeignProcessingRechecks` keeps
+    /// a foreign-held file as a blocker of its domain in the replacement.
+    waitAllSetProcessingResolved();
+    return true;
 }
 
 size_t ObjectStorageQueueSource::FileIterator::estimatedKeysCount()
@@ -319,7 +328,22 @@ ObjectStorageQueueSource::FileIterator::next()
             size_t previous_size = new_batch.size();
 
             /// Filter out files which we know we would not need to process.
-            filterProcessableFiles(new_batch);
+            try
+            {
+                filterProcessableFiles(new_batch);
+            }
+            catch (...)
+            {
+                /// Ordered mode: the files of the batch are neither handed out nor queued any more,
+                /// and a taken replay stays in `in_flight_replays_per_domain`, deferring the later
+                /// files of its domain forever. Continuing would also let the later files of the
+                /// listing be committed past the lost ones. Stop this iterator instead: the next
+                /// one does not inherit anything from it, and its fresh listing pass lists the lost
+                /// files again in order.
+                if (mode == ObjectStorageQueueMode::ORDERED)
+                    iterator_invalidated = true;
+                throw;
+            }
 
             /// The taken replays which did not survive the filtering are not handed out,
             /// so they are not ordering barriers any more (if a replay was queued again or
@@ -857,7 +881,9 @@ ObjectStorageQueueSource::FileIterator::takeForeignProcessingRechecksToInherit()
     ///   iterator does not have these files, so once the inherited blockers resolve it could
     ///   process a later inherited file and advance the `processed` pointer past them;
     /// - no replay of the domain was taken from the queue without being handed out
-    ///   (`in_flight_replays_per_domain`), for the same reason.
+    ///   (`in_flight_replays_per_domain`), and no file of the domain handed out to a processing
+    ///   thread has an unknown set-processing outcome (`unresolved_set_processing_per_domain`,
+    ///   normally empty here, see `isFinished`), for the same reason.
     /// The files of other domains are not inherited: the next listing pass rechecks them in order.
     std::unordered_set<std::string> pending_paths;
     for (const auto & pending : foreign_processing_files_to_recheck)
@@ -874,7 +900,7 @@ ObjectStorageQueueSource::FileIterator::takeForeignProcessingRechecksToInherit()
             if (held != foreign_held_files_per_domain.end())
                 it->second = std::ranges::all_of(held->second, [&](const std::string & path) { return pending_paths.contains(path); });
             if (blocked_files_per_domain.contains(domain) || dropped_blocked_files_per_domain.contains(domain)
-                || in_flight_replays_per_domain.contains(domain))
+                || in_flight_replays_per_domain.contains(domain) || unresolved_set_processing_per_domain.contains(domain))
                 it->second = false;
         }
 
@@ -1259,6 +1285,18 @@ ObjectStorageQueueSource::FileIterator::waitOrderingDomainGate(const std::string
     return OrderingDomainGate::Shutdown;
 }
 
+void ObjectStorageQueueSource::FileIterator::waitAllSetProcessingResolved()
+{
+    if (mode != ObjectStorageQueueMode::ORDERED)
+        return;
+
+    std::unique_lock lock(next_mutex);
+    /// The outcome of a set-processing attempt resolves within one keeper round trip;
+    /// the timeout only guards against a missed wake-up.
+    while (!shutdown_called && !unresolved_set_processing_per_domain.empty())
+        set_processing_resolved_cv.wait_for(lock, std::chrono::milliseconds(100));
+}
+
 ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 {
     while (!shutdown_called)
@@ -1279,7 +1317,7 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 
             if (iterator_invalidated)
             {
-                LOG_WARNING(log, "Bucket lock refresh failed, stopping the file iterator");
+                LOG_WARNING(log, "Bucket lock refresh or preparing a batch of files failed, stopping the file iterator");
                 return {};
             }
             auto result = getNextKeyFromAcquiredBucket(processor);
@@ -1295,6 +1333,12 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
         else
         {
             std::lock_guard lock(mutex);
+
+            if (iterator_invalidated)
+            {
+                LOG_WARNING(log, "Preparing a batch of files failed, stopping the file iterator");
+                return {};
+            }
             if (objects_to_retry.empty())
             {
                 std::tie(object_info, file_metadata) = next();
