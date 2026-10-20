@@ -1,10 +1,8 @@
-"""Generate C++ gRPC sources and expose their public headers from ProtoInfo."""
+"""Generate C++ gRPC source and header outputs from ProtoInfo."""
 
 load("@protobuf//bazel/common:proto_common.bzl", "proto_common")
 load("@protobuf//bazel/common:proto_info.bzl", "ProtoInfo")
 load("@protobuf//bazel/common:proto_lang_toolchain_info.bzl", "ProtoLangToolchainInfo")
-load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
-load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 
 def _grpc_proto_sources_impl(ctx):
     info = ctx.attr.proto[ProtoInfo]
@@ -17,17 +15,9 @@ def _grpc_proto_sources_impl(ctx):
         generated_files = srcs + hdrs,
     )
 
-    roots = []
-    for src, hdr in zip(info.direct_sources, hdrs):
-        imported_hdr = proto_common.get_import_path(src).removesuffix(".proto") + ".grpc.pb.h"
-        roots.append(hdr.path.removesuffix(imported_hdr).removesuffix("/"))
-
     return [
         DefaultInfo(files = depset(srcs)),
-        CcInfo(compilation_context = cc_common.create_compilation_context(
-            headers = depset(hdrs),
-            includes = depset(roots),
-        )),
+        OutputGroupInfo(grpc_headers = depset(hdrs)),
     ]
 
 grpc_proto_sources = rule(
@@ -39,5 +29,4 @@ grpc_proto_sources = rule(
             providers = [ProtoLangToolchainInfo],
         ),
     },
-    provides = [CcInfo],
 )

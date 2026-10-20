@@ -31,7 +31,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      return includes, quote_includes, external_includes, system_includes
  
  def _process_target(ctx, target, config, output_path, is_target_under_inspection):
-@@ -386,12 +392,185 @@
+@@ -386,12 +392,201 @@
          return []
      return [OutputGroupInfo(dwyu = depset(transitive = _gather_transitive_reports(ctx)))]
  
@@ -69,11 +69,16 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +        fail("{}: incomplete {} header aliases: pending={}, originals={}, configured={}".format(label, attribute, pending, originals, configured))
 +    return aliases
 +
++def _is_rules_cc_textual_header(file):
++    # Bazel HeaderInfo.create moves these from modular hdrs/srcs to textual.
++    return "." + file.extension in cc_helper.extensions.CC_TEXTUAL_INCLUDE
++
 +def _compiler_srcs(target, files):
-+    # Use the same file categories as rules_cc's get_srcs/get_private_hdrs and
-+    # build_precompiled_files. A .S in textual_hdrs is not a separate compile.
++    # A .S in textual_hdrs is still an actual assemble when also in srcs.
++    cc = target[CcInfo].compilation_context
++    private_headers = {file: True for file in cc.direct_private_headers}
++    private_headers.update({file: True for file in cc.direct_textual_headers if _is_rules_cc_textual_header(file)})
 +    extensions = cc_helper.extensions
-+    private_headers = {file: True for file in target[CcInfo].compilation_context.direct_private_headers}
 +    compile_files = []
 +    link_inputs = []
 +    for file in files:
@@ -94,13 +99,24 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +
 +def _compiler_header_manifest(ctx, target, link_inputs):
 +    cc = target[CcInfo].compilation_context
-+    public = _configured_header_aliases(target.label, "hdrs", getattr(ctx.rule.files, "hdrs", []), cc.direct_public_headers)
-+    textual_files = getattr(ctx.rule.files, "textual_hdrs", [])
-+    textual = _configured_header_aliases(target.label, "textual_hdrs", textual_files, cc.direct_textual_headers)
++    hdrs = getattr(ctx.rule.files, "hdrs", [])
++    explicit_textual = getattr(ctx.rule.files, "textual_hdrs", [])
++    hdrs_textual = [file for file in hdrs if _is_rules_cc_textual_header(file)]
++    srcs_textual = [file for file in getattr(ctx.rule.files, "srcs", []) if _is_rules_cc_textual_header(file)]
++    modular = [file for file in hdrs if not _is_rules_cc_textual_header(file)]
++    public = _configured_header_aliases(target.label, "hdrs", modular, cc.direct_public_headers)
++    textual_files = explicit_textual + hdrs_textual + srcs_textual
++    textual = _configured_header_aliases(target.label, "textual hdrs/srcs", textual_files, cc.direct_textual_headers)
++    public_textual = {file.path: True for file in explicit_textual + hdrs_textual}
 +    private = {file.path: file.path for file in cc.direct_private_headers}
++    for alias, original in textual.items():
++        if original in public_textual:
++            public[alias] = original
++        else:
++            private[alias] = original
 +    manifest = ctx.actions.declare_file("{}.dwyu_owned_headers.json".format(target.label.name))
 +    ctx.actions.write(manifest, json.encode({
-+        "public": public | textual,
++        "public": public,
 +        "private": private,
 +        "required": {file.path: True for file in textual_files + list(cc.direct_private_headers)}.keys(),
 +        "unchecked_link_inputs": [file.path for file in link_inputs],
@@ -219,7 +235,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
      # Work around the bug described in https://github.com/bazelbuild/bazel/issues/19663
      # Implementation_deps are not added to CcInfo.compilation_context
-@@ -440,7 +619,7 @@
+@@ -440,7 +635,7 @@
  
          preprocessor_results.append(pp_output)
  
@@ -228,7 +244,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
  def dwyu_cc_aspect_impl(target, ctx):
      """
-@@ -510,8 +689,16 @@
+@@ -510,8 +705,16 @@
      #
  
      config = _make_dwyu_config(ctx)
@@ -239,7 +255,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +    if config.preprocessing_mode == "compiler":
 +        # Textual and private headers get caller context; .S actual srcs still
 +        # compile even if also textual. Precompiled link inputs have no cpp roots.
-+        public_files = getattr(ctx.rule.files, "hdrs", [])
++        public_files = [file for file in getattr(ctx.rule.files, "hdrs", []) if not _is_rules_cc_textual_header(file)]
 +        private_files, link_inputs = _compiler_srcs(target, private_files)
 +        header_manifest = _compiler_header_manifest(ctx, target, link_inputs)
 +
@@ -247,7 +263,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      processed_target = _process_target(
          ctx,
          target = struct(label = target.label, cc_info = target[CcInfo]),
-@@ -529,26 +716,34 @@
+@@ -529,26 +732,34 @@
  
      report_file = ctx.actions.declare_file("{}_dwyu_report.json".format(target.label.name))
  
@@ -286,7 +302,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      args.add("--output", report_file)
      args.add("--target_under_inspection", str(target.label))
      args.add_all("--preprocessed_public_files", preprocessed_public_files, omit_if_empty = False)
-@@ -560,17 +755,20 @@
+@@ -560,17 +771,20 @@
          args.add("--ignored_includes_config", ctx.files._ignored_includes[0])
      args.add_all("--extra_ignored_includes", config.extra_ignored_includes, omit_if_empty = True)
      args.add_all("--ignored_unused_deps", config.ignored_unused_deps, omit_if_empty = True)
