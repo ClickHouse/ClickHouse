@@ -67,16 +67,34 @@ SELECT parseDateTimeOrZero('2106-12-31', '%F', 'UTC');
 SELECT parseDateTimeOrNull('2106-12-31', '%F', 'UTC');
 SELECT parseDateTimeOrNull('2106-02-07 06:28:15', '%F %H:%i:%s', 'UTC');
 
+SELECT '--- DateTime: mixed valid and overflowing rows ---';
+SELECT arrayMap(
+    s -> isNull(parseDateTimeOrNull(s, '%F %H:%i:%s', 'UTC')),
+    ['1970-01-01 00:00:00', '2106-02-07 06:28:16', '2106-02-07 06:28:15', '2106-12-31 00:00:00']);
+SELECT arrayMap(
+    s -> toUnixTimestamp(parseDateTimeOrZero(s, '%F %H:%i:%s', 'UTC')),
+    ['1970-01-01 00:00:00', '2106-02-07 06:28:16', '2106-02-07 06:28:15', '2106-12-31 00:00:00']);
+
 SELECT '--- DateTime: timezone conversion at boundary ---';
 SELECT toUnixTimestamp(parseDateTime('2106-02-07 15:28:15', '%F %H:%i:%s', 'Asia/Tokyo'));
 SELECT parseDateTime('2106-02-07 15:28:16', '%F %H:%i:%s', 'Asia/Tokyo'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT parseDateTimeOrNull('2106-02-07 15:28:16', '%F %H:%i:%s', 'Asia/Tokyo');
+
+SELECT '--- DateTime: inline offsets at boundary ---';
+SELECT toUnixTimestamp(parseDateTime('2106-02-07 08:28:15+0200', '%F %H:%i:%s%z', 'UTC'));
+SELECT parseDateTimeOrNull('2106-02-07 08:28:16+0200', '%F %H:%i:%s%z', 'UTC');
+SELECT toUnixTimestamp(parseDateTime('2106-02-07 00:28:15-0600', '%F %H:%i:%s%z', 'UTC'));
+SELECT parseDateTime('2106-02-07 00:28:16-0600', '%F %H:%i:%s%z', 'UTC'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 
 SELECT '--- DateTime: Joda syntax at boundary ---';
 SELECT parseDateTimeInJodaSyntax('2106-02-07 06:28:15', 'yyyy-MM-dd HH:mm:ss', 'UTC');
 SELECT parseDateTimeInJodaSyntax('2106-02-07 06:28:16', 'yyyy-MM-dd HH:mm:ss', 'UTC'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT parseDateTimeInJodaSyntaxOrZero('2106-12-31', 'yyyy-MM-dd', 'UTC');
 SELECT parseDateTimeInJodaSyntaxOrNull('2106-12-31', 'yyyy-MM-dd', 'UTC');
+
+SELECT '--- DateTime: Joda inline offset at boundary ---';
+SELECT toUnixTimestamp(parseDateTimeInJodaSyntax('2106-02-07 08:28:15+0200', 'yyyy-MM-dd HH:mm:ssZ', 'UTC'));
+SELECT parseDateTimeInJodaSyntaxOrNull('2106-02-07 08:28:16+0200', 'yyyy-MM-dd HH:mm:ssZ', 'UTC');
 
 SELECT '--- DateTime64: dates past DateTime range ---';
 SELECT parseDateTime64('2106-12-31', '%F', 'UTC');
