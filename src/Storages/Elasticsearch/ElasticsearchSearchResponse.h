@@ -48,8 +48,6 @@ private:
     bool finished = false;
     String pit_id;
     String last_sort;
-    String index_name;
-    String document_id;
 };
 
 }

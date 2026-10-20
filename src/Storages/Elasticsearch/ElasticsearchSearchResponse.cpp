@@ -6,6 +6,8 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Parser.h>
 #include <Common/Exception.h>
+#include <Common/assert_cast.h>
+#include <Columns/ColumnString.h>
 
 namespace DB
 {
@@ -140,10 +142,11 @@ bool ElasticsearchSearchResponse::readHit(MutableColumns & columns)
     if (hits_read > 0)
         JSONUtils::skipComma(*in);
 
-    index_name.clear();
-    document_id.clear();
     last_sort.clear();
     bool has_source = false;
+    bool has_id = false;
+    bool has_index = false;
+    bool has_sort = false;
 
     JSONUtils::skipObjectStart(*in);
     for (size_t i = 0; !JSONUtils::checkAndSkipObjectEnd(*in); ++i)
@@ -154,22 +157,43 @@ bool ElasticsearchSearchResponse::readHit(MutableColumns & columns)
         auto name = JSONUtils::readFieldName(*in, format_settings.json);
         skipWhitespaceIfAny(*in);
 
-        if (name == "_index" && (hit_columns.index_pos || hit_columns.source_pos))
+        if (name == "_index" && hit_columns.index_pos)
         {
+            if (has_index)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Hit #{} has more than one '_index' field", hits_read);
+
+            String index_name;
             readJSONString(index_name, *in, format_settings.json);
+            columns[*hit_columns.index_pos]->insertData(index_name.data(), index_name.size());
+            has_index = true;
         }
         else if (name == "_id" && hit_columns.id_pos)
         {
-            readJSONString(document_id, *in, format_settings.json);
+            if (has_id)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Hit #{} has more than one '_id' field", hits_read);
+
+            ColumnString & id_column = assert_cast<ColumnString &>(*columns[*hit_columns.id_pos]);
+            ColumnString::Chars & chars = id_column.getChars();
+            ColumnString::Offsets & offsets = id_column.getOffsets();
+            readJSONStringInto(chars, *in, format_settings.json);
+            offsets.push_back(chars.size());
+            has_id = true;
         }
         else if (name == "_source" && hit_columns.source_pos)
         {
+            if (has_source)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Hit #{} has more than one '_source' field", hits_read);
+
             hit_columns.source_serialization->deserializeTextJSON(*columns[*hit_columns.source_pos], *in, format_settings);
             has_source = true;
         }
         else if (name == "sort")
         {
+            if (has_sort)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Hit #{} has more than one 'sort' field", hits_read);
+
             readJSONArrayInto(last_sort, *in);
+            has_sort = true;
         }
         else
         {
@@ -177,22 +201,16 @@ bool ElasticsearchSearchResponse::readHit(MutableColumns & columns)
         }
     }
 
-    if (hit_columns.index_pos)
-    {
-        if (index_name.empty())
+    if (hit_columns.index_pos && !has_index)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Hit #{} has no '_index'", hits_read);
-        columns[*hit_columns.index_pos]->insertData(index_name.data(), index_name.size());
-    }
-    if (hit_columns.id_pos)
-    {
-        if (document_id.empty())
+
+    if (hit_columns.id_pos && !has_id)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Hit #{} has no '_id'", hits_read);
-        columns[*hit_columns.id_pos]->insertData(document_id.data(), document_id.size());
-    }
+
     if (hit_columns.source_pos && !has_source)
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Hit #{} from index '{}' has no '_source'. You can read only the virtual columns '_id' and '_index'",
-            hits_read, index_name);
+            "Hit #{} has no '_source'. You can read only the virtual columns '_id' and '_index'",
+            hits_read);
 
     ++hits_read;
     return true;
