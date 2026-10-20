@@ -68,6 +68,31 @@ Dependency ownership, generation, and action-audit details are in
 
 ## Binary comparison
 
+The current Bazel cleanup checks rebuild the selected compiler and `//:clickhouse`.
+The x86-64 check verifies and strips the saved CMake ELF, then runs `cmp`.
+The ARM64 check strips the rebuilt Bazel ELF and checks it against the native
+CMake hash recorded below.
+
+| Verified commit | Change | x86-64 | ARM64 |
+| --- | --- | --- | --- |
+| `d1246980e` | Move common/base and harmful into `//base`, publish Poco headers from their libraries and compact first-party header globs | [2e6522eb](https://app.buildbuddy.io/invocation/2e6522eb-2fa8-46f7-ad32-c49903ffe3b8) | [614507cd](https://app.buildbuddy.io/invocation/614507cd-3d59-43d7-be52-4e7bd2556e68) |
+| `2c17235f4` | Private web assets only at `//src:dbms__compile_0`; protobuf headers from producer libraries; remove unused C++ compiler inputs; factor CPU-dependent options and deps | [2ed56ae3](https://app.buildbuddy.io/invocation/2ed56ae3-2803-498c-a21b-037b21cdf21e) | [d3f7f72b](https://app.buildbuddy.io/invocation/d3f7f72b-d81c-4e5b-b4e1-20144e230e76) |
+| `2dd816e17` | Remove inherited include directories across native and external libraries; simplify empty/default attributes; verify every header glob during migration | [4a00d9df](https://app.buildbuddy.io/invocation/4a00d9df-e8ac-414e-871f-5a51c886d28a) | [cfa9c744](https://app.buildbuddy.io/invocation/cfa9c744-f6c3-4c7b-9660-3cdd91d52bed) |
+
+For these checks, `llvm-strip --strip-all --remove-section=.note.gnu.build-id`
+produced SHA-256 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`
+on x86-64 and `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`
+on ARM64. The selected compilers and original Bazel ELFs retained the SHA-256
+values recorded in their respective tables.
+
+The audit on `2dd816e17` ran 50 BUILD predicates for each of x86-64 and ARM64:
+100 inspections covering 117 main packages, 159 external overlays and 814
+C/C++ targets. It found 92 inspections with complete static evidence. The
+other eight retained unresolved generated-proto/translation-unit inputs and
+13 dynamic export labels; the audit does not claim those can be removed.
+The comparison against upstream `6bb427c9a` has no non-BUILD changes in
+`src`, `base`, `programs`, `contrib`, `cmake`, `tests`, or `utils`.
+
 ### Linux x86-64
 
 On a Linux x86-64 host with BuildBuddy remote execution configured, build the
