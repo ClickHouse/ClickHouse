@@ -18,6 +18,10 @@
 #if   defined(POCO_OS_FAMILY_UNIX)
 #include <fcntl.h>
 #include <unistd.h>
+#elif defined(POCO_OS_FAMILY_WINDOWS)
+#include "Poco/Exception.h"
+#include <windows.h>
+#include <bcrypt.h>
 #endif
 #include <ctime>
 
@@ -46,6 +50,13 @@ int RandomBuf::readFromDevice(char* buffer, std::streamsize length)
 		n = read(fd, buffer, length);
 		close(fd);
 	}
+	#elif defined(POCO_OS_FAMILY_WINDOWS)
+	// The operating system's generator, as `/dev/urandom` above. Do not fall through to the
+	// fallback below on failure: it shares the non-atomic `x` between threads, and it is not
+	// a source of entropy anyway.
+	if (BCryptGenRandom(nullptr, reinterpret_cast<PUCHAR>(buffer), static_cast<ULONG>(length), BCRYPT_USE_SYSTEM_PREFERRED_RNG) != 0)
+		throw SystemException("BCryptGenRandom failed");
+	n = static_cast<int>(length);
 	#endif
 	if (n <= 0)
 	{
