@@ -55,8 +55,6 @@
 #include <DistributedCache/Utils.h>
 #endif
 
-namespace fs = std::filesystem;
-
 namespace CurrentMetrics
 {
     extern const Metric MergeTreePartsLoaderThreads;
