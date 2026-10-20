@@ -1150,21 +1150,25 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     else if (node->type() == avro::AVRO_RECORD)
     {
         std::vector<AvroDeserializer::Action> field_actions(node->leaves());
+        std::vector<int> unbound_renamed_fields;
+        auto bound_columns = [&] { return std::ranges::count(column_found, true); };
         for (int i = 0; i < static_cast<int>(node->leaves()); ++i)
         {
             const auto & field_node = node->leafAt(i);
             const auto & field_name = node->nameAt(i);
-            auto field_path = concatPath(current_path, field_name);
-            if (current_path.empty() && !header.has(field_path))
-            {
-                /// A column is read from one field only, so no other field may resolve to it.
-                auto it = original_field_names.find(field_name);
-                size_t other_field_index = 0;
-                if (it != original_field_names.end() && header.has(it->second) && !node->nameIndex(it->second, other_field_index)
-                    && !column_found[header.getPositionByName(it->second)])
-                    field_path = it->second;
-            }
-            field_actions[i] = createAction(header, field_node, field_path);
+            bool renamed = current_path.empty() && original_field_names.contains(field_name);
+            auto bound_before = renamed ? bound_columns() : 0;
+            field_actions[i] = createAction(header, field_node, concatPath(current_path, field_name));
+            if (renamed && bound_columns() == bound_before)
+                unbound_renamed_fields.push_back(i);
+        }
+
+        /// A field stored under an escaped name fills the column of its original name only if no other field fills it.
+        for (int i : unbound_renamed_fields)
+        {
+            const auto & original_name = original_field_names.at(node->nameAt(i));
+            if (header.has(original_name) && !column_found[header.getPositionByName(original_name)])
+                field_actions[i] = createAction(header, node->leafAt(i), original_name);
         }
         return AvroDeserializer::Action::recordAction(field_actions);
     }

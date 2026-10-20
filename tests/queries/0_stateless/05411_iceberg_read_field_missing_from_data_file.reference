@@ -30,3 +30,6 @@ files_after_optimize	2	0
 escaped	1	a
 escaped	2	b
 escaped	3	c
+collision	y1	n1	q1_1
+collision	y2	n2	q1_2
+collision	y3	n3	q1_3

@@ -67,4 +67,9 @@ ${CLICKHOUSE_LOCAL} --input_format_avro_allow_missing_fields=1 --query "
     SELECT 'escaped', id, \`name.column\`
     FROM file('${CURDIR}/data_avro/iceberg_escaped_field_name.avro', 'Avro', 'id Int32, \`name.column\` String') ORDER BY id"
 
+# A field resolved directly wins over an escaped-name alias, and one column is filled from one field only.
+${CLICKHOUSE_LOCAL} --input_format_avro_allow_missing_fields=0 --query "
+    SELECT 'collision', y, \`n.c\`, z
+    FROM file('${CURDIR}/data_avro/iceberg_field_name_collision.avro', 'Avro', 'y String, \`n.c\` String, z String') ORDER BY y"
+
 rm -rf "${TABLE_DIR}"
