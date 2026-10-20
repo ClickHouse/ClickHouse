@@ -306,26 +306,19 @@ ExpressionTransform
                   (Join)
                   Resize 1 → 2
                     FillingRightJoinSide
-                      Resize 2 → 1
-                        JoiningTransform 3 → 1
-                          DelayedJoinedBlocksWorkerTransform
-                            SimpleSquashingTransform
-                              JoiningTransform 3 → 1
-                                DelayedJoinedBlocksWorkerTransform
-                                  SimpleSquashingTransform
-                                    DelayedJoinedBlocksTransform 0 → 2
-                                      (Expression)
-                                      ExpressionTransform × 2
-                                        (ReadFromMergeTree)
-                                        MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
-                                      (Expression)
-                                      ExpressionTransform × 2
-                                        (BuildRuntimeFilter)
-                                        BuildRuntimeFilterTransform × 2
-                                          (Expression)
-                                          ExpressionTransform × 2
-                                            (ReadFromMergeTree)
-                                            MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
+                      Resize × 2 4 → 2
+                        DelayedPorts 4 → 4
+                          JoiningTransform 2 → 1
+                            DelayedJoinedBlocksWorkerTransform
+                              SimpleSquashingTransform
+                                JoiningTransform 2 → 1
+                                  DelayedJoinedBlocksWorkerTransform
+                                    SimpleSquashingTransform
+                                      DelayedJoinedBlocksTransform 0 → 2
+                                        (Expression)
+                                        ExpressionTransform × 2
+                                          (ReadFromMergeTree)
+                                          MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
                                         (Expression)
                                         ExpressionTransform × 2
                                           (BuildRuntimeFilter)
