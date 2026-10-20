@@ -1641,7 +1641,7 @@ IcebergMetadata::estimateRead(
     auto data_snapshot = getRelevantDataSnapshotFromTableStateSnapshot(*table_state_snapshot, context);
     if (!data_snapshot)
     {
-        estimate.profile.emplace();
+        estimate.rows = 0;
         return estimate;
     }
 

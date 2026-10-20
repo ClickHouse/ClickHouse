@@ -14,7 +14,6 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
-#include <Storages/Statistics/RelationProfile.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Disks/DiskType.h>
@@ -60,10 +59,10 @@ struct DataLakeReadEstimate
     bool pruned_data_files = false;
     /// The snapshot has live delete files.
     bool has_delete_files = false;
-    /// The rows of the live data files left after pruning, deleted rows included, and the statistics of the requested
-    /// columns over them; std::nullopt if the metadata is malformed.
-    std::optional<RelationProfile> profile;
-    /// Estimates conditions on the column statistics of `profile`; nullptr if no requested column has statistics.
+    /// The rows of the live data files left after pruning, deleted rows included; std::nullopt if the metadata is malformed.
+    std::optional<UInt64> rows;
+    /// The statistics of the requested columns over these files, with their numbers of distinct values, and the estimate of
+    /// conditions on them; nullptr if no requested column has statistics.
     std::shared_ptr<const ConditionSelectivityEstimator> estimator;
 };
 

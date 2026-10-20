@@ -297,27 +297,24 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             .table_name = reading->getStorageID().getTableName(),
             .imprecise_estimate = true,
             .source = RowEstimateSource::DataLakeMetadata};
-        if (!estimate->profile)
+        if (!estimate->rows)
             return stats;
-        const auto & profile = *estimate->profile;
+        const UInt64 rows = *estimate->rows;
 
         const auto conditions = getConditionsToEstimate(*reading, filter);
-        if (conditions.empty() || profile.rows == 0)
+        if (conditions.empty() || rows == 0)
         {
-            stats.estimated_rows = profile.rows;
-            stats.column_stats = profile.column_stats;
+            stats.estimated_rows = rows;
+            if (estimate->estimator)
+                stats.column_stats = estimate->estimator->estimateRelationProfile().column_stats;
             /// The read returns every remaining row unless its own filter skips some or delete files remove some.
-            stats.imprecise_estimate = profile.rows != 0 && (reading->getFilterActionsDAG() || estimate->has_delete_files);
+            stats.imprecise_estimate = rows != 0 && (reading->getFilterActionsDAG() || estimate->has_delete_files);
             return stats;
         }
 
         if (estimate->estimator)
         {
             auto filtered = estimate->estimator->estimateRelationProfile(reading->getStorageMetadata(), conditions);
-            /// Only the counted numbers of distinct values reach the estimator; take all from the manifests, at most the rows left.
-            for (auto & [name, column] : filtered.column_stats)
-                if (const auto it = profile.column_stats.find(name); it != profile.column_stats.end())
-                    column.num_distinct_values = std::clamp<UInt64>(it->second.num_distinct_values, 1, std::max<UInt64>(filtered.rows, 1));
             stats.estimated_rows = filtered.rows;
             stats.column_stats = std::move(filtered.column_stats);
             return stats;
@@ -328,8 +325,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             return stats;
 
         /// The remaining files bound the rows, as the selected parts bound a MergeTree read.
-        stats.estimated_rows = profile.rows;
-        stats.column_stats = profile.column_stats;
+        stats.estimated_rows = rows;
         return stats;
     }
 

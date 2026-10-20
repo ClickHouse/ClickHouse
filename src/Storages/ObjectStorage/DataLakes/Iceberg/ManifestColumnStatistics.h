@@ -64,8 +64,8 @@ public:
     /// Adds a data file with a non-negative `record_count`.
     void addFile(const ProcessedManifestFileEntry & entry, const IcebergPathFromMetadata & path_to_manifest_file);
 
-    /// Sets the profile of `estimate`, the rows of the added files and the merged statistics of the requested columns with
-    /// their numbers of distinct values, and the estimator of conditions on them. Called once, after the last file.
+    /// Sets the rows of `estimate` and its estimator: the merged statistics of the requested columns with their numbers of
+    /// distinct values. Called once, after the last file.
     void finalize(DataLakeReadEstimate & estimate);
 
 private:
@@ -139,16 +139,17 @@ private:
     {
         UInt64 count;
         /// Rule 1, or rule 2 below the clamp: a count or a bound from the values, not a guess.
-        bool counted;
+        bool measured;
     };
 
-    /// The number of distinct values of a target by the first rule that applies, clamped to [1, non-NULL rows];
-    /// `column` holds its merged statistics over `rows` rows.
-    static DistinctValues estimateDistinctValues(
+    /// The number of distinct values of a target by the first rule that applies, clamped to [1, non-NULL rows]; std::nullopt
+    /// if none does. `column` holds its merged statistics over `rows` rows.
+    static std::optional<DistinctValues> estimateDistinctValues(
         const Target & target, const DistinctValuesInputs & inputs, const ColumnStats & column, UInt64 rows);
 
     /// Resolves field ids and the column types of each file's schema.
     const IcebergSchemaProcessor & schema_processor;
+    /// Set of column targets for which to track statistics
     std::vector<Target> targets;
     /// Aligned with `targets`.
     std::vector<DistinctValuesInputs> distinct_values_inputs;
