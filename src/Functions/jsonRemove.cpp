@@ -17,6 +17,7 @@
 #include "config.h"
 
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 
 #if USE_RAPIDJSON
@@ -60,6 +61,7 @@ struct PathStep
 
 using ParsedPath = VectorWithMemoryTracking<PathStep>;
 using ParsedPaths = VectorWithMemoryTracking<ParsedPath>;
+using MemberNameLookup = std::unordered_map<std::string_view, const String *>;
 
 struct JSONSlice
 {
@@ -71,7 +73,8 @@ using JSONNodeIndex = size_t;
 
 struct JSONObjectMember
 {
-    String name;
+    /// Points to a constant JSONPath name, or null if no path selects this key.
+    const String * name = nullptr;
     JSONSlice raw_name;
     JSONNodeIndex value;
 };
@@ -112,6 +115,15 @@ public:
     explicit JSONInputStream(std::string_view data_)
         : data(data_)
     {
+    }
+
+    void reset(std::string_view data_)
+    {
+        data = data_;
+        position = 0;
+        last_string_start = 0;
+        in_string = false;
+        escaped = false;
     }
 
     Ch Peek() const { return position == data.size() ? '\0' : data[position]; }
@@ -159,9 +171,16 @@ private:
 class JSONTreeBuilder : public rapidjson::BaseReaderHandler<rapidjson::UTF8<char>, JSONTreeBuilder>
 {
 public:
-    explicit JSONTreeBuilder(JSONInputStream & stream_)
-        : stream(stream_)
+    JSONTreeBuilder(JSONInputStream & stream_, const MemberNameLookup & member_names_)
+        : stream(stream_), member_names(member_names_)
     {
+    }
+
+    void reset()
+    {
+        stack.clear();
+        nodes.clear();
+        root = 0;
     }
 
     bool Null()
@@ -198,7 +217,9 @@ public:
     bool Key(const char * value, rapidjson::SizeType length, bool)
     {
         auto & frame = stack.back();
-        frame.member_name.assign(value, length);
+        /// RapidJSON already decoded the key; intern only keys referenced by JSONPaths.
+        const auto it = member_names.find(std::string_view(value, length));
+        frame.member_name = it == member_names.end() ? nullptr : it->second;
         frame.raw_member_name = getRawStringSlice();
         return true;
     }
@@ -222,14 +243,14 @@ public:
         return true;
     }
 
-    JSONNodes releaseNodes() { return std::move(nodes); }
+    JSONNodes & getNodes() { return nodes; }
     JSONNodeIndex getRoot() const { return root; }
 
 private:
     struct ContainerFrame
     {
         JSONNodeIndex node;
-        ::String member_name;
+        const ::String * member_name = nullptr;
         JSONSlice raw_member_name;
     };
 
@@ -266,8 +287,8 @@ private:
         auto & parent = nodes[frame.node];
         if (parent.type == JSONNode::Type::Object)
         {
-            parent.members.push_back({std::move(frame.member_name), frame.raw_member_name, node_index});
-            frame.member_name.clear();
+            parent.members.push_back({frame.member_name, frame.raw_member_name, node_index});
+            frame.member_name = nullptr;
         }
         else
         {
@@ -278,6 +299,7 @@ private:
     }
 
     JSONInputStream & stream;
+    const MemberNameLookup & member_names;
     JSONNodes nodes;
     ContainerStack stack;
     JSONNodeIndex root = 0;
@@ -356,7 +378,7 @@ void collectNextNodes(
 
             for (const auto & member : parent.members)
             {
-                if (member.name == step.member_name)
+                if (member.name && *member.name == step.member_name)
                     next_parent_indices.push_back(member.value);
             }
         }
@@ -374,7 +396,7 @@ bool removePathStep(JSONNode & parent, const PathStep & step)
         if (parent.type != JSONNode::Type::Object)
             return false;
 
-        return std::erase_if(parent.members, [&](const auto & member) { return member.name == step.member_name; }) != 0;
+        return std::erase_if(parent.members, [&](const auto & member) { return member.name && *member.name == step.member_name; }) != 0;
     }
 
     if (parent.type != JSONNode::Type::Array || step.index >= parent.elements.size())
@@ -567,6 +589,16 @@ public:
         auto & result_offsets = result->getOffsets();
         result_chars.reserve_exact(json_is_const ? json_column->getDataAt(0).size() : json_column->getChars().size());
 
+        /// Paths are constant, so object keys can refer to their canonical names without copies.
+        MemberNameLookup member_names;
+        for (const auto & path : paths)
+            for (const auto & step : path)
+                if (step.type == PathStep::Type::Member)
+                    member_names.emplace(step.member_name, &step.member_name);
+
+        JSONInputStream stream(std::string_view{});
+        JSONTreeBuilder builder(stream, member_names);
+        TrackedReader reader;
         JSONPathTraversalScratch traversal_scratch;
         JSONSerializationStack serialization_stack;
 
@@ -579,9 +611,8 @@ public:
             if (json.contains('\0'))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid JSON string in function {}: embedded NULL byte", getName());
 
-            JSONInputStream stream(json);
-            JSONTreeBuilder builder(stream);
-            TrackedReader reader;
+            stream.reset(json);
+            builder.reset();
             const auto parse_result
                 = reader.Parse<rapidjson::kParseIterativeFlag | rapidjson::kParseNumbersAsStringsFlag>(stream, builder);
             if (parse_result.IsError())
@@ -591,7 +622,7 @@ public:
                     rapidjson::GetParseError_En(parse_result.Code()));
 
             const auto root = builder.getRoot();
-            auto nodes = builder.releaseNodes();
+            auto & nodes = builder.getNodes();
             for (const auto & path : paths)
                 removeAtPath(nodes, root, path, traversal_scratch);
 

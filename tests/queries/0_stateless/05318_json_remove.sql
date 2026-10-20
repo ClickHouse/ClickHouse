@@ -2,6 +2,12 @@
 -- Reason: needs RapidJSON, which is not enabled in the fast test build.
 
 SELECT JSONRemove('{"a":1,"b":2}', '$.a') FORMAT TSV;
+SELECT JSONRemove('{"t":true,"f":false,"n":null,"d":1}', '$.d') FORMAT TSV;
+SELECT JSONRemove('[true,false,null]', '$[1]') FORMAT TSV;
+SELECT JSONRemove('{"a":1}', '$.x.y') FORMAT TSV;
+SELECT JSONRemove('[0]', '$[5]') FORMAT TSV;
+SELECT JSONRemove('[{"a":1}]', '$.a.b') FORMAT TSV;
+SELECT JSONRemove('{ "a" : [ 1 , "x  y" ] , "b" : 2 }', '$.b') FORMAT TSV;
 SELECT JSONRemove('{"a":1}', '$.a') FORMAT TSV;
 SELECT JSONRemove('[1]', '$[0]') FORMAT TSV;
 SELECT JSONRemove('{"a":{"b":1,"c":2},"d":3}', '$.a.b') FORMAT TSV;
@@ -65,3 +71,14 @@ SELECT JSONRemove('{"a":1,"b":2}', '$.a') FROM numbers(0)
 UNION ALL
 SELECT JSONRemove('{"a":1,"b":2}', '$.a') FROM numbers(1)
 FORMAT TSV;
+
+-- Reusing reader and builder state across changing JSON shapes must not leak prior rows.
+SELECT JSONRemove(json, '$.drop')
+FROM VALUES(
+    'position UInt8, json String',
+    (1, '{"drop":1,"keep":true}'),
+    (2, '[false,null]'),
+    (3, '{"drop":null,"keep":{"x":2}}'),
+    (4, '{"keep":"last","drop":3}')
+)
+ORDER BY position FORMAT TSV;
