@@ -1,0 +1,21 @@
+fixture	16	4	16	4	4
+parts chunks	4	4
+parts_columns chunks by rows	4	16
+parts_columns chunks by bytes	4	16
+projection_parts chunks	4	4
+projection_parts_columns chunks	4	8
+parts streamed	0
+parts_columns streamed	0
+projections	0
+column_bytes_on_disk	0
+column_marks_bytes	0
+statistics	0
+substreams	0
+filenames	0
+subcolumns.names	0
+subcolumns.types	0
+subcolumns.bytes_on_disk	0
+subcolumns.marks_bytes	0
+substreams with _state	0
+memory	id	0
+memory	j	1

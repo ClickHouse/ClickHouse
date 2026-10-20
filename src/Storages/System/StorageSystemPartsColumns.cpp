@@ -3,8 +3,11 @@
 #include <Interpreters/ProcessList.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
+#include <Common/assert_cast.h>
 #include <Common/escapeForFileName.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -23,6 +26,40 @@
 
 namespace DB
 {
+
+namespace
+{
+
+/// Appends rows to an `Array` output column directly into its nested column, without building a `Field`.
+/// A writer over nullptr stands for a column that is not selected.
+template <typename NestedColumn>
+class ArrayColumnWriter
+{
+public:
+    explicit ArrayColumnWriter(IColumn * column)
+        : array(column ? &assert_cast<ColumnArray &>(*column) : nullptr)
+        , data(array ? &assert_cast<NestedColumn &>(array->getData()) : nullptr)
+    {
+    }
+
+    explicit operator bool() const { return array != nullptr; }
+
+    NestedColumn & getData() { return *data; }
+
+    void insertString(std::string_view value) { data->insertData(value.data(), value.size()); }
+
+    void finishRow()
+    {
+        if (array)
+            array->getOffsets().push_back(data->size());
+    }
+
+private:
+    ColumnArray * array;
+    NestedColumn * data;
+};
+
+}
 
 StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_)
     : StorageSystemPartsBase(table_id_,
@@ -93,20 +130,24 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
 {
 }
 
-void StorageSystemPartsColumns::processNextStorage(
-    ContextPtr context, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
+struct StorageSystemPartsColumns::ColumnsProcessingState : StorageProcessingState
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageSystemPartsColumns::processNextStorage");
-    /// Prepare information about columns in storage.
     struct ColumnInfo
     {
         String default_kind;
         String default_expression;
     };
 
-    QueryStatusPtr query_status = context->getProcessListElement();
-
     std::unordered_map<String, ColumnInfo> columns_info;
+    QueryStatusPtr query_status;
+};
+
+StorageSystemPartsBase::StorageProcessingStatePtr StorageSystemPartsColumns::prepareStorage(
+    ContextPtr context, const StoragesInfo & info, const std::vector<UInt8> & /*columns_mask*/)
+{
+    auto state = std::make_unique<ColumnsProcessingState>();
+    state->query_status = context->getProcessListElement();
+
     auto metadata_snapshot = info.storage->getInMemoryMetadataPtr(context, false);
     size_t metadata_column_number = 0;
     for (const auto & column : metadata_snapshot->getColumns())
@@ -115,310 +156,321 @@ void StorageSystemPartsColumns::processNextStorage(
         /// A partially filled `columns_info` would report wrong defaults, so give up the whole storage instead.
         ++metadata_column_number;
         slowDownSystemPartsMetadataEnumeration(info.table, metadata_column_number);
-        if (query_status && metadata_column_number % COLUMNS_CANCELLATION_CHECK_PERIOD == 0 && !query_status->checkTimeLimit())
-            return;
+        if (state->query_status && metadata_column_number % COLUMNS_CANCELLATION_CHECK_PERIOD == 0 && !state->query_status->checkTimeLimit())
+            return nullptr;
 
-        ColumnInfo column_info;
+        ColumnsProcessingState::ColumnInfo column_info;
         if (column.default_desc.expression)
         {
             column_info.default_kind = toString(column.default_desc.kind);
             column_info.default_expression = column.default_desc.expression->formatForLogging();
         }
 
-        columns_info[column.name] = column_info;
+        state->columns_info[column.name] = column_info;
     }
 
-    /// Go through the list of parts.
-    MergeTreeData::DataPartStateVector all_parts_state;
-    MergeTreeData::DataPartsVector all_parts;
+    return state;
+}
 
-    all_parts = info.getParts(all_parts_state, has_state_column, query_status);
-    PartitionKeySamples partition_key_samples;
+void StorageSystemPartsColumns::processPart(
+    ContextPtr /*context*/,
+    MutableColumns & columns,
+    const std::vector<UInt8> & columns_mask,
+    const StoragesInfo & info,
+    const MergeTreeData::DataPartPtr & part,
+    MergeTreeData::DataPartState part_state,
+    bool has_state_column,
+    StorageProcessingState & storage_state)
+{
+    auto component_guard = Coordination::setCurrentComponent("StorageSystemPartsColumns::processPart");
 
-    for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
+    auto & state = assert_cast<ColumnsProcessingState &>(storage_state);
+    const auto & query_status = state.query_status;
+    const auto & columns_info = state.columns_info;
+
+    auto columns_size = part->getTotalColumnsSize();
+
+    /// Don't count the reference held by the enumeration in the returned refcount.
+    auto use_count = part.use_count() - 1;
+
+    auto min_max_date = part->getMinMaxDate();
+    auto min_max_time = part->getMinMaxTime();
+
+    auto index_size_in_bytes = part->getIndexSizeInBytes();
+    auto index_size_in_allocated_bytes = part->getIndexSizeInAllocatedBytes();
+    std::optional<Estimates> estimates;
+
+    /// Lazy initialize statistics estimates if they are queried.
+    auto find_estimate = [&](const auto & column_name)
     {
-        if (query_status && !query_status->checkTimeLimit())
-            break;
+        if (!estimates.has_value())
+            estimates = part->getEstimates();
 
-        slowDownSystemPartsEnumeration(info.table);
+        return estimates->find(column_name);
+    };
 
-        const auto & part = all_parts[part_number];
-        auto part_state = all_parts_state[part_number];
-        auto columns_size = part->getTotalColumnsSize();
+    using State = MergeTreeDataPartState;
 
-        /// For convenience, in returned refcount, don't add references that was due to local variables in this method: all_parts, active_parts.
-        auto use_count = part.use_count() - 1;
+    /// The rendered text is identical for every column of a part; resolving the key per column
+    /// re-enters the uncached patch branch of PartitionKeySamples::get once per column.
+    String partition_str;
+    if (columns_mask[0])
+        partition_str = part->partition.serializeToString(state.partition_key_samples.get(*part));
 
-        auto min_max_date = part->getMinMaxDate();
-        auto min_max_time = part->getMinMaxTime();
+    const auto data_settings = info.data->getSettings();
 
-        auto index_size_in_bytes = part->getIndexSizeInBytes();
-        auto index_size_in_allocated_bytes = part->getIndexSizeInAllocatedBytes();
-        std::optional<Estimates> estimates;
+    size_t column_position = 0;
+    for (const auto & column : part->getColumns())
+    {
+        ++column_position;
+        slowDownSystemPartsColumnsEnumeration(info.table, column_position);
+        /// The limit stays exceeded, so the source stops before the next part as well.
+        if (query_status && column_position % COLUMNS_CANCELLATION_CHECK_PERIOD == 0 && !query_status->checkTimeLimit())
+            return;
 
-        /// Lazy initialize statistics estimates if they are queried.
-        auto find_estimate = [&](const auto & column_name)
+        size_t src_index = 0;
+        size_t res_index = 0;
+
+        /// Returns the next output column, or nullptr if it is not selected.
+        auto next_column = [&]() -> IColumn *
         {
-            if (!estimates.has_value())
-                estimates = part->getEstimates();
-
-            return estimates->find(column_name);
+            return columns_mask[src_index++] ? columns[res_index++].get() : nullptr;
         };
 
-        using State = MergeTreeDataPartState;
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(partition_str);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->name);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->uuid);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->getTypeName());
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part_state == State::Active);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->getMarksCount());
 
-        /// The rendered text is identical for every column of a part; resolving the key per column
-        /// re-enters the uncached patch branch of PartitionKeySamples::get once per column.
-        String partition_str;
-        if (columns_mask[0])
-            partition_str = part->partition.serializeToString(partition_key_samples.get(*part));
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->rows_count);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->getBytesOnDisk());
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(columns_size.data_compressed);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(columns_size.data_uncompressed);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(columns_size.marks);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(UInt64(part->modification_time));
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(UInt64(part->remove_time.load(std::memory_order_relaxed)));
 
-        bool time_limit_exceeded = false;
-        size_t column_position = 0;
-        for (const auto & column : part->getColumns())
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(UInt64(use_count));
+
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(min_max_date.first);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(min_max_date.second);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(static_cast<UInt32>(min_max_time.first));
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(static_cast<UInt32>(min_max_time.second));
+
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->info.getPartitionId());
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->info.min_block);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->info.max_block);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->info.level);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(UInt64(part->info.getDataVersion()));
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(index_size_in_bytes);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(index_size_in_allocated_bytes);
+
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(info.database);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(info.table);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(info.engine);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->getDataPartStorage().getDiskName());
+        if (columns_mask[src_index++])
         {
-            ++column_position;
-            slowDownSystemPartsColumnsEnumeration(info.table, column_position);
-            if (query_status && column_position % COLUMNS_CANCELLATION_CHECK_PERIOD == 0 && !query_status->checkTimeLimit())
-            {
-                time_limit_exceeded = true;
-                break;
-            }
-
-            size_t src_index = 0;
-            size_t res_index = 0;
-
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(partition_str);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->name);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->uuid);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->getTypeName());
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(part_state == State::Active);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->getMarksCount());
-
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->rows_count);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->getBytesOnDisk());
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(columns_size.data_compressed);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(columns_size.data_uncompressed);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(columns_size.marks);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(UInt64(part->modification_time));
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(UInt64(part->remove_time.load(std::memory_order_relaxed)));
-
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(UInt64(use_count));
-
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(min_max_date.first);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(min_max_date.second);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(static_cast<UInt32>(min_max_time.first));
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(static_cast<UInt32>(min_max_time.second));
-
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->info.getPartitionId());
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->info.min_block);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->info.max_block);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->info.level);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(UInt64(part->info.getDataVersion()));
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(index_size_in_bytes);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(index_size_in_allocated_bytes);
-
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(info.database);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(info.table);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(info.engine);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->getDataPartStorage().getDiskName());
-            if (columns_mask[src_index++])
-            {
-                /// The full path changes at clean up thread, so do not read it if parts can be deleted or renamed, avoid the race.
-                if (part_state != State::Deleting && part_state != State::DeleteOnDestroy && part_state != State::Temporary && part_state != State::PreActive)
-                    columns[res_index++]->insert(part->getDataPartStorage().getFullPath());
-                else
-                    columns[res_index++]->insertDefault();
-            }
-
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(column.name);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(column.type->getName());
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(column_position);
-
-            auto column_info_it = columns_info.find(column.name);
-            if (column_info_it != columns_info.end())
-            {
-                if (columns_mask[src_index++])
-                    columns[res_index++]->insert(column_info_it->second.default_kind);
-                if (columns_mask[src_index++])
-                    columns[res_index++]->insert(column_info_it->second.default_expression);
-            }
+            /// The full path changes at clean up thread, so do not read it if parts can be deleted or renamed, avoid the race.
+            if (part_state != State::Deleting && part_state != State::DeleteOnDestroy && part_state != State::Temporary && part_state != State::PreActive)
+                columns[res_index++]->insert(part->getDataPartStorage().getFullPath());
             else
+                columns[res_index++]->insertDefault();
+        }
+
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(column.name);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(column.type->getName());
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(column_position);
+
+        auto column_info_it = columns_info.find(column.name);
+        if (column_info_it != columns_info.end())
+        {
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(column_info_it->second.default_kind);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(column_info_it->second.default_expression);
+        }
+        else
+        {
+            if (columns_mask[src_index++])
+                columns[res_index++]->insertDefault();
+            if (columns_mask[src_index++])
+                columns[res_index++]->insertDefault();
+        }
+
+        ColumnSize column_size;
+        if (columns_mask[src_index] || columns_mask[src_index + 1] || columns_mask[src_index + 2] || columns_mask[src_index + 3])
+            column_size = part->getColumnSize(column.name);
+
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(column_size.data_compressed + column_size.marks);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(column_size.data_compressed);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(column_size.data_uncompressed);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(column_size.marks);
+        if (columns_mask[src_index++])
+        {
+            if (auto column_modification_time = part->getColumnModificationTime(column.name))
+                columns[res_index++]->insert(UInt64(column_modification_time.value()));
+            else
+                columns[res_index++]->insertDefault();
+        }
+        bool column_has_ttl = part->ttl_infos.columns_ttl.contains(column.name);
+        if (columns_mask[src_index++])
+        {
+            if (column_has_ttl)
+                columns[res_index++]->insert(static_cast<UInt32>(part->ttl_infos.columns_ttl[column.name].min));
+            else
+                columns[res_index++]->insertDefault();
+        }
+        if (columns_mask[src_index++])
+        {
+            if (column_has_ttl)
+                columns[res_index++]->insert(static_cast<UInt32>(part->ttl_infos.columns_ttl[column.name].max));
+            else
+                columns[res_index++]->insertDefault();
+        }
+
+        if (ArrayColumnWriter<ColumnString> statistics(next_column()); statistics)
+        {
+            auto estimate_it = find_estimate(column.name);
+            if (estimate_it != estimates->end())
             {
-                if (columns_mask[src_index++])
-                    columns[res_index++]->insertDefault();
-                if (columns_mask[src_index++])
-                    columns[res_index++]->insertDefault();
+                for (const auto & type : estimate_it->second.types)
+                    statistics.insertString(toString(type));
             }
 
-            ColumnSize column_size = part->getColumnSize(column.name);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(column_size.data_compressed + column_size.marks);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(column_size.data_compressed);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(column_size.data_uncompressed);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(column_size.marks);
-            if (columns_mask[src_index++])
-            {
-                if (auto column_modification_time = part->getColumnModificationTime(column.name))
-                    columns[res_index++]->insert(UInt64(column_modification_time.value()));
-                else
-                    columns[res_index++]->insertDefault();
-            }
-            bool column_has_ttl = part->ttl_infos.columns_ttl.contains(column.name);
-            if (columns_mask[src_index++])
-            {
-                if (column_has_ttl)
-                    columns[res_index++]->insert(static_cast<UInt32>(part->ttl_infos.columns_ttl[column.name].min));
-                else
-                    columns[res_index++]->insertDefault();
-            }
-            if (columns_mask[src_index++])
-            {
-                if (column_has_ttl)
-                    columns[res_index++]->insert(static_cast<UInt32>(part->ttl_infos.columns_ttl[column.name].max));
-                else
-                    columns[res_index++]->insertDefault();
-            }
+            statistics.finishRow();
+        }
 
-            if (columns_mask[src_index++])
-            {
-                auto estimate_it = find_estimate(column.name);
-                if (estimate_it != estimates->end())
-                {
-                    Array types;
-                    for (const auto & type : estimate_it->second.types)
-                        types.push_back(toString(type));
+        if (columns_mask[src_index++])
+        {
+            auto estimate_it = find_estimate(column.name);
+            if (estimate_it != estimates->end() && estimate_it->second.estimated_min.has_value())
+                columns[res_index++]->insert(applyVisitor(FieldVisitorToString(), estimate_it->second.estimated_min.value()));
+            else
+                columns[res_index++]->insertDefault();
+        }
 
-                    columns[res_index++]->insert(types);
-                }
-                else
-                {
-                    columns[res_index++]->insertDefault();
-                }
-            }
+        if (columns_mask[src_index++])
+        {
+            auto estimate_it = find_estimate(column.name);
+            if (estimate_it != estimates->end() && estimate_it->second.estimated_max.has_value())
+                columns[res_index++]->insert(applyVisitor(FieldVisitorToString(), estimate_it->second.estimated_max.value()));
+            else
+                columns[res_index++]->insertDefault();
+        }
 
-            if (columns_mask[src_index++])
-            {
-                auto estimate_it = find_estimate(column.name);
-                if (estimate_it != estimates->end() && estimate_it->second.estimated_min.has_value())
-                    columns[res_index++]->insert(applyVisitor(FieldVisitorToString(), estimate_it->second.estimated_min.value()));
-                else
-                    columns[res_index++]->insertDefault();
-            }
+        if (columns_mask[src_index++])
+        {
+            auto estimate_it = find_estimate(column.name);
+            if (estimate_it != estimates->end() && estimate_it->second.estimated_cardinality.has_value())
+                columns[res_index++]->insert(estimate_it->second.estimated_cardinality.value());
+            else
+                columns[res_index++]->insertDefault();
+        }
 
-            if (columns_mask[src_index++])
-            {
-                auto estimate_it = find_estimate(column.name);
-                if (estimate_it != estimates->end() && estimate_it->second.estimated_max.has_value())
-                    columns[res_index++]->insert(applyVisitor(FieldVisitorToString(), estimate_it->second.estimated_max.value()));
-                else
-                    columns[res_index++]->insertDefault();
-            }
+        if (columns_mask[src_index++])
+        {
+            auto estimate_it = find_estimate(column.name);
+            if (estimate_it != estimates->end() && estimate_it->second.estimated_null_count.has_value())
+                columns[res_index++]->insert(estimate_it->second.estimated_null_count.value());
+            else
+                columns[res_index++]->insertDefault();
+        }
 
-            if (columns_mask[src_index++])
-            {
-                auto estimate_it = find_estimate(column.name);
-                if (estimate_it != estimates->end() && estimate_it->second.estimated_cardinality.has_value())
-                    columns[res_index++]->insert(estimate_it->second.estimated_cardinality.value());
-                else
-                    columns[res_index++]->insertDefault();
-            }
+        if (columns_mask[src_index++])
+        {
+            auto estimate_it = find_estimate(column.name);
+            if (estimate_it != estimates->end() && estimate_it->second.estimated_default_count.has_value())
+                columns[res_index++]->insert(estimate_it->second.estimated_default_count.value());
+            else
+                columns[res_index++]->insertDefault();
+        }
 
-            if (columns_mask[src_index++])
-            {
-                auto estimate_it = find_estimate(column.name);
-                if (estimate_it != estimates->end() && estimate_it->second.estimated_null_count.has_value())
-                    columns[res_index++]->insert(estimate_it->second.estimated_null_count.value());
-                else
-                    columns[res_index++]->insertDefault();
-            }
+        auto serialization = part->getSerialization(column.name);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(ISerialization::kindStackToString(serialization->getKindStack()));
 
-            if (columns_mask[src_index++])
-            {
-                auto estimate_it = find_estimate(column.name);
-                if (estimate_it != estimates->end() && estimate_it->second.estimated_default_count.has_value())
-                    columns[res_index++]->insert(estimate_it->second.estimated_default_count.value());
-                else
-                    columns[res_index++]->insertDefault();
-            }
+        ArrayColumnWriter<ColumnString> substreams(next_column());
+        ArrayColumnWriter<ColumnString> filenames(next_column());
 
-            auto serialization = part->getSerialization(column.name);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(ISerialization::kindStackToString(serialization->getKindStack()));
-
-            Array substreams;
-            Array filenames;
-
+        if (substreams || filenames)
+        {
             if (column.type->hasDynamicSubcolumns() && !part->getColumnsSubstreams().empty())
             {
-                const auto & column_substreams = part->getColumnsSubstreams().getColumnSubstreams(column_position - 1);
-                for (const auto & substream : column_substreams)
+                for (const auto & substream : part->getColumnsSubstreams().getColumnSubstreams(column_position - 1))
                 {
-                    substreams.push_back(substream);
-                    auto filename = IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", part->checksums);
-                    filenames.push_back(filename.value_or(""));
+                    if (substreams)
+                        substreams.insertString(substream);
+                    if (filenames)
+                        filenames.insertString(IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", part->checksums).value_or(""));
                 }
             }
             else
             {
+                ISerialization::StreamFileNameSettings stream_file_name_settings(*data_settings);
                 serialization->enumerateStreams([&](const auto & subpath)
                 {
-                    auto substream = ISerialization::getFileNameForStream(column.name, subpath, ISerialization::StreamFileNameSettings(*info.data->getSettings()));
-                    auto filename = IMergeTreeDataPart::getStreamNameForColumn(column.name, subpath, ".bin", part->checksums, info.data->getSettings());
-
-                    substreams.push_back(std::move(substream));
-                    filenames.push_back(filename.value_or(""));
+                    if (substreams)
+                        substreams.insertString(ISerialization::getFileNameForStream(column.name, subpath, stream_file_name_settings));
+                    if (filenames)
+                        filenames.insertString(IMergeTreeDataPart::getStreamNameForColumn(column.name, subpath, ".bin", part->checksums, data_settings).value_or(""));
                 });
             }
 
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(substreams);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(filenames);
+            substreams.finishRow();
+            filenames.finishRow();
+        }
 
-            Array subcolumn_names;
-            Array subcolumn_types;
-            Array subcolumn_serializations;
-            Array subcolumn_bytes_on_disk;
-            Array subcolumn_data_compressed_bytes;
-            Array subcolumn_data_uncompressed_bytes;
-            Array subcolumn_marks_bytes;
+        ArrayColumnWriter<ColumnString> subcolumn_names(next_column());
+        ArrayColumnWriter<ColumnString> subcolumn_types(next_column());
+        ArrayColumnWriter<ColumnString> subcolumn_serializations(next_column());
+        ArrayColumnWriter<ColumnUInt64> subcolumn_bytes_on_disk(next_column());
+        ArrayColumnWriter<ColumnUInt64> subcolumn_data_compressed_bytes(next_column());
+        ArrayColumnWriter<ColumnUInt64> subcolumn_data_uncompressed_bytes(next_column());
+        ArrayColumnWriter<ColumnUInt64> subcolumn_marks_bytes(next_column());
 
+        const bool need_subcolumn_sizes = subcolumn_bytes_on_disk || subcolumn_data_compressed_bytes || subcolumn_data_uncompressed_bytes || subcolumn_marks_bytes;
+
+        if (subcolumn_names || subcolumn_types || subcolumn_serializations || need_subcolumn_sizes)
+        {
             IDataType::forEachSubcolumn([&](const auto & subpath, const auto & name, const auto & data)
             {
                 /// We count only final subcolumns, which are represented by files on disk
@@ -430,14 +482,20 @@ void StorageSystemPartsColumns::processNextStorage(
                 if (ISerialization::isEphemeralSubcolumn(subpath, subpath.size()))
                     return;
 
-                subcolumn_names.push_back(name);
-                subcolumn_types.push_back(data.type->getName());
-                subcolumn_serializations.push_back(ISerialization::kindStackToString(data.serialization->getKindStack()));
+                if (subcolumn_names)
+                    subcolumn_names.insertString(name);
+                if (subcolumn_types)
+                    subcolumn_types.insertString(data.type->getName());
+                if (subcolumn_serializations)
+                    subcolumn_serializations.insertString(ISerialization::kindStackToString(data.serialization->getKindStack()));
+
+                if (!need_subcolumn_sizes)
+                    return;
 
                 ColumnSize size;
                 NameAndTypePair subcolumn(column.name, name, column.type, data.type);
 
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(subcolumn, subpath, ".bin", part->checksums, info.data->getSettings());
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(subcolumn, subpath, ".bin", part->checksums, data_settings);
                 if (stream_name)
                 {
                     auto bin_checksum = part->checksums.files.find(*stream_name + ".bin");
@@ -452,34 +510,28 @@ void StorageSystemPartsColumns::processNextStorage(
                         size.marks += mrk_checksum->second.file_size;
                 }
 
-                subcolumn_bytes_on_disk.push_back(size.data_compressed + size.marks);
-                subcolumn_data_compressed_bytes.push_back(size.data_compressed);
-                subcolumn_data_uncompressed_bytes.push_back(size.data_uncompressed);
-                subcolumn_marks_bytes.push_back(size.marks);
+                if (subcolumn_bytes_on_disk)
+                    subcolumn_bytes_on_disk.getData().insertValue(size.data_compressed + size.marks);
+                if (subcolumn_data_compressed_bytes)
+                    subcolumn_data_compressed_bytes.getData().insertValue(size.data_compressed);
+                if (subcolumn_data_uncompressed_bytes)
+                    subcolumn_data_uncompressed_bytes.getData().insertValue(size.data_uncompressed);
+                if (subcolumn_marks_bytes)
+                    subcolumn_marks_bytes.getData().insertValue(size.marks);
 
             }, ISerialization::SubstreamData(serialization).withType(column.type));
 
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(subcolumn_names);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(subcolumn_types);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(subcolumn_serializations);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(subcolumn_bytes_on_disk);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(subcolumn_data_compressed_bytes);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(subcolumn_data_uncompressed_bytes);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(subcolumn_marks_bytes);
-
-            if (has_state_column)
-                columns[res_index++]->insert(part->stateString());
+            subcolumn_names.finishRow();
+            subcolumn_types.finishRow();
+            subcolumn_serializations.finishRow();
+            subcolumn_bytes_on_disk.finishRow();
+            subcolumn_data_compressed_bytes.finishRow();
+            subcolumn_data_uncompressed_bytes.finishRow();
+            subcolumn_marks_bytes.finishRow();
         }
 
-        if (time_limit_exceeded)
-            break;
+        if (has_state_column)
+            columns[res_index++]->insert(part->stateString());
     }
 }
 
