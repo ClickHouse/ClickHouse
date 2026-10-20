@@ -52,11 +52,12 @@ public:
 
     /// Get the target storage this alias points to
     StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;
-    StoragePtr tryGetTargetTable() const { return DatabaseCatalog::instance().tryGetTable(StorageID(getTargetDatabase(), target_table), getContext()); }
+    StoragePtr tryGetTargetTable() const { return DatabaseCatalog::instance().tryGetTable(getTargetStorageID(), getContext()); }
 
     /// Whether the target was written without a database (`Alias('t')`), so it is resolved against the database
     /// of the alias itself and follows the alias when that database is renamed.
     bool isTargetDatabaseOwnDatabase() const { return target_database_is_own_database; }
+    const String & getTargetTableName() const { return target_table; }
 
     /// Returns whether the current user has the specified access to every table this alias resolves
     /// through, i.e. the whole chain when the target is itself an Alias. For callers that read metadata.
@@ -333,7 +334,12 @@ public:
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
 protected:
-    String getTargetDatabase() const { return target_database_is_own_database ? getStorageID().database_name : target_database; }
+    /// Resolved once per use, so that an access check and the lookup it guards see the same target
+    /// even if the alias is concurrently moved to another database.
+    StorageID getTargetStorageID() const
+    {
+        return StorageID(target_database_is_own_database ? getStorageID().database_name : target_database, target_table);
+    }
 
     String target_database;
     String target_table;

@@ -952,6 +952,16 @@ std::optional<DatabaseCatalog::RecomputedDependencies> DatabaseCatalog::getDepen
     if (!is_ordinary_view && !is_alias_to_own_database)
         return std::nullopt;
 
+    /// The target of such an alias follows it into the new database, and a target equal to the alias itself
+    /// is erased from the dependencies below, so it would escape the cycle check.
+    if (is_alias_to_own_database && alias->getTargetTableName() == new_name.table)
+        throw Exception(
+            ErrorCodes::INFINITE_LOOP,
+            "Cannot move {}.{} to {}, because the Alias table would refer to itself",
+            backQuoteIfNeed(database.getDatabaseName()),
+            backQuoteIfNeed(table_name),
+            new_name.getFullName());
+
     auto ast = database.getCreateTableQuery(table_name, query_context);
     auto global_context = query_context->getGlobalContext();
     auto dependencies = getDependenciesFromCreateQuery(
