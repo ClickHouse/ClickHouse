@@ -257,7 +257,12 @@ MetadataStorageFromPlainRewritableObjectStorage::SnapshotFileContents MetadataSt
         auto read_settings = getReadSettings();
         read_settings.enable_filesystem_cache = false;
 
-        auto in = object_storage->readObject(StoredObject(key, /*local_path*/ "", metadata->size_bytes), read_settings, metadata->size_bytes);
+        /// Pin the download to the generation seen by `HEAD`: the file is rewritten while readers download it, and a download
+        /// may consist of several requests (ranged reads, retries), which must not splice bytes from different snapshots.
+        /// A changed generation makes the read fail, and the state is loaded by listing the object storage.
+        StoredObject object(key, /*local_path*/ "", metadata->size_bytes);
+        object.etag = result.etag;
+        auto in = object_storage->readObject(object, read_settings, metadata->size_bytes);
         result.layout = readPlainRewritableSnapshot(*in);
         LOG_DEBUG(log, "Read the snapshot file '{}' ({} bytes) with {} directories", key, metadata->size_bytes, result.layout->size());
     }
