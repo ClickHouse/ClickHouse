@@ -41,6 +41,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int FILE_DOESNT_EXIST;
+    extern const int PATH_ACCESS_DENIED;
     extern const int UNKNOWN_TABLE;
 }
 
@@ -289,17 +290,36 @@ bool DatabaseURL::checkFileURLExists(const String & url, ContextPtr context_, bo
         }
     }
 
-    fs::path fs_path(local_path);
-    if (fs_path.is_relative())
-        fs_path = fs::path(context_->getUserFilesPath()) / fs_path;
+    auto to_absolute_path = [&](const String & path_from_url)
+    {
+        fs::path fs_path(path_from_url);
+        if (fs_path.is_relative())
+            fs_path = fs::path(context_->getUserFilesPath()) / fs_path;
 
-    /// For a disk-backed `user_files_policy` the user-files path is the disk root, which is not
-    /// necessarily host-absolute - for `s3_plain` it is an object-key prefix. `fs::absolute`
-    /// would prepend the server working directory and break the disk-prefix match in
-    /// `splitUserFilesAbsolutePath`, so in that case normalize only lexically.
-    const String path = user_files_volume
-        ? fs_path.lexically_normal().string()
-        : fs::absolute(fs_path).lexically_normal().string();
+        /// For a disk-backed `user_files_policy` the user-files path is the disk root, which is not
+        /// necessarily host-absolute - for `s3_plain` it is an object-key prefix. `fs::absolute`
+        /// would prepend the server working directory and break the disk-prefix match in
+        /// `splitUserFilesAbsolutePath`, so in that case normalize only lexically.
+        return user_files_volume
+            ? fs_path.lexically_normal().string()
+            : fs::absolute(fs_path).lexically_normal().string();
+    };
+
+    const String path = to_absolute_path(local_path);
+
+    /// With a `file://` base URL, the tables of the database are the files beneath the directory of
+    /// the base URL, so that a name that is a `file://` URL of its own does not reach another directory
+    /// of `user_files` (a relative name does not go above the root of the base path when it is resolved
+    /// against the base URL). The check is lexical, like that resolution. `clickhouse-local` accepts any path.
+    if (!is_local && !base_url.empty() && classifyURLScheme(base_url) == URLSchemeTarget::File)
+    {
+        String base_directory = getLocalPathFromFileURL(base_url);
+        /// A relative reference replaces the last segment of the base path (RFC 3986), so the directory
+        /// of the base is everything up to its last slash.
+        base_directory.resize(base_directory.find_last_of('/') + 1);
+        if (!fileOrSymlinkPathStartsWith(path, to_absolute_path(base_directory)))
+            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside the directory of the base URL of the database");
+    }
 
     /// A path with globs matches a dynamic set of files, possibly empty, so it always "exists".
     if (containsGlobs(path))

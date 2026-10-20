@@ -98,6 +98,17 @@ public:
     StoragePtr getNested() const override { return nested; }
     String getName() const override { return nested->getName(); }
 
+    /// Forward the delegate's planner-visible capability contracts, as `StorageURLDatabaseTable` does:
+    /// `StorageProxy` forwards only a part of them, and without these overrides `SELECT count()` would
+    /// parse the file instead of using the optimized count path (e.g. the `Parquet` metadata or the
+    /// row count cache), and `PREWHERE` could be moved to columns that the delegate does not support.
+    std::optional<NameSet> supportedPrewhereColumns() const override { return nested->supportedPrewhereColumns(); }
+    bool canMoveConditionsToPrewhere() const override { return nested->canMoveConditionsToPrewhere(); }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override
+    {
+        return nested->supportsTrivialCountOptimization(storage_snapshot, query_context);
+    }
+
     /// Read through a snapshot of the nested storage (like `StorageTableFunctionProxy` does):
     /// the storage may downcast `storage_snapshot->storage` to its own type.
     void read(
@@ -261,6 +272,16 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
         ? std::pair<String, String>{{}, table_path}
         : splitToArchiveParts(table_path, context_);
     const String path_to_probe = path_to_archive.empty() ? table_path : path_to_archive;
+
+    /// A table of the database is a file beneath the directory of the database, so that a name like
+    /// `../other_dir/file.csv` (or an absolute path) does not reach another directory of `user_files`,
+    /// e.g. the directory of another `Filesystem` database. The check is lexical, like the names of the
+    /// tables. `clickhouse-local` accepts any path.
+    if (check_path && !fileOrSymlinkPathStartsWith(path_to_probe, path))
+    {
+        /// Access denied is thrown regardless of 'throw_on_error'
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside the directory of the database");
+    }
 
     /// When `user_files_policy` is configured with a non-local disk (e.g. `s3_plain`),
     /// `fs::exists` only checks the local filesystem and would reject valid paths
