@@ -177,31 +177,31 @@ struct StorageInMemoryMetadata
     bool hasOnlyRowsTTL() const;
 
     /// Common tables TTLs (for rows and moves).
-    TTLTableDescription getTableTTLs() const;
+    const TTLTableDescription & getTableTTLs() const;
     bool hasAnyTableTTL() const;
 
     /// Separate TTLs for columns.
-    TTLColumnsDescription getColumnTTLs() const;
+    const TTLColumnsDescription & getColumnTTLs() const;
     bool hasAnyColumnTTL() const;
 
     /// Just wrapper for table TTLs, return rows part of table TTLs.
-    TTLDescription getRowsTTL() const;
+    const TTLDescription & getRowsTTL() const;
     bool hasRowsTTL() const;
 
-    TTLDescriptions getRowsWhereTTLs() const;
+    const TTLDescriptions & getRowsWhereTTLs() const;
     bool hasAnyRowsWhereTTL() const;
 
     /// Just wrapper for table TTLs, return moves (to disks or volumes) parts of
     /// table TTL.
-    TTLDescriptions getMoveTTLs() const;
+    const TTLDescriptions & getMoveTTLs() const;
     bool hasAnyMoveTTL() const;
 
     // Just wrapper for table TTLs, return info about recompression ttl
-    TTLDescriptions getRecompressionTTLs() const;
+    const TTLDescriptions & getRecompressionTTLs() const;
     bool hasAnyRecompressionTTL() const;
 
     // Just wrapper for table TTLs, return info about recompression ttl
-    TTLDescriptions getGroupByTTLs() const;
+    const TTLDescriptions & getGroupByTTLs() const;
     bool hasAnyGroupByTTL() const;
 
     using HasDependencyCallback = std::function<bool(const String &, ColumnDependency::Kind)>;
@@ -309,6 +309,10 @@ struct StorageInMemoryMetadata
     /// Storage settings
     ASTPtr getSettingsChanges() const;
     Field getSettingChange(const String & setting_name) const;
+
+    /// Whether the table `SETTINGS` clause contains an explicit override of `setting_name`.
+    /// Unlike `getSettingsChanges`, it does not clone the AST, so it is cheap enough for hot paths.
+    bool hasSettingChange(const String & setting_name) const;
     bool hasSettingsChanges() const { return settings_changes != nullptr; }
 
     /// Select query for *View storages.

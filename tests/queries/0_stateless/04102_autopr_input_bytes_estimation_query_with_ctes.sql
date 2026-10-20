@@ -1,6 +1,11 @@
 -- Tags: stateful, long
 
 SET use_uncompressed_cache=0;
+
+-- `apply_string_filters_during_scan` materializes the values that do not match a substring condition
+-- of PREWHERE as empty strings, so the in-memory size of the read block, which the estimation is based on,
+-- becomes much smaller than the amount of data actually read from disk.
+SET apply_string_filters_during_scan=0;
 SET use_query_condition_cache=0;
 SET use_columns_cache=0;
 

@@ -15,6 +15,17 @@ namespace DB
 
 #if USE_AVRO
 
+/// Files the snapshot takes out of the table. A `replace` snapshot both adds and removes, and
+/// the table-wide `total-*` counters only stay right if the removals are subtracted from them.
+struct SnapshotRemovals
+{
+    Int64 data_files = 0;
+    Int64 records = 0;
+    Int64 files_size = 0;
+    Int64 position_delete_files = 0;
+    Int64 position_deletes = 0;
+};
+
 class MetadataGenerator
 {
 public:
@@ -48,6 +59,7 @@ public:
         SnapshotOperation operation = SnapshotOperation::Append,
         /// Incremental refreshable-MV cursor to embed in the summary of an `append` snapshot (see `f_refresh_cursor`).
         const std::optional<String> & refresh_cursor = std::nullopt,
+        const SnapshotRemovals & removals = {},
         /// The complete summary of the new snapshot, written instead of one derived from the counts above and the parent's totals.
         const std::optional<Iceberg::SnapshotSummary> & precomputed_summary = std::nullopt);
 

@@ -28,6 +28,7 @@ namespace Setting
 {
 extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
 extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
+extern const SettingsBool use_aggregation_memory_tracker;
 extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
 extern const SettingsBool collect_hash_table_stats_during_aggregation;
 extern const SettingsBool enable_adaptive_aggregator;
@@ -100,9 +101,9 @@ IProcessor::Status LazyReadReplacingFinalSource::prepare()
 
 static void calculateGlobalOffset(ActionsDAG & dag, ReadFromMergeTree & reading_step)
 {
-    bool added_part_starting_offset = false;
-    bool added_part_offset = false;
-    reading_step.addStartingPartOffsetAndPartOffset(added_part_starting_offset, added_part_offset);
+    const auto part_offset_columns = reading_step.addStartingPartOffsetAndPartOffset();
+    const bool added_part_starting_offset = part_offset_columns.added_part_starting_offset;
+    const bool added_part_offset = part_offset_columns.added_part_offset;
     DataTypePtr uint64_type = std::make_shared<DataTypeUInt64>();
     const auto * part_starting_offset_in = &dag.addInput("_part_starting_offset", uint64_type);
     const auto * part_offset_in = &dag.addInput("_part_offset", uint64_type);
@@ -270,6 +271,7 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
             /*group_by_two_level_threshold_=*/settings[Setting::group_by_two_level_threshold],
             /*group_by_two_level_threshold_bytes_=*/settings[Setting::group_by_two_level_threshold_bytes],
             /*max_bytes_before_external_group_by_=*/0,
+            /*min_bytes_before_external_group_by_=*/0,
             /*empty_result_for_aggregation_by_empty_set_=*/true,
             /*tmp_data_scope_=*/nullptr,
             /*max_threads_=*/settings[Setting::max_threads],
@@ -288,7 +290,8 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
             /*enable_packed_string_keys_=*/settings[Setting::enable_packed_string_keys_in_aggregation],
             /*enable_adaptive_aggregator_=*/settings[Setting::enable_adaptive_aggregator],
             /*adaptive_aggregator_freeze_threshold_=*/settings[Setting::adaptive_aggregator_freeze_threshold],
-            /*adaptive_aggregator_freeze_threshold_bytes_=*/settings[Setting::adaptive_aggregator_freeze_threshold_bytes]);
+            /*adaptive_aggregator_freeze_threshold_bytes_=*/settings[Setting::adaptive_aggregator_freeze_threshold_bytes],
+            /*use_aggregation_memory_tracker_=*/settings[Setting::use_aggregation_memory_tracker]);
 
         auto merge_threads = settings[Setting::max_threads];
         auto temporary_data_merge_threads = settings[Setting::aggregation_memory_efficient_merge_threads]

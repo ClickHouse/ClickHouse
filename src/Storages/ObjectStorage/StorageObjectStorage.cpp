@@ -1003,8 +1003,18 @@ void StorageObjectStorage::truncate(
 
 void StorageObjectStorage::drop()
 {
-    /// We cannot use query context here, because drop is executed in the background.
-    auto drop_context = Context::getGlobalContextInstance();
+    dropTable(configuration, catalog, storage_id);
+}
+
+void StorageObjectStorage::dropTable(
+    const StorageObjectStorageConfigurationPtr & configuration,
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const StorageID & storage_id)
+{
+    /// A table of an `Atomic` database is dropped by a background thread, which has no query context.
+    /// A table of a `DataLakeCatalog` database is dropped inside the query, so the query settings apply.
+    auto query_context = CurrentThread::tryGetQueryContext();
+    auto drop_context = query_context ? query_context : Context::getGlobalContextInstance();
     if (catalog)
     {
         const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());

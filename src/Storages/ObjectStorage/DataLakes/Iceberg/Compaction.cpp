@@ -1506,6 +1506,7 @@ void compactIcebergTable(
                 /*user_defined_timestamp=*/std::nullopt,
                 MetadataGenerator::SnapshotOperation::Replace,
                 /*refresh_cursor=*/std::nullopt,
+                /*removals=*/{},
                 summary);
 
             /// Every delete manifest is dropped: each live position delete is fully applied once all the data files it can
