@@ -2744,6 +2744,8 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
             buffer.finalize();
             data += current_roles_str;
         }
+        if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_EXECUTE_AS_SETTINGS && client_info.execute_as_settings.has_value())
+            data += client_info.serializeExecuteAsSettings();
 
         std::string calculated_hash = encodeSHA256(data);
         chassert(calculated_hash.size() == 32);

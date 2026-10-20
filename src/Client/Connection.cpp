@@ -91,6 +91,7 @@ namespace ErrorCodes
     extern const int EMPTY_DATA_PASSED;
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 Connection::~Connection()
@@ -1057,6 +1058,15 @@ void Connection::sendQuery(
 
     compression_codec = chooseNetworkCompressionCodec(settings);
 
+    /// An older node cannot receive the values `EXECUTE AS ... SETTINGS` gave, and would run the query without them.
+    if (client_info && client_info->execute_as_settings.has_value() && !cluster_secret.empty()
+        && client_info->query_kind != ClientInfo::QueryKind::INITIAL_QUERY
+        && server_revision < DBMS_MIN_PROTOCOL_VERSION_WITH_EXECUTE_AS_SETTINGS)
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "Server {} is too old for EXECUTE AS ... SETTINGS (revision {} < {})",
+            getDescription(), server_revision, DBMS_MIN_PROTOCOL_VERSION_WITH_EXECUTE_AS_SETTINGS);
+
     query_id = query_id_;
 
     /// Avoid reusing connections that had been left in the intermediate state
@@ -1152,6 +1162,8 @@ void Connection::sendQuery(
                 buffer.finalize();
                 data += current_roles_str;
             }
+            if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_EXECUTE_AS_SETTINGS && client_info->execute_as_settings.has_value())
+                data += client_info->serializeExecuteAsSettings();
             /// TODO: add source/target host/ip-address
 
             std::string hash = encodeSHA256(data);

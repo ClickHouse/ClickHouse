@@ -172,6 +172,16 @@ void SettingsConstraints::get(const MergeTreeSettings &, std::string_view short_
     writability = checker.constraint.writability;
 }
 
+bool SettingsConstraints::isDeclaredConstOnly(std::string_view setting_name) const
+{
+    auto it = constraints.find(resolveSettingName(setting_name));
+    if (it == constraints.end())
+        return false;
+    const auto & constraint = it->second;
+    return constraint.writability == SettingConstraintWritability::CONST && constraint.min_value.isNull()
+        && constraint.max_value.isNull() && constraint.disallowed_values.empty();
+}
+
 void SettingsConstraints::merge(const SettingsConstraints & other)
 {
     if (access_control->doesSettingsConstraintsReplacePrevious())

@@ -46,6 +46,7 @@ void RemoteInserter::initialize()
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
     /// Drop inherited current_roles: a write needs no role scoping.
     modified_client_info.current_roles.reset();
+    modified_client_info.execute_as_settings.reset();
 
     Settings settings = insert_settings;
 

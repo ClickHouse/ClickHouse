@@ -84,6 +84,7 @@ String makeFullClientInfoWire(
     writeBinary(String(""), buf);                              /// client_agent (>= 54485)
     writeBinary(false, buf);                                   /// is_internal (>= 54486)
     writeBinary(static_cast<UInt8>(0), buf);                   /// have_current_roles = no (>= 54488)
+    writeBinary(static_cast<UInt8>(0), buf);                   /// have_execute_as_settings = no (>= 54495)
     buf.finalize();
     return buf.str();
 }
