@@ -1417,7 +1417,8 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorBloomFilter::getGranuleAndReset
 {
     const auto granule = std::make_shared<MergeTreeIndexGranuleBloomFilter>(bits_per_row, hash_functions, column_hashes);
     total_rows = 0;
-    column_hashes.clear();
+    for (auto & hashes : column_hashes)
+        hashes.clear();
     return granule;
 }
 

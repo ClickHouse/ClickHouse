@@ -1,0 +1,30 @@
+--- cuckoo_filter
+String = FixedString	2	2
+FixedString(3) = String	1	1
+FixedString(3) = wider	0	0
+has LC	1	1
+hasAny LC	1	1
+hasAll LC	1	1
+has FS3	1	1
+hasAny FS3	1	1
+has FS3 wider	0	0
+mapContainsKey LC	1	1
+mapContains LC	1	1
+mapContainsValue LC	1	1
+IN with empty array	2	2
+IN without empty array	2	2
+--- binary_fuse_filter
+String = FixedString	2	2
+FixedString(3) = String	1	1
+FixedString(3) = wider	0	0
+has LC	1	1
+hasAny LC	1	1
+hasAll LC	1	1
+has FS3	1	1
+hasAny FS3	1	1
+has FS3 wider	0	0
+mapContainsKey LC	1	1
+mapContains LC	1	1
+mapContainsValue LC	1	1
+IN with empty array	2	2
+IN without empty array	2	2
