@@ -571,8 +571,9 @@ namespace
         [[nodiscard]]
         Int64OrError buildDateTime(const DateLUTImpl & time_zone)
         {
-            if (is_hour_of_half_day && !is_am)
-                hour += 12;
+            /// Don't change `hour`: `jodaTimezone` calls this function to resolve a zone name before the final call,
+            /// and a PM hour would get 12 hours twice.
+            const auto hour_of_day = is_hour_of_half_day && !is_am ? hour + 12 : hour;
 
             // Convert the parsed date/time into a timestamp.
             Int32 days_since_epoch = 0;
@@ -583,7 +584,7 @@ namespace
             else
                 ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch, daysSinceEpochFromDate(year, month, day))
 
-            Int64 seconds_since_epoch = days_since_epoch * 86400UZ + hour * 3600UZ + minute * 60UZ + second;
+            Int64 seconds_since_epoch = days_since_epoch * 86400UZ + hour_of_day * 3600UZ + minute * 60UZ + second;
 
             /// Time zone is not specified, use local time zone
             if (!has_time_zone_offset)
