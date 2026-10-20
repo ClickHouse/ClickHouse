@@ -69,7 +69,7 @@ wait
 echo "DROP TABLE concurrent_alter_column SYNC" | ${CLICKHOUSE_CLIENT}   # SYNC has effect only for Atomic database
 
 # Wait for alters and check for deadlocks (in case of deadlock this loop will not finish)
-while true; do
+while clickhouse_test_time_left; do
     echo "SELECT * FROM system.processes WHERE query_id LIKE 'alter\\_00816\\_%'" | ${CLICKHOUSE_CLIENT} | grep -q -F 'alter' || break
     sleep 1;
 done
