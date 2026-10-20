@@ -50,6 +50,7 @@
 #include <IO/WriteHelpers.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ParserQuery.h>
+#include <Parsers/SecretArguments.h>
 #include <Parsers/parseQuery.h>
 
 #if !defined(CLICKHOUSE_PARSER_NO_FORMATTING)
@@ -79,6 +80,10 @@ std::string & result()
     static std::string value;
     return value;
 }
+
+/// No engine is registered here, so the secrets of their arguments are shown.
+[[maybe_unused]] const bool secret_arguments_finder_installed
+    = (DB::setSecretArgumentsFinder(&DB::NoSecretArgumentsFinder::instance()), true);
 
 constexpr size_t MAX_QUERY_SIZE = 1u << 20;
 constexpr size_t MAX_PARSER_DEPTH = 1000;

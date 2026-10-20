@@ -1,6 +1,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Formats/Impl/Parquet/Write.h>
+#include <Processors/Formats/Impl/Parquet/FileLogicalType.h>
+#include <Interpreters/castColumn.h>
 
 #include <Columns/MaskOperations.h>
 #include <Columns/ColumnFixedString.h>
@@ -10,6 +12,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnSparse.h>
 #include <Core/Block.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFilterInfo.h>
@@ -254,15 +257,18 @@ parq::CompressionCodec::type compressionMethodToParquet(CompressionMethod c)
 
 /// Depth-first traversal of the schema tree for this column.
 /// `column_path` is the dotted Iceberg field path of this node (t.x / arr.element / m.value), built
-/// with the same convention as ColumnMapper's producer; only the Iceberg optionality lookup uses it.
+/// with the same convention as ColumnMapper's producer; only the ColumnMapper lookups use it.
 void prepareColumnRecursive(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
     ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
     const String & column_path, const IcebergOptionality & iceberg_optionality);
 
 void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::string & name,
-    const WriteOptions & options, ColumnChunkWriteStates & states, SchemaElements & schemas, std::optional<Int64> field_id)
+    const WriteOptions & options, ColumnChunkWriteStates & states, SchemaElements & schemas, std::optional<Int64> field_id,
+    const String & column_path, const IcebergOptionality & iceberg_optionality)
 {
+    const bool adjusted_to_utc = !iceberg_optionality.isLocalTimestamp(column_path);
+
     /// Add physical column info.
     auto & state = states.emplace_back();
     state.primitive_column = column;
@@ -407,7 +413,7 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
                 parq::TimeUnit unit;
                 unit.__set_MILLIS({});
                 parq::TimestampType tt;
-                tt.__set_isAdjustedToUTC(true);
+                tt.__set_isAdjustedToUTC(adjusted_to_utc);
                 tt.__set_unit(unit);
                 parq::LogicalType t;
                 t.__set_TIMESTAMP(tt);
@@ -448,7 +454,7 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             parq::TimestampType tt;
             /// (Shouldn't we check the DateTime64's timezone parameter here? No, the actual number
             /// in DateTime64 column is always in UTC, regardless of the timezone parameter.)
-            tt.__set_isAdjustedToUTC(true);
+            tt.__set_isAdjustedToUTC(adjusted_to_utc);
             tt.__set_unit(unit);
             parq::LogicalType t;
             t.__set_TIMESTAMP(tt);
@@ -582,6 +588,49 @@ void prepareColumnNullable(
     }
 }
 
+/// With `output_format_parquet_write_file_logical_type`, a named `Tuple` whose element names are all
+/// fields of the `FILE` logical type is written as a `FILE`-annotated group. Returns the types into
+/// which the elements are converted for that: the specification requires every field to be
+/// OPTIONAL, so the types are `Nullable`. Returns nullopt for a tuple of another kind.
+std::optional<DataTypes> getFileLogicalTypeElementTypes(const DataTypeTuple & type, const std::string & name, const WriteOptions & options)
+{
+    if (!options.write_file_logical_type || !type.hasExplicitNames() || type.getElements().empty())
+        return std::nullopt;
+    for (const auto & element_name : type.getElementNames())
+        if (!getFileLogicalTypeFieldKind(element_name).has_value())
+            return std::nullopt;
+
+    DataTypes result;
+    for (size_t i = 0; i < type.getElements().size(); ++i)
+    {
+        const String & element_name = type.getNameByPosition(i + 1);
+        const DataTypePtr & element_type = type.getElement(i);
+        const DataTypePtr nested_type = removeLowCardinalityAndNullable(element_type);
+        WhichDataType which(nested_type);
+        if (getFileLogicalTypeFieldKind(element_name) == FileLogicalTypeFieldKind::Int64)
+        {
+            /// `UInt64` is allowed, because it is the natural type of a size (e.g. of the `_size`
+            /// virtual column); a value that does not fit into `Int64` throws during the conversion.
+            if (!which.isNativeInteger() || isBool(nested_type))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot write column {} as Parquet `FILE` logical type: element `{}` must be an integer, got {}. "
+                    "Disable the setting `output_format_parquet_write_file_logical_type` to write it as an ordinary group",
+                    name, element_name, element_type->getName());
+            result.push_back(makeNullable(std::make_shared<DataTypeInt64>()));
+        }
+        else
+        {
+            if (!which.isStringOrFixedString())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot write column {} as Parquet `FILE` logical type: element `{}` must be a `String` or `FixedString`, got {}. "
+                    "Disable the setting `output_format_parquet_write_file_logical_type` to write it as an ordinary group",
+                    name, element_name, element_type->getName());
+            result.push_back(makeNullable(std::make_shared<DataTypeString>()));
+        }
+    }
+    return result;
+}
+
 std::optional<std::unordered_map<String, Int64>> buildSubFieldIds(
     const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
     const String & prefix)
@@ -608,6 +657,28 @@ void prepareColumnTuple(
     const auto * type_tuple = assert_cast<const DataTypeTuple *>(type.get());
     size_t num_elements = type_tuple->getElements().size();
 
+    Columns element_columns = column_tuple->getColumnsCopy();
+    DataTypes element_types = type_tuple->getElements();
+    /// For a `FILE` group, the string fields must be annotated with STRING and `inline` must not be
+    /// annotated, regardless of `output_format_parquet_string_as_string`.
+    std::optional<WriteOptions> file_string_field_options;
+    std::optional<WriteOptions> file_binary_field_options;
+    const std::optional<DataTypes> file_element_types = getFileLogicalTypeElementTypes(*type_tuple, name, options);
+    if (file_element_types)
+    {
+        for (size_t i = 0; i < num_elements; ++i)
+        {
+            ColumnWithTypeAndName element{element_columns[i], element_types[i], type_tuple->getNameByPosition(i + 1)};
+            const DataTypePtr & file_type = (*file_element_types)[i];
+            element_columns[i] = isInteger(removeNullable(file_type)) ? castColumnAccurate(element, file_type) : castColumn(element, file_type);
+            element_types[i] = file_type;
+        }
+        file_string_field_options.emplace(options);
+        file_string_field_options->output_string_as_string = true;
+        file_binary_field_options.emplace(options);
+        file_binary_field_options->output_string_as_string = false;
+    }
+
     /// We artificially disallow empty tuples because they're not widely supported.
     /// But they're supported in clickhouse; if we remove this check, nothing breaks, and clickhouse
     /// can write and read such columns.
@@ -626,6 +697,12 @@ void prepareColumnTuple(
         if (it != column_field_ids->end())
             tuple_schema.__set_field_id(static_cast<Int32>(it->second));
     }
+    if (file_element_types)
+    {
+        parq::LogicalType logical_type;
+        logical_type.__set_FILE({});
+        tuple_schema.__set_logicalType(logical_type);
+    }
 
     size_t child_states_begin = states.size();
 
@@ -636,8 +713,12 @@ void prepareColumnTuple(
     for (size_t i = 0; i < num_elements; ++i)
     {
         const auto & element_name = type_tuple->getNameByPosition(i + 1);
+        const WriteOptions * element_options = &options;
+        if (file_element_types)
+            element_options = getFileLogicalTypeFieldKind(element_name) == FileLogicalTypeFieldKind::Binary
+                ? &*file_binary_field_options : &*file_string_field_options;
         prepareColumnRecursive(
-            column_tuple->getColumnPtr(i), type_tuple->getElement(i), element_name, options, states, schemas, sub_field_ids,
+            element_columns[i], element_types[i], element_name, *element_options, states, schemas, sub_field_ids,
             Nested::concatenateName(column_path, element_name), child_optionality);
     }
 
@@ -863,7 +944,7 @@ void prepareColumnRecursive(
 {
     /// Remove const and sparse but leave LowCardinality as the encoder can directly use it for
     /// parquet dictionary-encoding.
-    column = column->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse()->convertToFullColumnIfConst();
+    column = removeSpecialRepresentations(column)->convertToFullColumnIfConst();
 
     switch (type->getTypeId())
     {
@@ -879,15 +960,24 @@ void prepareColumnRecursive(
                     column->convertToFullColumnIfLowCardinality(), nested_type, name, options, states, schemas, column_field_ids, column_path, iceberg_optionality);
             else
                 /// Use nested data type, but keep ColumnLowCardinality. The encoder can deal with it.
-                preparePrimitiveColumn(column, nested_type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name));
+                preparePrimitiveColumn(
+                    column, nested_type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name), column_path,
+                    iceberg_optionality);
             break;
         }
         default:
-            preparePrimitiveColumn(column, type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name));
+            preparePrimitiveColumn(
+                column, type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name), column_path,
+                iceberg_optionality);
             break;
     }
 }
 
+}
+
+bool IcebergOptionality::isLocalTimestamp(const String & path) const
+{
+    return mapper && mapper->isLocalTimestampPath(path);
 }
 
 bool IcebergOptionality::isOptional(const String & path) const
@@ -928,6 +1018,10 @@ static void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
 {
     if (!type->getCustomName())
         return;
+
+    /// The conversions below cast the column to its concrete type, which a constant column is not
+    /// (e.g. `SELECT readWKT(...) FORMAT Parquet`). Materialize it.
+    column = removeSpecialRepresentations(column)->convertToFullColumnIfConst();
 
     if (type->getCustomName()->getName() == "Geometry")
     {
