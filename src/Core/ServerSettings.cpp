@@ -1275,7 +1275,10 @@ Only directly dependent views are considered here, and the creation of one view 
 Allow explicitly granting and revoking `ALTER USER SELF AUTHENTICATION`, including grant-option changes and explicit current-grants selections.
 When disabled, `ALL`, `ACCESS MANAGEMENT`, and broad current-grants copying exclude this privilege from their requests;
 group revokes preserve any existing self-service grant and its grant option. When enabled, groups include it normally.
-For privilege grants, local `WITH REPLACE OPTION` preserves the bit while disabled; distributed `WITH REPLACE OPTION` requires enabling the setting.
+Privilege `WITH REPLACE OPTION` clears all direct privileges, including this bit and its grant option, regardless of this setting.
+The subsequent grant follows the setting. Replacement does not remove role memberships or privileges inherited through them.
+The full implicit revoke is authorized normally: local replacement can require this bit's grant option when a target holds it;
+distributed replacement requires that grant option even when remote targets do not hold it. Full `ALTER USER` does not supply it.
 Disabled by default. Changing this server setting requires a restart. Existing grants remain effective while disabled;
 loading, restoring, replicating, and displaying grants are unaffected. Enable the setting on each executor of distributed grant/revoke statements.
 Disabling this setting does not make persisted grants compatible with older versions. Before downgrade, enable it for cleanup,

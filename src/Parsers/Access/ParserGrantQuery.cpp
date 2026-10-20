@@ -808,7 +808,11 @@ Explicit requests are rejected while disabled, including grant-option changes, m
 While disabled, ordinary `ALL`, `ACCESS MANAGEMENT`, and broad current-grants copying remain available but omit this privilege from the request.
 Group revokes preserve any existing self-service grant and its grant option. Other requested privileges follow their normal rules.
 When enabled, these groups include the privilege normally, and group revokes may remove it.
-For privilege grants, local `WITH REPLACE OPTION` also preserves the bit while disabled; distributed `WITH REPLACE OPTION` requires enabling the setting.
+Privilege `WITH REPLACE OPTION` is an exception to preservation: it clears all direct privileges, including the self-service bit and its grant option,
+regardless of the setting. The subsequent grant follows the setting, so disabled group replacement omits the bit; enabled requests may grant it again
+with only the grant option specified by the new request. Role memberships and privileges inherited through them are unaffected.
+The full implicit revoke is authorized normally. Local replacement can require self-service grant option when a target holds the bit;
+distributed replacement requires that grant option even if remote targets do not hold it. Full `ALTER USER` does not supply it.
 Existing direct and role-derived grants remain effective when the setting is disabled. Loading, restoring, replicating, and displaying them remain supported.
 Enable the setting on participating executors for distributed grant/revoke statements. Disabling it is not a downgrade procedure:
 before downgrade, enable it for cleanup, remove the privilege from users, roles, and configuration, and verify that persisted definitions contain no new keyword.

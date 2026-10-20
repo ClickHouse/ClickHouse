@@ -456,11 +456,6 @@ BlockIO InterpreterGrantQuery::execute()
                 "Granting or revoking ALTER USER SELF AUTHENTICATION requires the server setting "
                 "experimental_self_service_password_change to be enabled");
 
-        /// A remote enabled executor would reconstruct an unfiltered implicit revoke from this option.
-        if (query.replace_access && !query.cluster.empty())
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Distributed WITH REPLACE OPTION requires experimental_self_service_password_change to be enabled");
-
         /// Normalize the AST too: enabled DDL workers must receive the filtered request.
         exclude_self_authentication(query.access_rights_elements);
     }
@@ -499,8 +494,8 @@ BlockIO InterpreterGrantQuery::execute()
     AccessRightsElements elements_to_grant;
     AccessRightsElements elements_to_revoke;
     collectAccessRightsElementsToGrantOrRevoke(query, elements_to_grant, elements_to_revoke);
-    if (!self_authentication_management_enabled)
-        exclude_self_authentication(elements_to_revoke); /// Includes implicit revokes from `WITH REPLACE OPTION`.
+    /// Replacement keeps its full implicit revoke for both authorization and mutation.
+    /// Ordinary revokes already copied the filtered request from the AST.
 
     std::vector<UUID> roles_to_grant;
     RolesOrUsersSet roles_to_revoke;

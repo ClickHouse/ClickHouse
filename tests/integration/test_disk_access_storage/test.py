@@ -476,6 +476,31 @@ def test_self_authentication_management_setting():
     password = "SettingPassword"
     config_path = "/etc/clickhouse-server/config.d/self_auth_setting.xml"
     users_config_path = "/etc/clickhouse-server/users.d/self_auth_setting.xml"
+    actor = "self_auth_setting_actor"
+    authorization_roles = ("self_auth_replace_absent", "self_auth_replace_present")
+    replacement_cases = []
+    requests = (
+        ("select_absent", 0, "SELECT ON system.one", False),
+        ("select_self", 1, "SELECT ON system.one", False),
+        ("select_go", 2, "SELECT ON system.one", False),
+        ("empty", 2, "USAGE ON *.*", False),
+        ("all", 2, "ALL ON *.*", False),
+        ("all_go", 2, "ALL ON *.*", True),
+        ("access", 2, "ACCESS MANAGEMENT ON *.*", False),
+        ("access_go", 2, "ACCESS MANAGEMENT ON *.*", True),
+        ("self", 2, privilege, False),
+        ("self_go", 2, privilege, True),
+        ("mixed", 2, f"SELECT ON system.one, {privilege}", False),
+        ("current", 2, "CURRENT GRANTS(SELECT ON system.one)", False),
+    )
+    for enabled in (False, True):
+        for kind, initial, request, grant_option in requests:
+            subject = f"self_auth_replace_{int(enabled)}_{kind}"
+            option = " WITH GRANT OPTION" if grant_option else ""
+            query = f"GRANT {request} TO {subject}{option} WITH REPLACE OPTION"
+            replacement_cases.append(
+                (enabled, kind, initial, grant_option, subject, query)
+            )
     copy_roles = {
         (group, initial): f"self_auth_copy_{group.replace(' ', '_').lower()}_{initial}"
         for group in ("ALL", "ACCESS MANAGEMENT")
@@ -567,6 +592,54 @@ def test_self_authentication_management_setting():
                 expected[3] = int(not revoke and grant_option)
             assert stored_bits(subject) == tuple(expected), query
 
+    def run_replacements(enabled):
+        for (
+            configured,
+            kind,
+            initial,
+            grant_option,
+            subject,
+            query,
+        ) in replacement_cases:
+            if configured != enabled:
+                continue
+            before = instance.query(f"SHOW GRANTS FOR {subject}")
+            assert stored_bits(subject)[:2] == (int(initial > 0), int(initial == 2))
+            if not enabled and kind in ("self", "self_go", "mixed"):
+                error = instance.query_and_get_error(query)
+                assert "SUPPORT_IS_DISABLED" in error and setting in error
+                assert instance.query(f"SHOW GRANTS FOR {subject}") == before
+                continue
+            instance.query(query)
+            grants_self = enabled and kind in (
+                "all",
+                "all_go",
+                "access",
+                "access_go",
+                "self",
+                "self_go",
+                "mixed",
+            )
+            assert stored_bits(subject)[:2] == (
+                int(grants_self),
+                int(grants_self and grant_option),
+            ), query
+            assert (
+                instance.query(
+                    "SELECT count() FROM system.grants "
+                    f"WHERE role_name = '{subject}' AND access_type = 'INSERT' "
+                    "AND database = 'system' AND table = 'numbers'"
+                )
+                == "0\n"
+            )
+            if kind.startswith("select") or kind == "current":
+                assert (
+                    instance.query(f"SHOW GRANTS FOR {subject}")
+                    == f"GRANT SELECT ON system.one TO {subject}\n"
+                )
+            elif kind == "empty":
+                assert instance.query(f"SHOW GRANTS FOR {subject}") == ""
+
     def configure(value):
         setting_xml = (
             f"<{setting}>{value}</{setting}>"
@@ -601,10 +674,13 @@ def test_self_authentication_management_setting():
 
     def cleanup():
         subjects = ", ".join(
-            [case[5] for case in matrix_cases] + list(copy_roles.values())
+            [case[5] for case in matrix_cases]
+            + list(copy_roles.values())
+            + [case[4] for case in replacement_cases]
+            + list(authorization_roles)
         )
         instance.query(
-            f"DROP USER IF EXISTS {direct}, {member}, {recipient};"
+            f"DROP USER IF EXISTS {direct}, {member}, {recipient}, {actor};"
             f"DROP ROLE IF EXISTS {role}, {subjects};"
         )
 
@@ -617,7 +693,7 @@ def test_self_authentication_management_setting():
         )
         configure(None)
         instance.query(
-            f"CREATE USER {direct}, {member}, {recipient} IDENTIFIED WITH sha256_password BY '{password}';"
+            f"CREATE USER {direct}, {member}, {recipient}, {actor} IDENTIFIED WITH sha256_password BY '{password}';"
             f"CREATE ROLE {role};"
         )
         assert (
@@ -701,11 +777,54 @@ def test_self_authentication_management_setting():
             instance.query(f"CREATE ROLE {subject}")
             if initial:
                 instance.query(f"GRANT {privilege} TO {subject} WITH GRANT OPTION")
+        setup = []
+        for _, _, initial, _, subject, _ in replacement_cases:
+            setup.append(
+                f"CREATE ROLE {subject}; GRANT INSERT ON system.numbers TO {subject};"
+            )
+            if initial:
+                option = " WITH GRANT OPTION" if initial == 2 else ""
+                setup.append(f"GRANT {privilege} TO {subject}{option};")
+        instance.query("".join(setup))
+        instance.query(
+            f"GRANT ALL ON *.* TO {actor} WITH GRANT OPTION; REVOKE {privilege} FROM {actor};"
+            f"CREATE ROLE {authorization_roles[0]}, {authorization_roles[1]};"
+            f"GRANT INSERT ON system.numbers TO {authorization_roles[0]}, {authorization_roles[1]};"
+            f"GRANT {privilege} TO {authorization_roles[1]} WITH GRANT OPTION;"
+        )
         run_matrix(True)
+        run_replacements(True)
         expected = grants()
         configure("false")
         assert grants() == expected
         run_matrix(False)
+        run_replacements(False)
+        before = instance.query(f"SHOW GRANTS FOR {authorization_roles[1]}")
+        replacement = f"GRANT SELECT ON system.one TO {authorization_roles[1]} WITH REPLACE OPTION"
+        error = instance.query_and_get_error(replacement, user=actor, password=password)
+        assert "ACCESS_DENIED" in error and privilege in error
+        assert instance.query(f"SHOW GRANTS FOR {authorization_roles[1]}") == before
+        instance.query(
+            f"GRANT SELECT ON system.one TO {authorization_roles[0]} WITH REPLACE OPTION",
+            user=actor,
+            password=password,
+        )
+        assert (
+            instance.query(f"SHOW GRANTS FOR {authorization_roles[0]}")
+            == f"GRANT SELECT ON system.one TO {authorization_roles[0]}\n"
+        )
+        # Direct privilege replacement leaves role-derived authority as role-derived authority.
+        instance.query(f"GRANT SELECT ON system.one TO {member} WITH REPLACE OPTION")
+        assert (
+            instance.query(
+                f"SELECT count() FROM system.grants WHERE user_name = '{member}' AND access_type = '{privilege}'"
+            )
+            == "0\n"
+        )
+        assert f"GRANT {role} TO {member}" in instance.query(
+            f"SHOW GRANTS FOR {member}"
+        )
+        instance.query(f"GRANT {role} TO {member} WITH REPLACE OPTION")
         own_change(direct)
         own_change(member)
         disabled(f"GRANT CURRENT GRANTS({privilege}) TO {recipient}", direct, password)
@@ -747,8 +866,6 @@ def test_self_authentication_management_setting():
             )
             == f"{privilege}\t1\n"
         )
-        instance.query(f"GRANT SELECT ON system.one TO {direct} WITH REPLACE OPTION")
-        own_change(direct)
         expected = grants()
         disabled(
             f"GRANT CURRENT GRANTS(SELECT ON system.one, {privilege}) TO {recipient}"
@@ -776,10 +893,16 @@ def test_self_authentication_management_setting():
         own_change(direct)
         own_change(member)
 
-        configure("true")
-        instance.query(
-            f"REVOKE {privilege} FROM {direct}; REVOKE ACCESS MANAGEMENT ON *.* FROM {role};"
+        # Replacing the supplying role removes its direct bit and the inherited authority.
+        instance.query(f"GRANT SELECT ON system.one TO {role} WITH REPLACE OPTION")
+        assert stored_bits(role)[:2] == (0, 0)
+        assert "ACCESS_DENIED" in instance.query_and_get_error(
+            f"ALTER USER {member} IDENTIFIED BY '{password}'",
+            user=member,
+            password=password,
         )
+        configure("true")
+        instance.query(f"REVOKE {privilege} FROM {direct};")
         for user in (direct, member):
             assert "ACCESS_DENIED" in instance.query_and_get_error(
                 f"ALTER USER {user} IDENTIFIED BY '{password}'",

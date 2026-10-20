@@ -100,6 +100,7 @@ def test_self_authentication_replication_with_management_disabled(started_cluste
     password = "ReplicatedSelfPassword"
     config_path = "/etc/clickhouse-server/config.d/self_auth_setting.xml"
     normalized = "self_auth_repl_normalized"
+    actor = "self_auth_repl_actor"
     try:
         node2.replace_config(
             config_path, f"<clickhouse><{setting}>false</{setting}></clickhouse>"
@@ -181,16 +182,58 @@ def test_self_authentication_replication_with_management_disabled(started_cluste
             == "8\t0\n"
         )
         before = node2.query(f"SHOW GRANTS FOR {normalized}")
-        for query in (
+        error = node2.query_and_get_error(
             f"GRANT ON CLUSTER default ALL, {privilege} ON *.* TO {normalized}",
-            f"GRANT ON CLUSTER default SELECT ON system.one TO {normalized} WITH REPLACE OPTION",
-        ):
-            error = node2.query_and_get_error(query, settings=settings)
-            assert "SUPPORT_IS_DISABLED" in error and setting in error
-            assert node2.query(f"SHOW GRANTS FOR {normalized}") == before
+            settings=settings,
+        )
+        assert "SUPPORT_IS_DISABLED" in error and setting in error
+        assert node2.query(f"SHOW GRANTS FOR {normalized}") == before
+
+        replacement = f"GRANT ON CLUSTER default SELECT ON system.one TO {normalized} WITH REPLACE OPTION"
+        for initial in (0, 1, 2):
+            node1.query(
+                f"REVOKE ALL ON *.* FROM {normalized}; GRANT INSERT ON system.numbers TO {normalized};"
+            )
+            if initial:
+                option = " WITH GRANT OPTION" if initial == 2 else ""
+                node1.query(f"GRANT {privilege} TO {normalized}{option}")
+            assert_eq_with_retry(
+                node2,
+                f"SHOW GRANTS FOR {normalized}",
+                node1.query(f"SHOW GRANTS FOR {normalized}"),
+            )
+            # Both disabled and enabled workers clear the same full direct privilege set.
+            node2.query(replacement, settings=settings)
+            for node in all_nodes:
+                assert (
+                    node.query(f"SHOW GRANTS FOR {normalized}")
+                    == f"GRANT SELECT ON system.one TO {normalized}\n"
+                )
+
+        node1.query(
+            f"CREATE USER {actor} IDENTIFIED WITH sha256_password BY '{password}';"
+            f"GRANT ALL ON *.* TO {actor} WITH GRANT OPTION; REVOKE {privilege} FROM {actor};"
+        )
+        assert_eq_with_retry(
+            node2, f"SHOW GRANTS FOR {actor}", node1.query(f"SHOW GRANTS FOR {actor}")
+        )
+        # Full ALTER USER cannot supply the missing grant option for the full implicit revoke,
+        # even though the target currently has no self-service bit.
+        before = node2.query(f"SHOW GRANTS FOR {normalized}")
+        error = node2.query_and_get_error(
+            replacement, user=actor, password=password, settings=settings
+        )
+        assert "ACCESS_DENIED" in error and privilege in error
+        assert node2.query(f"SHOW GRANTS FOR {normalized}") == before
+        node1.query(f"GRANT {privilege} TO {actor} WITH GRANT OPTION")
+        assert_eq_with_retry(
+            node2, f"SHOW GRANTS FOR {actor}", node1.query(f"SHOW GRANTS FOR {actor}")
+        )
+        node2.query(replacement, user=actor, password=password, settings=settings)
+        assert node2.query(f"SHOW GRANTS FOR {normalized}") == before
     finally:
         node1.query(
-            f"DROP USER IF EXISTS {direct}, {member}; DROP ROLE IF EXISTS {role}, {normalized};"
+            f"DROP USER IF EXISTS {direct}, {member}, {actor}; DROP ROLE IF EXISTS {role}, {normalized};"
         )
         node2.exec_in_container(["rm", "-f", config_path])
         node2.restart_clickhouse()
