@@ -1,5 +1,6 @@
 SET print_pretty_type_names = 0;
 
+-- Basic construction, type inference, aliases, duplicate keys and empty arrays.
 SELECT mapFromEntries([('a', toUInt8(1)), ('b', toUInt8(2))]) FORMAT TabSeparatedRaw;
 SELECT toTypeName(mapFromEntries([('a', toUInt8(1))])) FORMAT TabSeparatedRaw;
 SELECT MAP_FROM_ENTRIES([('a', toUInt8(1))]) FORMAT TabSeparatedRaw;
@@ -14,6 +15,7 @@ SELECT mapEntries(mapFromEntries([('a', 1), ('a', 2), ('b', 3)])) FORMAT TabSepa
 SELECT mapFromEntries(CAST([], 'Array(Tuple(String, UInt8))')) FORMAT TabSeparatedRaw;
 SELECT mapFromEntries([]), toTypeName(mapFromEntries([])) FORMAT TabSeparatedRaw;
 
+-- Named tuples and nullable or LowCardinality key/value types.
 SELECT mapFromEntries(arrayZip(['a', 'b'], [toUInt8(1), toUInt8(2)])) FORMAT TabSeparatedRaw;
 SELECT mapFromEntries(CAST([('a', 1), ('b', 2)], 'Array(Tuple(foo String, bar UInt8))')) FORMAT TabSeparatedRaw;
 
@@ -59,6 +61,7 @@ FORMAT TabSeparatedRaw;
 
 SELECT mapEntries(mapFromEntries(mapEntries(map('a', 1, 'a', 2)))) FORMAT TabSeparatedRaw;
 
+-- NULL keys and invalid function arguments must fail.
 SELECT mapFromEntries(CAST([('a', 1), (NULL, 2)], 'Array(Tuple(Nullable(String), UInt8))')); -- { serverError BAD_ARGUMENTS }
 
 SELECT mapFromEntries([
@@ -73,7 +76,7 @@ SELECT mapFromEntries(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT mapFromEntries(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT mapFromEntries([('a', 1)], [('b', 2)]); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
--- Nullable tuples must retain the behavior of the former Trino arrayMap rewrite.
+-- Non-NULL nullable tuples retain the behavior of the former Trino arrayMap rewrite.
 SELECT mapFromEntries(CAST([('a', 1), ('b', 2)], 'Array(Nullable(Tuple(String, UInt8)))')) FORMAT TabSeparatedRaw;
 SELECT toTypeName(mapFromEntries(CAST([('a', 1)], 'Array(Nullable(Tuple(String, UInt8)))'))) FORMAT TabSeparatedRaw;
 SELECT
@@ -150,3 +153,13 @@ FORMAT TabSeparatedRaw;
 -- Typed empty arrays preserve their inferred key and value types.
 SELECT toTypeName(mapFromEntries(CAST([], 'Array(Nullable(Tuple(Array(UInt8), Array(UInt8))))'))) =
     'Map(Array(UInt8), Array(UInt8))' FORMAT TabSeparatedRaw;
+-- Verify array offsets when one row has no entries.
+SELECT
+    number,
+    mapFromEntries(arrayFilter(entry -> number != 0, [('a', toUInt8(1))]))
+FROM numbers(2)
+ORDER BY number
+FORMAT TabSeparatedRaw;
+
+-- NULL entries are invalid even when both fields of the tuple are nullable.
+SELECT mapFromEntries(CAST([NULL], 'Array(Nullable(Tuple(Nullable(String), Nullable(UInt8))))')); -- { serverError BAD_ARGUMENTS }

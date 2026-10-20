@@ -7,11 +7,11 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMap.h>
-#include <DataTypes/NullableUtils.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -288,6 +288,41 @@ ColumnPtr extractNullableMapEntryElement(
     return column;
 }
 
+/// Validate the physical tuple entries and expose their key/value columns.
+/// Keep NULL-entry rejection here, before any nullable subcolumns are extracted.
+std::pair<ColumnPtr, ColumnPtr> extractMapEntryColumns(
+    const ColumnArray & entries, const DataTypePtr & nested_type, const String & function_name)
+{
+    const auto & data = entries.getDataPtr();
+    const auto * nullable_entries = checkAndGetColumn<ColumnNullable>(data.get());
+    if (nullable_entries)
+    {
+        const auto & null_map = nullable_entries->getNullMapData();
+        if (!memoryIsZero(null_map.data(), 0, null_map.size()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of function {} must not contain NULL map entries", function_name);
+    }
+
+    const auto & tuple_data = nullable_entries ? nullable_entries->getNestedColumnPtr() : data;
+    const auto * tuple_column = checkAndGetColumn<ColumnTuple>(tuple_data.get());
+    if (!tuple_column || tuple_column->tupleSize() != 2)
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Argument column of function {} must be Array(Tuple(K, V)), but {} is given",
+            function_name,
+            entries.getName());
+
+    ColumnPtr keys = tuple_column->getColumnPtr(0);
+    ColumnPtr values = tuple_column->getColumnPtr(1);
+    if (nullable_entries)
+    {
+        const auto & tuple_type = assert_cast<const DataTypeTuple &>(*removeNullable(nested_type));
+        keys = extractNullableMapEntryElement(keys, tuple_type.getElement(0), *nullable_entries);
+        values = extractNullableMapEntryElement(values, tuple_type.getElement(1), *nullable_entries);
+    }
+
+    return {std::move(keys), std::move(values)};
+}
+
 /// mapFromEntries(entries) creates a map from an array of key-value tuples.
 class FunctionMapFromEntries final : public IFunction
 {
@@ -365,32 +400,7 @@ public:
         if (isNothing(nested_type))
             return ColumnMap::create(entries->getDataPtr(), entries->getDataPtr(), offsets);
 
-        const auto * nullable_tuple = checkAndGetColumn<ColumnNullable>(entries->getDataPtr().get());
-        if (nullable_tuple)
-        {
-            const auto & null_map = nullable_tuple->getNullMapData();
-            if (!memoryIsZero(null_map.data(), 0, null_map.size()))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of function {} must not contain NULL map entries", getName());
-        }
-
-        const auto & tuple_data = nullable_tuple ? nullable_tuple->getNestedColumnPtr() : entries->getDataPtr();
-        const auto * tuple_column = checkAndGetColumn<ColumnTuple>(tuple_data.get());
-        if (!tuple_column || tuple_column->tupleSize() != 2)
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Argument column of function {} must be Array(Tuple(K, V)), but {} is given",
-                getName(),
-                holder->getName());
-
-        ColumnPtr keys = tuple_column->getColumnPtr(0);
-        ColumnPtr values = tuple_column->getColumnPtr(1);
-        if (nullable_tuple)
-        {
-            const auto & tuple_type = assert_cast<const DataTypeTuple &>(*removeNullable(nested_type));
-            keys = extractNullableMapEntryElement(keys, tuple_type.getElement(0), *nullable_tuple);
-            values = extractNullableMapEntryElement(values, tuple_type.getElement(1), *nullable_tuple);
-        }
-
+        auto [keys, values] = extractMapEntryColumns(*entries, nested_type, getName());
         keys = normalizeMapKeyColumn(std::move(keys), getName());
         return ColumnMap::create(keys, values, offsets);
     }
@@ -753,6 +763,7 @@ The function is a convenient alternative to syntax `CAST([...], 'Map(key_type, v
     /// mapFromEntries function documentation
     FunctionDocumentation::Description description_mapFromEntries = R"(
 Creates a map from an array of key-value tuples.
+NULL map entries and NULL keys are rejected; NULL values are allowed.
 Duplicate keys are preserved.
 The function infers the key and value types from the input, unlike casting an array of tuples to a Map.
 )";
