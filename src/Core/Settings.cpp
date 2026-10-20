@@ -2540,7 +2540,7 @@ The number of streams that read simultaneously is capped by this multiplier as w
 )", 0) \
     \
     DECLARE(String, network_compression_method, "ZSTD", R"(
-The codec for compressing the client/server and server/server communication over the native protocol, the response of an HTTP request made with `compress=1`, which uses the same frame format, and the streaming exchange between the tasks of a distributed query plan (`make_distributed_plan`). Exchanges through temporary files use the default codec of the server.
+The codec for compressing the client/server and server/server communication over the native protocol and the response of an HTTP request made with `compress=1`, which uses the same frame format. The streaming exchange between the tasks of a distributed query plan (`make_distributed_plan`) uses [distributed_plan_exchange_compression_method](#distributed_plan_exchange_compression_method) instead.
 
 Possible values:
 
@@ -2556,7 +2556,7 @@ Possible values:
         {"26.9", "LZ4", "ZSTD", "Switched the default compression method for client/server and server/server communication from `LZ4` to `ZSTD` to reduce network traffic."}) \
     \
     DECLARE(Int64, network_zstd_compression_level, 3, R"(
-Adjusts the level of ZSTD compression. Used only when [network_compression_method](#network_compression_method) is set to `ZSTD`.
+Adjusts the level of ZSTD compression. Used only when [network_compression_method](#network_compression_method) is set to `ZSTD`. The streaming exchange of a distributed query plan uses it only when [distributed_plan_exchange_compression_method](#distributed_plan_exchange_compression_method) is empty.
 
 Possible values:
 
@@ -11072,6 +11072,26 @@ Possible values:
  - 'Streaming' - stream exchange data over network.
 )", EXPERIMENTAL, \
         {"25.5", "", "", "New experimental setting."}) \
+    DECLARE(String, distributed_plan_exchange_compression_method, "LZ4", R"(
+The codec for compressing the packets of the streaming exchange between the tasks of a distributed query plan. Exchanges through temporary files use the default codec of the server.
+
+Possible values:
+
+- `''` — use the codec of [network_compression_method](#network_compression_method).
+- `NONE` — no compression.
+- `LZ4` — use the LZ4 codec.
+- `LZ4HC` — use the LZ4HC codec at its default level 9. It compresses many times slower than `LZ4`.
+- `ZSTD` — use the ZSTD codec with the level of [distributed_plan_exchange_zstd_compression_level](#distributed_plan_exchange_zstd_compression_level).
+)", EXPERIMENTAL, \
+        {"26.11", "", "LZ4", "New setting: the streaming exchange of a distributed query plan compresses with `LZ4` instead of the codec of `network_compression_method`."}) \
+    DECLARE(Int64, distributed_plan_exchange_zstd_compression_level, 1, R"(
+The level of ZSTD compression of the streaming exchange of a distributed query plan. Used only when [distributed_plan_exchange_compression_method](#distributed_plan_exchange_compression_method) is set to `ZSTD`.
+
+Possible values:
+
+- Integer from 1 to 22. Higher levels compress better and slower.
+)", EXPERIMENTAL, \
+        {"26.11", 1, 1, "New setting for the level of ZSTD compression of the streaming exchange of a distributed query plan."}) \
     DECLARE(UInt64, distributed_plan_max_rows_to_broadcast, 20000, R"(
 Maximum rows to use broadcast join instead of shuffle join in distributed query plan.
 A heuristic for the rule-based distributed planner. When the cost-based optimizer is enabled, the broadcast-vs-shuffle choice is made by estimated cost and this setting has no effect.
