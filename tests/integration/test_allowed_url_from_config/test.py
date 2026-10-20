@@ -86,6 +86,18 @@ def test_config_with_hosts(start_cluster):
             "http://host:123/bucket/k.csv?X-Amz-Signature=[HIDDEN]",
         ),
         (
+            "SELECT * FROM azureBlobStorage('BlobEndpoint=https://host:123/;"
+            "SharedAccessSignature=sv=2022-11-02&sr=c&sp=r&sig=pw_azure_sas_canary', 'cont', 'data.csv', 'CSV', 'x UInt8')",
+            "pw_azure_sas_canary",
+            "https://host:123",
+        ),
+        (
+            "SELECT * FROM azureBlobStorage('https://host:123/?sv=2022-11-02&sr=c&sp=r&sig=pw_azure_url_sas_canary', "
+            "'cont', 'data.csv', 'account', 'key', 'CSV', 'auto', 'x UInt8')",
+            "pw_azure_url_sas_canary",
+            "https://host:123/",
+        ),
+        (
             "SELECT * FROM url('http://host:123/?connection_string=DSN%3Dx%3BPWD%3Dpw_xdbc_canary', CSV, 'x UInt8')",
             "pw_xdbc_canary",
             "http://host:123/?connection_string=[HIDDEN]",
@@ -96,6 +108,8 @@ def test_config_with_hosts(start_cluster):
         "presigned",
         "avro_schema_registry",
         "s3_presigned_in_path",
+        "azure_connection_string_sas",
+        "azure_url_sas_with_account_key",
         "xdbc_connection_string",
     ],
 )
