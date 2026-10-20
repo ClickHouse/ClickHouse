@@ -17,8 +17,8 @@ INSERT INTO t_proj_offset SELECT number, 1000 - number FROM numbers(64);
 SELECT _part_offset, _part_granule_offset FROM t_proj_offset WHERE key = 3 SETTINGS prefer_optimize_projection = 1;
 SELECT sum(key) FROM t_proj_offset WHERE _part_offset = 3 SETTINGS prefer_optimize_projection = 1;
 SELECT _part_offset FROM t_proj_offset WHERE key = 3 SETTINGS force_optimize_projection = 1; -- { serverError PROJECTION_NOT_USED }
--- the projection's part filtering must not prune by its own offsets either
-SELECT key FROM t_proj_offset WHERE val = 997 AND _part_offset = 3 SETTINGS optimize_use_projection_filtering = 1;
+-- the projection's part filtering must not prune by its own offsets either (a key set, so the exclusion search is used)
+SELECT key FROM t_proj_offset WHERE val IN (997, 950) AND _part_offset = 3 SETTINGS optimize_use_projection_filtering = 1;
 
 -- after a merge the projection wins on marks without any setting
 DROP TABLE IF EXISTS t_proj_offset_merged;
@@ -72,9 +72,9 @@ INSERT INTO t_proj_lwu_rmt SELECT number, if(number % 2, 1, -1), 'old' FROM numb
 UPDATE t_proj_lwu_v1 SET s = 'new' WHERE v > 0;
 UPDATE t_proj_lwu_v2 SET s = 'new' WHERE v > 0;
 UPDATE t_proj_lwu_rmt SET s = 'new' WHERE v > 0;
-SELECT groupArray(k) FROM (SELECT k FROM t_proj_lwu_v1 WHERE s = 'new' ORDER BY k);
-SELECT groupArray(k) FROM (SELECT k FROM t_proj_lwu_v2 WHERE s = 'new' ORDER BY k);
-SELECT groupArray(k) FROM (SELECT k FROM t_proj_lwu_rmt WHERE s = 'new' ORDER BY k);
+SELECT arraySort(groupArray(k)) FROM t_proj_lwu_v1 WHERE s = 'new';
+SELECT arraySort(groupArray(k)) FROM t_proj_lwu_v2 WHERE s = 'new';
+SELECT arraySort(groupArray(k)) FROM t_proj_lwu_rmt WHERE s = 'new';
 
 DROP TABLE IF EXISTS t_proj_lwu_alter;
 DROP TABLE IF EXISTS t_proj_lwu_delete;
@@ -89,11 +89,11 @@ SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, index_g
 
 INSERT INTO t_proj_lwu_alter SELECT number, if(number % 2, 1, -1), 'old' FROM numbers(10);
 ALTER TABLE t_proj_lwu_alter UPDATE s = 'new' WHERE v > 0 SETTINGS alter_update_mode = 'lightweight';
-SELECT groupArray(k) FROM (SELECT k FROM t_proj_lwu_alter WHERE s = 'new' ORDER BY k);
+SELECT arraySort(groupArray(k)) FROM t_proj_lwu_alter WHERE s = 'new';
 
 INSERT INTO t_proj_lwu_delete SELECT number, if(number % 2, 1, -1), 'old' FROM numbers(10);
 DELETE FROM t_proj_lwu_delete WHERE v > 0 SETTINGS lightweight_delete_mode = 'lightweight_update';
-SELECT groupArray(k) FROM (SELECT k FROM t_proj_lwu_delete ORDER BY k);
+SELECT arraySort(groupArray(k)) FROM t_proj_lwu_delete;
 
 DROP TABLE t_proj_offset;
 DROP TABLE t_proj_offset_merged;
