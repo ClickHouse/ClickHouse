@@ -24,6 +24,8 @@
 #include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 #include <base/sort.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -199,17 +201,13 @@ static bool allWhitespace(const std::string & s)
 }
 
 /// An empty or whitespace-only file: there is nothing to merge from it.
+/// `ReadBufferFromFile` throws on a read error, which `std::ifstream` would report as a plain end of file.
 static bool isBlankFile(const std::string & path)
 {
-    std::ifstream file(path);
-    if (!file.is_open())
-        return false;
-
-    std::string line;
-    while (std::getline(file, line))
-        if (!allWhitespace(line))
-            return false;
-    return true;
+    ReadBufferFromFile in(path);
+    std::string contents;
+    readStringUntilEOF(contents, in);
+    return allWhitespace(contents);
 }
 
 static void deleteAttributesRecursive(Node * root)
