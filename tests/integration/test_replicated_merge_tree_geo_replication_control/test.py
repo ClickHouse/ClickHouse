@@ -776,8 +776,18 @@ def test_region_requires_experimental_setting(start_cluster):
         )
         assert apac1.query("SELECT count() FROM gated") == "0\n"
 
+        # A full-definition ATTACH is user input like a CREATE, so it is gated as well.
+        error = apac1.query_and_get_error(
+            "ATTACH TABLE gated_attach UUID '5ac7c2a5-0cd1-4a4b-9a43-3a0b4f1b6c9e' (key UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/gated_attach', 'apac1') ORDER BY key"
+            + " SETTINGS geo_replication_control_region = 'APAC'",
+            settings={"allow_experimental_geo_replication_control": 0},
+        )
+        assert "SUPPORT_IS_DISABLED" in error
+        assert "allow_experimental_geo_replication_control" in error
+
     finally:
         apac1.query("DROP TABLE IF EXISTS gated SYNC")
+        apac1.query("DROP TABLE IF EXISTS gated_attach SYNC")
 
 
 def test_clone_part_from_shard_skips_lagging_same_region_replica(start_cluster):
