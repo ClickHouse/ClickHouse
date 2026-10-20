@@ -644,10 +644,11 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
             block.insert(column);
     }
 
-    /// The requested-column entries carry what `evaluateDefaults` needs for a subcolumn.
+    /// The requested-column entries carry what `evaluateDefaults` needs for a subcolumn. The original
+    /// ones keep a flattened `Nested` field such as `n.z` a column of its own, as its `DEFAULT` is.
     NamesAndTypesList columns_to_evaluate;
     NameSet added;
-    for (const auto & column : reader->getColumns())
+    for (const auto & column : reader->getOriginalRequestedColumns())
     {
         if (columns_to_reevaluate.contains(column.name) && block.has(column.name) && added.emplace(column.name).second)
             columns_to_evaluate.push_back(column);
@@ -820,12 +821,13 @@ void MergeTreeReadersChain::reevaluateDefaultsAfterPatches(ReadResult & result, 
     if (names_to_evaluate.empty())
         return;
 
-    /// The requested-column entries carry what `evaluateDefaults` needs for a subcolumn.
+    /// The requested-column entries carry what `evaluateDefaults` needs for a subcolumn. The original
+    /// ones keep a flattened `Nested` field such as `n.z` a column of its own, as its `DEFAULT` is.
     NamesAndTypesList columns_to_evaluate;
     NameSet added;
     for (size_t i = 0; i <= reader_index; ++i)
     {
-        for (const auto & column : range_readers[i].getReader()->getColumns())
+        for (const auto & column : range_readers[i].getReader()->getOriginalRequestedColumns())
         {
             if (names_to_evaluate.contains(column.name) && block.has(column.name) && added.emplace(column.name).second)
                 columns_to_evaluate.push_back(column);

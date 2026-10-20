@@ -92,6 +92,10 @@ public:
     ALWAYS_INLINE const NamesAndTypesList & getColumns() const { return data_part_info_for_read->isWidePart() ? converted_requested_columns : original_requested_columns; }
     size_t numColumnsInResult() const { return getColumns().size(); }
 
+    /// The requested columns as they were passed, without converting the flattened fields of `Nested`
+    /// to subcolumns: the `DEFAULT` of a field such as `n.z` is registered under that name.
+    const NamesAndTypesList & getOriginalRequestedColumns() const { return original_requested_columns; }
+
     /// Returns column names and types as they are stored on disk (may differ from requested types
     /// when there are pending type-changing mutations). Used to build correct `ColumnsWithTypeAndName`
     /// before `performRequiredConversions` is applied.
