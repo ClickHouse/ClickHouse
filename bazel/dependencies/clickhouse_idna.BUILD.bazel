@@ -12,19 +12,6 @@ ch_cc_library(
         "src/idna.cpp",
     ],
     hdrs = glob(["include/**/*.h"]),
-    additional_compiler_inputs = [
-        "src/id_tables.cpp",
-        "src/identifier.cpp",
-        "src/mapping.cpp",
-        "src/mapping_tables.cpp",
-        "src/normalization.cpp",
-        "src/normalization_tables.cpp",
-        "src/punycode.cpp",
-        "src/to_ascii.cpp",
-        "src/to_unicode.cpp",
-        "src/unicode_transcoding.cpp",
-        "src/validity.cpp",
-    ],
     copts =
         [
             "-w",
@@ -38,4 +25,5 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    textual_hdrs = ["src/identifier.cpp", "src/mapping.cpp", "src/normalization.cpp", "src/punycode.cpp", "src/to_ascii.cpp", "src/to_unicode.cpp", "src/unicode_transcoding.cpp", "src/validity.cpp", "src/id_tables.cpp", "src/mapping_tables.cpp", "src/normalization_tables.cpp"],
 )

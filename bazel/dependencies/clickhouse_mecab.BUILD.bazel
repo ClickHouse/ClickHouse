@@ -36,7 +36,6 @@ ch_cc_library(
         "-std=c++23",
         "-Wno-register",
     ],
-    implementation_deps = ["@clickhouse//contrib/MeCab-cmake:mecab_config_headers"],
     includes = [
         "mecab/src",
     ],
@@ -48,5 +47,5 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins", "@clickhouse//contrib/MeCab-cmake:mecab_config_headers"],
 )

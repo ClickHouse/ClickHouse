@@ -190,6 +190,7 @@ CMake hash recorded below.
 | `48813843b` (verification snapshot) | Remove 20 redundant FlatBuffers generated-header references | [6c14921a](https://app.buildbuddy.io/invocation/6c14921a-ceb6-418f-b03f-77b375a3e994) | [218d91af](https://app.buildbuddy.io/invocation/218d91af-8695-4b00-9e3c-82ae80a4c1fc) |
 | `1727c9490` (verification snapshot) | DWYU Clang guarded-header attribution and consumer checks | [6e83876d](https://app.buildbuddy.io/invocation/6e83876d-27cb-4314-b3c4-0d5cef4b660d) | [350cdec5](https://app.buildbuddy.io/invocation/350cdec5-eeaf-4af6-92c6-3047187d8b02) |
 | `081e42f92` (verification snapshot) | Remove four GCP dependencies verified by native isolated links | [93141dec](https://app.buildbuddy.io/invocation/93141dec-b288-485b-9e0f-fa1601abfa81) | [5649d2b1](https://app.buildbuddy.io/invocation/5649d2b1-0450-4495-b813-aecd5757e09f) |
+| `cc5b05740` (verification snapshot) | C++ library ownership: Cap'n Proto, gtest, ANTLR, Minizip, WordNet and other dependencies | [0fbd854d](https://app.buildbuddy.io/invocation/0fbd854d-aa33-44bb-92a7-b92f1dc5ccc1) | [858f9a68](https://app.buildbuddy.io/invocation/858f9a68-849b-475f-8e01-54666a79367e) |
 
 The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`

@@ -22,5 +22,5 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = ["@clickhouse_boost//:_boost_graph"],
+    deps = ["@clickhouse_boost//:_boost_graph", "@clickhouse_boost//:boost_headers"],
 )

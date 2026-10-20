@@ -58,5 +58,5 @@ ch_cc_library(
         "-std=c++23",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":google_benchmark"],
+    implementation_deps = [":google_benchmark"],
 )

@@ -2722,6 +2722,7 @@ ch_cc_library(
         "@clickhouse_aws//:_aws__compile_0",
         "@clickhouse_azure//:_azure_sdk",
         "@clickhouse_capnproto//:_capnp",
+        "@clickhouse_capnproto//:_capnpc",
         "@clickhouse_cctz//:_cctz",
         "@clickhouse_cppkafka//:_cppkafka",
         "@clickhouse_croaring//:_roaring",

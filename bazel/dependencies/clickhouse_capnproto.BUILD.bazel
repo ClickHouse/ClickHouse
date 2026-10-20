@@ -41,6 +41,8 @@ ch_cc_library(
     copts = _CAPNPROTO_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":_kj"],
+    hdrs = glob(["c++/src/capnp/*.h"], exclude = ["c++/src/capnp/arena.h", "c++/src/capnp/test-util.h", "c++/src/capnp/schema-parser.h", "c++/src/capnp/serialize-text.h"]),
+    textual_hdrs = ["c++/src/capnp/arena.h"],
 )
 
 ch_cc_library(
@@ -60,7 +62,8 @@ ch_cc_library(
     ],
     copts = _CAPNPROTO_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":_capnp"],
+    deps = [":_capnp", ":_kj"],
+    hdrs = ["c++/src/capnp/schema-parser.h", "c++/src/capnp/serialize-text.h"] + glob(["c++/src/capnp/compiler/**/*.h"]),
 )
 
 ch_cc_library(
@@ -90,11 +93,12 @@ ch_cc_library(
         "c++/src/kj/filesystem-disk-win32.c++",
         "c++/src/kj/parse/char.c++",
     ],
-    hdrs = glob(["c++/src/**/*.h"]),
+    hdrs = glob(["c++/src/kj/**/*.h"], exclude = ["c++/src/kj/async-inl.h", "c++/src/kj/async-win32.h", "c++/src/kj/compat/brotli.h", "c++/src/kj/compat/gzip.h"]),
     copts = _CAPNPROTO_COPTS,
     includes = [
         "c++/src",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    textual_hdrs = ["c++/src/kj/async-inl.h"],
 )
