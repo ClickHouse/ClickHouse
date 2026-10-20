@@ -4,6 +4,8 @@
 #if USE_AWS_S3 && USE_AVRO
 
 #include <aws/core/auth/AWSCredentials.h>
+#include <aws/glue/model/Column.h>
+#include <aws/glue/model/TableInput.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Interpreters/Context_fwd.h>
 #include <Poco/JSON/Object.h>
@@ -103,7 +105,28 @@ public:
         const String & column_name,
         const String & glue_column_type);
 
+    /// Translates an Iceberg schema object (`{"schema-id": .., "fields": [..]}`) into the Glue
+    /// `StorageDescriptor.Columns` representation used by Apache Iceberg's Glue catalog: one column
+    /// per top-level field, with a Hive-style type string and the `iceberg.field.id`,
+    /// `iceberg.field.optional` and `iceberg.field.current` parameters that `getTableMetadata`
+    /// reads back. Athena and other Glue consumers require these columns to be present.
+    static Aws::Vector<Aws::Glue::Model::Column> glueColumnsFromIcebergSchema(const Poco::JSON::Object::Ptr & schema);
+
+    /// Returns the schema referenced by `current-schema-id` in an Iceberg `metadata.json` object.
+    static Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata_object);
+
 private:
+    /// Builds the `TableInput` for an `UpdateTable` call that moves `metadata_location` to
+    /// `new_metadata_path`. Glue's `UpdateTable` replaces the whole table definition, so the
+    /// existing definition is fetched first and only the metadata pointer (and, when `columns`
+    /// is given, the column list) is changed; everything else, including columns written by a
+    /// previous commit, is preserved.
+    Aws::Glue::Model::TableInput buildUpdatedTableInput(
+        const String & namespace_name,
+        const String & table_name,
+        const String & new_metadata_path,
+        const std::optional<Aws::Vector<Aws::Glue::Model::Column>> & columns) const;
+
     std::unique_ptr<Aws::Glue::GlueClient> glue_client;
     const LoggerPtr log;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
