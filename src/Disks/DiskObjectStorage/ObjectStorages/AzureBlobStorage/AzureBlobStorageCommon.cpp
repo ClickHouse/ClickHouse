@@ -323,7 +323,7 @@ std::unique_ptr<ContainerClient> ConnectionParams::createForContainer() const
     try
     {
         /// A SAS token authorizes the request by itself, so `auth_method` is unused on this path.
-        if (!endpoint.sas_auth.empty())
+        if (!endpoint.sas_auth.empty() || !endpoint.additional_params.empty())
         {
             RawContainerClient raw_client{endpoint.getContainerEndpoint(), client_options};
             return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);

@@ -793,9 +793,10 @@ void AzureObjectStorage::applyNewSettings(
         if (!options.force_client_rebuild && current_params->forbid_implicit_credentials == restrict_now)
             return;
 
+        /// A restricted session fails with `ACCESS_DENIED`, as for S3; only loading a table falls back to no credentials.
         auto params = std::make_unique<AzureBlobStorage::ConnectionParams>(*current_params);
         params->forbid_implicit_credentials = restrict_now;
-        params->anonymous_fallback_for_server_credentials = restrict_now;
+        params->anonymous_fallback_for_server_credentials = false;
         client.set(AzureBlobStorage::getContainerClient(*params, /*readonly=*/ true));
         connection_params.set(std::move(params));
         return;

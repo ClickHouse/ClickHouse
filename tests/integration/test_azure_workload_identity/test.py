@@ -107,7 +107,7 @@ def get_storage_hits(started_cluster):
 
 def test_table_created_with_opt_in_serves_no_restricted_session(started_cluster):
     """A table that uses the server's identity follows the restriction of the accessing session, as for S3: a
-    client built under the opt-in is not reused by a restricted session, and the opt-in works again afterwards."""
+    restricted session is refused before any request, and the opt-in works again afterwards."""
 
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     allow = {"allow_server_credentials_in_user_queries": 1}
@@ -118,10 +118,9 @@ def test_table_created_with_opt_in_serves_no_restricted_session(started_cluster)
     )
 
     before = len(get_storage_hits(started_cluster))
-    node.query_and_get_error("SELECT * FROM t_opt_in", settings={"azure_sdk_max_retries": 0})
-    restricted_hits = get_storage_hits(started_cluster)[before:]
-    assert restricted_hits
-    assert not any(hit["authorization"] for hit in restricted_hits)
+    error = node.query_and_get_error("SELECT * FROM t_opt_in", settings={"azure_sdk_max_retries": 0})
+    assert "ACCESS_DENIED" in error
+    assert get_storage_hits(started_cluster)[before:] == []
 
     before = len(get_storage_hits(started_cluster))
     node.query_and_get_error("SELECT * FROM t_opt_in", settings={**allow, "azure_sdk_max_retries": 0})
@@ -132,7 +131,8 @@ def test_table_created_with_opt_in_serves_no_restricted_session(started_cluster)
 
 
 def test_truncate_follows_the_session(started_cluster):
-    """`TRUNCATE` deletes blobs with the client of the truncating session, not with one an opted-in session left."""
+    """`TRUNCATE` uses the client of the truncating session, not one an opted-in session left: a restricted session is
+    refused before any delete is sent."""
 
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     allow = {"allow_server_credentials_in_user_queries": 1}
@@ -142,11 +142,9 @@ def test_truncate_follows_the_session(started_cluster):
         settings=allow,
     )
 
-    # The mock storage denies the delete batch, so the query fails after the request is recorded.
     before = len(get_storage_hits(started_cluster))
-    node.query_and_get_error("TRUNCATE TABLE t_truncate", settings={"azure_sdk_max_retries": 0})
-    deletes = [hit for hit in get_storage_hits(started_cluster)[before:] if "comp=batch" in hit["path"]]
-    assert deletes
-    assert not any(hit["authorization"] for hit in deletes)
+    error = node.query_and_get_error("TRUNCATE TABLE t_truncate", settings={"azure_sdk_max_retries": 0})
+    assert "ACCESS_DENIED" in error
+    assert get_storage_hits(started_cluster)[before:] == []
 
     node.query("DROP TABLE t_truncate SYNC")
