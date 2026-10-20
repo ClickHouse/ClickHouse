@@ -968,7 +968,8 @@ void Client::connect()
             }
 
             /// This problem can't be fixed with reconnection so it is not attempted
-            if (e.code() == ErrorCodes::AUTHENTICATION_FAILED || e.code() == ErrorCodes::REQUIRED_PASSWORD)
+            if (e.code() == ErrorCodes::AUTHENTICATION_FAILED || e.code() == ErrorCodes::REQUIRED_PASSWORD
+                || e.code() == ErrorCodes::REQUIRED_SECOND_FACTOR)
                 throw;
 
             if (attempted_address_index == hosts_and_ports.size() - 1)
