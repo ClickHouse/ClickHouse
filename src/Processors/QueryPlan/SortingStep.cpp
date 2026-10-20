@@ -547,6 +547,20 @@ void SortingStep::fullSortStreams(
     mergeSorting(pipeline, sort_settings, result_sort_desc, limit_, threshold_tracker, sort_totals);
 }
 
+/// With all-constant keys every row ties, so a merge drains its inputs one after another, and a fan-out
+/// that must push to all of its outputs before it consumes again cannot wait that out.
+static bool allConstantMergeCanStall(const QueryPipelineBuilder & pipeline, const SortDescription & description)
+{
+    if (!sortDescriptionIsAllConstant(description, *pipeline.getSharedHeader()))
+        return false;
+
+    for (const auto & processor : pipeline.getProcessors())
+        if (processor->requiresAllOutputsPushable())
+            return true;
+
+    return false;
+}
+
 void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_, QueryPipelineProcessorsCollector & collector, const bool skip_partial_sort)
 {
     scatterByPartitionIfNeeded(pipeline);
@@ -557,9 +571,8 @@ void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescriptio
     addPerStreamLimitByIfNeeded(pipeline, result_sort_desc);
 
     /// If there are several streams, then we merge them into one
-    /// (all-constant keys order nothing, and a merge can wait on inputs a shared upstream blocks, so those are resized).
     const bool merge_needed = pipeline.getNumStreams() > 1 && (partition_by_description.empty() || pipeline.getNumThreads() == 1);
-    if (merge_needed && !sortDescriptionIsAllConstant(result_sort_desc, *pipeline.getSharedHeader()))
+    if (merge_needed && !allConstantMergeCanStall(pipeline, result_sort_desc))
     {
         sorting_stage = collector.detachProcessors(static_cast<size_t>(SortingStage::Sort));
         auto transform = std::make_shared<MergingSortedTransform>(
