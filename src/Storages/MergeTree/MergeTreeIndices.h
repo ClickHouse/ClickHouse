@@ -357,6 +357,11 @@ struct IMergeTreeIndex
     /// never schedule it for recalculation, otherwise those operations get wedged.
     virtual bool isInert() const { return false; }
 
+    /// False when the index data usually does not compress (e.g. bloom filter bits), so a generic codec only
+    /// slows down reading it. The blocks of such an index that the part's codec does not compress well
+    /// are written with codec `NONE`.
+    virtual bool isCompressible() const { return true; }
+
     Names getColumnsRequiredForIndexCalc() const;
     const NamesAndTypesList & getColumnsWithTypesRequiredForIndexCalc() const;
 
