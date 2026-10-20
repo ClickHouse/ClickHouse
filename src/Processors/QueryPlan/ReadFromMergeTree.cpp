@@ -316,7 +316,6 @@ namespace Setting
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsUInt64 parallel_replicas_count;
-    extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool distributed_index_analysis;
@@ -3724,8 +3723,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     /// JOIN - answers `true` here as well, and skipping would leave it reading every mark with nobody to
     /// narrow it. Such a read has to analyze itself in any case: an analysis made on the initiator names
     /// the initiator's parts, which are not the parts this replica reads.
+    /// The analysis on the initiator is done by its local plan, so without one (`parallel_replicas_prefer_local_replica = 0`,
+    /// or parallel replicas inside a `Distributed` subquery) no replica analyzes and the coordinator has only whole parts.
     if (context_->canUseParallelReplicasOnFollower() && is_parallel_reading_from_replicas_
-        && settings[Setting::parallel_replicas_local_plan]
+        && ClusterProxy::canUseLocalPlanForParallelReplicas(context_)
         && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator]
         /// If parallel replicas support projection optimization, selected_marks will be used to determine the optimal projection.
         && !support_projection_optimization)
