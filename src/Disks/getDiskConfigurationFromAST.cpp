@@ -568,12 +568,7 @@ void validateResolvedAzureDiskCredentials(
         if (auto it = disks.find(wrapped_disk); !wrapped_disk.empty() && it != disks.end())
         {
             if (const auto params = getCustomDiskServerIdentity(it->second))
-            {
-                auto restricted = *params;
-                restricted.forbid_implicit_credentials = true;
-                restricted.anonymous_fallback_for_server_credentials = false;
-                restricted.checkOrDropServerManagedCredentials();
-            }
+                params->checkSessionMayUseServerIdentity(/*restrict_server_credentials=*/ true);
         }
     }
 

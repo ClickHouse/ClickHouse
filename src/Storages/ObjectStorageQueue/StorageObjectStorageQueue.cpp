@@ -722,6 +722,10 @@ void StorageObjectStorageQueue::read(
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. "
                         "To enable use setting `stream_like_engine_allow_direct_select`. Be aware that usually the read data is removed from the queue.");
     }
+
+    /// The client keeps the creator's allowance for background processing; a direct reader is checked against its own.
+    checkSessionMayUseServerIdentity(*object_storage, local_context);
+
     bool do_commit_on_select = false;
     {
         std::lock_guard lock(mutex);

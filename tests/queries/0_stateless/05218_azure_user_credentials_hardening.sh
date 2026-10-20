@@ -20,6 +20,7 @@ OPT_IN_TABLE="azure_hardening_opt_in_${DB}"
 QUEUE="azure_hardening_queue_${DB}"
 FROM_ZK_TABLE="azure_hardening_from_zk_${DB}"
 NAMED_DISK_TABLE="azure_hardening_named_disk_${DB}"
+IDENTITY_QUEUE="azure_hardening_identity_queue_${DB}"
 NAMED_DISK="azure_hardening_trusted_${DB}"
 ZK_PATH="/clickhouse/test_azure_hardening_${DB}"
 
@@ -42,6 +43,7 @@ cleanup() {
         DROP TABLE IF EXISTS ${QUEUE} SYNC;
         DROP TABLE IF EXISTS ${FROM_ZK_TABLE} SYNC;
         DROP TABLE IF EXISTS ${NAMED_DISK_TABLE} SYNC;
+        DROP TABLE IF EXISTS ${IDENTITY_QUEUE} SYNC;
         DROP NAMED COLLECTION IF EXISTS ${NC_URL_ONLY};
         DROP NAMED COLLECTION IF EXISTS ${NC_ACCOUNT_KEY};
     " 2>/dev/null
@@ -130,6 +132,13 @@ $CLICKHOUSE_CLIENT --allow_server_credentials_in_user_queries=1 -m -q "
 "
 $CLICKHOUSE_CLIENT -q "
     ALTER TABLE ${QUEUE} MODIFY SETTING after_processing_move_connection_string = '${URL}'; -- { serverError ACCESS_DENIED }
+"
+
+# A queue created with the opt-in keeps it for background processing, but a restricted direct reader is refused.
+$CLICKHOUSE_CLIENT --allow_server_credentials_in_user_queries=1 -q "
+    CREATE TABLE ${IDENTITY_QUEUE} (x UInt8) ENGINE = AzureQueue('${URL}', 'cont', 'queue/*', 'CSV') SETTINGS mode = 'unordered'"
+$CLICKHOUSE_CLIENT -q "
+    SELECT * FROM ${IDENTITY_QUEUE} SETTINGS stream_like_engine_allow_direct_select = 1; -- { serverError ACCESS_DENIED }
 "
 
 # A wrapper may name a disk an opted-in session created; the restricted session is refused, not given that disk.

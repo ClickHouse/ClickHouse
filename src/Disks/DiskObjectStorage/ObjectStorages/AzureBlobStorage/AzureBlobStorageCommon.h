@@ -178,6 +178,10 @@ struct ConnectionParams
 
     /// `auth_method` for a caller that obtains tokens from it directly; throws `ACCESS_DENIED` if it is off limits.
     AuthMethod getPermittedAuthMethod() const;
+
+    /// Throws `ACCESS_DENIED` if a client built from these parameters uses the server's own identity and the
+    /// accessing session is restricted. Does not change the parameters, so a client kept for others is not affected.
+    void checkSessionMayUseServerIdentity(bool restrict_server_credentials) const;
 };
 
 void processURL(const String & url, const String & container_name, Endpoint & endpoint, AuthMethod & auth_method);

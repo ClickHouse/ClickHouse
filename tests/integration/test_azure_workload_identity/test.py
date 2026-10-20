@@ -122,6 +122,12 @@ def test_table_created_with_opt_in_serves_no_restricted_session(started_cluster)
     assert "ACCESS_DENIED" in error
     assert get_storage_hits(started_cluster)[before:] == []
 
+    # Entrypoints that do not refresh the client, such as `ALTER` and `OPTIMIZE` of a data lake, are checked as well.
+    for query in ["OPTIMIZE TABLE t_opt_in", "ALTER TABLE t_opt_in ADD COLUMN d UInt64"]:
+        before = len(get_storage_hits(started_cluster))
+        assert "ACCESS_DENIED" in node.query_and_get_error(query, settings={"azure_sdk_max_retries": 0})
+        assert get_storage_hits(started_cluster)[before:] == []
+
     before = len(get_storage_hits(started_cluster))
     node.query_and_get_error("SELECT * FROM t_opt_in", settings={**allow, "azure_sdk_max_retries": 0})
     allowed_hits = get_storage_hits(started_cluster)[before:]

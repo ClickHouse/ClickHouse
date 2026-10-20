@@ -953,6 +953,7 @@ bool StorageObjectStorage::optimize(
     bool /*cleanup*/,
     [[maybe_unused]] ContextPtr context)
 {
+    checkSessionMayUseServerIdentity(*object_storage, context);
     return configuration->optimize(object_storage, metadata_snapshot, context, format_settings, catalog);
 }
 
@@ -1213,6 +1214,9 @@ Pipe StorageObjectStorage::executeCommand(const String & command_name, const AST
 
 void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/, DDLGuardPtr & /*ddl_guard*/)
 {
+    /// These entrypoints reuse the client without refreshing it for the session, so check its policy first.
+    checkSessionMayUseServerIdentity(*object_storage, context);
+
     /// Do not interleave with the hive partitioning resolution, which also updates the metadata.
     std::lock_guard lock(hive_partitioning_resolution_mutex);
 
@@ -1236,12 +1240,14 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
 Pipe StorageObjectStorage::alterPartition(
     const StorageMetadataPtr & /*metadata_snapshot*/, const PartitionCommands & commands, ContextPtr context)
 {
+    checkSessionMayUseServerIdentity(*object_storage, context);
     return configuration->alterPartition(commands, std::move(context), catalog, getStorageID());
 }
 
 
 void StorageObjectStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const
 {
+    checkSessionMayUseServerIdentity(*object_storage, context);
     configuration->checkAlterIsPossible(object_storage, context, commands);
 }
 
