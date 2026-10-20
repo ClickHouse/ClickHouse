@@ -1698,7 +1698,8 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     String formatted_query;
     {
         InterpreterSelectQueryAnalyzer analyzer(query_ast.select, new_context, {});
-        const auto & query_tree = analyzer.getQueryTree();
+        auto query_tree = analyzer.getQueryTree()->clone();
+        qualifyTableFunctionArguments(query_tree);
         auto select_ast = query_tree->toAST();
 
         auto new_query_ast = query_ast.clone();
