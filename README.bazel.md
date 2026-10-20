@@ -99,6 +99,13 @@ dependency. DWYU does not diagnose that separately.
 the `Common/...` include prefix. Its real compile and both strict DWYU reports
 for it and `//base/readpassphrase` passed on
 [`eb7b5b543`](https://app.buildbuddy.io/invocation/3368dac8-1546-4214-966d-8537faf7e80c).
+The actual compile and strict DWYU reports for
+`//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_0`,
+`//base/poco/NetSSL_OpenSSL:secure_socket`, and the six bech32, cityhash,
+consistent-hashing, farmhash, metrohash and MurmurHash libraries also passed
+on [7f243010](https://app.buildbuddy.io/invocation/a946eb68-b890-4f5d-842d-2efbb1b3901c).
+The same run found remaining DWYU findings in other libraries, so the overall
+DWYU command exited 1. The verified reports above each have no findings.
 These checks do not establish repository-wide DWYU cleanliness.
 
 ## Binary comparison
@@ -145,6 +152,7 @@ CMake hash recorded below.
 | `efc95a005` (verification snapshot) | Complete NetSSL and IO header ownership; put Abseil, gRPC, Kafka, Wasmtime and libpqxx headers on their compiled owners; remove inherited header and runtime dependencies; normalize Bazel labels; use Clang in DWYU | [e414861c](https://app.buildbuddy.io/invocation/e414861c-295a-4a5a-926b-67ff5d5a29db) | [a3557b7c](https://app.buildbuddy.io/invocation/a3557b7c-8477-43eb-b681-d54bd9a72d66) |
 | `eb7b5b543` (verification snapshot) | Use the compiled Cares, farmhash, metrohash, MurmurHash and bech32 libraries as header owners; keep every IO archive member in its original position; check standalone exported macros in DWYU | [1f816158](https://app.buildbuddy.io/invocation/1f816158-633c-42e4-a617-accce026ef07) | [bb3f2893](https://app.buildbuddy.io/invocation/bb3f2893-a634-4682-97fe-fc19082bb8b8) |
 | `064407cd4` (verification snapshot) | Get Mongo and libssh generated headers from their compiled owners instead of listing them in 21 first-party header sets; remove the empty TimeSeries and UniqTheta header targets | [467a5e89](https://app.buildbuddy.io/invocation/467a5e89-e915-4074-b1aa-160aae9c158b) | [76b13055](https://app.buildbuddy.io/invocation/76b13055-e8b7-4064-b98c-4e4b8a22e956) |
+| `b82e9b694` (verification snapshot) | Give Common, PromQL grammar and consistent hashing compiled header owners; remove NetSSL's remaining Common header dependencies, remove six unused LLVM header sets, and assign CRoaring C and C++ headers to their compiled libraries | [8a31eb38](https://app.buildbuddy.io/invocation/8a31eb38-7c4f-45ba-b1b3-bd281d93b095) | [3484d6a6](https://app.buildbuddy.io/invocation/3484d6a6-a321-4685-8e31-01192bb7c62f) |
 
 The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`

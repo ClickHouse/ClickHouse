@@ -96,7 +96,7 @@ ch_cc_library(
     deps = [
         "@clickhouse_boost//:_boost_coroutine",
         "@clickhouse//base:common",
-        "@clickhouse//src/Common:headers",
+        "@clickhouse//src/Common",
         "@clickhouse//src:headers",
         "@clickhouse//base:base_headers",
         "@clickhouse//base:headers",

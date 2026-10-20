@@ -9,7 +9,7 @@ ch_cc_library(
     clickhouse_code = True,
     implementation_deps = [
         ":headers",
-        "//src/Common:headers",
+        "//src/Common",
         "//base:base_headers",
         "//base/poco/Foundation:_poco_foundation",
         "@clickhouse_fmtlib//:_fmt",

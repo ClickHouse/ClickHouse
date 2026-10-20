@@ -545,7 +545,8 @@ CMAKE_LINK = {
     "//bazel:google_api_http_cc_proto",
     "//bazel:google_type_expr_cc_proto",
     "//base/poco/NetSSL_OpenSSL:secure_socket",
-    "//base/poco/Foundation:thread_pool"
+    "//base/poco/Foundation:thread_pool",
+    "//src/Common"
   ],
   "expected_objects": [
     157,
@@ -679,7 +680,7 @@ CMAKE_LINK = {
     1,
     47,
     1,
-    432,
+    429,
     1,
     1,
     1,
@@ -1090,7 +1091,8 @@ CMAKE_LINK = {
     1,
     1,
     1,
-    1
+    1,
+    3
   ],
   "archives": [
     {
@@ -1781,7 +1783,17 @@ CMAKE_LINK = {
         [
           131,
           18,
-          76
+          46
+        ],
+        [
+          543,
+          0,
+          1
+        ],
+        [
+          131,
+          46,
+          75
         ],
         [
           133,
@@ -1790,8 +1802,28 @@ CMAKE_LINK = {
         ],
         [
           131,
-          76,
-          170
+          75,
+          120
+        ],
+        [
+          543,
+          1,
+          2
+        ],
+        [
+          131,
+          120,
+          153
+        ],
+        [
+          543,
+          2,
+          3
+        ],
+        [
+          131,
+          153,
+          167
         ],
         [
           134,
@@ -1800,8 +1832,8 @@ CMAKE_LINK = {
         ],
         [
           131,
-          170,
-          432
+          167,
+          429
         ]
       ],
       "name": "src/libclickhouse_common_io.a"

@@ -120,6 +120,7 @@ poco_cc_library(
         "//base/poco/Foundation:_poco_foundation",
         "//base/poco/Net:_poco_net",
         "//base/poco/Util:_poco_util",
+        "@clickhouse_openssl//:crypto",
         "@clickhouse_openssl//:ssl",
     ],
 )
@@ -139,7 +140,10 @@ poco_cc_library(
     copts = _NET_SSL_COPTS,
     implementation_deps = [
         ":_poco_net_ssl__compile_0",
-        "//src:clickhouse_common_io__compile_0",
+        "//src/Common",
+        "//base/poco/Foundation:_poco_foundation",
+        "//base/poco/Net:_poco_net",
+        "@clickhouse_openssl//:crypto",
     ],
     local_defines = _NET_SSL_DEFINES,
 )

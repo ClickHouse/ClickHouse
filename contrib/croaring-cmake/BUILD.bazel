@@ -3,6 +3,7 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
-    name = "headers",
-    hdrs = glob(["**/*.h"]),
+    name = "page_aligned_functions",
+    hdrs = ["page_aligned_functions.h"],
+    deps = ["@clickhouse_croaring//:_roaring__compile_0"],
 )

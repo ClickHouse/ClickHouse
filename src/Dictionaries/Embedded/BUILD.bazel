@@ -88,7 +88,7 @@ ch_cc_library(
     ],
     source_headers = False,
     deps = [
-        "//src/Common:headers",
+        "//src/Common",
         "//src:headers",
         "//base:base_headers",
         "//base/poco/Foundation:_poco_foundation",

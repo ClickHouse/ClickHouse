@@ -114,7 +114,7 @@ ch_cc_library(
     source_headers = False,
     deps = [
         "//src/Parsers:headers",
-        "//src/Common:headers",
+        "//src/Common",
         "//src:headers",
         "//base:base_headers",
         "@clickhouse_jemalloc//:_jemalloc",
