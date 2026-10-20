@@ -20,7 +20,7 @@ cleanup
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${U}"
 ${CLICKHOUSE_CLIENT} -q "CREATE QUOTA ${Q} FOR INTERVAL 100 year MAX QueryCacheHits = 1 TO ${U}"
 
-CACHED_QUERY="SELECT dummy FROM system.one SETTINGS use_query_cache = 1, query_cache_system_table_handling = 'save', query_cache_min_query_duration = 0, query_cache_min_query_runs = 0, query_cache_ttl = 3600, query_cache_tag = '${CLICKHOUSE_DATABASE}'"
+CACHED_QUERY="SELECT dummy FROM system.one SETTINGS use_query_cache = 1, query_cache_system_table_handling = 'save', query_cache_min_query_duration = 0, query_cache_min_query_runs = 0, query_cache_ttl = 600, query_cache_tag = '${CLICKHOUSE_DATABASE}'"
 
 # The first run populates the cache, the others read from it.
 for _ in 1 2 3 4; do
@@ -29,7 +29,6 @@ done
 ${CLICKHOUSE_CLIENT} -q "SELECT profile_events['QueryCacheHits'] FROM system.quotas_usage WHERE quota_name = '${Q}'"
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
-${CLICKHOUSE_CLIENT} -q "SELECT query_cache_usage, count() FROM system.query_log WHERE event_date >= yesterday() AND user = '${U}' AND type = 'QueryFinish' AND query LIKE '%use_query_cache%' GROUP BY ALL ORDER BY ALL"
+${CLICKHOUSE_CLIENT} -q "SELECT query_cache_usage, count() FROM system.query_log WHERE event_date >= yesterday() AND current_database = currentDatabase() AND user = '${U}' AND type = 'QueryFinish' AND query LIKE '%use_query_cache%' GROUP BY ALL ORDER BY ALL"
 
-${CLICKHOUSE_CLIENT} -q "SYSTEM DROP QUERY CACHE TAG '${CLICKHOUSE_DATABASE}'"
 cleanup
