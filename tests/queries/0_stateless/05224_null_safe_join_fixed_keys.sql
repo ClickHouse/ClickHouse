@@ -2,6 +2,9 @@
 -- `if(isNull(x), default, assumeNotNull(x))`, instead of a serialized `tuple(x)`, if all keys of the clause still pack
 -- into the 32 bytes of a fixed-width hash key.
 
+-- Disable force_primary_key_reverse_order: the row picked by `ANY LEFT JOIN` follows the physical order of the rows, which depends on the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 SET enable_analyzer = 1;
 SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET query_plan_join_swap_table = 0;
