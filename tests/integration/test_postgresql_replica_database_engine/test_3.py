@@ -1,3 +1,4 @@
+import threading
 import time
 import uuid
 
@@ -3820,6 +3821,69 @@ def test_attach_table_reuses_existing_publication_membership(started_cluster):
     pg_manager.drop_materialized_db(mat_db)
 
 
+def test_attach_table_snapshot_interrupted_by_server_termination(started_cluster):
+    # The server is terminated while `ATTACH TABLE` loads the snapshot of a table discovered from
+    # `materialized_postgresql_schema_list`, so its empty nested table and publication entry survive.
+    # On attach, the interrupted snapshot is not taken for a completed one: the nested table is loaded again.
+    table_a = "interrupted_snapshot_a"
+    table_b = "interrupted_snapshot_b"
+    mat_db = "interrupted_snapshot_database"
+    failpoint = "materialized_postgresql_pause_before_attach_table_snapshot"
+    # Two schemas, so that the table names have the schema prefix that the replication stream uses.
+    pg_manager.create_postgres_schema("interrupted_snapshot_schema")
+    pg_manager.create_postgres_table(table_a)
+    instance.query(
+        f"INSERT INTO postgres_database.{table_a} SELECT number, number FROM numbers(0, 10)"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            "materialized_postgresql_schema_list = 'public, interrupted_snapshot_schema'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(
+        instance, table_a, materialized_database=mat_db, schema_name="public"
+    )
+
+    pg_manager.create_postgres_table(table_b)
+    instance.query(
+        f"INSERT INTO postgres_database.{table_b} SELECT number, number FROM numbers(0, 100)"
+    )
+
+    def attach_table():
+        try:
+            instance.query(f"ATTACH TABLE {mat_db}.`public.{table_b}`")
+        except Exception:
+            pass  # The server is terminated while the query runs.
+
+    instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    attach_thread = threading.Thread(target=attach_table)
+    attach_thread.start()
+    instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE")
+    instance.stop_clickhouse(kill=True)
+    attach_thread.join()
+    instance.start_clickhouse()
+
+    check_tables_are_synchronized(
+        instance, table_b, materialized_database=mat_db, schema_name="public"
+    )
+    instance.query(
+        f"INSERT INTO postgres_database.{table_b} SELECT number, number FROM numbers(100, 10)"
+    )
+    check_tables_are_synchronized(
+        instance, table_b, materialized_database=mat_db, schema_name="public"
+    )
+    check_tables_are_synchronized(
+        instance, table_a, materialized_database=mat_db, schema_name="public"
+    )
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
 def test_detach_permanently_rejects_last_replicated_table(started_cluster):
     # A database without replicated tables could not start again, so detaching the last table is refused.
     tables = ["detach_last_a", "detach_last_b"]
@@ -3849,9 +3913,15 @@ def test_detach_permanently_rejects_last_replicated_table(started_cluster):
     assert "QUERY_NOT_ALLOWED" in error
     assert "it is the only table replicated by" in error
 
-    instance.restart_clickhouse()
+    # The refused detach is checked before the table is shut down, so it keeps replicating without a restart.
     instance.query(
         f"INSERT INTO postgres_database.{tables[1]} SELECT number, number FROM numbers(10, 10)"
+    )
+    check_tables_are_synchronized(instance, tables[1], materialized_database=mat_db)
+
+    instance.restart_clickhouse()
+    instance.query(
+        f"INSERT INTO postgres_database.{tables[1]} SELECT number, number FROM numbers(20, 10)"
     )
     check_tables_are_synchronized(instance, tables[1], materialized_database=mat_db)
 

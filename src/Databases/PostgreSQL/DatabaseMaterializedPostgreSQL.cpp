@@ -39,6 +39,7 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
+#include <base/scope_guard.h>
 
 #include <filesystem>
 
@@ -567,35 +568,59 @@ StoragePtr DatabaseMaterializedPostgreSQL::detachTable(ContextPtr, const String 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DETACH TABLE not allowed, use DETACH PERMANENTLY");
 }
 
+void DatabaseMaterializedPostgreSQL::checkCanDetachTablePermanently(const String & table_name) const
+{
+    /// Look the table up instead of using `materialized_tables[table_name]`: the latter inserts
+    /// an empty entry for an unknown name, and that null `StoragePtr` stayed in the map after
+    /// the exception below, so a later `tryGetTable` would dereference it.
+    auto it = materialized_tables.find(table_name);
+    if (it == materialized_tables.end() || !it->second)
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Materialized table `{}` does not exist", table_name);
+
+    /// A database without replicated tables cannot start again: on the next startup, nothing would distinguish
+    /// it from a database that did not finish its initial synchronization, so the detached tables
+    /// would be loaded from a new snapshot again.
+    bool has_other_tables = false;
+    for (const auto & [name, storage] : materialized_tables)
+    {
+        if (name != table_name && !tables_detaching_permanently.contains(name))
+        {
+            has_other_tables = true;
+            break;
+        }
+    }
+    if (!has_other_tables)
+        throw Exception(
+            ErrorCodes::QUERY_NOT_ALLOWED,
+            "Cannot detach table `{}` permanently: it is the only table replicated by MaterializedPostgreSQL "
+            "database `{}`, apart from the tables being detached. Use `DROP DATABASE {}` to stop replication",
+            table_name, getDatabaseName(), backQuoteIfNeed(getDatabaseName()));
+}
+
+void DatabaseMaterializedPostgreSQL::checkTableCanBeDetachedPermanently(ContextPtr, const String & table_name)
+{
+    std::lock_guard tables_lock(tables_mutex);
+    checkCanDetachTablePermanently(table_name);
+    tables_detaching_permanently.insert(table_name);
+}
+
 void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const String & table_name)
 {
     /// If there is query context then we need to detach materialized storage.
     /// If there is no query context then we need to detach internal storage from atomic database.
     if (CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext())
     {
+        SCOPE_EXIT({
+            std::lock_guard tables_lock(tables_mutex);
+            tables_detaching_permanently.erase(table_name);
+        });
+
         StoragePtr table_to_delete;
         String tables_to_replicate;
         {
             std::lock_guard tables_lock(tables_mutex);
-
-            /// Look the table up instead of using `materialized_tables[table_name]`: the latter inserts
-            /// an empty entry for an unknown name, and that null `StoragePtr` stayed in the map after
-            /// the exception below, so a later `tryGetTable` would dereference it.
-            auto it = materialized_tables.find(table_name);
-            if (it == materialized_tables.end() || !it->second)
-                throw Exception(ErrorCodes::UNKNOWN_TABLE, "Materialized table `{}` does not exist", table_name);
-
-            /// A database without replicated tables cannot start again: on the next startup, nothing would distinguish
-            /// it from a database that did not finish its initial synchronization, so the detached tables
-            /// would be loaded from a new snapshot again.
-            if (materialized_tables.size() == 1)
-                throw Exception(
-                    ErrorCodes::QUERY_NOT_ALLOWED,
-                    "Cannot detach table `{}` permanently: it is the only table replicated by MaterializedPostgreSQL "
-                    "database `{}`. Use `DROP DATABASE {}` to stop replication",
-                    table_name, getDatabaseName(), backQuoteIfNeed(getDatabaseName()));
-
-            table_to_delete = it->second;
+            checkCanDetachTablePermanently(table_name);
+            table_to_delete = materialized_tables.at(table_name);
             tables_to_replicate = getFormattedTablesList(table_name);
         }
 

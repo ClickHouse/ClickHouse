@@ -446,6 +446,10 @@ public:
     /// with next restart. The database may not support this method.
     virtual void detachTablePermanently(ContextPtr /*context*/, const String & /*name*/);
 
+    /// Called by `DETACH TABLE ... PERMANENTLY` before the table is shut down, so that a refused detach leaves
+    /// the table operational. Throws if `detachTablePermanently` would refuse to detach the table.
+    virtual void checkTableCanBeDetachedPermanently(ContextPtr /*context*/, const String & /*name*/) {}
+
     /// Returns list of table names that were permanently detached.
     /// This list may not be updated in runtime and may be filled only on server startup
     virtual Strings getNamesOfPermanentlyDetachedTables() const;
