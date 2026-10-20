@@ -103,12 +103,6 @@ ch_cc_library(
     ],
     local_includes = [
         "../../bazel/gen/base",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
-    }) + [
         "../../" + (repository_path("contrib/llvm-project") + "/llvm/include"),
     ],
     deps = select({

@@ -54,10 +54,7 @@ ch_cc_library(
         "-I",
         "$(GENDIR)/bazel/gen/includes/configs",
         "-I",
-    ] + select({
-        "@platforms//cpu:x86_64": ["$(GENDIR)/bazel/gen/src"],
-        "@platforms//cpu:aarch64": ["$(GENDIR)/bazel/gen/src"],
-    }) + [
+        "$(GENDIR)/bazel/gen/src",
         "-I",
         repository_path("contrib/libfiu") + "/libfiu",
         "-I",
@@ -3383,10 +3380,7 @@ ch_cc_library(
         "-I",
         "$(GENDIR)/bazel/gen/includes/configs",
         "-I",
-    ] + select({
-        "@platforms//cpu:x86_64": ["$(GENDIR)/bazel/gen/src"],
-        "@platforms//cpu:aarch64": ["$(GENDIR)/bazel/gen/src"],
-    }) + [
+        "$(GENDIR)/bazel/gen/src",
         "-I",
         "rust/workspace/skim/include",
         "-I",
@@ -3486,10 +3480,7 @@ ch_cc_library(
         "-I",
         "$(GENDIR)/bazel/gen/includes/configs",
         "-I",
-    ] + select({
-        "@platforms//cpu:x86_64": ["$(GENDIR)/bazel/gen/src"],
-        "@platforms//cpu:aarch64": ["$(GENDIR)/bazel/gen/src"],
-    }) + [
+        "$(GENDIR)/bazel/gen/src",
         "-I",
         "rust/workspace/skim/include",
         "-I",
@@ -3571,10 +3562,7 @@ ch_cc_library(
         "-I",
         "$(GENDIR)/bazel/gen/includes/configs",
         "-I",
-    ] + select({
-        "@platforms//cpu:x86_64": ["$(GENDIR)/bazel/gen/src"],
-        "@platforms//cpu:aarch64": ["$(GENDIR)/bazel/gen/src"],
-    }) + [
+        "$(GENDIR)/bazel/gen/src",
         "-I",
         "rust/workspace/skim/include",
         "-I",

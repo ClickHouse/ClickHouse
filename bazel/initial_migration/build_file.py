@@ -827,12 +827,18 @@ class BuildFile:
         elif kind == 'cmake_link':
             self.loads.setdefault('@clickhouse//bazel/rules:cmake_link.bzl', set()).add(kind)
         elif kind == 'llvm_runtime_objects':
-            self.loads.setdefault('@clickhouse//bazel/rules:llvm_runtime.bzl', set()).add(kind)
+            runtime = '@clickhouse//bazel/rules:llvm_runtime.bzl'
+            if runtime not in self.loads:
+                arch = Select({'@platforms//cpu:' + arch: arch for arch in ARCHES})
+                self.rules.append('_RUNTIME_ARCH = ' + starlark(arch) + '\n')
+            self.loads.setdefault(runtime, set()).add(kind)
         elif kind.startswith('perl_'):
             self.loads.setdefault('@rules_perl//perl:perl.bzl', set()).add(kind)
         elif kind in {'copy_file', 'expand_template', 'write_file'}:
             self.loads.setdefault('@bazel_skylib//rules:' + kind + '.bzl', set()).add(kind)
         lines = [kind + '(\n    name = ' + json.dumps(name) + ',\n']
+        if kind == 'llvm_runtime_objects':
+            lines.append('    arch = _RUNTIME_ARCH,\n')
         for key, value in attrs.items():
             if value == []:
                 continue
@@ -920,11 +926,13 @@ class BuildFile:
                 }
                 if unmapped:
                     attrs['reference_source_root'] = select(unmapped)
-                attrs['language'] = select({
+                languages = {group['language'] for arch, group in groups.items() if inputs[arch]['srcs']}
+                # llvm_runtime_objects returns before reading language if srcs
+                # is empty. Missing CMake groups need no fallback language.
+                attrs['language'] = next(iter(languages)) if len(languages) == 1 else select({
                     '@platforms//cpu:' + arch: groups.get(arch, {}).get('language', 'C')
                     for arch in ARCHES
                 })
-                attrs['arch'] = select({'@platforms//cpu:' + arch: arch for arch in ARCHES})
                 object_name = name + '__runtime_objects_' + str(index)
                 self.rule('llvm_runtime_objects', object_name, {
                     **attrs,

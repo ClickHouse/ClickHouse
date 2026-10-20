@@ -333,6 +333,7 @@ def declare_from_references(root, references):
                 raise ValueError(f'{arch} {node}: unsupported LLVM generator {command}')
             tool = '@llvm-project//llvm:' + tool_name
             inputs = [':llvm_tablegen_inputs']
+            anchor = ':llvm/include/llvm/CodeGen/ValueTypes.td'
             output = 'gen/' + arch + '/' + node.removeprefix(PREFIX + '/')
             action_outputs = [output]
             if '-gen-register-info' in words:
@@ -352,14 +353,14 @@ def declare_from_references(root, references):
                         inputs.append(label)
                         translated.append('$(execpath ' + label + ')')
                     else:
-                        # This BUILD file belongs to the raw repository.
-                        translated.append('$(execpath :BUILD.bazel)')
-                        translated[-1] = '$$(dirname ' + translated[-1] + ')/' + path
+                        relative = os.path.relpath(path, os.path.dirname(anchor[1:]))
+                        translated.append('$$(dirname $(execpath ' + anchor + '))/' + relative)
                 elif os.path.isabs(word):
                     raise ValueError(f'{arch} {node}: undeclared TableGen input {word}')
                 else:
                     translated.append(shlex.quote(word))
-            inputs.append(':BUILD.bazel')
+            if anchor not in inputs:
+                inputs.append(anchor)
             rule = 'tablegen_' + arch + '_' + hashlib.sha256(node.encode()).hexdigest()[:16]
             build.rule('genrule', rule, {
                 'srcs': inputs, 'outs': action_outputs, 'tools': [tool],
