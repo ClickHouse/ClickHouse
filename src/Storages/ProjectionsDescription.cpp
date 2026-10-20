@@ -621,6 +621,19 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         }
     }
 
+    /// With `WHERE` the query runs to `WithMergeableState`, whose header holds the results of the `SELECT` expressions,
+    /// so the `ORDER BY` appended to `SELECT` is replaced with the columns it reads: the part stores those, not its result.
+    if (projection_order_by && result.where_clause_ast && !is_aggregate)
+    {
+        auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
+        const auto virtuals = metadata_snapshot->virtuals;
+        auto & select_list = result.query_ast->as<ASTSelectQuery &>().select()->children;
+        select_list.pop_back();
+        for (const auto & column :
+             KeyDescription::getKeyFromAST(projection_order_by, columns, virtuals, query_context).expression->getRequiredColumns())
+            select_list.push_back(make_intrusive<ASTIdentifier>(column));
+    }
+
     InterpreterSelectQuery select(
         result.query_ast,
         mut_context,
