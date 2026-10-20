@@ -116,7 +116,9 @@ SELECT id FROM t_has_any_enum_column_bf WHERE hasAll(e, [toFixedString('b', 2)])
 SELECT id FROM t_has_any_enum_column_bf WHERE hasAny(e, ['a']) ORDER BY id SETTINGS use_skip_indexes = 0;
 SELECT id FROM t_has_any_enum_column_bf WHERE hasAny(e, ['zz']) ORDER BY id SETTINGS use_skip_indexes = 0;
 
--- The index is used and prunes the granules that do not have the value.
+-- The index is used and prunes the granules that do not have the value. A padded `FixedString` constant
+-- is not the name of an enum value, so the index is not used for it.
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT id FROM t_has_any_enum_column_bf WHERE hasAny(e, [toFixedString('a', 1)])) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT id FROM t_has_any_enum_column_bf WHERE hasAny(e, [toFixedString('a', 2)])) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
 
 DROP TABLE t_has_any_enum_column_bf;
