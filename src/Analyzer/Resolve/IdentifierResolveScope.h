@@ -174,8 +174,8 @@ struct IdentifierResolveScope
 
     std::list<std::unordered_map<std::string, ColumnNodePtr> *> join_using_columns;
 
-    /// CTE name to query node
-    std::unordered_map<std::string, QueryTreeNodePtr> cte_name_to_query_node;
+    /// CTE name to its definitions in declaration order (several only with `analyzer_compatibility_allow_cte_redefinition`)
+    std::unordered_map<std::string, QueryTreeNodes> cte_name_to_query_node;
 
     /// Window name to window node
     std::unordered_map<std::string, QueryTreeNodePtr> window_name_to_window_node;
@@ -205,6 +205,9 @@ struct IdentifierResolveScope
       */
     QueryTreeNodePtrWithHashIgnoreAliasesMap<QueryTreeNodePtr> nullable_group_by_keys;
 
+    /// With `group_by_use_nulls`, the columns that `if`/`multiIf` GROUP BY keys may collapse to; used only for correlated references.
+    QueryTreeNodePtrWithHashIgnoreAliasesSet nullable_collapsed_group_by_key_columns;
+
     /** It's possible that after a JOIN, a column in the projection has a type different from the column in the source table.
       * (For example, after join_use_nulls or USING column cast to supertype)
       * However, the column in the projection still refers to the table as its source.
@@ -217,6 +220,10 @@ struct IdentifierResolveScope
     /// Join retutns NULLs instead of default values
     bool join_use_nulls = false;
     bool allow_resolve_from_using = true;
+    /// Points to the JOIN node whose ON expression is currently being resolved (where both sides should be accessible),
+    /// or to the ARRAY JOIN node whose expressions are being resolved (where its input should be accessible).
+    /// nullptr when not resolving any JOIN ON or ARRAY JOIN expression
+    const IQueryTreeNode * resolving_join_on_expression = nullptr;
 
     /** True while the `PREWHERE` expression of this query is being resolved.
       * `PREWHERE` is evaluated by the reading step and cannot contain a correlated subquery,
@@ -230,9 +237,6 @@ struct IdentifierResolveScope
 
     /// JOIN USING count (joins whose keys can retype a matched column)
     size_t using_joins_count = 0;
-
-    /// True while resolving a JOIN ON expression.
-    bool resolving_join_on_expression = false;
 
     /// Subquery depth
     size_t subquery_depth = 0;

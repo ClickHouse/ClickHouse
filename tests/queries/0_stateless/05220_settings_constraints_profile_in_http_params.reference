@@ -1,0 +1,6 @@
+-- a parameter after the profile is checked against the constraints it installs
+SETTING_CONSTRAINT_VIOLATION
+-- a parameter before the profile is overridden by it
+12345
+-- a parameter equal to the value before the profile still overrides the profile
+0

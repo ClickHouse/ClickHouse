@@ -52,6 +52,10 @@ namespace
     {
         std::string_view ch_function_name;
         bool drop_metric_name = true;
+
+        /// The aggregate function returns a sample's value (can be Float32), a sample's timestamp (a DateTime type) or a count (UInt64)
+        /// instead of Float64, so the result must be cast.
+        bool needs_cast_to_float64 = false;
     };
 
     /// Returns information about how the specified prometheus function is implemented.
@@ -89,40 +93,67 @@ namespace
                  /* drop_metric_name = */ true,
              }},
 
+            {"first_over_time",
+             {
+                 "timeSeriesFirstToGrid",
+                 /* drop_metric_name = */ false,
+                 /* needs_cast_to_float64 = */ true,
+             }},
+
+            {"ts_of_first_over_time",
+             {
+                 "timeSeriesTimestampOfFirstToGrid",
+                 /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
+             }},
+
             {"last_over_time",
              {
                  "timeSeriesLastToGrid",
                  /* drop_metric_name = */ false,
+                 /* needs_cast_to_float64 = */ true,
+             }},
+
+            {"ts_of_last_over_time",
+             {
+                 "timeSeriesTimestampOfLastToGrid",
+                 /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
              }},
 
             {"max_over_time",
              {
                  "timeSeriesMaxToGrid",
                  /* drop_metric_name = */ true,
-             }},
-
-            {"min_over_time",
-             {
-                 "timeSeriesMinToGrid",
-                 /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
              }},
 
             {"ts_of_max_over_time",
              {
                  "timeSeriesTimestampOfMaxToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
+             }},
+
+            {"min_over_time",
+             {
+                 "timeSeriesMinToGrid",
+                 /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
              }},
 
             {"ts_of_min_over_time",
              {
                  "timeSeriesTimestampOfMinToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
              }},
 
             {"present_over_time",
              {
                  "timeSeriesPresentToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
              }},
 
             {"deriv",
@@ -135,12 +166,14 @@ namespace
              {
                  "timeSeriesChangesToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
              }},
 
             {"resets",
              {
                  "timeSeriesResetsToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
              }},
 
             {"sum_over_time",
@@ -159,15 +192,26 @@ namespace
              {
                  "timeSeriesCountToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
              }},
 
-            /// TODO:
-            /// stddev_over_time"
-            /// stdvar_over_time
-            /// mad_over_time
-            /// ts_of_last_over_time
-            /// first_over_time
-            /// ts_of_first_over_time
+            {"mad_over_time",
+             {
+                 "timeSeriesMadToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"stddev_over_time",
+             {
+                 "timeSeriesStddevToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"stdvar_over_time",
+             {
+                 "timeSeriesStdvarToGrid",
+                 /* drop_metric_name = */ true,
+             }},
         };
 
         auto it = impl_map.find(function_name);
@@ -223,22 +267,37 @@ SQLQueryPiece applyFunctionOverRange(
     const auto * fixed_at_node = getFixedAtModifier(argument);
     const auto aggregation_range = getRangeAggregationRange(fixed_at_node, node_range, context);
 
-    /// The result is a vector grid (one row per series, the aggregate function is calculated `GROUP BY group`) if the
-    /// range vector holds series, and a scalar grid if it was made from a scalar.
-    const bool has_group = (argument.store_method == StoreMethod::VECTOR_GRID) || (argument.store_method == StoreMethod::RAW_DATA);
+    /// A range vector made from a scalar has no `group` column. The result is still a vector grid with one series without
+    /// tags, because the aggregate function returns NULL for a window without enough samples and only VECTOR_GRID can hold NULL.
+    const bool from_scalar = (argument.store_method != StoreMethod::VECTOR_GRID) && (argument.store_method != StoreMethod::RAW_DATA);
 
     SelectQueryBuilder builder;
 
-    if (has_group)
+    if (from_scalar)
+    {
+        builder.select_list.push_back(timeSeriesNoTagsGroupToAST());
+        builder.select_list.back()->setAlias(ColumnNames::Group);
+    }
+    else
+    {
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+    }
 
     /// <aggregate_function>(<timestamps>, <values>) AS values
     ASTPtr aggregate_values = addParametersToAggregateFunction(
         makeASTFunction(impl_info->ch_function_name, std::move(aggregate_function_arguments)),
-        timeSeriesTimestampToAST(aggregation_range.start_time, context.timestamp_data_type),
-        timeSeriesTimestampToAST(aggregation_range.end_time, context.timestamp_data_type),
-        timeSeriesDurationToAST(aggregation_range.step, context.timestamp_data_type),
-        timeSeriesDurationToAST(window, context.timestamp_data_type));
+        timeSeriesTimestampToAST(aggregation_range.start_time, context.result_timestamp_type),
+        timeSeriesTimestampToAST(aggregation_range.end_time, context.result_timestamp_type),
+        timeSeriesDurationToAST(aggregation_range.step, context.result_timestamp_type),
+        timeSeriesDurationToAST(window, context.result_timestamp_type));
+
+    if (impl_info->needs_cast_to_float64)
+    {
+        /// CAST(<aggregate_function>(timestamp, value), 'Array(Nullable(Float64))')
+        /// See `needs_cast_to_float64`; a timestamp becomes seconds since 1970-01-01 as in Prometheus. The cast does nothing
+        /// for Float64 and is cheap anyway: the aggregated grid is much smaller than the raw data.
+        aggregate_values = makeASTFunction("CAST", std::move(aggregate_values), make_intrusive<ASTLiteral>("Array(Nullable(Float64))"));
+    }
 
     if (fixed_at_node)
         aggregate_values = repeatFixedAtResultOverGrid(
@@ -247,7 +306,7 @@ SQLQueryPiece applyFunctionOverRange(
     builder.select_list.push_back(std::move(aggregate_values));
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
-    if (has_group)
+    if (!from_scalar)
         builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
     if (argument.select_query)
@@ -263,13 +322,20 @@ SQLQueryPiece applyFunctionOverRange(
 
     res.select_query = builder.getSelectQuery();
     res.type = ResultType::INSTANT_VECTOR;
-    res.store_method = has_group ? StoreMethod::VECTOR_GRID : StoreMethod::SCALAR_GRID;
+    res.store_method = StoreMethod::VECTOR_GRID;
     res.start_time = start_time;
     res.end_time = end_time;
     res.step = step;
 
-    if (has_group && drop_metric_name.value_or(impl_info->drop_metric_name))
+    if (from_scalar)
+    {
+        /// A scalar has no metric name.
+        res.metric_name_dropped = true;
+    }
+    else if (drop_metric_name.value_or(impl_info->drop_metric_name))
+    {
         res = dropMetricName(std::move(res), context);
+    }
 
     return res;
 }
