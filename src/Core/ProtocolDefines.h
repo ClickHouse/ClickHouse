@@ -147,8 +147,8 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 ///   bumps its own serialization version instead, with the value of the current release as `since_plan_version`
 ///   (see `QueryPlanStepRegistry::StepVersions`).
 ///
-/// Last bumped for release 26.10.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 20;
+/// Last bumped for release 26.11.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 21;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -183,6 +183,10 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP
 /// plan setting name. Gates writing it in `AggregatingStep::serializeSettings` /
 /// `MergingAggregatedStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PACKED_STRING_KEYS_SETTING = 5;
+/// First global query-plan version that writes version 1 of `ArrayJoin`, which carries the
+/// `array_join_use_nulls` flag (bit 32). A step below version 1 with the flag set fails closed on both
+/// sides, because an older peer would silently pad with default values instead of `NULL`s.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_USE_NULLS = 21;
 /// First query-plan serialization version that knows the `enable_adaptive_aggregator` and
 /// `adaptive_aggregator_freeze_threshold` plan setting names. Gates writing them in
 /// `AggregatingStep::serializeSettings`.
