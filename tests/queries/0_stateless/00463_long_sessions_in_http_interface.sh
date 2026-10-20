@@ -47,7 +47,7 @@ ${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}" --data-binary "SELECT * FROM 
 
 echo "A session successfully expire after a timeout:"
 # An infinite loop is required to make the test reliable. We will check that the timeout corresponds to the observed time at least once
-while true
+while clickhouse_test_time_left
 do
     (
         ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_7&session_timeout=1" --data-binary "SELECT 1"
@@ -60,7 +60,7 @@ done
 echo "A session successfully expire after a timeout and the session's temporary table shadows the permanent table:"
 # An infinite loop is required to make the test reliable. We will check that the timeout corresponds to the observed time at least once
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t; CREATE TABLE t (s String) ENGINE = Memory; INSERT INTO t VALUES ('World');"
-while true
+while clickhouse_test_time_left
 do
     (
         ${CLICKHOUSE_CURL} -X POST -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_8&session_timeout=1" --data-binary "CREATE TEMPORARY TABLE t (s String)"
@@ -77,7 +77,7 @@ echo "A session cannot be used by concurrent connections:"
 ${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_9&query_id=${CLICKHOUSE_DATABASE}_9&max_rows_to_read=0" --data-binary "SELECT count() FROM system.numbers" >/dev/null &
 
 # An infinite loop is required to make the test reliable. We will ensure that at least once the query on the line above has started before this check
-while true
+while clickhouse_test_time_left
 do
     ${CLICKHOUSE_CLIENT} --query "SELECT count() > 0 FROM system.processes WHERE query_id = '${CLICKHOUSE_DATABASE}_9'" | grep -F '1' && break || sleep 1
 done
