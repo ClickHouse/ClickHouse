@@ -143,13 +143,10 @@ void addDefaultRequiredExpressionsRecursively(
         /// This column is required, but doesn't have default expression, so lets use "default default"
         const auto & column = columns.get(required_column_name);
         auto default_value = column.type->getDefault();
-        ASTPtr expr = make_intrusive<ASTLiteral>(default_value);
+        /// The literal has the `Field`'s own type; the declared type is what a subcolumn reference such as `j.a` needs.
+        ASTPtr expr = makeASTFunction("_CAST", make_intrusive<ASTLiteral>(default_value), make_intrusive<ASTLiteral>(column.type->getName()));
         if (is_column_in_query && convert_null_to_default)
-        {
-            /// We should CAST default value to required type, otherwise the result of ifNull function can be different type.
-            auto cast_expr = makeASTFunction("_CAST", std::move(expr), make_intrusive<ASTLiteral>(columns.get(required_column_name).type->getName()));
-            expr = makeASTFunction("ifNull", make_intrusive<ASTIdentifier>(required_column_name), std::move(cast_expr));
-        }
+            expr = makeASTFunction("ifNull", make_intrusive<ASTIdentifier>(required_column_name), std::move(expr));
         default_expr_list_accum->children.emplace_back(setAlias(expr, required_column_name));
         added_columns.emplace(required_column_name);
     }
