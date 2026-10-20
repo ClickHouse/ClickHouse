@@ -189,6 +189,7 @@ CMake hash recorded below.
 | `5568e6f0e` (verification snapshot) | gRPC ownership and compiler-based consumer audits | [fd6e4d56](https://app.buildbuddy.io/invocation/fd6e4d56-63c0-4ccd-9698-884960e46025) | [bc432a7c](https://app.buildbuddy.io/invocation/bc432a7c-2df3-40ed-abf9-067582048607) |
 | `48813843b` (verification snapshot) | Remove 20 redundant FlatBuffers generated-header references | [6c14921a](https://app.buildbuddy.io/invocation/6c14921a-ceb6-418f-b03f-77b375a3e994) | [218d91af](https://app.buildbuddy.io/invocation/218d91af-8695-4b00-9e3c-82ae80a4c1fc) |
 | `1727c9490` (verification snapshot) | DWYU Clang guarded-header attribution and consumer checks | [6e83876d](https://app.buildbuddy.io/invocation/6e83876d-27cb-4314-b3c4-0d5cef4b660d) | [350cdec5](https://app.buildbuddy.io/invocation/350cdec5-eeaf-4af6-92c6-3047187d8b02) |
+| `081e42f92` (verification snapshot) | Remove four GCP dependencies verified by native isolated links | [93141dec](https://app.buildbuddy.io/invocation/93141dec-b288-485b-9e0f-fa1601abfa81) | [5649d2b1](https://app.buildbuddy.io/invocation/5649d2b1-0450-4495-b813-aecd5757e09f) |
 
 The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`

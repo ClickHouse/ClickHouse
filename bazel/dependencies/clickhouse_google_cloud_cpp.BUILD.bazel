@@ -630,8 +630,6 @@ ch_cc_library(
     deps = [
         ":google_cloud_cpp_common",
         ":google_cloud_cpp_iam_credentials_v1_iamcredentials_protos",
-        ":google_cloud_cpp_iam_v1_iam_policy_protos",
-        ":google_cloud_cpp_longrunning_operations_protos",
         "@clickhouse_abseil_cpp//:absl_time",
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse_grpc//:grpc++",
@@ -934,7 +932,6 @@ ch_cc_library(
     ],
     implementation_deps = [
         "@clickhouse_crc32c//:_crc32c",
-        "@clickhouse_zlib_ng//:_zlib",
         "@clickhouse_abseil_cpp//:absl_base_config",
         "@clickhouse_abseil_cpp//:absl_crc32c",
         "@clickhouse_abseil_cpp//:absl_str_format_internal",
@@ -965,9 +962,6 @@ ch_grpc_cc_library(
     copts = _GENERATED_COPTS_1,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     proto = "@clickhouse//bazel:google_storage_v2_storage_proto",
-    deps = [
-        ":google_cloud_cpp_iam_v1_iam_policy_protos",
-    ],
 )
 
 ch_grpc_cc_library(
