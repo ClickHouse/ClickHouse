@@ -4,6 +4,7 @@ INSERT INTO test_insert_format_compression COMPRESSION \'gzip\' FORMAT CSV
 INSERT INTO test_insert_format_compression COMPRESSION \'gzip\' SELECT * FROM input(\'id UInt32, text String\') FORMAT CSV
 INSERT INTO test_insert_format_compression SETTINGS max_threads = 1 COMPRESSION \'gzip\' FORMAT CSV
 INSERT INTO test_insert_format_compression SETTINGS max_threads = 1 COMPRESSION \'gzip\' SELECT * FROM input(\'id UInt32, text String\') FORMAT CSV
+INSERT INTO test_insert_format_compression SETTINGS input_format = \'CSV\' COMPRESSION \'gzip\' SELECT * FROM input(\'id UInt32, text String\') SETTINGS input_format = \'CSV\'
 1
 1
 1
@@ -18,6 +19,8 @@ INSERT INTO test_insert_format_compression SETTINGS max_threads = 1 COMPRESSION 
 8	H
 15	O
 16	P
+27	AA
+28	BB
 20	T
 21	U
 25	Y
@@ -44,6 +47,5 @@ COMPRESSION
 COMPRESSION \'gzip\'
 COMPRESSION
 COMPRESSION \'gzip\'
-1
 1
 1
