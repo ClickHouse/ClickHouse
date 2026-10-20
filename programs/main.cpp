@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <new>
@@ -472,6 +473,13 @@ int main(int argc_, char ** argv_)
         std::cerr << "Cannot read the command line as UTF-8, error code: " << GetLastError() << std::endl;
         return 1;
     }
+
+    /// Query results are written as UTF-8 bytes, and a console renders the bytes written to it in its
+    /// output code page. Select UTF-8 for the lifetime of the process and restore the user's code page
+    /// on exit. Redirected output has no console code page and receives the bytes as they are.
+    static const UINT original_console_output_code_page = GetConsoleOutputCP();
+    if (original_console_output_code_page != 0 && original_console_output_code_page != CP_UTF8 && SetConsoleOutputCP(CP_UTF8))
+        std::atexit([] { SetConsoleOutputCP(original_console_output_code_page); });
 #endif
 
     /// PHDR cache is required for query profiler to work reliably
