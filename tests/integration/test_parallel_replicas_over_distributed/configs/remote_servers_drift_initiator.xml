@@ -1,0 +1,22 @@
+<clickhouse>
+    <remote_servers>
+        <!-- Used by test_config_drift_between_servers_declines_shard_scope. `remote_servers` is per-server
+             configuration: the n1 group reads this file and the n4 group reads remote_servers_drift_follower.xml,
+             which lists the same two shards under the same cluster name in the other order, as they would
+             be while a change to the shard list rolls out. -->
+        <test_config_drift>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica><host>n1</host><port>9000</port></replica>
+                <replica><host>n2</host><port>9000</port></replica>
+                <replica><host>n3</host><port>9000</port></replica>
+            </shard>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica><host>n4</host><port>9000</port></replica>
+                <replica><host>n5</host><port>9000</port></replica>
+                <replica><host>n6</host><port>9000</port></replica>
+            </shard>
+        </test_config_drift>
+    </remote_servers>
+</clickhouse>

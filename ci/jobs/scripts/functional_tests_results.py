@@ -59,10 +59,11 @@ ABORTED_RUN_LIVENESS_LEAF = "Server liveness check failed"
 # `HUNG_CHECK_EXIT_CODE` IS included: the run was aborted mid-flight exactly as
 # for the other members, so the same demotion applies; only the synthetic leaf's
 # name differs.
-ABORTED_RUN_EXIT_CODES = frozenset(
+#
+# Kept as its own set because, unlike the in-band codes, these establish only
+# that the run was killed, never by whom.
+KILLED_BY_SIGNAL_EXIT_CODES = frozenset(
     {
-        STOP_TESTING_EXIT_CODE,
-        HUNG_CHECK_EXIT_CODE,
         128 + signal.SIGTERM,  # 143
         128 + signal.SIGKILL,  # 137
         -signal.SIGTERM,  # -15
@@ -70,11 +71,20 @@ ABORTED_RUN_EXIT_CODES = frozenset(
     }
 )
 
+# Derived so the two sets cannot drift apart.
+ABORTED_RUN_EXIT_CODES = (
+    frozenset({STOP_TESTING_EXIT_CODE, HUNG_CHECK_EXIT_CODE})
+    | KILLED_BY_SIGNAL_EXIT_CODES
+)
+
+KILLED_BY_SIGNAL_RESULT_NAME = "Test command killed by signal"
+
 NO_TESTS_SIGN = "No tests were run"
 NO_TESTS_FILTERED_OUT_SIGN = (
     "No tests were run because every explicitly requested test was filtered out"
 )
-SUCCESS_FINISH_SIGNS = ["All tests have finished", NO_TESTS_SIGN]
+ALL_TESTS_FINISHED_SIGN = "All tests have finished"
+SUCCESS_FINISH_SIGNS = [ALL_TESTS_FINISHED_SIGN, NO_TESTS_SIGN]
 
 RETRIES_SIGN = "Some tests were restarted"
 
@@ -102,12 +112,17 @@ class FTResultsProcessor:
         hung: bool = False
         retries: bool = False
         success_finish: bool = False
+        all_tests_finished: bool = False
         no_tests_run: bool = False
         test_end: bool = True
 
     def __init__(self, wd):
         self.tests_output_file = f"{wd}/test_result.txt"
         self.debug_files = []
+        # Set by `run`: whether the runner went through the whole test list.
+        # Unlike the result status, it is not affected by later aggregation
+        # (e.g. `extend_sub_results` turning a runner-level `ERROR` into `FAIL`).
+        self.run_completed = False
 
     def _process_test_output(self):
         total = 0
@@ -118,6 +133,7 @@ class FTResultsProcessor:
         hung = False
         retries = False
         success_finish = False
+        all_tests_finished = False
         no_tests_run = False
         test_results = []
         test_end = True
@@ -129,6 +145,8 @@ class FTResultsProcessor:
 
                 if any(s in line for s in SUCCESS_FINISH_SIGNS):
                     success_finish = True
+                if ALL_TESTS_FINISHED_SIGN in line:
+                    all_tests_finished = True
                 if NO_TESTS_FILTERED_OUT_SIGN in line:
                     no_tests_run = True
                 # Ignore hung check report, since it may be quite large.
@@ -227,6 +245,7 @@ class FTResultsProcessor:
             test_results=test_results,
             hung=hung,
             success_finish=success_finish,
+            all_tests_finished=all_tests_finished,
             no_tests_run=no_tests_run,
             retries=retries,
         )
@@ -244,9 +263,20 @@ class FTResultsProcessor:
         s = self._process_test_output()
         test_results = s.test_results
 
+        # A completed run went through the whole test list: failed tests are
+        # allowed, but not an abort (server death, kill by signal, hung check),
+        # an early stop on too many failures or on the time limit, or hung queries.
+        self.run_completed = (
+            s.all_tests_finished
+            and not s.hung
+            and runner_exit_code not in ABORTED_RUN_EXIT_CODES
+            and runner_exit_code
+            not in (MAX_FAILURES_EXIT_CODE, GLOBAL_TIME_LIMIT_EXIT_CODE)
+        )
+
         if s.no_tests_run and allow_no_tests and not s.hung:
-            # The job was given an explicit list of tests (flaky, targeted or
-            # `selected tests` run), and `clickhouse-test` explicitly proved it
+            # The job was given an explicit list of tests (a flaky or targeted
+            # check), and `clickhouse-test` explicitly proved it
             # filtered every one of them out - e.g. all are tagged `no-tsan` in a
             # TSan job. A generic "No tests were run" banner is not sufficient:
             # it is also printed after runner-level failures before the first test.
@@ -265,6 +295,24 @@ class FTResultsProcessor:
             state = Result.Status.FAIL
             test_results.append(
                 Result("Some queries hung", Result.Status.FAIL, info="Some queries hung")
+            )
+        elif (
+            runner_exit_code in KILLED_BY_SIGNAL_EXIT_CODES
+            and s.failed == 0
+            and s.unknown == 0
+        ):
+            # Gate on the counters: `NOT_FAILED` rows are invisible to
+            # `is_failure`. ERROR goes on the leaf only, where the bugfix
+            # inverter reads it - an ERROR aggregate disables coverage collection.
+            state = Result.Status.FAIL
+            test_results.append(
+                Result(
+                    KILLED_BY_SIGNAL_RESULT_NAME,
+                    Result.Status.ERROR,
+                    info=f"The test command exited with {runner_exit_code} (killed by "
+                    "signal) and no test was reported as failed, so the cause could "
+                    "not be attributed. Check the server log for a crash.",
+                )
             )
         elif runner_exit_code in ABORTED_RUN_EXIT_CODES:
             state = Result.Status.FAIL

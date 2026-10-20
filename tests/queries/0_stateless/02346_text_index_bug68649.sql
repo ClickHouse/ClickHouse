@@ -8,7 +8,6 @@ SET explain_query_plan_default = 'legacy'; -- the default plan printer reverses 
 SET use_statistics = 1;
 SET materialize_statistics_on_insert = 1;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1; -- CI may inject False, leaving no PREWHERE to inspect
 SET allow_reorder_prewhere_conditions = 1;
 SET use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;

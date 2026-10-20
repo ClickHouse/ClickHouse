@@ -103,6 +103,8 @@ public:
     /// Update metadata to the latest version.
     virtual void update(const ContextPtr &) { }
 
+    virtual void setExplicitMetadataFilePath(const String & /*path*/) { }
+
     virtual bool supportsWrites() const { return false; }
     virtual bool supportsParallelInsert() const { return false; }
 
@@ -147,7 +149,10 @@ public:
     }
 
     virtual bool optimize(
-        const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        ContextPtr /*context*/,
+        const std::optional<FormatSettings> & /*format_settings*/,
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/)
     {
         throwNotImplemented("optimize");
     }

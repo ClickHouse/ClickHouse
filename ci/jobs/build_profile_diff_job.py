@@ -73,6 +73,7 @@ import json
 import os
 import statistics
 import subprocess
+import time
 import traceback
 from typing import Dict, List, Optional
 
@@ -212,7 +213,7 @@ class Section:
 
 
 class Db:
-    def __init__(self):
+    def __init__(self, read_budget_s=None):
         # CI_LOGS_USER only for local runs
         user = os.environ.get("CI_LOGS_USER", BUILD_PROFILE_USER)
         # This job only reads, so it goes to the read-only sub-service of the
@@ -230,9 +231,12 @@ class Db:
                 user=user,
                 password=password,
                 readonly=True,
+                read_budget_s=read_budget_s,
             )
         else:
-            self._cluster = LogCluster(readonly=True, user=user)
+            self._cluster = LogCluster(
+                readonly=True, user=user, read_budget_s=read_budget_s
+            )
 
     def query(self, query: str) -> List[dict]:
         """Run a SELECT and return rows as dicts.
@@ -520,6 +524,7 @@ class LocalInfo:
     pr_number = 0
     sha = ""
     event_time = ""
+    is_local_run = True
 
     def get_kv_data(self, key):
         return None
@@ -569,7 +574,38 @@ EXTEND_MAX_PAGES = 60
 # `gh` self-bounds connect and TLS handshake but not a stalled response body,
 # so every call carries its own deadline.
 GH_TIMEOUT_SECONDS = 120
+# Attempts per commit listing: GitHub fails single requests while the ones around them succeed.
+GH_ATTEMPTS = 3
 GH_STREAM_LEN = 300
+
+# Wall clock kept back from the CI logs cluster read retries so that the job can
+# still report: praktika SIGKILLs a job at its timeout and a killed job produces
+# no Result at all. The budget starts at the cluster handle and is checked
+# between POST retries, so the reserve has to hold the startup before that, the
+# read in flight when the budget runs out (its readiness schedule, bounded by
+# the retry count at 180 s of backoff, and one POST overrunning its own 60 s
+# socket timeout, measured at up to 185 s on a trickling connection), and the
+# comment refresh plus the job completion. The image pull is not in it: the
+# timeout only starts with the job process.
+CLUSTER_READ_RESERVE_SECONDS = 550
+
+
+def cluster_read_budget_seconds(info):
+    """Wall clock all CI logs cluster reads of this job may spend on retries, together.
+
+    None on a local run, which leaves the reads unbounded.
+    """
+    if info.is_local_run:
+        return None
+    # Not at module scope: ci.defs.job_configs needs a bare `praktika`, which the
+    # documented local run resolves only via the sys.path entry ci.praktika adds.
+    from ci.defs.job_configs import JobConfigs
+
+    job_timeout = JobConfigs.build_profile_diff_job.timeout
+    assert (
+        CLUSTER_READ_RESERVE_SECONDS * 2 < job_timeout
+    ), f"CLUSTER_READ_RESERVE_SECONDS [{CLUSTER_READ_RESERVE_SECONDS}] leaves no usable read budget in a [{job_timeout}] s job"
+    return job_timeout - CLUSTER_READ_RESERVE_SECONDS
 
 
 def _elide_stream(text: str) -> str:
@@ -586,6 +622,9 @@ def _list_commits_page(anchor_sha: str, page: int) -> List[dict]:
     This is NOT the first-parent chain: the listing interleaves merged PRs'
     second-parent commits. Each entry carries its parent shas so that
     `_walk_first_parent` can reconstruct the chain client-side.
+
+    A timeout, an HTTP 5xx or 429, or a failure that names no HTTP status (a
+    cut or reset response) is retried; any other 4xx fails at once.
     """
     # Hardcoded upstream namespace, like the store_data hook: the profile rows
     # in the CI logs cluster carry public-repo shas.
@@ -597,20 +636,30 @@ def _list_commits_page(anchor_sha: str, page: int) -> List[dict]:
         "--jq",
         "[.[] | {sha: .sha, date: .commit.committer.date, parents: [.parents[].sha]}]",
     ]
-    try:
-        res = subprocess.run(argv, capture_output=True, text=True, timeout=GH_TIMEOUT_SECONDS)
-    except subprocess.TimeoutExpired as e:
-        raise RuntimeError(f"gh api timed out after {GH_TIMEOUT_SECONDS} s: {endpoint}") from e
-    if res.returncode != 0:
+    error = None
+    for attempt in range(1, GH_ATTEMPTS + 1):
+        if attempt > 1:
+            print(f"WARNING: {error}, retrying in {5 * (attempt - 1)} s")
+            time.sleep(5 * (attempt - 1))
+        try:
+            res = subprocess.run(argv, capture_output=True, text=True, timeout=GH_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            error = RuntimeError(f"gh api timed out after {GH_TIMEOUT_SECONDS} s (attempt {attempt} of {GH_ATTEMPTS}): {endpoint}")
+            continue
+        if res.returncode == 0:
+            return json.loads(res.stdout)
         # Field order matters: an outer caller bounds this message before it
         # reaches a public comment, so the exit code and the endpoint - one of
         # up to EXTEND_MAX_PAGES - precede the capped API-controlled streams,
         # which are what name the HTTP status.
-        raise RuntimeError(
-            f"gh api exited {res.returncode} for {endpoint}: "
+        error = RuntimeError(
+            f"gh api exited {res.returncode} for {endpoint} (attempt {attempt} of {GH_ATTEMPTS}): "
             f"err[{_elide_stream(res.stderr)}] out[{_elide_stream(res.stdout)}]"
         )
-    return json.loads(res.stdout)
+        # gh reports an HTTP error as "gh: <message> (HTTP <status>)"; a 4xx other than 429 is not transient.
+        if "(HTTP 4" in res.stderr and "(HTTP 429)" not in res.stderr:
+            break
+    raise error
 
 
 def _walk_first_parent(anchor_sha: str, cutoff: str, max_pages: int, list_page, max_commits: int = 0):
@@ -1662,7 +1711,7 @@ def main():
         return
 
     try:
-        db = Db()
+        db = Db(read_budget_s=cluster_read_budget_seconds(info))
         comparison = run_comparison(db, info, args, pr_number, pr_sha)
     except LogClusterUnavailable as e:
         # Not a failed comparison - one that never ran. A local run has no job
