@@ -90,3 +90,6 @@ map key over Tuple(Enum8) values
 1
 1
 1
+map key over nested Array values
+1
+1

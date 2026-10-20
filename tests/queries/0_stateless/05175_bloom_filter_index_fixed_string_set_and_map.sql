@@ -237,6 +237,18 @@ SELECT count() FROM t_bf_map_tuple_enum WHERE m['k'] = tuple('b');
 SELECT count() FROM t_bf_map_tuple_enum WHERE m['k'] = tuple('b') SETTINGS use_skip_indexes = 0;
 
 DROP TABLE t_bf_map_tuple_enum;
+
+SELECT 'map key over nested Array values';
+-- Only the map keys are indexed, so the map values may be a type the index does not support.
+DROP TABLE IF EXISTS t_bf_map_nested_array;
+CREATE TABLE t_bf_map_nested_array (m Map(String, Array(Array(UInt8))), INDEX bf mapKeys(m) TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_bf_map_nested_array VALUES (map('k', [[1]]));
+
+SELECT count() FROM t_bf_map_nested_array WHERE m['k'] = [[1]];
+SELECT count() FROM t_bf_map_nested_array WHERE m['k'] = [[1]] SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_bf_map_nested_array;
 DROP TABLE t_bf_map_uint8_set_source;
 DROP TABLE t_bf_set;
 DROP TABLE t_bf_map;

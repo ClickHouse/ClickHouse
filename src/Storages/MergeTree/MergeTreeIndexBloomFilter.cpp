@@ -1476,7 +1476,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
             /// With validation off, `equals` against a name the enum lacks is constant false for every row,
             /// so the coercion of the constant to the `mapValues` index type below must not throw.
-            if (!validate_enum_literals_in_operators && isUnknownEnumElement(*BloomFilter::getPrimitiveType(map_value_type), value_field))
+            /// Only `mapKeys` may be the indexed expression, so the map values need not be a type the index
+            /// supports (e.g. `Array(Array(UInt8))`): strip only the wrappers instead of `getPrimitiveType`.
+            if (!validate_enum_literals_in_operators && isUnknownEnumElement(*removeLowCardinalityAndNullable(map_value_type), value_field))
             {
                 out.function = RPNElement::ALWAYS_FALSE;
                 return true;
