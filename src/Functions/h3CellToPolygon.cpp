@@ -51,10 +51,13 @@ public:
 
     // Polygon cannot be nullable, so handle null rows as empty polygons ourselves.
     bool useDefaultImplementationForNulls() const override { return false; }
-    String getSignatureString() const override { return "(MaybeNullable(UInt64)) -> Polygon"; }
+    String getSignatureString() const override { return "(MaybeNullable(UInt64) | NULL) -> Polygon"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        if (arguments[0].type->onlyNull())
+            return result_type->createColumn()->cloneResized(input_rows_count);
+
         const auto full_column = arguments[0].column->convertToFullColumnIfConst();
         const auto * nullable_column = checkAndGetColumn<ColumnNullable>(full_column.get());
         const auto * column = checkAndGetColumn<ColumnUInt64>(

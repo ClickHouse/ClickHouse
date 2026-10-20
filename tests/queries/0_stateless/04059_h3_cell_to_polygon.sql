@@ -47,6 +47,9 @@ SELECT
     h3CellToPolygon(CAST(NULL AS Nullable(UInt64))) = [],
     isNull(h3CellToBoundaryWKT(CAST(NULL AS Nullable(UInt64))));
 
+-- Untyped NULL is Nullable(Nothing), and it also represents an empty polygon.
+SELECT h3CellToPolygon(NULL) = [], isNull(h3CellToBoundaryWKT(NULL));
+
 -- A mixed Nullable column must skip validation on NULL rows, not substitute invalid H3 index 0.
 SELECT
     count() = 3,
