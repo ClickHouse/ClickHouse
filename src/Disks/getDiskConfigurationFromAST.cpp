@@ -18,10 +18,12 @@
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Text.h>
+#include <Poco/NumberParser.h>
 #include <Common/StringUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
 
 #include <algorithm>
+#include <optional>
 #include <unordered_set>
 #include <vector>
 #include <boost/algorithm/string/trim.hpp>
@@ -48,6 +50,25 @@ namespace ServerSetting
 {
     extern const ServerSettingsBool s3_load_table_anonymously_if_credentials_restricted;
     extern const ServerSettingsBool s3_allow_server_credentials_for_system_table_disks;
+}
+
+/// Parses a literal boolean argument of a dynamic disk with the rules of `Poco::Util::AbstractConfiguration::getBool`,
+/// which the backends use to read it back from the generated configuration: an integer (nonzero is true) or, ignoring
+/// case, `true` / `yes` / `on` and `false` / `no` / `off`. Returns `std::nullopt` for anything else, including a value
+/// with a `${...}` reference that the configuration would expand, so that a credential check never decides on a value
+/// the backend reads differently.
+static std::optional<bool> parseLiteralConfigBool(const std::string & value)
+{
+    if (value.find('$') != std::string::npos)
+        return std::nullopt;
+    int number = 0;
+    if (Poco::NumberParser::tryParse(value, number))
+        return number != 0;
+    if (boost::iequals(value, "true") || boost::iequals(value, "yes") || boost::iequals(value, "on"))
+        return true;
+    if (boost::iequals(value, "false") || boost::iequals(value, "no") || boost::iequals(value, "off"))
+        return false;
+    return std::nullopt;
 }
 
 [[noreturn]] static void throwBadConfiguration(const std::string & message = "")
@@ -231,7 +252,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         else if (key == "secret_access_key")
             has_secret_access_key = !value_str.empty() && !indirect;
         else if (key == "no_sign_request")
-            has_no_sign_request = !indirect && value_str != "0" && !boost::iequals(value_str, "false");
+            has_no_sign_request = !indirect && parseLiteralConfigBool(value_str) == true;
         else if (key == "http_client")
             wants_gcp_oauth = !indirect && boost::iequals(value_str, "gcp_oauth");
         else if (key == "google_adc_client_id")
@@ -241,7 +262,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         else if (key == "google_adc_refresh_token")
             has_google_adc_refresh_token = !value_str.empty() && !indirect;
         else if (key == "use_environment_credentials")
-            use_environment_credentials_off = !indirect && (value_str == "0" || boost::iequals(value_str, "false"));
+            use_environment_credentials_off = !indirect && parseLiteralConfigBool(value_str) == false;
         else if (key == "role_arn")
             has_role_arn = !value_str.empty() && !indirect;
         else if (key == "service_account_key_file")
@@ -254,7 +275,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         else if (key == "access_token")
             has_gcs_access_token = !value_str.empty() && !indirect;
         else if (key == "_server_credentials_allowed")
-            has_server_credentials_marker = !indirect && value_str != "0" && !boost::iequals(value_str, "false");
+            has_server_credentials_marker = !indirect && parseLiteralConfigBool(value_str) == true;
 
         if (key == "include")
         {
