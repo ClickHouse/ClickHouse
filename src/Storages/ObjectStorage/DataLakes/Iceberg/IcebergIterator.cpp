@@ -590,7 +590,19 @@ ObjectInfoPtr IcebergIterator::next(size_t)
 
 size_t IcebergIterator::estimatedKeysCount()
 {
-    return std::numeric_limits<size_t>::max();
+    if (!data_snapshot)
+        return 0;
+
+    size_t data_files_count = 0;
+    for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
+    {
+        if (manifest_list_entry.content_type != Iceberg::ManifestFileContentType::DATA)
+            continue;
+        if (manifest_list_entry.live_files_count <= 0)
+            return std::numeric_limits<size_t>::max();
+        data_files_count += static_cast<size_t>(manifest_list_entry.live_files_count);
+    }
+    return data_files_count;
 }
 
 IcebergIterator::~IcebergIterator() = default;
