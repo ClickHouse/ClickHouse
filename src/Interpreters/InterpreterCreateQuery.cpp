@@ -175,6 +175,7 @@ namespace FailPoints
 {
     extern const char create_or_replace_before_rename[];
     extern const char create_table_pause_before_commit[];
+    extern const char create_database_pause_after_engine[];
     extern const char atomic_populate_fail_before_subscription[];
     extern const char atomic_populate_pause_before_subscription[];
     extern const char atomic_populate_pause_after_view_publication[];
@@ -455,6 +456,11 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     DatabasePtr database = DatabaseFactory::instance().get(
         create, metadata_path / "", getContext(), mode, internal, is_metadata_replay, is_restore_from_backup);
+
+    /// The engine has resolved its named collection and registered the dependency, but the database is
+    /// not published yet. Internal queries (e.g. of the server startup) do not stop here.
+    if (!internal)
+        FailPointInjection::pauseFailPoint(FailPoints::create_database_pause_after_engine);
 
     if (create.uuid != UUIDHelpers::Nil)
         create.setDatabase(TABLE_WITH_UUID_NAME_PLACEHOLDER);

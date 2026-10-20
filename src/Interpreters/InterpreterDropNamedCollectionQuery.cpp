@@ -145,8 +145,14 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
                         continue;
                     }
 
-                    /// Database creation is synchronized by the database-level DDL guard. Once it
-                    /// is acquired, an absent database dependency can only be a failed create.
+                    /// `CREATE DATABASE` holds the `DDLGuard` of the database name (with an empty table
+                    /// name) for its whole duration, from before the engine resolves the collection and
+                    /// registers the entry until the database is published or the entry is removed on
+                    /// failure. The exclusive database guard is taken by the creator only after the
+                    /// registration, so it does not cover that window by itself. Acquire the same guards
+                    /// in the same order as the creator: once both are held, no create of this name is in
+                    /// flight, and an absent database dependency can only be a failed create.
+                    auto database_name_guard = DatabaseCatalog::instance().getDDLGuard(dep.database_name, "", nullptr);
                     auto ddl_guard = DatabaseCatalog::instance().getExclusiveDDLGuardForDatabase(dep.database_name);
                     if (DatabaseCatalog::instance().tryGetDatabase(dep.database_name))
                     {

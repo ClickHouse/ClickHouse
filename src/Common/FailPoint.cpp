@@ -400,6 +400,7 @@ static struct InitFiu
     ONCE(drop_database_fail_before_drop) \
     ONCE(attach_database_fail_after_load) \
     PAUSEABLE_ONCE(create_table_pause_before_commit) \
+    PAUSEABLE_ONCE(create_database_pause_after_engine) \
     ONCE(database_remove_detached_permanently_flag_fail) \
     ONCE(database_atomic_drop_table_fail_before_replace) \
     PAUSEABLE_ONCE(rename_database_after_dependency_check) \
