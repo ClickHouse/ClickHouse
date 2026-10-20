@@ -377,8 +377,12 @@ static bool tryToExtractStructureFromCreateQuery(ReadBuffer & in, NamesAndTypesL
     if (!create_query)
         return false;
 
+    /// `CREATE TABLE ... LIKE` has no column list, and a column list with only indexes or constraints has no columns.
+    if (!create_query->columns_list)
+        return false;
+
     const auto * create_defines = create_query->columns_list->as<MySQLParser::ASTCreateDefines>();
-    if (!create_defines)
+    if (!create_defines || !create_defines->columns)
         return false;
 
     structure = getColumnsList(create_defines->columns);

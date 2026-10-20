@@ -1,0 +1,15 @@
+LIKE `t0`
+c1	Nullable(Int64)					
+c2	Nullable(String)					
+1	a
+2	b
+(KEY `k` (`x`)) ENGINE=InnoDB
+c1	Nullable(Int64)					
+c2	Nullable(String)					
+1	a
+2	b
+(CONSTRAINT `c` CHECK (`x` > 0)) ENGINE=InnoDB
+c1	Nullable(Int64)					
+c2	Nullable(String)					
+1	a
+2	b
