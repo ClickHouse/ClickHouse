@@ -81,6 +81,9 @@ struct IsOperation
     // NOTE: allow_decimal should not fully contain `division` because of divInt
     static constexpr bool allow_decimal = plus || minus || multiply || division || least || greatest || midpoint;
     static constexpr bool division_or_null = modulo_or_null || positive_modulo_or_null || int_div_or_null || div_floating_or_null;
+    /// The operations `BinaryArithmeticOverloadResolver` can build with `division_by_nullable`: only they receive the
+    /// null map of a `Nullable` divisor.
+    static constexpr bool can_have_division_by_nullable = int_div || modulo || positive_modulo || div_floating;
 };
 
 }
