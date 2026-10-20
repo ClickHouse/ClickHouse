@@ -67,5 +67,37 @@ SELECT replaceRegexpAll(trim(explain), '\\s+', ' ')
 FROM (EXPLAIN WHATIF SELECT a FROM t_budget WHERE a IN (SELECT number * 200 + 50 FROM numbers(60)) AND c = 0 SETTINGS max_rows_to_read = 6000)
 WHERE match(explain, '^With idx_[cd]|^ +(marks|empirical_status|empirical_reason|sampled_marks):');
 
+-- each part has 101 windows, so a step of 10 leaves the last window alone in its run. Only the last window of each part survives
+SELECT '-- the window of a shorter last run stands for fewer windows, so the estimate holds the real granules';
+DROP TABLE IF EXISTS t_tail;
+DROP TABLE IF EXISTS t_tail_real;
+CREATE TABLE t_tail (x UInt64) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+CREATE TABLE t_tail_real (x UInt64, INDEX idx_x x TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+SYSTEM STOP MERGES t_tail;
+SYSTEM STOP MERGES t_tail_real;
+INSERT INTO t_tail SELECT number FROM numbers(10100);
+INSERT INTO t_tail SELECT number FROM numbers(10100);
+INSERT INTO t_tail SELECT number FROM numbers(10100);
+INSERT INTO t_tail_real SELECT * FROM t_tail;
+CREATE HYPOTHETICAL INDEX idx_x ON t_tail (x) TYPE minmax GRANULARITY 1;
+SELECT
+    extract(report, 'sampled_marks: +(\\d+ / \\d+)') AS sampled_marks,
+    extractGroups(report, 'With idx_x [^\\n]*\\n +status: +applicable\\n +marks: +(\\d+)\\n +marks_span: +(\\d+) to (\\d+)') AS estimate,
+    real,
+    real BETWEEN toUInt64(estimate[2]) AND toUInt64(estimate[3]) AS real_in_span
+FROM
+(
+    SELECT arrayStringConcat(groupArray(explain), '\n') AS report
+    FROM (EXPLAIN WHATIF index_scan_budget_rows = 3030 SELECT x FROM t_tail WHERE x >= 10000)
+),
+(
+    SELECT toUInt64(extract(arrayStringConcat(groupArray(explain), '\n'), '(?s).*Granules: (\\d+)/')) AS real
+    FROM (EXPLAIN indexes = 1 SELECT x FROM t_tail_real WHERE x >= 10000 SETTINGS use_skip_indexes_on_data_read = 0)
+);
+
+DROP TABLE t_tail;
+DROP TABLE t_tail_real;
 DROP TABLE t_budget;
 DROP TABLE t_budget_real;
