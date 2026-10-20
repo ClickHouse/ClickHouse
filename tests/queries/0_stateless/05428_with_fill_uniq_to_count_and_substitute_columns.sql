@@ -18,6 +18,14 @@ SETTINGS optimize_uniq_to_count = 1;
 SELECT uniq(a) FROM (SELECT DISTINCT a FROM values('a UInt64, b UInt64', (1, 0), (2, 2)) ORDER BY b WITH FILL FROM 0 TO 5)
 SETTINGS optimize_uniq_to_count = 1;
 
+-- arrayJoin after GROUP BY in the subquery, or in the outer query, repeats rows.
+SELECT uniq(a) FROM (SELECT a, arrayJoin([1, 2]) AS z FROM values('a UInt64', (1), (2)) GROUP BY a) SETTINGS optimize_uniq_to_count = 1;
+SELECT uniq(a) FROM (SELECT a FROM values('a UInt64', (1), (2)) GROUP BY a ORDER BY arrayJoin([1, 2])) SETTINGS optimize_uniq_to_count = 1;
+SELECT uniq(a) FROM (SELECT a FROM values('a UInt64', (1), (2)) GROUP BY a HAVING arrayJoin([1, 2]) > 0) SETTINGS optimize_uniq_to_count = 1;
+SELECT uniq(a) FROM (SELECT a FROM values('a UInt64', (1), (2)) GROUP BY a QUALIFY arrayJoin([1, 2]) > 0) SETTINGS optimize_uniq_to_count = 1;
+SELECT uniq(a) FROM (SELECT a FROM values('a UInt64', (1), (2)) GROUP BY a LIMIT 2 BY arrayJoin([1, 2])) SETTINGS optimize_uniq_to_count = 1;
+SELECT uniq(a) FROM (SELECT a FROM values('a UInt64', (1), (2)) GROUP BY a) WHERE arrayJoin([1, 2]) > 0 SETTINGS optimize_uniq_to_count = 1;
+
 -- The skip is per query level and needs WITH FILL: a subquery with a plain ORDER BY is still rewritten.
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT 1 AS k, c FROM (SELECT uniq(a) AS c FROM (SELECT number AS a FROM numbers(5) GROUP BY a ORDER BY a) ORDER BY c)
 ORDER BY k WITH FILL FROM 0 TO 3 INTERPOLATE (c AS c + 1)) WHERE explain LIKE '%function_name: count%'
