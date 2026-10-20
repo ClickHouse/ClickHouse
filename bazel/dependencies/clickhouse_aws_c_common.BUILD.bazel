@@ -1,12 +1,43 @@
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "LICENSE",
-    "include/aws/common/config.h.in",
 ])
+
+expand_template(
+    name = "configure_include_aws_common_config_h",
+    out = "config/contrib/aws-cmake/include/aws/common/config.h",
+    substitutions = {
+        "#cmakedefine AWS_HAVE_GCC_OVERFLOW_MATH_EXTENSIONS": "/* #undef AWS_HAVE_GCC_OVERFLOW_MATH_EXTENSIONS */",
+        "#cmakedefine AWS_HAVE_POSIX_LARGE_FILE_SUPPORT": "/* #undef AWS_HAVE_POSIX_LARGE_FILE_SUPPORT */",
+        "#cmakedefine AWS_HAVE_MM256_EXTRACT_EPI64": "/* #undef AWS_HAVE_MM256_EXTRACT_EPI64 */",
+        "#cmakedefine AWS_HAVE_MSVC_INTRINSICS_X64": "/* #undef AWS_HAVE_MSVC_INTRINSICS_X64 */",
+        "#cmakedefine AWS_HAVE_AVX512_INTRINSICS": "/* #undef AWS_HAVE_AVX512_INTRINSICS */",
+        "#cmakedefine AWS_HAVE_AVX2_INTRINSICS": "/* #undef AWS_HAVE_AVX2_INTRINSICS */",
+        "#cmakedefine AWS_HAVE_LINUX_IF_LINK_H": "/* #undef AWS_HAVE_LINUX_IF_LINK_H */",
+        "#cmakedefine AWS_HAVE_GCC_INLINE_ASM": "#define AWS_HAVE_GCC_INLINE_ASM",
+        "#cmakedefine AWS_HAVE_WINAPI_DESKTOP": "/* #undef AWS_HAVE_WINAPI_DESKTOP */",
+        "#cmakedefine AWS_USE_CPU_EXTENSIONS": "/* #undef AWS_USE_CPU_EXTENSIONS */",
+        "#cmakedefine AWS_ARCH_INTEL_X64": "/* #undef AWS_ARCH_INTEL_X64 */",
+        "#cmakedefine AWS_HAVE_ARM32_CRC": "/* #undef AWS_HAVE_ARM32_CRC */",
+        "#cmakedefine AWS_HAVE_EXECINFO": "/* #undef AWS_HAVE_EXECINFO */",
+        "#cmakedefine AWS_HAVE_ARMv8_1": "/* #undef AWS_HAVE_ARMv8_1 */",
+        "#cmakedefine AWS_HAVE_CLMUL": "/* #undef AWS_HAVE_CLMUL */",
+    } | select({
+        "@platforms//cpu:x86_64": {
+            "#cmakedefine AWS_ARCH_ARM64": "/* #undef AWS_ARCH_ARM64 */",
+            "#cmakedefine AWS_ARCH_INTEL": "#define AWS_ARCH_INTEL",
+        },
+        "@platforms//cpu:aarch64": {
+            "#cmakedefine AWS_ARCH_ARM64": "#define AWS_ARCH_ARM64",
+            "#cmakedefine AWS_ARCH_INTEL": "/* #undef AWS_ARCH_INTEL */",
+        },
+    }),
+    template = "include/aws/common/config.h.in",
+)
 
 ch_cc_library(
     name = "aws_c_common",
@@ -61,16 +92,23 @@ ch_cc_library(
             "source/arch/intel/cpuid.c",
         ],
         "@platforms//cpu:aarch64": ["source/arch/arm/auxv/cpuid.c"],
-    }) + glob(["source/external/**/*.h"])),
+    }) + glob(["source/external/**/*.h"]) + glob([
+        "include/**/private/**/*.h",
+        "include/**/private/**/*.inl",
+    ])),
+    hdrs = glob([
+        "include/**/*.h",
+        "include/**/*.inl",
+    ], exclude = [
+        "include/**/private/**/*.h",
+        "include/**/private/**/*.inl",
+    ]) + ["config/contrib/aws-cmake/include/aws/common/config.h"],
     copts = [
         "-w",
         "-std=gnu11",
         "-g1",
     ],
-    implementation_deps = [
-        ":aws_c_common_headers",
-        "@clickhouse_llvm_project//:libcxxabi_headers",
-    ],
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     llvm_headers = True,
     local_defines = [
@@ -90,6 +128,10 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
+    includes = [
+        "include",
+        "config/contrib/aws-cmake/include",
+    ],
     local_includes = [
         "source/external/libcbor/cbor",
         "source/external/libcbor",
@@ -99,7 +141,10 @@ ch_cc_library(
 ch_cc_library(
     name = "aws_c_common__compile_2",
     srcs = select({
-        "@platforms//cpu:x86_64": ["source/arch/intel/encoding_avx2.c"] + glob(["source/external/libcbor/**/*.h"]),
+        "@platforms//cpu:x86_64": ["source/arch/intel/encoding_avx2.c"] + glob(["source/external/libcbor/**/*.h"]) + glob([
+            "include/**/private/**/*.h",
+            "include/**/private/**/*.inl",
+        ]),
         "@platforms//cpu:aarch64": [],
     }),
     arches = [
@@ -116,7 +161,10 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     implementation_deps = select({
-        "@platforms//cpu:x86_64": ["@clickhouse_llvm_project//:libcxxabi_headers"],
+        "@platforms//cpu:x86_64": [
+            "@clickhouse_llvm_project//:libcxxabi_headers",
+            ":aws_c_common",
+        ],
         "@platforms//cpu:aarch64": [],
     }),
     language = "C",
@@ -143,17 +191,4 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    deps = [
-        ":aws_c_common_headers",
-    ],
-)
-
-cc_library(
-    name = "aws_c_common_headers",
-    hdrs = glob([
-        "include/**/*.h",
-        "include/**/*.inl",
-    ]),
-    includes = ["include"],
-    deps = ["@clickhouse_aws//:aws_config_headers"],
 )

@@ -26,10 +26,8 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = [
-        "@clickhouse_abseil_cpp//:absl_flags_internal",
-        "@clickhouse_abseil_cpp//:absl_flags_reflection",
-        "@clickhouse_abseil_cpp//:absl_log_internal_check_op",
-        "@clickhouse_abseil_cpp//:absl_log_internal_conditions",
+    deps = ["@clickhouse_abseil_cpp//:absl_flags_internal"] + [
+        "@clickhouse_abseil_cpp//:absl_die_if_null",
+        "@clickhouse_abseil_cpp//:absl_log_internal_check_impl",
     ],
 )

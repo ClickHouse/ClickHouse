@@ -41,7 +41,8 @@ expand_template(
 )
 
 cc_library(
-    name = "wasmtime_headers",
+    name = "wasmtime",
+    srcs = ["@clickhouse//bazel/rust:wasmtime_processed"],
     hdrs = glob(["crates/c-api/include/**/*.h"]) + [":config/contrib/wasmtime/include/wasmtime/conf.h"],
     includes = [
         "config/contrib/wasmtime/include",

@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -9,7 +8,8 @@ exports_files([
 
 ch_cc_library(
     name = "aws_c_s3",
-    srcs = glob(["source/*.c"]),
+    srcs = glob(["source/*.c"]) + glob(["include/**/private/**/*.h"]),
+    hdrs = glob(["include/**/*.h"], exclude = ["include/**/private/**/*.h"]),
     copts = [
         "-w",
         "-std=gnu11",
@@ -17,8 +17,8 @@ ch_cc_library(
     ],
     implementation_deps = [
         "@clickhouse_llvm_project//:libcxxabi_headers",
-        "@clickhouse_aws_c_cal//:aws_c_cal_headers",
-        "@clickhouse_aws_checksums//:aws_checksums_headers",
+        "@clickhouse_aws_c_cal//:aws_c_cal",
+        "@clickhouse_aws_checksums//:aws_checksums",
     ],
     language = "C",
     local_defines = [
@@ -38,12 +38,6 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = [":aws_c_s3_headers"],
-)
-
-cc_library(
-    name = "aws_c_s3_headers",
-    hdrs = glob(["include/**/*.h"]),
     includes = ["include"],
-    deps = ["@clickhouse_aws_c_auth//:aws_c_auth_headers"],
+    deps = ["@clickhouse_aws_c_auth//:aws_c_auth"],
 )

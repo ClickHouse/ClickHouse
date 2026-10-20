@@ -9,6 +9,22 @@ exports_files([
     "TableFunctionView.cpp",
 ])
 
+_PRIVATE_TABLE_FUNCTIONS_HEADERS = [
+    "TableFunctionArrowFlight.h",
+    "TableFunctionDictionary.h",
+    "TableFunctionFilesystem.h",
+    "TableFunctionFuzzJSON.h",
+    "TableFunctionFuzzQuery.h",
+    "TableFunctionMongoDB.h",
+    "TableFunctionObfuscate.h",
+    "TableFunctionObjectStorageCluster.h",
+    "TableFunctionPrometheusQuery.h",
+    "TableFunctionRemote.h",
+    "TableFunctionTimeSeries.h",
+    "TableFunctionTimeSeriesSelector.h",
+    "TableFunctionTraceView.h",
+]
+
 ch_cc_library(
     name = "clickhouse_table_functions",
     srcs = ([
@@ -57,7 +73,7 @@ ch_cc_library(
         "TableFunctionZeros.cpp",
         "registerTableFunctions.cpp",
         "Hive/TableFunctionHive.cpp",
-    ]),
+    ] + _PRIVATE_TABLE_FUNCTIONS_HEADERS),
     clickhouse_code = True,
     implementation_deps = [
         "//bazel:clickhouse_config_headers",
@@ -470,5 +486,10 @@ ch_cc_library(
 
 cc_library(
     name = "headers",
-    hdrs = glob(["**/*.h"]),
+    hdrs = glob(
+        [
+            "**/*.h",
+        ],
+        exclude = _PRIVATE_TABLE_FUNCTIONS_HEADERS,
+    ),
 )

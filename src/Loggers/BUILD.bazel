@@ -416,7 +416,7 @@ ch_cc_library(
         "@clickhouse_datasketches_cpp//:datasketches_cpp",
         "@clickhouse_fp16//:fp16",
         "@clickhouse_usearch//:usearch",
-        "//contrib/librdkafka-cmake:headers",
+        "//contrib/librdkafka-cmake:rdhttp_poco_transport",
         "//:headers",
     ],
 )

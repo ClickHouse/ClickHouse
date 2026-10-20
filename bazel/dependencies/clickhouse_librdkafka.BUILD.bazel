@@ -1,5 +1,6 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//contrib/librdkafka-cmake:flags.bzl", "RDKAFKA_LOCAL_DEFINES")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -21,88 +22,6 @@ expand_template(
     },
     template = "@clickhouse//contrib/librdkafka-cmake:config.h.in",
 )
-
-_RDKAFKA_LOCAL_DEFINES = select({
-    "@platforms//cpu:x86_64": [
-        "CJSON_HIDE_SYMBOLS",
-    ],
-    "@platforms//cpu:aarch64": [
-        "ARM_ACLE",
-        "ARM_ASM_HWCAP",
-        "ARM_AUXV_HAS_CRC32",
-        "ARM_AUXV_HAS_NEON",
-        "ARM_FEATURES",
-        "ARM_NEON",
-        "ARM_NEON_HASLD4",
-        "CJSON_HIDE_SYMBOLS",
-        "HAVE_ARM_ACLE_H",
-    ],
-}) + [
-    "HAVE_ATTRIBUTE_ALIGNED",
-    "HAVE_BUILTIN_CTZ",
-    "HAVE_BUILTIN_CTZLL",
-    "HAVE_POSIX_MEMALIGN",
-] + select({
-    "@platforms//cpu:x86_64": [],
-    "@platforms//cpu:aarch64": [
-        "HAVE_SYS_AUXV_H",
-    ],
-}) + [
-    "HAVE_VISIBILITY_HIDDEN",
-    "HAVE_VISIBILITY_INTERNAL",
-    "OPENSSL_NO_ENGINE",
-    "POCO_ENABLE_CPP11",
-    "POCO_OS_FAMILY_UNIX",
-    "STD_EXCEPTION_HAS_STACK_TRACE=1",
-    "UNALIGNED_OK",
-    "WITH_GZFILEOP",
-    "X86_64",
-] + select({
-    "@platforms//cpu:x86_64": [
-        "X86_AVX2",
-        "X86_FEATURES",
-        "X86_PCLMULQDQ_CRC",
-        "X86_SSE2",
-        "X86_SSE42",
-        "X86_SSSE3",
-    ],
-    "@platforms//cpu:aarch64": [],
-}) + [
-    "ZLIB_COMPAT",
-    "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-    "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-    "_LIBUNWIND_IS_NATIVE_ONLY",
-    "call_once=rd_kafka_call_once",
-    "cnd_broadcast=rd_kafka_cnd_broadcast",
-    "cnd_destroy=rd_kafka_cnd_destroy",
-    "cnd_init=rd_kafka_cnd_init",
-    "cnd_signal=rd_kafka_cnd_signal",
-    "cnd_timedwait=rd_kafka_cnd_timedwait",
-    "cnd_wait=rd_kafka_cnd_wait",
-    "mtx_destroy=rd_kafka_mtx_destroy",
-    "mtx_init=rd_kafka_mtx_init",
-    "mtx_lock=rd_kafka_mtx_lock",
-    "mtx_timedlock=rd_kafka_mtx_timedlock",
-    "mtx_trylock=rd_kafka_mtx_trylock",
-    "mtx_unlock=rd_kafka_mtx_unlock",
-    "thrd_create=rd_kafka_thrd_create",
-    "thrd_current=rd_kafka_thrd_current",
-    "thrd_detach=rd_kafka_thrd_detach",
-    "thrd_equal=rd_kafka_thrd_equal",
-    "thrd_exit=rd_kafka_thrd_exit",
-    "thrd_join=rd_kafka_thrd_join",
-    "thrd_sleep=rd_kafka_thrd_sleep",
-    "thrd_yield=rd_kafka_thrd_yield",
-    "tss_create=rd_kafka_tss_create",
-    "tss_delete=rd_kafka_tss_delete",
-    "tss_get=rd_kafka_tss_get",
-    "tss_set=rd_kafka_tss_set",
-]
-
-_RDKAFKA_LOCAL_INCLUDES = [
-    "config/contrib/librdkafka-cmake",
-    "src",
-]
 
 ch_cc_library(
     name = "_rdkafka__compile_0",
@@ -186,66 +105,31 @@ ch_cc_library(
         "src/rdkafka_sasl_cyrus.c",
         "src/rdkafka_sasl_scram.c",
         "src/rdkafka_sasl_oauthbearer.c",
-    ],
-    hdrs = [
-        "@clickhouse_cyrus_sasl//:config/contrib/cyrus-sasl-cmake/prop.h",
-        "@clickhouse_cyrus_sasl//:config/contrib/cyrus-sasl-cmake/sasl/sasl.h",
+    ] + [
         ":config/contrib/librdkafka-cmake/config.h",
-        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
-        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
-        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-    ] + glob(["src/**/*.h"]),
+        "@clickhouse//contrib/librdkafka-cmake:rdhttp_poco_transport.h",
+    ] + glob(["src/**/*.h"], exclude = ["src/rdkafka.h"]),
+    hdrs = ["src/rdkafka.h"],
     additional_compiler_inputs = ["src/rdkafka_conf.c"],
     copts = [
         "-w",
         "-std=gnu11",
         "-fno-sanitize=undefined",
     ],
-    implementation_deps = ([
-        "@clickhouse//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_0",
+    implementation_deps = [
         "@clickhouse_llvm_project//:libcxxabi_headers",
-        "@clickhouse//contrib/librdkafka-cmake:headers",
-    ]) + ["@clickhouse_zlib_ng//:_zlib", "@clickhouse_cyrus_sasl//:_sasl2"],
+        "@clickhouse_zlib_ng//:_zlib",
+        "@clickhouse_cyrus_sasl//:_sasl2",
+        "@lz4//:lz4_frame",
+        "@clickhouse_krb5//:_krb5",
+        "@clickhouse_zstd//:_zstd__compile_0",
+        "@clickhouse_openssl//:crypto",
+        "@clickhouse_openssl//:ssl",
+    ],
     language = "C",
-    local_defines = _RDKAFKA_LOCAL_DEFINES,
-    local_includes = _RDKAFKA_LOCAL_INCLUDES,
-    deps = [
-        "@lz4//:lz4_frame",
-        "@clickhouse//contrib/librdkafka-cmake:librdkafka_cmake_headers",
-        "@clickhouse_krb5//:_krb5",
-        "@clickhouse_zstd//:_zstd__compile_0",
-    ],
-)
-
-ch_cc_library(
-    name = "_rdkafka__compile_1",
-    srcs = ["@clickhouse//contrib/librdkafka-cmake:rdhttp_poco_transport.cpp"],
-    hdrs = [
-        "@clickhouse_cyrus_sasl//:config/contrib/cyrus-sasl-cmake/prop.h",
-        "@clickhouse_cyrus_sasl//:config/contrib/cyrus-sasl-cmake/sasl/sasl.h",
-        ":config/contrib/librdkafka-cmake/config.h",
-        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
-        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
-        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-    ] + glob(["src/**/*.h"]),
-    additional_compiler_inputs = ["src/rdkafka_conf.c"],
-    copts = [
-        "-w",
-        "-std=c++23",
-        "-fno-sanitize=undefined",
-    ],
-    implementation_deps = ([
-        "@clickhouse//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_0",
-        "@clickhouse//contrib/librdkafka-cmake:headers",
-    ]) + ["@clickhouse_zlib_ng//:_zlib", "@clickhouse_cyrus_sasl//:_sasl2"],
-    local_defines = _RDKAFKA_LOCAL_DEFINES,
-    local_includes = _RDKAFKA_LOCAL_INCLUDES,
-    deps = [
-        "@lz4//:lz4_frame",
-        "@clickhouse//contrib/librdkafka-cmake:librdkafka_cmake_headers",
-        "@clickhouse_krb5//:_krb5",
-        "@clickhouse_zstd//:_zstd__compile_0",
-    ],
+    local_defines = RDKAFKA_LOCAL_DEFINES,
+    local_includes = ["config/contrib/librdkafka-cmake", "src"],
+    strip_include_prefix = "src",
 )
 
 cc_library(
@@ -254,12 +138,6 @@ cc_library(
         "@clickhouse_cyrus_sasl//:_sasl2",
         "@clickhouse//base:common",
         ":_rdkafka__compile_0",
-        ":_rdkafka__compile_1",
+        "@clickhouse//contrib/librdkafka-cmake:rdhttp_poco_transport",
     ],
-)
-
-cc_library(
-    name = "librdkafka_native_headers",
-    hdrs = ["src/rdkafka.h"],
-    strip_include_prefix = "src",
 )

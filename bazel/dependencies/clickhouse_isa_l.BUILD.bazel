@@ -48,16 +48,11 @@ ch_cc_library(
             "mem/mem_zero_detect_base.c",
             "raid/raid_base_aliases.c",
             "raid/raid_base.c",
-        ],
+        ] + glob(["crc/**/*.h", "erasure_code/**/*.h"]),
         "@platforms//cpu:aarch64": [],
     }),
     hdrs = select({
-        "@platforms//cpu:x86_64": glob([
-            "crc/**/*.h",
-            "erasure_code/**/*.h",
-            "igzip/**/*.h",
-            "include/**/*.h",
-        ]),
+        "@platforms//cpu:x86_64": glob(["igzip/**/*.h", "include/**/*.h"]),
         "@platforms//cpu:aarch64": [],
     }),
     arches = [

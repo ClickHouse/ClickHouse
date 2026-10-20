@@ -1,11 +1,27 @@
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "LICENSE",
-    "cmake/build_config.h.in",
 ])
+
+expand_template(
+    name = "configure_dmlc_core_dmlc_build_config_h",
+    out = "config/contrib/xgboost/dmlc-core/dmlc/build_config.h",
+    substitutions = {
+        "#cmakedefine CMAKE_CURRENT_SOURCE_DIR \"${CMAKE_CURRENT_SOURCE_DIR}\"": "#define CMAKE_CURRENT_SOURCE_DIR \"contrib/xgboost-cmake\"",
+        "  #cmakedefine DMLC_EXECINFO_H <${DMLC_EXECINFO_H}>": "/* #undef DMLC_EXECINFO_H */",
+        "#cmakedefine DMLC_EXECINFO_H_PRESENT": "/* #undef DMLC_EXECINFO_H_PRESENT */",
+        "#cmakedefine DMLC_NANOSLEEP_PRESENT": "#define DMLC_NANOSLEEP_PRESENT",
+        "#cmakedefine DMLC_CXXABI_H_PRESENT": "#define DMLC_CXXABI_H_PRESENT",
+        "#cmakedefine DMLC_FOPEN_64_PRESENT": "#define DMLC_FOPEN_64_PRESENT",
+        "#cmakedefine DMLC_USE_PARQUET": "/* #undef DMLC_USE_PARQUET */",
+        "${DMLC_CMAKE_LITTLE_ENDIAN}": "1",
+    },
+    template = "cmake/build_config.h.in",
+)
 
 ch_cc_library(
     name = "_dmlc_core",
@@ -22,20 +38,8 @@ ch_cc_library(
         "src/config.cc",
     ] + glob(["src/**/*.h"]),
     hdrs = [
-        "@clickhouse_xgboost//:config/contrib/xgboost/dmlc-core/dmlc/build_config.h",
+        ":configure_dmlc_core_dmlc_build_config_h",
     ] + glob(["include/dmlc/*.h"]),
-    additional_compiler_inputs = [
-        "src/data.cc",
-        "src/io.cc",
-        "src/recordio.cc",
-        "src/io/recordio_split.cc",
-        "src/io/local_filesys.cc",
-        "src/io/input_split_base.cc",
-        "src/io/indexed_recordio_split.cc",
-        "src/io/line_split.cc",
-        "src/io/filesys.cc",
-        "src/config.cc",
-    ],
     copts = [
         "-w",
         "-std=c++23",
@@ -49,6 +53,7 @@ ch_cc_library(
     }),
     includes = [
         "include",
+        "config/contrib/xgboost/dmlc-core",
     ],
     local_defines = [
         "DMLC_CORE_USE_CMAKE",
@@ -65,5 +70,4 @@ ch_cc_library(
         "__USE_XOPEN2K8",
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
-    implementation_deps = ["@clickhouse_xgboost//:dmlc_config_headers"],
 )

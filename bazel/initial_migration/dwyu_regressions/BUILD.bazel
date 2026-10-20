@@ -1,0 +1,70 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "api",
+    hdrs = ["api/ares.h"],
+    includes = ["api"],
+)
+
+cc_library(
+    name = "cpp_api",
+    hdrs = ["api/cpp_api.h"],
+    includes = ["api"],
+)
+
+cc_library(
+    name = "bridge",
+    deps = [":api"],
+)
+
+cc_library(
+    name = "direct",
+    srcs = ["direct.cc"],
+    implementation_deps = [":api"],
+)
+
+# Real compile succeeds via the bridge. DWYU must reject the missing direct
+# dependency on :api. It must not silently call <ares.h> a toolchain header.
+cc_library(
+    name = "via_bridge",
+    srcs = ["direct.cc"],
+    implementation_deps = [":bridge"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "c_guard",
+    srcs = ["guard.c"],
+    implementation_deps = [":api"],
+)
+
+cc_library(
+    name = "cpp_guard",
+    srcs = ["guard.cc"],
+    implementation_deps = [":cpp_api"],
+)
+
+cc_library(
+    name = "local",
+    srcs = [
+        "local.cc",
+        "local/private.h",
+    ],
+    implementation_deps = [":api"],
+    local_includes = ["local"],
+)
+
+cc_library(
+    name = "bad_private_include",
+    srcs = ["local.cc"],
+    tags = ["manual"],
+    deps = [":local"],
+)
+
+cc_library(
+    name = "missing",
+    srcs = ["missing.cc"],
+    tags = ["manual"],
+)

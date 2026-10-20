@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -34,16 +33,16 @@ ch_cc_library(
         "source/tls_channel_handler_shared.c",
         "source/tracing.c",
         "source/linux/epoll_event_loop.c",
-    ] + glob(["source/posix/*.c"]) + glob(["source/**/*.h"]),
+    ] + glob(["source/posix/*.c"]) + glob(["source/**/*.h"]) + glob(["include/**/private/**/*.h"]),
+    hdrs = glob(["include/**/*.h"], exclude = ["include/**/private/**/*.h"]),
     copts = [
         "-w",
         "-std=gnu11",
         "-g1",
     ],
     implementation_deps = [
-        ":aws_c_io_headers",
         "@clickhouse_llvm_project//:libcxxabi_headers",
-        "@clickhouse_aws_c_cal//:aws_c_cal_headers",
+        "@clickhouse_aws_c_cal//:aws_c_cal",
     ],
     language = "C",
     local_defines = [
@@ -63,17 +62,25 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
+    deps = [
+        "@clickhouse_aws_c_common//:aws_c_common",
+        "@clickhouse_openssl//:ssl",
+    ],
+    includes = ["include"],
 )
 
 ch_cc_library(
     name = "aws_c_io__compile_3",
-    srcs = ["source/tls_channel_handler.c"] + glob(["source/**/*.h"]),
+    srcs = ["source/tls_channel_handler.c"] + glob(["source/**/*.h"]) + glob(["include/**/private/**/*.h"]),
     copts = [
         "-w",
         "-std=gnu11",
         "-g1",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    implementation_deps = [
+        "@clickhouse_llvm_project//:libcxxabi_headers",
+        ":aws_c_io",
+    ],
     language = "C",
     local_defines = [
         "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
@@ -92,16 +99,5 @@ ch_cc_library(
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
-    deps = [":aws_c_io_headers"],
-)
-
-cc_library(
-    name = "aws_c_io_headers",
-    hdrs = glob(["include/**/*.h"]),
-    includes = ["include"],
-    deps = [
-        "@clickhouse_aws_c_common//:aws_c_common_headers",
-        "@clickhouse_openssl//:ssl",
     ],
 )

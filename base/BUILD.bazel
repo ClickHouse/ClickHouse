@@ -8,6 +8,10 @@ exports_files([
     "poco/LICENSE",
 ])
 
+_PRIVATE_COMMON_HEADERS = [
+    "base/mremap.h",
+]
+
 ch_cc_library(
     name = "common",
     srcs = [
@@ -38,7 +42,7 @@ ch_cc_library(
         "base/Numa.cpp",
         "//bazel:gen/base/base/GitHash.generated.cpp",
         "base/wide_integer_to_string.cpp",
-    ],
+    ] + _PRIVATE_COMMON_HEADERS,
     clickhouse_code = True,
     implementation_deps = ["@llvm-project//compiler-rt:headers"],
     local_defines = [
@@ -81,7 +85,12 @@ ch_cc_library(
 
 cc_library(
     name = "base_headers",
-    hdrs = glob(["base/**/*.h"]),
+    hdrs = glob(
+        [
+            "base/**/*.h",
+        ],
+        exclude = _PRIVATE_COMMON_HEADERS,
+    ),
     includes = ["."],
     deps = [
         "@clickhouse_boost//:boost_headers",

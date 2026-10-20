@@ -87,8 +87,6 @@ ch_cc_library(
     implementation_deps = [
         "@clickhouse_openssl//:crypto",
         "@clickhouse_openssl//:ssl",
-        "@clickhouse_openssl//:openssl_native_headers",
-        "@clickhouse//contrib/openssl-cmake:openssl_cmake_headers",
         "@clickhouse//contrib/postgres-cmake:headers",
     ],
     includes = [

@@ -1,24 +1,11 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "COPYING",
 ])
-
-cc_library(
-    name = "libpqxx_headers",
-    hdrs = glob(["include/**/*.hxx"]),
-    includes = [
-        "include",
-    ],
-    textual_hdrs = glob(
-        ["include/pqxx/*"],
-        exclude = ["include/pqxx/*.*"],
-    ),
-)
 
 expand_template(
     name = "configure_pqxx_config_internal_compiler_h",
@@ -37,7 +24,7 @@ expand_template(
 ch_cc_library(
     name = "_libpqxx",
     srcs = (glob(["src/*.cxx"]) + glob(["src/**/*.hxx"])) + [":config/contrib/libpqxx-cmake/pqxx/config-internal-compiler.h"],
-    hdrs = [":config/contrib/libpqxx-cmake/pqxx/config-public-compiler.h"],
+    hdrs = [":config/contrib/libpqxx-cmake/pqxx/config-public-compiler.h"] + glob(["include/**/*.hxx"]),
     copts = [
         "-w",
         "-std=c++23",
@@ -48,9 +35,13 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = [
-        ":libpqxx_headers",
-        "@clickhouse_postgres//:_libpq",
+    includes = [
+        "config/contrib/libpqxx-cmake",
+        "include",
     ],
-    includes = ["config/contrib/libpqxx-cmake"],
+    textual_hdrs = glob(
+        ["include/pqxx/*"],
+        exclude = ["include/pqxx/*.*"],
+    ),
+    deps = ["@clickhouse_postgres//:_libpq"],
 )

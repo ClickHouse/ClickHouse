@@ -9,6 +9,26 @@ exports_files([
     "LICENSE",
 ])
 
+_AMQP_SHARED_HEADERS = [
+    "src/basicframe.h",
+    "src/basicheaderframe.h",
+    "src/basicpublishframe.h",
+    "src/bodyframe.h",
+    "src/channelframe.h",
+    "src/confirmframe.h",
+    "src/connectionframe.h",
+    "src/exchangeframe.h",
+    "src/extframe.h",
+    "src/headerframe.h",
+    "src/includes.h",
+    "src/linux_tcp/function.h",
+    "src/linux_tcp/poll.h",
+    "src/methodframe.h",
+    "src/queueframe.h",
+    "src/receivedframe.h",
+    "src/transactionframe.h",
+]
+
 ch_cc_library(
     name = "_amqp-cpp",
     srcs = [
@@ -30,8 +50,8 @@ ch_cc_library(
         "src/receivedframe.cpp",
         "src/table.cpp",
         "src/watchable.cpp",
-    ],
-    hdrs = glob(["**/*.h"]),
+    ] + glob(["src/**/*.h"], exclude = _AMQP_SHARED_HEADERS),
+    hdrs = glob(["include/**/*.h"]) + _AMQP_SHARED_HEADERS,
     copts = [
         "-w",
         "-std=c++23",

@@ -21,7 +21,9 @@ ch_cc_library(
         "src/lib/zxc_dispatch.c",
         "src/lib/zxc_pstream.c",
         "src/lib/zxc_seekable.c",
-    ],
+    ] + glob(["src/lib/**/*.h"]),
+    hdrs = glob(["include/**/*.h"]),
+    includes = ["include"],
     copts = _ZXC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
@@ -94,14 +96,7 @@ _GENERATED_COPTS_1 = select({
 
 ch_cc_library(
     name = "_zxc_compress_avx2",
-    srcs = _ZXC_COMPRESS_SRCS,
-    hdrs = select({
-        "@platforms//cpu:x86_64": glob([
-            "include/**/*.h",
-            "src/lib/**/*.h",
-        ]),
-        "@platforms//cpu:aarch64": [],
-    }),
+    srcs = _ZXC_COMPRESS_SRCS + glob(["src/lib/**/*.h", "include/**/*.h"]),
     arches = [
         "x86_64",
     ],
@@ -110,17 +105,11 @@ ch_cc_library(
         "@platforms//cpu:x86_64": ["@clickhouse_llvm_project//:libcxxabi_headers"],
         "@platforms//cpu:aarch64": [],
     }),
-    includes = select({
-        "@platforms//cpu:x86_64": [
-            "include",
-        ],
-        "@platforms//cpu:aarch64": [],
-        "//conditions:default": [],
-    }),
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = select({
         "@platforms//cpu:x86_64": [
+            "include",
             "src/lib",
             "src/lib/vendors",
         ],
@@ -160,14 +149,7 @@ _GENERATED_COPTS_2 = select({
 
 ch_cc_library(
     name = "_zxc_compress_avx512",
-    srcs = _ZXC_COMPRESS_SRCS,
-    hdrs = select({
-        "@platforms//cpu:x86_64": glob([
-            "include/**/*.h",
-            "src/lib/**/*.h",
-        ]),
-        "@platforms//cpu:aarch64": [],
-    }),
+    srcs = _ZXC_COMPRESS_SRCS + glob(["src/lib/**/*.h", "include/**/*.h"]),
     arches = [
         "x86_64",
     ],
@@ -180,6 +162,7 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = select({
         "@platforms//cpu:x86_64": [
+            "include",
             "src/lib",
             "src/lib/vendors",
         ],
@@ -203,23 +186,13 @@ ch_cc_library(
     name = "_zxc_compress_default",
     srcs = [
         "src/lib/zxc_compress.c",
-    ],
-    hdrs = glob([
-        "include/**/*.h",
-        "src/lib/**/*.h",
-    ]),
+    ] + glob(["src/lib/**/*.h", "include/**/*.h"]),
     copts = _ZXC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
-    includes = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            "include",
-        ],
-        "//conditions:default": [],
-    }),
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_2,
     local_includes = [
+        "include",
         "src/lib",
         "src/lib/vendors",
     ],
@@ -236,14 +209,7 @@ _ZXC_DECOMPRESS_SRCS = select({
 
 ch_cc_library(
     name = "_zxc_decompress_avx2",
-    srcs = _ZXC_DECOMPRESS_SRCS,
-    hdrs = select({
-        "@platforms//cpu:x86_64": glob([
-            "include/**/*.h",
-            "src/lib/**/*.h",
-        ]),
-        "@platforms//cpu:aarch64": [],
-    }),
+    srcs = _ZXC_DECOMPRESS_SRCS + glob(["src/lib/**/*.h", "include/**/*.h"]),
     arches = [
         "x86_64",
     ],
@@ -256,6 +222,7 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = select({
         "@platforms//cpu:x86_64": [
+            "include",
             "src/lib",
             "src/lib/vendors",
         ],
@@ -268,14 +235,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "_zxc_decompress_avx512",
-    srcs = _ZXC_DECOMPRESS_SRCS,
-    hdrs = select({
-        "@platforms//cpu:x86_64": glob([
-            "include/**/*.h",
-            "src/lib/**/*.h",
-        ]),
-        "@platforms//cpu:aarch64": [],
-    }),
+    srcs = _ZXC_DECOMPRESS_SRCS + glob(["src/lib/**/*.h", "include/**/*.h"]),
     arches = [
         "x86_64",
     ],
@@ -288,6 +248,7 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = select({
         "@platforms//cpu:x86_64": [
+            "include",
             "src/lib",
             "src/lib/vendors",
         ],
@@ -302,16 +263,13 @@ ch_cc_library(
     name = "_zxc_decompress_default",
     srcs = [
         "src/lib/zxc_decompress.c",
-    ],
-    hdrs = glob([
-        "include/**/*.h",
-        "src/lib/**/*.h",
-    ]),
+    ] + glob(["src/lib/**/*.h", "include/**/*.h"]),
     copts = _ZXC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_2,
     local_includes = [
+        "include",
         "src/lib",
         "src/lib/vendors",
     ],
@@ -328,14 +286,7 @@ _ZXC_HUFFMAN_SRCS = select({
 
 ch_cc_library(
     name = "_zxc_huffman_avx2",
-    srcs = _ZXC_HUFFMAN_SRCS,
-    hdrs = select({
-        "@platforms//cpu:x86_64": glob([
-            "include/**/*.h",
-            "src/lib/**/*.h",
-        ]),
-        "@platforms//cpu:aarch64": [],
-    }),
+    srcs = _ZXC_HUFFMAN_SRCS + glob(["src/lib/**/*.h", "include/**/*.h"]),
     arches = [
         "x86_64",
     ],
@@ -348,6 +299,7 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = select({
         "@platforms//cpu:x86_64": [
+            "include",
             "src/lib",
             "src/lib/vendors",
         ],
@@ -360,14 +312,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "_zxc_huffman_avx512",
-    srcs = _ZXC_HUFFMAN_SRCS,
-    hdrs = select({
-        "@platforms//cpu:x86_64": glob([
-            "include/**/*.h",
-            "src/lib/**/*.h",
-        ]),
-        "@platforms//cpu:aarch64": [],
-    }),
+    srcs = _ZXC_HUFFMAN_SRCS + glob(["src/lib/**/*.h", "include/**/*.h"]),
     arches = [
         "x86_64",
     ],
@@ -380,6 +325,7 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = select({
         "@platforms//cpu:x86_64": [
+            "include",
             "src/lib",
             "src/lib/vendors",
         ],
@@ -394,16 +340,13 @@ ch_cc_library(
     name = "_zxc_huffman_default",
     srcs = [
         "src/lib/zxc_huffman.c",
-    ],
-    hdrs = glob([
-        "include/**/*.h",
-        "src/lib/**/*.h",
-    ]),
+    ] + glob(["src/lib/**/*.h", "include/**/*.h"]),
     copts = _ZXC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_2,
     local_includes = [
+        "include",
         "src/lib",
         "src/lib/vendors",
     ],

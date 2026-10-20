@@ -323,10 +323,7 @@ ch_cc_library(
         "config/contrib/libhdfs3-cmake",
     ] + _HDFS3_LOCAL_INCLUDES,
     textual_hdrs = _HDFS3_TEXTUAL_HDRS,
-    deps = [] + [
-        "@clickhouse_boost//:boost_headers",
-        "@clickhouse_abseil_cpp//:abseil_cpp_headers",
-    ],
+    deps = ["@clickhouse_boost//:boost_headers"],
 )
 
 ch_cc_library(
@@ -427,10 +424,7 @@ ch_cc_library(
         "config/contrib/libhdfs3-cmake",
     ] + _HDFS3_LOCAL_INCLUDES,
     textual_hdrs = _HDFS3_TEXTUAL_HDRS,
-    deps = [] + [
-        "@clickhouse_boost//:boost_headers",
-        "@clickhouse_abseil_cpp//:abseil_cpp_headers",
-    ],
+    deps = ["@clickhouse_boost//:boost_headers"],
 )
 
 cc_library(

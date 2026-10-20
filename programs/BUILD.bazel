@@ -121,7 +121,6 @@ ch_cc_library(
         "//bazel/rust:polyglot_cc",
         "//bazel/rust:pco_cc",
         "//bazel/rust:delta_kernel_ffi_cc",
-        "//bazel/rust:wasmtime_cc",
         "//bazel/rust:chdig_cc",
         "@llvm-project//compiler-rt:headers",
         "@llvm-project//libc:libc_headers",

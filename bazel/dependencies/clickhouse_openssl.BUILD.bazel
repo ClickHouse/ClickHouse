@@ -84,7 +84,18 @@ _GENERATED_LOCAL_DEFINES_0 = select({
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
+_SSL_HDRS = [
+    "include/openssl/dtls1.h",
+    "include/openssl/quic.h",
+    "include/openssl/srtp.h",
+    "include/openssl/ssl.h",
+    "include/openssl/ssl2.h",
+    "include/openssl/ssl3.h",
+    "include/openssl/tls1.h",
+]
+
 _CRYPTO_LOCAL_INCLUDES = [
+    "include",
     "providers/common/include",
     "providers/fips/include",
     "providers/implementations/include",
@@ -94,7 +105,10 @@ _CRYPTO_LOCAL_INCLUDES = [
     "crypto/ec/curve448/arch_32",
     "crypto/ec/curve448/arch_64",
     ".",
-]
+] + select({
+    "@platforms//cpu:x86_64": ["configured/linux_x86_64/include_private"],
+    "@platforms//cpu:aarch64": ["configured/linux_aarch64/include_private"],
+})
 
 ch_cc_library(
     name = "crypto__compile_0",
@@ -476,7 +490,7 @@ ch_cc_library(
             "crypto/bn/rsaz_exp.c",
             "crypto/bn/rsaz_exp_x2.c",
             "crypto/ec/ecp_nistz256.c",
-            "@clickhouse//contrib/openssl-cmake:linux_x86_64/include_private/buildinf.h",
+            "configured/linux_x86_64/include_private/buildinf.h",
         ],
         "@platforms//cpu:aarch64": [
             "crypto/aes/aes_cbc.c",
@@ -493,14 +507,15 @@ ch_cc_library(
             "crypto/rc4/rc4_enc.c",
             "crypto/rc4/rc4_skey.c",
             "crypto/whrlpool/wp_block.c",
-            "@clickhouse//contrib/openssl-cmake:linux_aarch64/include_private/buildinf.h",
+            "configured/linux_aarch64/include_private/buildinf.h",
         ],
-    }),
-    hdrs = glob([
-        "**/*.h",
-        "**/*.inc",
-        "**/*.H",
-    ]),
+    }) + glob([
+        "crypto/**/*.h",
+        "include/**/*.h",
+        "include/**/*.H",
+        "providers/**/*.h",
+        "providers/**/*.inc",
+    ]) + ["ms/uplink.h"],
     additional_compiler_inputs = [
         "crypto/LPdir_nyi.c",
         "crypto/LPdir_unix.c",
@@ -523,12 +538,12 @@ ch_cc_library(
         "-std=gnu11",
         "-Wno-unused-command-line-argument",
     ],
-    implementation_deps = (["@clickhouse_llvm_project//:libcxxabi_headers"]) + ["@clickhouse//contrib/openssl-cmake:openssl_private_headers"],
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     llvm_headers = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _CRYPTO_LOCAL_INCLUDES,
-    deps = [] + ["@clickhouse//contrib/openssl-cmake:openssl_cmake_headers"],
+    textual_hdrs = ["include/crypto/riscv_arch.def"],
 )
 
 ch_cc_library(
@@ -598,30 +613,29 @@ ch_cc_library(
             "@clickhouse//contrib/openssl-cmake:asm/crypto/sm4/asm/vpsm4-armv8.S",
             "@clickhouse//contrib/openssl-cmake:asm/crypto/sm4/asm/vpsm4_ex-armv8.S",
         ],
-    }),
-    hdrs = glob([
-        "**/*.h",
-        "**/*.inc",
-        "**/*.H",
-    ]),
-    additional_compiler_inputs = [
-        "@clickhouse_llvm_project//:runtime_source_inputs",
-        "@clickhouse_llvm_project//:runtime_generated_headers",
-        "ms/applink.c",
-    ],
+    }) + ["crypto/arm_arch.h"],
     copts = [
         "-Wno-unused-command-line-argument",
     ],
     language = "ASM",
     llvm_headers = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _CRYPTO_LOCAL_INCLUDES,
-    deps = [] + ["@clickhouse//contrib/openssl-cmake:openssl_cmake_headers"],
-    implementation_deps = ["@clickhouse//contrib/openssl-cmake:openssl_private_headers"],
+    local_includes = [
+        ".",
+        "crypto",
+    ],
 )
 
 cc_library(
     name = "crypto",
+    hdrs = glob(
+        [
+            "include/openssl/*.h",
+            "include/openssl/*.H",
+        ],
+        exclude = _SSL_HDRS,
+    ),
+    includes = ["include"],
     deps = [
         "@clickhouse_llvm_project//:clang_rt_builtins",
         ":crypto__compile_0",
@@ -703,7 +717,18 @@ ch_cc_library(
     ] + glob(["ssl/statem/*.c"]) + glob(["ssl/t1_*.c"]) + [
         "ssl/tls13_enc.c",
         "ssl/tls_depr.c",
+    ] + glob([
+        "include/internal/**/*.h",
+        "ssl/**/*.h",
+    ]) + [
+        "include/crypto/context.h",
+        "include/crypto/ctype.h",
+        "include/crypto/rand.h",
+        "include/crypto/rand_pool.h",
+        "include/crypto/siphash.h",
+        "ms/uplink.h",
     ],
+    hdrs = _SSL_HDRS,
     additional_compiler_inputs = ["ms/applink.c"],
     copts = [
         "-w",
@@ -711,6 +736,7 @@ ch_cc_library(
         "-Wno-unused-command-line-argument",
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    includes = ["include"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -722,14 +748,4 @@ ch_cc_library(
 filegroup(
     name = "headers",
     srcs = glob(["include/**"]),
-)
-
-cc_library(
-    name = "openssl_native_headers",
-    hdrs = glob([
-        "include/**/*.h",
-        "include/**/*.H",
-    ]),
-    includes = ["include"],
-    textual_hdrs = ["include/crypto/riscv_arch.def"],
 )

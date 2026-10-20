@@ -1,0 +1,356 @@
+diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
+--- a/dwyu/cc/aspect/dwyu.bzl
++++ b/dwyu/cc/aspect/dwyu.bzl
+@@ -1,4 +1,4 @@
+-load("@rules_cc//cc:action_names.bzl", "CPP_COMPILE_ACTION_NAME")
++load("@rules_cc//cc:action_names.bzl", "C_COMPILE_ACTION_NAME", "CPP_COMPILE_ACTION_NAME")
+ load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain")
+ load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
+ load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+@@ -28,7 +28,7 @@
+     "98": "199711",
+ }
+ 
+-PREPROCESSOR_MODES = ["full", "ignore_system_includes", "fast"]
++PREPROCESSOR_MODES = ["full", "ignore_system_includes", "fast", "compiler"]
+ 
+ def _is_verbose(ctx):
+     return ctx.attr.dwyu_verbose
+@@ -158,6 +158,11 @@
+             if impl_dep_cc.system_includes:
+                 system_includes.append(impl_dep_cc.system_includes)
+ 
++    # local_includes belongs to this rule only; never inherit it from implementation_deps.
++    if "system_include_paths" in ctx.features:
++        system_includes.append(target_cc.local_includes)
++    else:
++        includes.append(target_cc.local_includes)
+     return includes, quote_includes, external_includes, system_includes
+ 
+ def _process_target(ctx, target, config, output_path, is_target_under_inspection):
+@@ -386,12 +391,104 @@
+         return []
+     return [OutputGroupInfo(dwyu = depset(transitive = _gather_transitive_reports(ctx)))]
+ 
+-def _extract_includes_from_files(ctx, config, target, files, defines, cc_toolchain, attr_prefix):
++def _compiler_language(file, files):
++    if file.extension == "c":
++        return "c"
++    if file.extension in ["cc", "cpp", "cxx", "c++", "C", "hpp", "hxx", "hh", "H"]:
++        return "c++"
++
++    # A header does not carry a language in CcInfo. For a C library preprocess its .h/.inc as C.
++    # Headers of a mixed C/C++ library are checked as C++ here and as part of every actual C TU.
++    has_c = any([f.extension == "c" for f in files])
++    has_cxx = any([f.extension in ["cc", "cpp", "cxx", "c++", "C"] for f in files])
++    return "c" if has_c and not has_cxx else "c++"
++
++def _preprocess_with_compiler(ctx, target, files, cc_toolchain, feature_configuration, attr_prefix):
++    target_cc = target[CcInfo].compilation_context
++    impl_contexts = [dep[CcInfo].compilation_context for dep in getattr(ctx.rule.attr, "implementation_deps", []) if CcInfo in dep]
++    includes, quotes, external, system = _get_includes(ctx, target_cc)
++    # create_compile_variables has no external_include_directories argument. LLVM treats both
++    # external and system include directories as -isystem; retain the same search order.
++    include_paths = depset(transitive = quotes + includes)
++    system_paths = depset(transitive = system + external)
++    defines = depset(transitive = [c.defines for c in impl_contexts] + [target_cc.defines, target_cc.local_defines])
++    private_files = getattr(ctx.rule.files, "srcs", [])
++    inputs = depset(
++        direct = files + getattr(ctx.rule.files, "additional_compiler_inputs", []),
++        transitive = [target_cc.headers, cc_toolchain.all_files] + [c.headers for c in impl_contexts],
++    )
++    results = []
++    for file in files:
++        language = _compiler_language(file, private_files)
++        action_name = C_COMPILE_ACTION_NAME if language == "c" else CPP_COMPILE_ACTION_NAME
++        options = ctx.fragments.cpp.copts
++        if language == "c":
++            options = options + ctx.fragments.cpp.conlyopts + ctx.rule.attr.copts + getattr(ctx.rule.attr, "conlyopts", [])
++        else:
++            options = options + ctx.fragments.cpp.cxxopts + ctx.rule.attr.copts + getattr(ctx.rule.attr, "cxxopts", [])
++        compiler_output = ctx.actions.declare_file("{}.dwyu_pp_{}_{}.i".format(target.label.name, attr_prefix, _hash(file.short_path)))
++        pp_output = ctx.actions.declare_file("{}.dwyu_psf_{}_{}.json".format(target.label.name, attr_prefix, _hash(file.short_path)))
++        variables = cc_common.create_compile_variables(
++            feature_configuration = feature_configuration,
++            cc_toolchain = cc_toolchain,
++            source_file = file.path,
++            output_file = compiler_output.path,
++            user_compile_flags = options,
++            include_directories = depset(transitive = includes),
++            quote_include_directories = depset(transitive = quotes),
++            system_include_directories = system_paths,
++            preprocessor_defines = defines,
++        )
++        command = cc_common.get_memory_inefficient_command_line(
++            feature_configuration = feature_configuration,
++            action_name = action_name,
++            variables = variables,
++        )
++        # Placing -x before the input matters for .h, .inc and generated files.
++        # Replace -c with -E; Clang rejects both under -Werror. -dI emits active includes.
++        args = ctx.actions.args()
++        args.add_all(["-x", language if file.extension in ["c", "cc", "cpp", "cxx", "c++", "C"] else language + "-header"])
++        args.add_all(["-E" if opt == "-c" else opt for opt in command])
++        args.add("-dI")
++        ctx.actions.run(
++            executable = cc_common.get_tool_for_action(feature_configuration = feature_configuration, action_name = action_name),
++            inputs = inputs,
++            tools = cc_toolchain.all_files,
++            outputs = [compiler_output],
++            arguments = [args],
++            mnemonic = "DwyuCompilerPreprocess",
++        )
++        args = make_param_file_args(ctx)
++        args.add_all("--files", [compiler_output])
++        args.add("--mode", "compiler")
++        args.add("--source", file)
++        args.add_all("--include_paths", include_paths)
++        args.add_all("--system_include_paths", depset(transitive = includes + system + external))
++        args.add_all("--toolchain_files", cc_toolchain.all_files)
++        # Only '--sysroot' names a genuine C library sysroot. Do not treat arbitrary
++        # additional_compiler_inputs or -isystem entries as toolchain headers.
++        args.add_all("--sysroots", [opt[len("--sysroot="):] for opt in command if opt.startswith("--sysroot=")])
++        args.add("--output", pp_output)
++        if _is_verbose(ctx):
++            args.add("--verbose")
++        ctx.actions.run(
++            executable = ctx.executable._tool_preprocessing,
++            inputs = depset(direct = [compiler_output], transitive = [inputs]),
++            outputs = [pp_output],
++            mnemonic = "DwyuProcessSourceFile",
++            arguments = [args],
++        )
++        results.append(pp_output)
++    return results
++
++def _extract_includes_from_files(ctx, config, target, files, defines, cc_toolchain, feature_configuration, attr_prefix):
+     """
+     For each given file perform a preprocessing step to find all relevant include statements
+     """
+     if not files:
+         return []
++    if config.preprocessing_mode == "compiler":
++        return _preprocess_with_compiler(ctx, target, files, cc_toolchain, feature_configuration, attr_prefix)
+ 
+     # Work around the bug described in https://github.com/bazelbuild/bazel/issues/19663
+     # Implementation_deps are not added to CcInfo.compilation_context
+@@ -511,7 +608,7 @@
+ 
+     config = _make_dwyu_config(ctx)
+ 
+-    defines = [] if config.preprocessing_mode == "fast" else _parse_compiler_command(ctx, target[CcInfo].compilation_context, cc_toolchain, feature_configuration)
++    defines = [] if config.preprocessing_mode in ["fast", "compiler"] else _parse_compiler_command(ctx, target[CcInfo].compilation_context, cc_toolchain, feature_configuration)
+     processed_target = _process_target(
+         ctx,
+         target = struct(label = target.label, cc_info = target[CcInfo]),
+@@ -536,6 +633,7 @@
+         files = public_files,
+         defines = defines,
+         cc_toolchain = cc_toolchain,
++        feature_configuration = feature_configuration,
+         attr_prefix = "pub",
+     )
+     preprocessed_private_files = _extract_includes_from_files(
+@@ -545,6 +643,7 @@
+         files = private_files,
+         defines = defines,
+         cc_toolchain = cc_toolchain,
++        feature_configuration = feature_configuration,
+         attr_prefix = "priv",
+     )
+ 
+diff --git a/dwyu/cc/aspect/private/preprocessing/BUILD b/dwyu/cc/aspect/private/preprocessing/BUILD
+--- a/dwyu/cc/aspect/private/preprocessing/BUILD
++++ b/dwyu/cc/aspect/private/preprocessing/BUILD
+@@ -2,7 +2,10 @@
+ 
+ cc_binary(
+     name = "main",
+-    srcs = ["main.cpp"],
++    srcs = [
++        "compiler.h",
++        "main.cpp",
++    ],
+     visibility = ["//visibility:public"],
+     deps = [
+         "//dwyu/cc/aspect/private/preprocessing/fast_parsing:process_files",
+diff --git a/dwyu/cc/aspect/private/preprocessing/compiler.h b/dwyu/cc/aspect/private/preprocessing/compiler.h
+new file mode 100644
+--- /dev/null
++++ b/dwyu/cc/aspect/private/preprocessing/compiler.h
+@@ -0,0 +1,134 @@
++#ifndef DWYU_CC_ASPECT_PRIVATE_PREPROCESSING_COMPILER_H
++#define DWYU_CC_ASPECT_PRIVATE_PREPROCESSING_COMPILER_H
++
++#include "dwyu/cc/private/utils.h"
++
++#include <nlohmann/json.hpp>
++#include <filesystem>
++#include <fstream>
++#include <iomanip>
++#include <sstream>
++#include <string>
++#include <unordered_map>
++#include <unordered_set>
++#include <vector>
++
++namespace dwyu {
++
++inline std::string execPath(const std::string& filename) {
++    namespace fs = std::filesystem;
++    auto file = fs::path{filename}.lexically_normal();
++    if (file.is_absolute()) file = file.lexically_relative(fs::current_path());
++    return file.generic_string();
++}
++
++inline bool isUnder(const std::string& filename, const std::string& directory) {
++    auto relative = std::filesystem::path{filename}.lexically_relative(directory);
++    return !relative.empty() && *relative.begin() != "..";
++}
++
++inline nlohmann::json extractCompilerIncludes(const std::string& compiler_output,
++                                               const std::string& source,
++                                               const std::vector<std::string>& include_paths,
++                                               const std::vector<std::string>& system_paths,
++                                               const std::vector<std::string>& toolchain_files,
++                                               const std::vector<std::string>& sysroots) {
++    std::ifstream input{compiler_output};
++    if (!input.is_open()) abortWithError("Cannot read Clang preprocessor output ", compiler_output);
++    const std::string own_file = execPath(source);
++    std::unordered_set<std::string> toolchain;
++    for (const auto& file : toolchain_files) toolchain.insert(execPath(file));
++    std::unordered_map<std::string, std::string> seen;
++    nlohmann::json includes = nlohmann::json::array();
++    std::string current_file;
++    std::string pending_file;
++    std::string pending_statement;
++    auto complete = [&](std::string resolved) {
++        if (pending_statement.empty()) return;
++        if (resolved.empty()) {
++            // Clang emits -dI even when it has seen a header guard. In that case there is
++            // no enter marker. Resolve against the same directories given to Clang.
++            std::string header = pending_statement.substr(1, pending_statement.size() - 2);
++            const bool quoted = pending_statement.front() == '"';
++            std::vector<std::string> candidates;
++            if (quoted) {
++                candidates.push_back(std::filesystem::path{pending_file}.parent_path().generic_string());
++                candidates.insert(candidates.end(), include_paths.begin(), include_paths.end());
++            }
++            candidates.insert(candidates.end(), system_paths.begin(), system_paths.end());
++            for (const auto& directory : candidates) {
++                auto candidate = std::filesystem::path{directory} / header;
++                if (std::filesystem::is_regular_file(candidate)) {
++                    resolved = execPath(candidate.generic_string());
++                    break;
++                }
++            }
++            // Compiler builtin search directories are intentionally not library include
++            // paths. Reuse a file actually entered by this Clang invocation only if it
++            // is an identified toolchain or sysroot header.
++            if (resolved.empty()) {
++                auto it = seen.find(pending_statement);
++                if (it != seen.end()) {
++                    bool from_toolchain = (toolchain.find(it->second) != toolchain.end());
++                    for (const auto& sysroot : sysroots)
++                        from_toolchain = from_toolchain || isUnder(it->second, execPath(sysroot));
++                    if (from_toolchain) resolved = it->second;
++                }
++            }
++        }
++        if (resolved.empty()) {
++            abortWithError("Clang resolved ", pending_statement, " in ", pending_file,
++                           " but DWYU cannot attribute the guarded header; inspect Clang's include dirs.");
++        }
++        resolved = execPath(resolved);
++        seen[pending_statement] = resolved;
++        if (pending_file == own_file) {
++            bool from_toolchain = (toolchain.find(resolved) != toolchain.end());
++            for (const auto& sysroot : sysroots)
++                from_toolchain = from_toolchain || isUnder(resolved, execPath(sysroot));
++            if (!from_toolchain)
++                includes.push_back({{"include", pending_statement}, {"file", resolved}});
++        }
++        pending_statement.clear();
++        pending_file.clear();
++    };
++    std::string line;
++    while (std::getline(input, line)) {
++        // Only -dI's active directives, not arbitrary #include-like text in source.
++        if (line.find("/* clang -E -dI */") != std::string::npos &&
++            (line.rfind("#include ", 0) == 0 || line.rfind("#include_next ", 0) == 0)) {
++            complete("");
++            const auto begin = line.find_first_of("<\\\"");
++            const auto end = line.find(begin == std::string::npos || line[begin] == '<' ? '>' : '"', begin + 1);
++            if (begin == std::string::npos || end == std::string::npos)
++                abortWithError("Unexpected Clang -dI directive: ", line);
++            pending_file = current_file;
++            pending_statement = line.substr(begin, end - begin + 1);
++            continue;
++        }
++        std::istringstream marker{line};
++        char hash;
++        unsigned number;
++        std::string filename;
++        if ((marker >> hash >> number >> std::quoted(filename)) && hash == '#') {
++            int flag;
++            bool entering = false;
++            bool returning = false;
++            while (marker >> flag) {
++                entering = entering || flag == 1;
++                returning = returning || flag == 2;
++            }
++            if (entering) complete(filename);
++            if (returning) complete("");
++            current_file = (filename.rfind("<", 0) == 0) ? filename : execPath(filename);
++        } else if (!line.empty()) {
++            complete("");
++        }
++    }
++    complete("");
++    return nlohmann::json::array({{{"file", source}, {"resolved_includes", std::move(includes)}}});
++}
++
++}  // namespace dwyu
++
++#endif
+diff --git a/dwyu/cc/aspect/private/preprocessing/main.cpp b/dwyu/cc/aspect/private/preprocessing/main.cpp
+--- a/dwyu/cc/aspect/private/preprocessing/main.cpp
++++ b/dwyu/cc/aspect/private/preprocessing/main.cpp
+@@ -1,3 +1,4 @@
++#include "dwyu/cc/aspect/private/preprocessing/compiler.h"
+ #include "dwyu/cc/aspect/private/preprocessing/fast_parsing/process_files.h"
+ #include "dwyu/cc/aspect/private/preprocessing/wave/gather_direct_includes_hook.h"
+ #include "dwyu/cc/aspect/private/preprocessing/wave/process_files.h"
+@@ -22,6 +23,9 @@
+ struct ProgramOptions {
+     std::vector<std::string> files{};
+     std::string mode{};
++    std::string source{};
++    std::vector<std::string> toolchain_files{};
++    std::vector<std::string> sysroots{};
+     std::vector<std::string> include_paths{};
+     std::vector<std::string> system_include_paths{};
+     std::vector<std::string> defines{};
+@@ -43,6 +47,9 @@
+     parser.addOptionList("--system_include_paths", options.system_include_paths);
+     // Macros defined by the CC toolchain or the user
+     parser.addOptionList("--defines", options.defines);
++    parser.addOptionValue("--source", options.source);
++    parser.addOptionList("--toolchain_files", options.toolchain_files);
++    parser.addOptionList("--sysroots", options.sysroots);
+     // Stores the discovered includes in this file
+     parser.addOptionValue("--output", options.output);
+     // Print debugging information
+@@ -55,6 +62,12 @@
+ 
+ nlohmann::json extractIncludesFromFiles(const ProgramOptions& options) {
+ 
++    if (options.mode == "compiler") {
++        if (options.files.size() != 1 || options.source.empty())
++            abortWithError("Compiler mode requires exactly one preprocessed file and --source");
++        return extractCompilerIncludes(options.files.front(), options.source, options.include_paths,
++                                       options.system_include_paths, options.toolchain_files, options.sysroots);
++    }
+     if (options.mode == "full" || options.mode == "ignore_system_includes") {
+         using TokenT = boost::wave::cpplexer::lex_token<>;
+         using LexIteratorT = boost::wave::cpplexer::lex_iterator<TokenT>;

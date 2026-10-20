@@ -12,10 +12,7 @@ ch_cc_library(
         "src/*.h",
         "src/*.hxx",
     ]),
-    hdrs = [
-        "@clickhouse//bazel:gen/base/base/GitHash.generated.cpp",
-    ] + [
-    ] + glob(["include/**/*.hxx"]),
+    hdrs = glob(["include/**/*.hxx"]),
     copts = [
         "-w",
         "-std=c++23",

@@ -12,6 +12,11 @@ bazel_dep(name = "rules_python", version = "1.8.0")
 bazel_dep(name = "rules_rs", version = "0.1.0")
 
 bazel_dep(name = "depend_on_what_you_use", version = "1.1.2", dev_dependency = True)
+single_version_override(
+    module_name = "depend_on_what_you_use",
+    patch_strip = 1,
+    patches = ["//bazel/patches:dwyu-compiler-preprocessing.patch"],
+)
 
 include("//bazel:contrib.MODULE.bazel")
 include("//bazel:clickstack.MODULE.bazel")

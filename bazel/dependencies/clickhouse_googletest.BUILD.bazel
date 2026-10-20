@@ -82,5 +82,7 @@ ch_cc_library(
     local_includes = [
         "googletest",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"] + [
+        "@clickhouse_abseil_cpp//:absl_flags_internal",
+    ],
 )

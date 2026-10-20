@@ -1,12 +1,30 @@
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "LICENSE",
-    "include/aws/crt/Config.h.in",
 ])
+
+expand_template(
+    name = "configure_include_aws_crt_Config_h",
+    out = "config/contrib/aws-cmake/include/aws/crt/Config.h",
+    substitutions = {
+        "@AWS_CRT_CPP_VERSION_MAJOR@": "0",
+        "@AWS_CRT_CPP_VERSION_MINOR@": "43",
+        "@AWS_CRT_CPP_VERSION_PATCH@": "8",
+        "@FULL_VERSION@": "0.43.8-clickhouse",
+    } | select({
+        "@platforms//cpu:x86_64": {
+            "@GIT_HASH@": "8b819009ee01311c3ec6767472a85b82a5f35b7c",
+        },
+        "@platforms//cpu:aarch64": {
+            "@GIT_HASH@": "6bb427c9a81459c2b9e7369ef6ed8a6e8680b0da",
+        },
+    }),
+    template = "include/aws/crt/Config.h.in",
+)
 
 ch_cc_library(
     name = "aws_crt_cpp",
@@ -19,16 +37,17 @@ ch_cc_library(
     ] + glob(["source/crypto/*.cpp"]) + [
         "source/endpoints/BddEngine.cpp",
         "source/endpoints/RuleEngine.cpp",
-    ] + glob(["source/http/*.cpp"]) + glob(["source/io/*.cpp"]),
+    ] + glob(["source/http/*.cpp"]) + glob(["source/io/*.cpp"]) + glob(["include/**/private/**/*.h"]),
+    hdrs = glob(["include/**/*.h"], exclude = ["include/**/private/**/*.h"]) + ["config/contrib/aws-cmake/include/aws/crt/Config.h"],
     copts = [
         "-w",
         "-std=c++23",
         "-g1",
     ],
     implementation_deps = [
-        "@clickhouse_aws_c_event_stream//:aws_c_event_stream_headers",
-        "@clickhouse_aws_c_s3//:aws_c_s3_headers",
-        "@clickhouse_aws_checksums//:aws_checksums_headers",
+        "@clickhouse_aws_c_event_stream//:aws_c_event_stream",
+        "@clickhouse_aws_c_s3//:aws_c_s3",
+        "@clickhouse_aws_checksums//:aws_checksums",
     ],
     local_defines = [
         "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
@@ -47,16 +66,13 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = [":aws_crt_cpp_headers"],
-)
-
-cc_library(
-    name = "aws_crt_cpp_headers",
-    hdrs = glob(["include/**/*.h"]),
-    includes = ["include"],
+    includes = [
+        "include",
+        "config/contrib/aws-cmake/include",
+    ],
     deps = [
-        "@clickhouse_aws_c_auth//:aws_c_auth_headers",
-        "@clickhouse_aws_c_cal//:aws_c_cal_headers",
+        "@clickhouse_aws_c_auth//:aws_c_auth",
+        "@clickhouse_aws_c_cal//:aws_c_cal",
         "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
     ],
 )

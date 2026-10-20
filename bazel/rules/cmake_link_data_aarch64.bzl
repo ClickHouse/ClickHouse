@@ -282,7 +282,7 @@ CMAKE_LINK = {
     "@clickhouse_croaring//:_roaring__compile_1",
     "@clickhouse_cppkafka//:_cppkafka",
     "@clickhouse_librdkafka//:_rdkafka__compile_0",
-    "@clickhouse_librdkafka//:_rdkafka__compile_1",
+    "//contrib/librdkafka-cmake:rdhttp_poco_transport",
     "@clickhouse_nats_io//:_nats_io",
     "@clickhouse_cyrus_sasl//:_sasl2",
     "@clickhouse_nuraft//:_nuraft",
@@ -495,7 +495,7 @@ CMAKE_LINK = {
     "@clickhouse_bzip2//:_bzip2",
     "@clickhouse_simdjson//:_simdjson",
     "//bazel/rust:delta_kernel_ffi_cc",
-    "//bazel/rust:wasmtime_cc",
+    "@clickhouse_wasmtime//:wasmtime",
     "//contrib/cityhash102:_cityhash",
     "@clickhouse_replxx//:_replxx",
     "@clickhouse_cctz//:_cctz",
@@ -543,7 +543,9 @@ CMAKE_LINK = {
     "//bazel:google_iam_v1_policy_cc_proto",
     "//bazel:google_api_annotations_cc_proto",
     "//bazel:google_api_http_cc_proto",
-    "//bazel:google_type_expr_cc_proto"
+    "//bazel:google_type_expr_cc_proto",
+    "//base/poco/NetSSL_OpenSSL:secure_socket",
+    "//base/poco/Foundation:thread_pool"
   ],
   "expected_objects": [
     157,
@@ -920,9 +922,9 @@ CMAKE_LINK = {
     1,
     3,
     27,
-    138,
+    137,
     81,
-    24,
+    23,
     1,
     26,
     72,
@@ -1073,6 +1075,8 @@ CMAKE_LINK = {
     2,
     1,
     20,
+    1,
+    1,
     1,
     1,
     1,
@@ -3179,7 +3183,7 @@ CMAKE_LINK = {
       "name": "base/base/libcommon.a"
     },
     {
-      "file": 374,
+      "objects": [[374, 0, 115], [542, 0, 1], [374, 115, 137]],
       "name": "base/poco/Foundation/lib_poco_foundation.a"
     },
     {
@@ -3187,23 +3191,7 @@ CMAKE_LINK = {
       "name": "base/poco/Net/lib_poco_net.a"
     },
     {
-      "objects": [
-        [
-          376,
-          0,
-          4
-        ],
-        [
-          377,
-          0,
-          1
-        ],
-        [
-          376,
-          4,
-          24
-        ]
-      ],
+      "objects": [[376, 0, 4], [377, 0, 1], [376, 4, 18], [541, 0, 1], [376, 18, 23]],
       "name": "base/poco/NetSSL_OpenSSL/lib_poco_net_ssl.a"
     },
     {

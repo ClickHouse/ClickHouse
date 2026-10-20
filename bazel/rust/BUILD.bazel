@@ -201,4 +201,5 @@ RUST_LOCALIZATION_REFERENCES = select({
         }) if name == "skim" else []),
     )
     for name in RUST_ARCHIVES
+    if name != "wasmtime"
 ]

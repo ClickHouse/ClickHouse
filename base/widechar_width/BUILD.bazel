@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -8,10 +7,7 @@ ch_cc_library(
     srcs = ["widechar_width.cpp"],
     hdrs = ["widechar_width.h"],
     clickhouse_code = True,
-    implementation_deps = [
-        "//bazel:clickhouse_config_headers",
-        "//base/widechar_width:headers",
-    ],
+    includes = ["."],
     link_runtime = True,
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -19,13 +15,5 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
-)
-
-cc_library(
-    name = "headers",
-    hdrs = glob(["**/*.h"]),
-    includes = [
-        ".",
-    ],
+    source_headers = False,
 )

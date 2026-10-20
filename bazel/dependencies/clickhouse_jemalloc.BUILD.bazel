@@ -100,7 +100,10 @@ ch_cc_library(
         "-std=gnu11",
         "-D_GNU_SOURCE",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    implementation_deps = [
+        "@clickhouse_llvm_project//:libcxxabi_headers",
+        "@llvm-project//libunwind:headers",
+    ],
     language = "C",
     local_defines = [
         "JEMALLOC_NO_PRIVATE_NAMESPACE",

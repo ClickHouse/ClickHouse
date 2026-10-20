@@ -15,9 +15,15 @@ exports_files([
     "tests/gtest_pfor.cpp",
 ])
 
+_PRIVATE_COMPRESSION_HEADERS = [
+    "CompressionCodecNone.h",
+    "CompressionCodecZSTD.h",
+    "CompressionCodecZXC.h",
+]
+
 ch_cc_library(
     name = "clickhouse_compression",
-    srcs = glob(["*.cpp"]),
+    srcs = glob(["*.cpp"]) + _PRIVATE_COMPRESSION_HEADERS,
     clickhouse_code = True,
     implementation_deps = [
         "//bazel:clickhouse_config_headers",
@@ -298,6 +304,11 @@ ch_cc_library(
 
 cc_library(
     name = "headers",
-    hdrs = glob(["**/*.h"]),
+    hdrs = glob(
+        [
+            "**/*.h",
+        ],
+        exclude = _PRIVATE_COMPRESSION_HEADERS,
+    ),
     deps = ["//base/poco/Util:_poco_util"],
 )

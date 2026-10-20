@@ -93,7 +93,6 @@ ch_cc_library(
         "src/art/art.c",
     ] + glob(["src/containers/*.c"]) + glob(["src/*.h"]),
     hdrs = [
-        "@clickhouse//bazel:gen/base/base/GitHash.generated.cpp",
         "@clickhouse_liburing//:config/contrib/liburing/src/include-compat/liburing/compat.h",
         "@clickhouse_liburing//:config/contrib/liburing/src/include/liburing/io_uring_version.h",
         "@clickhouse_snappy//:config/contrib/snappy-cmake/config.h",
@@ -116,26 +115,7 @@ ch_cc_library(
     local_includes = [
         "include/roaring",
     ] + _ROARING_LOCAL_INCLUDES,
-    deps = [
-        "@clickhouse_boost//:boost_headers",
-        "@clickhouse_fmtlib//:_fmt",
-        "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
-        "@clickhouse_fast_float//:fast_float",
-        "@clickhouse_jwt_cpp//:jwt_cpp",
-        "@clickhouse_libdivide//:libdivide",
-        "@clickhouse_magic_enum//:magic_enum",
-        "@clickhouse_miniselect//:miniselect",
-        "@clickhouse_msgpack_c//:msgpack_c",
-        "@clickhouse_pocketfft//:pocketfft",
-        "@clickhouse_sparsehash_c11//:sparsehash_c11",
-        "@clickhouse_abseil_cpp//:abseil_cpp_headers",
-        "@clickhouse_google_protobuf//:_libprotobuf",
-        "@clickhouse_libssh//:_ssh",
-        "@clickhouse//contrib/cityhash102:_cityhash",
-        "@clickhouse//contrib/driftsort:headers",
-        "@clickhouse//contrib/ipnsort:headers",
-        "@clickhouse//contrib/pdqsort:headers",
-    ],
+    deps = ["@clickhouse_boost//:boost_headers", "@clickhouse_fmtlib//:_fmt", "@clickhouse_aws_c_mqtt//:aws_c_mqtt", "@clickhouse_fast_float//:fast_float", "@clickhouse_jwt_cpp//:jwt_cpp", "@clickhouse_libdivide//:libdivide", "@clickhouse_magic_enum//:magic_enum", "@clickhouse_miniselect//:miniselect", "@clickhouse_msgpack_c//:msgpack_c", "@clickhouse_pocketfft//:pocketfft", "@clickhouse_sparsehash_c11//:sparsehash_c11", "@clickhouse_google_protobuf//:_libprotobuf", "@clickhouse_libssh//:_ssh", "@clickhouse//contrib/cityhash102:_cityhash", "@clickhouse//contrib/driftsort:headers", "@clickhouse//contrib/ipnsort:headers", "@clickhouse//contrib/pdqsort:headers"],
 )
 
 ch_cc_library(
@@ -144,7 +124,6 @@ ch_cc_library(
         "src/roaring.c",
     ] + glob(["src/*.h"]),
     hdrs = [
-        "@clickhouse//bazel:gen/base/base/GitHash.generated.cpp",
         "@clickhouse_liburing//:config/contrib/liburing/src/include-compat/liburing/compat.h",
         "@clickhouse_liburing//:config/contrib/liburing/src/include/liburing/io_uring_version.h",
         "@clickhouse_snappy//:config/contrib/snappy-cmake/config.h",
@@ -165,27 +144,7 @@ ch_cc_library(
     local_includes = [
         "include/roaring",
     ] + _ROARING_LOCAL_INCLUDES,
-    deps = [
-        "@clickhouse_boost//:boost_headers",
-        "@clickhouse_fmtlib//:_fmt",
-        "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
-        "@clickhouse_fast_float//:fast_float",
-        "@clickhouse_jwt_cpp//:jwt_cpp",
-        "@clickhouse_libdivide//:libdivide",
-        "@clickhouse_magic_enum//:magic_enum",
-        "@clickhouse_miniselect//:miniselect",
-        "@clickhouse_msgpack_c//:msgpack_c",
-        "@clickhouse_pocketfft//:pocketfft",
-        "@clickhouse_sparsehash_c11//:sparsehash_c11",
-        "@clickhouse_abseil_cpp//:abseil_cpp_headers",
-        "@clickhouse_google_protobuf//:_libprotobuf",
-        "@clickhouse_libssh//:_ssh",
-        "@clickhouse//contrib/cityhash102:_cityhash",
-        "@clickhouse//contrib/croaring-cmake:headers",
-        "@clickhouse//contrib/driftsort:headers",
-        "@clickhouse//contrib/ipnsort:headers",
-        "@clickhouse//contrib/pdqsort:headers",
-    ],
+    deps = ["@clickhouse_boost//:boost_headers", "@clickhouse_fmtlib//:_fmt", "@clickhouse_aws_c_mqtt//:aws_c_mqtt", "@clickhouse_fast_float//:fast_float", "@clickhouse_jwt_cpp//:jwt_cpp", "@clickhouse_libdivide//:libdivide", "@clickhouse_magic_enum//:magic_enum", "@clickhouse_miniselect//:miniselect", "@clickhouse_msgpack_c//:msgpack_c", "@clickhouse_pocketfft//:pocketfft", "@clickhouse_sparsehash_c11//:sparsehash_c11", "@clickhouse_google_protobuf//:_libprotobuf", "@clickhouse_libssh//:_ssh", "@clickhouse//contrib/cityhash102:_cityhash", "@clickhouse//contrib/croaring-cmake:headers", "@clickhouse//contrib/driftsort:headers", "@clickhouse//contrib/ipnsort:headers", "@clickhouse//contrib/pdqsort:headers"],
 )
 
 cc_library(

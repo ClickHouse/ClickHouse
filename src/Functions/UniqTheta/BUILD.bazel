@@ -3,9 +3,13 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
+_PRIVATE_FUNCTIONS_UNIQTHETA_HEADERS = [
+    "FunctionsUniqTheta.h",
+]
+
 ch_cc_library(
     name = "clickhouse_functions_uniqtheta",
-    srcs = ["FunctionsUniqTheta.cpp"],
+    srcs = ["FunctionsUniqTheta.cpp"] + _PRIVATE_FUNCTIONS_UNIQTHETA_HEADERS,
     clickhouse_code = True,
     implementation_deps = [
         "//bazel:clickhouse_config_headers",
@@ -418,5 +422,5 @@ ch_cc_library(
 
 cc_library(
     name = "headers",
-    hdrs = glob(["**/*.h"]),
+    hdrs = [],
 )

@@ -52,6 +52,19 @@ _cargo_sources = repository_rule(
     },
 )
 
+def _openssl_configured_files(module_ctx):
+    include = module_ctx.path(Label("//contrib/openssl-cmake:common/include/openssl/opensslv.h")).dirname.dirname
+    files = {}
+    for directory in include.readdir():
+        for header in directory.readdir():
+            if header.basename.endswith(".h"):
+                relative = directory.basename + "/" + header.basename
+                files["include/" + relative] = Label("//contrib/openssl-cmake:common/include/" + relative)
+    for arch in ["x86_64", "aarch64"]:
+        relative = "linux_" + arch + "/include_private/buildinf.h"
+        files["configured/" + relative] = Label("//contrib/openssl-cmake:" + relative)
+    return files
+
 def _contrib_impl(module_ctx):
     repositories = json.decode(module_ctx.read(Label("//bazel/rules:contrib_repositories.json")))
     for repository in repositories.values():
@@ -85,6 +98,7 @@ def _contrib_impl(module_ctx):
             strip_prefix = repository["strip_prefix"],
             type = "tar.gz",
             build_file = Label("//bazel/dependencies:" + repository["name"] + ".BUILD.bazel"),
+            files = _openssl_configured_files(module_ctx) if repository["name"] == "clickhouse_openssl" else {},
             # The upstream ../config.h lookup relies on an empty CMake auxdir.
             # Use the declared configuration include root in Bazel instead.
             patches = [Label("//bazel/patches:librdkafka-config-include.patch")] if repository["name"] == "clickhouse_librdkafka" else [],

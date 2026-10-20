@@ -88,6 +88,16 @@ required even if no headers are included. The custom `//:clickhouse` final
 link is not a C++ library; request its underlying libraries individually.
 Rebuild and compare `//:clickhouse` on both CPUs after changing the graph.
 
+The checker uses Clang to preprocess C and C++ with the target's real
+defines and include directories. Its positive and negative tests passed on
+[`efc95a005`](https://app.buildbuddy.io/invocation/fd412377-53b1-42a6-b463-f76de205432a),
+both with and without system include treatment on the test libraries.
+Recompile each library after removing reported unused dependencies: a
+dependency can supply an include directory for a header owned by another
+dependency. DWYU does not diagnose that separately. For example, removing
+all five reported unused dependencies from `//src:clickhouse_common_io__compile_1`
+still requires its header owner to publish the `Common/...` include prefix.
+
 ## Binary comparison
 
 The current Bazel cleanup checks rebuild the selected compiler and `//:clickhouse`.
@@ -128,6 +138,8 @@ CMake hash recorded below.
 | `9b13f2efd` (verification snapshot) | Add development-only DWYU checks; remove 10 redundant header wrappers; make allocator, Access/Common, Poco and external dependencies private or direct at their owners | [8dfb9f12](https://app.buildbuddy.io/invocation/8dfb9f12-d2fc-499c-987a-2ba548367ee0) | [78d74d65](https://app.buildbuddy.io/invocation/78d74d65-3465-4f77-9ff9-674397a5b3c5) |
 | `15a331cc2` (verification snapshot) | Put Poco headers on their libraries; correct Poco dependency directions and remove 29 redundant header wrappers across all consumers; simplify equivalent Bazel labels repository-wide; fix public and private providers for c-ares, cityhash, sorting, and Poco | [904cb2e1](https://app.buildbuddy.io/invocation/904cb2e1-282c-4a8c-b491-5d938e61e1db) | [1f513462](https://app.buildbuddy.io/invocation/1f513462-5698-4a61-89f7-f87b05aff800) |
 | `8a53eb4fb` (verification snapshot) | Stop publishing the entire Linux sysroot in every native library’s headers and remove implicit LLVM API header dependencies | [0b00df52](https://app.buildbuddy.io/invocation/0b00df52-f1ef-4819-a5bf-c0659491e127) | [1e8ba352](https://app.buildbuddy.io/invocation/1e8ba352-3618-45d3-8202-ce8ce9bec696) |
+| `2003dfd8b` (verification snapshot) | Put OpenSSL, IO, Google Cloud and AWS headers on their compiled owners, keep first-party implementation headers private, and remove Poco NetSSL and Foundation header cycles | [d402dea2](https://app.buildbuddy.io/invocation/d402dea2-7edb-4a62-9f15-2b5be0729a56) | [0662ba9d](https://app.buildbuddy.io/invocation/0662ba9d-43f5-4225-95e0-30183193b590) |
+| `efc95a005` (verification snapshot) | Complete NetSSL and IO header ownership; put Abseil, gRPC, Kafka, Wasmtime and libpqxx headers on their compiled owners; remove inherited header and runtime dependencies; normalize Bazel labels; use Clang in DWYU | [e414861c](https://app.buildbuddy.io/invocation/e414861c-295a-4a5a-926b-67ff5d5a29db) | [a3557b7c](https://app.buildbuddy.io/invocation/a3557b7c-8477-43eb-b681-d54bd9a72d66) |
 
 The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`

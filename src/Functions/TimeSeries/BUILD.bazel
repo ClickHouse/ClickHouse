@@ -3,9 +3,13 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
+_PRIVATE_FUNCTIONS_TIME_SERIES_HEADERS = [
+    "TimeSeriesTagsFunctionHelpers.h",
+]
+
 ch_cc_library(
     name = "clickhouse_functions_time_series",
-    srcs = glob(["*.cpp"]),
+    srcs = glob(["*.cpp"]) + _PRIVATE_FUNCTIONS_TIME_SERIES_HEADERS,
     clickhouse_code = True,
     implementation_deps = [
         "//bazel:clickhouse_config_headers",
@@ -418,5 +422,5 @@ ch_cc_library(
 
 cc_library(
     name = "headers",
-    hdrs = glob(["**/*.h"]),
+    hdrs = [],
 )

@@ -170,6 +170,5 @@ ch_cc_library(
         "@clickhouse_grpc//:utf8_range_lib",
         "@clickhouse_google_protobuf//:utf8_validity",
         "//contrib/c-ares-cmake:headers",
-        "//contrib/openssl-cmake:headers",
     ],
 )

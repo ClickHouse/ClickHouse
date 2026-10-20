@@ -6,6 +6,16 @@ exports_files([
     "LICENSE",
 ])
 
+_CLD2_PRIVATE_HEADERS = [
+    "internal/cldutil.h",
+    "internal/compact_lang_det_hint_code.h",
+    "internal/fixunicodevalue.h",
+    "internal/utf8acceptinterchange.h",
+    "internal/utf8prop_lettermarkscriptnum.h",
+    "internal/utf8repl_lettermarklower.h",
+    "internal/utf8scannot_lettermarkspecial.h",
+]
+
 ch_cc_library(
     name = "_cld2",
     srcs = [
@@ -33,11 +43,8 @@ ch_cc_library(
         "internal/cld2_generated_deltaoctachrome.cc",
         "internal/cld2_generated_distinctoctachrome.cc",
         "internal/cld_generated_score_quad_octa_2.cc",
-    ],
-    hdrs = glob([
-        "internal/**/*.h",
-        "public/**/*.h",
-    ]),
+    ] + _CLD2_PRIVATE_HEADERS,
+    hdrs = glob(["public/**/*.h", "internal/**/*.h"], exclude = _CLD2_PRIVATE_HEADERS),
     copts = [
         "-w",
         "-std=c++23",

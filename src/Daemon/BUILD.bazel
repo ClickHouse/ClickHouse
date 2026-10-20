@@ -98,5 +98,8 @@ ch_cc_library(
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
-    deps = ["//base/poco/Util:_poco_util"],
+    deps = [
+        "//base/poco/Util:_poco_util",
+        "//src/Loggers:headers",
+    ],
 )

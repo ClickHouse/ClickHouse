@@ -124,15 +124,13 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = [
-        "@clickhouse_abseil_cpp//:absl_flags_internal",
-        "@clickhouse_abseil_cpp//:absl_flags_reflection",
-        "@clickhouse_abseil_cpp//:absl_log_internal_check_op",
-        "@clickhouse_abseil_cpp//:absl_log_internal_conditions",
-        "@clickhouse_abseil_cpp//:absl_random_distributions",
-        "@clickhouse_abseil_cpp//:absl_random_internal_entropy_pool",
-        "@clickhouse_abseil_cpp//:absl_random_seed_sequences",
-        "@clickhouse_abseil_cpp//:absl_status",
-        "@clickhouse_openssl//:ssl",
+    deps = ["@clickhouse_abseil_cpp//:absl_flags_internal", "@clickhouse_abseil_cpp//:absl_random_distributions", "@clickhouse_abseil_cpp//:absl_status", "@clickhouse_openssl//:ssl"] + [
+        "@clickhouse_abseil_cpp//:absl_die_if_null",
+        "@clickhouse_abseil_cpp//:absl_log_internal_check_impl",
+        "@clickhouse_abseil_cpp//:absl_random_random",
+        "@clickhouse_abseil_cpp//:absl_statusor",
+    ],
+    implementation_deps = [
+        "@clickhouse_abseil_cpp//:absl_cleanup_internal",
     ],
 )
