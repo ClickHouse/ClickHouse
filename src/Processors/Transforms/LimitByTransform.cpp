@@ -178,6 +178,11 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
         if (row_idx == 5)
             FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_mid_loop_pause);
 
+        /// Grow `group_counts` before a key can be inserted: if the allocation threw between `emplaceKey` and
+        /// `setMapped`, the key would stay in the hash table without a group index.
+        if (group_counts.size() == group_counts.capacity())
+            group_counts.reserve(std::max<size_t>(16, group_counts.capacity() * 2));
+
         auto key_emplace_result = state.emplaceKey(hash_method.data, row_idx, *data.aggregates_pool);
         size_t row_group_idx = 0;
         if (key_emplace_result.isInserted()) /// New grouping key
