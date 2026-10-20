@@ -34,14 +34,19 @@ size_t ParquetMetadataCacheKeyHash::operator()(const ParquetMetadataCacheKey & k
 }
 
 ParquetMetadataCacheCell::ParquetMetadataCacheCell(
-    std::shared_ptr<const Parquet::FileFooter> footer_, std::vector<Parquet::FileColumnChunksPtr> column_chunks_)
+    std::shared_ptr<const Parquet::FileFooter> footer_,
+    std::vector<Parquet::FileColumnChunksPtr> column_chunks_,
+    std::shared_ptr<ParquetKeptStatistics> kept_statistics_)
     : footer(std::move(footer_))
     , column_chunks(std::move(column_chunks_))
     , memory_bytes(calculateMemorySize() + SIZE_IN_MEMORY_OVERHEAD)
     /// Kept statistics may add a quarter of the footer's size to the cell, and at least 4 KiB for a small footer, so the
     /// cache limits still bound the cell. The columns kept first use up this budget for the lifetime of the cell.
-    , kept_statistics(std::allocate_shared<ParquetKeptStatistics>(
-          ServerOwnedCacheEntryAllocator<ParquetKeptStatistics>(), std::max<size_t>(memory_bytes / 4, MIN_KEPT_STATISTICS_BYTES)))
+    , kept_statistics(
+          kept_statistics_ ? std::move(kept_statistics_)
+                           : std::allocate_shared<ParquetKeptStatistics>(
+                                 ServerOwnedCacheEntryAllocator<ParquetKeptStatistics>(),
+                                 std::max<size_t>(memory_bytes / 4, MIN_KEPT_STATISTICS_BYTES)))
 {
 }
 size_t ParquetMetadataCacheCell::calculateMemorySize() const
@@ -191,7 +196,7 @@ void ParquetMetadataCache::addColumnChunks(
     }
     if (!added)
         return;
-    Base::replaceIfMatches(key, cell, std::make_shared<ParquetMetadataCacheCell>(cell->footer, std::move(merged)));
+    Base::replaceIfMatches(key, cell, std::make_shared<ParquetMetadataCacheCell>(cell->footer, std::move(merged), cell->kept_statistics));
 }
 
 void ParquetMetadataCache::keepStatistics(
@@ -203,7 +208,9 @@ void ParquetMetadataCache::keepStatistics(
     if (!column)
         return;
     Base::updateIfMatches(
-        key, [&](const MappedPtr & resident) { return resident == cell && cell->kept_statistics->add(std::move(*column)); });
+        key,
+        [&](const MappedPtr & resident)
+        { return resident->kept_statistics == cell->kept_statistics && cell->kept_statistics->add(std::move(*column)); });
 }
 
 void ParquetMetadataCache::onEntryRemoval(const size_t weight_loss, const MappedPtr &)
