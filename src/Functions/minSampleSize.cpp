@@ -306,7 +306,7 @@ Uses the formula described in [this article](https://towardsdatascience.com/requ
         {"Tuple(Float64, Float64, Float64)"}
     };
     FunctionDocumentation::Examples examples_conversion = {
-        {"minSampleSizeConversion", "SELECT minSampleSizeConversion(0.25, 0.03, 0.80, 0.05) AS sample_size", "(3396.077603219163,0.22,0.28)"}
+        {"minSampleSizeConversion", "SELECT minSampleSizeConversion(0.25, 0.03, 0.80, 0.05) AS sample_size", "(3396.077603219162,0.22,0.28)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_conversion = {22, 6};
     FunctionDocumentation::Category category_conversion = FunctionDocumentation::Category::Other;

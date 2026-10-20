@@ -11,10 +11,7 @@ AggregateFunction/groupArraySample#0      unstable  # the output is not the same
 AggregateFunction/groupArraySample#2      unstable  # the output is not the same on every run
 AggregateFunction/kolmogorovSmirnovTest#0 unstable  # the output is not the same on every run
 AggregateFunction/kolmogorovSmirnovTest#1 unstable  # the output is not the same on every run
-AggregateFunction/meanZTest#0             unstable  # the last digit differs between aarch64 and x86_64: boost evaluates the distribution in `long double`, which is 128-bit on aarch64, where musl implements its functions only with `double` precision
 AggregateFunction/stddevPopStable#0       unstable  # the output is not the same on every run
-AggregateFunction/studentTTestOneSample#0 unstable  # the last digit differs between aarch64 and x86_64: boost evaluates the distribution in `long double`, which is 128-bit on aarch64, where musl implements its functions only with `double` precision
-AggregateFunction/studentTTestOneSample#1 unstable  # the last digit differs between aarch64 and x86_64: boost evaluates the distribution in `long double`, which is 128-bit on aarch64, where musl implements its functions only with `double` precision
 Function/FQDN#0                           output  # the response describes the server or the machine it runs on
 Function/UTCTimestamp#0                   unstable  # the output is not the same on every run
 Function/addressToLine#0                  unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a source path of one build
