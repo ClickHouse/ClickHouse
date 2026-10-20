@@ -1327,12 +1327,9 @@ bool LocalServer::executeInitialTableQuery(const String & initial_query)
 
 bool LocalServer::beforeExecutingCommandLineQueries()
 {
-    if (!deferred_implicit_stdin_table)
-        return true;
-
-    const auto & [table_name, initial_query] = *deferred_implicit_stdin_table;
-    client_context->setSetting("implicit_table_at_top_level", table_name);
-    return executeInitialTableQuery(initial_query);
+    if (implicit_stdin_table_to_activate)
+        client_context->setSetting("implicit_table_at_top_level", *implicit_stdin_table_to_activate);
+    return true;
 }
 
 int LocalServer::main(const std::vector<std::string> & /*args*/)
@@ -1444,23 +1441,24 @@ try
 
     auto [table_name, initial_query] = getInitialCreateTableQuery();
 
-    /// Query files must not see an inferred stdin table just because --query was also specified.
-    /// Explicit input tables are still created before processing query files.
+    /// Create the inferred stdin table before query files can change session settings.
+    /// Delay implicit_table_at_top_level until --query, so file SELECTs do not
+    /// implicitly read from stdin. Explicit input tables retain their behavior.
     const auto & client_config = getClientConfiguration();
     const bool has_explicit_table_input = client_config.has("table-structure")
         || client_config.has("table-file")
         || client_config.has("table-data-format");
-    const bool defer_implicit_stdin_table = !table_name.empty() && !queries.empty() && !queries_files.empty()
+    const bool defer_implicit_stdin_table_activation = !table_name.empty() && !queries.empty() && !queries_files.empty()
         && !has_explicit_table_input;
 
-    if (defer_implicit_stdin_table)
-        deferred_implicit_stdin_table.emplace(table_name, initial_query);
+    if (defer_implicit_stdin_table_activation)
+        implicit_stdin_table_to_activate = table_name;
     else if (!table_name.empty())
         client_context->setSetting("implicit_table_at_top_level", table_name);
 
     connect();
 
-    if (!table_name.empty() && !defer_implicit_stdin_table)
+    if (!table_name.empty())
         executeInitialTableQuery(initial_query);
 
 #if USE_FUZZING_MODE

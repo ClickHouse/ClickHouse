@@ -79,7 +79,8 @@ private:
       * This query will be executed first, before queries passed through --query argument
       * Returns a pair of the table name and the corresponding create table statement.
       * Returns empty strings if it cannot compose that query.
-      * An inferred stdin table is created after query files when both --queries-file and --query are used.
+      * With --queries-file and --query together, inferred stdin tables are created early,
+      * but implicit SELECTs use the table only after query files have finished.
       */
     std::pair<std::string, std::string> getInitialCreateTableQuery();
     bool executeInitialTableQuery(const String & initial_query);
@@ -131,8 +132,8 @@ private:
 
     std::optional<StatusFile> status;
     std::optional<std::filesystem::path> temporary_directory_to_delete;
-    /// Save the inferred table until query files have finished.
-    std::optional<std::pair<String, String>> deferred_implicit_stdin_table;
+    /// Enable implicit stdin-table SELECTs after query files have finished.
+    std::optional<String> implicit_stdin_table_to_activate;
 
     std::unique_ptr<ReadBufferFromFile> input;
 

@@ -54,6 +54,14 @@ $CLICKHOUSE_LOCAL -q "SELECT count();" --queries-file="$TEMP_SQL_FILE_NAME" < "$
 # The trailing query uses system.one so that the test does not depend on reading stdin twice.
 $CLICKHOUSE_LOCAL --structure "a UInt8, b UInt8" --input-format CSV --queries-file="$TEMP_SQL_FILE_NAME" -q "SELECT 99 FROM system.one;" < "$STDIN_DATA_FILE_NAME"
 
+# File-level settings must not affect the generated stdin-table CREATE.
+printf '1\n2\n3\n' > "$STDIN_DATA_FILE_NAME"
+echo 'SET readonly = 1;' > "$TEMP_SQL_FILE_NAME"
+$CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" -q "SELECT count();" < "$STDIN_DATA_FILE_NAME"
+
+printf '%s\n' 'SET allow_experimental_kusto_dialect = 1;' "SET dialect = 'kusto';" > "$TEMP_SQL_FILE_NAME"
+$CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" -q "table | count" < "$STDIN_DATA_FILE_NAME"
+
 # --copy is a format-conversion shortcut, not a second query mode for --queries-file.
 $CLICKHOUSE_LOCAL --copy --queries-file="$TEMP_SQL_FILE_NAME" --input-format CSV < "$STDIN_DATA_FILE_NAME" 2>&1 | grep -o 'BAD_ARGUMENTS'
 
