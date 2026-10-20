@@ -376,7 +376,7 @@ private:
         // Start for the last element, which is always part of the set.
         // The head contains the current new head, that may be merged with the current element.
         Stats head = sampled.back();
-        ssize_t i = sampled.size() - 2;
+        ssize_t i = static_cast<ssize_t>(sampled.size()) - 2;
 
         // Do not compress the last element
         while (i >= 1)
