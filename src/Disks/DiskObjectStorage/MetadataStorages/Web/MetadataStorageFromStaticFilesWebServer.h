@@ -121,6 +121,9 @@ public:
     /// `IMetadataStorage` API (e.g. `StorageDistributed`'s local insert queue) must check this and
     /// fail closed instead of using `getPath()` as a real path.
     bool isPathOnLocalFilesystem() const override { return false; }
+    /// Nothing is ever written, hence nothing is ever removed or replicated.
+    bool hasDeadBlobsQueue() const override { return false; }
+    bool hasMissingBlobsQueue() const override { return false; }
 };
 
 }

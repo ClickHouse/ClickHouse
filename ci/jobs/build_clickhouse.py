@@ -535,6 +535,7 @@ def main():
                 name="Build ClickHouse",
                 command=build_command,
                 workdir=build_dir_normalized,
+                info_extractor=Result.cpp_build_info_extractor,
             )
         )
 
@@ -556,6 +557,7 @@ def main():
                     name="Build ClickHouse (retry without PGO)",
                     command=build_command,
                     workdir=build_dir_normalized,
+                    info_extractor=Result.cpp_build_info_extractor,
                 )
                 if retry_build.is_ok():
                     retry_build.set_info(

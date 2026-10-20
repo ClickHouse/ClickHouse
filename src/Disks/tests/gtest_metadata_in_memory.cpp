@@ -241,7 +241,7 @@ TEST_F(MetadataInMemoryTest, TestNotOnLocalFilesystem)
 /// default `true` would let the cache-wrapped disk slip past the same guards.
 TEST_F(MetadataInMemoryTest, TestCacheWrapperForwardsPathLocality)
 {
-    auto wrapped = std::make_shared<DB::MetadataStorageFromCacheObjectStorage>(getMetadataStorage());
+    auto wrapped = std::make_shared<DB::MetadataStorageFromCacheObjectStorage>(getMetadataStorage(), /*object_storage_=*/ nullptr);
     EXPECT_FALSE(wrapped->isPathOnLocalFilesystem());
 }
 
@@ -255,7 +255,7 @@ TEST_F(MetadataInMemoryTest, TestNoLocalFilesystemDirectoryNamespace)
     auto metadata = getMetadataStorage();
     EXPECT_FALSE(metadata->hasLocalFilesystemDirectoryNamespace());
 
-    auto wrapped = std::make_shared<DB::MetadataStorageFromCacheObjectStorage>(metadata);
+    auto wrapped = std::make_shared<DB::MetadataStorageFromCacheObjectStorage>(metadata, /*object_storage_=*/ nullptr);
     EXPECT_FALSE(wrapped->hasLocalFilesystemDirectoryNamespace());
 }
 
@@ -268,7 +268,7 @@ TEST_F(MetadataInMemoryTest, TestDoesNotKeepMetadataAcrossRestarts)
     auto metadata = getMetadataStorage();
     EXPECT_FALSE(metadata->keepsMetadataAcrossRestarts());
 
-    auto wrapped = std::make_shared<DB::MetadataStorageFromCacheObjectStorage>(metadata);
+    auto wrapped = std::make_shared<DB::MetadataStorageFromCacheObjectStorage>(metadata, /*object_storage_=*/ nullptr);
     EXPECT_FALSE(wrapped->keepsMetadataAcrossRestarts());
 }
 

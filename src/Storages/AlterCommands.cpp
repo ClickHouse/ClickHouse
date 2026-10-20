@@ -341,6 +341,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         {
             command.default_kind = toColumnDefaultKind(ast_col_decl.default_specifier);
             command.default_expression = ast_col_decl.getDefaultExpression();
+            command.ephemeral_default = ast_col_decl.ephemeral_default;
         }
 
         if (ast_col_decl.getComment())
@@ -944,6 +945,7 @@ void AlterCommand::apply(
                 {
                     column.default_desc.kind = default_kind;
                     column.default_desc.expression = default_expression;
+                    column.default_desc.ephemeral_default = ephemeral_default;
                 }
             }
         });
