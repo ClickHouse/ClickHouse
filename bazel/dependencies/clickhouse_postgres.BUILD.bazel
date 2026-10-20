@@ -101,8 +101,5 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    local_includes = [
-        repository_local_include("contrib/postgres-cmake", "contrib/postgres"),
-    ],
     deps = [":postgres_headers"] + ["@clickhouse//contrib/postgres-cmake:headers"],
 )
