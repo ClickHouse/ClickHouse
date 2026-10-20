@@ -21,8 +21,9 @@ clauses = (
     (f"{setting}=0, {setting}", "1"),
     (f"{setting}, {setting}=0", "0"),
     (f"{setting}='false', {setting}='true'", "1"),
-    (f"{setting}=0, {setting}=1, {setting}=DEFAULT", "1"),
-    (f"{setting}=DEFAULT, {setting}=0, {setting}=1", "1"),
+    # A nested `DEFAULT` resets to the built-in default after the explicit changes of its clause.
+    (f"{setting}=0, {setting}=1, {setting}=DEFAULT", "0"),
+    (f"{setting}=DEFAULT, {setting}=0, {setting}=1", "0"),
 )
 
 
