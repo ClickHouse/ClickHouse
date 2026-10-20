@@ -113,25 +113,25 @@ BlockIO createHypotheticalIndex(
             return {};
     }
 
-    /// SQL UDFs are expanded first, as for `ALTER TABLE ... ADD INDEX`.
-    ASTPtr expanded_index_decl = query.index_decl->clone();
-    if (!UserDefinedSQLFunctionFactory::instance().empty())
-        UserDefinedSQLFunctionVisitor::visit(expanded_index_decl, context);
-    KeyDescription::checkNoAlias(expanded_index_decl.get(), "INDEX");
-
     auto index_desc = IndexDescription::getIndexFromAST(
         query.index_decl,
         metadata->getColumns(),
         /* is_implicitly_created = */ false,
         /* escape_filenames = */ true,
         context);
-    KeyDescription::checkNoAlias(index_desc.expression_list_ast.get(), "INDEX " + index_desc.name);
 
     /// Empirical estimation reads the index's columns, so require column-level
     /// SELECT — otherwise a user with table-level access could infer a restricted
     /// column's distribution from the reported skip ratio.
     if (index_desc.expression)
         context->checkAccess(AccessType::SELECT, table_id, index_desc.expression->getRequiredColumns());
+
+    /// SQL UDFs are expanded first, as for `ALTER TABLE ... ADD INDEX`.
+    ASTPtr expanded_index_decl = query.index_decl->clone();
+    if (!UserDefinedSQLFunctionFactory::instance().empty())
+        UserDefinedSQLFunctionVisitor::visit(expanded_index_decl, context);
+    KeyDescription::checkNoAlias(expanded_index_decl.get(), "INDEX");
+    KeyDescription::checkNoAlias(index_desc.expression_list_ast.get(), "INDEX " + index_desc.name);
 
     /// validate() must run before get(): index creators assume their arguments were already
     /// validated and read them unguarded (e.g. set/bloom_filter index.arguments->children[0]),
