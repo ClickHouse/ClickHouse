@@ -64,10 +64,10 @@ SET automatic_parallel_replicas_mode = 0;
 SYSTEM FLUSH LOGS query_log;
 
 -- Every run above prints its result, so the reference holds them equal to the single-node one. What it
--- cannot show is whether replicas were used at all; that is this.
+-- cannot show is whether replicas were used; that is this, and it holds both runs after the warmup to it.
 SELECT
     replaceOne(log_comment, '05395_replicas_', '') AS shape,
-    countIf(ProfileEvents['ParallelReplicasUsedCount'] > 0) > 0 AS replicas_were_used_at_least_once
+    count() = 2 AND min(ProfileEvents['ParallelReplicasUsedCount'] > 0) AS replicas_were_used_on_every_run
 FROM system.query_log
 WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDatabase()
   AND event_date >= yesterday()

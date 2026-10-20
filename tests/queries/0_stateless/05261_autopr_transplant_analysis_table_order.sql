@@ -104,12 +104,12 @@ SET automatic_parallel_replicas_mode = 0;
 
 SYSTEM FLUSH LOGS query_log;
 
--- `replicas_were_used_at_least_once` is what keeps this honest: without it the marks comparison would
--- also hold for a run that quietly stayed single-node, and the test would pass while testing nothing.
+-- Both runs after the warmup must use replicas: a run that quietly stayed single-node is the regression
+-- this test is for, and the marks comparison alone would hold for it too.
 SELECT
     shape,
-    countIf(used > 0) > 0 AS replicas_were_used_at_least_once,
-    countIf(used > 0 AND marks != single_node_marks) = 0 AS every_replica_run_matches_single_node
+    count() = 2 AND min(used > 0) AS replicas_were_used_on_every_run,
+    min(marks = single_node_marks) AS every_run_matches_single_node
 FROM
 (
     SELECT
