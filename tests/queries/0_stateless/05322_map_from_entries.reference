@@ -20,3 +20,9 @@ Map(String, UInt8)
 0	{'a':0,'b':1}
 1	{'a':1,'b':2}
 [('a',1),('a',2)]
+{'a':1,'b':2}
+Map(String, Nullable(UInt8))
+{}	Map(String, Nullable(UInt8))
+1	1
+1
+{'a':[1,2],'b':[3]}	Map(String, Array(UInt8))

@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -312,7 +313,7 @@ public:
         if (isNothing(nested_type))
             return std::make_shared<DataTypeMap>(nested_type, nested_type);
 
-        const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(nested_type.get());
+        const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(removeNullable(nested_type).get());
         if (!tuple_type || tuple_type->getElements().size() != 2)
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -320,8 +321,16 @@ public:
                 getName(),
                 arguments[0]->getName());
 
-        auto key_type = removeNullableOrLowCardinalityNullable(tuple_type->getElement(0));
-        return std::make_shared<DataTypeMap>(key_type, tuple_type->getElement(1));
+        auto key_type = tuple_type->getElement(0);
+        auto value_type = tuple_type->getElement(1);
+        if (nested_type->isNullable())
+        {
+            /// Preserve the tupleElement nullability rules used by the previous Trino rewrite.
+            key_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(key_type);
+            value_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(value_type);
+        }
+
+        return std::make_shared<DataTypeMap>(removeNullableOrLowCardinalityNullable(key_type), value_type);
     }
 
     ColumnPtr executeImpl(
@@ -344,7 +353,9 @@ public:
         if (isNothing(nested_type))
             return ColumnMap::create(entries->getDataPtr(), entries->getDataPtr(), offsets);
 
-        const auto * tuple_column = checkAndGetColumn<ColumnTuple>(entries->getDataPtr().get());
+        const auto * nullable_tuple = checkAndGetColumn<ColumnNullable>(entries->getDataPtr().get());
+        const auto & tuple_data = nullable_tuple ? nullable_tuple->getNestedColumnPtr() : entries->getDataPtr();
+        const auto * tuple_column = checkAndGetColumn<ColumnTuple>(tuple_data.get());
         if (!tuple_column || tuple_column->tupleSize() != 2)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -352,8 +363,42 @@ public:
                 getName(),
                 holder->getName());
 
-        auto keys = normalizeMapKeyColumn(tuple_column->getColumnPtr(0), getName());
-        return ColumnMap::create(keys, tuple_column->getColumnPtr(1), offsets);
+        ColumnPtr keys = tuple_column->getColumnPtr(0);
+        ColumnPtr values = tuple_column->getColumnPtr(1);
+        if (nullable_tuple)
+        {
+            const auto & tuple_type = assert_cast<const DataTypeTuple &>(*removeNullable(nested_type));
+            const auto & null_map = nullable_tuple->getNullMapData();
+
+            /// Match tupleElement's extraction of components from a Nullable(Tuple).
+            auto extract = [&](const ColumnPtr & column, const DataTypePtr & type) -> ColumnPtr
+            {
+                if (canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(type) || canContainNull(*type))
+                    return NullableSubcolumnCreator(nullable_tuple->getNullMapColumnPtr()).create(column);
+
+                /// Non-nullable composite components use defaults for NULL tuples.
+                if (memoryIsZero(null_map.data(), 0, null_map.size()))
+                    return column;
+
+                auto result = type->createColumn();
+                result->reserve(column->size());
+                const auto default_value = type->getDefault();
+                for (size_t i = 0; i < column->size(); ++i)
+                {
+                    if (null_map[i])
+                        result->insert(default_value);
+                    else
+                        result->insertFrom(*column, i);
+                }
+                return result;
+            };
+
+            keys = extract(keys, tuple_type.getElement(0));
+            values = extract(values, tuple_type.getElement(1));
+        }
+
+        keys = normalizeMapKeyColumn(std::move(keys), getName());
+        return ColumnMap::create(keys, values, offsets);
     }
 };
 

@@ -72,3 +72,32 @@ SELECT mapFromEntries([tuple(1, 2, 3)]); -- { serverError ILLEGAL_TYPE_OF_ARGUME
 SELECT mapFromEntries(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT mapFromEntries(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT mapFromEntries([('a', 1)], [('b', 2)]); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT mapFromEntries(CAST([('a', 1), ('b', 2)], 'Array(Nullable(Tuple(String, UInt8)))')) FORMAT TabSeparatedRaw;
+SELECT toTypeName(mapFromEntries(CAST([('a', 1)], 'Array(Nullable(Tuple(String, UInt8)))'))) FORMAT TabSeparatedRaw;
+SELECT
+    mapFromEntries(CAST([], 'Array(Nullable(Tuple(String, UInt8)))')),
+    toTypeName(mapFromEntries(CAST([], 'Array(Nullable(Tuple(String, UInt8)))')))
+FORMAT TabSeparatedRaw;
+
+WITH CAST([('a', 1), ('b', 2)], 'Array(Nullable(Tuple(String, UInt8)))') AS entries
+SELECT
+    mapEntries(mapFromEntries(entries)) =
+        mapEntries(mapFromArrays(arrayMap(e -> tupleElement(e, 1), entries), arrayMap(e -> tupleElement(e, 2), entries))),
+    toTypeName(mapFromEntries(entries)) =
+        toTypeName(mapFromArrays(arrayMap(e -> tupleElement(e, 1), entries), arrayMap(e -> tupleElement(e, 2), entries)))
+FORMAT TabSeparatedRaw;
+
+WITH CAST([('a', 'x')], 'Array(Nullable(Tuple(String, LowCardinality(String))))') AS entries
+SELECT
+    toTypeName(mapFromEntries(entries)) =
+        toTypeName(mapFromArrays(arrayMap(e -> tupleElement(e, 1), entries), arrayMap(e -> tupleElement(e, 2), entries)))
+FORMAT TabSeparatedRaw;
+
+SELECT
+    mapFromEntries(CAST([('a', [1, 2]), ('b', [3])], 'Array(Nullable(Tuple(String, Array(UInt8))))')),
+    toTypeName(mapFromEntries(CAST([('a', [1, 2])], 'Array(Nullable(Tuple(String, Array(UInt8))))')))
+FORMAT TabSeparatedRaw;
+
+SELECT mapFromEntries(CAST([('a', 1), NULL], 'Array(Nullable(Tuple(String, UInt8)))')); -- { serverError BAD_ARGUMENTS }
+SELECT mapFromEntries(CAST([('a', 1), (NULL, 2)], 'Array(Nullable(Tuple(Nullable(String), UInt8)))')); -- { serverError BAD_ARGUMENTS }
