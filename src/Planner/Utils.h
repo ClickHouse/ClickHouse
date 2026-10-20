@@ -79,6 +79,9 @@ bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node);
   */
 bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_node);
 
+/// Whether a table expression reads a view or a remote table, directly or through a `Merge` table.
+bool readsViewOrRemoteStorage(const QueryTreeNodePtr & table_expression);
+
 /// Returns `and` function node that has condition nodes as its arguments
 QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, const ContextPtr & context);
 

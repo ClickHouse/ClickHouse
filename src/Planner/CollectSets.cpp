@@ -1,7 +1,6 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Planner/CollectSets.h>
 
-#include <Storages/StorageMerge.h>
 #include <Storages/StorageSet.h>
 #include <Storages/StorageProxy.h>
 #if CLICKHOUSE_CLOUD
@@ -13,7 +12,6 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/SetUtils.h>
-#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
@@ -45,32 +43,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-bool storageMayCarryTotals(const StoragePtr & storage)
-{
-    if (storage->isView() || storage->isRemote())
-        return true;
-
-    const auto * merge = typeid_cast<const StorageMerge *>(storage.get());
-    return merge && merge->hasChildTable(storageMayCarryTotals);
-}
-
-bool joinTreeReadsStorageWithTotals(const QueryNode & query_node)
-{
-    for (const auto & table_expression : extractTableExpressions(query_node.getJoinTreeNodeTyped(), /*add_array_join=*/ false, /*recursive=*/ true))
-    {
-        StoragePtr storage;
-        if (const auto * table_node = table_expression->as<TableNode>())
-            storage = table_node->getStorage();
-        else if (const auto * table_function_node = table_expression->as<TableFunctionNode>())
-            storage = table_function_node->getStorage();
-
-        if (storage && storageMayCarryTotals(storage))
-            return true;
-    }
-
-    return false;
-}
 
 class CollectSetsVisitor : public InDepthQueryTreeVisitorWithContext<CollectSetsVisitor>
 {
@@ -232,7 +204,8 @@ private:
                 query_node = node;
                 const auto & typed_query_node = node->as<QueryNode &>();
                 has_totals_in_group_by = typed_query_node.isGroupByWithTotals();
-                has_totals_in_join_tree = queryHasWithTotalsInAnySubqueryInJoinTree(node) || joinTreeReadsStorageWithTotals(typed_query_node);
+                /// A subquery with `WITH TOTALS`, a view or a remote table may produce a totals row.
+                has_totals_in_join_tree = queryHasWithTotalsInAnySubqueryInJoinTree(node) || readsViewOrRemoteStorage(typed_query_node.getJoinTreeNode());
             }
             return;
         }

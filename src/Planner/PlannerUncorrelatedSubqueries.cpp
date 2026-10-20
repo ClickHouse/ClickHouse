@@ -319,7 +319,8 @@ bool canRewriteInToJoin(const QueryTreeNodePtr & in_node, const QueryTreeNodePtr
         return false;
 
     /// A set ignores the `WITH TOTALS` row of its subquery, but a join would add it to the query.
-    if (queryTreeHasWithTotalsInAnySubqueryInJoinTree(arguments[1].get()))
+    // A view or a remote table may produce such a row as well.
+    if (queryTreeHasWithTotalsInAnySubqueryInJoinTree(arguments[1].get()) || readsViewOrRemoteStorage(arguments[1]))
         return false;
 
     const auto & left_key = arguments[0];

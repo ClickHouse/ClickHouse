@@ -24,5 +24,7 @@
 0	1
 -- IN read on the totals row of a view
 0	1
+-- IN subquery that reads a view with totals
+0	1
 -- IN inside the projection of a correlated subquery
 1	1

@@ -68,6 +68,10 @@ DROP VIEW IF EXISTS vt;
 CREATE VIEW vt AS SELECT id FROM t GROUP BY id WITH TOTALS;
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
 FROM (EXPLAIN SELECT id, id IN (SELECT k FROM s) FROM vt);
+
+SELECT '-- IN subquery that reads a view with totals';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT id, id IN (SELECT id FROM vt) FROM t);
 DROP VIEW vt;
 
 SELECT '-- IN inside the projection of a correlated subquery';
