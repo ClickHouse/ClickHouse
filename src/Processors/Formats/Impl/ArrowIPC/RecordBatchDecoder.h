@@ -340,6 +340,12 @@ private:
     ColumnPtr readOffsetsAndChild(
         const ArrowField & field, size_t rows, bool large, const DataTypePtr & target_hint, const String & path,
         size_t list_depth, const InvisibleRowsMask * invisible_rows);
+    /// Decodes a ListView/LargeListView field into an `Array`: each visible row copies the child range
+    /// [offset, offset + size), which may overlap other rows' ranges and come in any order. An invisible row
+    /// (whose offset and size are undefined) is an empty array, like an invisible List row.
+    ColumnPtr readListViewAndChild(
+        const ArrowField & field, size_t rows, bool large, const DataTypePtr & target_hint, const String & path,
+        size_t list_depth, const InvisibleRowsMask * invisible_rows);
     /// The requested ClickHouse type for a field: `resolveHint` over the requested types of the batch being
     /// decoded (`target_types`), preferring the hint derived from the parent and otherwise looking up `path`,
     /// the dotted column name, `list_depth` lists below the top level.
