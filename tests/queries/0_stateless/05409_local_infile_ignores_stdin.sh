@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# `INSERT ... FROM INFILE` in `clickhouse-local` inserts only the file. It used to insert the data piped to stdin as
-# well, and to wait for an open stdin pipe to close. (`clickhouse-client` still appends stdin, see
-# `02270_stdin_with_query_or_infile_data`.)
+# `INSERT ... FROM INFILE` inserts only the file. It used to insert the data piped to stdin as well, and to wait for
+# an open stdin pipe to close. `02270_stdin_with_query_or_infile_data` checks the same for `clickhouse-client`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
