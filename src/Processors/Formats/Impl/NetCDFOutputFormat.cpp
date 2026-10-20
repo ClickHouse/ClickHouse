@@ -181,8 +181,11 @@ String makeFillValue(T value)
 /// itself, already buffered in whole.
 ///
 /// The values of a decimal column, such as `DateTime64`, are taken from its underlying integers.
+///
+/// With `only_if_default_is_taken`, the result is empty when the preferred value is free, because
+/// then no attribute is needed at all.
 template <typename T, typename Source>
-String chooseFillValue(const Source * data, size_t size, const UInt8 * null_map, T preferred)
+String chooseFillValue(const Source * data, size_t size, const UInt8 * null_map, T preferred, bool only_if_default_is_taken)
 {
     using Bits = std::conditional_t<sizeof(T) == 1, UInt8,
         std::conditional_t<sizeof(T) == 2, UInt16, std::conditional_t<sizeof(T) == 4, UInt32, UInt64>>>;
@@ -225,6 +228,8 @@ String chooseFillValue(const Source * data, size_t size, const UInt8 * null_map,
         /// The bits above the last candidate are zero, so the first free bit of the last word can
         /// be past the end, and then every candidate is taken.
         UInt64 offset = word * bits_in_word + std::countr_one(taken[word]);
+        if (offset == 0 && only_if_default_is_taken)
+            return {};
         if (offset < num_candidates)
             return makeFillValue<T>(std::bit_cast<T>(static_cast<Bits>(first_candidate - offset)));
     }
@@ -334,42 +339,62 @@ void writeDateTime64Column(WriteBuffer & out, const IColumn & column, const UInt
     }
 }
 
+/// The readers take the default fill value of a type as missing data even in a variable without the
+/// `_FillValue` attribute, except for the types of one byte, which are often small numbers rather
+/// than measurements. The netCDF library documents this in its conventions of the attributes.
+bool isByteType(NetCDFType type)
+{
+    return type == NetCDFType::Byte || type == NetCDFType::UByte;
+}
+
 /// Picks the value to write the NULLs of a column as, looking at the data that the column holds.
-String chooseFillValue(const IColumn & column, const UInt8 * null_map, const String & name)
+String chooseFillValue(const IColumn & column, const UInt8 * null_map, const String & name, bool only_if_default_is_taken)
 {
     size_t size = column.size();
 
     switch (column.getDataType())
     {
         case TypeIndex::Int8:
-            return chooseFillValue<Int8>(assert_cast<const ColumnInt8 &>(column).getData().data(), size, null_map, -127);
+            return chooseFillValue<Int8>(
+                assert_cast<const ColumnInt8 &>(column).getData().data(), size, null_map, -127, only_if_default_is_taken);
         case TypeIndex::UInt8:
-            return chooseFillValue<UInt8>(assert_cast<const ColumnUInt8 &>(column).getData().data(), size, null_map, 255);
+            return chooseFillValue<UInt8>(
+                assert_cast<const ColumnUInt8 &>(column).getData().data(), size, null_map, 255, only_if_default_is_taken);
         case TypeIndex::Int16:
-            return chooseFillValue<Int16>(assert_cast<const ColumnInt16 &>(column).getData().data(), size, null_map, -32767);
+            return chooseFillValue<Int16>(
+                assert_cast<const ColumnInt16 &>(column).getData().data(), size, null_map, -32767, only_if_default_is_taken);
         case TypeIndex::UInt16:
-            return chooseFillValue<UInt16>(assert_cast<const ColumnUInt16 &>(column).getData().data(), size, null_map, 65535);
+            return chooseFillValue<UInt16>(
+                assert_cast<const ColumnUInt16 &>(column).getData().data(), size, null_map, 65535, only_if_default_is_taken);
         case TypeIndex::Int32:
-            return chooseFillValue<Int32>(assert_cast<const ColumnInt32 &>(column).getData().data(), size, null_map, -2147483647);
+            return chooseFillValue<Int32>(
+                assert_cast<const ColumnInt32 &>(column).getData().data(), size, null_map,
+                -2147483647, only_if_default_is_taken);
         case TypeIndex::UInt32:
-            return chooseFillValue<UInt32>(assert_cast<const ColumnUInt32 &>(column).getData().data(), size, null_map, 4294967295U);
+            return chooseFillValue<UInt32>(
+                assert_cast<const ColumnUInt32 &>(column).getData().data(), size, null_map,
+                4294967295U, only_if_default_is_taken);
         case TypeIndex::Int64:
             return chooseFillValue<Int64>(
-                assert_cast<const ColumnInt64 &>(column).getData().data(), size, null_map, -9223372036854775806LL);
+                assert_cast<const ColumnInt64 &>(column).getData().data(), size, null_map,
+                -9223372036854775806LL, only_if_default_is_taken);
         case TypeIndex::UInt64:
             return chooseFillValue<UInt64>(
-                assert_cast<const ColumnUInt64 &>(column).getData().data(), size, null_map, 18446744073709551614ULL);
+                assert_cast<const ColumnUInt64 &>(column).getData().data(), size, null_map,
+                18446744073709551614ULL, only_if_default_is_taken);
         case TypeIndex::Float32:
             return chooseFillValue<Float32>(
-                assert_cast<const ColumnFloat32 &>(column).getData().data(), size, null_map, 9.9692099683868690e+36f);
+                assert_cast<const ColumnFloat32 &>(column).getData().data(), size, null_map,
+                9.9692099683868690e+36f, only_if_default_is_taken);
         case TypeIndex::Float64:
             return chooseFillValue<Float64>(
-                assert_cast<const ColumnFloat64 &>(column).getData().data(), size, null_map, 9.9692099683868690e+36);
+                assert_cast<const ColumnFloat64 &>(column).getData().data(), size, null_map,
+                9.9692099683868690e+36, only_if_default_is_taken);
         case TypeIndex::DateTime64:
         {
             /// A `DateTime64` is a 64-bit integer with a scale, and it is written as one.
             const auto & data = assert_cast<const ColumnDecimal<DateTime64> &>(column).getData();
-            return chooseFillValue<Int64>(data.data(), size, null_map, -9223372036854775806LL);
+            return chooseFillValue<Int64>(data.data(), size, null_map, -9223372036854775806LL, only_if_default_is_taken);
         }
         default:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
@@ -617,25 +642,34 @@ void NetCDFOutputFormat::finalizeImpl()
 
             /// The value that the NULLs are written as has to be absent from the data of the
             /// column, so it can only be chosen once the whole column is there.
-            if (variable.null_map)
+            const UInt8 * null_map = variable.null_map
+                ? assert_cast<const ColumnUInt8 &>(*variable.null_map).getData().data()
+                : nullptr;
+            /// Any nonzero byte of a null map is a NULL, not only 1.
+            const bool has_nulls = null_map
+                && std::any_of(null_map, null_map + variable.data->size(), [](UInt8 is_null) { return is_null != 0; });
+
+            if (has_nulls)
             {
-                const auto & null_map = assert_cast<const ColumnUInt8 &>(*variable.null_map).getData();
-                /// Any nonzero byte of a null map is a NULL, not only 1.
-                const bool has_nulls = std::any_of(null_map.begin(), null_map.end(), [](UInt8 is_null) { return is_null != 0; });
+                variable.fill_value = chooseFillValue(*variable.data, null_map, variable.name, /*only_if_default_is_taken=*/ false);
 
-                /// A column that has no NULLs at all needs no value to write them as: the attribute
-                /// is not written, and the column is read back as not Nullable.
-                if (has_nulls)
-                {
-                    variable.fill_value = chooseFillValue(*variable.data, null_map.data(), variable.name);
-
-                    /// The data can only take every value of the type when the type is small, and
-                    /// then there is nothing to write a NULL as.
-                    if (variable.fill_value.empty())
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "The column {} is Nullable and its values take every value of its type, so the NetCDF "
-                            "format has no value left to write the NULLs as", variable.name);
-                }
+                /// The data can only take every value of the type when the type is small, and
+                /// then there is nothing to write a NULL as.
+                if (variable.fill_value.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "The column {} is Nullable and its values take every value of its type, so the NetCDF "
+                        "format has no value left to write the NULLs as", variable.name);
+            }
+            else if (!isByteType(variable.type))
+            {
+                /// A column that has no NULLs needs no value to write them as. But a variable without
+                /// the attribute is not free of missing data for the readers: the netCDF library and
+                /// `netCDF4` take the default fill value of the type as missing then, for all types
+                /// but the ones of one byte. So when the data contains that value, an explicit
+                /// `_FillValue` that the data does not contain is written, and the value stays a value.
+                /// When the data takes every value of the type, there is nothing to choose, and the
+                /// attribute is not written, as it would mark a real value as missing either way.
+                variable.fill_value = chooseFillValue(*variable.data, null_map, variable.name, /*only_if_default_is_taken=*/ true);
             }
         }
 
