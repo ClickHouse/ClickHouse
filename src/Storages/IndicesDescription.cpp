@@ -15,6 +15,7 @@
 
 #include <Core/Defines.h>
 #include <Common/Exception.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {
@@ -29,7 +30,7 @@ namespace
 {
 
 /// Only the `preprocessor` and `postprocessor` arguments contain column expressions.
-void expandTextIndexTransformAliases(const ASTPtr & arguments, const ColumnsDescription & columns)
+void expandTextIndexTransformAliases(const ASTPtr & arguments, const ColumnsDescription & columns, bool reject_lambda_parameter_prefix)
 {
     using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
     for (const auto & child : arguments->children)
@@ -41,7 +42,7 @@ void expandTextIndexTransformAliases(const ASTPtr & arguments, const ColumnsDesc
         const auto * key = func->arguments->children[0]->as<ASTIdentifier>();
         if (key && (key->name() == "preprocessor" || key->name() == "postprocessor"))
         {
-            ReplaceAliasToExprVisitor::Data data{columns, {}, /*reject_lambda_capture=*/ true};
+            ReplaceAliasToExprVisitor::Data data{columns, {}, /*reject_lambda_capture=*/ true, reject_lambda_parameter_prefix};
             ReplaceAliasToExprVisitor{data}.visit(func->arguments->children[1]);
         }
     }
@@ -161,7 +162,7 @@ IndexDescription IndexDescription::getIndexFromAST(
         result.arguments = index_type->arguments->clone();
 
         if (result.type == TEXT_INDEX_NAME)
-            expandTextIndexTransformAliases(result.arguments, columns);
+            expandTextIndexTransformAliases(result.arguments, columns, /*reject_lambda_parameter_prefix=*/ false);
     }
 
     return result;
@@ -195,6 +196,31 @@ void IndexDescription::initExpressionInfo(ASTPtr index_expression, const Columns
     expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
 
     sample_block = expression->getSampleBlock();
+}
+
+void IndexDescription::checkAliasesNotCapturedByLambda(const ASTPtr & definition_ast, const ColumnsDescription & columns)
+{
+    const auto * index_definition = definition_ast ? definition_ast->as<ASTIndexDeclaration>() : nullptr;
+    if (!index_definition)
+        return;
+
+    using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
+    /// extractKeyExpressionList returns a copy, the visitor rewrites it.
+    ASTPtr expr_list = extractKeyExpressionList(index_definition->getExpression());
+    ReplaceAliasToExprVisitor::Data data{columns, {}, /*reject_lambda_capture=*/ true, /*reject_lambda_parameter_prefix=*/ true};
+    try
+    {
+        ReplaceAliasToExprVisitor{data}.visit(expr_list);
+
+        const auto index_type = index_definition->getType();
+        if (index_type && index_type->arguments && Poco::toLower(index_type->name) == TEXT_INDEX_NAME)
+            expandTextIndexTransformAliases(index_type->arguments->clone(), columns, /*reject_lambda_parameter_prefix=*/ true);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("While checking skip index {}", backQuoteIfNeed(index_definition->name));
+        throw;
+    }
 }
 
 Field getFieldFromIndexArgumentAST(const ASTPtr & ast)

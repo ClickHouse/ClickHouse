@@ -56,6 +56,12 @@ void ReplaceAliasByExpressionMatcher::visit(const ASTIdentifier & column, ASTPtr
     if (data.private_aliases.contains(column_name))
         return;
 
+    if (data.reject_lambda_parameter_prefix && column.name_parts.size() > 1
+        && data.private_aliases.contains(column.name_parts.front()) && data.columns.hasAlias(column_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ALIAS column '{}' cannot be expanded inside a lambda: its name starts with the lambda parameter '{}'",
+            column_name, column.name_parts.front());
+
     if (data.columns.hasAlias(column_name))
     {
         /// Alias expr is saved in default expr.
@@ -88,7 +94,7 @@ void ReplaceAliasByExpressionMatcher::visit(const ASTIdentifier & column, ASTPtr
             /// written at table scope, so its identifiers refer to table columns even when they match a
             /// lambda parameter name, and only the fully expanded result can be captured.
             ASTPtr expanded = col_default->expression->clone();
-            Data table_scope{data.columns, {}, data.reject_lambda_capture};
+            Data table_scope{data.columns, {}, data.reject_lambda_capture, data.reject_lambda_parameter_prefix};
             Visitor(table_scope).visit(expanded);
 
             if (data.reject_lambda_capture && !data.private_aliases.empty())

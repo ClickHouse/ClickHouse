@@ -1016,6 +1016,17 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
 
         if (!minmax_index_exists)
         {
+            try
+            {
+                IndexDescription::checkAliasesNotCapturedByLambda(createImplicitMinMaxIndexAST(column.name), columns);
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() == ErrorCodes::BAD_ARGUMENTS)
+                    return;
+                throw;
+            }
+
             auto index = createImplicitMinMaxIndexDescription(column.name, columns, escape_index_filenames, context);
             bool valid_index = true;
             try
