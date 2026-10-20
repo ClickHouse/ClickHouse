@@ -29,6 +29,7 @@
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/checkTimeSeriesVersion.h>
 #include <Storages/TimeSeries/getPromQLResultTimestampType.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
@@ -741,6 +742,56 @@ void PrometheusHTTPProtocolAPI::getMetadata(
             "equals",
             make_intrusive<ASTIdentifier>(metric_family_column_name),
             make_intrusive<ASTLiteral>(metric_param));
+
+    /// A row policy on the TimeSeries table restricts the metadata to the families of the metrics the policy lets through.
+    /// The inner tags table inherits that policy (see getEffectiveRowPolicyFilter), so the subquery is filtered by it:
+    /// AND hasAny(arrayMap(suffix -> concat(ifNull(toString(metric_family), ''), suffix), timeSeriesMetricTypeToSuffixes(ifNull(toString(type), ''))),
+    ///            (SELECT groupUniqArray(toString(metric_name)) FROM <tags>))
+    if (auto row_policy_filter = getEffectiveRowPolicyFilter(*time_series_storage, getContext()))
+    {
+        LOG_DEBUG(log, "Restricting the metadata to the metric families visible under the row policy filter: {}",
+                  row_policy_filter->expression->formatForLogging());
+
+        auto visible_metric_names_select = make_intrusive<ASTSelectQuery>();
+        {
+            auto select_list = make_intrusive<ASTExpressionList>();
+            select_list->children.push_back(makeASTFunction(
+                "groupUniqArray", makeASTFunction("toString", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName))));
+            visible_metric_names_select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
+
+            auto table_exp = make_intrusive<ASTTableExpression>();
+            table_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(time_series_storage->getTargetTableID(ViewTarget::Tags, getContext()));
+            table_exp->children.push_back(table_exp->database_and_table_name);
+            auto table = make_intrusive<ASTTablesInSelectQueryElement>();
+            table->table_expression = std::move(table_exp);
+            table->children.push_back(table->table_expression);
+            auto tables = make_intrusive<ASTTablesInSelectQuery>();
+            tables->children.push_back(std::move(table));
+            visible_metric_names_select->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+        }
+
+        auto visible_metric_names_union = make_intrusive<ASTSelectWithUnionQuery>();
+        visible_metric_names_union->list_of_selects = make_intrusive<ASTExpressionList>();
+        visible_metric_names_union->list_of_selects->children.push_back(std::move(visible_metric_names_select));
+        visible_metric_names_union->children.push_back(visible_metric_names_union->list_of_selects);
+
+        auto visible_metric_names = make_intrusive<ASTSubquery>(std::move(visible_metric_names_union));
+
+        auto metric_names_of_family = makeASTFunction(
+            "arrayMap",
+            makeASTFunction(
+                "lambda",
+                makeASTFunction("tuple", make_intrusive<ASTIdentifier>("__suffix")),
+                makeASTFunction("concat", normalize_column(metric_family_column_name), make_intrusive<ASTIdentifier>("__suffix"))),
+            makeASTFunction("timeSeriesMetricTypeToSuffixes", normalize_column(TimeSeriesColumnNames::Type)));
+
+        auto family_is_visible = makeASTFunction("hasAny", std::move(metric_names_of_family), std::move(visible_metric_names));
+
+        if (builder.where)
+            builder.where = makeASTFunction("and", std::move(builder.where), std::move(family_is_visible));
+        else
+            builder.where = std::move(family_is_visible);
+    }
 
     builder.group_by.push_back(normalize_column(metric_family_column_name));
     builder.order_by.push_back(normalize_column(metric_family_column_name));

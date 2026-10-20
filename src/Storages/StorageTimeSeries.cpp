@@ -1502,7 +1502,7 @@ By default the [tags](#tags-table) table has no `TTL`: a time series stays in it
 
 A [row policy](/reference/statements/create/row-policy) on a `TimeSeries` table filters `SELECT` queries on the table
 and PromQL reads of the table: the `promql` dialect, the `prometheusQuery` and `prometheusQueryRange` table functions,
-the Prometheus HTTP API (`/api/v1/query`, `/api/v1/query_range`, `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values`)
+the Prometheus HTTP API (`/api/v1/query`, `/api/v1/query_range`, `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values`, `/api/v1/metadata`)
 and the remote read protocol.
 
 PromQL reads select time series from the inner [tags](#tags-table) table, and that table inherits the `SELECT` row policies
@@ -1519,6 +1519,7 @@ CREATE ROW POLICY tenant_a ON my_table FOR SELECT USING tags['tenant'] = 'a' TO 
 With this policy the user `user_a` reads only the time series of the tenant `a` through every PromQL entry point,
 through a `SELECT` from the `TimeSeries` table, and through a direct read of the inner [tags](#tags-table) table
 or the [timeSeriesTags](/reference/functions/table-functions/timeSeriesTags) table function.
+The `/api/v1/metadata` endpoint returns only the metric families which have a time series visible to the user.
 
 A filter which uses a column the inner tags table doesn't have, for example `samples`, still works for a `SELECT` from
 the `TimeSeries` table, but makes a PromQL read and a direct read of the inner tags table fail with an unknown identifier error.
