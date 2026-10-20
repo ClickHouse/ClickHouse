@@ -17,9 +17,8 @@ Expression (Project names)
                 MergingAggregated (merge)
                   ShuffleExchange (by hash([__table4.path]))
                     Aggregating (partial)
-                      Expression (Before GROUP BY)
-                        Expression ((WHERE + Change column names to column identifiers))
-                          ReadFromMergeTree (default.test)
+                      Expression ((Before GROUP BY + (WHERE + Change column names to column identifiers)))
+                        ReadFromMergeTree (default.test)
 ----------
 path_0	12	path_0	12
 path_1	10	path_1	8

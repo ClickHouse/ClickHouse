@@ -1,0 +1,38 @@
+[('a','"b"')]
+[('a','b')]
+['a']
+['1','"x"']
+[1,2]
+[('b','1')]
+Array(Tuple(String, String))
+Array(Tuple(String, String))
+Array(String)
+Array(String)
+Array(Int64)
+Nullable(String)
+Nullable(Tuple(a Int64))
+1	[('a','"b"'),('c','[1,2]')]	[('a','b'),('c','[1,2]')]	['a','c']	[]	[]
+2	[]	[]	[]	[]	[]
+3	[]	[]	[]	['1','2']	[1,2]
+['b']
+[]
+['b']
+[]
+[]
+[]
+[]
+[]
+['x']
+[]
+['1']
+{"a":{"b":1}}	a	['b']
+\N	a	[]
+{"a":{"b":1}}	\N	[]
+\N	\N	[]
+x	LowCardinality(Nullable(String))
+\N	LowCardinality(Nullable(String))
+x	LowCardinality(String)
+	LowCardinality(String)
+['x']	Array(LowCardinality(String))
+[]	Array(LowCardinality(String))
+\N	Nullable(Nothing)

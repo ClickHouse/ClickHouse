@@ -47,7 +47,8 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/HTTPSClientSession.h>
 #include <Poco/Net/SSLManager.h>
-#include <Poco/StreamCopier.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
@@ -173,6 +174,7 @@ std::string correctAPIURI(const std::string & uri)
     return std::filesystem::path(uri) / "v1";
 }
 
+/// Percent-encodes every byte of a level outside the RFC 3986 unreserved set and joins the levels with `%1F`.
 String encodeNamespaceForURI(const String & namespace_name)
 {
     String encoded;
@@ -181,7 +183,7 @@ String encodeNamespaceForURI(const String & namespace_name)
         if (ch == '.')
             encoded += "%1F";
         else
-            encoded.push_back(ch);
+            Poco::URI::encode(String(1, ch), "#&+/:;=?@", encoded);
     }
     return encoded;
 }
@@ -927,14 +929,15 @@ AccessToken OneLakeCatalog::retrieveAccessTokenViaRefreshToken(const CatalogStat
     request.setContentLength(body.size());
     request.set("Accept", "application/json");
 
-    std::ostream & os = session->sendRequest(request);
-    os << body;
+    auto request_body = DB::sendHTTPRequest(*session, request);
+    DB::writeString(body, *request_body);
+    request_body->finalize();
 
     Poco::Net::HTTPResponse response;
-    std::istream & rs = session->receiveResponse(response);
+    auto response_body = DB::receiveHTTPResponse(*session, response);
 
     std::string json_str;
-    Poco::StreamCopier::copyToString(rs, json_str);
+    DB::readStringUntilEOF(json_str, *response_body);
 
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
     {
@@ -1136,10 +1139,10 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
 
     if (!session)
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Can not create HTTP session");
-    session->sendRequest(request);
+    DB::sendHTTPRequest(*session, request)->finalize();
 
     Poco::Net::HTTPResponse response;
-    auto & in = session->receiveResponse(response);
+    auto in = DB::receiveHTTPResponse(*session, response);
 
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
     {
@@ -1151,7 +1154,7 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
     }
 
     String token_json_raw;
-    Poco::StreamCopier::copyToString(in, token_json_raw);
+    DB::readStringUntilEOF(token_json_raw, *in);
 
     LOG_DEBUG(log, "Received Google Cloud token response from metadata service");
 
@@ -1212,6 +1215,8 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
     {
         auto result_headers = auth_headers ? *auth_headers : getAuthHeaders(catalog_state, force_refresh);
         std::move(headers.begin(), headers.end(), std::back_inserter(result_headers));
+        /// The auth headers may carry a token from the OAuth server or values from the database settings.
+        context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(result_headers);
 
         return DB::BuilderRWBufferFromHTTP(url)
             .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
@@ -1651,7 +1656,7 @@ DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & bas
             /// Here name encoded back to 'foo%2Fbar' format
             const auto table_name_raw = current_table_json->get("name").extract<String>();
             std::string table_name;
-            Poco::URI::encode(table_name_raw, "/", table_name);
+            Poco::URI::encode(table_name_raw, "/?#", table_name);
 
             tables.push_back(base_namespace + "." + table_name);
             if (limit && tables.size() >= limit)
@@ -1823,13 +1828,14 @@ String RestCatalog::sendRequest(const CatalogState & catalog_state, const String
     headers.emplace_back("X-Iceberg-Access-Delegation", "vended-credentials");
 
     const auto & context = getContext();
+    context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers);
 
     DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
     if (!body_str.empty())
     {
-        out_stream_callback = [body_str](std::ostream & os)
+        out_stream_callback = [body_str](DB::WriteBuffer & out)
         {
-            os << body_str;
+            DB::writeString(body_str, out);
         };
     }
 
