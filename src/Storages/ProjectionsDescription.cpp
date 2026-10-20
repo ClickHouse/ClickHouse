@@ -14,6 +14,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -430,23 +431,6 @@ QueryTreeNodePtr buildProjectionQueryTree(
     return query_tree;
 }
 
-/// Whether `ast`, outside of nested queries, gives the alias `column` to an expression other than the column itself.
-bool hasAliasHidingColumn(const IAST & ast, const String & column)
-{
-    if (ast.tryGetAlias() == column)
-    {
-        const auto * identifier = ast.as<ASTIdentifier>();
-        if (!identifier || identifier->name() != column)
-            return true;
-    }
-
-    for (const auto & child : ast.children)
-        if (!child->as<ASTSelectQuery>() && hasAliasHidingColumn(*child, column))
-            return true;
-
-    return false;
-}
-
 }
 
 ProjectionDescription ProjectionDescription::getProjectionFromAST(
@@ -523,20 +507,6 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
         if (expressionContainsArrayJoin(projection_definition->query))
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "Projection '{}' cannot contain arrayJoin, because it changes the number of rows", result.name);
-
-        /// With `WHERE` the columns the sorting key reads are stored by selecting them by name, so an alias of the same
-        /// name would replace such a column and every insert would fail to compute the sorting key.
-        if (result.type == ProjectionDescription::Type::Normal && result.where_clause_ast)
-        {
-            const auto & projection_query = projection_definition->query->as<const ASTProjectionSelectQuery &>();
-            for (const auto & column : result.metadata->getSortingKey().expression->getRequiredColumns())
-                for (const auto & clause : {projection_query.with(), projection_query.select(), projection_query.where()})
-                    if (clause && hasAliasHidingColumn(*clause, column))
-                        throw Exception(ErrorCodes::ILLEGAL_PROJECTION,
-                            "Projection '{}' with WHERE cannot store column {} that its ORDER BY reads, because the alias {} "
-                            "is given to another expression. Use a different alias",
-                            result.name, column, column);
-        }
 
         static const std::unordered_set<std::string_view> ALLOWED_PROJECTION_SETTINGS = {
             "index_granularity",
@@ -662,7 +632,12 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         select_list.pop_back();
         for (const auto & column :
              KeyDescription::getKeyFromAST(projection_order_by, columns, virtuals, query_context).expression->getRequiredColumns())
-            select_list.push_back(make_intrusive<ASTIdentifier>(column));
+        {
+            /// A column of the source table, which an alias of the same name does not replace.
+            auto identifier = make_intrusive<ASTIdentifier>(column);
+            IdentifierSemantic::setMembership(*identifier, 0);
+            select_list.push_back(std::move(identifier));
+        }
     }
 
     InterpreterSelectQuery select(

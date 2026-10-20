@@ -22,5 +22,9 @@ projection	1000	999000	478947
 no projection	1000	999000	478947
 projection	1000	999000	478947
 no projection	1000	999000	478947
-projection rows	500
-projection columns	_parent_part_offset, k, plus(v, 1), v
+projection columns	t_alias	_parent_part_offset, k, minus(100, v), v
+projection columns	t_replace	k, minus(100, v), s, v
+projection columns	t_with	_parent_part_offset, k, v
+unsorted parts	t_alias	0
+unsorted parts	t_replace	0
+unsorted parts	t_with	0
