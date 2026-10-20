@@ -73,7 +73,7 @@ SELECT aes_decrypt_mysql('aes-256-ofb', unhex('24E9E4966469'), '1234567891012131
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Encryption;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionDecrypt<DecryptMySQLModeImpl>>(documentation);
+    factory.registerFunction<FunctionDecrypt<DecryptMySQLModeImpl>>(documentation, FunctionFactory::Case::Sensitive, encryptionFunctionSecretArguments());
 }
 
 }

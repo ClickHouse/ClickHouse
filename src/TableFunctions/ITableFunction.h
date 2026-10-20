@@ -52,6 +52,10 @@ public:
     virtual bool hasStaticStructure() const { return false; }
     /// Returns false if storage returned by table function supports type conversion (e.g. StorageDistributed)
     virtual bool needStructureConversion() const { return true; }
+    /// Returns true if the storage created by this table function can store its own unreplicated data on disk.
+    /// Used to classify `CREATE TABLE ... AS table_function(...)` without executing the table function,
+    /// see `IStorage::hasUnreplicatedTableDataOnDisk`.
+    virtual bool hasUnreplicatedTableDataOnDisk() const { return false; }
 
     /** Return array of table function arguments indexes for which query tree analysis must be skipped.
       * It is important for table functions that take subqueries, because otherwise analyzer will resolve them.
@@ -89,6 +93,10 @@ public:
     /// the persisted definition is later resolved with no user or under the connection's
     /// credentials, so the branch that must depend on the reader's grants cannot be decided.
     virtual bool dependsOnCurrentUserGrants() const { return false; }
+
+    /// Whether two reads of the returned storage within one query may produce different rows
+    /// (e.g. `generateRandom`). Counterpart of `IFunction::isDeterministicInScopeOfQuery`.
+    virtual bool isDeterministicInScopeOfQuery() const { return true; }
 
     /// The name of the named collection the table function arguments were resolved from, or an empty
     /// string. When a permanent table is created from the table function (`CREATE TABLE ... AS f(...)`),
