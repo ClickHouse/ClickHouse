@@ -50,6 +50,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Formats/FormatFactory.h>
 
+#include <Parsers/CommonParsers.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
@@ -110,6 +111,8 @@
 #include <Storages/SelectQueryInfo.h>
 #include <TableFunctions/ITableFunction.h>
 
+#include <Poco/String.h>
+
 #include <algorithm>
 #include <array>
 #include <filesystem>
@@ -118,6 +121,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <ranges>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
@@ -5564,8 +5568,19 @@ void ClientBase::recordParseErrorForAIContext(std::string_view query, const Stri
 
     /// The query was not parsed, so the secret parts of a statement (the credentials of an external
     /// engine or of a user, a presigned URL) cannot be found the way `formatForLogging` finds them.
-    /// They are always string literals, so every string literal is hidden, and everything after a
-    /// literal that is not closed. The structure of the query, where the syntax error is, survives.
+    /// They are not only string literals: an engine like `MySQL` accepts its password as an
+    /// identifier, bare or quoted. So every literal and every name is hidden - everything except
+    /// the keywords, numbers, operators and punctuation - and everything after a token that is not
+    /// closed. The skeleton of the query, where the syntax error is, survives.
+    static const std::unordered_set<std::string> keyword_words = []
+    {
+        std::unordered_set<std::string> words;
+        for (const auto & keyword : getAllKeyWords())
+            for (const auto word : std::views::split(keyword, ' '))
+                words.emplace(word.begin(), word.end());
+        return words;
+    }();
+
     bool hidden_parts = false;
     String masked_query;
     Lexer lexer(query.data(), query.data() + query.size());
@@ -5583,6 +5598,12 @@ void ClientBase::recordParseErrorForAIContext(std::string_view query, const Stri
             masked_query += "'[HIDDEN]'";
             hidden_parts = true;
         }
+        else if (token.type == TokenType::QuotedIdentifier
+            || (token.type == TokenType::BareWord && !keyword_words.contains(Poco::toUpper(String(token.begin, token.end)))))
+        {
+            masked_query += "[HIDDEN]";
+            hidden_parts = true;
+        }
         else
             masked_query.append(token.begin, token.end);
     }
@@ -5592,7 +5613,7 @@ void ClientBase::recordParseErrorForAIContext(std::string_view query, const Stri
     /// terminal (it highlights the position of the error), but the recorded text goes into the
     /// prompt of a model, where the escape sequences are noise.
     String masked_message = hidden_parts
-        ? String("The query could not be parsed. The text of the error is not shown, because it can quote the string literals of the query, which are hidden.")
+        ? String("The query could not be parsed. The text of the error is not shown, because it can quote the literals and names of the query, which are hidden.")
         : stripTerminalEscapeSequences(message);
 
     ai_query_context->recordError(
