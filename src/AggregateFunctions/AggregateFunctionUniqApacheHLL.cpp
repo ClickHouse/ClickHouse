@@ -146,7 +146,7 @@ Merging a lower-resolution sketch permanently lowers the result's resolution, re
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the approximate number of distinct values.", {"UInt64"}};
     FunctionDocumentation::Examples examples = {
-        {"Basic usage", "SELECT uniqApacheHLL(number) FROM numbers(1000)", "1000"},
+        {"Basic usage", "SELECT uniqApacheHLL(number) FROM numbers(1000)", "996"},
         {"With parameters", "SELECT uniqApacheHLL(14, 'HLL_8')(number) FROM numbers(1000)", "1000"},
     };
     FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
