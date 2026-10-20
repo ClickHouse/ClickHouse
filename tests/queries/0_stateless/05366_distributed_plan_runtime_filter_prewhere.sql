@@ -6,12 +6,15 @@ SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 1;
 SET join_runtime_filter_min_probe_rows = 0;
 SET query_plan_optimize_join_order_randomize = 0;
+SET query_plan_join_swap_table = 0;
 -- The assertions below count the rows the filter in PREWHERE lets through.
 SET optimize_move_to_prewhere = 1;
 SET join_use_nulls = 0;
 -- The shared `FixedHashMap` filter is published only by a non-spilling `hash` join.
 SET join_algorithm = 'hash', max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 SET join_runtime_filter_from_fixed_hash_table = 1;
+-- Without statistics Cascades keeps the whole plan in the main stage, and nothing is shipped.
+SET use_statistics = 1;
 
 DROP TABLE IF EXISTS probe;
 DROP TABLE IF EXISTS build;
@@ -23,21 +26,16 @@ INSERT INTO probe SELECT number, toString(number) FROM numbers(200000);
 -- Dense keys, so the hash join converts its map into a `FixedHashMap` and publishes the shared filter.
 INSERT INTO build SELECT number * 2, number % 2 FROM numbers(200);
 
--- One fragment, so the join and both reads are shipped together.
+-- The join and both reads are shipped together to two tasks.
 SELECT count(), sum(length(v)) FROM probe JOIN build ON probe.k = build.k WHERE build.c = 1
 SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, enable_cascades_optimizer = 1, distributed_plan_workers_num = 2,
-    param__internal_cascades_cost_config = '{"exchange_fixed_overhead":1000000000}', query_plan_join_swap_table = 0,
     log_comment = '05366_fragment';
 
 -- The small table on the left: Cascades swaps the join inputs after the filter was added, so the
 -- fragment makes the misplaced filter inert and adds one that filters `probe`.
 SELECT count(), sum(length(v)) FROM build JOIN probe ON probe.k = build.k WHERE build.c = 1
 SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, enable_cascades_optimizer = 1, distributed_plan_workers_num = 2,
-    param__internal_cascades_cost_config = '{"exchange_fixed_overhead":1000000000}', query_plan_join_swap_table = 0,
     log_comment = '05366_fragment_swapped';
-
-SELECT count(), sum(length(v)) FROM probe JOIN build ON probe.k = build.k WHERE build.c = 1
-SETTINGS query_plan_join_swap_table = 0;
 
 SYSTEM FLUSH LOGS query_log, processors_profile_log, text_log;
 

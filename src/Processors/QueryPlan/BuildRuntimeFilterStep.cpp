@@ -515,9 +515,6 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
     if (has_tree_exchange)
         geometry.validateTransported();
 
-    /// A local build is paired with its join by `pairJoinRuntimeFilters`. A build with filter exchanges is
-    /// not: its consumers are in other stages, and it registers its filter in this task's lookup as well.
-    const bool needs_pairing = !filter_key.empty() && !has_tree_exchange;
     auto step = std::make_unique<BuildRuntimeFilterStep>(
         ctx.input_headers.front(),
         std::move(filter_column_name),
@@ -534,7 +531,9 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
             .distinct_keys_hint_matches_filter_key = false});
     if (has_tree_exchange)
         step->setTreeExchange(std::move(tree_exchange_id), std::move(tree_source_buckets), tree_fan_in);
-    step->needs_pairing = needs_pairing;
+    /// A local build is paired with its join by `pairJoinRuntimeFilters`. A build with filter exchanges is
+    /// not: its consumers are in other stages, and it registers its filter in this task's lookup as well.
+    step->needs_pairing = !step->filter_key.empty() && !has_tree_exchange;
     return step;
 }
 

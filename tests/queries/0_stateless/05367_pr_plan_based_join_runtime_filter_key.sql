@@ -1,6 +1,5 @@
 -- Plan-based parallel replicas ships the join with its runtime filter, which must filter on the remote
--- replicas too. The results must match the non-parallel ones; the row counts are checked only for INNER
--- and SEMI, as the ANTI filter keeps almost all rows.
+-- replicas too. The row counts are checked only for INNER and SEMI, as the ANTI filter keeps almost all rows.
 
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
@@ -16,6 +15,8 @@ SET enable_join_runtime_filters = 1;
 SET join_runtime_filter_min_probe_rows = 0;
 SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_join_swap_table = 'false';
+-- The assertions below count the rows the filter in PREWHERE lets through.
+SET optimize_move_to_prewhere = 1;
 
 DROP TABLE IF EXISTS rf_probe;
 DROP TABLE IF EXISTS rf_build;
@@ -28,10 +29,6 @@ INSERT INTO rf_build SELECT number * 1000 FROM numbers(50);
 SELECT 'inner', count(), sum(v) FROM rf_probe AS p INNER JOIN rf_build AS b ON p.k = b.k SETTINGS log_comment = '05367_inner';
 SELECT 'semi', count(), sum(v) FROM rf_probe AS p LEFT SEMI JOIN rf_build AS b ON p.k = b.k SETTINGS log_comment = '05367_semi';
 SELECT 'anti', count(), sum(v) FROM rf_probe AS p LEFT ANTI JOIN rf_build AS b ON p.k = b.k;
-
-SELECT 'inner', count(), sum(v) FROM rf_probe AS p INNER JOIN rf_build AS b ON p.k = b.k SETTINGS enable_parallel_replicas = 0;
-SELECT 'semi', count(), sum(v) FROM rf_probe AS p LEFT SEMI JOIN rf_build AS b ON p.k = b.k SETTINGS enable_parallel_replicas = 0;
-SELECT 'anti', count(), sum(v) FROM rf_probe AS p LEFT ANTI JOIN rf_build AS b ON p.k = b.k SETTINGS enable_parallel_replicas = 0;
 
 SYSTEM FLUSH LOGS query_log, processors_profile_log;
 

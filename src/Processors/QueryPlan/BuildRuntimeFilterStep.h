@@ -104,8 +104,7 @@ private:
     /// the matching `__applyFilter` looks it up by the same key. Serialized, but not shown and left out of
     /// a cache key, so it never enters a plan-step hash. Empty for an inert step.
     String filter_key;
-    /// See `needsPairing`. Not serialized: set by `deserialize`, so it marks the local builds of a plan taken
-    /// over the wire. A build with filter exchanges never needs it: its consumers are in other stages.
+    /// See `needsPairing`. Not serialized: set by `deserialize` for the local builds of a plan taken over the wire.
     bool needs_pairing = false;
 
     RuntimeFilterBuildOptions build_options;

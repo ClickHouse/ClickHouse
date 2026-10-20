@@ -795,11 +795,9 @@ bool pairJoinRuntimeFilters(QueryPlan::Node & root, bool allow_pairing, bool tra
     /// - a cloned subplan put two build steps with the key into one lookup (one of them may be a build with
     ///   filter exchanges, which is never made inert), which would merge them;
     /// - its join is not optimized yet, so `optimizeJoinLogical` may still reorder or swap it.
-    /// Without `allow_pairing` (no join runtime filters here) no join is considered, so all are made inert.
-    /// Only the steps that still need pairing are checked: by a later optimization of the same plan their
-    /// join can be a physical step, which is not collected below, and the check would wrongly make them inert.
+    /// Only the steps that still need pairing are checked (see `BuildRuntimeFilterStep::needsPairing`).
     std::vector<QueryPlan::Node *> join_nodes;
-    std::vector<BuildRuntimeFilterStep *> keyed_build_steps;
+    std::vector<BuildRuntimeFilterStep *> steps_to_pair;
     std::unordered_map<String, size_t> build_steps_per_key;
     for (std::vector<QueryPlan::Node *> stack{&root}; !stack.empty();)
     {
@@ -812,7 +810,7 @@ bool pairJoinRuntimeFilters(QueryPlan::Node & root, bool allow_pairing, bool tra
             /// this task's lookup too, so a local build with the same key must not keep it.
             ++build_steps_per_key[build_step->getFilterKey()];
             if (build_step->needsPairing())
-                keyed_build_steps.push_back(build_step);
+                steps_to_pair.push_back(build_step);
         }
         else if (auto * join_step = typeid_cast<JoinStepLogical *>(node->step.get());
                  allow_pairing && join_step && join_step->isOptimized() && node->children.size() == 2)
@@ -861,7 +859,7 @@ bool pairJoinRuntimeFilters(QueryPlan::Node & root, bool allow_pairing, bool tra
         }
     }
 
-    for (auto * build_step : keyed_build_steps)
+    for (auto * build_step : steps_to_pair)
         if (build_step->needsPairing())
             build_step->finishPairing(/*keep_key=*/false);
     return kept_any;

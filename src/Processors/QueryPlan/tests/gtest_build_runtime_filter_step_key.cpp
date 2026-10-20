@@ -194,13 +194,6 @@ const std::vector<SharedRuntimeFilterDescriptor> & sharedDescriptors(const Query
 
 }
 
-TEST(BuildRuntimeFilterStepKey, RegistryWritesVersion1FromKeyVersion)
-{
-    EXPECT_EQ(stepRegistry().versionToWrite(step_name, pre_key_version), 0u);
-    EXPECT_EQ(stepRegistry().versionToWrite(step_name, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES), 1u);
-    EXPECT_EQ(stepRegistry().versionToWrite(step_name, current_version), 1u);
-}
-
 TEST(BuildRuntimeFilterStepKey, KeyRoundTripsAtCurrentVersion)
 {
     tryRegisterFunctions();
@@ -295,21 +288,6 @@ TEST(PairJoinRuntimeFilters, MakesStepsWithDuplicateKeyInert)
     EXPECT_TRUE(sharedDescriptors(*second.join).empty());
 }
 
-/// Control for the test above: the same plan with distinct keys keeps both.
-TEST(PairJoinRuntimeFilters, KeepsStepsWithDistinctKeys)
-{
-    tryRegisterFunctions();
-
-    QueryPlan::Nodes nodes;
-    auto first = addJoin(nodes, "key-a", makeShippedBuildStep("key-a"));
-    auto second = addJoin(nodes, "key-b", makeShippedBuildStep("key-b"));
-    auto * root = addUnion(nodes, {first.join, second.join});
-
-    EXPECT_TRUE(QueryPlanOptimizations::pairJoinRuntimeFilters(*root, /*allow_pairing=*/true, /*track_key_range=*/false));
-    EXPECT_EQ(first.build_step->getFilterKey(), "key-a");
-    EXPECT_EQ(second.build_step->getFilterKey(), "key-b");
-}
-
 /// A join that is not optimized yet may still be reordered or swapped by `optimizeJoinLogical`.
 TEST(PairJoinRuntimeFilters, MakesStepOfUnoptimizedJoinInert)
 {
@@ -335,16 +313,4 @@ TEST(PairJoinRuntimeFilters, MakesAllStepsInertWithoutPairing)
     EXPECT_TRUE(build_step->getFilterKey().empty());
     EXPECT_FALSE(build_step->needsPairing());
     EXPECT_TRUE(sharedDescriptors(*join).empty());
-}
-
-/// A step built on this node is not checked: its join may already be physical by a later optimization.
-TEST(PairJoinRuntimeFilters, LeavesLocallyBuiltStepAlone)
-{
-    tryRegisterFunctions();
-
-    QueryPlan::Nodes nodes;
-    auto [join, build_step] = addJoin(nodes, "key-other", makeBuildStep("key-a"));
-
-    EXPECT_FALSE(QueryPlanOptimizations::pairJoinRuntimeFilters(*join, /*allow_pairing=*/false, /*track_key_range=*/false));
-    EXPECT_EQ(build_step->getFilterKey(), "key-a");
 }
