@@ -33,8 +33,6 @@ _PROTO_LIBRARIES = [
 ]
 
 _GENERATED_HDRS_0 = [
-    "//rust/workspace:pco/include/pco.h",
-    "//rust/workspace:skim/include/skim.h",
 ] + glob(
     [
         "*.h",
@@ -293,15 +291,11 @@ ch_cc_library(
         "@clickhouse_re2//:_re2",
         "@clickhouse_vectorscan//:_vectorscan__compile_0",
         "//bazel:clickhouse_config_headers",
-        "//bazel:clickhouse_grpc_headers",
         "@clickhouse_cctz//:_cctz",
         "@clickhouse_libfiu//:_libfiu",
         "@clickhouse_libssh//:_ssh",
         "@clickhouse_crc32c//:_crc32c",
         "@clickhouse_libarchive//:_libarchive",
-        "//rust/workspace:pco_headers",
-        "//rust/workspace:skim_headers",
-        "//bazel:arrow_flight_generated_headers",
         "@clickhouse_croaring//:_roaring",
         "@clickhouse_replxx//:_replxx",
         "@clickhouse_zmij//:_zmij",
@@ -361,15 +355,11 @@ ch_cc_library(
     ],
     implementation_deps = [
         "//bazel:clickhouse_config_headers",
-        "//bazel:clickhouse_grpc_headers",
         "@clickhouse_cctz//:_cctz",
         "@clickhouse_libfiu//:_libfiu",
         "@clickhouse_libssh//:_ssh",
         "@clickhouse_crc32c//:_crc32c",
         "@clickhouse_libarchive//:_libarchive",
-        "//rust/workspace:pco_headers",
-        "//rust/workspace:skim_headers",
-        "//bazel:arrow_flight_generated_headers",
         "@clickhouse_croaring//:_roaring",
         "@clickhouse_replxx//:_replxx",
         "@clickhouse_zmij//:_zmij",

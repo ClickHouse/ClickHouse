@@ -184,8 +184,6 @@ ch_cc_library(
         "Combinators/AggregateFunctionTuple.cpp",
     ] + glob(["TimeSeries/*.cpp"]) + _PRIVATE_AGGREGATE_FUNCTIONS_0_HEADERS,
     hdrs = [
-        "//rust/workspace:pco/include/pco.h",
-        "//rust/workspace:skim/include/skim.h",
     ] + glob(
         [
             "**/*.h",
@@ -210,13 +208,9 @@ ch_cc_library(
         "@clickhouse_double_conversion//:_double-conversion",
         "@clickhouse_libfiu//:_libfiu",
         "//bazel:clickhouse_config_headers",
-        "//bazel:clickhouse_grpc_headers",
         "@clickhouse_cctz//:_cctz",
         "@clickhouse_crc32c//:_crc32c",
         "@clickhouse_libarchive//:_libarchive",
-        "//rust/workspace:pco_headers",
-        "//rust/workspace:skim_headers",
-        "//bazel:arrow_flight_generated_headers",
         "@clickhouse_replxx//:_replxx",
         "@clickhouse_zmij//:_zmij",
         "@clickhouse_libdeflate//:_libdeflate",
@@ -468,8 +462,6 @@ ch_cc_library(
     }),
     hdrs = select({
         "@platforms//cpu:x86_64": [
-            "//rust/workspace:pco/include/pco.h",
-            "//rust/workspace:skim/include/skim.h",
         ] + glob(
             [
                 "**/*.h",
@@ -492,15 +484,11 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }) + [
         "//bazel:clickhouse_config_headers",
-        "//bazel:clickhouse_grpc_headers",
         "@clickhouse_cctz//:_cctz",
         "@clickhouse_libfiu//:_libfiu",
         "@clickhouse_libssh//:_ssh",
         "@clickhouse_crc32c//:_crc32c",
         "@clickhouse_libarchive//:_libarchive",
-        "//rust/workspace:pco_headers",
-        "//rust/workspace:skim_headers",
-        "//bazel:arrow_flight_generated_headers",
         "@clickhouse_croaring//:_roaring",
         "@clickhouse_replxx//:_replxx",
         "@clickhouse_zmij//:_zmij",

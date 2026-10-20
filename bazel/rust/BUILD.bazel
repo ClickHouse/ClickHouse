@@ -187,14 +187,20 @@ RUST_LOCALIZATION_REFERENCES = select({
 [
     cc_import(
         name = name + "_cc",
+        hdrs = ["//rust/workspace:" + name + "/include/" + name + ".h"] if name in [
+            "pco",
+            "skim",
+        ] else [],
         static_library = ":" + name + "_processed",
+        strip_include_prefix = "/rust/workspace/" + name + "/include" if name in [
+            "pco",
+            "skim",
+        ] else None,
         # Cargo bundles cxx.cc and skim/build.rs's bridge objects into the archive.
         # Only rules_rs needs the separate Bazel C++ bridge.
         deps = (["//rust/workspace:" + name + "_headers"] if name in [
-            "pco",
             "polyglot",
             "prql",
-            "skim",
         ] else []) + (select({
             "//bazel:use_cmake_metadata": [],
             "//conditions:default": [":skim_bridge"],

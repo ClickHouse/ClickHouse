@@ -60,8 +60,6 @@ _PROTO_LIBRARIES = [
 ]
 
 _GENERATED_HDRS_0 = [
-    "//rust/workspace:pco/include/pco.h",
-    "//rust/workspace:skim/include/skim.h",
 ] + glob(
     ["*.h"],
     exclude = _PRIVATE_STORAGES_SYSTEM_1_HEADERS,
@@ -451,12 +449,8 @@ ch_cc_library(
         "@clickhouse_croaring//:_roaring",
         "@clickhouse_nuraft//:_nuraft",
         "//bazel:clickhouse_config_headers",
-        "//bazel:clickhouse_grpc_headers",
         "@clickhouse_libfiu//:_libfiu",
         "@clickhouse_libarchive//:_libarchive",
-        "//rust/workspace:pco_headers",
-        "//rust/workspace:skim_headers",
-        "//bazel:arrow_flight_generated_headers",
         "@clickhouse_mongo_c_driver//:_libmongoc",
         "@clickhouse_mongo_cxx_driver//:_bsoncxx",
         "@clickhouse_mongo_cxx_driver//:_mongocxx",

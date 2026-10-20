@@ -39,10 +39,8 @@ filegroup(
         includes = [name + "/include"],
     )
     for name in [
-        "pco",
         "polyglot",
         "prql",
-        "skim",
     ]
 ]
 

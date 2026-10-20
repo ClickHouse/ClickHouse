@@ -32,7 +32,7 @@ ch_cc_library(
     clickhouse_code = True,
     implementation_deps = [
         "//bazel:clickhouse_config_headers",
-        "//rust/workspace:pco_headers",
+        "//bazel/rust:pco_cc",
         "//contrib/libdivide-cmake:headers",
         "@clickhouse_libdivide//:libdivide",
     ],

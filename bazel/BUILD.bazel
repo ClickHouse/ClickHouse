@@ -1516,22 +1516,6 @@ cc_library(
 )
 
 cc_library(
-    name = "clickhouse_grpc_headers",
-    hdrs = [
-        "gen/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.h",
-        "gen/src/Server/grpc_protos/clickhouse_grpc.pb.h",
-    ],
-    includes = [
-        "gen/src",
-        "gen/src/Server/grpc_protos",
-    ],
-    deps = [
-        "@clickhouse_google_protobuf//:_libprotobuf",
-        "@clickhouse_grpc//:grpc++",
-    ],
-)
-
-cc_library(
     name = "krb5_generated_headers",
     hdrs = ["gen/contrib/krb5-cmake/include/krb5/krb5.h"],
     includes = ["gen/contrib/krb5-cmake/include"],
@@ -1625,6 +1609,7 @@ cc_library(
         "gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.cc",
         "gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
     ],
+    visibility = ["@clickhouse_arrow//:__pkg__"],
 )
 
 platform(

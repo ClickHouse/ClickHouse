@@ -10,10 +10,10 @@ ch_cc_library(
         "//bazel:gen/src/Server/grpc_protos/clickhouse_grpc.pb.cc",
         "//bazel:gen/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc",
     ],
-    hdrs = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [],
-    }),
+    hdrs = [
+        "//bazel:gen/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.h",
+        "//bazel:gen/src/Server/grpc_protos/clickhouse_grpc.pb.h",
+    ],
     clickhouse_code = True,
     copts = ["-w"],
     implementation_deps = [
@@ -68,12 +68,13 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
+    source_headers = False,
+    strip_include_prefix = "/bazel/gen/src/Server/grpc_protos",
     textual_hdrs = [
         "//bazel:gen/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc",
         "//bazel:gen/src/Server/grpc_protos/clickhouse_grpc.pb.cc",
     ],
     deps = [
-        "//bazel:clickhouse_grpc_headers",
         "@clickhouse_c_ares//:_c-ares",
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse_re2//:_re2",

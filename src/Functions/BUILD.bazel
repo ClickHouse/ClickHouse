@@ -156,8 +156,6 @@ _PROTO_LIBRARIES = [
 ]
 
 _GENERATED_HDRS_0 = [
-    "//rust/workspace:pco/include/pco.h",
-    "//rust/workspace:skim/include/skim.h",
 ] + glob(
     [
         "AI/*.h",
@@ -1145,13 +1143,9 @@ ch_cc_library(
         "@clickhouse_stringzilla//:_stringzilla",
         "@clickhouse_xxhash//:xxHash",
         "//bazel:clickhouse_config_headers",
-        "//bazel:clickhouse_grpc_headers",
         "@clickhouse_cctz//:_cctz",
         "@clickhouse_crc32c//:_crc32c",
         "@clickhouse_libarchive//:_libarchive",
-        "//rust/workspace:pco_headers",
-        "//rust/workspace:skim_headers",
-        "//bazel:arrow_flight_generated_headers",
         "//contrib/bech32:_bech32",
         "@clickhouse_replxx//:_replxx",
         "@clickhouse_libdeflate//:_libdeflate",
@@ -1240,14 +1234,10 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }) + [
         "//bazel:clickhouse_config_headers",
-        "//bazel:clickhouse_grpc_headers",
         "@clickhouse_cctz//:_cctz",
         "@clickhouse_libfiu//:_libfiu",
         "@clickhouse_crc32c//:_crc32c",
         "@clickhouse_libarchive//:_libarchive",
-        "//rust/workspace:pco_headers",
-        "//rust/workspace:skim_headers",
-        "//bazel:arrow_flight_generated_headers",
         "//contrib/bech32:_bech32",
         "@clickhouse_idna//:_idna",
         "@clickhouse_replxx//:_replxx",
@@ -1303,8 +1293,6 @@ ch_cc_library(
     }),
     hdrs = select({
         "@platforms//cpu:x86_64": [
-            "//rust/workspace:pco/include/pco.h",
-            "//rust/workspace:skim/include/skim.h",
         ] + glob(
             [
                 "AI/*.h",
@@ -1491,14 +1479,10 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }) + [
         "//bazel:clickhouse_config_headers",
-        "//bazel:clickhouse_grpc_headers",
         "@clickhouse_cctz//:_cctz",
         "@clickhouse_libfiu//:_libfiu",
         "@clickhouse_crc32c//:_crc32c",
         "@clickhouse_libarchive//:_libarchive",
-        "//rust/workspace:pco_headers",
-        "//rust/workspace:skim_headers",
-        "//bazel:arrow_flight_generated_headers",
         "//contrib/bech32:_bech32",
         "@clickhouse_idna//:_idna",
         "@clickhouse_replxx//:_replxx",

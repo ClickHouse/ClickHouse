@@ -77,10 +77,6 @@ ch_cc_library(
     clickhouse_code = True,
     implementation_deps = [
         "//bazel:clickhouse_config_headers",
-        "//bazel:clickhouse_grpc_headers",
-        "//rust/workspace:pco_headers",
-        "//rust/workspace:skim_headers",
-        "//bazel:arrow_flight_generated_headers",
         "//bazel:arrow_flatbuffer_headers",
         "@clickhouse_arrow//:arrow_headers",
         "//src:clickhouse_common_io__compile_0",

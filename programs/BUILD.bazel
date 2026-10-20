@@ -14,7 +14,6 @@ ch_cc_library(
     features = ["-static_link_cpp_runtimes"],
     implementation_deps = [
         "//bazel:clickhouse_config_headers",
-        "//bazel:clickhouse_grpc_headers",
     ],
     link_runtime = True,
     llvm_headers = False,

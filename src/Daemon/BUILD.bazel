@@ -13,8 +13,6 @@ ch_cc_library(
     clickhouse_code = True,
     implementation_deps = [
         "//bazel:clickhouse_config_headers",
-        "//bazel:clickhouse_grpc_headers",
-        "//rust/workspace:pco_headers",
         "//src/Common/Config:clickhouse_common_config",
     ],
     local_defines = select({
