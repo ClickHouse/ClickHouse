@@ -136,7 +136,7 @@ public:
         if (dictionary_size == 0 || dictionary_size > MAX_DICTIONARY_SIZE_FOR_FAST_PATH)
             return nullptr;
 
-        PaddedPODArray<UInt8> slot_of_dictionary_index(dictionary_size, 0);
+        PaddedPODArray<UInt8> needle_of_dictionary_index(dictionary_size, 0);
         size_t distinct_needles = 0;
         for (size_t i = 0; i != needle_size; ++i)
         {
@@ -155,94 +155,28 @@ public:
                 continue;
             }
 
-            if (!slot_of_dictionary_index[dictionary_index])
-                slot_of_dictionary_index[dictionary_index] = static_cast<UInt8>(++distinct_needles);
+            if (!needle_of_dictionary_index[dictionary_index])
+                needle_of_dictionary_index[dictionary_index] = static_cast<UInt8>(++distinct_needles);
         }
 
         if (distinct_needles == 0)
             return ColumnUInt8::create(input_rows_count, UInt8{0});
 
-        UInt64 full_mask
-            = distinct_needles == MAX_NEEDLES_FOR_FAST_PATH ? ~UInt64(0) : (UInt64(1) << distinct_needles) - 1;
+        LowCardinalityExecutionHelpers::LowCardinalityArrayView haystack{
+            .elements = *haystack_elements,
+            .offsets = haystack_array->getOffsets(),
+            .rows = input_rows_count,
+        };
 
-        auto result = ColumnUInt8::create(input_rows_count);
-        bool searched = search_type == GatherUtils::ArraySearchType::All
-            ? searchByIndexType<true>(*haystack_elements, *haystack_array, slot_of_dictionary_index, full_mask, input_rows_count, result->getData())
-            : searchByIndexType<false>(*haystack_elements, *haystack_array, slot_of_dictionary_index, full_mask, input_rows_count, result->getData());
+        if (search_type == GatherUtils::ArraySearchType::Any)
+            return haystack.existsByDictionaryMatches(needle_of_dictionary_index);
 
-        if (!searched)
-            return nullptr;
-
-        return result;
+        return haystack.allByDictionaryMatches(needle_of_dictionary_index, distinct_needles);
     }
 
 private:
     static constexpr size_t MAX_NEEDLES_FOR_FAST_PATH = 64;
     static constexpr size_t MAX_DICTIONARY_SIZE_FOR_FAST_PATH = 1ULL << 16;
-
-    template <bool is_all, typename IndexType>
-    static void searchDictionaryIndexes(
-        const PaddedPODArray<IndexType> & indexes,
-        const ColumnArray::Offsets & offsets,
-        const PaddedPODArray<UInt8> & slot_of_dictionary_index,
-        UInt64 full_mask,
-        size_t input_rows_count,
-        PaddedPODArray<UInt8> & result)
-    {
-        for (size_t row = 0; row != input_rows_count; ++row)
-        {
-            UInt64 mask = 0;
-            for (size_t i = offsets[ssize_t(row) - 1], end = offsets[row]; i != end; ++i)
-            {
-                UInt8 slot = slot_of_dictionary_index[indexes[i]];
-                if (!slot)
-                    continue;
-
-                if constexpr (is_all)
-                {
-                    mask |= UInt64(1) << (slot - 1);
-                    if (mask == full_mask)
-                        break;
-                }
-                else
-                {
-                    mask = 1;
-                    break;
-                }
-            }
-
-            if constexpr (is_all)
-                result[row] = mask == full_mask;
-            else
-                result[row] = mask != 0;
-        }
-    }
-
-    template <bool is_all>
-    static bool searchByIndexType(
-        const ColumnLowCardinality & elements,
-        const ColumnArray & array,
-        const PaddedPODArray<UInt8> & slot_of_dictionary_index,
-        UInt64 full_mask,
-        size_t input_rows_count,
-        PaddedPODArray<UInt8> & result)
-    {
-        const IColumn & indexes = elements.getIndexes();
-        const ColumnArray::Offsets & offsets = array.getOffsets();
-
-        if (const auto * indexes_uint8 = typeid_cast<const ColumnUInt8 *>(&indexes))
-            searchDictionaryIndexes<is_all>(indexes_uint8->getData(), offsets, slot_of_dictionary_index, full_mask, input_rows_count, result);
-        else if (const auto * indexes_uint16 = typeid_cast<const ColumnUInt16 *>(&indexes))
-            searchDictionaryIndexes<is_all>(indexes_uint16->getData(), offsets, slot_of_dictionary_index, full_mask, input_rows_count, result);
-        else if (const auto * indexes_uint32 = typeid_cast<const ColumnUInt32 *>(&indexes))
-            searchDictionaryIndexes<is_all>(indexes_uint32->getData(), offsets, slot_of_dictionary_index, full_mask, input_rows_count, result);
-        else if (const auto * indexes_uint64 = typeid_cast<const ColumnUInt64 *>(&indexes))
-            searchDictionaryIndexes<is_all>(indexes_uint64->getData(), offsets, slot_of_dictionary_index, full_mask, input_rows_count, result);
-        else
-            return false;
-
-        return true;
-    }
 
     GatherUtils::ArraySearchType search_type;
     const char * name;
