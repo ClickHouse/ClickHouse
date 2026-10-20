@@ -5,6 +5,7 @@
 #include <Functions/ColorConversion.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/ITupleFunction.h>
+#include <Common/sinCos.h>
 
 namespace DB
 {
@@ -33,9 +34,13 @@ public:
         Float64 chroma = oklch[1];
         Float64 hue_rad = oklch[2] * ColorConversion::deg2rad;
 
+        Float64 sin_hue;
+        Float64 cos_hue;
+        sinCos(hue_rad, sin_hue, cos_hue);
+
         auto oklab = oklch;
-        oklab[1] = chroma * std::cos(hue_rad);
-        oklab[2] = chroma * std::sin(hue_rad);
+        oklab[1] = chroma * cos_hue;
+        oklab[2] = chroma * sin_hue;
 
         return ColorConversion::oklabToSrgb(oklab, gamma);
     }
