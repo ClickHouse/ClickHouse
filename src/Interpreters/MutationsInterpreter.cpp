@@ -783,7 +783,7 @@ NameSet MutationsInterpreter::getColumnsReadByDefault(
 
         RequiredSourceColumnsVisitor::Data required_columns;
         auto expression = column_default->expression->clone();
-        /// A dictionary or table name (`dictGet(db.dict, ...)`, `x IN t`) is not a column, as in `TreeRewriter::normalize`.
+        /// A dictionary or table name (`dictGet(db.dict, ...)`, `x IN t`) is not a column.
         Aliases aliases;
         MarkTableIdentifiersVisitor::Data identifiers_data{aliases};
         MarkTableIdentifiersVisitor(identifiers_data).visit(expression);
@@ -2177,7 +2177,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
 
             if (!needed.empty())
             {
-                /// A stale column left in the header would be taken as is.
+                /// evaluateMissingDefaults computes only the columns missing from the header.
                 std::erase_if(input_columns, [&](const auto & column)
                 {
                     return stage.stale_defaults.contains(column.name) || subcolumn_names.contains(column.name);
