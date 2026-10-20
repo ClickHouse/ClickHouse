@@ -6,6 +6,7 @@
 #include <Databases/DataLake/AWSV4Signer.h>
 
 #include <Common/Exception.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -313,6 +314,8 @@ DB::ReadWriteBufferFromHTTPPtr S3TablesCatalog::createReadBuffer(
     auto result_headers = extractSigV4AuthHeaders(std::move(all_signed));
     for (const auto & h : headers)
         result_headers.push_back(h);
+    /// The signed headers contain the access key id, region and session token from the database settings.
+    context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(result_headers);
 
     LOG_DEBUG(log, "Requesting (SigV4): {}", url.toString());
 
@@ -358,6 +361,7 @@ String S3TablesCatalog::sendRequest(
 
     auto headers = extractSigV4AuthHeaders(std::move(all_signed));
     headers.emplace_back("Content-Type", "application/json");
+    context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers);
 
     auto wb = DB::BuilderRWBufferFromHTTP(url)
         .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
