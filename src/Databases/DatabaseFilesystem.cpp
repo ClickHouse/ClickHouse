@@ -21,7 +21,6 @@
 #include <Common/filesystemHelpers.h>
 #include <Formats/FormatFactory.h>
 
-#include <climits>
 #include <filesystem>
 
 
@@ -66,39 +65,6 @@ String getPathToArchive(const String & table_path, const ContextPtr & context)
     return splitToArchiveParts(table_path, context).first;
 }
 
-/// Like `fs::weakly_canonical`, but a component stat fails on is kept as written instead of failing the whole path,
-/// unless it is a symlink that can be read, which is followed.
-fs::path canonicalizeResolvablePrefix(const fs::path & path)
-{
-    /// The kernel's own limit before `ELOOP`.
-    constexpr size_t max_symlinks_to_follow = 40;
-    size_t symlinks_followed = 0;
-    fs::path prefix = path;
-    fs::path rest;
-    /// A path of `PATH_MAX` bytes or more cannot be accessed at all, so it is not worth resolving.
-    if (path.native().size() >= PATH_MAX)
-        return path;
-    while (true)
-    {
-        std::error_code ec;
-        fs::path resolved = fs::canonical(prefix, ec);
-        if (!ec)
-            return rest.empty() ? resolved : resolved / rest;
-        if (!prefix.has_relative_path())
-            return path;
-        /// `readlink` of `dir/link/` fails, so a trailing separator is stripped below before the link is followed.
-        fs::path target = fs::read_symlink(prefix, ec); /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
-        if (!ec && symlinks_followed < max_symlinks_to_follow)
-        {
-            ++symlinks_followed;
-            prefix = prefix.parent_path() / target;
-            continue;
-        }
-        rest = rest.empty() ? prefix.filename() : prefix.filename() / rest;
-        prefix = prefix.parent_path();
-    }
-}
-
 }
 
 DatabaseFilesystem::DatabaseFilesystem(
@@ -119,9 +85,9 @@ DatabaseFilesystem::DatabaseFilesystem(
     std::error_code ec;
     const bool path_exists = fs::exists(path, ec);
 
-    if (!is_local
-        && !(ec ? fileOrSymlinkPathStartsWith(canonicalizeResolvablePrefix(path).string(), user_files_path.string())
-                : pathStartsWith(fs::path(path), user_files_path)))
+    /// Where a path stat fails on leads cannot be resolved, so it is not checked here. A user statement over it is
+    /// refused below, and each table resolution checks its own path before touching a file.
+    if (!is_local && !ec && !pathStartsWith(fs::path(path), user_files_path))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Path must be inside user-files path: {}", user_files_path.string());

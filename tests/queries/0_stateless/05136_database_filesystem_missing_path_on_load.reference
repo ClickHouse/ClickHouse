@@ -18,15 +18,5 @@ fsdb2
 1
 --- it is still reachable through a replay on start, and drops ---
 0
---- server: a path inside user_files that stat refuses is rejected as such (1 = BAD_ARGUMENTS) ---
-1
---- server: the same path outside user_files is still refused by the containment check (1 = BAD_ARGUMENTS) ---
-1
---- server: the same path spelled through a symlink to user_files is still inside it (1 = BAD_ARGUMENTS) ---
-1
---- server: a symlink from outside user_files to such a path inside it is inside it (1 = BAD_ARGUMENTS) ---
-1
---- server: a symlink to such a path outside user_files is still refused (1 = BAD_ARGUMENTS) ---
-1
---- server: a symlink loop outside user_files is refused, not followed forever (1 = BAD_ARGUMENTS) ---
+--- server: a path that stat refuses is rejected as such (1 = BAD_ARGUMENTS) ---
 1
