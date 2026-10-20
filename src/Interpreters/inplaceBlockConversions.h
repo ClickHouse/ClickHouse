@@ -50,6 +50,11 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
 void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context,
     const ColumnDefaults & column_defaults, bool forbid_default_defaults = false);
 
+/// Of `column_names`, the ones a read can fill from a `DEFAULT` that calls a non-deterministic function, such as `rand64`,
+/// itself or through the defaults of the columns it reads. Two reads of a part that lacks such a column fill it with
+/// different values. A subcolumn is filled together with its column.
+NameSet getNonDeterministicDefaults(const Names & column_names, const ColumnsDescription & columns, ContextPtr context);
+
 void fillMissingColumns(
     Columns & res_columns,
     size_t num_rows,

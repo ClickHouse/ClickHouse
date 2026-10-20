@@ -1,5 +1,6 @@
--- For a part created before the columns were added, a read fills them from their `DEFAULT`. A column read lazily
--- must not be filled from a non-deterministic default the lazy read computes again for a column the main read reads.
+-- For a part created before the columns were added, a read fills them from their `DEFAULT`. A column whose default
+-- calls a non-deterministic function, itself or through the defaults of the columns it reads, is not read lazily:
+-- the lazy read would fill it with values other than the ones the main read uses.
 
 SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 0;
@@ -7,6 +8,7 @@ SET query_plan_join_swap_table = 0;
 SET query_plan_optimize_join_order_limit = 0;
 SET enable_join_runtime_filters = 0;
 SET enable_parallel_replicas = 0;
+SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 1000;
 
 DROP TABLE IF EXISTS l;

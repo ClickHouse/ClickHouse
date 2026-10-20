@@ -1,5 +1,6 @@
 #include <Interpreters/inplaceBlockConversions.h>
 
+#include <functional>
 #include <utility>
 
 #include <Core/Block.h>
@@ -12,6 +13,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithAlias.h>
 
 #include <Columns/ColumnArray.h>
@@ -38,6 +40,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Functions/FunctionFactory.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageDummy.h>
@@ -729,6 +732,58 @@ void fillMissingColumns(
             res_columns[i] = createColumnWithDefaultValue(*requested_column->getTypeInStorage(), requested_column->getSubcolumnName(), num_rows);
         }
     }
+}
+
+/// Whether `ast` calls a function whose result its arguments do not determine. A function that is not known here, such
+/// as a user-defined one, is taken as one, and a subquery as well.
+static bool callsNonDeterministicFunction(const IAST & ast, const ContextPtr & context)
+{
+    if (ast.as<ASTSubquery>())
+        return true;
+
+    if (const auto * function = ast.as<ASTFunction>(); function && function->name != "lambda")
+    {
+        const auto resolver = FunctionFactory::instance().tryGet(function->name, context);
+        if (!resolver || !resolver->isDeterministic())
+            return true;
+    }
+
+    return std::ranges::any_of(ast.children, [&](const ASTPtr & child) { return callsNonDeterministicFunction(*child, context); });
+}
+
+NameSet getNonDeterministicDefaults(const Names & column_names, const ColumnsDescription & columns, ContextPtr context)
+{
+    const auto defaults = columns.getDefaults();
+
+    /// For each column with a default visited, whether its default is non-deterministic.
+    std::unordered_map<String, bool> visited;
+    std::function<bool(const String &)> is_non_deterministic = [&](const String & name)
+    {
+        const auto it = defaults.find(name);
+        if (it == defaults.end())
+            return false;
+
+        if (const auto visited_it = visited.find(name); visited_it != visited.end())
+            return visited_it->second;
+
+        RequiredSourceColumnsVisitor::Data required_columns;
+        auto expression = it->second.expression->clone();
+        RequiredSourceColumnsVisitor(required_columns).visit(expression);
+
+        const bool result = callsNonDeterministicFunction(*it->second.expression, context)
+            || std::ranges::any_of(required_columns.requiredColumns(), is_non_deterministic);
+        visited.emplace(name, result);
+        return result;
+    };
+
+    NameSet result;
+    for (const auto & name : column_names)
+    {
+        const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+        if (column && is_non_deterministic(column->getNameInStorage()))
+            result.insert(name);
+    }
+    return result;
 }
 
 }
