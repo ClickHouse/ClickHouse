@@ -114,7 +114,7 @@ std::vector<Document> DistinctHandler::handle(const std::vector<OpMessageSection
         return result;
     }
 
-    auto output = executor->execute(sql_query, getMaxTimeSettings(json_representation, "distinct"));
+    auto output = executor->execute(sql_query, {}, getMaxTimeSettings(json_representation, "distinct"));
 
     rapidjson::Document result_json;
     if (result_json.Parse(output.data()).HasParseError())

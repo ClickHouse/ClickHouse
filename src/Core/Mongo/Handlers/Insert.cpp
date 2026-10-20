@@ -14,6 +14,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
+#include <base/wide_integer_to_string.h>
 #include <fmt/format.h>
 #include <Common/DateLUT.h>
 #include <Common/Exception.h>
@@ -25,7 +26,9 @@
 #include <rapidjson/writer.h>
 
 #include <map>
+#include <limits>
 #include <optional>
+#include <set>
 #include <vector>
 
 namespace DB::ErrorCodes
@@ -88,7 +91,7 @@ std::optional<String> mergeDecimalTypes(const String & left, const String & righ
     return fmt::format("Decimal128({})", std::max(*left_scale, *right_scale));
 }
 
-/// Records that the field `name` holds a decimal of the scale of `type`, see `checkDecimalScales`.
+/// Records that the field `name` holds a decimal of the scale of `type`, see `checkValuesFitColumns`.
 void recordDecimalScale(const String & name, const String & type, std::map<String, UInt32> & decimal_scales)
 {
     if (auto scale = getWrapperDecimalScale(type))
@@ -152,7 +155,7 @@ std::optional<String> convertWrappersInArray(
   * document can never produce a value for a column that is not in the schema.
   *
   * `decimal_scales` collects the largest scale of the `$numberDecimal` values of every field,
-  * including the elements of an array, see `checkDecimalScales`.
+  * including the elements of an array, see `checkValuesFitColumns`.
   */
 void flattenDocument(
     const rapidjson::Value & document,
@@ -294,6 +297,71 @@ std::vector<InsertHandler::DocumentField> inferSchema(const rapidjson::Value & f
     return fields;
 }
 
+/// The smallest and the largest integer among the values of one field, see `checkValuesFitColumns`.
+struct IntegerRange
+{
+    Int128 min = 0;
+    Int128 max = 0;
+};
+
+void recordIntegers(const String & name, const rapidjson::Value & value, std::map<String, IntegerRange> & integer_ranges)
+{
+    if (value.IsArray())
+    {
+        /// The elements of an array of arrays go into the same column, `Array(Array(...))`.
+        for (const auto & element : value.GetArray())
+            recordIntegers(name, element, integer_ranges);
+        return;
+    }
+
+    if (!value.IsInt64() && !value.IsUint64())
+        return;
+    const Int128 number = value.IsInt64() ? Int128(value.GetInt64()) : Int128(value.GetUint64());
+
+    auto [it, inserted] = integer_ranges.emplace(name, IntegerRange{.min = number, .max = number});
+    if (!inserted)
+    {
+        it->second.min = std::min(it->second.min, number);
+        it->second.max = std::max(it->second.max, number);
+    }
+}
+
+/// Records the range of the integers of every field of an already flattened document, including
+/// the integer elements of its arrays. A nested document of an array is a value of a `JSON`
+/// element, which has no fixed integer type to check, so it is not descended into.
+void recordIntegerRanges(const rapidjson::Value & flattened, std::map<String, IntegerRange> & integer_ranges)
+{
+    for (auto it = flattened.MemberBegin(); it != flattened.MemberEnd(); ++it)
+        recordIntegers(it->name.GetString(), it->value, integer_ranges);
+}
+
+/// The range of the values of an integer type of at most 64 bits, nothing for any other type.
+std::optional<IntegerRange> getIntegerTypeRange(const DataTypePtr & type)
+{
+    /// `Bool` is a `UInt8` that holds only `0` and `1`.
+    if (isBool(type))
+        return IntegerRange{.min = 0, .max = 1};
+
+    WhichDataType which(type);
+    if (which.isInt8())
+        return IntegerRange{.min = std::numeric_limits<Int8>::min(), .max = std::numeric_limits<Int8>::max()};
+    if (which.isInt16())
+        return IntegerRange{.min = std::numeric_limits<Int16>::min(), .max = std::numeric_limits<Int16>::max()};
+    if (which.isInt32())
+        return IntegerRange{.min = std::numeric_limits<Int32>::min(), .max = std::numeric_limits<Int32>::max()};
+    if (which.isInt64())
+        return IntegerRange{.min = std::numeric_limits<Int64>::min(), .max = std::numeric_limits<Int64>::max()};
+    if (which.isUInt8())
+        return IntegerRange{.min = 0, .max = std::numeric_limits<UInt8>::max()};
+    if (which.isUInt16())
+        return IntegerRange{.min = 0, .max = std::numeric_limits<UInt16>::max()};
+    if (which.isUInt32())
+        return IntegerRange{.min = 0, .max = std::numeric_limits<UInt32>::max()};
+    if (which.isUInt64())
+        return IntegerRange{.min = 0, .max = std::numeric_limits<UInt64>::max()};
+    return std::nullopt;
+}
+
 /** A decimal column keeps a fixed number of fractional digits and reading a value with more of
   * them silently drops the rest, while a `$numberDecimal` is supposed to be stored exactly. The
   * column of a decimal field is the one of the first document that had the field - in this batch
@@ -301,16 +369,31 @@ std::vector<InsertHandler::DocumentField> inferSchema(const rapidjson::Value & f
   * is written, rather than rounded. The types are read from `system.columns`, which shows only the
   * columns the user may see; a decimal field without a visible column cannot be checked, so it is
   * an error as well.
+  *
+  * An integer column has a fixed range, and the `JSONEachRow` reader does not check it: a value
+  * outside of it is stored wrapped around, e.g. `2147483648` in the `Int32` column inferred from
+  * a small first value becomes `-2147483648`. So the integers of every field - the values and the
+  * elements of the arrays - are checked against the range of the integer type of its column the
+  * same way, before anything is written, and so are the integers of a later insert.
   */
-void checkDecimalScales(
-    const CollectionRef & collection, std::shared_ptr<QueryExecutor> executor, const std::map<String, UInt32> & decimal_scales)
+void checkValuesFitColumns(
+    const CollectionRef & collection,
+    std::shared_ptr<QueryExecutor> executor,
+    const std::map<String, UInt32> & decimal_scales,
+    const std::map<String, IntegerRange> & integer_ranges)
 {
-    if (decimal_scales.empty())
+    if (decimal_scales.empty() && integer_ranges.empty())
         return;
 
+    std::set<String> field_names;
+    for (const auto & [name, _] : decimal_scales)
+        field_names.insert(name);
+    for (const auto & [name, _] : integer_ranges)
+        field_names.insert(name);
+
     WriteBufferFromOwnString names;
-    for (auto it = decimal_scales.begin(); it != decimal_scales.end(); ++it)
-        names << (it == decimal_scales.begin() ? "" : ", ") << quoteString(it->first);
+    for (auto it = field_names.begin(); it != field_names.end(); ++it)
+        names << (it == field_names.begin() ? "" : ", ") << quoteString(*it);
 
     auto output = executor->execute(fmt::format(
         "SELECT name, type FROM system.columns WHERE database = {} AND table = {} AND name IN ({}) FORMAT JSONCompactEachRow",
@@ -338,6 +421,47 @@ void checkDecimalScales(
         line_begin = line_end + 1;
     }
 
+    /// The type of the values of a column inside the wrappers that do not change them.
+    auto get_value_type = [](const String & column_type)
+    {
+        DataTypePtr type = DataTypeFactory::instance().get(column_type);
+        while (true)
+        {
+            type = removeLowCardinalityAndNullable(type);
+            if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+                type = array_type->getNestedType();
+            else
+                break;
+        }
+        return type;
+    };
+
+    for (const auto & [name, range] : integer_ranges)
+    {
+        auto it = column_types.find(name);
+        if (it == column_types.end())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The field '{}' holds an integer value, but the collection '{}.{}' has no visible column of that name to check its range "
+                "against",
+                name,
+                collection.database,
+                collection.collection);
+
+        auto type_range = getIntegerTypeRange(get_value_type(it->second));
+        if (!type_range)
+            continue;
+
+        if (range.min < type_range->min || range.max > type_range->max)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The field '{}' holds the integer value {}, which is out of the range of its column of the type {}: the value cannot "
+                "be stored",
+                name,
+                range.min < type_range->min ? range.min : range.max,
+                it->second);
+    }
+
     for (const auto & [name, scale] : decimal_scales)
     {
         auto it = column_types.find(name);
@@ -350,16 +474,7 @@ void checkDecimalScales(
                 collection.database,
                 collection.collection);
 
-        /// The decimal inside the wrappers that do not change its values.
-        DataTypePtr type = DataTypeFactory::instance().get(it->second);
-        while (true)
-        {
-            type = removeLowCardinalityAndNullable(type);
-            if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
-                type = array_type->getNestedType();
-            else
-                break;
-        }
+        DataTypePtr type = get_value_type(it->second);
 
         if (isDecimal(type) && getDecimalScale(*type) < scale)
             throw Exception(
@@ -489,12 +604,14 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
     WriteBufferFromOwnString data;
     bool table_prepared = false;
     std::map<String, UInt32> decimal_scales;
+    std::map<String, IntegerRange> integer_ranges;
 
     for (const auto & doc : to_insert)
     {
         rapidjson::Value flattened(rapidjson::kObjectType);
         std::map<String, String> wrapper_types;
         flattenDocument(doc.getRapidJSONRepresentation(), "", flattened, allocator, wrapper_types, decimal_scales);
+        recordIntegerRanges(flattened, integer_ranges);
 
         /// The schema comes from the first document only, as in Mongo a collection has no
         /// schema of its own.
@@ -511,27 +628,42 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
         data << buffer.GetString() << "\n";
     }
 
-    checkDecimalScales(collection, executor, decimal_scales);
+    checkValuesFitColumns(collection, executor, decimal_scales, integer_ranges);
 
     /** The whole batch is one `INSERT`, and it is written all or nothing. Mongo writes the documents
       * of an ordered batch one by one and keeps the ones before a failing document; here a document
       * that does not fit - an unknown field, a value of a wrong type - fails the whole command
       * before anything is written, so a client that retries the batch does not duplicate a prefix
       * of it. That holds because every document is parsed before the block is written: the batch
-      * is at most `MAX_WRITE_BATCH_SIZE` documents (see `getWriteBatch`), which fits into a single
-      * block, and the settings below keep it from being split into several blocks, each written
-      * on its own, or from being deferred by an asynchronous insert whose error the reply would
-      * not see. A profile that tolerates malformed rows must not apply either: the skipped row
-      * would be acknowledged as written.
+      * is at most `MAX_WRITE_BATCH_SIZE` documents (see `getWriteBatch`), and the settings below
+      * make the reader of the input return all of them as one block, and keep that block whole.
+      * Every condition that makes the reader return a block early is pinned, rather than only
+      * the ones a profile sets by default: the row limit is the size of the largest batch, the
+      * byte limits - `max_insert_block_size_bytes` and `input_format_max_block_size_bytes`, which
+      * the reader takes when the former is zero - are zero, i.e. unlimited, and so are the minimums
+      * `min_insert_block_size_rows` and `min_insert_block_size_bytes`, as the reader returns a block
+      * as soon as one of the minimums is reached; the same minimums and maximums bound the
+      * squashing of the blocks before they are written. A block is not returned on a timer either
+      * (`input_format_max_block_wait_ms`, `input_format_connection_handling`), the input is not
+      * split between parallel parsers, and the insert is not deferred by an asynchronous insert
+      * whose error the reply would not see. A profile that tolerates malformed rows must not apply
+      * either: the skipped row would be acknowledged as written.
       */
     SettingsChanges insert_settings;
     insert_settings.setSetting("max_insert_block_size", Field(UInt64(MAX_WRITE_BATCH_SIZE)));
     insert_settings.setSetting("max_insert_block_size_bytes", Field(UInt64(0)));
+    insert_settings.setSetting("input_format_max_block_size_bytes", Field(UInt64(0)));
+    insert_settings.setSetting("min_insert_block_size_rows", Field(UInt64(0)));
+    insert_settings.setSetting("min_insert_block_size_bytes", Field(UInt64(0)));
+    insert_settings.setSetting("input_format_max_block_wait_ms", Field(UInt64(0)));
+    insert_settings.setSetting("input_format_connection_handling", Field(false));
     insert_settings.setSetting("input_format_parallel_parsing", Field(false));
     insert_settings.setSetting("async_insert", Field(false));
     insert_settings.setSetting("input_format_allow_errors_num", Field(UInt64(0)));
     insert_settings.setSetting("input_format_allow_errors_ratio", Field(0.0));
 
+    /// The data is `JSONEachRow` whatever the profile says: its `input_format` or `format` would
+    /// otherwise win over the `FORMAT` of the query, which `QueryExecutor::execute` prevents.
     executor->execute(
         fmt::format(
             "INSERT INTO {} SETTINGS input_format_skip_unknown_fields = 0 FORMAT JSONEachRow\n{}",

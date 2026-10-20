@@ -72,7 +72,7 @@ std::vector<Document> CountHandler::handle(const std::vector<OpMessageSection> &
     if (collectionHasSchema(collection, executor))
     {
         auto output = executor->execute(
-            fmt::format("SELECT count() FROM ({}) FORMAT TSV", sql_query), getMaxTimeSettings(json_representation, "count"));
+            fmt::format("SELECT count() FROM ({}) FORMAT TSV", sql_query), {}, getMaxTimeSettings(json_representation, "count"));
 
         /// A ClickHouse table is free to hold more rows than an `int32` can count.
         count = std::stoll(output);

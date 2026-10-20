@@ -19,7 +19,6 @@
 #include <Parsers/Mongo/ParserMongoQuery.h>
 #include <Parsers/Mongo/parseMongoQuery.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -289,21 +288,29 @@ void appendTypedValue(bson_t * document, const String & key, const rapidjson::Va
     auto unwrapped = removeLowCardinalityAndNullable(type);
     WhichDataType which(unwrapped);
 
+    /// `date_time_output_format` is pinned to `iso` (see `MongoProtocol.cpp`), so a `DateTime` or a
+    /// `DateTime64` arrives as its UTC time with the `Z` designator, e.g. `2021-11-07T05:30:00Z`,
+    /// whatever the time zone of its column. It names one instant, which is read in UTC rather than
+    /// in the time zone of the column - a column without an explicit time zone has the one of the
+    /// query, which is gone by now.
     if (which.isDateTime64() && value.IsString())
     {
         const auto & datetime_type = assert_cast<const DataTypeDateTime64 &>(*unwrapped);
         DateTime64 datetime(0);
         ReadBufferFromString in(std::string_view(value.GetString(), value.GetStringLength()));
-        readDateTime64Text(datetime, datetime_type.getScale(), in, datetime_type.getTimeZone());
+        readDateTime64Text(datetime, datetime_type.getScale(), in, DateLUT::instance("UTC"));
+        assertChar('Z', in);
+        assertEOF(in);
         bson_append_date_time(document, key.data(), key_length, dateTime64ToMilliseconds(datetime, datetime_type.getScale()));
         return;
     }
     if (which.isDateTime() && value.IsString())
     {
-        const auto & datetime_type = assert_cast<const DataTypeDateTime &>(*unwrapped);
         time_t datetime = 0;
         ReadBufferFromString in(std::string_view(value.GetString(), value.GetStringLength()));
-        readDateTimeText(datetime, in, datetime_type.getTimeZone());
+        readDateTimeText(datetime, in, DateLUT::instance("UTC"));
+        assertChar('Z', in);
+        assertEOF(in);
         bson_append_date_time(document, key.data(), key_length, static_cast<Int64>(datetime) * 1000);
         return;
     }
@@ -580,7 +587,10 @@ Document buildCursorReply(const std::vector<Document> & selected, const Collecti
 }
 
 std::vector<Document> executeSelectIntoCursor(
-    const String & sql_query, const CollectionRef & collection, std::shared_ptr<QueryExecutor> executor, const SettingsChanges & extra_settings)
+    const String & sql_query,
+    const CollectionRef & collection,
+    std::shared_ptr<QueryExecutor> executor,
+    const SettingsChanges & client_settings)
 {
     /// The reply is one BSON document holding the whole result: the cursor id is always 0,
     /// so there is no `getMore` to continue from, and a result that does not fit into the
@@ -596,7 +606,7 @@ std::vector<Document> executeSelectIntoCursor(
 
     std::vector<Document> selected;
     {
-        auto output = executor->execute(sql_query, extra_settings);
+        auto output = executor->execute(sql_query, {}, client_settings);
 
         rapidjson::Document result_json;
         if (result_json.Parse(output.data()).HasParseError())
@@ -944,6 +954,25 @@ void rejectUnsupportedConcerns(const rapidjson::Value & json, const String & com
         rejectUnsupportedReadConcern(it->value, command);
 }
 
+void rejectTransaction(const rapidjson::Value & json, const String & command)
+{
+    /// Every command of a multi-document transaction carries `autocommit: false`, and the first one
+    /// also `startTransaction: true`. Such a command must not run: its writes would be applied at
+    /// once rather than on `commitTransaction`, and no `abortTransaction` could undo them. A
+    /// retryable write outside of a transaction carries `lsid` and `txnNumber` alone, which ask for
+    /// nothing a single server that applies a write before it replies does not do, so they are
+    /// accepted.
+    for (const char * field : {"startTransaction", "autocommit"})
+    {
+        if (json.HasMember(field))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "The '{}' command carries '{}', i.e. it is a part of a multi-document transaction, and transactions are not supported",
+                command,
+                field);
+    }
+}
+
 ASTPtr parseMongoDialectCommand(const String & mongo_dialect_query, const CollectionRef & collection, const QueryExecutor & executor)
 {
     /// The limits of the authenticated user's profile, as for a query of the `clickhouse` dialect.
@@ -1207,8 +1236,10 @@ std::vector<Document> runMessageRequest(const std::vector<OpMessageSection> & se
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command {} is not supported yet.", command);
 
     /// Checked here rather than by each handler, so that no command, read or write, runs with a
-    /// concern it does not honour.
-    rejectUnsupportedConcerns(sections[0].documents[0].getRapidJSONRepresentation(), command);
+    /// concern it does not honour, nor as a part of a transaction.
+    const auto command_json = sections[0].documents[0].getRapidJSONRepresentation();
+    rejectUnsupportedConcerns(command_json, command);
+    rejectTransaction(command_json, command);
 
     return handler->handle(sections, executor);
 }

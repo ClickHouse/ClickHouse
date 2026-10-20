@@ -98,6 +98,12 @@ struct CollectionRef
   */
 inline constexpr std::string_view MONGO_DIALECT_PLACEHOLDER_NAMESPACE = "db.collection";
 
+/** Rejects a command that is a part of a multi-document transaction, i.e. one that carries
+  * `startTransaction` or `autocommit`: transactions are not supported, so its writes would otherwise
+  * be applied at once, while the client expects them to wait for the commit of the transaction.
+  */
+void rejectTransaction(const rapidjson::Value & json, const String & command);
+
 /** Parses the Mongo dialect text that a handler builds for a command on `collection`, with the
   * parser limits of the session (`max_query_size`, `max_parser_depth`, `max_parser_backtracks`),
   * the same ones a query of the dialect sent over the other interfaces is parsed with.
@@ -136,12 +142,14 @@ std::vector<std::pair<String, DataTypePtr>> extractResultColumns(const rapidjson
   * The `meta` of the result drives the conversion of each value (see `appendTypedValue`), and
   * the dotted name of a column - the way the dialect addresses a nested field - becomes the
   * nested document it names: the row `{"profile.name": "x"}` returns as `{"profile": {"name": "x"}}`.
+  * `client_settings` are the settings of the client options of the command, such as `maxTimeMS`
+  * (see `QueryExecutor::execute`).
   */
 std::vector<Document> executeSelectIntoCursor(
     const String & sql_query,
     const CollectionRef & collection,
     std::shared_ptr<QueryExecutor> executor,
-    const SettingsChanges & extra_settings = {});
+    const SettingsChanges & client_settings = {});
 
 /** The reply of a document-returning command whose result is empty: a cursor with no rows in
   * its first batch. Mongo reads a collection that does not exist as empty rather than raising
@@ -188,7 +196,9 @@ std::optional<bool> getBoolOption(const rapidjson::Value & json, const char * na
 /** The `maxTimeMS` of a read command - `find`, `count`, `distinct` and `aggregate` - as the settings
   * of the query that answers it: `max_execution_time` with `timeout_overflow_mode = 'throw'`. A
   * request with a deadline must not run without one. Nothing, i.e. the limits of the user's
-  * profile, for an absent `maxTimeMS` and for `0`, which Mongo reads as no limit.
+  * profile, for an absent `maxTimeMS` and for `0`, which Mongo reads as no limit. The settings are
+  * client settings of `QueryExecutor::execute`: they cannot loosen a tighter limit of the profile,
+  * and they are subject to its constraints.
   */
 SettingsChanges getMaxTimeSettings(const rapidjson::Value & json, const char * command);
 

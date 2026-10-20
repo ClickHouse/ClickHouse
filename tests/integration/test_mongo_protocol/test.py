@@ -6,6 +6,7 @@ import os
 import socket
 import struct
 import time
+import uuid
 
 import bson
 import pymongo
@@ -703,12 +704,14 @@ def test_unwind_and_the_other_stages(started_cluster):
         (1, "green"),
         (1, "red"),
     ]
+    # A kept document with an empty array has no element: the field is null rather than the default
+    # value of the element type.
     assert [
-        (d["id"], d["tags"])
+        (d["id"], d.get("tags"))
         for d in collection.aggregate(
             [{"$unwind": {"path": "$tags", "preserveNullAndEmptyArrays": True}}, {"$sort": {"id": 1, "tags": 1}}]
         )
-    ] == [(1, "green"), (1, "red"), (2, "")]
+    ] == [(1, "green"), (1, "red"), (2, None)]
     assert [
         d["position"]
         for d in collection.aggregate(
@@ -2651,4 +2654,250 @@ def test_parent_path_of_a_subdocument_over_the_wire(started_cluster):
     assert wait_for(lambda: collection.find_one({"id": 1}, {"profile": 1}) == {"profile": {"name": "gamma", "age": 0}})
     assert collection.find_one({"id": 2}, {"profile": 1}) == {"profile": {"name": "beta", "age": 40}}
 
+    collection.drop()
+
+
+def test_insert_is_all_or_nothing_with_small_block_settings(started_cluster):
+    """The block thresholds of the profile do not split the batch of an `insert` into blocks that
+    are written one by one: with one-row blocks a valid prefix would be written before a later
+    malformed document fails the command."""
+    node = cluster.instances["node"]
+    node.query("DROP USER IF EXISTS mongo_small_blocks", password="123")
+    node.query(
+        "CREATE USER mongo_small_blocks IDENTIFIED WITH plaintext_password BY 'mongo_pass' "
+        "SETTINGS min_insert_block_size_rows = 1, min_insert_block_size_bytes = 0, input_format_max_block_size_bytes = 1",
+        password="123",
+    )
+    node.query("GRANT SELECT, INSERT, SHOW ON db.* TO mongo_small_blocks", password="123")
+
+    collection = make_client()["db"]["insert_small_blocks"]
+    collection.drop()
+    collection.insert_one({"id": 0, "name": "first"})
+
+    small = make_client(user="mongo_small_blocks", password="mongo_pass", database="db")["db"]["insert_small_blocks"]
+    with pytest.raises(pymongo.errors.PyMongoError):
+        small.insert_many([{"id": i, "name": "valid"} for i in range(1, 1001)] + [{"id": 1001, "unknown_field": "bad"}])
+    assert collection.count_documents({}) == 1
+
+    small.insert_many([{"id": i, "name": "valid"} for i in range(1, 1001)])
+    assert collection.count_documents({}) == 1001
+
+    collection.drop()
+    node.query("DROP USER mongo_small_blocks", password="123")
+
+
+def test_internal_queries_ignore_the_format_overrides_of_the_profile(started_cluster):
+    """The `input_format`, `output_format`, `format` and `default_format` of the profile do not
+    change the formats of the queries the handlers generate and parse back: a document is stored as
+    its fields rather than as its text, and the replies are built from the output they expect."""
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query("DROP TABLE IF EXISTS db.format_overrides", password="123")
+    node.query("CREATE TABLE db.format_overrides (v String) ENGINE = MergeTree ORDER BY tuple()", password="123")
+
+    for user, settings in [
+        ("mongo_input_format", "input_format = 'JSONAsString', output_format = 'CSV', default_format = 'Vertical'"),
+        ("mongo_format", "format = 'JSONAsString'"),
+    ]:
+        node.query(f"DROP USER IF EXISTS {user}", password="123")
+        node.query(
+            f"CREATE USER {user} IDENTIFIED WITH plaintext_password BY 'mongo_pass' SETTINGS {settings}",
+            password="123",
+        )
+        node.query(f"GRANT SELECT, INSERT, SHOW ON db.* TO {user}", password="123")
+
+        node.query("TRUNCATE TABLE db.format_overrides", password="123")
+        database = make_client(user=user, password="mongo_pass", database="db")["db"]
+        collection = database["format_overrides"]
+        collection.insert_one({"v": "x"})
+        assert node.query("SELECT v FROM db.format_overrides", password="123") == "x\n"
+
+        assert list(collection.find({}, {"_id": 0})) == [{"v": "x"}]
+        assert collection.count_documents({"v": "x"}) == 1
+        assert collection.distinct("v") == ["x"]
+        assert "format_overrides" in database.list_collection_names()
+
+        node.query(f"DROP USER {user}", password="123")
+
+    node.query("DROP TABLE db.format_overrides", password="123")
+
+
+def test_insert_rejects_integers_out_of_the_range_of_the_column(started_cluster):
+    """A small first integer makes an `Int32` column, and a later integer it cannot hold - in the
+    same batch, in a later insert or as an element of an array - is rejected rather than stored
+    wrapped around."""
+    client = make_client()
+
+    scalars = client["db"]["insert_integer_ranges"]
+    scalars.drop()
+    with pytest.raises(pymongo.errors.OperationFailure, match="out of the range"):
+        scalars.insert_many([{"x": 1}, {"x": 2147483648}])
+    assert scalars.count_documents({}) == 0
+
+    scalars.insert_one({"x": 1})
+    for value in [2147483648, -2147483649]:
+        with pytest.raises(pymongo.errors.OperationFailure, match="out of the range"):
+            scalars.insert_one({"x": value})
+    scalars.insert_one({"x": -2147483648})
+    assert sorted(doc["x"] for doc in scalars.find({})) == [-2147483648, 1]
+
+    arrays = client["db"]["insert_integer_array_ranges"]
+    arrays.drop()
+    arrays.insert_one({"xs": [1, 2]})
+    with pytest.raises(pymongo.errors.OperationFailure, match="out of the range"):
+        arrays.insert_one({"xs": [3, 2147483648]})
+    assert [doc["xs"] for doc in arrays.find({})] == [[1, 2]]
+
+    scalars.drop()
+    arrays.drop()
+
+
+def test_transaction_envelopes_are_rejected(started_cluster):
+    """A command that is a part of a multi-document transaction is rejected before it changes
+    anything, while a retryable write, which carries `lsid` and `txnNumber` alone, is executed."""
+    collection = make_client()["db_transactions"]["t"]
+    collection.drop()
+    collection.insert_one({"id": 1})
+
+    session = {"id": bson.Binary(uuid.uuid4().bytes, 4)}
+    sock = connect_raw()
+    try:
+        authenticate_raw(sock)
+        for command in [
+            {
+                "insert": "t",
+                "documents": [{"id": 2}],
+                "lsid": session,
+                "txnNumber": bson.Int64(1),
+                "startTransaction": True,
+                "autocommit": False,
+            },
+            {"delete": "t", "deletes": [{"q": {"id": 1}, "limit": 0}], "lsid": session, "txnNumber": bson.Int64(1), "autocommit": False},
+            {
+                "update": "t",
+                "updates": [{"q": {"id": 1}, "u": {"$set": {"id": 3}}, "multi": True}],
+                "lsid": session,
+                "txnNumber": bson.Int64(1),
+                "autocommit": False,
+            },
+            {"find": "t", "filter": {}, "lsid": session, "txnNumber": bson.Int64(1), "autocommit": False},
+        ]:
+            sock.sendall(encode_op_msg({**command, "$db": "db_transactions"}))
+            reply = read_op_msg(sock)
+            assert reply["ok"] == 0, reply
+            assert "transactions are not supported" in reply["errmsg"], reply
+
+        sock.sendall(
+            encode_op_msg(
+                {"insert": "t", "documents": [{"id": 4}], "lsid": session, "txnNumber": bson.Int64(2), "$db": "db_transactions"}
+            )
+        )
+        reply = read_op_msg(sock)
+        assert reply["ok"] == 1, reply
+        assert reply["n"] == 1, reply
+    finally:
+        sock.close()
+
+    assert sorted(doc["id"] for doc in collection.find({})) == [1, 4]
+    collection.database.command("dropDatabase")
+
+
+def test_dates_keep_their_instant(started_cluster):
+    """A date is encoded from its instant rather than from its local time: the two instants of an
+    hour repeated by the end of the daylight saving time stay apart, and a column without an
+    explicit time zone reads the same under a profile with a `session_timezone`."""
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query("DROP TABLE IF EXISTS db.date_instants", password="123")
+    node.query(
+        "CREATE TABLE db.date_instants (id Int32, t DateTime('America/New_York'), t64 DateTime64(3, 'America/New_York'), "
+        "i DateTime, i64 DateTime64(3)) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
+    # 1636263000 and 1636266600 are both 01:30 in New York on 2021-11-07.
+    node.query(
+        "INSERT INTO db.date_instants SELECT number + 1, 1636263000 + number * 3600 AS s, toDateTime64(s, 3), s, toDateTime64(s, 3) "
+        "FROM numbers(2)",
+        password="123",
+    )
+
+    node.query("DROP USER IF EXISTS mongo_tokyo", password="123")
+    node.query(
+        "CREATE USER mongo_tokyo IDENTIFIED WITH plaintext_password BY 'mongo_pass' SETTINGS session_timezone = 'Asia/Tokyo'",
+        password="123",
+    )
+    node.query("GRANT SELECT ON db.date_instants TO mongo_tokyo", password="123")
+
+    expected = [
+        datetime.datetime(2021, 11, 7, 5, 30),
+        datetime.datetime(2021, 11, 7, 6, 30),
+    ]
+    for client in [make_client(), make_client(user="mongo_tokyo", password="mongo_pass", database="db")]:
+        documents = sorted(client["db"]["date_instants"].find({}, {"_id": 0}), key=lambda doc: doc["id"])
+        assert [{key: doc[key] for key in ["t", "t64", "i", "i64"]} for doc in documents] == [
+            {"t": instant, "t64": instant, "i": instant, "i64": instant} for instant in expected
+        ]
+
+    node.query("DROP USER mongo_tokyo", password="123")
+    node.query("DROP TABLE db.date_instants", password="123")
+
+
+def test_max_time_ms_is_subject_to_the_constraints_of_the_profile(started_cluster):
+    """`maxTimeMS` cannot loosen the `max_execution_time` of the profile, and it cannot set a value
+    the constraints of the profile forbid."""
+    node = cluster.instances["node"]
+    collection = make_client()["db"]["max_time_constrained"]
+    collection.drop()
+    collection.insert_many([{"id": 1}, {"id": 2}])
+
+    node.query("DROP USER IF EXISTS mongo_time_limited", password="123")
+    node.query(
+        "CREATE USER mongo_time_limited IDENTIFIED WITH plaintext_password BY 'mongo_pass' "
+        "SETTINGS max_execution_time = 10 MIN 5 MAX 10",
+        password="123",
+    )
+    node.query("GRANT SELECT ON db.max_time_constrained TO mongo_time_limited", password="123")
+
+    limited = make_client(user="mongo_time_limited", password="mongo_pass", database="db")["db"]
+    assert limited.command({"count": "max_time_constrained", "maxTimeMS": 60000})["n"] == 2
+    assert limited.command({"count": "max_time_constrained", "maxTimeMS": 6000})["n"] == 2
+    with pytest.raises(pymongo.errors.OperationFailure, match="max_execution_time"):
+        limited.command({"count": "max_time_constrained", "maxTimeMS": 1000})
+
+    node.query("SYSTEM FLUSH LOGS query_log", password="123")
+    timeouts = node.query(
+        "SELECT DISTINCT Settings['max_execution_time'] FROM system.query_log "
+        "WHERE type = 'QueryFinish' AND user = 'mongo_time_limited' AND query_kind = 'Select' "
+        "AND has(tables, 'db.max_time_constrained') ORDER BY 1",
+        password="123",
+    ).split()
+    assert timeouts == ["10", "6"]
+
+    node.query("DROP USER mongo_time_limited", password="123")
+    collection.drop()
+
+
+def test_generated_queries_ignore_the_dialect_of_the_profile(started_cluster):
+    """The statements the handlers generate are ClickHouse SQL, whatever `dialect` the profile of
+    the authenticated user selects."""
+    node = cluster.instances["node"]
+    collection = make_client()["db"]["dialect_profile"]
+    collection.drop()
+    collection.insert_many([{"id": 1, "name": "a"}, {"id": 2, "name": "b"}])
+
+    node.query("DROP USER IF EXISTS mongo_dialect_user", password="123")
+    node.query(
+        "CREATE USER mongo_dialect_user IDENTIFIED WITH plaintext_password BY 'mongo_pass' "
+        "SETTINGS dialect = 'mongo', allow_experimental_mongo_dialect = 1",
+        password="123",
+    )
+    node.query("GRANT SELECT, INSERT ON db.dialect_profile TO mongo_dialect_user", password="123")
+
+    dialect_collection = make_client(user="mongo_dialect_user", password="mongo_pass", database="db")["db"]["dialect_profile"]
+    assert sorted(doc["id"] for doc in dialect_collection.find({"id": {"$gt": 0}})) == [1, 2]
+    assert dialect_collection.count_documents({"name": "a"}) == 1
+    dialect_collection.insert_one({"id": 3, "name": "c"})
+    assert sorted(doc["id"] for doc in collection.find({})) == [1, 2, 3]
+
+    node.query("DROP USER mongo_dialect_user", password="123")
     collection.drop()

@@ -172,11 +172,16 @@ public:
     explicit QueryExecutor(std::unique_ptr<Session> & session_, const Poco::Net::SocketAddress & address_);
 
     /** Runs `query` in a fresh query context of this session and returns its output.
+      * `query` is ClickHouse SQL whatever the `dialect` of the user's profile, and its `FORMAT` is
+      * the one it is executed with, whatever the format overrides of the profile.
       * `extra_settings` are applied on top of the settings the reply encoding requires, e.g. a
       * write command submits its mutation with `mutations_sync` so that the next statement of
-      * the same command observes it.
+      * the same command observes it. `client_settings` are the settings that a client option of
+      * the command asks for, e.g. the `max_execution_time` of a `maxTimeMS`: they are checked
+      * against the constraints of the user's profile, and a time limit only tightens the one of
+      * the profile.
       */
-    String execute(const String & query, const SettingsChanges & extra_settings = {});
+    String execute(const String & query, const SettingsChanges & extra_settings = {}, const SettingsChanges & client_settings = {});
 
     void authenticate(const String & username, const String & password);
 
