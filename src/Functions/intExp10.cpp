@@ -33,11 +33,17 @@ struct IntExp10Impl
             {
                 if (std::isnan(a))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "intExp10 must not be called with nan");
-                if (a < 0)
-                    return 0;
-                if (a >= 20)
-                    return std::numeric_limits<UInt64>::max();
             }
+
+            /// Range-check before the narrowing `static_cast<int>` below. Without this, integer
+            /// inputs whose magnitude exceeds `INT_MAX` (e.g. `UInt32` near `2^32`, `Int64`
+            /// near `INT64_MAX`) get implementation-defined truncation and return nonsense.
+            if constexpr (is_signed_v<A>)
+                if (a < A{0})
+                    return 0;
+            if (a >= A{20})
+                return std::numeric_limits<UInt64>::max();
+
             return intExp10(static_cast<int>(a));
         }
     }

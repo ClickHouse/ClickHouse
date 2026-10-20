@@ -42,6 +42,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -13154,9 +13155,18 @@ std::optional<StreamFileNameCollision> findStreamFileNameCollision(
 
 void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const
 {
-    auto columns_list = settings[MergeTreeSetting::share_nested_offsets]
-        ? Nested::collect(columns.getAllPhysical())
-        : columns.getAllPhysical();
+    auto columns_list = columns.getAllPhysical();
+    if (settings[MergeTreeSetting::share_nested_offsets])
+    {
+        auto physical_columns = std::move(columns_list);
+        columns_list = Nested::collect(physical_columns);
+
+        /// `Nested::collect` drops a non-flattened Nested whose name prefix is a flattened Nested group, but its streams are still written.
+        auto collected_names = columns_list.getNameSet();
+        for (const auto & column : physical_columns)
+            if (isNested(column.type) && !collected_names.contains(column.name))
+                columns_list.push_back(column);
+    }
 
     MergeTreeMapSerializationVersion map_version = settings[MergeTreeSetting::map_serialization_version];
     MergeTreeObjectSharedDataSerializationVersion shared_data_version = settings[MergeTreeSetting::object_shared_data_serialization_version];

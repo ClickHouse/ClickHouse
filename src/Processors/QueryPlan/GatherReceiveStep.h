@@ -20,6 +20,8 @@ public:
 
     [[nodiscard]] String getName() const override { return "GatherReceive"; }
 
+    const String & getExchangeId() const { return exchange_id; }
+
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     void serialize(Serialization & ctx) const override;

@@ -45,6 +45,8 @@ public:
 
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    /// The name of the type does not depend on the values.
+    std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
