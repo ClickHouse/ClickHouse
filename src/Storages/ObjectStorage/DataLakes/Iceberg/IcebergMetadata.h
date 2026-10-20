@@ -127,6 +127,7 @@ public:
     std::optional<size_t> totalRows(ContextPtr Local_context) const override;
     static bool supportsTotalBytes(ContextPtr, ObjectStorageType) { return true; }
     std::optional<size_t> totalBytes(ContextPtr Local_context) const override;
+    std::optional<MinMaxCountStatistics> getMinMaxCountStatistics(const NamesAndTypesList & columns, ContextPtr local_context) const override;
 
     bool isDataSortedBySortingKey(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override;
 
