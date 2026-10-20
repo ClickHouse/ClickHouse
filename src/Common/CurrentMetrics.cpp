@@ -401,6 +401,8 @@
     M(PointInPolygonCacheBytes, "Size in bytes of the cache of preprocessed constant polygons for the `pointInPolygon` function") \
     M(PointInPolygonCacheCells, "Number of preprocessed constant polygons in the cache for the `pointInPolygon` function") \
     M(PointInPolygonCacheSizeLimit, "Maximum size in bytes of the cache of preprocessed constant polygons for the `pointInPolygon` function (the applied value of the `point_in_polygon_cache_size` server setting)") \
+    M(ExternalSetCacheBytes, "Total size, in bytes, of the blocks held in the caches of `IN` sets in external memory") \
+    M(ExternalSetCacheCells, "Total number of blocks held in the caches of `IN` sets in external memory") \
     M(DNSHostsCacheBytes, "Size of the DNS hosts cache in bytes") \
     M(DNSHostsCacheSize, "Number of cached DNS hosts") \
     M(DNSAddressesCacheBytes, "Size of the DNS addresses cache in bytes") \
@@ -454,6 +456,7 @@
     M(SharedPartColumnSubstreamsEntriesCacheSize, "Number of distinct per-column substream entries shared across data parts (sum over per-table caches)") \
     M(S3Requests, "S3 requests count") \
     M(KeeperAliveConnections, "Number of alive connections") \
+    M(KeeperRaftThreadsWaitingForLogsPreprocessing, "Number of Raft event loop threads waiting for the local log entries to be preprocessed after startup. The Raft event loop also runs the listener, the election and heartbeat timers and every RPC completion, so this should stay at zero or one.") \
     M(KeeperOutstandingRequests, "Number of outstanding requests") \
     M(KeeperTTLNodes, "Number of nodes with a TTL set currently stored in Keeper.") \
     M(KeeperContainerNodes, "Number of container nodes currently stored in Keeper.") \

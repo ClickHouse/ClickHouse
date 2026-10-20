@@ -3,20 +3,24 @@
 #include <base/types.h>
 #include <Common/HyperLogLogBiasEstimator.h>
 #include <Common/CompactArray.h>
+#include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/transformEndianness.h>
 
 #include <IO/ReadBuffer.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 
 #include <bit>
 #include <cmath>
+#include <limits>
 #include <string>
 
 namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
 }
 }
@@ -188,6 +192,16 @@ public:
         return static_cast<DenominatorType>(val);
     }
 
+    /// Only the counts are checked, not the registers: a state whose registers disagree with its counts passes, and
+    /// merging into it can make its counts wrap, so the merged state then fails this check.
+    bool countsAddUp(UInt64 bucket_count, UInt64 zeros) const
+    {
+        UInt64 sum = 0;
+        for (size_t i = 0; i < size; ++i)
+            sum += rank_count[i];
+        return sum == bucket_count && rank_count[0] == zeros;
+    }
+
 private:
     static constexpr size_t size = max_rank + 1;
     UInt32 rank_count[size] = { 0 };
@@ -320,6 +334,11 @@ public:
 
         double final_estimate = fixRawEstimate(raw_estimate);
 
+        if (final_estimate < 0)
+            throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA, "Corrupted HyperLogLog state: the estimate {} is negative", final_estimate);
+        /// For 64-bit hashes the estimate of a valid state can exceed the range of UInt64.
+        if (final_estimate + 0.5 >= 0x1p64)
+            return std::numeric_limits<UInt64>::max();
         return static_cast<UInt64>(final_estimate + 0.5); /// NOLINT
     }
 
@@ -327,7 +346,7 @@ public:
     {
         const auto & rhs_rank_store = rhs.rank_store;
         for (HashValueType bucket = 0; bucket < bucket_count; ++bucket)
-            update(bucket, rhs_rank_store[bucket]);
+            update</* check_rank = */ true>(bucket, rhs_rank_store[bucket]);
     }
 
     void read(DB::ReadBuffer & in)
@@ -355,6 +374,16 @@ public:
 
             in.readStrict(reinterpret_cast<char *>(&zeros), sizeof(ZerosCounterType));
             DB::transformEndianness<std::endian::native, std::endian::little>(zeros);
+        }
+
+        if constexpr (details::isBigRankStore(precision) && denominator_mode == DenominatorMode::StableIfBig)
+        {
+            if (!denominator.countsAddUp(bucket_count, zeros))
+                throw DB::Exception(
+                    DB::ErrorCodes::INCORRECT_DATA,
+                    "Corrupted HyperLogLog state: the rank counts do not add up to the number of buckets {} or the count of rank 0 "
+                    "is not the stored number of zero registers {}",
+                    bucket_count, zeros);
         }
     }
 
@@ -454,12 +483,24 @@ private:
 
     /// Update maximum rank for current bucket.
     /// ALWAYS_INLINE is required to have better code layout for uniqCombined function
+    /// A rank from another state is checked: a corrupted state can have ranks above `max_rank`, the last index of `rank_count`.
+    template <bool check_rank = false>
     void ALWAYS_INLINE update(HashValueType bucket, UInt8 rank)
     {
         UInt8 cur_rank = rank_store.get(bucket);
 
         if (rank > cur_rank)
         {
+            if constexpr (check_rank)
+            {
+                if (unlikely(rank > max_rank))
+                    throw DB::Exception(
+                        DB::ErrorCodes::INCORRECT_DATA,
+                        "Corrupted HyperLogLog state: rank {} is above the maximum rank {}",
+                        static_cast<UInt32>(rank),
+                        max_rank);
+            }
+
             if (cur_rank == 0)
                 --zeros;
             denominator.update(cur_rank, rank);
