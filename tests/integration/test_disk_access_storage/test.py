@@ -434,7 +434,14 @@ def test_self_authentication_identity_race(failpoint, change):
         if change == "rename_replace" or (
             change == "drop_replace" and failpoint.endswith("identity_lookup")
         ):
-            assert "ACCESS_DENIED" in completed_request.get_error()
+            error = completed_request.get_error()
+            assert "ACCESS_DENIED" in error
+            expected_message = (
+                "Self-service authentication requires the authenticated account"
+                if failpoint.endswith("identity_lookup")
+                else "Self-service authentication target changed during alteration"
+            )
+            assert expected_message in error
         else:
             # A disappeared bound ID is skipped; a replacement under the same name is never updated.
             assert completed_request.get_answer() == ""

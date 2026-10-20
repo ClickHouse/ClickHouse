@@ -364,27 +364,31 @@ BlockIO InterpreterCreateUserQuery::execute()
     const Strings names = query.names->toStrings();
     std::optional<UUID> self_service_user_id;
 
-    /// A session whose access rights are limited by the GRANTS clause of an authentication method must not
-    /// mint credentials for an existing user. The GRANTS clause of a new authentication method is intersected
+    /// A session whose access rights are limited by the `GRANTS` clause of an authentication method must not
+    /// change credentials for an existing user. The `GRANTS` clause of a new authentication method is intersected
     /// at login with the *user's* full access rights, not with the limit of the session which created the
-    /// method, so such a session could otherwise issue itself a token wider than itself. Deny it (fail-close),
-    /// as with role administration. `CREATE USER` is not affected: a newly created user has no access rights,
+    /// method, so such a session could otherwise issue itself a token wider than itself. Resetting methods
+    /// can also widen subsequent authentication by deleting a restrictive method matching the same password.
+    /// Deny both, as with role administration. `CREATE USER` is not affected: a newly created user has no access rights,
     /// so a limit placed on its authentication methods cannot hand out more than nothing.
-    if (query.alter && !query.authentication_methods.empty() && access->getParams().authentication_grants)
+    if (query.alter
+        && (!query.authentication_methods.empty() || query.reset_authentication_methods_to_new)
+        && access->getParams().authentication_grants)
         throw Exception(ErrorCodes::ACCESS_DENIED,
             "Not enough privileges. "
             "The current session is authenticated with a method which limits the access rights with the GRANTS clause, "
-            "and such sessions cannot add authentication methods to an existing user");
+            "and such sessions cannot change authentication methods of an existing user");
 
     /// Authorize every target before credential conversion, cluster dispatch, or storage updates.
     /// `IF EXISTS` and storage selection do not bypass these checks.
     if (query.alter)
     {
-        const auto authenticated_user_id = getContext()->getUserID();
+        const auto authenticated_user_id = access->getUserID();
+        const auto authenticated_user_name = access->getUserName();
         const bool self_service = isAuthenticationOnlyAlter(query)
             && names.size() == 1 && query.cluster.empty() && query.storage_name.empty()
-            && authenticated_user_id && names.front() == getContext()->getUserName();
-        const bool token_addition = isSelfServiceAuthenticationMethodAddition(query, getContext()->getUserName());
+            && authenticated_user_id && names.front() == authenticated_user_name;
+        const bool token_addition = isSelfServiceAuthenticationMethodAddition(query, authenticated_user_name);
         const auto rights = access->getAccessRightsWithImplicit();
         for (const auto & name : names)
         {
@@ -416,7 +420,7 @@ BlockIO InterpreterCreateUserQuery::execute()
     }
     else
     {
-        /// Replacement overwrites an existing account, so upstream requires both create and drop.
+        /// `CREATE USER OR REPLACE` overwrites an existing account, so it requires both `CREATE USER` and `DROP USER`.
         AccessFlags required_access = AccessType::CREATE_USER;
         if (query.or_replace)
             required_access |= AccessType::DROP_USER;
@@ -576,9 +580,9 @@ BlockIO InterpreterCreateUserQuery::execute()
         /// Keep the self-service update bound to the verified ID, including the constraint preflight.
         const auto ids = self_service_user_id ? std::vector<UUID>{*self_service_user_id}
             : (query.if_exists ? storage->find<User>(names) : storage->getIDs<User>(names));
+        getContext()->checkSettingsConstraintsForOverwrite(ids, update_func);
         if (self_service_user_id)
             FailPointInjection::pauseFailPoint(FailPoints::self_authentication_before_update);
-        getContext()->checkSettingsConstraintsForOverwrite(ids, update_func);
         if (query.if_exists)
             access_control.tryUpdate(ids, update_func);
         else
