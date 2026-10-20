@@ -234,9 +234,9 @@ ${CLICKHOUSE_CLIENT} -q "DROP VIEW IF EXISTS t_reattach_mv_to"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mv_to_src"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mv_to_dst"
 
-# External `TimeSeries` `SAMPLES`/`TAGS` targets are resolved and type-checked by
-# `normalizeTimeSeriesDefinition` before the interpreter reads any source table, so
-# `CREATE TABLE ts ENGINE = TimeSeries SAMPLES missing_samples AS src` fails with `UNKNOWN_TABLE`
+# External `TimeSeries` `SAMPLES`/`TAGS` targets (only tables of version 9 or earlier may have them) are
+# resolved and type-checked by `normalizeTimeSeriesDefinition` before the interpreter reads any source table, so
+# `CREATE TABLE ts ENGINE = TimeSeries SETTINGS version = 9 SAMPLES missing_samples AS src` fails with `UNKNOWN_TABLE`
 # and must not detach `src` on the way. Because an existing target can still fail the type check
 # there, any statement carrying such a target conservatively never triggers the `DETACH`/`ATTACH`.
 # The source is itself a `TimeSeries` table: the columns of a `TimeSeries` table are always generated,
@@ -247,7 +247,7 @@ ${CLICKHOUSE_CLIENT} --enable_time_series_table=1 -q "CREATE TABLE t_reattach_ts
 REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} \
     --reattach_tables_before_query_execution=1 \
     --enable_time_series_table=1 \
-    --query "CREATE TABLE t_reattach_ts ENGINE = TimeSeries SAMPLES t_reattach_ts_missing_samples AS t_reattach_ts_src" 2>&1)
+    --query "CREATE TABLE t_reattach_ts ENGINE = TimeSeries SETTINGS version = 9 SAMPLES t_reattach_ts_missing_samples AS t_reattach_ts_src" 2>&1)
 REATTACH_STATUS=$?
 if [ "$REATTACH_STATUS" -eq 0 ]; then
     echo "FAIL (query unexpectedly succeeded)"
@@ -267,7 +267,7 @@ ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_ts_samples (id Tuple(UInt64, UU
 REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} \
     --reattach_tables_before_query_execution=1 \
     --enable_time_series_table=1 \
-    --query "CREATE TABLE t_reattach_ts ENGINE = TimeSeries SAMPLES t_reattach_ts_samples" 2>&1)
+    --query "CREATE TABLE t_reattach_ts ENGINE = TimeSeries SETTINGS version = 9 SAMPLES t_reattach_ts_samples" 2>&1)
 REATTACH_STATUS=$?
 if [ "$REATTACH_STATUS" -ne 0 ]; then
     echo "FAIL (client error: $REATTACH_OUTPUT)"
