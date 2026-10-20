@@ -32,6 +32,8 @@ public:
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     bool storesDataOnDisk() const override { return true; }
+    /// With `persistent = 0` the table keeps its data only in memory, like `Memory`.
+    bool hasUnreplicatedTableDataOnDisk() const override { return persistent; }
     Strings getDataPaths() const override { return {path}; }
     Disks getDataDisks() const override { return {disk}; }
 

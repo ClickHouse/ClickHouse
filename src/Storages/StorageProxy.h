@@ -195,6 +195,7 @@ public:
     void checkTableSizeBelowDropLimit([[ maybe_unused ]] ContextPtr query_context) const override { getNested()->checkTableSizeBelowDropLimit(query_context); }
 
     bool storesDataOnDisk() const override { return getNested()->storesDataOnDisk(); }
+    bool hasUnreplicatedTableDataOnDisk() const override { return getNested()->hasUnreplicatedTableDataOnDisk(); }
     Strings getDataPaths() const override { return getNested()->getDataPaths(); }
     StoragePolicyPtr getStoragePolicy() const override { return getNested()->getStoragePolicy(); }
     /// Must be forwarded explicitly: the default `IStorage` implementation derives the disks from
