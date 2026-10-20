@@ -21,7 +21,7 @@ trap 'rm -rf "${DIR}"; kill ${HTTP_PID} 2>/dev/null; wait ${HTTP_PID} 2>/dev/nul
 # by the given number of seconds, as if the clock of the server was off, or with `none` omits it.
 # The path `latest.parquet` redirects to the file named in the file `redirect`. The path `auth.parquet`
 # redirects to the absolute URL of `export.parquet`, which serves `d.parquet` to the user `alice` and
-# `e.parquet` to the user `bob`.
+# `e.parquet` to the user `bob`. The path `token.parquet` serves the same files depending on the header `X-Token`.
 HTTP_PORT=$(python3 -c "
 import socket
 s = socket.socket()
@@ -65,6 +65,8 @@ class Handler(BaseHTTPRequestHandler):
             auth = self.headers.get('Authorization', '')
             user = base64.b64decode(auth[len('Basic '):]).decode().split(':')[0] if auth.startswith('Basic ') else ''
             name = {'alice': 'd.parquet', 'bob': 'e.parquet'}.get(user, '')
+        if name == 'token.parquet':
+            name = {'alice': 'd.parquet', 'bob': 'e.parquet'}.get(self.headers.get('X-Token', ''), '')
         path = os.path.join(ROOT, name)
         if not os.path.isfile(path):
             self.send_response(404)
@@ -263,6 +265,23 @@ ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_05346_auth (k Int64, s String) ENGI
 run auth_1 "SELECT count(), min(k) FROM t_05346_auth WHERE s LIKE '100099%'" ", max_http_get_redirects = 1"
 run auth_2 "SELECT count(), min(k) FROM t_05346_auth WHERE s LIKE '100099%'" ", max_http_get_redirects = 1"
 
+echo "--- request headers of a named collection"
+# The headers of a table can change while it keeps its UUID: here the header of the named collection is
+# changed and the table reattached. `token.parquet` then serves another file with the same size and
+# modification time, so the entries recorded for the file of one header must not apply to the other.
+NC="nc_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+${CLICKHOUSE_CLIENT} --query "DROP NAMED COLLECTION IF EXISTS ${NC}"
+${CLICKHOUSE_CLIENT} --query "CREATE NAMED COLLECTION ${NC} AS url = 'http://127.0.0.1:${HTTP_PORT}/token.parquet', format = 'Parquet',
+    \`headers.header.name\` = 'X-Token', \`headers.header.value\` = 'alice'"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05346_token"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_05346_token (k Int64, s String) ENGINE = URL(${NC})"
+run header_1 "SELECT count(), min(k) FROM t_05346_token WHERE s LIKE '100099%'"
+${CLICKHOUSE_CLIENT} --query "ALTER NAMED COLLECTION ${NC} SET \`headers.header.value\` = 'bob'"
+${CLICKHOUSE_CLIENT} --query "DETACH TABLE t_05346_token"
+${CLICKHOUSE_CLIENT} --query "ATTACH TABLE t_05346_token"
+run header_2 "SELECT count(), min(k) FROM t_05346_token WHERE s LIKE '100099%'"
+run header_3 "SELECT count(), min(k) FROM t_05346_token WHERE s LIKE '100099%'"
+
 echo "--- an origin without a date"
 # Without the `Date` of the response the age of the modification is unknown: the cache is not used.
 echo none > "${DIR}/date_skew"
@@ -278,10 +297,12 @@ run function_1 "SELECT count() FROM ${URL} WHERE s LIKE '9%'"
 run function_2 "SELECT count() FROM ${URL} WHERE s LIKE '9%'"
 
 echo "--- query condition cache lookups"
-events where_1 where_2 where_top_k top_k_1 top_k_plain rewritten_1 rewritten_2 policy after_policy recent_1 recent_2 skew_1 skew_2 redirect_1 redirect_2 redirect_3 auth_1 auth_2 no_date_1 no_date_2 function_1 function_2
+events where_1 where_2 where_top_k top_k_1 top_k_plain rewritten_1 rewritten_2 policy after_policy recent_1 recent_2 skew_1 skew_2 redirect_1 redirect_2 redirect_3 auth_1 auth_2 header_1 header_2 header_3 no_date_1 no_date_2 function_1 function_2
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05346"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05346_b"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05346_c"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05346_latest"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05346_auth"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05346_token"
+${CLICKHOUSE_CLIENT} --query "DROP NAMED COLLECTION ${NC}"

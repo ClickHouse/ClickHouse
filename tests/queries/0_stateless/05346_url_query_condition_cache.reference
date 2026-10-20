@@ -28,6 +28,10 @@
 --- credentials redirected to the same URL
 20	1000990
 20	1000990
+--- request headers of a named collection
+10	1000990
+10	1000990
+10	1000990
 --- an origin without a date
 10	1000990
 10	1000990
@@ -53,6 +57,9 @@ redirect_2	1	0
 redirect_3	1	1
 auth_1	1	0
 auth_2	1	1
+header_1	1	0
+header_2	1	0
+header_3	1	1
 no_date_1	0	0
 no_date_2	0	0
 function_1	0	0

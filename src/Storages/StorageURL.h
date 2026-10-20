@@ -302,6 +302,9 @@ private:
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
     HTTPHeaderEntries headers;
+    /// A hash of the request headers of the table, which are a part of the query condition cache key,
+    /// see `makeQueryConditionCacheFileKey`. The OpenTelemetry headers added per query are not included.
+    UInt128 request_headers_hash;
     bool need_only_count;
     StorageID storage_id;
     size_t total_rows_in_file = 0;

@@ -320,6 +320,20 @@ namespace
         return headers;
     }
 
+    UInt128 hashRequestHeaders(const HTTPHeaderEntries & headers)
+    {
+        SipHash hash;
+        hash.update(headers.size());
+        for (const auto & [header_name, header_value] : headers)
+        {
+            hash.update(header_name.size());
+            hash.update(header_name);
+            hash.update(header_value.size());
+            hash.update(header_value);
+        }
+        return hash.get128();
+    }
+
     StorageURLSource::FailoverOptions getFailoverOptions(const String & uri, size_t max_addresses)
     {
         return parseRemoteDescription(uri, 0, uri.size(), '|', max_addresses);
@@ -606,6 +620,7 @@ StorageURLSource::StorageURLSource(
     , parser_shared_resources(std::move(parser_shared_resources_))
     , format_filter_info(std::move(format_filter_info_))
     , headers(getHeaders(headers_, context_))
+    , request_headers_hash(hashRequestHeaders(headers_))
     , need_only_count(need_only_count_)
     , storage_id(std::move(storage_id_))
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
@@ -1081,13 +1096,16 @@ std::optional<String> StorageURLSource::makeQueryConditionCacheFileKey() const
     /// which can have the same modification time and size, and the requests keep the credentials of the original
     /// URL after a redirect, so different credentials redirected to the same URL can get different files.
     /// The credentials the requests were sent with are hashed as well: they persist from a previous URL with
-    /// `user:password@` to the next ones without it, see `setCredentialsFromURL`.
+    /// `user:password@` to the next ones without it, see `setCredentialsFromURL`. So are the request headers:
+    /// they can authenticate the request too (`Authorization`), and can change while the table keeps its UUID,
+    /// for example in a named collection.
     SipHash hash;
     for (const auto & component : {curr_uri.toString(), current_file_resolved_uri.toString(), credentials.getUsername(), credentials.getPassword()})
     {
         hash.update(component.size());
         hash.update(component);
     }
+    hash.update(request_headers_hash);
     return QueryConditionCache::makeFilePartName(
         getHexUIntLowercase(hash.get128()), fmt::format("{}_{}", *current_file_last_modified, *current_file_size));
 }
