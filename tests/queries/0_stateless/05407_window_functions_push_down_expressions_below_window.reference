@@ -3,7 +3,7 @@ memory
 plan
 Window
 toUInt64OrZero
-below the sorting for the window
+between the windows and their lowest sorting
 Window
 Window
 toUInt64OrZero
@@ -17,6 +17,11 @@ toUInt64OrZero
 1	7	3	3
 2	8	3	9
 0	9	4	0
+a sparse column materialized by the sorting for the window
+8	9900	51102855
+9	100	510052
+8	9900	51102855
+9	100	510052
 disabled
 toUInt64OrZero
 Window

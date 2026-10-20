@@ -233,6 +233,11 @@ void tryPushDownExpressionsBelowWindow(const Stack & stack, QueryPlan::Nodes & n
     if (chain.empty() || chain.back()->children.size() != 1)
         return;
 
+    /// The expressions are computed above the lowest sorting, like with the old query analysis, where `liftUpFunctions`
+    /// moved them there. The sorting materializes sparse columns, which some functions see (`byteSize`).
+    if (typeid_cast<const SortingStep *>(chain.back()->step.get()))
+        chain.pop_back();
+
     QueryPlan::Node * bottom_node = chain.back()->children.front();
     const Block & bottom_header = *bottom_node->step->getOutputHeader();
     const Block & window_header = *window_node->step->getOutputHeader();

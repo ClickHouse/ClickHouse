@@ -7902,7 +7902,7 @@ Possible values:
         {"26.8", false, true, "New setting to push volume-reducing functions (`length`, `lengthUTF8`, `empty`, `notEmpty`) below `Sorting` and `Filter` steps, so the wide argument column is replaced by the fixed-size result. previous_value=false so `compatibility` with versions before 26.8 restores the pre-existing behavior (no push down)."}) \
     DECLARE(Bool, query_plan_push_down_expressions_below_window, true, R"(
 Toggles a query-plan-level optimization which computes the expressions that are computed after window functions
-before them, below the `Window` steps and the `Sorting` steps for them, if they read a `String` or `FixedString`
+before them, between the `Window` steps and the `Sorting` step for them, if they read a `String` or `FixedString`
 column and have a small fixed-size result, for example `toUInt64OrZero(splitByString('@', s)[2])` or `length(s)`.
 The window functions buffer their input, so they buffer the result instead of the column.
 

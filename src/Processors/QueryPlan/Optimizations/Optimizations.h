@@ -312,9 +312,9 @@ using Stack = std::vector<Frame>;
 void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
 
 /// Moves the expressions of an `Expression` step above `Window` steps that read a `String` / `FixedString` column
-/// and have a small fixed-size result below the `Window` steps and the `Sorting` steps for them, so that they buffer
-/// the result instead of the column. It is a second pass optimization so that `liftUpFunctions` does not move
-/// the expressions back above the `Sorting` steps.
+/// and have a small fixed-size result below the `Window` steps (above the lowest `Sorting` step for them, like with
+/// the old query analysis), so that they buffer the result instead of the column. It is a second pass optimization,
+/// so that it sees the plan after the first pass moved and merged the expressions.
 void tryPushDownExpressionsBelowWindow(const Stack & stack, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 /// Register the applied `__applyFilter` conjuncts on the reading step at the top of the stack.
 void collectAppliedJoinRuntimeFilters(const Stack & stack);

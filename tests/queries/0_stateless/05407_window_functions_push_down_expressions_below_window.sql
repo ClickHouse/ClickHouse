@@ -22,7 +22,7 @@ SELECT if(explain LIKE '%Window (%', 'Window', 'toUInt64OrZero') FROM
 )
 WHERE explain LIKE '%Window (%' OR explain LIKE '%FUNCTION toUInt64OrZero%';
 
-SELECT 'below the sorting for the window';
+SELECT 'between the windows and their lowest sorting';
 SELECT if(explain LIKE '%Window (%', 'Window', 'toUInt64OrZero') FROM
 (
     EXPLAIN actions = 1, compact = 0, pretty = 0
@@ -36,6 +36,17 @@ SELECT k, v, n, m FROM
     FROM (SELECT number % 3 AS k, concat('p@', toString(number)) AS s FROM numbers(10))
 )
 ORDER BY v;
+
+SELECT 'a sparse column materialized by the sorting for the window';
+DROP TABLE IF EXISTS t_window_push_down_byte_size;
+CREATE TABLE t_window_push_down_byte_size (k UInt64, s String) ENGINE = MergeTree ORDER BY k
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.1;
+INSERT INTO t_window_push_down_byte_size SELECT number, if(number % 100 = 0, 'x', '') FROM numbers(10000);
+SELECT b, count(), sum(n) FROM (SELECT byteSize(s) AS b, count() OVER (ORDER BY k % 31) AS n FROM t_window_push_down_byte_size)
+GROUP BY b ORDER BY b SETTINGS max_threads = 1, optimize_read_in_order = 0;
+SELECT b, count(), sum(n) FROM (SELECT byteSize(s) AS b, count() OVER (ORDER BY k % 31) AS n FROM t_window_push_down_byte_size)
+GROUP BY b ORDER BY b SETTINGS max_threads = 1, optimize_read_in_order = 0, query_plan_push_down_expressions_below_window = 0;
+DROP TABLE t_window_push_down_byte_size;
 
 SELECT 'disabled';
 SELECT if(explain LIKE '%Window (%', 'Window', 'toUInt64OrZero') FROM
