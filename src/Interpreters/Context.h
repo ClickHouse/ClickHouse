@@ -777,7 +777,7 @@ protected:
     /// parallel reading streams serialize their merges into the one tree.
     std::shared_ptr<StreamingCursor> streaming_cursor;
 
-    std::function<void()> query_execution_started_callback;
+    QueryExecutionStartedCallback query_execution_started_callback;
 
     /// Use copy constructor or createGlobal() instead
     ContextData();
@@ -2053,7 +2053,8 @@ public:
     /// Called by the interpreter after the query has passed its checks,
     /// right before it starts its main work.
     void onQueryExecutionStarted() const;
-    void setQueryExecutionStartedCallback(std::function<void()> callback);
+    void setQueryExecutionStartedCallback(QueryExecutionStartedCallback callback);
+    const QueryExecutionStartedCallback & getQueryExecutionStartedCallback() const;
 
     void checkTransactionsAreAllowed(bool explicit_tcl_query = false) const;
     void initCurrentTransaction(MergeTreeTransactionPtr txn);

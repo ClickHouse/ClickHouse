@@ -8884,9 +8884,14 @@ Coordination::Requests Context::getDDLAdditionalChecksOnEnqueue() const
     return ddl_additional_checks_on_enqueue;
 }
 
-void Context::setQueryExecutionStartedCallback(std::function<void()> callback)
+void Context::setQueryExecutionStartedCallback(QueryExecutionStartedCallback callback)
 {
     query_execution_started_callback = std::move(callback);
+}
+
+const QueryExecutionStartedCallback & Context::getQueryExecutionStartedCallback() const
+{
+    return query_execution_started_callback;
 }
 
 void Context::onQueryExecutionStarted() const

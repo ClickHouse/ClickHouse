@@ -61,29 +61,26 @@ function shared_native_and_http_tests()
     [[ -z "$out" ]] && echo "no output"
 
     echo '--- CREATE TABLE AS SELECT returns as soon as the SELECT has started'
-    local ctas_fifo="${CLICKHOUSE_USER_FILES_UNIQUE}_${run}_ctas.fifo"
-    rm -f "$ctas_fifo"
-    mkfifo "$ctas_fifo"
-    out=$($run "CREATE TABLE t_ctas_slow_${run} ENGINE = MergeTree ORDER BY n AS SELECT k AS n FROM file('${ctas_fifo}', 'TSV', 'k UInt64')")
+    local slow_select="SELECT number AS n FROM numbers(100) WHERE NOT ignore(sleepEachRow(0.1)) SETTINGS max_block_size = 1"
+    local ctas_id="ctas_${run}_${CLICKHOUSE_DATABASE}"
+    out=$($run "CREATE TABLE t_ctas_slow_${run} ENGINE = MergeTree ORDER BY n AS $slow_select" "$ctas_id")
     [[ -z "$out" ]] && echo "no output"
-    printf '7\n' > "$ctas_fifo"
-    wait_for "count() = 1 FROM t_ctas_slow_${run}"
+    wait_for "count() = 1 FROM system.processes WHERE query_id = '$ctas_id'"
+    echo "still populating after the client returned"
+    wait_for "count() = 100 FROM t_ctas_slow_${run}"
     echo "created with rows"
     $CLICKHOUSE_CLIENT -q "DROP TABLE t_ctas_slow_${run}"
-    rm -f "$ctas_fifo"
 
     echo '--- CREATE OR REPLACE TABLE AS SELECT returns as soon as the SELECT has started'
-    local replace_fifo="${CLICKHOUSE_USER_FILES_UNIQUE}_${run}_replace.fifo"
-    rm -f "$replace_fifo"
-    mkfifo "$replace_fifo"
+    local replace_id="replace_${run}_${CLICKHOUSE_DATABASE}"
     $CLICKHOUSE_CLIENT -q "CREATE TABLE t_ctas_slow_${run} (n UInt64) ENGINE = MergeTree ORDER BY n"
-    out=$($run "CREATE OR REPLACE TABLE t_ctas_slow_${run} ENGINE = MergeTree ORDER BY n AS SELECT k AS n FROM file('${replace_fifo}', 'TSV', 'k UInt64')")
+    out=$($run "CREATE OR REPLACE TABLE t_ctas_slow_${run} ENGINE = MergeTree ORDER BY n AS $slow_select" "$replace_id")
     [[ -z "$out" ]] && echo "no output"
-    printf '7\n' > "$replace_fifo"
-    wait_for "count() = 1 FROM t_ctas_slow_${run}"
-    $CLICKHOUSE_CLIENT -q "SELECT n FROM t_ctas_slow_${run}"
+    wait_for "count() = 1 FROM system.processes WHERE query_id = '$replace_id'"
+    echo "still populating after the client returned"
+    wait_for "count() = 100 FROM t_ctas_slow_${run}"
+    echo "replaced with rows"
     $CLICKHOUSE_CLIENT -q "DROP TABLE t_ctas_slow_${run}"
-    rm -f "$replace_fifo"
 
     echo '--- enabling the setting for a whole session is rejected'
     $run "SET run_query_in_background = 1" "" 0 | grep -o -m1 "run_query_in_background cannot be changed with SET"

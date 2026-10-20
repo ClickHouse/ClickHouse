@@ -329,6 +329,8 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     /// `NOT_FOUND_COLUMN_IN_BLOCK`.
     query_context->setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
 
+    query_context->setQueryExecutionStartedCallback(query_execution_started_callback);
+
     const bool preserve_user = from_context->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles];
     if (submitting_user_context)
     {
