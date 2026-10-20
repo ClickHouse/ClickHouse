@@ -372,11 +372,9 @@ def test_external_tables_version_9():
     node.query(
         "CREATE TABLE mysamples ("
         "id UUID, "
-        "samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))), "
-        "bucket DateTime64(3), "
-        "min_time SimpleAggregateFunction(min, DateTime64(3)), "
-        "max_time SimpleAggregateFunction(max, DateTime64(3))) "
-        "ENGINE=AggregatingMergeTree ORDER BY (id, bucket)"
+        "timestamp DateTime64(3), "
+        "value Float64) "
+        "ENGINE=MergeTree ORDER BY (id, timestamp)"
     )
 
     node.query(

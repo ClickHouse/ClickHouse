@@ -23,7 +23,10 @@ def start_cluster():
 
 
 def test_timeseries_partition_key_timezone(start_cluster):
-    node.query("CREATE TABLE prometheus (samples Array(Tuple(DateTime64(6), Float64))) ENGINE = TimeSeries")
+    node.query(
+        "CREATE TABLE prometheus (samples Array(Tuple(DateTime64(6), Float64))) "
+        "ENGINE = TimeSeries SETTINGS version = 11"
+    )
 
     # Insert 40 samples relative to now().
     node.query(
@@ -56,7 +59,8 @@ def test_timeseries_partition_key_timezone(start_cluster):
 
     # Initial query under America/Los_Angeles.
     count_before = node.query(
-        "SELECT count() FROM timeSeriesSelector(currentDatabase(), 'prometheus', 'cpu_usage', now() - 3600, now())"
+        "SELECT sum(length(time_series)) "
+        "FROM timeSeriesSelector(currentDatabase(), 'prometheus', 'cpu_usage', now() - 3600, now())"
     ).strip()
     assert count_before == "40", f"Expected 40 samples before restart, got {count_before}"
 
@@ -67,7 +71,8 @@ def test_timeseries_partition_key_timezone(start_cluster):
 
     # Range query after server timezone change must still read all 40 samples.
     count_after = node.query(
-        "SELECT count() FROM timeSeriesSelector(currentDatabase(), 'prometheus', 'cpu_usage', now() - 3600, now())"
+        "SELECT sum(length(time_series)) "
+        "FROM timeSeriesSelector(currentDatabase(), 'prometheus', 'cpu_usage', now() - 3600, now())"
     ).strip()
     assert count_after == "40", (
         f"a range query returned {count_after} of the 40 samples in that range after the server timezone changed"

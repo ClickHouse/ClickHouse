@@ -24,26 +24,28 @@ def started_cluster():
 def create_owner(name):
     node.query(
         f"""
-        CREATE TABLE test.{name}_samples
-        (
-            id UUID,
-            samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(DateTime64(3), Float64))),
-            bucket DateTime64(3),
-            min_time SimpleAggregateFunction(min, DateTime64(3)),
-            max_time SimpleAggregateFunction(max, DateTime64(3))
-        ) ENGINE = AggregatingMergeTree ORDER BY (id, bucket)
-        """
-    )
-    node.query(
-        f"""
         CREATE TABLE test.{name}_owner ENGINE = TimeSeries
-        SETTINGS version = 10, recent_samples_ttl_seconds = 0
-        SAMPLES test.{name}_samples
+        SETTINGS version = 11, recent_samples_ttl_seconds = 0
         """
     )
+    # Resolve the `Atomic` inner target from metadata, even when it has no parts.
+    samples_tables = node.query(
+        f"""
+        SELECT name
+        FROM system.tables
+        WHERE database = 'test'
+            AND name = concat('.inner_id.samples.', (
+                SELECT toString(uuid)
+                FROM system.tables
+                WHERE database = 'test' AND name = '{name}_owner'
+            ))
+        """
+    ).splitlines()
+    assert len(samples_tables) == 1, samples_tables
+    return f"test.`{samples_tables[0]}`"
 
 
-def run_race(name, failpoint, query, alter_command=None):
+def run_race(samples_table, failpoint, query, alter_command=None):
     node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
     paused = False
     released = False
@@ -55,7 +57,7 @@ def run_race(name, failpoint, query, alter_command=None):
             node.query(
                 alter_command
                 or f"""
-                ALTER TABLE test.{name}_samples MODIFY COLUMN samples
+                ALTER TABLE {samples_table} MODIFY COLUMN samples
                 Array(Tuple(DateTime64(3), Float64))
                 """
             )
@@ -71,9 +73,9 @@ def run_race(name, failpoint, query, alter_command=None):
 
 
 def test_insert_revalidates_bound_samples_target():
-    create_owner("insert")
+    samples_table = create_owner("insert")
     answer, error = run_race(
-        "insert",
+        samples_table,
         "time_series_insert_pause_after_target_validation",
         """
         INSERT INTO test.insert_owner (metric_name, tags, samples)
@@ -82,13 +84,13 @@ def test_insert_revalidates_bound_samples_target():
     )
     assert answer == ""
     assert "BAD_TYPE_OF_FIELD" in error
-    assert node.query("SELECT count() FROM test.insert_samples") == "0\n"
+    assert node.query(f"SELECT count() FROM {samples_table}") == "0\n"
 
 
 def test_read_revalidates_bound_samples_target():
-    create_owner("read")
+    samples_table = create_owner("read")
     answer, error = run_race(
-        "read",
+        samples_table,
         "time_series_read_pause_after_target_validation",
         "SELECT samples FROM test.read_owner LIMIT 1",
     )
@@ -97,7 +99,7 @@ def test_read_revalidates_bound_samples_target():
 
 
 def test_native_selector_revalidates_bound_samples_target():
-    create_owner("native")
+    samples_table = create_owner("native")
     node.query(
         """
         INSERT INTO test.native_owner (metric_name, tags, samples)
@@ -105,7 +107,7 @@ def test_native_selector_revalidates_bound_samples_target():
         """
     )
     answer, error = run_race(
-        "native",
+        samples_table,
         "time_series_selector_pause_after_target_metadata",
         """
         SELECT count() FROM prometheusQueryRange(
@@ -115,20 +117,20 @@ def test_native_selector_revalidates_bound_samples_target():
     )
     assert answer == ""
     assert "BAD_TYPE_OF_FIELD" in error
-    assert node.query("SELECT count() FROM test.native_samples") == "1\n"
+    assert node.query(f"SELECT count() FROM {samples_table}") == "1\n"
 
 
 def test_insert_rejects_metadata_change_after_initial_validation():
-    create_owner("metadata")
+    samples_table = create_owner("metadata")
     answer, error = run_race(
-        "metadata",
+        samples_table,
         "time_series_insert_pause_after_target_validation",
         """
         INSERT INTO test.metadata_owner (metric_name, tags, samples)
         VALUES ('metric', map(), [(toDateTime64(1000, 3), 1.)])
         """,
-        "ALTER TABLE test.metadata_samples COMMENT COLUMN samples 'changed during planning'",
+        f"ALTER TABLE {samples_table} COMMENT COLUMN samples 'changed during planning'",
     )
     assert answer == ""
     assert "UNFINISHED" in error
-    assert node.query("SELECT count() FROM test.metadata_samples") == "0\n"
+    assert node.query(f"SELECT count() FROM {samples_table}") == "0\n"
