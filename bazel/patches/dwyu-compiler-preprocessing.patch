@@ -31,7 +31,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      return includes, quote_includes, external_includes, system_includes
  
  def _process_target(ctx, target, config, output_path, is_target_under_inspection):
-@@ -386,12 +392,283 @@
+@@ -386,12 +392,298 @@
          return []
      return [OutputGroupInfo(dwyu = depset(transitive = _gather_transitive_reports(ctx)))]
  
@@ -249,6 +249,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +
 +        public_output = ctx.actions.declare_file("{}.dwyu_psf_{}_{}_public.json".format(name, attr_prefix, _hash(file.short_path)))
 +        private_output = ctx.actions.declare_file("{}.dwyu_psf_{}_{}_private.json".format(name, attr_prefix, _hash(file.short_path)))
++        compiler_headers = ctx.actions.declare_file("{}.dwyu_pp_{}_{}.headers".format(name, attr_prefix, _hash(file.short_path)))
 +
 +        # Placing -x before the input matters for .h, .inc and generated files.
 +        # Replace -c with -E; Clang rejects both under -Werror. -dI emits active includes.
@@ -261,11 +262,23 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +            # includer during this action, so Clang cannot determine macro use.
 +            args.add("-Wno-unused-macros")
 +        args.add("-dI")
++        # The same Clang invocation reports files suppressed by include guards.
++        # System headers must be present too: Bazel can put project hdrs in
++        # -isystem directories, which does not make them toolchain files.
++        args.add_all([
++            "-fshow-skipped-includes",
++            "-Xclang",
++            "-header-include-file",
++            "-Xclang",
++            compiler_headers.path,
++            "-Xclang",
++            "-sys-header-deps",
++        ])
 +        ctx.actions.run(
 +            executable = cc_common.get_tool_for_action(feature_configuration = feature_configuration, action_name = action_name),
 +            inputs = inputs,
 +            tools = cc_toolchain.all_files,
-+            outputs = [compiler_output],
++            outputs = [compiler_output, compiler_headers],
 +            arguments = [args],
 +            mnemonic = "DwyuCompilerPreprocess",
 +        )
@@ -273,6 +286,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +            capture.append(struct(
 +                source = file,
 +                output = compiler_output,
++                compiler_headers = compiler_headers,
 +                command = command,
 +                inputs = inputs,
 +                toolchain_files = cc_toolchain.all_files,
@@ -281,6 +295,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +        args.add_all("--files", [compiler_output])
 +        args.add("--mode", "compiler")
 +        args.add("--source", file)
++        args.add("--compiler_headers", compiler_headers)
 +
 +        # Keep compiler feature directories in their configured order. A JSON
 +        # value protects compiler --options from DWYU's option parser.
@@ -296,7 +311,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +            args.add("--verbose")
 +        ctx.actions.run(
 +            executable = ctx.executable._tool_preprocessing,
-+            inputs = depset(direct = [compiler_output], transitive = [inputs]),
++            inputs = depset(direct = [compiler_output, compiler_headers], transitive = [inputs]),
 +            outputs = [public_output, private_output],
 +            mnemonic = "DwyuProcessSourceFile",
 +            arguments = [args],
@@ -317,7 +332,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
      # Work around the bug described in https://github.com/bazelbuild/bazel/issues/19663
      # Implementation_deps are not added to CcInfo.compilation_context
-@@ -440,7 +717,7 @@
+@@ -440,7 +732,7 @@
  
          preprocessor_results.append(pp_output)
  
@@ -326,7 +341,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
  def dwyu_cc_aspect_impl(target, ctx):
      """
-@@ -510,8 +787,17 @@
+@@ -510,8 +802,17 @@
      #
  
      config = _make_dwyu_config(ctx)
@@ -346,7 +361,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      processed_target = _process_target(
          ctx,
          target = struct(label = target.label, cc_info = target[CcInfo]),
-@@ -529,26 +815,35 @@
+@@ -529,26 +830,35 @@
  
      report_file = ctx.actions.declare_file("{}_dwyu_report.json".format(target.label.name))
  
@@ -386,7 +401,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      args.add("--output", report_file)
      args.add("--target_under_inspection", str(target.label))
      args.add_all("--preprocessed_public_files", preprocessed_public_files, omit_if_empty = False)
-@@ -560,17 +855,20 @@
+@@ -560,17 +870,20 @@
          args.add("--ignored_includes_config", ctx.files._ignored_includes[0])
      args.add_all("--extra_ignored_includes", config.extra_ignored_includes, omit_if_empty = True)
      args.add_all("--ignored_unused_deps", config.ignored_unused_deps, omit_if_empty = True)
@@ -410,7 +425,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
          transitive = [target[CcInfo].compilation_context.headers],
      )
      ctx.actions.run(
-@@ -584,3 +882,185 @@
+@@ -584,3 +897,186 @@
  
      accumulated_reports = depset(direct = [report_file], transitive = _gather_transitive_reports(ctx))
      return [OutputGroupInfo(dwyu = accumulated_reports)]
@@ -546,6 +561,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +            args.add_all("--files", [item.output])
 +            args.add("--mode", "compiler")
 +            args.add("--source", item.source)
++            args.add("--compiler_headers", item.compiler_headers)
 +            args.add("--consumer_root")
 +            args.add("--compiler_command", json.encode(item.command))
 +            args.add_all("--toolchain_files", item.toolchain_files, expand_directories = False)
@@ -554,7 +570,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +            args.add("--owned_headers", data.headers)
 +            ctx.actions.run(
 +                executable = ctx.executable._tool_preprocessing,
-+                inputs = depset(direct = [item.output, data.headers], transitive = [item.inputs]),
++                inputs = depset(direct = [item.output, item.compiler_headers, data.headers], transitive = [item.inputs]),
 +                outputs = [pub, priv],
 +                mnemonic = "DwyuProcessConsumerContext",
 +                arguments = [args],
@@ -912,9 +928,10 @@ diff --git a/dwyu/cc/aspect/private/preprocessing/BUILD b/dwyu/cc/aspect/private
      deps = [
          "//dwyu/cc/aspect/private/preprocessing/fast_parsing:process_files",
 diff --git a/dwyu/cc/aspect/private/preprocessing/compiler.h b/dwyu/cc/aspect/private/preprocessing/compiler.h
+new file mode 100644
 --- /dev/null
 +++ b/dwyu/cc/aspect/private/preprocessing/compiler.h
-@@ -0,0 +1,191 @@
+@@ -0,0 +1,212 @@
 +#ifndef DWYU_CC_ASPECT_PRIVATE_PREPROCESSING_COMPILER_H
 +#define DWYU_CC_ASPECT_PRIVATE_PREPROCESSING_COMPILER_H
 +
@@ -941,11 +958,14 @@ diff --git a/dwyu/cc/aspect/private/preprocessing/compiler.h b/dwyu/cc/aspect/pr
 +inline CompilerIncludes extractCompilerIncludes(const std::string& compiler_output,
 +                                                const std::string& source,
 +                                                const std::string& owned_headers,
++                                                const std::string& compiler_headers,
 +                                                const std::vector<std::string>& command,
 +                                                const std::vector<std::string>& toolchain_files,
 +                                                bool root_is_owned = true) {
 +    std::ifstream input{compiler_output};
 +    if (!input.is_open()) abortWithError("Cannot read Clang preprocessor output ", compiler_output);
++    std::ifstream header_trace{compiler_headers};
++    if (!header_trace.is_open()) abortWithError("Cannot read Clang header output ", compiler_headers);
 +    std::ifstream headers_input{owned_headers};
 +    if (!headers_input.is_open()) abortWithError("Cannot read DWYU header manifest ", owned_headers);
 +    const auto headers = nlohmann::json::parse(headers_input);
@@ -966,13 +986,25 @@ diff --git a/dwyu/cc/aspect/private/preprocessing/compiler.h b/dwyu/cc/aspect/pr
 +        return file;
 +    };
 +    const CompilerSearch search{command, toolchain_files};
-+    std::unordered_map<std::string, std::string> seen;
 +    nlohmann::json public_includes = nlohmann::json::object();
 +    nlohmann::json private_includes = nlohmann::json::object();
 +    std::unordered_set<std::string> entered_files;
 +    std::string current_file = own_file;
 +    bool current_public = public_headers.find(own_file) != public_headers.end();
 +    std::vector<std::pair<std::string, bool>> include_stack;
++    bool processed_predefines = false;
++    // HeaderIncludeGen::PrintHeaderInfo escapes, but does not surround, names.
++    // Consume in preprocessor order, including foreign files; never search ahead.
++    auto nextHeader = [&]() {
++        std::string record;
++        if (!std::getline(header_trace, record))
++            abortWithError("Missing Clang header record in ", compiler_headers, " while in ", current_file);
++        std::istringstream name{"\"" + record + "\""};
++        std::string filename;
++        if (!(name >> std::quoted(filename)) || (name >> std::ws && !name.eof()) || filename.empty())
++            abortWithError("Malformed Clang header record in ", compiler_headers, ": ", record);
++        return execPath(filename);
++    };
 +    auto observations = [&](const std::string& file, bool is_public) -> nlohmann::json& {
 +        auto& per_file = (is_public ? public_includes : private_includes)[original(file)];
 +        if (per_file.is_null()) per_file = nlohmann::json::array();
@@ -989,29 +1021,22 @@ diff --git a/dwyu/cc/aspect/private/preprocessing/compiler.h b/dwyu/cc/aspect/pr
 +    bool pending_include_next = false;
 +    auto complete = [&](std::string resolved) {
 +        if (pending_statement.empty()) return;
-+        // Only an actual Clang enter marker establishes a seen include. Guarded
-+        // dependency headers need not be resolved unless owned code included them.
-+        if (!resolved.empty()) seen[pending_statement] = execPath(resolved);
++        if (resolved.empty()) {
++            if (isOwned(pending_file) && pending_include_next)
++                abortWithError("Clang skipped guarded #include_next ", pending_statement, " in ", pending_file,
++                               "; DWYU cannot prove which directory supplied the next header.");
++            // HeaderIncludeGen suppresses skips at the initial source and
++            // built-in levels until the predefines have been processed.
++            if (processed_predefines || include_stack.size() + 1 > 2)
++                resolved = nextHeader();
++            else if (isOwned(pending_file))
++                abortWithError("Clang did not report guarded ", pending_statement, " in ", pending_file,
++                               " before the end of its predefines.");
++        }
 +        if (!isOwned(pending_file)) {
 +            pending_statement.clear();
 +            pending_file.clear();
 +            return;
-+        }
-+        if (resolved.empty() && pending_include_next)
-+            abortWithError("Clang skipped guarded #include_next ", pending_statement, " in ", pending_file,
-+                           "; DWYU cannot prove which directory supplied the next header.");
-+        if (resolved.empty()) {
-+            resolved = search.guardedHeader(pending_statement, pending_file);
-+            // A driver-derived GCC/sysroot directory need not be present in
-+            // the command. Reuse only a toolchain file Clang actually entered.
-+            if (resolved.empty()) {
-+                auto it = seen.find(pending_statement);
-+                if (it != seen.end() && search.isToolchain(it->second)) resolved = it->second;
-+            }
-+        }
-+        if (resolved.empty()) {
-+            abortWithError("Clang resolved ", pending_statement, " in ", pending_file,
-+                           " but DWYU cannot attribute the guarded header; inspect Clang's include dirs.");
 +        }
 +        resolved = execPath(resolved);
 +        if ((!root_is_owned || resolved != own_file) && !search.isToolchain(resolved))
@@ -1049,6 +1074,14 @@ diff --git a/dwyu/cc/aspect/private/preprocessing/compiler.h b/dwyu/cc/aspect/pr
 +            }
 +            if (entering) {
 +                const auto next_file = filename.rfind("<", 0) == 0 ? filename : execPath(filename);
++                // The main file has no -dI enter flag and is depth one.
++                // Match HeaderIncludeGen::ShouldShowHeader/FileChanged on entry.
++                if ((processed_predefines || include_stack.size() + 2 > 2) && filename != "<command line>") {
++                    const auto reported = nextHeader();
++                    if (reported != execPath(filename))
++                        abortWithError("Clang header record ", reported, " does not match enter marker ",
++                                       filename, " in ", compiler_output);
++                }
 +                if ((current_file == "<built-in>" || current_file == "<command line>") &&
 +                    next_file.rfind("<", 0) != 0) {
 +                    const auto statement = search.forcedStatement(next_file);
@@ -1084,6 +1117,7 @@ diff --git a/dwyu/cc/aspect/private/preprocessing/compiler.h b/dwyu/cc/aspect/pr
 +                current_file = std::move(include_stack.back().first);
 +                current_public = include_stack.back().second;
 +                include_stack.pop_back();
++                if (include_stack.empty()) processed_predefines = true;
 +            }
 +            // A marker without enter/return flags only changes source line
 +            // locations, as from #line. It never changes header ownership.
@@ -1092,6 +1126,10 @@ diff --git a/dwyu/cc/aspect/private/preprocessing/compiler.h b/dwyu/cc/aspect/pr
 +        }
 +    }
 +    complete("");
++    if (std::getline(header_trace, line))
++        abortWithError("Unexpected Clang header record after ", compiler_output, ": ", line);
++    if (!header_trace.eof())
++        abortWithError("Failed reading Clang header output ", compiler_headers);
 +    auto records = [&](nlohmann::json& per_file) {
 +        auto result = nlohmann::json::array();
 +        for (auto it = per_file.begin(); it != per_file.end(); ++it)
@@ -1107,6 +1145,7 @@ diff --git a/dwyu/cc/aspect/private/preprocessing/compiler.h b/dwyu/cc/aspect/pr
 +
 +#endif
 diff --git a/dwyu/cc/aspect/private/preprocessing/compiler_search.h b/dwyu/cc/aspect/private/preprocessing/compiler_search.h
+new file mode 100644
 --- /dev/null
 +++ b/dwyu/cc/aspect/private/preprocessing/compiler_search.h
 @@ -0,0 +1,203 @@
@@ -1321,13 +1360,14 @@ diff --git a/dwyu/cc/aspect/private/preprocessing/main.cpp b/dwyu/cc/aspect/priv
  #include "dwyu/cc/aspect/private/preprocessing/fast_parsing/process_files.h"
  #include "dwyu/cc/aspect/private/preprocessing/wave/gather_direct_includes_hook.h"
  #include "dwyu/cc/aspect/private/preprocessing/wave/process_files.h"
-@@ -22,16 +23,23 @@
+@@ -22,16 +23,24 @@
  struct ProgramOptions {
      std::vector<std::string> files{};
      std::string mode{};
 +    std::string source{};
 +    std::string owned_headers{};
 +    std::string private_output{};
++    std::string compiler_headers{};
 +    std::vector<std::string> toolchain_files{};
 +    std::string compiler_command{};
      std::vector<std::string> include_paths{};
@@ -1345,19 +1385,20 @@ diff --git a/dwyu/cc/aspect/private/preprocessing/main.cpp b/dwyu/cc/aspect/priv
  
      // Files which we are preprocessing
      parser.addOptionList("--files", options.files);
-@@ -43,6 +51,11 @@
+@@ -43,6 +52,12 @@
      parser.addOptionList("--system_include_paths", options.system_include_paths);
      // Macros defined by the CC toolchain or the user
      parser.addOptionList("--defines", options.defines);
 +    parser.addOptionValue("--source", options.source);
 +    parser.addOptionValue("--owned_headers", options.owned_headers);
 +    parser.addOptionValue("--private_output", options.private_output);
++    parser.addOptionValue("--compiler_headers", options.compiler_headers);
 +    parser.addOptionList("--toolchain_files", options.toolchain_files);
 +    parser.addOptionValue("--compiler_command", options.compiler_command);
      // Stores the discovered includes in this file
      parser.addOptionValue("--output", options.output);
      // Print debugging information
-@@ -88,7 +101,21 @@
+@@ -88,7 +103,22 @@
          std::cout << "Defines              : " << listToStr(options.defines) << "\n";
      }
  
@@ -1365,9 +1406,10 @@ diff --git a/dwyu/cc/aspect/private/preprocessing/main.cpp b/dwyu/cc/aspect/priv
 +    nlohmann::json output_json;
 +    if (options.mode == "compiler") {
 +        if (options.files.size() != 1 || options.source.empty() || options.owned_headers.empty()
-+            || options.private_output.empty() || options.compiler_command.empty())
-+            abortWithError("Compiler mode requires one preprocessed file, --source, --owned_headers, --private_output and --compiler_command");
++            || options.private_output.empty() || options.compiler_headers.empty() || options.compiler_command.empty())
++            abortWithError("Compiler mode requires one preprocessed file, --source, --owned_headers, --private_output, --compiler_headers and --compiler_command");
 +        auto includes = extractCompilerIncludes(options.files.front(), options.source, options.owned_headers,
++                                                options.compiler_headers,
 +                                                nlohmann::json::parse(options.compiler_command).get<std::vector<std::string>>(),
 +                                                options.toolchain_files, !options.consumer_root);
 +        output_json = std::move(includes.public_files);
