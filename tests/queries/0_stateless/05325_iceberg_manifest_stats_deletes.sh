@@ -9,6 +9,7 @@
 # - T3: per partition: no filter, a filter that prunes the partition with the deletes, one that keeps only it.
 # - T4: equality deletes are not subtracted, nor a removed delete entry (Spark fixture, see data_minio/deletes_db/README.md).
 # - T5: the NDV of a key is clamped to the rows left after the deletes.
+# - T6: a filter is estimated on the rows left after the deletes.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -56,6 +57,7 @@ skipped()
 # u: 2 data files (k 0-99, 100-199), the DELETE touches only the first, so its delete file is scoped to it.
 # g: the same layout, the DELETE touches both files, so its delete file covers both.
 # p: 1 data file per partition (us: odd k, eu: even k), the DELETE touches only the us file.
+# del: 2 data files of 1000 rows, v has 5 values, the DELETE touches only the first, so its delete file is scoped to it.
 ${CLICKHOUSE_CLIENT} ${PINS} --query "
     CREATE TABLE u (k Int32, v Int64) ENGINE = IcebergLocal('${LAKE}/u') SETTINGS iceberg_format_version = 2;
     INSERT INTO u SELECT number, number FROM numbers(100);
@@ -68,6 +70,10 @@ ${CLICKHOUSE_CLIENT} ${PINS} --query "
     CREATE TABLE p (k Int32, r String, v Int64) ENGINE = IcebergLocal('${LAKE}/p') PARTITION BY (r) SETTINGS iceberg_format_version = 2;
     INSERT INTO p SELECT number, ['eu', 'us'][number % 2 + 1], number FROM numbers(200);
     DELETE FROM p WHERE r = 'us' AND k < 40;
+    CREATE TABLE del (k Int32, v Int32) ENGINE = IcebergLocal('${LAKE}/del') SETTINGS iceberg_format_version = 2;
+    INSERT INTO del SELECT number, number % 5 FROM numbers(1000);
+    INSERT INTO del SELECT number, number % 5 FROM numbers(1000, 1000);
+    DELETE FROM del WHERE k < 500;
     CREATE TABLE mt (k Int32, x Int64) ENGINE = MergeTree ORDER BY k
         SETTINGS index_granularity = 8192, auto_statistics_types = 'uniq';
     INSERT INTO mt SELECT number, number FROM numbers(1000);
@@ -90,5 +96,8 @@ labels "(SELECT id AS k FROM icebergLocal('${LAKE}/eq_deletes_table/'))"
 echo '--- T5: k is 0..199 and the deletes leave 180 rows, so the range 200 is clamped to 180'
 ${CLICKHOUSE_CLIENT_TRACE} ${PINS} --query "EXPLAIN SELECT count() FROM mt AS m JOIN u AS t ON m.k = t.k" 2>&1 >/dev/null \
     | grep -oE 'Estimated statistics for [A-Za-z]+ t: .*' | head -n 1 | grep -oE 't: [0-9]+ rows|__table[0-9]+\.k: [0-9]+'
+echo '--- T6: WHERE v = 1, 500 of 2000 rows deleted'
+echo 'Expect ~300: the deletes leave 1500 rows, and v = 1 is 1 of its 5 values, so 1500 / 5.'
+labels del "t.v = 1"
 
 rm -rf "${LAKE}"
