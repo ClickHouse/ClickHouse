@@ -759,6 +759,11 @@ bool Reader::spatialBboxStatsHaveNoNulls(size_t row_group_idx, size_t spatial_ke
     return true;
 }
 
+static size_t heapBytesOfField(const Field & field)
+{
+    return field.getType() == Field::Types::String ? field.safeGet<String>().size() : 0;
+}
+
 void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read)
 {
     extended_sample_block = *sample_block;
@@ -1153,12 +1158,14 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     size_t total_rows = 0;
     key_condition_column_ranges.clear();
     key_condition_column_ranges_complete = false;
-    const bool record_key_condition_ranges = collect_key_condition_column_ranges && options.format.parquet.filter_push_down
-        && format_filter_info->key_condition && spatial_key_conditions.empty() && !rows_to_read;
+    const bool record_key_condition_ranges = !collect_key_condition_column_ranges.empty()
+        && options.format.parquet.filter_push_down && format_filter_info->key_condition && spatial_key_conditions.empty()
+        && !rows_to_read;
     if (record_key_condition_ranges)
-        for (size_t idx : format_filter_info->key_condition->getUsedColumnsInOrder())
+        for (size_t idx : collect_key_condition_column_ranges)
             if (idx < extended_sample_block.columns())
-                key_condition_column_ranges.emplace_back(idx, std::vector<Range>{});
+                key_condition_column_ranges.push_back({.idx = idx, .ranges = {}, .bytes = 0});
+    size_t key_condition_column_ranges_bytes = 0;
     for (size_t row_group_idx = 0; row_group_idx < file_metadata().row_groups.size(); ++row_group_idx)
     {
         const auto * meta = &file_metadata().row_groups[row_group_idx];
@@ -1196,8 +1203,22 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         /// `canSkipFile` matches ranges kept by different queries by position, which must be the same row group for every
         /// query: no `continue` that depends on the query may come before this push (hence no recording with `rows_to_read`).
         if (record_key_condition_ranges)
-            for (auto & [idx, ranges] : key_condition_column_ranges)
-                ranges.push_back(hyperrectangle[idx]);
+        {
+            for (auto & column : key_condition_column_ranges)
+            {
+                const Range & range = hyperrectangle[column.idx];
+                const size_t range_bytes = sizeof(Range) + heapBytesOfField(range.left) + heapBytesOfField(range.right);
+                column.ranges.push_back(range);
+                column.bytes += range_bytes;
+                key_condition_column_ranges_bytes += range_bytes;
+            }
+            while (key_condition_column_ranges_bytes > max_key_condition_column_ranges_bytes)
+            {
+                auto largest = std::ranges::max_element(key_condition_column_ranges, {}, &KeyConditionColumnRanges::bytes);
+                key_condition_column_ranges_bytes -= largest->bytes;
+                key_condition_column_ranges.erase(largest);
+            }
+        }
 
         if (options.format.parquet.filter_push_down && format_filter_info->key_condition)
         {

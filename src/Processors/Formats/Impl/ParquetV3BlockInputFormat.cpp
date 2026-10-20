@@ -220,8 +220,23 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
                 reader->reader.setFileFooter(readFileFooter(reader->reader.prefetcher));
             }
             reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
-            reader->reader.collect_key_condition_column_ranges
-                = metadata_cache_cell && format_filter_info && format_filter_info->keep_filter_column_statistics;
+            if (metadata_cache_cell && format_filter_info->keep_filter_column_statistics && format_filter_info->key_condition)
+            {
+                /// Ranges are collected only for the columns not kept yet, and only while they can still be kept.
+                Block key_block = getPort().getHeader();
+                for (const auto & column : format_filter_info->additional_columns)
+                    key_block.insert(column);
+                const auto & kept_statistics = *metadata_cache_cell->kept_statistics;
+                for (size_t idx : format_filter_info->key_condition->getUsedColumnsInOrder())
+                {
+                    if (idx >= key_block.columns())
+                        continue;
+                    const auto & column = key_block.getByPosition(idx);
+                    if (!kept_statistics.get(ParquetCachedStatisticsFilter::makeColumnKey(column.name, *column.type, format_settings)))
+                        reader->reader.collect_key_condition_column_ranges.push_back(idx);
+                }
+                reader->reader.max_key_condition_column_ranges_bytes = kept_statistics.remainingBytes();
+            }
             reader->init(parser_shared_resources, buckets_to_read ? std::optional(buckets_to_read->row_group_ids) : std::nullopt);
             /// Not after the miss that inserted the cell: replacing it would move it to SLRU's protected queue.
             if (cache_hit)
@@ -258,14 +273,15 @@ void ParquetV3BlockInputFormat::cacheFilterColumnStatistics()
     /// With a column mapper (data lakes) the column names do not identify the columns of the file.
     if (!parquet_reader.key_condition_column_ranges_complete || format_filter_info->column_mapper)
         return;
-    for (const auto & [idx, ranges] : parquet_reader.key_condition_column_ranges)
+    for (const auto & column_ranges : parquet_reader.key_condition_column_ranges)
     {
-        if (std::ranges::all_of(ranges, [](const Range & range) { return range.isInfinite(); }))
+        if (std::ranges::all_of(column_ranges.ranges, [](const Range & range) { return range.isInfinite(); }))
             continue;
-        const auto & column = parquet_reader.extended_sample_block.getByPosition(idx);
+        const auto & column = parquet_reader.extended_sample_block.getByPosition(column_ranges.idx);
         String column_key = ParquetCachedStatisticsFilter::makeColumnKey(column.name, *column.type, format_settings);
         if (metadata_cache && metadata_cache_key)
-            metadata_cache->keepStatistics(*metadata_cache_key, metadata_cache_cell, column_key, ranges);
+            metadata_cache->keepStatistics(
+                *metadata_cache_key, metadata_cache_cell, column_key, column_ranges.ranges, column_ranges.bytes);
     }
 }
 

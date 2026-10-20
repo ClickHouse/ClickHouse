@@ -110,6 +110,26 @@ add "f4 settled, second read" "$Q_RANGE_FN"
 add "f4 settled, third read" "$Q_RANGE_FN"
 run_batch
 
+# Ranges too large to keep (250 row groups with 3000-byte bounds of four columns) are collected only up to what could
+# be kept, for all columns together. The third read of the file, which collects them, takes about as much memory as the
+# third read of an unsettled copy.
+WIDE_STRUCTURE="x UInt32, s1 String, s2 String, s3 String, s4 String"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION file('${DIR}/wide.parquet', Parquet, '$WIDE_STRUCTURE')
+    SELECT number, repeat('a', 3000), repeat('b', 3000), repeat('c', 3000), repeat('d', 3000) FROM numbers(250)
+    SETTINGS output_format_parquet_row_group_size = 1"
+cp "$DATA_DIR/wide.parquet" "$DATA_DIR/wide_unsettled.parquet"
+touch -d '2020-01-01 00:00:00' "$DATA_DIR/wide.parquet"
+touch -d '2099-01-01 00:00:00' "$DATA_DIR/wide_unsettled.parquet"
+Q_WIDE=""
+for f in wide wide_unsettled; do
+    for n in 1 2 3; do
+        Q_WIDE+="SELECT count() FROM file('${DIR}/$f.parquet', Parquet, '$WIDE_STRUCTURE')
+            WHERE s1 = 'zzzz' AND s2 = 'zzzz' AND s3 = 'zzzz' AND s4 = 'zzzz'
+            SETTINGS use_query_condition_cache = 0, max_untracked_memory = 0, $PINNED, log_comment = '05390 $f $n' FORMAT Null;"
+    done
+done
+${CLICKHOUSE_CLIENT} --query "$Q_WIDE"
+
 SKIPPED=()
 PRUNED=()
 while read -r i skipped pruned; do
@@ -127,6 +147,11 @@ for ((i = 1; i <= ${#LABELS[@]}; ++i)); do
     [ -n "${SHOW_PRUNED[i - 1]}" ] && line+=", pruned row groups ${PRUNED[i]}"
     echo "$line"
 done
+echo "ranges too large to keep, extra memory of the read that collects them below 3 MB: $(${CLICKHOUSE_CLIENT} --query "
+    SELECT sumIf(memory_usage, log_comment = '05390 wide 3') - sumIf(memory_usage, log_comment = '05390 wide_unsettled 3') < 3000000 AND count() = 2
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND is_initial_query
+        AND log_comment IN ('05390 wide 3', '05390 wide_unsettled 3')")"
 
 # The kept ranges count in the cache weight as soon as they are kept, and a skip leaves the weight as it is. Reads
 # through the wrapper of `aggregate_function_input_format = 'value'` keep the ranges for later reads too. A read of

@@ -71,12 +71,14 @@ struct ParquetKeptStatistics : private boost::noncopyable
     ~ParquetKeptStatistics();
 
     /// A copy of `ranges` to `add`, or nothing if ranges are already kept under `column_key` or all kept ranges would
-    /// exceed `max_bytes`.
-    std::optional<Column> prepare(const String & column_key, const Ranges & ranges) const;
+    /// exceed `max_bytes`. `ranges_bytes` is `sizeof(Range)` and the heap bytes of the bounds, for every range.
+    std::optional<Column> prepare(const String & column_key, const Ranges & ranges, size_t ranges_bytes) const;
     /// Returns false if ranges are already kept under the key or all kept ranges would exceed `max_bytes`.
     bool add(Column column);
     RangesPtr get(const String & column_key) const;
     size_t bytes() const;
+    /// The bytes that more ranges can take.
+    size_t remainingBytes() const;
 
 private:
     const size_t max_bytes;
@@ -149,7 +151,11 @@ public:
     /// Keeps `ranges` in `cell` and counts them in its weight, if the cache still holds `cell` (or a cell that replaced it)
     /// under `key`. Moves the cell in the cache like a hit.
     void keepStatistics(
-        const ParquetMetadataCacheKey & key, const MappedPtr & cell, const String & column_key, const ParquetKeptStatistics::Ranges & ranges);
+        const ParquetMetadataCacheKey & key,
+        const MappedPtr & cell,
+        const String & column_key,
+        const ParquetKeptStatistics::Ranges & ranges,
+        size_t ranges_bytes);
 
 private:
     LoggerPtr log;
