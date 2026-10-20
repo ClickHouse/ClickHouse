@@ -89,11 +89,25 @@ namespace
         auto authentication_grants = context->getAuthenticationGrants();
         auto authentication_valid_until = context->getAuthenticationValidUntil();
 
-        context->setUser(
-            context->getAccessControl().getID<User>(target_user_name),
-            /* external_roles_= */ {},
-            authentication_grants,
-            authentication_valid_until);
+        auto target_user_id = context->getAccessControl().getID<User>(target_user_name);
+
+        /// Like the query form, start from the server defaults, so that the caller's values come back only
+        /// through the clamp below.
+        auto previous_settings = context->getSettingsCopy();
+        context->setSettings(context->getGlobalContext()->getSettingsRef());
+        try
+        {
+            context->setUser(
+                target_user_id,
+                /* external_roles_= */ {},
+                authentication_grants,
+                authentication_valid_until);
+        }
+        catch (...)
+        {
+            context->setSettings(previous_settings);
+            throw;
+        }
 
         /// We need to update the client info to make currentUser() return `target_user_name`.
         context->setCurrentUserName(target_user_name);
