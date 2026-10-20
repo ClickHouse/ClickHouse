@@ -625,40 +625,55 @@ def main():
             wine_prefix = f"{Utils.cwd()}/ci/tmp/wineprefix"
             wine_env = "WINEDEBUG=-all WINEPREFIX=" + wine_prefix
             backup_dir = f"{Utils.cwd()}/ci/tmp/windows-backup-non-ascii"
-            results.append(
+            wine_commands = [
+                ("Initialize the Wine prefix", f"{wine_env} wine wineboot --init"),
+                ("clickhouse.exe --version", f"{wine_env} wine {build_dir}/programs/clickhouse.exe --version"),
+                (
+                    "clickhouse.exe local --query \"SELECT 1\"",
+                    f'{wine_env} wine {build_dir}/programs/clickhouse.exe local --query "SELECT 1"',
+                ),
+                # Answering a query leaves the rest of the port untested: the emulation
+                # of socket flags Winsock does not have, and the memory limit a job
+                # object imposes, are on no path a `SELECT` takes. See
+                # `utils/windows-selftest`.
+                (
+                    "clickhouse-windows-selftest.exe",
+                    f"{wine_env} wine {build_dir}/utils/windows-selftest/clickhouse-windows-selftest.exe",
+                ),
+                # Backups to a destination named outside ASCII, checked by the name of
+                # the directory on the host - the one thing a code-page conversion on the
+                # way into `std::filesystem` changes without failing the round trip.
+                (
+                    "Backup to a non-ASCII destination",
+                    f"{wine_env} ./utils/windows-selftest/backup-non-ascii-names.sh"
+                    f" {backup_dir} \"$({wine_env} winepath -w {backup_dir})\""
+                    f" wine {build_dir}/programs/clickhouse.exe",
+                ),
+                # A non-ASCII argument reaches the query as UTF-8: the C runtime decodes
+                # `argv` through the active code page, and `main` rebuilds it from the wide
+                # command line. `LC_ALL=C.UTF-8` makes Wine decode the Unix command line as
+                # UTF-8 in the first place. `тест` is `D182D0B5D181D182` in UTF-8.
+                (
+                    "Non-ASCII command-line argument",
+                    f"test \"$(LC_ALL=C.UTF-8 {wine_env} wine {build_dir}/programs/clickhouse.exe"
+                    f" local --query \"SELECT hex('тест')\")\" = D182D0B5D181D182",
+                ),
+            ]
+            # Run all of them even after one fails: while the port is being brought up every
+            # round of this job is the only way to learn anything about how the binary behaves,
+            # so one failure should not hide what the commands after it would have said. Each
+            # command gets a result of its own, because `Result.from_commands_run` with
+            # `fail_fast=False` reports the status of the last command only.
+            wine_results = [
                 Result.from_commands_run(
-                    name="Run clickhouse.exe under Wine",
-                    command=[
-                        f"{wine_env} wine wineboot --init",
-                        f"{wine_env} wine {build_dir}/programs/clickhouse.exe --version",
-                        f'{wine_env} wine {build_dir}/programs/clickhouse.exe local --query "SELECT 1"',
-                        # Answering a query leaves the rest of the port untested: the emulation
-                        # of socket flags Winsock does not have, and the memory limit a job
-                        # object imposes, are on no path a `SELECT` takes. See
-                        # `utils/windows-selftest`.
-                        f"{wine_env} wine {build_dir}/utils/windows-selftest/clickhouse-windows-selftest.exe",
-                        # Backups to a destination named outside ASCII, checked by the name of
-                        # the directory on the host - the one thing a code-page conversion on the
-                        # way into `std::filesystem` changes without failing the round trip.
-                        f"{wine_env} ./utils/windows-selftest/backup-non-ascii-names.sh"
-                        f" {backup_dir} \"$({wine_env} winepath -w {backup_dir})\""
-                        f" wine {build_dir}/programs/clickhouse.exe",
-                        # A non-ASCII argument reaches the query as UTF-8: the C runtime decodes
-                        # `argv` through the active code page, and `main` rebuilds it from the wide
-                        # command line. `LC_ALL=C.UTF-8` makes Wine decode the Unix command line as
-                        # UTF-8 in the first place. `тест` is `D182D0B5D181D182` in UTF-8.
-                        f"test \"$(LC_ALL=C.UTF-8 {wine_env} wine {build_dir}/programs/clickhouse.exe"
-                        f" local --query \"SELECT hex('тест')\")\" = D182D0B5D181D182",
-                    ],
-                    # Run all of them even after one fails. The step still fails if any command
-                    # does, but while the port is being brought up every round of this job is the
-                    # only way to learn anything about how the binary behaves, so one failure
-                    # should not hide what the commands after it would have said.
-                    fail_fast=False,
+                    name=f"Run under Wine: {name}",
+                    command=command,
                     with_info=True,
                 )
-            )
-            res = results[-1].is_ok()
+                for name, command in wine_commands
+            ]
+            results.extend(wine_results)
+            res = all(result.is_ok() for result in wine_results)
 
         # Apply BOLT post-link optimization if profiles are available
         if res and use_bolt:
