@@ -92,6 +92,12 @@ CMake hash recorded below.
 | `edcf793d2` | Remove 1,429 inherited pure-header dependencies and 462 unused compiler inputs from first-party source libraries | [8cd4d93b](https://app.buildbuddy.io/invocation/8cd4d93b-730a-4229-82d8-e6be2cce51a8) | [250fe733](https://app.buildbuddy.io/invocation/250fe733-bab9-4da0-91b6-95a6987ee7e7) |
 | `d190c4589` | Share LLVM runtime CPU settings; use actual TableGen source inputs; collapse 25 equivalent guarded CPU selections | [4b1cc6ad](https://app.buildbuddy.io/invocation/4b1cc6ad-3ea5-416b-8a8a-acadea21462b) | [c8ba4265](https://app.buildbuddy.io/invocation/c8ba4265-4a1e-4d89-a65a-5485bc546691) |
 | `0f056047a` | Remove 216 local include entries already provided by external header owners or earlier identical include directories | [1c2757f0](https://app.buildbuddy.io/invocation/1c2757f0-011f-49f6-a2e2-babbd72601cc) | [17aa7d79](https://app.buildbuddy.io/invocation/17aa7d79-99d6-4f4b-bbb0-75962de23dbc) |
+| `7c4942663` | Factor common BUILD options and simplify configured target attributes | [ffcc3031](https://app.buildbuddy.io/invocation/ffcc3031-86bd-43e4-a99a-65e6b9614e2f) | [3916d923](https://app.buildbuddy.io/invocation/3916d923-3017-4ced-97e1-2985962d4bd9) |
+| `b53a1f0ef` | Use exact ordered source globs for ClickHouse and external libraries | [3b3ce979](https://app.buildbuddy.io/invocation/3b3ce979-38b9-47b8-849e-68997f669b3f) | [a551cecb](https://app.buildbuddy.io/invocation/a551cecb-1d51-45a2-9489-6e9402263f84) |
+| `b2a8c3c90` | Receive generated headers through their public C++ dependencies | [79256c87](https://app.buildbuddy.io/invocation/79256c87-438a-48af-ac56-e1e6d0b97324) | [e11c7df8](https://app.buildbuddy.io/invocation/e11c7df8-954a-4e5c-a743-ea2614c808f1) |
+| `ad9ecc63e` | Name shared C++ build attributes after their actual owners | [1701a1f8](https://app.buildbuddy.io/invocation/1701a1f8-c9c1-423e-a458-1a0b4fd6a6a4) | [0a28ce2e](https://app.buildbuddy.io/invocation/0a28ce2e-349b-4e1a-8f0f-9bb6ad5e42f8) |
+| `8566b1dbe` | Inherit tool headers and published include directories; simplify guarded program options | [65d3acf3](https://app.buildbuddy.io/invocation/65d3acf3-bc62-4fee-add3-074cc0e4210d) | [e5ff17a7](https://app.buildbuddy.io/invocation/e5ff17a7-af86-4028-ab19-ca0b2ef02c4f) |
+| `9f3a2b2b9` | Make redundant public dependencies private and simplify program platform selections | [e1921a90](https://app.buildbuddy.io/invocation/e1921a90-0bd0-4acc-87c2-e0f9aa91ad73) | [23b43b04](https://app.buildbuddy.io/invocation/23b43b04-46ea-425a-9aad-aa15269596d3) |
 
 For these checks, `llvm-strip --strip-all --remove-section=.note.gnu.build-id`
 produced SHA-256 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`
@@ -99,7 +105,7 @@ on x86-64 and `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`
 on ARM64. The selected compilers and original Bazel ELFs retained the SHA-256
 values recorded in their respective tables.
 
-On the final `0f056047a` build, the original Bazel SHA-256 values remained
+On the final `9f3a2b2b9` build, the original Bazel SHA-256 values remained
 `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372`
 (x86-64) and
 `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744`
@@ -109,13 +115,22 @@ On the final `0f056047a` build, the original Bazel SHA-256 values remained
 `3c685a0e2448e17c0c11e265a7027c2cfaca6158018220a67ca2af9d3df0e71f`
 (ARM64).
 
-The `46418055d` through `0f056047a` builds each reproduced these hashes.
+The `46418055d` through `9f3a2b2b9` builds each reproduced these hashes.
 The x86 check verified the saved CMake ELF SHA-256
 `cfbf99ef585fc2dbcf9f9ca413e13230ba2c9ab7dc8518df8bdeab06aa087cbc`
 and returned 0 from both the stripped-binary `cmp` and `PARITY_STATUS`.
 The ARM check matched the recorded native CMake normalized hash and returned
 `ARM_STRIPPED_STATUS=0`; it did not run a fresh ARM CMake build.
 Only completed successful runs appear in the table.
+
+The 50 BUILD checks from `3ddb640b7` covered all 277 tracked first-party
+and external BUILD files per check (13,850 file checks). They covered header
+ownership, pinned-file source globs, public and private dependencies, flags
+and include directories, CPU selections, compiler inputs, exports, and
+shared settings. The six commits above apply the proven reductions; source
+globs preserve the original translation-unit order on both CPUs. Checks
+that would add sources, change include precedence, or remove a platform
+guard were rejected. All changed production files are BUILD files.
 
 ClickStack's source build reproduced all 162 pinned release assets on both
 CPUs. Its source manifest SHA-256 was
