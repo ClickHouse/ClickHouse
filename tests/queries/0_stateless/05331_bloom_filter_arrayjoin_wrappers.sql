@@ -204,14 +204,14 @@ SELECT 'explicit inner ARRAY JOIN reaches Bloom pruning', has_index AND selected
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_aj_wrappers ARRAY JOIN emptyArrayToSingle(tags) AS value WHERE value GLOBAL IN (SELECT value FROM t_bf_aj_target));
 
 -- Filter fusion into ARRAY JOIN is a plan-shape optimization and is skipped for serialized plans.
-SELECT 'full wrapper PLAN retains globalIn element filter', countIf(position(explain, 'Element filter column: globalIn(') > 0) > 0 AND countIf(position(explain, 'ARRAY JOIN emptyArrayToSingle(') > 0) > 0
-FROM (EXPLAIN PLAN actions = 1, indexes = 1 SELECT count() FROM t_bf_aj_wrappers WHERE CAST(arrayJoin(emptyArrayToSingle(CAST(CAST(tags AS Dynamic) AS Array(String)))), 'Nullable(String)') GLOBAL IN (SELECT CAST(value, 'Nullable(String)') FROM t_bf_aj_target) SETTINGS query_plan_lower_array_join_function = 1, query_plan_fuse_filter_into_array_join = 1, serialize_query_plan = 0);
+SELECT 'full wrapper PLAN retains globalIn element filter', countIf(position(explain, 'Element filter column: globalIn(') > 0) > 0 AND countIf(position(explain, 'ARRAY JOIN arrayJoin(emptyArrayToSingle(') > 0) > 0
+FROM (EXPLAIN PLAN actions = 1, indexes = 1, pretty = 0, compact = 0 SELECT count() FROM t_bf_aj_wrappers WHERE CAST(arrayJoin(emptyArrayToSingle(CAST(CAST(tags AS Dynamic) AS Array(String)))), 'Nullable(String)') GLOBAL IN (SELECT CAST(value, 'Nullable(String)') FROM t_bf_aj_target) SETTINGS query_plan_lower_array_join_function = 1, query_plan_fuse_filter_into_array_join = 1, serialize_query_plan = 0);
 
-SELECT 'full nullable wrapper PLAN retains globalNullIn element filter', countIf(position(explain, 'Element filter column: globalNullIn(') > 0) > 0 AND countIf(position(explain, 'ARRAY JOIN emptyArrayToSingle(') > 0) > 0
-FROM (EXPLAIN PLAN actions = 1, indexes = 1 SELECT count() FROM t_bf_aj_wrappers WHERE globalNullIn(CAST(arrayJoin(emptyArrayToSingle(CAST(tags AS Array(Nullable(String))))), 'Nullable(String)'), (SELECT value FROM t_bf_aj_nullable)) SETTINGS query_plan_lower_array_join_function = 1, query_plan_fuse_filter_into_array_join = 1, transform_null_in = 1, serialize_query_plan = 0);
+SELECT 'full nullable wrapper PLAN retains globalNullIn element filter', countIf(position(explain, 'Element filter column: globalNullIn(') > 0) > 0 AND countIf(position(explain, 'ARRAY JOIN arrayJoin(emptyArrayToSingle(') > 0) > 0
+FROM (EXPLAIN PLAN actions = 1, indexes = 1, pretty = 0, compact = 0 SELECT count() FROM t_bf_aj_wrappers WHERE globalNullIn(CAST(arrayJoin(emptyArrayToSingle(CAST(tags AS Array(Nullable(String))))), 'Nullable(String)'), (SELECT value FROM t_bf_aj_nullable)) SETTINGS query_plan_lower_array_join_function = 1, query_plan_fuse_filter_into_array_join = 1, transform_null_in = 1, serialize_query_plan = 0);
 
-SELECT 'explicit inner ARRAY JOIN PLAN composes source and globalIn filter', countIf(position(explain, 'ARRAY JOIN emptyArrayToSingle(tags)') > 0) > 0 AND countIf(position(explain, 'Element filter column: globalIn(__array_join_exp_1,') > 0) > 0
-FROM (EXPLAIN PLAN actions = 1, indexes = 1 SELECT count() FROM t_bf_aj_wrappers ARRAY JOIN emptyArrayToSingle(tags) AS value WHERE value GLOBAL IN (SELECT value FROM t_bf_aj_target) SETTINGS serialize_query_plan = 0);
+SELECT 'explicit inner ARRAY JOIN PLAN composes source and globalIn filter', countIf(position(explain, 'ARRAY JOIN __array_join_exp_1') > 0) > 0 AND countIf(position(explain, 'Element filter column: globalIn(__array_join_exp_1,') > 0) > 0
+FROM (EXPLAIN PLAN actions = 1, indexes = 1, pretty = 0, compact = 0 SELECT count() FROM t_bf_aj_wrappers ARRAY JOIN emptyArrayToSingle(tags) AS value WHERE value GLOBAL IN (SELECT value FROM t_bf_aj_target) SETTINGS query_plan_fuse_filter_into_array_join = 1, serialize_query_plan = 0);
 
 SELECT 'default-hit wrapper declines Bloom pruning', max(explain LIKE '%Name: idx_tags%') = 0
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_aj_wrappers WHERE arrayJoin(emptyArrayToSingle(tags)) GLOBAL IN (SELECT value FROM t_bf_aj_default) SETTINGS query_plan_lower_array_join_function = 1);

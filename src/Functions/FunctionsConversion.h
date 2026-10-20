@@ -3807,11 +3807,11 @@ class IFunctionWithConversionSettings : public IFunction
 {
 public:
     ~IFunctionWithConversionSettings() override = default;
+    IFunctionWithConversionSettings(const IFunctionWithConversionSettings &) = delete;
+    IFunctionWithConversionSettings & operator=(const IFunctionWithConversionSettings &) = delete;
 
 private:
     IFunctionWithConversionSettings() = default;
-    IFunctionWithConversionSettings(const IFunctionWithConversionSettings &) = delete;
-    IFunctionWithConversionSettings & operator=(const IFunctionWithConversionSettings &) = delete;
 
     template <typename ToDataType, typename Name, typename MonotonicityImpl>
     friend class FunctionConvert;
