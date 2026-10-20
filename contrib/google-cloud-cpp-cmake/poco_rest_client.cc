@@ -301,6 +301,31 @@ Poco::Net::Context::Ptr SslContextFor(
 
 auto constexpr kDefaultMaxSessionsPerEndpoint = std::size_t{64};
 
+using SessionRegistration =
+    ::ClickHouse::PocoRestSessionAccountingOption::Registration;
+
+// A session together with its registration in a ClickHouse connection group
+// (`PocoRestSessionAccountingOption`), if there is one. The registration is
+// always destroyed before the session -- also when a session is overwritten by
+// a move -- so the group stops counting the session before its socket is closed
+// and before its address can be taken by another session.
+struct AccountedSession {
+  std::unique_ptr<Poco::Net::HTTPClientSession> session;
+  std::unique_ptr<SessionRegistration> registration;
+
+  AccountedSession() = default;
+  AccountedSession(AccountedSession&&) noexcept = default;
+  AccountedSession& operator=(AccountedSession&& other) noexcept {
+    if (this != &other) {
+      registration.reset();
+      session = std::move(other.session);
+      registration = std::move(other.registration);
+    }
+    return *this;
+  }
+  ~AccountedSession() { registration.reset(); }
+};
+
 // Idle keep-alive sessions, so a request does not pay a DNS lookup, a TCP
 // handshake and a TLS handshake of its own. `Poco::Net::HTTPClientSession` is not
 // thread-safe, so the pool hands out exclusive ownership and takes it back only
@@ -322,18 +347,19 @@ class SessionPool {
     return *pool;
   }
 
-  std::unique_ptr<Poco::Net::HTTPClientSession> Acquire(
+  AccountedSession Acquire(
       std::string const& key,
       ::ClickHouse::PocoRestSessionStaleCheckOption::Type const& is_stale) {
     auto const now = std::chrono::steady_clock::now();
     std::lock_guard<std::mutex> lock(mu_);
     ExpireIdle(now);
     auto it = idle_.find(key);
-    if (it == idle_.end()) return nullptr;
+    if (it == idle_.end()) return {};
     auto& entries = it->second;
     while (!entries.empty()) {
       auto entry = std::move(entries.back());
       entries.pop_back();
+      auto& session = entry.Session();
       // A peer may close an idle keep-alive connection at any time, and
       // `connected()` reports only what this side knows: it does not see a
       // half-closed socket, a TLS `close_notify`, or an unsolicited response
@@ -343,32 +369,31 @@ class SessionPool {
       // idle, and let the caller connect afresh rather than discover the failure
       // mid-request or parse leftover bytes as its own response.
       if (IsExpired(entry, now)) continue;
-      if (!entry.session->connected()) continue;
-      if (is_stale && is_stale(*entry.session)) continue;
-      return std::move(entry.session);
+      if (!session.connected()) continue;
+      if (is_stale && is_stale(session)) continue;
+      return entry.Take();
     }
     idle_.erase(it);
-    return nullptr;
+    return {};
   }
 
   // Called from the destructor of a response, so it does not throw: when the
   // session cannot be retained (e.g. an allocation of the pool fails), it is
   // destroyed, which closes its connection.
-  void Release(std::string const& key,
-               std::unique_ptr<Poco::Net::HTTPClientSession> session,
+  void Release(std::string const& key, AccountedSession session,
                std::size_t max_per_endpoint) noexcept {
     try {
-      ReleaseImpl(key, std::move(session), max_per_endpoint);
+      ReleaseImpl(key, session, max_per_endpoint);
     } catch (...) {
-      // The session, if not retained yet, is destroyed with the exception.
+      // The session, if not retained yet, is destroyed (and unregistered from
+      // its connection group) when this function returns.
     }
   }
 
  private:
-  void ReleaseImpl(std::string const& key,
-                   std::unique_ptr<Poco::Net::HTTPClientSession> session,
+  void ReleaseImpl(std::string const& key, AccountedSession& session,
                    std::size_t max_per_endpoint) {
-    if (!session || !session->connected()) return;
+    if (!session.session || !session.session->connected()) return;
     if (max_per_endpoint == 0) return;
     auto const now = std::chrono::steady_clock::now();
     std::lock_guard<std::mutex> lock(mu_);
@@ -376,7 +401,7 @@ class SessionPool {
     // A session that has already served as many requests as its keep-alive
     // policy allows, or that the peer asked to close after this response, is not
     // worth retaining: the next borrower would have to reconnect it anyway.
-    if (session->isKeepAliveExpired()) return;
+    if (session.session->isKeepAliveExpired()) return;
     auto& entries = idle_[key];
     // A cap lowered since the bucket filled up applies right away: trim the
     // oldest entries down to the new limit, so a reconfigured endpoint stops
@@ -388,12 +413,62 @@ class SessionPool {
                                           entries.size() - max_per_endpoint));
     }
     if (entries.size() >= max_per_endpoint) return;
-    entries.push_back({std::move(session), now});
+    // The group-wide limit on idle connections, on top of the per-endpoint one.
+    bool holds_idle_slot = false;
+    if (session.registration) {
+      if (!session.registration->tryReserveIdle()) return;
+      holds_idle_slot = true;
+    }
+    // Should `push_back` throw, the entry gives the slot back when destroyed.
+    Entry entry(std::move(session), holds_idle_slot, now);
+    entries.push_back(std::move(entry));
   }
 
-  struct Entry {
-    std::unique_ptr<Poco::Net::HTTPClientSession> session;
-    std::chrono::steady_clock::time_point returned_at;
+  // An idle session. When it holds a slot of its group's limit on idle
+  // connections (`SessionRegistration::tryReserveIdle`), the entry gives the
+  // slot back exactly once: when the session is taken out (`Take`), or when the
+  // entry is destroyed or overwritten. A move transfers the slot.
+  class Entry {
+   public:
+    Entry(AccountedSession session, bool holds_idle_slot,
+          std::chrono::steady_clock::time_point returned_at)
+        : session_(std::move(session)),
+          holds_idle_slot_(holds_idle_slot),
+          returned_at_(returned_at) {}
+    Entry(Entry&& other) noexcept
+        : session_(std::move(other.session_)),
+          holds_idle_slot_(std::exchange(other.holds_idle_slot_, false)),
+          returned_at_(other.returned_at_) {}
+    Entry& operator=(Entry&& other) noexcept {
+      if (this != &other) {
+        ReleaseIdleSlot();
+        session_ = std::move(other.session_);
+        holds_idle_slot_ = std::exchange(other.holds_idle_slot_, false);
+        returned_at_ = other.returned_at_;
+      }
+      return *this;
+    }
+    ~Entry() { ReleaseIdleSlot(); }
+
+    Poco::Net::HTTPClientSession& Session() const { return *session_.session; }
+    std::chrono::steady_clock::time_point ReturnedAt() const {
+      return returned_at_;
+    }
+    AccountedSession Take() {
+      ReleaseIdleSlot();
+      return std::move(session_);
+    }
+
+   private:
+    void ReleaseIdleSlot() noexcept {
+      if (!holds_idle_slot_) return;
+      holds_idle_slot_ = false;
+      session_.registration->releaseIdle();
+    }
+
+    AccountedSession session_;
+    bool holds_idle_slot_ = false;
+    std::chrono::steady_clock::time_point returned_at_;
   };
 
   // Hard upper bound on how long a session may sit in the pool, whatever its own
@@ -408,11 +483,11 @@ class SessionPool {
 
   bool IsExpired(Entry const& entry,
                  std::chrono::steady_clock::time_point now) const {
-    if (now - entry.returned_at >= kMaxIdleTime) return true;
+    if (now - entry.ReturnedAt() >= kMaxIdleTime) return true;
     // Poco keeps the keep-alive policy of the session -- the timeout and the
     // request budget ClickHouse configured, both possibly lowered by the peer's
     // own `Keep-Alive` header -- and decides against them.
-    return entry.session->isKeepAliveExpired();
+    return entry.Session().isKeepAliveExpired();
   }
 
   // Drops every session that outlived its keep-alive policy, in every bucket, and
@@ -506,7 +581,7 @@ struct SessionPoolTicket {
 // the endpoint and proxy match. `ticket` is set to the pool key and the retained
 // idle session limit of this request, so the caller can hand the session back
 // once the response body has been consumed.
-std::unique_ptr<Poco::Net::HTTPClientSession> MakeSession(
+AccountedSession MakeSession(
     Poco::URI const& uri, Options const& options, SessionPoolTicket* ticket) {
   // The proxy has to be resolved before the pool is consulted: it decides which
   // peer the socket is actually connected to, so it is part of the pool key. The
@@ -603,7 +678,8 @@ std::unique_ptr<Poco::Net::HTTPClientSession> MakeSession(
   if (options.has<::ClickHouse::PocoRestSessionStaleCheckOption>()) {
     stale_check = options.get<::ClickHouse::PocoRestSessionStaleCheckOption>();
   }
-  auto session = SessionPool::Instance().Acquire(key, stale_check);
+  auto accounted = SessionPool::Instance().Acquire(key, stale_check);
+  auto& session = accounted.session;
   if (!session) {
     if (secure) {
       session = std::make_unique<Poco::Net::HTTPSClientSession>(
@@ -611,6 +687,15 @@ std::unique_ptr<Poco::Net::HTTPClientSession> MakeSession(
     } else {
       session = std::make_unique<Poco::Net::HTTPClientSession>(uri.getHost(),
                                                                uri.getPort());
+    }
+    // Registered before it ever connects, so the connection limits of its
+    // ClickHouse connection group apply to it (`PocoRestSessionAccountingOption`).
+    // This throws when the group's hard limit is reached, and the request then
+    // fails without connecting.
+    if (options.has<::ClickHouse::PocoRestSessionAccountingOption>()) {
+      auto const& accounting =
+          options.get<::ClickHouse::PocoRestSessionAccountingOption>();
+      if (accounting) accounted.registration = accounting(*session);
     }
     // A per-request proxy resolved by ClickHouse wins over the fixed upstream
     // ProxyOption: it already carries everything Poco needs (including tunneling
@@ -655,14 +740,14 @@ std::unique_ptr<Poco::Net::HTTPClientSession> MakeSession(
   // Without this Poco sends `Connection: Close` and the peer tears the socket
   // down after one response, which would make the pool useless.
   session->setKeepAlive(true);
-  return session;
+  return accounted;
 }
 
 // Streams the response body. Owns the session to keep the connection (and the
 // std::istream obtained from it) alive until the payload is consumed.
 class PocoHttpPayload : public HttpPayload {
  public:
-  PocoHttpPayload(std::unique_ptr<Poco::Net::HTTPClientSession> session,
+  PocoHttpPayload(AccountedSession session,
                   std::unique_ptr<Poco::Net::HTTPResponse> response,
                   std::istream* body, SessionPoolTicket ticket)
       : session_(std::move(session)),
@@ -675,15 +760,24 @@ class PocoHttpPayload : public HttpPayload {
   // bytes still buffered would desynchronise whichever request picked it up next.
   // Whether that holds is not always known by the time the body is dropped --
   // see FinishForReuse.
+  //
+  // A destructor is implicitly `noexcept`, so the whole reuse decision runs
+  // inside one `try`: it reads response headers supplied by the peer (e.g. a
+  // malformed `Content-Length` on a `204 No Content`, whose body Poco never
+  // parses and the SDK never reads), and any of those accesses may throw. When
+  // anything throws, the session is not returned to the pool and is destroyed
+  // with the payload, which closes its connection.
   ~PocoHttpPayload() override {
-    if (!session_) return;
-    if (!failed_ && !finished_) FinishForReuse();
-    if (!finished_ || failed_) return;
-    if (!response_ || !response_->getKeepAlive()) return;
-    // The IO scheduling hooks belong to the request that installed them
-    // (`PocoRestSessionHooksOption`), not to whoever borrows the session next.
-    session_->setSendDataHooks();
-    session_->setReceiveDataHooks();
+    if (!session_.session) return;
+    try {
+      if (!CanReuseSession()) return;
+      // The IO scheduling hooks belong to the request that installed them
+      // (`PocoRestSessionHooksOption`), not to whoever borrows the session next.
+      session_.session->setSendDataHooks();
+      session_.session->setReceiveDataHooks();
+    } catch (...) {
+      return;
+    }
     SessionPool::Instance().Release(ticket_.key, std::move(session_),
                                     ticket_.max_per_endpoint);
   }
@@ -730,14 +824,18 @@ class PocoHttpPayload : public HttpPayload {
   //
   // Anything unexpected leaves `finished_` false, which means "do not reuse" -- the conservative
   // direction.
+  //
+  // Called only from the destructor, inside its `try`: it may throw (header parsing, reading the
+  // body), and an exception means "do not reuse".
   void FinishForReuse() {
     // Roughly the transfer time of a TLS handshake's round trip on an intra-region link. Above
     // this, reconnecting is the cheaper of the two.
     static constexpr std::uint64_t kMaxDrainBytes = 128 * 1024;
 
     if (!response_) return;
-    auto const content_length = response_->getContentLength();
-    if (content_length == Poco::Net::HTTPMessage::UNKNOWN_CONTENT_LENGTH) return;
+    auto const content_length = response_->getContentLength64();
+    // `UNKNOWN_CONTENT_LENGTH` (-1), or a negative value the peer sent.
+    if (content_length < 0) return;
     auto const total = static_cast<std::uint64_t>(content_length);
 
     if (bytes_read_ >= total) {
@@ -748,23 +846,29 @@ class PocoHttpPayload : public HttpPayload {
     auto remaining = total - bytes_read_;
     if (remaining > kMaxDrainBytes) return;
 
-    try {
-      char scratch[16 * 1024];
-      while (remaining > 0) {
-        auto const want = static_cast<std::streamsize>(
-            std::min<std::uint64_t>(remaining, sizeof(scratch)));
-        body_->read(scratch, want);
-        auto const count = static_cast<std::uint64_t>(body_->gcount());
-        if (count == 0 || body_->bad()) return;
-        remaining -= count;
-      }
-      finished_ = true;
-    } catch (...) {
-      // Destructor: swallow and leave the session unreusable.
+    char scratch[16 * 1024];
+    while (remaining > 0) {
+      auto const want = static_cast<std::streamsize>(
+          std::min<std::uint64_t>(remaining, sizeof(scratch)));
+      body_->read(scratch, want);
+      auto const count = static_cast<std::uint64_t>(body_->gcount());
+      if (count == 0 || body_->bad()) return;
+      remaining -= count;
     }
+    finished_ = true;
   }
 
-  std::unique_ptr<Poco::Net::HTTPClientSession> session_;
+  // Whether the session may go back to the pool: the response was read to its end (possibly by
+  // `FinishForReuse`) without an error, and both sides agreed to keep the connection. May throw;
+  // the caller treats an exception as "do not reuse".
+  bool CanReuseSession() {
+    if (failed_) return false;
+    if (!finished_) FinishForReuse();
+    if (!finished_) return false;
+    return response_ && response_->getKeepAlive();
+  }
+
+  AccountedSession session_;
   std::unique_ptr<Poco::Net::HTTPResponse> response_;
   std::istream* body_;
   SessionPoolTicket ticket_;
@@ -775,7 +879,7 @@ class PocoHttpPayload : public HttpPayload {
 
 class PocoRestResponse : public RestResponse {
  public:
-  PocoRestResponse(std::unique_ptr<Poco::Net::HTTPClientSession> session,
+  PocoRestResponse(AccountedSession session,
                    std::unique_ptr<Poco::Net::HTTPResponse> response,
                    std::istream* body, SessionPoolTicket ticket) {
     status_code_ = static_cast<HttpStatusCode>(response->getStatus());
@@ -1049,7 +1153,8 @@ class PocoRestClient : public RestClient {
       if (throttle) throttle(method);
     }
     SessionPoolTicket ticket;
-    auto session = MakeSession(uri, options, &ticket);
+    auto accounted = MakeSession(uri, options, &ticket);
+    auto& session = accounted.session;
     if (used_proxy != nullptr) *used_proxy = ticket.proxy;
 
     auto path = uri.getPathAndQuery();
@@ -1132,6 +1237,10 @@ class PocoRestClient : public RestClient {
     }
 
     auto& body_stream = session->sendRequest(http_request);
+    // `sendRequest` has (re)connected the session if it had to, so the socket
+    // options of its connection group can be applied to the socket now, before
+    // the response is received.
+    if (accounted.registration) accounted.registration->onConnected(*session);
     if (encode_form) {
       body_stream.write(encoded_body.data(),
                         static_cast<std::streamsize>(encoded_body.size()));
@@ -1156,7 +1265,7 @@ class PocoRestClient : public RestClient {
     }
 
     return std::make_unique<PocoRestResponse>(
-        std::move(session), std::move(http_response), &response_stream,
+        std::move(accounted), std::move(http_response), &response_stream,
         std::move(ticket));
   }
 

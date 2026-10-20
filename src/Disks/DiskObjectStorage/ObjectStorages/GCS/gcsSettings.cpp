@@ -620,6 +620,28 @@ std::shared_ptr<gc::Credentials> makeGCSCredentials(
     UNREACHABLE();
 }
 
+namespace
+{
+
+/// Registration of a session of the native transport in a connection group of `HTTPConnectionPools`.
+class GCSSessionRegistration final : public ::ClickHouse::PocoRestSessionAccountingOption::Registration
+{
+public:
+    explicit GCSSessionRegistration(std::unique_ptr<HTTPConnectionPools::ExternalConnection> connection_)
+        : connection(std::move(connection_))
+    {
+    }
+
+    void onConnected(Poco::Net::HTTPClientSession & session) override { connection->onConnected(session); }
+    bool tryReserveIdle() override { return connection->tryReserveStored(); }
+    void releaseIdle() noexcept override { connection->releaseStored(); }
+
+private:
+    std::unique_ptr<HTTPConnectionPools::ExternalConnection> connection;
+};
+
+}
+
 std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & settings, const ContextPtr & context)
 {
     /// Fail-closed validation of the actual network destination against `remote_url_allow_hosts`,
@@ -758,6 +780,18 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
         gcs::LimitedErrorCountRetryPolicy(static_cast<int>(settings.retry_attempts)).clone());
     options.set<gcs::BackoffPolicyOption>(
         gcs::ExponentialBackoffPolicy(std::chrono::milliseconds(100), std::chrono::seconds(5), 2.0).clone());
+
+    /// The transport keeps its own sessions rather than borrowing them from `HTTPConnectionPools`, so it
+    /// registers each of them in the connection group the S3 client of the same surface would use --
+    /// `DISK` for a disk, `STORAGE` for a table function or a table engine -- and the server-wide
+    /// `disk_connections_*` / `storage_connections_*` limits (`hard_limit`, the limit on idle
+    /// connections) and socket buffer sizes (`rcvbuf`, `sndbuf`) apply to them as well.
+    options.set<::ClickHouse::PocoRestSessionAccountingOption>(
+        [group = settings.for_disk ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE](
+            Poco::Net::HTTPClientSession & session) -> std::unique_ptr<::ClickHouse::PocoRestSessionAccountingOption::Registration>
+        {
+            return std::make_unique<GCSSessionRegistration>(HTTPConnectionPools::instance().registerExternalConnection(group, session));
+        });
 
     /// Whether a pooled keep-alive session is still usable is decided by ClickHouse's own TLS-aware
     /// probe, the one `HTTPConnectionPool` uses: a session that is merely `connected()` may already

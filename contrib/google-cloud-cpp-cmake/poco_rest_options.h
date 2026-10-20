@@ -11,6 +11,7 @@
 
 #include <chrono>
 #include <functional>
+#include <memory>
 #include <string>
 
 #include <Poco/Net/HTTPClientSession.h>
@@ -149,6 +150,38 @@ struct PocoRestRequestObserverOption
 struct PocoRestUrlCheckOption
 {
     using Type = std::function<std::string(const std::string & url)>;
+};
+
+/// Accounts the sessions the transport opens in a ClickHouse connection group (the `DISK` group for a
+/// disk, the `STORAGE` group otherwise), as `HTTPConnectionPools` accounts its own connections, so that
+/// switching to the native transport does not escape `disk_connections_hard_limit` /
+/// `storage_connections_hard_limit`, the group's limit on idle connections, and the group's
+/// `rcvbuf` / `sndbuf`. The factory is called for every session the transport creates, before it
+/// connects, and throws when the group's hard limit is reached; the request then fails without
+/// connecting. The returned registration lives exactly as long as the session and is destroyed right
+/// before it. Unset means the sessions are not accounted.
+struct PocoRestSessionAccountingOption
+{
+    class Registration
+    {
+    public:
+        /// Unregisters the session.
+        virtual ~Registration() = default;
+
+        /// Called after every request was sent on the session, which is then connected (it may have
+        /// reconnected since the previous request). May throw; the request then fails.
+        virtual void onConnected(Poco::Net::HTTPClientSession & session) = 0;
+
+        /// Called before the session is kept idle for reuse. Returns false when the session must not be
+        /// kept, and may throw (the session is then not kept either).
+        virtual bool tryReserveIdle() = 0;
+
+        /// Called exactly once after a successful `tryReserveIdle`, when the session stops being idle
+        /// (it is handed out again, or dropped from the pool).
+        virtual void releaseIdle() noexcept = 0;
+    };
+
+    using Type = std::function<std::unique_ptr<Registration>(Poco::Net::HTTPClientSession & session)>;
 };
 
 /// Called by the transport on the session of every request right before the request is sent, so that
