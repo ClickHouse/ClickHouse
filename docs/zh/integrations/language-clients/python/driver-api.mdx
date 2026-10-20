@@ -35,7 +35,7 @@ doc_type: 'reference'
 | `headers`                  | dict 或 None                  | `None`                 | 应用于所有请求 (包括客户端初始化) 的 HTTP 请求头。用户自定义请求头会在驱动默认请求头之后应用，并可覆盖这些默认值。                                                                                                                                                                                       |
 | `compress`                 | bool 或 str                   | `True`                 | 启用压缩，或指定 `"lz4"`、`"zstd"`、`"br"` 或 `"gzip"`。请参阅[压缩](/zh/integrations/language-clients/python/additional-options#compression)。                                                                                                                           |
 | `query_limit`              | int                          | `0`                    | 会为符合条件的查询追加默认行数限制。0 表示不限制。对于大型结果，建议以流式方式处理，而不是将其全部物化到内存中。                                                                                                                                                                                            |
-| `query_retries`            | int                          | `2`                    | 用于可重试读取失败的重试次数预算。命令和插入操作通常不进行重试，因为重放可能会导致副作用重复发生。                                                                                                                                                                                                    |
+| `query_retries`            | int                          | `2`                    | 通过查询方法执行的符合条件的读取操作的重试次数上限。有关连接关闭时的重试以及命令和插入操作的重试，请参阅 [HTTP 重试](#http-retries)。                                                                                                                                                                       |
 | `connect_timeout`          | 同步为 int，异步为 float            | `10`                   | 建立新连接的超时时间，单位为秒，不包括等待连接池空闲槽位的时间。异步客户端支持小数秒。                                                                                                                                                                                                          |
 | `send_receive_timeout`     | 同步为 int，异步为 float            | `300`                  | 套接字读取超时时间，单位为秒。异步客户端支持小数秒。                                                                                                                                                                                                                           |
 | `client_name`              | str 或 None                   | `None`                 | 添加到 HTTP User-Agent 前的前缀，用于在 `system.query_log` 中进行标识。                                                                                                                                                                                               |
@@ -148,6 +148,16 @@ with clickhouse_connect.get_client(interface="chdb") as client:
 ```
 
 默认使用的是内存数据库。传入 `path="/data/my_chdb"` 或使用 `dsn="chdb:///data/my_chdb"` 可启用持久化存储。该后端每个进程只允许使用一个 engine 路径，并且不支持 `get_async_client` 或外部数据。
+
+### HTTP 重试 {#http-retries}
+
+同步和异步 HTTP 客户端在遇到某些远程连接关闭，或收到 HTTP 429、503、504 响应时，都会对符合条件的读操作进行重试。对于 `query` 及其专用查询方法、`raw_query` 和 `raw_stream`，可通过 `query_retries` 设置额外尝试的次数。即使 `query_retries=0`，符合条件的读操作在远程连接关闭后也至少会重试一次。通过 `command` 发送的读操作在远程连接关闭后可重试一次，但不计入 `query_retries` 的重试额度，也不会因上述 HTTP 状态码而重试。
+
+客户端能够识别 `SELECT`、`SHOW`、`DESCRIBE` 和 `EXISTS` 等读语句，包括受支持的 `WITH` 和 `EXPLAIN` 形式。无法识别为读操作的 SQL 在发生上述故障后不会重试。包含 `PARALLEL WITH` 或 `INTO OUTFILE` 的语句以及多语句也不在重试范围内。
+
+通过 `command`、`query`、`raw_query` 或 `raw_stream` 发送的 SQL 写操作、DDL 和变更在发生上述故障后不会重放。DB-API 或 SQLAlchemy 通过这些方法执行 SQL 时同样如此。连接错误并不能说明写操作是否已提交，因此在应用程序中重试前，请先确认执行结果。
+
+当请求正文可以重放时，插入 API 仍会在连接关闭后进行重试，这可能会产生重复行。请参阅[插入重试与去重](/zh/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication)。
 
 ## 客户端生命周期和最佳实践 {#client-lifecycle-and-best-practices}
 
@@ -812,32 +822,29 @@ client.insert(
 ```python
 from clickhouse_connect import dbapi
 
-connection = dbapi.connect(
+with dbapi.connect(
     host="localhost",
     username="default",
     password="password",
     database="default",
-)
-cursor = connection.cursor()
-
-try:
-    cursor.execute(
-        "SELECT name FROM system.tables "
-        "WHERE database = %(database)s ORDER BY name LIMIT 5",
-        {"database": "system"},
-    )
-    print(cursor.description)
-    print(cursor.fetchall())
-finally:
-    cursor.close()
-    connection.close()
+) as connection:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT name FROM system.tables "
+            "WHERE database = %(database)s ORDER BY name LIMIT 5",
+            {"database": "system"},
+        )
+        print(cursor.description)
+        print(cursor.fetchall())
 ```
 
-`Cursor.execute` 和 `Cursor.executemany` 都接受额外的 `settings` 和 `query_formats` 关键字参数。`settings` 用于传递 ClickHouse 设置。当语句返回行时，`query_formats` 会根据 ClickHouse 类型应用读取格式，其映射方式与 `Client.query` 相同。这两个方法还都接受仅限关键字的 `pyformat_encoded` 参数。其默认值 `True` 遵循 DB-API `pyformat` 约定。当语句编译器生成了原始百分号时，SQLAlchemy 方言会将其设为 `False`，因此应用通常不应设置它。参数化的 `Cursor.executemany` 操作会针对每个参数集分别执行一次，从而保留 SQL 绑定和表达式的语义。使用 HTTP 时，每个参数集都会单独发送一个请求。如果后续某个参数集执行失败，此前已完成的写入仍保持已提交状态。对于这类 `executemany` insert，`Cursor.rowcount` 为 ClickHouse 报告的 `written_rows` 值之和；若无法获取该值，则为 `-1`。通过 `Cursor.execute` 发送的 INSERT 语句返回 `0`。不含占位符的 `INSERT INTO table (columns) VALUES` 兼容形式会使用 Native insert。以 `VALUES` 结尾且不含占位符的 INSERT 若无法识别为该兼容形式，则会抛出 `ProgrammingError`。如需显式执行 Native 批量 insert，应用应使用 `Client.insert`。`fetchone`、`fetchmany` 和 `fetchall` 会读取当前已 materialized 的结果。
+作为驱动扩展，`Connection` 和 `Cursor` 上下文管理器会返回现有对象，并在正常退出和异常退出时都调用 `close()`。它们不会屏蔽代码块中抛出的异常。
+
+`Cursor.execute` 和 `Cursor.executemany` 都接受额外的 `settings` 和 `query_formats` 关键字参数。`settings` 用于传递 ClickHouse 设置。当语句返回行时，`query_formats` 会根据 ClickHouse 类型应用读取格式，其映射方式与 `Client.query` 相同。这两个方法还都接受仅限关键字的 `pyformat_encoded` 参数。其默认值 `True` 遵循 DB-API `pyformat` 约定。当语句编译器生成了原始百分号时，SQLAlchemy 方言会将其设为 `False`，因此应用通常不应设置它。参数化的 `Cursor.executemany` 操作会针对每个参数集分别执行一次，从而保留 SQL 绑定和表达式的语义。使用 HTTP 时，每个参数集都会单独发送一个请求。如果后续某个参数集执行失败，此前已完成的写入仍保持已提交状态。对于这类 `executemany` 插入，`Cursor.rowcount` 为 ClickHouse 报告的 `written_rows` 值之和；若无法获取该值，则为 `-1`。通过 `Cursor.execute` 发送的 插入 语句返回 `0`。不含占位符的 `INSERT INTO table (columns) VALUES` 兼容形式会使用 Native 插入。以 `VALUES` 结尾且不含占位符的 插入 若无法识别为该兼容形式，则会抛出 `ProgrammingError`。如需显式执行 Native 批量 插入，应用应使用 `Client.insert`。`fetchone`、`fetchmany` 和 `fetchall` 会读取当前已 materialized 的结果。
 
 `Cursor.description` 会根据每个结果列的类型确定 `null_ok`。不可为 NULL 的类型返回 `False`，可为 NULL 的类型返回 `True`，包括 `Nullable` 包装器、`Variant` 和 `Dynamic`。`None` 表示可空性未知。当以 `SELECT` 或 `WITH` 开头的查询 (忽略前导注释) 既不返回行也不返回列元数据时，游标会执行 `LIMIT 0` 元数据查询来填充 `description`。如果该元数据查询失败，`description` 将保持为空。
 
-ClickHouse 不通过此 HTTP 接口提供传统事务。`Connection.commit()` 和 `Connection.rollback()` 都是空操作。共享 connection 时，[会话 ID 并发规则](/zh/integrations/language-clients/python/advanced-usage#managing-clickhouse-session-ids)仍然适用。
+ClickHouse 不通过此 HTTP 接口提供传统事务。`Connection.commit()` 和 `Connection.rollback()` 都是空操作，因此退出连接上下文时会调用 `Connection.close()`，而不会执行提交或回滚。共享 connection 时，[会话 ID 并发规则](/zh/integrations/language-clients/python/advanced-usage#managing-clickhouse-session-ids)仍然适用。
 
 ## 实用类和函数 {#utility-classes-and-functions}
 
