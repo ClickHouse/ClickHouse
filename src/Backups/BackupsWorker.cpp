@@ -44,6 +44,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <base/insertAtEnd.h>
 
 #include <boost/range/adaptor/map.hpp>
 
@@ -742,13 +743,26 @@ void BackupsWorker::doBackup(
     /// Write the backup.
     if (on_cluster && !is_internal_backup)
     {
-        /// The elements are sent to the other hosts unresolved (each host fills empty database names in
-        /// from its own default database, see `DDLTask::setClusterInfo`), so resolve a copy against
-        /// this host's current database for the access check, the same way the no-cluster branch below
-        /// resolves the query itself.
-        auto elements = backup_query->elements;
-        ASTBackupQuery::setCurrentDatabase(elements, context->getCurrentDatabase());
-        auto required_access = BackupUtils::getRequiredAccessToBackup(elements);
+        /// The elements are sent to the other hosts unresolved, and each host fills empty database
+        /// names in from its address's default database (see `DDLTask::setClusterInfo`), so an element
+        /// written unqualified can select a different table on each host. Compute the required access
+        /// per effective database, resolving the elements the way the addresses will, and authorize
+        /// the union - the same way `doRestore` checks the restore rights per address. The hosts
+        /// cannot be relied upon for these checks: with the default
+        /// `distributed_ddl_use_initial_user_and_roles = false` they execute the query with full access.
+        std::set<String> effective_databases;
+        auto addresses = cluster->filterAddressesByShardOrReplica(backup_settings.shard_num, backup_settings.replica_num);
+        for (const auto * address : addresses)
+            effective_databases.insert(
+                address->default_database.empty() ? context->getCurrentDatabase() : address->default_database);
+
+        AccessRightsElements required_access;
+        for (const auto & effective_database : effective_databases)
+        {
+            auto elements = backup_query->elements;
+            ASTBackupQuery::setCurrentDatabase(elements, effective_database);
+            insertAtEnd(required_access, BackupUtils::getRequiredAccessToBackup(elements));
+        }
 
         /// Send the BACKUP query to other hosts.
         backup_settings.copySettingsToQuery(*backup_query);

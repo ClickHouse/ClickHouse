@@ -87,6 +87,8 @@ def drop_after_test():
         node1.query("DROP TABLE IF EXISTS tbl2 ON CLUSTER 'cluster3' SYNC")
         node1.query("DROP DATABASE IF EXISTS mydb ON CLUSTER 'cluster3' SYNC")
         node1.query("DROP DATABASE IF EXISTS mydb2 ON CLUSTER 'cluster3' SYNC")
+        node1.query("DROP DATABASE IF EXISTS initdb ON CLUSTER 'cluster3' SYNC")
+        node1.query("DROP DATABASE IF EXISTS addrdb ON CLUSTER 'cluster3' SYNC")
         node1.query("DROP USER IF EXISTS u1, u2 ON CLUSTER 'cluster3'")
         node1.query("DROP NAMED COLLECTION IF EXISTS backup_nc")
         node1.query("DROP NAMED COLLECTION IF EXISTS backup_nc_mismatch")
@@ -1163,6 +1165,49 @@ def test_system_named_collections_required_privileges():
     )
 
     node1.query("DROP NAMED COLLECTION backup_nc")
+
+
+def test_backup_required_privileges_address_default_database():
+    # The addresses of 'cluster_address_default_db' set `default_database`, so an unqualified
+    # table name in the dispatched query resolves on every host to that database, not to the
+    # initiator's current database. The initiator must authorize what the hosts will actually
+    # export: with the default `distributed_ddl_use_initial_user_and_roles = false` the hosts
+    # execute the dispatched query with full access.
+    node1.query("CREATE DATABASE initdb ON CLUSTER 'cluster'")
+    node1.query("CREATE DATABASE addrdb ON CLUSTER 'cluster'")
+    node1.query(
+        "CREATE TABLE initdb.tbl ON CLUSTER 'cluster' (x UInt8) "
+        "ENGINE=ReplicatedMergeTree('/clickhouse/tables/initdb_tbl/', '{replica}') ORDER BY x"
+    )
+    node1.query(
+        "CREATE TABLE addrdb.tbl ON CLUSTER 'cluster' (x UInt8) "
+        "ENGINE=ReplicatedMergeTree('/clickhouse/tables/addrdb_tbl/', '{replica}') ORDER BY x"
+    )
+    node1.query("INSERT INTO addrdb.tbl VALUES (1)")
+
+    node1.query("CREATE USER u1")
+    node1.query("GRANT CLUSTER ON *.* TO u1")
+    # new_backup_name() returns a Disk(...) locator, so the DISK source grant is required.
+    node1.query("GRANT READ ON DISK, WRITE ON DISK TO u1")
+    node1.query("GRANT BACKUP ON initdb.* TO u1")
+
+    backup_name = new_backup_name()
+    expected_error = "necessary to have the grant BACKUP ON addrdb.tbl"
+    assert expected_error in node1.query_and_get_error(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster_address_default_db' TO {backup_name}",
+        user="u1",
+        database="initdb",
+    )
+
+    node1.query("GRANT BACKUP ON addrdb.tbl TO u1")
+    node1.query(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster_address_default_db' TO {backup_name}",
+        user="u1",
+        database="initdb",
+    )
+
+    node1.query("DROP DATABASE initdb ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP DATABASE addrdb ON CLUSTER 'cluster' SYNC")
 
 
 def test_system_named_collections_key_mismatch():

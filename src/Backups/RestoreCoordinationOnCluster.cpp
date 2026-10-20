@@ -271,7 +271,7 @@ bool RestoreCoordinationOnCluster::acquireReplicatedSQLObjects(const String & lo
                     break;
             }
 
-            auto code = zk->tryCreate(path, "", zkutil::CreateMode::Persistent);
+            auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
             if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
                 throw zkutil::KeeperException::fromPath(code, path);
 

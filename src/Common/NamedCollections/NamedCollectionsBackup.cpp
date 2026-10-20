@@ -170,20 +170,10 @@ void restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
         String stored;
         readStringUntilEOF(stored, *in);
 
+        String statement;
         try
         {
-            String statement = filename.ends_with(encrypted_sql_extension) ? factory.decryptStoredEntry(stored) : stored;
-
-            ParserCreateNamedCollectionQuery parser;
-            ASTPtr ast = parseQuery(
-                parser,
-                statement.data(),
-                statement.data() + statement.size(),
-                "in file " + filepath + " from backup " + backup->getNameForLogging(),
-                0,
-                context->getSettingsRef()[Setting::max_parser_depth],
-                context->getSettingsRef()[Setting::max_parser_backtracks]);
-            create_queries.push_back(std::move(ast));
+            statement = filename.ends_with(encrypted_sql_extension) ? factory.decryptStoredEntry(stored) : stored;
         }
         catch (Exception & e)
         {
@@ -193,6 +183,29 @@ void restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
                 filepath,
                 backup->getNameForLogging());
             throw;
+        }
+
+        try
+        {
+            ParserCreateNamedCollectionQuery parser;
+            ASTPtr ast = parseQuery(
+                parser,
+                statement.data(),
+                statement.data() + statement.size(),
+                /* query_description= */ "",
+                0,
+                context->getSettingsRef()[Setting::max_parser_depth],
+                context->getSettingsRef()[Setting::max_parser_backtracks]);
+            create_queries.push_back(std::move(ast));
+        }
+        catch (const Exception &)
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_RESTORE_TABLE,
+                "Cannot parse the named collection entry {} from backup {} as a CREATE NAMED COLLECTION statement, "
+                "the entry may be corrupted (SETTINGS restore_named_collections = false skips restoring named collections)",
+                filepath,
+                backup->getNameForLogging());
         }
     }
 

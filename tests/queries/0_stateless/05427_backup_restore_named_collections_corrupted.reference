@@ -1,0 +1,7 @@
+backup
+1
+corrupt the first ciphertext byte of the entry (after the 64-byte FileEncryption header)
+the restore fails without leaking the decrypted statement
+1
+0
+0
