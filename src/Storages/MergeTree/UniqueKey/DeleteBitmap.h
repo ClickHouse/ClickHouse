@@ -79,14 +79,12 @@ public:
     /// True if `row` is set.
     bool contains(UInt64 row) const;
 
-    /// Bulk point-containment; writes 1 to `out_keep[i]` when `rows[i]` is
-    /// *not* in the bitmap, 0 otherwise. `n == 0` is a no-op.
-    void containsBulk(const UInt64 * rows, size_t n, uint8_t * out_keep) const;
-
-    /// Build a per-row keep mask for `rows` (1=keep, 0=deleted) into `out_keep`;
-    /// returns the number kept. Wraps `containsBulk`. Caller sizes `out_keep` to `n`.
-    size_t buildKeepFilter(const UInt64 * rows, size_t n, UInt8 * out_keep) const;
+    /// Build a per-row keep mask (1=keep, 0=deleted) for rows [`begin`, `begin` + `n`) into `out_keep`;
+    /// returns the number kept. Caller sizes `out_keep` to `n`.
     size_t buildKeepFilterRange(UInt64 begin, size_t n, UInt8 * out_keep) const;
+
+    /// Zero `filter[row - begin]` for every set row in [`begin`, `begin` + `n`); returns how many rows that is.
+    size_t clearInFilter(UInt64 begin, size_t n, UInt8 * filter) const;
 
     /// Set `row`.
     void add(UInt64 row);

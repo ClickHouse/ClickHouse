@@ -111,9 +111,9 @@ def test_remote_disk_distinct():
     )
 
 
-# The set of `IN` spills to disk once it takes 1 MiB: the external sort writes its keys as runs, which
-# it merges into the finished set, and every block of rows on the left side looks its keys up in the
-# blocks of that file.
+# The set of `IN` spills to disk once it takes 1 MiB: its sorter writes the keys as runs to temporary
+# files and merges them into the finished set, and every block of rows on the left side looks its keys up
+# in the blocks of that file.
 IN_QUERY = "SELECT count() FROM numbers(1e6) WHERE number IN (SELECT number * 3 FROM numbers(2e6))"
 IN_SETTINGS = {
     "max_bytes_ratio_before_external_set": 0,
@@ -134,10 +134,10 @@ def test_multiple_local_disk_in():
     query_id = str(uuid.uuid4())
     assert node_local.query(IN_QUERY, settings=IN_SETTINGS, query_id=query_id) == "333334\n"
     assert node_local.contains_in_log(
-        f"{{{query_id}}}.*Writing part of data into temporary file.*/test_tmp_policy_disk1/"
+        f"{{{query_id}}}.*Wrote .* keys of a set of IN to temporary file disk(disk1)"
     )
     assert node_local.contains_in_log(
-        f"{{{query_id}}}.*Writing part of data into temporary file.*/test_tmp_policy_disk2/"
+        f"{{{query_id}}}.*Wrote .* keys of a set of IN to temporary file disk(disk2)"
     )
     assert node_local.contains_in_log(
         f"{{{query_id}}}.*Created set on disk with 2000000 keys .* in temporary file disk(disk[12])"
@@ -150,7 +150,7 @@ def test_remote_disk_in():
     query_id = str(uuid.uuid4())
     assert node_remote.query(IN_QUERY, settings=IN_SETTINGS, query_id=query_id) == "333334\n"
     assert node_remote.contains_in_log(
-        f"{{{query_id}}}.*Writing part of data into temporary file.*disk_s3_plain"
+        f"{{{query_id}}}.*Wrote .* keys of a set of IN to temporary file disk(disk_s3_plain)"
     )
     assert node_remote.contains_in_log(
         f"{{{query_id}}}.*Created set on disk with 2000000 keys .* in temporary file disk(disk_s3_plain)"
