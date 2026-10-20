@@ -168,6 +168,8 @@ public:
     explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_);
     void addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats);
     void incrementRowCount(UInt64 rows);
+    /// See `ColumnStatistics::setCardinality`; the column must have statistics.
+    void setCardinality(const String & column_name, UInt64 cardinality);
     ConditionSelectivityEstimatorPtr getEstimator() const;
 
 private:

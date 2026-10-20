@@ -401,14 +401,14 @@ std::optional<Float64> ColumnStatistics::estimateEqual(const Field & val) const
         return stats.at(StatisticsType::CountMinSketch)->estimateEqual(val);
     }
 #endif
-    if (uniq_stats != nullptr)
+    if (hasCardinality())
     {
-        UInt64 cardinality = uniq_stats->estimateCardinality();
-        if (cardinality == 0 || rows == 0)
+        UInt64 distinct_values = estimateCardinality();
+        if (distinct_values == 0 || rows == 0)
             return 0;
         /// Uniq ignores NULLs, so divide non-NULL row count by distinct values.
         /// `getNonNullRowCount` returns `rows` when null-count tracking is absent.
-        return static_cast<Float64>(getNonNullRowCount()) / static_cast<Float64>(cardinality);
+        return static_cast<Float64>(getNonNullRowCount()) / static_cast<Float64>(distinct_values);
     }
 
     return std::nullopt;
@@ -440,11 +440,14 @@ std::optional<Float64> ColumnStatistics::estimateRange(const Range & range) cons
 
 bool ColumnStatistics::hasCardinality() const
 {
-    return findUniqStats(stats) != nullptr;
+    return cardinality || findUniqStats(stats) != nullptr;
 }
 
 UInt64 ColumnStatistics::estimateCardinality() const
 {
+    /// Cardinality set from the outside, i.e Iceberg case
+    if (cardinality)
+        return *cardinality;
     if (const IStatistics * uniq_stats = findUniqStats(stats))
     {
         return uniq_stats->estimateCardinality();
