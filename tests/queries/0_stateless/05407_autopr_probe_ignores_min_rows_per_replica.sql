@@ -3,7 +3,9 @@
 
 SET enable_analyzer=1;
 
-SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=1, parallel_replicas_local_plan=1,
+-- Mode 2 builds the plan with parallel replicas on every run, while mode 1 would decide each query after the first
+-- from the statistics the first one collected, without building it.
+SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=2, parallel_replicas_local_plan=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
 SET query_plan_optimize_join_order_randomize=0;
 -- Don't let the min-bytes gate skip the small reads before the plan with parallel replicas is built.
@@ -15,7 +17,6 @@ CREATE TABLE returns (d Date, item UInt32, order_id UInt64) ENGINE = MergeTree O
 INSERT INTO sales SELECT toDate('2026-01-01') + number % 365, number % 20000, number FROM numbers(1000000);
 INSERT INTO returns SELECT toDate('2026-01-01') + number % 365, number % 20000, number * 10 FROM numbers(500000);
 
--- `LIMIT` without `ORDER BY`: the automatic mode cannot match the plans, so it builds the plan with parallel replicas on every run.
 SELECT s.item, r.order_id FROM sales s, returns r
 WHERE s.item = r.item AND s.order_id = r.order_id AND s.item BETWEEN 100 AND 120 AND r.item BETWEEN 100 AND 120
 LIMIT 10 FORMAT Null SETTINGS log_comment = '05407_without_min_rows';
@@ -32,9 +33,7 @@ LIMIT 10 FORMAT Null SETTINGS log_comment = '05407_min_rows_in_session';
 
 -- The setting given in the `SETTINGS` clause of a subquery, of a view analyzed by its own interpreter (not inlined),
 -- and of the `view` table function.
--- Mode 2 builds the plan with parallel replicas on every run, while mode 1 would decide each query after the first
--- from the statistics the first one collected.
-SET parallel_replicas_min_number_of_rows_per_replica = 0, automatic_parallel_replicas_mode = 2, parallel_replicas_plan_based = 1;
+SET parallel_replicas_min_number_of_rows_per_replica = 0, parallel_replicas_plan_based = 1;
 SET analyzer_inline_views = 0;
 
 CREATE VIEW sales_view_without_min_rows AS SELECT * FROM sales SETTINGS parallel_replicas_min_number_of_rows_per_replica = 0;
