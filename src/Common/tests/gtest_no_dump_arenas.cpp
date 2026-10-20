@@ -16,8 +16,8 @@
 #include <aws/core/utils/memory/stl/AWSString.h>
 #endif
 
+#include <charconv>
 #include <cstdint>
-#include <cstdio>
 #include <fstream>
 #include <string>
 
@@ -32,12 +32,15 @@ bool isExcludedFromCoreDump(const void * ptr)
     bool inside = false;
     while (std::getline(smaps, line))
     {
-        uintptr_t begin;
-        uintptr_t end;
-        if (sscanf(line.c_str(), "%lx-%lx", &begin, &end) == 2)
+        uintptr_t begin = 0;
+        uintptr_t end = 0;
+        const char * line_end = line.data() + line.size();
+        auto [separator, begin_error] = std::from_chars(line.data(), line_end, begin, 16);
+        if (begin_error == std::errc() && separator != line_end && *separator == '-'
+            && std::from_chars(separator + 1, line_end, end, 16).ec == std::errc())
             inside = begin <= address && address < end;
         else if (inside && line.starts_with("VmFlags:"))
-            return line.find(" dd") != std::string::npos;
+            return line.contains(" dd");
     }
     return false;
 }
