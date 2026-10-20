@@ -968,6 +968,18 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
     if (!memory_usage_before_adding_blocks)
         memory_usage_before_adding_blocks = JoinCommon::getCurrentQueryMemoryUsage();
 
+    const auto & right_key_names = table_join->getAllNames(JoinTableSide::Right);
+    ColumnPtrMap all_key_columns(right_key_names.size());
+    for (const auto & column_name : right_key_names)
+    {
+        const auto & column = block.getByName(column_name).column;
+        auto prepared_key_column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
+        /// Keep the dictionary for the single-LowCardinality-column maps; their key getter needs it.
+        if (!isLowCardinalityType(data->type))
+            prepared_key_column = prepared_key_column->convertToFullColumnIfLowCardinality();
+        all_key_columns[column_name] = prepared_key_column;
+    }
+
     if (strictness == JoinStrictness::Asof)
     {
         chassert(kind == JoinKind::Left || kind == JoinKind::Inner);
@@ -986,7 +998,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                 if (asof_const_column->isNullAt(0))
                     return false;
             }
-            else if (const auto * asof_null_map = assert_cast<const ColumnNullable &>(*asof_column.column).tryGetNullMapData())
+            else if (const auto * asof_null_map = assert_cast<const ColumnNullable &>(*all_key_columns.at(asof_key_name)).tryGetNullMapData())
             {
                 /// A column without a null map has no NULLs. Do not create the null map: the block is stored and accounted.
                 const auto & asof_column_nullable = *asof_null_map;
@@ -1006,17 +1018,6 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
     }
 
     const size_t rows = selector.size();
-    const auto & right_key_names = table_join->getAllNames(JoinTableSide::Right);
-    ColumnPtrMap all_key_columns(right_key_names.size());
-    for (const auto & column_name : right_key_names)
-    {
-        const auto & column = block.getByName(column_name).column;
-        auto prepared_key_column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
-        /// Keep the dictionary for the single-LowCardinality-column maps; their key getter needs it.
-        if (!isLowCardinalityType(data->type))
-            prepared_key_column = prepared_key_column->convertToFullColumnIfLowCardinality();
-        all_key_columns[column_name] = prepared_key_column;
-    }
 
     Block block_to_save = filterColumnsPresentInSampleBlock(block, savedBlockSample());
     if (shrink_blocks)

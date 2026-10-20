@@ -319,16 +319,17 @@ DataTypePtr removeNullableInsideTuple(const DataTypePtr & type)
     return std::make_shared<DataTypeTuple>(elements);
 }
 
-bool keyMatchesNullAsValue(const DataTypePtr & type)
+bool keyMatchesValuesEqualsRejects(const DataTypePtr & type)
 {
     /// A top-level NULL of Nullable and LowCardinality(Nullable) never matches.
     auto key_type = removeLowCardinalityAndNullable(type);
-    if (canContainNull(*key_type))
+    /// A JOIN key can match a NaN to a NaN, while `nan = nan` is false.
+    if (canContainNull(*key_type) || isFloat(key_type))
         return true;
 
     const auto * tuple_type = typeid_cast<const DataTypeTuple *>(key_type.get());
     return tuple_type && std::ranges::any_of(tuple_type->getElements(), [](const DataTypePtr & element)
-        { return canContainNull(*element) || keyMatchesNullAsValue(element); });
+        { return canContainNull(*element) || keyMatchesValuesEqualsRejects(element); });
 }
 
 bool canBecomeNullable(const DataTypePtr & type)
