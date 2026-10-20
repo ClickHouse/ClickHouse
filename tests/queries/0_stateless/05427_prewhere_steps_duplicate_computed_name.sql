@@ -29,7 +29,19 @@ ALTER TABLE t3 ADD COLUMN n UInt64 DEFAULT toUInt64(v);
 SELECT t1.id, t3.n FROM t1 LEFT JOIN t3 ON t1.id = t3.id AND t3.enabled = true AND t3.id > 0
 WHERE t3.enabled = true AND t3.n > 0 ORDER BY t1.id;
 
+-- A new name is not taken from a stored column.
+CREATE TABLE t4 (id Int64, reviewer Int64, enabled Bool, `__prewhere_equals(__table2.enabled, 1_Bool)` UInt8) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t4_mem AS t4 ENGINE = Memory;
+INSERT INTO t4 VALUES (1, 100, true, 7), (2, 200, false, 8);
+INSERT INTO t4_mem SELECT * FROM t4;
+SELECT t1.id, t4.reviewer, t4.`__prewhere_equals(__table2.enabled, 1_Bool)` FROM t1 LEFT JOIN t4 ON t1.id = t4.id AND t4.enabled = true AND t4.reviewer > 0
+WHERE t4.enabled = true AND t4.reviewer = 100 ORDER BY t1.id;
+SELECT t1.id, t4.reviewer, t4.`__prewhere_equals(__table2.enabled, 1_Bool)` FROM t1 LEFT JOIN t4_mem AS t4 ON t1.id = t4.id AND t4.enabled = true AND t4.reviewer > 0
+WHERE t4.enabled = true AND t4.reviewer = 100 ORDER BY t1.id;
+
 DROP TABLE t1;
 DROP TABLE t2;
 DROP TABLE t2_mem;
 DROP TABLE t3;
+DROP TABLE t4;
+DROP TABLE t4_mem;

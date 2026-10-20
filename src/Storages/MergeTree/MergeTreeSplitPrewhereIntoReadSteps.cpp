@@ -416,6 +416,11 @@ bool tryBuildPrewhereSteps(
     NodeToNewNameMap new_names;
     {
         const auto & dag = prewhere_info->prewhere_actions;
+        /// Readers do not read a stored column that a step already produced, so a new name must not be one.
+        auto is_stored_column = [&](const String & name)
+        {
+            return columns && columns->hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+        };
         const std::unordered_set<const ActionsDAG::Node *> output_nodes(dag.getOutputs().begin(), dag.getOutputs().end());
         std::unordered_map<std::string_view, size_t> name_count;
         NameSet used_names;
@@ -429,7 +434,7 @@ bool tryBuildPrewhereSteps(
             if (node.type == ActionsDAG::ActionType::INPUT || output_nodes.contains(&node) || name_count[node.result_name] < 2)
                 continue;
             String new_name = "__prewhere_" + node.result_name;
-            for (size_t suffix = 1; used_names.contains(new_name); ++suffix)
+            for (size_t suffix = 1; used_names.contains(new_name) || is_stored_column(new_name); ++suffix)
                 new_name = fmt::format("__prewhere_{}_{}", node.result_name, suffix);
             used_names.insert(new_name);
             new_names.emplace(&node, std::move(new_name));
