@@ -1733,6 +1733,8 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     auto component_guard = Coordination::setCurrentComponent("InterpreterSystemQuery::dropReplica");
     if (query.replica.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name is empty");
+    if (query.replica.contains('/'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid replica name, '/' is not allowed: {}", query.replica);
 
     if (!table_id.empty())
     {
