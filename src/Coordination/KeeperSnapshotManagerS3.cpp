@@ -107,6 +107,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
         static constexpr bool s3_slow_all_threads_after_network_error = true;
         static constexpr bool s3_slow_all_threads_after_retryable_error = false;
         static constexpr bool enable_s3_requests_logging = false;
+        static const RemoteHostFilter remote_host_filter;
 
         if (!new_uri.key.empty())
         {
@@ -116,7 +117,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
 
         S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
             auth_settings[S3AuthSetting::region],
-            RemoteHostFilter(),
+            remote_host_filter,
             s3_max_redirects,
             S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = s3_retry_attempts},
             s3_slow_all_threads_after_network_error,

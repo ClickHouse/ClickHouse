@@ -11,17 +11,13 @@ doc_type: 'reference'
 
 Позволяет параллельно обрабатывать файлы по URL с множества узлов в указанном кластере. На инициаторе создаётся подключение ко всем узлам кластера, раскрывается звёздочка в пути к файлу URL, после чего каждый файл динамически распределяется. На узле-воркере он запрашивает у инициатора следующую задачу на обработку и выполняет её. Это повторяется, пока не будут завершены все задачи.
 
-<div id="syntax">
-  ## Синтаксис
-</div>
+## Синтаксис {#syntax}
 
 ```sql
 urlCluster(cluster_name, URL, format, structure)
 ```
 
-<div id="arguments">
-  ## Аргументы
-</div>
+## Аргументы {#arguments}
 
 | Аргумент       | Описание                                                                                                                                      |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -30,15 +26,11 @@ urlCluster(cluster_name, URL, format, structure)
 | `format`       | [Формат](/ru/reference/formats/index) данных. Тип: [String](/ru/reference/data-types/string).                                                       |
 | `structure`    | Структура таблицы в формате `'UserID UInt64, Name String'`. Определяет имена столбцов и их типы. Тип: [String](/ru/reference/data-types/string). |
 
-<div id="returned-value">
-  ## Возвращаемое значение
-</div>
+## Возвращаемое значение {#returned-value}
 
 Таблица с указанными форматом и структурой, содержащая данные из заданного `URL`.
 
-<div id="examples">
-  ## Примеры
-</div>
+## Примеры {#examples}
 
 Получение первых 3 строк таблицы, содержащей столбцы типов `String` и [UInt32](/ru/reference/data-types/int-uint), с HTTP-сервера, который возвращает данные в формате [CSV](/ru/reference/formats/CSV/CSV).
 
@@ -64,16 +56,14 @@ if __name__ == "__main__":
 SELECT * FROM urlCluster('cluster_simple','http://127.0.0.1:12345', CSV, 'column1 String, column2 UInt32')
 ```
 
-<div id="globs-in-url">
-  ## Глоб-шаблоны в URL
-</div>
+## Глоб-шаблоны в URL {#globs-in-url}
 
 Шаблоны в `{ }` используются для генерации набора сегментов или для указания резервных адресов. Поддерживаемые типы шаблонов и примеры приведены в описании функции [remote](/ru/reference/functions/table-functions/remote#globs-in-addresses).
 Символ `|` внутри шаблонов используется для указания резервных адресов. Они перебираются в том же порядке, в котором перечислены в шаблоне. Количество генерируемых адресов ограничено настройкой [glob&#95;expansion&#95;max&#95;elements](/ru/reference/settings/session-settings/other#glob_expansion_max_elements).
 
-<div id="related">
-  ## См. также
-</div>
+Адреса генерируются по одному по мере распределения задач между узлами кластера, поэтому `glob_expansion_max_elements` ограничивает не размер шаблона, а количество адресов, которые может прочитать один запрос, как описано для функции [url](/ru/reference/functions/table-functions/url#globs-in-url). Предикат по `_path` или `_file` применяется к каждому адресу в момент его генерации, поэтому отклонённые им адреса тоже генерируются и учитываются в лимите; на обработку передаются только подходящие.
+
+## См. также {#related}
 
 * [Движок HDFS](/ru/reference/engines/table-engines/integrations/hdfs)
 * [Табличная функция URL](/ru/reference/engines/table-engines/special/url)

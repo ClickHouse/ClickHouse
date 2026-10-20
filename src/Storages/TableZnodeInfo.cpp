@@ -11,8 +11,8 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Core/ServerSettings.h>
 #include <Core/UUID.h>
+#include <Common/Hex.h>
 #include <IO/ReadHelpers.h>
-#include <base/hex.h>
 
 #include <optional>
 

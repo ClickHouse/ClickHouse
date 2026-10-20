@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1215944",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1255061",
       "email": "support@clickhouse.com"
     }
   },
@@ -22,6 +22,9 @@
   "tags": [
     {
       "name": "Organization"
+    },
+    {
+      "name": "Notifications"
     },
     {
       "name": "User management"
@@ -166,9 +169,28 @@
     "/v1/organizations": {
       "get": {
         "summary": "Get list of available organizations",
-        "description": "Returns a list with a single organization associated with the API key in the request.",
+        "description": "Returns the organizations available to the caller, oldest first. An API key resolves to the single organization it belongs to; a user token returns every organization the user is a member of. Results are capped at `limit` (default 250) per page; the server may return fewer and caps the value at its own maximum. Every response carries `limit` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null.",
         "operationId": "organizationGetList",
-        "parameters": [],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of results to return.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 250
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "description": "Opaque cursor from a previous response's `nextCursor`, marking where to resume the list.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -192,6 +214,17 @@
                       "items": {
                         "$ref": "#/components/schemas/Organization"
                       }
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "description": "Maximum number of results returned in this page."
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Cursor for the next page, to be sent as the `cursor` query parameter. Null on the last page."
                     }
                   }
                 }
@@ -255,7 +288,7 @@
           "Organization"
         ],
         "x-mint": {
-          "content": "Returns a list with a single organization associated with the API key in the request."
+          "content": "Returns the organizations available to the caller, oldest first. An API key resolves to the single organization it belongs to; a user token returns every organization the user is a member of. Results are capped at `limit` (default 250) per page; the server may return fewer and caps the value at its own maximum. Every response carries `limit` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null."
         }
       }
     },
@@ -572,8 +605,8 @@
     },
     "/v1/organizations/{organizationId}/prometheus/discovery": {
       "get": {
-        "summary": "List Prometheus scrape targets",
-        "description": "Returns one Prometheus scrape target per service in the organization, in the [HTTP service discovery](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) format. Only services the API key is authorized to view are included; services that are being deleted or have been deleted are omitted.\n\nPoint an [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) job at this endpoint to discover and scrape all services in the organization automatically. Prometheus refreshes the target list on every discovery poll, so newly created and deleted services are picked up without configuration changes.\n\nDiscovered targets scrape with `filtered_metrics=true` by default; pass `?filtered_metrics=false` to this endpoint to discover unfiltered targets. See the [Prometheus integration guide](https://clickhouse.com/docs/integrations/prometheus) for more on the exported metrics.",
+        "summary": "Get Prometheus service discovery targets",
+        "description": "Returns one Prometheus scrape target per service in the organization, in the [HTTP service discovery](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) format. Only services the API key is authorized to view are included; services that are being deleted or have been deleted are omitted.\n\nPoint an [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) job at this endpoint to discover and scrape all services in the organization automatically. Prometheus refreshes the target list on every discovery poll, so newly created and deleted services are picked up without configuration changes.\n\nFilter targets in `relabel_configs` by `__meta_clickhouse_region`, `__meta_clickhouse_provider` or `__meta_clickhouse_tag_<key>`. Invalid label name characters in tag keys become `_`. `__meta_clickhouse_tagpresent_<key>` is `true` for every tag, including tags without a value.\n\nDiscovered targets scrape with `filtered_metrics=true` by default; pass `?filtered_metrics=false` to this endpoint to discover unfiltered targets. See the [Prometheus integration guide](https://clickhouse.com/docs/integrations/prometheus) for more on the exported metrics.",
         "operationId": "organizationPrometheusDiscoveryGet",
         "parameters": [
           {
@@ -668,7 +701,7 @@
           "Prometheus"
         ],
         "x-mint": {
-          "content": "Returns one Prometheus scrape target per service in the organization, in the [HTTP service discovery](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) format. Only services the API key is authorized to view are included; services that are being deleted or have been deleted are omitted.\n\nPoint an [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) job at this endpoint to discover and scrape all services in the organization automatically. Prometheus refreshes the target list on every discovery poll, so newly created and deleted services are picked up without configuration changes.\n\nDiscovered targets scrape with `filtered_metrics=true` by default; pass `?filtered_metrics=false` to this endpoint to discover unfiltered targets. See the [Prometheus integration guide](https://clickhouse.com/docs/integrations/prometheus) for more on the exported metrics."
+          "content": "Returns one Prometheus scrape target per service in the organization, in the [HTTP service discovery](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) format. Only services the API key is authorized to view are included; services that are being deleted or have been deleted are omitted.\n\nPoint an [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) job at this endpoint to discover and scrape all services in the organization automatically. Prometheus refreshes the target list on every discovery poll, so newly created and deleted services are picked up without configuration changes.\n\nFilter targets in `relabel_configs` by `__meta_clickhouse_region`, `__meta_clickhouse_provider` or `__meta_clickhouse_tag_<key>`. Invalid label name characters in tag keys become `_`. `__meta_clickhouse_tagpresent_<key>` is `true` for every tag, including tags without a value.\n\nDiscovered targets scrape with `filtered_metrics=true` by default; pass `?filtered_metrics=false` to this endpoint to discover unfiltered targets. See the [Prometheus integration guide](https://clickhouse.com/docs/integrations/prometheus) for more on the exported metrics."
         }
       }
     },
@@ -1814,7 +1847,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Creates a new service in the organization, and returns the current service state and a password to access the service. The service is started asynchronously.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:create-service` permission.\n\n</div>\n</div>"
+          "content": "Creates a new service in the organization, and returns the current service state and a password to access the service. The service is started asynchronously.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permissions</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:create-service`, `control-plane:service:manage` permissions.\n\n</div>\n</div>"
         }
       }
     },
@@ -3344,7 +3377,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/scalingSchedule": {
       "get": {
         "summary": "Get service autoscaling schedule",
-        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns the autoscaling schedule for a service. Returns 404 if no schedule has been configured or if the schedule was cleared. Requires the scheduled autoscaling feature to be enabled for the organization.",
+        "description": "Returns the autoscaling schedule for a service. Returns 404 if no schedule has been configured or if the schedule was cleared. Requires the scheduled autoscaling feature to be enabled for the organization.",
         "operationId": "scalingScheduleGet",
         "parameters": [
           {
@@ -3450,16 +3483,13 @@
         "tags": [
           "Service"
         ],
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Returns the autoscaling schedule for a service. Returns 404 if no schedule has been configured or if the schedule was cleared. Requires the scheduled autoscaling feature to be enabled for the organization.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:view` permission.\n\n</div>\n</div>"
+        }
       },
       "post": {
         "summary": "Create or replace service autoscaling schedule",
-        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Creates or fully replaces the autoscaling schedule for a service. Pass an empty `entries` array to clear the schedule — a subsequent GET will return 404, and the response will contain an empty `baseConfig` (all fields absent). The base scaling config (applied when no entry is active) is managed separately via the `replicaScaling` endpoint. Requires the scheduled autoscaling feature to be enabled for the organization.",
+        "description": "Creates or fully replaces the autoscaling schedule for a service. Pass an empty `entries` array to clear the schedule — a subsequent GET will return 404, and the response will contain an empty `baseConfig` (all fields absent). The base scaling config (applied when no entry is active) is managed separately via the `replicaScaling` endpoint. Requires the scheduled autoscaling feature to be enabled for the organization.",
         "operationId": "scalingScheduleUpsert",
         "parameters": [
           {
@@ -3574,16 +3604,13 @@
         "tags": [
           "Service"
         ],
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Creates or fully replaces the autoscaling schedule for a service. Pass an empty `entries` array to clear the schedule — a subsequent GET will return 404, and the response will contain an empty `baseConfig` (all fields absent). The base scaling config (applied when no entry is active) is managed separately via the `replicaScaling` endpoint. Requires the scheduled autoscaling feature to be enabled for the organization.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-scaling-config` permission.\n\n</div>\n</div>"
+        }
       },
       "delete": {
         "summary": "Delete service scheduled scaling",
-        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Deletes the autoscaling schedule for a service. If a schedule entry is currently active, the base scaling config is restored to the instance before the schedule is removed. Returns 404 if no schedule exists. Requires the scheduled autoscaling feature to be enabled for the organization.",
+        "description": "Deletes the autoscaling schedule for a service. If a schedule entry is currently active, the base scaling config is restored to the instance before the schedule is removed. Returns 404 if no schedule exists. Requires the scheduled autoscaling feature to be enabled for the organization.",
         "operationId": "scalingScheduleDelete",
         "parameters": [
           {
@@ -3686,12 +3713,9 @@
         "tags": [
           "Service"
         ],
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Deletes the autoscaling schedule for a service. If a schedule entry is currently active, the base scaling config is restored to the instance before the schedule is removed. Returns 404 if no schedule exists. Requires the scheduled autoscaling feature to be enabled for the organization.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-scaling-config` permission.\n\n</div>\n</div>"
+        }
       }
     },
     "/v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow": {
@@ -4887,7 +4911,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/snapshots": {
       "get": {
         "summary": "List of service snapshots",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns a list of all snapshots for the service. The most recent snapshots come first in the list.",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns a list of snapshots for the service, most recent first. Results are capped at `limit` (default 250) per page; the server may return fewer and caps the value at its own maximum. Every response carries `limit`, `totalCount` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null.",
         "operationId": "snapshotGetList",
         "parameters": [
           {
@@ -4908,6 +4932,24 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of results to return.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 250
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "description": "Opaque cursor from a previous response's `nextCursor`, marking where to resume the list.",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -4934,6 +4976,24 @@
                       "items": {
                         "$ref": "#/components/schemas/Snapshot"
                       }
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "description": "Maximum number of results returned in this page."
+                    },
+                    "totalCount": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "description": "Total number of results across all pages. It has only informative value, thus is not guaranteed and it is provided on a best-effort basis. Null if the total count is unknown."
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Cursor for the next page, to be sent as the `cursor` query parameter. Null on the last page."
                     }
                   }
                 }
@@ -5484,7 +5544,7 @@
       },
       "patch": {
         "summary": "Update service snapshot configuration",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Updates the service snapshot configuration. Requires ADMIN auth key role. Enables or disables scheduled snapshots and sets the cadence; when enabled, gap and timeFrame (in minutes) must together be one of the supported (gap, timeFrame) pairs: (30, 1440), (60, 2880). Provide at least one of enabled, gap, timeFrame; omit a field to leave it unchanged (null is not accepted).",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Updates the service snapshot configuration. Requires ADMIN auth key role. Enables or disables scheduled snapshots and sets the cadence; when enabled, gap and timeFrame (in minutes) must together be one of the supported (gap, timeFrame) pairs: (30, 1440), (60, 2880). Provide at least one of enabled, gap, timeFrame; omit a field to leave it unchanged (null is not accepted). Enabling snapshots or changing the cadence requires an eligible organization (see the organization's capabilities.snapshots).",
         "operationId": "snapshotConfigurationUpdate",
         "parameters": [
           {
@@ -5598,6 +5658,247 @@
         },
         "tags": [
           "Snapshot"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/services/{serviceId}/replicaAwareRouting": {
+      "get": {
+        "summary": "Get replica aware routing",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns whether replica aware routing (sticky routing) is enabled for HTTP and native connections on the service.",
+        "operationId": "replicaAwareRoutingGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ReplicaAwareRouting"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Service"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "patch": {
+        "summary": "Update replica aware routing",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Updates replica aware routing (sticky routing) for the service. Requires the organization feature to be enabled. Provide at least one of httpEnabled, nativeEnabled; omit a field to leave it unchanged.",
+        "operationId": "replicaAwareRoutingUpdate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplicaAwareRoutingPatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ReplicaAwareRouting"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Service"
         ],
         "x-badges": [
           {
@@ -6087,7 +6388,7 @@
     "/v1/organizations/{organizationId}/keys": {
       "get": {
         "summary": "Get list of keys",
-        "description": "Returns a list of keys in the organization, ordered by creation date, oldest first. Results are capped at `limit` (default and maximum 250) per page. Every response carries `limit`, `totalCount` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null.",
+        "description": "Returns a list of keys in the organization, ordered by creation date, oldest first. Results are capped at `limit` (default 250) per page; the server may return fewer and caps the value at its own maximum. Every response carries `limit`, `totalCount` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null.",
         "operationId": "openapiKeyGetList",
         "parameters": [
           {
@@ -6107,7 +6408,6 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 250,
               "default": 250
             }
           },
@@ -6224,7 +6524,7 @@
           "API keys"
         ],
         "x-mint": {
-          "content": "Returns a list of keys in the organization, ordered by creation date, oldest first. Results are capped at `limit` (default and maximum 250) per page. Every response carries `limit`, `totalCount` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view-api-keys` permission.\n\n</div>\n</div>"
+          "content": "Returns a list of keys in the organization, ordered by creation date, oldest first. Results are capped at `limit` (default 250) per page; the server may return fewer and caps the value at its own maximum. Every response carries `limit`, `totalCount` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view-api-keys` permission.\n\n</div>\n</div>"
         }
       },
       "post": {
@@ -7811,6 +8111,310 @@
         "x-mint": {
           "content": "Returns a single organization activity by ID.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view-activities` permission.\n\n</div>\n</div>"
         }
+      }
+    },
+    "/v1/organizations/{organizationId}/notifications": {
+      "get": {
+        "summary": "List of organization notifications",
+        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns notifications for the organization, most recent first. Only notifications about resources the caller can access are returned, so two keys in the same organization can see different results. The [notification types endpoint](#tag/Notifications/operation/notificationTypesGetList) lists the types this organization can receive, so it shows what to expect here. Notifications are retained for 180 days. A page holds at most `limit` notifications (default 100, maximum 250; a larger value is clamped) and the server may return fewer. Every response carries `limit` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null.",
+        "operationId": "notificationGetList",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization the notifications belong to.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of results to return.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 250,
+              "default": 100
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "description": "Opaque cursor from a previous response's `nextCursor`, marking where to resume the list.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "severity",
+            "description": "Filter to notifications of this severity: 'info', 'warning', 'critical'.",
+            "schema": {
+              "type": "string",
+              "example": "warning"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "description": "Filter to notifications of this type. New types are added over time; the [notification types endpoint](#tag/Notifications/operation/notificationTypesGetList) lists the ones this organization can receive.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "resource_id",
+            "description": "Filter to notifications about this resource. A service also matches the notifications of its ClickPipes; pass `resource_type` to narrow to one kind of resource.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "resource_type",
+            "description": "Filter to notifications about resources of this kind. One of 'service', 'organization', 'clickpipe', 'postgres'.",
+            "schema": {
+              "type": "string",
+              "example": "service"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from_date",
+            "description": "Return notifications created at or after this time. An RFC 3339 timestamp, not a bare date.",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2026-10-01T00:00:00Z"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to_date",
+            "description": "Return notifications created at or before this time. An RFC 3339 timestamp, not a bare date.",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2026-10-08T00:00:00Z"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Notification"
+                      }
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "description": "Maximum number of results returned in this page."
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Cursor for the next page, to be sent as the `cursor` query parameter. Null on the last page."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Notifications"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/notificationTypes": {
+      "get": {
+        "summary": "List notification types",
+        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns every notification type the organization is entitled to, each flagged with whether the caller may use it. Types the organization is not entitled to are omitted; types the caller lacks permission to use are returned with `isAvailable` set to false. Every type supports the `ui`, `email` and `slack` channels, so channels are a property of the API rather than of a type. The effective delivery default is a function of type, role and channel, so no per-type default is reported here.",
+        "operationId": "notificationTypesGetList",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the requested organization.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/NotificationType"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Notifications"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
       }
     },
     "/v1/organizations/{organizationId}/usageCost": {
@@ -15356,7 +15960,7 @@
     "/v1/organizations/{organizationId}/postgres/{postgresId}/metrics": {
       "get": {
         "summary": "Get Postgres time-series metrics",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns bucketed time-series metrics for a PostgreSQL service over the requested window (CPU, memory, disk, network, connections, cache hit ratio, throughput, transactions, and more). Use this to chart or analyze how a service behaved over time.",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns bucketed time-series metrics for a PostgreSQL service over the requested window (CPU, memory, disk, network, connections, cache hit ratio, throughput, transactions, wait events, lock waits, and more). Use this to chart or analyze how a service behaved over time.",
         "operationId": "postgresInstanceMetricsGet",
         "parameters": [
           {
@@ -19172,7 +19776,7 @@
       "get": {
         "operationId": "savedQueryList",
         "summary": "List saved queries",
-        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns saved queries for the service.",
+        "description": "Returns saved queries for the service.",
         "tags": [
           "Saved queries"
         ],
@@ -19459,17 +20063,14 @@
             }
           }
         },
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Returns saved queries for the service.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:view` permission.\n\n</div>\n</div>"
+        }
       },
       "post": {
         "operationId": "savedQueryCreate",
         "summary": "Create a saved query",
-        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Creates a saved query.",
+        "description": "Creates a saved query.",
         "tags": [
           "Saved queries"
         ],
@@ -19744,19 +20345,16 @@
             }
           }
         },
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Creates a saved query.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage` permission.\n\n</div>\n</div>"
+        }
       }
     },
     "/v1/organizations/{organizationId}/services/{serviceId}/saved-queries/{queryId}": {
       "delete": {
         "operationId": "savedQueryDelete",
         "summary": "Delete a saved query",
-        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Deletes a saved query.",
+        "description": "Deletes a saved query.",
         "tags": [
           "Saved queries"
         ],
@@ -20030,17 +20628,14 @@
             }
           }
         },
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Deletes a saved query.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage` permission.\n\n</div>\n</div>"
+        }
       },
       "get": {
         "operationId": "savedQueryGet",
         "summary": "Get a saved query",
-        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns a saved query.",
+        "description": "Returns a saved query.",
         "tags": [
           "Saved queries"
         ],
@@ -20285,17 +20880,14 @@
             }
           }
         },
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Returns a saved query.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:view` permission.\n\n</div>\n</div>"
+        }
       },
       "put": {
         "operationId": "savedQueryUpdate",
         "summary": "Update a saved query",
-        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Updates a saved query.",
+        "description": "Updates a saved query.",
         "tags": [
           "Saved queries"
         ],
@@ -20582,12 +21174,9 @@
             }
           }
         },
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
+        "x-mint": {
+          "content": "Updates a saved query.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage` permission.\n\n</div>\n</div>"
+        }
       }
     },
     "/v1/organizations/{organizationId}/udfUploads/url": {
@@ -24529,7 +25118,7 @@
       "OrganizationCapabilities": {
         "properties": {
           "snapshots": {
-            "description": "Whether the organization is eligible to use service snapshots: true only when the organization has the snapshots feature enabled, is on a PPv2 tier, and has the backups entitlement — the same conditions enforced when a snapshotConfiguration is saved. Check this before configuring snapshots on a service. Snapshots apply to primary services only, so a secondary/replica service is rejected regardless of organization eligibility.",
+            "description": "Whether the organization is eligible to enable snapshots on its primary services.",
             "type": "boolean"
           }
         }
@@ -24609,7 +25198,18 @@
           "clickhouse_discovery_service_name": {
             "description": "Service name.",
             "type": "string"
+          },
+          "__meta_clickhouse_region": {
+            "description": "Service region, for example `us-east-1`.",
+            "type": "string"
+          },
+          "__meta_clickhouse_provider": {
+            "description": "Cloud provider, for example `aws`.",
+            "type": "string"
           }
+        },
+        "additionalProperties": {
+          "type": "string"
         }
       },
       "PrometheusDiscoveryTargetGroup": {
@@ -26984,9 +27584,8 @@
             ]
           },
           "host": {
-            "description": "PostgreSQL server hostname or IP address. To use a reverse private endpoint, pass the endpoint hostname here.",
+            "description": "PostgreSQL server hostname or IP address. To use a reverse private endpoint, pass the endpoint hostname here. For Cloud SQL with SERVICE_ACCOUNT_WORKLOAD_IDENTITY authentication, pass the instance connection name (project:region:instance).",
             "type": "string",
-            "format": "hostname",
             "example": "my-postgres-server.example.com"
           },
           "port": {
@@ -27006,7 +27605,8 @@
             "type": "string",
             "enum": [
               "basic",
-              "IAM_ROLE"
+              "IAM_ROLE",
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
             ],
             "example": "IAM_ROLE"
           },
@@ -27073,9 +27673,8 @@
             "$ref": "#/components/schemas/PLAIN"
           },
           "host": {
-            "description": "PostgreSQL server hostname or IP address. To use a reverse private endpoint, pass the endpoint hostname here.",
+            "description": "PostgreSQL server hostname or IP address. To use a reverse private endpoint, pass the endpoint hostname here. For Cloud SQL with SERVICE_ACCOUNT_WORKLOAD_IDENTITY authentication, pass the instance connection name (project:region:instance).",
             "type": "string",
-            "format": "hostname",
             "example": "my-postgres-server.example.com"
           },
           "port": {
@@ -27098,7 +27697,8 @@
             "type": "string",
             "enum": [
               "basic",
-              "IAM_ROLE"
+              "IAM_ROLE",
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
             ],
             "example": "IAM_ROLE"
           },
@@ -27143,12 +27743,11 @@
             "$ref": "#/components/schemas/PLAIN"
           },
           "host": {
-            "description": "PostgreSQL server hostname or IP address. To use a reverse private endpoint, pass the endpoint hostname here.",
+            "description": "PostgreSQL server hostname or IP address. To use a reverse private endpoint, pass the endpoint hostname here. For Cloud SQL with SERVICE_ACCOUNT_WORKLOAD_IDENTITY authentication, pass the instance connection name (project:region:instance).",
             "type": [
               "string",
               "null"
             ],
-            "format": "hostname",
             "example": "my-postgres-server.example.com"
           },
           "port": {
@@ -27470,14 +28069,14 @@
               "mysql",
               "rdsmysql",
               "auroramysql",
+              "cloudsqlmysql",
               "mariadb",
               "rdsmariadb"
             ]
           },
           "host": {
-            "description": "MySQL server hostname or IP address. To use a reverse private endpoint, pass the endpoint hostname here.",
+            "description": "MySQL server hostname or IP address. To use a reverse private endpoint, pass the endpoint hostname here. For Cloud SQL with SERVICE_ACCOUNT_WORKLOAD_IDENTITY authentication, pass the instance connection name (project:region:instance).",
             "type": "string",
-            "format": "hostname",
             "example": "my-mysql-server.example.com"
           },
           "port": {
@@ -27492,7 +28091,8 @@
             "type": "string",
             "enum": [
               "basic",
-              "IAM_ROLE"
+              "IAM_ROLE",
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
             ],
             "example": "basic"
           },
@@ -27558,6 +28158,7 @@
               "mysql",
               "rdsmysql",
               "auroramysql",
+              "cloudsqlmysql",
               "mariadb",
               "rdsmariadb"
             ]
@@ -27566,9 +28167,8 @@
             "$ref": "#/components/schemas/PLAIN"
           },
           "host": {
-            "description": "MySQL server hostname or IP address. To use a reverse private endpoint, pass the endpoint hostname here.",
+            "description": "MySQL server hostname or IP address. To use a reverse private endpoint, pass the endpoint hostname here. For Cloud SQL with SERVICE_ACCOUNT_WORKLOAD_IDENTITY authentication, pass the instance connection name (project:region:instance).",
             "type": "string",
-            "format": "hostname",
             "example": "my-mysql-server.example.com"
           },
           "port": {
@@ -27586,7 +28186,8 @@
             "type": "string",
             "enum": [
               "basic",
-              "IAM_ROLE"
+              "IAM_ROLE",
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
             ],
             "example": "basic"
           },
@@ -27644,12 +28245,11 @@
             "$ref": "#/components/schemas/PLAIN"
           },
           "host": {
-            "description": "MySQL server hostname or IP address. To use a reverse private endpoint, pass the endpoint hostname here.",
+            "description": "MySQL server hostname or IP address. To use a reverse private endpoint, pass the endpoint hostname here. For Cloud SQL with SERVICE_ACCOUNT_WORKLOAD_IDENTITY authentication, pass the instance connection name (project:region:instance).",
             "type": [
               "string",
               "null"
             ],
-            "format": "hostname",
             "example": "my-mysql-server.example.com"
           },
           "port": {
@@ -27670,7 +28270,8 @@
             ],
             "enum": [
               "basic",
-              "IAM_ROLE"
+              "IAM_ROLE",
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
             ],
             "example": "basic"
           },
@@ -27752,11 +28353,38 @@
       "ClickPipeBigQueryPipeSettings": {
         "properties": {
           "replicationMode": {
-            "description": "Replication mode. BigQuery only supports snapshot mode.",
+            "description": "Replication mode: \"cdc\" (change data capture with initial snapshot), \"snapshot\" (one-time snapshot only), or \"cdc_only\" (CDC without initial snapshot).",
             "type": "string",
-            "enum": [
-              "snapshot"
-            ]
+            "example": "cdc"
+          },
+          "replicationMethod": {
+            "description": "How changes are captured from BigQuery. \"query_based\" polls each table using a watermark timestamp column, \"events_based\" reads the BigQuery change history using the APPENDS or CHANGES table function. Required for \"cdc\" and \"cdc_only\" replication modes and not allowed for \"snapshot\".",
+            "type": "string",
+            "example": "query_based"
+          },
+          "syncIntervalSeconds": {
+            "description": "Interval in seconds between CDC syncs. Not allowed for \"snapshot\" replication mode.",
+            "type": "integer",
+            "minimum": 1,
+            "example": 60
+          },
+          "queryCdcPullSyncParallelism": {
+            "description": "Number of tables pulled in parallel during a CDC sync. Not allowed for \"snapshot\" replication mode.",
+            "type": "integer",
+            "minimum": 1,
+            "example": 4
+          },
+          "syncDelaySeconds": {
+            "description": "Each CDC sync reads data only up to now minus this delay, giving recently written rows time to become visible in BigQuery. Increase it if your tables are loaded via batch jobs or Google Cloud Dataflow; if set too low, late-visible rows may be skipped. Not allowed for \"snapshot\" replication mode.",
+            "type": "integer",
+            "minimum": 0,
+            "example": 60
+          },
+          "pullWindowSizeSeconds": {
+            "description": "Maximum amount of time one pull (query) can cover. Applies when the pipe has fallen behind, e.g. on the first CDC sync or when resuming after a pause: with a 6 hour limit, a pipe that is 3 days behind catches up in 12 smaller pulls instead of one large query. If a pull fails, only that pull is retried. Not allowed for \"snapshot\" replication mode.",
+            "type": "integer",
+            "minimum": 1,
+            "example": 86400
           },
           "allowNullableColumns": {
             "description": "Allow nullable columns in the destination table.",
@@ -27819,6 +28447,15 @@
               "ReplacingMergeTree",
               "Null"
             ]
+          },
+          "queryCdcWatermarkColumn": {
+            "description": "Source column of type TIMESTAMP used as the CDC watermark. Required for every table when replicationMethod is \"query_based\"; not allowed otherwise.",
+            "type": "string"
+          },
+          "eventsFunction": {
+            "description": "BigQuery table function used to read changes: \"appends\" (newly appended rows) or \"changes\" (all row changes). Required for every table when replicationMethod is \"events_based\"; not allowed otherwise.",
+            "type": "string",
+            "example": "appends"
           }
         },
         "required": [
@@ -28077,6 +28714,77 @@
           }
         }
       },
+      "ClickPipeMongoDBPipeColumn": {
+        "properties": {
+          "name": {
+            "description": "Top-level document field name.",
+            "type": "string",
+            "example": "amount"
+          },
+          "type": {
+            "description": "ClickHouse type the field is replicated as. Must be a valid ClickHouse column type supported by structured ingestion.",
+            "type": "string",
+            "example": "Float64"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ]
+      },
+      "ClickPipeMongoDBStructuredIngestion": {
+        "properties": {
+          "enabled": {
+            "description": "Replicate the collection into typed ClickHouse columns instead of a single JSON document column.",
+            "type": "boolean",
+            "example": true
+          },
+          "dropUnexpectedValues": {
+            "description": "When true, values that don't fit their column are reported with only the field name and reason, without the value.",
+            "type": "boolean",
+            "example": false,
+            "default": false
+          },
+          "columns": {
+            "type": "array",
+            "description": "Typed columns of the collection, taken as provided. When omitted, the columns are inferred from a sample of the collection documents. The _id document is always replicated and uses String type.",
+            "items": {
+              "$ref": "#/components/schemas/ClickPipeMongoDBPipeColumn"
+            }
+          },
+          "excludedColumns": {
+            "type": "array",
+            "description": "Names of columns, provided or inferred, to leave out of replication. Names that match no column are ignored. Column names must be unique within this list.",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "internal_notes"
+            ],
+            "uniqueItems": true
+          },
+          "sortingKeys": {
+            "type": "array",
+            "description": "Ordered list of column names to use as the sorting (ORDER BY) key in ClickHouse. When omitted, the sorting key is the _id document key.",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "_id",
+              "created_at"
+            ],
+            "uniqueItems": true
+          },
+          "partitionByExpr": {
+            "description": "ClickHouse PARTITION BY expression applied to the destination table when ClickPipes creates it.",
+            "type": "string",
+            "example": "toYYYYMM(created_at)"
+          }
+        },
+        "required": [
+          "enabled"
+        ]
+      },
       "ClickPipeMongoDBPipeTableMapping": {
         "properties": {
           "sourceDatabaseName": {
@@ -28103,6 +28811,9 @@
               "Null"
             ],
             "example": "ReplacingMergeTree"
+          },
+          "structuredIngestion": {
+            "$ref": "#/components/schemas/ClickPipeMongoDBStructuredIngestion"
           }
         },
         "required": [
@@ -28361,7 +29072,7 @@
       "ClickPipePubSubSource": {
         "properties": {
           "format": {
-            "description": "Format of messages in the Pub/Sub topic. GCP Pub/Sub ClickPipes are in limited preview — contact support to enable this feature for your organization.",
+            "description": "Format of messages in the Pub/Sub topic. GCP Pub/Sub ClickPipes are in private preview — contact support to enable this feature for your organization.",
             "type": "string",
             "enum": [
               "JSONEachRow",
@@ -28444,7 +29155,7 @@
       "ClickPipePostPubSubServiceAccountSource": {
         "properties": {
           "format": {
-            "description": "Format of messages in the Pub/Sub topic. GCP Pub/Sub ClickPipes are in limited preview — contact support to enable this feature for your organization.",
+            "description": "Format of messages in the Pub/Sub topic. GCP Pub/Sub ClickPipes are in private preview — contact support to enable this feature for your organization.",
             "type": "string",
             "enum": [
               "JSONEachRow",
@@ -28531,7 +29242,7 @@
       "ClickPipePostPubSubWorkloadIdentitySource": {
         "properties": {
           "format": {
-            "description": "Format of messages in the Pub/Sub topic. GCP Pub/Sub ClickPipes are in limited preview — contact support to enable this feature for your organization.",
+            "description": "Format of messages in the Pub/Sub topic. GCP Pub/Sub ClickPipes are in private preview — contact support to enable this feature for your organization.",
             "type": "string",
             "enum": [
               "JSONEachRow",
@@ -30078,6 +30789,65 @@
           }
         }
       },
+      "Notification": {
+        "properties": {
+          "id": {
+            "description": "Unique notification ID.",
+            "type": "string",
+            "format": "uuid",
+            "example": "1b7e0a94-2d0f-4c3a-8f1e-6c9b2d5a4e7f"
+          },
+          "type": {
+            "description": "Notification type. New types are added over time, so treat this as an open set.",
+            "type": "string",
+            "example": "service_backup_failed"
+          },
+          "severity": {
+            "description": "Severity of the notification. One of 'info', 'warning', 'critical'.",
+            "type": "string",
+            "example": "warning"
+          },
+          "resourceType": {
+            "description": "Kind of resource the notification is about. One of 'service', 'organization', 'clickpipe', 'postgres'.",
+            "type": "string",
+            "example": "service"
+          },
+          "resourceId": {
+            "description": "ID of the resource the notification is about.",
+            "type": "string"
+          },
+          "resourceName": {
+            "description": "Name the resource had when the notification was created. Absent for most notification types; use `resourceId` to identify the resource.",
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "When the notification was created. ISO-8601.",
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-10-07T09:30:00Z"
+          },
+          "title": {
+            "description": "Short human-readable summary.",
+            "type": "string",
+            "example": "Backup failed for analytics-prod"
+          },
+          "description": {
+            "description": "Human-readable body as plain text, with any links written as \"label (url)\".",
+            "type": "string",
+            "example": "A scheduled backup for analytics-prod did not complete. Review the backup settings (https://console.clickhouse.cloud/services/abc/backups)."
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "severity",
+          "resourceType",
+          "resourceId",
+          "createdAt",
+          "title",
+          "description"
+        ]
+      },
       "SnapshotConfiguration": {
         "properties": {
           "enabled": {
@@ -30091,6 +30861,34 @@
           "timeFrame": {
             "description": "Retention window the snapshots cover, in minutes. Set together with gap; only supported preset pairs are accepted.",
             "type": "number"
+          }
+        }
+      },
+      "ReplicaAwareRouting": {
+        "properties": {
+          "httpEnabled": {
+            "description": "Whether replica aware routing is enabled for HTTP connections. When enabled, clients must send the X-ClickHouse-Replica-Tag header. Enabling this changes HTTP connection behavior for the service.",
+            "type": "boolean"
+          },
+          "nativeEnabled": {
+            "description": "Whether replica aware routing is enabled for native protocol connections.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "httpEnabled",
+          "nativeEnabled"
+        ]
+      },
+      "ReplicaAwareRoutingPatchRequest": {
+        "properties": {
+          "httpEnabled": {
+            "description": "Whether replica aware routing is enabled for HTTP connections. Omit to leave unchanged.",
+            "type": "boolean"
+          },
+          "nativeEnabled": {
+            "description": "Whether replica aware routing is enabled for native protocol connections. Omit to leave unchanged.",
+            "type": "boolean"
           }
         }
       },
@@ -36780,6 +37578,61 @@
           }
         ]
       },
+      "NotificationType": {
+        "properties": {
+          "name": {
+            "description": "Stable identifier of the notification type. Never renamed or reused.",
+            "type": "string",
+            "example": "service_backup_failed"
+          },
+          "title": {
+            "description": "Human-readable name of the notification type.",
+            "type": "string",
+            "example": "Backup failed"
+          },
+          "description": {
+            "description": "Longer explanation of what the notification reports. Omitted for types that have none.",
+            "type": "string"
+          },
+          "category": {
+            "description": "Broad grouping the notification type belongs to. Current values: billing, service, clickpipe, postgres. New values may be added over time.",
+            "type": "string",
+            "example": "service"
+          },
+          "severity": {
+            "description": "Relative importance of notifications of this type.",
+            "type": "string",
+            "enum": [
+              "info",
+              "warning",
+              "critical"
+            ],
+            "example": "warning"
+          },
+          "resourceType": {
+            "description": "Kind of resource a notification of this type is about. Current values: service, organization, clickpipe, postgres. New values may be added over time.",
+            "type": "string",
+            "example": "service"
+          },
+          "isConfigurable": {
+            "description": "Whether the per-role delivery default can be changed. When false the role default is frozen; this does not mean the notification is always delivered.",
+            "type": "boolean"
+          },
+          "isAvailable": {
+            "description": "False when the caller lacks the permission this type requires. The type is still returned, just flagged.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "category",
+          "severity",
+          "resourceType",
+          "isConfigurable",
+          "isAvailable"
+        ]
+      },
       "OrganizationQuota": {
         "properties": {
           "quotaCode": {
@@ -37236,6 +38089,19 @@
             "example": 2,
             "minimum": 0
           },
+          "shared_memory_percent": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Percent of VM memory reserved for the shared_memory, from 25% to 75%. shared_buffers sized to fit in it. Limited to 50% on VMs with memory less or equal 16GB",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/shared_buffers/"
+            },
+            "example": 25,
+            "minimum": 25,
+            "maximum": 75
+          },
           "statement_timeout": {
             "type": [
               "string",
@@ -37344,6 +38210,19 @@
             "example": "5GB",
             "minimum": 32768
           },
+          "checkpoint_timeout": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Sets the maximum time between automatic WAL checkpoints.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/checkpoint_timeout/"
+            },
+            "example": "5min",
+            "minimum": 30,
+            "maximum": 3600
+          },
           "max_slot_wal_keep_size": {
             "type": [
               "string",
@@ -37362,13 +38241,26 @@
             "externalDocs": {
               "url": "https://postgresqlco.nf/doc/en/param/wal_compression/"
             },
-            "example": "off",
+            "example": "lz4",
             "enum": [
               "off",
               "on",
               "lz4",
               "zstd"
             ]
+          },
+          "wal_buffers": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Sets the number of disk-page buffers in shared memory for WAL. A number without a unit is in 8 kB pages.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/wal_buffers/"
+            },
+            "example": "16MB",
+            "minimum": 32,
+            "maximum": 262144
           },
           "autovacuum_max_workers": {
             "type": [
@@ -37441,6 +38333,58 @@
             },
             "example": 0.2,
             "minimum": 0
+          },
+          "autovacuum_vacuum_threshold": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Minimum number of tuple updates or deletes prior to vacuum.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/autovacuum_vacuum_threshold/"
+            },
+            "example": 50,
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "autovacuum_analyze_threshold": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Minimum number of tuple inserts, updates, or deletes prior to analyze.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/autovacuum_analyze_threshold/"
+            },
+            "example": 50,
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "autovacuum_vacuum_insert_threshold": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Minimum number of tuple inserts prior to vacuum, or -1 to disable insert vacuums.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/autovacuum_vacuum_insert_threshold/"
+            },
+            "example": 1000,
+            "minimum": -1,
+            "maximum": 2147483647
+          },
+          "autovacuum_freeze_max_age": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Age at which to autovacuum a table to prevent transaction ID wraparound.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/autovacuum_freeze_max_age/"
+            },
+            "example": 200000000,
+            "minimum": 100000,
+            "maximum": 2000000000
           },
           "autovacuum_vacuum_cost_limit": {
             "type": [
@@ -38059,7 +39003,7 @@
       "PostgresMetricSeries": {
         "properties": {
           "label": {
-            "description": "Distinguishing label for this series within the metric (for example a CPU mode, a database name, or \"Reads\").",
+            "description": "Distinguishing label for this series within the metric (for example a CPU mode, a database name, a wait event such as \"Lock:relation\", or \"Reads\").",
             "type": "string"
           },
           "dataPoints": {
@@ -38078,7 +39022,7 @@
       "PostgresMetric": {
         "properties": {
           "key": {
-            "description": "Stable metric identifier (for example cpu_usage, connection_count, cache_hit_ratio).",
+            "description": "Stable metric identifier (for example cpu_usage, connection_count, cache_hit_ratio, active_sessions_by_wait).",
             "type": "string"
           },
           "name": {
@@ -38839,7 +39783,7 @@
             "$ref": "#/components/schemas/InstancePrivateEndpointsPatch"
           },
           "releaseChannel": {
-            "description": "Select fast if you want to get new ClickHouse releases as soon as they are available. You'll get new features faster, but with a higher risk of bugs. Select slow if you would like to defer releases to give yourself more time to test. This feature is only available for production services. default is the regular release channel.",
+            "description": "Select fast if you want to get new ClickHouse releases as soon as they are available. You'll get new features faster, but with a higher risk of bugs. Select slow if you would like to defer releases to give yourself more time to test. This feature is only available for production services. default is the regular release channel. All services in a warehouse share one release channel, so changing it on one service changes it for all of them. Changing it through a secondary service also requires the `control-plane:service:manage` permission on the warehouse's primary service.",
             "type": "string",
             "enum": [
               "slow",
@@ -40098,15 +41042,6 @@
                   "netenable"
                 ]
               },
-              "sandboxVersion": {
-                "default": "v2",
-                "type": "string",
-                "enum": [
-                  "v1",
-                  "v2",
-                  "v3"
-                ]
-              },
               "type": {
                 "type": "string",
                 "const": "executable"
@@ -40225,15 +41160,6 @@
                 "enum": [
                   "basic",
                   "netenable"
-                ]
-              },
-              "sandboxVersion": {
-                "default": "v2",
-                "type": "string",
-                "enum": [
-                  "v1",
-                  "v2",
-                  "v3"
                 ]
               },
               "type": {
@@ -40368,15 +41294,6 @@
                   "netenable"
                 ]
               },
-              "sandboxVersion": {
-                "default": "v2",
-                "type": "string",
-                "enum": [
-                  "v1",
-                  "v2",
-                  "v3"
-                ]
-              },
               "type": {
                 "type": "string",
                 "const": "executable"
@@ -40490,15 +41407,6 @@
                 "enum": [
                   "basic",
                   "netenable"
-                ]
-              },
-              "sandboxVersion": {
-                "default": "v2",
-                "type": "string",
-                "enum": [
-                  "v1",
-                  "v2",
-                  "v3"
                 ]
               },
               "type": {
@@ -41029,6 +41937,7 @@
       "name": "Organization",
       "tags": [
         "Organization",
+        "Notifications",
         "Billing",
         "User management",
         "Role Management",

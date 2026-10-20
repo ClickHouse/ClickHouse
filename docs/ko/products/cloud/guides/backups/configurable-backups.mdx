@@ -26,6 +26,8 @@ import ConfigurableBackupsCLI from "/snippets/ko/cloud/backups/_configurable_bac
 
     그러면 오른쪽에 탭이 열리며, 여기에서 보존 기간, 빈도, 시작 시간 값을 선택할 수 있습니다. 선택한 설정을 적용하려면 저장해야 합니다.
 
+    백업 주기에 따라 최신 복원 지점이 최악의 경우 얼마나 오래전 시점일 수 있는지(RPO)가 결정됩니다. 백업 보존 기간은 백업 데이터를 얼마나 오래 보관할지 결정할 뿐, 최신 복원 지점의 시점을 앞당기지는 않습니다. 예를 들어 보존 기간이 1일이고 백업 주기가 48시간이라면 최신 복원 지점이 거의 48시간 전 시점일 수 있습니다.
+
     <Image img="/images/cloud/manage/backup-configuration-form.webp" size="lg" alt="백업 보존 기간 및 빈도 선택" border />
 
     <Note>
