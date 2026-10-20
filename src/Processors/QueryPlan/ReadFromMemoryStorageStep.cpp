@@ -43,7 +43,9 @@
 #include <functional>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <fmt/ranges.h>
 
@@ -186,7 +188,7 @@ static void fillColumnsMissingFromBlock(const Block & src, const NamesAndTypesLi
 {
     NamesAndTypesList columns_without_sizes;
     std::vector<size_t> positions_without_sizes;
-    std::unordered_map<const ColumnWithTypeAndName *, ColumnPtr> decompressed_sources;
+    std::unordered_map<const ColumnWithTypeAndName *, ColumnPtr> offsets_of_sources;
 
     auto column_it = columns_to_read.begin();
     for (size_t i = 0; i < columns.size(); ++i, ++column_it)
@@ -194,16 +196,22 @@ static void fillColumnsMissingFromBlock(const Block & src, const NamesAndTypesLi
         if (columns[i])
             continue;
 
-        const ColumnArray * source_array = nullptr;
+        ColumnPtr offsets_column;
         if (const auto * source = findSizesSource(src, *column_it, nested_arrays))
         {
-            auto & source_column = decompressed_sources[source];
-            if (!source_column)
-                source_column = source->column->decompress();
-            source_array = typeid_cast<const ColumnArray *>(source_column.get());
+            auto & source_offsets = offsets_of_sources[source];
+            if (!source_offsets)
+                source_offsets = tryDecompressArrayOffsets(*source->type, *source->column);
+            if (!source_offsets)
+            {
+                auto decompressed = source->column->decompress();
+                if (const auto * source_array = typeid_cast<const ColumnArray *>(decompressed.get()))
+                    source_offsets = source_array->getOffsetsPtr();
+            }
+            offsets_column = source_offsets;
         }
 
-        if (!source_array)
+        if (!offsets_column)
         {
             columns_without_sizes.push_back(*column_it);
             positions_without_sizes.push_back(i);
@@ -212,10 +220,10 @@ static void fillColumnsMissingFromBlock(const Block & src, const NamesAndTypesLi
 
         /// Only the outer sizes: the deeper levels of a member are its own.
         const auto & type_in_storage = column_it->getTypeInStorage();
-        const auto & offsets = source_array->getOffsets();
+        const auto & offsets = assert_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData();
         auto elements = assert_cast<const DataTypeArray &>(*type_in_storage).getNestedType()
             ->createColumnConstWithDefaultValue(offsets.empty() ? 0 : offsets.back())->convertToFullColumnIfConst();
-        ColumnPtr column = ColumnArray::create(elements, source_array->getOffsetsPtr());
+        ColumnPtr column = ColumnArray::create(elements, offsets_column);
         columns[i] = column_it->isSubcolumn() ? type_in_storage->getSubcolumn(column_it->getSubcolumnName(), column) : column;
     }
 
@@ -226,6 +234,46 @@ static void fillColumnsMissingFromBlock(const Block & src, const NamesAndTypesLi
         for (size_t j = 0; j < positions_without_sizes.size(); ++j)
             columns[positions_without_sizes[j]] = std::move(filled[j]);
     }
+}
+
+/// A column that is read together with some of its subcolumns is decompressed once, and the subcolumns are taken from it.
+static Columns readColumnsFromBlock(const Block & src, const NamesAndTypesList & columns_to_read, const Names & nested_arrays)
+{
+    std::unordered_set<String> parents_of_subcolumns;
+    for (const auto & column : columns_to_read)
+    {
+        if (column.isSubcolumn())
+            parents_of_subcolumns.insert(column.getNameInStorage());
+    }
+
+    std::optional<Block> decompressed;
+    for (const auto & column : columns_to_read)
+    {
+        if (column.isSubcolumn() || !parents_of_subcolumns.contains(column.name))
+            continue;
+
+        const auto * elem = src.findByName(column.name);
+        if (!elem || !elem->column)
+            continue;
+
+        auto decompressed_column = elem->column->decompress();
+        if (decompressed_column == elem->column)
+            continue;
+
+        if (!decompressed)
+            decompressed = src;
+        decompressed->getByName(column.name).column = std::move(decompressed_column);
+    }
+
+    const Block & block = decompressed ? *decompressed : src;
+
+    Columns columns;
+    columns.reserve(columns_to_read.size());
+    for (const auto & name_and_type : columns_to_read)
+        columns.emplace_back(readColumnFromBlock(block, name_and_type));
+
+    fillColumnsMissingFromBlock(block, columns_to_read, columns, nested_arrays);
+    return columns;
 }
 
 class MemorySource : public ISource
@@ -322,7 +370,6 @@ protected:
             }
 
             Columns columns;
-            columns.reserve(physical_columns.size() + virtual_columns.size());
             fillPhysicalColumns(src, columns);
 
             UInt64 num_rows = columns.empty() ? 0 : columns.front()->size();
@@ -354,10 +401,7 @@ private:
 
     void fillPhysicalColumns(const Block & src, Columns & result_columns) const
     {
-        for (const auto & name_and_type : physical_columns)
-            result_columns.emplace_back(readColumnFromBlock(src, name_and_type));
-
-        fillColumnsMissingFromBlock(src, physical_columns, result_columns, nested_arrays);
+        result_columns = readColumnsFromBlock(src, physical_columns, nested_arrays);
         chassert(std::all_of(result_columns.begin(), result_columns.end(), [](const auto & column) { return column != nullptr; }));
     }
 
@@ -508,12 +552,7 @@ private:
             if (missing.empty())
                 return;
 
-            Columns columns;
-            columns.reserve(missing.size());
-            for (const auto & name_and_type : missing)
-                columns.emplace_back(readColumnFromBlock(src, name_and_type));
-
-            fillColumnsMissingFromBlock(src, missing, columns, nested_arrays);
+            Columns columns = readColumnsFromBlock(src, missing, nested_arrays);
 
             auto column_it = columns.begin();
             for (const auto & name_and_type : missing)
@@ -685,12 +724,7 @@ protected:
         {
             const Block & src = (*data)[block_index];
 
-            Columns block_columns;
-            block_columns.reserve(columns.size());
-            for (const auto & name_and_type : columns)
-                block_columns.emplace_back(readColumnFromBlock(src, name_and_type));
-
-            fillColumnsMissingFromBlock(src, columns, block_columns, nested_arrays);
+            Columns block_columns = readColumnsFromBlock(src, columns, nested_arrays);
 
             for (size_t i = 0; i < block_columns.size(); ++i)
                 result_columns[i]->insertRangeFrom(*block_columns[i]->index(*rows_in_block, 0), 0, rows_in_block->size());
