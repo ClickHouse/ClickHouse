@@ -149,7 +149,7 @@ public:
     ALWAYS_INLINE bool insert(Key key)
     {
         typename Set::LookupResult it;
-        bool inserted;
+        bool inserted = false;
         set.emplace(key, it, inserted);
         return inserted;
     }
