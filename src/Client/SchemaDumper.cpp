@@ -1182,6 +1182,16 @@ void collectMergeAndLoopReferences(
     }
 }
 
+/// Table functions that read the table their arguments name, which a CREATE resolves for the structure.
+bool readsLocalTableByName(std::string_view name)
+{
+    static constexpr std::string_view names[] = {
+        "mergeTreeIndex", "mergeTreeTextIndex", "mergeTreeProjection", "mergeTreeAnalyzeIndexes", "mergeTreeCodecBlockCounts",
+        "timeSeriesSamples", "timeSeriesData", "timeSeriesTags", "timeSeriesTimeRanges", "timeSeriesMetricFamilies",
+        "timeSeriesMetrics"};
+    return std::ranges::find(names, name) != std::end(names);
+}
+
 /// Collects table references from dictionary, join, `IN`, and local `cluster`/`remote` function arguments.
 void collectFunctionArgumentReferences(
     const IAST & node, const ClusterLocality & clusters,
@@ -1343,6 +1353,23 @@ void collectFunctionArgumentReferences(
                         "the session nor the server are supported",
                         function->formatForErrorMessage());
             }
+        }
+        else if (readsLocalTableByName(function->name))
+        {
+            /// `mergeTreeIndex(db, table)` and alike read a local table, as `timeSeriesData('db.table')` does.
+            const ASTs no_args;
+            const ASTs & args = function->arguments ? function->arguments->children : no_args;
+            if (args.size() == 1)
+                candidate = tryGetQualifiedNameFromFunctionArgument(*function, 0);
+            else if (args.size() >= 2)
+                if (auto database = tryFoldNameArgument(args[0], clusters.context))
+                    if (auto table = tryFoldNameArgument(args[1], clusters.context))
+                        candidate = std::pair(*database, *table);
+            if (!candidate)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot statically resolve the table arguments of {} for --dump-schema: only table identifiers, "
+                    "string literals and constant expressions that read neither the session nor the server are supported",
+                    function->formatForErrorMessage());
         }
         else if (functionIsInOrGlobalInOperator(function->name))
         {
@@ -2660,17 +2687,25 @@ struct ReplayGateNeeds
     std::set<String> data_lake_catalog_gates; /// gates of the known `catalog_type`s; `data_lake_catalog_database` keeps all
 };
 
-/// The engines `database_replicated_allow_only_replicated_engine` rejects in a `Replicated` database, measured: they
-/// store data on disk without replication. `File(format)` keeps its data in the table directory; with a path it does not.
+/// The engines `database_replicated_allow_only_replicated_engine` rejects in a `Replicated` database. Older servers also
+/// reject `Distributed`, newer ones every `File` table except one over a file descriptor; both are kept.
 bool storesDataOnDiskWithoutReplication(const ASTFunction & engine)
 {
+    if (equalsCaseInsensitive(engine.name, "File"))
+    {
+        if (!engine.arguments || engine.arguments->children.size() < 2)
+            return true;
+        const auto & source = engine.arguments->children[1];
+        const auto * literal = source->as<ASTLiteral>();
+        return !source->as<ASTIdentifier>()
+            && !(literal && (literal->value.getType() == Field::Types::Int64 || literal->value.getType() == Field::Types::UInt64));
+    }
     if (startsWithCaseInsensitive(engine.name, "Replicated"))
         return false;
     static const std::set<std::string_view> names
         = {"Log", "TinyLog", "StripeLog", "Set", "Join", "EmbeddedRocksDB", "Distributed", "Remote", "RemoteSecure"};
     return endsWithCaseInsensitive(engine.name, "MergeTree")
-        || std::ranges::any_of(names, [&](std::string_view name) { return equalsCaseInsensitive(engine.name, name); })
-        || (equalsCaseInsensitive(engine.name, "File") && (!engine.arguments || engine.arguments->children.size() <= 1));
+        || std::ranges::any_of(names, [&](std::string_view name) { return equalsCaseInsensitive(engine.name, name); });
 }
 
 /// Kafka reads its Keeper-offsets gate only when `kafka_keeper_path` or `kafka_replica_name` is set,
@@ -2842,11 +2877,14 @@ String nameTokens(const IAST & ast, const IAST * skip, bool with_types, std::vec
             else
             {
                 names += function->name + ' ';
+                const bool cast_or_default = function->name == "accurateCastOrDefault";
                 const bool is_cast = equalsCaseInsensitive(function->name, "CAST") || equalsCaseInsensitive(function->name, "_CAST")
-                    || function->name == "accurateCast" || function->name == "accurateCastOrNull";
-                if (is_cast && function->arguments && !function->arguments->children.empty())
+                    || function->name == "accurateCast" || function->name == "accurateCastOrNull" || cast_or_default;
+                if (is_cast && function->arguments && function->arguments->children.size() >= (cast_or_default ? 2 : 1))
                 {
-                    const auto & target = function->arguments->children.back();
+                    /// `accurateCastOrDefault(x, T[, default])` names its type second.
+                    const auto & args = function->arguments->children;
+                    const auto & target = cast_or_default ? args[1] : args.back();
                     if (target->as<ASTLiteral>())
                         add_types_in_string(*target, false);
                     else if (validated_types)
@@ -2939,6 +2977,27 @@ std::vector<String> codecGateNeeds(const ASTPtr & codec, const ASTPtr & type_ast
         try
         {
             CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, type, CodecValidationSettings(settings));
+        }
+        catch (const Exception &)
+        {
+            needed.push_back(gate);
+        }
+    }
+    return needed;
+}
+
+/// The same for a codec given as a string, as the MergeTree `*_compression_codec` settings are.
+std::vector<String> codecStringGateNeeds(const String & codec, const std::vector<String> & gates)
+{
+    std::vector<String> needed;
+    for (const auto & gate : gates)
+    {
+        Settings settings;
+        for (const auto & other : gates)
+            settings.set(other, Field(other != gate));
+        try
+        {
+            CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(settings));
         }
         catch (const Exception &)
         {
@@ -3461,6 +3520,19 @@ ReplayGateNeeds collectReplayGateNeeds(
             {
                 if (!endsWithCaseInsensitive(storage->engine->name, "MergeTree"))
                     continue;
+                /// A fresh CREATE validates the codec settings like a column CODEC.
+                if (storage->settings)
+                    for (const auto & change : storage->settings->changes)
+                        if ((change.name == "default_compression_codec" || change.name == "marks_compression_codec"
+                             || change.name == "primary_key_compression_codec")
+                            && change.value.getType() == Field::Types::String)
+                            for (const auto & gate : codecStringGateNeeds(change.value.safeGet<String>(), codec_gates_to_check))
+                            {
+                                if (gate == "allow_suspicious_codecs")
+                                    needs.suspicious_codecs = true;
+                                else
+                                    needs.codec_gates.insert(gate);
+                            }
                 needs.suspicious_primary_key |= sortingKeyMayUseSimpleAggregateFunction(*storage, *create);
                 if (storage->ttl_table)
                     for (const auto & child : storage->ttl_table->children)
@@ -4057,6 +4129,17 @@ void dumpDatabaseSchema(
     std::ostream & out,
     std::ostream & err)
 {
+    /// The dump's own queries are ClickHouse SQL and must fail rather than stop early on a result limit.
+    /// A value derived from `compatibility` is not sent as the user's change, like an ordinary query.
+    Settings internal_settings = context->getSettingsRef();
+    if (internal_settings.hasSettingsChangedByCompatibility())
+        internal_settings.markSettingsChangedByCompatibilityAsUnchanged();
+    internal_settings.set("dialect", String("clickhouse"));
+    internal_settings.set("result_overflow_mode", String("throw"));
+    auto dump_context = Context::createCopy(context);
+    dump_context->setSettings(internal_settings);
+    context = dump_context;
+
     std::vector<String> database_list = splitDatabaseList(databases);
     std::vector<String> exclude_list = splitDatabaseList(exclude_databases);
 
@@ -4164,8 +4247,14 @@ void dumpDatabaseSchema(
         /// Every server is born with `default`, so its CREATE must tolerate the existing one:
         /// a bare replay would otherwise stop on DATABASE_ALREADY_EXISTS before any user object.
         if (db == "default" && create_database_query.front().starts_with("CREATE DATABASE "))
+        {
             create_database_query.front() = "CREATE DATABASE IF NOT EXISTS "
                 + create_database_query.front().substr(std::string_view("CREATE DATABASE ").size());
+            /// The replay keeps the target's own `default`, so another engine of it is not recreated.
+            if (const auto & engine = database_info.at(db).engine; engine != "Atomic")
+                err << "Warning: database `default` has engine " << engine << ", but the dump creates it with IF NOT EXISTS, "
+                    << "so a replay keeps the existing `default` of the target with its own engine.\n";
+        }
         create_database_query_by_db.emplace(db, std::move(create_database_query.front()));
     }
 
@@ -4192,9 +4281,40 @@ void dumpDatabaseSchema(
     /// analysis runs a subquery. The settings go in the query text, because `LocalConnection` drops the settings argument.
     const AnalyzesOnSource analyzes_on_source = [&](const String & select_query, const SettingsChanges & changes)
     {
-        String query = "EXPLAIN QUERY TREE " + select_query + " SETTINGS ";
-        for (size_t i = 0; i < changes.size(); ++i)
-            query += (i ? ", " : "") + changes[i].name + (changes[i].value.safeGet<bool>() ? " = 1" : " = 0");
+        String query;
+        /// A stored query can end with its own SETTINGS clause, so the probe changes go into that clause.
+        try
+        {
+            ParserSelectWithUnionQuery parser;
+            ASTPtr ast = parseQuery(parser, select_query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            ASTSelectQuery * last = nullptr;
+            if (const auto * with_union = ast->as<ASTSelectWithUnionQuery>(); with_union && with_union->list_of_selects
+                && !with_union->list_of_selects->children.empty())
+                last = with_union->list_of_selects->children.back()->as<ASTSelectQuery>();
+            if (last && last->settings())
+            {
+                auto & set_query = last->settings()->as<ASTSetQuery &>();
+                for (const auto & change : changes)
+                {
+                    const Field value = UInt64(change.value.safeGet<bool>() ? 1 : 0);
+                    if (auto * existing = set_query.changes.tryGet(change.name))
+                        *existing = value;
+                    else
+                        set_query.changes.emplace_back(change.name, value);
+                }
+                query = "EXPLAIN QUERY TREE " + ast->formatWithSecretsOneLine();
+            }
+        }
+        catch (const Exception &) // NOLINT(bugprone-empty-catch)
+        {
+            /// The server parses the query below and decides.
+        }
+        if (query.empty())
+        {
+            query = "EXPLAIN QUERY TREE " + select_query + " SETTINGS ";
+            for (size_t i = 0; i < changes.size(); ++i)
+                query += (i ? ", " : "") + changes[i].name + (changes[i].value.safeGet<bool>() ? " = 1" : " = 0");
+        }
         try
         {
             fetchStringColumn(connection, timeouts, client_info, query, context->getSettingsRef());
