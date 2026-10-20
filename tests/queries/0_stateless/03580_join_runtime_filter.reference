@@ -1,8 +1,8 @@
 ============= hash ===============
 499.5
       Algorithm: HashJoin
-            Algorithm: HashJoin
-                BuildRuntimeFilter (Build runtime join filter on __table2.c_custkey)
+          Algorithm: HashJoin
+              BuildRuntimeFilter (Build runtime join filter on __table2.c_custkey)
           BuildRuntimeFilter (Build runtime join filter on __table3.n_nationkey)
 6000
 0
@@ -17,8 +17,8 @@
 ============= parallel_hash ===============
 499.5
       Algorithm: ConcurrentHashJoin
-            Algorithm: ConcurrentHashJoin
-                BuildRuntimeFilter (Build runtime join filter on __table2.c_custkey)
+          Algorithm: ConcurrentHashJoin
+              BuildRuntimeFilter (Build runtime join filter on __table2.c_custkey)
           BuildRuntimeFilter (Build runtime join filter on __table3.n_nationkey)
 6000
 0
@@ -33,8 +33,8 @@
 ============= grace_hash ===============
 499.5
       Algorithm: GraceHashJoin
-            Algorithm: GraceHashJoin
-                BuildRuntimeFilter (Build runtime join filter on __table2.c_custkey)
+          Algorithm: GraceHashJoin
+              BuildRuntimeFilter (Build runtime join filter on __table2.c_custkey)
           BuildRuntimeFilter (Build runtime join filter on __table3.n_nationkey)
 6000
 0
