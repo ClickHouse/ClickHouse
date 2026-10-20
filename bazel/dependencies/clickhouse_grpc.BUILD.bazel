@@ -1692,8 +1692,10 @@ cc_library(
 ch_cc_library(
     name = "grpc++",
     implementation_deps = [
-        "@clickhouse//contrib/c-ares-cmake:headers",
         ":upb_mini_table_lib",
+        "@clickhouse_abseil_cpp//:absl_base_config",
+        "@clickhouse_abseil_cpp//:absl_statusor",
+        "@clickhouse_abseil_cpp//:absl_str_format_internal",
     ],
     srcs = [
         "src/core/client_channel/virtual_channel.cc",
@@ -1768,6 +1770,14 @@ ch_cc_library(
         ":grpc",
         ":gpr",
         ":grpc__compile_0",
+        "@clickhouse_abseil_cpp//:absl_cord",
+        "@clickhouse_abseil_cpp//:absl_die_if_null",
+        "@clickhouse_abseil_cpp//:absl_function_ref",
+        "@clickhouse_abseil_cpp//:absl_log_internal_check_impl",
+        "@clickhouse_abseil_cpp//:absl_status",
+        "@clickhouse_abseil_cpp//:absl_strings",
+        "@clickhouse_abseil_cpp//:absl_synchronization",
+        "@clickhouse_abseil_cpp//:absl_time",
     ],
     hdrs = _GRPC_CPP_PUBLIC_HEADERS,
     textual_hdrs = glob(["include/grpcpp/*.inc"]),
@@ -1776,8 +1786,10 @@ ch_cc_library(
 ch_cc_library(
     name = "grpc++_unsecure",
     implementation_deps = [
-        "@clickhouse//contrib/c-ares-cmake:headers",
         ":upb_mini_table_lib",
+        "@clickhouse_abseil_cpp//:absl_base_config",
+        "@clickhouse_abseil_cpp//:absl_statusor",
+        "@clickhouse_abseil_cpp//:absl_str_format_internal",
     ],
     srcs = [
         "src/core/client_channel/virtual_channel.cc",
@@ -1844,6 +1856,14 @@ ch_cc_library(
         ":grpc_unsecure",
         ":gpr",
         ":grpc_unsecure__compile_0",
+        "@clickhouse_abseil_cpp//:absl_cord",
+        "@clickhouse_abseil_cpp//:absl_die_if_null",
+        "@clickhouse_abseil_cpp//:absl_function_ref",
+        "@clickhouse_abseil_cpp//:absl_log_internal_check_impl",
+        "@clickhouse_abseil_cpp//:absl_status",
+        "@clickhouse_abseil_cpp//:absl_strings",
+        "@clickhouse_abseil_cpp//:absl_synchronization",
+        "@clickhouse_abseil_cpp//:absl_time",
     ],
     hdrs = _GRPC_CPP_PUBLIC_HEADERS,
     textual_hdrs = glob(["include/grpcpp/*.inc"]),
@@ -2604,6 +2624,9 @@ ch_cc_library(
 
 cc_library(
     name = "grpc_unsecure",
+    includes = [
+        "include",
+    ],
     deps = ["@clickhouse_zlib_ng//:_zlib", ":address_sorting", ":gpr", ":upb", ":grpc_unsecure__compile_0", ":grpc_unsecure__compile_1"],
 )
 
