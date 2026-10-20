@@ -509,7 +509,8 @@ void StorageMaterializedView::readImpl(
     {
         auto query_context = local_context->getQueryContext();
         auto view_query_context = context->getQueryContext();
-        if (view_metadata->sql_security_type == SQLSecurityType::DEFINER
+        if (!view_metadata->sql_security_type
+            || view_metadata->sql_security_type == SQLSecurityType::DEFINER
             || view_metadata->sql_security_type == SQLSecurityType::NONE)
             query_context->markQueryAccessInfoHiddenFromUserQueryLog();
         if (view_query_context != query_context)

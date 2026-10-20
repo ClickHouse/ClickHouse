@@ -90,7 +90,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"formatted_query", std::make_shared<DataTypeString>(), "Formatted query string."},
         {"normalized_query_hash", std::make_shared<DataTypeUInt64>(), "A numeric hash value, such as it is identical for queries differ only by values of literals."},
         {"query_kind", low_cardinality_string, "Type of the query."},
-        {"query_access_info_is_hidden", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "Whether this row crossed a view or materialized view with `SQL SECURITY DEFINER` or `SQL SECURITY NONE`. `1` means yes, `0` means no such boundary was recorded, and `NULL` means provenance is unknown. `system.user_query_log` exposes only initial-query rows with an explicit `0`; `system.query_log` retains every row."},
+        {"query_access_info_is_hidden", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "Whether this row crossed a view or materialized view with `SQL SECURITY DEFINER` or `SQL SECURITY NONE`, or a materialized view created without an explicit `SQL SECURITY` clause. `1` means yes, `0` means no such boundary was recorded, and `NULL` means provenance is unknown. `system.user_query_log` exposes only initial-query rows with an explicit `0`; `system.query_log` retains every row."},
         {"databases", array_low_cardinality_string, "Names of the databases present in the query."},
         {"tables", array_low_cardinality_string, "Names of the tables present in the query."},
         {"columns", array_low_cardinality_string, "Names of the columns present in the query."},

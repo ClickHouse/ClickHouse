@@ -289,6 +289,11 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
             context->getSettingsRef()[Setting::max_threads]
         );
 
+        /// Serialized table and table-function reads bypass the planner's access-info registration.
+        /// Record the resolved storage after building the read, as the planner does.
+        if (context->hasQueryContext())
+            context->getQueryContext()->addQueryAccessInfo(storage->getStorageID(), column_names);
+
         /// Preserve the mutable_context for the lifetime of query execution
         /// because source processors (e.g., StorageKeeperMapSource) may hold weak_ptr to it
         reading_plan.addInterpreterContext(mutable_context);

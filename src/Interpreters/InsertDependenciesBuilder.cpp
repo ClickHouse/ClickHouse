@@ -1521,7 +1521,9 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         if (current == init_table_id)
         {
             if (init_context->hasQueryContext()
-                && (metadata->sql_security_type == SQLSecurityType::DEFINER || metadata->sql_security_type == SQLSecurityType::NONE))
+                && (!metadata->sql_security_type
+                    || metadata->sql_security_type == SQLSecurityType::DEFINER
+                    || metadata->sql_security_type == SQLSecurityType::NONE))
                 init_context->getQueryContext()->markQueryAccessInfoHiddenFromUserQueryLog();
 
             set_defaults_for_root_view(init_table_id, materialized_view->getTargetTableId());
@@ -1540,7 +1542,9 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         // output_headers is filled at next call observePath(inner_table)
 
         if (init_context->hasQueryContext()
-            && (metadata->sql_security_type == SQLSecurityType::DEFINER || metadata->sql_security_type == SQLSecurityType::NONE))
+            && (!metadata->sql_security_type
+                || metadata->sql_security_type == SQLSecurityType::DEFINER
+                || metadata->sql_security_type == SQLSecurityType::NONE))
             init_context->getQueryContext()->markQueryAccessInfoHiddenFromUserQueryLog();
 
         std::tie(select_contexts[current], insert_contexts[current]) = createSelectInsertContext(path);
