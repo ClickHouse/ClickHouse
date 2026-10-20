@@ -59,7 +59,6 @@ namespace Setting
     extern const SettingsString s3_upload_checksum_algorithm;
     extern const SettingsUInt64 s3_upload_part_size_multiply_factor;
     extern const SettingsUInt64 s3_upload_part_size_multiply_parts_count_threshold;
-    extern const SettingsBool s3_use_idempotency_id;
 }
 
 namespace S3RequestSetting
@@ -1705,7 +1704,8 @@ TEST_P(SyncAsync, SinglepartConditionalPutKeepsCallerMetadata) {
 /// With `s3_use_idempotency_id` disabled, neither a single-part nor a multipart upload puts the token into
 /// the object metadata: some S3-compatible storages (Amazon S3 Tables) reject any `x-amz-meta-*` header.
 TEST_P(SyncAsync, DisabledIdempotencyIdIsNotStamped) {
-    getSettings()[Setting::s3_use_idempotency_id] = false;
+    /// Set by name, so the test compiles (and fails) without the setting.
+    getSettings().set("s3_use_idempotency_id", false);
 
     {
         auto buffer = getWriteBuffer("no_idempotency_id_put", {}, ObjectAttributes{{"caller-key", "caller-value"}});
