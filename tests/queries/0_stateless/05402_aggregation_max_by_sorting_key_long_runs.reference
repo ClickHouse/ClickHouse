@@ -25,7 +25,6 @@ B	12	1	12
 -- long run, LIMIT longer than the run, DESC and ASC
 Granules: 100000/100000
 Granules: 100000/100000
-100000	0	99999
 -- long run, LIMIT 3 DESC: the last 3 granules are read
 Granules: 3/100000
 1	99999

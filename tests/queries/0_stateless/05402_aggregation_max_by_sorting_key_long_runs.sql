@@ -38,7 +38,8 @@ SELECT k, count(), min(m), max(m) FROM (SELECT k, m FROM t ORDER BY k, m LIMIT 2
 
 DROP TABLE t;
 
--- One run of 100000 granules. Counting the rows of the run once per granule would take minutes here.
+-- One run of 100000 granules. Counting the rows of the run once per granule would take minutes here. Only the plans are
+-- checked: reading every granule of this table is slow, and the results are checked on the small table above.
 DROP TABLE IF EXISTS t_long;
 CREATE TABLE t_long (k UInt8, m UInt32) ENGINE = MergeTree ORDER BY (k, m)
     SETTINGS index_granularity = 1, index_granularity_bytes = '10Mi';
@@ -49,7 +50,6 @@ SELECT if(has(lines, 'MaxBySortingKey'), lines[indexOf(lines, 'MaxBySortingKey')
 FROM (SELECT groupArray(trimLeft(explain)) AS lines FROM (EXPLAIN indexes = 1 SELECT k, m FROM t_long ORDER BY k, m DESC LIMIT 1000000 BY k SETTINGS optimize_aggregation_max_by_sorting_key = 1));
 SELECT if(has(lines, 'MaxBySortingKey'), lines[indexOf(lines, 'MaxBySortingKey') + 3], 'not applied') AS granules
 FROM (SELECT groupArray(trimLeft(explain)) AS lines FROM (EXPLAIN indexes = 1 SELECT k, m FROM t_long ORDER BY k, m LIMIT 1000000 BY k SETTINGS optimize_aggregation_max_by_sorting_key = 1));
-SELECT count(), min(m), max(m) FROM (SELECT k, m FROM t_long ORDER BY k, m DESC LIMIT 1000000 BY k SETTINGS optimize_aggregation_max_by_sorting_key = 1);
 
 SELECT '-- long run, LIMIT 3 DESC: the last 3 granules are read';
 SELECT if(has(lines, 'MaxBySortingKey'), lines[indexOf(lines, 'MaxBySortingKey') + 3], 'not applied') AS granules
