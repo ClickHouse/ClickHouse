@@ -99,6 +99,8 @@ struct QueryPlanOptimizationSettings
     bool aggregate_partitions_independently;
     bool limit_by_partitions_independently;
     bool distinct_partitions_independently;
+    bool parallel_distinct;
+    bool force_distinct_partitions_independently;
     bool window_partitions_independently;
     bool force_window_partitions_independently;
     bool creating_set_partitions_independently;
@@ -220,6 +222,7 @@ struct QueryPlanOptimizationSettings
     bool optimize_lazy_materialization = false;
     bool optimize_lazy_materialization_for_object_storage = false;
     bool optimize_lazy_materialization_for_file = false;
+    bool lazy_materialization_for_join = false;
     size_t max_limit_for_lazy_materialization = 0;
 
     /// If lazy FINAL optimization for ReplacingMergeTree is enabled
