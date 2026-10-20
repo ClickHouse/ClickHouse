@@ -1,0 +1,15 @@
+-- argMax and argMin of rowNumberInAllBlocks
+not applied
+1	11	0
+1	11	0
+-- LIMIT BY, the function evaluated before the sorting
+not applied
+1	11	11
+1	11	11
+-- LIMIT BY, the function evaluated after the sorting
+not applied
+1	11	0
+1	11	0
+-- without a stateful function, the optimization still applies
+Granules: 1/3
+1	22

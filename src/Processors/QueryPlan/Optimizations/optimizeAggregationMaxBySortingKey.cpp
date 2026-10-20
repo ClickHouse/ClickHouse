@@ -89,7 +89,9 @@ namespace DB::QueryPlanOptimizations
 ///   mutations are read in full;
 /// - `argMin`/`argMax` of a `Nullable` value, which ignore the rows where it is NULL;
 /// - a filter on the witness rows when a primary key column may contain NULL;
-/// - `LIMIT BY` whose length plus offset overflows (`LIMIT -n OFFSET m BY`), or with `arrayJoin` above the sorting.
+/// - `LIMIT BY` whose length plus offset overflows (`LIMIT -n OFFSET m BY`), or with `arrayJoin` above the sorting;
+/// - stateful functions (`rowNumberInAllBlocks`, `runningDifference`, ...) before the aggregation or the `LIMIT BY`,
+///   whose values depend on all rows they process.
 
 /// The order and equality of the primary index must agree with the aggregation. `Nullable`: `max` and `min`
 /// ignore NULLs, which sort at an end of the run. Floating point: NaN has no consistent order, and `-0` and `+0`
@@ -250,6 +252,10 @@ static void tryApply(
     /// `FilterStep`, plus `PREWHERE` and row policies of the reading step.
     QueryDAG query;
     if (!query.build(input_node))
+        return;
+    /// Stateful functions (`rowNumberInAllBlocks`, `runningDifference`, ...) depend on all rows they process, so their
+    /// values would change for the kept rows too.
+    if (query.dag && query.dag->hasStatefulFunctions())
         return;
 
     QueryPlan::Node * node = &input_node;
@@ -647,8 +653,10 @@ static void tryApplyToLimitBy(const LimitByStep & limit_by, QueryPlan::Node & li
     while (const auto * expression = typeid_cast<const ExpressionStep *>(node->step.get()))
     {
         /// `arrayJoin` above the sort (e.g. with `query_plan_lower_array_join_function = 0`) changes the number of
-        /// rows: a row of the run that proves a granule unnecessary may produce none.
-        if (node->children.size() != 1 || expression->getExpression().hasArrayJoin())
+        /// rows: a row of the run that proves a granule unnecessary may produce none. Stateful functions depend on all
+        /// sorted rows, so they would change for the kept rows too.
+        if (node->children.size() != 1 || expression->getExpression().hasArrayJoin()
+            || expression->getExpression().hasStatefulFunctions())
             return;
         expressions.push_back(expression);
         node = node->children.front();
