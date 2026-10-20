@@ -108,7 +108,7 @@ void read(std::vector<T> & arr, ReadBuffer & in)
     /// Memory must track bytes actually read, not the declared element count:
     /// do not pre-allocate for an attacker-controlled size.
     arr.clear();
-    arr.reserve(std::min<size_t>(static_cast<size_t>(size), 4096));
+    arr.reserve(std::min<size_t>(static_cast<size_t>(size), static_cast<size_t>(MAX_ARRAY_PREALLOCATION)));
     for (int32_t i = 0; i < size; ++i)
     {
         T elem{};

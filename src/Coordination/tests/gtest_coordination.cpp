@@ -462,15 +462,18 @@ TEST_P(CoordinationTest, CreateRequestDoesNotPreallocateOversizedACLs)
     }
 
     {
-        /// Declared ACL count is within the cap, but no element bytes follow.
+        /// Declared ACL count is above the pre-allocation bound, but no element bytes follow.
+        /// The reservation must stay bounded by the cap, not by the declared count.
         DB::WriteBufferFromNuraftBuffer wbuf;
         Coordination::write(std::string{"/node"}, wbuf);
         Coordination::write(std::string{}, wbuf);
-        Coordination::write(static_cast<int32_t>(Coordination::MAX_STRING_OR_ARRAY_SIZE), wbuf);
+        Coordination::write(static_cast<int32_t>(2 * Coordination::MAX_ARRAY_PREALLOCATION), wbuf);
 
         auto request_read = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Create);
         DB::ReadBufferFromNuraftBuffer rbuf(wbuf.getBuffer());
         EXPECT_THROW(request_read->readImpl(rbuf), DB::Exception);
+        auto & create_read = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*request_read);
+        EXPECT_LE(create_read.acls.capacity(), static_cast<size_t>(Coordination::MAX_ARRAY_PREALLOCATION));
     }
 }
 
