@@ -12,7 +12,7 @@ keywords: ['AWS PrivateLink', 'VPC 엔드포인트 서비스', 'MSK', 'Kafka', '
 
 이 가이드는 [AWS PrivateLink VPC 엔드포인트 서비스](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html)를 사용해 Amazon MSK 클러스터를 ClickPipes에 노출하는 방법을 설명합니다.
 
-예를 들어 다음과 같은 경우에는 [MSK multi-VPC connectivity](/ko/integrations/clickpipes/aws-privatelink#msk-multi-vpc)를 사용할 수 없거나 충분하지 않을 수 있으므로 이 방식을 사용하십시오.
+예를 들어 다음과 같은 경우에는 [MSK multi-VPC connectivity](/ko/integrations/clickpipes/networking/aws-privatelink#msk-multi-vpc)를 사용할 수 없거나 충분하지 않을 수 있으므로 이 방식을 사용하십시오.
 
 * ClickPipes에서 MSK로의 교차 리전 연결
 * MSK Express 클러스터
@@ -132,25 +132,25 @@ com.amazonaws.vpce.<region>.vpce-svc-0123456789abcdef0
   ## ClickPipes 역방향 private endpoint 생성
 </div>
 
-ClickHouse Cloud 콘솔에서 각 broker VPC 엔드포인트 서비스마다 역방향 private endpoint를 1개씩 생성합니다:
+ClickHouse Cloud 콘솔에서 각 브로커 VPC 엔드포인트 서비스마다 역방향 private endpoint를 1개씩 생성합니다:
 
 1. ClickHouse Cloud 서비스로 이동합니다.
 2. ClickPipe 생성을 시작합니다.
 3. `Reverse private endpoint`를 선택합니다.
 4. VPC 엔드포인트 유형으로 `VPC endpoint service`를 선택합니다.
-5. broker별 VPC 엔드포인트 서비스 이름을 입력합니다.
-6. `Custom private DNS name`에 해당 broker의 원래 MSK broker 호스트명을 입력합니다.
+5. 브로커별 VPC 엔드포인트 서비스 이름을 입력합니다.
+6. `Custom private DNS name`에 해당 브로커의 원래 MSK 브로커 호스트명을 입력합니다.
 7. endpoint를 생성합니다.
 8. endpoint가 승인 대기 중이면 AWS VPC 엔드포인트 서비스 콘솔에서 endpoint connection request를 승인합니다.
 
-모든 broker 호스트명에 일치하는 RPE가 생길 때까지 이 과정을 반복합니다.
+모든 브로커 호스트명에 일치하는 RPE가 생길 때까지 이 과정을 반복합니다.
 
 Custom private DNS 동작, 명명 규칙, API/Terraform 옵션에 대해서는 다음을 참조하십시오.
-[Custom private DNS](/ko/integrations/clickpipes/aws-privatelink#custom-private-dns).
+[Custom private DNS](/ko/integrations/clickpipes/networking/aws-privatelink#custom-private-dns).
 
 [OpenAPI](/ko/products/cloud/api-reference/clickpipes/create-reverse-private-endpoint) 또는 Terraform을 사용하여 역방향 private endpoint를 생성할 수도 있습니다.
 
-OpenAPI를 사용하는 경우, 각 broker마다 `type`을 `VPC_ENDPOINT_SERVICE`로 설정하고 broker별 VPC 엔드포인트 서비스 이름과 broker 호스트명에 대한 custom private DNS 매핑 1개를 지정하여 역방향 private endpoint를 1개씩 생성합니다:
+OpenAPI를 사용하는 경우, 각 브로커마다 `type`을 `VPC_ENDPOINT_SERVICE`로 설정하고 브로커별 VPC 엔드포인트 서비스 이름과 브로커 호스트명에 대한 custom private DNS 매핑 1개를 지정하여 역방향 private endpoint를 1개씩 생성합니다:
 
 ```json
 {
@@ -165,24 +165,24 @@ OpenAPI를 사용하는 경우, 각 broker마다 `type`을 `VPC_ENDPOINT_SERVICE
 }
 ```
 
-Terraform에서는 [`clickhouse_clickpipes_reverse_private_endpoint`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint)를 사용해 endpoint를 생성하고, [`clickhouse_clickpipes_reverse_private_endpoint_custom_private_dns`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint_custom_private_dns)를 사용해 broker 호스트명 매핑을 구성합니다.
+Terraform에서는 [`clickhouse_clickpipes_reverse_private_endpoint`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint)를 사용해 endpoint를 생성하고, [`clickhouse_clickpipes_reverse_private_endpoint_custom_private_dns`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint_custom_private_dns)를 사용해 브로커 호스트명 매핑을 구성합니다.
 
 <div id="create-the-kafka-clickpipe">
   ## Kafka ClickPipe 생성
 </div>
 
-역방향 private endpoints를 사용해 ClickPipe를 생성하려면 [ClickPipes AWS PrivateLink 가이드](/ko/integrations/clickpipes/aws-privatelink#creating-clickpipe)를 따르십시오.
+역방향 private endpoints를 사용해 ClickPipe를 생성하려면 [ClickPipes AWS PrivateLink 가이드](/ko/integrations/clickpipes/networking/aws-privatelink#creating-clickpipe)를 따르십시오.
 
 Kafka ClickPipe를 생성할 때는 다음 사항을 따르십시오.
 
-* 사용 중인 MSK listener 및 인증 방법의 포트를 포함한 원래 MSK broker 호스트명을 broker 목록으로 사용하십시오.
-* MSK bootstrap broker 문자열은 사용하지 마십시오.
-* broker별 역방향 private endpoints를 모두 선택하거나 연결하십시오.
-* IAM role 인증과 같이 MSK cluster에 필요한 인증 방법을 구성하십시오.
+* 사용 중인 MSK listener 및 인증 방법의 포트를 포함한 원래 MSK 브로커 호스트명을 브로커 목록으로 사용하십시오.
+* MSK bootstrap 브로커 문자열은 사용하지 마십시오.
+* 브로커별 역방향 private endpoints를 모두 선택하거나 연결하십시오.
+* IAM role 인증과 같이 MSK 클러스터에 필요한 인증 방법을 구성하십시오.
 
-포트는 MSK listener에 따라 달라집니다. 예를 들어 IAM 인증에는 일반적으로 `9098`, SASL/SCRAM에는 일반적으로 `9096`, TLS에는 일반적으로 `9094`를 사용합니다. 올바른 포트는 MSK cluster 구성 또는 bootstrap broker 출력에서 확인하십시오.
+포트는 MSK listener에 따라 달라집니다. 예를 들어 IAM 인증에는 일반적으로 `9098`, SASL/SCRAM에는 일반적으로 `9096`, TLS에는 일반적으로 `9094`를 사용합니다. 올바른 포트는 MSK 클러스터 구성 또는 bootstrap 브로커 출력에서 확인하십시오.
 
-예시 broker 목록:
+예시 브로커 목록:
 
 ```text
 b-1.example-cluster.abcde.c2.kafka.eu-central-1.amazonaws.com:9098,b-2.example-cluster.abcde.c2.kafka.eu-central-1.amazonaws.com:9098,b-3.example-cluster.abcde.c2.kafka.eu-central-1.amazonaws.com:9098

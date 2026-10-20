@@ -14,5 +14,4 @@ export const ClickHouseSupportedBadge = () => {
         </div>
     )
 }
-
 export default ClickHouseSupportedBadge;

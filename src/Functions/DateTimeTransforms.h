@@ -4,6 +4,7 @@
 #include <limits>
 #include <base/arithmeticOverflow.h>
 #include <base/types.h>
+#include <Core/AccurateComparison.h>
 #include <Core/DecimalFunctions.h>
 #include <Common/Exception.h>
 #include <Common/DateLUTImpl.h>
@@ -59,7 +60,7 @@ namespace ErrorCodes
 
 constexpr time_t MAX_DATETIME64_TIMESTAMP = 253402300799LL;   //  9999-12-31 23:59:59 UTC
 constexpr time_t MIN_DATETIME64_TIMESTAMP = -62167219200LL;   //  0000-01-01 00:00:00 UTC
-constexpr time_t MAX_DATE32_TIMESTAMP = 10413791999LL;        //  2299-12-31 23:59:59 UTC (last day of Date32)
+constexpr time_t MAX_DATE32_TIMESTAMP = 253402300799LL;       //  9999-12-31 23:59:59 UTC (last day of Date32)
 constexpr time_t MAX_DATETIME_TIMESTAMP = 0xFFFFFFFF;
 constexpr time_t MAX_DATE_TIMESTAMP = 5662310399;       // 2149-06-06 23:59:59 UTC
 constexpr time_t MAX_TIME_TIMESTAMP = 3599999;              // 999:59:59
@@ -79,6 +80,82 @@ inline time_t maxWholeSecondsForDateTime64(Int64 scale_multiplier)
 inline time_t minWholeSecondsForDateTime64(Int64 scale_multiplier)
 {
     return std::max<Int64>(MIN_DATETIME64_TIMESTAMP, std::numeric_limits<Int64>::min() / scale_multiplier);
+}
+
+/// The same window expressed in ticks rather than in whole seconds. A conversion from a floating-point source can
+/// land inside the last representable second - at scale 9 the last whole second is `9223372036`, yet
+/// `9223372036.5` still fits the `Int64` ticks - so a whole-seconds bound would reject a representable value.
+/// Largest representable value in ticks: the last whole second plus as much fraction as the `Int64` holds.
+inline Int64 maxTicksForDateTime64(Int64 scale_multiplier)
+{
+    const Int64 whole = maxWholeSecondsForDateTime64(scale_multiplier) * scale_multiplier;
+    return whole + std::min(scale_multiplier - 1, std::numeric_limits<Int64>::max() - whole);
+}
+
+/// Smallest representable value in ticks; the calendar bound starts exactly at a second, the `Int64` one does not.
+inline Int64 minTicksForDateTime64(Int64 scale_multiplier)
+{
+    if (minWholeSecondsForDateTime64(scale_multiplier) == MIN_DATETIME64_TIMESTAMP)
+        return MIN_DATETIME64_TIMESTAMP * scale_multiplier;
+    return std::numeric_limits<Int64>::min();
+}
+
+/// `Time64` holds a signed clock reading within `[-999:59:59.9..., 999:59:59.9...]`, so both ends carry the
+/// sub-second tail of the last representable second and never come close to the `Int64` tick limit.
+/// `Time64` caps the scale at 9, so this cannot overflow `Int64`.
+inline Int64 maxTicksForTime64(Int64 scale_multiplier)
+{
+    return MAX_TIME_TIMESTAMP * scale_multiplier + scale_multiplier - 1;
+}
+
+inline Int64 minTicksForTime64(Int64 scale_multiplier)
+{
+    return -maxTicksForTime64(scale_multiplier);
+}
+
+/// The largest value of the floating-point type `T` that does not exceed `bound`, and the smallest one that is not
+/// below it. A conversion of an `Int64` bound to a floating-point type rounds to either side, and a bound that
+/// crossed the real one would let `convertToDecimal` overflow the `Int64` ticks (or make the cast of the product
+/// undefined) instead of saturating.
+template <typename T>
+T floatBoundNotAbove(Int64 bound)
+{
+    const T result = static_cast<T>(bound);
+    if (accurate::greaterOp(result, bound))
+        return std::nextafter(result, static_cast<T>(0));
+    return result;
+}
+
+template <typename T>
+T floatBoundNotBelow(Int64 bound)
+{
+    const T result = static_cast<T>(bound);
+    if (accurate::lessOp(result, bound))
+        return std::nextafter(result, static_cast<T>(0));
+    return result;
+}
+
+/// The window of day numbers whose midnight in `time_zone` is representable as a `DateTime64` with the given scale
+/// multiplier, intersected with the `Date32` range. Because of the scale-dependent bounds above, a perfectly valid
+/// `Date32` value such as `9999-12-31` has no scale-9 representation at all, so a `Date32` -> `DateTime64` conversion
+/// has to reject (or saturate) day numbers outside this window instead of silently returning the clamped bound.
+inline std::pair<Int32, Int32> getDateTime64DayNumRange(Int64 scale_multiplier, const DateLUTImpl & time_zone)
+{
+    /// The cast to `DateLUTImpl::Time` is required: `toDayNum` only takes the out-of-LUT-range escape path for
+    /// exactly that type, and `time_t` is a distinct type from `Int64` on Darwin (see the note in `DateLUTImpl.h`).
+    const auto min_whole = static_cast<DateLUTImpl::Time>(minWholeSecondsForDateTime64(scale_multiplier));
+    const auto max_whole = static_cast<DateLUTImpl::Time>(maxWholeSecondsForDateTime64(scale_multiplier));
+
+    /// `toDayNum` returns the day containing the timestamp, whose midnight is not greater than it. That makes the
+    /// upper bound representable as is, while the lower one may need rounding up to the next day.
+    Int32 min_day = static_cast<Int32>(time_zone.toDayNum(min_whole));
+    if (time_zone.fromDayNum(ExtendedDayNum(min_day)) < min_whole)
+        ++min_day;
+    const Int32 max_day = static_cast<Int32>(time_zone.toDayNum(max_whole));
+
+    return {
+        std::max<Int32>(min_day, DATE_LUT_MIN_EXTEND_DAY_NUM),
+        std::min<Int32>(max_day, DATE_LUT_MAX_EXTEND_DAY_NUM)};
 }
 
 [[noreturn]] void throwDateIsNotSupported(const char * name);
@@ -116,6 +193,306 @@ auto extendedFactorForMonotonicity(ArgType arg, const DateLUTImpl & date_lut)
         return FactorTransform::executeExtendedResult(arg, date_lut);
     else
         return FactorTransform::execute(arg, date_lut);
+}
+
+enum class DateRoundingInterval : UInt8
+{
+    Day,
+    Week,
+    Month,
+    LastDayOfMonth,
+    Quarter,
+    Year,
+    ISOYear,
+};
+
+/// A `DateTime` without an explicit time zone keeps the one captured when the type was created, but
+/// literals compared against such a column are parsed in the session one.
+inline const DateLUTImpl & preimageParseTimeZone(const DataTypeDateTime & type)
+{
+    return type.hasExplicitTimeZone() ? type.getTimeZone() : DateLUT::instance();
+}
+
+/// The UTC time whose civil components equal those of `source_time` in `parse_time_zone`. The optimizer
+/// renders preimage bounds as UTC civil strings that the comparison parses back in the column's parse
+/// time zone, so this is the value the bound has to carry. Boundaries need not be midnight
+/// (`America/Lima` started 1994 at 01:00:00), and an ambiguous or skipped local time does not
+/// round-trip, in which case there is no surrogate and the caller declines.
+inline std::optional<DateLUTImpl::Time> makeUTCCivilTimeSurrogate(
+    const DateLUTImpl & parse_time_zone, DateLUTImpl::Time source_time)
+{
+    const auto components = parse_time_zone.toDateTimeComponents(source_time);
+    const auto reparsed_source_time = parse_time_zone.makeDateTime(
+        components.date.year,
+        components.date.month,
+        components.date.day,
+        static_cast<UInt8>(components.time.hour),
+        components.time.minute,
+        components.time.second);
+
+    if (reparsed_source_time != source_time)
+        return std::nullopt;
+
+    return DateLUT::instance("UTC").makeDateTime(
+        components.date.year,
+        components.date.month,
+        components.date.day,
+        static_cast<UInt8>(components.time.hour),
+        components.time.minute,
+        components.time.second);
+}
+
+/// `transform_time_zone` is the one the rounding function itself runs in; it differs from the parse
+/// time zone for implicit-time-zone columns, where `DateTimeTransformImpl` takes `Date` results from
+/// the argument type but `DateTime` results from the session-resolved result type.
+inline FieldIntervalPtr makeDateOrDateTimePreimageForDayRange(
+    const IDataType & type, ExtendedDayNum start_day, ExtendedDayNum end_day,
+    const DateLUTImpl * transform_time_zone = nullptr)
+{
+    /// Limited to `Date` and `DateTime`: `Date32` and `DateTime64` bounds clamp, wrap or depend on
+    /// the scale, so they need result-type-aware bounds and sometimes several intervals.
+    const auto & utc_time_zone = DateLUT::instance("UTC");
+    if (isDate(type))
+    {
+        /// `Date` is already a civil day number, so its preimage does not require time-zone conversion.
+        if (start_day.toUnderType() < 0 || end_day.toUnderType() > DATE_LUT_MAX_DAY_NUM)
+            return nullptr;
+
+        return std::make_shared<FieldInterval>(
+            Field(utc_time_zone.fromDayNum(start_day)), Field(utc_time_zone.fromDayNum(end_day)));
+    }
+
+    const auto * date_time_type = checkAndGetDataType<DataTypeDateTime>(&type);
+    if (!date_time_type || start_day.toUnderType() <= 0 || end_day.toUnderType() > DATE_LUT_MAX_DAY_NUM)
+        return nullptr;
+
+    /// Do not optimize partial civil days at the edges of the `DateTime` domain.
+    const auto & source_time_zone = transform_time_zone ? *transform_time_zone : date_time_type->getTimeZone();
+    const auto source_start = source_time_zone.fromDayNum(start_day);
+    const auto source_end = source_time_zone.fromDayNum(end_day);
+    if (source_start < 0 || source_end > std::numeric_limits<UInt32>::max())
+        return nullptr;
+
+    /// The optimizer renders the bounds as UTC civil strings that are parsed back in the column's
+    /// parse time zone, so carry the local components of that time zone over.
+    const auto & parse_time_zone = preimageParseTimeZone(*date_time_type);
+    const auto start_surrogate = makeUTCCivilTimeSurrogate(parse_time_zone, source_start);
+    const auto end_surrogate = makeUTCCivilTimeSurrogate(parse_time_zone, source_end);
+    if (!start_surrogate || !end_surrogate)
+        return nullptr;
+
+    return std::make_shared<FieldInterval>(
+        Field(*start_surrogate), Field(*end_surrogate));
+}
+
+/// The `DateTime64` counterpart of `makeDateOrDateTimePreimageForDayRange`. The bounds go through the
+/// same civil-string round trip, but the representable range depends on the scale: the optimizer
+/// renders the endpoints as untyped literals that the comparison re-parses against the column type,
+/// and a whole-second endpoint the scaled `Int64` tick count cannot hold throws `DECIMAL_OVERFLOW`
+/// on that re-parse (`toYear(x) = 2262` on a `DateTime64(9)` column), so decline it. The extended
+/// calendar reaches back to year `0000`, which the text parser does not round-trip either, see below.
+inline FieldIntervalPtr makeDateTime64PreimageForDayRange(
+    const DataTypeDateTime64 & type, ExtendedDayNum start_day, ExtendedDayNum end_day)
+{
+    if (start_day.toUnderType() < DATE_LUT_MIN_EXTEND_DAY_NUM || end_day.toUnderType() > DATE_LUT_MAX_EXTEND_DAY_NUM)
+        return nullptr;
+
+    const auto & source_time_zone = type.getTimeZone();
+    const Int64 source_start = source_time_zone.fromDayNum(start_day);
+    const Int64 source_end = source_time_zone.fromDayNum(end_day);
+
+    const Int64 max_whole_seconds
+        = std::numeric_limits<Int64>::max() / DecimalUtils::scaleMultiplier<Int64>(type.getScale());
+    if (source_start < -max_whole_seconds || source_end > max_whole_seconds)
+        return nullptr;
+
+    const auto & parse_time_zone = type.hasExplicitTimeZone() ? type.getTimeZone() : DateLUT::instance();
+    const auto start_surrogate = makeUTCCivilTimeSurrogate(parse_time_zone, source_start);
+    const auto end_surrogate = makeUTCCivilTimeSurrogate(parse_time_zone, source_end);
+    if (!start_surrogate || !end_surrogate)
+        return nullptr;
+
+    /// A surrogate is rendered as a civil string, and `readDateTime64Text` maps every literal whose
+    /// year component is `0000` to the Unix epoch instead of year zero, so a year-zero boundary comes
+    /// back as 1970 and the rewrite would compare against the wrong instant. `Date` and `DateTime`
+    /// cannot reach year zero, `Date32` is parsed by a day-number parser that has no such case, so
+    /// only `DateTime64` needs the guard: `toYear(x) = 0` and `toYYYYMM(x) = 1`.
+    const auto & utc_time_zone = DateLUT::instance("UTC");
+    if (utc_time_zone.toDateTimeComponents(*start_surrogate).date.year == 0
+        || utc_time_zone.toDateTimeComponents(*end_surrogate).date.year == 0)
+        return nullptr;
+
+    return std::make_shared<FieldInterval>(
+        Field(*start_surrogate), Field(*end_surrogate));
+}
+
+/** The preimage of a civil calendar period - a whole year for `toYear`, a whole month for `toYYYYMM` -
+  * for every argument type those functions accept. Unlike the rounding functions, their result does
+  * not saturate to the `Date` range, so `Date32` and `DateTime64` arguments have a single interval
+  * too. The `Date`/`DateTime` and `DateTime64` helpers decline endpoints outside the column type: an
+  * endpoint the type cannot represent saturates on re-parse (`Date` clamps to `2149-06-06`,
+  * `DateTime` to `2106-02-07 06:28:15`), and since the rewrite compares strictly against the
+  * *exclusive* upper endpoint, a saturated endpoint lands on a real, storable value and the boundary
+  * rows flip: `toYear(d) = 2149` loses `2149-06-06`, `toYear(d) != 2149` returns it as a phantom,
+  * and `toYear(d) >= 2150` returns rows no row can satisfy.
+  */
+inline FieldIntervalPtr makeCivilPeriodPreimage(const IDataType & type, ExtendedDayNum start_day, ExtendedDayNum end_day)
+{
+    if (isDate(type) || isDateTime(type))
+        return makeDateOrDateTimePreimageForDayRange(type, start_day, end_day);
+
+    if (isDate32(type))
+    {
+        /// `Date32` is a civil day number like `Date`, so no time-zone conversion is involved, and it
+        /// spans the whole extended calendar, which is wider than every period this can produce.
+        if (start_day.toUnderType() < DATE_LUT_MIN_EXTEND_DAY_NUM || end_day.toUnderType() > DATE_LUT_MAX_EXTEND_DAY_NUM)
+            return nullptr;
+
+        const auto & utc_time_zone = DateLUT::instance("UTC");
+        return std::make_shared<FieldInterval>(
+            Field(utc_time_zone.fromDayNum(start_day)), Field(utc_time_zone.fromDayNum(end_day)));
+    }
+
+    if (const auto * date_time64_type = checkAndGetDataType<DataTypeDateTime64>(&type))
+        return makeDateTime64PreimageForDayRange(*date_time64_type, start_day, end_day);
+
+    return nullptr;
+}
+
+inline FieldIntervalPtr getPreimageForDateRounding(
+    const IDataType & type, const Field & point, DateRoundingInterval interval)
+{
+    if (point.getType() != Field::Types::UInt64)
+        return nullptr;
+
+    const UInt64 day_num = point.safeGet<UInt64>();
+    if (day_num > DATE_LUT_MAX_DAY_NUM)
+        return nullptr;
+
+    const auto & calendar = DateLUT::instance("UTC");
+    const ExtendedDayNum point_day(static_cast<Int32>(day_num));
+    ExtendedDayNum start_day = point_day;
+    ExtendedDayNum end_day = point_day;
+
+    switch (interval)
+    {
+        case DateRoundingInterval::Day:
+            end_day = ExtendedDayNum(point_day.toUnderType() + 1);
+            break;
+        case DateRoundingInterval::Week:
+            start_day = calendar.toFirstDayNumOfWeek(point_day);
+            end_day = ExtendedDayNum(start_day.toUnderType() + 7);
+            break;
+        case DateRoundingInterval::Month:
+            start_day = calendar.toFirstDayNumOfMonth(point_day);
+            end_day = calendar.addMonths(start_day, 1);
+            break;
+        case DateRoundingInterval::LastDayOfMonth:
+            start_day = calendar.toFirstDayNumOfMonth(point_day);
+            end_day = calendar.addMonths(start_day, 1);
+            break;
+        case DateRoundingInterval::Quarter:
+            start_day = calendar.toFirstDayNumOfQuarter(point_day);
+            end_day = calendar.addQuarters(start_day, 1);
+            break;
+        case DateRoundingInterval::Year:
+            start_day = calendar.toFirstDayNumOfYear(point_day);
+            end_day = calendar.addYears(start_day, 1);
+            break;
+        case DateRoundingInterval::ISOYear:
+            start_day = calendar.toFirstDayNumOfISOYear(point_day);
+            end_day = calendar.toFirstDayNumOfISOYear(ExtendedDayNum(start_day.toUnderType() + 371));
+            break;
+    }
+
+    const auto result_day = interval == DateRoundingInterval::LastDayOfMonth
+        ? calendar.toLastDayNumOfMonth(point_day)
+        : start_day;
+
+    /// Values which cannot be produced by this rounding function have an empty preimage.
+    if (result_day != point_day)
+        return nullptr;
+
+    return makeDateOrDateTimePreimageForDayRange(type, start_day, end_day);
+}
+
+inline FieldIntervalPtr getPreimageForISOYear(const IDataType & type, const Field & point)
+{
+    if (point.getType() != Field::Types::UInt64)
+        return nullptr;
+
+    const UInt64 iso_year = point.safeGet<UInt64>();
+    if (iso_year < DATE_LUT_MIN_YEAR || iso_year >= DATE_LUT_MAX_YEAR)
+        return nullptr;
+
+    const auto & calendar = DateLUT::instance("UTC");
+    const auto january_fourth = calendar.makeDayNum(static_cast<Int16>(iso_year), 1, 4);
+    const auto next_january_fourth = calendar.makeDayNum(static_cast<Int16>(iso_year + 1), 1, 4);
+    const auto start_day = calendar.toFirstDayNumOfISOYear(january_fourth);
+    const auto end_day = calendar.toFirstDayNumOfISOYear(next_january_fourth);
+    return makeDateOrDateTimePreimageForDayRange(type, start_day, end_day);
+}
+
+inline FieldIntervalPtr getPreimageForYYYYMMDD(const IDataType & type, const Field & point)
+{
+    if (point.getType() != Field::Types::UInt64)
+        return nullptr;
+
+    const UInt64 yyyymmdd = point.safeGet<UInt64>();
+    const UInt64 year = yyyymmdd / 10000;
+    const UInt64 month = yyyymmdd / 100 % 100;
+    const UInt64 day = yyyymmdd % 100;
+    if (year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || day < 1 || day > 31)
+        return nullptr;
+
+    const auto & calendar = DateLUT::instance("UTC");
+    const auto point_day = calendar.tryToMakeDayNum(
+        static_cast<Int16>(year), static_cast<UInt8>(month), static_cast<UInt8>(day));
+    if (!point_day || calendar.toNumYYYYMMDD(*point_day) != yyyymmdd)
+        return nullptr;
+
+    return makeDateOrDateTimePreimageForDayRange(
+        type, *point_day, ExtendedDayNum(point_day->toUnderType() + 1));
+}
+
+inline FieldIntervalPtr getPreimageForStartOfDay(const IDataType & type, const Field & point)
+{
+    if (point.getType() != Field::Types::UInt64)
+        return nullptr;
+
+    /// The default `DateTime` result for extended source types can have a non-contiguous preimage.
+    const DateLUTImpl * source_time_zone = nullptr;
+    if (const auto * date_time_type = checkAndGetDataType<DataTypeDateTime>(&type))
+        source_time_zone = &preimageParseTimeZone(*date_time_type);
+    else if (isDate(type))
+        source_time_zone = &DateLUT::instance();
+    else
+        return nullptr;
+
+    const UInt64 timestamp = point.safeGet<UInt64>();
+    if (timestamp > std::numeric_limits<UInt32>::max())
+        return nullptr;
+
+    /// Round through the transform itself rather than through day starts: a day skipped by a
+    /// time-zone shift shares its start with a neighbour (`Pacific/Apia` skipped 2011-12-30), and
+    /// days starting before the epoch saturate into the first representable one.
+    const auto rounds_to_point = [&](Int32 day)
+    {
+        return day >= 0 && day <= DATE_LUT_MAX_DAY_NUM
+            && source_time_zone->toDate(DayNum(static_cast<UInt16>(day))) == static_cast<DateLUTImpl::Time>(timestamp);
+    };
+
+    ExtendedDayNum start_day(static_cast<Int32>(source_time_zone->toDayNum(static_cast<UInt32>(timestamp)).toUnderType()));
+    if (!rounds_to_point(start_day.toUnderType()))
+        return nullptr;
+
+    ExtendedDayNum end_day(start_day.toUnderType() + 1);
+    while (rounds_to_point(start_day.toUnderType() - 1))
+        start_day = ExtendedDayNum(start_day.toUnderType() - 1);
+    while (rounds_to_point(end_day.toUnderType()))
+        end_day = ExtendedDayNum(end_day.toUnderType() + 1);
+
+    return makeDateOrDateTimePreimageForDayRange(type, start_day, end_day, source_time_zone);
 }
 
 template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior>
@@ -218,7 +595,9 @@ struct ToStartOfDayImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toDate(static_cast<time_t>(t.whole)));
+        /// Clamped, not wrapped: the seconds value must stay monotonic because the primary index treats
+        /// this transform as always monotonic.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toDate(static_cast<time_t>(t.whole)), 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> &, const DateLUTImpl &)
     {
@@ -234,7 +613,8 @@ struct ToStartOfDayImpl
     }
     static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toDate(DayNum(d)));
+        /// Clamped: a Date past 2106-02-07 has a start-of-day beyond UInt32 seconds.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toDate(DayNum(d)), 0, std::numeric_limits<UInt32>::max()));
     }
     static DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
@@ -247,6 +627,13 @@ struct ToStartOfDayImpl
     static Int64 executeExtendedResult(Int32 d, const DateLUTImpl & time_zone)
     {
         return common::mulIgnoreOverflow(time_zone.fromDayNum(ExtendedDayNum(d)), DecimalUtils::scaleMultiplier<DateTime64>(DataTypeDateTime64::default_scale));
+    }
+
+    static constexpr bool hasPreimage() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        return getPreimageForStartOfDay(type, point);
     }
 
     using FactorTransform = ZeroTransform;
@@ -282,6 +669,13 @@ struct ToMondayImpl
     {
         return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d));
     }
+    static constexpr bool hasPreimage() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        return getPreimageForDateRounding(type, point, DateRoundingInterval::Week);
+    }
+
     using FactorTransform = ZeroTransform;
 };
 
@@ -316,6 +710,13 @@ struct ToStartOfMonthImpl
         return time_zone.toFirstDayNumOfMonth(ExtendedDayNum(d));
     }
 
+    static constexpr bool hasPreimage() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        return getPreimageForDateRounding(type, point, DateRoundingInterval::Month);
+    }
+
     using FactorTransform = ZeroTransform;
 };
 
@@ -339,7 +740,10 @@ struct ToLastDayOfMonthImpl
     }
     static UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toLastDayNumOfMonth(DayNum(d));
+        /// Computed in the extended range and clamped: the last day of the month can be past the
+        /// `Date` maximum (2149-06-06), and a `DayNum` result wraps around it instead of saturating.
+        const int res = time_zone.toLastDayNumOfMonth(ExtendedDayNum(d));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static Int64 executeExtendedResult(Int64 t, const DateLUTImpl & time_zone)
     {
@@ -349,6 +753,14 @@ struct ToLastDayOfMonthImpl
     {
         return time_zone.toLastDayNumOfMonth(ExtendedDayNum(d));
     }
+
+    static constexpr bool hasPreimage() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        return getPreimageForDateRounding(type, point, DateRoundingInterval::LastDayOfMonth);
+    }
+
     using FactorTransform = ZeroTransform;
 };
 
@@ -382,6 +794,13 @@ struct ToStartOfQuarterImpl
     {
         return time_zone.toFirstDayNumOfQuarter(ExtendedDayNum(d));
     }
+    static constexpr bool hasPreimage() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        return getPreimageForDateRounding(type, point, DateRoundingInterval::Quarter);
+    }
+
     using FactorTransform = ZeroTransform;
 };
 
@@ -416,6 +835,13 @@ struct ToStartOfYearImpl
         return time_zone.toFirstDayNumOfYear(ExtendedDayNum(d));
     }
 
+    static constexpr bool hasPreimage() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        return getPreimageForDateRounding(type, point, DateRoundingInterval::Year);
+    }
+
     using FactorTransform = ZeroTransform;
 };
 
@@ -427,24 +853,20 @@ struct ToYearWeekImpl
     static UInt32 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
         // TODO: ditch toDayNum()
-        YearWeek yw = time_zone.toYearWeek(time_zone.toDayNum(t), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
-        return yw.first * 100 + yw.second;
+        return time_zone.toYearWeekPacked(time_zone.toDayNum(t), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
     }
 
     static UInt32 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        YearWeek yw = time_zone.toYearWeek(time_zone.toDayNum(t), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
-        return yw.first * 100 + yw.second;
+        return time_zone.toYearWeekPacked(time_zone.toDayNum(t), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
     }
     static UInt32 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        YearWeek yw = time_zone.toYearWeek(ExtendedDayNum (d), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
-        return yw.first * 100 + yw.second;
+        return time_zone.toYearWeekPacked(ExtendedDayNum(d), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
     }
     static UInt32 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        YearWeek yw = time_zone.toYearWeek(DayNum(d), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
-        return yw.first * 100 + yw.second;
+        return time_zone.toYearWeekPacked(DayNum(d), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
     }
 
     static constexpr bool hasMonotonicity() { return true; }
@@ -509,7 +931,10 @@ struct ToLastDayOfWeekImpl
     }
     static UInt16 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toLastDayNumOfWeek(DayNum(d), week_mode);
+        /// Computed in the extended range and clamped: the last day of the week can be past the
+        /// `Date` maximum (2149-06-06), and a `DayNum` result wraps around it instead of saturating.
+        const int res = time_zone.toLastDayNumOfWeek(ExtendedDayNum(d), week_mode);
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static Int64 executeExtendedResult(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
@@ -563,6 +988,17 @@ template <IntervalKind::Kind unit>
 struct ToStartOfInterval;
 
 static constexpr auto TO_START_OF_INTERVAL_NAME = "toStartOfInterval";
+
+/// The whole seconds of a `DateTime64` value `t` in the scale given by `scale_multiplier`, rounded towards negative
+/// infinity. The division rounds towards zero, which would move a value before the epoch with a fractional part to
+/// the next second, and the start of its interval could then be later than the value itself.
+inline Int64 wholeSecondsRoundedDown(Int64 t, Int64 scale_multiplier)
+{
+    Int64 whole = t / scale_multiplier;
+    if (t % scale_multiplier < 0)
+        --whole;
+    return whole;
+}
 
 /// Implementation shared by the subsecond ToStartOfInterval specializations (millisecond, microsecond, nanosecond).
 /// t is the time in the scale given by scale_multiplier, num_units is the interval length in the interval unit,
@@ -731,7 +1167,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Second>
     }
     static Int64 execute(Int64 t, Int64 seconds, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> /*origin*/ = std::nullopt)
     {
-        return time_zone.toStartOfSecondInterval(t / scale_multiplier, seconds);
+        return time_zone.toStartOfSecondInterval(wholeSecondsRoundedDown(t, scale_multiplier), seconds);
     }
 };
 
@@ -752,7 +1188,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Minute>
     }
     static Int64 execute(Int64 t, Int64 minutes, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> /*origin*/ = std::nullopt)
     {
-        return time_zone.toStartOfMinuteInterval(t / scale_multiplier, minutes);
+        return time_zone.toStartOfMinuteInterval(wholeSecondsRoundedDown(t, scale_multiplier), minutes);
     }
 };
 
@@ -773,16 +1209,16 @@ struct ToStartOfInterval<IntervalKind::Kind::Hour>
     }
     static Int64 execute(Int64 t, Int64 hours, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> /*origin*/ = std::nullopt)
     {
-        return time_zone.toStartOfHourInterval(t / scale_multiplier, hours);
+        return time_zone.toStartOfHourInterval(wholeSecondsRoundedDown(t, scale_multiplier), hours);
     }
 };
 
 template <>
 struct ToStartOfInterval<IntervalKind::Kind::Day>
 {
-    static UInt32 execute(UInt16 d, Int64 days, const DateLUTImpl & time_zone, Int64)
+    static Int64 execute(UInt16 d, Int64 days, const DateLUTImpl & time_zone, Int64)
     {
-        return static_cast<UInt32>(time_zone.toStartOfDayInterval(ExtendedDayNum(d), days));
+        return time_zone.toStartOfDayInterval(ExtendedDayNum(d), days);
     }
     static Int64 execute(Int32 d, Int64 days, const DateLUTImpl & time_zone, Int64)
     {
@@ -794,7 +1230,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Day>
     }
     static Int64 execute(Int64 t, Int64 days, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> /*origin*/ = std::nullopt)
     {
-        return time_zone.toStartOfDayInterval(time_zone.toDayNum(t / scale_multiplier), days);
+        return time_zone.toStartOfDayInterval(time_zone.toDayNum(wholeSecondsRoundedDown(t, scale_multiplier)), days);
     }
 };
 
@@ -816,7 +1252,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Week>
     static Int64 execute(Int64 t, Int64 weeks, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> origin = std::nullopt)
     {
         if (!origin.has_value())
-            return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t / scale_multiplier), weeks);
+            return time_zone.toStartOfWeekInterval(time_zone.toDayNum(wholeSecondsRoundedDown(t, scale_multiplier)), weeks);
         Int64 days = 0;
         if (common::mulOverflow(weeks, static_cast<Int64>(7), days))
             throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
@@ -841,19 +1277,40 @@ struct ToStartOfInterval<IntervalKind::Kind::Month>
     }
     static Int64 execute(Int64 t, Int64 months, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> origin = std::nullopt)
     {
-        const Int64 scaled_time = t / scale_multiplier;
+        /// With an origin, `t` is the non-negative offset from it.
+        const Int64 scaled_time = wholeSecondsRoundedDown(t, scale_multiplier);
         if (!origin.has_value())
             return time_zone.toStartOfMonthInterval(time_zone.toDayNum(scaled_time), months);
 
-        const Int64 scaled_origin = origin.value() / scale_multiplier;
-        const Int64 days = time_zone.toDayOfMonth(scaled_time + scaled_origin) - time_zone.toDayOfMonth(scaled_origin);
-        Int64 months_to_add = time_zone.toMonth(scaled_time + scaled_origin) - time_zone.toMonth(scaled_origin);
-        const Int64 years = time_zone.toYear(scaled_time + scaled_origin) - time_zone.toYear(scaled_origin);
-        months_to_add = days < 0 ? months_to_add - 1 : months_to_add;
-        months_to_add += years * 12;
+        /// Round the origin down as well: otherwise a fractional origin before the epoch is moved to the next second,
+        /// possibly to the next day, and the bucket starts computed below would not match the ones of the origin.
+        const Int64 scaled_origin = wholeSecondsRoundedDown(origin.value(), scale_multiplier);
+        /// The number of calendar months between the origin and the argument. The bucket starting that many months
+        /// after the origin is in the same month as the argument, and every later bucket is in a later month, so the
+        /// bucket of the argument is either the last one not exceeding this number of months, or the one before it,
+        /// when the bucket start is later in the month than the argument (by the day of month, which `addMonths`
+        /// can clip to the end of a shorter month, or by the time of day).
+        const Int64 months_to_add = (time_zone.toYear(scaled_time + scaled_origin) - time_zone.toYear(scaled_origin)) * 12
+            + time_zone.toMonth(scaled_time + scaled_origin) - time_zone.toMonth(scaled_origin);
         Int64 month_multiplier = (months_to_add / months) * months;
 
-        return (time_zone.addMonths(time_zone.toDate(scaled_origin), month_multiplier) - time_zone.toDate(scaled_origin));
+        /// The bucket start is checked exactly, so a bucket boundary is rounded to itself.
+        /// `offset` is in whole seconds and `t` is non-negative, so `offset > scaled_time` is the same as
+        /// `offset * scale_multiplier > t`, but cannot overflow near the top of the `DateTime64` range.
+        /// `addMonths` keeps the time of day of the origin, also when the UTC offset changes on the day of the bucket
+        /// start between midnight and that time, which the difference between the midnights would not account for.
+        /// `addMonths` maps the second occurrence of a repeated hour to the first one, so zero months is not passed to it.
+        auto bucket_start = [&](Int64 num_months)
+        {
+            return num_months == 0 ? 0 : time_zone.addMonths(scaled_origin, num_months) - scaled_origin;
+        };
+        Int64 offset = bucket_start(month_multiplier);
+        while (month_multiplier >= months && offset > scaled_time)
+        {
+            month_multiplier -= months;
+            offset = bucket_start(month_multiplier);
+        }
+        return offset;
     }
 };
 
@@ -875,7 +1332,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Quarter>
     static Int64 execute(Int64 t, Int64 quarters, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> origin = std::nullopt)
     {
         if (!origin.has_value())
-            return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(t / scale_multiplier), quarters);
+            return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(wholeSecondsRoundedDown(t, scale_multiplier)), quarters);
         Int64 months = 0;
         if (common::mulOverflow(quarters, static_cast<Int64>(3), months))
             throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
@@ -901,7 +1358,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Year>
     static Int64 execute(Int64 t, Int64 years, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> origin = std::nullopt)
     {
         if (!origin.has_value())
-            return time_zone.toStartOfYearInterval(time_zone.toDayNum(t / scale_multiplier), years);
+            return time_zone.toStartOfYearInterval(time_zone.toDayNum(wholeSecondsRoundedDown(t, scale_multiplier)), years);
         Int64 months = 0;
         if (common::mulOverflow(years, static_cast<Int64>(12), months))
             throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
@@ -909,6 +1366,40 @@ struct ToStartOfInterval<IntervalKind::Kind::Year>
     }
 };
 
+
+/// The lookup table holds at most one UTC offset change per local day, so equal factors mean no change lies between them.
+struct ToDayAndUTCOffsetFactorImpl
+{
+    static constexpr auto name = "toDayAndUTCOffsetFactor";
+
+    static std::pair<Int64, Int64> execute(Int64 t, const DateLUTImpl & time_zone)
+    {
+        /// Outside the lookup table no two points share a factor.
+        if (!DateLUTImpl::isTimeInLUTRange(t))
+            return {std::numeric_limits<Int64>::min(), t};
+        return {time_zone.toDayNum(t).toUnderType(), time_zone.timezoneOffset(t)};
+    }
+    static std::pair<Int64, Int64> execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return execute(static_cast<Int64>(t), time_zone);
+    }
+    /// `Date` and `Date32` are rejected by the functions themselves.
+    static std::pair<Int64, Int64> execute(Int32 d, const DateLUTImpl &) { return {d, 0}; }
+    static std::pair<Int64, Int64> execute(UInt16 d, const DateLUTImpl &) { return {d, 0}; }
+
+    using FactorTransform = ZeroTransform;
+};
+
+/// Reads a `DateTime64` through its whole part, as `toTimeWithFixedDate` does.
+struct ToTimeWithFixedDateFactorImpl : ToDayAndUTCOffsetFactorImpl
+{
+    using ToDayAndUTCOffsetFactorImpl::execute;
+
+    static std::pair<Int64, Int64> execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
+    {
+        return execute(static_cast<Int64>(t.whole), time_zone);
+    }
+};
 
 struct ToTimeWithFixedDateImpl
 {
@@ -941,7 +1432,7 @@ struct ToTimeWithFixedDateImpl
     }
     static constexpr bool hasPreimage() { return false; }
 
-    using FactorTransform = ToDateImpl<>;
+    using FactorTransform = ToTimeWithFixedDateFactorImpl;
 };
 
 struct ToStartOfMinuteImpl
@@ -950,7 +1441,8 @@ struct ToStartOfMinuteImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toStartOfMinute(t.whole));
+        /// Clamped: see ToStartOfDayImpl.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toStartOfMinute(t.whole), 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl & time_zone)
     {
@@ -1255,7 +1747,8 @@ struct ToStartOfFiveMinutesImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toStartOfFiveMinutes(t.whole));
+        /// Clamped: see ToStartOfDayImpl.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toStartOfFiveMinutes(t.whole), 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl & time_zone)
     {
@@ -1295,7 +1788,8 @@ struct ToStartOfTenMinutesImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toStartOfTenMinutes(t.whole));
+        /// Clamped: see ToStartOfDayImpl.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toStartOfTenMinutes(t.whole), 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl & time_zone)
     {
@@ -1339,7 +1833,8 @@ struct ToStartOfFifteenMinutesImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toStartOfFifteenMinutes(t.whole));
+        /// Clamped: see ToStartOfDayImpl.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toStartOfFifteenMinutes(t.whole), 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl & time_zone)
     {
@@ -1384,7 +1879,8 @@ struct TimeSlotImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl &)
     {
-        return static_cast<UInt32>(t.whole / 1800 * 1800);
+        /// Clamped: see ToStartOfDayImpl.
+        return static_cast<UInt32>(std::clamp<Int64>(t.whole / 1800 * 1800, 0, std::numeric_limits<UInt32>::max()));
     }
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl &)
@@ -1440,7 +1936,8 @@ struct ToStartOfHourImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toStartOfHour(t.whole));
+        /// Clamped: see ToStartOfDayImpl.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toStartOfHour(t.whole), 0, std::numeric_limits<UInt32>::max()));
     }
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl & time_zone)
@@ -1517,20 +2014,21 @@ struct ToYearImpl
         if (point.getType() != Field::Types::UInt64) return nullptr;
 
         auto year = point.safeGet<UInt64>();
-        if (year < DATE_LUT_MIN_YEAR || year >= DATE_LUT_MAX_YEAR) return nullptr;
+        /// The year DATE_LUT_MAX_REPRESENTABLE_YEAR is excluded because the exclusive upper endpoint of its
+        /// preimage would be the first moment of the next year, which is not representable.
+        if (year >= DATE_LUT_MAX_REPRESENTABLE_YEAR) return nullptr;
 
-        const DateLUTImpl & date_lut = DateLUT::instance("UTC");
+        if (!isDateOrDate32(type) && !isDateTime(type) && !isDateTime64(type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
+                type.getName(),
+                name);
 
-        auto start_time = date_lut.makeDateTime(static_cast<Int16>(year), 1, 1, 0, 0, 0);
-        auto end_time = date_lut.addYears(start_time, 1);
-
-        if (isDateOrDate32(type) || isDateTime(type) || isDateTime64(type))
-            return std::make_shared<FieldInterval>(Field(start_time), Field(end_time));
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
-            type.getName(),
-            name);
+        const DateLUTImpl & calendar = DateLUT::instance("UTC");
+        const auto start_day = calendar.makeDayNum(static_cast<Int16>(year), 1, 1);
+        const auto end_day = calendar.addYears(start_day, 1);
+        return makeCivilPeriodPreimage(type, start_day, end_day);
     }
 
     using FactorTransform = ZeroTransform;
@@ -1704,6 +2202,58 @@ struct ToDaysInMonthImpl
     using FactorTransform = ToStartOfMonthImpl;
 };
 
+/// The factor transform that decides the monotonicity of `toDayOfWeek` (see
+/// `IFunctionCustomWeek::getMonotonicityForRange`): the function is monotonic on a range iff both ends of
+/// the range share the factor.
+///
+/// `toDayOfWeek` is monotonic on a range iff the range stays inside one week in the ordering of its
+/// `week_mode`: a Monday-week for modes 0 and 1, a Sunday-week for modes 2 and 3. The mode is a constant
+/// argument that `getMonotonicityForRange` does not see, so the factor pairs both weeks: two days share
+/// it iff they lie in the same Monday-week and in the same Sunday-week, that is, in the same
+/// Monday-to-Saturday run or on the same Sunday. A range inside such a run is monotonic for every mode,
+/// which keeps the key usable for granules that span several days; a range with a Sunday boundary inside
+/// it, where the Sunday-first modes run from 7 down to 1, is not.
+///
+/// The factor is the unclamped day number: of the Monday for Monday to Saturday, of the day itself for a
+/// Sunday. It must not be narrowed to `UInt16` the way `toMonday` and `toDate` do, since that aliases
+/// the day number modulo 65536 on the extended carriers (`1970-01-01` and `2149-06-07` would share a
+/// factor). There is deliberately no `DecimalComponents` overload: `TransformDateTime64` then rounds a
+/// `DateTime64` down to whole seconds before calling the `Int64` overload, whereas reading the whole
+/// part of the components truncates towards zero and gives a pre-epoch value at 23:59:59.5 the factor
+/// of the next day.
+struct ToDayOfWeekFactorImpl
+{
+    static constexpr auto name = "toDayOfWeekFactor";
+
+    static Int64 execute(Int64 t, const DateLUTImpl & time_zone)
+    {
+        return fromDayNum(time_zone.toDayNum(t), time_zone);
+    }
+    static Int64 execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        /// Don't saturate.
+        return fromDayNum(time_zone.toDayNum<Int64>(t), time_zone);
+    }
+    static Int64 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return fromDayNum(ExtendedDayNum(d), time_zone);
+    }
+    static Int64 execute(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        return fromDayNum(ExtendedDayNum(d), time_zone);
+    }
+
+    using FactorTransform = ZeroTransform;
+
+private:
+    static Int64 fromDayNum(ExtendedDayNum day, const DateLUTImpl & time_zone)
+    {
+        if (time_zone.toDayOfWeek(day) == 7)
+            return day.toUnderType();
+        return time_zone.toFirstDayNumOfWeek(day).toUnderType();
+    }
+};
+
 struct ToDayOfWeekImpl
 {
     static constexpr auto name = "toDayOfWeek";
@@ -1730,7 +2280,7 @@ struct ToDayOfWeekImpl
     }
 
     static constexpr bool hasMonotonicity() { return true; }
-    using FactorTransform = ToMondayImpl;
+    using FactorTransform = ToDayOfWeekFactorImpl;
 };
 
 struct ToDayOfYearImpl
@@ -1795,6 +2345,54 @@ public:
     using FactorTransform = ZeroTransform;
 };
 
+/// Within one UTC offset of one local day the clock only moves forward, and the hour 23 that DateLUT repeats moves
+/// `t - since_start`, so equal factors mean the clock did not go back between two points.
+template <Int64 period>
+struct ToClockPeriodStartFactorImpl
+{
+    static constexpr auto name = "toClockPeriodStartFactor";
+
+    static std::tuple<Int64, Int64, Int64> execute(Int64 t, const DateLUTImpl & time_zone)
+    {
+        /// Outside the lookup table no two points share a factor.
+        if (!DateLUTImpl::isTimeInLUTRange(t))
+            return {std::numeric_limits<Int64>::min(), t, 0};
+        const auto time = time_zone.toDateTimeComponents(t).time;
+        const Int64 since_start = static_cast<Int64>(time.hour * 3600 + time.minute * 60 + time.second) % period;
+        return {time_zone.toDayNum(t).toUnderType(), time_zone.timezoneOffset(t), t - since_start};
+    }
+    static std::tuple<Int64, Int64, Int64> execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return execute(static_cast<Int64>(t), time_zone);
+    }
+    /// `toHour` and `toMinute` reject `Date` and `Date32`.
+    static std::tuple<Int64, Int64, Int64> execute(Int32 d, const DateLUTImpl &) { return {d, 0, 0}; }
+    static std::tuple<Int64, Int64, Int64> execute(UInt16 d, const DateLUTImpl &) { return {d, 0, 0}; }
+
+    using FactorTransform = ZeroTransform;
+};
+
+/// `toYYYYMMDDhhmmss` does not restart at midnight, so only a jump of the clock breaks its order.
+struct ToYYYYMMDDhhmmssFactorImpl
+{
+    static constexpr auto name = "toYYYYMMDDhhmmssFactor";
+
+    static std::tuple<Int64, Int64, Int64> execute(Int64 t, const DateLUTImpl & time_zone)
+    {
+        if (time_zone.hasFixedOffset() && DateLUTImpl::isTimeInLUTRange(t))
+            return {};
+        return ToClockPeriodStartFactorImpl<86400>::execute(t, time_zone);
+    }
+    static std::tuple<Int64, Int64, Int64> execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return execute(static_cast<Int64>(t), time_zone);
+    }
+    static std::tuple<Int64, Int64, Int64> execute(Int32, const DateLUTImpl &) { return {}; }
+    static std::tuple<Int64, Int64, Int64> execute(UInt16, const DateLUTImpl &) { return {}; }
+
+    using FactorTransform = ZeroTransform;
+};
+
 struct ToHourImpl
 {
     static constexpr auto name = "toHour";
@@ -1820,7 +2418,7 @@ struct ToHourImpl
     }
     static constexpr bool hasPreimage() { return false; }
 
-    using FactorTransform = ToDateImpl<>;
+    using FactorTransform = ToClockPeriodStartFactorImpl<86400>;
 };
 
 struct TimezoneOffsetImpl
@@ -1851,7 +2449,7 @@ struct TimezoneOffsetImpl
     }
 
     static constexpr bool hasPreimage() { return false; }
-    using FactorTransform = ToTimeWithFixedDateImpl;
+    using FactorTransform = ToDayAndUTCOffsetFactorImpl;
 };
 
 struct ToMinuteImpl
@@ -1879,7 +2477,7 @@ struct ToMinuteImpl
     }
     static constexpr bool hasPreimage() { return false; }
 
-    using FactorTransform = ToStartOfHourImpl;
+    using FactorTransform = ToClockPeriodStartFactorImpl<3600>;
 };
 
 struct ToSecondImpl
@@ -1908,6 +2506,39 @@ struct ToSecondImpl
     static constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ToStartOfMinuteImpl;
+};
+
+/// The factor transform of the subsecond extractors. They restart at zero every second, so their
+/// monotonicity claim holds only where both ends of the key range fall into the same second.
+/// For the argument types where the extractor is the constant 0 - a `DateTime` has no subsecond part,
+/// and neither does a `DateTime64(0)` - or is not supported at all, every pair of endpoints has to
+/// share a factor, because a constant function is monotonic; the extractors' own `execute` overloads
+/// reject the unsupported types before index analysis can be reached.
+struct ToStartOfSecondFactorImpl
+{
+    static constexpr auto name = "toStartOfSecond";
+
+    static DateTime64 execute(const DateTime64 & datetime64, Int64 scale_multiplier, const DateLUTImpl & time_zone)
+    {
+        /// A zero-precision value has no subsecond part at all, so the extractor is the constant 0 on it.
+        if (scale_multiplier == 1)
+            return DateTime64(0);
+        return ToStartOfSecondImpl::execute(datetime64, scale_multiplier, time_zone);
+    }
+
+    static Time64 execute(const Time64 & time64, Int64 scale_multiplier, const DateLUTImpl & time_zone)
+    {
+        if (scale_multiplier == 1)
+            return Time64(0);
+        return ToStartOfSecondImpl::execute(time64, scale_multiplier, time_zone);
+    }
+
+    static UInt32 execute(UInt32, const DateLUTImpl &) { return 0; }
+    static UInt32 execute(Int32, const DateLUTImpl &) { return 0; }
+    static UInt32 execute(Int64, const DateLUTImpl &) { return 0; }
+    static UInt32 execute(UInt16, const DateLUTImpl &) { return 0; }
+
+    using FactorTransform = ZeroTransform;
 };
 
 struct ToMillisecondImpl
@@ -1942,7 +2573,7 @@ struct ToMillisecondImpl
     }
     static constexpr bool hasPreimage() { return false; }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = ToStartOfSecondFactorImpl;
 };
 
 struct ToMicrosecondImpl
@@ -1977,7 +2608,7 @@ struct ToMicrosecondImpl
     }
     static constexpr bool hasPreimage() { return false; }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = ToStartOfSecondFactorImpl;
 };
 
 struct ToNanosecondImpl
@@ -2012,7 +2643,7 @@ struct ToNanosecondImpl
     }
     static constexpr bool hasPreimage() { return false; }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = ToStartOfSecondFactorImpl;
 };
 
 struct ToISOYearImpl
@@ -2038,7 +2669,12 @@ struct ToISOYearImpl
     {
         return time_zone.toISOYear(DayNum(d));
     }
-    static constexpr bool hasPreimage() { return false; }
+    static constexpr bool hasPreimage() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        return getPreimageForISOYear(type, point);
+    }
 
     using FactorTransform = ZeroTransform;
 };
@@ -2079,6 +2715,13 @@ struct ToStartOfISOYearImpl
     static Int32 executeExtendedResult(Int32 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfISOYear(ExtendedDayNum(d));
+    }
+
+    static constexpr bool hasPreimage() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        return getPreimageForDateRounding(type, point, DateRoundingInterval::ISOYear);
     }
 
     using FactorTransform = ZeroTransform;
@@ -2165,7 +2808,8 @@ struct ToYearNumSinceEpochImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return time_zone.toYearSinceEpoch(t);
         else
-            return static_cast<UInt16>(time_zone.toYearSinceEpoch(t));
+            /// Clamped: see ToStartOfDayImpl.
+            return static_cast<UInt16>(std::clamp<Int64>(time_zone.toYearSinceEpoch(t), 0, std::numeric_limits<UInt16>::max()));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -2261,7 +2905,8 @@ struct ToMonthNumSinceEpochImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return time_zone.toMonthNumSinceEpoch(t);
         else
-            return static_cast<UInt16>(time_zone.toMonthNumSinceEpoch(t));
+            /// Clamped: see ToStartOfDayImpl.
+            return static_cast<UInt16>(std::clamp<Int64>(time_zone.toMonthNumSinceEpoch(t), 0, std::numeric_limits<UInt16>::max()));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -2293,7 +2938,8 @@ struct ToRelativeWeekNumImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return time_zone.toRelativeWeekNum(t);
         else
-            return static_cast<UInt16>(time_zone.toRelativeWeekNum(t));
+            /// Clamped: see ToStartOfDayImpl.
+            return static_cast<UInt16>(std::clamp<Int64>(time_zone.toRelativeWeekNum(t), 0, std::numeric_limits<UInt16>::max()));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -2325,11 +2971,15 @@ struct ToRelativeDayNumImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return static_cast<Int64>(time_zone.toDayNum(t));
         else
-            return static_cast<UInt16>(time_zone.toDayNum(t));
+            /// Clamped: see ToStartOfDayImpl.
+            return static_cast<UInt16>(std::clamp<Int64>(time_zone.toDayNum(t), 0, std::numeric_limits<UInt16>::max()));
     }
-    static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
+    static auto execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt16>(time_zone.toDayNum(static_cast<time_t>(t)));
+        if constexpr (precision_ == ResultPrecision::Extended)
+            return static_cast<Int64>(time_zone.toDayNum(static_cast<time_t>(t)));
+        else
+            return static_cast<UInt16>(time_zone.toDayNum(static_cast<time_t>(t)));
     }
     static auto execute(Int32 d, const DateLUTImpl &)
     {
@@ -2357,7 +3007,8 @@ struct ToRelativeHourNumImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return static_cast<Int64>(time_zone.toStableRelativeHourNum(t));
         else
-            return static_cast<UInt32>(time_zone.toRelativeHourNum(t));
+            /// Clamped: see ToStartOfDayImpl.
+            return static_cast<UInt32>(std::clamp<Int64>(time_zone.toRelativeHourNum(t), 0, std::numeric_limits<UInt32>::max()));
     }
     ALWAYS_INLINE static UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -2395,7 +3046,8 @@ struct ToRelativeMinuteNumImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return static_cast<Int64>(time_zone.toRelativeMinuteNum(t));
         else
-            return static_cast<UInt32>(time_zone.toRelativeMinuteNum(t));
+            /// Clamped: see ToStartOfDayImpl.
+            return static_cast<UInt32>(std::clamp<Int64>(time_zone.toRelativeMinuteNum(t), 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -2422,9 +3074,13 @@ struct ToRelativeSecondNumImpl
 {
     static constexpr auto name = "toRelativeSecondNum";
 
-    static Int64 execute(Int64 t, const DateLUTImpl &)
+    static auto execute(Int64 t, const DateLUTImpl &)
     {
-        return t;
+        if constexpr (precision_ == ResultPrecision::Extended)
+            return t;
+        else
+            /// Clamped: see ToStartOfDayImpl.
+            return static_cast<UInt32>(std::clamp<Int64>(t, 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(UInt32 t, const DateLUTImpl &)
     {
@@ -2439,7 +3095,8 @@ struct ToRelativeSecondNumImpl
     }
     static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.fromDayNum(DayNum(d)));
+        /// Clamped: a Date past 2106-02-07 exceeds UInt32 seconds.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.fromDayNum(DayNum(d)), 0, std::numeric_limits<UInt32>::max()));
     }
     static constexpr bool hasPreimage() { return false; }
 
@@ -2511,21 +3168,22 @@ struct ToYYYYMMImpl
         auto year = year_month / 100;
         auto month = year_month % 100;
 
-        if (year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || (year == DATE_LUT_MAX_YEAR && month == 12))
+        /// The month DATE_LUT_MAX_REPRESENTABLE_YEAR-12 is excluded because the exclusive upper endpoint of its
+        /// preimage would be the first moment of the next month, which is not representable.
+        if (year > DATE_LUT_MAX_REPRESENTABLE_YEAR || month < 1 || month > 12 || (year == DATE_LUT_MAX_REPRESENTABLE_YEAR && month == 12))
             return nullptr;
 
-        const DateLUTImpl & date_lut = DateLUT::instance("UTC");
+        if (!isDateOrDate32(type) && !isDateTime(type) && !isDateTime64(type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
+                type.getName(),
+                name);
 
-        auto start_time = date_lut.makeDateTime(static_cast<Int16>(year), static_cast<UInt8>(month), 1, 0, 0, 0);
-        auto end_time = date_lut.addMonths(start_time, 1);
-
-        if (isDateOrDate32(type) || isDateTime(type) || isDateTime64(type))
-            return std::make_shared<FieldInterval>(Field(start_time), Field(end_time));
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
-            type.getName(),
-            name);
+        const DateLUTImpl & calendar = DateLUT::instance("UTC");
+        const auto start_day = calendar.makeDayNum(static_cast<Int16>(year), static_cast<UInt8>(month), 1);
+        const auto end_day = calendar.addMonths(start_day, 1);
+        return makeCivilPeriodPreimage(type, start_day, end_day);
     }
 
     using FactorTransform = ZeroTransform;
@@ -2551,7 +3209,12 @@ struct ToYYYYMMDDImpl
     {
         return time_zone.toNumYYYYMMDD(DayNum(d));
     }
-    static constexpr bool hasPreimage() { return false; }
+    static constexpr bool hasPreimage() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        return getPreimageForYYYYMMDD(type, point);
+    }
 
     using FactorTransform = ZeroTransform;
 };
@@ -2578,7 +3241,7 @@ struct ToYYYYMMDDhhmmssImpl
     }
     static constexpr bool hasPreimage() { return false; }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = ToYYYYMMDDhhmmssFactorImpl;
 };
 
 struct DateTimeComponentsWithFractionalPart : public DateLUTImpl::DateTimeComponents
@@ -2636,6 +3299,17 @@ struct ToDateTimeComponentsImpl
 struct DateTimeAccurateConvertStrategyAdditions {};
 struct DateTimeAccurateOrNullConvertStrategyAdditions {};
 
+/// The same for `Decimal`, `DateTime64` and `Time64` results, which also need the scale of the result.
+struct AccurateConvertStrategyAdditions
+{
+    UInt32 scale { 0 };
+};
+
+struct AccurateOrNullConvertStrategyAdditions
+{
+    UInt32 scale { 0 };
+};
+
 template <typename FromType, typename ToType, typename Transform, bool is_extended_result = false, typename Additions = void *>
 struct Transformer
 {
@@ -2661,15 +3335,132 @@ struct Transformer
             return;
         }
 
+        using FromValueType = typename FromTypeVector::value_type;
+
+        /// The representable window of a `DateTime64` / `Time64` result, for the accurate casts from a numeric
+        /// source: the transform below silently clamps an out-of-range source to that window, which is exactly
+        /// what an accurate cast must reject instead. An integer source is a count of whole seconds, while a
+        /// floating-point one also carries a sub-second fraction and is therefore checked in the tick domain -
+        /// `999:59:59.5` is a good `Time64(1)` value even though `999:59:60` is not a good number of seconds.
+        [[maybe_unused]] Int64 whole_seconds_lower_bound = 0;
+        [[maybe_unused]] Int64 whole_seconds_upper_bound = 0;
+        /// A `BFloat16` source is checked in `Float32`, the carrier the transform computes in: every `BFloat16`
+        /// value is exact there, while the 8-bit mantissa of the source could not even hold the scale multiplier.
+        using FloatCheckType = std::conditional_t<std::is_same_v<FromValueType, BFloat16>, Float32, FromValueType>;
+        [[maybe_unused]] FloatCheckType ticks_lower_bound {};
+        [[maybe_unused]] FloatCheckType ticks_upper_bound {};
+        /// A `Date32` day is not always representable as a high-precision `DateTime64` - a scale-9 one ends at
+        /// `2262-04-11` - and the transform below would clamp it, so an accurate cast needs this window too.
+        [[maybe_unused]] Int32 day_num_lower_bound = 0;
+        [[maybe_unused]] Int32 day_num_upper_bound = 0;
+        if constexpr (std::is_same_v<FromType, DataTypeDate32> && std::is_same_v<ToType, DataTypeDateTime64>
+            && is_any_of<Additions, AccurateConvertStrategyAdditions, AccurateOrNullConvertStrategyAdditions>)
+        {
+            std::tie(day_num_lower_bound, day_num_upper_bound) = getDateTime64DayNumRange(transform.scale_multiplier, time_zone);
+        }
+        if constexpr (is_any_of<ToType, DataTypeDateTime64, DataTypeTime64>
+            && is_any_of<Additions, AccurateConvertStrategyAdditions, AccurateOrNullConvertStrategyAdditions>)
+        {
+            if constexpr (std::is_same_v<ToType, DataTypeTime64>)
+            {
+                whole_seconds_lower_bound = -static_cast<Int64>(MAX_TIME_TIMESTAMP);
+                whole_seconds_upper_bound = MAX_TIME_TIMESTAMP;
+            }
+            else
+            {
+                /// The bounds depend on the scale, because the ticks are stored in an `Int64`.
+                whole_seconds_lower_bound = minWholeSecondsForDateTime64(transform.scale_multiplier);
+                whole_seconds_upper_bound = maxWholeSecondsForDateTime64(transform.scale_multiplier);
+            }
+
+            if constexpr (is_floating_point<FromValueType>)
+            {
+                /// The bounds of the transform itself, so that the accurate cast accepts exactly the values the
+                /// transform represents without clamping - including a fraction of the last representable second.
+                ticks_lower_bound = transform.min_ticks_in_source_domain;
+                ticks_upper_bound = transform.max_ticks_in_source_domain;
+            }
+        }
+
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            if constexpr (is_any_of<ToType, DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeTime>)
+            if constexpr (is_any_of<ToType, DataTypeDateTime64, DataTypeTime64>)
+            {
+                if constexpr (is_any_of<Additions, AccurateConvertStrategyAdditions, AccurateOrNullConvertStrategyAdditions>)
+                {
+                    bool is_valid_input = false;
+                    if constexpr (std::is_same_v<FromType, DataTypeDate32>)
+                        is_valid_input = vec_from[i] >= day_num_lower_bound && vec_from[i] <= day_num_upper_bound;
+                    else if constexpr (is_floating_point<FromValueType>)
+                    {
+                        /// Every comparison with a NaN is false, so a NaN is rejected as well.
+                        const FloatCheckType ticks = static_cast<FloatCheckType>(vec_from[i]) * static_cast<FloatCheckType>(transform.scale_multiplier);
+                        is_valid_input = ticks >= ticks_lower_bound && ticks <= ticks_upper_bound;
+                    }
+                    else if constexpr (is_signed_v<FromValueType>)
+                        is_valid_input = vec_from[i] >= whole_seconds_lower_bound && vec_from[i] <= whole_seconds_upper_bound;
+                    else
+                        is_valid_input = vec_from[i] <= static_cast<UInt64>(whole_seconds_upper_bound);
+
+                    if (!is_valid_input)
+                    {
+                        if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                        {
+                            vec_to[i] = 0;
+                            (*vec_null_map_to)[i] = true;
+                            continue;
+                        }
+                        else
+                        {
+                            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be safely converted into type {}",
+                                static_cast<double>(vec_from[i]), ToType::family_name);
+                        }
+                    }
+                }
+            }
+            else if constexpr (is_any_of<ToType, DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeTime>)
             {
                 if constexpr (is_any_of<Additions, DateTimeAccurateConvertStrategyAdditions, DateTimeAccurateOrNullConvertStrategyAdditions>)
                 {
-                    using FromValueType = typename FromTypeVector::value_type;
                     bool is_valid_input = false;
-                    if constexpr (std::is_same_v<ToType, DataTypeTime>)
+                    if constexpr (std::is_same_v<FromType, DataTypeTime64> || std::is_same_v<FromType, DataTypeTime>)
+                    {
+                        /// `Time` and `Time64` are timezone-unaware counts of seconds of a clock reading
+                        /// (scaled, for `Time64`). Widening an exact `Time` value to `Time64(0)` must not
+                        /// change the outcome of an accurate cast, so both share the same checks.
+                        Int64 seconds = 0;
+                        bool has_whole_seconds = true;
+
+                        if constexpr (std::is_same_v<FromType, DataTypeTime64>)
+                        {
+                            const Int64 scale_multiplier = transform.getScaleMultiplier();
+                            const Int64 value = vec_from[i].value;
+
+                            /// `Time64` is a scaled integer. An accurate conversion to a whole-second type
+                            /// must not discard a fractional part before applying the target range check.
+                            has_whole_seconds = value % scale_multiplier == 0;
+                            seconds = value / scale_multiplier;
+                        }
+                        else
+                        {
+                            seconds = static_cast<Int64>(vec_from[i]);
+                        }
+
+                        if (has_whole_seconds)
+                        {
+                            if constexpr (std::is_same_v<ToType, DataTypeTime>)
+                                is_valid_input = seconds >= -MAX_TIME_TIMESTAMP && seconds <= MAX_TIME_TIMESTAMP;
+                            else if constexpr (std::is_same_v<ToType, DataTypeDate>)
+                                is_valid_input = seconds >= 0 && seconds <= static_cast<Int64>(0xFFFFFFFFL)
+                                    && seconds % DATE_SECONDS_PER_DAY == 0;
+                            else if constexpr (std::is_same_v<ToType, DataTypeDate32>)
+                                is_valid_input = seconds >= static_cast<Int64>(DATE_LUT_MIN_EXTEND_DAY_NUM) * DATE_SECONDS_PER_DAY
+                                    && seconds <= MAX_DATE32_TIMESTAMP && seconds % DATE_SECONDS_PER_DAY == 0;
+                            else
+                                is_valid_input = seconds >= 0 && seconds <= static_cast<Int64>(0xFFFFFFFFL);
+                        }
+                    }
+                    else if constexpr (std::is_same_v<ToType, DataTypeTime>)
                     {
                         /// `Time` is a signed count of seconds of a clock reading within
                         /// `[-MAX_TIME_TIMESTAMP, MAX_TIME_TIMESTAMP]`, so it cannot share the unsigned `DateTime`
@@ -2694,11 +3485,11 @@ struct Transformer
                     }
                     else if constexpr (std::is_same_v<ToType, DataTypeDate32>)
                     {
-                        /// `Date32` spans `[1900-01-01, 2299-12-31]`, and a numeric source is read either as an
+                        /// `Date32` spans `[0000-01-01, 9999-12-31]`, and a numeric source is read either as an
                         /// extended day number or as a unix timestamp, so its representable window is
-                        /// `[-getDayNumOffsetEpoch(), MAX_DATE32_TIMESTAMP]`. Anything outside is silently clamped
-                        /// by the transform below, which is exactly what the accurate cast must reject.
-                        static constexpr Int64 lower_bound = -static_cast<Int64>(DateLUTImpl::getDayNumOffsetEpoch());
+                        /// `[DATE_LUT_MIN_EXTEND_DAY_NUM, MAX_DATE32_TIMESTAMP]`. Anything outside is silently
+                        /// clamped by the transform below, which is exactly what the accurate cast must reject.
+                        static constexpr Int64 lower_bound = DATE_LUT_MIN_EXTEND_DAY_NUM;
                         if constexpr (is_floating_point<FromValueType>)
                         {
                             /// `Float64` represents every `BFloat16` and `Float32` value and both bounds exactly.
@@ -2769,7 +3560,7 @@ struct DateTimeTransformImpl
         {
             ColumnUInt8::MutablePtr col_null_map_to;
             ColumnUInt8::Container * vec_null_map_to [[maybe_unused]] = nullptr;
-            if constexpr (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
+            if constexpr (is_any_of<Additions, DateTimeAccurateOrNullConvertStrategyAdditions, AccurateOrNullConvertStrategyAdditions>)
             {
                 col_null_map_to = ColumnUInt8::create(sources->getData().size(), false);
                 vec_null_map_to = &col_null_map_to->getData();
@@ -2808,7 +3599,7 @@ struct DateTimeTransformImpl
                 Op::vector(sources->getData(), col_to->getData(), time_zone, transform, vec_null_map_to, input_rows_count);
             }
 
-            if constexpr (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
+            if constexpr (is_any_of<Additions, DateTimeAccurateOrNullConvertStrategyAdditions, AccurateOrNullConvertStrategyAdditions>)
             {
                 if (vec_null_map_to)
                     return ColumnNullable::create(std::move(mutable_result_col), std::move(col_null_map_to));

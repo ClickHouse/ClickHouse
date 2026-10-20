@@ -20,7 +20,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int TOO_LARGE_ARRAY_SIZE;
 extern const int TIMEOUT_EXCEEDED;
 }
@@ -38,28 +37,14 @@ public:
 
     size_t getNumberOfArguments() const override { return 5; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args{
-            {"longitute_min", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32 or Float64"},
-            {"latitude_min", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32 or Float64"},
-            {"longitute_max", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32 or Float64"},
-            {"latitude_max", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32 or Float64"},
-            {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), nullptr, "UInt8"}
-        };
-        validateFunctionArguments(*this, arguments, args);
-
-        if (!(arguments[0].type->equals(*arguments[1].type) &&
-              arguments[0].type->equals(*arguments[2].type) &&
-              arguments[0].type->equals(*arguments[3].type)))
-        {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Illegal type of argument of {} all coordinate arguments must have the same type, "
-                            "instead they are:{}, {}, {}, {}.", getName(), arguments[0].type->getName(),
-                            arguments[1].type->getName(), arguments[2].type->getName(), arguments[3].type->getName());
-        }
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+        /// Enforce the same exact native Float type across the 4 coordinate args via a shared
+        /// type variable. The matcher is `NativeFloat` (Float32 or Float64), not `Float`, because
+        /// only Float32 and Float64 have an `execute` specialization; a `BFloat16` coordinate —
+        /// which `Float` would admit — must be rejected with a clean `ILLEGAL_TYPE_OF_ARGUMENT`
+        /// rather than reaching the dispatch below and raising a `LOGICAL_ERROR`.
+        return "(T : NativeFloat, T : NativeFloat, T : NativeFloat, T : NativeFloat, UInt8) -> Array(String)";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -115,9 +100,10 @@ public:
                             lat_min_column->getName(), lon_max_column->getName(), lat_max_column->getName());
         }
 
-        auto col_res = ColumnArray::create(ColumnString::create());
-        ColumnString & res_strings = typeid_cast<ColumnString &>(col_res->getData());
-        ColumnArray::Offsets & res_offsets = col_res->getOffsets();
+        auto res_strings_column = ColumnString::create();
+        auto res_offsets_column = ColumnArray::ColumnOffsets::create();
+        ColumnString & res_strings = *res_strings_column;
+        ColumnArray::Offsets & res_offsets = res_offsets_column->getData();
         ColumnString::Chars & res_strings_chars = res_strings.getChars();
         ColumnString::Offsets & res_strings_offsets = res_strings.getOffsets();
 
@@ -178,7 +164,7 @@ public:
                             res_offsets.back(), std::to_string(res_strings.size()));
         }
 
-        result = std::move(col_res);
+        result = ColumnArray::create(std::move(res_strings_column), std::move(res_offsets_column));
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -225,9 +211,9 @@ REGISTER_FUNCTION(GeohashesInBox)
     FunctionDocumentation::Description description = R"(
 Returns an array of [geohash](https://en.wikipedia.org/wiki/Geohash)-encoded strings of given precision that fall inside and intersect boundaries of given box, essentially a 2D grid flattened into an array.
 
-:::note
+<Note>
 All coordinate parameters must be of the same type: either `Float32` or `Float64`.
-:::
+</Note>
 
 This function throws an exception if the size of the resulting array exceeds more than 10,000,000 items.
     )";

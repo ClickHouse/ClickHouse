@@ -6,6 +6,7 @@ from .cache import Cache
 from .runtime import RunConfig
 from .settings import Settings
 from .utils import Utils
+from .workflow import Workflow
 
 
 class CacheRunnerHooks:
@@ -172,30 +173,29 @@ class CacheRunnerHooks:
                     if result:
                         fetched_records.append(result)
 
-        env = _Environment.get()
         # Step 2: Apply the fetched records sequentially
         for job_name, record in fetched_records:
             assert Utils.normalize_string(job_name) not in workflow_config.cache_success
-            if workflow.is_event_push() and record.branch != env.BRANCH:
-                # TODO: make this behaviour configurable?
+            # The trust boundary is pull_request vs. everything else. A
+            # pull_request run executes untrusted code, so trusted lanes (push,
+            # schedule, dispatch, merge_queue) must not reuse a record it
+            # produced - otherwise a PR's green result could satisfy e.g. the
+            # merge queue's lookup and skip a job the queue must run on the merge
+            # group state (the drift guard). A pull_request run itself may reuse
+            # any record. Correctness is unaffected either way: a digest match
+            # means identical inputs, so the producing event only encodes how
+            # much we trust the result.
+            if (
+                not workflow.is_event_pull_request()
+                and record.event == Workflow.Event.PULL_REQUEST
+            ):
                 print(
-                    f"NOTE: Result for [{job_name}] cached from branch [{record.branch}] - skip for workflow with event=PUSH"
+                    f"NOTE: Result for [{job_name}] cached from event [{record.event}] - skip for workflow with event=[{workflow.event}]"
                 )
                 continue
             workflow_config.cache_success.append(job_name)
             workflow_config.cache_success_base64.append(Utils.to_base64(job_name))
             workflow_config.cache_jobs[job_name] = record
-        # single threaded variant
-        # for job_name, job_digest in workflow_config.digest_jobs.items():
-        #     record = cache.fetch_success(job_name=job_name, job_digest=job_digest)
-        #     if record:
-        #         assert (
-        #             Utils.normalize_string(job_name)
-        #             not in workflow_config.cache_success
-        #         )
-        #         workflow_config.cache_success.append(job_name)
-        #         workflow_config.cache_success_base64.append(Utils.to_base64(job_name))
-        #         workflow_config.cache_jobs[job_name] = record
 
         print("Check artifacts to reuse")
         for job in workflow.jobs:
@@ -238,7 +238,10 @@ class CacheRunnerHooks:
                 print(f"Reuse artifact [{artifact.name}] from [{record}]")
                 path_prefixes.append(
                     env.get_s3_prefix_static(
-                        record.pr_number, record.branch, record.sha
+                        record.pr_number,
+                        record.branch,
+                        record.sha,
+                        record.workflow,
                     )
                 )
             else:
@@ -257,7 +260,12 @@ class CacheRunnerHooks:
             # cache is enabled, and it's a job that supposed to be cached (has defined digest config)
             workflow_runtime = RunConfig.from_workflow_data()
             job_digest = workflow_runtime.digest_jobs[job.name]
-            # if_not_exist=workflow.is_event_pull_request() - to not overwrite record from "push" workflow, as it can reuse only from push, "pull_request" - from both
+            # Dual of the reuse rule above: a pull_request run produces an
+            # untrusted record, so it must not overwrite a record already in the
+            # shared (job, digest) slot - it only fills an empty one
+            # (if_not_exist=True). Every trusted event overwrites, keeping the
+            # slot's record reusable by all trusted lanes (and by pull_request,
+            # which reuses anything).
             Cache.push_success_record(
                 job.name,
                 job_digest,

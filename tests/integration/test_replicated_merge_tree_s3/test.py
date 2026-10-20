@@ -83,6 +83,9 @@ def generate_values(date_str, count, sign=1):
 def create_table(cluster, additional_settings=None):
     settings = {
         "storage_policy": "s3",
+        # Otherwise the new materialize_statistics_on_insert default writes an extra
+        # statistics.packed file per part, breaking the exact S3 object count this test asserts.
+        "auto_statistics_types": "",
     }
     settings.update(additional_settings)
 

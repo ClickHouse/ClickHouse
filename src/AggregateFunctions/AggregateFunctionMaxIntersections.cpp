@@ -257,7 +257,7 @@ SELECT maxIntersections(start, end) FROM my_events;
         }, documentation});
 
     FunctionDocumentation::Description position_description = R"(
-Aggregate function that calculates the positions of the occurrences of the [`maxIntersections`](/sql-reference/aggregate-functions/reference/maxintersections) function.
+Aggregate function that calculates the positions of the occurrences of the [`maxIntersections`](/reference/functions/aggregate-functions/maxIntersections) function.
     )";
     FunctionDocumentation::Syntax position_syntax = R"(
 maxIntersectionsPosition(start_column, end_column)

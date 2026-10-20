@@ -92,8 +92,14 @@ class Labels:
     CI_FUNCTIONAL = "ci-functional-test"
     CI_TOOLCHAIN = "ci-toolchain"
     CI_NO_COVERAGE = "ci-no-coverage"
+    # Pull requests run the LLVM coverage jobs only with this label.
+    CI_COVERAGE = "ci-coverage"
+    # Runs the LLVM coverage jobs and the stateless flaky checks and nothing else, see
+    # `LLVM_COVERAGE_ONLY_JOBS` in `filter_job.py`. A pull request that changes only stateless
+    # tests can merge with it, see `can_be_merged.py`.
+    CI_LLVM_COVERAGE = "ci-llvm-coverage"
 
-    # Gates the PromQL compliance PR comment from integration-test post-hooks (see promql_compliance_hook.py).
+    # Gates the PromQL compliance dedicated job + PR comment (see promql_compliance_job.py).
     COMP_PROMQL = "comp-promql"
 
     # automatic backport for critical bug fixes
@@ -231,6 +237,33 @@ def get_category(pr_body: str) -> Tuple[str, str]:
     return error, matched
 
 
+# PRs opened by an automated agent: the agent's own token has no triage rights on
+# the repository, so this hook, which runs with the CI bot's rights, adds the labels
+# and the human owner. The owner answers reviewers; the agent never does.
+# Keyed by the GitHub login of the agent account; `branch_prefix` tells the agents
+# that share one account apart. The coverage agent only adds stateless tests, so its
+# pull requests run the LLVM coverage jobs and the flaky checks (`ci-llvm-coverage`).
+AGENT_PRS = {
+    "clickgapai": [
+        {
+            "branch_prefix": "covgap/",  # the coverage agent
+            "labels": [Labels.CI_LLVM_COVERAGE, Labels.CAN_BE_TESTED],
+            "assignees": ["alexbakharew"],
+        },
+    ],
+}
+
+
+def agent_pr_rules(info) -> list:
+    """The AGENT_PRS entries that match the PR author and the head branch."""
+    branch = info.git_branch or ""
+    return [
+        rule
+        for rule in AGENT_PRS.get(info.user_name, [])
+        if branch.startswith(rule["branch_prefix"])
+    ]
+
+
 def check_labels(category, info):
     pr_labels_to_add = []
     pr_labels_to_remove = []
@@ -268,6 +301,13 @@ def check_labels(category, info):
         pr_labels_to_add += [label for label in backport_labels if label not in labels]
         print(f"Add backport labels [{backport_labels}] for PR category [{category}]")
 
+    assignees_to_add = []
+    for rule in agent_pr_rules(info):
+        pr_labels_to_add += [label for label in rule["labels"] if label not in labels and label not in pr_labels_to_add]
+        assignees_to_add += rule["assignees"]
+    if assignees_to_add:
+        print(f"Agent PR on branch [{info.git_branch}]: assign {assignees_to_add}")
+
     cmd = f"gh pr edit {info.pr_number}"
     if pr_labels_to_add:
         print(f"Add labels [{pr_labels_to_add}]")
@@ -279,7 +319,10 @@ def check_labels(category, info):
         for label in pr_labels_to_remove:
             cmd += f" --remove-label '{label}'"
 
-    if pr_labels_to_remove or pr_labels_to_add:
+    for assignee in assignees_to_add:
+        cmd += f" --add-assignee '{assignee}'"
+
+    if pr_labels_to_remove or pr_labels_to_add or assignees_to_add:
         Shell.check(cmd, verbose=True, strict=True, retries=5)
 
     for label in pr_labels_to_add:

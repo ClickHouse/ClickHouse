@@ -214,7 +214,7 @@ Private Endpoint Resource ID는 Azure Portal에 표시됩니다. 이전 단계�
 
 <Image img="/images/cloud/security/azure-pe-view.webp" size="lg" alt="Private Endpoint 보기" border />
 
-properties 아래에서 `id` 필드를 찾아 이 값을 복사하십시오.
+최상위 `id` 필드(Private Endpoint의 Resource ID이며, 형식은 `/subscriptions/.../providers/Microsoft.Network/privateEndpoints/<name>`)를 복사하십시오. `properties` 객체 내부에 중첩된 `id` 필드는 사용하지 마십시오.
 
 **권장 메서드: Resource ID 사용**
 

@@ -485,3 +485,61 @@ TEST(StablePermutation, ColumnSparse)
         assertColumnPermutations(create_column, IndexInRangeFloat64Transform());
     }
 }
+
+template <typename Column, typename ColumnCreateFunc>
+static void assertUpdatePermutationPreservesEqualKeys(ColumnCreateFunc create_column)
+{
+    for (size_t size : {128, 80000})
+    {
+        auto type = create_column();
+        auto id = create_column();
+        for (size_t i = 0; i < size; ++i)
+        {
+            type->insertValue(typename Column::ValueType((i / 2) % 64));
+            id->insertValue(typename Column::ValueType(i / 2));
+        }
+
+        for (auto direction : {IColumn::PermutationSortDirection::Ascending, IColumn::PermutationSortDirection::Descending})
+        {
+            IColumn::Permutation actual;
+            actual.resize(size);
+            iota(actual.data(), size, IColumn::Permutation::value_type(0));
+            IColumn::Permutation expected;
+            expected.resize(size);
+            iota(expected.data(), size, IColumn::Permutation::value_type(0));
+            EqualRanges ranges{{0, size}};
+
+            /// Check every sorting stage against an independent stable reference.
+            /// Equal keys must retain the original cancellation/replacement order.
+            for (const auto * column : {type.get(), id.get()})
+            {
+                for (const auto & range : ranges)
+                {
+                    std::stable_sort(expected.begin() + range.from, expected.begin() + range.to,
+                        [&](size_t lhs, size_t rhs)
+                        {
+                            int result = column->compareAt(lhs, rhs, *column, 1);
+                            return direction == IColumn::PermutationSortDirection::Ascending ? result < 0 : result > 0;
+                        });
+                }
+                column->updatePermutation(direction, IColumn::PermutationSortStability::Stable, 0, 1, actual, ranges);
+                assertPermutationsWithLimit(actual, expected, 0);
+            }
+        }
+    }
+}
+
+TEST(StablePermutation, UpdatePermutationPreservesEqualKeys)
+{
+    assertUpdatePermutationPreservesEqualKeys<ColumnInt64>([] { return ColumnInt64::create(); });
+}
+
+TEST(StablePermutation, UpdatePermutationPreservesEqualDecimalKeys)
+{
+    assertUpdatePermutationPreservesEqualKeys<ColumnDecimal<Decimal64>>([] { return ColumnDecimal<Decimal64>::create(0, 4); });
+}
+
+TEST(StablePermutation, UpdatePermutationPreservesEqualDateTime64Keys)
+{
+    assertUpdatePermutationPreservesEqualKeys<ColumnDecimal<DateTime64>>([] { return ColumnDecimal<DateTime64>::create(0, 3); });
+}

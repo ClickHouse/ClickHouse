@@ -1,8 +1,8 @@
 ---
 slug: /cloud/managed-postgres/monitoring/metrics
 sidebarTitle: 'メトリクス リファレンス'
-title: 'Managed Postgres メトリクス リファレンス'
-description: 'Managed Postgres Prometheus エンドポイントで公開されるメトリクスの完全な一覧'
+title: 'ClickHouse Managed Postgres メトリクス リファレンス'
+description: 'ClickHouse Managed Postgres Prometheus エンドポイントで公開されるメトリクスの完全な一覧'
 keywords: ['managed postgres', 'メトリクス', 'prometheus', 'reference', 'オブザーバビリティ']
 doc_type: 'reference'
 ---
@@ -12,13 +12,11 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-metrics-beta" />
 
 このページでは、
-[Managed Postgres Prometheus エンドポイント](/ja/products/managed-postgres/monitoring/prometheus)
+[ClickHouse Managed Postgres Prometheus エンドポイント](/ja/products/managed-postgres/monitoring/prometheus)
 で公開されるすべてのメトリクスを一覧表示します。
 設定と認証については、[Prometheus エンドポイント] ページを参照してください。
 
-<div id="common-labels">
-  ## 共通ラベル
-</div>
+## 共通ラベル {#common-labels}
 
 すべてのメトリクスには、次のラベルが含まれます。
 
@@ -32,9 +30,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 CPUメトリクスの`mode`、connectionsの`state`、データベース
 サイズの`database`) 。これらは各メトリクスの説明に併記されています。
 
-<div id="information-metric">
-  ## 情報メトリクス
-</div>
+## 情報メトリクス {#information-metric}
 
 `PostgresServiceInfo` は常に `1` となる Gauge で、サービスの現在のステータスとバージョンをラベルとして持ちます。これを使うと、他のメトリクスにステータスを join したり、サービスが `running` 状態でなくなった際に alert を発したりできます。
 
@@ -46,9 +42,7 @@ CPUメトリクスの`mode`、connectionsの`state`、データベース
 (例: `running`、`creating`、`stopped`) を示します。`postgres_version`
 は、Postgres のメジャーバージョン (例: `17`、`18`) を示します。
 
-<div id="capacity">
-  ## 容量
-</div>
+## 容量 {#capacity}
 
 サービスにプロビジョニングされた静的な上限値です。これらが変わるのは、
 サービスのサイズを変更した場合のみです。
@@ -59,9 +53,7 @@ CPUメトリクスの`mode`、connectionsの`state`、データベース
 | `PostgresServer_MemoryLimitBytes`  | gauge | bytes | サービスに割り当てられたメモリ。      |
 | `PostgresServer_StorageLimitBytes` | gauge | bytes | サービスに割り当てられたストレージ。    |
 
-<div id="resource-utilization">
-  ## リソース使用率
-</div>
+## リソース使用率 {#resource-utilization}
 
 | メトリック                                  | タイプ   | 追加ラベル  | 説明                                                                                       |
 | -------------------------------------- | ----- | ------ | ---------------------------------------------------------------------------------------- |
@@ -74,9 +66,7 @@ CPU使用率をパーセンテージで計算するには、
 対象のモードについて `PostgresServer_CPUSeconds_Total` のレートを求め、
 それを `PostgresServer_CPUCores` で割ります。
 
-<div id="io">
-  ## ディスクおよびネットワーク I/O
-</div>
+## ディスクおよびネットワーク I/O {#io}
 
 | メトリック                                      | 型     | 単位    | 説明                 |
 | ------------------------------------------- | ----- | ----- | ------------------ |
@@ -85,9 +75,7 @@ CPU使用率をパーセンテージで計算するには、
 | `PostgresServer_NetworkReceiveBytes_Total`  | カウンター | bytes | ネットワーク経由で受信したバイト数。 |
 | `PostgresServer_NetworkTransmitBytes_Total` | カウンター | bytes | ネットワーク経由で送信したバイト数。 |
 
-<div id="database-activity">
-  ## データベースアクティビティ
-</div>
+## データベースアクティビティ {#database-activity}
 
 サービス開始以降の累積カウンターです。`rate()` または `irate()` を使用して、
 1 秒あたりの値に換算できます。
@@ -102,9 +90,28 @@ CPU使用率をパーセンテージで計算するには、
 | `PostgresServer_TransactionsRolledBack_Total` | カウンター | ロールバックされたトランザクション数。 |
 | `PostgresServer_Deadlocks_Total`              | カウンター | 検出されたデッドロック数。       |
 
-<div id="connections-cache-size">
-  ## 接続数、cache、データベースサイズ
-</div>
+## クエリパフォーマンス {#query-performance}
+
+記録されたクエリインサイトのイベントから集計されるカウンターです。`UTILITY` 操作は除外されます。
+
+| メトリクス                                      | 種類      | 単位    | 説明                                                        |
+| ------------------------------------------ | ------- | ----- | --------------------------------------------------------- |
+| `PostgresQuery_Calls_Total`                | カウンター | イベント  | 記録されたクエリイベント数。                                            |
+| `PostgresQuery_DurationMicroseconds_Total` | カウンター | マイクロ秒 | 記録されたクエリの合計実行時間。                                          |
+| `PostgresQuery_ErrorEvents_Total`          | カウンター | イベント  | エラー重大度が 0 以外の記録済みイベント数 (警告を含む)。                           |
+| `PostgresQuery_FailureEvents_Total`        | カウンター | イベント  | 重大度が `ERROR` 以上の記録済みイベント数。                                |
+| `PostgresQuery_Rows_Total`                 | カウンター | 行     | 記録されたクエリが返した行数、または影響を与えた行数。                               |
+| `PostgresQuery_SharedBlocksHit_Total`      | カウンター | ブロック  | 記録されたクエリでキャッシュヒットした共有ブロック数。                               |
+| `PostgresQuery_SharedBlocksRead_Total`     | カウンター | ブロック  | 記録されたクエリが読み取った共有ブロック数。                                    |
+| `PostgresQuery_WALBytes_Total`             | カウンター | バイト   | 記録されたクエリが生成した WAL のバイト数。                                  |
+| `PostgresQuery_SelectCalls_Total`          | カウンター | イベント  | 記録された `SELECT` イベント数。                                     |
+| `PostgresQuery_InsertCalls_Total`          | カウンター | イベント  | 記録された `INSERT` イベント数。                                     |
+| `PostgresQuery_UpdateCalls_Total`          | カウンター | イベント  | 記録された `UPDATE` イベント数。                                     |
+| `PostgresQuery_DeleteCalls_Total`          | カウンター | イベント  | 記録された `DELETE` イベント数。                                     |
+| `PostgresQuery_MergeCalls_Total`           | カウンター | イベント  | 記録された `MERGE` イベント数。                                      |
+| `PostgresQuery_OtherCalls_Total`           | カウンター | イベント  | `SELECT`、`INSERT`、`UPDATE`、`DELETE`、`MERGE` 以外の記録済みイベント数。 |
+
+## 接続数、cache、データベースサイズ {#connections-cache-size}
 
 | メトリック                             | 種類    | 追加ラベル      | 説明                                                                     |
 | ---------------------------------- | ----- | ---------- | ---------------------------------------------------------------------- |
@@ -112,9 +119,7 @@ CPU使用率をパーセンテージで計算するには、
 | `PostgresServer_CacheHitRatio`     | gauge |            | バッファcacheヒット率。アクセスされたblocks全体に占める、cacheから提供されたblocksの割合を百分率で示します。      |
 | `PostgresServer_DatabaseSizeBytes` | gauge | `database` | 各データベースのディスクサイズ (バイト単位) 。デフォルトの `postgres` と、ユーザーが作成したすべてのデータベースを含みます。 |
 
-<div id="related">
-  ## 関連ページ
-</div>
+## 関連ページ {#related}
 
 * [Prometheus エンドポイント] — 設定、認証、スクレイピング
 * [ダッシュボード](/ja/products/managed-postgres/monitoring/dashboard) — 組み込みのクラウドコンソールのチャート

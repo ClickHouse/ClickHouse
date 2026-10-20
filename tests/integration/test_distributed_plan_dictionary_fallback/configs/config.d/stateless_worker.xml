@@ -1,0 +1,29 @@
+<clickhouse>
+    <stateless_worker_server>
+        <enabled>1</enabled>
+        <endpoint>localhost</endpoint>
+    </stateless_worker_server>
+
+    <stateless_worker_client>
+        <enabled>1</enabled>
+        <cluster>default</cluster>
+    </stateless_worker_client>
+
+    <distributed_query>
+        <streaming_exchange_port>9223</streaming_exchange_port>
+        <streaming_exchange_listen_host>0.0.0.0</streaming_exchange_listen_host>
+    </distributed_query>
+
+    <!-- Only the worker node is a worker: every task of a distributed plan runs on a server whose catalog is not
+         the initiator's. -->
+    <remote_servers>
+        <default>
+            <shard>
+                <replica>
+                    <host>worker</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </default>
+    </remote_servers>
+</clickhouse>

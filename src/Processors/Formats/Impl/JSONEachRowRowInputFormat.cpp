@@ -414,10 +414,19 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
     register_format("JSONL", false);
     register_format("NDJSON", false);
 
+    /// `JSONLines`, `JSONL` and `NDJSON` are interchangeable spellings of `JSONEachRow`, and the
+    /// file extensions below are registered only for `JSONEachRow`.
+    factory.registerFormatAlias("JSONLines", "JSONEachRow");
+    factory.registerFormatAlias("JSONL", "JSONEachRow");
+    factory.registerFormatAlias("NDJSON", "JSONEachRow");
+
     factory.registerFileExtension("ndjson", "JSONEachRow");
     factory.registerFileExtension("jsonl", "JSONEachRow");
+    /// NDJSON lakes commonly name their files `.json`, but the `json` extension infers as `JSON`.
+    factory.registerFileExtension("json", "JSONEachRow", /*used_for_format_inference=*/ false);
 
     register_format("JSONStringsEachRow", true);
+    factory.registerFileExtension("json", "JSONStringsEachRow", /*used_for_format_inference=*/ false);
 
     factory.markFormatSupportsSubsetOfColumns("JSONEachRow");
     factory.markFormatSupportsSubsetOfColumns("JSONLines");
@@ -674,11 +683,18 @@ The output will be in JSON format:
 void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory);
 void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
 {
-    factory.registerFileSegmentationEngine("JSONEachRow", &JSONUtils::fileSegmentationEngineJSONEachRow);
-    factory.registerFileSegmentationEngine("JSONStringsEachRow", &JSONUtils::fileSegmentationEngineJSONEachRow);
-    factory.registerFileSegmentationEngine("JSONLines", &JSONUtils::fileSegmentationEngineJSONEachRow);
-    factory.registerFileSegmentationEngine("NDJSON", &JSONUtils::fileSegmentationEngineJSONEachRow);
-    factory.registerFileSegmentationEngine("JSONL", &JSONUtils::fileSegmentationEngineJSONEachRow);
+    auto creator = [](const FormatSettings & settings) -> FormatFactory::FileSegmentationEngine
+    {
+        return [max_row_size = settings.json.max_row_size_for_json_each_row](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+        {
+            return JSONUtils::fileSegmentationEngineJSONEachRow(in, memory, min_bytes, max_rows, max_row_size);
+        };
+    };
+    factory.registerFileSegmentationEngineCreator("JSONEachRow", creator);
+    factory.registerFileSegmentationEngineCreator("JSONStringsEachRow", creator);
+    factory.registerFileSegmentationEngineCreator("JSONLines", creator);
+    factory.registerFileSegmentationEngineCreator("NDJSON", creator);
+    factory.registerFileSegmentationEngineCreator("JSONL", creator);
 }
 
 void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory);

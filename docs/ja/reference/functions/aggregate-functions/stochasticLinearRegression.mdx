@@ -45,6 +45,8 @@ CREATE TABLE IF NOT EXISTS train_data
 
 INSERT INTO train_data VALUES (1, 1, 0), (2, 2, 0), (3, 3, 0), (4, 4, 0), (5, 5, 0), (6, 6, 0);
 
+DROP TABLE IF EXISTS your_model;
+
 CREATE TABLE your_model ENGINE = Memory AS SELECT
 stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, x1, x2)
 AS state FROM train_data;
@@ -53,7 +55,7 @@ AS state FROM train_data;
 ここでは、`train_data` テーブルにもデータを挿入する必要があります。
 パラメータの数は固定ではなく、`linearRegressionState` に渡す引数の数によってのみ決まります。
 これらはすべて数値でなければなりません。
-予測するよう学習させたい目的値を持つカラムは、最初の引数として挿入されることに注意してください。
+予測するよう学習させたい目的変数を持つカラムは、最初の引数として挿入されることに注意してください。
 
 2. 予測
 
@@ -122,8 +124,12 @@ stochasticLinearRegression([learning_rate, l2_regularization_coef, mini_batch_si
 **モデルの学習**
 
 ```sql title=Query
+DROP TABLE IF EXISTS train_data;
+
 CREATE TABLE train_data (target Float64, x1 Float64, x2 Float64) ENGINE = Memory;
 INSERT INTO train_data VALUES (1, 1, 0), (2, 2, 0), (3, 3, 0), (4, 4, 0), (5, 5, 0), (6, 6, 0);
+
+DROP TABLE IF EXISTS your_model;
 
 CREATE TABLE your_model
 ENGINE = Memory
@@ -141,14 +147,20 @@ SELECT count() FROM your_model
 **予測**
 
 ```sql title=Query
+DROP TABLE IF EXISTS train_data;
+
 CREATE TABLE train_data (target Float64, x1 Float64, x2 Float64) ENGINE = Memory;
 INSERT INTO train_data VALUES (1, 1, 0), (2, 2, 0), (3, 3, 0), (4, 4, 0), (5, 5, 0), (6, 6, 0);
+
+DROP TABLE IF EXISTS your_model;
 
 CREATE TABLE your_model
 ENGINE = Memory
 AS SELECT
 stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, x1, x2)
 AS state FROM train_data;
+
+DROP TABLE IF EXISTS test_data;
 
 CREATE TABLE test_data (x1 Float64, x2 Float64) ENGINE = Memory;
 INSERT INTO test_data VALUES (10, 0), (20, 0);
@@ -165,6 +177,8 @@ evalMLMethod(model, x1, x2) > 0 FROM test_data
 **モデルの重みを取得**
 
 ```sql title=Query
+DROP TABLE IF EXISTS train_data;
+
 CREATE TABLE train_data (target Float64, x1 Float64, x2 Float64) ENGINE = Memory;
 INSERT INTO train_data VALUES (1, 1, 0), (2, 2, 0), (3, 3, 0), (4, 4, 0), (5, 5, 0), (6, 6, 0);
 

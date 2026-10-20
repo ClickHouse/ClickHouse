@@ -1,5 +1,7 @@
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnDynamic.h>
 #include <Core/Block.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -118,4 +120,24 @@ TEST(MergedDataHasEnoughRows, ZeroByteLimitDisablesTheBranch)
     merged_data.initialize(header, inputs);
 
     EXPECT_FALSE(merged_data.hasEnoughRows());
+}
+
+TEST(MergedDataHasEnoughRows, DynamicColumnsUseDestinationSizeForBatching)
+{
+    auto dynamic_type = std::make_shared<DataTypeDynamic>();
+    Block header;
+    header.insert(ColumnWithTypeAndName(dynamic_type->createColumn(), dynamic_type, "value"));
+
+    auto source = ColumnDynamic::create(254);
+    source->insert(Field(Int64(1)));
+    source->insert(Field(Int64(2)));
+
+    IMergingAlgorithm::Inputs inputs(1);
+    inputs[0].chunk.setColumns(Columns{source->getPtr()}, 2);
+
+    MergedData merged_data(false, MAX_BLOCK_SIZE, 32, 254);
+    merged_data.initialize(header, inputs);
+
+    ColumnRawPtrs raw_columns{source.get()};
+    EXPECT_EQ(merged_data.rowsToInsertBeforeFlush(raw_columns, 0, 2, 2), 1u);
 }

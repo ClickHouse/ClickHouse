@@ -105,6 +105,11 @@ def insert_data(node):
         settings={
             # do not do direct INSERT, always via SYSTEM FLUSH DISTRIBUTED
             "prefer_localhost_replica": 0,
+            # Pin LZ4 for the on-disk distributed batch: the corrupted-send tests zero a fixed byte
+            # range that must land inside one compressed block to trigger the expected checksum error.
+            # The ZSTD(3) network default changes the block layout/size, so the corruption no longer
+            # fails cleanly and FLUSH DISTRIBUTED hangs on a partially-decodable stream.
+            "network_compression_method": "LZ4",
         },
     )
     path = get_path_to_dist_batch(node, "default", "dist")

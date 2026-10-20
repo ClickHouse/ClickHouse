@@ -27,6 +27,12 @@ struct PlusImpl
     static const constexpr bool allow_string_integer = false;
     static const constexpr bool is_commutative = true;
 
+    /// Documentation-only — accepts numerics (with the usual promotion rule),
+    /// Date / DateTime / DateTime64 + Interval, Array of numerics (broadcast),
+    /// and decimals with scale arithmetic. The full promotion matrix isn't
+    /// expressible in the current DSL.
+    static constexpr auto signature_documentation = "(Any, Any) -> Any";
+
     template <typename Result = ResultType>
     static NO_SANITIZE_UNDEFINED Result apply(A a, B b)
     {
@@ -72,6 +78,10 @@ increments the number of seconds in the date with time.
 It is also possible to add a date and a time. Adding a `Date` and a `Time`
 produces a `DateTime`. Adding a `Date` and a `Time64`, or a `Date32` and
 a `Time` or `Time64`, produces a `DateTime64`.
+Adding a `Time` or `Time64` to a `DateTime` or `DateTime64` applies the time
+value as an offset in seconds. `DateTime` plus `Time` produces a `DateTime`,
+any combination involving `DateTime64` or `Time64` produces a `DateTime64`
+with the maximum scale of the two arguments.
     )";
     FunctionDocumentation::Syntax syntax = "plus(x, y)";
     FunctionDocumentation::Argument argument1 = {"x", "Left hand operand."};

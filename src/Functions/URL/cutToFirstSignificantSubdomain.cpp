@@ -44,7 +44,7 @@ using FunctionCutToFirstSignificantSubdomainWithWWWRFC = FunctionStringToString<
 REGISTER_FUNCTION(CutToFirstSignificantSubdomain)
 {
     FunctionDocumentation::Description cutToFirstSignificantSubdomain_description = R"(
-Returns the part of the domain that includes top-level subdomains up to the [first significant subdomain](/sql-reference/functions/url-functions#firstSignificantSubdomain).
+Returns the part of the domain that includes top-level subdomains up to the [first significant subdomain](/reference/functions/regular-functions/url-functions#firstSignificantSubdomain).
 
     )";
     FunctionDocumentation::Syntax cutToFirstSignificantSubdomain_syntax = "cutToFirstSignificantSubdomain(url)";
@@ -119,7 +119,7 @@ SELECT
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainWithWWW>(cutToFirstSignificantSubdomainWithWWW_documentation);
 
     FunctionDocumentation::Description cutToFirstSignificantSubdomainRFC_description = R"(
-Returns the part of the domain that includes top-level subdomains up to the ["first significant subdomain"](/sql-reference/functions/url-functions#firstSignificantSubdomain). Similar to [`cutToFirstSignificantSubdomain`](#cutToFirstSignificantSubdomain) but conforms to [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
+Returns the part of the domain that includes top-level subdomains up to the ["first significant subdomain"](/reference/functions/regular-functions/url-functions#firstSignificantSubdomain). Similar to [`cutToFirstSignificantSubdomain`](#cutToFirstSignificantSubdomain) but conforms to [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
     )";
     FunctionDocumentation::Syntax cutToFirstSignificantSubdomainRFC_syntax = "cutToFirstSignificantSubdomainRFC(url)";
     FunctionDocumentation::Arguments cutToFirstSignificantSubdomainRFC_arguments =

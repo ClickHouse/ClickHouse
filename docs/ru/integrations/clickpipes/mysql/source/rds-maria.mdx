@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/ru/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/ru/clickpipes/_iam_authentication.mdx";
 
 Это пошаговое руководство по настройке экземпляра RDS MariaDB для репликации данных через ClickPipe для MySQL.
 
@@ -111,6 +112,16 @@ import { Image } from "/snippets/ru/components/Image.jsx";
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
    ```
 
+<div id="iam-authentication">
+  ### Использование IAM-аутентификации (необязательно)
+</div>
+
+<Note>
+  AWS [добавила IAM-аутентификацию базы данных для RDS for MariaDB в версии 10.6.5](https://aws.amazon.com/blogs/database/iam-authentication-with-amazon-rds-for-mariadb/). Поддержка зависит от конкретной версии движка и региона AWS. Перед использованием этого варианта проверьте [актуальный список поддерживаемых регионов и версий движка AWS](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.RDS_Fea_Regions_DB-eng.Feature.IamDatabaseAuthentication.html).
+</Note>
+
+<IAMAuthentication engine="mysql" service="rds" />
+
 <div id="configure-network-access">
   ## Настройте сетевой доступ
 </div>
@@ -119,7 +130,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   ### Управление доступом по IP
 </div>
 
-Если вы хотите ограничить трафик к своему экземпляру RDS, добавьте [указанные в документации статические NAT IP-адреса](/ru/integrations/clickpipes/home#list-of-static-ips) в `Inbound rules` группы безопасности RDS.
+Если вы хотите ограничить трафик к своему экземпляру RDS, добавьте [указанные в документации статические NAT IP-адреса](/ru/integrations/clickpipes/networking/static-ips) в `Inbound rules` группы безопасности RDS.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="Где найти группу безопасности в RDS?" size="lg" border />
 

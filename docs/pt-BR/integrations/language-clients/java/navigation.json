@@ -3,10 +3,10 @@
   "group": "Java",
   "icon": "/images/integrations/logos/java.svg",
   "pages": [
+    "pt-BR/integrations/language-clients/java/index",
     "pt-BR/integrations/language-clients/java/client",
     "pt-BR/integrations/language-clients/java/jdbc",
     "pt-BR/integrations/language-clients/java/r2dbc",
     "pt-BR/integrations/language-clients/java/date-time-guide"
-  ],
-  "root": "pt-BR/integrations/language-clients/java/index"
+  ]
 }
