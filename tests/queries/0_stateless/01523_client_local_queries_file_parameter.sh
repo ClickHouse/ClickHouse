@@ -5,8 +5,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-## Use process ID ($$) for uniqueness of file name
-TEMP_SQL_FILE_NAME=$"01523_client_local_queries_file_parameter_tmp_$$.sql"
+# Use the process ID to keep temporary files unique, and remove them on failure.
+TEMP_SQL_FILE_NAME="01523_client_local_queries_file_parameter_tmp_$$.sql"
+SECOND_SQL_FILE_NAME="${TEMP_SQL_FILE_NAME}.second"
+STDIN_DATA_FILE_NAME="${TEMP_SQL_FILE_NAME}.data"
+trap 'rm -f "$TEMP_SQL_FILE_NAME" "$SECOND_SQL_FILE_NAME" "$STDIN_DATA_FILE_NAME"' EXIT
 echo "SELECT 1;" > "$TEMP_SQL_FILE_NAME"
 $CLICKHOUSE_CLIENT --queries-file="$TEMP_SQL_FILE_NAME" 2>&1
 
@@ -21,7 +24,7 @@ echo "CREATE TABLE 01523_test (a Int64, b Int64) ENGINE = File(CSV, stdin);
 SELECT a, b FROM 01523_test;
 DROP TABLE 01523_test;" > "$TEMP_SQL_FILE_NAME"
 
-echo -e "1,2\n3,4" | $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" 2>&1
+printf '1,2\n3,4\n' | $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" 2>&1
 
 # clickhouse-local executes query files before --query. clickhouse-client still rejects the combination.
 echo "SELECT 'from file';" > "$TEMP_SQL_FILE_NAME"
@@ -31,7 +34,6 @@ $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" --query "SELECT 'from lon
 $CLICKHOUSE_CLIENT --queries-file="$TEMP_SQL_FILE_NAME" --query "SELECT 4;" 2>&1 | grep -o 'BAD_ARGUMENTS'
 
 # Multiple files run in order, and a SQL UDF created in a file is available to --query.
-SECOND_SQL_FILE_NAME="${TEMP_SQL_FILE_NAME}.second"
 printf "%s\n" "CREATE FUNCTION f_01523 AS (x) -> x + 1;" "SELECT 'first file';" > "$TEMP_SQL_FILE_NAME"
 printf "%s\n" "SELECT 'second file';" > "$SECOND_SQL_FILE_NAME"
 $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" --queries-file="$SECOND_SQL_FILE_NAME" -q "SELECT f_01523(41);" < /dev/null
@@ -42,12 +44,14 @@ echo "SELECT 'second file';" > "$SECOND_SQL_FILE_NAME"
 $CLICKHOUSE_LOCAL -q "SELECT 'first query';" --queries-file="$TEMP_SQL_FILE_NAME" -q "SELECT 'second query';" --queries-file="$SECOND_SQL_FILE_NAME" < /dev/null
 
 # Redirected stdin must not become an implicit table until after query files finish.
-STDIN_DATA_FILE_NAME="${TEMP_SQL_FILE_NAME}.data"
 printf '1,2\n3,4\n5,6\n' > "$STDIN_DATA_FILE_NAME"
 echo "SELECT count();" > "$TEMP_SQL_FILE_NAME"
 $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" < "$STDIN_DATA_FILE_NAME"
 $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" -q "SELECT count();" < "$STDIN_DATA_FILE_NAME"
 $CLICKHOUSE_LOCAL -q "SELECT count();" --queries-file="$TEMP_SQL_FILE_NAME" < "$STDIN_DATA_FILE_NAME"
+
+# Explicit input configuration keeps the stdin table available to both file and command-line queries.
+$CLICKHOUSE_LOCAL --structure "a UInt8, b UInt8" --input-format CSV --queries-file="$TEMP_SQL_FILE_NAME" -q "SELECT count();" < "$STDIN_DATA_FILE_NAME"
 
 # --copy is a format-conversion shortcut, not a second query mode for --queries-file.
 $CLICKHOUSE_LOCAL --copy --queries-file="$TEMP_SQL_FILE_NAME" --input-format CSV < "$STDIN_DATA_FILE_NAME" 2>&1 | grep -o 'BAD_ARGUMENTS'
@@ -62,4 +66,3 @@ else
     echo "unexpected output"
 fi
 
-rm "$TEMP_SQL_FILE_NAME" "$SECOND_SQL_FILE_NAME" "$STDIN_DATA_FILE_NAME"

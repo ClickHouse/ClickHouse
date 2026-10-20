@@ -5394,9 +5394,12 @@ void ClientBase::runNonInteractive()
                 return;
         }
 
+        if (queries.empty())
+            return;
+
         /// clickhouse-local runs all query files before --query regardless of argument order.
         /// clickhouse-client still rejects this combination in Client::processConfig().
-        if (queries.empty() || !beforeExecutingCommandLineQueries())
+        if (!beforeExecutingCommandLineQueries())
             return;
     }
 

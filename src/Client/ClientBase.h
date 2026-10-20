@@ -120,7 +120,7 @@ public:
 protected:
     void runInteractive();
     void runNonInteractive();
-    /// Hook for clients that need to initialize state between query files and --query.
+    /// Called after query files succeed and before processing command-line --query arguments.
     virtual bool beforeExecutingCommandLineQueries() { return true; }
 
     char * argv0 = nullptr;

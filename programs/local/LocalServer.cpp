@@ -1319,7 +1319,7 @@ void LocalServer::connect()
 bool LocalServer::executeInitialTableQuery(const String & initial_query)
 {
     /// The initial CREATE is hidden from query timing output.
-    bool print_time_to_stderr = getClientConfiguration().getBool("print-time-to-stderr", false);
+    const bool print_time_to_stderr = getClientConfiguration().getBool("print-time-to-stderr", false);
     getClientConfiguration().setBool("print-time-to-stderr", false);
     SCOPE_EXIT({ getClientConfiguration().setBool("print-time-to-stderr", print_time_to_stderr); });
     return processQueryText(initial_query);
@@ -1444,12 +1444,14 @@ try
 
     auto [table_name, initial_query] = getInitialCreateTableQuery();
 
-    /// Query files must behave as they do without --query: do not expose the inferred stdin table until they finish.
-    /// Explicit initial tables are still created before processing query files.
+    /// Query files must not see an inferred stdin table just because --query was also specified.
+    /// Explicit input tables are still created before processing query files.
+    const auto & client_config = getClientConfiguration();
+    const bool has_explicit_table_input = client_config.has("table-structure")
+        || client_config.has("table-file")
+        || client_config.has("table-data-format");
     const bool defer_implicit_stdin_table = !table_name.empty() && !queries.empty() && !queries_files.empty()
-        && !getClientConfiguration().has("table-structure")
-        && !getClientConfiguration().has("table-file")
-        && !getClientConfiguration().has("table-data-format");
+        && !has_explicit_table_input;
 
     if (defer_implicit_stdin_table)
         deferred_implicit_stdin_table.emplace(table_name, initial_query);
