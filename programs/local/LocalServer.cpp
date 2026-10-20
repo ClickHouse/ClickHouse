@@ -1459,7 +1459,20 @@ try
     connect();
 
     if (!table_name.empty())
-        executeInitialTableQuery(initial_query);
+    {
+        if (defer_implicit_stdin_table_activation)
+        {
+            /// Schema inference must not advance stdin before query files execute.
+            /// Use positional reads for the inferred table, then restore the user's
+            /// read method for file queries. The inferred table keeps its read buffer.
+            const Settings original_settings = client_context->getSettingsCopy();
+            SCOPE_EXIT({ client_context->setSettings(original_settings); });
+            client_context->setSetting("storage_file_read_method", String{"pread"});
+            executeInitialTableQuery(initial_query);
+        }
+        else
+            executeInitialTableQuery(initial_query);
+    }
 
 #if USE_FUZZING_MODE
     runLibFuzzer();

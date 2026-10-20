@@ -62,6 +62,13 @@ $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" -q "SELECT count();" < "$
 printf '%s\n' 'SET allow_experimental_kusto_dialect = 1;' "SET dialect = 'kusto';" > "$TEMP_SQL_FILE_NAME"
 $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" -q "table | count" < "$STDIN_DATA_FILE_NAME"
 
+# Inferred-table schema discovery must not consume stdin before query files read it.
+# This matters with the read method, which otherwise advances the shared descriptor.
+printf '1\n2\n3\n' > "$STDIN_DATA_FILE_NAME"
+printf '%s\n' 'CREATE TABLE stdin_source (x UInt8) ENGINE=File(TSV, stdin);' 'SELECT sum(x) FROM stdin_source;' > "$TEMP_SQL_FILE_NAME"
+$CLICKHOUSE_LOCAL --storage_file_read_method=read --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT 42 FROM system.one' < "$STDIN_DATA_FILE_NAME"
+$CLICKHOUSE_LOCAL --storage_file_read_method=read --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT count()' < "$STDIN_DATA_FILE_NAME"
+
 # --copy is a format-conversion shortcut, not a second query mode for --queries-file.
 $CLICKHOUSE_LOCAL --copy --queries-file="$TEMP_SQL_FILE_NAME" --input-format CSV < "$STDIN_DATA_FILE_NAME" 2>&1 | grep -o 'BAD_ARGUMENTS'
 
