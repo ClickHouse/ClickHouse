@@ -4312,6 +4312,30 @@ bool KeyCondition::tryMatchKeyColumnThroughMonotonicChain(
     for (auto it = chain_not_tested_for_monotonicity.rbegin(); it != chain_not_tested_for_monotonicity.rend(); ++it)
     {
         const auto & function = *it;
+
+        /// A cast may be created with a conversion mode other than the one from the query context: the join key
+        /// conversion and the runtime filters always remove the trailing zero bytes of a `FixedString` converted
+        /// to `String`. Rebuilding such a cast by name would lose it, so keep the cast of the expression.
+        const auto * dag_node = function.getDAGNode();
+        if (dag_node && dag_node->function_base && dag_node->children.size() == 2 && dag_node->children[1]->column
+            && isColumnConst(*dag_node->children[1]->column)
+            && (function.getFunctionName() == "CAST" || function.getFunctionName() == "_CAST")
+            && dag_node->function_base->getArgumentTypes()[0]->equals(*key_column_type))
+        {
+            const auto & func = dag_node->function_base;
+            if (!func->isDeterministicInScopeOfQuery() || (!assume_function_monotonicity && !func->hasInformationAboutMonotonicity()))
+                return false;
+
+            if (!assume_function_monotonicity && !isFunctionReallyMonotonic(*func, *key_column_type))
+                return false;
+
+            key_column_type = func->getResultType();
+            ColumnWithTypeAndName const_arg{dag_node->children[1]->column, dag_node->children[1]->result_type, dag_node->children[1]->result_name};
+            out_functions_chain.push_back(
+                std::make_shared<FunctionWithOptionalConstArg>(func, const_arg, FunctionWithOptionalConstArg::Kind::RIGHT_CONST));
+            continue;
+        }
+
         auto func_builder = FunctionFactory::instance().tryGet(function.getFunctionName(), node.getContext());
         if (!func_builder)
             return false;
