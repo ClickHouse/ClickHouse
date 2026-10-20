@@ -1,4 +1,5 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//src:common_io_flags.bzl", "CLICKHOUSE_COMMON_IO_LOCAL_DEFINES")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -22,7 +23,6 @@ exports_files([
     "BlobStorageLogWriter.cpp",
     "BufferAllocationPolicy.cpp",
     "CalendarTimeInterval.cpp",
-    "CaresPTRResolver.cpp",
     "CgroupsMemoryUsageObserver.cpp",
     "ClickHouseRevision.cpp",
     "ClickHouseVersion.cpp",
@@ -536,11 +536,31 @@ ch_cc_library(
     source_headers = False,
 )
 
+ch_cc_library(
+    name = "cares_ptr_resolver",
+    srcs = ["CaresPTRResolver.cpp"],
+    hdrs = ["CaresPTRResolver.h"],
+    clickhouse_code = True,
+    copts = ["-Wno-reserved-identifier"],
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    source_headers = False,
+    strip_include_prefix = "/src",
+    deps = [
+        ":headers",
+        "@clickhouse_c_ares//:_c-ares",
+    ],
+)
+
 cc_library(
     name = "headers",
-    hdrs = glob(["**/*.h"]),
+    hdrs = glob(
+        ["**/*.h"],
+        exclude = ["CaresPTRResolver.h"],
+    ),
     textual_hdrs = glob(["**/*.inc"]),
     deps = [
+        "//src:headers",
+        "//base:base_headers",
         "//bazel:clickhouse_config_headers",
         "//base/poco/Net:_poco_net",
     ] + [

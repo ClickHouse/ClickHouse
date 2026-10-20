@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -28,9 +27,4 @@ ch_cc_library(
         "@clickhouse_llvm_project//:clang_rt_builtins",
         "//base/glibc-compatibility",
     ],
-)
-
-cc_library(
-    name = "headers",
-    hdrs = glob(["**/*.h"]),
 )

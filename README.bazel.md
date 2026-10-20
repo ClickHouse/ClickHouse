@@ -94,9 +94,12 @@ defines and include directories. Its positive and negative tests passed on
 both with and without system include treatment on the test libraries.
 Recompile each library after removing reported unused dependencies: a
 dependency can supply an include directory for a header owned by another
-dependency. DWYU does not diagnose that separately. For example, removing
-all five reported unused dependencies from `//src:clickhouse_common_io__compile_1`
-still requires its header owner to publish the `Common/...` include prefix.
+dependency. DWYU does not diagnose that separately.
+`//src/Common:cares_ptr_resolver` now owns its source and header and publishes
+the `Common/...` include prefix. Its real compile and both strict DWYU reports
+for it and `//base/readpassphrase` passed on
+[`eb7b5b543`](https://app.buildbuddy.io/invocation/3368dac8-1546-4214-966d-8537faf7e80c).
+These checks do not establish repository-wide DWYU cleanliness.
 
 ## Binary comparison
 
@@ -140,6 +143,7 @@ CMake hash recorded below.
 | `8a53eb4fb` (verification snapshot) | Stop publishing the entire Linux sysroot in every native library’s headers and remove implicit LLVM API header dependencies | [0b00df52](https://app.buildbuddy.io/invocation/0b00df52-f1ef-4819-a5bf-c0659491e127) | [1e8ba352](https://app.buildbuddy.io/invocation/1e8ba352-3618-45d3-8202-ce8ce9bec696) |
 | `2003dfd8b` (verification snapshot) | Put OpenSSL, IO, Google Cloud and AWS headers on their compiled owners, keep first-party implementation headers private, and remove Poco NetSSL and Foundation header cycles | [d402dea2](https://app.buildbuddy.io/invocation/d402dea2-7edb-4a62-9f15-2b5be0729a56) | [0662ba9d](https://app.buildbuddy.io/invocation/0662ba9d-43f5-4225-95e0-30183193b590) |
 | `efc95a005` (verification snapshot) | Complete NetSSL and IO header ownership; put Abseil, gRPC, Kafka, Wasmtime and libpqxx headers on their compiled owners; remove inherited header and runtime dependencies; normalize Bazel labels; use Clang in DWYU | [e414861c](https://app.buildbuddy.io/invocation/e414861c-295a-4a5a-926b-67ff5d5a29db) | [a3557b7c](https://app.buildbuddy.io/invocation/a3557b7c-8477-43eb-b681-d54bd9a72d66) |
+| `eb7b5b543` (verification snapshot) | Use the compiled Cares, farmhash, metrohash, MurmurHash and bech32 libraries as header owners; keep every IO archive member in its original position; check standalone exported macros in DWYU | [1f816158](https://app.buildbuddy.io/invocation/1f816158-633c-42e4-a617-accce026ef07) | [bb3f2893](https://app.buildbuddy.io/invocation/bb3f2893-a634-4682-97fe-fc19082bb8b8) |
 
 The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`

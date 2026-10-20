@@ -28,7 +28,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      return includes, quote_includes, external_includes, system_includes
  
  def _process_target(ctx, target, config, output_path, is_target_under_inspection):
-@@ -386,12 +391,104 @@
+@@ -386,12 +391,109 @@
          return []
      return [OutputGroupInfo(dwyu = depset(transitive = _gather_transitive_reports(ctx)))]
  
@@ -89,8 +89,13 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +        # Placing -x before the input matters for .h, .inc and generated files.
 +        # Replace -c with -E; Clang rejects both under -Werror. -dI emits active includes.
 +        args = ctx.actions.args()
-+        args.add_all(["-x", language if file.extension in ["c", "cc", "cpp", "cxx", "c++", "C"] else language + "-header"])
++        is_source = file.extension in ["c", "cc", "cpp", "cxx", "c++", "C"]
++        args.add_all(["-x", language if is_source else language + "-header"])
 +        args.add_all(["-E" if opt == "-c" else opt for opt in command])
++        if not is_source:
++            # A standalone header exports macros to its includer. There is no
++            # includer during this action, so Clang cannot determine macro use.
++            args.add("-Wno-unused-macros")
 +        args.add("-dI")
 +        ctx.actions.run(
 +            executable = cc_common.get_tool_for_action(feature_configuration = feature_configuration, action_name = action_name),
@@ -134,7 +139,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
      # Work around the bug described in https://github.com/bazelbuild/bazel/issues/19663
      # Implementation_deps are not added to CcInfo.compilation_context
-@@ -511,7 +608,7 @@
+@@ -511,7 +613,7 @@
  
      config = _make_dwyu_config(ctx)
  
@@ -143,7 +148,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      processed_target = _process_target(
          ctx,
          target = struct(label = target.label, cc_info = target[CcInfo]),
-@@ -536,6 +633,7 @@
+@@ -536,6 +638,7 @@
          files = public_files,
          defines = defines,
          cc_toolchain = cc_toolchain,
@@ -151,7 +156,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
          attr_prefix = "pub",
      )
      preprocessed_private_files = _extract_includes_from_files(
-@@ -545,6 +643,7 @@
+@@ -545,6 +648,7 @@
          files = private_files,
          defines = defines,
          cc_toolchain = cc_toolchain,

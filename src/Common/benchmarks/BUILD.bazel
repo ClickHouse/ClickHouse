@@ -834,7 +834,6 @@ ch_cc_library(
         "@clickhouse_xxhash//:xxHash",
         "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
         "@clickhouse_wyhash//:wyhash",
-        "//contrib/libfarmhash:headers",
         "//:headers",
         "//src:headers",
     ],

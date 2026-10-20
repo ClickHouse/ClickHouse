@@ -10,7 +10,7 @@ CMAKE_LINK = {
     "@clickhouse_llvm_project//:libllvmlibc__compile_0",
     "//src/Common:clickhouse_new_delete",
     "//src:clickhouse_common_io__compile_0",
-    "//src:clickhouse_common_io__compile_1",
+    "//src/Common:cares_ptr_resolver",
     "//src:clickhouse_common_io__compile_2",
     "//src:clickhouse_common_io__compile_3",
     "//base:harmful",

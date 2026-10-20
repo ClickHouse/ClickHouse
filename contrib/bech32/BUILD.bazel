@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -10,7 +9,7 @@ exports_files([
 ch_cc_library(
     name = "_bech32",
     srcs = ["src/bech32.cpp"],
-    hdrs = ["include/bech32.h"],
+    hdrs = glob(["include/*.h"]),
     copts = [
         "-w",
         "-std=c++23",
@@ -29,9 +28,4 @@ ch_cc_library(
         "@clickhouse_llvm_project//:clang_rt_builtins",
         "//base/glibc-compatibility",
     ],
-)
-
-cc_library(
-    name = "headers",
-    hdrs = glob(["**/*.h"]),
 )

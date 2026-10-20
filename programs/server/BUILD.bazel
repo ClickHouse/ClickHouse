@@ -156,9 +156,5 @@ ch_cc_library(
         "@clickhouse_sqids_cpp//:sqids_cpp",
         "@clickhouse_wagyu//:wagyu",
         "@clickhouse_wyhash//:wyhash",
-        "//contrib/bech32:headers",
-        "//contrib/libfarmhash:headers",
-        "//contrib/libmetrohash:headers",
-        "//contrib/murmurhash:headers",
     ],
 )

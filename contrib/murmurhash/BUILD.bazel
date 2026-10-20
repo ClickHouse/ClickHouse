@@ -13,10 +13,7 @@ ch_cc_library(
         "src/MurmurHash2.cpp",
         "src/MurmurHash3.cpp",
     ],
-    hdrs = [
-        "include/MurmurHash2.h",
-        "include/MurmurHash3.h",
-    ],
+    hdrs = glob(["include/*.h"]),
     copts = [
         "-w",
         "-std=c++23",
@@ -34,11 +31,6 @@ ch_cc_library(
         "@clickhouse_llvm_project//:clang_rt_builtins",
         "//base/glibc-compatibility",
     ],
-)
-
-cc_library(
-    name = "headers",
-    hdrs = glob(["**/*.h"]),
 )
 
 cc_library(

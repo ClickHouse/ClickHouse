@@ -1,5 +1,6 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_prefix_maps", "repository_path")
+load("@clickhouse//src:common_io_flags.bzl", "CLICKHOUSE_COMMON_IO_LOCAL_DEFINES")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
@@ -1153,72 +1154,6 @@ _PRIVATE_IO_HEADERS = [
     "IO/SnappyFramedWriteBuffer.h",
 ]
 
-_CLICKHOUSE_COMMON_IO_LOCAL_DEFINES = select({
-    "@platforms//cpu:x86_64": [],
-    "@platforms//cpu:aarch64": [
-        "ARM_ACLE",
-        "ARM_ASM_HWCAP",
-        "ARM_AUXV_HAS_CRC32",
-        "ARM_AUXV_HAS_NEON",
-        "ARM_FEATURES",
-        "ARM_NEON",
-        "ARM_NEON_HASLD4",
-    ],
-}) + [
-    "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
-    "BOOST_ASIO_STANDALONE=1",
-    "BOOST_TIMER_ENABLE_DEPRECATED=1",
-    "ENABLE_DISTRIBUTED_CACHE=0",
-    "ENABLE_MULTITARGET_CODE=1",
-    "FIU_ENABLE",
-] + select({
-    "@platforms//cpu:x86_64": [],
-    "@platforms//cpu:aarch64": [
-        "HAVE_ARM_ACLE_H",
-    ],
-}) + [
-    "HAVE_ATTRIBUTE_ALIGNED",
-    "HAVE_BUILTIN_CTZ",
-    "HAVE_BUILTIN_CTZLL",
-    "HAVE_CONFIG_H",
-    "HAVE_POSIX_MEMALIGN",
-] + select({
-    "@platforms//cpu:x86_64": [],
-    "@platforms//cpu:aarch64": [
-        "HAVE_SYS_AUXV_H",
-    ],
-}) + [
-    "HAVE_VISIBILITY_HIDDEN",
-    "HAVE_VISIBILITY_INTERNAL",
-    "JEMALLOC_NO_RENAME",
-    "MZ_COMPAT_VERSION=110",
-    "PICOJSON_USE_LOCALE=0",
-    "POCO_ENABLE_CPP11",
-    "POCO_OS_FAMILY_UNIX",
-    "STD_EXCEPTION_HAS_STACK_TRACE=1",
-    "SZ_DYNAMIC_DISPATCH=1",
-    "UNALIGNED_OK",
-    "WITH_COVERAGE=0",
-    "WITH_COVERAGE_DEPTH=0",
-    "WITH_GZFILEOP",
-    "X86_64",
-] + select({
-    "@platforms//cpu:x86_64": [
-        "X86_AVX2",
-        "X86_FEATURES",
-        "X86_PCLMULQDQ_CRC",
-        "X86_SSE2",
-        "X86_SSE42",
-        "X86_SSSE3",
-    ],
-    "@platforms//cpu:aarch64": [],
-}) + [
-    "ZLIB_COMPAT",
-    "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-    "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-    "_LIBUNWIND_IS_NATIVE_ONLY",
-]
-
 ch_cc_library(
     name = "clickhouse_common_io__compile_0",
     srcs = [
@@ -1502,6 +1437,7 @@ ch_cc_library(
     additional_compiler_inputs = ["//bazel:gen/embedded/contrib/nlp-data/charset.zst"],
     clickhouse_code = True,
     implementation_deps = [
+        "//src/Common:cares_ptr_resolver",
         "//src/Access/Common:headers",
         "//src/AggregateFunctions:headers",
         "//src/Common/Config:headers",
@@ -1547,7 +1483,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     includes = ["."],
-    local_defines = _CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
     source_headers = False,
     deps = [
         ":headers",
@@ -1573,24 +1509,6 @@ ch_cc_library(
 )
 
 ch_cc_library(
-    name = "clickhouse_common_io__compile_1",
-    srcs = ["//src/Common:CaresPTRResolver.cpp"],
-    clickhouse_code = True,
-    copts = ["-Wno-reserved-identifier"],
-    implementation_deps = [
-        ":headers",
-        "//base:base_headers",
-        "//base/poco/Foundation:_poco_foundation",
-        "//src/Common:headers",
-        "@clickhouse_c_ares//:_c-ares",
-        "@clickhouse_fmtlib//:_fmt",
-        "@clickhouse_magic_enum//:magic_enum",
-    ],
-    local_defines = _CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
-    source_headers = False,
-)
-
-ch_cc_library(
     name = "clickhouse_common_io__compile_2",
     srcs = ["//src/Common:IntervalTree.cpp"],
     clickhouse_code = True,
@@ -1605,7 +1523,7 @@ ch_cc_library(
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_jemalloc//:_jemalloc",
     ],
-    local_defines = _CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
     source_headers = False,
 )
 
@@ -1629,7 +1547,7 @@ ch_cc_library(
         "@clickhouse_jemalloc//:_jemalloc",
         "@clickhouse_magic_enum//:magic_enum",
     ],
-    local_defines = _CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
     source_headers = False,
 )
 
@@ -1707,7 +1625,7 @@ cc_library(
         "@clickhouse_google_protobuf//:utf8_validity",
         "//base/widechar_width",
         ":clickhouse_common_io__compile_0",
-        ":clickhouse_common_io__compile_1",
+        "//src/Common:cares_ptr_resolver",
         ":clickhouse_common_io__compile_2",
         ":clickhouse_common_io__compile_3",
     ],
