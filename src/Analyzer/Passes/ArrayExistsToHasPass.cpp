@@ -134,8 +134,18 @@ public:
         /// of floats (`Tuple(Float64)`, `Variant(Float64)`, ...) is compared by `has` with the generic
         /// column comparison, which treats two NaNs as equal, while `equals` compares the nested
         /// values numerically: `arrayExists(x -> x = tuple(nan), [tuple(nan)])` is false, but
-        /// `has([tuple(nan)], tuple(nan))` is true.
-        if ((!isFloat(nested_type) && containsFloat(nested_type)) || (!isFloat(constant_type) && containsFloat(constant_type)))
+        /// `has([tuple(nan)], tuple(nan))` is true. The same holds for `BFloat16`, which the numeric
+        /// dispatch of `has` does not cover, and for an `Array(LowCardinality(Float64))`, which `has`
+        /// searches by dictionary lookup.
+        auto is_numerically_compared_float = [](const DataTypePtr & type)
+        {
+            WhichDataType which(type);
+            return which.isFloat32() || which.isFloat64();
+        };
+        if (containsFloat(nested_type)
+            && (!is_numerically_compared_float(nested_type) || array_type->getNestedType()->lowCardinality()))
+            return;
+        if (containsFloat(constant_type) && !is_numerically_compared_float(constant_type))
             return;
 
         bool types_compatible = (isNativeNumber(nested_type) || isEnum(nested_type)) && isNativeNumber(constant_type);
