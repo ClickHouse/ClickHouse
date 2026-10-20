@@ -529,6 +529,11 @@ void filterPartsAndCollectProjectionCandidates(
     const ActionsDAG::Node * filter_node,
     const ContextPtr & context)
 {
+    /// The analysis evaluates the filter on the projection part's own rows.
+    for (const auto & name : ActionsDAG::cloneSubDAG({filter_node}, /*remove_aliases=*/ false).getRequiredColumnsNames())
+        if (projection.metadata->virtuals.has(name) && !projection.canProvideParentColumn(name))
+            return;
+
     RangesInDataParts projection_parts;
     std::unordered_set<const IMergeTreeDataPart *> valid_parts;
 

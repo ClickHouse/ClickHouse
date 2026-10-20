@@ -128,7 +128,7 @@ const ProjectionDescription * chooseCommitOrderProjection(const StorageInMemoryM
         if (sorting_key.size() < 2 || sorting_key[0] != BlockNumberColumn::name || sorting_key[1] != BlockOffsetColumn::name)
             continue;
 
-        auto has_column = [&](const String & column) { return projection.sample_block.findColumnOrSubcolumnByName(column).has_value() || projection.metadata->virtuals.has(column); };
+        auto has_column = [&](const String & column) { return projection.canProvideParentColumn(column); };
         if (std::ranges::all_of(columns, has_column))
             return &projection;
     }
