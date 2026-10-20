@@ -62,6 +62,14 @@ def test_optimize(started_cluster_iceberg_with_spark, storage_type):
         "SELECT number FROM numbers(20, 90)"
     )
 
+    # The summary of the compaction's snapshot describes the compaction, not the Spark write it is built on.
+    spark_keys = "arrayFilter(k -> startsWith(k, 'spark.') OR k IN ('engine-name', 'engine-version', 'app-id'), mapKeys(summary))"
+    latest = instance.query(
+        f"SELECT operation, {spark_keys} FROM system.iceberg_history WHERE table = '{TABLE_NAME}' AND is_current_ancestor "
+        "ORDER BY made_current_at DESC LIMIT 2"
+    ).splitlines()
+    assert latest[0] == "REPLACE\t[]" and latest[1].startswith("APPEND\t['"), latest
+
     # Earlier snapshots are not changed by the compaction: time travel still returns the rows before the DELETE.
     assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id SETTINGS iceberg_snapshot_id = {snapshot_id}") == instance.query(
         "SELECT number FROM numbers(10, 90)"

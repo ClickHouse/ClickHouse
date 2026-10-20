@@ -1472,7 +1472,7 @@ void compactIcebergTable(
                 update.added_files_size += rewritten.bytes;
             }
 
-            /// The parent's extra summary fields (e.g. the refresh cursor) are carried forward, minus the ones this summary sets itself.
+            /// Of the parent's extra summary fields only the refresh cursor is carried forward; the others describe the parent's own write.
             SnapshotSummaryExtraFields extra_fields;
             if (current_snapshot->has(Iceberg::f_summary))
             {
@@ -1484,9 +1484,9 @@ void compactIcebergTable(
                         "Cannot use summary of parent snapshot {} for compaction: {}",
                         current_snapshot_id,
                         parent_summary.error());
-                extra_fields = parent_summary->getExtraFields();
-                for (const auto & key : SnapshotSummary(update, totals).toJSON()->getNames())
-                    extra_fields.erase(key);
+                const auto & parent_extra_fields = parent_summary->getExtraFields();
+                if (auto it = parent_extra_fields.find(Iceberg::f_refresh_cursor); it != parent_extra_fields.end())
+                    extra_fields.insert(*it);
             }
             SnapshotSummary summary(update, totals, std::move(extra_fields));
 
