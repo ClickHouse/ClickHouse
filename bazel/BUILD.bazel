@@ -284,3 +284,12 @@ embed_clickstack(
         "//conditions:default": -1,
     }),
 )
+
+filegroup(
+    name = "cctz_timezone_data",
+    srcs = [
+        out
+        for out in CODEGEN_RULES["generate_native_embedded_sources"]["outs"]
+        if out.startswith("gen/embedded/contrib/cctz/testdata/zoneinfo/")
+    ],
+)

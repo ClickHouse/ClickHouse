@@ -46,10 +46,7 @@ ch_cc_library(
         "xmlsave.c",
         "debugXML.c",
     ],
-    hdrs = [
-        "@clickhouse//contrib/libxml2-cmake:linux_x86_64/include/config.h",
-        "@clickhouse//contrib/libxml2-cmake:linux_x86_64/include/libxml/xmlversion.h",
-    ] + glob([
+    hdrs = glob([
         "**/*.h",
         "**/*.inc",
     ]),
@@ -109,5 +106,5 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = ["@clickhouse_zlib_ng//:_zlib"],
+    deps = ["@clickhouse_zlib_ng//:_zlib"] + ["@clickhouse//contrib/libxml2-cmake:headers"],
 )

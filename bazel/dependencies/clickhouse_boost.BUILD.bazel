@@ -151,18 +151,11 @@ ch_cc_library(
         "libs/iostreams/src/zlib.cpp",
         "libs/iostreams/src/zstd.cpp",
     ],
-    hdrs = select({
-        "@platforms//cpu:x86_64": glob([
-            "libs/iostreams/**/*.h",
-            "libs/iostreams/**/*.hpp",
-            "libs/iostreams/**/*.inc",
-        ]),
-        "@platforms//cpu:aarch64": glob([
-            "libs/iostreams/**/*.h",
-            "libs/iostreams/**/*.hpp",
-            "libs/iostreams/**/*.inc",
-        ]),
-    }),
+    hdrs = glob([
+        "libs/iostreams/**/*.h",
+        "libs/iostreams/**/*.hpp",
+        "libs/iostreams/**/*.inc",
+    ]),
     additional_compiler_inputs = [
         "libs/iostreams/test/bzip2-1.0.8/libbz2.def",
         "libs/iostreams/test/zlib-1.2.11/contrib/vstudio/vc10/zlibvc.def",

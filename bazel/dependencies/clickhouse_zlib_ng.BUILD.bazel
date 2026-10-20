@@ -97,7 +97,6 @@ ch_cc_library(
         ":config/contrib/zlib-ng-cmake/zlib.h",
         ":config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
     ] + glob(["**/*.h"]),
-    additional_compiler_inputs = [":config/contrib/zlib-ng-cmake/gzread.c"],
     copts = [
         "-w",
         "-std=gnu11",

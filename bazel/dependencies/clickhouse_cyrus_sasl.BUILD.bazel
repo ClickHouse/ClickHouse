@@ -36,7 +36,6 @@ ch_cc_library(
         "lib/dlopen.c",
         "lib/client.c",
         "lib/checkpw.c",
-        "@clickhouse//contrib/cyrus-sasl-cmake:config.h",
     ] + glob(["**/*.h"]),
     hdrs = [
         ":config/contrib/cyrus-sasl-cmake/prop.h",
@@ -48,7 +47,7 @@ ch_cc_library(
         "-I",
         "contrib/cyrus-sasl-cmake",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"] + ["@clickhouse//contrib/cyrus-sasl-cmake:headers"],
     language = "C",
     local_defines = [
         "'CONFIGDIR=\"\"'",

@@ -144,10 +144,6 @@ ch_cc_library(
     deps = [
         ":aws_c_common_headers",
     ],
-    alwayslink = select({
-        "@platforms//cpu:x86_64": False,
-        "@platforms//cpu:aarch64": False,
-    }),
 )
 
 cc_library(

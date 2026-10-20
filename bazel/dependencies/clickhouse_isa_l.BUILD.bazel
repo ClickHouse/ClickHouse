@@ -97,7 +97,6 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
-    deps = [],
 )
 
 nasm_objects(

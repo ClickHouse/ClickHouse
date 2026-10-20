@@ -62,8 +62,7 @@ ch_cc_library(
     name = "_zstd__compile_1",
     srcs = [
         "lib/decompress/huf_decompress_amd64.S",
-    ],
-    hdrs = glob(["lib/**/*.h"]),
+    ] + glob(["lib/**/*.h"]),
     copts = [
         "-D",
         "ZSTD_LEGACY_SUPPORT=1",

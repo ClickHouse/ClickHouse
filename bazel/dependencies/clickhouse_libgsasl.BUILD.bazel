@@ -60,7 +60,7 @@ ch_cc_library(
         "cram-md5/server.c",
         "cram-md5/digest.c",
     ] + glob(["digest-md5/*.c"]) + glob(["login/*.c"]) + glob(["gssapi/*.c"]),
-    hdrs = ["@clickhouse//contrib/libgsasl-cmake:linux_x86_64/include/config.h"] + glob(["**/*.h"]),
+    hdrs = glob(["**/*.h"]),
     copts = [
         "-w",
         "-std=gnu11",
@@ -86,5 +86,5 @@ ch_cc_library(
         "gl",
         "digest-md5",
     ],
-    deps = ["@clickhouse_krb5//:_krb5"],
+    deps = ["@clickhouse_krb5//:_krb5"] + ["@clickhouse//contrib/libgsasl-cmake:headers"],
 )

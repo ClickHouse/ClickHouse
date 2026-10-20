@@ -102,10 +102,6 @@ ch_cc_library(
         ]),
         "@platforms//cpu:aarch64": [],
     }),
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [],
-    }),
     arches = [
         "x86_64",
     ],
@@ -170,10 +166,6 @@ ch_cc_library(
             "include/**/*.h",
             "src/lib/**/*.h",
         ]),
-        "@platforms//cpu:aarch64": [],
-    }),
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [],
     }),
     arches = [
@@ -252,10 +244,6 @@ ch_cc_library(
         ]),
         "@platforms//cpu:aarch64": [],
     }),
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [],
-    }),
     arches = [
         "x86_64",
     ],
@@ -286,10 +274,6 @@ ch_cc_library(
             "include/**/*.h",
             "src/lib/**/*.h",
         ]),
-        "@platforms//cpu:aarch64": [],
-    }),
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [],
     }),
     arches = [
@@ -352,10 +336,6 @@ ch_cc_library(
         ]),
         "@platforms//cpu:aarch64": [],
     }),
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [],
-    }),
     arches = [
         "x86_64",
     ],
@@ -386,10 +366,6 @@ ch_cc_library(
             "include/**/*.h",
             "src/lib/**/*.h",
         ]),
-        "@platforms//cpu:aarch64": [],
-    }),
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [],
     }),
     arches = [

@@ -106,10 +106,7 @@ ch_cc_library(
         "libarchive/filter_fork_windows.c",
         "libarchive/xxhash.c",
     ],
-    hdrs = select({
-        "@platforms//cpu:x86_64": glob(["libarchive/**/*.h"]),
-        "@platforms//cpu:aarch64": glob(["libarchive/**/*.h"]),
-    }),
+    hdrs = glob(["libarchive/**/*.h"]),
     copts = [
         "-w",
         "-std=gnu11",

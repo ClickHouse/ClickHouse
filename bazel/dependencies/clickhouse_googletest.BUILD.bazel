@@ -18,7 +18,7 @@ ch_cc_library(
     name = "_gmock",
     srcs = [
         "googlemock/src/gmock-all.cc",
-    ] + glob(["googlemock/test/*.h"]),
+    ],
     hdrs = glob(["googlemock/include/**/*.h"]),
     additional_compiler_inputs = [
         "googlemock/src/gmock-cardinalities.cc",
@@ -58,11 +58,7 @@ ch_cc_library(
     name = "_gtest",
     srcs = [
         "googletest/src/gtest-all.cc",
-    ] + glob([
-        "googletest/samples/*.h",
-        "googletest/src/*.h",
-        "googletest/test/*.h",
-    ]),
+    ] + glob(["googletest/src/*.h"]),
     hdrs = glob(["googletest/include/**/*.h"]),
     additional_compiler_inputs = [
         "googletest/src/gtest-assertion-result.cc",

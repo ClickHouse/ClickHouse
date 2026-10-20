@@ -945,14 +945,7 @@ cc_binary(
     name = "parquet_dump_schema",
     srcs = [
         "cpp/tools/parquet/parquet_dump_schema.cc",
-    ] + glob(
-        [
-            "cpp/src/**/*.h",
-            "cpp/src/**/*.hpp",
-            "cpp/src/**/*.tcc",
-        ],
-        exclude = ["cpp/src/generated/*_generated.h"],
-    ),
+    ],
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
     ],
@@ -971,14 +964,7 @@ cc_binary(
     name = "parquet_reader",
     srcs = [
         "cpp/tools/parquet/parquet_reader.cc",
-    ] + glob(
-        [
-            "cpp/src/**/*.h",
-            "cpp/src/**/*.hpp",
-            "cpp/src/**/*.tcc",
-        ],
-        exclude = ["cpp/src/generated/*_generated.h"],
-    ),
+    ],
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
     ],
@@ -997,14 +983,7 @@ cc_binary(
     name = "parquet_scan",
     srcs = [
         "cpp/tools/parquet/parquet_scan.cc",
-    ] + glob(
-        [
-            "cpp/src/**/*.h",
-            "cpp/src/**/*.hpp",
-            "cpp/src/**/*.tcc",
-        ],
-        exclude = ["cpp/src/generated/*_generated.h"],
-    ),
+    ],
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
     ],
