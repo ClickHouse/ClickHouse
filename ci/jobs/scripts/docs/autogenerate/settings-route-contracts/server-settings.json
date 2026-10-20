@@ -127,6 +127,7 @@
     {"prefix":"show","mode":"token","target":"/reference/settings/server-settings/settings/show"},
     {"prefix":"skip","mode":"token","target":"/reference/settings/server-settings/settings/skip"},
     {"prefix":"user","mode":"token","target":"/reference/settings/server-settings/settings/user"},
+    {"prefix":"gpu","mode":"token","target":"/reference/settings/server-settings/settings/gpu"},
     {"prefix":"max","mode":"token","target":"/reference/settings/server-settings/settings/max"},
     {"prefix":"min","mode":"token","target":"/reference/settings/server-settings/settings/min"},
     {"prefix":"tmp","mode":"token","target":"/reference/settings/server-settings/settings/tmp"},
