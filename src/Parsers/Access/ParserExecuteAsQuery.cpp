@@ -139,8 +139,9 @@ the same value for itself. A nested `EXECUTE AS` keeps the values: the next user
 The values also reach the remote nodes of a distributed query over a cluster with `<secret>`, which check them against
 the same user there; the query fails if a remote node does not have the feature enabled or is of an older version.
 Over a cluster without `<secret>` the remote node does not apply the constraints of the user. Other ways a query is run
-again, for example `INSERT` into a `Distributed` table, `ON CLUSTER` queries or background operations, run without the
-values. Use `getSetting` rather than `getSettingOrDefault` in such a row policy, so that a query without the value fails.
+again, for example `INSERT` into a `Distributed` table, `ON CLUSTER` queries or background operations, do not carry the
+values; at most they pass a value on as an ordinary setting, subject to the constraints of the user they run as. Use
+`getSetting` rather than `getSettingOrDefault` in such a row policy, so that a query without the value fails.
 
 ```sql
 CREATE SETTINGS PROFILE tenant_lock SETTINGS SQL_tenant CONST;
