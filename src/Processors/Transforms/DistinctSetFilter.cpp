@@ -273,6 +273,8 @@ namespace
 /// duplicates by the `LowCardinality` dictionary index, or `NULL`-key rows in the `skip_null_keys` mode -
 /// which are never inserted; `mask` may be `nullptr`.
 /// Returns the number of input rows processed: all of them, or the prefix before the observed cancellation.
+/// On cancellation the unprocessed tail of `filter` is left uninitialized: the only caller that passes a
+/// cancellation flag (`filterImpl`) discards the filter together with the rest of the chunk.
 template <typename Method>
 size_t buildDistinctFilter(
     Method & method,
@@ -294,12 +296,7 @@ size_t buildDistinctFilter(
                     cancellation_flag,
                     begin ? FailPoints::distinct_transform_pause : nullptr,
                     "Cancelled while hashing rows with a mask"))
-            {
-                /// Zero the unprocessed tail so the filter still holds exactly one `1` per row
-                /// inserted into the set below, keeping the `num_selected` accounting consistent.
-                std::fill(filter.begin() + begin, filter.end(), 0);
                 return begin;
-            }
 
             const size_t end = std::min(begin + CANCELLATION_POLL_ROWS, rows);
             for (size_t i = begin; i < end; ++i)
@@ -324,10 +321,7 @@ size_t buildDistinctFilter(
                     cancellation_flag,
                     begin ? FailPoints::distinct_transform_pause : nullptr,
                     "Cancelled while hashing rows without a mask"))
-            {
-                std::fill(filter.begin() + begin, filter.end(), 0);
                 return begin;
-            }
 
             const size_t end = std::min(begin + CANCELLATION_POLL_ROWS, rows);
             for (size_t i = begin; i < end; ++i)
@@ -701,6 +695,8 @@ DistinctSetFilter::FilterResult DistinctSetFilter::filterImpl(Chunk chunk, const
     /// (`DistinctTransform`) drops the returned chunk as soon as it sees the same flag, so filtering the
     /// columns here would only allocate copies that are thrown away. The insertion-check path has no
     /// cancellation flag: `ExternalDistinctTransform` must keep the accepted prefix to spill it.
+    /// Because the filter is discarded here too, `buildDistinctFilter` leaves its unprocessed tail
+    /// uninitialized instead of zeroing it.
     if (isCancelled(cancellation_flag))
         return {{}, processed_rows};
 
