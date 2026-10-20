@@ -120,9 +120,20 @@ public:
         last_string_start = 0;
         in_string = false;
         escaped = false;
+        in_exponent = false;
     }
 
-    Ch Peek() const { return position == data.size() ? '\0' : data[position]; }
+    /// Even with kParseNumbersAsStringsFlag, RapidJSON rejects valid exponents above
+    /// the double range. Give its parser zero exponent digits, while retaining the
+    /// original bytes and offsets for JSONTreeBuilder's raw-number slices.
+    Ch Peek() const
+    {
+        if (position == data.size())
+            return '\0';
+
+        const Ch value = data[position];
+        return in_exponent && value >= '0' && value <= '9' ? '0' : value;
+    }
 
     Ch Take()
     {
@@ -131,6 +142,7 @@ public:
 
         const size_t offset = position;
         const Ch value = data[position++];
+        bool exponent_digit = false;
         if (in_string)
         {
             if (escaped)
@@ -143,10 +155,22 @@ public:
         else if (value == '"')
         {
             in_string = true;
+            in_exponent = false;
             last_string_start = offset;
         }
+        else if (in_exponent)
+        {
+            if (value >= '0' && value <= '9')
+                exponent_digit = true;
+            else if (value != '+' && value != '-')
+                in_exponent = false;
+        }
+        else if (value == 'e' || value == 'E')
+        {
+            in_exponent = true;
+        }
 
-        return value;
+        return exponent_digit ? '0' : value;
     }
 
     size_t Tell() const { return position; }
@@ -162,6 +186,7 @@ private:
     size_t last_string_start = 0;
     bool in_string = false;
     bool escaped = false;
+    bool in_exponent = false;
 };
 
 class JSONTreeBuilder : public rapidjson::BaseReaderHandler<rapidjson::UTF8<char>, JSONTreeBuilder>

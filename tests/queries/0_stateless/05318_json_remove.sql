@@ -17,6 +17,9 @@ SELECT JSONRemove('{"a":1}', '$.missing') FORMAT TSV;
 SELECT JSONRemove('{"a":1}', '$.a.b') FORMAT TSV;
 SELECT JSONRemove('{"a.b":1,"c":2}', '$["a.b"]') FORMAT TSV;
 SELECT JSONRemove('[0,1,2]', '$[1 to 2]') FORMAT TSV;
+-- The largest encodable single-position range is a missing path, not index zero.
+SELECT JSONRemove('[10,20]', '$[4294967294]') FORMAT TSV;
+SELECT JSONRemove('[10,20]', '$[4294967294 to 4294967295]') FORMAT TSV;
 SELECT JSON_REMOVE('[0,1,2]', '$[1]') FORMAT TSV;
 SELECT JSONRemove('42', '$.a') FORMAT TSV;
 SELECT JSONRemove(' { "a" : 1 } ', '$.missing') FORMAT TSV;
@@ -26,6 +29,15 @@ SELECT JSONRemove('{"a":0,"a":{"x":1}}', '$.a.x') FORMAT TSV;
 SELECT JSONRemove('{"a":{"b":{"x":1},"b":{"x":2}},"a":{"b":{"x":3}}}', '$.a.b.x') FORMAT TSV;
 SELECT JSONRemove('{"a":[{"x":1},{"x":2}],"a":[{"x":3},{"x":4}]}', '$.a[1].x') FORMAT TSV;
 SELECT JSONRemove('{"big":18446744073709551617,"a":1,"exp":1e+308,"text":"18446744073709551617"}', '$.a') FORMAT TSV;
+-- Preserve original exponent tokens, even when outside the double range.
+SELECT JSONRemove('{"keep":1e309,"drop":0}', '$.drop') FORMAT TSV;
+SELECT JSONRemove('{"drop":1e309,"keep":0}', '$.drop') FORMAT TSV;
+SELECT JSONRemove('{"keep":-1E+99999999999999999999,"drop":0}', '$.drop') FORMAT TSV;
+SELECT JSONRemove('{"keep":1e-99999999999999999999,"drop":0}', '$.drop') FORMAT TSV;
+SELECT JSONRemove('{"keep":1e309,"string":"1e309","drop":0}', '$.drop') FORMAT TSV;
+SELECT JSONRemove('[1e309,2]', '$[0]') FORMAT TSV;
+SELECT JSONRemove('[1e309,2]', '$[1]') FORMAT TSV;
+SELECT JSONRemove('1e309', '$.missing') FORMAT TSV;
 SELECT JSONRemove('{"drop":2,"neg_zero":-0,"decimal":1.00,"exp":1e-2}', '$.drop') FORMAT TSV;
 SELECT JSONRemove('{"a":0,"nested":[1.00,{"keep":1e-2,"drop":2}]}', '$.nested[1].drop') FORMAT TSV;
 SELECT JSONRemove('{"drop":{"n":18446744073709551617},"keep":18446744073709551618}', '$.drop') FORMAT TSV;
@@ -58,9 +70,19 @@ SELECT JSONRemove('[0,1,2]', '$') FORMAT TSV; -- { serverError BAD_ARGUMENTS }
 SELECT JSONRemove('[0,1,2]', '$[*]') FORMAT TSV; -- { serverError BAD_ARGUMENTS }
 SELECT JSONRemove('[0,1,2]', '$[0,2]') FORMAT TSV; -- { serverError BAD_ARGUMENTS }
 SELECT JSONRemove('[0,1,2]', '$[0 to 2]') FORMAT TSV; -- { serverError BAD_ARGUMENTS }
+-- Array indices must not wrap when converted to UInt32.
+SELECT JSONRemove('[10,20]', '$[4294967295]') FORMAT TSV; -- { serverError BAD_ARGUMENTS }
+SELECT JSONRemove('[10,20]', '$[4294967296]') FORMAT TSV; -- { serverError BAD_ARGUMENTS }
+SELECT JSONRemove('[10,20]', '$[4294967297]') FORMAT TSV; -- { serverError BAD_ARGUMENTS }
+SELECT JSONRemove('{"a":[{"x":1}]}', '$.a[4294967296].x') FORMAT TSV; -- { serverError BAD_ARGUMENTS }
+SELECT JSONRemove('[10,20]', '$[0 to 4294967296]') FORMAT TSV; -- { serverError BAD_ARGUMENTS }
+SELECT JSONRemove('[10,20]', '$[4294967296 to 4294967297]') FORMAT TSV; -- { serverError BAD_ARGUMENTS }
 SELECT JSONRemove('[0,1,2]', '$[') FORMAT TSV; -- { serverError BAD_ARGUMENTS }
 SELECT JSONRemove('{', '$.a') FORMAT TSV; -- { serverError BAD_ARGUMENTS }
 SELECT JSONRemove('{"a":1} {"b":2}', '$.x') FORMAT TSV; -- { serverError BAD_ARGUMENTS }
+-- Masking exponent digits must not hide malformed JSON.
+SELECT JSONRemove('{"keep":1e+,"drop":0}', '$.drop') FORMAT TSV; -- { serverError BAD_ARGUMENTS }
+SELECT JSONRemove('{"keep":1e309x,"drop":0}', '$.drop') FORMAT TSV; -- { serverError BAD_ARGUMENTS }
 SELECT JSONRemove('[]', concat('$[', toString(number), ']')) FROM numbers(1) FORMAT TSV; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 -- Embedded NUL bytes must not silently truncate the input.
 SELECT JSONRemove(concat('{"a":1}', char(0), '{"b":2}'), '$.x') FORMAT TSV; -- { serverError BAD_ARGUMENTS }
