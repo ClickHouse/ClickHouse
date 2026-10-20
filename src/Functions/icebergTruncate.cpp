@@ -2,11 +2,13 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
 
 namespace DB
 {
@@ -99,6 +101,11 @@ public:
         {
             return std::make_shared<DataTypeString>();
         }
+        else if (which_truncate.isUInt64())
+        {
+            /// `value - value mod N` is in `[0, value]`, which the `Int64` result of `minus` cannot hold.
+            return std::make_shared<DataTypeUInt64>();
+        }
         else
         {
             auto get_column_const = [] (const DataTypePtr data_type)
@@ -130,9 +137,16 @@ public:
     }
 
     bool hasInformationAboutMonotonicity() const override { return true; }
-    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override { return { .is_monotonic = true, .is_always_monotonic = true }; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
+    Monotonicity getMonotonicityForRange(const IDataType & type, const Field &, const Field &) const override
+    {
+        /// For `Int64`, `value - value mod N` of the lowest values is below the `Int64` minimum and wraps around.
+        if (WhichDataType(removeLowCardinalityAndNullable(type.getPtr())).isInt64())
+            return {};
+        return { .is_monotonic = true, .is_always_monotonic = true };
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         auto value = (*arguments[0].column)[0].safeGet<Int64>();
         if (value <= 0)
@@ -183,7 +197,10 @@ public:
             auto minus_arguments = {arguments[1], modulo_result_with_type};
             auto minus_func = FunctionFactory::instance().get("minus", context)->build(minus_arguments);
             auto minus_result_type = minus_func->getResultType();
-            return minus_func->execute(minus_arguments, minus_result_type, input_rows_count, false);
+            auto minus_result = minus_func->execute(minus_arguments, minus_result_type, input_rows_count, false);
+            if (which_truncate.isUInt64())
+                return castColumn({minus_result, minus_result_type, ""}, result_type);
+            return minus_result;
         }
 
         std::unreachable();
