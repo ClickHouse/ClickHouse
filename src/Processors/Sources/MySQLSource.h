@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <string>
 #include <string_view>
 
@@ -65,7 +64,7 @@ protected:
     std::unique_ptr<Connection> connection;
 
     const std::unique_ptr<MySQLStreamSettings> settings;
-    VectorWithMemoryTracking<size_t> position_mapping;
+    std::vector<size_t> position_mapping;
     ExternalResultDescription description;
 };
 

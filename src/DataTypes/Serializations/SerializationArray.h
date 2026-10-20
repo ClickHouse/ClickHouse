@@ -108,7 +108,4 @@ private:
     ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const;
 };
 
-/// Converts the offsets of an array (a `ColumnArray::ColumnOffsets`) to the sizes of its elements.
-ColumnPtr arrayOffsetsToSizes(const IColumn & column);
-
 }

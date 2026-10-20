@@ -1,3 +1,0 @@
-status:       applicable
-empirical_status: unsupported
-empirical_reason: The estimate would read 1000 rows, over max_rows_to_read = 500 (a sample keeps at least ~30 granules and one per part)

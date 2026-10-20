@@ -9,10 +9,9 @@
 #include <IO/BoundedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromS3.h>
-#include <Common/Scheduler/CurrentCPULease.h>
 #include <IO/IReadBufferMetadataProvider.h>
 #include <Interpreters/Context.h>
-#include <Common/Hex.h>
+#include <base/hex.h>
 #include <base/scope_guard.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -32,6 +31,7 @@ extern const Event CachedReadBufferCacheWriteMicroseconds;
 extern const Event CachedReadBufferReadFromSourceBytes;
 extern const Event CachedReadBufferPredownloadedFromSourceBytes;
 extern const Event CachedReadBufferReadFromCacheBytes;
+extern const Event CachedReadBufferPredownloadedBytes;
 extern const Event CachedReadBufferCacheWriteBytes;
 extern const Event CachedReadBufferCacheWriteStopped;
 extern const Event CachedReadBufferCreateBufferMicroseconds;
@@ -669,12 +669,8 @@ CachedOnDiskReadBufferFromFile::createReadFromFileSegmentState(
                     return create(ReadType::CACHED);
                 }
 
-                {
-                    /// Park the CPU lease while waiting for a concurrent download
-                    CPULeaseParkGuard cpu_park;
-                    download_state = file_segment.wait(
-                        offset, info_.cache_settings.wait_for_concurrent_download_timeout_milliseconds);
-                }
+                download_state = file_segment.wait(
+                    offset, info_.cache_settings.wait_for_concurrent_download_timeout_milliseconds);
 
                 if (download_state == FileSegment::State::DOWNLOADING && !canStartFromCache(offset, file_segment))
                 {
@@ -1126,6 +1122,7 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
 
             ProfileEvents::increment(ProfileEvents::CachedReadBufferPredownloadedFromSourceBytes, size);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromSourceBytes, size);
+            ProfileEvents::increment(ProfileEvents::CachedReadBufferPredownloadedBytes, size);
 
             std::string failure_reason;
             /// Bytes left to read from the download offset (read_until_position is exclusive).
@@ -1531,9 +1528,6 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
 
     const auto & current_read_range = file_segment.range();
     chassert(current_read_range.contains(offset));
-
-    /// Park the CPU lease during the read; a cache hit parks only briefly
-    CPULeaseParkGuard cpu_park;
 
     size_t size = 0;
     if (state.bytes_to_predownload)

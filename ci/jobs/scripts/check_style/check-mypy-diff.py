@@ -135,19 +135,6 @@ def parse_mypy_error_count(output: str) -> int | None:
     return None
 
 
-def find_mypy_config(base_path: Path) -> Path:
-    """
-    Locate the CI mypy config inside a checkout. The config lives in
-    `ci/tools/.mypy.ini`; the base-branch worktree may predate the move from
-    `tests/ci/.mypy.ini`, so check the old location too to keep the
-    base-vs-head comparison running under the same rules.
-    """
-    config = base_path / "ci" / "tools" / ".mypy.ini"
-    if config.exists():
-        return config
-    return base_path / "tests" / "ci" / ".mypy.ini"
-
-
 def run_mypy_on_file(
     file_path: str,
     git_root: Path,
@@ -204,7 +191,7 @@ def run_mypy_on_files_dict(
         Dictionary mapping file path (str) to MyPyResult
     """
     base_path = worktree_path if worktree_path else git_root
-    config_path = find_mypy_config(base_path)
+    config_path = base_path / "tests" / "ci" / ".mypy.ini"
 
     results = {}
     for file_path in file_paths:
@@ -230,7 +217,7 @@ def run_mypy_on_files(
         return 0, ""
 
     base_path = worktree_path if worktree_path else git_root
-    config = find_mypy_config(base_path)
+    config = base_path / "tests" / "ci" / ".mypy.ini"
     if not config.exists():
         print(f"Warning: mypy config not found at {config}", file=sys.stderr)
 

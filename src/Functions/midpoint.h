@@ -32,6 +32,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -51,9 +52,12 @@ private:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
     {
-        return "(T1, ...) -> leastSupertype(T1, ...)";
+        if (types.empty())
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} cannot be called without arguments", getName());
+
+        return getLeastSupertype(types);
     }
 
     template <typename T>
@@ -515,9 +519,12 @@ public:
         return std::make_unique<FunctionToFunctionBaseAdaptor>(FunctionMidpoint::create(context), argument_types, return_type);
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
     {
-        return "(T1, ...) -> leastSupertype(T1, ...)";
+        if (types.empty())
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} cannot be called without arguments", getName());
+
+        return getLeastSupertype(types);
     }
 
 private:

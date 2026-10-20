@@ -20,7 +20,6 @@ namespace
 enum class SourceKind
 {
     File,
-    OwnedFile,
     SortedChunks,
     UniqueChunks,
 };
@@ -53,7 +52,7 @@ protected:
             chunks.emplace_back(Columns{std::move(column)}, 2);
         }
 
-        if (kind == SourceKind::File || kind == SourceKind::OwnedFile)
+        if (kind == SourceKind::File)
         {
             disk = createDisk("spill_source");
             tmp_data = std::make_shared<TemporaryDataOnDiskScope>(
@@ -62,9 +61,6 @@ protected:
             for (auto & chunk : chunks)
                 (*stream)->write(header->cloneWithColumns(chunk.detachColumns()));
             stream->finishWriting();
-
-            if (kind == SourceKind::OwnedFile)
-                return std::make_unique<BufferingFromFileSource>(header, std::move(*stream), getLogger("SpillSourceTest"));
 
             auto source = std::make_unique<BufferingFromFileSource>(header, *stream, getLogger("SpillSourceTest"));
             connect(completion, source->getCompletionPort());
@@ -140,7 +136,7 @@ INSTANTIATE_TEST_SUITE_P(
     Replay,
     SpillSourceTest,
     testing::Combine(
-        testing::Values(SourceKind::File, SourceKind::OwnedFile, SourceKind::SortedChunks, SourceKind::UniqueChunks),
+        testing::Values(SourceKind::File, SourceKind::SortedChunks, SourceKind::UniqueChunks),
         testing::Values(
             IProcessor::CancelReason::PartialResult,
             IProcessor::CancelReason::Unknown,

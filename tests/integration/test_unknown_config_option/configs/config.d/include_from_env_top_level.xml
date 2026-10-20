@@ -1,0 +1,11 @@
+<clickhouse>
+    <!--
+        A top-level `<include from_env="UNKNOWN_CONFIG_ENV_ROOT"/>` is expanded by `ConfigProcessor`
+        by wrapping the environment variable's value as `<from_env>VALUE</from_env>` and importing
+        its children into the root, so `<my_env_imported_section>` becomes a real top-level key. The
+        validator must resolve `from_env` the same way and exempt the imported key; otherwise the
+        node fails to start with `UNKNOWN_ELEMENT_IN_CONFIG`. The variable value is injected via the
+        instance's `env_variables` in the test.
+    -->
+    <include from_env="UNKNOWN_CONFIG_ENV_ROOT"/>
+</clickhouse>

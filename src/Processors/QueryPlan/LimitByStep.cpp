@@ -200,7 +200,7 @@ void LimitByStep::serialize(Serialization & ctx) const
 
     writeVarUInt(columns.size(), ctx.out);
     for (const auto & column : columns)
-        ctx.writeColumnName(column);
+        writeStringBinary(column, ctx.out);
 }
 
 QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)

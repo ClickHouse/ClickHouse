@@ -109,16 +109,6 @@ size_t rawByteWidth(const WhichDataType & which);
 /// then left as String for the subsequent cast (matching the library reader's text-parse fallback).
 MutableColumnPtr reinterpretStringLeaf(const ColumnString & str, const NullMap * null_map, const DataTypePtr & to_no_null);
 
-/// Decodes a column the writer had no Arrow mapping for and wrote with `serializeBinary`, back into the type
-/// its `clickhouse.opaque` tag names. Returns null when the field is not one, or names a type other than
-/// `to_no_null`, leaving the bytes to be read as `String`.
-MutableColumnPtr deserializeOpaqueBinaryLeaf(
-    const ColumnString & str,
-    const NullMap * null_map,
-    const DataTypePtr & to_no_null,
-    const ArrowField & field,
-    const FormatSettings & format_settings);
-
 /// Navigation helpers for requested-type hints, shared between the decoder's hint recursion and the
 /// post-decode raw-byte rewrite in `ArrowIPCBlockInputFormat` — both must resolve the target of a
 /// nested field by the same rules, or a leaf the decoder converted comes back to a rewrite that
@@ -172,9 +162,6 @@ public:
         String name;
         DataTypePtr type;
         ColumnPtr column;
-        /// The schema field this came from, so the post-decode rewrite can read its metadata. Points into
-        /// the decoder's schema, which outlives every batch.
-        const ArrowField * field = nullptr;
     };
 
     using DecodedColumns = VectorWithMemoryTracking<DecodedColumn>;
@@ -328,11 +315,6 @@ private:
     /// Nullable structs retain their null maps when tuples are nullable or a tuple conversion is
     /// requested. The reader applies the destination nullability after converting visible rows.
     bool wrapsInNullable(const ArrowField & field, const IColumn & inner, const DataTypePtr & effective_hint) const;
-    /// Decodes a RunEndEncoded field (which has no buffers of its own) into a column of its values type, with each
-    /// run's value repeated for its rows. The nulls are those of the values.
-    ColumnPtr decodeRunEndEncoded(
-        const ArrowField & field, size_t rows, const DataTypePtr & target_hint, const String & path, size_t list_depth,
-        const InvisibleRowsMask * invisible_rows, ColumnUInt8::Ptr * decoded_null_map);
     ColumnPtr readOffsetsAndChild(
         const ArrowField & field, size_t rows, bool large, const DataTypePtr & target_hint, const String & path,
         size_t list_depth, const InvisibleRowsMask * invisible_rows);

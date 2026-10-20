@@ -1,4 +1,3 @@
-#!/usr/bin/env bash
 # Tags: distributed
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
