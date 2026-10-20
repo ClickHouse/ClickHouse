@@ -11,8 +11,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # `CREATE TABLE ... AS SELECT`, both for `ON CLUSTER` and for a `Replicated` database. A stored view
 # definition keeps its own SQL settings.
 
-DB="$CLICKHOUSE_DATABASE"
+# `ON CLUSTER` is not allowed for a `Replicated` database, which the test database may be.
+DB="${CLICKHOUSE_DATABASE}_atomic"
 CLIENT="$CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none"
+
+$CLICKHOUSE_CLIENT -q "CREATE DATABASE $DB ENGINE = Atomic"
 
 $CLIENT -m -q "
     CREATE TABLE $DB.ctas ON CLUSTER test_shard_localhost ENGINE = Memory SETTINGS send_profile_traces = 1
@@ -29,7 +32,7 @@ $CLIENT -m -q "
 # Hide the generated UUIDs and the database name.
 normalize()
 {
-    sed -E 's/ UUID \\?'"'"'[0-9a-f-]+\\?'"'"'//g' | sed "s/$DB/db/g"
+    sed -E 's/ UUID \\?'"'"'[0-9a-f-]+\\?'"'"'//g' | sed "s/$DB/db/g; s/$CLICKHOUSE_DATABASE/db/g"
 }
 
 echo 'ON CLUSTER'
@@ -39,7 +42,15 @@ $CLICKHOUSE_CLIENT -q "
     FORMAT TSVRaw
 " | normalize
 
-RDB="${DB}_replicated"
+# The setting enabled for the whole request (as the Web UI does for the Flame graph) is not forwarded
+# through the settings of the queued entry either.
+$CLIENT --send_profile_traces=1 -q "CREATE TABLE $DB.session ON CLUSTER test_shard_localhost (x UInt8) ENGINE = Memory"
+$CLICKHOUSE_CLIENT -q "
+    SELECT DISTINCT mapContains(settings, 'send_profile_traces') FROM system.distributed_ddl_queue
+    WHERE position(query, '$DB.session ') > 0
+"
+
+RDB="${CLICKHOUSE_DATABASE}_replicated"
 $CLIENT -m -q "
     CREATE DATABASE $RDB ENGINE = Replicated('/test/05321/$RDB', 's1', 'r1');
     CREATE TABLE $RDB.ctas ENGINE = Memory SETTINGS send_profile_traces = 1 AS SELECT 1 AS x SETTINGS send_profile_traces = 1;
@@ -58,3 +69,4 @@ $CLICKHOUSE_CLIENT -q "
 " | normalize
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE $RDB SYNC"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE $DB SYNC"
