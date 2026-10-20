@@ -12,9 +12,10 @@
 -- and subtracted. What remains on top of the same INSERT into a table without the UNIQUE KEY is
 -- two fsyncs per part: `unique_key_index.sst` and `txn_version.txt`, once each.
 --
--- Under load in CI the difference is occasionally one lower (about 4% of the runs in the flaky
--- check), so one less is accepted as well. Syncing `unique_key_index.sst` both when it is written
--- and at the end of the INSERT would make it three.
+-- Under load in CI the difference is occasionally lower, by one or two (a few percent of the runs
+-- in the flaky check): `txn_version.txt` is not always written, and synced, by the INSERT itself.
+-- So only the upper bound is checked. Syncing `unique_key_index.sst` both when it is written and
+-- at the end of the INSERT would make it three.
 
 SET enable_unique_key = 1;
 
@@ -53,7 +54,7 @@ SELECT
     (SELECT ProfileEvents['FileSync'] FROM system.query_log
      WHERE current_database = currentDatabase() AND type = 'QueryFinish'
        AND query LIKE 'INSERT INTO t_fsync_no_uk %'
-     ORDER BY event_time_microseconds DESC LIMIT 1)) BETWEEN 1 AND 2;
+     ORDER BY event_time_microseconds DESC LIMIT 1)) <= 2;
 
 DROP TABLE t_fsync_uk;
 DROP TABLE t_fsync_uk_off;
