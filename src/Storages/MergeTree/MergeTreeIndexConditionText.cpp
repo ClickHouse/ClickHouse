@@ -2159,7 +2159,15 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(
     Block block;
     size_t num_rows = 1;
     ExpressionActions actions(std::move(subdag));
-    actions.execute(block, num_rows);
+    try
+    {
+        actions.execute(block, num_rows);
+    }
+    catch (const Exception &)
+    {
+        /// Unknown if the predicate throws on the default, e.g. a `CAST` that drops `Nullable` on NULL.
+        return false;
+    }
     const auto & result_column = block.getByName(output_column_name).column;
 
     /// A Nullable map value type defaults to NULL, for which the function is NULL and not true.

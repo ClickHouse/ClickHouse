@@ -22,3 +22,5 @@ S8 prunes	1
 S9 hasAnyTokens	[2]
 S9 hasAllTokens	[2]
 S9 hasPhrase	[2]
+S10 subcolumn	1
+S10 arrayElement	1

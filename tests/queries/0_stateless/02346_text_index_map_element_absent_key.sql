@@ -97,9 +97,20 @@ SELECT 'S9 hasAnyTokens', groupArray(id) FROM (SELECT id FROM t_post WHERE hasAn
 SELECT 'S9 hasAllTokens', groupArray(id) FROM (SELECT id FROM t_post WHERE hasAllTokens(m['k'], concat(repeat(char(0), 5), 'abc'), 'splitByString([\'abc\'])') ORDER BY id);
 SELECT 'S9 hasPhrase', groupArray(id) FROM (SELECT id FROM t_post WHERE hasPhrase(m['k'], concat(repeat(char(0), 5), 'abc'), 'splitByString([\'abc\'])') ORDER BY id);
 
+DROP TABLE IF EXISTS t_cast;
+CREATE TABLE t_cast (id UInt32, m Map(String, Nullable(String)),
+                     INDEX tix mapValues(m) TYPE text(tokenizer = ngrams(3)))
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO t_cast VALUES (1, map('k', 'abcdef')), (2, map('k', 'hello'));
+
+-- S10: the cast throws on the NULL default, but every row holds the key, so the query must not fail.
+SELECT 'S10 subcolumn', count() FROM t_cast WHERE CAST(m['k'], 'String') LIKE '%hel%';
+SELECT 'S10 arrayElement', count() FROM t_cast WHERE CAST(m['k'], 'String') LIKE '%hel%' SETTINGS optimize_functions_to_subcolumns = 0;
+
 DROP TABLE t_fs;
 DROP TABLE t_str;
 DROP TABLE t_null;
 DROP TABLE t_dyn;
 DROP TABLE t_arr;
 DROP TABLE t_post;
+DROP TABLE t_cast;
