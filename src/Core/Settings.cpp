@@ -11254,6 +11254,12 @@ to the original size. When the filtered out part is small, or the argument itsel
 larger than the saved work. With this setting enabled, the execution of the arguments is profiled and the
 decision is revisited while the query runs.
 
+Only the arguments which are executed lazily and whose functions cannot throw an exception on invalid input
+values can be switched to the eager execution, so that the short circuit keeps protecting from such exceptions.
+With the default `short_circuit_function_evaluation = 'enable'`, none of the lazily executed arguments currently
+satisfies this condition, so the setting has no effect. Use it together with
+`short_circuit_function_evaluation = 'force_enable'`.
+
 The setting applies to the expressions evaluated by the query pipeline and by the data sources: `SELECT` and
 `WHERE` expressions, `PREWHERE` and row-level filters of `MergeTree` and of the object storage and `Parquet`
 readers, a filter fused into `ARRAY JOIN`, the residual `JOIN ON` expression of a hash join or an `IEJoin`,
