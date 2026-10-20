@@ -71,6 +71,8 @@ private:
         /// accessor reads exactly. Set for a result column without a declared SQLite type (see
         /// `resolveUndeclaredColumns`).
         bool requires_exact_storage_class = false;
+        /// An integer column read through the text path (`UInt64`, the wide integers, `LowCardinality`).
+        bool is_integer_read_as_text = false;
     };
 
     ColumnReadInfo createColumnReadInfoForNative(
@@ -79,9 +81,10 @@ private:
         bool is_nullable) const;
     ColumnReadInfo createColumnReadInfoForText(const ColumnWithTypeAndName & column) const;
 
-    /// A result column with a declared SQLite type (a direct column of a table) carries a contract for its
-    /// cells: the declared affinity, or the STRICT table, fixes what the ClickHouse type mapped from it
-    /// reads. A result column without one - an expression, a literal, an aggregate - has no such contract:
+    /// A result column with a declared SQLite type (a direct column of a table) is read as the ClickHouse type
+    /// mapped from it, and a cell of another storage class is read into an integer column only when it holds an
+    /// integer exactly (`insertValue`). A result column without one - an expression, a literal, an aggregate -
+    /// has no declared type to map from:
     /// its ClickHouse type was inferred from a single row (see `doQueryResultStructure`), or declared by the
     /// user, and SQLite is free to return a different storage class in every row (`CASE`, `UNION ALL`, an
     /// aggregate over mixed data). Reading such a cell through a coercing accessor (`sqlite3_column_int64`
@@ -94,6 +97,7 @@ private:
     void checkStorageClass(const ColumnReadInfo & info, sqlite3_stmt * statement, int idx) const;
 
     void insertValue(IColumn & column, const ColumnReadInfo & info, sqlite3_stmt * statement, int idx) const;
+    void insertIntegerTextValue(IColumn & column, const ColumnReadInfo & info, sqlite3_stmt * statement, int idx) const;
     void insertTextValue(IColumn & column, const ColumnReadInfo & info, sqlite3_stmt * statement, int idx) const;
 
     Block sample_block;
