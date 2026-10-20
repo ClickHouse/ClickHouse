@@ -593,6 +593,41 @@ TEST(AIAgent, HistoryIsTrimmedWhenOneStepCarriesAHugeQueryArgument)
     EXPECT_NE(stored_query.find("This argument was cut here"), String::npos);
 }
 
+TEST(AIAgent, OversizedToolErrorIsTruncatedInHistory)
+{
+    /// A call whose arguments do not match the schema of the tool fails in the SDK before it reaches
+    /// the tool, and the error quotes the whole arguments. The newest tool result is the one the
+    /// trim keeps, so the error has to be capped on its way into the history like a result is.
+    AIAgentHooks hooks;
+    hooks.check_query = [](const String &)
+    {
+        AIQueryRunDecision decision;
+        decision.needs_confirmation = false;
+        return decision;
+    };
+    hooks.run_visible = [](const String &, bool, bool) { return String("Ok."); };
+
+    const ai::JsonValue wrong_typed_arguments{{"query", ai::JsonValue::array({String(300 * 1024, 'x')})}};
+    AgentWithMock harness({toolCallStep("run_query", wrong_typed_arguments), textStep("done")}, hooks);
+    harness.agent->chat("run something");
+
+    ASSERT_EQ(harness.transport->conversations.size(), 2u);
+    for (const auto & messages : harness.transport->conversations)
+        EXPECT_LE(conversationBytes(messages), 256u * 1024u);
+
+    /// The failure is still reported as a failure, and says that it was cut.
+    const auto & last = harness.transport->conversations.back();
+    ASSERT_TRUE(last.back().has_tool_results());
+    const auto results = last.back().get_tool_results();
+    ASSERT_EQ(results.size(), 1u);
+    const auto & result = results.at(0);
+    EXPECT_TRUE(result.is_error);
+    ASSERT_TRUE(result.result.is_object() && result.result.contains("error"));
+    const auto error = result.result["error"].get<std::string>();
+    EXPECT_NE(error.find("Invalid arguments"), String::npos);
+    EXPECT_NE(error.find("This error message was cut here"), String::npos);
+}
+
 TEST(AIAgent, HistoryIsTrimmedWhenTheModelTextItselfIsOversized)
 {
     /// The same for the free-form text the model writes before a tool call, and for the text of a

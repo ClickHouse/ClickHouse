@@ -307,7 +307,8 @@ void AIAgent::chat(const String & user_text)
                 result_parts.emplace_back(call.id, truncateOversizedToolResult(std::move(result.result)), false);
             }
             else
-                result_parts.emplace_back(call.id, ai::JsonValue{{"error", escapeInvalidUTF8(result.error_message())}}, true);
+                result_parts.emplace_back(
+                    call.id, ai::JsonValue{{"error", truncateOversizedToolError(escapeInvalidUTF8(result.error_message()))}}, true);
         }
         messages.push_back(ai::Message::tool_results(result_parts));
         /// The history is trimmed whenever it grows, not once per turn: every step of one turn
@@ -369,6 +370,20 @@ ai::JsonValue AIAgent::truncateOversizedToolResult(ai::JsonValue value)
             "The result was cut to its first {} bytes (of {}) to fit the conversation. "
             "Re-run with a stricter filter or a smaller limit to see the rest.",
             max_tool_result_bytes, original_size)}};
+}
+
+String AIAgent::truncateOversizedToolError(String message)
+{
+    static constexpr std::string_view ERROR_CUT_NOTICE
+        = "\n\n[This error message was cut here: {} of its {} bytes did not fit the conversation.]";
+
+    if (message.size() <= max_tool_result_bytes)
+        return message;
+
+    const size_t original_size = message.size();
+    truncateToUTF8Boundary(message, max_tool_result_bytes);
+    message += fmt::format(ERROR_CUT_NOTICE, original_size - message.size(), original_size);
+    return message;
 }
 
 String AIAgent::truncateOversizedAssistantText(String text)

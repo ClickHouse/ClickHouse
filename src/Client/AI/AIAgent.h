@@ -103,6 +103,10 @@ private:
     /// one (a pasted log) would otherwise break the budget on its own.
     void truncateCurrentQuestion(size_t total_bytes);
     static ai::JsonValue truncateOversizedToolResult(ai::JsonValue value);
+    /// Cut the message of a failed tool call down to `max_tool_result_bytes`, with a notice of what
+    /// was left out. A failure can quote what the model sent (the SDK dumps the whole arguments of a
+    /// call that does not match the schema of the tool), so it is as unbounded as a result.
+    static String truncateOversizedToolError(String message);
     /// Cut the text of one assistant step and the string arguments of its tool calls down to
     /// `max_assistant_step_bytes` each, with a notice of what was left out.
     static String truncateOversizedAssistantText(String text);
