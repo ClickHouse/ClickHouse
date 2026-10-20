@@ -5,7 +5,6 @@
 #include <iterator>
 #include <span>
 #include <utility>
-#include <vector>
 
 #include <absl/container/inlined_vector.h>
 
@@ -13,6 +12,7 @@
 
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
@@ -323,7 +323,7 @@ private:
         auto group_of = [&](TimestampType timestamp) { return static_cast<size_t>(((offset(timestamp) >> shift) * scale) >> 32); };
 
         /// `group_ends[g]` first holds the start of group `g` and ends up holding its end.
-        std::vector<UInt32, AllocatorWithMemoryTracking<UInt32>> group_ends(groups + 1);
+        VectorWithMemoryTracking<UInt32> group_ends(groups + 1);
         for (const Sample * sample = first; sample != last; ++sample)
             ++group_ends[group_of(sample->first) + 1];
         for (size_t g = 0; g < groups; ++g)
