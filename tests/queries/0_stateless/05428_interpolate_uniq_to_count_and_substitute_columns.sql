@@ -8,9 +8,17 @@ SELECT uniq(a) AS x FROM (SELECT number AS a, max(intDiv(number, 2) * 4) AS mb F
 GROUP BY mb ORDER BY mb WITH FILL INTERPOLATE (x AS x + 100) LIMIT AFTER uniq(a) > 100
 SETTINGS optimize_uniq_to_count = 1;
 
+-- The skip is per query level: a subquery without INTERPOLATE is still rewritten.
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT 1 AS k, c FROM (SELECT uniq(a) AS c FROM (SELECT number AS a FROM numbers(5) GROUP BY a))
+ORDER BY k WITH FILL FROM 0 TO 3 INTERPOLATE (c AS c + 1)) WHERE explain LIKE '%function_name: count%'
+SETTINGS optimize_uniq_to_count = 1;
+
 DROP TABLE IF EXISTS t_interpolate_substitute;
 CREATE TABLE t_interpolate_substitute (k UInt64, a UInt64, b UInt64, CONSTRAINT c ASSUME a = b) ENGINE = MergeTree ORDER BY b;
 INSERT INTO t_interpolate_substitute VALUES (0, 5, 5), (2, 7, 7);
 SELECT k, max(a) AS x FROM t_interpolate_substitute WHERE k < 100 GROUP BY k ORDER BY k WITH FILL INTERPOLATE (x AS x + 100)
+SETTINGS convert_query_to_cnf = 1, optimize_substitute_columns = 1;
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT k, x FROM (SELECT k, max(a) AS x FROM t_interpolate_substitute WHERE k < 100 GROUP BY k)
+ORDER BY k WITH FILL INTERPOLATE (x AS x + 100)) WHERE explain LIKE '%column_name: b,%'
 SETTINGS convert_query_to_cnf = 1, optimize_substitute_columns = 1;
 DROP TABLE t_interpolate_substitute;
