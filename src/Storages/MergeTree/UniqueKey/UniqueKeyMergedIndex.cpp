@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/ThrottlerArray.h>
 
 #if USE_ROCKSDB
 #include <Storages/MergeTree/UniqueKey/UniqueKeySSTProbe.h>
@@ -166,7 +167,11 @@ void UniqueKeyMergedIndexBuilder::build(MergeTreeDataPartChecksums & out_checksu
             "UNIQUE KEY merge: merged part has {} rows, exceeds the dense index's UInt32 row-number capacity",
             merged_rows_count);
 
-    std::vector<SourceCursor> cursors = openSourceCursors(sources, context->getReadSettings());
+    /// Throttled like the merge's own reads in `MergeTreeSequentialSource`.
+    auto read_settings = context->getReadSettings();
+    addThrottler(read_settings.remote_throttler, context->getMergesThrottler());
+    addThrottler(read_settings.local_throttler, context->getMergesThrottler());
+    std::vector<SourceCursor> cursors = openSourceCursors(sources, read_settings);
 
     /// Min-heap on each source's current key: entries leave in ascending order across the sources,
     /// as `SSTIndexWriter::addEncoded` requires.
