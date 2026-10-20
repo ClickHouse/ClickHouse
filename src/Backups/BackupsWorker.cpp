@@ -1212,6 +1212,7 @@ void BackupsWorker::doRestore(
             RestorerFromBackup dummy_restorer{restore_elements, restore_settings, nullptr, backup, context, getThreadPool(ThreadPoolId::RESTORE), {}};
             dummy_restorer.run(RestorerFromBackup::CHECK_ACCESS_ONLY);
         }
+        context->onQueryExecutionStarted();
     }
 
     /// Do RESTORE.
