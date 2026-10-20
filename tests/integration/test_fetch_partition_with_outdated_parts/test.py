@@ -44,6 +44,7 @@ def test_fetch_partition_with_outdated_parts(start_cluster):
 
     assert node.query("SELECT id FROM simple2 order by id").strip() == "1\n2\n3"
 
+
 def test_missing_part_error_includes_table_name(start_cluster):
     node.query("CREATE DATABASE parts_exchange_errors")
     node.query(
