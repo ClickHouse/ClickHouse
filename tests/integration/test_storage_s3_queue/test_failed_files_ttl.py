@@ -913,6 +913,49 @@ def test_ordered_mode_rejects_mismatched_tracked_files_limit(started_cluster):
     node.query(f"DROP TABLE {table_name}")
 
 
+def test_ordered_mode_rejects_mismatched_tracked_file_ttl_sec(started_cluster):
+    """Ordered-mode tables sharing a keeper_path must agree on tracked_file_ttl_sec, because it is what
+    expires `/failed` in ordered mode: otherwise a replica with a TTL would delete failure records
+    that a replica without one keeps indefinitely."""
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_ordered_ttl_mismatch_{uuid.uuid4().hex[:8]}"
+    other_table_name = f"{table_name}_other"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "tracked_files_limit": 0,
+            "tracked_file_ttl_sec": 0,
+        },
+    )
+
+    error = create_table(
+        started_cluster,
+        node,
+        other_table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "tracked_files_limit": 0,
+            "tracked_file_ttl_sec": 60,
+        },
+        expect_error=True,
+    )
+    assert "tracked_files_ttl_sec" in error, \
+        f"Expected metadata mismatch error mentioning tracked_files_ttl_sec, got: {error}"
+
+    node.query(f"DROP TABLE {table_name}")
+
+
 def test_lowering_loading_retries_is_honored_same_process_hot_cache(started_cluster):
     """Test that lowering `s3queue_loading_retries` mid-retry is honored immediately
     in the SAME process, without a restart - i.e. when the in-memory FileStatus cache

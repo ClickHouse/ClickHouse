@@ -324,6 +324,16 @@ void ObjectStorageQueueTableMetadata::checkImmutableFieldsEquals(const ObjectSto
             from_zk.partition_component,
             partition_component);
 
+    /// `tracked_files_ttl_sec` is also what expires `/failed` in ordered mode, so replicas of every
+    /// mode must agree on it, as they did before `failed_files_ttl_sec` was added.
+    if (tracked_files_ttl_sec != from_zk.tracked_files_ttl_sec)
+        throw Exception(
+            ErrorCodes::METADATA_MISMATCH,
+            "Existing table metadata in ZooKeeper differs in `tracked_files_ttl_sec`. "
+            "Stored in ZooKeeper: {}, local: {}",
+            from_zk.tracked_files_ttl_sec.load(),
+            tracked_files_ttl_sec.load());
+
     if (modeFromString(mode) == ObjectStorageQueueMode::UNORDERED)
     {
         if (tracked_files_limit != from_zk.tracked_files_limit)
@@ -333,14 +343,6 @@ void ObjectStorageQueueTableMetadata::checkImmutableFieldsEquals(const ObjectSto
                 "Stored in ZooKeeper: {}, local: {}",
                 from_zk.tracked_files_limit.load(),
                 tracked_files_limit.load());
-
-        if (tracked_files_ttl_sec != from_zk.tracked_files_ttl_sec)
-            throw Exception(
-                ErrorCodes::METADATA_MISMATCH,
-                "Existing table metadata in ZooKeeper differs in `tracked_files_ttl_sec`. "
-                "Stored in ZooKeeper: {}, local: {}",
-                from_zk.tracked_files_ttl_sec.load(),
-                tracked_files_ttl_sec.load());
 
         if (failed_files_ttl_sec != from_zk.failed_files_ttl_sec)
             throw Exception(
