@@ -13,11 +13,11 @@
 #include <Interpreters/Context.h>
 #include <Parsers/Lexer.h>
 #include <Common/JSONParsers/RapidJSONMemoryTrackerAllocator.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include "config.h"
 
 #include <string_view>
-#include <unordered_map>
 #include <utility>
 
 #if USE_RAPIDJSON
@@ -61,7 +61,7 @@ struct PathStep
 
 using ParsedPath = VectorWithMemoryTracking<PathStep>;
 using ParsedPaths = VectorWithMemoryTracking<ParsedPath>;
-using MemberNameLookup = std::unordered_map<std::string_view, const String *>;
+using MemberNameLookup = UnorderedMapWithMemoryTracking<std::string_view, const String *>;
 
 struct JSONSlice
 {
