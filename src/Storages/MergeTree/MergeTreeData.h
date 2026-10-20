@@ -927,7 +927,8 @@ public:
     /// without consulting the table settings again, so that a concurrent ALTER of
     /// 'fsync_after_insert' or 'fsync_after_insert_each_part' cannot leave a running INSERT
     /// with parts that were synced neither when written nor when the query finished.
-    void fsyncPartsAfterInsert(const std::vector<MergeTreePartInfo> & committed_parts) const;
+    /// Checks for cancellation and the time limit of `query_context` before syncing each part.
+    void fsyncPartsAfterInsert(const std::vector<MergeTreePartInfo> & committed_parts, const ContextPtr & query_context) const;
 
     /// If the table contains too many unfinished mutations, sleep for a while to give them time to execute.
     /// If until is non-null, wake up from the sleep earlier if the event happened.

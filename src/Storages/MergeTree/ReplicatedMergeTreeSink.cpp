@@ -1333,7 +1333,7 @@ void ReplicatedMergeTreeSink::fsyncCommittedParts()
     if (committed_parts.empty())
         return;
 
-    storage.fsyncPartsAfterInsert(committed_parts);
+    storage.fsyncPartsAfterInsert(committed_parts, context);
     committed_parts.clear();
 }
 

@@ -63,6 +63,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
@@ -8941,7 +8942,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<size_t>(delay_milliseconds)));
 }
 
-void MergeTreeData::fsyncPartsAfterInsert(const std::vector<MergeTreePartInfo> & committed_parts) const
+void MergeTreeData::fsyncPartsAfterInsert(const std::vector<MergeTreePartInfo> & committed_parts, const ContextPtr & query_context) const
 {
     /// Deliberately not re-checking the table settings here: every part in `committed_parts` has
     /// skipped its per-part sync because of the settings in effect when it was written. If the
@@ -8980,8 +8981,15 @@ void MergeTreeData::fsyncPartsAfterInsert(const std::vector<MergeTreePartInfo> &
     }
 
     /// Outside the parts lock: an fsync of a whole part is far too slow to hold it for.
+    auto process_list_element = query_context->getProcessListElement();
     for (const auto & part : parts_to_sync)
     {
+        /// The batch can take long on slow storage, so `KILL QUERY` and `max_execution_time` are
+        /// checked between parts. A part that is not synced here keeps its pending flag, so a merge
+        /// still syncs it before reading it.
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
+
         part->getDataPartStorage().syncFiles();
         part->pending_fsync_after_insert.store(false);
     }
