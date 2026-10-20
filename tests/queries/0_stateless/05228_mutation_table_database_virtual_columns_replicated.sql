@@ -30,6 +30,11 @@ ALTER TABLE t_repl_05228 DELETE WHERE {CLICKHOUSE_DATABASE:Identifier}.t_repl_05
 -- column read in an earlier one.
 ALTER TABLE t_repl_05228 UPDATE value = _table WHERE key = 1, UPDATE value = ('safe' AS _table) WHERE key = 2; -- { serverError BAD_ARGUMENTS }
 
+-- With `prefer_column_name_to_alias`, a bare `_table` is the virtual column even when an alias with the same
+-- name is defined in the same command. The mutation is checked with the setting of the query as well as of the
+-- background context, so it is refused if either of them reads the virtual column.
+ALTER TABLE t_repl_05228 UPDATE value = ('safe' AS _table) WHERE _table != '' SETTINGS prefer_column_name_to_alias = 1; -- { serverError BAD_ARGUMENTS }
+
 -- Inside a lambda body, the virtual column is still read unless a lambda parameter shadows it.
 ALTER TABLE t_repl_05228 DELETE WHERE arrayExists(x -> x = _table, ['t_repl_05228']); -- { serverError BAD_ARGUMENTS }
 

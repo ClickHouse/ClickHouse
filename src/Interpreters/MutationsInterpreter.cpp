@@ -85,6 +85,7 @@ namespace Setting
 {
     extern const SettingsBool allow_nondeterministic_mutations;
     extern const SettingsBool analyzer_compatibility_prefer_alias_over_subcolumn;
+    extern const SettingsBool prefer_column_name_to_alias;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsNonZeroUInt64 max_block_size;
@@ -2606,14 +2607,31 @@ std::optional<String> MutationsInterpreter::findNonDeterministicVirtualColumn(
 
     auto storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
 
-    /// How a compound identifier such as `t._table` is resolved depends on
-    /// `analyzer_compatibility_prefer_alias_over_subcolumn`. The mutation is validated with the value of the
-    /// query, but executed with the value of the background context, which may be different, so the
-    /// interpretations of both are checked. An interpretation which is not used by either of them is not
-    /// required to be well-typed.
-    std::set<bool> prefer_alias_over_subcolumn_values = {
-        context->getSettingsRef()[Setting::analyzer_compatibility_prefer_alias_over_subcolumn],
-        context->getBackgroundContext()->getSettingsRef()[Setting::analyzer_compatibility_prefer_alias_over_subcolumn]};
+    /// How an identifier is resolved depends on the settings of name resolution: a compound identifier such as
+    /// `t._table` on `analyzer_compatibility_prefer_alias_over_subcolumn`, and a bare identifier that is both
+    /// an alias and a column (`UPDATE value = ('safe' AS _table) WHERE _table != ''`) on
+    /// `prefer_column_name_to_alias`. The mutation is validated with the settings of the query, but executed
+    /// with the settings of the background context, which may be different, so the interpretations of both
+    /// are checked. An interpretation which is not used by either of them is not required to be well-typed.
+    struct NameResolutionSettings
+    {
+        bool prefer_alias_over_subcolumn;
+        bool prefer_column_name_to_alias;
+
+        auto operator<=>(const NameResolutionSettings &) const = default;
+    };
+
+    auto get_name_resolution_settings = [](const ContextPtr & settings_context)
+    {
+        const auto & context_settings = settings_context->getSettingsRef();
+        return NameResolutionSettings{
+            .prefer_alias_over_subcolumn = context_settings[Setting::analyzer_compatibility_prefer_alias_over_subcolumn],
+            .prefer_column_name_to_alias = context_settings[Setting::prefer_column_name_to_alias]};
+    };
+
+    std::set<NameResolutionSettings> name_resolution_settings_variants = {
+        get_name_resolution_settings(context),
+        get_name_resolution_settings(context->getBackgroundContext())};
 
     /// `EPHEMERAL` columns are not expanded by the analyzer, but their definitions may read virtual columns
     /// as well (`e String EPHEMERAL _database`), so they are resolved in turn, each one in its own scope.
@@ -2625,10 +2643,11 @@ std::optional<String> MutationsInterpreter::findNonDeterministicVirtualColumn(
 
         for (const auto & expressions : scopes)
         {
-            for (bool prefer_alias_over_subcolumn : prefer_alias_over_subcolumn_values)
+            for (const auto & name_resolution_settings : name_resolution_settings_variants)
             {
                 auto analysis_context = Context::createCopy(context);
-                analysis_context->setSetting("analyzer_compatibility_prefer_alias_over_subcolumn", prefer_alias_over_subcolumn);
+                analysis_context->setSetting("analyzer_compatibility_prefer_alias_over_subcolumn", name_resolution_settings.prefer_alias_over_subcolumn);
+                analysis_context->setSetting("prefer_column_name_to_alias", name_resolution_settings.prefer_column_name_to_alias);
 
                 auto expression = buildQueryTree(expressions->clone(), analysis_context);
                 /// The expressions are only analyzed, nothing is read, so the table is not locked.
