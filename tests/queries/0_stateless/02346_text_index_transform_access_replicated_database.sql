@@ -13,7 +13,7 @@ CREATE DATABASE {CLICKHOUSE_DATABASE_2:Identifier}
 ENGINE = Replicated('/clickhouse/02346_text_index_transform_access/{database}', 'shard1', 'replica1') FORMAT Null;
 
 CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.tab (id UInt64, val String)
-ENGINE = ReplicatedMergeTree() ORDER BY id FORMAT Null;
+ENGINE = MergeTree ORDER BY id FORMAT Null;
 
 SELECT '1. ALTER ADD INDEX is denied.';
 
@@ -28,7 +28,7 @@ CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.tab_denied
     val String,
     INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val))
 )
-ENGINE = ReplicatedMergeTree() ORDER BY id; -- { serverError FUNCTION_NOT_ALLOWED }
+ENGINE = MergeTree ORDER BY id; -- { serverError FUNCTION_NOT_ALLOWED }
 
 SELECT '3. Accepted with the privilege.';
 
