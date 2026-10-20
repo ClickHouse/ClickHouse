@@ -83,8 +83,6 @@ public:
     bool checkForSuffix() override;
     bool checkForEndOfRow() override;
 
-    void resetStateBeforeFirstRow() override { first_row = true; }
-
 private:
     template <bool is_header>
     std::vector<String> readRowImpl();

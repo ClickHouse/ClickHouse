@@ -2,6 +2,8 @@ a	b
 1	2
 name	age
 bob	3
+a,b	c
+1	2
 a	b
 1	2
 name	age
@@ -10,60 +12,14 @@ a	b
 1	2
 name	age
 bob	3
+a	b
+1	2
+a	b
+1	2
 bob	3
 a	b
 1	2
-EFBBBF626F62	3
-a,b	c
-1	2
-a,b	c
-x	2
-EFBBBF226162632278	3
-EFBBBF226162632278	3
-EFBBBF226162632278	3
-79	4
-a	b
-1	2
-EFBBBF2261	b"	c
-78	y	z
-EFBBBF2261	b"	c
-78	y	z
+626F62	3
+626F62	3
 EFBBBF626F62	3
 EFBBBF626F62	3
-a,2020,b	c
-1	2
-a,b	c
-\N	\N
-1	2
-a	b
-1	2
-a	b
-1	2
-a	b
-x	2
-c1	c2	c3	c4
-﻿"a	2020	b"	c
-1	2	3	4
-c1	c2	c3	c4
-﻿"a	2020	b"	c
-1	2	3	4
-c1	c2	c3	c4
-﻿"a	2020	b"	c
-x	y	z	\N
-c1	c2	c3	c4
-﻿"a	2020	b"	c
-x	y	z	\N
-c1	c2	c3	c4	c5
-﻿"a	2020	b"	c	\N
-x	\N	z	w	lost
-c1	c2	c3	c4	c5
-﻿"a	2020	b"	c	\N
-x	0	z	w	lost
-c1	c2	c3	c4
-﻿"a	2020	b"	c
-String	String	String	String
-x	2	\N	\N
-c1	c2	c3	c4
-﻿"a	2020	b"	c
-String	String	String	String
-x	2	\N	\N

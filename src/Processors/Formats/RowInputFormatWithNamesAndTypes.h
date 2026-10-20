@@ -146,13 +146,6 @@ public:
     /// Check if we are at the end of row, not between fields.
     virtual bool checkForEndOfRow() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method checkForEndOfRow is not implemented"); }
 
-    /// Header detection can read the first row, roll back and read it again.
-    /// Reset the state that depends on the rows read so far, so the first row is read again as if for the first time.
-    virtual void resetStateBeforeFirstRow() {}
-
-    /// Whether the number of fields in the first row determines how the following rows are split into fields.
-    virtual bool isNumberOfFieldsFixedByFirstRow() const { return false; }
-
     const FormatSettings & getFormatSettings() const { return format_settings; }
 
     virtual void setReadBuffer(ReadBuffer & in_) { in = &in_; }
@@ -204,10 +197,6 @@ protected:
     {
         throw Exception{ErrorCodes::NOT_IMPLEMENTED, "Method readRowAndGetFieldsAndDataTypes is not implemented"};
     }
-
-    /// Header detection can read the first row, roll back and read it again.
-    /// Reset the state that depends on the rows read so far, so the first row is read again as if for the first time.
-    virtual void resetStateBeforeFirstRow() { format_reader->resetStateBeforeFirstRow(); }
 
     bool with_names;
     bool with_types;

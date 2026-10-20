@@ -6,7 +6,6 @@
 #include <Formats/SchemaInferenceUtils.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <IO/Operators.h>
-#include <IO/ReadHelpers.h>
 
 namespace DB
 {
@@ -126,9 +125,6 @@ CustomSeparatedFormatReader::CustomSeparatedFormatReader(
 
 void CustomSeparatedFormatReader::skipPrefixBeforeHeader()
 {
-    /// A BOM before a nonempty result prefix cannot be a part of the first value, so it is safe to skip it.
-    if (!format_settings.custom.result_before_delimiter.empty())
-        skipBOMIfExists(*buf);
     skipSpaces();
     assertString(format_settings.custom.result_before_delimiter, *buf);
 }
@@ -436,14 +432,6 @@ std::optional<std::pair<std::vector<String>, DataTypes>> CustomSeparatedSchemaRe
     auto fields = reader.readRow();
     auto data_types = tryInferDataTypesByEscapingRule(fields, reader.getFormatSettings(), reader.getEscapingRule(), &json_inference_info);
     return std::make_pair(std::move(fields), std::move(data_types));
-}
-
-void CustomSeparatedSchemaReader::resetStateBeforeFirstRow()
-{
-    reader.resetStateBeforeFirstRow();
-    first_row = true;
-    no_more_data = false;
-    json_inference_info = {};
 }
 
 std::optional<DataTypes> CustomSeparatedSchemaReader::readRowAndGetDataTypesImpl()
