@@ -78,12 +78,43 @@ CMake hash recorded below.
 | `d1246980e` | Move common/base and harmful into `//base`, publish Poco headers from their libraries and compact first-party header globs | [2e6522eb](https://app.buildbuddy.io/invocation/2e6522eb-2fa8-46f7-ad32-c49903ffe3b8) | [614507cd](https://app.buildbuddy.io/invocation/614507cd-3d59-43d7-be52-4e7bd2556e68) |
 | `2c17235f4` | Private web assets only at `//src:dbms__compile_0`; protobuf headers from producer libraries; remove unused C++ compiler inputs; factor CPU-dependent options and deps | [2ed56ae3](https://app.buildbuddy.io/invocation/2ed56ae3-2803-498c-a21b-037b21cdf21e) | [d3f7f72b](https://app.buildbuddy.io/invocation/d3f7f72b-d81c-4e5b-b4e1-20144e230e76) |
 | `2dd816e17` | Remove inherited include directories across native and external libraries; simplify empty/default attributes; verify every header glob during migration | [4a00d9df](https://app.buildbuddy.io/invocation/4a00d9df-e8ac-414e-871f-5a51c886d28a) | [cfa9c744](https://app.buildbuddy.io/invocation/cfa9c744-f6c3-4c7b-9660-3cdd91d52bed) |
+| `f6171366a` | Factor shared headers, include directories and dependency lists across 121 BUILD files | [a32378ce](https://app.buildbuddy.io/invocation/a32378ce-2d66-46b2-8da7-2e4803ee4d35) | [1a640ec9](https://app.buildbuddy.io/invocation/1a640ec9-4d35-4d19-ad8b-f69311334c98) |
+| `e13fce440` | Remove another 103 inherited include directories on the supported CPUs, including 49 in System | [65fd36c3](https://app.buildbuddy.io/invocation/65fd36c3-9f55-4e1c-a124-ac612fc1053c) | [51192ad4](https://app.buildbuddy.io/invocation/51192ad4-c4c4-4c4c-89c5-3c1aaaec0af5) |
+| `ddd1b7a50` | Use ordered source globs across Arrow and ten other external libraries | [5df10cd9](https://app.buildbuddy.io/invocation/5df10cd9-7d05-4618-9858-fccb3e1ebee3) | [285f173c](https://app.buildbuddy.io/invocation/285f173c-04f1-4745-a8c9-602820a86133) |
+| `726df523f` | Use configured outputs for 839 generated sources and resources, including System build options; remove CPU names from generated labels | [980425b9](https://app.buildbuddy.io/invocation/980425b9-6ee9-4027-875d-6d7ed41ca914) | [996943ee](https://app.buildbuddy.io/invocation/996943ee-02cf-44d0-b55f-d90a5f9c29a7) |
+| `c33ef80bb` | Publish include directories from 74 existing C++ owners and remove 2,246 inherited include entries across 145 BUILD files | [2da6ce75](https://app.buildbuddy.io/invocation/2da6ce75-4313-4f73-9f08-d5d940f9fb9c) | [4d3214e6](https://app.buildbuddy.io/invocation/4d3214e6-6429-4c9c-a2ce-c334c716c617) |
+| `16eb12020` | Audit all 277 BUILD files; simplify C++ source inputs, public header ownership, private header globs and exports in 64 BUILD files | [25eb6582](https://app.buildbuddy.io/invocation/25eb6582-895f-4b94-95be-5ce171677d3e) | [86e31142](https://app.buildbuddy.io/invocation/86e31142-df80-45c5-ad8b-188762b7569c) |
+| `200715e40` | Refresh the LLVM archive checksum after GitHub changed `export-subst` in Python bindings metadata; compiler sources verified unchanged | [8d6284cc](https://app.buildbuddy.io/invocation/8d6284cc-6f87-4ee3-b04a-94d41c20391f) | [9c38d891](https://app.buildbuddy.io/invocation/9c38d891-5fe5-412d-9e4e-920157433329) |
+| `fd232ec86` | Build ClickStack Next resources from pinned HyperDX sources with `rules_js`; remove prebuilt asset exports, preserve native ARM execution and resource timestamps | [683e25a2](https://app.buildbuddy.io/invocation/683e25a2-7979-40d5-8f57-be184464276d) | [655f9e64](https://app.buildbuddy.io/invocation/655f9e64-2939-45fc-9111-f33bfd4c1950) |
 
 For these checks, `llvm-strip --strip-all --remove-section=.note.gnu.build-id`
 produced SHA-256 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`
 on x86-64 and `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`
 on ARM64. The selected compilers and original Bazel ELFs retained the SHA-256
 values recorded in their respective tables.
+
+On the final `fd232ec86` build, the original Bazel SHA-256 values remained
+`0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372`
+(x86-64) and
+`2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744`
+(ARM64). The selected compiler SHA-256 values remained
+`52a7d0fdc59f6a0cd416844e55a70f67e689eeb1df0d98cc8c018444eb6262ce`
+(x86-64) and
+`3c685a0e2448e17c0c11e265a7027c2cfaca6158018220a67ca2af9d3df0e71f`
+(ARM64).
+
+ClickStack's source build reproduced all 162 pinned release assets on both
+CPUs. Its source manifest SHA-256 was
+`1dc9e12c91fdf7e62c97eb87329d8d241d07634e5ed88713aa3d6cfcfe9d799c`.
+The 163-file compressed-resource manifest was
+`f1eba11ef01b2d65a209413ce6976815ac71d7803ee1d13d708367c88349b958`
+(x86-64) and
+`b575f49150d3c4be233723802259b22016bc05ec5fff99e2a994af7a7a2fb078`
+(ARM64); these differ because the native CMake reference builds recorded
+different resource timestamps. Both manifests reproduced after disabling
+remote cache acceptance in the
+[x86-64 replay](https://app.buildbuddy.io/invocation/330a160d-406e-420b-8144-0e727ee1c41d)
+and [ARM64 replay](https://app.buildbuddy.io/invocation/5969731e-e831-428f-873f-2e5266c14bcb).
 
 The audit on `2dd816e17` ran 50 BUILD predicates for each of x86-64 and ARM64:
 100 inspections covering 117 main packages, 159 external overlays and 814
@@ -92,6 +123,16 @@ other eight retained unresolved generated-proto/translation-unit inputs and
 13 dynamic export labels; the audit does not claim those can be removed.
 The comparison against upstream `6bb427c9a` has no non-BUILD changes in
 `src`, `base`, `programs`, `contrib`, `cmake`, `tests`, or `utils`.
+
+The subsequent `16eb12020` audit inspected all 277 tracked BUILD files:
+116 first-party BUILD files, 159 dependency overlays, the dependency template
+package, and the Rust Perfetto protobuf overlay. It changed 64 BUILD files,
+removing unused compiler inputs, redundant exports and header exclusions,
+and obtaining shared headers from their C++ dependencies. All 22 removed
+exports were checked against references in BUILD, Starlark, and migration
+metadata. Three external source archives were unavailable for source-inventory
+proof; their files were inspected and left unchanged. The source-file order
+checks cover both supported CPUs.
 
 ### Linux x86-64
 

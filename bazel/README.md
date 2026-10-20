@@ -25,8 +25,9 @@ bazel test --config=x86_64 //:unit_tests_dbms
 
 The second command runs compilers, code generators, and Cargo on BuildBuddy
 ARM64 Linux executors. `cmake_match_aarch64` includes the ARM64 execution
-platform required for tests; see `README.bazel.md` for the commands and
-recorded build results.
+platform required for tests. It also registers the Linux x86-64 BuildBuddy
+executor, after the ARM64 executors, for the platform-constrained ClickStack
+Next build. See `README.bazel.md` for the commands and recorded build results.
 The unit test target runs the complete GoogleTest suite with the same
 `OPENSSL_CONF=/dev/null` setting as ClickHouse's CI.
 
@@ -95,6 +96,16 @@ Delta and Cargo vendor sources. OpenSSL's source and configured headers are
 assembled into a declared output directory for its Cargo build script.
 Wasmtime uses its original fetched headers beside the configured `conf.h`;
 unchanged copies are not checked into the port.
+
+ClickStack is built from HyperDX sources by
+`//bazel/rules/clickstack:source_export`, using `rules_js`, HyperDX's Yarn
+lockfile, checked Google CSS source responses, and checksum-pinned font files.
+`//bazel:generate_native_ClickStack` compresses that output and generates the
+header used by ClickHouse. The ARM64 comparison uses native CMake's ARM64
+resource timestamps; both targets build the same Next assets. HyperDX source,
+Node, and font revisions are in `clickstack.MODULE.bazel`. The ClickStack
+dependency overlay exports only the license; it no longer exports prebuilt
+Next assets.
 
 Configured dependency headers are declared outputs in their owning external
 repositories. `initial_migration/configuration.py` recovers the original CMake templates and
