@@ -10,7 +10,7 @@
 namespace DB
 {
 
-using GeoMonotoneDeque = boost::container::devector<CartesianPoint, AllocatorWithMemoryTracking<CartesianPoint>>;
+using GeoMonotoneDeque = boost::container::devector<CartesianPoint, AllocatorWithMemoryTracking<CartesianPoint>>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 using GeoBidirectionalMonotoneRing = GeoMonotoneRingImpl<GeoMonotoneDeque>;
 
 /// Valid monotone rings whose closed x projections are strictly separated. An insertion may
