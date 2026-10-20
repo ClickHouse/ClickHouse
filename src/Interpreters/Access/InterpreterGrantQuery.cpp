@@ -429,7 +429,9 @@ BlockIO InterpreterGrantQuery::execute()
     const auto updated_query = removeOnClusterClauseIfNeeded(query_ptr, getContext());
     auto & query = updated_query->as<ASTGrantQuery &>();
 
-    query.replaceCurrentUserTag(getContext()->getUserName());
+    if (!getContext()->getUserID() && query.grantees && (query.grantees->current_user || query.grantees->except_current_user))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "CURRENT_USER requires a user in the current context");
+
     query.access_rights_elements.eraseNotGrantable();
 
     if (!query.access_rights_elements.sameOptions())
@@ -490,6 +492,9 @@ BlockIO InterpreterGrantQuery::execute()
     /// Executing on cluster.
     if (!query.cluster.empty())
     {
+        /// Other hosts receive the query text, so `CURRENT_USER` is sent as a name.
+        query.replaceCurrentUserTag(getContext()->getUserName());
+
         if (query.current_grants)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "GRANT CURRENT GRANTS can't be executed on cluster.");
 

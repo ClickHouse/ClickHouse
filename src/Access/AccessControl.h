@@ -221,6 +221,10 @@ public:
     void setThrowOnInvalidReplicatedAccessEntities(bool enable) { throw_on_invalid_replicated_access_entities = enable; }
     bool shouldThrowOnInvalidReplicatedAccessEntities() const { return throw_on_invalid_replicated_access_entities; }
 
+    /// Sets whether a name that may denote either a user or a role throws when both exist, instead of meaning the user.
+    void setThrowOnAmbiguousUserOrRoleNames(bool enable) { throw_on_ambiguous_user_or_role_names = enable; }
+    bool shouldThrowOnAmbiguousUserOrRoleNames() const { return throw_on_ambiguous_user_or_role_names; }
+
     /// Sets whether `SET ROLE` is refused when the session or the query is readonly.
     void setReadonlyRestrictsSetRole(bool enable) { readonly_restricts_set_role = enable; }
     bool doesReadonlyRestrictSetRole() const { return readonly_restricts_set_role; }
@@ -358,6 +362,7 @@ private:
     std::atomic_bool settings_constraints_replace_previous = false;
     std::atomic_bool table_engines_require_grant = false;
     std::atomic_bool throw_on_invalid_replicated_access_entities = false;
+    std::atomic_bool throw_on_ambiguous_user_or_role_names = false;
     std::atomic_bool forbid_sql_access_entities_targeting_users_config = false;
     std::atomic_int bcrypt_workfactor = 12;
     std::atomic<AuthenticationType> default_password_type = AuthenticationType::SHA256_PASSWORD;
