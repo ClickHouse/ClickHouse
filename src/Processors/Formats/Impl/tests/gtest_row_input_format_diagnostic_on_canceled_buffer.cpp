@@ -49,6 +49,23 @@ private:
     bool served = false;
 };
 
+/// Keep allocated capacity larger than the readable chunk, as for a short final file buffer.
+class ReadBufferWithSpareCapacity : public ReadBuffer
+{
+public:
+    explicit ReadBufferWithSpareCapacity(std::string input) : ReadBuffer(nullptr, 0), storage(std::move(input))
+    {
+        const size_t valid_size = storage.size();
+        storage.resize(valid_size + 64, '#');
+        BufferBase::set(storage.data(), storage.size(), 0);
+        buffer().resize(valid_size);
+    }
+
+private:
+    bool nextImpl() override { return false; }
+    std::string storage;
+};
+
 }
 
 /// Regression test for the "ReadBuffer is canceled. Can't read from it." abort in
@@ -145,33 +162,43 @@ TEST(RowInputFormatDiagnostics, InvalidLastRowWithoutTrailingNewline)
                 if (trailing_newline)
                     payload += '\n';
 
-                ReadBufferFromString buf(payload);
-                auto check_diagnostic = [&](auto & format)
+                auto check_payload = [&](ReadBuffer & buf)
                 {
-                    try
+                    auto check_diagnostic = [&](auto & format)
                     {
-                        format.read();
-                        ADD_FAILURE() << "Expected a parse error for " << payload;
+                        try
+                        {
+                            format.read();
+                            ADD_FAILURE() << "Expected a parse error for " << payload;
+                        }
+                        catch (const Exception & e)
+                        {
+                            const auto & message = e.message();
+                            EXPECT_NE(message.find(preceding_row ? "Row 2" : "Row 1"), std::string::npos);
+                            EXPECT_NE(message.find("Column 0"), std::string::npos);
+                            EXPECT_NE(message.find("type: UInt8"), std::string::npos);
+                            EXPECT_EQ(message.find("Could not print diagnostic info"), std::string::npos);
+                        }
+                    };
+
+                    if (csv)
+                    {
+                        CSVRowInputFormat format(shared_header, buf, params, false, false, format_settings);
+                        check_diagnostic(format);
                     }
-                    catch (const Exception & e)
+                    else
                     {
-                        const auto & message = e.message();
-                        EXPECT_NE(message.find(preceding_row ? "Row 2" : "Row 1"), std::string::npos);
-                        EXPECT_NE(message.find("Column 0"), std::string::npos);
-                        EXPECT_NE(message.find("type: UInt8"), std::string::npos);
-                        EXPECT_EQ(message.find("Could not print diagnostic info"), std::string::npos);
+                        TabSeparatedRowInputFormat format(shared_header, buf, params, false, false, false, format_settings);
+                        check_diagnostic(format);
                     }
                 };
 
-                if (csv)
+                ReadBufferFromString buf(payload);
+                check_payload(buf);
+                if (!trailing_newline)
                 {
-                    CSVRowInputFormat format(shared_header, buf, params, false, false, format_settings);
-                    check_diagnostic(format);
-                }
-                else
-                {
-                    TabSeparatedRowInputFormat format(shared_header, buf, params, false, false, false, format_settings);
-                    check_diagnostic(format);
+                    ReadBufferWithSpareCapacity spare_buf(payload);
+                    check_payload(spare_buf);
                 }
             }
         }

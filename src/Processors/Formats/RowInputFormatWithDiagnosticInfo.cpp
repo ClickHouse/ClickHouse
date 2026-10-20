@@ -50,7 +50,7 @@ std::pair<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRawD
         && in->buffer().empty()
         && buffer_begin_on_current_row
         && in->internalBuffer().begin() == buffer_begin_on_current_row
-        && in->internalBuffer().size() == buffer_size_on_current_row
+        && in->internalBuffer().size() >= buffer_size_on_current_row
         && in->position() == buffer_begin_on_current_row + buffer_size_on_current_row
         && bytes_read_at_start_of_buffer_on_current_row == bytes_read_at_start_of_buffer_on_prev_row
         && in->count() == bytes_read_at_start_of_buffer_on_current_row + buffer_size_on_current_row;
@@ -71,7 +71,7 @@ std::pair<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRawD
     });
 
     if (restore_after_eof)
-        in->buffer() = in->internalBuffer();
+        in->buffer() = ReadBuffer::Buffer(buffer_begin_on_current_row, buffer_begin_on_current_row + buffer_size_on_current_row);
 
     const auto & header = getPort().getHeader();
     MutableColumns columns = header.cloneEmptyColumns(serializations);
