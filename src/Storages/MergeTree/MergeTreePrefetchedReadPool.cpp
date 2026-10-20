@@ -454,6 +454,9 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
         /// A Compact part has no sizes of individual columns, but its reader prefetches a buffer
         /// per column as well. The data of one column can be of any size up to the whole data file,
         /// so the size of the data file is the bound of the buffer of every column.
+        /// Every requested column is charged, even if the part has no column with this name: the name
+        /// can be resolved to another column of the part by the reader (e.g. a pending `RENAME COLUMN`),
+        /// and every requested column has at most one buffer, so the estimate stays an upper bound.
         std::optional<size_t> compact_part_column_size;
         if (read_info.data_part_info->isCompactPart())
             compact_part_column_size = std::max<size_t>(
@@ -462,12 +465,11 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
         auto update_stat_for_column = [&](const auto & column_name)
         {
             size_t column_size = 0;
-            auto column = read_info.data_part_info->tryGetColumn(column_name);
-            if (column && compact_part_column_size)
+            if (compact_part_column_size)
             {
                 column_size = *compact_part_column_size;
             }
-            else if (column)
+            else if (auto column = read_info.data_part_info->tryGetColumn(column_name))
             {
                 if (column->isSubcolumn() && settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading])
                     column_size = read_info.data_part_info->getSubcolumnSize(column_name).data_compressed;

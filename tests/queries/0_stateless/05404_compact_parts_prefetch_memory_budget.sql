@@ -21,6 +21,12 @@ SET allow_prefetched_read_pool_for_remote_filesystem = 1, remote_filesystem_read
 SELECT sum(c2), sum(c3) FROM t_compact_prefetch_budget SETTINGS filesystem_prefetch_max_memory_usage = 1, log_comment = '05404_small_budget';
 SELECT sum(c2), sum(c3) FROM t_compact_prefetch_budget SETTINGS filesystem_prefetch_max_memory_usage = '1Gi', log_comment = '05404_large_budget';
 
+-- With a pending `RENAME COLUMN` the part has no column with the requested name, but the reader reads it by the old name.
+SYSTEM STOP MERGES t_compact_prefetch_budget;
+ALTER TABLE t_compact_prefetch_budget RENAME COLUMN c2 TO renamed_c2 SETTINGS alter_sync = 0;
+SELECT sum(renamed_c2) FROM t_compact_prefetch_budget SETTINGS filesystem_prefetch_max_memory_usage = 1, log_comment = '05404_renamed_small_budget';
+SELECT sum(renamed_c2) FROM t_compact_prefetch_budget SETTINGS filesystem_prefetch_max_memory_usage = '1Gi', log_comment = '05404_renamed_large_budget';
+
 DROP TABLE t_compact_prefetch_budget;
 
 -- The columns of a Compact part can have very different sizes: here one column takes almost the whole part. A budget above
