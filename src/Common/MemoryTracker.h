@@ -172,6 +172,10 @@ private:
     /// Whatever a query still holds when it ends is taken off its user, so the user ends at zero for that query.
     void settleDriftOnQueryEnd();
 
+    /// What the global tracker holds for allocations still being decided over its hard limit. A measurement
+    /// cannot contain them yet, so a correction from one (`updateAllocated`, `updateRSS`) keeps them.
+    std::atomic<Int64> pending_amount = 0;
+
     /// Helper fields for analyzing the global memory tracker. Both are touched only by the
     /// background memory worker (see `updateAllocated` and `updateUncorrected`), so they need
     /// no synchronization.
