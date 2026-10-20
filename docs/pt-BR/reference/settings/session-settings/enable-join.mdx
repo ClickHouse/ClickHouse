@@ -14,7 +14,7 @@ import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## enable_join_fixed_hash_table_conversion
+## enable_join_fixed_hash_table_conversion {#enable_join_fixed_hash_table_conversion}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -22,7 +22,7 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 Permite converter a tabela hash em um array linear em junções quando a chave é um único inteiro com um pequeno intervalo de valores.
 
-## enable_join_key_only_hash_tables
+## enable_join_key_only_hash_tables {#enable_join_key_only_hash_tables}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -30,7 +30,7 @@ Permite converter a tabela hash em um array linear em junções quando a chave �
 
 Usa tabelas hash que armazenam apenas as chaves de junção, sem referência a uma linha da direita, para junções cujo resultado nunca pode conter um valor obtido de uma linha da direita: `LEFT ANTI` e `LEFT SEMI` quando nenhuma coluna da direita é selecionada. Essa tabela tem uma célula menor e permite que os blocos da direita sejam descartados em vez de armazenados.
 
-## enable_join_runtime_filters
+## enable_join_runtime_filters {#enable_join_runtime_filters}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -38,15 +38,22 @@ Usa tabelas hash que armazenam apenas as chaves de junção, sem referência a u
 
 Filtra o lado esquerdo usando o conjunto de chaves de JOIN coletado do lado direito em tempo de execução.
 
-## enable_join_runtime_filters_index_analysis
+## enable_join_runtime_filters_index_analysis {#enable_join_runtime_filters_index_analysis}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Os filtros de runtime de junção passaram a ser um recurso do tier Production."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "Nova configuração para habilitar a filtragem de junções usando análise dinâmica de índices"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Os JOIN runtime filters passaram a ser um recurso do tier Production."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "Nova configuração para habilitar a filtragem de junção usando análise de índice dinâmica"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "1"},{"label": "Habilita a poda de grânulos no lado de sondagem (esquerdo) de um JOIN usando o filtro de tempo de execução coletado do lado de construção (direito)."}]}]} />
 
-Execute uma segunda etapa de análise de índices (via `use_skip_indexes_on_data_read`) para descartar grânulos no lado esquerdo (LHS) de uma junção.
+Poda grânulos no lado de sondagem de um JOIN usando o filtro de tempo de execução coletado do lado de construção; consulte `enable_join_runtime_filters`.
+Só tem efeito se `use_skip_indexes_on_data_read = 1`.
+Só é possível podar por uma chave de junção que seja uma coluna da chave primária do lado de sondagem ou que esteja coberta por um índice de salto `minmax`, `set` ou `bloom_filter`.
+Se o filtro de tempo de execução tiver mantido os valores exatos das chaves, o predicado de poda será um conjunto `IN` com esses valores; caso contrário, será usado o intervalo de chaves entre o valor mínimo e o máximo (que tem menor poder de poda).
 
-## enable_join_transitive_predicates
+Só tem efeito quando o lado de sondagem da junção é lido localmente. Os descritores que orientam a poda são anexados ao passo de leitura durante a otimização do plano de consulta e não são preservados quando esse passo é reconstruído para execução remota; por isso, a poda de grânulos não ocorre com réplicas paralelas (`enable_parallel_replicas = 1`) nem com um plano de consulta distribuído (`make_distributed_plan = 1`). Nesses modos, a configuração não tem efeito: a consulta retorna o mesmo resultado e o próprio filtro de tempo de execução de JOIN se comporta exatamente como se esta configuração estivesse desabilitada; perde-se apenas a poda de grânulos.
+
+A poda de grânulos também é ignorada quando o lado de sondagem é lido com `FINAL` (a poda não está implementada para leituras com `FINAL`, e `optimizeLazyFinal` reconstrói esse tipo de leitura sem os descritores) e para tabelas com dados pendentes, mutações `ALTER` ou partes de patch. Nesses casos, a configuração também não tem efeito, no mesmo sentido.
+
+## enable_join_transitive_predicates {#enable_join_transitive_predicates}
 
 <BetaBadge />
 

@@ -3,6 +3,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ErrnoException.h>
 #include <Common/Exception.h>
+#include <Common/HiddenSecret.h>
 #include <Common/ShellCommand.h>
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
@@ -37,9 +38,6 @@ namespace
     /// `env -C` sets the child's working directory, and `KEY=VAL` entries set environment
     /// variables before exec'ing `action_command`.
     constexpr auto ENV_BINARY = "/usr/bin/env";
-
-    /// Marker used in logs in place of secret values.
-    constexpr auto REDACTED_VALUE = "[HIDDEN]";
 
     struct DirectCommand
     {
@@ -77,7 +75,7 @@ namespace
         for (const auto & [name, value] : driver.env)
         {
             cmd.arguments.emplace_back(name + '=' + value);
-            redacted << ' ' << name << '=' << REDACTED_VALUE;
+            redacted << ' ' << name << '=' << HIDDEN_SECRET;
         }
 
         cmd.arguments.emplace_back(action_command);
@@ -103,7 +101,7 @@ namespace
         {
             cmd.arguments.emplace_back("--" + name);
             cmd.arguments.emplace_back(value);
-            redacted << " --" << name << ' ' << REDACTED_VALUE;
+            redacted << " --" << name << ' ' << HIDDEN_SECRET;
         }
 
         cmd.redacted_description = redacted.str();

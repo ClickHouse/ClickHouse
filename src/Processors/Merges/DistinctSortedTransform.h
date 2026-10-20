@@ -11,17 +11,17 @@ namespace ProfileEvents
 namespace DB
 {
 
-/// Merges external `DISTINCT` runs, returning ordinary payload and discarding suppression keys.
+/// Merges sorted inputs into one row per key, returning ordinary payload and discarding suppression keys.
 class DistinctSortedTransform final : public IMergingTransform<DistinctSortedAlgorithm>
 {
 public:
     DistinctSortedTransform(
-        SharedHeaders input_headers, SharedHeader output_header, SortDescription description,
-        size_t max_block_size_rows, bool have_all_inputs = true)
+        SharedHeaders input_headers, SharedHeader output_header, SortDescription key_description,
+        const std::optional<String> & already_emitted_flag_column, size_t max_block_size_rows, bool have_all_inputs = true)
         : IMergingTransform(
             input_headers, output_header, have_all_inputs, /*limit_hint_=*/ 0,
             /*always_read_till_end_=*/ false, /*empty_chunk_on_finish_=*/ false,
-            input_headers, output_header, std::move(description), max_block_size_rows)
+            input_headers, output_header, std::move(key_description), already_emitted_flag_column, max_block_size_rows)
     {
     }
 
