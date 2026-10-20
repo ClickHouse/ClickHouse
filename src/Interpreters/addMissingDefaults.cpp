@@ -91,7 +91,10 @@ ActionsDAG addMissingDefaults(
     if (auto dag = evaluateMissingDefaults(actions.getResultColumns(), required_columns, columns, context, true, null_as_default))
     {
         /// A default may read a subcolumn of a column this DAG has just filled with its type default; no caller can extract it.
-        auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(Block(actions.getResultColumns()), dag->getRequiredColumnsNames(), context);
+        auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(
+            Block(actions.getResultColumns()),
+            dag->getRequiredColumnsNames(),
+            context);
         actions = ActionsDAG::merge(std::move(actions), ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(*dag)));
     }
 

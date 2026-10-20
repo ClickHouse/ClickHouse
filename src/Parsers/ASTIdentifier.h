@@ -60,6 +60,7 @@ public:
     String full_name;
     std::vector<String> name_parts;
 
+    /// Rebuilds `full_name` after `name_parts` changed.
     void resetFullName();
 
 protected:
