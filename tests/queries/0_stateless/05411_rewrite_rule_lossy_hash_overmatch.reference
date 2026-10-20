@@ -1,0 +1,15 @@
+backup a.bc: rejected
+backup ca.b: not rejected
+backup with data: rejected
+backup except data: not rejected
+filelog same file: rejected
+filelog other file: not rejected
+filelog other offset: not rejected
+filelog to end: not rejected
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+check grant select: rejected
+check grant insert: not rejected

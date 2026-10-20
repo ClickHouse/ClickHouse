@@ -528,12 +528,36 @@ namespace
     /// per class, so a false "exact match" requires the under-hashed class to be present in the
     /// template; a result template never participates in matching itself, and once substituted
     /// it is re-screened as the source side of whatever rule matches next.
+    /// `ASTGrantQuery` / `ASTCheckGrantQuery` hash the text their formatter emits for
+    /// `access_rights_elements`, and that text is lossy for some privileges: unless
+    /// `enable_read_write_grants` is set, `READ ON FILE` and `WRITE ON FILE` are both written as
+    /// `FILE`, and unless `enable_user_name_access_type` is set, `CREATE USER ON u` is written
+    /// with `ON *.*` (see `AccessRightsElement::makeBackwardCompatible` / `formatONClause`). The
+    /// hash cannot use the precise form, because it has to survive the format -> parse round
+    /// trip of the debug-build AST consistency check. So reject a template that names any of
+    /// these privileges: a query can only share the lossy text of a template that names them too.
+    bool hasLossyFormattedAccessRights(const AccessRightsElements & elements)
+    {
+        static const AccessFlags lossy_flags
+            = AccessFlags::allSourceFlags() | AccessFlags::allUserNameFlags() | AccessType::SOURCES;
+        return std::ranges::any_of(elements, [](const AccessRightsElement & element)
+        {
+            return static_cast<bool>(element.access_flags & lossy_flags);
+        });
+    }
+
     const IAST * findUnauditedTemplateNode(const ASTPtr & ast)
     {
         if (!ast)
             return nullptr;
 
         if (!isExactMatchAuditedASTClass(*ast))
+            return ast.get();
+
+        if (const auto * grant = ast->as<ASTGrantQuery>(); grant && hasLossyFormattedAccessRights(grant->access_rights_elements))
+            return ast.get();
+        if (const auto * check_grant = ast->as<ASTCheckGrantQuery>();
+            check_grant && hasLossyFormattedAccessRights(check_grant->access_rights_elements))
             return ast.get();
 
         if (const auto * create_rule = ast->as<ASTCreateRewriteRuleQuery>())

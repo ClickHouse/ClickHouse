@@ -53,102 +53,126 @@ void ASTSystemQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     /// (`database`, `table`, `query_settings`, `backup_source`, `scheduled_merge_parts`) are part of
     /// `children` and are hashed through the child recursion, so they are not repeated here. See the
     /// header comment for why the rewrite-rule matcher needs this.
-    hash_state.update(type);
-    hash_state.update(if_exists);
-    hash_state.update(target_function);
-    hash_state.update(replica);
-    hash_state.update(shard);
-    hash_state.update(zk_name);
-    hash_state.update(full_replica_zk_path);
-    hash_state.update(replica_zk_path);
-    hash_state.update(is_drop_whole_replica);
-    hash_state.update(with_tables);
-    hash_state.update(storage_policy);
-    hash_state.update(volume);
-    hash_state.update(disk);
-    hash_state.update(seconds);
-    hash_state.update(untracked_memory_size);
+    /// `SipHash::update` appends only the bytes of a string, so strings are prefixed with their
+    /// length: otherwise adjacent fields could exchange characters and still hash the same
+    /// (e.g. `replica = 'ab', shard = 'c'` vs `replica = 'a', shard = 'bc'`).
+    auto fold = [&](const auto & value)
+    {
+        using T = std::decay_t<decltype(value)>;
+        if constexpr (std::is_convertible_v<const T &, std::string_view>)
+        {
+            const std::string_view str = value;
+            hash_state.update(str.size());
+            hash_state.update(str);
+        }
+        else
+            hash_state.update(value);
+    };
 
-    hash_state.update(query_result_cache_tag.has_value());
+    fold(type);
+    fold(if_exists);
+    fold(target_function);
+    fold(replica);
+    fold(shard);
+    fold(zk_name);
+    fold(full_replica_zk_path);
+    fold(replica_zk_path);
+    fold(is_drop_whole_replica);
+    fold(with_tables);
+    fold(storage_policy);
+    fold(volume);
+    fold(disk);
+    fold(seconds);
+    fold(untracked_memory_size);
+
+    fold(query_result_cache_tag.has_value());
     if (query_result_cache_tag)
-        hash_state.update(*query_result_cache_tag);
+        fold(*query_result_cache_tag);
 
-    hash_state.update(filesystem_cache_name);
-    hash_state.update(distributed_cache_server_id);
-    hash_state.update(distributed_cache_drop_connections);
-    hash_state.update(key_to_drop);
+    fold(filesystem_cache_name);
+    fold(distributed_cache_server_id);
+    fold(distributed_cache_drop_connections);
+    fold(key_to_drop);
 
-    hash_state.update(offset_to_drop.has_value());
+    fold(offset_to_drop.has_value());
     if (offset_to_drop)
-        hash_state.update(*offset_to_drop);
+        fold(*offset_to_drop);
 
-    hash_state.update(backup_name);
-    hash_state.update(schema_cache_storage);
-    hash_state.update(schema_cache_format);
-    hash_state.update(queue_path);
-    hash_state.update(fail_point_name);
-    hash_state.update(fail_point_action);
-    hash_state.update(delta_kernel_tracing_level);
-    hash_state.update(coverage_test_name);
-    hash_state.update(sync_replica_mode);
+    fold(backup_name);
+    fold(schema_cache_storage);
+    fold(schema_cache_format);
+    fold(queue_path);
+    fold(fail_point_name);
+    fold(fail_point_action);
+    fold(delta_kernel_tracing_level);
+    fold(coverage_test_name);
+    fold(sync_replica_mode);
 
-    hash_state.update(src_replicas.size());
+    fold(src_replicas.size());
     for (const auto & src_replica : src_replicas)
-        hash_state.update(src_replica);
+        fold(src_replica);
 
-    hash_state.update(tables.size());
+    fold(tables.size());
     for (const auto & [table_database, table_name] : tables)
     {
-        hash_state.update(table_database);
-        hash_state.update(table_name);
+        fold(table_database);
+        fold(table_name);
     }
 
     /// `ServerType` (SYSTEM START/STOP LISTEN): fold its type, custom name and exclusion sets.
-    hash_state.update(server_type.type);
-    hash_state.update(server_type.custom_name);
-    hash_state.update(server_type.exclude_types.size());
+    fold(server_type.type);
+    fold(server_type.custom_name);
+    fold(server_type.exclude_types.size());
     for (auto excluded_type : server_type.exclude_types)
-        hash_state.update(excluded_type);
-    hash_state.update(server_type.exclude_custom_names.size());
+        fold(excluded_type);
+    fold(server_type.exclude_custom_names.size());
     for (const auto & excluded_name : server_type.exclude_custom_names)
-        hash_state.update(excluded_name);
+        fold(excluded_name);
 
 #if USE_XRAY
     /// Fields set only for SYSTEM INSTRUMENT ADD / REMOVE.
-    hash_state.update(instrumentation_function_name);
+    fold(instrumentation_function_name);
     /// The formatter emits the handler name upper-cased (`Poco::toUpper`), so fold the same
     /// normalized form: otherwise `... ADD 'f' log ...` and its formatted `... ADD 'f' LOG ...`
     /// re-parse to different handler-name cases and break the tree-hash consistency check.
-    hash_state.update(Poco::toUpper(instrumentation_handler_name));
-    hash_state.update(instrumentation_entry_type);
-    hash_state.update(instrumentation_point.has_value());
+    fold(Poco::toUpper(instrumentation_handler_name));
+    fold(instrumentation_entry_type);
+    fold(instrumentation_point.has_value());
     if (instrumentation_point)
     {
-        hash_state.update(instrumentation_point->index());
+        fold(instrumentation_point->index());
         std::visit(
             [&](const auto & value)
             {
                 using T = std::decay_t<decltype(value)>;
                 if constexpr (!std::is_same_v<T, Instrumentation::All>)
-                    hash_state.update(value);
+                    fold(value);
             },
             *instrumentation_point);
     }
-    hash_state.update(instrumentation_arguments.size());
+    fold(instrumentation_arguments.size());
     for (const auto & argument : instrumentation_arguments)
     {
-        hash_state.update(argument.index());
-        std::visit([&](const auto & value) { hash_state.update(value); }, argument);
+        fold(argument.index());
+        std::visit([&](const auto & value) { fold(value); }, argument);
     }
-    hash_state.update(instrumentation_subquery);
+    fold(instrumentation_subquery);
 #endif
 
-    hash_state.update(fake_time_for_view.has_value());
+    fold(filelog_to_end);
+    fold(filelog_file.has_value());
+    if (filelog_file)
+        fold(*filelog_file);
+    fold(filelog_offset.has_value());
+    if (filelog_offset)
+        fold(*filelog_offset);
+
+    fold(fake_time_for_view.has_value());
     if (fake_time_for_view)
-        hash_state.update(*fake_time_for_view);
+        fold(*fake_time_for_view);
 
     /// The `ON CLUSTER` name (inherited from `ASTQueryWithOnCluster`) is a plain member too.
-    hash_state.update(cluster);
+    fold(cluster);
 }
 
 const char * ASTSystemQuery::typeToString(Type type)
