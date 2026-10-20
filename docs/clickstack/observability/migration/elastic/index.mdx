@@ -8,18 +8,14 @@ keywords: ['Elasticsearch']
 doc_type: 'landing-page'
 ---
 
-This section contains guides for migrating from Elastic Stack to ClickHouse Observability.
-
-<Note>
-These guides are awaiting review for fully managed ClickHouse Observability. Existing instructions may describe OSS or Self Configured workflows and should not yet be treated as verified setup instructions for this offering.
-</Note>
+Plan your migration from Elastic Stack to managed or self-configured ClickHouse Observability. Start with the introduction and search comparison, then choose the data, agent, and SDK migration guidance that matches your deployment.
 
 | Section | Description |
 |---------|-------------|
-| [Introduction](/clickstack/observability/migration/elastic/intro) | Overview of the migration process and key considerations |
-| [Search](/clickstack/observability/migration/elastic/search) | Comparing search capabilities and query syntax |
-| [Migrating Data](/clickstack/observability/migration/elastic/migrating-data) | Strategies for data migration and parallel operation |
-| [Migrating Agents](/clickstack/observability/migration/elastic/migrating-agents) | Transitioning from Elastic agents to OpenTelemetry |
-| [Migrating SDKs](/clickstack/observability/migration/elastic/migrating-sdks) | Replacing Elastic APM agents with OpenTelemetry SDKs |
+| [Introduction](/clickstack/observability/migration/elastic/intro) | Migration considerations and differences between the platforms |
+| [Search](/clickstack/observability/migration/elastic/search) | Translate search queries and understand schema and missing-field differences |
+| [Migrating Data](/clickstack/observability/migration/elastic/migrating-data) | Plan parallel ingestion, retention, and historical-data migration |
+| [Migrating Agents](/clickstack/observability/migration/elastic/migrating-agents) | Choose a migration path for Beats, Elastic Agent, or OpenTelemetry collectors |
+| [Migrating SDKs](/clickstack/observability/migration/elastic/migrating-sdks) | Move application instrumentation from Elastic APM to OpenTelemetry |
 
 For self-configured migrations, also review [equivalent concepts](/clickstack/self-configured/migration/elastic/concepts) and [type mappings](/clickstack/self-configured/migration/elastic/types).
