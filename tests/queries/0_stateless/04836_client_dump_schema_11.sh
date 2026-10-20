@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-fasttest
+# Tags: long, zookeeper, no-fasttest
 # Tag zookeeper: one case dumps a `Replicated` database.
 
 # --dump-schema cases from review: nullability, nested table functions, sorting keys, bad selects, Alias and Overlay
