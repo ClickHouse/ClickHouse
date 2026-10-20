@@ -27,6 +27,11 @@ public:
     ObjectStorageType getType() const override { return type; }
     std::string getTypeName() const override { return type_name; }
 
+    /// The native object storage reads every key from the bucket it was created for, so a fully
+    /// qualified path cannot name another bucket. Iceberg paths in another bucket are rejected by
+    /// `IcebergPathResolver` instead.
+    bool supportsFullyQualifiedPaths() const override { return false; }
+
     ObjectStoragePtr createObjectStorage(
         ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) override;
 
