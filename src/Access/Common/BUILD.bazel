@@ -6,11 +6,13 @@ package(default_visibility = ["//visibility:public"])
 ch_cc_library(
     name = "clickhouse_common_access",
     srcs = glob(["*.cpp"]),
+    hdrs = glob(
+        ["*.h"],
+        exclude = ["SQLSecurityDefs.h"],
+    ),
     clickhouse_code = True,
     implementation_deps = [
-        ":headers",
-        "//src/Common",
-        "//base:base_headers",
+        "//bazel:clickhouse_config_headers",
         "//base/poco/Foundation:_poco_foundation",
         "@clickhouse_fmtlib//:_fmt",
         "@clickhouse_aws//:_aws",
@@ -128,8 +130,16 @@ ch_cc_library(
         "@clickhouse_cctz//:tzdata",
         "@clickhouse_google_protobuf//:utf8_validity",
         "//base/widechar_width",
-        "//src:headers",
     ],
+    deps = [
+        ":headers",
+        "//src/Common",
+        "//src:headers",
+        "//src/Parsers:headers",
+        "//base:base_headers",
+        "//base/poco/Net:_poco_net",
+    ],
+    source_headers = False,
     link_runtime = True,
     llvm_headers = False,
     local_defines = select({
@@ -199,6 +209,5 @@ ch_cc_library(
 
 cc_library(
     name = "headers",
-    hdrs = glob(["**/*.h"]),
-    deps = ["//base/poco/Net:_poco_net"],
+    hdrs = ["SQLSecurityDefs.h"],
 )

@@ -1451,7 +1451,7 @@ ch_cc_library(
     clickhouse_code = True,
     implementation_deps = [
         "//src/Common:cares_ptr_resolver",
-        "//src/Access/Common:headers",
+        "//src/Access/Common:clickhouse_common_access",
         "//src/AggregateFunctions:headers",
         "//src/Common/ZooKeeper:headers",
         "//src/Compression:clickhouse_compression",
@@ -1915,7 +1915,7 @@ _GENERATED_DEPS_1 = [
     "//contrib/sz3-cmake:headers",
     "//contrib/vectorscan-cmake:headers",
     "//base:base_headers",
-    "//src/Access/Common:headers",
+    "//src/Access/Common:clickhouse_common_access",
     "//src/AggregateFunctions:headers",
     "//src/Common",
     "//src/Common/ZooKeeper:headers",
@@ -2713,7 +2713,7 @@ ch_cc_library(
         "//bazel:web_ui_resources",
     ],
     clickhouse_code = True,
-    implementation_deps = [
+    implementation_deps = ["//src/Parsers:clickhouse_parsers"] + [
         "//bazel/rust:delta_kernel_ffi_headers",
         "@clickhouse_arrow//:arrow_generated_config_headers",
         "@clickhouse_amqp_cpp//:_amqp-cpp",
@@ -2795,7 +2795,7 @@ ch_cc_library(
         "Core/YTsaurus/YTsaurusQueries.h",
         "Storages/YTsaurus/YTsaurusSettings.h",
     ],
-    deps = _GENERATED_DEPS_1 + [
+    deps = ["//src/Access/Common:headers"] + _GENERATED_DEPS_1 + [
         "@clickhouse_mongo_cxx_driver//:_bsoncxx",
         "@clickhouse_mongo_cxx_driver//:_mongocxx",
         "//src/Common/Config:clickhouse_common_config",
@@ -3097,7 +3097,7 @@ ch_cc_library(
             "//contrib/sz3-cmake:headers",
             "//contrib/vectorscan-cmake:headers",
             "//base:base_headers",
-            "//src/Access/Common:headers",
+            "//src/Access/Common:clickhouse_common_access",
             "//src/AggregateFunctions:headers",
             "//src/Common",
             "//src/Common/ZooKeeper:headers",
