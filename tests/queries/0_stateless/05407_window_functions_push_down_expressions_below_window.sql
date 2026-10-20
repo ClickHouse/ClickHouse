@@ -264,6 +264,15 @@ SELECT toUInt64(s), count() OVER ()
 FROM (SELECT if(number = 0, 'x', '1') AS s, arrayJoin(if(number = 0, [], [1])) AS a FROM numbers(2))
 SETTINGS query_plan_lower_array_join_function = 0, max_threads = 1;
 
+SELECT 'a column replicated lazily by arrayJoin';
+SELECT if(explain LIKE '%Window (%', 'Window', 'cityHash64') FROM
+(
+    EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT cityHash64(s), count() OVER () FROM (SELECT toString(number) AS s, arrayJoin(range(10000)) AS a FROM numbers(500))
+    SETTINGS query_plan_lower_array_join_function = 0
+)
+WHERE explain LIKE '%Window (%' OR explain LIKE '%FUNCTION cityHash64%';
+
 SELECT 'a table that keeps its columns in memory';
 DROP TABLE IF EXISTS t_window_push_down_memory;
 CREATE TABLE t_window_push_down_memory (s String) ENGINE = Memory;

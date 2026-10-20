@@ -378,11 +378,12 @@ bool hasOwnMemory(const QueryPlan::Node & node, const String & column_name, size
     return false;
 }
 
-/// Whether the column `column_name` of the output of `node` may be a sparse column, which takes much less than
-/// the offset of a `String` per row, while the result of an expression of it can be a full column. A part can store
-/// a column in a sparse serialization, and functions keep their results sparse if they map the default value to
-/// the default value (`toFixedString(s, 8)`), so all the inputs of the expressions are followed to the reads.
-bool mayBeSparse(const QueryPlan::Node & node, const String & column_name, size_t depth = 0)
+/// Whether the column `column_name` of the output of `node` may be a sparse or a lazily replicated column, which takes
+/// much less than the offset of a `String` per row, while the result of an expression of it can be a full column.
+/// A part can store a column in a sparse serialization, and functions keep their results sparse if they map the default
+/// value to the default value (`toFixedString(s, 8)`), so all the inputs of the expressions are followed to the reads.
+/// An `arrayJoin` can replicate all the columns of the block lazily, not only the ones computed from it.
+bool mayBeSparseOrReplicated(const QueryPlan::Node & node, const String & column_name, size_t depth = 0)
 {
     static constexpr size_t max_depth = 100;
     if (depth > max_depth)
@@ -398,6 +399,9 @@ bool mayBeSparse(const QueryPlan::Node & node, const String & column_name, size_
 
     if (actions)
     {
+        if (actions->hasArrayJoin())
+            return true;
+
         const auto * column_output = actions->tryFindInOutputs(column_name);
         if (!column_output || node.children.size() != 1)
             return true;
@@ -405,7 +409,7 @@ bool mayBeSparse(const QueryPlan::Node & node, const String & column_name, size_
         NodeSet column_nodes;
         collectSubtree(column_output, column_nodes);
         for (const auto * column_node : column_nodes)
-            if (column_node->type == ActionsDAG::ActionType::INPUT && mayBeSparse(*node.children.front(), column_node->result_name, depth + 1))
+            if (column_node->type == ActionsDAG::ActionType::INPUT && mayBeSparseOrReplicated(*node.children.front(), column_node->result_name, depth + 1))
                 return true;
 
         return false;
@@ -438,7 +442,7 @@ bool mayBeSparse(const QueryPlan::Node & node, const String & column_name, size_
     if (typeid_cast<const UnionStep *>(step))
     {
         for (const auto * child : node.children)
-            if (mayBeSparse(*child, column_name, depth + 1))
+            if (mayBeSparseOrReplicated(*child, column_name, depth + 1))
                 return true;
         return false;
     }
@@ -448,12 +452,12 @@ bool mayBeSparse(const QueryPlan::Node & node, const String & column_name, size_
         for (const auto & window_function : window->getWindowFunctions())
             if (window_function.column_name == column_name)
                 return false;
-        return node.children.size() != 1 || mayBeSparse(*node.children.front(), column_name, depth + 1);
+        return node.children.size() != 1 || mayBeSparseOrReplicated(*node.children.front(), column_name, depth + 1);
     }
 
     const auto & input_headers = step->getInputHeaders();
     if (node.children.size() == 1 && input_headers.size() == 1 && blocksHaveEqualStructure(*input_headers.front(), *step->getOutputHeader()))
-        return mayBeSparse(*node.children.front(), column_name, depth + 1);
+        return mayBeSparseOrReplicated(*node.children.front(), column_name, depth + 1);
 
     return true;
 }
@@ -721,7 +725,7 @@ void tryPushDownExpressionsBelowWindow(const Stack & stack, QueryPlan::Nodes & n
         else if (can_replace_column(input, lowest_candidates))
             replacing_candidates = &lowest_candidates;
 
-        if (!replacing_candidates || !hasOwnMemory(*bottom_node, column_name) || mayBeSparse(*bottom_node, column_name))
+        if (!replacing_candidates || !hasOwnMemory(*bottom_node, column_name) || mayBeSparseOrReplicated(*bottom_node, column_name))
             continue;
 
         for (const auto * candidate : *replacing_candidates)

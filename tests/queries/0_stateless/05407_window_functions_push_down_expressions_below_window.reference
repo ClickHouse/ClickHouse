@@ -81,6 +81,9 @@ cityHash64
 Window
 arrayJoin below the window functions
 1	1
+a column replicated lazily by arrayJoin
+cityHash64
+Window
 a table that keeps its columns in memory
 cityHash64
 Window
