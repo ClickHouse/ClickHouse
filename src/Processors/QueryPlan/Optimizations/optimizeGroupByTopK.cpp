@@ -496,14 +496,15 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
             *sort_node.step->getOutputHeader(), *aggregating_node->step->getOutputHeader()));
     }
 
-    const bool synthetic_sort = sorting_step == nullptr;
+    /// A sort only for the heap pays off only while the heap bounds the hash table, so the heap must not freeze.
+    const bool sort_only_for_heap = sorting_step == nullptr || sorting_step->isForGroupByTopK();
 
     Aggregator::Params::TopKParams top_k_params{
         .k = limit,
         .directions = std::move(directions),
         .nulls_directions = std::move(nulls_directions),
         .key_columns = num_key_columns,
-        .observation_rows = synthetic_sort ? 0 : settings.top_k_optimization_observation_rows,
+        .observation_rows = sort_only_for_heap ? 0 : settings.top_k_optimization_observation_rows,
         .shared_boundary = settings.top_k_optimization_shared_boundary,
         .threshold_tracker = nullptr,
     };

@@ -920,7 +920,10 @@ void applyTopKPushdownToPartialAggregation(
             .directions = std::move(directions),
             .nulls_directions = std::move(nulls_directions),
             .key_columns = sort_description.size(),
-            .observation_rows = settings[Setting::group_by_top_k_optimization_observation_rows],
+            /// The injected order, like the sort `tryOptimizeGroupByTopK` synthesizes, only pays off while the heap
+            /// bounds the hash table, so the heap must not freeze.
+            .observation_rows
+            = query_node.isOrderByForGroupByTopK() ? 0 : settings[Setting::group_by_top_k_optimization_observation_rows].value,
             .shared_boundary = settings[Setting::group_by_top_k_optimization_shared_boundary],
             .threshold_tracker = nullptr,
         });
@@ -1423,6 +1426,7 @@ void addDistinctStep(QueryPlan & query_plan,
 }
 
 void addSortingStep(QueryPlan & query_plan,
+    const QueryNode & query_node,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context)
 {
@@ -1436,6 +1440,8 @@ void addSortingStep(QueryPlan & query_plan,
         query_analysis_result.partial_sorting_limit,
         sort_settings);
     sorting_step->setStepDescription("Sorting for ORDER BY");
+    if (query_node.isOrderByForGroupByTopK())
+        sorting_step->setForGroupByTopK();
     query_plan.addStep(std::move(sorting_step));
 }
 
@@ -1856,7 +1862,7 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
         return;
 
     if (expressions_analysis_result.hasSort())
-        addSortingStep(query_plan, query_analysis_result, planner_context);
+        addSortingStep(query_plan, query_node, query_analysis_result, planner_context);
 
     /** For DISTINCT step, pre_distinct = false, because if we have limit and distinct,
       * we need to merge streams to one and calculate overall distinct.
@@ -3190,7 +3196,7 @@ void Planner::buildPlanForQueryNode()
                 !(query_node.isGroupByWithTotals() && !query_analysis_result.aggregate_final))
                 addMergeSortingStep(query_plan, query_analysis_result, planner_context, "Merge sorted streams for ORDER BY, without aggregation");
             else
-                addSortingStep(query_plan, query_analysis_result, planner_context);
+                addSortingStep(query_plan, query_node, query_analysis_result, planner_context);
         }
 
         /** Optimization if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,

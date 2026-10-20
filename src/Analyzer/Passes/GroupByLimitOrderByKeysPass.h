@@ -13,6 +13,9 @@ namespace DB
 /// text. With the `ORDER BY` in that text the replicas and the initiator agree, and the replicas put the heap on their
 /// partial aggregation (`applyTopKPushdownToPartialAggregation`). The single-node plan gets the same `ORDER BY`, so that
 /// it measures what the replicas would run and automatic parallel replicas can match the two plans.
+///
+/// Like the sort that `tryOptimizeGroupByTopK` synthesizes, the injected one only pays off while the heap bounds the hash
+/// table, so the heap must not freeze. `QueryNode::isOrderByForGroupByTopK` tells the planner so.
 class GroupByLimitOrderByKeysPass final : public IQueryTreePass
 {
 public:

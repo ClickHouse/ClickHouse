@@ -4,6 +4,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
 #include <Core/Settings.h>
+#include <DataTypes/TypeTree.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Context.h>
 #include <base/arithmeticOverflow.h>
@@ -13,6 +14,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_suspicious_types_in_order_by;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool enable_group_by_top_k_optimization;
     extern const SettingsBool exact_rows_before_limit;
@@ -64,9 +66,20 @@ void GroupByLimitOrderByKeysPass::run(QueryTreeNodePtr & query_tree_node, Contex
             && heap_size > settings[Setting::query_plan_max_limit_for_top_k_optimization]))
         return;
 
+    /// The replicas analyze the `ORDER BY` from the query text, and must accept every key as a sorting key, see
+    /// `QueryAnalyzer::validateSortingKeyType`.
+    const bool allow_suspicious_types = settings[Setting::allow_suspicious_types_in_order_by];
+    const auto is_illegal_sorting_type = [&](const IDataType & type)
+    { return !type.isComparable() || (!allow_suspicious_types && (isDynamic(type) || isVariant(type))); };
+    const auto & keys = query->getGroupBy().getNodes();
+    for (const auto & key : keys)
+        if (anyInTypeTree(*key->getResultType(), is_illegal_sorting_type))
+            return;
+
     auto & order_by = query->getOrderBy().getNodes();
-    for (const auto & key : query->getGroupBy().getNodes())
+    for (const auto & key : keys)
         order_by.push_back(std::make_shared<SortNode>(key->clone()));
+    query->setIsOrderByForGroupByTopK(true);
 }
 
 }
