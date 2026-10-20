@@ -88,10 +88,12 @@ SELECT
         toTypeName(mapFromArrays(arrayMap(e -> tupleElement(e, 1), entries), arrayMap(e -> tupleElement(e, 2), entries)))
 FORMAT TabSeparatedRaw;
 
+-- arrayMap removes nested LowCardinality during the old rewrite, but mapFromEntries preserves it.
 WITH CAST([('a', 'x')], 'Array(Nullable(Tuple(String, LowCardinality(String))))') AS entries
 SELECT
-    toTypeName(mapFromEntries(entries)) =
-        toTypeName(mapFromArrays(arrayMap(e -> tupleElement(e, 1), entries), arrayMap(e -> tupleElement(e, 2), entries)))
+    mapEntries(mapFromEntries(entries)) =
+        mapEntries(mapFromArrays(arrayMap(e -> tupleElement(e, 1), entries), arrayMap(e -> tupleElement(e, 2), entries))),
+    toTypeName(mapFromEntries(entries))
 FORMAT TabSeparatedRaw;
 
 SELECT
