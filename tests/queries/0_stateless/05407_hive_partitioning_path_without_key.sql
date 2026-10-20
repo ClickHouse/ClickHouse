@@ -11,6 +11,8 @@ INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '/05407/hour=11
 INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '/05407/misc/stray.csv', format = CSV, structure = 'c1 Int64') SELECT 3 SETTINGS s3_truncate_on_insert = 1;
 INSERT INTO FUNCTION file(currentDatabase() || '/05407_dup/key=1/key=2/data.csv', CSV, 'c1 Int64') SELECT 4 SETTINGS engine_file_truncate_on_insert = 1, use_hive_partitioning = 0;
 INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '/05407_dup/key=1/key=2/data.csv', format = CSV, structure = 'c1 Int64') SELECT 4 SETTINGS s3_truncate_on_insert = 1, use_hive_partitioning = 0;
+INSERT INTO FUNCTION file(currentDatabase() || '/05407_headers/_headers=foo/data.csv', CSV, 'c1 Int64') SELECT 5 SETTINGS engine_file_truncate_on_insert = 1, use_hive_partitioning = 0;
+INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '/05407_headers/_headers=foo/data.csv', format = CSV, structure = 'c1 Int64') SELECT 5 SETTINGS s3_truncate_on_insert = 1, use_hive_partitioning = 0;
 
 SET use_hive_partitioning = 1;
 
@@ -41,3 +43,10 @@ SELECT c1 FROM file(currentDatabase() || '/05407_dup/key=1/key=2/data.csv', CSV,
 SELECT c1, _file FROM file(currentDatabase() || '/05407_dup/key=1/key=2/data.csv', CSV, 'c1 Int64');
 SELECT c1 FROM s3(s3_conn, filename = currentDatabase() || '/05407_dup/key=1/key=2/data.csv', format = CSV, structure = 'c1 Int64');
 SELECT c1, _file FROM s3(s3_conn, filename = currentDatabase() || '/05407_dup/key=1/key=2/data.csv', format = CSV, structure = 'c1 Int64');
+
+-- outside web sources, _headers is a hive partition key like any other
+SET use_hive_partitioning = 1;
+SELECT c1, _headers FROM file(currentDatabase() || '/05407_headers/_headers=foo/data.csv', CSV, 'c1 Int64');
+SELECT c1 FROM file(currentDatabase() || '/05407_headers/_headers=foo/data.csv', CSV, 'c1 Int64') WHERE _headers = 'foo';
+SELECT c1, _headers FROM s3(s3_conn, filename = currentDatabase() || '/05407_headers/_headers=foo/data.csv', format = CSV, structure = 'c1 Int64');
+SELECT c1 FROM s3(s3_conn, filename = currentDatabase() || '/05407_headers/_headers=foo/data.csv', format = CSV, structure = 'c1 Int64') WHERE _headers = 'foo';
