@@ -284,6 +284,8 @@ void ManifestColumnStatistics::finalize(DataLakeReadEstimate & estimate)
     if (!estimator)
         return;
 
+    /// Selectivities are shares of these rows.
+    statistics_builder.incrementRowCount(total_rows);
     profile.column_stats = estimator->estimateRelationProfile().column_stats;
     /// Without a `uniq` sketch the estimator guesses a fixed share of the rows; the manifests give better.
     for (size_t i = 0; i < targets.size(); ++i)
@@ -298,6 +300,7 @@ void ManifestColumnStatistics::finalize(DataLakeReadEstimate & estimate)
         if (distinct_values.counted)
             statistics_builder.setCardinality(targets[i].name, distinct_values.count);
     }
+    estimate.estimator = estimator;
 }
 
 }

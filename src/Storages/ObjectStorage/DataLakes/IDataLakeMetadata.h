@@ -51,6 +51,7 @@ using PartitionCommands = std::vector<PartitionCommand>;
 
 struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
+class ConditionSelectivityEstimator;
 
 /// A read estimated from the data lake metadata without reading data (see `IDataLakeMetadata::estimateRead`).
 struct DataLakeReadEstimate
@@ -62,6 +63,8 @@ struct DataLakeReadEstimate
     /// The rows of the live data files left after pruning, deleted rows included, and the statistics of the requested
     /// columns over them; std::nullopt if the metadata is malformed.
     std::optional<RelationProfile> profile;
+    /// Estimates conditions on the column statistics of `profile`; nullptr if no requested column has statistics.
+    std::shared_ptr<const ConditionSelectivityEstimator> estimator;
 };
 
 class IDataLakeMetadata : boost::noncopyable

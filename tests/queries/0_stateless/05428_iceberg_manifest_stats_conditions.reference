@@ -1,0 +1,65 @@
+--- fixture: data files and rows per Iceberg table
+p	DATA	2	10000
+t	DATA	4	10000
+--- T1: v = 3, every file overlaps
+Expect ~2000: v is 0..4, so its counted NDV is 5, and equality keeps 10000 / 5 rows.
+Join: t[no_stats~2000] ⋈ dim[1]
+rows: 2000
+--- T1: v IN (1, 2)
+Expect ~4000: 2 of the 5 values of v, so 10000 * 2 / 5.
+Join: t[no_stats~4000] ⋈ dim[2]
+rows: 4000
+--- T1: n IS NULL
+Expect ~9000: the NULL counts of the manifests, 9000 of the 10000 rows.
+Join: t[no_stats~9000] ⋈ dim[5]
+rows: 9000
+--- T1: k BETWEEN 1000 AND 8999, every file overlaps
+Expect ~7999: interpolated between min 0 and max 9999, so about 8000 of the 10000 rows.
+Join: t[no_stats~7999] ⋈ dim[5]
+rows: 8000
+--- T1: s = 'rare'
+Expect ~100: a string has no counted NDV, so equality takes the default 1% of 10000 (true 200).
+Join: t[no_stats~100] ⋈ dim[5]
+rows: 200
+--- T2: k < 1000, 1 of 4 files remains
+Expect ~999: the remaining file holds k 0..2499 in 2500 rows, interpolated to 2500 * 1000 / 2500.
+Join: t[no_stats~999] ⋈ dim[5]
+rows: 1000
+--- T2: d = '2024-01-05', 1 of 4 files remains
+Expect ~100: the remaining file holds 25 days in 2500 rows, so 2500 / 25.
+Join: t[no_stats~100] ⋈ dim[5]
+rows: 100
+--- T3: r = 'us', the eu partition is pruned
+Expect ~3000: the us partition holds 3000 rows and one partition value, so 3000 / 1.
+Join: t[no_stats~3000] ⋈ dim[5]
+rows: 3000
+--- T4: plan, manifest statistics off
+Expect no row estimates: without the manifest statistics the Iceberg reads have none, so neither have the joins above them.
+Join: c ⋈ g ⋈ (l ⋈ o)
+Join: c ⋈ g
+Join: l ⋈ o
+--- T4: plan, manifest statistics on
+Expect g ~1 (5 rows / 5 ids) and c ~200 (1000 rows / 5 values of cg), joined first.
+Join: l[30000] ⋈ (o[10000] ⋈ (c[no_stats~200] ⋈ g[no_stats~1]))
+Join: o[10000] ⋈ (c[no_stats~200] ⋈ g[no_stats~1])
+Join: c[no_stats~200] ⋈ g[no_stats~1]
+--- T4: result, manifest statistics off and on
+Expect 6000 both times.
+6000
+6000
+--- T4: JoinBuildTableRowCount, manifest statistics off and on
+Expect off: g (1) + o (10000) + l x o (30000) = 40001; on: g (1) + c x g (200) + o x c x g (2000) = 2201.
+off	40001
+on	2201
+--- T5: v = 3 above LIMIT 5000
+Expect ~2000: v = 3 on the 10000 rows, below the limit (true 1000: the limit takes 2 whole files first).
+Join: t[no_stats~2000] ⋈ dim[1]
+rows: 1000
+--- T6: row policy k < 1000, 1 of 4 files remains
+Expect ~999: as the filter k < 1000 in T2.
+Join: t[no_stats~999] ⋈ dim[1]
+rows: 1000
+--- T7: k % 2 = 0, right above the read
+Expect ~100: the default 1% of 10000 rows for a condition that is not a range, once (true 5000).
+Join: t[no_stats~100] ⋈ dim[5]
+rows: 5000
