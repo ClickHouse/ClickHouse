@@ -4259,6 +4259,11 @@ cc_test(
     ] + [
         "@clickhouse_arrow//:arrow_headers",
         "@clickhouse_heks//:heks",
+        "//base/poco/Foundation:thread_pool",
+        "//base/poco/NetSSL_OpenSSL:secure_socket",
+        "//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_1",
+        ":clickhouse_common_io__compile_2",
+        ":clickhouse_common_io__compile_3",
     ],
 )
 
