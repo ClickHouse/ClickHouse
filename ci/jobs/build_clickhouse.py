@@ -7,6 +7,7 @@ import subprocess
 
 from ci.defs.defs import BuildTypes, ToolSet
 from ci.jobs.scripts.clickhouse_version import CHVersion
+from ci.jobs.scripts import relocation_headroom
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
@@ -637,6 +638,9 @@ def main():
                     info="BOLT post-processing failed (best-effort), using PGO-only binary",
                 )
 
+        if res and build_type == BuildTypes.AMD_MSAN:
+            results.append(relocation_headroom.check(build_dir, info))
+
         # The point of `Build (wasm64)` is a `clickhouse local` that runs, not one that
         # merely links: execute queries under Node.js, covering the advertised surface -
         # a `MergeTree` table is created, filled and aggregated, which exercises the
@@ -711,7 +715,13 @@ def main():
         )
         res = results[-1].is_ok()
 
-    Result.create_from(results=results, files=files).complete_job()
+    # A failed relocation headroom check fails the job without dropping the jobs that use its artifacts.
+    headroom_only = any(r.name == relocation_headroom.NAME and not r.is_ok() for r in results) and all(
+        r.is_ok() for r in results if r.name != relocation_headroom.NAME
+    )
+    Result.create_from(results=results, files=files).complete_job(
+        do_not_block_pipeline_on_failure=headroom_only, do_not_cache=any(r.do_not_cache() for r in results)
+    )
 
 
 if __name__ == "__main__":
