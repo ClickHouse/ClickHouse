@@ -1165,7 +1165,7 @@ std::chrono::time_point<std::chrono::system_clock> QueryResultCacheReader::entry
     return expires_at;
 }
 
-bool QueryResultCacheReader::entryIgnoresQuota()
+bool QueryResultCacheReader::entryIgnoresQuota() const
 {
     chassert(hasCacheEntryForKey(false));
     return ignore_quota;
