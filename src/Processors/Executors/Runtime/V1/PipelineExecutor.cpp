@@ -9,6 +9,7 @@
 #include <Common/ConcurrencyControl.h>
 #include <Common/Scheduler/CPULeaseAllocation.h>
 #include <Common/Scheduler/CPUSlotsAllocation.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/Stopwatch.h>
@@ -68,6 +69,10 @@ struct WorkloadResources
     MemoryReservation * reservation;
     MemoryTracker * tracker;
 
+    // The previously published CPU lease, restored on destruction
+    ISlotLease * prev_cpu_lease = nullptr;
+    bool publishes_lease = false; // moved to the new instance by the move constructor
+
     WorkloadResources(IAcquiredSlot * cpu_slot, const QueryStatusPtr & status)
         : lease(dynamic_cast<ISlotLease*>(cpu_slot))
         , reservation(status ? status->getMemoryReservation() : nullptr)
@@ -78,9 +83,38 @@ struct WorkloadResources
             lease->startConsumption();
             last_renew_ns = clock_gettime_ns();
         }
+
+        // Publish own lease, or hide the outer executor's lease from a nested executor
+        // that does not park (it may have no lease at all)
+        prev_cpu_lease = getCurrentCPULease();
+        if (lease && lease->isParkingEnabled())
+        {
+            setCurrentCPULease(lease);
+            publishes_lease = true;
+        }
+        else if (prev_cpu_lease)
+        {
+            setCurrentCPULease(nullptr);
+            publishes_lease = true;
+        }
     }
 
-    WorkloadResources(WorkloadResources && other) = default;
+    WorkloadResources(WorkloadResources && other) noexcept
+        : lease(other.lease)
+        , last_renew_ns(other.last_renew_ns)
+        , reservation(other.reservation)
+        , tracker(other.tracker)
+        , prev_cpu_lease(other.prev_cpu_lease)
+        , publishes_lease(other.publishes_lease)
+    {
+        other.publishes_lease = false; // the moved-to instance now owns the publication
+    }
+
+    ~WorkloadResources()
+    {
+        if (publishes_lease)
+            setCurrentCPULease(prev_cpu_lease);
+    }
 
     bool isCPULeaseRenewNeeded()
     {
@@ -135,15 +169,14 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> processors, Query
     }
     catch (Exception & exception)
     {
-        /// If exception was thrown while pipeline initialization, it means that query pipeline was not build correctly.
-        /// It is logical error, and we need more information about pipeline.
-        /// Label the nodes with addresses so that they can be matched against the endpoints
-        /// named by the exception (e.g. from `ExecutingGraph::addEdge`) even when `getUniqID`
-        /// degrades to the `_0` suffix because `CurrentThread` is not initialized.
-        WriteBufferFromOwnString buf;
-        printPipeline(*processors, buf, /* with_profile = */ false, /* with_addresses = */ true);
-        buf.finalize();
-        exception.addMessage("Query pipeline:\n" + buf.str());
+        /// A logical error here means the pipeline was built incorrectly: append a dump of it.
+        if (exception.code() == ErrorCodes::LOGICAL_ERROR)
+        {
+            WriteBufferFromOwnString buf;
+            printPipeline(*processors, buf);
+            buf.finalize();
+            exception.addMessage("Query pipeline:\n" + buf.str());
+        }
 
         throw;
     }
@@ -625,6 +658,7 @@ SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurr
                             .on_preempt = [this](size_t slot_id) { tasks.preempt(slot_id); },
                             .on_resume = [this](size_t slot_id) { tasks.resume(slot_id); },
                             .workload = query_context->getSettingsRef()[Setting::workload],
+                            .parking_enabled = query_context->getCPUSlotParking(),
                             .trace_cpu_scheduling = trace_cpu_scheduling,
                         },
                         initial_max);
