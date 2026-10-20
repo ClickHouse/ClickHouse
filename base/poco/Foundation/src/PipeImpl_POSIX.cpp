@@ -15,6 +15,7 @@
 #include "Poco/PipeImpl_POSIX.h"
 #include "Poco/Exception.h"
 #include <sys/types.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
 
@@ -25,7 +26,18 @@ namespace Poco {
 PipeImpl::PipeImpl()
 {
 	int fds[2];
+	// Close-on-exec, so that processes started by the program do not inherit the pipe.
+#if defined(__APPLE__)
 	int rc = pipe(fds);
+	if (rc == 0 && (fcntl(fds[0], F_SETFD, FD_CLOEXEC) == -1 || fcntl(fds[1], F_SETFD, FD_CLOEXEC) == -1))
+	{
+		close(fds[0]);
+		close(fds[1]);
+		rc = -1;
+	}
+#else
+	int rc = pipe2(fds, O_CLOEXEC);
+#endif
 	if (rc == 0)
 	{
 		_readfd  = fds[0];
