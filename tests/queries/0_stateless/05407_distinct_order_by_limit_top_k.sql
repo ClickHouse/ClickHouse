@@ -17,7 +17,6 @@ SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT DISTINCT value FROM t_
 SELECT count() FROM (EXPLAIN actions = 1 SELECT DISTINCT value FROM t_distinct_top_k ORDER BY ts LIMIT 10 WITH TIES) WHERE explain LIKE '%Top-K%';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT DISTINCT value FROM t_distinct_top_k ORDER BY ts LIMIT 2000) WHERE explain LIKE '%Top-K%';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT DISTINCT value FROM t_distinct_top_k ORDER BY ts LIMIT 10 SETTINGS enable_distinct_top_k_optimization = 0) WHERE explain LIKE '%Top-K%';
-SELECT count() FROM (EXPLAIN actions = 1 SELECT DISTINCT value FROM t_distinct_top_k ORDER BY ts LIMIT 10 SETTINGS max_rows_in_distinct = 1000000) WHERE explain LIKE '%Top-K%';
 
 -- The boundary on `ts` filters the rows of the read.
 SELECT count() FROM (EXPLAIN actions = 1 SELECT DISTINCT value FROM t_distinct_top_k ORDER BY ts LIMIT 10) WHERE explain LIKE '%Top-K dynamic filtering: 1%';

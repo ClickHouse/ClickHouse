@@ -267,10 +267,6 @@ void tryOptimizeDistinctTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & n
     if (!pre_distinct_step->getSortDescription().empty())
         return;
 
-    /// The limits of the `DISTINCT` set count the keys of the whole input, which the top-K never sees.
-    if (pre_distinct_step->getSettings().set_size_limits.hasLimits())
-        return;
-
     /// The sorting may also sort by a subcolumn, which the transform does not look up.
     const auto & header = *pre_distinct_step->getOutputHeader();
     for (size_t i = 0; i < pre_distinct_sort_description.size(); ++i)

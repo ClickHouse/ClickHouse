@@ -2360,7 +2360,7 @@ When enabled, each stream of the preliminary `DISTINCT` keeps only the `N` (`LIM
 
 When the `ORDER BY` columns are not `DISTINCT` keys, the `ORDER BY` value of each key is taken from its first row in the `ORDER BY` order. Without the optimization it is taken from an arbitrary row of the key. Both results are allowed by the semantics of `DISTINCT` with `ORDER BY`.
 
-The optimization is disabled when the requested `LIMIT` is higher than [query_plan_max_limit_for_top_k_optimization](#query_plan_max_limit_for_top_k_optimization) or than the hard cap of `100000`, with `LIMIT WITH TIES`, `WITH FILL`, `LIMIT BY`, and when `max_rows_in_distinct` or `max_bytes_in_distinct` is set.
+The optimization is disabled when the requested `LIMIT` is higher than [query_plan_max_limit_for_top_k_optimization](#query_plan_max_limit_for_top_k_optimization) or than the hard cap of `100000`, with `LIMIT WITH TIES`, `WITH FILL` and `LIMIT BY`. The `max_rows_in_distinct` and `max_bytes_in_distinct` limits apply to the final `DISTINCT`, which sees only the keys the preliminary one passes.
 
 Possible values:
 
