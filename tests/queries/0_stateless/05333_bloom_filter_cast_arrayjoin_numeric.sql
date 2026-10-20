@@ -389,7 +389,7 @@ WITH
 SELECT 'DateTime64(7) CAST-to-String default context preserves typed rows',
        indexed = full_scan AND full_scan = [(toUInt64(1), '2020-01-01 00:00:01.1234567')];
 
--- This conversion keeps the full FormatSettings comparison. Unrelated format changes may decline the index but must preserve rows.
+-- DateTime64-to-String is outside the closed context-independent CAST subset. Declining the index must preserve rows.
 WITH
     groupArray(explain) AS plan,
     arrayFirstIndex(x -> position(x, 'Name: idx_dt64_cast_text') > 0, plan) AS name_row,

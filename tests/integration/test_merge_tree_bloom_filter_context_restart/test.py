@@ -4,7 +4,6 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 
-
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DATABASE = "test_bloom_filter_context_restart"
 INITIAL_CONFIG = os.path.join(SCRIPT_DIR, "configs/best_effort.xml")
@@ -12,11 +11,16 @@ CONFIGS = {
     "best_effort": INITIAL_CONFIG,
     "best_effort_us": os.path.join(SCRIPT_DIR, "configs/best_effort_us.xml"),
 }
+FLOAT_CONFIGS = {
+    0: os.path.join(SCRIPT_DIR, "configs/precise_float_parsing_0.xml"),
+    1: os.path.join(SCRIPT_DIR, "configs/precise_float_parsing_1.xml"),
+}
+FLOAT_CONFIG_DESTINATION = "/etc/clickhouse-server/users.d/precise_float_parsing.xml"
+FLOAT_DATABASE = f"{DATABASE}_float"
+FLOAT_TEXT = "0.1e-5"
 TIMEZONE_CONFIGS = {
     "UTC": os.path.join(SCRIPT_DIR, "configs/timezone_utc.xml"),
-    "America/Los_Angeles": os.path.join(
-        SCRIPT_DIR, "configs/timezone_los_angeles.xml"
-    ),
+    "America/Los_Angeles": os.path.join(SCRIPT_DIR, "configs/timezone_los_angeles.xml"),
 }
 TIMEZONE_CONFIG_DESTINATION = "/etc/clickhouse-server/config.d/timezone_utc.xml"
 EXPECTED_ROWS = "[" + ",".join(str(i) for i in range(16)) + "]"
@@ -57,8 +61,7 @@ def started_cluster():
 
 def _create_tables(date_time_type):
     node.query(f"CREATE DATABASE {DATABASE} ENGINE = Atomic")
-    node.query(
-        f"""
+    node.query(f"""
         CREATE TABLE {DATABASE}.scalar_cast
         (
             id UInt64,
@@ -69,10 +72,8 @@ def _create_tables(date_time_type):
         ENGINE = MergeTree
         ORDER BY id
         SETTINGS index_granularity = 1, index_granularity_bytes = 0
-        """
-    )
-    node.query(
-        f"""
+        """)
+    node.query(f"""
         CREATE TABLE {DATABASE}.array_map_cast
         (
             id UInt64,
@@ -83,10 +84,8 @@ def _create_tables(date_time_type):
         ENGINE = MergeTree
         ORDER BY id
         SETTINGS index_granularity = 1, index_granularity_bytes = 0
-        """
-    )
-    node.query(
-        f"""
+        """)
+    node.query(f"""
         CREATE TABLE {DATABASE}.array_whole_cast
         (
             id UInt64,
@@ -97,10 +96,8 @@ def _create_tables(date_time_type):
         ENGINE = MergeTree
         ORDER BY id
         SETTINGS index_granularity = 1, index_granularity_bytes = 0
-        """
-    )
-    node.query(
-        f"""
+        """)
+    node.query(f"""
         CREATE TABLE {DATABASE}.numeric_cast
         (
             id UInt64,
@@ -115,8 +112,7 @@ def _create_tables(date_time_type):
             min_rows_for_wide_part = 0,
             min_bytes_for_wide_part = 0,
             add_minmax_index_for_numeric_columns = 0
-        """
-    )
+        """)
 
     node.query(
         f"INSERT INTO {DATABASE}.scalar_cast "
@@ -216,9 +212,7 @@ def _assert_native_context_indexes_declined(mode):
             f"has(arrayMap(x -> {array_expression}, a), {target})",
             f"arrayMap(x -> {array_expression}, a) IN ([{target}])",
         ):
-            _assert_unsafe_index_declined(
-                f"{DATABASE}.{array_table} WHERE {predicate}"
-            )
+            _assert_unsafe_index_declined(f"{DATABASE}.{array_table} WHERE {predicate}")
             _assert_indexed_rows_match_full_scan(array_table, predicate)
 
         if family == "unix":
@@ -234,9 +228,7 @@ def _assert_native_context_indexes_declined(mode):
             f"{fixed_expression} = {fixed_target}",
             f"{fixed_expression} IN ({fixed_target})",
         ):
-            _assert_unsafe_index_declined(
-                f"{DATABASE}.{fixed_table} WHERE {predicate}"
-            )
+            _assert_unsafe_index_declined(f"{DATABASE}.{fixed_table} WHERE {predicate}")
             _assert_indexed_rows_match_full_scan(fixed_table, predicate)
 
 
@@ -258,8 +250,7 @@ def _assert_numeric_datetime_indexes_selected():
 
 
 def _create_native_table(table, column, expression, inserted_value):
-    node.query(
-        f"""
+    node.query(f"""
         CREATE TABLE {DATABASE}.{table}
         (
             id UInt64,
@@ -274,8 +265,7 @@ def _create_native_table(table, column, expression, inserted_value):
             min_rows_for_wide_part = 0,
             min_bytes_for_wide_part = 0,
             add_minmax_index_for_numeric_columns = 0
-        """
-    )
+        """)
     node.query(
         f"INSERT INTO {DATABASE}.{table} "
         f"SELECT number, {inserted_value} FROM numbers(16)"
@@ -293,8 +283,7 @@ def _create_native_tables():
         )
 
         array_expression = _native_conversion(family, "x")
-        node.query(
-            f"""
+        node.query(f"""
             CREATE TABLE {DATABASE}.native_{family}_array
             (
                 id UInt64,
@@ -310,8 +299,7 @@ def _create_native_tables():
                 min_rows_for_wide_part = 0,
                 min_bytes_for_wide_part = 0,
                 add_minmax_index_for_numeric_columns = 0
-            """
-        )
+            """)
         node.query(
             f"INSERT INTO {DATABASE}.native_{family}_array "
             f"SELECT number, ['{DATE_TEXT}'] FROM numbers(16)"
@@ -336,8 +324,7 @@ def _create_native_tables():
         ("datetime", "toDateTime(n, 'UTC')"),
         ("unix", "toUnixTimestamp(n, 'UTC')"),
     ):
-        node.query(
-            f"""
+        node.query(f"""
             CREATE TABLE {DATABASE}.numeric_{family}
             (
                 id UInt64,
@@ -352,8 +339,7 @@ def _create_native_tables():
                 min_rows_for_wide_part = 0,
                 min_bytes_for_wide_part = 0,
                 add_minmax_index_for_numeric_columns = 0
-            """
-        )
+            """)
         node.query(
             f"INSERT INTO {DATABASE}.numeric_{family} "
             "SELECT number, number FROM numbers(16)"
@@ -396,6 +382,185 @@ def _assert_indexed_rows_match_full_scan(
     assert indexed == expected_rows
 
 
+def _float_context():
+    actual = node.query(
+        "SELECT toUInt8(getSetting('precise_float_parsing')), "
+        "reinterpretAsUInt64(CAST('0.1e-5' AS Float64))"
+    ).strip()
+    setting, bits = map(int, actual.split("\t"))
+    return setting, bits
+
+
+def _create_float_index_tables(database):
+    node.query(f"DROP DATABASE IF EXISTS {database} SYNC")
+    node.query(f"CREATE DATABASE {database} ENGINE = Atomic")
+    tables = (
+        (
+            "cast_scalar",
+            "s String",
+            "CAST(s AS Float64)",
+            f"'{FLOAT_TEXT}'",
+        ),
+        (
+            "native_scalar",
+            "s String",
+            "toFloat64(s)",
+            f"'{FLOAT_TEXT}'",
+        ),
+        (
+            "cast_array",
+            "a Array(String)",
+            "CAST(a AS Array(Float64))",
+            f"['{FLOAT_TEXT}']",
+        ),
+        (
+            "array_map",
+            "a Array(String)",
+            "arrayMap(x -> CAST(x AS Float64), a)",
+            f"['{FLOAT_TEXT}']",
+        ),
+        (
+            "named_tuple",
+            "t Tuple(a Float64, b String)",
+            "tupleElement(CAST(t AS Tuple(b Float64, a String)), 1)",
+            f"tuple(toFloat64(0), '{FLOAT_TEXT}')",
+        ),
+    )
+    for table, source_column, expression, inserted_value in tables:
+        node.query(f"""
+            CREATE TABLE {database}.{table}
+            (
+                id UInt64,
+                {source_column},
+                INDEX idx {expression} TYPE bloom_filter(0.000001) GRANULARITY 1
+            )
+            ENGINE = MergeTree
+            ORDER BY id
+            SETTINGS
+                index_granularity = 1,
+                index_granularity_bytes = 0,
+                min_rows_for_wide_part = 0,
+                min_bytes_for_wide_part = 0
+            """)
+        node.query(
+            f"INSERT INTO {database}.{table} "
+            f"SELECT number, {inserted_value} FROM numbers(16)"
+        )
+
+    node.query(f"""
+        CREATE TABLE {database}.numeric_cast
+        (
+            id UInt64,
+            n UInt64,
+            INDEX idx toUInt8(n) TYPE bloom_filter(0.000001) GRANULARITY 1
+        )
+        ENGINE = MergeTree
+        ORDER BY id
+        SETTINGS
+            index_granularity = 1,
+            index_granularity_bytes = 0,
+            min_rows_for_wide_part = 0,
+            min_bytes_for_wide_part = 0,
+            add_minmax_index_for_numeric_columns = 0
+        """)
+    node.query(
+        f"INSERT INTO {database}.numeric_cast " "SELECT number, number FROM numbers(16)"
+    )
+
+
+def _assert_float_context_indexes_declined(database, target):
+    cases = (
+        (
+            "cast_scalar",
+            f"CAST(s AS Float64) = {target}",
+        ),
+        (
+            "cast_scalar",
+            f"CAST(s AS Float64) IN ({target})",
+        ),
+        (
+            "native_scalar",
+            f"toFloat64(s) = {target}",
+        ),
+        (
+            "cast_array",
+            f"has(CAST(a AS Array(Float64)), {target})",
+        ),
+        (
+            "array_map",
+            "has(arrayMap(x -> CAST(x AS Float64), a), " f"{target})",
+        ),
+        (
+            "named_tuple",
+            f"tupleElement(CAST(t AS Tuple(b Float64, a String)), 1) = {target}",
+        ),
+        (
+            "named_tuple",
+            f"tupleElement(CAST(t AS Tuple(b Float64, a String)), 1) IN ({target})",
+        ),
+    )
+    for table, predicate in cases:
+        qualified_predicate = f"{database}.{table} WHERE {predicate}"
+        _assert_unsafe_index_declined(qualified_predicate)
+        _assert_indexed_rows_match_full_scan(
+            table,
+            predicate,
+            EXPECTED_ROWS,
+            database=database,
+        )
+
+    numeric_predicate = "toUInt8(n) IN (2, 12)"
+    numeric_plan = node.query(
+        f"EXPLAIN indexes = 1 SELECT id FROM {database}.numeric_cast "
+        f"WHERE {numeric_predicate}",
+        settings=QUERY_SETTINGS,
+    )
+    assert "Name: idx" in numeric_plan, numeric_plan
+    assert "Granules: 2/16" in numeric_plan, numeric_plan
+    _assert_indexed_rows_match_full_scan(
+        "numeric_cast",
+        numeric_predicate,
+        "[2,12]",
+        database=database,
+    )
+
+
+@pytest.mark.parametrize(
+    "build_mode,reload_mode",
+    [(0, 0), (0, 1), (1, 0), (1, 1)],
+)
+def test_persisted_bloom_filter_respects_float_context_restart(build_mode, reload_mode):
+    try:
+        node.copy_file_to_container(FLOAT_CONFIGS[build_mode], FLOAT_CONFIG_DESTINATION)
+        node.restart_clickhouse()
+        actual_build_mode, build_bits = _float_context()
+        assert actual_build_mode == build_mode
+
+        _create_float_index_tables(FLOAT_DATABASE)
+
+        node.copy_file_to_container(
+            FLOAT_CONFIGS[reload_mode], FLOAT_CONFIG_DESTINATION
+        )
+        node.restart_clickhouse()
+        actual_reload_mode, reload_bits = _float_context()
+        assert actual_reload_mode == reload_mode
+        if build_mode == reload_mode:
+            assert build_bits == reload_bits
+        else:
+            assert build_bits != reload_bits
+
+        target = "reinterpretAsFloat64(toUInt64(" f"{reload_bits}))"
+        _assert_float_context_indexes_declined(FLOAT_DATABASE, target)
+    finally:
+        try:
+            node.query(f"DROP DATABASE IF EXISTS {FLOAT_DATABASE} SYNC")
+        finally:
+            node.copy_file_to_container(FLOAT_CONFIGS[0], FLOAT_CONFIG_DESTINATION)
+            node.restart_clickhouse()
+            actual_mode, _ = _float_context()
+            assert actual_mode == 0
+
+
 @pytest.mark.parametrize(
     "date_time_type",
     [
@@ -412,7 +577,6 @@ def test_persisted_bloom_filter_respects_cast_context_restart(
             node.query("SELECT getSetting('cast_string_to_date_time_mode')").strip()
             == "best_effort"
         )
-
 
         _create_tables(date_time_type)
         _assert_native_outputs("best_effort")
@@ -519,9 +683,10 @@ def test_persisted_bloom_filter_respects_cast_context_restart(
             )
 
 
-def _create_timezone_table(database, table, source_column, index_expression, inserted_value):
-    node.query(
-        f"""
+def _create_timezone_table(
+    database, table, source_column, index_expression, inserted_value
+):
+    node.query(f"""
         CREATE TABLE {database}.{table}
         (
             id UInt64,
@@ -536,8 +701,7 @@ def _create_timezone_table(database, table, source_column, index_expression, ins
             min_rows_for_wide_part = 0,
             min_bytes_for_wide_part = 0,
             add_minmax_index_for_numeric_columns = 0
-        """
-    )
+        """)
     node.query(
         f"INSERT INTO {database}.{table} "
         f"SELECT number, {inserted_value} FROM numbers(16)"
@@ -674,9 +838,7 @@ def test_date_cast_bloom_index_is_safe_across_server_timezone_restart():
         )
         node.restart_clickhouse()
 
-        _assert_timezone_context(
-            "America/Los_Angeles", 1577952000, 1577952000000
-        )
+        _assert_timezone_context("America/Los_Angeles", 1577952000, 1577952000000)
         _assert_timezone_phase(cases, database, "declined")
     finally:
         try:

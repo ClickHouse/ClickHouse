@@ -17,9 +17,12 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeFunction.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeSet.h>
@@ -145,6 +148,38 @@ bool canPruneSafeColumnWithDateTimeConversion(const String & function_name, cons
         ColumnsWithTypeAndName{
             {uint64_type->createColumn(), uint64_type, "x"},
             {converted.result_type->createColumn(), converted.result_type, "converted"},
+        });
+    MergeTreeIndexConditionBloomFilter condition(&predicate, context, header, index_dag, 4, {}, {});
+    return !condition.alwaysUnknownOrTrue();
+}
+
+bool canPruneSafeColumnWithNativeConversion(const String & function_name, const DataTypePtr & source_type)
+{
+    tryRegisterFunctions();
+    const auto context = getContext().context;
+    const auto uint64_type = std::make_shared<DataTypeUInt64>();
+
+    ActionsDAG query_dag;
+    const auto & query_input = query_dag.addInput("x", uint64_type);
+    const auto & query_value = query_dag.addColumn(uint64_type->createColumnConst(1, Field(UInt64(1))), uint64_type, "query_value", true);
+    const auto & predicate
+        = query_dag.addFunction(FunctionFactory::instance().get("equals", context), {&query_input, &query_value}, "predicate");
+
+    ActionsDAG index_dag;
+    const auto & safe_input = index_dag.addInput("x", uint64_type);
+    const auto & source_input = index_dag.addInput("payload", source_type);
+    const auto converted = FunctionFactory::instance().get(function_name, context)->build({{nullptr, source_type, "payload"}});
+    const auto & converted_node = index_dag.addFunction(converted, {&source_input}, "converted");
+    const auto & safe_output = index_dag.addAlias(safe_input, "x");
+    const auto & converted_output = index_dag.addAlias(converted_node, "converted");
+    index_dag.getOutputs().clear();
+    index_dag.getOutputs().push_back(&safe_output);
+    index_dag.getOutputs().push_back(&converted_output);
+
+    Block header(
+        ColumnsWithTypeAndName{
+            {uint64_type->createColumn(), uint64_type, "x"},
+            {converted_node.result_type->createColumn(), converted_node.result_type, "converted"},
         });
     MergeTreeIndexConditionBloomFilter condition(&predicate, context, header, index_dag, 4, {}, {});
     return !condition.alwaysUnknownOrTrue();
@@ -376,6 +411,60 @@ bool constructorDeclinesDateTimeConversionInFunctionCaptureBody()
         ColumnsWithTypeAndName{
             {uint64_type->createColumn(), uint64_type, "x"},
             {array_datetime_type->createColumn(), array_datetime_type, "mapped"},
+        });
+    MergeTreeIndexConditionBloomFilter condition(&predicate, context, header, index_dag, 4, {}, {});
+    return condition.alwaysUnknownOrTrue();
+}
+
+bool constructorDeclinesNativeConversionInFunctionCaptureBody()
+{
+    tryRegisterFunctions();
+    const auto context = getContext().context;
+    const auto uint64_type = std::make_shared<DataTypeUInt64>();
+    const auto string_type = std::make_shared<DataTypeString>();
+    const auto float64_type = std::make_shared<DataTypeFloat64>();
+    const auto array_string_type = std::make_shared<DataTypeArray>(string_type);
+    const auto array_float64_type = std::make_shared<DataTypeArray>(float64_type);
+
+    ActionsDAG lambda_dag;
+    const auto & captured_input = lambda_dag.addInput("captured", string_type);
+    const auto & converted = lambda_dag.addFunction(
+        FunctionFactory::instance().get("toFloat64", context)->build({{nullptr, string_type, "captured"}}),
+        {&captured_input},
+        "float_conversion");
+    lambda_dag.getOutputs().push_back(&converted);
+
+    const auto lambda_capture = std::make_shared<FunctionCaptureOverloadResolver>(
+        std::move(lambda_dag),
+        ExpressionActionsSettings(context),
+        Names{"captured"},
+        NamesAndTypesList{{"v", string_type}},
+        float64_type,
+        converted.result_name,
+        /* allow_constant_folding= */ true);
+
+    ActionsDAG query_dag;
+    const auto & query_input = query_dag.addInput("x", uint64_type);
+    const auto & query_value = query_dag.addColumn(uint64_type->createColumnConst(0, Field(UInt64(1))), uint64_type, "query_value", true);
+    const auto & predicate
+        = query_dag.addFunction(FunctionFactory::instance().get("equals", context), {&query_input, &query_value}, "predicate");
+
+    ActionsDAG index_dag;
+    const auto & safe_input = index_dag.addInput("x", uint64_type);
+    const auto & captured_value = index_dag.addInput("captured", string_type);
+    const auto & lambda = index_dag.addFunction(lambda_capture, {&captured_value}, "lambda");
+    const auto & array_input = index_dag.addInput("values", array_string_type);
+    const auto & mapped = index_dag.addFunction(FunctionFactory::instance().get("arrayMap", context), {&lambda, &array_input}, "mapped");
+    const auto & safe_output = index_dag.addAlias(safe_input, "x");
+    const auto & mapped_output = index_dag.addAlias(mapped, "mapped");
+    index_dag.getOutputs().clear();
+    index_dag.getOutputs().push_back(&safe_output);
+    index_dag.getOutputs().push_back(&mapped_output);
+
+    Block header(
+        ColumnsWithTypeAndName{
+            {uint64_type->createColumn(), uint64_type, "x"},
+            {array_float64_type->createColumn(), array_float64_type, "mapped"},
         });
     MergeTreeIndexConditionBloomFilter condition(&predicate, context, header, index_dag, 4, {}, {});
     return condition.alwaysUnknownOrTrue();
@@ -1502,6 +1591,67 @@ TEST(MergeTreeIndexBloomFilter, DeclinesSettingsDependentDateTimeCastsAcrossCons
 
     /// This safe cast is a positive control for the constructor's normal pruning path.
     EXPECT_TRUE(canPruneSafeColumnWithIndexCast(std::make_shared<DataTypeUInt64>(), string_type));
+}
+
+TEST(MergeTreeIndexBloomFilter, AppliesClosedSafeLeafPolicyToNativeCasts)
+{
+    const auto string_type = std::make_shared<DataTypeString>();
+    const auto fixed_string_type = std::make_shared<DataTypeFixedString>(8);
+    const auto uint32_type = std::make_shared<DataTypeUInt32>();
+    const auto uint64_type = std::make_shared<DataTypeUInt64>();
+    const auto float64_type = std::make_shared<DataTypeFloat64>();
+    const auto datetime_type = std::make_shared<DataTypeDateTime>("UTC");
+    const auto enum_type = std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{{"known", 1}});
+    const auto decimal_type = std::make_shared<DataTypeDecimal64>(18, 2);
+
+    EXPECT_FALSE(canPruneSafeColumnWithIndexCast(string_type, float64_type));
+    EXPECT_FALSE(canPruneSafeColumnWithIndexCast(fixed_string_type, float64_type));
+    EXPECT_FALSE(canPruneSafeColumnWithIndexCast(std::make_shared<DataTypeArray>(string_type), std::make_shared<DataTypeArray>(float64_type)));
+    EXPECT_FALSE(canPruneSafeColumnWithIndexCast(datetime_type, string_type));
+    EXPECT_FALSE(canPruneSafeColumnWithIndexCast(std::make_shared<DataTypeIPv4>(), string_type));
+    EXPECT_FALSE(canPruneSafeColumnWithIndexCast(std::make_shared<DataTypeNullable>(string_type), string_type));
+
+    const auto string_map = std::make_shared<DataTypeMap>(string_type, string_type);
+    const auto float_map = std::make_shared<DataTypeMap>(string_type, float64_type);
+    EXPECT_FALSE(canPruneSafeColumnWithIndexCast(string_map, float_map));
+
+    EXPECT_TRUE(canPruneSafeColumnWithIndexCast(uint64_type, float64_type));
+    EXPECT_TRUE(canPruneSafeColumnWithIndexCast(uint64_type, string_type));
+    EXPECT_TRUE(canPruneSafeColumnWithIndexCast(decimal_type, string_type));
+    EXPECT_TRUE(canPruneSafeColumnWithIndexCast(string_type, string_type));
+    EXPECT_TRUE(canPruneSafeColumnWithIndexCast(fixed_string_type, fixed_string_type));
+    EXPECT_TRUE(canPruneSafeColumnWithIndexCast(string_type, enum_type));
+    EXPECT_TRUE(canPruneSafeColumnWithIndexCast(
+        std::make_shared<DataTypeArray>(uint32_type), std::make_shared<DataTypeArray>(datetime_type)));
+    EXPECT_TRUE(canPruneSafeColumnWithIndexCast(
+        std::make_shared<DataTypeMap>(string_type, uint32_type), std::make_shared<DataTypeMap>(string_type, datetime_type)));
+
+    const auto named_source = std::make_shared<DataTypeTuple>(DataTypes{float64_type, string_type}, Strings{"a", "b"});
+    const auto named_destination = std::make_shared<DataTypeTuple>(DataTypes{float64_type, string_type}, Strings{"b", "a"});
+    EXPECT_FALSE(canPruneSafeColumnWithIndexCast(named_source, named_destination));
+
+    const auto same_named_destination = std::make_shared<DataTypeTuple>(DataTypes{float64_type, string_type}, Strings{"a", "b"});
+    EXPECT_TRUE(canPruneSafeColumnWithIndexCast(named_source, same_named_destination));
+}
+
+TEST(MergeTreeIndexBloomFilter, DeclinesSettingsCapturingConversionsOutsideClosedWhitelist)
+{
+    const auto string_type = std::make_shared<DataTypeString>();
+    const auto uint64_type = std::make_shared<DataTypeUInt64>();
+
+    EXPECT_FALSE(canPruneSafeColumnWithNativeConversion("toFloat64", string_type));
+    EXPECT_FALSE(canPruneSafeColumnWithNativeConversion("toFloat64OrZero", string_type));
+    EXPECT_FALSE(canPruneSafeColumnWithNativeConversion("toFloat64OrNull", string_type));
+    EXPECT_FALSE(canPruneSafeColumnWithNativeConversion("parseDateTimeBestEffort", string_type));
+    EXPECT_FALSE(canPruneSafeColumnWithNativeConversion("toFloat64", uint64_type));
+
+    EXPECT_TRUE(canPruneSafeColumnWithNativeConversion("toString", uint64_type));
+    EXPECT_TRUE(canPruneSafeColumnWithNativeConversion("toUInt8", uint64_type));
+}
+
+TEST(MergeTreeIndexBloomFilter, DeclinesNativeSettingsCapturingConversionInFunctionCaptureBody)
+{
+    EXPECT_TRUE(constructorDeclinesNativeConversionInFunctionCaptureBody());
 }
 
 TEST(MergeTreeIndexBloomFilter, AuthenticatesNativeCastByExactImplementationInsteadOfFactoryHandle)

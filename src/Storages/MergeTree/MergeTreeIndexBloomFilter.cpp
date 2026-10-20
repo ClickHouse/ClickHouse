@@ -343,7 +343,56 @@ bool isNativeTypeTree(const IDataType & type, ExpressionMatchBudget & budget, si
     return false;
 }
 
-bool isSettingsDependentDateTimeCast(const DataTypePtr & source, const DataTypePtr & destination, ExpressionMatchBudget & budget)
+bool isNativePrimitiveNumericType(const IDataType & type)
+{
+    return typeid(type) == typeid(DataTypeUInt8) || typeid(type) == typeid(DataTypeUInt16) || typeid(type) == typeid(DataTypeUInt32)
+        || typeid(type) == typeid(DataTypeUInt64) || typeid(type) == typeid(DataTypeUInt128) || typeid(type) == typeid(DataTypeUInt256)
+        || typeid(type) == typeid(DataTypeInt8) || typeid(type) == typeid(DataTypeInt16) || typeid(type) == typeid(DataTypeInt32)
+        || typeid(type) == typeid(DataTypeInt64) || typeid(type) == typeid(DataTypeInt128) || typeid(type) == typeid(DataTypeInt256)
+        || typeid(type) == typeid(DataTypeBFloat16) || typeid(type) == typeid(DataTypeFloat32) || typeid(type) == typeid(DataTypeFloat64);
+}
+
+bool isNativeDecimalType(const IDataType & type)
+{
+    return typeid(type) == typeid(DataTypeDecimal32) || typeid(type) == typeid(DataTypeDecimal64)
+        || typeid(type) == typeid(DataTypeDecimal128) || typeid(type) == typeid(DataTypeDecimal256);
+}
+
+bool isNativeEnumType(const IDataType & type)
+{
+    return typeid(type) == typeid(DataTypeEnum8) || typeid(type) == typeid(DataTypeEnum16);
+}
+
+bool isSameNativeStringType(const IDataType & source, const IDataType & destination)
+{
+    if (typeid(source) != typeid(destination))
+        return false;
+    if (typeid(source) == typeid(DataTypeString))
+        return true;
+    if (typeid(source) == typeid(DataTypeFixedString))
+        return static_cast<const DataTypeFixedString &>(source).getN() == static_cast<const DataTypeFixedString &>(destination).getN();
+    return false;
+}
+
+bool isSafeNativeCastLeafPair(const IDataType & source, const IDataType & destination)
+{
+    if (isNativePrimitiveNumericType(source) && isNativePrimitiveNumericType(destination))
+        return true;
+
+    if ((isNativePrimitiveNumericType(source) || isNativeDecimalType(source)) && typeid(destination) == typeid(DataTypeString))
+        return true;
+
+    if ((typeid(source) == typeid(DataTypeString) || typeid(source) == typeid(DataTypeFixedString)) && isNativeEnumType(destination))
+        return true;
+
+    const bool narrow_unsigned_source
+        = typeid(source) == typeid(DataTypeUInt8) || typeid(source) == typeid(DataTypeUInt16) || typeid(source) == typeid(DataTypeUInt32);
+    const bool datetime_destination
+        = typeid(destination) == typeid(DataTypeDateTime) || typeid(destination) == typeid(DataTypeDateTime64);
+    return (narrow_unsigned_source && datetime_destination) || isSameNativeStringType(source, destination);
+}
+
+bool isContextStableNativeCastTypePair(const DataTypePtr & source, const DataTypePtr & destination, ExpressionMatchBudget & budget)
 {
     struct PendingPair
     {
@@ -353,23 +402,17 @@ bool isSettingsDependentDateTimeCast(const DataTypePtr & source, const DataTypeP
     };
 
     if (!source || !destination)
-        return true;
+        return false;
     std::vector<PendingPair> pending{{source.get(), destination.get(), 0}};
 
     while (!pending.empty())
     {
         if (!budget.consume())
-            return true;
+            return false;
         const auto [left, right, depth] = pending.back();
         pending.pop_back();
         if (!left || !right || depth > 32 || !isNativeTypeTree(*left, budget, depth) || !isNativeTypeTree(*right, budget, depth))
-            return true;
-
-        const bool right_datetime = typeid(*right) == typeid(DataTypeDateTime) || typeid(*right) == typeid(DataTypeDateTime64);
-        const bool left_stable_datetime_source
-            = typeid(*left) == typeid(DataTypeUInt8) || typeid(*left) == typeid(DataTypeUInt16) || typeid(*left) == typeid(DataTypeUInt32);
-        if (right_datetime && !left_stable_datetime_source)
-            return true;
+            return false;
 
         auto enqueue = [&](const IDataType * left_child, const IDataType * right_child)
         {
@@ -385,7 +428,7 @@ bool isSettingsDependentDateTimeCast(const DataTypePtr & source, const DataTypeP
                 || !enqueue(
                     static_cast<const DataTypeArray &>(*left).getNestedType().get(),
                     static_cast<const DataTypeArray &>(*right).getNestedType().get()))
-                return true;
+                return false;
             continue;
         }
         if (typeid(*left) == typeid(DataTypeNullable) || typeid(*right) == typeid(DataTypeNullable))
@@ -394,7 +437,7 @@ bool isSettingsDependentDateTimeCast(const DataTypePtr & source, const DataTypeP
                 || !enqueue(
                     static_cast<const DataTypeNullable &>(*left).getNestedType().get(),
                     static_cast<const DataTypeNullable &>(*right).getNestedType().get()))
-                return true;
+                return false;
             continue;
         }
         if (typeid(*left) == typeid(DataTypeLowCardinality) || typeid(*right) == typeid(DataTypeLowCardinality))
@@ -403,20 +446,38 @@ bool isSettingsDependentDateTimeCast(const DataTypePtr & source, const DataTypeP
                 || !enqueue(
                     static_cast<const DataTypeLowCardinality &>(*left).getDictionaryType().get(),
                     static_cast<const DataTypeLowCardinality &>(*right).getDictionaryType().get()))
-                return true;
+                return false;
             continue;
         }
         if (typeid(*left) == typeid(DataTypeTuple) || typeid(*right) == typeid(DataTypeTuple))
         {
             if (typeid(*left) != typeid(DataTypeTuple) || typeid(*right) != typeid(DataTypeTuple))
-                return true;
-            const auto & left_elements = static_cast<const DataTypeTuple &>(*left).getElements();
-            const auto & right_elements = static_cast<const DataTypeTuple &>(*right).getElements();
+                return false;
+            const auto & left_tuple = static_cast<const DataTypeTuple &>(*left);
+            const auto & right_tuple = static_cast<const DataTypeTuple &>(*right);
+            const auto & left_elements = left_tuple.getElements();
+            const auto & right_elements = right_tuple.getElements();
             if (left_elements.size() != right_elements.size() || !budget.consume(left_elements.size()))
-                return true;
+                return false;
+
+            /// CAST maps tuples by name when both sides have explicit names and at least one name
+            /// overlaps. Only identical name order is known to preserve the positional leaf pairs
+            /// checked here. Other named remappings (and schema-evolution defaults) fail closed.
+            if (left_tuple.hasExplicitNames() && right_tuple.hasExplicitNames())
+            {
+                const auto & left_names = left_tuple.getElementNames();
+                const auto & right_names = right_tuple.getElementNames();
+                if (left_names.size() != left_elements.size() || right_names.size() != right_elements.size()
+                    || !budget.consume(left_names.size()))
+                    return false;
+                for (size_t i = 0; i < left_names.size(); ++i)
+                    if (!budget.consume(left_names[i].size()) || !budget.consume(right_names[i].size()) || left_names[i] != right_names[i])
+                        return false;
+            }
+
             for (size_t i = 0; i < left_elements.size(); ++i)
                 if (!enqueue(left_elements[i].get(), right_elements[i].get()))
-                    return true;
+                    return false;
             continue;
         }
         if (typeid(*left) == typeid(DataTypeMap) || typeid(*right) == typeid(DataTypeMap))
@@ -427,11 +488,15 @@ bool isSettingsDependentDateTimeCast(const DataTypePtr & source, const DataTypeP
                 || !enqueue(
                     static_cast<const DataTypeMap &>(*left).getValueType().get(),
                     static_cast<const DataTypeMap &>(*right).getValueType().get()))
-                return true;
+                return false;
+            continue;
         }
+
+        if (!isSafeNativeCastLeafPair(*left, *right))
+            return false;
     }
 
-    return false;
+    return true;
 }
 
 bool isStableSourceForDateTimeModeConversion(const DataTypePtr & source, ExpressionMatchBudget & budget)
@@ -544,42 +609,52 @@ bool isBloomIndexExpressionContextStable(const ActionsDAG & indexed_expression_d
                 || handle == canonical_accurate_cast || handle == canonical_accurate_cast_or_null;
             const bool is_native_datetime_conversion
                 = isNativeDateTimeModeDependentConversionForBloomFilterExpressionMatching(*function_base);
+            const bool is_native_settings_conversion
+                = isNativeSettingsCapturingConversionForBloomFilterExpressionMatching(*function_base);
             const bool claims_native_datetime_conversion = handle == canonical_to_datetime || handle == canonical_to_datetime32
                 || handle == canonical_to_datetime64 || handle == canonical_to_unix_timestamp;
             if (!is_native_cast && claims_native_cast)
                 return false;
             if (!is_native_datetime_conversion && claims_native_datetime_conversion)
                 return false;
-            if (is_native_cast)
+            if ((is_native_cast || is_native_datetime_conversion) && !is_native_settings_conversion)
+                return false;
+            if (is_native_settings_conversion)
             {
-                /// Exact final class identity is authoritative here: native internal CAST
-                /// variants and createInternalCast nodes may legitimately have other or no
-                /// factory handle. Their source and result types still receive the same hazard
-                /// check below.
                 const auto & argument_types = node->function_base->getArgumentTypes();
                 const auto & result_type = node->function_base->getResultType();
-                if (argument_types.size() != 2 || node->children.size() != 2 || !result_type || !node->children[0]
-                    || !node->children[0]->result_type || argument_types[0].get() != node->children[0]->result_type.get()
-                    || node->result_type.get() != result_type.get()
-                    || isSettingsDependentDateTimeCast(argument_types[0], result_type, budget))
+                if (argument_types.empty() || argument_types.size() != node->children.size() || !result_type
+                    || node->result_type.get() != result_type.get() || !budget.consume(argument_types.size()))
                     return false;
-            }
-            if (is_native_datetime_conversion)
-            {
-                /// Authenticate the exact final FunctionConvert implementation before virtual
-                /// type access. Requiring every child/result type to match its native signature
-                /// prevents malformed DAG edges from bypassing the source check.
-                const auto & argument_types = node->function_base->getArgumentTypes();
-                const auto & result_type = node->function_base->getResultType();
-                if (argument_types.empty() || argument_types.size() != node->children.size() || !budget.consume(argument_types.size())
-                    || !result_type || node->result_type.get() != result_type.get())
-                    return false;
+
                 for (size_t i = 0; i < argument_types.size(); ++i)
                     if (!argument_types[i] || !node->children[i] || !node->children[i]->result_type
-                        || argument_types[i].get() != node->children[i]->result_type.get())
+                        || argument_types[i].get() != node->children[i]->result_type.get()
+                        || !isNativeTypeTree(*argument_types[i], budget))
                         return false;
-                if (!isNativeTypeTree(*result_type, budget) || !isStableSourceForDateTimeModeConversion(argument_types[0], budget))
+                if (!isNativeTypeTree(*result_type, budget))
                     return false;
+
+                if (is_native_cast)
+                {
+                    /// Exact final FunctionCast identity admits internal/no-handle variants too;
+                    /// every native CAST must pass the closed paired leaf policy.
+                    if (argument_types.size() != 2 || !isContextStableNativeCastTypePair(argument_types[0], result_type, budget))
+                        return false;
+                }
+                else if (is_native_datetime_conversion)
+                {
+                    /// This exact subset has a separate range proof for UInt8/16/32 sources.
+                    if (!isStableSourceForDateTimeModeConversion(argument_types[0], budget))
+                        return false;
+                }
+                else if (!areNativeConversionsEquivalentForBloomFilterExpressionMatching(*function_base, *function_base))
+                {
+                    /// The self-comparison is an exact native semantic whitelist for integer->UInt8,
+                    /// numeric->Decimal and numeric/Decimal->String. FromString templates and every
+                    /// unproved settings-capturing conversion fail closed here.
+                    return false;
+                }
             }
 
             if (typeid(*function_base) == typeid(FunctionCapture))
@@ -625,8 +700,7 @@ bool isBloomIndexExpressionContextStable(const ActionsDAG & indexed_expression_d
             {
                 const auto & captured_column = captures[i];
                 if (!captured_column.type || !captured_column.column
-                    || !sameNativeTypeTree(captured_column.type, capture.captured_types[i], budget)
-                    || isSettingsDependentDateTimeCast(captured_column.type, captured_column.type, budget))
+                    || !sameNativeTypeTree(captured_column.type, capture.captured_types[i], budget))
                     return false;
             }
         }

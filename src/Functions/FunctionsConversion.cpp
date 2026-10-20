@@ -3687,6 +3687,19 @@ bool isNativeDateTimeModeDependentConversionForBloomFilterExpressionMatching(con
         || typeid(*native_function) == typeid(detail::FunctionToUnixTimestamp);
 }
 
+bool isNativeSettingsCapturingConversionForBloomFilterExpressionMatching(const IFunctionBase & function)
+{
+    if (isNativeCastForBloomFilterExpressionMatching(function))
+        return true;
+
+    const auto * adaptor = dynamic_cast<const FunctionToFunctionBaseAdaptor *>(&function);
+    if (!adaptor)
+        return false;
+
+    const auto * native_function = adaptor->getFunction().get();
+    return native_function && dynamic_cast<const detail::IFunctionWithConversionSettings *>(native_function);
+}
+
 bool areNativeConversionsEquivalentForBloomFilterExpressionMatching(const IFunctionBase & left, const IFunctionBase & right)
 {
     const auto * left_adaptor = dynamic_cast<const FunctionToFunctionBaseAdaptor *>(&left);

@@ -3794,7 +3794,36 @@ inline bool renderingCollapsesDistinctValues(const DataTypePtr & type, const For
 }
 
 template <typename ToDataType, typename Name, typename MonotonicityImpl>
-class FunctionConvert final : public IFunction
+class FunctionConvert;
+
+template <typename ToDataType, typename Name,
+    ConvertFromStringExceptionMode exception_mode,
+    ConvertFromStringParsingMode parsing_mode>
+class FunctionConvertFromString;
+
+/// Exact identity for the native conversion functions that capture FunctionConvertSettings.
+/// The private constructor keeps custom IFunction implementations from claiming this identity.
+class IFunctionWithConversionSettings : public IFunction
+{
+public:
+    ~IFunctionWithConversionSettings() override = default;
+
+private:
+    IFunctionWithConversionSettings() = default;
+    IFunctionWithConversionSettings(const IFunctionWithConversionSettings &) = delete;
+    IFunctionWithConversionSettings & operator=(const IFunctionWithConversionSettings &) = delete;
+
+    template <typename ToDataType, typename Name, typename MonotonicityImpl>
+    friend class FunctionConvert;
+
+    template <typename ToDataType, typename Name,
+        ConvertFromStringExceptionMode exception_mode,
+        ConvertFromStringParsingMode parsing_mode>
+    friend class FunctionConvertFromString;
+};
+
+template <typename ToDataType, typename Name, typename MonotonicityImpl>
+class FunctionConvert final : public IFunctionWithConversionSettings
 {
 public:
     using Monotonic = MonotonicityImpl;
@@ -4421,7 +4450,7 @@ private:
 template <typename ToDataType, typename Name,
     ConvertFromStringExceptionMode exception_mode,
     ConvertFromStringParsingMode parsing_mode = ConvertFromStringParsingMode::Basic>
-class FunctionConvertFromString final : public IFunction
+class FunctionConvertFromString final : public IFunctionWithConversionSettings
 {
 public:
     static constexpr auto name = Name::name;

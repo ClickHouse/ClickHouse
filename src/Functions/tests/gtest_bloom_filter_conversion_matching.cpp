@@ -284,3 +284,22 @@ TEST(BloomFilterConversionMatching, AuthenticatesOnlyExactDateTimeModeDependentC
     EXPECT_FALSE(isNativeDateTimeModeDependentConversionForBloomFilterExpressionMatching(*fixed_parser));
     EXPECT_FALSE(isNativeDateTimeModeDependentConversionForBloomFilterExpressionMatching(*unrelated_conversion));
 }
+
+TEST(BloomFilterConversionMatching, AuthenticatesSettingsCapturingNativeConversionFamilies)
+{
+    auto context = makeContextWithSetting("precise_float_parsing", "0");
+    const auto string_type = getType("String");
+    const auto uint64_type = getType("UInt64");
+
+    const auto native_convert = buildFunctionBase("toUInt8", context, {uint64_type});
+    const auto native_convert_from_string = buildFunctionBase("toFloat64OrZero", context, {string_type});
+    const auto best_effort_parser = buildFunctionBase("parseDateTimeBestEffort", context, {string_type});
+    const auto native_cast = buildCast(context, getType("Array(String)"), "Array(Float64)");
+    const auto unrelated_function = buildFunctionBase("plus", context, {uint64_type, uint64_type});
+
+    EXPECT_TRUE(isNativeSettingsCapturingConversionForBloomFilterExpressionMatching(*native_convert));
+    EXPECT_TRUE(isNativeSettingsCapturingConversionForBloomFilterExpressionMatching(*native_convert_from_string));
+    EXPECT_TRUE(isNativeSettingsCapturingConversionForBloomFilterExpressionMatching(*best_effort_parser));
+    EXPECT_TRUE(isNativeSettingsCapturingConversionForBloomFilterExpressionMatching(*native_cast));
+    EXPECT_FALSE(isNativeSettingsCapturingConversionForBloomFilterExpressionMatching(*unrelated_function));
+}
