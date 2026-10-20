@@ -18,8 +18,12 @@
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Parsers/ASTWithElement.h>
 #include <Common/FieldVisitorToString.h>
+#include <Interpreters/ApplyWithGlobalVisitor.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExpandedASTBudget.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageProxy.h>
@@ -61,7 +65,9 @@ namespace DB
 namespace Setting
 {
 extern const SettingsBool ast_fuzzer_oracle;
+extern const SettingsBool enable_global_with_statement;
 extern const SettingsJoinStrictness join_default_strictness;
+extern const SettingsUInt64 max_expanded_ast_elements;
 }
 
 namespace ErrorCodes
@@ -1199,6 +1205,32 @@ void collectReadParts(const ASTPtr & ast, const ContextPtr & context, Strings & 
     }
 
     forEachChild(ast, [&](const ASTPtr & child) { collectReadParts(child, context, parts, depth); });
+}
+
+void removeWithElements(const ASTPtr & ast)
+{
+    if (auto * select = ast->as<ASTSelectQuery>(); select && select->with())
+    {
+        auto & elements = select->with()->children;
+        elements.erase(
+            std::remove_if(elements.begin(), elements.end(), [](const ASTPtr & element) { return element->as<ASTWithElement>() != nullptr; }),
+            elements.end());
+    }
+    forEachChild(ast, [](const ASTPtr & child) { removeWithElements(child); });
+}
+
+/// A copy of `ast` in which each table identifier names a table: every reference to a common table expression
+/// (and every `IN` operand naming a `WITH` alias) is replaced by its definition, as the query's own `WITH` processing does.
+ASTPtr expandWithElements(const ASTPtr & ast, const ContextPtr & context)
+{
+    ASTPtr expanded = ast->clone();
+    const auto & settings = context->getSettingsRef();
+    if (settings[Setting::enable_global_with_statement])
+        ApplyWithGlobalVisitor::visit(expanded, settings[Setting::max_expanded_ast_elements]);
+    ExpandedASTBudget budget(settings[Setting::max_expanded_ast_elements], *expanded);
+    ApplyWithSubqueryVisitor::visit(expanded, context, budget);
+    removeWithElements(expanded);
+    return expanded;
 }
 
 /// Safer replacement for `GetAggregatesVisitor` when scanning fuzzer-mutated
@@ -2872,6 +2904,8 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
 
     bool any_check_performed = false;
 
+    const ASTPtr read_ast = expandWithElements(query_ast, context);
+
     /// Run one oracle under a uniform guard: its own mismatch
     /// (`AST_FUZZER_ORACLE_MISMATCH`) propagates and is annotated with the
     /// reproduction settings by the outer handler below, and a disconnected
@@ -2884,7 +2918,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
         Strings parts_before;
         try
         {
-            collectReadParts(query_ast, context, parts_before);
+            collectReadParts(read_ast, context, parts_before);
             if (check_fn())
                 any_check_performed = true;
         }
@@ -2894,7 +2928,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
             {
                 /// A merge, insert or mutation between the reads means they compared different data.
                 Strings parts_after;
-                collectReadParts(query_ast, context, parts_after);
+                collectReadParts(read_ast, context, parts_after);
                 if (parts_after != parts_before)
                 {
                     LOG_TRACE(logger, "{} oracle mismatch skipped: the parts of a table it reads changed", name);
