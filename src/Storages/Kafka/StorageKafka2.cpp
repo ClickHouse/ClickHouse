@@ -227,6 +227,9 @@ StorageKafka2::StorageKafka2(
 StorageKafka2::~StorageKafka2()
 {
     auto component_guard = Coordination::setCurrentComponent("StorageKafka2::~StorageKafka2");
+    /// The `librdkafka` callbacks dereference `this`, so the consumers must go first. Same as `StorageKafka`.
+    if (!shutdown_called)
+        shutdown(false);
     replica_is_active_node.reset();
 }
 

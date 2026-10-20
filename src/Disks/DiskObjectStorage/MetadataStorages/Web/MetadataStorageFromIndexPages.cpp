@@ -6,6 +6,7 @@
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/logger_useful.h>
+#include <Common/maskURIPassword.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
@@ -225,6 +226,13 @@ namespace
         return path;
     }
 
+    /// Listing URLs keep the source URL's userinfo for authentication, so only a masked copy may be formatted.
+    std::string maskedURL(std::string url)
+    {
+        maskURICredentials(url);
+        return url;
+    }
+
     void rejectOriginChangingRedirect(const std::string & requested_url, const std::string & final_url)
     {
         const Poco::URI requested_uri(requested_url, false);
@@ -233,8 +241,8 @@ namespace
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Index page '{}' was redirected to a different origin '{}'",
-                requested_url,
-                final_url);
+                maskedURL(requested_url),
+                maskedURL(final_url));
     }
 
     using WebIndexPage::getEffectiveRelativePathForDeduplication;
@@ -609,7 +617,7 @@ bool MetadataStorageFromIndexPages::tryListDirectory(
             {
                 if (e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
                     shard_exception = std::make_exception_ptr(
-                        Exception(ErrorCodes::BAD_ARGUMENTS, "Index page '{}' exceeds max_http_index_page_size", listing_url));
+                        Exception(ErrorCodes::BAD_ARGUMENTS, "Index page '{}' exceeds max_http_index_page_size", maskedURL(listing_url)));
                 else
                     shard_exception = std::current_exception();
             }
