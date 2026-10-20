@@ -295,8 +295,16 @@ public:
     {
         for (const auto & child : children)
         {
-            auto saved = vars;
             std::string reason;
+            /// A branch that binds no variable cannot modify `vars`, so it needs no rollback snapshot.
+            if (!child->capturesVariables())
+            {
+                if (child->match(what, vars, iteration, arg_num, reason))
+                    return true;
+                continue;
+            }
+
+            auto saved = vars;
             if (child->match(what, vars, iteration, arg_num, reason))
                 return true;
             vars = std::move(saved);
