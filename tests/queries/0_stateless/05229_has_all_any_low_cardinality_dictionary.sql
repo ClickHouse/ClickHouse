@@ -35,6 +35,9 @@ SELECT 'empty string needle', countIf(hasAll(lc, [''])), countIf(hasAll(plain, [
     sum(cityHash64(id, hasAll(lc, ['']))) = sum(cityHash64(id, hasAll(plain, ['']))) FROM tags;
 SELECT '64 needles', countIf(hasAll(lc, arrayMap(j -> concat('c', toString(j % 8)), range(64)))), countIf(hasAll(plain, arrayMap(j -> concat('c', toString(j % 8)), range(64)))),
     sum(cityHash64(id, hasAll(lc, arrayMap(j -> concat('c', toString(j % 8)), range(64))))) = sum(cityHash64(id, hasAll(plain, arrayMap(j -> concat('c', toString(j % 8)), range(64))))) FROM tags;
+SELECT '64 distinct needles', countIf(hasAll(lc, arrayMap(j -> concat('d', toString(j)), range(64)))), countIf(hasAll(plain, arrayMap(j -> concat('d', toString(j)), range(64)))),
+    sum(cityHash64(id, hasAll(lc, arrayMap(j -> concat('d', toString(j)), range(64))))) = sum(cityHash64(id, hasAll(plain, arrayMap(j -> concat('d', toString(j)), range(64)))))
+FROM (SELECT number AS id, CAST(arr AS Array(LowCardinality(String))) AS lc, arr AS plain FROM (SELECT number, arrayMap(j -> concat('d', toString(j)), range(64 - number % 2)) AS arr FROM numbers(10)));
 SELECT 'needle absent from dictionary', countIf(hasAll(lc, ['c0', 'absent'])), countIf(hasAll(plain, ['c0', 'absent'])),
     sum(cityHash64(id, hasAll(lc, ['c0', 'absent']))) = sum(cityHash64(id, hasAll(plain, ['c0', 'absent']))) FROM tags;
 SELECT 'no needle present', countIf(hasAll(lc, ['absent'])), countIf(hasAll(plain, ['absent'])),

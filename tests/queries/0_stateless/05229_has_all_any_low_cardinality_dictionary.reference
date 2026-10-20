@@ -6,6 +6,7 @@ mixed needles	533	533	1
 duplicated needle	667	667	1
 empty string needle	143	143	1
 64 needles	500	500	1
+64 distinct needles	5	5	1
 needle absent from dictionary	0	0	1
 no needle present	0	0	1
 hasAny 1 needle	667	667	1
