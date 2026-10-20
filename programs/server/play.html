@@ -11318,6 +11318,10 @@ async function readEventStream(response, targetResultEl, abortController, cell, 
             accumulateResultPayload(cell.resources, bytes);
             if (cellOwnsChrome(cell)) progressEl.renderPayloadFrom(cell.resources);
         },
+        /// Progress packets advance the IO clock too, so the rate falls once the payload stops.
+        progressMeter: () => {
+            if (cellOwnsChrome(cell)) progressEl.renderPayloadFrom(cell.resources);
+        },
         onBytes: verbatim ? (bytes) => verbatim.onBytes(bytes) : undefined,
         onException: () => { saw_exception = true; },
     });

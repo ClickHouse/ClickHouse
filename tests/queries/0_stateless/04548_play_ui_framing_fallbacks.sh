@@ -309,6 +309,9 @@ echo "$page" | grep -q -F 'sampleIoRate(cell.resources, io_clock_base_ns + io_cl
 echo "$page" | grep -q -F 'if (options.progressMeter) options.progressMeter(+progress.elapsed_ns || 0);' \
     && echo "$page" | grep -q -F 'progressMeter: cell ? (elapsed_ns) => sampleReplayIo(elapsed_ns) : undefined,' \
     && echo 'replayed progress samples the IO rate: OK'
+# Live progress packets sample the IO rate too, so it falls once the payload stops (send_profile_events = 0).
+echo "$page" | grep -A1 -F 'progressMeter: () => {' | grep -q -F 'if (cellOwnsChrome(cell)) progressEl.renderPayloadFrom(cell.resources);' \
+    && echo 'live progress samples the IO rate: OK'
 # The result sends of remote shards to the initiator count too: an HTTP query has no own `NativeProtocolDataBytes`.
 echo "$page" | grep -q -F "|| e.name === 'NativeProtocolDataBytes' || e.name === 'NativeProtocolDataReceiveBytes'" && echo 'remote native result sends feed the IO meter: OK'
 # The page sends the query and its data as the HTTP request body, so the browser's upload counts too.
