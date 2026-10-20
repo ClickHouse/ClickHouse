@@ -8,6 +8,7 @@ ch_cc_library(
     clickhouse_code = True,
     implementation_deps = [
         "//src/Compression:clickhouse_compression",
+        "@clickhouse_boost//:boost_headers",
     ],
     link_runtime = True,
     local_defines = [

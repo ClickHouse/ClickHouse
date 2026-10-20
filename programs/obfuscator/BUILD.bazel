@@ -7,9 +7,9 @@ ch_cc_library(
     srcs = ["Obfuscator.cpp"],
     clickhouse_code = True,
     implementation_deps = [
-        "//bazel:clickhouse_config_headers",
-        "//bazel:arrow_flatbuffer_headers",
-        "@clickhouse_arrow//:arrow_headers",
+        "@clickhouse_boost//:boost_headers",
+        "//src/Common",
+        "//src/Compression:clickhouse_compression",
     ],
     link_runtime = True,
     local_defines = [

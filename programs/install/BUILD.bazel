@@ -22,6 +22,8 @@ ch_cc_library(
         "//base/poco/Util:_poco_util",
         "//src/Common",
         "//src/Common/Config:clickhouse_common_config",
+        "//base:base_headers",
+        "@clickhouse_boost//:boost_headers",
     ],
     link_runtime = True,
     local_defines = [

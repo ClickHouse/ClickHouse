@@ -10,9 +10,8 @@ ch_cc_library(
     ],
     clickhouse_code = True,
     implementation_deps = [
-        "//bazel:clickhouse_config_headers",
-        "//bazel:arrow_flatbuffer_headers",
-        "@clickhouse_arrow//:arrow_headers",
+        "@clickhouse_fmtlib//:_fmt",
+        "//src/Common",
     ],
     link_runtime = True,
     local_defines = [

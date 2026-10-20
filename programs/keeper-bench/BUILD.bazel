@@ -17,10 +17,15 @@ ch_cc_library(
     ] + glob(["**/*.h"]),
     clickhouse_code = True,
     implementation_deps = [
-        "//bazel:clickhouse_config_headers",
-        "//bazel:arrow_flatbuffer_headers",
-        "@clickhouse_arrow//:arrow_headers",
         "//src/Common/Config:clickhouse_common_config",
+        "//base:base_headers",
+        "//base:pcg_random",
+        "//base/poco/Foundation:_poco_foundation",
+        "//base/poco/Net:_poco_net",
+        "//base/poco/Util:_poco_util",
+        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_fmtlib//:_fmt",
+        "//src/Common",
     ],
     link_runtime = True,
     local_defines = [

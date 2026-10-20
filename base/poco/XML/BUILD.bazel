@@ -9,7 +9,17 @@ exports_files([
 
 poco_cc_library(
     name = "_poco_xml",
-    srcs = glob(["src/*.cpp"]) + glob(["src/**/*.h"]),
+    srcs = glob(["src/*.cpp"]) + glob(
+        ["src/**/*.h"],
+        exclude = [
+            "src/asciitab.h",
+            "src/iasciitab.h",
+            "src/latin1tab.h",
+            "src/nametab.h",
+            "src/utf8tab.h",
+            "src/xmltok_impl.h",
+        ],
+    ),
     hdrs = glob(["include/**/*.h"]),
     copts = [
         "-Wno-c99-extensions",
@@ -52,11 +62,16 @@ poco_cc_library(
 
 poco_cc_library(
     name = "_poco_xml_expat",
-    srcs = glob([
-        "src/*.c",
-        "src/*.h",
-        "include/Poco/XML/expat*.h",
-    ]),
+    srcs = glob(["src/*.c"]) + glob(
+        [
+            "src/*.h",
+            "include/Poco/XML/expat*.h",
+        ],
+        exclude = [
+            "src/hash_table.h",
+            "src/siphash.h",
+        ],
+    ),
     additional_compiler_inputs = [
         "src/xmltok_impl.c",
         "src/xmltok_ns.c",

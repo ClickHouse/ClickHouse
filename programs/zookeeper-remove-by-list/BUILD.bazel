@@ -6,11 +6,7 @@ ch_cc_library(
     name = "clickhouse-zookeeper-remove-by-list-lib",
     srcs = ["ZooKeeperRemoveByList.cpp"],
     clickhouse_code = True,
-    implementation_deps = [
-        "//bazel:clickhouse_config_headers",
-        "//bazel:arrow_flatbuffer_headers",
-        "@clickhouse_arrow//:arrow_headers",
-    ],
+    implementation_deps = ["@clickhouse_boost//:boost_headers"],
     link_runtime = True,
     local_defines = [
         "AI_SDK_HAS_ANTHROPIC=1",

@@ -7,9 +7,8 @@ ch_cc_library(
     srcs = ["static-files-disk-uploader.cpp"],
     clickhouse_code = True,
     implementation_deps = [
-        "//bazel:clickhouse_config_headers",
-        "//bazel:arrow_flatbuffer_headers",
-        "@clickhouse_arrow//:arrow_headers",
+        "@clickhouse_boost//:boost_headers",
+        "//src/Common",
     ],
     link_runtime = True,
     local_defines = [

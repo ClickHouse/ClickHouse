@@ -40,10 +40,14 @@ ch_cc_library(
     clickhouse_code = True,
     implementation_deps = [
         "//bazel:clickhouse_config_headers",
-        "//bazel:arrow_flatbuffer_headers",
-        "@clickhouse_arrow//:arrow_headers",
         "//src/Common/ZooKeeper:clickhouse_common_zookeeper_base",
         "//src/Common/Config:clickhouse_common_config",
+        "//base:base_headers",
+        "//base/poco/Foundation:_poco_foundation",
+        "//base/poco/Net:_poco_net",
+        "//base/poco/Util:_poco_util",
+        "//src/Common",
+        "//src/Compression:clickhouse_compression",
     ],
     link_runtime = True,
     local_defines = [

@@ -9,6 +9,7 @@ ch_cc_library(
     implementation_deps = [
         "//base/poco/Foundation:_poco_foundation",
         "//src/Common",
+        "@clickhouse_nuraft//:_nuraft",
     ],
     link_runtime = True,
     local_defines = [

@@ -35,5 +35,6 @@ poco_cc_library(
     deps = [
         "//base/poco/JSON:_poco_json",
         "//base/poco/XML:_poco_xml",
+        "//base/poco/Foundation:_poco_foundation",
     ],
 )

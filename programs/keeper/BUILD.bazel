@@ -27,6 +27,7 @@ ch_cc_library(
         "//src/Common/ZooKeeper:clickhouse_common_zookeeper_base",
         "//src/Common/Config:clickhouse_common_config",
         "//src:clickhouse_common_io__compile_0",
+        "//base:base_headers",
     ],
     link_runtime = True,
     local_defines = [

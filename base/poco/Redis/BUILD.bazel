@@ -24,5 +24,8 @@ poco_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = ["//base/poco/Net:_poco_net"],
+    deps = [
+        "//base/poco/Net:_poco_net",
+        "//base/poco/Foundation:_poco_foundation",
+    ],
 )
