@@ -31,6 +31,32 @@ FROM (
              optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0
 );
 
+-- The conjuncts pushed into one side keep their order too. `(l.k + r.k) < 10` reaches the left side through
+-- the join key as `l.k + l.k < 10` and is the guard there: it removes the row whose `l.s` is not numeric.
+SELECT l.k AS left_k, r.k AS right_k, l.s AS s
+FROM values('k UInt64, s String', (1, '1'), (6, 'oops')) AS l
+ALL INNER JOIN values('k UInt64', 1, 6) AS r ON l.k = r.k
+WHERE (l.k + r.k) < 10 AND toUInt64(l.s) > 0
+SETTINGS short_circuit_function_evaluation = 'force_enable', join_algorithm = 'hash', enable_join_runtime_filters = 0,
+         query_plan_filter_push_down = 1, query_plan_merge_filters = 1, query_plan_merge_filter_into_join_condition = 0,
+         query_plan_optimize_join_order_limit = 0, query_plan_optimize_join_order_randomize = 0,
+         query_plan_join_swap_table = 'false';
+
+-- Order oracle for the cell above: the left side's filter extracts the guard, not the throwing conjunct.
+SELECT countIf(position(explain, 'AND column: less(plus(__table1.k, __table1.k), 10_UInt8)') > 0) > 0
+   AND countIf(position(explain, 'AND column: greater(toUInt64(__table1.s), 0_UInt8)') > 0) = 0
+FROM (
+    EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT l.k AS left_k, r.k AS right_k, l.s AS s
+    FROM values('k UInt64, s String', (1, '1'), (6, 'oops')) AS l
+    ALL INNER JOIN values('k UInt64', 1, 6) AS r ON l.k = r.k
+    WHERE (l.k + r.k) < 10 AND toUInt64(l.s) > 0
+    SETTINGS short_circuit_function_evaluation = 'force_enable', join_algorithm = 'hash', enable_join_runtime_filters = 0,
+             query_plan_filter_push_down = 1, query_plan_merge_filters = 1, query_plan_merge_filter_into_join_condition = 0,
+             query_plan_remove_unused_columns = 1, query_plan_optimize_join_order_limit = 0,
+             query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false'
+);
+
 -- A second equality in the WHERE becomes part of the join condition and the other two conjuncts stay behind.
 SELECT count(), min(a.k)
 FROM (SELECT number AS k, number AS j, if(number % 2 = 0, toString(number), 'oops') AS s FROM numbers(8)) AS a
