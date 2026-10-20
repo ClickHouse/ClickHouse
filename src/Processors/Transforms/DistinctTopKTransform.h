@@ -112,8 +112,9 @@ private:
     /// Whether `consume` visits the rows of a chunk in the sort order when many of them pass the boundary.
     bool use_sorted_visit = true;
 
-    /// Scratch buffer of `consume`.
+    /// Scratch buffers of `consume`.
     IColumn::Permutation permutation;
+    IColumn::Filter visited_rows;
 
     /// Scratch buffers of `trim`.
     std::vector<size_t> trim_rows;

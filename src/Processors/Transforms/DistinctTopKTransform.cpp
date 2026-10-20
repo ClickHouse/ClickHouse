@@ -272,6 +272,8 @@ void DistinctTopKTransform::consume(Chunk chunk)
         return res * first_description.direction > 0;
     };
 
+    /// Only the first `num_sorted_rows` rows of the permutation are defined: some columns (`ColumnLowCardinality`) return
+    /// no more than the limit.
     for (size_t i = 0; i < num_sorted_rows; ++i)
     {
         if (worse_than_boundary_in_first_column(permutation[i]))
@@ -279,11 +281,15 @@ void DistinctTopKTransform::consume(Chunk chunk)
         process_row(permutation[i]);
     }
 
-    /// The set has not filled with the best rows, e.g. because they are copies of a few keys; the remaining rows of the
-    /// permutation are in no particular order. The sorting did not pay off and is not repeated for the following chunks.
+    /// The set has not filled with the best rows, e.g. because they are copies of a few keys, so the remaining rows are
+    /// visited in their order. The sorting did not pay off and is not repeated for the following chunks.
     use_sorted_visit = false;
-    for (size_t i = num_sorted_rows; i < num_rows; ++i)
-        process_row(permutation[i]);
+    visited_rows.assign(num_rows, static_cast<UInt8>(0));
+    for (size_t i = 0; i < num_sorted_rows; ++i)
+        visited_rows[permutation[i]] = 1;
+    for (size_t row = 0; row < num_rows; ++row)
+        if (!visited_rows[row])
+            process_row(row);
 }
 
 void DistinctTopKTransform::updateBoundary()
