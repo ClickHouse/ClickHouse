@@ -18,6 +18,7 @@
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 #include <Disks/IDisk.h>
 
 namespace fs = std::filesystem;
@@ -59,7 +60,7 @@ struct statvfs getStatVFS(String path)
             continue;
         }
 
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STATVFS, path, "Could not calculate available disk space (statvfs)");
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STATVFS, path, "Could not get disk stat (statvfs)");
     }
     return fs;
 }
@@ -451,6 +452,15 @@ fs::path readSymlink(const fs::path & path)
     if (path.filename().empty())
         return fs::read_symlink(path.parent_path());        /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
     return fs::read_symlink(path);      /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
+}
+
+bool tryDelete(const fs::path & path, LoggerPtr log)
+{
+    std::error_code ec;
+    bool removed = fs::remove(path, ec);
+    if (ec)
+        LOG_WARNING(log, "Cannot remove {}: {}", path.string(), ec.message());
+    return removed;
 }
 
 }

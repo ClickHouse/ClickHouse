@@ -28,6 +28,7 @@ namespace ProfileEvents
     extern const Event AzureGetProperties;
     extern const Event DiskAzureGetProperties;
     extern const Event AzureCreateContainer;
+    extern const Event AzureClients;
     extern const Event DiskAzureCreateContainer;
 
     extern const Event AzureGetRequestThrottlerCount;
@@ -230,6 +231,28 @@ String ConnectionParams::getConnectionURL() const
     return endpoint.storage_account_url;
 }
 
+String ConnectionParams::getConnectionURLWithoutQuery() const
+{
+    if (std::holds_alternative<ConnectionString>(auth_method))
+    {
+        try
+        {
+            /// `ParseConnectionString` appends the SAS of the connection string to `BlobServiceUrl` as its query.
+            auto url = Azure::Storage::_internal::ParseConnectionString(endpoint.storage_account_url).BlobServiceUrl;
+            const auto query = url.GetQueryParameters();
+            for (const auto & [key, value] : query)
+                url.RemoveQueryParameter(key);
+            return url.GetAbsoluteUrl();
+        }
+        catch (const std::logic_error & e)
+        {
+            translateAzureSdkParseError(e);
+        }
+    }
+
+    return endpoint.storage_account_url.substr(0, endpoint.storage_account_url.find_first_of("?#"));
+}
+
 std::unique_ptr<ServiceClient> ConnectionParams::createForService() const
 {
     try
@@ -343,6 +366,8 @@ static bool containerExists(const ContainerClient & client)
 
 std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & params, bool readonly)
 {
+    ProfileEvents::increment(ProfileEvents::AzureClients);
+
     if (!params.endpoint.sas_auth.empty() || !params.endpoint.additional_params.empty())
         return params.createForContainer();
 
@@ -379,23 +404,36 @@ std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & par
     }
 }
 
-AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+AuthConfig readAuthConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
-    if (config.has(config_prefix + ".account_key") && config.has(config_prefix + ".account_name"))
-    {
-        return std::make_shared<Azure::Storage::StorageSharedKeyCredential>(
-            config.getString(config_prefix + ".account_name"),
-            config.getString(config_prefix + ".account_key")
-        );
-    }
-
+    AuthConfig auth_config;
+    if (config.has(config_prefix + ".account_name"))
+        auth_config.account_name = config.getString(config_prefix + ".account_name");
+    if (config.has(config_prefix + ".account_key"))
+        auth_config.account_key = config.getString(config_prefix + ".account_key");
     if (config.has(config_prefix + ".connection_string"))
-        return ConnectionString{config.getString(config_prefix + ".connection_string")};
+        auth_config.connection_string = config.getString(config_prefix + ".connection_string");
+    auth_config.use_workload_identity = config.getBool(config_prefix + ".use_workload_identity", false);
+    return auth_config;
+}
 
-    if (config.getBool(config_prefix + ".use_workload_identity", false))
+AuthMethod getAuthMethod(const AuthConfig & auth_config)
+{
+    if (auth_config.account_key.has_value() && auth_config.account_name.has_value())
+        return std::make_shared<Azure::Storage::StorageSharedKeyCredential>(*auth_config.account_name, *auth_config.account_key);
+
+    if (auth_config.connection_string.has_value())
+        return ConnectionString{*auth_config.connection_string};
+
+    if (auth_config.use_workload_identity)
         return std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
 
     return getManagedIdentityCredential();
+}
+
+AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+{
+    return getAuthMethod(readAuthConfig(config, config_prefix));
 }
 
 BlobClientOptions getClientOptions(

@@ -7,6 +7,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/SipHash.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 
@@ -207,6 +208,18 @@ String MergeTreePartInfo::getPartNameForLogs() const
     return getPartNameV1();
 }
 
+UInt64 MergeTreePartInfo::hash() const
+{
+    /// Every field `operator==` compares except `kind`, which is a pure function of the partition id
+    SipHash state;
+    state.update(partition_id);
+    state.update(min_block);
+    state.update(max_block);
+    state.update(level);
+    state.update(mutation);
+    return state.get64();
+}
+
 String MergeTreePartInfo::getPartNameV1() const
 {
     WriteBufferFromOwnString wb;
@@ -304,7 +317,11 @@ void MergeTreePartInfo::deserialize(ReadBuffer & in)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Version for MergeTreePart info mismatched. Got: {}, supported version: {}",
             version, DBMS_MERGE_TREE_PART_INFO_VERSION);
 
-    readStringBinary(partition_id, in);
+    /// Through the setter, which re-derives `kind` from the id; a direct assignment to the field would not.
+    String new_partition_id;
+    readStringBinary(new_partition_id, in);
+    setPartitionId(new_partition_id);
+
     readIntBinary(min_block, in);
     readIntBinary(max_block, in);
     readIntBinary(level, in);

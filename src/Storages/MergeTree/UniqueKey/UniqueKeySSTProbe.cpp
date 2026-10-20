@@ -20,7 +20,6 @@
 #include <rocksdb/env.h>
 #include <rocksdb/file_system.h>
 #include <rocksdb/filter_policy.h>
-#include <rocksdb/iterator.h>
 #include <rocksdb/options.h>
 #include <rocksdb/slice.h>
 #include <rocksdb/sst_file_reader.h>
@@ -37,6 +36,7 @@ namespace ErrorCodes
     extern const int ROCKSDB_ERROR;
     extern const int CORRUPTED_DATA;
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 /// Declares a `rocksdb::FileSystem` method override that unconditionally
@@ -256,9 +256,34 @@ SSTFileReader::SSTFileReader(const DataPartStoragePtr & storage, const String & 
     index_reader = std::move(reader);
 }
 
-std::unique_ptr<rocksdb::Iterator> SSTFileReader::newIterator(const rocksdb::ReadOptions & options) const
+std::vector<rocksdb::Status> SSTFileReader::multiGet(
+    const std::vector<rocksdb::Slice> & keys, std::vector<String> & values_out) const
 {
-    return std::unique_ptr<rocksdb::Iterator>(index_reader->NewIterator(options));
+    if (keys.empty())
+    {
+        values_out.clear();
+        return {};
+    }
+
+    /// `SstFileReader::MultiGet` only `assert`s its 32-key cap; over-limit
+    /// input is UB in release builds, so the bound is enforced here instead.
+    if (keys.size() > PROBE_BATCH_SIZE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "UNIQUE KEY SST MultiGet called with {} keys, cap is {}", keys.size(), PROBE_BATCH_SIZE);
+
+    auto statuses = index_reader->MultiGet(rocksdb::ReadOptions(), keys, &values_out);
+    if (statuses.size() != keys.size() || values_out.size() != keys.size())
+        throw Exception(ErrorCodes::ROCKSDB_ERROR,
+            "UNIQUE KEY SST MultiGet returned {} statuses / {} values for {} keys",
+            statuses.size(), values_out.size(), keys.size());
+
+    /// A miss is `NotFound`; any other error is a read error - fail closed.
+    for (const auto & status : statuses)
+        if (!status.ok() && !status.IsNotFound())
+            throw Exception(ErrorCodes::ROCKSDB_ERROR,
+                "Failed to MultiGet from UNIQUE KEY SST: {}", status.ToString());
+
+    return statuses;
 }
 
 std::shared_ptr<const rocksdb::TableProperties> SSTFileReader::getProperties() const
@@ -301,33 +326,36 @@ void SSTProbeTargetPart::findRowIndexBatch(
         throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
             "UNIQUE KEY SST probe target has no readable index (invalid reader)");
 
-    /// Fresh iterator per call: the target is `shared_ptr<const>`, so a cached
-    /// iterator would race across concurrent probes.
-    rocksdb::ReadOptions read_opts;
-    std::unique_ptr<rocksdb::Iterator> it = reader->newIterator(read_opts);
+    /// Chunk buffers are reused across chunks; all state is call-local.
+    std::vector<rocksdb::Slice> chunk_keys;
+    chunk_keys.reserve(PROBE_BATCH_SIZE);
+    std::vector<String> chunk_values;
 
-    for (size_t i = 0; i < encoded_keys.size(); ++i)
+    const size_t n = encoded_keys.size();
+    for (size_t begin = 0; begin < n; begin += PROBE_BATCH_SIZE)
     {
-        rocksdb::Slice key_slice(encoded_keys[i].data(), encoded_keys[i].size());
-        it->Seek(key_slice);
-        if (it->Valid() && it->key().compare(key_slice) == 0)
+        const size_t end = std::min(begin + PROBE_BATCH_SIZE, n);
+        chunk_keys.clear();
+        for (size_t i = begin; i < end; ++i)
+            chunk_keys.emplace_back(encoded_keys[i].data(), encoded_keys[i].size());
+
+        chunk_values.clear();
+        const auto statuses = reader->multiGet(chunk_keys, chunk_values);
+
+        for (size_t c = 0; c < chunk_keys.size(); ++c)
         {
-            auto value_slice = it->value();
-            const UInt64 row_number = decodeRowNumberBE(value_slice.data(), value_slice.size());
+            /// `multiGet` throws on read errors; a miss is `NotFound`.
+            if (!statuses[c].ok())
+                continue;
+
+            const UInt64 row_number = decodeRowNumberBE(chunk_values[c].data(), chunk_values[c].size());
             /// Out-of-range row means a corrupt SST - fail closed.
             /// TODO(unique-key): enforce this once the probe factory passes a non-null part.
             if (part && row_number >= part->rows_count)
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
                     "UNIQUE KEY SST points at row {} but part '{}' has only {} rows",
                     row_number, part->name, part->rows_count);
-            out[i] = row_number;
-        }
-        else if (!it->status().ok())
-        {
-            /// A genuine miss leaves the iterator OK; a non-OK status is an SST read
-            /// error and must not be reported as "not found".
-            throw Exception(ErrorCodes::ROCKSDB_ERROR,
-                "SSTProbeTargetPart: error seeking UNIQUE KEY SST: {}", it->status().ToString());
+            out[begin + c] = row_number;
         }
     }
 }

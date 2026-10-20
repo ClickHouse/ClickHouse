@@ -8,9 +8,7 @@ doc_type: 'reference'
 
 Табличные функции — это способы создания таблиц.
 
-<div id="usage">
-  ## Использование
-</div>
+## Использование {#usage}
 
 Табличные функции можно использовать в секции [`FROM`](/ru/reference/statements/select/from)
 запроса `SELECT`. Например, с помощью табличной функции `file` можно выполнить `SELECT` данных из файла на локальном
@@ -88,5 +86,7 @@ cat numbers.csv
 ```
 
 <Note>
-  Вы не сможете использовать табличные функции, если параметр [allow&#95;ddl](/ru/reference/settings/session-settings/allow#allow_ddl) отключён.
+  Для выполнения большинства табличных функций требуется привилегия `CREATE TEMPORARY TABLE`, поэтому запрос `SELECT` или `INSERT`,
+  который её вызывает, будет отклонён, если
+  [`readonly`](/ru/concepts/features/configuration/settings/permissions-for-queries#readonly) установлен в 1.
 </Note>
