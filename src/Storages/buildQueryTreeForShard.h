@@ -83,8 +83,7 @@ void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr c
   * `duplicate_to_representative` is written only when an `ActionsDAG` is returned; it is left empty on `std::nullopt`.
   * A caller that stores it unconditionally therefore never applies a collapse the returned plan does not perform.
   *
-  * `rewrite_for_shard`, when set, maps an expression to the one the shard received, before the `ALIAS` inlining. A column
-  * the shard does not return is computed from its rewritten expression when that has no aggregate or window function.
+  * `rewrite_for_shard`, when set, maps an expression to the one the shard received, before the `ALIAS` inlining.
   */
 std::optional<ActionsDAG> buildShardCollapseFanOut(
     const QueryTreeNodePtr & query_tree,

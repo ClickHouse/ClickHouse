@@ -1499,21 +1499,21 @@ private:
     TableExpressionNodePtr replacement_table_expression;
 };
 
-/// Inside aggregate arguments the default is wrapped into `identity`, which is neither foldable nor injective, so the
-/// child's own analysis keeps the aggregate unchanged.
+/// Outside of filters the default is wrapped into `identity`, which is neither foldable nor injective, so the child's
+/// own analysis keeps every expression over it and names it as this query does.
 void replaceMissingColumnsWithDefaults(
     QueryTreeNodePtr & node,
     const QueryTreeNodePtr & table_expression,
     const std::unordered_map<String, QueryTreeNodePtr> & defaults,
     const ContextPtr & context,
-    bool inside_aggregate = false)
+    bool wrap = true)
 {
     if (const auto * column = node->as<ColumnNode>(); column && column->getColumnSourceOrNull() == table_expression)
     {
         if (auto it = defaults.find(column->getColumnName()); it != defaults.end())
         {
             node = it->second->clone();
-            if (inside_aggregate)
+            if (wrap)
             {
                 auto identity_node = std::make_shared<FunctionNode>("identity");
                 identity_node->getArguments().getNodes().push_back(std::move(node));
@@ -1524,16 +1524,21 @@ void replaceMissingColumnsWithDefaults(
         }
     }
 
-    if (auto * function = node->as<FunctionNode>(); function && function->isAggregateFunction())
+    if (auto * query_node = node->as<QueryNode>())
     {
-        /// Argument subtrees may be shared with positions outside the aggregate, which must stay unwrapped.
-        function->getArgumentsNode() = function->getArgumentsNode()->clone();
-        inside_aggregate = true;
+        /// A filter keeps the bare default, which the child folds to prune what it reads. Its subtrees may be shared.
+        for (auto * filter : {&query_node->getWhere(), &query_node->getPrewhere()})
+        {
+            if (!*filter)
+                continue;
+            *filter = (*filter)->clone();
+            replaceMissingColumnsWithDefaults(*filter, table_expression, defaults, context, /*wrap=*/false);
+        }
     }
 
     for (auto & child : node->getChildren())
         if (child && child->getNodeType() != QueryTreeNodeType::QUERY && child->getNodeType() != QueryTreeNodeType::UNION)
-            replaceMissingColumnsWithDefaults(child, table_expression, defaults, context, inside_aggregate);
+            replaceMissingColumnsWithDefaults(child, table_expression, defaults, context, wrap);
 }
 
 QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(

@@ -34,6 +34,9 @@ SELECT 'filter', count() FROM merge(currentDatabase(), '^t_(a|dist_b)$') WHERE a
 SELECT 'filter', count() FROM merge(currentDatabase(), '^t_(dist_a|b)$') WHERE a = 5;
 SELECT 'filter', count() FROM merge(currentDatabase(), '^t_(a|dist_b)$') WHERE a = 0;
 SELECT 'filter', count() FROM merge(currentDatabase(), '^t_(dist_a|b)$') WHERE a = 0;
+-- A filter over a missing column still prunes the child that lacks the column.
+SELECT 'prune', count(), min(id) FROM merge(currentDatabase(), '^t_(a|dist_b)$') WHERE a = 5 SETTINGS max_rows_to_read = 1;
+SELECT 'prune', count(), min(id) FROM merge(currentDatabase(), '^t_(dist_a|b)$') WHERE a = 5 SETTINGS max_rows_to_read = 1;
 
 -- Columns of a subquery over the `Merge`.
 SELECT 'rows', arraySort(groupArray((id, a, b))) FROM (SELECT id, a, b FROM merge(currentDatabase(), '^t_(a|dist_b)$') ORDER BY id);
@@ -52,17 +55,33 @@ SELECT 'key', id, a + 1 AS y, count() FROM merge(currentDatabase(), '^t_(dist_a|
 SELECT 'const', id, now() + a > '2000-01-01 00:00:00', today() + a > '2000-01-01', concat(timezone(), toString(a)) FROM merge(currentDatabase(), '^t_(a|dist_b)$') ORDER BY id SETTINGS session_timezone = 'Asia/Tokyo';
 SELECT 'const', id, now() + a > '2000-01-01 00:00:00', today() + a > '2000-01-01', concat(timezone(), toString(a)) FROM merge(currentDatabase(), '^t_(dist_a|b)$') ORDER BY id SETTINGS session_timezone = 'Asia/Tokyo';
 
--- Expressions over missing columns that the child returns folded to constants.
+-- Expressions over missing columns that fold to constants.
 SELECT 'folded', a, b, a + 1, b + 2 FROM merge(currentDatabase(), '^t_(a|dist_b)$') ORDER BY ALL;
 SELECT 'folded', a, b, a + 1, b + 2 FROM merge(currentDatabase(), '^t_(dist_a|b)$') ORDER BY ALL;
 
--- Expressions over missing columns that the child returns partly folded.
+-- Expressions over missing columns that fold partly.
 SELECT 'partial', id, a + 1 AS y, id * (a + 1) AS z FROM merge(currentDatabase(), '^t_(a|dist_b)$') ORDER BY id;
 SELECT 'partial', id, a + 1 AS y, id * (a + 1) AS z FROM merge(currentDatabase(), '^t_(dist_a|b)$') ORDER BY id;
 SELECT 'partial', a + 1 AS y, id * (a + 1) AS z FROM merge(currentDatabase(), '^t_(a|dist_b)$') ORDER BY z;
 SELECT 'partial', a + 1 AS y, id * (a + 1) AS z FROM merge(currentDatabase(), '^t_(dist_a|b)$') ORDER BY z;
 SELECT 'partial', id, a IN (0, 7), id * (a IN (0, 7)) FROM merge(currentDatabase(), '^t_(a|dist_b)$') ORDER BY id;
 SELECT 'partial', id, a IN (0, 7), id * (a IN (0, 7)) FROM merge(currentDatabase(), '^t_(dist_a|b)$') ORDER BY id;
+
+-- Expressions that fold through a constant argument or a constant set.
+SELECT 'short', a, b, if(a = 0, 1, id) FROM merge(currentDatabase(), '^t_(a|dist_b)$') ORDER BY ALL;
+SELECT 'short', a, b, if(a = 0, 1, id) FROM merge(currentDatabase(), '^t_(dist_a|b)$') ORDER BY ALL;
+SELECT 'short', a, b, a = 0 OR id > 4 FROM merge(currentDatabase(), '^t_(a|dist_b)$') ORDER BY ALL;
+SELECT 'short', a, b, a = 0 OR id > 4 FROM merge(currentDatabase(), '^t_(dist_a|b)$') ORDER BY ALL;
+SELECT 'short', a, b, id * (a IN (0, 7)) FROM merge(currentDatabase(), '^t_(a|dist_b)$') ORDER BY ALL;
+SELECT 'short', a, b, id * (a IN (0, 7)) FROM merge(currentDatabase(), '^t_(dist_a|b)$') ORDER BY ALL;
+
+-- Grouping and `LIMIT BY` keys over missing columns.
+SELECT 'group', a + 1 AS y, count() FROM merge(currentDatabase(), '^t_(a|dist_b)$') GROUP BY y ORDER BY y;
+SELECT 'group', a + 1 AS y, count() FROM merge(currentDatabase(), '^t_(dist_a|b)$') GROUP BY y ORDER BY y;
+SELECT 'group', if(a = 0, 1, id) AS y, count() FROM merge(currentDatabase(), '^t_(a|dist_b)$') GROUP BY y ORDER BY y;
+SELECT 'group', if(a = 0, 1, id) AS y, count() FROM merge(currentDatabase(), '^t_(dist_a|b)$') GROUP BY y ORDER BY y;
+SELECT 'limit by', id, a + 1 AS y FROM merge(currentDatabase(), '^t_(a|dist_b)$') ORDER BY a, id LIMIT 1 BY id;
+SELECT 'limit by', id, a + 1 AS y FROM merge(currentDatabase(), '^t_(dist_a|b)$') ORDER BY a, id LIMIT 1 BY id;
 
 -- A `Merge` table with a single `Distributed` child is read at `Complete`.
 CREATE TABLE t_m1 (id UInt64, a UInt8, b UInt8) ENGINE = Merge(currentDatabase(), '^t_dist_b$');

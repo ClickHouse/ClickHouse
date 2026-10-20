@@ -1,6 +1,5 @@
 #include <Storages/buildQueryTreeForShard.h>
 
-#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -52,7 +51,6 @@
 #include <Storages/StorageSnapshot.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Analyzer/UnionNode.h>
-#include <Analyzer/WindowFunctionsUtils.h>
 
 #include <stack>
 
@@ -1285,34 +1283,14 @@ namespace
 
 using RewriteForShard = std::function<QueryTreeNodePtr(const QueryTreeNodePtr &)>;
 
-/// Folds the functions whose arguments are all constants, as the analysis of a shard that re-analyzes the query does.
-/// `IN` is skipped: its set is built only by that analysis.
-void foldConstantFunctions(QueryTreeNodePtr & node)
-{
-    if (node->getNodeType() == QueryTreeNodeType::CONSTANT)
-        return;
-
-    for (auto & child : node->getChildren())
-        if (child && child->getNodeType() != QueryTreeNodeType::QUERY && child->getNodeType() != QueryTreeNodeType::UNION)
-            foldConstantFunctions(child);
-
-    if (const auto * function = node->as<FunctionNode>(); function && !isNameOfInFunction(function->getFunctionName()))
-        node = foldConstantCast(node);
-}
-
 String actionNameAfterAliasInlining(
-    const QueryTreeNodePtr & node,
-    const PlannerContext & planner_context,
-    const RewriteForShard & rewrite_for_shard,
-    bool fold_constants = false)
+    const QueryTreeNodePtr & node, const PlannerContext & planner_context, const RewriteForShard & rewrite_for_shard)
 {
     /// The action name computed afterwards then matches the name the shard's ActionsDAG assigns
     /// (the shard works on the inlined query tree). Action names come from the column identifier or the
     /// expression rather than the SQL alias, so inlining without aliasing is what this needs.
     auto node_clone = rewrite_for_shard ? rewrite_for_shard(node) : node->clone();
     inlineAliasColumnsInExpression(node_clone);
-    if (fold_constants)
-        foldConstantFunctions(node_clone);
 
     /// `buildQueryTreeForShard` performs one more naming-relevant rewrite after inlining ALIAS columns:
     /// `ReplaceLongConstWithScalarVisitor` turns over-threshold constants into `__getScalar('<hash>')` calls
@@ -1337,14 +1315,10 @@ public:
     CollectAliasNameTranslationVisitor(
         const PlannerContext & planner_context_,
         std::unordered_map<String, String> & translation_,
-        const RewriteForShard & rewrite_for_shard_,
-        std::unordered_map<String, QueryTreeNodePtr> & computed_expressions_,
-        std::unordered_map<String, String> & folded_translation_)
+        const RewriteForShard & rewrite_for_shard_)
         : planner_context(planner_context_)
         , translation(translation_)
         , rewrite_for_shard(rewrite_for_shard_)
-        , computed_expressions(computed_expressions_)
-        , folded_translation(folded_translation_)
     {
     }
 
@@ -1357,18 +1331,6 @@ public:
         auto identifier_name = calculateActionNodeName(node, planner_context, /*use_column_identifier_as_action_node_name=*/true);
         if (translation.contains(identifier_name))
             return;
-
-        if (rewrite_for_shard)
-        {
-            auto rewritten = rewrite_for_shard(node);
-            inlineAliasColumnsInExpression(rewritten);
-            if (!hasAggregateFunctionNodes(rewritten) && !hasWindowFunctionNodes(rewritten)
-                && calculateActionNodeName(rewritten, planner_context, /*use_column_identifier_as_action_node_name=*/true) != identifier_name)
-                computed_expressions.emplace(identifier_name, std::move(rewritten));
-
-            folded_translation.emplace(
-                identifier_name, actionNameAfterAliasInlining(node, planner_context, rewrite_for_shard, /*fold_constants=*/true));
-        }
 
         translation.emplace(std::move(identifier_name), actionNameAfterAliasInlining(node, planner_context, rewrite_for_shard));
     }
@@ -1387,8 +1349,6 @@ private:
     const PlannerContext & planner_context;
     std::unordered_map<String, String> & translation;
     const RewriteForShard & rewrite_for_shard;
-    std::unordered_map<String, QueryTreeNodePtr> & computed_expressions;
-    std::unordered_map<String, String> & folded_translation;
 };
 
 /// Collect, for every `ALIAS` column in the query tree, the inlined clone of its defining expression, keyed by the
@@ -1453,9 +1413,7 @@ void collectLeafColumnActionNames(
 /// True if `node`'s value depends on which server evaluates it: a function that is not deterministic (`rand`, `now`,
 /// ...), or a `ConstantNode` the analyzer produced by folding a server-local call (`hostName`, `tcpPort`, ...), which
 /// the fold marks non-deterministic while a plain literal stays deterministic.
-/// With `allow_folded_constants` every constant is accepted, for an expression of the query itself: its constants were
-/// folded once for the whole query, while an `ALIAS` body runs on the server that reads the row.
-bool containsNonDeterministicFunction(const QueryTreeNodePtr & node, bool allow_folded_constants = false)
+bool containsNonDeterministicFunction(const QueryTreeNodePtr & node)
 {
     if (!node)
         return false;
@@ -1465,11 +1423,11 @@ bool containsNonDeterministicFunction(const QueryTreeNodePtr & node, bool allow_
             return true;
 
     if (const auto * constant_node = node->as<ConstantNode>())
-        if (!allow_folded_constants && !constant_node->isDeterministic())
+        if (!constant_node->isDeterministic())
             return true;
 
     for (const auto & child : node->getChildren())
-        if (containsNonDeterministicFunction(child, allow_folded_constants))
+        if (containsNonDeterministicFunction(child))
             return true;
 
     return false;
@@ -1545,14 +1503,10 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
 
     std::unordered_map<String, String> identifier_to_inlined_name;
     std::unordered_map<String, QueryTreeNodePtr> identifier_to_alias_expression;
-    std::unordered_map<String, QueryTreeNodePtr> identifier_to_rewritten_expression;
-    std::unordered_map<String, String> identifier_to_folded_name;
     std::unordered_set<String> genuine_qualifier_tails;
     {
         QueryTreeNodePtr query_tree_for_visit = query_tree;
-        CollectAliasNameTranslationVisitor visitor(
-            *planner_context, identifier_to_inlined_name, rewrite_for_shard, identifier_to_rewritten_expression,
-            identifier_to_folded_name);
+        CollectAliasNameTranslationVisitor visitor(*planner_context, identifier_to_inlined_name, rewrite_for_shard);
         visitor.visit(query_tree_for_visit);
 
         CollectInlinedAliasExpressionsVisitor alias_visitor(*planner_context, identifier_to_alias_expression);
@@ -1605,16 +1559,6 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
             return {}; /// Two shard columns share this name, so which one feeds this column is undecidable.
 
         auto shard_it = shard_normalized_to_index.find(normalized_inlined_name);
-        /// A shard that re-analyzes the query names the expression with its constants folded.
-        if (auto folded_it = identifier_to_folded_name.find(expected_name);
-            shard_it == shard_normalized_to_index.end() && folded_it != identifier_to_folded_name.end())
-        {
-            auto normalized_folded_name = normalizeGeneratedTableQualifiers(folded_it->second, &genuine_qualifier_tails);
-            if (ambiguous_shard_names.contains(normalized_folded_name))
-                return {};
-            shard_it = shard_normalized_to_index.find(normalized_folded_name);
-        }
-
         if (shard_it != shard_normalized_to_index.end())
         {
             shard_index_for_expected[i] = shard_it->second;
@@ -1631,19 +1575,16 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
         /// expression to that expression; neither is a column the shard emits at a mergeable-state boundary. The body's
         /// leaves are raw columns the shard does send, so evaluate the body here instead of looking the column up.
         auto alias_it = identifier_to_alias_expression.find(expected_name);
-        auto rewritten_it = identifier_to_rewritten_expression.find(expected_name);
-        const bool is_rewritten = alias_it == identifier_to_alias_expression.end();
-        if (is_rewritten && rewritten_it == identifier_to_rewritten_expression.end())
+        if (alias_it == identifier_to_alias_expression.end())
             return {}; /// Cannot explain this column; let the caller fall back to its default reconciliation.
-        auto expression = is_rewritten ? rewritten_it->second : alias_it->second;
 
         /// Evaluating the body here reproduces what the shard would have computed only while the body is a function of
         /// the shard's columns alone. One whose value depends on the evaluating server would take this server's value.
-        if (containsNonDeterministicFunction(expression, /*allow_folded_constants=*/is_rewritten))
+        if (containsNonDeterministicFunction(alias_it->second))
             return {};
 
         shard_index_for_expected[i] = computed_from_expression;
-        expression_for_expected[i] = std::move(expression);
+        expression_for_expected[i] = alias_it->second;
         collapse_detected = true;
     }
 
@@ -1747,8 +1688,6 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
 
     /// Every shard column must be accounted for: either it feeds an expected column directly, or a computed expression
     /// above reads it. A leftover column means the mapping does not explain this header, so fall back to be safe.
-    /// With `rewrite_for_shard` a leftover is what the shard folded differently from an expression computed above.
-    if (!rewrite_for_shard)
     {
         std::unordered_set<const ActionsDAG::Node *> reachable;
         std::vector<const ActionsDAG::Node *> to_visit = outputs;
