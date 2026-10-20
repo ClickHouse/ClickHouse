@@ -2,9 +2,9 @@
 
 # Inside a materialized view query, the source table read through `merge`, `loop` or `executable` is the
 # table, like through `remote` or `Distributed`, also in the IN and scalar subqueries of the `executable`
-# input query and of the row policies it reads through `merge`; only the view query itself, with its own
-# subqueries, reads the inserted block. The same holds when a refreshable view appends to the source table,
-# while a refreshable view reading it sees the table.
+# input query and of the row policies it reads, directly or through `merge`; only the view query itself,
+# with its own subqueries, reads the inserted block. The same holds when a refreshable view appends to the
+# source table, while a refreshable view reading it sees the table.
 # The values do not depend on whether the inserted rows are already in the table. The database name is spelled out:
 # `currentDatabase()` in the view query does not resolve to the test database during the push.
 
@@ -14,7 +14,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -m -q "
 DROP TABLE IF EXISTS mv_merge;
-DROP TABLE IF EXISTS mv_merge_in;
+DROP TABLE IF EXISTS mv_merge_not_in;
 DROP TABLE IF EXISTS mv_merge_not_in_table;
 DROP TABLE IF EXISTS mv_loop;
 DROP TABLE IF EXISTS mv_buffer_not_in;
@@ -41,12 +41,12 @@ CREATE MATERIALIZED VIEW mv_merge TO dst AS
         (SELECT sum(x) FROM merge(${CLICKHOUSE_DATABASE}, '^(src|dist)\$') WHERE x >= 100) AS value
     FROM src;
 
--- The IN subquery is part of the view query, so it reads the inserted block even inside the 'merge' child,
+-- The NOT IN subquery is part of the view query, so it reads the inserted block even inside the 'merge' child,
 -- also when 'src' is not its leftmost table.
-CREATE MATERIALIZED VIEW mv_merge_in TO dst AS
-    SELECT 'merge_in' AS name, count() AS block_rows,
+CREATE MATERIALIZED VIEW mv_merge_not_in TO dst AS
+    SELECT 'merge_not_in' AS name, count() AS block_rows,
         (SELECT count() FROM merge(${CLICKHOUSE_DATABASE}, '^(src|dist)\$')
-         WHERE x >= 100 AND x IN (SELECT n.number FROM numbers(200) AS n JOIN src AS s ON n.number = s.x)) AS value
+         WHERE x >= 100 AND x NOT IN (SELECT n.number FROM numbers(200) AS n JOIN src AS s ON n.number = s.x)) AS value
     FROM src;
 
 -- So does a table on the right of NOT IN.
@@ -76,7 +76,7 @@ INSERT INTO src VALUES (1), (2), (3);
 SELECT * FROM dst ORDER BY name;
 
 DROP TABLE mv_merge;
-DROP TABLE mv_merge_in;
+DROP TABLE mv_merge_not_in;
 DROP TABLE mv_merge_not_in_table;
 DROP TABLE mv_loop;
 DROP TABLE mv_buffer_not_in;
@@ -149,6 +149,16 @@ CREATE MATERIALIZED VIEW db_05389.mv_executable_merge_policy_in TO db_05389.dst 
 CREATE MATERIALIZED VIEW db_05389.mv_executable_merge_policy_scalar TO db_05389.dst AS
     SELECT 'executable_merge_policy_scalar' AS name, count() AS block_rows,
         (SELECT sum(x) FROM executable('echo_rows.sh', 'TSV', 'x UInt64', (SELECT x FROM merge(db_05389, '^aux_scalar\$')))) AS value
+    FROM db_05389.src;
+
+CREATE MATERIALIZED VIEW db_05389.mv_executable_policy_in TO db_05389.dst AS
+    SELECT 'executable_policy_in' AS name, count() AS block_rows,
+        (SELECT sum(x) FROM executable('echo_rows.sh', 'TSV', 'x UInt64', (SELECT x FROM db_05389.aux_in))) AS value
+    FROM db_05389.src;
+
+CREATE MATERIALIZED VIEW db_05389.mv_loop_policy_in TO db_05389.dst AS
+    SELECT 'loop_policy_in' AS name, count() AS block_rows,
+        (SELECT max(x) FROM (SELECT x FROM loop(db_05389, aux_in) LIMIT 3)) AS value
     FROM db_05389.src;
 
 INSERT INTO db_05389.src VALUES (1), (2), (3);
