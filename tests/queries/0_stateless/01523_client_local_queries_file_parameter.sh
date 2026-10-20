@@ -38,6 +38,11 @@ printf "%s\n" "CREATE FUNCTION f_01523 AS (x) -> x + 1;" "SELECT 'first file';" 
 printf "%s\n" "SELECT 'second file';" > "$SECOND_SQL_FILE_NAME"
 $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" --queries-file="$SECOND_SQL_FILE_NAME" -q "SELECT f_01523(41);" < /dev/null
 
+# SQL from separate files shares a session, even if -q is specified first.
+printf '%s\n' 'CREATE TABLE state_01523 (x UInt8) ENGINE=Memory;' 'INSERT INTO state_01523 VALUES (4);' > "$TEMP_SQL_FILE_NAME"
+printf '%s\n' 'INSERT INTO state_01523 VALUES (5);' > "$SECOND_SQL_FILE_NAME"
+$CLICKHOUSE_LOCAL -q 'SELECT sum(x) FROM state_01523' --queries-file="$TEMP_SQL_FILE_NAME" --queries-file="$SECOND_SQL_FILE_NAME" < /dev/null
+
 # Query files and --query keep their own ordering, regardless of interleaving on the command line.
 echo "SELECT 'first file';" > "$TEMP_SQL_FILE_NAME"
 echo "SELECT 'second file';" > "$SECOND_SQL_FILE_NAME"
@@ -66,6 +71,7 @@ $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" -q "table | count" < "$ST
 # This matters with the read method, which otherwise advances the shared descriptor.
 printf '1\n2\n3\n' > "$STDIN_DATA_FILE_NAME"
 printf '%s\n' 'CREATE TABLE stdin_source (x UInt8) ENGINE=File(TSV, stdin);' 'SELECT sum(x) FROM stdin_source;' > "$TEMP_SQL_FILE_NAME"
+$CLICKHOUSE_LOCAL --storage_file_read_method=read --queries-file="$TEMP_SQL_FILE_NAME" < "$STDIN_DATA_FILE_NAME"
 $CLICKHOUSE_LOCAL --storage_file_read_method=read --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT 42 FROM system.one' < "$STDIN_DATA_FILE_NAME"
 $CLICKHOUSE_LOCAL --storage_file_read_method=read --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT count()' < "$STDIN_DATA_FILE_NAME"
 
@@ -82,3 +88,14 @@ else
     echo "unexpected output"
 fi
 
+
+# A failure in the second query file also stops the trailing --query.
+printf '%s\n' "SELECT 'first file';" > "$TEMP_SQL_FILE_NAME"
+echo "SELECT throwIf(1, 'second file failed');" > "$SECOND_SQL_FILE_NAME"
+if output=$($CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" --queries-file="$SECOND_SQL_FILE_NAME" -q "SELECT 'trailing query';" < /dev/null 2>&1); then
+    echo "unexpected success"
+elif [[ "$output" == *"second file failed"* ]] && ! grep -Fxq 'trailing query' <<< "$output"; then
+    echo "second file stopped query"
+else
+    echo "unexpected output"
+fi

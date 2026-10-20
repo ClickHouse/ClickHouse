@@ -13,6 +13,7 @@ BAD_ARGUMENTS
 first file
 second file
 42
+9
 first file
 second file
 first query
@@ -27,8 +28,10 @@ second query
 3
 3
 6
+6
 42
 6
 3
 BAD_ARGUMENTS
 file error stopped query
+second file stopped query
