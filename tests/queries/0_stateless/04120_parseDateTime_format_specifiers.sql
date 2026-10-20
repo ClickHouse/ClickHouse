@@ -97,6 +97,11 @@ SELECT parseDateTimeInJodaSyntax('2106-02-07 06:28:16', 'yyyy-MM-dd HH:mm:ss', '
 SELECT parseDateTimeInJodaSyntaxOrZero('2106-12-31', 'yyyy-MM-dd', 'UTC');
 SELECT parseDateTimeInJodaSyntaxOrNull('2106-12-31', 'yyyy-MM-dd', 'UTC');
 
+SELECT '--- DateTime: Joda named timezone at boundary ---';
+SELECT toUnixTimestamp(parseDateTimeInJodaSyntax('2106-02-07 15:28:15 Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss z', 'UTC'));
+SELECT parseDateTimeInJodaSyntaxOrNull('2106-02-07 15:28:16 Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss z', 'UTC');
+SELECT parseDateTimeInJodaSyntaxOrNull('1970-01-01 00:00:00 Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss z', 'UTC');
+
 SELECT '--- DateTime: Joda inline offset at boundary ---';
 SELECT toUnixTimestamp(parseDateTimeInJodaSyntax('2106-02-07 08:28:15+0200', 'yyyy-MM-dd HH:mm:ssZ', 'UTC'));
 SELECT parseDateTimeInJodaSyntaxOrNull('2106-02-07 08:28:16+0200', 'yyyy-MM-dd HH:mm:ssZ', 'UTC');
@@ -115,6 +120,8 @@ SELECT toUnixTimestamp(parseDateTimeInJodaSyntaxOrNull('2106-02-07 08:28:16+0200
 SELECT toUnixTimestamp(parseDateTime('2106-02-07 15:28:16', '%F %H:%i:%s', 'Asia/Tokyo'));
 SELECT toUnixTimestamp(parseDateTime('1970-01-01 00:00:00', '%F %H:%i:%s', 'Asia/Tokyo'));
 
+SELECT toUnixTimestamp(parseDateTimeInJodaSyntax('2106-02-07 15:28:16 Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss z', 'UTC'));
+
 SET date_time_overflow_behavior = 'ignore';
 SELECT '--- DateTime: ignore overflow ---';
 SELECT toUnixTimestamp(parseDateTime('2106-02-07 06:28:16', '%F %H:%i:%s', 'UTC'));
@@ -124,6 +131,8 @@ SELECT toUnixTimestamp(parseDateTime('2106-12-31', '%F', 'UTC'));
 SELECT toUnixTimestamp(parseDateTimeInJodaSyntax('2106-02-07 06:28:16', 'yyyy-MM-dd HH:mm:ss', 'UTC'));
 SELECT toUnixTimestamp(parseDateTime('1970-01-01 00:00:00', '%F %H:%i:%s', 'Asia/Tokyo'));
 SELECT toUnixTimestamp(parseDateTimeOrNull('2106-02-07 15:28:16', '%F %H:%i:%s', 'Asia/Tokyo'));
+
+SELECT toUnixTimestamp(parseDateTimeInJodaSyntax('2106-02-07 15:28:16 Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss z', 'UTC'));
 
 SELECT '--- mysqlYear2: %y ---';
 SELECT parseDateTime('99', '%y', 'UTC');

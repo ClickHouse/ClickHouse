@@ -1857,7 +1857,9 @@ namespace
             {
                 std::string_view read_time_zone{cur, end};
                 const DateLUTImpl & date_time_zone = DateLUT::instance(read_time_zone);
-                const auto result = parsed_value.buildDateTime(date_time_zone);
+                /// Resolve the named timezone before checking the final DateTime range.
+                /// A local time outside UInt32 can still be valid after timezone conversion.
+                const auto result = parsed_value.buildDateTime(date_time_zone, FormatSettings::DateTimeOverflowBehavior::Ignore);
                 if (result.has_value())
                 {
                     const DateLUTImpl::Time timezone_offset = date_time_zone.timezoneOffset(*result);

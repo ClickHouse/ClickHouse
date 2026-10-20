@@ -50,6 +50,10 @@
 2106-02-07 06:28:15
 1970-01-01 00:00:00
 \N
+--- DateTime: Joda named timezone at boundary ---
+4294967295
+\N
+\N
 --- DateTime: Joda inline offset at boundary ---
 4294967295
 \N
@@ -64,6 +68,7 @@
 4294967295
 4294967295
 0
+4294967295
 --- DateTime: ignore overflow ---
 0
 0
@@ -71,6 +76,7 @@
 28229504
 0
 4294934896
+0
 0
 --- mysqlYear2: %y ---
 1999-01-01 00:00:00
