@@ -136,6 +136,7 @@ private:
             : entry(entry_)
             , parts_to_do(format_version_)
             , parts_in_progress(format_version_)
+            , affected_rows_by_command(entry_->commands.size())
         {
         }
 
@@ -170,6 +171,11 @@ private:
         time_t latest_fail_time = 0;
         String latest_fail_reason;
         String latest_fail_error_code_name;
+
+        /// The number of rows affected by each command of the mutation in the parts mutated by this replica so far
+        /// (only `DELETE` and `UPDATE` commands are counted). Tracked in memory only: zero for the parts mutated before
+        /// the queue state was loaded (e.g. before a server restart) and for the parts fetched from other replicas.
+        std::vector<UInt64> affected_rows_by_command;
     };
 
     /// Mapping from znode path to Mutations Status
@@ -471,6 +477,8 @@ public:
     MutationCommands getMutationCommands(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version,
                                          Strings & mutation_ids) const;
 
+    /// Adds the number of rows affected by each `DELETE` and `UPDATE` command of mutations while mutating a part by this replica.
+    void addAffectedRowsToMutations(const AffectedRowsByMutationCommandsMap & affected_rows);
     struct MutationsSnapshot : public MergeTreeData::MutationsSnapshotBase
     {
     public:

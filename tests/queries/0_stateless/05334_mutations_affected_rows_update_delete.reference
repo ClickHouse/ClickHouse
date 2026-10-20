@@ -1,0 +1,30 @@
+delete then update	3
+delete then update	2
+update then delete	5
+update then delete	5
+several parts	3
+several parts	3
+shared stage	2
+shared stage	1
+shared stage	4
+batch delete then update	3
+batch delete then update	2
+batch delete then update	0
+one by one delete then update	3
+one by one delete then update	2
+batch update then delete	5
+batch update then delete	5
+batch update then delete	0
+batch shared stage	2
+batch shared stage	1
+batch shared stage	4
+batch shared stage	0
+update after lightweight delete	4
+update after lightweight delete	6
+lightweight delete twice	3
+lightweight delete twice	2
+maybe coalesced lightweight deletes	5	4	3	0
+update after lightweight delete in patch part	6
+batch lightweight delete then alter delete	3
+batch lightweight delete then alter delete	2
+batch lightweight delete then alter delete	0

@@ -1,0 +1,36 @@
+basic	3
+no match	0
+several parts	3
+one part matches	2
+batch disjoint	2
+batch disjoint	2
+batch disjoint	0
+batch overlap	4
+batch overlap	0
+batch overlap	0
+batch overlap reversed	2
+batch overlap reversed	2
+batch overlap reversed	0
+two commands	0
+two commands	4
+batch of three	2
+batch of three	2
+batch of three	0
+batch of three	0
+already deleted	3
+already deleted	0
+null	1
+null rows left	2
+lightweight delete first	3
+in partition	3
+many blocks	7
+part type	t_compact	Compact
+part type	t_wide	Wide
+wide and compact	t_compact	3
+wide and compact	t_wide	3
+insert after	3
+insert after rows	10
+all rows	10
+all rows batch	6
+all rows batch	4
+all rows batch	0

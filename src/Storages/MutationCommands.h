@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 #include <unordered_map>
+#include <utility>
 
 #include <Core/Defines.h>
 #include <Core/Names.h>
@@ -18,6 +19,9 @@ class ASTAlterCommand;
 class Context;
 class WriteBuffer;
 class ReadBuffer;
+
+/// Identifies a command of a mutation of `StorageMergeTree`: the version of the mutation and the index of the command in it.
+using MutationCommandIdentifier = std::pair<UInt64, size_t>;
 
 /// Represents set of actions which should be applied
 /// to values from set of columns which satisfy predicate.
@@ -118,6 +122,14 @@ struct MutationCommand
     /// Required to distinguish read command used for MODIFY COLUMN.
     bool read_for_patch = false;
 
+    /// The mutation command this command is copied from: the version of the mutation and the index of the command in it.
+    /// Set only when the command is applied to a part of `StorageMergeTree` or `StorageReplicatedMergeTree`
+    /// (where the version is the number of the mutation znode), to count the rows affected by the command
+    /// (see `affected_rows` in `system.mutations`).
+    /// NOTE: `mutation_version` is not used for this because `MutationsInterpreter` starts a new stage for each `mutation_version`,
+    /// so setting it would change how the mutations applied to a part together are executed.
+    std::optional<MutationCommandIdentifier> command_identifier = {};
+
     /// If `parse_alter_commands` is true, more alter commands are accepted as
     /// mutation commands. `max_parser_depth` / `max_parser_backtracks` are
     /// captured into the returned command so subsequent on-demand re-parsing
@@ -169,6 +181,10 @@ public:
 };
 
 using MutationCommandsConstPtr = std::shared_ptr<MutationCommands>;
+
+/// The number of rows affected by each mutation command in a mutated part. The key is the version of the mutation and each value is a
+/// vector of the number of rows affected by each command in the mutation.
+using AffectedRowsByMutationCommandsMap = std::unordered_map<UInt64, std::vector<UInt64>>;
 
 /// A pair of Actions DAG that is required to execute one step
 /// of mutation and the name of filter column if it's a filtering step.
