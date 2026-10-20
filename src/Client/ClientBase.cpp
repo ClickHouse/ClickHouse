@@ -5394,7 +5394,9 @@ void ClientBase::runNonInteractive()
                 return;
         }
 
-        return;
+        /// clickhouse-local can execute --query after all --queries-file inputs.
+        if (queries.empty())
+            return;
     }
 
     if (buzz_house)

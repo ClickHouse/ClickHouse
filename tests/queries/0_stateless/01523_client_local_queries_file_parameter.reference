@@ -4,7 +4,13 @@
 3
 1	2
 3	4
+from file
+from query
 BAD_ARGUMENTS
+from file
+from long query
 BAD_ARGUMENTS
-BAD_ARGUMENTS
-BAD_ARGUMENTS
+first file
+second file
+42
+file error stopped query

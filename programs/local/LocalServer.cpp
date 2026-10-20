@@ -1481,9 +1481,6 @@ void LocalServer::updateLoggerLevel(const String & logs_level)
 void LocalServer::processConfig()
 {
     auto component_guard = Coordination::setCurrentComponent("LocalServer::processConfig");
-    if (!queries.empty() && !queries_files.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
-
     pager = getClientConfiguration().getString("pager", "");
 
     delayed_interactive = getClientConfiguration().has("interactive") && (!queries.empty() || !queries_files.empty());
