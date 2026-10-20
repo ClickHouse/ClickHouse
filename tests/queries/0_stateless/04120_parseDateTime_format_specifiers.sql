@@ -132,7 +132,8 @@ SELECT toUnixTimestamp(parseDateTimeOrZero('2106-02-07 06:28:16', '%F %H:%i:%s',
 SELECT isNull(parseDateTimeOrNull('2106-02-07 06:28:16', '%F %H:%i:%s', 'UTC'));
 SELECT toUnixTimestamp(parseDateTime('2106-12-31', '%F', 'UTC'));
 SELECT toUnixTimestamp(parseDateTimeInJodaSyntax('2106-02-07 06:28:16', 'yyyy-MM-dd HH:mm:ss', 'UTC'));
-SELECT toUnixTimestamp(parseDateTime('1970-01-01 00:00:00', '%F %H:%i:%s', 'Asia/Tokyo'));
+SELECT parseDateTimeOrNull('1970-01-01 00:00:00', '%F %H:%i:%s', 'Asia/Tokyo');
+SELECT parseDateTimeInJodaSyntaxOrNull('1970-01-01 00:00:00 Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss z', 'UTC');
 SELECT toUnixTimestamp(parseDateTimeOrNull('2106-02-07 15:28:16', '%F %H:%i:%s', 'Asia/Tokyo'));
 
 SELECT toUnixTimestamp(parseDateTimeInJodaSyntax('2106-02-07 15:28:16 Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss z', 'UTC'));

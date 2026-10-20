@@ -597,6 +597,9 @@ namespace
             if constexpr (return_type == ReturnType::DateTime)
             {
                 constexpr Int64 max_datetime_seconds = std::numeric_limits<UInt32>::max();
+                /// DateTime parsing has always rejected negative timestamps, even when overflow handling is "ignore".
+                if (seconds_since_epoch < 0 && overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Ignore)
+                    RETURN_ERROR(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Seconds since epoch is negative")
                 if (seconds_since_epoch < 0 || seconds_since_epoch > max_datetime_seconds)
                 {
                     if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
