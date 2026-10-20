@@ -329,3 +329,14 @@ SELECT x FROM (
     GROUP BY GROUPING SETS ((k, j), ())
 ) ORDER BY x NULLS LAST
 SETTINGS compatibility = '24.3', group_by_use_nulls = 1, allow_experimental_correlated_subqueries = 1;
+
+-- A correlated subquery reached through an alias that is first resolved inside an aggregate in a
+-- GROUP BY key branch which `if` with a constant condition drops. The outer aggregate must not
+-- stop the correlated reference from becoming Nullable (found by the stress test).
+SELECT '-- correlated alias first resolved inside an aggregate of a dropped GROUP BY branch ---';
+SELECT x, c FROM (
+    SELECT (SELECT c0) AS x, count() AS c
+    FROM (SELECT CAST('1', 'Bool') UNION ALL SELECT CAST('1', 'Bool')) AS t0(c0)
+    GROUP BY GROUPING SETS ((if(82, c0, (1 IN tuple(2, toUInt128(covarSamp(x, y)))))), ())
+) ORDER BY x NULLS LAST
+SETTINGS group_by_use_nulls = 1;

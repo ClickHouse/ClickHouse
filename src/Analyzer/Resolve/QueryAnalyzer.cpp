@@ -3937,14 +3937,22 @@ void QueryAnalyzer::applyGroupByUseNullsToExpression(QueryTreeNodePtr & node, Id
     /// query: a reference inside an aggregate's arguments (including `* APPLY x -> agg(x, key)`,
     /// where the aggregate is on the lambda's stack while the key set is on the enclosing query's
     /// scope) must not be wrapped. The same holds for `grouping(...)` arguments, which only
-    /// identify GROUP BY keys and are matched against them in their original form. It is reset when
-    /// crossing into an outer query for a correlated expression, because the inner query's
-    /// aggregate context does not constrain how the outer query's GROUP BY keys wrap the reference.
+    /// identify GROUP BY keys and are matched against them in their original form. It is reset and
+    /// no longer accumulated once the walk crosses into an outer query for a correlated expression:
+    /// neither the inner query's aggregate context nor the outer query's one constrains how the
+    /// outer query's GROUP BY keys wrap the reference. The correlated values are fed into the
+    /// subquery from the outer query's post-aggregation rows, where they are already Nullable. The
+    /// outer query's stack can hold an aggregate when the subquery is reached through an alias that
+    /// was first resolved inside it, e.g. `SELECT (SELECT c0) AS x ... GROUP BY GROUPING SETS
+    /// ((if(1, c0, covarSamp(x, y) > 0)), ())`, where the aggregate later disappears together with
+    /// the constant-folded branch but `x` stays shared with the projection.
     bool is_aggregate_or_grouping_argument = false;
+    bool crossed_into_outer_query = false;
     for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
     {
-        is_aggregate_or_grouping_argument = is_aggregate_or_grouping_argument
-            || scope_ptr->expressions_in_resolve_process_stack.hasAggregateOrGroupingFunction();
+        if (!crossed_into_outer_query)
+            is_aggregate_or_grouping_argument = is_aggregate_or_grouping_argument
+                || scope_ptr->expressions_in_resolve_process_stack.hasAggregateOrGroupingFunction();
 
         /// `find(node)` computes `node`'s hash, so skip scopes with no keys (avoids the hash for
         /// the common scope that is not under `group_by_use_nulls`).
@@ -4008,6 +4016,7 @@ void QueryAnalyzer::applyGroupByUseNullsToExpression(QueryTreeNodePtr & node, Id
             break;
 
         is_aggregate_or_grouping_argument = false;
+        crossed_into_outer_query = true;
     }
 }
 

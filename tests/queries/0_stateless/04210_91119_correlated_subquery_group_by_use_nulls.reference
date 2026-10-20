@@ -154,3 +154,6 @@ COLUMN id: N, column_name: number, result_type: UInt64, source_id: N
 5
 7
 \N
+-- correlated alias first resolved inside an aggregate of a dropped GROUP BY branch ---
+true	2
+\N	2
