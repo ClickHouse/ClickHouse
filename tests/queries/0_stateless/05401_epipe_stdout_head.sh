@@ -19,12 +19,12 @@ function check()
     cat "$stderr_file"
 }
 
-check client $CLICKHOUSE_CLIENT -q "SELECT * FROM numbers(100000000)"
-check local $CLICKHOUSE_LOCAL -q "SELECT * FROM numbers(100000000)"
-check "local, without parallel formatting" $CLICKHOUSE_LOCAL --output_format_parallel_formatting 0 -q "SELECT * FROM numbers(100000000)"
+check client $CLICKHOUSE_CLIENT -q "SELECT * FROM numbers(1000000)"
+check local $CLICKHOUSE_LOCAL -q "SELECT * FROM numbers(1000000)"
+check "local, without parallel formatting" $CLICKHOUSE_LOCAL --output_format_parallel_formatting 0 -q "SELECT * FROM numbers(1000000)"
 
 # The rest of the queries is not run, even with `--ignore-error`.
-check "client, ignore error" $CLICKHOUSE_CLIENT --ignore-error -q "SELECT * FROM numbers(100000000); SELECT throwIf(1)"
-check "local, ignore error" $CLICKHOUSE_LOCAL --ignore-error -q "SELECT * FROM numbers(100000000); SELECT throwIf(1)"
+check "client, ignore error" $CLICKHOUSE_CLIENT --ignore-error -q "SELECT * FROM numbers(1000000); SELECT throwIf(1)"
+check "local, ignore error" $CLICKHOUSE_LOCAL --ignore-error -q "SELECT * FROM numbers(1000000); SELECT throwIf(1)"
 
 rm -f "$stderr_file"
