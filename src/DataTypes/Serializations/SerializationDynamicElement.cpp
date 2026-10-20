@@ -37,11 +37,11 @@ struct DynamicElementVariantReader
     ISerialization::DeserializeBinaryBulkStatePtr null_map_state;
     bool reads_nested_subcolumn_directly = false;
 
-    DynamicElementVariantReader clone() const
+    DynamicElementVariantReader clone(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const
     {
         auto new_reader = *this;
-        new_reader.state = state ? state->clone() : nullptr;
-        new_reader.null_map_state = null_map_state ? null_map_state->clone() : nullptr;
+        new_reader.state = state ? state->clone(context) : nullptr;
+        new_reader.null_map_state = null_map_state ? null_map_state->clone(context) : nullptr;
         return new_reader;
     }
 };
@@ -185,15 +185,15 @@ struct DeserializeBinaryBulkStateDynamicElement : public ISerialization::Deseria
     SerializationPtr shared_variant_serialization;
     ISerialization::DeserializeBinaryBulkStatePtr shared_variant_state;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateDynamicElement>(*this);
-        new_state->structure_state = structure_state ? structure_state->clone() : nullptr;
+        new_state->structure_state = structure_state ? structure_state->clone(context) : nullptr;
         new_state->variant_readers.clear();
         new_state->variant_readers.reserve(variant_readers.size());
         for (const auto & reader : variant_readers)
-            new_state->variant_readers.push_back(reader.clone());
-        new_state->shared_variant_state = shared_variant_state ? shared_variant_state->clone() : nullptr;
+            new_state->variant_readers.push_back(reader.clone(context));
+        new_state->shared_variant_state = shared_variant_state ? shared_variant_state->clone(context) : nullptr;
         return new_state;
     }
 

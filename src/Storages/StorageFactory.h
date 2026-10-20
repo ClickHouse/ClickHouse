@@ -170,4 +170,10 @@ void checkStorageSettingNames(const StorageFactory::Arguments & args);
 /// rather than written by the user now. Refusing a replayed definition would block loading or retry forever.
 bool isReplayedTableDefinition(LoadingStrictnessLevel mode, const ASTCreateQuery & query, const ContextPtr & local_context);
 
+/// Rejects a definition of a table with its own unreplicated data on disk when `database_replicated_allow_only_replicated_engine`
+/// restricts the `Replicated` database it is created in. The same restriction as in `InterpreterCreateQuery::doCreateTable`
+/// (see `IStorage::hasUnreplicatedTableDataOnDisk`), for engines that must check it before the storage is constructed, because
+/// the construction itself has effects or can fail for an unrelated reason (e.g. schema inference opens the source).
+void throwIfUnreplicatedTableDataNotAllowed(const StorageFactory::Arguments & args);
+
 }
