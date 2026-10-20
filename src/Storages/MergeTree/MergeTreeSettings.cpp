@@ -287,6 +287,8 @@ cache during merge.
 If enabled along with [exclude_deleted_rows_for_part_size_in_merge](#exclude_deleted_rows_for_part_size_in_merge),
 deleted rows count for existing data parts will be calculated during table
 starting up. Note that it may slow down start up table loading.
+These exact row counts also allow implicit projections to optimize ungrouped
+`count` queries on parts with lightweight deletes.
 
 Possible values:
 - `true`
@@ -1012,6 +1014,9 @@ If enabled, estimated actual size of data parts (i.e., excluding those rows
 that have been deleted through `DELETE FROM`) will be used when selecting
 parts to merge. Note that this behavior is only triggered for data parts
 affected by `DELETE FROM` executed after this setting is enabled.
+The calculated row counts can also optimize ungrouped `count` queries.
+Enabling this setting does not calculate counts for existing parts; use
+`load_existing_rows_count_for_old_parts` when loading those parts.
 
 Possible values:
 - `true`
