@@ -20,6 +20,9 @@ public:
 
     size_t allocatedBytes() const override;
 
+    /// Reads the sizes from the streams of the parent `String`, not from its own stream.
+    bool supportsRowRanges() const override { return false; }
+
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,
