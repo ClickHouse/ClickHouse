@@ -154,7 +154,6 @@ ch_cc_library(
         "@clickhouse_abseil_cpp//:abseil_cpp_headers",
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse_libssh//:_ssh",
-    ] + [
         "@clickhouse//contrib/cityhash102:headers",
         "@clickhouse//contrib/driftsort:headers",
         "@clickhouse//contrib/ipnsort:headers",
@@ -226,7 +225,6 @@ ch_cc_library(
         "@clickhouse_abseil_cpp//:abseil_cpp_headers",
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse_libssh//:_ssh",
-    ] + [
         "@clickhouse//contrib/cityhash102:headers",
         "@clickhouse//contrib/croaring-cmake:headers",
         "@clickhouse//contrib/driftsort:headers",

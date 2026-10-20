@@ -1012,7 +1012,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "google_cloud_cpp_grpc_utils",
-    srcs = ([
+    srcs = [
         "google/cloud/completion_queue.cc",
         "google/cloud/connection_options.cc",
         "google/cloud/grpc_error_delegate.cc",
@@ -1035,7 +1035,7 @@ ch_cc_library(
         "google/cloud/internal/streaming_write_rpc_impl.cc",
         "google/cloud/internal/time_utils.cc",
         "google/cloud/internal/unified_grpc_credentials.cc",
-    ]),
+    ],
     hdrs = [
         "@clickhouse//bazel:gen/base/base/GitHash.generated.cpp",
         "@clickhouse//bazel:gen/includes/configs/config_version.cpp",
@@ -1202,7 +1202,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "google_cloud_cpp_rest_internal",
-    srcs = ([
+    srcs = [
         "google/cloud/internal/binary_data_as_debug_string.cc",
         "google/cloud/internal/external_account_source_format.cc",
         "google/cloud/internal/external_account_token_source_aws.cc",
@@ -1230,7 +1230,7 @@ ch_cc_library(
         "google/cloud/internal/tracing_rest_response.cc",
         "google/cloud/internal/unified_rest_credentials.cc",
         "@clickhouse//contrib:google-cloud-cpp-cmake/poco_rest_client.cc",
-    ]),
+    ],
     hdrs = [
         "@clickhouse//bazel:gen/base/base/GitHash.generated.cpp",
         "@clickhouse//bazel:gen/includes/configs/config_version.cpp",
@@ -1338,7 +1338,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "google_cloud_cpp_storage",
-    srcs = ([
+    srcs = [
         "google/cloud/storage/auto_finalize.cc",
     ] + glob(
         ["google/cloud/storage/bucket_*.cc"],
@@ -1406,7 +1406,7 @@ ch_cc_library(
         "google/cloud/storage/internal/tracing_object_read_source.cc",
         "google/cloud/storage/internal/unified_rest_credentials.cc",
         "google/cloud/storage/lifecycle_rule.cc",
-    ]) + glob(["google/cloud/storage/*_reader.cc"]) + ([
+    ] + glob(["google/cloud/storage/*_reader.cc"]) + [
         "google/cloud/storage/notification_metadata.cc",
     ] + glob(
         ["google/cloud/storage/oauth2/*.cc"],
@@ -1421,7 +1421,7 @@ ch_cc_library(
         "google/cloud/storage/version.cc",
         "google/cloud/storage/well_known_headers.cc",
         "google/cloud/storage/well_known_parameters.cc",
-    ]),
+    ],
     hdrs = [
         "@clickhouse//bazel:gen/base/base/GitHash.generated.cpp",
         "@clickhouse//bazel:gen/includes/configs/config_version.cpp",

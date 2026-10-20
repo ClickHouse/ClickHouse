@@ -31,7 +31,6 @@ ch_cc_library(
     name = "_orc",
     srcs = [
         "@clickhouse//bazel:gen/contrib/arrow-cmake/orc_proto.pb.cc",
-    ] + ([
         "c++/src/Adaptor.cc",
         "c++/src/BlockBuffer.cc",
         "c++/src/BloomFilter.cc",
@@ -113,7 +112,7 @@ ch_cc_library(
         "c++/src/wrap/orc-proto-wrapper.hh",
         "c++/src/wrap/snappy-wrapper.h",
         "c++/src/wrap/zero-copy-stream-wrapper.h",
-    ]),
+    ],
     hdrs = [
         "@clickhouse//bazel:gen/contrib/arrow-cmake/orc_proto.pb.h",
         ":config/contrib/orc/c++/include/Adaptor.hh",
@@ -207,5 +206,6 @@ ch_cc_library(
         "@clickhouse//contrib/lz4-cmake:_lz4",
         "@clickhouse_snappy//:_snappy",
         "@clickhouse_zstd//:_zstd",
-    ] + ["@clickhouse//contrib/arrow-cmake:headers"],
+        "@clickhouse//contrib/arrow-cmake:headers",
+    ],
 )

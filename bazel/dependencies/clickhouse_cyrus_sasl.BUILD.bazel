@@ -47,7 +47,10 @@ ch_cc_library(
         "-I",
         "contrib/cyrus-sasl-cmake",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"] + ["@clickhouse//contrib/cyrus-sasl-cmake:headers"],
+    implementation_deps = [
+        "@clickhouse_llvm_project//:libcxxabi_headers",
+        "@clickhouse//contrib/cyrus-sasl-cmake:headers",
+    ],
     language = "C",
     local_defines = [
         "'CONFIGDIR=\"\"'",

@@ -1443,18 +1443,27 @@ ch_cc_library(
     }),
     hdrs = _GENERATED_HDRS_0,
     clickhouse_code = True,
-    copts = ["-g1"] + select({
+    copts = [
+        "-g1",
+    ] + select({
         "@platforms//cpu:x86_64": [
             "-march=x86-64-v2",
-            "-I",
-            "$(GENDIR)/bazel/gen/includes/configs",
-            "-I",
-            "contrib/libfarmhash",
-            "-I",
-            "$(GENDIR)/bazel/gen/src",
-            "-I",
-            repository_path("contrib/cctz") + "/include",
-            "-I",
+        ],
+        "@platforms//cpu:aarch64": [
+            "-fno-sanitize=signed-integer-overflow",
+        ],
+    }) + [
+        "-I",
+        "$(GENDIR)/bazel/gen/includes/configs",
+        "-I",
+        "contrib/libfarmhash",
+        "-I",
+        "$(GENDIR)/bazel/gen/src",
+        "-I",
+        repository_path("contrib/cctz") + "/include",
+        "-I",
+    ] + select({
+        "@platforms//cpu:x86_64": [
             repository_path("contrib/re2"),
             "-I",
             repository_path("contrib/libfiu") + "/libfiu",
@@ -1466,16 +1475,6 @@ ch_cc_library(
             repository_path("contrib/zstd") + "/lib",
         ],
         "@platforms//cpu:aarch64": [
-            "-fno-sanitize=signed-integer-overflow",
-            "-I",
-            "$(GENDIR)/bazel/gen/includes/configs",
-            "-I",
-            "contrib/libfarmhash",
-            "-I",
-            "$(GENDIR)/bazel/gen/src",
-            "-I",
-            repository_path("contrib/cctz") + "/include",
-            "-I",
             repository_path("contrib/libfiu") + "/libfiu",
             "-I",
             "$(GENDIR)/" + repository_path("contrib/libssh") + "/config/contrib/libssh/include",

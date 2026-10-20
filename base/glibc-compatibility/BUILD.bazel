@@ -25,7 +25,7 @@ ch_cc_library(
     ] + select({
         "@platforms//cpu:x86_64": ["musl/getauxval.c"],
         "@platforms//cpu:aarch64": [],
-    }) + ([
+    }) + [
         "musl/getentropy.c",
         "musl/getrandom.c",
         "musl/glob.c",
@@ -64,7 +64,7 @@ ch_cc_library(
         "musl/utimensat.c",
         "musl/vasprintf.c",
         "musl/vdso.c",
-    ] + glob(["**/*.h"])),
+    ] + glob(["**/*.h"]),
     copts = [
         "-fomit-frame-pointer",
         "-std=gnu11",

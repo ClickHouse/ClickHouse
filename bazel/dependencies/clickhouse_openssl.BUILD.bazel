@@ -510,31 +510,23 @@ ch_cc_library(
         "**/*.inc",
         "**/*.H",
     ]),
-    additional_compiler_inputs = select({
+    additional_compiler_inputs = [
+        "crypto/LPdir_nyi.c",
+        "crypto/LPdir_unix.c",
+        "crypto/LPdir_vms.c",
+        "crypto/LPdir_win.c",
+        "crypto/LPdir_win32.c",
+        "crypto/LPdir_wince.c",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            "crypto/LPdir_nyi.c",
-            "crypto/LPdir_unix.c",
-            "crypto/LPdir_vms.c",
-            "crypto/LPdir_win.c",
-            "crypto/LPdir_win32.c",
-            "crypto/LPdir_wince.c",
             "crypto/bn/bn_asm.c",
-            "crypto/des/ncbc_enc.c",
-            "ms/applink.c",
-            "providers/implementations/macs/blake2_mac_impl.c",
         ],
-        "@platforms//cpu:aarch64": [
-            "crypto/LPdir_nyi.c",
-            "crypto/LPdir_unix.c",
-            "crypto/LPdir_vms.c",
-            "crypto/LPdir_win.c",
-            "crypto/LPdir_win32.c",
-            "crypto/LPdir_wince.c",
-            "crypto/des/ncbc_enc.c",
-            "ms/applink.c",
-            "providers/implementations/macs/blake2_mac_impl.c",
-        ],
-    }),
+        "@platforms//cpu:aarch64": [],
+    }) + [
+        "crypto/des/ncbc_enc.c",
+        "ms/applink.c",
+        "providers/implementations/macs/blake2_mac_impl.c",
+    ],
     copts = [
         "-w",
         "-std=gnu11",
@@ -701,7 +693,7 @@ ch_cc_library(
         "ssl/record/methods/tlsany_meth.c",
         "ssl/record/rec_layer_d1.c",
         "ssl/record/rec_layer_s3.c",
-    ] + glob(["ssl/rio/*.c"]) + (glob(["ssl/s3_*.c"]) + [
+    ] + glob(["ssl/rio/*.c"]) + glob(["ssl/s3_*.c"]) + [
         "ssl/ssl_asn1.c",
         "ssl/ssl_cert.c",
         "ssl/ssl_cert_comp.c",
@@ -716,10 +708,10 @@ ch_cc_library(
         "ssl/ssl_stat.c",
         "ssl/ssl_txt.c",
         "ssl/ssl_utst.c",
-    ]) + glob(["ssl/statem/*.c"]) + (glob(["ssl/t1_*.c"]) + [
+    ] + glob(["ssl/statem/*.c"]) + glob(["ssl/t1_*.c"]) + [
         "ssl/tls13_enc.c",
         "ssl/tls_depr.c",
-    ]),
+    ],
     additional_compiler_inputs = ["ms/applink.c"],
     copts = [
         "-w",

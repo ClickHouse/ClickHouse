@@ -607,23 +607,19 @@ ch_cc_library(
     ],
     hdrs = _GENERATED_HDRS_0,
     clickhouse_code = True,
-    copts = ["-g1"] + select({
+    copts = [
+        "-g1",
+    ] + select({
         "@platforms//cpu:x86_64": [
             "-march=x86-64-v2",
-            "-ffp-contract=fast",
-            "-I",
-            "$(GENDIR)/bazel/gen/includes/configs",
-            "-I",
-            "$(GENDIR)/bazel/gen/src",
         ],
-        "@platforms//cpu:aarch64": [
-            "-ffp-contract=fast",
-            "-I",
-            "$(GENDIR)/bazel/gen/includes/configs",
-            "-I",
-            "$(GENDIR)/bazel/gen/src",
-        ],
+        "@platforms//cpu:aarch64": [],
     }) + [
+        "-ffp-contract=fast",
+        "-I",
+        "$(GENDIR)/bazel/gen/includes/configs",
+        "-I",
+        "$(GENDIR)/bazel/gen/src",
         "-I",
         repository_path("contrib/cctz") + "/include",
         "-I",

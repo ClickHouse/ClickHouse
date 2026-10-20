@@ -1078,7 +1078,6 @@ _LLVM_PROJECT_COPTS = [
     "-I",
     repository_path("contrib/llvm-project") + "/llvm/include",
     "-I",
-] + ([
     "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/llvm/include",
     "-I",
     repository_path("contrib/llvm-project") + "/third-party/siphash/include",
@@ -1094,7 +1093,7 @@ _LLVM_PROJECT_COPTS = [
         "-I",
         repository_path("contrib/llvm-project") + "/llvm/lib/Target/AArch64",
     ],
-}))
+})
 
 ch_cc_library(
     name = "LLVMAggressiveInstCombine",
@@ -2684,7 +2683,6 @@ ch_cc_library(
         "-I",
         repository_path("contrib/llvm-project") + "/llvm/include",
         "-I",
-    ] + ([
         "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/llvm/include",
         "-I",
         repository_path("contrib/llvm-project") + "/third-party/siphash/include",
@@ -2700,7 +2698,7 @@ ch_cc_library(
             "-I",
             repository_path("contrib/llvm-project") + "/llvm/lib/Target/AArch64",
         ],
-    })),
+    }),
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -4236,7 +4234,7 @@ llvm_runtime_objects(
         "compiler-rt/lib/builtins/fixunssfdi.c",
         "compiler-rt/lib/builtins/fixunssfsi.c",
         "compiler-rt/lib/builtins/fixunssfti.c",
-    ] + (select({
+    ] + select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
             "compiler-rt/lib/builtins/floatdidf.c",
@@ -4369,7 +4367,7 @@ llvm_runtime_objects(
             "compiler-rt/lib/builtins/cpu_model/aarch64.c",
             "compiler-rt/lib/builtins/aarch64/fp_mode.c",
         ],
-    })) + [
+    }) + [
         "compiler-rt/lib/builtins/extendbfsf2.c",
         "compiler-rt/lib/builtins/truncdfbf2.c",
         "compiler-rt/lib/builtins/truncxfbf2.c",
@@ -4380,7 +4378,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = [
         "--no-default-config",
-    ] + (select({
+    ] + select({
         "@platforms//cpu:x86_64": [
             "-march=x86-64-v3",
             "-mpclmul",
@@ -4409,7 +4407,6 @@ llvm_runtime_objects(
         repository_path("contrib/llvm-project") + "/third-party/siphash/include",
         "-I",
         "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
-    ]) + [
         "-I",
         repository_path("contrib/llvm-project") + "/libc",
         "-isystem",
@@ -4448,7 +4445,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = [
         "--no-default-config",
-    ] + (select({
+    ] + select({
         "@platforms//cpu:x86_64": [
             "-march=x86-64-v3",
             "-mpclmul",
@@ -4487,7 +4484,7 @@ llvm_runtime_objects(
             "-isystem",
             repository_path("contrib/llvm-project") + "/libcxx/include",
         ],
-    })) + [
+    }) + [
         "-isystem",
         repository_path("contrib/llvm-project") + "/libcxxabi/include",
         "-isystem",
@@ -9281,7 +9278,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = [
         "--no-default-config",
-    ] + (select({
+    ] + select({
         "@platforms//cpu:x86_64": [
             "-march=x86-64-v3",
             "-mpclmul",
@@ -9314,7 +9311,6 @@ llvm_runtime_objects(
         repository_path("contrib/llvm-project") + "/third-party/siphash/include",
         "-I",
         "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
-    ]) + [
         "-I",
         repository_path("contrib/llvm-project") + "/libc",
         "-isystem",
@@ -9353,7 +9349,7 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = [
         "--no-default-config",
-    ] + (select({
+    ] + select({
         "@platforms//cpu:x86_64": [
             "-march=x86-64-v3",
             "-mpclmul",
@@ -9384,7 +9380,6 @@ llvm_runtime_objects(
         repository_path("contrib/llvm-project") + "/third-party/siphash/include",
         "-I",
         "$(GENDIR)/" + repository_path("contrib/llvm-project") + "/gen/libcxx/include/c++/v1",
-    ]) + [
         "-I",
         repository_path("contrib/llvm-project") + "/libc",
         "-isystem",

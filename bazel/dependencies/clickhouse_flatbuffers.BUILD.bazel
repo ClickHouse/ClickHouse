@@ -192,25 +192,23 @@ cc_binary(
         "@platforms//cpu:x86_64": [
             "-march=x86-64-v3",
             "-mpclmul",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-mbranches-within-32B-boundaries",
         ],
         "@platforms//cpu:aarch64": [
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
         ],
+    }) + [
+        "-fasynchronous-unwind-tables",
+        "-fdebug-compilation-dir=.",
+        "-falign-functions=64",
+        "-falign-loops=32",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-faddrsig",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "-mbranches-within-32B-boundaries",
+        ],
+        "@platforms//cpu:aarch64": [],
     }) + [
         "-fstack-protector-strong",
         "-fstack-clash-protection",

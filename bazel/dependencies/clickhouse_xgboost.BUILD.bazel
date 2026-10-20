@@ -156,7 +156,6 @@ ch_cc_library(
         "plugin/federated/README.md",
         "plugin/federated/federated.proto",
         "plugin/sycl/README.md",
-    ] + [
         "src/global_config.cc",
         "src/data/gradient_index_page_source.cc",
         "src/data/data.cc",

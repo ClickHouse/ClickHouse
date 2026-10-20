@@ -208,7 +208,7 @@ _ARROW_LOCAL_INCLUDES = [
 
 ch_cc_library(
     name = "_arrow__compile_0",
-    srcs = ([
+    srcs = [
         "cpp/src/arrow/util/compression_zstd.cc",
         "cpp/src/arrow/util/compression_zlib.cc",
         "cpp/src/arrow/util/compression_snappy.cc",
@@ -383,7 +383,7 @@ ch_cc_library(
             "cpp/src/arrow/util/byte_stream_split_internal_avx2.cc",
         ],
         "@platforms//cpu:aarch64": [],
-    })),
+    }),
     hdrs = [
         "@clickhouse//bazel:gen/contrib/flatbuffers/generated/File_generated.h",
         "@clickhouse//bazel:gen/contrib/flatbuffers/generated/Message_generated.h",
@@ -489,7 +489,6 @@ ch_cc_library(
     srcs = [
         "@clickhouse//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc",
         "@clickhouse//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
-    ] + ([
         "cpp/src/arrow/flight/client.cc",
         "cpp/src/arrow/flight/client_cookie_middleware.cc",
         "cpp/src/arrow/flight/client_tracing_middleware.cc",
@@ -509,7 +508,7 @@ ch_cc_library(
         "cpp/src/arrow/flight/sql/server_session_middleware.cc",
         "cpp/src/arrow/flight/sql/server.cc",
         "cpp/src/arrow/flight/sql/sql_info_internal.cc",
-    ]),
+    ],
     hdrs = [
         "@clickhouse//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.h",
         "@clickhouse//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.h",
@@ -619,7 +618,7 @@ _GENERATED_LOCAL_DEFINES_1 = [
 
 ch_cc_library(
     name = "_parquet",
-    srcs = ([
+    srcs = [
         "cpp/src/parquet/arrow/fuzz_internal.cc",
         "cpp/src/parquet/arrow/path_internal.cc",
         "cpp/src/parquet/arrow/reader.cc",
@@ -671,7 +670,7 @@ ch_cc_library(
             "cpp/src/parquet/bloom_filter_avx2.cc",
         ],
         "@platforms//cpu:aarch64": [],
-    })),
+    }),
     copts = [
         "-w",
         "-std=c++23",
@@ -796,25 +795,23 @@ _GENERATED_LINKOPTS_0 = [
     "@platforms//cpu:x86_64": [
         "-march=x86-64-v3",
         "-mpclmul",
-        "-fasynchronous-unwind-tables",
-        "-fdebug-compilation-dir=.",
-        "-falign-functions=64",
-        "-falign-loops=32",
-        "-ffunction-sections",
-        "-fdata-sections",
-        "-faddrsig",
-        "-mbranches-within-32B-boundaries",
     ],
     "@platforms//cpu:aarch64": [
         "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-        "-fasynchronous-unwind-tables",
-        "-fdebug-compilation-dir=.",
-        "-falign-functions=64",
-        "-falign-loops=32",
-        "-ffunction-sections",
-        "-fdata-sections",
-        "-faddrsig",
     ],
+}) + [
+    "-fasynchronous-unwind-tables",
+    "-fdebug-compilation-dir=.",
+    "-falign-functions=64",
+    "-falign-loops=32",
+    "-ffunction-sections",
+    "-fdata-sections",
+    "-faddrsig",
+] + select({
+    "@platforms//cpu:x86_64": [
+        "-mbranches-within-32B-boundaries",
+    ],
+    "@platforms//cpu:aarch64": [],
 }) + [
     "-fstack-protector-strong",
     "-fstack-clash-protection",

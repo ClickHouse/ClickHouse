@@ -188,7 +188,7 @@ _GRPC_LOCAL_INCLUDES = [
 
 ch_cc_library(
     name = "grpc__compile_0",
-    srcs = (glob(["src/core/call/call_*.cc"]) + [
+    srcs = glob(["src/core/call/call_*.cc"]) + [
         "src/core/call/client_call.cc",
         "src/core/call/interception_chain.cc",
         "src/core/call/message.cc",
@@ -438,7 +438,7 @@ ch_cc_library(
         "src/core/util/work_serializer.cc",
         "src/core/xds/grpc/certificate_provider_store.cc",
         "src/core/xds/grpc/file_watcher_certificate_provider_factory.cc",
-    ] + glob(["src/core/xds/grpc/xds_*.cc"]) + glob(["src/core/xds/xds_client/*.cc"])),
+    ] + glob(["src/core/xds/grpc/xds_*.cc"]) + glob(["src/core/xds/xds_client/*.cc"]),
     hdrs = [
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
@@ -470,7 +470,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "grpc__compile_1",
-    srcs = ([
+    srcs = [
         "src/core/ext/upb-gen/cel/expr/checked.upb_minitable.c",
         "src/core/ext/upb-gen/cel/expr/syntax.upb_minitable.c",
         "src/core/ext/upb-gen/envoy/config/common/mutation_rules/v3/mutation_rules.upb_minitable.c",
@@ -626,7 +626,7 @@ ch_cc_library(
         "src/core/ext/upbdefs-gen/src/proto/grpc/lookup/v1/rls_config.upbdefs.c",
     ] + glob(["src/core/ext/upbdefs-gen/udpa/annotations/*.c"]) + [
         "src/core/ext/upbdefs-gen/validate/validate.upbdefs.c",
-    ] + glob(["src/core/ext/upbdefs-gen/xds/annotations/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/xds/core/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/xds/type/matcher/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/xds/type/v3/*.c"])),
+    ] + glob(["src/core/ext/upbdefs-gen/xds/annotations/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/xds/core/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/xds/type/matcher/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/xds/type/v3/*.c"]),
     hdrs = [
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
@@ -711,7 +711,7 @@ ch_cc_library(
         "src/cpp/server/channel_argument_option.cc",
         "src/cpp/server/create_default_thread_pool.cc",
         "src/cpp/server/external_connection_acceptor_impl.cc",
-    ] + glob(["src/cpp/server/health/*.cc"]) + ([
+    ] + glob(["src/cpp/server/health/*.cc"]) + [
         "src/cpp/server/insecure_server_credentials.cc",
         "src/cpp/server/secure_server_credentials.cc",
     ] + glob(["src/cpp/server/server_*.cc"]) + [
@@ -722,7 +722,7 @@ ch_cc_library(
         "src/cpp/util/status.cc",
         "src/cpp/util/string_ref.cc",
         "src/cpp/util/time_cc.cc",
-    ]),
+    ],
     copts = _GENERATED_COPTS_2,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
@@ -764,7 +764,7 @@ ch_cc_library(
         "src/cpp/server/channel_argument_option.cc",
         "src/cpp/server/create_default_thread_pool.cc",
         "src/cpp/server/external_connection_acceptor_impl.cc",
-    ] + glob(["src/cpp/server/health/*.cc"]) + ([
+    ] + glob(["src/cpp/server/health/*.cc"]) + [
         "src/cpp/server/insecure_server_credentials.cc",
     ] + glob(["src/cpp/server/server_*.cc"]) + [
         "src/cpp/thread_manager/thread_manager.cc",
@@ -772,7 +772,7 @@ ch_cc_library(
         "src/cpp/util/status.cc",
         "src/cpp/util/string_ref.cc",
         "src/cpp/util/time_cc.cc",
-    ]),
+    ],
     copts = _GENERATED_COPTS_1,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
@@ -894,25 +894,23 @@ cc_binary(
         "@platforms//cpu:x86_64": [
             "-march=x86-64-v3",
             "-mpclmul",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
-            "-mbranches-within-32B-boundaries",
         ],
         "@platforms//cpu:aarch64": [
             "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-            "-fasynchronous-unwind-tables",
-            "-fdebug-compilation-dir=.",
-            "-falign-functions=64",
-            "-falign-loops=32",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-faddrsig",
         ],
+    }) + [
+        "-fasynchronous-unwind-tables",
+        "-fdebug-compilation-dir=.",
+        "-falign-functions=64",
+        "-falign-loops=32",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-faddrsig",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "-mbranches-within-32B-boundaries",
+        ],
+        "@platforms//cpu:aarch64": [],
     }) + [
         "-fstack-protector-strong",
         "-fstack-clash-protection",
@@ -1079,7 +1077,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "grpc_unsecure__compile_0",
-    srcs = (glob(["src/core/call/call_*.cc"]) + [
+    srcs = glob(["src/core/call/call_*.cc"]) + [
         "src/core/call/client_call.cc",
         "src/core/call/interception_chain.cc",
         "src/core/call/message.cc",
@@ -1317,7 +1315,7 @@ ch_cc_library(
         "src/core/util/uuid_v4.cc",
         "src/core/util/validation_errors.cc",
         "src/core/util/work_serializer.cc",
-    ]),
+    ],
     hdrs = [
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
