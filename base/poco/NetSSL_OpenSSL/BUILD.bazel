@@ -87,7 +87,7 @@ _GENERATED_DEPS_0 = [
 
 ch_cc_library(
     name = "_poco_net_ssl__compile_0",
-    srcs = [
+    srcs = ([
         "src/AcceptCertificateHandler.cpp",
         "src/CertificateHandlerFactory.cpp",
         "src/CertificateHandlerFactoryMgr.cpp",
@@ -98,21 +98,15 @@ ch_cc_library(
         "src/InvalidCertificateHandler.cpp",
         "src/KeyConsoleHandler.cpp",
         "src/KeyFileHandler.cpp",
-        "src/PrivateKeyFactory.cpp",
-        "src/PrivateKeyFactoryMgr.cpp",
-        "src/PrivateKeyPassphraseHandler.cpp",
+    ] + glob(["src/PrivateKey*.cpp"]) + [
         "src/RejectCertificateHandler.cpp",
         "src/SSLException.cpp",
         "src/SSLManager.cpp",
-        "src/SecureServerSocket.cpp",
-        "src/SecureServerSocketImpl.cpp",
-        "src/SecureSocketImpl.cpp",
-        "src/SecureStreamSocket.cpp",
-        "src/SecureStreamSocketImpl.cpp",
+    ] + glob(["src/Secure*.cpp"]) + [
         "src/Session.cpp",
         "src/Utility.cpp",
         "src/VerificationErrorArgs.cpp",
-    ],
+    ]),
     hdrs = _GENERATED_HDRS_0,
     clickhouse_code = True,
     copts = [

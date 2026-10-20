@@ -9,7 +9,7 @@ exports_files([
 
 ch_cc_library(
     name = "_c-ares",
-    srcs = [
+    srcs = ([
         "src/lib/ares_addrinfo2hostent.c",
         "src/lib/ares_addrinfo_localhost.c",
         "src/lib/ares_android.c",
@@ -19,9 +19,7 @@ ch_cc_library(
         "src/lib/ares_cookie.c",
         "src/lib/ares_data.c",
         "src/lib/ares_destroy.c",
-        "src/lib/ares_free_hostent.c",
-        "src/lib/ares_free_string.c",
-        "src/lib/ares_freeaddrinfo.c",
+    ] + glob(["src/lib/ares_free*.c"]) + [
         "src/lib/ares_getaddrinfo.c",
         "src/lib/ares_gethostbyaddr.c",
         "src/lib/ares_gethostbyname.c",
@@ -47,7 +45,7 @@ ch_cc_library(
         "src/lib/ares_timeout.c",
         "src/lib/ares_update_servers.c",
         "src/lib/ares_version.c",
-    ] + glob(["src/lib/dsa/*.c"]) + [
+    ]) + glob(["src/lib/dsa/*.c"]) + [
         "src/lib/event/ares_event_configchg.c",
         "src/lib/event/ares_event_epoll.c",
         "src/lib/event/ares_event_kqueue.c",

@@ -29,16 +29,14 @@ expand_template(
 
 ch_cc_library(
     name = "_orc",
-    srcs = [
+    srcs = ([
         "@clickhouse//bazel:gen/contrib/arrow-cmake/orc_proto.pb.cc",
         "c++/src/Adaptor.cc",
         "c++/src/BlockBuffer.cc",
         "c++/src/BloomFilter.cc",
         "c++/src/BpackingDefault.cc",
         "c++/src/ByteRLE.cc",
-        "c++/src/ColumnPrinter.cc",
-        "c++/src/ColumnReader.cc",
-        "c++/src/ColumnWriter.cc",
+    ] + glob(["c++/src/Column*.cc"]) + [
         "c++/src/Common.cc",
         "c++/src/Dictionary.cc",
         "c++/src/DictionaryLoader.cc",
@@ -68,7 +66,7 @@ ch_cc_library(
         "c++/src/io/InputStream.cc",
         "c++/src/io/OutputStream.cc",
         "c++/src/io/Cache.cc",
-    ] + glob(["c++/src/sargs/*.cc"]) + [
+    ]) + glob(["c++/src/sargs/*.cc"]) + [
         "c++/src/BitUnpackerAvx512.hh",
         "c++/src/BlockBuffer.hh",
         "c++/src/BloomFilter.hh",

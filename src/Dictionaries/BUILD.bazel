@@ -496,11 +496,9 @@ ch_cc_library(
 
 ch_cc_library(
     name = "clickhouse_dictionaries__compile_1",
-    srcs = [
+    srcs = ([
         "CacheDictionaryUpdateQueue.cpp",
-        "CassandraDictionarySource.cpp",
-        "CassandraHelpers.cpp",
-        "CassandraSource.cpp",
+    ] + glob(["Cassandra*.cpp"]) + [
         "ClickHouseDictionarySource.cpp",
         "DictionaryHelpers.cpp",
         "DictionaryPipelineExecutor.cpp",
@@ -518,21 +516,10 @@ ch_cc_library(
         "MySQLDictionarySource.cpp",
         "NaiveBayesDictionary.cpp",
         "NullDictionarySource.cpp",
-        "PolygonDictionary.cpp",
-        "PolygonDictionaryImplementations.cpp",
-        "PolygonDictionaryUtils.cpp",
+    ] + glob(["Polygon*.cpp"]) + [
         "PostgreSQLDictionarySource.cpp",
         "RangeHashedDictionaryComplex.cpp",
-        "RangeHashedDictionaryGetItemsImplDecimal.cpp",
-        "RangeHashedDictionaryGetItemsImplFloat.cpp",
-        "RangeHashedDictionaryGetItemsImplInt.cpp",
-        "RangeHashedDictionaryGetItemsImplOthers.cpp",
-        "RangeHashedDictionaryGetItemsImplUInt.cpp",
-        "RangeHashedDictionaryGetItemsShortCircuitImplDecimal.cpp",
-        "RangeHashedDictionaryGetItemsShortCircuitImplFloat.cpp",
-        "RangeHashedDictionaryGetItemsShortCircuitImplInt.cpp",
-        "RangeHashedDictionaryGetItemsShortCircuitImplOthers.cpp",
-        "RangeHashedDictionaryGetItemsShortCircuitImplUInt.cpp",
+    ] + glob(["RangeHashedDictionaryGetItems*.cpp"]) + [
         "RangeHashedDictionarySimple.cpp",
         "RedisDictionarySource.cpp",
         "RedisSource.cpp",
@@ -543,11 +530,7 @@ ch_cc_library(
         "YAMLRegExpTreeDictionarySource.cpp",
         "YTsaurusDictionarySource.cpp",
         "readInvalidateQuery.cpp",
-        "registerCacheDictionaries.cpp",
-        "registerDictionaries.cpp",
-        "registerHashedDictionary.cpp",
-        "registerRangeHashedDictionary.cpp",
-    ],
+    ] + glob(["register*.cpp"])),
     hdrs = _GENERATED_HDRS_0,
     clickhouse_code = True,
     copts = [

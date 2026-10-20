@@ -166,7 +166,7 @@ _GENERATED_TEXTUAL_HDRS_0 = [
 
 ch_cc_library(
     name = "_hdfs3__compile_0",
-    srcs = [
+    srcs = ([
         "src/network/TcpSocket.cpp",
         "src/network/DomainSocket.cpp",
         "src/network/BufferedSocketReader.cpp",
@@ -206,15 +206,10 @@ ch_cc_library(
         "src/client/NativeRSRawEncoder.cpp",
         "src/client/Preconditions.cpp",
         "src/client/RSUtil.cpp",
-        "src/client/RawErasureCoderFactory.cpp",
-        "src/client/RawErasureDecoder.cpp",
-        "src/client/RawErasureEncoder.cpp",
+    ] + glob(["src/client/RawErasure*.cpp"]) + [
         "src/client/StatefulStripeReader.cpp",
         "src/client/PositionStripeReader.cpp",
-        "src/client/StripeReader.cpp",
-        "src/client/StripedBlockUtil.cpp",
-        "src/client/StripedInputStreamImpl.cpp",
-        "src/client/StripedOutputStreamImpl.cpp",
+    ] + glob(["src/client/Stripe*.cpp"]) + [
         "src/client/SystemECPolicies.cpp",
         "src/client/dump.cpp",
         "src/client/erasure_coder.cpp",
@@ -255,7 +250,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/libhdfs3-cmake/IpcConnectionContext.pb.cc",
         "@clickhouse//bazel:gen/contrib/libhdfs3-cmake/RpcHeader.pb.cc",
         "@clickhouse//bazel:gen/contrib/libhdfs3-cmake/datatransfer.pb.cc",
-    ] + glob(["src/**/*.h"]),
+    ]) + glob(["src/**/*.h"]),
     hdrs = [
         "@clickhouse//contrib/libhdfs3-cmake:absl_log_undef.h",
         "@clickhouse//bazel:gen/contrib/krb5-cmake/include/krb5/krb5.h",

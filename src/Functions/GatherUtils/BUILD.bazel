@@ -18,18 +18,13 @@ ch_cc_library(
         "GatherUtils.cpp",
         "concat.cpp",
         "ends_with.cpp",
-    ] + glob(["has_*.cpp"]) + [
+    ] + glob(["has_*.cpp"]) + ([
         "push.cpp",
         "sliceDynamicOffsetBounded.cpp",
         "sliceDynamicOffsetUnbounded.cpp",
-        "sliceFromLeftConstantOffsetBounded.cpp",
-        "sliceFromLeftConstantOffsetUnbounded.cpp",
-        "sliceFromLeftDynamicLength.cpp",
-        "sliceFromRightConstantOffsetBounded.cpp",
-        "sliceFromRightConstantOffsetUnbounded.cpp",
-        "sliceFromRightDynamicLength.cpp",
+    ] + glob(["sliceFrom*.cpp"]) + [
         "starts_with.cpp",
-    ],
+    ]),
     clickhouse_code = True,
     copts = [
         "-g1",

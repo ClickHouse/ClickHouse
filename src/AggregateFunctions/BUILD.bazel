@@ -43,7 +43,7 @@ _PROTO_LIBRARIES = [
 
 ch_cc_library(
     name = "clickhouse_aggregate_functions__compile_0",
-    srcs = [
+    srcs = ([
         "AggregateFunctionAggThrow.cpp",
         "AggregateFunctionAnalysisOfVariance.cpp",
         "AggregateFunctionAny.cpp",
@@ -69,16 +69,7 @@ ch_cc_library(
         "AggregateFunctionFlameGraph.cpp",
         "AggregateFunctionFourthMoment.cpp",
         "AggregateFunctionGini.cpp",
-        "AggregateFunctionGroupArray.cpp",
-        "AggregateFunctionGroupArrayInsertAt.cpp",
-        "AggregateFunctionGroupArrayIntersect.cpp",
-        "AggregateFunctionGroupArrayMoving.cpp",
-        "AggregateFunctionGroupArraySorted.cpp",
-        "AggregateFunctionGroupBitmap.cpp",
-        "AggregateFunctionGroupConcat.cpp",
-        "AggregateFunctionGroupFormat.cpp",
-        "AggregateFunctionGroupNumericIndexedVector.cpp",
-        "AggregateFunctionGroupUniqArray.cpp",
+    ] + glob(["AggregateFunctionGroup*.cpp"]) + [
         "AggregateFunctionHierarchicalKMeans.cpp",
         "AggregateFunctionHistogram.cpp",
         "AggregateFunctionIntervalLengthSum.cpp",
@@ -105,10 +96,7 @@ ch_cc_library(
         "AggregateFunctionQuantileGK.cpp",
         "AggregateFunctionQuantileInterpolatedWeighted.cpp",
         "AggregateFunctionQuantilePrometheusHistogram.cpp",
-        "AggregateFunctionQuantileTDigest.cpp",
-        "AggregateFunctionQuantileTDigestWeighted.cpp",
-        "AggregateFunctionQuantileTiming.cpp",
-        "AggregateFunctionQuantileTimingWeighted.cpp",
+    ] + glob(["AggregateFunctionQuantileT*.cpp"]) + [
         "AggregateFunctionRankCorrelation.cpp",
         "AggregateFunctionRegr.cpp",
         "AggregateFunctionRetention.cpp",
@@ -127,7 +115,7 @@ ch_cc_library(
         "AggregateFunctionTheilsU.cpp",
         "AggregateFunctionThirdMoment.cpp",
         "AggregateFunctionTopK.cpp",
-    ] + select({
+    ]) + select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": ["AggregateFunctionUniq.cpp"],
     }) + [

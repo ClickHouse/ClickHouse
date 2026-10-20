@@ -373,7 +373,7 @@ _GENERATED_DEPS_0 = select({
 
 ch_cc_library(
     name = "clickhouse_functions_url__compile_0",
-    srcs = [
+    srcs = ([
         "URLHierarchy.cpp",
         "URLPathHierarchy.cpp",
         "basename.cpp",
@@ -387,9 +387,7 @@ ch_cc_library(
         "decodeURLComponent.cpp",
         "domain.cpp",
         "domainWithoutWWW.cpp",
-        "extractURLParameter.cpp",
-        "extractURLParameterNames.cpp",
-        "extractURLParameters.cpp",
+    ] + glob(["extractURL*.cpp"]) + [
         "firstSignificantSubdomain.cpp",
         "firstSignificantSubdomainCustom.cpp",
         "fragment.cpp",
@@ -401,7 +399,7 @@ ch_cc_library(
         "queryString.cpp",
         "queryStringAndFragment.cpp",
         "topLevelDomain.cpp",
-    ],
+    ]),
     hdrs = _GENERATED_HDRS_0,
     clickhouse_code = True,
     copts = [

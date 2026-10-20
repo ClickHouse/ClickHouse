@@ -32,7 +32,7 @@ exports_files([
 
 ch_cc_library(
     name = "_poco_foundation",
-    srcs = [
+    srcs = ([
         "src/AbstractObserver.cpp",
         "src/ActiveDispatcher.cpp",
         "src/ArchiveStrategy.cpp",
@@ -131,9 +131,7 @@ ch_cc_library(
         "src/SortedDirectoryIterator.cpp",
         "src/SplitterChannel.cpp",
         "src/Stopwatch.cpp",
-        "src/StreamChannel.cpp",
-        "src/StreamConverter.cpp",
-        "src/StreamCopier.cpp",
+    ] + glob(["src/Stream*.cpp"]) + [
         "src/String.cpp",
         "src/StringTokenizer.cpp",
         "src/SyslogChannel.cpp",
@@ -171,7 +169,7 @@ ch_cc_library(
         "src/VarHolder.cpp",
         "src/VarIterator.cpp",
         "src/Void.cpp",
-    ],
+    ]),
     additional_compiler_inputs = [
         "src/DirectoryIterator_UNIX.cpp",
         "src/Environment_UNIX.cpp",
