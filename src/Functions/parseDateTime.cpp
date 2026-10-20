@@ -25,6 +25,7 @@
 #include <boost/algorithm/string/case_conv.hpp>
 
 #include <expected>
+#include <limits>
 
 
 namespace DB
@@ -592,8 +593,12 @@ namespace
             /// Time zone is specified in format string.
             seconds_since_epoch -= time_zone_offset;
             if constexpr (return_type == ReturnType::DateTime)
+            {
                 if (seconds_since_epoch < 0)
                     RETURN_ERROR(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Seconds since epoch is negative")
+                if (seconds_since_epoch > std::numeric_limits<UInt32>::max())
+                    RETURN_ERROR(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Seconds since epoch exceeds DateTime range")
+            }
 
             return seconds_since_epoch;
         }

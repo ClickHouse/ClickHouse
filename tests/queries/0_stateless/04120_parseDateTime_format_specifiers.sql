@@ -59,6 +59,29 @@ SELECT parseDateTime('2106', '%Y', 'UTC');
 SELECT parseDateTime('1969', '%Y', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
 SELECT parseDateTime('2107', '%Y', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
 
+SELECT '--- DateTime: UInt32 upper bound ---';
+SELECT parseDateTime('2106-02-07 06:28:15', '%F %H:%i:%s', 'UTC');
+SELECT parseDateTime('2106-02-07 06:28:16', '%F %H:%i:%s', 'UTC'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT parseDateTime('2106-02-08', '%F', 'UTC'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT parseDateTimeOrZero('2106-12-31', '%F', 'UTC');
+SELECT parseDateTimeOrNull('2106-12-31', '%F', 'UTC');
+SELECT parseDateTimeOrNull('2106-02-07 06:28:15', '%F %H:%i:%s', 'UTC');
+
+SELECT '--- DateTime: timezone conversion at boundary ---';
+SELECT toUnixTimestamp(parseDateTime('2106-02-07 15:28:15', '%F %H:%i:%s', 'Asia/Tokyo'));
+SELECT parseDateTime('2106-02-07 15:28:16', '%F %H:%i:%s', 'Asia/Tokyo'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT parseDateTimeOrNull('2106-02-07 15:28:16', '%F %H:%i:%s', 'Asia/Tokyo');
+
+SELECT '--- DateTime: Joda syntax at boundary ---';
+SELECT parseDateTimeInJodaSyntax('2106-02-07 06:28:15', 'yyyy-MM-dd HH:mm:ss', 'UTC');
+SELECT parseDateTimeInJodaSyntax('2106-02-07 06:28:16', 'yyyy-MM-dd HH:mm:ss', 'UTC'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT parseDateTimeInJodaSyntaxOrZero('2106-12-31', 'yyyy-MM-dd', 'UTC');
+SELECT parseDateTimeInJodaSyntaxOrNull('2106-12-31', 'yyyy-MM-dd', 'UTC');
+
+SELECT '--- DateTime64: dates past DateTime range ---';
+SELECT parseDateTime64('2106-12-31', '%F', 'UTC');
+SELECT parseDateTime64InJodaSyntax('2106-12-31', 'yyyy-MM-dd', 'UTC');
+
 SELECT '--- mysqlYear2: %y ---';
 SELECT parseDateTime('99', '%y', 'UTC');
 SELECT parseDateTime('00', '%y', 'UTC');

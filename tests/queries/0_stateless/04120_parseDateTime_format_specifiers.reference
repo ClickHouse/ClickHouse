@@ -29,6 +29,21 @@
 --- mysqlISO8601Year4: %Y (extra edge: setYear boundaries) ---
 1970-01-01 00:00:00
 2106-01-01 00:00:00
+--- DateTime: UInt32 upper bound ---
+2106-02-07 06:28:15
+1970-01-01 00:00:00
+\N
+2106-02-07 06:28:15
+--- DateTime: timezone conversion at boundary ---
+4294967295
+\N
+--- DateTime: Joda syntax at boundary ---
+2106-02-07 06:28:15
+1970-01-01 00:00:00
+\N
+--- DateTime64: dates past DateTime range ---
+2106-12-31 00:00:00.000000
+2106-12-31 00:00:00
 --- mysqlYear2: %y ---
 1999-01-01 00:00:00
 2000-01-01 00:00:00
