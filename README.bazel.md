@@ -185,6 +185,7 @@ CMake hash recorded below.
 | `bca4a5ef2` (verification snapshot) | Remove C-only libraries' unused libc++ headers; private Common implementation dependencies and System fragment | [4f9e9b21](https://app.buildbuddy.io/invocation/4f9e9b21-2cd7-4c6a-ad27-b2fca52fd713) | [a856ced1](https://app.buildbuddy.io/invocation/a856ced1-259b-476a-b3c0-75d1643edc25) |
 | `d15ee9fae` (verification snapshot) | Arrow HDFS/zstd and Parquet version/RapidJSON/xsimd header ownership | [b1dba745](https://app.buildbuddy.io/invocation/b1dba745-7289-49f0-b108-0cacb8cae2ac) | [ced8a66f](https://app.buildbuddy.io/invocation/ced8a66f-04e0-40b1-b37f-1e0af117fa70) |
 | `e97b28fb6` (verification snapshot) | Poco and program library public headers and implementation dependencies | [1bdd91c3](https://app.buildbuddy.io/invocation/1bdd91c3-a230-4418-9fff-42627e92229c) | [212269c1](https://app.buildbuddy.io/invocation/212269c1-5fdf-46b3-b0e2-290b7d083a47) |
+| `b63670f02` (verification snapshot) | LLVM C/assembly runtime inputs and backend public header ownership | [91b5daf6](https://app.buildbuddy.io/invocation/91b5daf6-cf9a-4da5-903b-8e831f767858) | [8f9e6844](https://app.buildbuddy.io/invocation/8f9e6844-7460-43be-b7d2-19d26050eb23) |
 
 The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`

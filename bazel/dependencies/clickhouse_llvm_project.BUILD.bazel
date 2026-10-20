@@ -1069,12 +1069,38 @@ cc_library(
         "llvm/lib/ExecutionEngine/IntelJITProfiling/*.h",
         "llvm/lib/ExecutionEngine/JITLink/*.h",
         "llvm/lib/ObjCopy/**/*.h",
-        "llvm/lib/Support/**/*.h",
         "llvm/lib/Support/**/*.inc",
+        "llvm/lib/Support/*.h",
+        "llvm/lib/Support/rpmalloc/*.h",
         "llvm/lib/TableGen/*.h",
-        "llvm/lib/Target/**/*.def",
-        "llvm/lib/Target/**/*.h",
         "llvm/lib/Target/**/*.inc",
+        "llvm/lib/Target/AArch64/Disassembler/*.h",
+        "llvm/lib/Target/AMDGPU/**/*.h",
+        "llvm/lib/Target/AMDGPU/*.def",
+        "llvm/lib/Target/ARC/**/*.h",
+        "llvm/lib/Target/ARM/**/*.h",
+        "llvm/lib/Target/AVR/**/*.h",
+        "llvm/lib/Target/BPF/**/*.h",
+        "llvm/lib/Target/CSKY/**/*.h",
+        "llvm/lib/Target/DirectX/**/*.h",
+        "llvm/lib/Target/Hexagon/**/*.h",
+        "llvm/lib/Target/Lanai/**/*.h",
+        "llvm/lib/Target/LoongArch/**/*.h",
+        "llvm/lib/Target/M68k/**/*.h",
+        "llvm/lib/Target/MSP430/**/*.h",
+        "llvm/lib/Target/Mips/**/*.h",
+        "llvm/lib/Target/NVPTX/**/*.h",
+        "llvm/lib/Target/PowerPC/**/*.h",
+        "llvm/lib/Target/PowerPC/*.def",
+        "llvm/lib/Target/RISCV/**/*.h",
+        "llvm/lib/Target/SPIRV/**/*.h",
+        "llvm/lib/Target/Sparc/**/*.h",
+        "llvm/lib/Target/SystemZ/**/*.h",
+        "llvm/lib/Target/VE/**/*.h",
+        "llvm/lib/Target/WebAssembly/**/*.h",
+        "llvm/lib/Target/X86/AsmParser/*.h",
+        "llvm/lib/Target/XCore/**/*.h",
+        "llvm/lib/Target/Xtensa/**/*.h",
     ]) + [
         "llvm/include/llvm/ABI/Types.h",
         "llvm/include/llvm/Analysis/AliasAnalysis.h",
@@ -1723,6 +1749,22 @@ cc_library(
         "llvm/lib/ExecutionEngine/MCJIT/MCJIT.h",
         "llvm/lib/ExecutionEngine/Orc/TargetProcess/OrcRTBootstrap.h",
         "llvm/lib/FileCheck/FileCheckImpl.h",
+        "llvm/lib/Support/Unix/Unix.h",
+        "llvm/lib/Target/BPF/BPFPassRegistry.def",
+        "llvm/lib/Target/DirectX/DirectXPassRegistry.def",
+        "llvm/lib/Target/Hexagon/HexagonPassRegistry.def",
+        "llvm/lib/Target/NVPTX/NVPTXPassRegistry.def",
+        "llvm/lib/Target/RISCV/RISCVPassRegistry.def",
+        "llvm/lib/Target/SPIRV/SPIRVPassRegistry.def",
+        "llvm/lib/Target/VE/VVPNodes.def",
+        "llvm/lib/Target/X86/Disassembler/X86DisassemblerDecoder.h",
+        "llvm/lib/Target/X86/MCA/X86CustomBehaviour.h",
+        "llvm/lib/Target/X86/MCTargetDesc/X86ATTInstPrinter.h",
+        "llvm/lib/Target/X86/MCTargetDesc/X86InstPrinterCommon.h",
+        "llvm/lib/Target/X86/MCTargetDesc/X86IntelInstPrinter.h",
+        "llvm/lib/Target/X86/MCTargetDesc/X86MCExpr.h",
+        "llvm/lib/Target/X86/MCTargetDesc/X86MCTargetDesc.h",
+        "llvm/lib/Target/X86/X86PassRegistry.def",
         "llvm/lib/TargetParser/Windows/Host.inc",
         "third-party/siphash/include/siphash/SipHash.h",
     ],
@@ -1774,11 +1816,12 @@ ch_cc_library(
     ],
     copts =
         _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMTransformUtils"],
     implementation_deps = [
         ":llvm_headers",
+        ":LLVMTransformUtils",
     ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [],
 )
 
 ch_cc_library(
@@ -1910,16 +1953,6 @@ ch_cc_library(
         "llvm/lib/Analysis/ValueTracking.cpp",
         "llvm/lib/Analysis/VectorUtils.cpp",
     ],
-    copts =
-        _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":LLVMObject",
-        ":LLVMProfileData",
-        ":LLVMFrontendHLSL",
-        ":LLVMCore",
-        ":llvm_headers",
-    ],
     hdrs = [
         "llvm/include/llvm/Analysis/AssumeBundleQueries.h",
         "llvm/include/llvm/Analysis/BlockFrequencyInfoImpl.h",
@@ -2009,22 +2042,25 @@ ch_cc_library(
         "llvm/include/llvm/Analysis/ValueLattice.h",
         "llvm/include/llvm/Analysis/ValueLatticeUtils.h",
     ],
+    copts =
+        _LLVM_PROJECT_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
     textual_hdrs = [
         "llvm/include/llvm/Analysis/VecFuncs.def",
         "llvm/include/llvm/IR/FunctionProperties.def",
+    ],
+    deps = [
+        ":LLVMObject",
+        ":LLVMProfileData",
+        ":LLVMFrontendHLSL",
+        ":LLVMCore",
+        ":llvm_headers",
     ],
 )
 
 ch_cc_library(
     name = "LLVMAsmParser",
     srcs = glob(["llvm/lib/AsmParser/*.cpp"]),
-    copts =
-        _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":LLVMCore",
-        ":llvm_headers",
-    ],
     hdrs = [
         "llvm/include/llvm/AsmParser/LLLexer.h",
         "llvm/include/llvm/AsmParser/LLParser.h",
@@ -2032,6 +2068,15 @@ ch_cc_library(
         "llvm/include/llvm/AsmParser/NumberedValues.h",
         "llvm/include/llvm/AsmParser/Parser.h",
         "llvm/include/llvm/AsmParser/SlotMapping.h",
+    ],
+    copts =
+        _LLVM_PROJECT_COPTS,
+    implementation_deps = [
+        ":LLVMCore",
+    ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [
+        ":llvm_headers",
     ],
 )
 
@@ -2083,18 +2128,18 @@ ch_cc_library(
     ],
     copts =
         _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":LLVMMCParser",
-        ":LLVMDebugInfoCodeView",
-        ":LLVMCodeGen",
-    ],
     implementation_deps = [
         ":LLVMCore",
         ":LLVMMC",
         ":LLVMProfileData",
         ":LLVMRemarks",
         ":llvm_headers",
+        ":LLVMCodeGen",
+        ":LLVMDebugInfoCodeView",
+    ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [
+        ":LLVMMCParser",
     ],
 )
 
@@ -2116,13 +2161,6 @@ ch_cc_library(
         "llvm/lib/BinaryFormat/Wasm.cpp",
         "llvm/lib/BinaryFormat/XCOFF.cpp",
     ],
-    copts =
-        _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":LLVMSupport",
-        ":llvm_headers",
-    ],
     hdrs = [
         "llvm/include/llvm/BinaryFormat/AMDGPUMetadataVerifier.h",
         "llvm/include/llvm/BinaryFormat/Minidump.h",
@@ -2130,9 +2168,16 @@ ch_cc_library(
         "llvm/include/llvm/BinaryFormat/MsgPackWriter.h",
         "llvm/include/llvm/BinaryFormat/WasmTraits.h",
     ],
+    copts =
+        _LLVM_PROJECT_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
     textual_hdrs = [
         "llvm/include/llvm/BinaryFormat/MinidumpConstants.def",
         "llvm/include/llvm/BinaryFormat/MsgPack.def",
+    ],
+    deps = [
+        ":LLVMSupport",
+        ":llvm_headers",
     ],
 )
 
@@ -2149,11 +2194,12 @@ ch_cc_library(
     ]),
     copts =
         _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMCore"],
     implementation_deps = [
         ":llvm_headers",
+        ":LLVMCore",
     ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [],
 )
 
 ch_cc_library(
@@ -2183,11 +2229,11 @@ ch_cc_library(
     ],
     copts =
         _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMSupport"],
     implementation_deps = [
         ":llvm_headers",
     ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [":LLVMSupport"],
 )
 
 ch_cc_library(
@@ -2197,23 +2243,16 @@ ch_cc_library(
     ],
     copts =
         _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMCore"],
     implementation_deps = [
         ":llvm_headers",
     ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [":LLVMCore"],
 )
 
 ch_cc_library(
     name = "LLVMCGData",
     srcs = glob(["llvm/lib/CGData/*.cpp"]),
-    copts =
-        _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":LLVMObject",
-        ":llvm_headers",
-    ],
     hdrs = [
         "llvm/include/llvm/CGData/CGDataPatchItem.h",
         "llvm/include/llvm/CGData/CodeGenData.h",
@@ -2223,8 +2262,15 @@ ch_cc_library(
         "llvm/include/llvm/CGData/OutlinedHashTreeRecord.h",
         "llvm/include/llvm/CGData/StableFunctionMapRecord.h",
     ],
+    copts =
+        _LLVM_PROJECT_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
     textual_hdrs = [
         "llvm/include/llvm/CGData/CodeGenData.inc",
+    ],
+    deps = [
+        ":LLVMObject",
+        ":llvm_headers",
     ],
 )
 
@@ -2561,11 +2607,11 @@ ch_cc_library(
     ],
     copts =
         _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMSupport"],
     implementation_deps = [
         ":llvm_headers",
     ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [":LLVMSupport"],
 )
 
 ch_cc_library(
@@ -2721,21 +2767,21 @@ ch_cc_library(
     ] + glob([
         "llvm/lib/Transforms/Coroutines/*.h",
     ]),
+    hdrs = [
+        "llvm/include/llvm/Transforms/Coroutines/SpillUtils.h",
+    ],
     copts =
         _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":LLVMipo",
-        ":llvm_headers",
-    ],
     implementation_deps = [
         ":LLVMAnalysis",
         ":LLVMCore",
         ":LLVMScalarOpts",
         ":LLVMTransformUtils",
     ],
-    hdrs = [
-        "llvm/include/llvm/Transforms/Coroutines/SpillUtils.h",
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [
+        ":LLVMipo",
+        ":llvm_headers",
     ],
 )
 
@@ -2783,13 +2829,6 @@ ch_cc_library(
         "llvm/lib/DebugInfo/CodeView/TypeStreamMerger.cpp",
         "llvm/lib/DebugInfo/CodeView/TypeTableCollection.cpp",
     ],
-    copts =
-        _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":LLVMSupport",
-        ":llvm_headers",
-    ],
     hdrs = [
         "llvm/include/llvm/DebugInfo/CodeView/CVSymbolVisitor.h",
         "llvm/include/llvm/DebugInfo/CodeView/CVTypeVisitor.h",
@@ -2820,6 +2859,13 @@ ch_cc_library(
         "llvm/include/llvm/DebugInfo/CodeView/TypeSymbolEmitter.h",
         "llvm/include/llvm/DebugInfo/CodeView/TypeTableCollection.h",
         "llvm/include/llvm/DebugInfo/CodeView/TypeVisitorCallbackPipeline.h",
+    ],
+    copts =
+        _LLVM_PROJECT_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [
+        ":LLVMSupport",
+        ":llvm_headers",
     ],
 )
 
@@ -2898,13 +2944,6 @@ ch_cc_library(
         "llvm/lib/Demangle/MicrosoftDemangleNodes.cpp",
         "llvm/lib/Demangle/RustDemangle.cpp",
     ],
-    copts =
-        _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":llvm_headers",
-        ":clang_rt_builtins",
-    ],
     hdrs = [
         "llvm/include/llvm/Demangle/ItaniumDemangle.h",
         "llvm/include/llvm/Demangle/MicrosoftDemangle.h",
@@ -2912,8 +2951,15 @@ ch_cc_library(
         "llvm/include/llvm/Demangle/StringViewExtras.h",
         "llvm/include/llvm/Demangle/Utility.h",
     ],
+    copts =
+        _LLVM_PROJECT_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
     textual_hdrs = [
         "llvm/include/llvm/Demangle/ItaniumNodes.def",
+    ],
+    deps = [
+        ":llvm_headers",
+        ":clang_rt_builtins",
     ],
 )
 
@@ -3056,6 +3102,9 @@ ch_cc_library(
     srcs = [
         "llvm/lib/Frontend/Atomic/Atomic.cpp",
     ],
+    hdrs = [
+        "llvm/include/llvm/Frontend/Atomic/Atomic.h",
+    ],
     copts =
         _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -3063,21 +3112,11 @@ ch_cc_library(
         ":LLVMAnalysis",
         ":llvm_headers",
     ],
-    hdrs = [
-        "llvm/include/llvm/Frontend/Atomic/Atomic.h",
-    ],
 )
 
 ch_cc_library(
     name = "LLVMFrontendHLSL",
     srcs = glob(["llvm/lib/Frontend/HLSL/*.cpp"]),
-    copts =
-        _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":LLVMCore",
-        ":llvm_headers",
-    ],
     hdrs = [
         "llvm/include/llvm/Frontend/HLSL/CBuffer.h",
         "llvm/include/llvm/Frontend/HLSL/HLSLResource.h",
@@ -3085,11 +3124,6 @@ ch_cc_library(
         "llvm/include/llvm/Frontend/HLSL/RootSignatureMetadata.h",
         "llvm/include/llvm/Frontend/HLSL/RootSignatureValidations.h",
     ],
-)
-
-ch_cc_library(
-    name = "LLVMFrontendOffloading",
-    srcs = glob(["llvm/lib/Frontend/Offloading/*.cpp"]),
     copts =
         _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -3097,12 +3131,24 @@ ch_cc_library(
         ":LLVMCore",
         ":llvm_headers",
     ],
-    implementation_deps = [
-        ":LLVMBinaryFormat",
-    ],
+)
+
+ch_cc_library(
+    name = "LLVMFrontendOffloading",
+    srcs = glob(["llvm/lib/Frontend/Offloading/*.cpp"]),
     hdrs = glob([
         "llvm/include/llvm/Frontend/Offloading/*.h",
     ]),
+    copts =
+        _LLVM_PROJECT_COPTS,
+    implementation_deps = [
+        ":LLVMBinaryFormat",
+    ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [
+        ":LLVMCore",
+        ":llvm_headers",
+    ],
 )
 
 ch_cc_library(
@@ -3163,18 +3209,6 @@ ch_cc_library(
         "llvm/lib/CodeGen/GlobalISel/RegBankSelect.cpp",
         "llvm/lib/CodeGen/GlobalISel/Utils.cpp",
     ],
-    copts =
-        _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":LLVMCodeGen",
-        ":LLVMCore",
-        ":llvm_headers",
-    ],
-    implementation_deps = [
-        ":LLVMAnalysis",
-        ":LLVMTransformUtils",
-    ],
     hdrs = [
         "llvm/include/llvm/CodeGen/GlobalISel/CSEInfo.h",
         "llvm/include/llvm/CodeGen/GlobalISel/CSEMIRBuilder.h",
@@ -3190,6 +3224,18 @@ ch_cc_library(
         "llvm/include/llvm/CodeGen/GlobalISel/MachineFloatingPointPredicateUtils.h",
         "llvm/include/llvm/CodeGen/GlobalISel/RegBankSelect.h",
     ],
+    copts =
+        _LLVM_PROJECT_COPTS,
+    implementation_deps = [
+        ":LLVMAnalysis",
+        ":LLVMTransformUtils",
+    ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [
+        ":LLVMCodeGen",
+        ":LLVMCore",
+        ":llvm_headers",
+    ],
 )
 
 ch_cc_library(
@@ -3199,12 +3245,12 @@ ch_cc_library(
     ],
     copts =
         _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMTransformUtils"],
     implementation_deps = [
         ":LLVMAnalysis",
         ":llvm_headers",
     ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [":LLVMTransformUtils"],
 )
 
 ch_cc_library(
@@ -3214,12 +3260,12 @@ ch_cc_library(
     ],
     copts =
         _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMAnalysis"],
     implementation_deps = [
         ":LLVMCore",
         ":llvm_headers",
     ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [":LLVMAnalysis"],
 )
 
 ch_cc_library(
@@ -3339,18 +3385,18 @@ ch_cc_library(
     ] + [
         "llvm/lib/Linker/LinkDiagnosticInfo.h",
     ],
+    hdrs = [
+        "llvm/include/llvm/Linker/Linker.h",
+    ],
     copts =
         _LLVM_PROJECT_COPTS,
+    implementation_deps = [
+        ":LLVMCore",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":LLVMTransformUtils",
         ":llvm_headers",
-    ],
-    implementation_deps = [
-        ":LLVMCore",
-    ],
-    hdrs = [
-        "llvm/include/llvm/Linker/Linker.h",
     ],
 )
 
@@ -3479,11 +3525,11 @@ ch_cc_library(
     ],
     copts =
         _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMMC"],
     implementation_deps = [
         ":llvm_headers",
     ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [":LLVMMC"],
 )
 
 ch_cc_library(
@@ -3576,16 +3622,6 @@ ch_cc_library(
     ] + [
         "llvm/lib/Object/RecordStreamer.h",
     ],
-    copts =
-        _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMTextAPI",
-        ":LLVMBinaryFormat",
-        ":llvm_headers",
-    ],
     hdrs = [
         "llvm/include/llvm/Object/COFFImportFile.h",
         "llvm/include/llvm/Object/COFFModuleDefinition.h",
@@ -3603,6 +3639,16 @@ ch_cc_library(
         "llvm/include/llvm/Object/TapiUniversal.h",
         "llvm/include/llvm/Object/WindowsMachineFlag.h",
         "llvm/include/llvm/Object/WindowsResource.h",
+    ],
+    copts =
+        _LLVM_PROJECT_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [
+        ":LLVMCore",
+        ":LLVMMC",
+        ":LLVMTextAPI",
+        ":LLVMBinaryFormat",
+        ":llvm_headers",
     ],
 )
 
@@ -3639,18 +3685,6 @@ ch_cc_library(
         "llvm/lib/ObjectYAML/YAML.cpp",
         "llvm/lib/ObjectYAML/yaml2obj.cpp",
     ],
-    copts =
-        _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":LLVMDebugInfoCodeView",
-        ":LLVMObject",
-        ":LLVMBinaryFormat",
-        ":llvm_headers",
-    ],
-    implementation_deps = [
-        ":LLVMMC",
-    ],
     hdrs = [
         "llvm/include/llvm/ObjectYAML/ArchiveYAML.h",
         "llvm/include/llvm/ObjectYAML/COFFYAML.h",
@@ -3667,6 +3701,18 @@ ch_cc_library(
         "llvm/include/llvm/ObjectYAML/OffloadYAML.h",
         "llvm/include/llvm/ObjectYAML/WasmYAML.h",
         "llvm/include/llvm/ObjectYAML/XCOFFYAML.h",
+    ],
+    copts =
+        _LLVM_PROJECT_COPTS,
+    implementation_deps = [
+        ":LLVMMC",
+    ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [
+        ":LLVMDebugInfoCodeView",
+        ":LLVMObject",
+        ":LLVMBinaryFormat",
+        ":llvm_headers",
     ],
 )
 
@@ -3729,16 +3775,6 @@ ch_cc_library(
         "llvm/lib/ProfileData/SampleProfWriter.cpp",
         "llvm/lib/ProfileData/SymbolRemappingReader.cpp",
     ],
-    copts =
-        _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":LLVMCore",
-        ":llvm_headers",
-    ],
-    implementation_deps = [
-        ":LLVMDemangle",
-    ],
     hdrs = glob([
         "llvm/include/llvm/ProfileData/Coverage/*.h",
     ]) + [
@@ -3763,6 +3799,16 @@ ch_cc_library(
         "llvm/include/llvm/ProfileData/SampleProfWriter.h",
         "llvm/include/llvm/ProfileData/SymbolRemappingReader.h",
     ],
+    copts =
+        _LLVM_PROJECT_COPTS,
+    implementation_deps = [
+        ":LLVMDemangle",
+    ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [
+        ":LLVMCore",
+        ":llvm_headers",
+    ],
 )
 
 ch_cc_library(
@@ -3770,13 +3816,6 @@ ch_cc_library(
     srcs = glob(["llvm/lib/Remarks/*.cpp"]) + glob([
         "llvm/lib/Remarks/*.h",
     ]),
-    copts =
-        _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":LLVMBitstreamReader",
-        ":llvm_headers",
-    ],
     hdrs = [
         "llvm/include/llvm/Remarks/BitstreamRemarkContainer.h",
         "llvm/include/llvm/Remarks/BitstreamRemarkSerializer.h",
@@ -3788,6 +3827,13 @@ ch_cc_library(
         "llvm/include/llvm/Remarks/RemarkStreamer.h",
         "llvm/include/llvm/Remarks/RemarkStringTable.h",
         "llvm/include/llvm/Remarks/YAMLRemarkSerializer.h",
+    ],
+    copts =
+        _LLVM_PROJECT_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [
+        ":LLVMBitstreamReader",
+        ":llvm_headers",
     ],
 )
 
@@ -3807,11 +3853,11 @@ ch_cc_library(
     ]),
     copts =
         _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMObject"],
     implementation_deps = [
         ":llvm_headers",
     ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [":LLVMObject"],
 )
 
 ch_cc_library(
@@ -3819,11 +3865,11 @@ ch_cc_library(
     srcs = glob(["llvm/lib/SandboxIR/*.cpp"]),
     copts =
         _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMCore"],
     implementation_deps = [
         ":llvm_headers",
     ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [":LLVMCore"],
 )
 
 ch_cc_library(
@@ -3911,17 +3957,6 @@ ch_cc_library(
         "llvm/lib/Transforms/Scalar/TailRecursionElimination.cpp",
         "llvm/lib/Transforms/Scalar/WarnMissedTransforms.cpp",
     ],
-    copts =
-        _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":LLVMTransformUtils",
-        ":LLVMAnalysis",
-        ":llvm_headers",
-    ],
-    implementation_deps = [
-        ":LLVMCore",
-    ],
     hdrs = [
         "llvm/include/llvm/Transforms/Scalar/ADCE.h",
         "llvm/include/llvm/Transforms/Scalar/AlignmentFromAssumptions.h",
@@ -3991,6 +4026,17 @@ ch_cc_library(
         "llvm/include/llvm/Transforms/Scalar/StructurizeCFG.h",
         "llvm/include/llvm/Transforms/Scalar/TailRecursionElimination.h",
         "llvm/include/llvm/Transforms/Scalar/WarnMissedTransforms.h",
+    ],
+    copts =
+        _LLVM_PROJECT_COPTS,
+    implementation_deps = [
+        ":LLVMCore",
+    ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [
+        ":LLVMTransformUtils",
+        ":LLVMAnalysis",
+        ":llvm_headers",
     ],
 )
 
@@ -4212,8 +4258,11 @@ ch_cc_library(
     ],
     copts =
         _LLVM_PROJECT_COPTS,
+    implementation_deps = [
+        ":llvm_headers",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":llvm_headers"],
+    deps = [],
 )
 
 ch_cc_library(
@@ -4223,17 +4272,22 @@ ch_cc_library(
         "llvm/lib/Support/BLAKE3/blake3_dispatch.c",
         "llvm/lib/Support/BLAKE3/blake3_portable.c",
         "llvm/lib/Support/BLAKE3/blake3_neon.c",
+    ] + [
+        "llvm/lib/Support/BLAKE3/llvm_blake3_prefix.h",
+        "llvm/lib/Support/BLAKE3/blake3_impl.h",
     ],
     copts = [
         "-w",
         "-std=gnu11",
     ],
-    language = "C",
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        "libcxxabi/include",
+    implementation_deps = [
+        ":llvm_headers",
     ],
-    deps = [":llvm_headers"],
+    language = "C",
+    libcxx_headers = False,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_includes = [],
+    deps = [],
 )
 
 _GENERATED_LOCAL_DEFINES_1 = select({
@@ -4254,16 +4308,6 @@ _GENERATED_LOCAL_DEFINES_1 = select({
     "@platforms//cpu:aarch64": [],
 })
 
-_GENERATED_DEPS_1 = select({
-    "@platforms//cpu:x86_64": [
-        ":llvm_headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libunwind:headers",
-    ],
-    "@platforms//cpu:aarch64": [],
-})
-
 ch_cc_library(
     name = "LLVMSupport__compile_2",
     srcs = select({
@@ -4273,26 +4317,21 @@ ch_cc_library(
             "llvm/lib/Support/BLAKE3/blake3_avx2_x86-64_unix.S",
         ],
         "@platforms//cpu:aarch64": [],
-    }),
-    additional_compiler_inputs = select({
+    }) + select({
         "@platforms//cpu:x86_64": [
-            "@clickhouse_llvm_project//:runtime_source_inputs",
-            "@clickhouse_llvm_project//:runtime_generated_headers",
+            "llvm/lib/Support/BLAKE3/llvm_blake3_prefix.h",
         ],
         "@platforms//cpu:aarch64": [],
     }),
+    additional_compiler_inputs = [],
     arches = [
         "x86_64",
     ],
     language = "ASM",
+    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    local_includes = select({
-        "@platforms//cpu:x86_64": [
-            "libcxxabi/include",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
-    deps = _GENERATED_DEPS_1,
+    local_includes = [],
+    deps = [],
 )
 
 ch_cc_library(
@@ -4302,14 +4341,13 @@ ch_cc_library(
             "llvm/lib/Support/BLAKE3/blake3_avx512_x86-64_unix.S",
         ],
         "@platforms//cpu:aarch64": [],
-    }),
-    additional_compiler_inputs = select({
+    }) + select({
         "@platforms//cpu:x86_64": [
-            "@clickhouse_llvm_project//:runtime_source_inputs",
-            "@clickhouse_llvm_project//:runtime_generated_headers",
+            "llvm/lib/Support/BLAKE3/llvm_blake3_prefix.h",
         ],
         "@platforms//cpu:aarch64": [],
     }),
+    additional_compiler_inputs = [],
     arches = [
         "x86_64",
     ],
@@ -4321,14 +4359,10 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     language = "ASM",
+    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    local_includes = select({
-        "@platforms//cpu:x86_64": [
-            "libcxxabi/include",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
-    deps = _GENERATED_DEPS_1,
+    local_includes = [],
+    deps = [],
 )
 
 cc_library(
@@ -4339,6 +4373,7 @@ cc_library(
         ":LLVMSupport__compile_1",
         ":LLVMSupport__compile_2",
         ":LLVMSupport__compile_3",
+        ":llvm_headers",
     ],
 )
 
@@ -4351,16 +4386,16 @@ ch_cc_library(
         "llvm/lib/Target/TargetMachineC.cpp",
         "llvm/lib/Target/TargetMachine.cpp",
     ],
+    hdrs = [
+        "llvm/include/llvm/Target/CodeGenCWrappers.h",
+        "llvm/include/llvm/Target/RegisterTargetPassConfigCallback.h",
+    ],
     copts =
         _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":LLVMAnalysis",
         ":llvm_headers",
-    ],
-    hdrs = [
-        "llvm/include/llvm/Target/CodeGenCWrappers.h",
-        "llvm/include/llvm/Target/RegisterTargetPassConfigCallback.h",
     ],
 )
 
@@ -4385,13 +4420,6 @@ ch_cc_library(
     ] + [
         "llvm/lib/TargetParser/Unix/Host.inc",
     ],
-    copts =
-        _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":LLVMSupport",
-        ":llvm_headers",
-    ],
     hdrs = [
         "llvm/include/llvm/TargetParser/AArch64TargetParser.h",
         "llvm/include/llvm/TargetParser/CSKYTargetParser.h",
@@ -4399,6 +4427,9 @@ ch_cc_library(
         "llvm/include/llvm/TargetParser/X86TargetParser.h",
         "llvm/include/llvm/TargetParser/XtensaTargetParser.h",
     ],
+    copts =
+        _LLVM_PROJECT_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
     textual_hdrs = glob([
         "llvm/include/llvm/TargetParser/*.inc",
     ]) + [
@@ -4407,6 +4438,10 @@ ch_cc_library(
         "llvm/include/llvm/TargetParser/PPCTargetParser.def",
         "llvm/include/llvm/TargetParser/X86TargetParser.def",
         "llvm/include/llvm/TargetParser/XtensaTargetParser.def",
+    ],
+    deps = [
+        ":LLVMSupport",
+        ":llvm_headers",
     ],
 )
 
@@ -4431,19 +4466,19 @@ ch_cc_library(
     ] + glob([
         "llvm/lib/TextAPI/*.h",
     ]),
+    hdrs = glob([
+        "llvm/include/llvm/TextAPI/*.h",
+    ]),
     copts =
         _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    textual_hdrs = [
+        "llvm/include/llvm/TextAPI/Architecture.def",
+    ],
     deps = [
         ":LLVMBinaryFormat",
         ":LLVMTargetParser",
         ":llvm_headers",
-    ],
-    hdrs = glob([
-        "llvm/include/llvm/TextAPI/*.h",
-    ]),
-    textual_hdrs = [
-        "llvm/include/llvm/TextAPI/Architecture.def",
     ],
 )
 
@@ -4545,15 +4580,6 @@ ch_cc_library(
         "llvm/lib/Transforms/Utils/ValueMapper.cpp",
         "llvm/lib/Transforms/Utils/VNCoercion.cpp",
     ],
-    copts =
-        _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":LLVMAnalysis",
-        ":LLVMCore",
-        ":LLVMProfileData",
-        ":llvm_headers",
-    ],
     hdrs = [
         "llvm/include/llvm/Transforms/Utils/AMDGPUEmitPrintf.h",
         "llvm/include/llvm/Transforms/Utils/ASanStackFrameLayout.h",
@@ -4633,6 +4659,15 @@ ch_cc_library(
         "llvm/include/llvm/Transforms/Utils/UnrollLoop.h",
         "llvm/include/llvm/Transforms/Utils/VNCoercion.h",
     ],
+    copts =
+        _LLVM_PROJECT_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [
+        ":LLVMAnalysis",
+        ":LLVMCore",
+        ":LLVMProfileData",
+        ":llvm_headers",
+    ],
 )
 
 ch_cc_library(
@@ -4668,17 +4703,6 @@ ch_cc_library(
     ] + glob([
         "llvm/lib/Transforms/Vectorize/*.h",
     ]),
-    copts =
-        _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":LLVMTransformUtils",
-        ":llvm_headers",
-    ],
-    implementation_deps = [
-        ":LLVMAnalysis",
-        ":LLVMCore",
-    ],
     hdrs = glob([
         "llvm/include/llvm/Transforms/Vectorize/SandboxVectorizer/**/*.h",
     ]) + [
@@ -4686,8 +4710,19 @@ ch_cc_library(
         "llvm/include/llvm/Transforms/Vectorize/SLPVectorizer.h",
         "llvm/include/llvm/Transforms/Vectorize/VectorCombine.h",
     ],
+    copts =
+        _LLVM_PROJECT_COPTS,
+    implementation_deps = [
+        ":LLVMAnalysis",
+        ":LLVMCore",
+    ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
     textual_hdrs = [
         "llvm/lib/Transforms/Vectorize/SandboxVectorizer/Passes/PassRegistry.def",
+    ],
+    deps = [
+        ":LLVMTransformUtils",
+        ":llvm_headers",
     ],
 )
 
@@ -4770,23 +4805,67 @@ ch_cc_library(
             "llvm/lib/Target/X86/X86WinEHUnwindV2.cpp",
         ],
         "@platforms//cpu:aarch64": [],
+    }) + select({
+        "@platforms//cpu:x86_64": [
+            "llvm/lib/Target/X86/GISel/X86CallLowering.h",
+            "llvm/lib/Target/X86/GISel/X86LegalizerInfo.h",
+            "llvm/lib/Target/X86/GISel/X86RegisterBankInfo.h",
+            "llvm/lib/Target/X86/ImmutableGraph.h",
+            "llvm/lib/Target/X86/X86.h",
+            "llvm/lib/Target/X86/X86AsmPrinter.h",
+            "llvm/lib/Target/X86/X86CallingConv.h",
+            "llvm/lib/Target/X86/X86FrameLowering.h",
+            "llvm/lib/Target/X86/X86ISelDAGToDAG.h",
+            "llvm/lib/Target/X86/X86ISelLowering.h",
+            "llvm/lib/Target/X86/X86InstrBuilder.h",
+            "llvm/lib/Target/X86/X86InstrFMA3Info.h",
+            "llvm/lib/Target/X86/X86InstrFoldTables.h",
+            "llvm/lib/Target/X86/X86InstrInfo.h",
+            "llvm/lib/Target/X86/X86IntrinsicsInfo.h",
+            "llvm/lib/Target/X86/X86MachineFunctionInfo.h",
+            "llvm/lib/Target/X86/X86MacroFusion.h",
+            "llvm/lib/Target/X86/X86RegisterInfo.h",
+            "llvm/lib/Target/X86/X86SelectionDAGInfo.h",
+            "llvm/lib/Target/X86/X86ShuffleDecodeConstantPool.h",
+            "llvm/lib/Target/X86/X86Subtarget.h",
+            "llvm/lib/Target/X86/X86TargetMachine.h",
+            "llvm/lib/Target/X86/X86TargetObjectFile.h",
+            "llvm/lib/Target/X86/X86TargetTransformInfo.h",
+        ],
+        "@platforms//cpu:aarch64": [],
     }),
     arches = [
         "x86_64",
     ],
     copts =
         _GENERATED_COPTS_1,
+    implementation_deps = [
+        ":LLVMGlobalISel",
+        ":LLVMX86Desc",
+        ":llvm_headers",
+        ":LLVMCodeGen",
+        ":LLVMX86Info",
+        ":LLVMCore",
+        ":LLVMMC",
+        ":LLVMAnalysis",
+        ":LLVMTransformUtils",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
         "gen/llvm/lib/Target/X86",
         "llvm/lib/Target/X86",
     ],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
+    textual_hdrs = select({
+        "@platforms//cpu:x86_64": [
+            "llvm/lib/Target/X86/X86GenRegisterBankInfo.def",
+            "llvm/lib/Target/X86/X86ReplaceableInstrs.def",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }),
     deps = [
-        ":LLVMGlobalISel",
         ":LLVMSelectionDAG",
         ":LLVMAsmPrinter",
-        ":LLVMX86Desc",
     ],
 )
 
@@ -4812,21 +4891,47 @@ ch_cc_library(
             "llvm/lib/Target/X86/MCTargetDesc/X86WinCOFFTargetStreamer.cpp",
         ],
         "@platforms//cpu:aarch64": [],
+    }) + select({
+        "@platforms//cpu:x86_64": [
+            "llvm/lib/Target/X86/MCTargetDesc/X86FixupKinds.h",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }),
+    hdrs = select({
+        "@platforms//cpu:x86_64": [
+            "llvm/lib/Target/X86/MCTargetDesc/X86BaseInfo.h",
+            "llvm/lib/Target/X86/MCTargetDesc/X86EncodingOptimization.h",
+            "llvm/lib/Target/X86/MCTargetDesc/X86InstComments.h",
+            "llvm/lib/Target/X86/MCTargetDesc/X86MCAsmInfo.h",
+            "llvm/lib/Target/X86/MCTargetDesc/X86ShuffleDecode.h",
+            "llvm/lib/Target/X86/MCTargetDesc/X86TargetStreamer.h",
+        ],
+        "@platforms//cpu:aarch64": [],
     }),
     arches = [
         "x86_64",
     ],
     copts =
         _GENERATED_COPTS_1,
+    implementation_deps = [
+        ":LLVMX86Info",
+        ":LLVMMC",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
         "gen/llvm/lib/Target/X86",
         "llvm/lib/Target/X86",
     ],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
+    textual_hdrs = select({
+        "@platforms//cpu:x86_64": [
+            "llvm/lib/Target/X86/MCTargetDesc/X86EncodingOptimizationForImmediate.def",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }),
     deps = [
         ":LLVMMCDisassembler",
-        ":LLVMX86Info",
+        ":llvm_headers",
     ],
 )
 
@@ -4838,23 +4943,37 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
+    hdrs = select({
+        "@platforms//cpu:x86_64": [
+            "llvm/lib/Target/X86/TargetInfo/X86TargetInfo.h",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }),
     arches = [
         "x86_64",
     ],
     copts =
         _GENERATED_COPTS_1,
+    implementation_deps = [
+        ":llvm_headers",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
         "gen/llvm/lib/Target/X86",
         "llvm/lib/Target/X86",
     ],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
-    deps = [":LLVMMC"],
+    deps = [
+        ":LLVMMC",
+    ],
 )
 
 ch_cc_library(
     name = "LLVMXRay",
     srcs = glob(["llvm/lib/XRay/*.cpp"]),
+    hdrs = glob([
+        "llvm/include/llvm/XRay/*.h",
+    ]),
     copts =
         _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -4862,9 +4981,6 @@ ch_cc_library(
         ":LLVMObject",
         ":llvm_headers",
     ],
-    hdrs = glob([
-        "llvm/include/llvm/XRay/*.h",
-    ]),
 )
 
 ch_cc_library(
@@ -4916,20 +5032,6 @@ ch_cc_library(
         "llvm/lib/Transforms/IPO/ThinLTOBitcodeWriter.cpp",
         "llvm/lib/Transforms/IPO/WholeProgramDevirt.cpp",
     ],
-    copts =
-        _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":LLVMScalarOpts",
-        ":LLVMInstCombine",
-        ":LLVMCGData",
-        ":LLVMFrontendOpenMP",
-        ":LLVMAnalysis",
-        ":LLVMCore",
-        ":LLVMProfileData",
-        ":LLVMTransformUtils",
-        ":llvm_headers",
-    ],
     hdrs = [
         "llvm/include/llvm/Transforms/IPO/Annotation2Metadata.h",
         "llvm/include/llvm/Transforms/IPO/ArgumentPromotion.h",
@@ -4968,6 +5070,22 @@ ch_cc_library(
         "llvm/include/llvm/Transforms/IPO/StripSymbols.h",
         "llvm/include/llvm/Transforms/IPO/ThinLTOBitcodeWriter.h",
         "llvm/include/llvm/Transforms/IPO/WholeProgramDevirt.h",
+    ],
+    copts =
+        _LLVM_PROJECT_COPTS,
+    implementation_deps = [
+        ":LLVMFrontendOpenMP",
+    ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [
+        ":LLVMScalarOpts",
+        ":LLVMInstCombine",
+        ":LLVMCGData",
+        ":LLVMAnalysis",
+        ":LLVMCore",
+        ":LLVMProfileData",
+        ":LLVMTransformUtils",
+        ":llvm_headers",
     ],
 )
 
@@ -12044,23 +12162,68 @@ ch_cc_library(
             "llvm/lib/Target/AArch64/SMEPeepholeOpt.cpp",
             "llvm/lib/Target/AArch64/SVEIntrinsicOpts.cpp",
         ],
+    }) + select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "llvm/lib/Target/AArch64/AArch64.h",
+            "llvm/lib/Target/AArch64/AArch64CallingConvention.h",
+            "llvm/lib/Target/AArch64/AArch64ExpandImm.h",
+            "llvm/lib/Target/AArch64/AArch64FrameLowering.h",
+            "llvm/lib/Target/AArch64/AArch64ISelLowering.h",
+            "llvm/lib/Target/AArch64/AArch64InstrInfo.h",
+            "llvm/lib/Target/AArch64/AArch64MCInstLower.h",
+            "llvm/lib/Target/AArch64/AArch64MachineFunctionInfo.h",
+            "llvm/lib/Target/AArch64/AArch64MachineScheduler.h",
+            "llvm/lib/Target/AArch64/AArch64MacroFusion.h",
+            "llvm/lib/Target/AArch64/AArch64PBQPRegAlloc.h",
+            "llvm/lib/Target/AArch64/AArch64PerfectShuffle.h",
+            "llvm/lib/Target/AArch64/AArch64PointerAuth.h",
+            "llvm/lib/Target/AArch64/AArch64PrologueEpilogue.h",
+            "llvm/lib/Target/AArch64/AArch64RegisterInfo.h",
+            "llvm/lib/Target/AArch64/AArch64SMEAttributes.h",
+            "llvm/lib/Target/AArch64/AArch64SelectionDAGInfo.h",
+            "llvm/lib/Target/AArch64/AArch64Subtarget.h",
+            "llvm/lib/Target/AArch64/AArch64TargetMachine.h",
+            "llvm/lib/Target/AArch64/AArch64TargetObjectFile.h",
+            "llvm/lib/Target/AArch64/AArch64TargetTransformInfo.h",
+            "llvm/lib/Target/AArch64/GISel/AArch64CallLowering.h",
+            "llvm/lib/Target/AArch64/GISel/AArch64GlobalISelUtils.h",
+            "llvm/lib/Target/AArch64/GISel/AArch64LegalizerInfo.h",
+            "llvm/lib/Target/AArch64/GISel/AArch64RegisterBankInfo.h",
+        ],
     }),
     arches = [
         "aarch64",
     ],
     copts =
         _GENERATED_COPTS_3,
+    implementation_deps = [
+        ":LLVMGlobalISel",
+        ":LLVMAArch64Desc",
+        ":llvm_headers",
+        ":LLVMCodeGen",
+        ":LLVMAArch64Info",
+        ":LLVMMC",
+        ":LLVMAnalysis",
+        ":LLVMCore",
+        ":LLVMTransformUtils",
+        ":LLVMTargetParser",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_5,
     local_includes = [
         "gen/llvm/lib/Target/AArch64",
         "llvm/lib/Target/AArch64",
     ],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_1,
+    textual_hdrs = select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "llvm/lib/Target/AArch64/AArch64GenRegisterBankInfo.def",
+        ],
+    }),
     deps = [
-        ":LLVMGlobalISel",
         ":LLVMSelectionDAG",
         ":LLVMAsmPrinter",
-        ":LLVMAArch64Desc",
     ],
 )
 
@@ -12083,12 +12246,35 @@ ch_cc_library(
             "llvm/lib/Target/AArch64/MCTargetDesc/AArch64WinCOFFStreamer.cpp",
             "llvm/lib/Target/AArch64/Utils/AArch64BaseInfo.cpp",
         ],
+    }) + select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "llvm/lib/Target/AArch64/MCTargetDesc/AArch64ELFStreamer.h",
+            "llvm/lib/Target/AArch64/MCTargetDesc/AArch64FixupKinds.h",
+            "llvm/lib/Target/AArch64/MCTargetDesc/AArch64WinCOFFStreamer.h",
+        ],
+    }),
+    hdrs = select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "llvm/lib/Target/AArch64/MCTargetDesc/AArch64AddressingModes.h",
+            "llvm/lib/Target/AArch64/MCTargetDesc/AArch64InstPrinter.h",
+            "llvm/lib/Target/AArch64/MCTargetDesc/AArch64MCAsmInfo.h",
+            "llvm/lib/Target/AArch64/MCTargetDesc/AArch64MCTargetDesc.h",
+            "llvm/lib/Target/AArch64/MCTargetDesc/AArch64TargetStreamer.h",
+            "llvm/lib/Target/AArch64/Utils/AArch64BaseInfo.h",
+        ],
     }),
     arches = [
         "aarch64",
     ],
     copts =
         _GENERATED_COPTS_3,
+    implementation_deps = [
+        ":LLVMAArch64Info",
+        ":LLVMMC",
+        ":LLVMTargetParser",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_5,
     local_includes = [
         "gen/llvm/lib/Target/AArch64",
@@ -12097,7 +12283,7 @@ ch_cc_library(
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_1,
     deps = [
         ":LLVMMCDisassembler",
-        ":LLVMAArch64Info",
+        ":llvm_headers",
     ],
 )
 
@@ -12109,18 +12295,29 @@ ch_cc_library(
             "llvm/lib/Target/AArch64/TargetInfo/AArch64TargetInfo.cpp",
         ],
     }),
+    hdrs = select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "llvm/lib/Target/AArch64/TargetInfo/AArch64TargetInfo.h",
+        ],
+    }),
     arches = [
         "aarch64",
     ],
     copts =
         _GENERATED_COPTS_3,
+    implementation_deps = [
+        ":llvm_headers",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_5,
     local_includes = [
         "gen/llvm/lib/Target/AArch64",
         "llvm/lib/Target/AArch64",
     ],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_1,
-    deps = [":LLVMMC"],
+    deps = [
+        ":LLVMMC",
+    ],
 )
 
 filegroup(
