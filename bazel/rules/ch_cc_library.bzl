@@ -27,15 +27,15 @@ def ch_cc_library(
         language = "CXX",
         arches = ["x86_64", "aarch64"],
         libcxx_headers = True,
-        llvm_headers = None,
+        llvm_headers = False,
         link_runtime = False,
         map_source_files = True,
         features = [],
         **kwargs):
     """Compile a CMake library, with CPU defaults before source overrides.
 
-    llvm_headers supplies LLVM compiler-rt, libc and libunwind headers; it
-    defaults to clickhouse_code. libcxx_headers supplies the pinned libc++
+    llvm_headers supplies LLVM compiler-rt, libc and libunwind headers for
+    libraries which request them. libcxx_headers supplies the pinned libc++
     headers to C/ASM. link_runtime adds libc++, libc++abi and libunwind libs.
     source_headers supplies //src:clickhouse_source_headers privately and
     defaults to clickhouse_code.
@@ -59,8 +59,6 @@ def ch_cc_library(
             str(Label("@platforms//cpu:" + arch)): defaults if arch in arches else []
             for arch in CLICKHOUSE_TARGET_FLAGS
         } | {"//conditions:default": defaults})
-    if llvm_headers == None:
-        llvm_headers = clickhouse_code
     if llvm_headers:
         headers = [
             Label("@llvm-project//compiler-rt:headers"),
@@ -95,7 +93,6 @@ def ch_cc_library(
             for arch in arches
         } | {"//conditions:default": []}) + kwargs.get("implementation_deps", [])
     native_options = {"//conditions:default": []}
-    sysroot_headers = {"//conditions:default": []}
     sysroot_files = {"//conditions:default": []}
     for arch in arches:
         cpu = str(Label("@platforms//cpu:" + arch))
@@ -108,11 +105,10 @@ def ch_cc_library(
             # GCC's sysroot must not supply a second C++ standard library.
             options.append("-nostdinc++")
         native_options[cpu] = options
-        sysroot_headers[cpu] = [Label("@clickhouse_sysroot//:linux_native_headers")]
         sysroot_files[cpu] = [Label("@clickhouse_sysroot//:linux_compile_files")]
     cc_library(
         name = name,
-        hdrs = hdrs + select(sysroot_headers),
+        hdrs = hdrs,
         additional_compiler_inputs = additional_compiler_inputs + select(sysroot_files),
         copts = cpu_flags + code_flags + copts +
                 (cmake_prefix_maps(arches) if map_source_files else []) + select(native_options),

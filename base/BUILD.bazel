@@ -40,6 +40,7 @@ ch_cc_library(
         "base/wide_integer_to_string.cpp",
     ],
     clickhouse_code = True,
+    implementation_deps = ["@llvm-project//compiler-rt:headers"],
     local_defines = [
         "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
         "BOOST_ASIO_STANDALONE=1",

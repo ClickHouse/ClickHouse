@@ -66,25 +66,3 @@ filegroup(
         ],
     }),
 )
-
-filegroup(
-    name = "linux_x86_64_native_headers",
-    srcs = glob(["linux-x86_64/x86_64-linux-gnu/libc/usr/include/**/*.h"]),
-)
-
-filegroup(
-    name = "linux_aarch64_native_headers",
-    srcs = glob(["linux-aarch64/aarch64-linux-gnu/libc/usr/include/**/*.h"]),
-)
-
-filegroup(
-    name = "linux_native_headers",
-    srcs = select({
-        "@platforms//cpu:x86_64": [
-            ":linux_x86_64_native_headers",
-        ],
-        "@platforms//cpu:aarch64": [
-            ":linux_aarch64_native_headers",
-        ],
-    }),
-)
