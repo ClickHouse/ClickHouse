@@ -204,6 +204,9 @@ public:
         ProjectionStats projection_stats;
         Names column_names_to_read;
         ReadType read_type = ReadType::Default;
+        /// Set when the read skipped its own index analysis (a parallel replicas follower): its ranges are whole parts,
+        /// and the coordinator holds the analyzed ones.
+        bool index_analysis_skipped = false;
         UInt64 total_parts = 0;
         UInt64 parts_before_pk = 0;
         UInt64 selected_parts = 0;
@@ -219,9 +222,6 @@ public:
         /// `force_primary_key` check uses). A projection whose own key is not used may not serve
         /// the read.
         bool pk_condition_useful = false;
-        /// Set when the read skipped its own index analysis (a parallel replicas follower): its ranges are whole parts,
-        /// and the coordinator holds the analyzed ones.
-        bool index_analysis_skipped = false;
         std::atomic<bool> exceeded_row_limits = false;
 
         AnalysisResult() = default;
@@ -234,6 +234,7 @@ public:
             , projection_stats(other.projection_stats)
             , column_names_to_read(other.column_names_to_read)
             , read_type(other.read_type)
+            , index_analysis_skipped(other.index_analysis_skipped)
             , total_parts(other.total_parts)
             , parts_before_pk(other.parts_before_pk)
             , selected_parts(other.selected_parts)
@@ -245,7 +246,6 @@ public:
             , has_exact_ranges(other.has_exact_ranges)
             , exact_ranges_excluded(other.exact_ranges_excluded)
             , pk_condition_useful(other.pk_condition_useful)
-            , index_analysis_skipped(other.index_analysis_skipped)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -257,6 +257,7 @@ public:
             , projection_stats(std::move(other.projection_stats))
             , column_names_to_read(std::move(other.column_names_to_read))
             , read_type(other.read_type)
+            , index_analysis_skipped(other.index_analysis_skipped)
             , total_parts(other.total_parts)
             , parts_before_pk(other.parts_before_pk)
             , selected_parts(other.selected_parts)
@@ -268,7 +269,6 @@ public:
             , has_exact_ranges(other.has_exact_ranges)
             , exact_ranges_excluded(other.exact_ranges_excluded)
             , pk_condition_useful(other.pk_condition_useful)
-            , index_analysis_skipped(other.index_analysis_skipped)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
