@@ -1284,7 +1284,8 @@ void compactIcebergTable(
             /// Without the snapshot -> schema bindings an entry would fall back to its manifest's schema header.
             registerIcebergMetadataSchemas(metadata_object, schema_processor);
 
-            const Int64 current_snapshot_id = metadata_object->has(Iceberg::f_current_snapshot_id)
+            const Int64 current_snapshot_id
+                = metadata_object->has(Iceberg::f_current_snapshot_id) && !metadata_object->isNull(Iceberg::f_current_snapshot_id)
                 ? metadata_object->getValue<Int64>(Iceberg::f_current_snapshot_id)
                 : -1;
             Poco::JSON::Object::Ptr current_snapshot;

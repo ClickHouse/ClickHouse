@@ -22,6 +22,8 @@ REPLACE	1	4	0
 [2,3,4,5]
 --- no position deletes
 new versions: 0
+--- null current-snapshot-id
+new versions: 0
 --- stale version hint
 [2]
 hint names the latest version: 1

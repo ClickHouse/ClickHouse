@@ -98,6 +98,17 @@ VERSION_BEFORE=$(latest_version "${T2}")
 ${OPTIMIZE} --query "OPTIMIZE TABLE t2" 2>&1
 echo "new versions: $(( $(latest_version "${T2}") - VERSION_BEFORE ))"
 
+echo '--- null current-snapshot-id'
+# The spec allows JSON null for "no current snapshot", and other writers emit it.
+T5="${BASE}/t5"
+${CH} --query "CREATE TABLE t5 (x Int64) ENGINE = IcebergLocal('${T5}/', 'Parquet')"
+${CH} --query "INSERT INTO t5 VALUES (1), (2)"
+${CH} --query "ALTER TABLE t5 DELETE WHERE x = 1"
+python3 -c "import json, sys; p = sys.argv[1]; m = json.load(open(p)); m['current-snapshot-id'] = None; json.dump(m, open(p, 'w'))" "$(latest_metadata "${T5}")"
+VERSION_BEFORE=$(latest_version "${T5}")
+${OPTIMIZE} --query "OPTIMIZE TABLE t5" 2>&1
+echo "new versions: $(( $(latest_version "${T5}") - VERSION_BEFORE ))"
+
 echo '--- stale version hint'
 T3="${BASE}/t3"
 ${CH} --query "CREATE TABLE t3 (x Int64) ENGINE = IcebergLocal('${T3}/', 'Parquet')"
@@ -144,5 +155,5 @@ ${EQ} --query "DROP TABLE t_eq"
 
 ${CH} --query "DROP TABLE t1_by_uuid"
 ${CH} --query "DROP TABLE t3_hinted"
-for t in t1 t2 t3 t4; do ${CH} --query "DROP TABLE ${t}"; done
+for t in t1 t2 t3 t4 t5; do ${CH} --query "DROP TABLE ${t}"; done
 rm -rf "${BASE}"
