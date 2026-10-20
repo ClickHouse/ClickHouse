@@ -108,6 +108,12 @@ SETTINGS short_circuit_function_evaluation = 'enable', query_plan_merge_filters 
 SELECT count() OVER () AS n FROM (SELECT if(number = 0, '', 'true') AS s FROM numbers(2))
 QUALIFY s != '' AND toBool(s)
 SETTINGS short_circuit_function_evaluation = 'enable', query_plan_merge_filters = 1, query_plan_push_down_expressions_below_window = 0;
+SELECT v FROM (SELECT toUInt64(s) AS v, row_number() OVER () AS rn FROM (SELECT if(number = 0, 'x', '1') AS s FROM numbers(2)))
+WHERE rn != 1 AND rn != 3
+SETTINGS query_plan_split_filter = 0, query_plan_merge_filters = 1, max_threads = 1;
+SELECT v FROM (SELECT toUInt64(s) AS v, row_number() OVER () AS rn FROM (SELECT if(number = 0, 'x', '1') AS s FROM numbers(2)))
+WHERE rn != 1 AND rn != 3
+SETTINGS query_plan_split_filter = 0, query_plan_merge_filters = 1, max_threads = 1, query_plan_push_down_expressions_below_window = 0;
 
 SELECT 'lazily executed arguments of short-circuit functions';
 SELECT if(count() OVER () = 0, toUInt64(s), 0) AS a FROM (SELECT concat('x', toString(number)) AS s FROM numbers(2)) SETTINGS short_circuit_function_evaluation = 'enable';

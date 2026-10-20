@@ -145,6 +145,20 @@ const ExpressionInfo & getExpressionInfo(const Node * node, std::unordered_map<c
     return cache.emplace(node, info).first->second;
 }
 
+/// A `Filter` with an `and` condition applies its arguments one after another, and computes the rest of its expressions
+/// only for the rows that passed the previous ones, like `toUInt64(s)` for `s != 'x' AND ...`. Computed in another step,
+/// they would be computed for all rows. Short-circuit evaluation does not help: it can be disabled, and it does not
+/// apply to all functions (`toBool`).
+bool hasAndCondition(const FilterStep & filter)
+{
+    const auto * filter_node = &filter.getExpression().findInOutputs(filter.getFilterColumnName());
+    while (filter_node->type == ActionsDAG::ActionType::ALIAS)
+        filter_node = filter_node->children.front();
+
+    return filter_node->type == ActionsDAG::ActionType::FUNCTION && filter_node->function_base
+        && filter_node->function_base->getName() == "and";
+}
+
 void addColumnNames(const SortDescription & description, NameSet & names)
 {
     for (const auto & column : description)
@@ -159,20 +173,13 @@ void tryPushDownExpressionsBelowWindow(const Stack & stack, QueryPlan::Nodes & n
     if (parent_node->children.size() != 1)
         return;
 
-    /// A `Filter` keeps the rows for which the condition is true after the window functions as well, so the
-    /// expressions it computes are computed for the same rows below them. With `QUALIFY`, the projection is
-    /// a separate step above the `Filter` and is not changed.
+    /// A `Filter` computes its expressions for all its rows, which are the same below the window functions.
+    /// With `QUALIFY`, the projection is a separate step above the `Filter` and is not changed.
     ActionsDAG * parent_actions_ptr = nullptr;
-    const FilterStep * parent_filter = nullptr;
     if (auto * expression_step = typeid_cast<ExpressionStep *>(parent_node->step.get()))
-    {
         parent_actions_ptr = &expression_step->getExpression();
-    }
-    else if (auto * filter_step = typeid_cast<FilterStep *>(parent_node->step.get()))
-    {
+    else if (auto * filter_step = typeid_cast<FilterStep *>(parent_node->step.get()); filter_step && !hasAndCondition(*filter_step))
         parent_actions_ptr = &filter_step->getExpression();
-        parent_filter = filter_step;
-    }
 
     if (!parent_actions_ptr)
         return;
@@ -235,23 +242,7 @@ void tryPushDownExpressionsBelowWindow(const Stack & stack, QueryPlan::Nodes & n
         ++bottom_column_counts[column.name];
 
     /// The expressions that can be computed below the chain, grouped by the column they read.
-    auto maybe_lazily_executed_nodes = collectMaybeLazilyExecutedNodes(parent_actions);
-
-    /// A `Filter` applies the arguments of an `and` condition one after another, so an argument is not executed for
-    /// the rows removed by the previous ones (`s != 'x' AND toUInt64(s) > 0`). Computed in another step, the `and`
-    /// would execute for all rows the arguments that are not executed lazily: all of them with short-circuit evaluation
-    /// disabled, and the functions not suitable for it (`toBool`) otherwise.
-    if (parent_filter)
-    {
-        const auto * filter_node = &parent_actions.findInOutputs(parent_filter->getFilterColumnName());
-        while (filter_node->type == ActionsDAG::ActionType::ALIAS)
-            filter_node = filter_node->children.front();
-
-        if (filter_node->type == ActionsDAG::ActionType::FUNCTION && filter_node->function_base
-            && filter_node->function_base->getName() == "and")
-            maybe_lazily_executed_nodes.insert(filter_node);
-    }
-
+    const auto maybe_lazily_executed_nodes = collectMaybeLazilyExecutedNodes(parent_actions);
     std::unordered_map<const Node *, ExpressionInfo> expression_info_cache;
     std::unordered_map<const Node *, std::vector<const Node *>> candidates_by_input;
     for (const auto & node : parent_actions.getNodes())
