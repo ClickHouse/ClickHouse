@@ -114,9 +114,6 @@ public:
         const Settings & settings,
         LoggerPtr log);
 
-    static std::vector<std::optional<size_t>> buildPrimaryKeyToMinMaxSlotMapping(
-        const StorageMetadataPtr & metadata_snapshot, const MergeTreeSettingsPtr & data_settings);
-
     static std::pair<MarkRanges, RangesInDataPartReadHints> filterMarksUsingIndex(
         MergeTreeIndexPtr index_helper,
         MergeTreeIndexConditionPtr condition,

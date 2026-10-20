@@ -116,10 +116,14 @@ ParallelReadingExtension::ParallelReadingExtension(
 }
 
 std::optional<InitialAllRangesAnnouncementResponse> ParallelReadingExtension::sendInitialRequest(
-    CoordinationMode mode, RangesInDataPartsDescription description, size_t mark_segment_size, size_t min_marks_per_request) const
+    CoordinationMode mode,
+    RangesInDataPartsDescription description,
+    size_t mark_segment_size,
+    size_t min_marks_per_request,
+    bool wants_analyzed_ranges) const
 {
     return all_callback(InitialAllRangesAnnouncement{
-        mode, std::move(description), number_of_current_replica, mark_segment_size, min_marks_per_request, stream_id});
+        mode, std::move(description), number_of_current_replica, mark_segment_size, min_marks_per_request, stream_id, wants_analyzed_ranges});
 }
 
 std::optional<ParallelReadResponse> ParallelReadingExtension::sendReadRequest(
@@ -145,6 +149,11 @@ MergeTreeIndexBuildContext::MergeTreeIndexBuildContext(
     , part_remaining_marks(std::move(part_remaining_marks_))
 {
     chassert(index_reader_pool);
+}
+
+void MergeTreeIndexBuildContext::setReadRanges(size_t part_index, MarkRanges ranges)
+{
+    read_ranges.at(part_index).ranges = std::move(ranges);
 }
 
 MergeTreeIndexReadResultPtr MergeTreeIndexBuildContext::getPreparedIndexReadResult(const MergeTreeReadTask & task) const

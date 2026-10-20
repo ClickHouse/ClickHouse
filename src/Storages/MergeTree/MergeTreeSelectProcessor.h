@@ -44,7 +44,8 @@ public:
         CoordinationMode mode,
         RangesInDataPartsDescription description,
         size_t mark_segment_size,
-        size_t min_marks_per_request) const;
+        size_t min_marks_per_request,
+        bool wants_analyzed_ranges) const;
 
     std::optional<ParallelReadResponse> sendReadRequest(CoordinationMode mode, size_t min_marks_per_request) const;
 
@@ -88,7 +89,11 @@ using PartRemainingMarks = std::unordered_map<size_t, MutableAtomicSizeT>;
 struct MergeTreeIndexBuildContext
 {
     /// For each part, stores all ranges need to be read.
-    const RangesByIndex read_ranges;
+    RangesByIndex read_ranges;
+
+    /// Set on a parallel replicas replica that skipped its own index analysis: `read_ranges` are whole parts until
+    /// `setReadRanges` replaces them with the ranges analyzed on the initiator.
+    bool read_ranges_are_whole_parts = false;
 
     /// For each part, stores a set of read ranges grouped by projection.
     const ProjectionRangesByIndex projection_read_ranges;
@@ -107,6 +112,9 @@ struct MergeTreeIndexBuildContext
         PartRemainingMarks part_remaining_marks_);
 
     MergeTreeIndexReadResultPtr getPreparedIndexReadResult(const MergeTreeReadTask & task) const;
+
+    /// Replaces the ranges the skip indexes of a part are evaluated over. Must be called before the first read task exists.
+    void setReadRanges(size_t part_index, MarkRanges ranges);
 };
 
 using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;

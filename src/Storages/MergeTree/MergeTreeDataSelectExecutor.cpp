@@ -163,7 +163,7 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & d
 
 /// Maps each primary-key column position to the slot of the matching column in a part's partition
 /// minmax index (nullopt when the primary-key column is not a partition-minmax column).
-std::vector<std::optional<size_t>> MergeTreeDataSelectExecutor::buildPrimaryKeyToMinMaxSlotMapping(
+static std::vector<std::optional<size_t>> buildPrimaryKeyToMinMaxSlotMapping(
     const StorageMetadataPtr & metadata_snapshot, const MergeTreeSettingsPtr & data_settings)
 {
     const auto & primary_key = metadata_snapshot->getPrimaryKey();

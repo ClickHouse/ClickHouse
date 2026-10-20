@@ -1061,9 +1061,9 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRang
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Coordinator for parallel reading from replicas is not initialized");
 
     /// Followers only block on the response when they actually need it (in-order modes pin
-    /// per-split parts via the response). In `Default` mode the caller discards the response,
-    /// so the round-trip would be pure overhead — skip it on both sides.
-    const bool send_response = announcement.mode != CoordinationMode::Default;
+    /// per-split parts via the response). In `Default` mode the caller needs it only when it asks
+    /// for the analyzed ranges, otherwise the round-trip would be pure overhead — skip it on both sides.
+    const bool send_response = announcement.mode != CoordinationMode::Default || announcement.wants_analyzed_ranges;
 
     announcement_received = true;
 
