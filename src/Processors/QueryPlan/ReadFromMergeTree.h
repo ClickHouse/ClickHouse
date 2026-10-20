@@ -425,10 +425,8 @@ public:
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
     void resetVirtualRowConversions() { virtual_row_conversion = nullptr; }
 
-    /// Whether the FINAL merges of this read can be followed by a virtual row (see `spreadMarkRangesAmongStreamsFinal`).
-    bool canUseVirtualRowWithFinal() const;
-    /// Whether the index of every part has the value of its virtual row; a part without it reads without one.
-    /// Loads the primary indexes of the parts.
+    /// Whether every part surviving pruning has the value of its virtual row in the index.
+    /// Loads only those parts' primary indexes; returns false if part filters are unavailable.
     bool everyPartHasVirtualRowBound(bool read_in_reverse) const;
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
@@ -798,19 +796,11 @@ private:
         /// a single pool reads the whole table (no splitting).
         std::optional<size_t> split_index = std::nullopt);
 
+    /// Whether the `FINAL` merges of this read can be followed by a virtual row (see `spreadMarkRangesAmongStreamsFinal`).
+    bool canUseVirtualRowWithFinal() const;
+
     /// The columns of a virtual row: the leading primary key columns the conversions read.
     Block makeVirtualRowHeader() const;
-
-    /// The virtual row following a FINAL merge over `parts` (see `spreadMarkRangesAmongStreamsFinal`);
-    /// nullopt when the index of a part lacks the value.
-    std::optional<Block> getFinalMergeVirtualRow(const RangesInDataParts & parts, const Block & pk_header, bool read_in_reverse) const;
-
-    /// Whether `lhs` comes before `rhs` in the order of a FINAL merge: the table's order, reversed for a read in the reverse order.
-    bool virtualRowPrecedes(const Block & lhs, const Block & rhs, bool read_in_reverse) const;
-
-    /// The tighter of a FINAL merge's virtual row and the border its layer starts from, in the columns of `pk_header`.
-    std::optional<Block> tightenFinalMergeVirtualRow(
-        std::optional<Block> virtual_row, const std::vector<Field> & border, const Block & pk_header, bool read_in_reverse) const;
 
     Pipe spreadMarkRanges(
         RangesInDataParts && parts_with_ranges,

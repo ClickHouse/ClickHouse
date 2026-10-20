@@ -1387,26 +1387,24 @@ InputOrderInfoPtr buildInputOrderInfo(
                 virtual_row_reader = reading;
             }
 
-            /// Virtual row is required for INNER JOIN to maintain read-in-order optimization.
-            /// Without it, the sorting step after join cannot correctly determine
-            /// which input stream to read from when most rows are filtered out,
-            /// potentially reading excessive amount of data. A part whose index lacks the value of
-            /// its virtual row reads without one (see `ReadFromMergeTree::everyPartHasVirtualRowBound`),
-            /// so every part needs it. `query_plan_read_in_order_through_join = 'force'` accepts the over-read.
-            if (!find_reading_ctx.joins_to_keep_in_order.empty() && optimization_settings.read_in_order_through_join != 2
-                && !(uses_virtual_row && reading->everyPartHasVirtualRowBound(order_info.input_order->direction < 0)))
-            {
-                for (const auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+            /// Joins that can discard left rows need virtual rows from every selected part to avoid
+            /// excessive reading by the merge after the join. `LEFT ALL` and `LEFT ANY` preserve left rows.
+            /// `query_plan_read_in_order_through_join = 'force'` accepts the over-read.
+            const bool join_requires_virtual_rows = std::ranges::any_of(
+                find_reading_ctx.joins_to_keep_in_order,
+                [](const auto * join_step)
                 {
                     const auto & table_join = join_step->getJoin()->getTableJoin();
-                    auto strictness = table_join.strictness();
-                    if (table_join.kind() != JoinKind::Left || (strictness != JoinStrictness::All && strictness != JoinStrictness::Any))
-                    {
-                        LOG_DEBUG(getLogger("optimizeReadInOrder"), "Skip using read in order for inner join without virtual row optimization");
-                        reading->resetVirtualRowConversions();
-                        return nullptr;
-                    }
-                }
+                    const auto strictness = table_join.strictness();
+                    return table_join.kind() != JoinKind::Left
+                        || (strictness != JoinStrictness::All && strictness != JoinStrictness::Any);
+                });
+            if (join_requires_virtual_rows && optimization_settings.read_in_order_through_join != 2
+                && (!uses_virtual_row || !reading->everyPartHasVirtualRowBound(order_info.input_order->direction < 0)))
+            {
+                LOG_DEBUG(getLogger("optimizeReadInOrder"), "Skip using read in order for inner join without virtual row optimization");
+                reading->resetVirtualRowConversions();
+                return nullptr;
             }
 
             bool can_read = reading->requestReadingInOrder(
@@ -1417,7 +1415,7 @@ InputOrderInfoPtr buildInputOrderInfo(
 
             if (!can_read)
             {
-                /// E.g. a reverse FINAL read the engine does not support: the read stays as it was.
+                /// E.g. a reverse `FINAL` read the engine does not support: the read stays as it was.
                 reading->resetVirtualRowConversions();
                 return nullptr;
             }

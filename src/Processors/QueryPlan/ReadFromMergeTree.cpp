@@ -915,10 +915,8 @@ Pipe ReadFromMergeTree::readFromPool(
     return pipe;
 }
 
-/// The index of `part` when it has the values a virtual row of `num_key_columns` reads, nullptr otherwise:
-/// `optimizeIndexColumns` may drop the trailing key columns (see
-/// `primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns`), and a read in the reverse order
-/// is bounded by the final mark.
+/// The index of `part` if it has the first `num_key_columns` PK columns, `nullptr` otherwise.
+/// `optimizeIndexColumns` may drop trailing PK columns, and a reverse read needs the final mark.
 static IMergeTreeDataPart::IndexPtr indexWithVirtualRowBound(const IMergeTreeDataPart & part, size_t num_key_columns, bool read_in_reverse)
 {
     if (read_in_reverse && !part.index_granularity->hasFinalMark())
@@ -929,9 +927,8 @@ static IMergeTreeDataPart::IndexPtr indexWithVirtualRowBound(const IMergeTreeDat
     return index;
 }
 
-/// The primary key value bounding the rows of the part's ranges, in the columns of `pk_header`: the
-/// index entry at the first mark, or at the mark after the last one for a read in the reverse order.
-/// Nullopt when the index does not have the value.
+/// PK values at the first selected mark, or the end mark for a reverse read.
+/// Returns `std::nullopt` if the index cannot provide them.
 static std::optional<Block> getVirtualRowBound(const RangesInDataPart & part_with_ranges, const Block & pk_header, bool read_in_reverse)
 {
     const auto index = indexWithVirtualRowBound(*part_with_ranges.data_part, pk_header.columns(), read_in_reverse);
@@ -945,8 +942,64 @@ static std::optional<Block> getVirtualRowBound(const RangesInDataPart & part_wit
 
     auto pk_columns = pk_header.cloneEmptyColumns();
     for (size_t j = 0; j < pk_columns.size(); ++j)
-        pk_columns[j]->insert((*(*index)[j])[mark_pos]);
+        pk_columns[j]->insertFrom(*(*index)[j], mark_pos);
     return pk_header.cloneWithColumns(std::move(pk_columns));
+}
+
+/// Whether `lhs` comes before `rhs` in the table's order, reversed for a reverse read.
+static bool virtualRowPrecedes(const Block & lhs, const Block & rhs, const std::vector<bool> & reverse_flags, bool read_in_reverse)
+{
+    for (size_t j = 0; j < lhs.columns(); ++j)
+    {
+        int cmp = lhs.getByPosition(j).column->compareAt(0, 0, *rhs.getByPosition(j).column, /*nan_direction_hint=*/ 1);
+        if (!reverse_flags.empty() && reverse_flags[j])
+            cmp = -cmp;
+        if (cmp != 0)
+            return read_in_reverse ? cmp > 0 : cmp < 0;
+    }
+    return false;
+}
+
+/// The virtual row of a `FINAL` merge over `parts`: the least of the parts' bounds (the greatest for a reverse read).
+/// Returns `std::nullopt` if the index of some part does not have the bound.
+static std::optional<Block> getFinalMergeVirtualRow(
+    const RangesInDataParts & parts, const Block & pk_header, const std::vector<bool> & reverse_flags, bool read_in_reverse)
+{
+    std::optional<Block> bound;
+    for (const auto & part : parts)
+    {
+        auto part_bound = getVirtualRowBound(part, pk_header, read_in_reverse);
+        if (!part_bound)
+            return std::nullopt;
+        if (!bound || virtualRowPrecedes(*part_bound, *bound, reverse_flags, read_in_reverse))
+            bound = std::move(part_bound);
+    }
+    return bound;
+}
+
+/// With `FINAL`, intersecting ranges are split into layers which are read in parallel. Borders between layers
+/// are PK values which can be in the middle of a granule, so a border is a tighter bound than the index.
+/// Use the border as the virtual row if it has all the needed PK columns.
+static std::optional<Block> tightenFinalMergeVirtualRow(
+    std::optional<Block> virtual_row,
+    const std::vector<Field> & border,
+    const Block & pk_header,
+    const std::vector<bool> & reverse_flags,
+    bool read_in_reverse)
+{
+    /// A border has as many values as the parts' indexes share, which may be fewer than the virtual row needs.
+    if (border.size() < pk_header.columns())
+        return virtual_row;
+
+    auto columns = pk_header.cloneEmptyColumns();
+    for (size_t j = 0; j < columns.size(); ++j)
+        columns[j]->insert(border[j]);
+    Block border_row = pk_header.cloneWithColumns(std::move(columns));
+
+    /// The border should always be at least as tight, compare just in case.
+    if (!virtual_row || virtualRowPrecedes(*virtual_row, border_row, reverse_flags, read_in_reverse))
+        return border_row;
+    return virtual_row;
 }
 
 Pipe ReadFromMergeTree::readInOrder(
@@ -963,7 +1016,7 @@ Pipe ReadFromMergeTree::readInOrder(
     const bool has_hard_limit_below_one_block = read_type != ReadType::Default && read_limit && read_limit < block_size.max_block_size_rows;
     const bool has_soft_limit_below_one_block = read_type != ReadType::Default && query_task_size_limit && query_task_size_limit < block_size.max_block_size_rows;
 
-    /// The FINAL merges do not consume virtual rows: a FINAL read gets one per merge instead (see
+    /// The `FINAL` merges do not consume virtual rows: a `FINAL` read gets one per merge instead (see
     /// `spreadMarkRangesAmongStreamsFinal`).
     const bool use_virtual_row = virtual_row_conversion && !isQueryWithFinal()
         && (read_type == ReadType::InOrder || read_type == ReadType::InReverseOrder);
@@ -2490,12 +2543,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     const bool read_in_reverse = reader_settings.read_in_order && query_info.input_order_info && query_info.input_order_info->direction < 0;
     const auto read_type = read_in_reverse ? ReadType::InReverseOrder : ReadType::InOrder;
 
-    /// A virtual row after each FINAL merge announces the key its layer starts from, so the merge downstream
+    /// A virtual row after each `FINAL` merge announces the key its layer starts from, so the merge downstream
     /// defers the merge and the reading of its parts. Only when a step requested reading in order: the parts
-    /// of a FINAL read are in order for its merges anyway, but without the request nothing downstream
-    /// consumes virtual rows, and vertical FINAL may be on.
+    /// of a `FINAL` read are in order for its merges anyway, but without the request nothing downstream
+    /// consumes virtual rows, and vertical `FINAL` may be on.
     const bool use_virtual_row = virtual_row_conversion && reader_settings.read_in_order;
     const Block virtual_row_header = use_virtual_row ? makeVirtualRowHeader() : Block{};
+    const auto reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
 
     /// A whole range has to be kept in memory to read it in the reverse order, so split ranges into smaller ones.
     auto split_ranges_for_reverse_read = [this](RangesInDataParts parts)
@@ -2645,10 +2699,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 // Let's split parts into non intersecting parts ranges and layers to ensure data parallelism of FINAL.
                 auto in_order_reading_step_getter
                     = [this, &index_build_context, &column_names, &info, read_type, read_in_reverse, &split_ranges_for_reverse_read,
-                       use_virtual_row, &virtual_row_header, &merging_pipes_virtual_rows](auto parts)
+                       use_virtual_row, &virtual_row_header, &reverse_flags, &merging_pipes_virtual_rows](auto parts)
                 {
                     if (use_virtual_row)
-                        merging_pipes_virtual_rows.push_back(getFinalMergeVirtualRow(parts, virtual_row_header, read_in_reverse));
+                        merging_pipes_virtual_rows.push_back(getFinalMergeVirtualRow(parts, virtual_row_header, reverse_flags, read_in_reverse));
 
                     if (read_in_reverse)
                         parts = split_ranges_for_reverse_read(std::move(parts));
@@ -2752,9 +2806,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                         /// so a forward read starts layer `i` after `borders[i - 1]`, a reverse one after `borders[i]`.
                         auto virtual_row = std::move(merging_pipes_virtual_rows.at(i));
                         const auto & borders = split_ranges_result.borders;
-                        if (read_in_reverse ? i < borders.size() : i > 0)
+                        const bool has_start_border = read_in_reverse ? (i < borders.size()) : (i > 0);
+                        if (has_start_border)
+                        {
+                            const auto & border = borders[read_in_reverse ? i : (i - 1)];
                             virtual_row = tightenFinalMergeVirtualRow(
-                                std::move(virtual_row), borders[read_in_reverse ? i : i - 1], virtual_row_header, read_in_reverse);
+                                std::move(virtual_row), border, virtual_row_header, reverse_flags, read_in_reverse);
+                        }
                         pipes_virtual_rows.push_back(std::move(virtual_row));
                     }
                 }
@@ -2789,7 +2847,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             continue;
 
         Names sort_columns = storage_snapshot->metadata->getSortingKeyColumns();
-        std::vector<bool> reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
         SortDescription sort_description;
         sort_description.compile_sort_description = settings[Setting::compile_sort_description];
         sort_description.min_count_to_compile_sort_description = settings[Setting::min_count_to_compile_sort_description];
@@ -4236,9 +4293,9 @@ bool ReadFromMergeTree::setVirtualRowConversions(ActionsDAG virtual_row_conversi
 
 bool ReadFromMergeTree::canUseVirtualRowWithFinal() const
 {
-    /// The virtual row of a FINAL merge announces the key its parts start from (see
+    /// The virtual row of a `FINAL` merge announces the key its parts start from (see
     /// `spreadMarkRangesAmongStreamsFinal`). That bounds the output only for the engines that never
-    /// emit a key below their inputs: Graphite rounds the time column down.
+    /// emit a key below their inputs: `Graphite` rounds the time column down.
     switch (data.merging_params.mode)
     {
         case MergeTreeData::MergingParams::Replacing:
@@ -4253,7 +4310,7 @@ bool ReadFromMergeTree::canUseVirtualRowWithFinal() const
             return false;
     }
 
-    /// The lanes of a parallel-replicas FINAL are laid out by the coordinator (see `buildDistributedFinalPipe`); not covered yet.
+    /// The lanes of a parallel-replicas `FINAL` are laid out by the coordinator (see `buildDistributedFinalPipe`); not covered yet.
     if (is_parallel_reading_from_replicas)
         return false;
 
@@ -4262,8 +4319,12 @@ bool ReadFromMergeTree::canUseVirtualRowWithFinal() const
 
 bool ReadFromMergeTree::everyPartHasVirtualRowBound(bool read_in_reverse) const
 {
-    const size_t num_key_columns = makeVirtualRowHeader().columns();
-    for (const auto & part : getParts())
+    /// Without part filters or an existing analysis, checking bounds would load indexes of unrelated parts.
+    if (!analyzed_result_ptr && !indexes)
+        return false;
+
+    const size_t num_key_columns = virtual_row_conversion->getRequiredColumnsWithTypes().size();
+    for (const auto & part : getPartsForPrewhere())
         if (!indexWithVirtualRowBound(*part.data_part, num_key_columns, read_in_reverse))
             return false;
     return true;
@@ -4280,53 +4341,6 @@ Block ReadFromMergeTree::makeVirtualRowHeader() const
     for (size_t j = 0; j < num_columns; ++j)
         columns.push_back({primary_key.data_types[j]->createColumn(), primary_key.data_types[j], primary_key.column_names[j]});
     return Block(std::move(columns));
-}
-
-bool ReadFromMergeTree::virtualRowPrecedes(const Block & lhs, const Block & rhs, bool read_in_reverse) const
-{
-    const auto reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
-    for (size_t j = 0; j < lhs.columns(); ++j)
-    {
-        int cmp = lhs.getByPosition(j).column->compareAt(0, 0, *rhs.getByPosition(j).column, /*nan_direction_hint=*/ 1);
-        if (!reverse_flags.empty() && reverse_flags[j])
-            cmp = -cmp;
-        if (cmp != 0)
-            return read_in_reverse ? cmp > 0 : cmp < 0;
-    }
-    return false;
-}
-
-std::optional<Block> ReadFromMergeTree::getFinalMergeVirtualRow(const RangesInDataParts & parts, const Block & pk_header, bool read_in_reverse) const
-{
-    /// Every row the merge emits comes from the ranges it reads, each bounded by its part's value, so the
-    /// least of those values in the table's order bounds the output; the greatest for a read in the reverse order.
-    std::optional<Block> bound;
-    for (const auto & part : parts)
-    {
-        auto part_bound = getVirtualRowBound(part, pk_header, read_in_reverse);
-        if (!part_bound)
-            return std::nullopt;
-        if (!bound || virtualRowPrecedes(*part_bound, *bound, read_in_reverse))
-            bound = std::move(part_bound);
-    }
-    return bound;
-}
-
-std::optional<Block> ReadFromMergeTree::tightenFinalMergeVirtualRow(
-    std::optional<Block> virtual_row, const std::vector<Field> & border, const Block & pk_header, bool read_in_reverse) const
-{
-    /// A border has as many values as the parts' indexes share, which may be fewer than the virtual row needs.
-    if (border.size() < pk_header.columns())
-        return virtual_row;
-
-    auto columns = pk_header.cloneEmptyColumns();
-    for (size_t j = 0; j < columns.size(); ++j)
-        columns[j]->insert(border[j]);
-    Block border_row = pk_header.cloneWithColumns(std::move(columns));
-
-    if (!virtual_row || virtualRowPrecedes(*virtual_row, border_row, read_in_reverse))
-        return border_row;
-    return virtual_row;
 }
 
 
