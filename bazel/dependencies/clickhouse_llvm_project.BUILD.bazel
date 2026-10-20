@@ -1759,13 +1759,6 @@ _GENERATED_LOCAL_DEFINES_0 = select({
     "__STDC_LIMIT_MACROS",
 ]
 
-_LLVMSUPPORT_DEPS = [
-    ":llvm_headers",
-    "@llvm-project//libc:libc_headers",
-    "@llvm-project//compiler-rt:headers",
-    "@llvm-project//libunwind:headers",
-]
-
 _LLVM_PROJECT_COPTS = [
     "-w",
     "-std=c++17",
@@ -2016,9 +2009,10 @@ ch_cc_library(
         "llvm/include/llvm/Analysis/ValueLattice.h",
         "llvm/include/llvm/Analysis/ValueLatticeUtils.h",
     ],
-    textual_hdrs = glob([
-        "llvm/include/llvm/Analysis/*.def",
-    ]),
+    textual_hdrs = [
+        "llvm/include/llvm/Analysis/VecFuncs.def",
+        "llvm/include/llvm/IR/FunctionProperties.def",
+    ],
 )
 
 ch_cc_library(
@@ -2705,9 +2699,6 @@ ch_cc_library(
         "llvm/include/llvm/IR/TypeFinder.h",
         "llvm/include/llvm/IR/ValueSymbolTable.h",
     ],
-    textual_hdrs = [
-        "llvm/include/llvm/IR/FunctionProperties.def",
-    ],
 )
 
 ch_cc_library(
@@ -2969,7 +2960,6 @@ ch_cc_library(
         "llvm/include/llvm/ExecutionEngine/JITLink/x86.h",
         "llvm/include/llvm/ExecutionEngine/JITLink/x86_64.h",
         "llvm/include/llvm/ExecutionEngine/MCJIT.h",
-        "llvm/include/llvm/ExecutionEngine/OProfileWrapper.h",
         "llvm/include/llvm/ExecutionEngine/ObjectCache.h",
         "llvm/include/llvm/ExecutionEngine/Orc/AbsoluteSymbols.h",
         "llvm/include/llvm/ExecutionEngine/Orc/BacktraceTools.h",
@@ -4210,7 +4200,7 @@ ch_cc_library(
     copts =
         _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = _LLVMSUPPORT_DEPS,
+    deps = [":llvm_headers"],
 )
 
 ch_cc_library(
@@ -4230,7 +4220,7 @@ ch_cc_library(
     local_includes = [
         "libcxxabi/include",
     ],
-    deps = _LLVMSUPPORT_DEPS,
+    deps = [":llvm_headers"],
 )
 
 _GENERATED_LOCAL_DEFINES_1 = select({

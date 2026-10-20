@@ -571,7 +571,6 @@ ch_cc_library(
     implementation_deps = [
         "//src/Access/Common:headers",
         "//src/AggregateFunctions:headers",
-        "//src/Common/Config:headers",
         "//src/Common/ZooKeeper:headers",
         "//src/Daemon:headers",
         "//src/Functions:headers",

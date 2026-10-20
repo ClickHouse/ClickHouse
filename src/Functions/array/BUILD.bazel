@@ -250,7 +250,6 @@ _GENERATED_DEPS_0 = select({
     "//src/Access/Common:headers",
     "//src/AggregateFunctions:headers",
     "//src/Common",
-    "//src/Common/Config:headers",
     "//src/Common/ZooKeeper:headers",
     "//src/Common/mysqlxx:headers",
     "//src/Compression:clickhouse_compression",

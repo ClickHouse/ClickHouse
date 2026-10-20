@@ -12,6 +12,7 @@ ch_cc_library(
         "//src/Common",
         "//src/Common/ZooKeeper:clickhouse_common_zookeeper_base",
         "//src/Common/Config:clickhouse_common_config",
+        "@clickhouse_boost//:boost_headers",
     ],
     link_runtime = True,
     local_defines = select({

@@ -530,7 +530,6 @@ ch_cc_library(
         "google/cloud/internal/log_impl.h",
         "google/cloud/internal/log_wrapper.h",
         "google/cloud/internal/make_status.h",
-        "google/cloud/internal/minimal_iam_credentials_stub.h",
         "google/cloud/internal/noexcept_action.h",
         "google/cloud/internal/non_constructible.h",
         "google/cloud/internal/oauth2_credential_constants.h",
@@ -670,6 +669,7 @@ ch_cc_library(
         "google/cloud/internal/grpc_channel_credentials_authentication.h",
         "google/cloud/internal/grpc_impersonate_service_account.h",
         "google/cloud/internal/grpc_service_account_authentication.h",
+        "google/cloud/internal/minimal_iam_credentials_stub.h",
         "google/cloud/internal/populate_grpc_options.h",
         "google/cloud/internal/streaming_write_rpc_impl.h",
         "google/cloud/internal/time_utils.h",
@@ -992,7 +992,10 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = [":google_cloud_cpp_rest_internal"],
+    deps = [
+        ":google_cloud_cpp_grpc_utils",
+        ":google_cloud_cpp_rest_internal",
+    ],
 )
 
 ch_grpc_cc_library(
