@@ -50,22 +50,30 @@ void DeferredPartsSync::sync(bool only_old)
     static constexpr auto min_age_to_sync = std::chrono::seconds(30);
     const auto now = std::chrono::steady_clock::now();
 
-    std::vector<std::string> paths;
-    size_t num_parts = 0;
+    /// The parts are kept alive until their files are synced, so that they are not removed in the meantime.
+    std::vector<MergeTreeDataPartPtr> parts_to_sync;
     while (!parts.empty() && (!only_old || now - parts.front().commit_time >= min_age_to_sync))
     {
-        for (const auto & entry : std::filesystem::recursive_directory_iterator(parts.front().part->getDataPartStorage().getFullPath()))
-            if (entry.is_regular_file())
-                paths.push_back(entry.path());
-
+        parts_to_sync.push_back(std::move(parts.front().part));
         parts.pop_front();
-        ++num_parts;
     }
 
-    if (num_parts == 0)
+    if (parts_to_sync.empty())
         return;
 
-    LOG_TRACE(getLogger("DeferredPartsSync"), "Syncing {} files of {} inserted parts", paths.size(), num_parts);
+    std::vector<std::string> paths;
+    for (const auto & part : parts_to_sync)
+    {
+        for (const auto & entry : std::filesystem::recursive_directory_iterator(part->getDataPartStorage().getFullPath()))
+        {
+            /// Temporary files, such as `txn_version.txt.tmp`, are renamed over the files of a committed part
+            /// when its metadata is updated. The writer syncs them itself, and they may disappear at any moment.
+            if (entry.is_regular_file() && !entry.path().filename().string().ends_with(".tmp"))
+                paths.push_back(entry.path());
+        }
+    }
+
+    LOG_TRACE(getLogger("DeferredPartsSync"), "Syncing {} files of {} inserted parts", paths.size(), parts_to_sync.size());
     parallelSyncPaths(paths);
 }
 

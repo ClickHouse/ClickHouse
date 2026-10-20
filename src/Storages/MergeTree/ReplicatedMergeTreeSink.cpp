@@ -504,6 +504,16 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
                     break;
                 }
 
+                /// The existing local part may be committed by another insert that has not synced it yet.
+                /// This insert relies on it, so it must not be acknowledged before the part is durable.
+                if (defer_fsync)
+                {
+                    for (const auto & hash : conflicts)
+                        if (hash.hasConflictPartName())
+                            if (auto existing_part = storage.getActiveContainingPart(hash.getConflictPartName()))
+                                parts_to_sync.add(existing_part);
+                }
+
                 ++retry_times;
                 // TODO: sync debuplication could use cache too
 

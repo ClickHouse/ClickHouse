@@ -481,6 +481,12 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
             {
                 LOG_INFO(storage.log, "Block with ID {} already exists as part {}; ignoring it", res.block_id, res.part_info.getPartNameForLogs());
                 conflict_block_ids.push_back(res.block_id);
+
+                /// The existing part may be committed by another insert that has not synced it yet.
+                /// This insert relies on it, so it must not be acknowledged before the part is durable.
+                if (defer_fsync)
+                    if (auto existing_part = storage.getActiveContainingPart(res.part_info, MergeTreeDataPartState::Active, lock))
+                        parts_to_sync.add(existing_part);
             }
 
             if (!conflict_block_ids.empty())
