@@ -34,6 +34,8 @@
 1970-01-01 00:00:00
 \N
 2106-02-07 06:28:15
+--- DateTime: negative timestamps under throw ---
+\N
 --- DateTime: mixed valid and overflowing rows ---
 [0,1,0,1]
 [0,0,4294967295,0]
@@ -54,6 +56,22 @@
 --- DateTime64: dates past DateTime range ---
 2106-12-31 00:00:00.000000
 2106-12-31 00:00:00
+--- DateTime: saturate overflow ---
+4294967295
+4294967295
+4294967295
+4294967295
+4294967295
+4294967295
+0
+--- DateTime: ignore overflow ---
+0
+0
+0
+28229504
+0
+4294934896
+0
 --- mysqlYear2: %y ---
 1999-01-01 00:00:00
 2000-01-01 00:00:00

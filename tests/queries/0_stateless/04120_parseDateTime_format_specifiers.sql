@@ -59,6 +59,7 @@ SELECT parseDateTime('2106', '%Y', 'UTC');
 SELECT parseDateTime('1969', '%Y', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
 SELECT parseDateTime('2107', '%Y', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
 
+SET date_time_overflow_behavior = 'throw';
 SELECT '--- DateTime: UInt32 upper bound ---';
 SELECT parseDateTime('2106-02-07 06:28:15', '%F %H:%i:%s', 'UTC');
 SELECT parseDateTime('2106-02-07 06:28:16', '%F %H:%i:%s', 'UTC'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
@@ -66,6 +67,10 @@ SELECT parseDateTime('2106-02-08', '%F', 'UTC'); -- { serverError VALUE_IS_OUT_O
 SELECT parseDateTimeOrZero('2106-12-31', '%F', 'UTC');
 SELECT parseDateTimeOrNull('2106-12-31', '%F', 'UTC');
 SELECT parseDateTimeOrNull('2106-02-07 06:28:15', '%F %H:%i:%s', 'UTC');
+
+SELECT '--- DateTime: negative timestamps under throw ---';
+SELECT parseDateTime('1970-01-01 00:00:00', '%F %H:%i:%s', 'Asia/Tokyo'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT parseDateTimeOrNull('1970-01-01 00:00:00', '%F %H:%i:%s', 'Asia/Tokyo');
 
 SELECT '--- DateTime: mixed valid and overflowing rows ---';
 SELECT arrayMap(
@@ -99,6 +104,26 @@ SELECT parseDateTimeInJodaSyntaxOrNull('2106-02-07 08:28:16+0200', 'yyyy-MM-dd H
 SELECT '--- DateTime64: dates past DateTime range ---';
 SELECT parseDateTime64('2106-12-31', '%F', 'UTC');
 SELECT parseDateTime64InJodaSyntax('2106-12-31', 'yyyy-MM-dd', 'UTC');
+
+SET date_time_overflow_behavior = 'saturate';
+SELECT '--- DateTime: saturate overflow ---';
+SELECT toUnixTimestamp(parseDateTime('2106-02-07 06:28:16', '%F %H:%i:%s', 'UTC'));
+SELECT toUnixTimestamp(parseDateTimeOrZero('2106-12-31', '%F', 'UTC'));
+SELECT toUnixTimestamp(parseDateTimeOrNull('2106-12-31', '%F', 'UTC'));
+SELECT toUnixTimestamp(parseDateTimeInJodaSyntax('2106-12-31', 'yyyy-MM-dd', 'UTC'));
+SELECT toUnixTimestamp(parseDateTimeInJodaSyntaxOrNull('2106-02-07 08:28:16+0200', 'yyyy-MM-dd HH:mm:ssZ', 'UTC'));
+SELECT toUnixTimestamp(parseDateTime('2106-02-07 15:28:16', '%F %H:%i:%s', 'Asia/Tokyo'));
+SELECT toUnixTimestamp(parseDateTime('1970-01-01 00:00:00', '%F %H:%i:%s', 'Asia/Tokyo'));
+
+SET date_time_overflow_behavior = 'ignore';
+SELECT '--- DateTime: ignore overflow ---';
+SELECT toUnixTimestamp(parseDateTime('2106-02-07 06:28:16', '%F %H:%i:%s', 'UTC'));
+SELECT toUnixTimestamp(parseDateTimeOrZero('2106-02-07 06:28:16', '%F %H:%i:%s', 'UTC'));
+SELECT isNull(parseDateTimeOrNull('2106-02-07 06:28:16', '%F %H:%i:%s', 'UTC'));
+SELECT toUnixTimestamp(parseDateTime('2106-12-31', '%F', 'UTC'));
+SELECT toUnixTimestamp(parseDateTimeInJodaSyntax('2106-02-07 06:28:16', 'yyyy-MM-dd HH:mm:ss', 'UTC'));
+SELECT toUnixTimestamp(parseDateTime('1970-01-01 00:00:00', '%F %H:%i:%s', 'Asia/Tokyo'));
+SELECT toUnixTimestamp(parseDateTimeOrNull('2106-02-07 15:28:16', '%F %H:%i:%s', 'Asia/Tokyo'));
 
 SELECT '--- mysqlYear2: %y ---';
 SELECT parseDateTime('99', '%y', 'UTC');
