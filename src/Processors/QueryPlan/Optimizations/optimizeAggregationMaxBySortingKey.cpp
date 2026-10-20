@@ -38,49 +38,81 @@ namespace DB::QueryPlanOptimizations
 {
 
 /// Skip granules that cannot contain the answer for any group of `GROUP BY <keys>`, `DISTINCT` or `LIMIT BY`, using only
-/// the primary index. The sections below are: runs, the rule for `max`, the rule for `min`, supported aggregates,
-/// queries without `max`/`min` of the next column, `LIMIT BY`, filters, and when the rule is not applied.
+/// the primary index. The sections below are: an example, runs, the rule for `max`, the rule for `min`, supported
+/// aggregates, queries without `max`/`min` of the next column, `LIMIT BY`, filters, and when the rule is not applied.
+///
+/// Example. A table of trades, one row per trade:
+///
+///     CREATE TABLE trades (symbol String, ts DateTime64(3), price Float64) ENGINE = MergeTree ORDER BY (symbol, ts);
+///
+///     SELECT symbol, argMax(price, ts) FROM trades GROUP BY symbol;  -- the latest price of every symbol
+///
+/// In each part, the rows of a symbol are stored together, sorted by `ts`. Say `AAPL` fills granules 0-2 and the first
+/// half of granule 3, and `MSFT` the rest of granule 3 and granules 4-5. The primary index holds the first row of every
+/// granule:
+///
+///     granule:      0           1           2           3           4           5
+///     first row:    AAPL 09:00  AAPL 10:00  AAPL 11:00  AAPL 12:00  MSFT 10:30  MSFT 11:30
+///
+/// Granules 0, 1 and 2 are followed by a granule that starts with `AAPL` at a later time, so the latest `AAPL` trade is
+/// not in them; likewise granule 4 for `MSFT`. Only granules 3 and 5 are read: the last one of each symbol. Granule 3
+/// holds the end of `AAPL` and the start of `MSFT`, which is fine, since `MSFT` ends in granule 5. Without the
+/// optimization, all 6 granules are read; with 100 symbols of 50 granules each, 100 granules are read instead of 5000.
 ///
 /// Runs. `k` is a sorting key column, and the prefix is the sorting key columns before it. Within a part, rows are
 /// sorted by `(<prefix>, k)`, so each value of the prefix forms a run of rows sorted by `k`. Every `GROUP BY` key must
 /// depend only on the prefix, so a group is a union of whole runs, and its answer is the best answer of its runs.
 /// The primary index stores the first row of every granule, so it tells where runs start and end, up to a granule.
+/// In the example, `k` is `ts`, the prefix is `(symbol)`, and the runs are the rows of `AAPL` and of `MSFT`; each
+/// group of `GROUP BY symbol` is one run, and `GROUP BY lower(symbol)` would work too, but not `GROUP BY toDate(ts)`.
+/// With `ORDER BY (exchange, symbol, ts)`, the prefix is `(exchange, symbol)`, and a group of `GROUP BY exchange` is
+/// the union of the runs of its symbols.
 ///
 /// The rule for `max`. If granules `j` and `j + 1` start with the same prefix, every row of granule `j` belongs to that
 /// run, and its `k` is not greater than `k` of the first row of granule `j + 1`. So granule `j` holds neither the start
 /// of a new run nor the maximum of an existing one, and can be skipped. The last granule of a run is always read.
-/// For example, with `ORDER BY (exchange, symbol, ts)`, `GROUP BY exchange` with `max(ts)` keeps the last granule
-/// of every `(exchange, symbol)` run, and `WHERE exchange = 'X' GROUP BY symbol` keeps the last granule of every
-/// symbol of that exchange.
+/// In the example, this skips granules 0, 1, 2 and 4, as described above.
 ///
 /// The rule for `min`. Granule `j` must also not hold the first row of its run. That is guaranteed when granule `j - 1`
 /// starts with the same prefix too, because then the run already started at or before the first row of granule
 /// `j - 1`. So with `min`, granule `j` is skipped only when granules `j - 1`, `j` and `j + 1` all start with the same
-/// prefix. This condition implies the one for the maximum, so it also serves queries with both.
+/// prefix. This condition implies the one for the maximum, so it also serves queries with both. In the example,
+/// `argMin(price, ts)` (the first price of every symbol) skips granules 1 and 2 and reads 0, 3, 4 and 5: granule 4
+/// starts with `MSFT` while granule 3 starts with `AAPL`, so the index cannot tell that the first `MSFT` row is in
+/// granule 3.
 ///
 /// Supported aggregates. `max(k)`, `argMax(x, k)`, `min(k)` and `argMin(x, k)`, all on the same `k`. Besides them, any
 /// aggregate whose arguments depend only on the prefix and whose result depends only on which distinct argument values
 /// it sees (`min`, `max`, `any`, `uniq*`, `groupUniqArray`, ...): an argument is constant within a run, so such an
 /// aggregate needs one row of every run of the group, which the kept last granule of each run provides. Other
-/// aggregates (`sum`, `count`, ...) need every row, so the optimization is not applied with them.
+/// aggregates (`sum`, `count`, ...) need every row, so the optimization is not applied with them. In the example,
+/// `SELECT symbol, argMax(price, ts), any(lower(symbol))` is supported, but adding `sum(price)` is not.
 ///
 /// Without `max`/`min` of the next column (`GROUP BY` with only aggregates of the previous kind or none, and
 /// `DISTINCT`), the prefix is the shortest sorting key prefix that covers the keys and arguments, and the last granule
-/// of each run is kept, as for `max`: then every run is present.
+/// of each run is kept, as for `max`: then every run is present. In the example, `SELECT DISTINCT symbol` and
+/// `SELECT count(DISTINCT symbol)` read granules 3 and 5.
 ///
 /// `LIMIT BY`. `ORDER BY <keys>, k DESC LIMIT n BY <keys>` needs the last `n` rows of each run (the first `n` with
 /// `ASC`), plus the offset: granule `j` is skipped when at least that many rows of its run are known to follow it
-/// (or precede it). The rows of each run are counted once per part, over the granules selected by the index analysis,
-/// so the planning time is proportional to them.
+/// (or precede it). A granule that lies entirely in its run counts all its rows; the last granule of a run counts only
+/// its first row, because the rest may belong to the next run. The rows of each run are counted once per part, over the
+/// granules selected by the index analysis, so the planning time is proportional to them. In the example,
+/// `ORDER BY symbol, ts DESC LIMIT 2 BY symbol` (the last two trades of every symbol) reads granules 2, 3, 4 and 5:
+/// granule 3 is known to hold only one `AAPL` row, and granule 5 only one `MSFT` row, so granules 2 and 4 are needed.
 ///
 /// Filters. The filter is split into conjuncts:
-/// - A conjunct that depends only on the prefix columns removes whole runs, so it does not matter.
+/// - A conjunct that depends only on the prefix columns removes whole runs, so it does not matter. In the example,
+///   `WHERE symbol IN ('AAPL', 'MSFT')`.
 /// - The other conjuncts must be certainly true for the row that proves the granule unnecessary: the first row of
 ///   granule `j + 1` for the maximum, and the first row of granule `j - 1` for the minimum. These rows are
 ///   real rows of the same run, and their `k` bounds every `k` in granule `j`; if they pass the filter, the
 ///   run's answer is not in granule `j`. They are checked on the primary index with a `KeyCondition`, which
 ///   must be exact (not relaxed): a conjunct on a column outside the primary index, or on a function the
-///   analysis does not know, disables the optimization.
+///   analysis does not know, disables the optimization. In the example, with `WHERE ts < '11:30'`, granules 0 and 1
+///   are skipped, because the first rows of granules 1 and 2 (`AAPL 10:00`, `AAPL 11:00`) pass it, but granule 2 is
+///   read: the first row of granule 3, `AAPL 12:00`, does not pass, so the latest `AAPL` trade before 11:30 may be in
+///   granule 2. A conjunct on `price` disables the optimization, because `price` is not in the primary index.
 ///
 /// When the rule is not applied. It assumes that every row of the part reaches the aggregation unless the filter
 /// removes it, that the row that proves a granule unnecessary takes part in the result, and that the stored order is
