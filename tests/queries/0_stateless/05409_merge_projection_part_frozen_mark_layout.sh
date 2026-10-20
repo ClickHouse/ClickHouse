@@ -27,12 +27,12 @@ ${CLICKHOUSE_LOCAL} -q "
 
     CREATE TABLE inserted_mark_sizes ENGINE = Memory AS
         SELECT DISTINCT part_type, marks_bytes / marks AS mark_size FROM system.projection_parts
-        WHERE table = 't_merge_projection_marks' AND active;
+        WHERE database = currentDatabase() AND table = 't_merge_projection_marks' AND active;
 
     SYSTEM START MERGES t_merge_projection_marks;
     OPTIMIZE TABLE t_merge_projection_marks FINAL SETTINGS optimize_throw_if_noop = 1;
 
-    SELECT count() FROM system.parts WHERE table = 't_merge_projection_marks' AND active;
+    SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_merge_projection_marks' AND active;
     SELECT (SELECT groupArray((part_type, mark_size)) FROM inserted_mark_sizes)
-         = (SELECT groupArray((part_type, marks_bytes / marks)) FROM system.projection_parts WHERE table = 't_merge_projection_marks' AND active);
+         = (SELECT groupArray((part_type, marks_bytes / marks)) FROM system.projection_parts WHERE database = currentDatabase() AND table = 't_merge_projection_marks' AND active);
 "
