@@ -1473,19 +1473,29 @@ def test_rename_after_failed_startup(started_cluster):
 
         node.query(f"RENAME TABLE {database}.{failed} TO {database}.{failed}_2")
         node.query(f"RENAME DATABASE {database} TO {renamed_database}")
+        uuids = dict(
+            row.split("\t")
+            for row in node.query(
+                f"SELECT name, uuid FROM system.tables WHERE database = '{renamed_database}'"
+            ).splitlines()
+        )
         node.query(
             f"EXCHANGE TABLES {renamed_database}.{failed}_2 AND {renamed_database}.{healthy}"
         )
 
         assert (
             node.query(
-                f"SELECT name FROM system.tables WHERE database = '{renamed_database}' ORDER BY name"
+                f"SELECT name, uuid FROM system.tables WHERE database = '{renamed_database}' ORDER BY name"
             )
-            == f"{failed}_2\n{healthy}\n"
+            == f"{failed}_2\t{uuids[healthy]}\n{healthy}\t{uuids[failed + '_2']}\n"
         )
-        # The running table is still tracked under its new name.
+        # The running table is still tracked under each new name.
         assert node.contains_in_log(
             f"StreamingStorageRegistry: Renamed table: {database}.{healthy}"
+        )
+        assert node.contains_in_log(
+            f"StreamingStorageRegistry: Renamed table: {renamed_database}.{healthy} ({uuids[healthy]})"
+            f" -> {renamed_database}.{failed}_2 ({uuids[healthy]})"
         )
     finally:
         node.query(f"DROP DATABASE IF EXISTS {database} SYNC")
