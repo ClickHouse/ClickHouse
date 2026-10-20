@@ -14,6 +14,7 @@ policy="policy_${CLICKHOUSE_DATABASE}"
 $CLICKHOUSE_CLIENT -m -q "
     DROP USER IF EXISTS ${user};
     DROP ROW POLICY IF EXISTS ${policy} ON secret_keys;
+    DROP ROW POLICY IF EXISTS ${policy}_others ON secret_keys;
     DROP TABLE IF EXISTS secret_keys;
     DROP TABLE IF EXISTS t_reader;
     DROP TABLE IF EXISTS t_slow;
@@ -42,6 +43,9 @@ echo 'row policy on the right-hand table'
 $CLICKHOUSE_CLIENT -m -q "
     GRANT SELECT ON ${CLICKHOUSE_DATABASE}.secret_keys TO ${user};
     CREATE ROW POLICY ${policy} ON secret_keys USING p = 2 TO ${user};
+    -- Other users keep seeing every row even if the server is configured with
+    -- \`users_without_row_policies_can_read_rows = false\`.
+    CREATE ROW POLICY ${policy}_others ON secret_keys USING 1 TO ALL EXCEPT ${user};
 "
 $CLICKHOUSE_CLIENT --user "${user}" -q "SELECT p, f FROM t_reader ORDER BY p"
 echo 'owner is not affected by the policy'
@@ -62,6 +66,7 @@ $CLICKHOUSE_CLIENT -m -q "
     DROP TABLE t_slow;
     DROP VIEW slow_keys;
     DROP ROW POLICY ${policy} ON secret_keys;
+    DROP ROW POLICY ${policy}_others ON secret_keys;
     DROP USER ${user};
     DROP TABLE t_reader;
     DROP TABLE secret_keys;
