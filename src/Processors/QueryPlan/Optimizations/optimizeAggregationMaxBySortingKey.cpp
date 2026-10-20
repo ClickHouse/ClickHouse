@@ -634,7 +634,9 @@ static void tryApplyToLimitBy(const LimitByStep & limit_by, QueryPlan::Node & li
     QueryPlan::Node * node = limit_by_node.children.front();
     while (const auto * expression = typeid_cast<const ExpressionStep *>(node->step.get()))
     {
-        if (node->children.size() != 1)
+        /// `arrayJoin` above the sort (e.g. with `query_plan_lower_array_join_function = 0`) changes the number of
+        /// rows: a row of the run that proves a granule unnecessary may produce none.
+        if (node->children.size() != 1 || expression->getExpression().hasArrayJoin())
             return;
         expressions.push_back(expression);
         node = node->children.front();
