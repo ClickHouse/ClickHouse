@@ -113,12 +113,18 @@ SELECT hex(s), c FROM (SELECT s, count() AS c FROM (WITH (number - 32800) % 100 
     GROUP BY s ORDER BY s ASC COLLATE 'en', c DESC LIMIT 4)
 SETTINGS max_threads = 1, max_block_size = 100, enable_group_by_top_k_optimization = 1, log_comment = '05407_ties_desc';
 
--- Result only: the streams split the starters, so whether a stream's heap starts depends on how the read is split.
+-- 160000 unique starters m0, m1, ... come first, so at least one of the 4 streams reads 32768 of them and starts its
+-- heap; the tail of a/á/Z keys (each about 13 times) is then ranked across streams that did and did not start.
 SELECT 'threads';
-SELECT s, count() FROM t_05407 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SELECT s, count() FROM (SELECT if(number < 160000, concat('m', toString(number)),
+    concat(['Z', 'a', 'á'][number % 3 + 1], toString(number % 997))) AS s FROM numbers_mt(200000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 4, max_block_size = 128, enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 0;
-SELECT s, count() FROM t_05407 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
-SETTINGS max_threads = 4, max_block_size = 128, enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 1;
+SELECT s, count() FROM (SELECT if(number < 160000, concat('m', toString(number)),
+    concat(['Z', 'a', 'á'][number % 3 + 1], toString(number % 997))) AS s FROM numbers_mt(200000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 4, max_block_size = 128, enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 1,
+    log_comment = '05407_threads';
 
 -- After the starters every row is a new key that ranks better than all before it, so the started heap admits each
 -- one and the arena grows with their 2000-byte payloads until the table crosses the two-level byte threshold and
@@ -259,8 +265,8 @@ INNER JOIN
     SELECT query_id, log_comment FROM system.query_log
     WHERE current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish' AND event_date >= yesterday()
         AND log_comment IN ('05407_dynamic_filter', '05407_gave_up', '05407_late_lc', '05407_late_start', '05407_plain_at_once',
-            '05407_qcc', '05407_remote_plan', '05407_remote_plan_nullable', '05407_remote_text', '05407_spill', '05407_ties_asc',
-            '05407_ties_desc', '05407_wait_repeats', '05407_wait_small')
+            '05407_qcc', '05407_remote_plan', '05407_remote_plan_nullable', '05407_remote_text', '05407_spill', '05407_threads',
+            '05407_ties_asc', '05407_ties_desc', '05407_wait_repeats', '05407_wait_small')
 ) AS i ON q.initial_query_id = i.query_id
 WHERE q.type = 'QueryFinish' AND q.event_date >= yesterday() AND (q.is_initial_query = NOT startsWith(i.log_comment, '05407_remote'))
 GROUP BY i.log_comment

@@ -102,16 +102,16 @@ C3A9	1000
 63	1000
 C3A9	1000
 threads
-a0	10
-á0	10
-a1	11
-á1	10
-a10	11
-a0	10
-á0	10
-a1	11
-á1	10
-a10	11
+a0	13
+á0	14
+a1	13
+á1	13
+a10	13
+a0	13
+á0	14
+a1	13
+á1	13
+a10	13
 external aggregation
 1
 Z996	10
@@ -245,6 +245,7 @@ engaged
 05407_remote_plan_nullable	1	1	1
 05407_remote_text	1	1	1
 05407_spill	1	1	1
+05407_threads	1	1	1
 05407_ties_asc	1	1	1
 05407_ties_desc	1	1	1
 05407_wait_repeats	0	1	1
