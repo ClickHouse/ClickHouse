@@ -117,6 +117,11 @@ function makeContext(storage) {
         /// A scenario enables the detection by setting it to `:autofill` (see `makeField`).
         AUTOFILL_SELECTOR: null,
         PASSWORDLESS_LOGINS_KEY: 'passwordless_logins',
+        /// The bounded lifetime of an implicit-user probe (`learnImplicitUser`).
+        IMPLICIT_USER_PROBE_TIMEOUT_MS: 5000,
+        AbortController,
+        setTimeout,
+        clearTimeout,
         MAX_PASSWORDLESS_LOGINS: 100,
         /// The page state `checkCredentials` reads and writes besides the connection fields.
         check_credentials_request_num: 0,

@@ -8950,7 +8950,8 @@ async function auxiliaryQuery(server_address, user, password, query, url_params 
     return await response.json();
 }
 
-async function getServerStatus(server_address, user, password) {
+/// `signal` (optional) aborts the request; an aborted request reports failure like any other.
+async function getServerStatus(server_address, user, password, signal) {
     let url = server_address +
         (server_address.indexOf('?') >= 0 ? '&' : '?') +
         /// Framing is pinned off for the same reason as in `auxiliaryQuery`: the response is
@@ -8959,7 +8960,7 @@ async function getServerStatus(server_address, user, password) {
     if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
     try {
-        let response = await fetch(url, { method: "POST", body: "SELECT version() AS v, uptime() AS t, currentUser() AS u", headers: { 'Authorization': 'never' } });
+        let response = await fetch(url, { method: "POST", body: "SELECT version() AS v, uptime() AS t, currentUser() AS u", signal, headers: { 'Authorization': 'never' } });
         if (!response.ok) return false;
         json = await response.json();
         return json;
@@ -11688,7 +11689,7 @@ function parseInbandExceptionFromTail(tail, format)
 /// The query of a run is admitted against the implicit-user probes of its server (`admitRunQuery`).
 async function postImpl(cell, posted_request_num, query, targetResultEl, abortController, paramValuesSnapshot, query_database, connection, queryStart, shape_params = '')
 {
-    return admitRunQuery(connection.url, () => postImplAdmitted(cell, posted_request_num, query, targetResultEl,
+    return admitRunQuery(connection.url, abortController.signal, () => postImplAdmitted(cell, posted_request_num, query, targetResultEl,
         abortController, paramValuesSnapshot, query_database, connection, queryStart, shape_params));
 }
 async function postImplAdmitted(cell, posted_request_num, query, targetResultEl, abortController, paramValuesSnapshot, query_database, connection, queryStart, shape_params)
@@ -16928,11 +16929,18 @@ async function replayConnectionUser(server_address, user, implicit_user, passwor
 /// Ask the server which user it authenticates a request without a `user` as (`currentUser` in
 /// `getServerStatus`), and remember the answer (`rememberImplicitUser`). Returns the name, or empty if
 /// the server cannot tell. The probe is sent outside of the connection's HTTP session (see
-/// `storeCredentials`).
+/// `storeCredentials`). Runs of the server wait for the probe (`admitRunQuery`), so it is aborted once
+/// it takes longer than `IMPLICIT_USER_PROBE_TIMEOUT_MS`: a stalled probe must not hold the queries of
+/// the user back. The time spent waiting for admission does not count.
+const IMPLICIT_USER_PROBE_TIMEOUT_MS = 5000;
 async function learnImplicitUser(server_address, password) {
     const probe_address = serverAddressWithoutSession(server_address);
     if (!probe_address) return '';
-    const json = await admitImplicitUserProbe(server_address, () => getServerStatus(probe_address, '', password));
+    const json = await admitImplicitUserProbe(server_address, () => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), IMPLICIT_USER_PROBE_TIMEOUT_MS);
+        return getServerStatus(probe_address, '', password, controller.signal).finally(() => clearTimeout(timer));
+    });
     if (!json || !json.u) return '';
     rememberImplicitUser(server_address, json.u);
     return json.u;
@@ -16947,20 +16955,27 @@ async function learnImplicitUser(server_address, password) {
 /// startup auto-run). So, per server (`serverIdentityKey`): a probe is sent only while no query of a
 /// run is in flight, waiting for them to finish otherwise, and a run that starts while a probe is in
 /// flight sends its query only after the probe has settled. A run counts from its admission to the
-/// end of its response, as the server holds the slot until then. The probe is a short status query,
-/// so a run waits for it only briefly; a probe can wait as long as the runs go on.
+/// end of its response, as the server holds the slot until then. The probe is a short status query
+/// with a bounded lifetime (`IMPLICIT_USER_PROBE_TIMEOUT_MS`), so a run waits for it only briefly; a
+/// probe can wait as long as the runs go on. A run that is stopped while it waits (`signal`) stops
+/// waiting and proceeds with its aborted request, which fails without being sent, as a run stopped
+/// at any other point.
 function implicitUserProbeAdmission(server_address) {
     const all = implicitUserProbeAdmission.servers ??= new Map();
     const key = serverIdentityKey(server_address) ?? server_address;
     if (!all.has(key)) all.set(key, { runs: 0, probes: new Set(), idle: [] });
     return all.get(key);
 }
-async function admitRunQuery(server_address, run) {
+async function admitRunQuery(server_address, signal, run) {
     const admission = implicitUserProbeAdmission(server_address);
     ++admission.runs;
     try {
-        /// No probe of this server starts while `runs` is non-zero, so the set only shrinks here.
-        while (admission.probes.size) await Promise.allSettled([...admission.probes]);
+        if (admission.probes.size && !signal.aborted) {
+            const stopped = new Promise(resolve => signal.addEventListener('abort', resolve, { once: true }));
+            /// No probe of this server starts while `runs` is non-zero, so the set only shrinks here.
+            while (admission.probes.size && !signal.aborted)
+                await Promise.race([Promise.allSettled([...admission.probes]), stopped]);
+        }
         return await run();
     } finally {
         if (--admission.runs === 0) for (const wake of admission.idle.splice(0)) wake();

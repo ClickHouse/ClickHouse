@@ -2080,6 +2080,71 @@ async function main() {
         }
     }
 
+    /// Guard (a stalled probe never disables the runs): the probe that holds the queries of the runs
+    /// back has a bounded lifetime, and a run stopped while it waits for the probe stops waiting. A run
+    /// that is stopped while held back settles at once without sending its query, and the next run is
+    /// held back only until the probe is aborted by its timeout (`IMPLICIT_USER_PROBE_TIMEOUT_MS`).
+    {
+        const r = await runScenario(js, {
+            href: base,
+            historyState: null,
+            seedTabs: [
+                { id: 't11', title: 'Report', query: 'SELECT 8', params: {}, result: null, lastSavedQuery: 'SELECT 8' },
+            ],
+            seedMeta: { key: 'state', activeTabId: 't11', tabOrder: ['t11'], tabSeq: 11, tabTitleSeq: 2 },
+        });
+        const events = [];
+        r.sandbox.fetch = async (url, options) => {
+            const body = String(options && options.body);
+            const kind = body.includes('currentUser()') ? 'probe' : body.includes('SELECT 8') ? 'query' : null;
+            const signal = options && options.signal;
+            /// Like the browser: an aborted request is not sent and rejects with `AbortError`.
+            const abort_error = () => Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' });
+            if (signal && signal.aborted) {
+                if (kind) events.push(kind + ':not-sent');
+                throw abort_error();
+            }
+            if (kind) events.push(kind + ':start');
+            if (kind === 'probe') {
+                /// The probe stalls until it is aborted, or forever if it cannot be.
+                await new Promise((resolve, reject) => signal && signal.addEventListener('abort', () => {
+                    events.push('probe:aborted');
+                    reject(abort_error());
+                }, { once: true }));
+            }
+            return {
+                ok: false,
+                status: 503,
+                headers: { get: () => null },
+                text: async () => '',
+                json: async () => ({}),
+            };
+        };
+        const wait_for = async (event, ms = 1000) => { for (let i = 0; i < ms / 10 && !events.includes(event); ++i) await sleep(10); };
+        vm.runInContext(`
+            user_elem.value = '';
+            password_elem.value = '';
+            rememberAuthenticationOutcome({ ok: true, status: 200, headers: { get: () => null } }, url_elem.value, '', '');
+        `, r.sandbox);
+        await wait_for('probe:start');
+        vm.runInContext("query_area.value = 'SELECT 8'; globalThis.first_run = postAll();", r.sandbox);
+        await sleep(50);
+        vm.runInContext('cancel()', r.sandbox);
+        const first_settled = await Promise.race([
+            vm.runInContext('first_run', r.sandbox).then(() => true, () => true),
+            sleep(1000).then(() => false)]);
+        check('probe-admission-cancel', 'a run stopped while held back by a stalled probe settles at once',
+            first_settled && !events.includes('probe:aborted'), events);
+        check('probe-admission-cancel', 'without sending its query', !events.includes('query:start'), events);
+        vm.runInContext("postAll();", r.sandbox);
+        await sleep(50);
+        check('probe-admission-cancel', 'the next run is held back while the probe is in flight',
+            !events.includes('query:start'), events);
+        await wait_for('query:start', 10000);
+        check('probe-admission-cancel', 'and is sent once the stalled probe is aborted by its timeout',
+            events.includes('probe:aborted') && events.indexOf('query:start') > events.indexOf('probe:aborted'), events);
+    }
+
     if (failures) {
         console.log(`${failures} check(s) FAILED`);
         process.exit(1);

@@ -102,6 +102,7 @@ def test_play_reconcile_startup(started_cluster, nodejs_container):
         "run-link-delayed-probe",
         "download-snapshot",
         "probe-admission",
+        "probe-admission-cancel",
     ):
         assert "PASS [{}]".format(scenario) in out, "scenario {} did not run:\n{}".format(
             scenario, out
