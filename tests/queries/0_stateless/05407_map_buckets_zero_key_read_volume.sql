@@ -1,7 +1,7 @@
 -- A key of a bucketed `Map` reads only its bucket, but a key with a float zero reads all buckets,
 -- because the other zero can be in another bucket. Compare the compressed bytes the two lookups read.
 
-SET use_uncompressed_cache = 0, use_columns_cache = 0, optimize_functions_to_subcolumns = 1;
+SET use_uncompressed_cache = 0, use_columns_cache = 0, optimize_functions_to_subcolumns = 1, enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS t_map_buckets_zero_key_read_volume;
 CREATE TABLE t_map_buckets_zero_key_read_volume (id UInt64, m Map(Float64, UInt64))
