@@ -86,6 +86,12 @@ CMake hash recorded below.
 | `16eb12020` | Audit all 277 BUILD files; simplify C++ source inputs, public header ownership, private header globs and exports in 64 BUILD files | [25eb6582](https://app.buildbuddy.io/invocation/25eb6582-895f-4b94-95be-5ce171677d3e) | [86e31142](https://app.buildbuddy.io/invocation/86e31142-df80-45c5-ad8b-188762b7569c) |
 | `200715e40` | Refresh the LLVM archive checksum after GitHub changed `export-subst` in Python bindings metadata; compiler sources verified unchanged | [8d6284cc](https://app.buildbuddy.io/invocation/8d6284cc-6f87-4ee3-b04a-94d41c20391f) | [9c38d891](https://app.buildbuddy.io/invocation/9c38d891-5fe5-412d-9e4e-920157433329) |
 | `fd232ec86` | Build ClickStack Next resources from pinned HyperDX sources with `rules_js`; remove prebuilt asset exports, preserve native ARM execution and resource timestamps | [683e25a2](https://app.buildbuddy.io/invocation/683e25a2-7979-40d5-8f57-be184464276d) | [655f9e64](https://app.buildbuddy.io/invocation/655f9e64-2939-45fc-9111-f33bfd4c1950) |
+| `46418055d` | Use actual source owners in Cargo, cbindgen, OpenSSL and LLVM compilation and link inputs | [c4aedb00](https://app.buildbuddy.io/invocation/c4aedb00-e11a-4698-baa6-820b0c7d1555) | [21144ab6](https://app.buildbuddy.io/invocation/21144ab6-66c6-416c-9c04-fa9aa67a855d) |
+| `9c641d5e7` | Remove 9,325 inherited public C++ dependencies in base, Poco and program targets | [36e5297d](https://app.buildbuddy.io/invocation/36e5297d-7dcf-402e-97db-588938211dce) | [75336c4b](https://app.buildbuddy.io/invocation/75336c4b-041d-4835-9779-9a129517fed0) |
+| `a0f0fc551` | Use Parquet, Cassandra, SASL and libxml header owners; remove unused Protobuf compiler inputs; share timezone inputs and common external-library sources | [6e75d9ca](https://app.buildbuddy.io/invocation/6e75d9ca-212c-4264-9ff4-751850a0f9f0) | [d04af095](https://app.buildbuddy.io/invocation/d04af095-58eb-4857-a817-166cde47f9f0) |
+| `edcf793d2` | Remove 1,429 inherited pure-header dependencies and 462 unused compiler inputs from first-party source libraries | [8cd4d93b](https://app.buildbuddy.io/invocation/8cd4d93b-730a-4229-82d8-e6be2cce51a8) | [250fe733](https://app.buildbuddy.io/invocation/250fe733-bab9-4da0-91b6-95a6987ee7e7) |
+| `d190c4589` | Share LLVM runtime CPU settings; use actual TableGen source inputs; collapse 25 equivalent guarded CPU selections | [4b1cc6ad](https://app.buildbuddy.io/invocation/4b1cc6ad-3ea5-416b-8a8a-acadea21462b) | [c8ba4265](https://app.buildbuddy.io/invocation/c8ba4265-4a1e-4d89-a65a-5485bc546691) |
+| `0f056047a` | Remove 216 local include entries already provided by external header owners or earlier identical include directories | [1c2757f0](https://app.buildbuddy.io/invocation/1c2757f0-011f-49f6-a2e2-babbd72601cc) | [17aa7d79](https://app.buildbuddy.io/invocation/17aa7d79-99d6-4f4b-bbb0-75962de23dbc) |
 
 For these checks, `llvm-strip --strip-all --remove-section=.note.gnu.build-id`
 produced SHA-256 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`
@@ -93,7 +99,7 @@ on x86-64 and `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`
 on ARM64. The selected compilers and original Bazel ELFs retained the SHA-256
 values recorded in their respective tables.
 
-On the final `fd232ec86` build, the original Bazel SHA-256 values remained
+On the final `0f056047a` build, the original Bazel SHA-256 values remained
 `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372`
 (x86-64) and
 `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744`
@@ -102,6 +108,14 @@ On the final `fd232ec86` build, the original Bazel SHA-256 values remained
 (x86-64) and
 `3c685a0e2448e17c0c11e265a7027c2cfaca6158018220a67ca2af9d3df0e71f`
 (ARM64).
+
+The `46418055d` through `0f056047a` builds each reproduced these hashes.
+The x86 check verified the saved CMake ELF SHA-256
+`cfbf99ef585fc2dbcf9f9ca413e13230ba2c9ab7dc8518df8bdeab06aa087cbc`
+and returned 0 from both the stripped-binary `cmp` and `PARITY_STATUS`.
+The ARM check matched the recorded native CMake normalized hash and returned
+`ARM_STRIPPED_STATUS=0`; it did not run a fresh ARM CMake build.
+Only completed successful runs appear in the table.
 
 ClickStack's source build reproduced all 162 pinned release assets on both
 CPUs. Its source manifest SHA-256 was
