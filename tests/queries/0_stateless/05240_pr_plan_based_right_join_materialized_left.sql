@@ -1,3 +1,6 @@
+-- Tags: memory-engine
+-- `memory-engine`: the stress runner would rewrite the `Memory` left side to `MergeTree`, which is shippable.
+
 -- A `RIGHT JOIN` whose left side cannot be read with parallel replicas is handled differently by
 -- the two implementations, and this test pins the plan-based half.
 --
@@ -12,6 +15,9 @@
 -- shippable - a `Memory` table, say - only the right side's read is
 -- distributed and the join runs on the initiator. Both cases answer correctly, so the difference
 -- costs parallelism rather than correctness.
+--
+-- `sum(l.key)` is there because the preserved right side alone would answer the same with no left
+-- row matched.
 --
 -- The counts are read from the shipped fragment rather than from the initiator's own plan, because
 -- with `parallel_replicas_local_plan = 1` the initiator also holds the local replica's branch of the
@@ -48,27 +54,59 @@ SET join_algorithm = 'hash', join_use_nulls = 0;
 
 SELECT 'non-MergeTree left: reads from replicas';
 SELECT countIf(explain ILIKE '%ParallelReplicas%') FROM (
-    EXPLAIN SELECT count(), sum(r.key) FROM t_mem AS l RIGHT JOIN t_right AS r ON l.key = r.key);
-SELECT count(), sum(r.key) FROM t_mem AS l RIGHT JOIN t_right AS r ON l.key = r.key;
+    EXPLAIN SELECT count(), sum(r.key), sum(l.key) FROM t_mem AS l RIGHT JOIN t_right AS r ON l.key = r.key);
+SELECT count(), sum(r.key), sum(l.key) FROM t_mem AS l RIGHT JOIN t_right AS r ON l.key = r.key;
 SELECT 'the join is shipped to the replicas';
 SELECT countIf(explain ILIKE '%JoinLogical%') FROM (
-    EXPLAIN SELECT count(), sum(r.key) FROM t_mem AS l RIGHT JOIN t_right AS r ON l.key = r.key);
+    EXPLAIN SELECT count(), sum(r.key), sum(l.key) FROM t_mem AS l RIGHT JOIN t_right AS r ON l.key = r.key);
+
+-- A plain `MergeTree` left side is shippable only while `parallel_replicas_for_non_replicated_merge_tree`
+-- admits it; without it only the replicated right side's read is distributed.
+SELECT 'non-replicated MergeTree left: reads from replicas';
+SELECT countIf(explain ILIKE '%ParallelReplicas%') FROM (
+    EXPLAIN SELECT count(), sum(r.key), sum(l.key) FROM t_left AS l RIGHT JOIN t_right AS r ON l.key = r.key)
+SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0;
+SELECT count(), sum(r.key), sum(l.key) FROM t_left AS l RIGHT JOIN t_right AS r ON l.key = r.key
+SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0;
+SELECT 'the join is not shipped';
+SELECT countIf(explain ILIKE '%JoinLogical%') FROM (
+    EXPLAIN SELECT count(), sum(r.key), sum(l.key) FROM t_left AS l RIGHT JOIN t_right AS r ON l.key = r.key)
+SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0;
+SELECT 'the same left admitted: the join is shipped to the replicas';
+SELECT countIf(explain ILIKE '%JoinLogical%') FROM (
+    EXPLAIN SELECT count(), sum(r.key), sum(l.key) FROM t_left AS l RIGHT JOIN t_right AS r ON l.key = r.key);
 
 SELECT 'view left: reads from replicas';
 SELECT countIf(explain ILIKE '%ParallelReplicas%') FROM (
-    EXPLAIN SELECT count(), sum(r.key) FROM v_left AS l RIGHT JOIN t_right AS r ON l.key = r.key);
-SELECT count(), sum(r.key) FROM v_left AS l RIGHT JOIN t_right AS r ON l.key = r.key;
+    EXPLAIN SELECT count(), sum(r.key), sum(l.key) FROM v_left AS l RIGHT JOIN t_right AS r ON l.key = r.key);
+SELECT count(), sum(r.key), sum(l.key) FROM v_left AS l RIGHT JOIN t_right AS r ON l.key = r.key;
 SELECT 'the join is shipped to the replicas';
 SELECT countIf(explain ILIKE '%JoinLogical%') FROM (
-    EXPLAIN SELECT count(), sum(r.key) FROM v_left AS l RIGHT JOIN t_right AS r ON l.key = r.key);
+    EXPLAIN SELECT count(), sum(r.key), sum(l.key) FROM v_left AS l RIGHT JOIN t_right AS r ON l.key = r.key);
+
+-- `FINAL` over the plain `View` makes the left side unshippable again, so this is the negative case
+-- for the arm above: the right side is still read from the replicas, the join is not shipped, and the
+-- answer is the same. The wrapper gates the query-based tests pin -
+-- `parallel_replicas_allow_view_over_mergetree` and `parallel_replicas_allow_materialized_views` -
+-- are settings of the query-based implementation and have no plan-based equivalent: they are read in
+-- `findParallelReplicasQuery` and `PlannerJoinTree`, while plan-based places its split in
+-- `applyParallelReplicas`. Both arms above ship the join at either value of either setting, so there
+-- is nothing to assert about them here.
+SELECT 'view left with FINAL: reads from replicas';
+SELECT countIf(explain ILIKE '%ParallelReplicas%') FROM (
+    EXPLAIN SELECT count(), sum(r.key), sum(l.key) FROM (SELECT key FROM v_left FINAL) AS l RIGHT JOIN t_right AS r ON l.key = r.key);
+SELECT count(), sum(r.key), sum(l.key) FROM (SELECT key FROM v_left FINAL) AS l RIGHT JOIN t_right AS r ON l.key = r.key;
+SELECT 'the join is not shipped';
+SELECT countIf(explain ILIKE '%JoinLogical%') FROM (
+    EXPLAIN SELECT count(), sum(r.key), sum(l.key) FROM (SELECT key FROM v_left FINAL) AS l RIGHT JOIN t_right AS r ON l.key = r.key);
 
 SELECT 'materialized view left: reads from replicas';
 SELECT countIf(explain ILIKE '%ParallelReplicas%') FROM (
-    EXPLAIN SELECT count(), sum(r.key) FROM mv_left AS l RIGHT JOIN t_right AS r ON l.key = r.key);
-SELECT count(), sum(r.key) FROM mv_left AS l RIGHT JOIN t_right AS r ON l.key = r.key;
+    EXPLAIN SELECT count(), sum(r.key), sum(l.key) FROM mv_left AS l RIGHT JOIN t_right AS r ON l.key = r.key);
+SELECT count(), sum(r.key), sum(l.key) FROM mv_left AS l RIGHT JOIN t_right AS r ON l.key = r.key;
 SELECT 'the join is shipped to the replicas';
 SELECT countIf(explain ILIKE '%JoinLogical%') FROM (
-    EXPLAIN SELECT count(), sum(r.key) FROM mv_left AS l RIGHT JOIN t_right AS r ON l.key = r.key);
+    EXPLAIN SELECT count(), sum(r.key), sum(l.key) FROM mv_left AS l RIGHT JOIN t_right AS r ON l.key = r.key);
 
 DROP TABLE mv_left SYNC;
 DROP VIEW v_left;

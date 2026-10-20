@@ -15,3 +15,30 @@ array join then all/inner: reads from replicas
 array join then inner/any: reads from replicas
 0
 1	1
+array join then right-any (legacy any): reads from replicas, join not shipped
+1	0
+0	0	3
+2	1	2
+2	2	2
+left/any non-leftmost: reads from replicas, join shipped
+1	1
+2	2
+left/semi non-leftmost: reads from replicas, join shipped
+1	1
+2
+inner/any non-leftmost: reads from replicas
+0
+2	2	7
+inner/any non-leftmost under a left leftmost join: reads from replicas
+0
+1
+array join then full: reads from replicas
+0
+0	0	3
+1	1	0
+2	1	2
+asof/inner non-leftmost: reads from replicas
+0
+2	2020-01-01 12:00:00
+paste non-leftmost: reads from replicas
+0
