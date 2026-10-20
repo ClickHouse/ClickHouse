@@ -9,9 +9,7 @@ keywords: ['clickpipes', 'openapi', 'واجهة برمجة تطبيقات', 'ب�
 
 يمكن إنشاء جميع أنواع ClickPipes وتحديثها وحذفها برمجيًا باستخدام [ClickHouse Cloud OpenAPI](/ar/products/cloud/api-reference/clickpipes/list-clickpipes). تتناول هذه الصفحة المصادقة ونقاط النهاية المتاحة لـ ClickPipes، مع أمثلة على طلبات `curl` لكل نوع من أنواع ClickPipe.
 
-<div id="authentication">
-  ## المصادقة
-</div>
+## المصادقة {#authentication}
 
 تستخدم ClickHouse Cloud واجهة برمجة تطبيقات المصادقة الأساسية عبر HTTP. تحتاج إلى مفتاح واجهة برمجة تطبيقات ‏(معرّف المفتاح + المفتاح السري) مع أذونات على الخدمة المستهدفة. راجع [إدارة مفاتيح واجهة برمجة تطبيقات](/ar/products/cloud/features/admin-features/api/openapi) للاطلاع على إرشادات إنشاء مفتاح.
 
@@ -24,17 +22,13 @@ export ORG_ID=<your_organization_id>
 export SERVICE_ID=<your_service_id>
 ```
 
-<div id="base-url">
-  ## عنوان URL الأساسي
-</div>
+## عنوان URL الأساسي {#base-url}
 
 ```bash
 https://api.clickhouse.cloud/v1
 ```
 
-<div id="endpoints">
-  ## نقاط النهاية
-</div>
+## نقاط النهاية {#endpoints}
 
 جميع نقاط النهاية الخاصة بـ ClickPipes تندرج ضمن نطاق خدمة ClickHouse Cloud:
 
@@ -59,22 +53,16 @@ https://api.clickhouse.cloud/v1
 
 للاطلاع على مخططات الطلبات والاستجابات الكاملة لكل نقطة نهاية، راجع [مرجع واجهة برمجة تطبيقات](/ar/products/cloud/api-reference/clickpipes/list-clickpipes).
 
-<div id="examples">
-  ## أمثلة
-</div>
+## أمثلة {#examples}
 
-<div id="list-clickpipes">
-  ### عرض ClickPipes
-</div>
+### عرض ClickPipes {#list-clickpipes}
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-<div id="get-clickpipe">
-  ### عرض تفاصيل ClickPipe
-</div>
+### عرض تفاصيل ClickPipe {#get-clickpipe}
 
 ```bash
 CLICKPIPE_ID=<your_clickpipe_id>
@@ -83,9 +71,7 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes/$CLICKPIPE_ID"
 ```
 
-<div id="stop-start-clickpipe">
-  ### إيقاف ClickPipe أو تشغيله
-</div>
+### إيقاف ClickPipe أو تشغيله {#stop-start-clickpipe}
 
 ```bash
 # Stop
@@ -103,9 +89,7 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes/$CLICKPIPE_ID/state"
 ```
 
-<div id="delete-clickpipe">
-  ### حذف ClickPipe
-</div>
+### حذف ClickPipe {#delete-clickpipe}
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -113,15 +97,11 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes/$CLICKPIPE_ID"
 ```
 
-<div id="creating-clickpipes">
-  ## إنشاء ClickPipes
-</div>
+## إنشاء ClickPipes {#creating-clickpipes}
 
 يختلف نص طلب `POST /clickpipes` باختلاف نوع المصدر. توضّح الأمثلة أدناه البنية الخاصة بكل نوع ClickPipe مدعوم. للاطلاع على مخططات JSON المعتمدة، راجع [مرجع واجهة برمجة تطبيقات](/ar/products/cloud/api-reference/clickpipes/list-clickpipes).
 
-<div id="create-kafka">
-  ### Kafka
-</div>
+### Kafka {#create-kafka}
 
 مصادر Kafka المتوافقة التالية مدعومة: `kafka`, `confluent`, `msk`, `azureeventhub`, `redpanda`, `warpstream`.
 
@@ -161,9 +141,7 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-<div id="create-kinesis">
-  ### Amazon Kinesis
-</div>
+### Amazon Kinesis {#create-kinesis}
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -173,11 +151,16 @@ curl -u "$KEY_ID:$KEY_SECRET" \
     "name": "My Kinesis ClickPipe",
     "source": {
       "kinesis": {
-        "format": "JSONEachRow",
+        "format": "AvroConfluent",
         "streamName": "my-stream",
         "region": "us-east-1",
         "iteratorType": "TRIM_HORIZON",
         "authentication": "IAM_USER",
+        "schemaRegistry": {
+          "type": "glue",
+          "glueRegion": "us-east-1",
+          "glueRegistryName": "my-registry"
+        },
         "accessKey": {
           "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
           "secretKey": "<secret_key>"
@@ -199,9 +182,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-<div id="create-s3">
-  ### Amazon S3
-</div>
+يُهيّئ هذا المثال صيغة Avro مع AWS Glue Schema Registry. لفك ترميز Protobuf باستخدام Glue، اضبط `format` على `Protobuf` وأبقِ على `schemaRegistry`. أما إذا أردت تحميل مخطط Protobuf بدلاً من ذلك، فاضبط `format` على `Protobuf` وقدِّم في `protobufSchema` ملف `.proto` مُرمَّزًا بترميز base64 أو `FileDescriptorSet` مُسلسَلًا؛ ولا تُدرج `schemaRegistry` في هذا الطلب.
+
+### Amazon S3 {#create-s3}
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -236,9 +219,7 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-<div id="create-gcs">
-  ### Google Cloud Storage
-</div>
+### Google Cloud Storage {#create-gcs}
 
 يجب أن يكون `serviceAccountKey` هو المحتوى المُشفَّر بترميز base64 لملف مفتاح JSON خاص بحساب خدمة على GCP.
 
@@ -272,9 +253,7 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-<div id="create-abs">
-  ### Azure Blob Storage
-</div>
+### Azure Blob Storage {#create-abs}
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -307,9 +286,7 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-<div id="create-postgres">
-  ### CDC في Postgres
-</div>
+### CDC في Postgres {#create-postgres}
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -345,9 +322,7 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-<div id="create-mysql">
-  ### CDC في MySQL
-</div>
+### CDC في MySQL {#create-mysql}
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -382,9 +357,7 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-<div id="create-mongodb">
-  ### CDC في MongoDB
-</div>
+### CDC في MongoDB {#create-mongodb}
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -419,9 +392,7 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-<div id="create-bigquery">
-  ### BigQuery
-</div>
+### BigQuery {#create-bigquery}
 
 يجب أن يحتوي `serviceAccountFile` على المحتوى المشفَّر بترميز base64 لملف مفتاح JSON الخاص بحساب خدمة في GCP.
 

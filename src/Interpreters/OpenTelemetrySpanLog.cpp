@@ -74,7 +74,7 @@ ColumnsDescription OpenTelemetrySpanLogElement::getColumnsDescription()
         // It is much less hassle to just use UInt64 of microseconds.
         {"start_time_us", std::make_shared<DataTypeUInt64>(), "The start time of the trace span (in microseconds)."},
         {"finish_time_us", std::make_shared<DataTypeUInt64>(), "The finish time of the trace span (in microseconds)."},
-        {"finish_date", std::make_shared<DataTypeDate>(), "The finish date of the trace span."},
+        {"event_date", std::make_shared<DataTypeDate>(), "The finish date of the trace span."},
         {"status_code", std::move(status_code_type), "The status code of the span."},
         {"status_message", low_cardinality_string, "Error message."},
         {"attribute", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeString>()), "Attribute depending on the trace span. They are filled in according to the recommendations in the OpenTelemetry standard."},
@@ -88,7 +88,8 @@ NamesAndAliases OpenTelemetrySpanLogElement::getNamesAndAliases()
     return
     {
         {"attribute.names", std::make_shared<DataTypeArray>(low_cardinality_string), "mapKeys(attribute)"},
-        {"attribute.values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "mapValues(attribute)"}
+        {"attribute.values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "mapValues(attribute)"},
+        {"finish_date", std::make_shared<DataTypeDate>(), "event_date"},
     };
 }
 
