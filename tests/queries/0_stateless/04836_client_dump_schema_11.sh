@@ -99,5 +99,6 @@ $CLICKHOUSE_CLIENT --dump-schema "$CLICKHOUSE_DATABASE" > /dev/null 2>&1
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "
     SELECT 'scalar subquery runs: ' || toString(count()) FROM system.query_log
-    WHERE event_date >= yesterday() AND type = 'QueryFinish' AND query LIKE 'EXPLAIN QUERY TREE%'
+    WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish'
+        AND query LIKE 'EXPLAIN QUERY TREE%'
         AND query LIKE '%${CLICKHOUSE_DATABASE}.src%' AND read_rows > 0"
