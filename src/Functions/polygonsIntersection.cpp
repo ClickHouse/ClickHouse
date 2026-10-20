@@ -80,20 +80,16 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be MultiPoint", getName());
             else
             {
-                auto first = LeftConverter::convert(arguments[0].column->convertToFullColumnIfConst());
-                auto second = RightConverter::convert(arguments[1].column->convertToFullColumnIfConst());
+                CorrectedGeometries<LeftConverter> first(arguments[0].column);
+                CorrectedGeometries<RightConverter> second(arguments[1].column);
 
                 /// We are not interested in some pitfalls in third-party libraries
                 /// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    /// Orient the polygons correctly.
-                    boost::geometry::correct(first[i]);
-                    boost::geometry::correct(second[i]);
-
                     MultiPolygon<Point> intersection{};
                     /// Main work here.
-                    boost::geometry::intersection(first[i], second[i], intersection);
+                    boost::geometry::intersection(first.get(i), second.get(i), intersection);
 
                     serializer.add(intersection);
                 }

@@ -41,8 +41,6 @@ private:
     std::optional<size_t> round_robin_bucket;
 
     bool has_output_chunks = false;
-    /// Inputs are not requested before an output asks for data.
-    bool was_output_needed = false;
     VectorWithMemoryTracking<char> was_output_processed;
     Chunk chunk;
 

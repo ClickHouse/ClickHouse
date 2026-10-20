@@ -24,7 +24,6 @@
 #include <Processors/Formats/Impl/Parquet/FileLogicalType.h>
 
 #include <array>
-#include <cstring>
 #include <unordered_set>
 #include <fmt/ranges.h>
 
@@ -1227,14 +1226,6 @@ void SchemaConverter::processPrimitiveColumn(
     /// data type. E.g. maybe out_decoded_type is Int32 based on parquet physical type, but
     /// out_inferred_type is Int16 based on schema inference, and castColumn does the conversion.
 
-    /// The physical type is read from the file as an integer and may be out of the range of the enum.
-    /// Check it without loading it as the enum, which would be undefined behavior.
-    Int32 raw_type = 0;
-    static_assert(sizeof(raw_type) == sizeof(element.type));
-    memcpy(&raw_type, &element.type, sizeof(raw_type));
-    if (raw_type < parq::Type::BOOLEAN || raw_type > parq::Type::FIXED_LEN_BYTE_ARRAY)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type: {}", raw_type);
-
     parq::Type::type type = element.type;
     std::optional<parq::ConvertedType::type> converted =
         element.__isset.converted_type ? std::make_optional(element.converted_type) : std::nullopt;
@@ -1406,12 +1397,12 @@ void SchemaConverter::processPrimitiveColumn(
         return get_output_type_index() == TypeIndex::String;
     };
 
-    auto set_plain_int64_decoder = [&]
+    auto set_plain_int64_decoder = [&](bool allow_datetime_and_ipv4)
     {
         out_inferred_type = std::make_shared<DataTypeInt64>();
         auto converter = std::make_shared<IntConverter>();
         converter->input_size = 8;
-        out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);
+        out_decoder.allow_stats = dispatch_int_stats_converter(allow_datetime_and_ipv4, *converter);
         out_decoder.allow_hash_filters = allow_int_hash_filters(64, true, 64);
         out_decoder.fixed_size_converter = std::move(converter);
     };
@@ -1580,7 +1571,7 @@ void SchemaConverter::processPrimitiveColumn(
 
         if (time_as_stored_integer && is_time_of_day && scale == 6 && type == parq::Type::INT64)
         {
-            set_plain_int64_decoder();
+            set_plain_int64_decoder(/*allow_datetime_and_ipv4=*/ false);
             return;
         }
 
@@ -1931,7 +1922,7 @@ void SchemaConverter::processPrimitiveColumn(
         }
         case parq::Type::INT64:
         {
-            set_plain_int64_decoder();
+            set_plain_int64_decoder(/*allow_datetime_and_ipv4=*/ true);
             return;
         }
         case parq::Type::INT96:
