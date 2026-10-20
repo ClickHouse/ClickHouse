@@ -238,6 +238,9 @@ static StoragePtr getTableToProbeIfEmpty(const StoragePtr & table, ASTDropQuery:
 /// `Paimon`, ...) keep their data on drop.
 static bool dropMayDeleteData(const StoragePtr & storage)
 {
+    /// The storage is the one a table function was resolved to, created by the table function itself
+    /// rather than handed out by `DatabaseCatalog`, so it is never a `StorageTableProxy` stand-in.
+    /// NOLINT(storage-cast)
     if (const auto * object_storage = dynamic_cast<const StorageObjectStorage *>(storage.get()))
         return object_storage->dropMayDeleteData();
     if (const auto * object_storage_cluster = dynamic_cast<const StorageObjectStorageCluster *>(storage.get()))
