@@ -4,6 +4,8 @@ SET enable_analyzer = 1;
 SET max_threads = 4, max_block_size = 1000;
 -- The queries below rely on the optimization being applied.
 SET enable_distinct_top_k_optimization = 1, query_plan_max_limit_for_top_k_optimization = 1000, use_top_k_dynamic_filtering = 1;
+-- The plan checks below expect a local read: with parallel replicas the plan is nested and the boundary does not reach the reads.
+SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS t_distinct_top_k;
 CREATE TABLE t_distinct_top_k (id UInt64, ts UInt64, value String, n Nullable(UInt32))
