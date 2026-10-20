@@ -4502,6 +4502,7 @@ bool MutateTask::prepare()
             *commands_for_execution,
             ctx->for_interpreter,
             unused_file_renames,
+            suitable_for_ttl_optimization,
             ctx->log);
     }
 
