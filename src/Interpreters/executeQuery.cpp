@@ -4136,7 +4136,8 @@ std::future<void> executeQueryInBackground(std::string_view query, ContextMutabl
 
         ~ExecutionStart()
         {
-            setException(std::make_exception_ptr(Exception(ErrorCodes::ABORTED, "Server is shutting down")));
+            if (!fulfilled.exchange(true))
+                promise.set_exception(std::make_exception_ptr(Exception(ErrorCodes::ABORTED, "Server is shutting down")));
         }
 
         void setStarted()
