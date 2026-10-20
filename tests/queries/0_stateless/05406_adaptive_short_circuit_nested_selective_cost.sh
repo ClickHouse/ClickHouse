@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-sanitizers
+# The adaptive decision is based on the measured wall-clock costs, and the sanitizers change the relative
+# cost of the mask operations and of `compareSubstrings` so much that the short-circuiting can look non-beneficial.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
