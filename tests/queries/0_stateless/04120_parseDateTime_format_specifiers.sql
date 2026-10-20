@@ -82,6 +82,18 @@ SELECT parseDateTime('01/02/99', '%D');
 SELECT parseDateTime('12/31/00', '%D');
 SELECT parseDateTime('1st', '%D'); -- { serverError CANNOT_PARSE_DATETIME }
 
+SELECT '--- Composite date day components require two digits ---';
+SELECT parseDateTime('2024-11-06', '%F', 'UTC');
+SELECT parseDateTime('2024-11-0:', '%F', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT parseDateTime('2024-11-:0', '%F', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT parseDateTime('11/02/24', '%D', 'UTC');
+SELECT parseDateTime('11/0:/24', '%D', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT parseDateTime('11/:0/24', '%D', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT parseDateTime64('2024-11-06', '%F', 'UTC');
+SELECT parseDateTime64('2024-11-0:', '%F', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT parseDateTime64('11/02/24', '%D', 'UTC');
+SELECT parseDateTime64('11/0:/24', '%D', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
+
 SELECT '--- mysqlDayOfMonth: %d requires two digits ---';
 SELECT parseDateTime('2024-11-06 10:00:00', '%Y-%m-%d %H:%i:%s', 'UTC');
 SELECT parseDateTime('2024-11-6 10:00:00', '%Y-%m-%d %H:%i:%s', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
