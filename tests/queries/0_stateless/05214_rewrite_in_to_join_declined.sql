@@ -53,6 +53,16 @@ SELECT '-- IN read on the totals row of a subquery';
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
 FROM (EXPLAIN SELECT id, id + 1 IN (SELECT k FROM s) FROM (SELECT id FROM t GROUP BY id WITH TOTALS));
 
+SELECT '-- IN inside LIMIT BY after ORDER BY';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT id FROM t ORDER BY id LIMIT 1 BY id IN (SELECT k FROM s));
+
+SELECT '-- IN inside LIMIT AFTER and LIMIT UNTIL';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT id FROM t ORDER BY id LIMIT AFTER id IN (SELECT k FROM s));
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT id FROM t ORDER BY id LIMIT UNTIL id IN (SELECT k FROM s));
+
 SELECT '-- IN read on the totals row of a view';
 DROP VIEW IF EXISTS vt;
 CREATE VIEW vt AS SELECT id FROM t GROUP BY id WITH TOTALS;

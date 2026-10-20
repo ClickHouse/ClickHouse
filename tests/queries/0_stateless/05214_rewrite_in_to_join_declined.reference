@@ -17,6 +17,11 @@
 0	1
 -- IN read on the totals row of a subquery
 0	1
+-- IN inside LIMIT BY after ORDER BY
+0	1
+-- IN inside LIMIT AFTER and LIMIT UNTIL
+0	1
+0	1
 -- IN read on the totals row of a view
 0	1
 -- IN inside the projection of a correlated subquery

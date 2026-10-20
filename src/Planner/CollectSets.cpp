@@ -281,6 +281,27 @@ private:
             && (!query_node->as<const QueryNode &>().isCorrelated() || where);
     }
 
+    /// Whether the planner adds the joins of an `IN` in this clause of the query below the step that computes it.
+    bool isRewritableClause(const QueryTreeNodePtr & clause) const
+    {
+        const auto & typed_query_node = query_node->as<const QueryNode &>();
+        if (clause == typed_query_node.getWhere() || clause == typed_query_node.getGroupByNode())
+            return true;
+
+        /// The clauses after the aggregation are also computed for the `WITH TOTALS` row, and a join never matches
+        /// that row against the subquery, so `IN` would always be false there.
+        if (has_totals_in_group_by)
+            return false;
+
+        if (clause == typed_query_node.getHaving() || clause == typed_query_node.getWindowNode()
+            || clause == typed_query_node.getQualify() || clause == typed_query_node.getProjectionNode()
+            || clause == typed_query_node.getOrderByNode())
+            return true;
+
+        /// `LIMIT BY` keeps the first rows of the sorted stream, and a join above the sorting may reorder them.
+        return clause == typed_query_node.getLimitByNode() && !typed_query_node.hasOrderBy();
+    }
+
     /// A scope whose expressions no join the rewrite can add is below, so an `IN` here is evaluated with
     /// a set and cannot be rewritten anywhere else in the query either.
     bool isBlockedScope(const QueryTreeNodePtr & node) const
@@ -289,24 +310,12 @@ private:
         if (node->getNodeType() == QueryTreeNodeType::LAMBDA)
             return true;
 
-        const auto & typed_query_node = query_node->as<const QueryNode &>();
-        if (node == typed_query_node.getPrewhere() || node == typed_query_node.getJoinTreeNode()
-            || node == typed_query_node.getInterpolate())
-            return true;
-
-        /// These clauses are also computed for the `WITH TOTALS` row, and a join never matches that row
-        /// against the subquery, so `IN` would always be false there.
-        if (has_totals_in_group_by && (node == typed_query_node.getHaving() || node == typed_query_node.getWindowNode()
-                || node == typed_query_node.getQualify() || node == typed_query_node.getProjectionNode()
-                || node == typed_query_node.getOrderByNode() || node == typed_query_node.getLimitByNode()))
-            return true;
-
-        const auto * function_node = node->as<FunctionNode>();
-        if (!function_node)
-            return false;
+        if (std::ranges::contains(query_node->getChildren(), node))
+            return !isRewritableClause(node);
 
         /// `indexHint` builds its arguments into a dag that has no join above it.
-        return function_node->getFunctionName() == "indexHint";
+        const auto * function_node = node->as<FunctionNode>();
+        return function_node && function_node->getFunctionName() == "indexHint";
     }
 
     PlannerContext & planner_context;

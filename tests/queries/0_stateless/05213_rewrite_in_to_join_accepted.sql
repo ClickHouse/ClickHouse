@@ -281,10 +281,10 @@ SELECT groupArray(id) FROM (SELECT id FROM t ORDER BY id IN (SELECT k FROM s), i
 
 SELECT '-- IN subquery inside LIMIT BY';
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
-FROM (EXPLAIN SELECT id FROM t ORDER BY id LIMIT 1 BY id IN (SELECT k FROM s));
+FROM (EXPLAIN SELECT id FROM t LIMIT 1 BY id IN (SELECT k FROM s));
 
-SELECT groupArray(id) FROM (SELECT id FROM t ORDER BY id LIMIT 1 BY id IN (SELECT k FROM s)) SETTINGS rewrite_in_to_join = 0;
-SELECT groupArray(id) FROM (SELECT id FROM t ORDER BY id LIMIT 1 BY id IN (SELECT k FROM s)) SETTINGS rewrite_in_to_join = 1;
+SELECT count() FROM (SELECT id FROM t LIMIT 1 BY id IN (SELECT k FROM s)) SETTINGS rewrite_in_to_join = 0;
+SELECT count() FROM (SELECT id FROM t LIMIT 1 BY id IN (SELECT k FROM s)) SETTINGS rewrite_in_to_join = 1;
 
 SELECT '-- A correlated subquery inside the left argument';
 SELECT countIf(explain LIKE '%JoinLogical%'), countIf(explain LIKE '%Set%') > 0
