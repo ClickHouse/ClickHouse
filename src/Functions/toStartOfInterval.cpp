@@ -430,7 +430,8 @@ private:
                     if (value < 0 && res != value && unlikely(common::subOverflow(res, divisor_in_scale, res)))
                         throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
                             "The result of function toStartOfInterval for {} does not fit into the DateTime64 result", value);
-                    result_data[i] = static_cast<ResultFieldType>(res);
+                    /// A `DateTime64(0)` argument has equal scales even for the legacy `DateTime` result, which saturates.
+                    result_data[i] = saturatingResultCast<saturate, ResultFieldType>(res);
                 }
                 return true;
             }
