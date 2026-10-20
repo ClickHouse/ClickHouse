@@ -91,6 +91,10 @@ void PostgreSQLSettings::loadFromQueryContextImpl(const Context & context, ASTSt
         if (setting.isValueChanged() || (reset_settings && std::ranges::contains(*reset_settings, name)))
             continue;
 
+        /// A setting of the engine only, with no query-level counterpart to take the value from.
+        if (!settings.has(name))
+            continue;
+
         /// Not changed yet, so it holds the default of the engine.
         const Field default_value = setting.getValue();
         Field value = settings.get(name);
