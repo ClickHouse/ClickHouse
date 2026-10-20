@@ -75,6 +75,15 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_roaring
 SELECT count() FROM t_roaring_many_to_one WHERE ts IN (SELECT toDateTime('2026-01-03 00:00:00', 'UTC') + number FROM numbers(100000)) SETTINGS force_primary_key = 1;
 DROP TABLE t_roaring_many_to_one;
 
+SELECT '--- Larger set: the bitmap is built in the middle of the analysis ---';
+-- 6400 distinct values build the bitmap only after 100 binary searches, so both paths prune these marks.
+DROP TABLE IF EXISTS t_roaring_lazy;
+CREATE TABLE t_roaring_lazy (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8;
+INSERT INTO t_roaring_lazy SELECT number FROM numbers(100000);
+SELECT trimLeft(explain) AS e FROM (EXPLAIN indexes = 1 SELECT count() FROM t_roaring_lazy WHERE id IN (SELECT number * 32 FROM numbers(6400))) WHERE startsWith(e, 'Granules:');
+SELECT count() FROM t_roaring_lazy WHERE id IN (SELECT number * 32 FROM numbers(6400)) SETTINGS force_primary_key = 1;
+DROP TABLE t_roaring_lazy;
+
 DROP TABLE t_roaring_index;
 DROP TABLE t_roaring_index_u32;
 DROP TABLE t_roaring_transformed;

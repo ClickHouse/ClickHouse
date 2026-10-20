@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/SetVariants.h>
@@ -446,8 +447,15 @@ private:
     const UInt64 instance_id;
     /// Whether all key columns have fixed-width values, making the ranges buffer cacheable.
     bool cache_ranges = false;
-    /// Accelerated 64-bit Roaring Bitmap index for single integer key column.
-    std::unique_ptr<roaring::Roaring64Map> roaring_bitmap;
+    /// Returns the bitmap once enough checks were made to pay for building it, else nullptr.
+    const roaring::Roaring64Map * getRoaringBitmap() const;
+
+    /// Accelerated 64-bit Roaring Bitmap index for single integer key column, built on demand.
+    static constexpr size_t no_roaring = std::numeric_limits<size_t>::max();
+    size_t checks_before_roaring = no_roaring;
+    mutable std::atomic<size_t> checks_without_roaring{0};
+    mutable std::unique_ptr<roaring::Roaring64Map> roaring_bitmap;
+    mutable std::atomic<const roaring::Roaring64Map *> roaring_bitmap_ready{nullptr};
 };
 
 }

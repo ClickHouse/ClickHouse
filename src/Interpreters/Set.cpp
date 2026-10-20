@@ -1068,10 +1068,10 @@ namespace
 /// while values spread over the whole range build in 788 ms and answer in 10.5 us. Keep it only for
 /// the shapes where it pays. `ordered_set` is sorted, so the ends bound the span.
 template <typename Container>
-bool isWorthBuildingRoaring(const Container & data)
+bool isWorthBuildingRoaring(const Container & data, size_t & distinct)
 {
     /// A key transform such as `toDate` can map many set elements to one value, so count each value once.
-    size_t distinct = 1;
+    distinct = 1;
     for (size_t i = 1; i < data.size(); ++i)
         distinct += data[i] != data[i - 1];
 
@@ -1106,6 +1106,20 @@ void addDistinctSorted(roaring::Roaring64Map & bitmap, const Container & data)
         }
     }
     bitmap.addMany(chunk_used, chunk);
+}
+
+/// Calls `f` with the data of an unsigned integer column; does nothing for other columns.
+template <typename F>
+void callOnUnsignedData(const IColumn & column, F && f)
+{
+    if (const auto * col_u64 = typeid_cast<const ColumnUInt64 *>(&column))
+        f(col_u64->getData());
+    else if (const auto * col_u32 = typeid_cast<const ColumnUInt32 *>(&column))
+        f(col_u32->getData());
+    else if (const auto * col_u16 = typeid_cast<const ColumnUInt16 *>(&column))
+        f(col_u16->getData());
+    else if (const auto * col_u8 = typeid_cast<const ColumnUInt8 *>(&column))
+        f(col_u8->getData());
 }
 
 }
@@ -1159,46 +1173,33 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
     cache_ranges = std::all_of(ordered_set.begin(), ordered_set.end(),
         [](const ColumnPtr & column) { return column->valuesHaveFixedSize(); });
 
-    /// Build 64-bit Roaring Bitmap for single integer key column.
+    /// Building the bitmap costs a few ns per value, and the PK analysis may make few or no checks
+    /// (e.g. a part pruned by statistics), so it is built only after distinct / 64 binary searches.
     if (tuple_size == 1 && !ordered_set[0]->empty())
     {
-        if (const auto * col_u64 = typeid_cast<const ColumnUInt64 *>(ordered_set[0].get()))
+        callOnUnsignedData(*ordered_set[0], [&](const auto & data)
         {
-            const auto & data = col_u64->getData();
-            if (isWorthBuildingRoaring(data))
-            {
-                roaring_bitmap = std::make_unique<roaring::Roaring64Map>();
-                addDistinctSorted(*roaring_bitmap, data);
-            }
-        }
-        else if (const auto * col_u32 = typeid_cast<const ColumnUInt32 *>(ordered_set[0].get()))
-        {
-            const auto & data = col_u32->getData();
-            if (isWorthBuildingRoaring(data))
-            {
-                roaring_bitmap = std::make_unique<roaring::Roaring64Map>();
-                addDistinctSorted(*roaring_bitmap, data);
-            }
-        }
-        else if (const auto * col_u16 = typeid_cast<const ColumnUInt16 *>(ordered_set[0].get()))
-        {
-            const auto & data = col_u16->getData();
-            if (isWorthBuildingRoaring(data))
-            {
-                roaring_bitmap = std::make_unique<roaring::Roaring64Map>();
-                addDistinctSorted(*roaring_bitmap, data);
-            }
-        }
-        else if (const auto * col_u8 = typeid_cast<const ColumnUInt8 *>(ordered_set[0].get()))
-        {
-            const auto & data = col_u8->getData();
-            if (isWorthBuildingRoaring(data))
-            {
-                roaring_bitmap = std::make_unique<roaring::Roaring64Map>();
-                addDistinctSorted(*roaring_bitmap, data);
-            }
-        }
+            size_t distinct = 0;
+            if (isWorthBuildingRoaring(data, distinct))
+                checks_before_roaring = distinct / 64;
+        });
     }
+}
+
+const roaring::Roaring64Map * MergeTreeSetIndex::getRoaringBitmap() const
+{
+    if (const auto * bitmap = roaring_bitmap_ready.load(std::memory_order_acquire))
+        return bitmap;
+
+    /// Exactly one caller sees the count reach the limit and builds the bitmap; the others keep searching.
+    if (checks_before_roaring == no_roaring
+        || checks_without_roaring.fetch_add(1, std::memory_order_relaxed) != checks_before_roaring)
+        return nullptr;
+
+    roaring_bitmap = std::make_unique<roaring::Roaring64Map>();
+    callOnUnsignedData(*ordered_set[0], [&](const auto & data) { addDistinctSorted(*roaring_bitmap, data); });
+    roaring_bitmap_ready.store(roaring_bitmap.get(), std::memory_order_release);
+    return roaring_bitmap.get();
 }
 
 MergeTreeSetIndex::~MergeTreeSetIndex() = default;
@@ -1375,7 +1376,8 @@ std::optional<BoolMask> MergeTreeSetIndex::checkInFieldValueRanges(const FieldVa
     size_t tuple_size = indexes_mapping.size();
 
     /// Fast path for single integer key column using 64-bit Roaring Bitmap.
-    if (tuple_size == 1 && roaring_bitmap)
+    const auto * roaring_bitmap_ptr = tuple_size == 1 ? getRoaringBitmap() : nullptr;
+    if (roaring_bitmap_ptr)
     {
         const auto & r = ranges[0];
         if (r.left.isPositiveInfinity() || r.right.isNegativeInfinity())
@@ -1430,7 +1432,7 @@ std::optional<BoolMask> MergeTreeSetIndex::checkInFieldValueRanges(const FieldVa
             /// Only whether the intersection is non-empty matters. `rank()` is linear in the
             /// number of containers, so a rank pair costs far more than the binary search it
             /// replaces; seeking to the first element >= left_val is logarithmic.
-            auto it = roaring_bitmap->begin();
+            auto it = roaring_bitmap_ptr->begin();
             const bool can_be_true = it.move_equalorlarger(left_val) && *it <= right_val;
 
             bool at_most_one = false;

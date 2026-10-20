@@ -58,3 +58,6 @@ Granules: 11/24
 --- Transformed set: many set elements map to one key value ---
 Granules: 7/30
 28
+--- Larger set: the bitmap is built in the middle of the analysis ---
+Granules: 6249/12500
+3125
