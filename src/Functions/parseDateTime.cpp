@@ -571,7 +571,7 @@ namespace
         }
 
         [[nodiscard]]
-        Int64OrError buildDateTime(const DateLUTImpl & time_zone, FormatSettings::DateTimeOverflowBehavior overflow_behavior)
+        Int64OrError buildDateTimeUnbounded(const DateLUTImpl & time_zone)
         {
             /// This method also runs while resolving named Joda timezones.
             /// Do not apply the PM offset to the stored hour twice.
@@ -594,6 +594,17 @@ namespace
 
             /// Time zone is specified in format string.
             seconds_since_epoch -= time_zone_offset;
+            return seconds_since_epoch;
+        }
+
+        [[nodiscard]]
+        Int64OrError buildDateTime(const DateLUTImpl & time_zone, FormatSettings::DateTimeOverflowBehavior overflow_behavior)
+        {
+            Int64OrError result = buildDateTimeUnbounded(time_zone);
+            if (!result.has_value())
+                return result;
+
+            Int64 seconds_since_epoch = *result;
             if constexpr (return_type == ReturnType::DateTime)
             {
                 constexpr Int64 max_datetime_seconds = std::numeric_limits<UInt32>::max();
@@ -1861,9 +1872,9 @@ namespace
             {
                 std::string_view read_time_zone{cur, end};
                 const DateLUTImpl & date_time_zone = DateLUT::instance(read_time_zone);
-                /// Resolve the named timezone before checking the final DateTime range.
-                /// A local time outside UInt32 can still be valid after timezone conversion.
-                const auto result = parsed_value.buildDateTime(date_time_zone, FormatSettings::DateTimeOverflowBehavior::Ignore);
+                /// Resolve the named timezone without enforcing the final DateTime range.
+                /// Saturation must happen only after the parsed timezone offset is applied.
+                const auto result = parsed_value.buildDateTimeUnbounded(date_time_zone);
                 if (result.has_value())
                 {
                     const DateLUTImpl::Time timezone_offset = date_time_zone.timezoneOffset(*result);

@@ -101,6 +101,7 @@ SELECT '--- DateTime: Joda named timezone at boundary ---';
 SELECT toUnixTimestamp(parseDateTimeInJodaSyntax('2106-02-07 15:28:15 Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss z', 'UTC'));
 SELECT parseDateTimeInJodaSyntaxOrNull('2106-02-07 15:28:16 Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss z', 'UTC');
 SELECT parseDateTimeInJodaSyntaxOrNull('1970-01-01 00:00:00 Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss z', 'UTC');
+SELECT parseDateTimeInJodaSyntax('1970-01-01 00:00:00 Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss z', 'UTC'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT toUnixTimestamp(parseDateTimeInJodaSyntax('2106-02-07 03:28:15 PM Asia/Tokyo', 'yyyy-MM-dd hh:mm:ss a z', 'UTC'));
 SELECT parseDateTimeInJodaSyntaxOrNull('2106-02-07 03:28:16 PM Asia/Tokyo', 'yyyy-MM-dd hh:mm:ss a z', 'UTC');
 SELECT toUnixTimestamp(parseDateTimeInJodaSyntax('1970-01-01 09:00:00 AM Asia/Tokyo', 'yyyy-MM-dd hh:mm:ss a z', 'UTC'));
@@ -124,6 +125,13 @@ SELECT toUnixTimestamp(parseDateTime('2106-02-07 15:28:16', '%F %H:%i:%s', 'Asia
 SELECT toUnixTimestamp(parseDateTime('1970-01-01 00:00:00', '%F %H:%i:%s', 'Asia/Tokyo'));
 
 SELECT toUnixTimestamp(parseDateTimeInJodaSyntax('2106-02-07 15:28:16 Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss z', 'UTC'));
+
+SELECT '--- DateTime: Joda named timezone below epoch under saturate ---';
+SELECT toUnixTimestamp(parseDateTimeInJodaSyntax('1970-01-01 00:00:00 Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss z', 'UTC'));
+SELECT toUnixTimestamp(parseDateTimeInJodaSyntaxOrNull('1970-01-01 00:00:00 Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss z', 'UTC'));
+SELECT toUnixTimestamp(parseDateTimeInJodaSyntax('1970-01-01 09:00:00 Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss z', 'UTC'));
+SELECT toUnixTimestamp(parseDateTimeInJodaSyntax('1970-01-01 00:00:00', 'yyyy-MM-dd HH:mm:ss', 'Asia/Tokyo'));
+SELECT toUnixTimestamp(parseDateTimeInJodaSyntax('1970-01-01 00:00:00+0900', 'yyyy-MM-dd HH:mm:ssZ', 'UTC'));
 
 SET date_time_overflow_behavior = 'ignore';
 SELECT '--- DateTime: ignore overflow ---';
