@@ -1048,7 +1048,6 @@ try
         /// True when the output format was derived from an `INTO OUTFILE` file extension; like an explicit
         /// format, it must not be overridden by the `default_format` setting fallback below.
         bool outfile_format_from_extension = false;
-        /// An existing non-empty file that `INTO OUTFILE ... APPEND` writes to.
         String non_empty_appended_file;
         /// The query can specify output format or output file.
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
