@@ -35,24 +35,41 @@ namespace Setting
 namespace DB::QueryPlanOptimizations
 {
 
-/// Skip granules that cannot contain `max(k)` or `min(k)` for any group of `GROUP BY <keys>`, where `k`
-/// is a sorting key column and every key depends only on the sorting key columns before `k` (the prefix).
+/// Skip granules that cannot contain the answer for any group of `GROUP BY <keys>`, `DISTINCT` or `LIMIT BY`, using only
+/// the primary index. The sections below are: runs, the rule for `max`, the rule for `min`, supported aggregates,
+/// queries without `max`/`min` of the next column, `LIMIT BY`, filters, and when the rule is not applied.
 ///
-/// Within a part, rows are sorted by `(<prefix>, k)`, so each value of the prefix forms a run of rows sorted by `k`.
-/// The primary index stores the first row of every granule. If granules `j` and `j + 1` start with the same prefix,
-/// then every row of granule `j` belongs to that run, and its `k` is not greater than `k` of the first row of
-/// granule `j + 1`. So granule `j` holds neither the start of a new run nor the maximum of an existing one, and can
-/// be skipped. A group is a union of whole runs, because its keys are functions of the prefix, so the aggregation
-/// over the remaining rows still finds the maximum of every group: it is the largest maximum of its runs.
+/// Runs. `k` is a sorting key column, and the prefix is the sorting key columns before it. Within a part, rows are
+/// sorted by `(<prefix>, k)`, so each value of the prefix forms a run of rows sorted by `k`. Every `GROUP BY` key must
+/// depend only on the prefix, so a group is a union of whole runs, and its answer is the best answer of its runs.
+/// The primary index stores the first row of every granule, so it tells where runs start and end, up to a granule.
+///
+/// The rule for `max`. If granules `j` and `j + 1` start with the same prefix, every row of granule `j` belongs to that
+/// run, and its `k` is not greater than `k` of the first row of granule `j + 1`. So granule `j` holds neither the start
+/// of a new run nor the maximum of an existing one, and can be skipped. The last granule of a run is always read.
 /// For example, with `ORDER BY (exchange, symbol, ts)`, `GROUP BY exchange` with `max(ts)` keeps the last granule
 /// of every `(exchange, symbol)` run, and `WHERE exchange = 'X' GROUP BY symbol` keeps the last granule of every
 /// symbol of that exchange.
 ///
-/// For the minimum, granule `j` must also not hold the first row of its run. That is guaranteed when
-/// granule `j - 1` starts with the same prefix too, because then the run already started at or before the
-/// first row of granule `j - 1`. So with `min`, granule `j` is skipped only when granules `j - 1`, `j` and
-/// `j + 1` all start with the same prefix. This condition implies the one for the maximum, so it also serves
-/// queries with both.
+/// The rule for `min`. Granule `j` must also not hold the first row of its run. That is guaranteed when granule `j - 1`
+/// starts with the same prefix too, because then the run already started at or before the first row of granule
+/// `j - 1`. So with `min`, granule `j` is skipped only when granules `j - 1`, `j` and `j + 1` all start with the same
+/// prefix. This condition implies the one for the maximum, so it also serves queries with both.
+///
+/// Supported aggregates. `max(k)`, `argMax(x, k)`, `min(k)` and `argMin(x, k)`, all on the same `k`. Besides them, any
+/// aggregate whose arguments depend only on the prefix and whose result depends only on which distinct argument values
+/// it sees (`min`, `max`, `any`, `uniq*`, `groupUniqArray`, ...): an argument is constant within a run, so such an
+/// aggregate needs one row of every run of the group, which the kept last granule of each run provides. Other
+/// aggregates (`sum`, `count`, ...) need every row, so the optimization is not applied with them.
+///
+/// Without `max`/`min` of the next column (`GROUP BY` with only aggregates of the previous kind or none, and
+/// `DISTINCT`), the prefix is the shortest sorting key prefix that covers the keys and arguments, and the last granule
+/// of each run is kept, as for `max`: then every run is present.
+///
+/// `LIMIT BY`. `ORDER BY <keys>, k DESC LIMIT n BY <keys>` needs the last `n` rows of each run (the first `n` with
+/// `ASC`), plus the offset: granule `j` is skipped when at least that many rows of its run are known to follow it
+/// (or precede it). The rows of each run are counted once per part, over the granules selected by the index analysis,
+/// so the planning time is proportional to them.
 ///
 /// Filters. The filter is split into conjuncts:
 /// - A conjunct that depends only on the prefix columns removes whole runs, so it does not matter.
@@ -63,21 +80,16 @@ namespace DB::QueryPlanOptimizations
 ///   must be exact (not relaxed): a conjunct on a column outside the primary index, or on a function the
 ///   analysis does not know, disables the optimization.
 ///
-/// Supported aggregates: `max(k)`, `argMax(x, k)`, `min(k)` and `argMin(x, k)`, all on the same `k`, plus aggregates
-/// whose result depends only on the set of distinct values of arguments that depend only on the prefix (`min`, `max`,
-/// `any`, `uniq*`, `groupUniqArray`, ...), which only need every run to be present.
-///
-/// Without `max(k)`-like aggregates (`GROUP BY` with only such aggregates or none, and `DISTINCT`), the prefix is the
-/// shortest sorting key prefix that covers the keys and arguments, and the last granule of each run is kept, as for
-/// `max`: then every run is present.
-///
-/// `ORDER BY <keys>, k DESC LIMIT n BY <keys>` needs the last `n` rows of each run (the first `n` with `ASC`), plus the
-/// offset: granule `j` is skipped when at least that many rows of its run are known to follow it (or precede it).
-///
-/// The rule assumes that every row of the part reaches the aggregation unless the filter removes it, and that
-/// the stored order is the order the aggregation uses. So it is not applied with `FINAL`, sampling, reverse
-/// sorting keys or key types whose order or equality differ from the aggregation's, and parts with deleted rows,
-/// patch parts or on-the-fly mutations are read in full.
+/// When the rule is not applied. It assumes that every row of the part reaches the aggregation unless the filter
+/// removes it, that the row that proves a granule unnecessary takes part in the result, and that the stored order is
+/// the order the aggregation uses. So it is not applied with:
+/// - `FINAL`, sampling, parallel replicas, reverse sorting keys, or key types whose order or equality differ from the
+///   aggregation's (see `isSupportedKeyType`);
+/// - `UNIQUE KEY` tables, whose delete bitmap hides rows; parts with deleted rows, patch parts or on-the-fly
+///   mutations are read in full;
+/// - `argMin`/`argMax` of a `Nullable` value, which ignore the rows where it is NULL;
+/// - a filter on the witness rows when a primary key column may contain NULL;
+/// - `LIMIT BY` whose length plus offset overflows (`LIMIT -n OFFSET m BY`), or with `arrayJoin` above the sorting.
 
 /// The order and equality of the primary index must agree with the aggregation. `Nullable`: `max` and `min`
 /// ignore NULLs, which sort at an end of the run. Floating point: NaN has no consistent order, and `-0` and `+0`
