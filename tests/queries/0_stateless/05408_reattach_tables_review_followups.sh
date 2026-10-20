@@ -78,7 +78,17 @@ ${CLICKHOUSE_CLIENT} -q "
     INSERT INTO t_plain VALUES ('2026-01-01 00:00:00', 'UTC');
     ALTER TABLE t_plain ADD PROJECTION p (SELECT dt, tz ORDER BY tz);
 "
-check_if_not_detached "SELECT count() FROM t_tz SETTINGS optimize_use_projections = 0, allow_nonconst_timezone_arguments = 0" t_tz
+# The internal `ATTACH` runs with the settings of the default profile. The test configuration
+# (`tests/config/users.d/nonconst_timezone.xml`) enables `allow_nonconst_timezone_arguments` there, and then
+# the projection is valid for the `ATTACH`, so the table may be reattached.
+DEFAULT_ALLOWS_NONCONST_TIMEZONE=$(${CLICKHOUSE_CLIENT} -q "
+    SELECT count() FROM system.settings_profile_elements
+    WHERE profile_name = 'default' AND setting_name = 'allow_nonconst_timezone_arguments' AND value IN ('1', 'true')")
+if [ "$DEFAULT_ALLOWS_NONCONST_TIMEZONE" -eq 0 ]; then
+    check_if_not_detached "SELECT count() FROM t_tz SETTINGS optimize_use_projections = 0, allow_nonconst_timezone_arguments = 0" t_tz
+else
+    check_if_detached "SELECT count() FROM t_tz SETTINGS optimize_use_projections = 0, allow_nonconst_timezone_arguments = 0" t_tz
+fi
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_tz SETTINGS optimize_use_projections = 0"
 # A control: a projection the default settings accept does not stop the reattach.
 check_if_detached "SELECT count() FROM t_plain" t_plain
