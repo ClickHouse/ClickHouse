@@ -83,13 +83,12 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be Point", getName());
             else
             {
-                CorrectedGeometries<LeftConverter> first(arguments[0].column);
-                CorrectedGeometries<RightConverter> second(arguments[1].column);
-
-                for (size_t i = 0; i < input_rows_count; ++i)
-                {
-                    res_data.emplace_back(boost::geometry::distance(first.get(i), second.get(i)));
-                }
+                forEachCorrectedGeometryPair<LeftConverter, RightConverter>(
+                    arguments[0].column, arguments[1].column, input_rows_count, name,
+                    [&](const auto & left, const auto & right)
+                    {
+                        res_data.emplace_back(boost::geometry::distance(left, right));
+                    });
             }
         });
 
