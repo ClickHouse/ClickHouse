@@ -145,7 +145,7 @@ ch_cc_library(
         "src/**/*.h",
     ]),
     hdrs = glob(["include/**/*.h"]),
-    additional_compiler_inputs = ((glob([
+    additional_compiler_inputs = glob([
         "plugin/federated/*.cc",
         "plugin/federated/*.cu",
         "plugin/federated/*.cuh",
@@ -156,7 +156,7 @@ ch_cc_library(
         "plugin/federated/README.md",
         "plugin/federated/federated.proto",
         "plugin/sycl/README.md",
-    ]) + [
+    ] + [
         "src/global_config.cc",
         "src/data/gradient_index_page_source.cc",
         "src/data/data.cc",
@@ -265,7 +265,7 @@ ch_cc_library(
         "src/gbm/gbtree.cc",
         "src/gbm/gblinear.cc",
         "src/context.cc",
-    ]),
+    ],
     copts = [
         "-w",
         "-std=c++23",

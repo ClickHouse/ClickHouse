@@ -16,11 +16,9 @@ _GENERATED_HDRS_0 = [
 _GENERATED_LOCAL_INCLUDES_0 = [
     "../../../" + "contrib/jemalloc-cmake/include",
     "../../../" + "contrib/libdivide-cmake",
-] + [
     "../../../" + "contrib/pdqsort",
     "../../../" + "contrib/ipnsort",
     "../../../" + "contrib/driftsort",
-] + [
     "../../../" + (repository_path("contrib/sz3") + "/include"),
     "../../../" + "contrib/sz3-cmake",
     "../../../" + (repository_path("contrib/NuRaft") + "/include"),
@@ -45,7 +43,7 @@ ch_cc_library(
         "rust/workspace/pco/include",
     ],
     link_runtime = True,
-    local_defines = (select({
+    local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
             "ARM_ACLE",
@@ -103,7 +101,7 @@ ch_cc_library(
             "X86_SSSE3",
         ],
         "@platforms//cpu:aarch64": [],
-    })) + [
+    }) + [
         "ZLIB_COMPAT",
         "ZOOKEEPER_LOG",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
@@ -115,7 +113,7 @@ ch_cc_library(
         "../../../bazel/gen/base",
         "../../../base/pcg-random",
     ] + _GENERATED_LOCAL_INCLUDES_0,
-    deps = (select({
+    deps = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
             "@clickhouse_llvm_project//:LLVMAArch64CodeGen",
@@ -367,10 +365,10 @@ ch_cc_library(
         "//src/Parsers/Prometheus/grammar:headers",
         "//src/Storages/System:headers",
         "//src/TableFunctions:headers",
-    ]),
+    ],
 )
 
-_GENERATED_LOCAL_DEFINES_0 = (select({
+_GENERATED_LOCAL_DEFINES_0 = select({
     "@platforms//cpu:x86_64": [],
     "@platforms//cpu:aarch64": [
         "ARM_ACLE",
@@ -428,7 +426,7 @@ _GENERATED_LOCAL_DEFINES_0 = (select({
         "X86_SSSE3",
     ],
     "@platforms//cpu:aarch64": [],
-})) + [
+}) + [
     "ZLIB_COMPAT",
     "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
     "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
@@ -437,7 +435,7 @@ _GENERATED_LOCAL_DEFINES_0 = (select({
 
 ch_cc_library(
     name = "clickhouse_common_zookeeper_base",
-    srcs = ([
+    srcs = [
         "IKeeper.cpp",
         "KeeperException.cpp",
         "KeeperFeatureFlags.cpp",
@@ -455,7 +453,7 @@ ch_cc_library(
         "ZooKeeperNodeCache.cpp",
         "ZooKeeperPathUtils.cpp",
         "ZooKeeperWithFaultInjection.cpp",
-    ] + glob(["KeeperClientCLI/*.cpp"])),
+    ] + glob(["KeeperClientCLI/*.cpp"]),
     hdrs = _GENERATED_HDRS_0,
     clickhouse_code = True,
     copts = [
@@ -477,7 +475,7 @@ ch_cc_library(
         "../../../bazel/gen/base",
         "../../../base/pcg-random",
     ] + _GENERATED_LOCAL_INCLUDES_0,
-    deps = (select({
+    deps = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
             "@clickhouse_llvm_project//:LLVMAArch64CodeGen",
@@ -728,7 +726,7 @@ ch_cc_library(
         "//src/Parsers/Prometheus/grammar:headers",
         "//src/Storages/System:headers",
         "//src/TableFunctions:headers",
-    ]),
+    ],
 )
 
 ch_cc_library(
@@ -755,7 +753,7 @@ ch_cc_library(
         "../../../bazel/gen/base",
         "../../../base/pcg-random",
     ] + _GENERATED_LOCAL_INCLUDES_0,
-    deps = (select({
+    deps = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
             "@clickhouse_llvm_project//:LLVMAArch64CodeGen",
@@ -1006,7 +1004,7 @@ ch_cc_library(
         "//src/Parsers/Prometheus/grammar:headers",
         "//src/Storages/System:headers",
         "//src/TableFunctions:headers",
-    ]),
+    ],
 )
 
 cc_library(

@@ -8,7 +8,7 @@ exports_files([
 
 ch_cc_library(
     name = "_mecab",
-    srcs = ([
+    srcs = [
         "mecab/src/char_property.cpp",
         "mecab/src/connector.cpp",
         "mecab/src/context_id.cpp",
@@ -30,7 +30,7 @@ ch_cc_library(
         "mecab/src/viterbi.cpp",
         "mecab/src/writer.cpp",
         "@clickhouse//contrib/MeCab-cmake:config.h",
-    ]),
+    ],
     hdrs = glob(["mecab/src/**/*.h"]),
     copts = [
         "-w",

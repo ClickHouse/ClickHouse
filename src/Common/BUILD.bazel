@@ -446,7 +446,7 @@ _GENERATED_HDRS_0 = [
     "AsynchronousMetricDocumentation.inc",
 ]
 
-_GENERATED_LOCAL_DEFINES_0 = (select({
+_GENERATED_LOCAL_DEFINES_0 = select({
     "@platforms//cpu:x86_64": [],
     "@platforms//cpu:aarch64": [
         "ARM_ACLE",
@@ -503,7 +503,7 @@ _GENERATED_LOCAL_DEFINES_0 = (select({
         "X86_SSSE3",
     ],
     "@platforms//cpu:aarch64": [],
-})) + [
+}) + [
     "ZLIB_COMPAT",
     "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
     "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
@@ -513,11 +513,9 @@ _GENERATED_LOCAL_DEFINES_0 = (select({
 _GENERATED_LOCAL_INCLUDES_0 = [
     "../../" + "contrib/jemalloc-cmake/include",
     "../../" + "contrib/libdivide-cmake",
-] + [
     "../../" + "contrib/pdqsort",
     "../../" + "contrib/ipnsort",
     "../../" + "contrib/driftsort",
-] + [
 ]
 
 _GENERATED_DEPS_0 = [
@@ -637,7 +635,6 @@ _GENERATED_DEPS_0 = [
     "@clickhouse_cctz//:tzdata",
     "@clickhouse_google_protobuf//:utf8_validity",
     "//base/widechar_width:widechar_width",
-] + [
     "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
     "@clickhouse_fast_float//:fast_float",
     "@clickhouse_jwt_cpp//:jwt_cpp",
@@ -647,7 +644,6 @@ _GENERATED_DEPS_0 = [
     "@clickhouse_msgpack_c//:msgpack_c",
     "@clickhouse_pocketfft//:pocketfft",
     "@clickhouse_sparsehash_c11//:sparsehash_c11",
-] + [
     "//base/glibc-compatibility:headers",
     "//base/glibc-rseq:headers",
     "//base/poco/Foundation:headers",
@@ -666,7 +662,6 @@ _GENERATED_DEPS_0 = [
     "//contrib/libdivide-cmake:headers",
     "//contrib/openssl-cmake:headers",
     "//contrib/pdqsort:headers",
-] + [
     "//:headers",
     "//base:base_headers",
     "//src:headers",

@@ -36,9 +36,8 @@ ch_cc_library(
         "libs/context/src/asm/make_x86_64_sysv_elf_gas.S",
         "libs/context/src/asm/ontop_x86_64_sysv_elf_gas.S",
     ],
-    copts = (
-        _BOOST_COPTS
-    ),
+    copts =
+        _BOOST_COPTS,
     llvm_headers = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0 + [
@@ -53,7 +52,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": glob(["libs/context/src/asm/*_arm64_aapcs_elf_gas.S"]),
     }),
     hdrs = glob(["libs/context/**/*.hpp"]),
-    additional_compiler_inputs = ((["libs/context/src/asm/jump_i386_sysv_elf_gas.S"] + select({
+    additional_compiler_inputs = ["libs/context/src/asm/jump_i386_sysv_elf_gas.S"] + select({
         "@platforms//cpu:x86_64": [
             "libs/context/src/asm/make_i386_sysv_elf_gas.S",
         ],
@@ -63,7 +62,7 @@ ch_cc_library(
             "libs/context/src/asm/make_x86_64_sysv_elf_gas.S",
             "libs/context/src/asm/ontop_x86_64_sysv_elf_gas.S",
         ],
-    })) + select({
+    }) + select({
         "@platforms//cpu:x86_64": [
             "libs/context/src/asm/jump_x86_64_sysv_elf_gas.S",
             "libs/context/src/asm/make_x86_64_sysv_elf_gas.S",
@@ -71,7 +70,7 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [
         ],
-    })),
+    }),
     language = "ASM",
     llvm_headers = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -100,9 +99,8 @@ ch_cc_library(
         "libs/coroutine/**/*.h",
         "libs/coroutine/**/*.hpp",
     ]),
-    copts = (
-        _BOOST_COPTS
-    ),
+    copts =
+        _BOOST_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":_boost_context"],
 )
@@ -138,9 +136,8 @@ ch_cc_library(
         "libs/graph/**/*.h",
         "libs/graph/**/*.hpp",
     ]),
-    copts = (
-        _BOOST_COPTS
-    ),
+    copts =
+        _BOOST_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":_boost_regex"],
 )
@@ -181,7 +178,7 @@ ch_cc_library(
         "-w",
         "-std=c++23",
     ],
-    local_defines = (select({
+    local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
             "ARM_ACLE",
@@ -220,7 +217,7 @@ ch_cc_library(
             "X86_SSSE3",
         ],
         "@platforms//cpu:aarch64": [],
-    })) + [
+    }) + [
         "ZLIB_COMPAT",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
@@ -260,9 +257,8 @@ ch_cc_library(
         "libs/regex/src/posix_api.cpp",
         "libs/regex/src/wide_posix_api.cpp",
     ],
-    copts = (
-        _BOOST_COPTS
-    ),
+    copts =
+        _BOOST_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":boost_headers",

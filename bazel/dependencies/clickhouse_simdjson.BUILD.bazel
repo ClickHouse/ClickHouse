@@ -27,7 +27,7 @@ ch_cc_library(
             "src/simdjson.cpp",
         ],
     ),
-    copts = ([
+    copts = [
         "-w",
         "-std=c++23",
     ] + select({
@@ -35,7 +35,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [
             "-DSIMDJSON_IMPLEMENTATION_FALLBACK=1",
         ],
-    })),
+    }),
     includes = [
         "include",
     ],

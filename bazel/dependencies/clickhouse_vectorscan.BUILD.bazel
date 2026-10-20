@@ -38,7 +38,7 @@ _VECTORSCAN_LOCAL_INCLUDES = [
 ch_cc_library(
     name = "_vectorscan__compile_0",
     srcs = select({
-        "@platforms//cpu:x86_64": ([
+        "@platforms//cpu:x86_64": [
             "src/alloc.c",
             "src/crc32.c",
             "src/database.c",
@@ -57,7 +57,7 @@ ch_cc_library(
             "src/util/arch/x86/cpuid_flags.c",
             "src/util/arch/x86/masked_move.c",
             "@clickhouse//contrib/vectorscan-cmake:amd64/config.h",
-        ]) + glob(
+        ] + glob(
             [
                 "include/**/*.hpp",
                 "src/fdr/**/*.h",
@@ -354,7 +354,7 @@ ch_cc_library(
                 "src/util/verify_types.h",
             ],
         ),
-        "@platforms//cpu:aarch64": ([
+        "@platforms//cpu:aarch64": [
             "src/alloc.c",
             "src/crc32.c",
             "src/database.c",
@@ -372,7 +372,7 @@ ch_cc_library(
             "src/util/state_compress.c",
             "src/util/arch/arm/cpuid_flags.c",
             "@clickhouse//contrib/vectorscan-cmake:aarch64/config.h",
-        ]) + glob(
+        ] + glob(
             [
                 "include/**/*.hpp",
                 "src/fdr/**/*.h",
@@ -670,10 +670,10 @@ ch_cc_library(
             ],
         ),
     }),
-    hdrs = (["@clickhouse//contrib/vectorscan-cmake:common/hs_version.h"] + glob([
+    hdrs = ["@clickhouse//contrib/vectorscan-cmake:common/hs_version.h"] + glob([
         "src/**/*.h",
         "src/**/*.hpp",
-    ])),
+    ]),
     additional_compiler_inputs = [
         "src/compiler/error.cpp",
         "src/util/supervector/arch/arm/impl.cpp",
@@ -681,7 +681,7 @@ ch_cc_library(
         "src/util/supervector/arch/x86/impl.cpp",
         "src/rose/match.c",
     ],
-    copts = ([
+    copts = [
         "-w",
         "-std=gnu11",
         "-g1",
@@ -693,7 +693,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [
             "contrib/vectorscan-cmake/aarch64",
         ],
-    })),
+    }),
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -706,7 +706,7 @@ ch_cc_library(
 ch_cc_library(
     name = "_vectorscan__compile_1",
     srcs = select({
-        "@platforms//cpu:x86_64": ([
+        "@platforms//cpu:x86_64": [
             "src/grey.cpp",
             "src/hs.cpp",
         ] + glob(["src/compiler/*.cpp"]) + ([
@@ -867,7 +867,7 @@ ch_cc_library(
             "src/util/ue2string.cpp",
             "src/util/supervector/arch/x86/impl.cpp",
             "@clickhouse//contrib/vectorscan-cmake:amd64/config.h",
-        ])) + glob(
+        ]) + glob(
             [
                 "include/**/*.hpp",
                 "src/compiler/**/*.h",
@@ -1260,7 +1260,7 @@ ch_cc_library(
                 "src/util/verify_types.h",
             ],
         ),
-        "@platforms//cpu:aarch64": ([
+        "@platforms//cpu:aarch64": [
             "src/grey.cpp",
             "src/hs.cpp",
         ] + glob(["src/compiler/*.cpp"]) + ([
@@ -1421,7 +1421,7 @@ ch_cc_library(
             "src/util/ue2string.cpp",
             "src/util/supervector/arch/arm/impl.cpp",
             "@clickhouse//contrib/vectorscan-cmake:aarch64/config.h",
-        ])) + glob(
+        ]) + glob(
             [
                 "include/**/*.hpp",
                 "src/compiler/**/*.h",
@@ -1815,11 +1815,11 @@ ch_cc_library(
             ],
         ),
     }),
-    hdrs = (["@clickhouse//contrib/vectorscan-cmake:common/hs_version.h"] + glob([
+    hdrs = ["@clickhouse//contrib/vectorscan-cmake:common/hs_version.h"] + glob([
         "src/**/*.h",
         "src/**/*.hpp",
-    ])),
-    additional_compiler_inputs = ((["src/rose/match.c"] + select({
+    ]),
+    additional_compiler_inputs = ["src/rose/match.c"] + select({
         "@platforms//cpu:x86_64": [
             "src/util/supervector/arch/arm/impl.cpp",
             "src/util/supervector/arch/ppc64el/impl.cpp",
@@ -1828,7 +1828,7 @@ ch_cc_library(
             "src/util/supervector/arch/ppc64el/impl.cpp",
             "src/util/supervector/arch/x86/impl.cpp",
         ],
-    })) + [
+    }) + [
         "src/compiler/error.cpp",
     ] + select({
         "@platforms//cpu:x86_64": [
@@ -1837,8 +1837,8 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [
             "src/util/supervector/arch/arm/impl.cpp",
         ],
-    })),
-    copts = ([
+    }),
+    copts = [
         "-w",
         "-std=c++17",
         "-g1",
@@ -1850,7 +1850,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [
             "contrib/vectorscan-cmake/aarch64",
         ],
-    })),
+    }),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _VECTORSCAN_LOCAL_INCLUDES,
     deps = _GENERATED_DEPS_0 + [
@@ -1872,10 +1872,10 @@ ch_cc_library(
             "@clickhouse//contrib/vectorscan-cmake:aarch64/config.h",
         ] + glob(["include/**/*.hpp"]),
     }),
-    hdrs = (["@clickhouse//contrib/vectorscan-cmake:common/hs_version.h"] + glob([
+    hdrs = ["@clickhouse//contrib/vectorscan-cmake:common/hs_version.h"] + glob([
         "src/**/*.h",
         "src/**/*.hpp",
-    ])),
+    ]),
     additional_compiler_inputs = [
         "src/compiler/error.cpp",
         "src/rose/match.c",
@@ -1883,7 +1883,7 @@ ch_cc_library(
         "src/util/supervector/arch/ppc64el/impl.cpp",
         "src/util/supervector/arch/x86/impl.cpp",
     ],
-    copts = ([
+    copts = [
         "-w",
         "-std=c++17",
         "-g1",
@@ -1898,7 +1898,7 @@ ch_cc_library(
             "-I",
             "contrib/vectorscan-cmake/aarch64",
         ],
-    })),
+    }),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _VECTORSCAN_LOCAL_INCLUDES,
     deps = _GENERATED_DEPS_0 + [

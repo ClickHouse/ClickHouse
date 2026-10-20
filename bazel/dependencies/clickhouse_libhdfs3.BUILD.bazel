@@ -87,7 +87,7 @@ expand_template(
     template = ":src/platform.h.in",
 )
 
-_GENERATED_LOCAL_DEFINES_0 = (select({
+_GENERATED_LOCAL_DEFINES_0 = select({
     "@platforms//cpu:x86_64": [],
     "@platforms//cpu:aarch64": [
         "ARM_ACLE",
@@ -138,7 +138,7 @@ _GENERATED_LOCAL_DEFINES_0 = (select({
         "X86_SSSE3",
     ],
     "@platforms//cpu:aarch64": [],
-})) + [
+}) + [
     "ZLIB_COMPAT",
     "_GLIBCXX_USE_NANOSLEEP",
     "_GNU_SOURCE",
@@ -299,7 +299,7 @@ ch_cc_library(
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
     ] + _GENERATED_HEADER_INPUTS_0,
-    additional_compiler_inputs = (glob([
+    additional_compiler_inputs = glob([
         "src/*.in",
         "src/proto/*.proto",
     ]) + [
@@ -307,8 +307,8 @@ ch_cc_library(
         "src/common/crc_iscsi_v_pcl.asm",
         "src/common/perf_checksum.cpp",
         "src/rpc/RpcClient.cpp",
-    ]),
-    copts = ([
+    ],
+    copts = [
         "-w",
         "-std=c++23",
         "-include",
@@ -339,7 +339,7 @@ ch_cc_library(
             repository_path("contrib/isa-l") + "/erasure_code",
         ],
         "@platforms//cpu:aarch64": [],
-    })),
+    }),
     implementation_deps = [
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse_krb5//:_krb5",
@@ -354,9 +354,10 @@ ch_cc_library(
         "config/contrib/libhdfs3-cmake",
     ] + _HDFS3_LOCAL_INCLUDES,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
-    deps = (_GENERATED_DEPS_0 + [
+    deps = _GENERATED_DEPS_0 + [
         "@clickhouse_boost//:boost_headers",
-    ]) + ["@clickhouse_abseil_cpp//:abseil_cpp_headers"],
+        "@clickhouse_abseil_cpp//:abseil_cpp_headers",
+    ],
 )
 
 ch_cc_library(
@@ -407,7 +408,7 @@ ch_cc_library(
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
     ] + _GENERATED_HEADER_INPUTS_0,
-    additional_compiler_inputs = (glob([
+    additional_compiler_inputs = glob([
         "src/*.in",
         "src/client/*.cpp",
         "src/common/*.cpp",
@@ -426,8 +427,8 @@ ch_cc_library(
         "src/rpc/RpcRemoteCall.cpp",
         "src/rpc/RpcServerInfo.cpp",
         "src/rpc/SaslClient.cpp",
-    ]),
-    copts = ([
+    ],
+    copts = [
         "-w",
         "-std=c++23",
         "-include",
@@ -459,7 +460,7 @@ ch_cc_library(
             repository_path("contrib/isa-l") + "/erasure_code",
         ],
         "@platforms//cpu:aarch64": [],
-    })),
+    }),
     implementation_deps = [
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse_krb5//:_krb5",
@@ -474,9 +475,10 @@ ch_cc_library(
         "config/contrib/libhdfs3-cmake",
     ] + _HDFS3_LOCAL_INCLUDES,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
-    deps = (_GENERATED_DEPS_0 + [
+    deps = _GENERATED_DEPS_0 + [
         "@clickhouse_boost//:boost_headers",
-    ]) + ["@clickhouse_abseil_cpp//:abseil_cpp_headers"],
+        "@clickhouse_abseil_cpp//:abseil_cpp_headers",
+    ],
 )
 
 cc_library(
@@ -500,14 +502,14 @@ cc_library(
         "include",
         "include/hdfs",
     ],
-    deps = ([
+    deps = [
         "@clickhouse_libgsasl//:_gsasl",
     ] + select({
         "@platforms//cpu:x86_64": [
             "@clickhouse_isa_l//:_isal",
         ],
         "@platforms//cpu:aarch64": [],
-    })) + [
+    }) + [
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse_libxml2//:_libxml2",
         ":_hdfs3__compile_0",

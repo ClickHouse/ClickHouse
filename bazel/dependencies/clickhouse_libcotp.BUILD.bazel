@@ -8,7 +8,7 @@ exports_files([
 
 ch_cc_library(
     name = "_libcotp",
-    srcs = (glob(["src/*.c"]) + [
+    srcs = glob(["src/*.c"]) + [
         "src/utils/base32.c",
         "src/utils/otpauth_uri.c",
         "src/utils/pct.c",
@@ -16,7 +16,7 @@ ch_cc_library(
         "src/utils/whash_openssl.c",
         "src/utils/whmac_openssl.c",
         "src/utils/yaotp_uri.c",
-    ]) + glob(["src/**/*.h"]),
+    ] + glob(["src/**/*.h"]),
     hdrs = glob(["src/**/*.h"]),
     copts = [
         "-w",

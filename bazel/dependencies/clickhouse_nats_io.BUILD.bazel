@@ -8,7 +8,7 @@ exports_files([
 
 ch_cc_library(
     name = "_nats_io",
-    srcs = ([
+    srcs = [
         "src/asynccb.c",
         "src/buf.c",
         "src/comsock.c",
@@ -34,7 +34,7 @@ ch_cc_library(
         "src/timer.c",
         "src/url.c",
         "src/util.c",
-    ] + glob(["src/glib/*.c"]) + glob(["src/unix/*.c"])),
+    ] + glob(["src/glib/*.c"]) + glob(["src/unix/*.c"]),
     hdrs = glob(["src/**/*.h"]),
     copts = [
         "-w",

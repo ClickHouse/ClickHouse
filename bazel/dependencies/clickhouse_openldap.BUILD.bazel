@@ -59,7 +59,7 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    local_includes = (select({
+    local_includes = select({
         "@platforms//cpu:x86_64": [
             repository_local_include("contrib/openldap-cmake/linux_x86_64/include", "contrib/openldap"),
         ],
@@ -69,13 +69,13 @@ ch_cc_library(
     }) + [
         "include",
         "libraries/liblber",
-    ]),
+    ],
     deps = ["@clickhouse_openssl//:ssl"],
 )
 
 ch_cc_library(
     name = "_ldap",
-    srcs = ([
+    srcs = [
         "libraries/libldap/abandon.c",
         "libraries/libldap/account_usability.c",
         "libraries/libldap/add.c",
@@ -150,7 +150,7 @@ ch_cc_library(
         "libraries/libldap/vlvctrl.c",
         "libraries/libldap/whoami.c",
         "@clickhouse//bazel:gen/contrib/openldap-cmake/ldap-version.c",
-    ]) + glob(["libraries/libldap/**/*.h"]),
+    ] + glob(["libraries/libldap/**/*.h"]),
     additional_compiler_inputs = [
         "libraries/liblber/debug.c",
         "libraries/libldap/dnssrv.c",
@@ -171,7 +171,7 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    local_includes = (select({
+    local_includes = select({
         "@platforms//cpu:x86_64": [
             repository_local_include("contrib/openldap-cmake/linux_x86_64/include", "contrib/openldap"),
         ],
@@ -181,6 +181,6 @@ ch_cc_library(
     }) + [
         "include",
         "libraries/libldap",
-    ]),
+    ],
     deps = [":_lber"],
 )

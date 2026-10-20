@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Factor ordered CPU dependency/definition lists and check all selections.
+"""Factor ordered C++ BUILD lists and check all selections.
 
 Preview writes only under --output. --write requires an unchanged checkout
 after every changed file passed the pre- and post-buildifier proofs.
@@ -8,12 +8,15 @@ after every changed file passed the pre- and post-buildifier proofs.
 import argparse
 import ast
 from collections import Counter, defaultdict
+import copy
 from difflib import SequenceMatcher
 import hashlib
+import io
 import json
 from pathlib import Path
 import subprocess
 import sys
+import tokenize
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "bazel"))
@@ -22,7 +25,7 @@ from initial_migration.normalize_cpp_builds import Configured, call_name, remova
 
 CPUS = ("@platforms//cpu:x86_64", "@platforms//cpu:aarch64")
 DEFAULT = "//conditions:default"
-FIELDS = {"deps", "implementation_deps", "local_defines"}
+FIELDS = {"deps", "implementation_deps", "local_defines", "hdrs", "textual_hdrs", "local_includes"}
 CPP_RULES = CPP_LIBRARIES | {"cc_binary", "cc_test", "llvm_runtime_objects", "nasm_objects"}
 
 
@@ -30,30 +33,93 @@ def digest(content):
     return hashlib.sha256(content.encode()).hexdigest()
 
 
-def values(source):
-    """Visit lists in the requested attributes and constants used only there."""
+def values(source, guards=False):
+    """Visit typed lists and constants used only in those typed attributes."""
     relevant = defaultdict(set)
+    guarded_reads = defaultdict(set)
     all_reads = defaultdict(set)
+    witnesses = {}
+    if guards:
+        configured = StrictConfigured("unsupported", collapse_failed=False).visit(copy.deepcopy(source.module))
+        for stmt in configured.body:
+            if not isinstance(stmt, ast.Expr) or call_name(stmt.value) not in CPP_RULES:
+                continue
+            name = next((kw.value.value for kw in stmt.value.keywords
+                         if kw.arg == "name" and isinstance(kw.value, ast.Constant)), None)
+            if name is not None:
+                witnesses[name] = {kw.arg for kw in stmt.value.keywords if no_match(kw.value)}
     for node in ast.walk(source.module):
         if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
             all_reads[node.id].add(id(node))
     for _, rule in source.rules():
         if call_name(rule) not in CPP_RULES:
             continue
+        name = next((kw.value.value for kw in rule.keywords
+                     if kw.arg == "name" and isinstance(kw.value, ast.Constant)), None)
         for attr in rule.keywords:
             if attr.arg in FIELDS:
-                yield attr.arg, attr.value, attr.col_offset
+                failed = witnesses.get(name, set())
+                # Two attributes must never use one another as permission to
+                # remove both CPU checks. Prefer a witness we never rewrite.
+                anchor = min(failed, key=lambda field: (field in FIELDS, field)) if failed else None
+                guarded = anchor is not None and anchor != attr.arg
+                yield attr.arg, attr, attr.col_offset, guarded
                 for node in ast.walk(attr.value):
                     if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
                         relevant[node.id, attr.arg].add(id(node))
+                        if guarded:
+                            guarded_reads[node.id, attr.arg].add(id(node))
     for stmt in source.module.body:
         if (isinstance(stmt, ast.Assign) and len(stmt.targets) == 1
                 and isinstance(stmt.targets[0], ast.Name)):
             name = stmt.targets[0].id
             for field in FIELDS:
                 if all_reads[name] and all_reads[name] == relevant[name, field]:
-                    yield field, stmt.value, 0
+                    yield field, stmt, 0, all_reads[name] == guarded_reads[name, field]
                     break
+
+
+def list_nodes(node):
+    """Do not recurse into list elements: repository_path() returns a string."""
+    yield node
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        yield from list_nodes(node.left)
+        yield from list_nodes(node.right)
+    elif call_name(node) == "select" and node.args and isinstance(node.args[0], ast.Dict):
+        for value in node.args[0].values:
+            yield from list_nodes(value)
+
+
+def list_parts(node):
+    """Flatten only additions in an attribute that requires a list."""
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return list_parts(node.left) + list_parts(node.right)
+    return [node]
+
+
+def typed_list(node):
+    """Reject tuple/string arithmetic and opaque functions in list additions."""
+    if isinstance(node, ast.List) or isinstance(node, ast.Name):
+        return True
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return typed_list(node.left) and typed_list(node.right)
+    return call_name(node) in {"select", "glob"}
+
+
+def canonical_list(node):
+    """Represent associative list additions in order, joining literal siblings."""
+    if not typed_list(node):
+        return node
+    parts = []
+    for item in list_parts(node):
+        if parts and isinstance(item, ast.List) and isinstance(parts[-1], ast.List):
+            parts[-1] = ast.List(elts=parts[-1].elts + item.elts, ctx=ast.Load())
+        else:
+            parts.append(item)
+    result = parts[0]
+    for item in parts[1:]:
+        result = ast.BinOp(left=result, op=ast.Add(), right=item)
+    return result
 
 
 def shared_runs(choices):
@@ -83,17 +149,40 @@ def shared_runs(choices):
 def factor(text, stats):
     source = Source(text)
     edits = []
-    for field, value, indent in values(source):
-        for node in ast.walk(value):
-            choices = select_dictionary(node)
-            if choices is None or not safe_expression(node):
+    for field, attribute, indent, guarded in values(source, guards=True):
+        edited = []
+        for node in list_nodes(attribute.value):
+            if call_name(node) != "select" or len(node.args) != 1 or node.keywords:
+                continue
+            choices = node.args[0]
+            if not isinstance(choices, ast.Dict):
+                continue
+            start, end = source.span(node)
+            if any(first <= start and end <= last for first, last in edited):
                 continue
             keys = {k.value for k in choices.keys if isinstance(k, ast.Constant)}
             if not set(CPUS) <= keys <= set(CPUS) | {DEFAULT} or len(keys) != len(choices.keys):
                 continue
             original = source.text(node)
+            if "#" in original:
+                stats["selects_with_comments_or_nested"] += 1
+                continue
+            branches = {k.value: v for k, v in zip(choices.keys, choices.values)}
+            shared = branches[CPUS[0]]
+            if (typed_list(shared) and ast_key(shared) == ast_key(branches[CPUS[1]])
+                    and (guarded or (DEFAULT in branches and ast_key(branches[DEFAULT]) == ast_key(shared)))):
+                replacement = source.text(shared)
+                if isinstance(shared, ast.BinOp):
+                    replacement = "(" + replacement + ")"
+                edits.append((start, end, replacement))
+                edited.append((start, end))
+                stats[field + "_equal_cpu_selects_removed"] += 1
+                continue
+            choices = select_dictionary(node)
+            if choices is None or not safe_expression(node):
+                continue
             # Preserve comments and never create nested edits.
-            if "#" in original or any(call_name(n) == "select"
+            if any(call_name(n) == "select"
                     for row in choices.values for item in row.elts for n in ast.walk(item)):
                 stats["selects_with_comments_or_nested"] += 1
                 continue
@@ -132,35 +221,90 @@ def factor(text, stats):
                 stats[field + "_selects_without_text_savings"] += 1
                 continue
             edits.append((*source.span(node), replacement))
+            edited.append((start, end))
             stats[field + "_selects_factored"] += 1
             stats[field + "_branch_literals_removed"] += (len(lists) - 1) * sum(map(len, runs))
     return source.rewrite(edits)
 
 
 def join(text):
-    """Join adjacent literal lists without dropping CPU-domain selects."""
+    """Flatten typed list additions; leave strings, tuples, and comments alone."""
     source = Source(text)
     edits = []
-    class Join(ast.NodeVisitor):
-        def visit_BinOp(self, node):
-            if (isinstance(node.op, ast.Add) and isinstance(node.left, ast.List)
-                    and isinstance(node.right, ast.List) and safe_expression(node)
-                    and "#" not in source.text(node)):
-                edits.append((*source.span(node), render_list(source, node.left.elts + node.right.elts, 4)))
+    for _, attr, indent, _ in values(source):
+        node = attr.value
+        if not isinstance(node, ast.BinOp) or not typed_list(node) or "#" in source.text(node):
+            continue
+        wanted = canonical_list(node)
+        if ast_key(wanted) == ast_key(node):
+            continue
+        chunks, pending = [], []
+        for item in list_parts(node):
+            if isinstance(item, ast.List):
+                pending.extend(item.elts)
             else:
-                self.generic_visit(node)
-    for _, value, _ in values(source):
-        Join().visit(value)
+                if pending:
+                    chunks.append(render_list(source, pending, indent))
+                    pending = []
+                chunks.append(source.text(item))
+        if pending:
+            chunks.append(render_list(source, pending, indent))
+        if chunks:
+            edits.append((*source.span(node), "(" + " + ".join(chunks) + ")"))
     return source.rewrite(edits)
 
 
 def normalize(text, stats=None):
     stats = stats if stats is not None else Counter()
     while True:
-        changed = join(factor(text, stats))
+        changed = remove_parens(join(factor(text, stats)))
         if changed == text:
             return text
         text = changed
+
+
+def remove_parens(text):
+    """Remove select/list grouping only if Python's parsed BUILD AST is identical."""
+    source = Source(text)
+    wanted = ast_key(source.module)
+    tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
+    pairs, stack = [], []
+    previous = None
+    ignorable = {tokenize.ENCODING, tokenize.NL, tokenize.NEWLINE, tokenize.COMMENT,
+                 tokenize.INDENT, tokenize.DEDENT, tokenize.ENDMARKER}
+    for index, token in enumerate(tokens):
+        if token.type in ignorable:
+            continue
+        if token.type == tokenize.OP and token.string == "(":
+            # Function calls cannot lose their parentheses. Calls such as
+            # select({...}) and glob([...]) stay intact.
+            called = previous is not None and (
+                previous.type == tokenize.NAME or previous.string in {")", "]", "}"})
+            stack.append((index, called))
+        elif token.type == tokenize.OP and token.string == ")" and stack:
+            first, called = stack.pop()
+            if not called:
+                pairs.append((first, index))
+        previous = token
+    # AST offsets count bytes, while tokenize columns count characters.
+    lines = text.splitlines(keepends=True)
+    def pos(where):
+        row, column = where
+        return source.starts[row - 1] + len(lines[row - 1][:column].encode())
+    removed = []
+    for first, last in pairs:
+        proposed = removed + [
+            (pos(tokens[first].start), pos(tokens[first].end), ""),
+            (pos(tokens[last].start), pos(tokens[last].end), ""),
+        ]
+        candidate = source.rewrite(proposed)
+        try:
+            parsed = ast.parse(candidate)
+        except SyntaxError:
+            continue
+        if ast_key(parsed) == wanted:
+            removed = proposed
+    return source.rewrite(removed)
 
 
 def no_match(node):
@@ -174,6 +318,18 @@ class StrictConfigured(Configured):
     generator proofs. That is insufficient here because an unsupported CPU
     must keep the original select() failure when no default was specified.
     """
+    def __init__(self, cpu, collapse_failed=True):
+        super().__init__(cpu)
+        self.collapse_failed = collapse_failed
+
+    def visit_Module(self, node):
+        node = super().visit_Module(node)
+        proof = Source.__new__(Source)
+        proof.module = node
+        for _, attr, _, _ in values(proof):
+            attr.value = canonical_list(attr.value)
+        return node
+
     def visit_Call(self, node):
         node = self.generic_visit(node)
         if call_name(node) == "select" and len(node.args) == 1 and not node.keywords:
@@ -188,6 +344,14 @@ class StrictConfigured(Configured):
                     return ast.Name(id="_NO_CPU_SELECT_MATCH_", ctx=ast.Load())
         if call_name(node) in CPP_LIBRARIES:
             node.keywords = [kw for kw in node.keywords if not removable_default(kw.arg, kw.value)]
+        if (self.collapse_failed and self.cpu == "@platforms//cpu:unsupported"
+                and call_name(node) in CPP_RULES
+                and any(no_match(kw.value) for kw in node.keywords)):
+            # An unsupported CPU cannot analyze this target through any
+            # attribute. Keep rule type/name for comparison, not failed values.
+            node.keywords = [kw for kw in node.keywords if kw.arg == "name"]
+            node.keywords.append(ast.keyword(arg="_failed_cpu_select",
+                                             value=ast.Constant(value=True)))
         node.keywords.sort(key=lambda kw: kw.arg or "")
         return node
 

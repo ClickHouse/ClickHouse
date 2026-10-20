@@ -1237,12 +1237,11 @@ ch_cc_library(
         "src/zone_info_source.cc",
     ] + glob(["src/**/*.h"]),
     hdrs = glob(["include/**/*.h"]),
-    copts = (
+    copts =
         [
             "-w",
             "-std=c++23",
-        ]
-    ),
+        ],
     includes = [
         "include",
     ],
@@ -2460,8 +2459,8 @@ ch_cc_library(
             "@clickhouse//bazel:gen/aarch64/embedded/contrib/cctz/testdata/zoneinfo/Zulu",
         ],
     }),
-    copts = (
-        ([
+    copts =
+        [
             "-w",
             "-std=c++23",
         ] + select({
@@ -2471,8 +2470,7 @@ ch_cc_library(
             "@platforms//cpu:aarch64": [
                 "--embed-dir=$(GENDIR)/bazel/gen/aarch64/embedded",
             ],
-        }))
-    ),
+        }),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )

@@ -26,7 +26,7 @@ expand_template(
     template = ":google/cloud/internal/build_info.cc.in",
 )
 
-_GENERATED_LOCAL_DEFINES_0 = (select({
+_GENERATED_LOCAL_DEFINES_0 = select({
     "@platforms//cpu:x86_64": [],
     "@platforms//cpu:aarch64": [
         "ARM_ACLE",
@@ -65,7 +65,7 @@ _GENERATED_LOCAL_DEFINES_0 = (select({
         "X86_SSSE3",
     ],
     "@platforms//cpu:aarch64": [],
-})) + [
+}) + [
     "ZLIB_COMPAT",
     "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
     "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
@@ -1356,7 +1356,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "google_cloud_cpp_storage",
-    srcs = ([
+    srcs = [
         "google/cloud/storage/auto_finalize.cc",
         "google/cloud/storage/bucket_access_control.cc",
         "google/cloud/storage/bucket_autoclass.cc",
@@ -1455,7 +1455,7 @@ ch_cc_library(
         "google/cloud/storage/version.cc",
         "google/cloud/storage/well_known_headers.cc",
         "google/cloud/storage/well_known_parameters.cc",
-    ]),
+    ],
     hdrs = [
         "@clickhouse//bazel:gen/base/base/GitHash.generated.cpp",
         "@clickhouse//bazel:gen/includes/configs/config_version.cpp",

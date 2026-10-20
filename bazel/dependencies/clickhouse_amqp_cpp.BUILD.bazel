@@ -11,7 +11,7 @@ exports_files([
 
 ch_cc_library(
     name = "_amqp-cpp",
-    srcs = ([
+    srcs = [
         "src/array.cpp",
         "src/channel.cpp",
         "src/channelimpl.cpp",
@@ -30,7 +30,7 @@ ch_cc_library(
         "src/receivedframe.cpp",
         "src/table.cpp",
         "src/watchable.cpp",
-    ]),
+    ],
     hdrs = glob(["**/*.h"]),
     copts = [
         "-w",

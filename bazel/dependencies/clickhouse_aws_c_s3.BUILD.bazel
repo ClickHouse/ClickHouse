@@ -21,7 +21,7 @@ ch_cc_library(
         "@clickhouse_aws_checksums//:aws_checksums_headers",
     ],
     language = "C",
-    local_defines = ([
+    local_defines = [
         "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
         "AWS_ENABLE_EPOLL",
         "AWS_PTHREAD_SETNAME_TAKES_2ARGS",
@@ -37,7 +37,7 @@ ch_cc_library(
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
-    ]),
+    ],
     deps = [":aws_c_s3_headers"],
 )
 

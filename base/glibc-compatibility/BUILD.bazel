@@ -5,7 +5,7 @@ package(default_visibility = ["//visibility:public"])
 
 ch_cc_library(
     name = "glibc-compatibility__compile_0",
-    srcs = ([
+    srcs = [
         "glibc-compatibility.c",
     ] + glob(["musl/_*.c"]) + [
         "musl/accept4.c",
@@ -22,7 +22,7 @@ ch_cc_library(
         "musl/fallocate.c",
         "musl/fcntl.c",
         "musl/futimens.c",
-    ]) + select({
+    ] + select({
         "@platforms//cpu:x86_64": ["musl/getauxval.c"],
         "@platforms//cpu:aarch64": [],
     }) + ([

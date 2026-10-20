@@ -23,8 +23,8 @@ ch_cc_library(
         ] + glob(["src/**/*.h"]),
     }),
     hdrs = glob(["include/**/*.h"]),
-    copts = (
-        ([
+    copts =
+        [
             "-w",
             "-std=c++23",
             "-I",
@@ -35,8 +35,7 @@ ch_cc_library(
             "@platforms//cpu:aarch64": [
                 "contrib/crc32c-cmake/aarch64",
             ],
-        }))
-    ),
+        }),
     includes = [
         "include",
     ],

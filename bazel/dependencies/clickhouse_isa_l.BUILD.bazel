@@ -38,7 +38,7 @@ _GENERATED_TARGET_COMPATIBLE_WITH_0 = select({
 ch_cc_library(
     name = "_isal__compile_0",
     srcs = select({
-        "@platforms//cpu:x86_64": ([
+        "@platforms//cpu:x86_64": [
             "crc/crc_base_aliases.c",
             "crc/crc_base.c",
             "crc/crc64_base.c",
@@ -58,7 +58,7 @@ ch_cc_library(
             "mem/mem_zero_detect_base.c",
             "raid/raid_base_aliases.c",
             "raid/raid_base.c",
-        ]),
+        ],
         "@platforms//cpu:aarch64": [],
     }),
     hdrs = select({
@@ -101,16 +101,13 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
-    deps = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [],
-    }),
+    deps = [],
 )
 
 nasm_objects(
     name = "_isal__nasm_1",
     srcs = select({
-        "@platforms//cpu:x86_64": ([
+        "@platforms//cpu:x86_64": [
             "crc/crc_multibinary.asm",
             "crc/crc16_t10dif_01.asm",
             "crc/crc16_t10dif_02.asm",
@@ -177,7 +174,7 @@ nasm_objects(
             "raid/pq_gen_avx512.asm",
             "raid/pq_gen_sse.asm",
             "raid/raid_multibinary.asm",
-        ] + glob(["raid/xor_*.asm"])),
+        ] + glob(["raid/xor_*.asm"]),
         "@platforms//cpu:aarch64": [],
     }),
     hdrs = select({
@@ -450,7 +447,7 @@ nasm_objects(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    copts = (select({
+    copts = select({
         "@platforms//cpu:x86_64": [
             "-D",
             "OS_LINUX",
@@ -473,7 +470,7 @@ nasm_objects(
             "-isystem",
             repository_path("contrib/llvm-project") + "/libcxxabi/include",
         ],
-    })),
+    }),
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     deps = _GENERATED_DEPS_0,

@@ -8,7 +8,7 @@ exports_files([
 
 ch_cc_library(
     name = "_uv",
-    srcs = (glob(["src/*.c"]) + [
+    srcs = glob(["src/*.c"]) + [
         "src/unix/async.c",
         "src/unix/core.c",
         "src/unix/dl.c",
@@ -32,7 +32,7 @@ ch_cc_library(
         "src/unix/procfs-exepath.c",
         "src/unix/random-getrandom.c",
         "src/unix/random-sysctl-linux.c",
-    ]) + glob(["src/**/*.h"]),
+    ] + glob(["src/**/*.h"]),
     hdrs = glob(["include/**/*.h"]),
     copts = [
         "-w",

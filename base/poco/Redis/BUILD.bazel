@@ -142,7 +142,7 @@ ch_cc_library(
         "@clickhouse_cctz//:tzdata",
         "@clickhouse_google_protobuf//:utf8_validity",
         "//base/widechar_width:widechar_width",
-    ] + [":poco_redis_headers"] + [
+        ":poco_redis_headers",
         "//base/poco/Foundation:headers",
         "//base/poco/Net:headers",
     ],

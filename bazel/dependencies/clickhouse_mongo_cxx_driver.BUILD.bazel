@@ -179,7 +179,7 @@ _GENERATED_LOCAL_DEFINES_0 = [
 
 ch_cc_library(
     name = "_bsoncxx",
-    srcs = ([
+    srcs = [
         "src/bsoncxx/lib/bsoncxx/private/itoa.cpp",
         "src/bsoncxx/lib/bsoncxx/private/version.cpp",
         "src/bsoncxx/lib/bsoncxx/v1/array/value.cpp",
@@ -208,7 +208,7 @@ ch_cc_library(
         "src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/types/bson_value/view.cpp",
         "src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/validate.cpp",
         "src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/vector.cpp",
-    ]),
+    ],
     hdrs = [
         ":config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/private/config/config.hh",
         ":config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/config/config.hpp",
@@ -239,7 +239,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "_mongocxx",
-    srcs = (([
+    srcs = [
         "src/mongocxx/lib/mongocxx/private/mongoc.cpp",
         "src/mongocxx/lib/mongocxx/private/scoped_bson.cpp",
         "src/mongocxx/lib/mongocxx/v1/aggregate_options.cpp",
@@ -250,7 +250,7 @@ ch_cc_library(
         "src/mongocxx/lib/mongocxx/v1/client.cpp",
     ] + glob(["src/mongocxx/lib/mongocxx/v1/client_*.cpp"]) + [
         "src/mongocxx/lib/mongocxx/v1/collection.cpp",
-    ]) + glob(["src/mongocxx/lib/mongocxx/v1/config/*.cpp"]) + ([
+    ] + glob(["src/mongocxx/lib/mongocxx/v1/config/*.cpp"]) + ([
         "src/mongocxx/lib/mongocxx/v1/count_options.cpp",
         "src/mongocxx/lib/mongocxx/v1/cursor.cpp",
         "src/mongocxx/lib/mongocxx/v1/data_key_options.cpp",
@@ -317,7 +317,7 @@ ch_cc_library(
         "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/uri.cpp",
         "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/validation_criteria.cpp",
         "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/write_concern.cpp",
-    ])),
+    ]),
     hdrs = [
         ":config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/private/config/config.hh",
         ":config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/config/config.hpp",

@@ -11,9 +11,9 @@ exports_files([
 
 ch_cc_library(
     name = "_bcrypt",
-    srcs = ([
+    srcs = [
         "bcrypt.c",
-    ] + glob(["crypt_blowfish/*.c"])),
+    ] + glob(["crypt_blowfish/*.c"]),
     hdrs = glob(["**/*.h"]),
     copts = [
         "-w",

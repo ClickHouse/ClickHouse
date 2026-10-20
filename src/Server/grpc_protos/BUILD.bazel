@@ -33,7 +33,7 @@ ch_cc_library(
         "$(GENDIR)/bazel/gen/includes/configs",
     ],
     link_runtime = True,
-    local_defines = (select({
+    local_defines = select({
         "@platforms//cpu:x86_64": [
             "ENABLE_MULTITARGET_CODE=1",
         ],
@@ -75,7 +75,7 @@ ch_cc_library(
             "X86_SSSE3",
         ],
         "@platforms//cpu:aarch64": [],
-    })) + [
+    }) + [
         "ZLIB_COMPAT",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",

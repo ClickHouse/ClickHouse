@@ -9,7 +9,7 @@ exports_files([
 
 ch_cc_library(
     name = "aws_c_io",
-    srcs = ([
+    srcs = [
         "source/alpn_handler.c",
         "source/async_stream.c",
         "source/channel.c",
@@ -34,7 +34,7 @@ ch_cc_library(
         "source/tls_channel_handler_shared.c",
         "source/tracing.c",
         "source/linux/epoll_event_loop.c",
-    ] + glob(["source/posix/*.c"]) + glob(["source/**/*.h"])),
+    ] + glob(["source/posix/*.c"]) + glob(["source/**/*.h"]),
     copts = [
         "-w",
         "-std=gnu11",
@@ -45,7 +45,7 @@ ch_cc_library(
         "@clickhouse_aws_c_cal//:aws_c_cal_headers",
     ],
     language = "C",
-    local_defines = ([
+    local_defines = [
         "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
         "AWS_ENABLE_EPOLL",
         "AWS_PTHREAD_SETNAME_TAKES_2ARGS",
@@ -61,13 +61,13 @@ ch_cc_library(
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
-    ]),
+    ],
     deps = [":aws_c_io_headers"],
 )
 
 ch_cc_library(
     name = "aws_c_io__compile_3",
-    srcs = (["source/tls_channel_handler.c"] + glob(["source/**/*.h"])),
+    srcs = ["source/tls_channel_handler.c"] + glob(["source/**/*.h"]),
     copts = [
         "-w",
         "-std=gnu11",
@@ -75,7 +75,7 @@ ch_cc_library(
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
-    local_defines = ([
+    local_defines = [
         "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
         "AWS_ENABLE_EPOLL",
         "AWS_PTHREAD_SETNAME_TAKES_2ARGS",
@@ -92,7 +92,7 @@ ch_cc_library(
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
-    ]),
+    ],
     deps = [":aws_c_io_headers"],
 )
 

@@ -8,7 +8,7 @@ exports_files([
 
 ch_cc_library(
     name = "_liblzma",
-    srcs = ([
+    srcs = [
         "src/common/tuklib_cpucores.c",
         "src/common/tuklib_physmem.c",
         "src/liblzma/check/check.c",
@@ -21,7 +21,7 @@ ch_cc_library(
         "src/liblzma/lzma/lzma2_encoder.c",
     ] + glob(["src/liblzma/lzma/lzma_*.c"]) + [
         "src/liblzma/rangecoder/price_table.c",
-    ]) + glob(["src/liblzma/simple/*.c"])) + glob([
+    ]) + glob(["src/liblzma/simple/*.c"]) + glob([
         "src/common/**/*.h",
         "src/liblzma/check/**/*.h",
         "src/liblzma/check/**/*.inc",

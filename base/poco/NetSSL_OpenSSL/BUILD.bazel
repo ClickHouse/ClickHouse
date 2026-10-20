@@ -27,7 +27,6 @@ _GENERATED_LOCAL_INCLUDES_0 = [
     "../../../" + repository_path("contrib/zmij"),
     "../../../" + "contrib/libdivide-cmake",
     "../../../" + repository_path("contrib/zlib-ng"),
-] + [
     "../../../" + (repository_path("contrib/zlib-ng") + "/config/contrib/zlib-ng-cmake"),
     "../../../" + repository_path("contrib/libdeflate"),
     "../../../" + "contrib/pdqsort",
@@ -52,7 +51,6 @@ _GENERATED_LOCAL_INCLUDES_0 = [
     "../../../" + repository_path("contrib/libbcrypt"),
     "../../../" + (repository_path("contrib/liburing") + "/config/contrib/liburing/src/include-compat"),
     "../../../" + (repository_path("contrib/liburing") + "/config/contrib/liburing/src/include"),
-] + [
     "../../../" + (repository_path("contrib/liburing") + "/src/include"),
     "../../../" + (repository_path("contrib/simdutf") + "/include"),
     "../../../" + (repository_path("contrib/simdjson") + "/include"),
@@ -157,7 +155,7 @@ ch_cc_library(
         repository_path("contrib/libarchive") + "/libarchive",
     ],
     implementation_deps = ["@clickhouse_openssl//:ssl"],
-    local_defines = (select({
+    local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
             "ARM_ACLE",
@@ -213,7 +211,7 @@ ch_cc_library(
             "X86_SSSE3",
         ],
         "@platforms//cpu:aarch64": [],
-    })) + [
+    }) + [
         "ZLIB_COMPAT",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
@@ -308,7 +306,7 @@ ch_cc_library(
         "-I",
         repository_path("contrib/libarchive") + "/libarchive",
     ],
-    local_defines = (select({
+    local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
             "ARM_ACLE",
@@ -365,7 +363,7 @@ ch_cc_library(
             "X86_SSSE3",
         ],
         "@platforms//cpu:aarch64": [],
-    })) + [
+    }) + [
         "ZLIB_COMPAT",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",

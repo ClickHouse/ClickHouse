@@ -16,7 +16,7 @@ _GENERATED_LOCAL_DEFINES_0 = [
 
 ch_cc_library(
     name = "_zstd__compile_0",
-    srcs = (glob(["lib/common/*.c"]) + ([
+    srcs = glob(["lib/common/*.c"]) + ([
         "lib/compress/fse_compress.c",
         "lib/compress/hist.c",
         "lib/compress/huf_compress.c",
@@ -33,7 +33,7 @@ ch_cc_library(
         "lib/decompress/zstd_ddict.c",
         "lib/decompress/zstd_decompress_block.c",
         "lib/decompress/zstd_decompress.c",
-    ]) + glob(["lib/dictBuilder/*.c"]) + glob(["lib/legacy/*.c"])),
+    ]) + glob(["lib/dictBuilder/*.c"]) + glob(["lib/legacy/*.c"]),
     hdrs = glob(["lib/**/*.h"]),
     copts = [
         "-w",

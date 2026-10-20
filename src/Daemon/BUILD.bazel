@@ -29,7 +29,7 @@ ch_cc_library(
         "-I",
         "rust/workspace/pco/include",
     ],
-    local_defines = (select({
+    local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
             "ARM_ACLE",
@@ -87,7 +87,7 @@ ch_cc_library(
             "X86_SSSE3",
         ],
         "@platforms//cpu:aarch64": [],
-    })) + [
+    }) + [
         "ZLIB_COMPAT",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",

@@ -83,7 +83,7 @@ copy_file(
 
 ch_cc_library(
     name = "_krb5",
-    srcs = (([
+    srcs = [
         "src/util/et/et_name.c",
         "src/util/et/com_err.c",
         "src/util/et/error_message.c",
@@ -509,9 +509,9 @@ ch_cc_library(
         "src/lib/krb5/rcache/memrcache.c",
         "src/lib/krb5/unicode/ucdata/ucdata.c",
         "src/lib/krb5/unicode/ucstr.c",
-    ]) + glob(["src/lib/krb5/asn.1/*.c"]) + [
+    ] + glob(["src/lib/krb5/asn.1/*.c"]) + [
         "src/lib/krb5/krb5_libinit.c",
-    ]) + glob(
+    ] + glob(
         [
             "src/**/*.h",
             "src/**/*.hxx",
@@ -626,7 +626,7 @@ ch_cc_library(
         ":config/contrib/krb5-cmake/include_private/osconf.h",
         ":config/contrib/krb5-cmake/include_private/profile.h",
     ] + glob(["src/include/**/*.h"]),
-    additional_compiler_inputs = (glob(
+    additional_compiler_inputs = glob(
         ["src/**"],
         exclude = [
             "src/**/*.h",
@@ -1063,7 +1063,7 @@ ch_cc_library(
         "src/lib/krb5/os/dnssrv.c",
         "src/lib/krb5/rcache/rc_file2.c",
         "src/lib/krb5/rcache/memrcache.c",
-    ]),
+    ],
     copts = [
         "-w",
         "-std=gnu11",

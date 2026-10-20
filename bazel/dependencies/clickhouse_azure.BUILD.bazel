@@ -8,7 +8,7 @@ exports_files([
 
 ch_cc_library(
     name = "_azure_sdk",
-    srcs = ([
+    srcs = [
         "sdk/core/azure-core/src/azure_assert.cpp",
         "sdk/core/azure-core/src/base64.cpp",
         "sdk/core/azure-core/src/context.cpp",
@@ -28,7 +28,7 @@ ch_cc_library(
         "sdk/core/azure-core/src/resource_identifier.cpp",
         "sdk/core/azure-core/src/tracing/tracing.cpp",
         "sdk/core/azure-core/src/uuid.cpp",
-    ] + glob(["sdk/identity/azure-identity/src/*.cpp"]) + glob(["sdk/storage/azure-storage-blobs/src/**/*.cpp"]) + glob(["sdk/storage/azure-storage-common/src/*.cpp"]) + glob(["sdk/storage/azure-storage-files-datalake/src/*.cpp"])) + glob([
+    ] + glob(["sdk/identity/azure-identity/src/*.cpp"]) + glob(["sdk/storage/azure-storage-blobs/src/**/*.cpp"]) + glob(["sdk/storage/azure-storage-common/src/*.cpp"]) + glob(["sdk/storage/azure-storage-files-datalake/src/*.cpp"]) + glob([
         "sdk/core/azure-core/src/**/*.hpp",
         "sdk/identity/azure-identity/src/**/*.hpp",
         "sdk/storage/azure-storage-blobs/src/**/*.hpp",

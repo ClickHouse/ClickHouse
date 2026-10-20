@@ -98,9 +98,9 @@ ch_cc_library(
             "include/libnuraft/timer_task.hxx",
         ],
     ),
-    hdrs = ([
+    hdrs = [
         "@clickhouse//bazel:gen/base/base/GitHash.generated.cpp",
-    ] + _GENERATED_HEADER_INPUTS_0) + glob(["include/**/*.hxx"]),
+    ] + _GENERATED_HEADER_INPUTS_0 + glob(["include/**/*.hxx"]),
     copts = [
         "-w",
         "-std=c++23",
@@ -120,7 +120,7 @@ ch_cc_library(
         repository_path("contrib/libarchive") + "/libarchive",
     ],
     implementation_deps = ["@clickhouse_boost//:boost_asio_headers"],
-    local_defines = (select({
+    local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
             "ARM_ACLE",
@@ -178,7 +178,7 @@ ch_cc_library(
             "X86_SSSE3",
         ],
         "@platforms//cpu:aarch64": [],
-    })) + [
+    }) + [
         "ZLIB_COMPAT",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",

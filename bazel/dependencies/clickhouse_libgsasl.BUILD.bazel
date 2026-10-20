@@ -8,7 +8,7 @@ exports_files([
 
 ch_cc_library(
     name = "_gsasl",
-    srcs = ([
+    srcs = [
         "gl/gc-gnulib.c",
         "gl/printf-parse.c",
         "gl/c-ctype.c",
@@ -59,8 +59,8 @@ ch_cc_library(
         "cram-md5/mechinfo.c",
         "cram-md5/server.c",
         "cram-md5/digest.c",
-    ] + glob(["digest-md5/*.c"]) + glob(["login/*.c"]) + glob(["gssapi/*.c"])),
-    hdrs = (["@clickhouse//contrib/libgsasl-cmake:linux_x86_64/include/config.h"] + glob(["**/*.h"])),
+    ] + glob(["digest-md5/*.c"]) + glob(["login/*.c"]) + glob(["gssapi/*.c"]),
+    hdrs = ["@clickhouse//contrib/libgsasl-cmake:linux_x86_64/include/config.h"] + glob(["**/*.h"]),
     copts = [
         "-w",
         "-std=gnu11",

@@ -29,7 +29,7 @@ expand_template(
 
 ch_cc_library(
     name = "_orc",
-    srcs = ([
+    srcs = [
         "@clickhouse//bazel:gen/contrib/arrow-cmake/orc_proto.pb.cc",
     ] + ([
         "c++/src/Adaptor.cc",
@@ -113,11 +113,12 @@ ch_cc_library(
         "c++/src/wrap/orc-proto-wrapper.hh",
         "c++/src/wrap/snappy-wrapper.h",
         "c++/src/wrap/zero-copy-stream-wrapper.h",
-    ])),
-    hdrs = ([
+    ]),
+    hdrs = [
         "@clickhouse//bazel:gen/contrib/arrow-cmake/orc_proto.pb.h",
         ":config/contrib/orc/c++/include/Adaptor.hh",
-    ] + (["@clickhouse//contrib/arrow-cmake:cpp/src/orc/c++/include/orc/orc-config.hh"] + glob(["c++/include/orc/**/*.hh"]))),
+        "@clickhouse//contrib/arrow-cmake:cpp/src/orc/c++/include/orc/orc-config.hh",
+    ] + glob(["c++/include/orc/**/*.hh"]),
     additional_compiler_inputs = [
         "c++/src/Reader.cc",
         "c++/src/sargs/PredicateLeaf.cc",
@@ -131,7 +132,7 @@ ch_cc_library(
     includes = [
         "c++/include",
     ],
-    local_defines = ((select({
+    local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
             "ARM_ACLE",
@@ -184,12 +185,12 @@ ch_cc_library(
             "X86_SSSE3",
         ],
         "@platforms//cpu:aarch64": [],
-    })) + [
+    }) + [
         "ZLIB_COMPAT",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
-    ]),
+    ],
     local_includes = [
         repository_local_include(
             "$(GENDIR)/" + repository_path("contrib/orc") + "/config/contrib/orc/c++/include",

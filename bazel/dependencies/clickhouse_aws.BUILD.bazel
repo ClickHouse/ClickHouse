@@ -75,7 +75,7 @@ expand_template(
 
 ch_cc_library(
     name = "_aws__compile_0",
-    srcs = (glob(["src/aws-cpp-sdk-core/source/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/auth/*.cpp"]) + [
+    srcs = glob(["src/aws-cpp-sdk-core/source/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/auth/*.cpp"]) + [
         "src/aws-cpp-sdk-core/source/auth/bearer-token-provider/DefaultBearerTokenProviderChain.cpp",
         "src/aws-cpp-sdk-core/source/auth/bearer-token-provider/SSOBearerTokenProvider.cpp",
     ] + glob(["src/aws-cpp-sdk-core/source/auth/signer-provider/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/auth/signer/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/client/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/config/*.cpp"]) + ["src/aws-cpp-sdk-core/source/config/defaults/ClientConfigurationDefaults.cpp"] + glob(["src/aws-cpp-sdk-core/source/endpoint/*.cpp"]) + [
@@ -107,13 +107,13 @@ ch_cc_library(
     ] + glob(["src/aws-cpp-sdk-core/source/utils/logging/*.cpp"]) + [
         "src/aws-cpp-sdk-core/source/utils/memory/AWSMemory.cpp",
         "src/aws-cpp-sdk-core/source/utils/memory/stl/SimpleStringStream.cpp",
-    ] + glob(["src/aws-cpp-sdk-core/source/utils/stream/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/utils/threading/*.cpp"]) + ["src/aws-cpp-sdk-core/source/utils/xml/XmlSerializer.cpp"] + glob(["generated/src/aws-cpp-sdk-s3/source/*.cpp"]) + glob(["generated/src/aws-cpp-sdk-s3/source/model/*.cpp"]) + glob(["generated/src/aws-cpp-sdk-glue/source/*.cpp"]) + glob(["generated/src/aws-cpp-sdk-glue/source/model/*.cpp"]) + ["@clickhouse//contrib:aws-cmake/aws_stubs.cpp"]),
+    ] + glob(["src/aws-cpp-sdk-core/source/utils/stream/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/utils/threading/*.cpp"]) + ["src/aws-cpp-sdk-core/source/utils/xml/XmlSerializer.cpp"] + glob(["generated/src/aws-cpp-sdk-s3/source/*.cpp"]) + glob(["generated/src/aws-cpp-sdk-s3/source/model/*.cpp"]) + glob(["generated/src/aws-cpp-sdk-glue/source/*.cpp"]) + glob(["generated/src/aws-cpp-sdk-glue/source/model/*.cpp"]) + ["@clickhouse//contrib:aws-cmake/aws_stubs.cpp"],
     copts = [
         "-w",
         "-std=c++23",
         "-g1",
     ],
-    local_defines = ([
+    local_defines = [
         "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
         "AWS_ENABLE_EPOLL",
         "AWS_PTHREAD_SETNAME_TAKES_2ARGS",
@@ -129,7 +129,7 @@ ch_cc_library(
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
-    ]),
+    ],
     deps = [":aws_headers"],
 )
 

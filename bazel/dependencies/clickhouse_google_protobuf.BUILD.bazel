@@ -112,7 +112,7 @@ exports_files([
     "src/google/protobuf/wrappers.proto",
 ])
 
-_GENERATED_LOCAL_DEFINES_0 = (select({
+_GENERATED_LOCAL_DEFINES_0 = select({
     "@platforms//cpu:x86_64": [
         "GOOGLE_PROTOBUF_CMAKE_BUILD",
     ],
@@ -156,7 +156,7 @@ _GENERATED_LOCAL_DEFINES_0 = (select({
         "X86_SSSE3",
     ],
     "@platforms//cpu:aarch64": [],
-})) + [
+}) + [
     "ZLIB_COMPAT",
     "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
     "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
@@ -343,7 +343,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "_libprotoc__compile_0",
-    srcs = ([
+    srcs = [
         "src/google/protobuf/compiler/code_generator.cc",
         "src/google/protobuf/compiler/code_generator_lite.cc",
         "src/google/protobuf/compiler/command_line_interface.cc",
@@ -445,7 +445,7 @@ ch_cc_library(
         "upb_generator/minitable/names.cc",
         "upb_generator/minitable/names_internal.cc",
         "upb_generator/plugin.cc",
-    ]),
+    ],
     hdrs = [
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
@@ -455,7 +455,7 @@ ch_cc_library(
         "**/*.hpp",
         "**/*.inc",
     ]),
-    additional_compiler_inputs = (glob(
+    additional_compiler_inputs = glob(
         ["**"],
         exclude = [
             "**/*.h",
@@ -605,7 +605,7 @@ ch_cc_library(
         ],
     ) + [
         "src/google/protobuf/compiler/versions.cc",
-    ]),
+    ],
     copts = [
         "-w",
         "-std=c++17",
@@ -621,7 +621,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "_libprotoc__compile_1",
-    srcs = ([
+    srcs = [
         "upb/base/status.c",
         "upb/hash/common.c",
         "upb/mem/alloc.c",
@@ -667,7 +667,7 @@ ch_cc_library(
         "upb/wire/eps_copy_input_stream.c",
     ]) + glob(["upb/wire/internal/*.c"]) + [
         "upb/wire/reader.c",
-    ]),
+    ],
     hdrs = [
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
@@ -705,17 +705,17 @@ cc_library(
 
 cc_binary(
     name = "protoc",
-    srcs = ([
+    srcs = [
         "src/google/protobuf/compiler/main.cc",
     ] + glob([
         "**/*.h",
         "**/*.hpp",
         "**/*.inc",
-    ])),
+    ]),
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
     ],
-    copts = ((([
+    copts = [
         "--no-default-config",
         "-fdiagnostics-color=always",
         "-pipe",
@@ -740,7 +740,7 @@ cc_binary(
             "-mbranches-within-32B-boundaries",
         ],
         "@platforms//cpu:aarch64": [],
-    }))) + [
+    })) + [
         "-fstack-protector-strong",
         "-fstack-clash-protection",
         "-ffp-contract=off",
@@ -765,7 +765,7 @@ cc_binary(
         repository_path("contrib/google-protobuf"),
         "-I",
         repository_path("contrib/google-protobuf") + "/upb/reflection/cmake",
-    ]) + cmake_prefix_maps([
+    ] + cmake_prefix_maps([
         "aarch64",
         "x86_64",
     ]) + select({
@@ -780,7 +780,7 @@ cc_binary(
             "--gcc-toolchain=" + repository_path("contrib/sysroot") + "/linux-aarch64",
             "-nostdinc++",
         ],
-    })),
+    }),
     features = [
         "-static_link_cpp_runtimes",
         "-fortify_source",

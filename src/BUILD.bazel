@@ -78,7 +78,7 @@ ch_cc_library(
     local_defines = [
         "AI_SDK_HAS_ANTHROPIC=1",
         "AI_SDK_HAS_OPENAI=1",
-    ] + (select({
+    ] + select({
         "@platforms//cpu:x86_64": [
             "ARROW_HAVE_AVX2",
             "ARROW_HAVE_BMI2",
@@ -150,7 +150,7 @@ ch_cc_library(
             "X86_SSSE3",
         ],
         "@platforms//cpu:aarch64": [],
-    })) + [
+    }) + [
         "ZLIB_COMPAT",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
@@ -161,7 +161,6 @@ ch_cc_library(
         "../bazel/gen/base",
         "../base/pcg-random",
         "Common/mysqlxx",
-    ] + ([
         "../" + (repository_path("contrib/orc") + "/config/contrib/orc/c++/include"),
         "../" + (repository_path("contrib/croaring") + "/cpp"),
         "../" + (repository_path("contrib/croaring") + "/include"),
@@ -196,71 +195,44 @@ ch_cc_library(
     ] + select({
         "@platforms//cpu:x86_64": [
             "../" + "bazel/gen/x86_64/src/Server/grpc_protos",
-            "../" + (repository_path("contrib/s2geometry") + "/src"),
-            "../" + "contrib/s2geometry-cmake",
-            "../" + (repository_path("contrib/AMQP-CPP") + "/include"),
-            "../" + repository_path("contrib/AMQP-CPP"),
-            "../" + repository_path("contrib/sqlite-amalgamation"),
-            "../" + (repository_path("contrib/rocksdb") + "/include"),
-            "../" + (repository_path("contrib/libpqxx") + "/include"),
-            "../" + (repository_path("contrib/libpqxx") + "/config/contrib/libpqxx-cmake"),
-            "../" + "contrib/postgres-cmake",
-            "../" + (repository_path("contrib/datasketches-cpp") + "/common/include"),
-            "../" + (repository_path("contrib/datasketches-cpp") + "/count/include"),
-            "../" + (repository_path("contrib/datasketches-cpp") + "/theta/include"),
-            "../" + (repository_path("contrib/libstemmer_c") + "/include"),
-            "../" + repository_path("contrib/wordnet-blast"),
-            "../" + (repository_path("contrib/lemmagen-c") + "/include"),
-            "../" + (repository_path("contrib/ulid-c") + "/include"),
-            "../" + "contrib/consistent-hashing",
-            "../" + (repository_path("contrib/usearch") + "/include"),
-            "../" + (repository_path("contrib/FP16") + "/include"),
-            "../" + (repository_path("contrib/SimSIMD") + "/include"),
-            "../" + "bazel/gen/contrib/prometheus-protobufs-cmake",
-            "../" + repository_path("contrib/google-cloud-cpp"),
-            "../" + (repository_path("contrib/google-cloud-cpp") + "/config/contrib/google-cloud-cpp-cmake"),
-            "../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
-            "../" + (repository_path("contrib/grpc") + "/spm-cpp-include"),
-            "../" + "bazel/gen",
         ],
         "@platforms//cpu:aarch64": [
             "../" + "bazel/gen/aarch64/src/Server/grpc_protos",
-            "../" + (repository_path("contrib/s2geometry") + "/src"),
-            "../" + "contrib/s2geometry-cmake",
-            "../" + (repository_path("contrib/AMQP-CPP") + "/include"),
-            "../" + repository_path("contrib/AMQP-CPP"),
-            "../" + repository_path("contrib/sqlite-amalgamation"),
-            "../" + (repository_path("contrib/rocksdb") + "/include"),
-            "../" + (repository_path("contrib/libpqxx") + "/include"),
-            "../" + (repository_path("contrib/libpqxx") + "/config/contrib/libpqxx-cmake"),
-            "../" + "contrib/postgres-cmake",
-            "../" + (repository_path("contrib/datasketches-cpp") + "/common/include"),
-            "../" + (repository_path("contrib/datasketches-cpp") + "/count/include"),
-            "../" + (repository_path("contrib/datasketches-cpp") + "/theta/include"),
-            "../" + (repository_path("contrib/libstemmer_c") + "/include"),
-            "../" + repository_path("contrib/wordnet-blast"),
-            "../" + (repository_path("contrib/lemmagen-c") + "/include"),
-            "../" + (repository_path("contrib/ulid-c") + "/include"),
-            "../" + "contrib/consistent-hashing",
-            "../" + (repository_path("contrib/usearch") + "/include"),
-            "../" + (repository_path("contrib/FP16") + "/include"),
-            "../" + (repository_path("contrib/SimSIMD") + "/include"),
-            "../" + "bazel/gen/contrib/prometheus-protobufs-cmake",
-            "../" + repository_path("contrib/google-cloud-cpp"),
-            "../" + (repository_path("contrib/google-cloud-cpp") + "/config/contrib/google-cloud-cpp-cmake"),
-            "../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
-            "../" + (repository_path("contrib/grpc") + "/spm-cpp-include"),
-            "../" + "bazel/gen",
         ],
     }) + [
+        "../" + (repository_path("contrib/s2geometry") + "/src"),
+        "../" + "contrib/s2geometry-cmake",
+        "../" + (repository_path("contrib/AMQP-CPP") + "/include"),
+        "../" + repository_path("contrib/AMQP-CPP"),
+        "../" + repository_path("contrib/sqlite-amalgamation"),
+        "../" + (repository_path("contrib/rocksdb") + "/include"),
+        "../" + (repository_path("contrib/libpqxx") + "/include"),
+        "../" + (repository_path("contrib/libpqxx") + "/config/contrib/libpqxx-cmake"),
+        "../" + "contrib/postgres-cmake",
+        "../" + (repository_path("contrib/datasketches-cpp") + "/common/include"),
+        "../" + (repository_path("contrib/datasketches-cpp") + "/count/include"),
+        "../" + (repository_path("contrib/datasketches-cpp") + "/theta/include"),
+        "../" + (repository_path("contrib/libstemmer_c") + "/include"),
+        "../" + repository_path("contrib/wordnet-blast"),
+        "../" + (repository_path("contrib/lemmagen-c") + "/include"),
+        "../" + (repository_path("contrib/ulid-c") + "/include"),
+        "../" + "contrib/consistent-hashing",
+        "../" + (repository_path("contrib/usearch") + "/include"),
+        "../" + (repository_path("contrib/FP16") + "/include"),
+        "../" + (repository_path("contrib/SimSIMD") + "/include"),
+        "../" + "bazel/gen/contrib/prometheus-protobufs-cmake",
+        "../" + repository_path("contrib/google-cloud-cpp"),
+        "../" + (repository_path("contrib/google-cloud-cpp") + "/config/contrib/google-cloud-cpp-cmake"),
+        "../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
+        "../" + (repository_path("contrib/grpc") + "/spm-cpp-include"),
+        "../" + "bazel/gen",
         "../" + "bazel/gen/.",
         "../" + repository_path("contrib/SHA3IUF"),
         "../" + "bazel/gen/contrib/flatbuffers",
-    ] + [
         "../" + (repository_path("contrib/arrow") + "/cpp/src"),
         "../" + (repository_path("contrib/llvm-project") + "/llvm/include"),
-    ]),
-    deps = (select({
+    ],
+    deps = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
             "@clickhouse_llvm_project//:LLVMAArch64CodeGen",
@@ -632,11 +604,11 @@ ch_cc_library(
         "//src/Parsers/Prometheus/grammar:headers",
         "//src/Storages/System:headers",
         "//src/TableFunctions:headers",
-    ]),
+    ],
     alwayslink = True,
 )
 
-_GENERATED_HDRS_0 = ([
+_GENERATED_HDRS_0 = [
     "//bazel/rust:delta_ffi_headers",
     "//bazel:gen/base/base/GitHash.generated.cpp",
     "@clickhouse_bzip2//:config/contrib/bzip2/bz_version.h",
@@ -1029,9 +1001,9 @@ _GENERATED_HDRS_0 = ([
     "Interpreters/replaceMissedSubcolumnsInQuery.h",
     "Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h",
     "Interpreters/sortBlock.h",
-] + glob(["Planner/*.h"]) + glob(["Processors/**/*.h"]) + glob(["QueryPipeline/*.h"]) + glob(["Server/**/*.h"]) + glob(["Storages/**/*.h"]) + glob(["WindowFunctions/*.h"]))
+] + glob(["Planner/*.h"]) + glob(["Processors/**/*.h"]) + glob(["QueryPipeline/*.h"]) + glob(["Server/**/*.h"]) + glob(["Storages/**/*.h"]) + glob(["WindowFunctions/*.h"])
 
-_GENERATED_LOCAL_DEFINES_0 = (select({
+_GENERATED_LOCAL_DEFINES_0 = select({
     "@platforms//cpu:x86_64": [],
     "@platforms//cpu:aarch64": [
         "ARM_ACLE",
@@ -1090,7 +1062,7 @@ _GENERATED_LOCAL_DEFINES_0 = (select({
         "X86_SSSE3",
     ],
     "@platforms//cpu:aarch64": [],
-})) + [
+}) + [
     "ZLIB_COMPAT",
     "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
     "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
@@ -1113,7 +1085,6 @@ _GENERATED_LOCAL_INCLUDES_0 = [
     "../" + repository_path("contrib/zmij"),
     "../" + "contrib/libdivide-cmake",
     "../" + repository_path("contrib/zlib-ng"),
-] + ([
     "../" + (repository_path("contrib/zlib-ng") + "/config/contrib/zlib-ng-cmake"),
     "../" + repository_path("contrib/libdeflate"),
     "../" + (repository_path("contrib/silk") + "/include"),
@@ -1154,7 +1125,8 @@ _GENERATED_LOCAL_INCLUDES_0 = [
     "../" + (repository_path("contrib/simdutf") + "/include"),
     "../" + (repository_path("contrib/simdjson") + "/include"),
     "../" + (repository_path("contrib/wasmtime") + "/config/contrib/wasmtime/include"),
-]) + ["../" + (repository_path("contrib/wasmtime") + "/crates/c-api/include")]
+    "../" + (repository_path("contrib/wasmtime") + "/crates/c-api/include"),
+]
 
 _GENERATED_DEPS_0 = [
     "@lz4//:lz4_frame",
@@ -1285,7 +1257,7 @@ ch_cc_library(
         "//src/Common:FileChecker.cpp",
         "//src/Common:FileRenamer.cpp",
     ] + select({
-        "@platforms//cpu:x86_64": ([
+        "@platforms//cpu:x86_64": [
             "//bazel:gen/x86_64/embedded/src/Common/FrequencyHolder.cpp",
             "//src/Common:FullyQualifiedObjectPath.cpp",
             "//src/Common:FunctionDocumentation.cpp",
@@ -1495,8 +1467,8 @@ ch_cc_library(
             "Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.cpp",
             "Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.cpp",
             "//bazel:gen/includes/configs/config_version.cpp",
-        ]),
-        "@platforms//cpu:aarch64": ([
+        ],
+        "@platforms//cpu:aarch64": [
             "//bazel:gen/aarch64/embedded/src/Common/FrequencyHolder.cpp",
             "//src/Common:FullyQualifiedObjectPath.cpp",
             "//src/Common:FunctionDocumentation.cpp",
@@ -1706,7 +1678,7 @@ ch_cc_library(
             "Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.cpp",
             "Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.cpp",
             "//bazel:gen/includes/configs/config_version.cpp",
-        ]),
+        ],
     }),
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = select({
@@ -2497,68 +2469,34 @@ cc_library(
 
 _GENERATED_HDRS_1 = [
     "//bazel/rust:delta_ffi_headers",
-] + select({
-    "@platforms//cpu:x86_64": [
-        "//bazel:gen/base/base/GitHash.generated.cpp",
-        "//bazel:gen/contrib/flatbuffers/generated/File_generated.h",
-        "//bazel:gen/contrib/flatbuffers/generated/Message_generated.h",
-        "//bazel:gen/contrib/flatbuffers/generated/Schema_generated.h",
-        "//bazel:gen/contrib/flatbuffers/generated/SparseTensor_generated.h",
-        "//bazel:gen/contrib/flatbuffers/generated/Tensor_generated.h",
-        "//bazel:gen/contrib/flatbuffers/generated/feather_generated.h",
-        "//bazel:gen/contrib/krb5-cmake/include/krb5/krb5.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/asn1_err.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/errmap.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/error_map.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/gssapi_err_generic.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/gssapi_err_krb5.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/k5e1_err.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/kdb5_err.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/krb524_err.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/krb5_err.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/kv5m_err.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/prof_err.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/util/profile/prof_err.h",
-    ],
-    "@platforms//cpu:aarch64": [
-        "//bazel:gen/base/base/GitHash.generated.cpp",
-        "//bazel:gen/contrib/flatbuffers/generated/File_generated.h",
-        "//bazel:gen/contrib/flatbuffers/generated/Message_generated.h",
-        "//bazel:gen/contrib/flatbuffers/generated/Schema_generated.h",
-        "//bazel:gen/contrib/flatbuffers/generated/SparseTensor_generated.h",
-        "//bazel:gen/contrib/flatbuffers/generated/Tensor_generated.h",
-        "//bazel:gen/contrib/flatbuffers/generated/feather_generated.h",
-        "//bazel:gen/contrib/krb5-cmake/include/krb5/krb5.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/asn1_err.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/errmap.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/error_map.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/gssapi_err_generic.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/gssapi_err_krb5.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/k5e1_err.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/kdb5_err.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/krb524_err.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/krb5_err.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/kv5m_err.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/prof_err.h",
-        "//bazel:gen/contrib/krb5-cmake/include_private/util/profile/prof_err.h",
-    ],
-}) + ([
+    "//bazel:gen/base/base/GitHash.generated.cpp",
+    "//bazel:gen/contrib/flatbuffers/generated/File_generated.h",
+    "//bazel:gen/contrib/flatbuffers/generated/Message_generated.h",
+    "//bazel:gen/contrib/flatbuffers/generated/Schema_generated.h",
+    "//bazel:gen/contrib/flatbuffers/generated/SparseTensor_generated.h",
+    "//bazel:gen/contrib/flatbuffers/generated/Tensor_generated.h",
+    "//bazel:gen/contrib/flatbuffers/generated/feather_generated.h",
+    "//bazel:gen/contrib/krb5-cmake/include/krb5/krb5.h",
+    "//bazel:gen/contrib/krb5-cmake/include_private/asn1_err.h",
+    "//bazel:gen/contrib/krb5-cmake/include_private/errmap.h",
+    "//bazel:gen/contrib/krb5-cmake/include_private/error_map.h",
+    "//bazel:gen/contrib/krb5-cmake/include_private/gssapi_err_generic.h",
+    "//bazel:gen/contrib/krb5-cmake/include_private/gssapi_err_krb5.h",
+    "//bazel:gen/contrib/krb5-cmake/include_private/k5e1_err.h",
+    "//bazel:gen/contrib/krb5-cmake/include_private/kdb5_err.h",
+    "//bazel:gen/contrib/krb5-cmake/include_private/krb524_err.h",
+    "//bazel:gen/contrib/krb5-cmake/include_private/krb5_err.h",
+    "//bazel:gen/contrib/krb5-cmake/include_private/kv5m_err.h",
+    "//bazel:gen/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.h",
+    "//bazel:gen/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.h",
+    "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.h",
+    "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.h",
+    "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.h",
+    "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.h",
+    "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.h",
+    "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.h",
+    "//bazel:gen/contrib/krb5-cmake/include_private/prof_err.h",
+    "//bazel:gen/contrib/krb5-cmake/include_private/util/profile/prof_err.h",
     "//rust/workspace:pco/include/pco.h",
     "//rust/workspace:skim/include/skim.h",
     "@clickhouse_arrow//:config/contrib/arrow-cmake/cpp/src/arrow/util/config.h",
@@ -3000,12 +2938,12 @@ _GENERATED_HDRS_1 = [
     "Interpreters/replaceMissedSubcolumnsInQuery.h",
     "Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h",
     "Interpreters/sortBlock.h",
-] + glob(["Planner/*.h"]) + glob(["Processors/**/*.h"]) + glob(["QueryPipeline/*.h"]) + glob(["Server/**/*.h"]) + glob(["Storages/**/*.h"]) + glob(["WindowFunctions/*.h"]))
+] + glob(["Planner/*.h"]) + glob(["Processors/**/*.h"]) + glob(["QueryPipeline/*.h"]) + glob(["Server/**/*.h"]) + glob(["Storages/**/*.h"]) + glob(["WindowFunctions/*.h"])
 
 _GENERATED_LOCAL_DEFINES_1 = [
     "AI_SDK_HAS_ANTHROPIC=1",
     "AI_SDK_HAS_OPENAI=1",
-] + (select({
+] + select({
     "@platforms//cpu:x86_64": [
         "ARROW_HAVE_AVX2",
         "ARROW_HAVE_BMI2",
@@ -3078,7 +3016,7 @@ _GENERATED_LOCAL_DEFINES_1 = [
         "X86_SSSE3",
     ],
     "@platforms//cpu:aarch64": [],
-})) + [
+}) + [
     "XXH_INLINE_ALL",
     "ZLIB_COMPAT",
     "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
@@ -3098,7 +3036,7 @@ _GENERATED_LOCAL_INCLUDES_1_BEFORE_WEB = [
     "../" + (repository_path("contrib/replxx") + "/include"),
 ]
 
-_GENERATED_LOCAL_INCLUDES_1_AFTER_WEB = (select({
+_GENERATED_LOCAL_INCLUDES_1_AFTER_WEB = select({
     "@platforms//cpu:x86_64": [
         "../" + repository_path("contrib/xxHash"),
         "../" + "contrib/jemalloc-cmake/include",
@@ -3323,7 +3261,7 @@ _GENERATED_LOCAL_INCLUDES_1_AFTER_WEB = (select({
     "../" + "bazel/gen/.",
     "../" + repository_path("contrib/SHA3IUF"),
     "../" + (repository_path("contrib/wasmtime") + "/config/contrib/wasmtime/include"),
-]) + [
+] + [
     "../" + (repository_path("contrib/wasmtime") + "/crates/c-api/include"),
     "../" + (repository_path("contrib/llvm-project") + "/llvm/include"),
 ]
@@ -3412,15 +3350,11 @@ _GENERATED_DEPS_1 = [
     "//src/Parsers/Prometheus/grammar:headers",
     "//src/Storages/System:headers",
     "//src/TableFunctions:headers",
-] + select({
-    "@platforms//cpu:x86_64": _PROTO_LIBRARIES,
-    "@platforms//cpu:aarch64": _PROTO_LIBRARIES,
-    "//conditions:default": [],
-})
+] + _PROTO_LIBRARIES
 
 ch_cc_library(
     name = "dbms__compile_0",
-    srcs = ([
+    srcs = [
         "//src/Dictionaries:DictionaryFactory.cpp",
         "//src/Dictionaries:DictionarySourceFactory.cpp",
         "//src/Dictionaries:DictionaryStructure.cpp",
@@ -3910,8 +3844,8 @@ ch_cc_library(
         "Storages/StorageFilesystem.cpp",
         "Storages/StorageFuzzJSON.cpp",
         "Storages/StorageFuzzQuery.cpp",
-    ]) + select({
-        "@platforms//cpu:x86_64": ([
+    ] + select({
+        "@platforms//cpu:x86_64": [
             "Storages/StorageInMemoryMetadata.cpp",
             "Storages/StorageInput.cpp",
             "Storages/StorageJoin.cpp",
@@ -4040,8 +3974,8 @@ ch_cc_library(
             "Server/TLSHandler.cpp",
             "//bazel:gen/x86_64/embedded/src/Server/WebTerminalRequestHandler.cpp",
             "//bazel:gen/x86_64/embedded/src/Server/WebUIRequestHandler.cpp",
-        ]),
-        "@platforms//cpu:aarch64": ([
+        ],
+        "@platforms//cpu:aarch64": [
             "Storages/StorageGenerateRandom.cpp",
             "Storages/StorageInMemoryMetadata.cpp",
             "Storages/StorageInput.cpp",
@@ -4171,7 +4105,7 @@ ch_cc_library(
             "Server/TLSHandler.cpp",
             "//bazel:gen/aarch64/embedded/src/Server/WebTerminalRequestHandler.cpp",
             "//bazel:gen/aarch64/embedded/src/Server/WebUIRequestHandler.cpp",
-        ]),
+        ],
     }) + ([
         "Server/createServer.cpp",
         "Server/socketBindListen.cpp",
@@ -4285,7 +4219,7 @@ ch_cc_library(
         "//src/Functions:UserDefined/createUserDefinedSQLObjectsStorage.cpp",
     ] + glob(["Processors/Formats/Impl/Parquet/*.cpp"]) + glob(["Processors/Formats/Impl/ArrowIPC/*.cpp"]) + glob(["Coordination/*.cpp"]) + glob(["Coordination/Storage/*.cpp"])),
     hdrs = _GENERATED_HDRS_1,
-    additional_compiler_inputs = (select({
+    additional_compiler_inputs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:gen/x86_64/embedded/programs/keeper/dashboard.html",
             "//bazel:gen/x86_64/embedded/programs/server/binary.html",
@@ -6714,7 +6648,7 @@ ch_cc_library(
         "Coordination/Storage/SortedFile.cpp",
         "Coordination/Storage/SortedRun.cpp",
         "Coordination/Storage/StorageState.cpp",
-    ]) + ["//bazel:web_ui_resources"],
+    ] + ["//bazel:web_ui_resources"],
     clickhouse_code = True,
     copts = [
         "-I",
@@ -6777,7 +6711,6 @@ ch_cc_library(
         "@clickhouse_xxhash//:xxHash",
         "@clickhouse_libhdfs3//:_hdfs3",
         "@clickhouse_wasmtime//:wasmtime_headers",
-    ] + ([
         "@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-anthropic",
         "@clickhouse_hive_metastore//:_hivemetastore",
     ] + select({
@@ -6787,14 +6720,14 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }) + [
         "@clickhouse_sqlite_amalgamation//:_sqlite",
-    ]),
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
         ".",
         "../bazel/gen/base",
         "../base/pcg-random",
         "Common/mysqlxx",
-    ] + (_GENERATED_LOCAL_INCLUDES_1_BEFORE_WEB + select({
+    ] + _GENERATED_LOCAL_INCLUDES_1_BEFORE_WEB + select({
         "@platforms//cpu:x86_64": [
             "../" + "bazel/gen/x86_64/contrib/sql-console-cmake",
             "../" + "bazel/gen/x86_64/contrib/clickstack-cmake",
@@ -6803,7 +6736,7 @@ ch_cc_library(
             "../" + "bazel/gen/aarch64/contrib/sql-console-cmake",
             "../" + "bazel/gen/aarch64/contrib/clickstack-cmake",
         ],
-    }) + _GENERATED_LOCAL_INCLUDES_1_AFTER_WEB),
+    }) + _GENERATED_LOCAL_INCLUDES_1_AFTER_WEB,
     deps = _GENERATED_DEPS_1,
 )
 
@@ -6896,7 +6829,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "dbms__compile_2",
-    srcs = ([
+    srcs = [
         "Interpreters/Aggregator.cpp",
         "Columns/IColumn.cpp",
         "Processors/Transforms/WindowTransform.cpp",
@@ -6911,7 +6844,7 @@ ch_cc_library(
         "WindowFunctions/WindowFunctionPercentRank.cpp",
         "WindowFunctions/WindowFunctionRank.cpp",
         "WindowFunctions/WindowFunctionRowNumber.cpp",
-    ]),
+    ],
     hdrs = _GENERATED_HDRS_1,
     clickhouse_code = True,
     copts = [
@@ -7073,7 +7006,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     hdrs = select({
-        "@platforms//cpu:x86_64": ([
+        "@platforms//cpu:x86_64": [
             "//bazel/rust:delta_ffi_headers",
             "//bazel:gen/base/base/GitHash.generated.cpp",
             "//bazel:gen/contrib/flatbuffers/generated/File_generated.h",
@@ -7544,7 +7477,7 @@ ch_cc_library(
             "Interpreters/replaceMissedSubcolumnsInQuery.h",
             "Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h",
             "Interpreters/sortBlock.h",
-        ] + glob(["Planner/*.h"]) + glob(["Processors/**/*.h"]) + glob(["QueryPipeline/*.h"]) + glob(["Server/**/*.h"]) + glob(["Storages/**/*.h"]) + glob(["WindowFunctions/*.h"])),
+        ] + glob(["Planner/*.h"]) + glob(["Processors/**/*.h"]) + glob(["QueryPipeline/*.h"]) + glob(["Server/**/*.h"]) + glob(["Storages/**/*.h"]) + glob(["WindowFunctions/*.h"]),
         "@platforms//cpu:aarch64": [],
     }),
     additional_compiler_inputs = select({
@@ -7794,7 +7727,7 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    deps = (select({
+    deps = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse_llvm_project//:LLVMDebugInfoDWARF",
             "@clickhouse_llvm_project//:LLVMExecutionEngine",
@@ -7837,7 +7770,6 @@ ch_cc_library(
     }) + [
         "@clickhouse_libpqxx//:libpqxx_headers",
         "@clickhouse_postgres//:postgres_headers",
-    ] + [
         "//base/glibc-compatibility:headers",
         "//base/glibc-rseq:headers",
         "//base/poco/Foundation:headers",
@@ -7864,7 +7796,6 @@ ch_cc_library(
         "//contrib/postgres-cmake:headers",
         "//contrib/sz3-cmake:headers",
         "//contrib/vectorscan-cmake:headers",
-    ] + [
         "//:headers",
         "//base:base_headers",
         "//src/Access/Common:headers",
@@ -7889,7 +7820,7 @@ ch_cc_library(
         "//src/Parsers/Prometheus/grammar:headers",
         "//src/Storages/System:headers",
         "//src/TableFunctions:headers",
-    ]) + select({
+    ] + select({
         "@platforms//cpu:x86_64": _PROTO_LIBRARIES,
         "@platforms//cpu:aarch64": [],
         "//conditions:default": [],
@@ -7911,7 +7842,7 @@ cc_library(
 cc_test(
     name = "unit_tests_dbms",
     size = "enormous",
-    srcs = (glob(["Access/tests/*.cpp"]) + [
+    srcs = glob(["Access/tests/*.cpp"]) + [
         "//src/AggregateFunctions:tests/gtest_crosstab.cpp",
         "//src/AggregateFunctions:tests/gtest_ddsketch.cpp",
         "//src/AggregateFunctions:tests/gtest_placeholder_state_compatibility.cpp",
@@ -8179,7 +8110,7 @@ cc_test(
         "Storages/Statistics/tests/gtest_stats.cpp",
         "Storages/Streaming/tests/gtest_subscription_manager.cpp",
         "Storages/TimeSeries/tests/gtest_normalize_time_series_definition.cpp",
-    ] + glob(["Storages/tests/*.cpp"])),
+    ] + glob(["Storages/tests/*.cpp"]),
     additional_compiler_inputs = select({
         "@platforms//cpu:x86_64": [
             "//bazel:gen/base/base/GitHash.generated.cpp",
@@ -8536,7 +8467,7 @@ cc_test(
     local_defines = [
         "AI_SDK_HAS_ANTHROPIC=1",
         "AI_SDK_HAS_OPENAI=1",
-    ] + (select({
+    ] + select({
         "@platforms//cpu:x86_64": [
             "ARROW_HAVE_AVX2",
             "ARROW_HAVE_BMI2",
@@ -8611,7 +8542,7 @@ cc_test(
             "X86_SSSE3",
         ],
         "@platforms//cpu:aarch64": [],
-    })) + [
+    }) + [
         "XXH_INLINE_ALL",
         "ZLIB_COMPAT",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
@@ -8624,7 +8555,6 @@ cc_test(
         "../" + repository_path("contrib/wyhash"),
         "../" + "contrib/jemalloc-cmake/include",
         "../" + "contrib/libdivide-cmake",
-    ] + ([
         "../" + "contrib/pdqsort",
         "../" + "contrib/ipnsort",
         "../" + "contrib/driftsort",
@@ -8658,112 +8588,71 @@ cc_test(
     ] + select({
         "@platforms//cpu:x86_64": [
             "../" + "bazel/gen/x86_64/src/Server/grpc_protos",
-            "../" + (repository_path("contrib/s2geometry") + "/src"),
-            "../" + "contrib/s2geometry-cmake",
-            "../" + (repository_path("contrib/AMQP-CPP") + "/include"),
-            "../" + repository_path("contrib/AMQP-CPP"),
-            "../" + repository_path("contrib/sqlite-amalgamation"),
-            "../" + (repository_path("contrib/rocksdb") + "/include"),
-            "../" + (repository_path("contrib/libpqxx") + "/include"),
-            "../" + (repository_path("contrib/libpqxx") + "/config/contrib/libpqxx-cmake"),
-            "../" + "contrib/postgres-cmake",
-            "../" + (repository_path("contrib/datasketches-cpp") + "/common/include"),
-            "../" + (repository_path("contrib/datasketches-cpp") + "/count/include"),
-            "../" + (repository_path("contrib/datasketches-cpp") + "/theta/include"),
-            "../" + (repository_path("contrib/libstemmer_c") + "/include"),
-            "../" + repository_path("contrib/wordnet-blast"),
-            "../" + (repository_path("contrib/lemmagen-c") + "/include"),
-            "../" + (repository_path("contrib/ulid-c") + "/include"),
-            "../" + (repository_path("contrib/usearch") + "/include"),
-            "../" + (repository_path("contrib/FP16") + "/include"),
-            "../" + (repository_path("contrib/SimSIMD") + "/include"),
-            "../" + "bazel/gen/contrib/prometheus-protobufs-cmake",
-            "../" + repository_path("contrib/google-cloud-cpp"),
-            "../" + (repository_path("contrib/google-cloud-cpp") + "/config/contrib/google-cloud-cpp-cmake"),
-            "../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
-            "../" + (repository_path("contrib/grpc") + "/spm-cpp-include"),
-            "../" + "bazel/gen",
-            "../" + "bazel/gen/.",
-            "../" + repository_path("contrib/SHA3IUF"),
-            "../" + "bazel/gen/contrib/flatbuffers",
-            "../" + (repository_path("contrib/arrow") + "/cpp/src"),
-            "../" + (repository_path("contrib/morton-nd") + "/include"),
-            "../" + repository_path("contrib/xxHash"),
-            "../" + (repository_path("contrib/StringZilla") + "/include"),
-            "../" + (repository_path("contrib/icu") + "/icu4c/source/i18n"),
-            "../" + (repository_path("contrib/icu") + "/icu4c/source/common"),
-            "../" + repository_path("contrib/fastops"),
-            "../" + (repository_path("contrib/cld2") + "/public"),
-            "../" + (repository_path("contrib/sqids-cpp") + "/include"),
-            "../" + (repository_path("contrib/h3") + "/src/h3lib/include"),
-            "../" + (repository_path("contrib/h3") + "/config/contrib/h3/src/h3lib/include"),
-            "../" + (repository_path("contrib/wagyu") + "/include"),
-            "../" + (repository_path("contrib/mapbox-geometry") + "/include"),
-            "../" + (repository_path("contrib/vectorscan") + "/src"),
-            "../" + "contrib/vectorscan-cmake/common",
-            "../" + (repository_path("contrib/ipcrypt2") + "/src/include"),
-            "../" + (repository_path("contrib/heks") + "/include"),
-            "../" + (repository_path("contrib/simdcomp") + "/include"),
-            "../" + (repository_path("contrib/simdcomp") + "/src"),
         ],
         "@platforms//cpu:aarch64": [
             "../" + "bazel/gen/aarch64/src/Server/grpc_protos",
-            "../" + (repository_path("contrib/s2geometry") + "/src"),
-            "../" + "contrib/s2geometry-cmake",
-            "../" + (repository_path("contrib/AMQP-CPP") + "/include"),
-            "../" + repository_path("contrib/AMQP-CPP"),
-            "../" + repository_path("contrib/sqlite-amalgamation"),
-            "../" + (repository_path("contrib/rocksdb") + "/include"),
-            "../" + (repository_path("contrib/libpqxx") + "/include"),
-            "../" + (repository_path("contrib/libpqxx") + "/config/contrib/libpqxx-cmake"),
-            "../" + "contrib/postgres-cmake",
-            "../" + (repository_path("contrib/datasketches-cpp") + "/common/include"),
-            "../" + (repository_path("contrib/datasketches-cpp") + "/count/include"),
-            "../" + (repository_path("contrib/datasketches-cpp") + "/theta/include"),
-            "../" + (repository_path("contrib/libstemmer_c") + "/include"),
-            "../" + repository_path("contrib/wordnet-blast"),
-            "../" + (repository_path("contrib/lemmagen-c") + "/include"),
-            "../" + (repository_path("contrib/ulid-c") + "/include"),
-            "../" + (repository_path("contrib/usearch") + "/include"),
-            "../" + (repository_path("contrib/FP16") + "/include"),
-            "../" + (repository_path("contrib/SimSIMD") + "/include"),
-            "../" + "bazel/gen/contrib/prometheus-protobufs-cmake",
-            "../" + repository_path("contrib/google-cloud-cpp"),
-            "../" + (repository_path("contrib/google-cloud-cpp") + "/config/contrib/google-cloud-cpp-cmake"),
-            "../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
-            "../" + (repository_path("contrib/grpc") + "/spm-cpp-include"),
-            "../" + "bazel/gen",
-            "../" + "bazel/gen/.",
-            "../" + repository_path("contrib/SHA3IUF"),
-            "../" + "bazel/gen/contrib/flatbuffers",
-            "../" + (repository_path("contrib/arrow") + "/cpp/src"),
-            "../" + (repository_path("contrib/morton-nd") + "/include"),
-            "../" + repository_path("contrib/xxHash"),
-            "../" + (repository_path("contrib/StringZilla") + "/include"),
-            "../" + (repository_path("contrib/icu") + "/icu4c/source/i18n"),
-            "../" + (repository_path("contrib/icu") + "/icu4c/source/common"),
-            "../" + repository_path("contrib/fastops"),
-            "../" + (repository_path("contrib/cld2") + "/public"),
-            "../" + (repository_path("contrib/sqids-cpp") + "/include"),
-            "../" + (repository_path("contrib/h3") + "/src/h3lib/include"),
-            "../" + (repository_path("contrib/h3") + "/config/contrib/h3/src/h3lib/include"),
-            "../" + (repository_path("contrib/wagyu") + "/include"),
-            "../" + (repository_path("contrib/mapbox-geometry") + "/include"),
-            "../" + (repository_path("contrib/vectorscan") + "/src"),
-            "../" + "contrib/vectorscan-cmake/common",
-            "../" + (repository_path("contrib/ipcrypt2") + "/src/include"),
-            "../" + (repository_path("contrib/heks") + "/include"),
         ],
     }) + [
+        "../" + (repository_path("contrib/s2geometry") + "/src"),
+        "../" + "contrib/s2geometry-cmake",
+        "../" + (repository_path("contrib/AMQP-CPP") + "/include"),
+        "../" + repository_path("contrib/AMQP-CPP"),
+        "../" + repository_path("contrib/sqlite-amalgamation"),
+        "../" + (repository_path("contrib/rocksdb") + "/include"),
+        "../" + (repository_path("contrib/libpqxx") + "/include"),
+        "../" + (repository_path("contrib/libpqxx") + "/config/contrib/libpqxx-cmake"),
+        "../" + "contrib/postgres-cmake",
+        "../" + (repository_path("contrib/datasketches-cpp") + "/common/include"),
+        "../" + (repository_path("contrib/datasketches-cpp") + "/count/include"),
+        "../" + (repository_path("contrib/datasketches-cpp") + "/theta/include"),
+        "../" + (repository_path("contrib/libstemmer_c") + "/include"),
+        "../" + repository_path("contrib/wordnet-blast"),
+        "../" + (repository_path("contrib/lemmagen-c") + "/include"),
+        "../" + (repository_path("contrib/ulid-c") + "/include"),
+        "../" + (repository_path("contrib/usearch") + "/include"),
+        "../" + (repository_path("contrib/FP16") + "/include"),
+        "../" + (repository_path("contrib/SimSIMD") + "/include"),
+        "../" + "bazel/gen/contrib/prometheus-protobufs-cmake",
+        "../" + repository_path("contrib/google-cloud-cpp"),
+        "../" + (repository_path("contrib/google-cloud-cpp") + "/config/contrib/google-cloud-cpp-cmake"),
+        "../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
+        "../" + (repository_path("contrib/grpc") + "/spm-cpp-include"),
+        "../" + "bazel/gen",
+        "../" + "bazel/gen/.",
+        "../" + repository_path("contrib/SHA3IUF"),
+        "../" + "bazel/gen/contrib/flatbuffers",
+        "../" + (repository_path("contrib/arrow") + "/cpp/src"),
+        "../" + (repository_path("contrib/morton-nd") + "/include"),
+        "../" + repository_path("contrib/xxHash"),
+        "../" + (repository_path("contrib/StringZilla") + "/include"),
+        "../" + (repository_path("contrib/icu") + "/icu4c/source/i18n"),
+        "../" + (repository_path("contrib/icu") + "/icu4c/source/common"),
+        "../" + repository_path("contrib/fastops"),
+        "../" + (repository_path("contrib/cld2") + "/public"),
+        "../" + (repository_path("contrib/sqids-cpp") + "/include"),
+        "../" + (repository_path("contrib/h3") + "/src/h3lib/include"),
+        "../" + (repository_path("contrib/h3") + "/config/contrib/h3/src/h3lib/include"),
+        "../" + (repository_path("contrib/wagyu") + "/include"),
+        "../" + (repository_path("contrib/mapbox-geometry") + "/include"),
+        "../" + (repository_path("contrib/vectorscan") + "/src"),
+        "../" + "contrib/vectorscan-cmake/common",
+        "../" + (repository_path("contrib/ipcrypt2") + "/src/include"),
+        "../" + (repository_path("contrib/heks") + "/include"),
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "../" + (repository_path("contrib/simdcomp") + "/include"),
+            "../" + (repository_path("contrib/simdcomp") + "/src"),
+        ],
+        "@platforms//cpu:aarch64": [],
+    }) + [
         "../" + (repository_path("contrib/yaml-cpp") + "/include"),
-    ]) + [
         "../" + (repository_path("contrib/silk") + "/include"),
         "../" + (repository_path("contrib/llvm-project") + "/llvm/include"),
         "../" + (llvm_toolchain_path() + "/libunwind/include"),
         "../" + (llvm_toolchain_path() + "/libc"),
         "../" + (llvm_toolchain_path() + "/compiler-rt/include"),
     ],
-    deps = ([
+    deps = [
         "@clickhouse_llvm_project//:clang_rt_builtins",
         "@clickhouse_llvm_project//:clang_rt_xray",
         "@clickhouse_llvm_project//:libllvmlibc",
@@ -9140,12 +9029,12 @@ cc_test(
         "@clickhouse_xsimd//:xsimd",
         "@clickhouse_abseil_cpp//:abseil_cpp_headers",
         "@clickhouse_wasmtime//:wasmtime_headers",
-    ]),
+    ],
 )
 
 cc_library(
     name = "clickhouse_source_headers",
-    hdrs = (glob(["Access/**/*.h"]) + glob(["Analyzer/**/*.h"]) + glob(["Backups/*.h"]) + [
+    hdrs = glob(["Access/**/*.h"]) + glob(["Analyzer/**/*.h"]) + glob(["Backups/*.h"]) + [
         "BridgeHelper/IBridgeHelper.h",
         "BridgeHelper/XDBCBridgeHelper.h",
     ] + glob(["Client/**/*.h"]) + glob(["Columns/*.h"]) + glob(["Coordination/**/*.h"]) + glob(["Core/**/*.h"]) + glob(["DataTypes/**/*.h"]) + glob(["Databases/**/*.h"]) + glob(["Disks/**/*.h"]) + [
@@ -9487,7 +9376,7 @@ cc_library(
         "Interpreters/replaceMissedSubcolumnsInQuery.h",
         "Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h",
         "Interpreters/sortBlock.h",
-    ] + glob(["Planner/*.h"]) + glob(["Processors/**/*.h"]) + glob(["QueryPipeline/*.h"]) + glob(["Server/**/*.h"]) + glob(["Storages/**/*.h"]) + glob(["WindowFunctions/*.h"])),
+    ] + glob(["Planner/*.h"]) + glob(["Processors/**/*.h"]) + glob(["QueryPipeline/*.h"]) + glob(["Server/**/*.h"]) + glob(["Storages/**/*.h"]) + glob(["WindowFunctions/*.h"]),
     textual_hdrs = ["Client/SQLKeywordsForHighlighting.inc"],
     deps = [
         "//:headers",

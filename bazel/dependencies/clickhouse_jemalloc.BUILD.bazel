@@ -29,7 +29,7 @@ expand_template(
 
 ch_cc_library(
     name = "_jemalloc",
-    srcs = ([
+    srcs = [
         "src/arena.c",
         "src/background_thread.c",
         "src/base.c",
@@ -95,7 +95,7 @@ ch_cc_library(
         "src/tsd.c",
         "src/util.c",
         "src/witness.c",
-    ]) + glob(["include/**/*.h"]),
+    ] + glob(["include/**/*.h"]),
     hdrs = [
         ":config/contrib/jemalloc-cmake/include_linux/jemalloc/internal/jemalloc_internal_defs.h",
         "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/internal/jemalloc_preamble.h",

@@ -49,7 +49,7 @@ ch_cc_library(
 
 cc_binary(
     name = "flatc",
-    srcs = ([
+    srcs = [
         "src/annotated_binary_text_gen.cpp",
         "src/bfbs_gen_lua.cpp",
         "src/bfbs_gen_nim.cpp",
@@ -75,7 +75,7 @@ cc_binary(
         "src/idl_gen_swift.cpp",
         "src/idl_gen_ts.cpp",
         "include/codegen/python.cc",
-    ] + glob(["grpc/src/compiler/*.cc"])) + glob([
+    ] + glob(["grpc/src/compiler/*.cc"]) + glob([
         "**/*.h",
         "**/*.hpp",
     ]),
@@ -120,7 +120,7 @@ cc_binary(
             "src/idl_gen_ts.cpp",
         ],
     ),
-    copts = ((([
+    copts = [
         "--no-default-config",
         "-fdiagnostics-color=always",
         "-pipe",
@@ -145,7 +145,7 @@ cc_binary(
             "-mbranches-within-32B-boundaries",
         ],
         "@platforms//cpu:aarch64": [],
-    }))) + [
+    })) + [
         "-fstack-protector-strong",
         "-fstack-clash-protection",
         "-ffp-contract=off",
@@ -166,7 +166,7 @@ cc_binary(
         "-gz=zlib",
         "-Werror",
         "-nostdinc++",
-    ]) + cmake_prefix_maps([
+    ] + cmake_prefix_maps([
         "aarch64",
         "x86_64",
     ]) + select({
@@ -181,7 +181,7 @@ cc_binary(
             "--gcc-toolchain=" + repository_path("contrib/sysroot") + "/linux-aarch64",
             "-nostdinc++",
         ],
-    })),
+    }),
     features = [
         "-static_link_cpp_runtimes",
         "-fortify_source",

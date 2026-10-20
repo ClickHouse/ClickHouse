@@ -17,7 +17,7 @@ _GENERATED_HEADER_INPUTS_0 = [
     "@clickhouse//contrib/pdqsort:pdqsort.h",
 ]
 
-_GENERATED_LOCAL_DEFINES_0 = (select({
+_GENERATED_LOCAL_DEFINES_0 = select({
     "@platforms//cpu:x86_64": [],
     "@platforms//cpu:aarch64": [
         "ARM_ACLE",
@@ -73,7 +73,7 @@ _GENERATED_LOCAL_DEFINES_0 = (select({
         "X86_SSSE3",
     ],
     "@platforms//cpu:aarch64": [],
-})) + [
+}) + [
     "ZLIB_COMPAT",
     "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
     "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
@@ -87,7 +87,7 @@ _ROARING_LOCAL_INCLUDES = [
 
 ch_cc_library(
     name = "_roaring__compile_0",
-    srcs = ([
+    srcs = [
         "src/array_util.c",
         "src/bitset.c",
         "src/bitset_util.c",
@@ -97,7 +97,7 @@ ch_cc_library(
         "src/roaring_array.c",
         "src/roaring_priority_queue.c",
         "src/art/art.c",
-    ] + glob(["src/containers/*.c"])) + glob(
+    ] + glob(["src/containers/*.c"]) + glob(
         [
             "include/roaring/**/*.h",
             "src/**/*.h",
@@ -133,13 +133,13 @@ ch_cc_library(
             "include/roaring/utilasm.h",
         ],
     ),
-    hdrs = ([
+    hdrs = [
         "@clickhouse//bazel:gen/base/base/GitHash.generated.cpp",
         "@clickhouse_liburing//:config/contrib/liburing/src/include-compat/liburing/compat.h",
         "@clickhouse_liburing//:config/contrib/liburing/src/include/liburing/io_uring_version.h",
         "@clickhouse_snappy//:config/contrib/snappy-cmake/config.h",
         "@clickhouse_snappy//:config/contrib/snappy-cmake/snappy-stubs-public.h",
-    ] + _GENERATED_HEADER_INPUTS_0) + glob([
+    ] + _GENERATED_HEADER_INPUTS_0 + glob([
         "cpp/**/*.hh",
         "include/**/*.h",
     ]),
@@ -233,14 +233,14 @@ ch_cc_library(
             "include/roaring/utilasm.h",
         ],
     ),
-    hdrs = ([
+    hdrs = [
         "@clickhouse//contrib/croaring-cmake:page_aligned_functions.h",
         "@clickhouse//bazel:gen/base/base/GitHash.generated.cpp",
         "@clickhouse_liburing//:config/contrib/liburing/src/include-compat/liburing/compat.h",
         "@clickhouse_liburing//:config/contrib/liburing/src/include/liburing/io_uring_version.h",
         "@clickhouse_snappy//:config/contrib/snappy-cmake/config.h",
         "@clickhouse_snappy//:config/contrib/snappy-cmake/snappy-stubs-public.h",
-    ] + _GENERATED_HEADER_INPUTS_0) + glob([
+    ] + _GENERATED_HEADER_INPUTS_0 + glob([
         "cpp/**/*.hh",
         "include/**/*.h",
     ]),

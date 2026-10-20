@@ -23,7 +23,7 @@ expand_template(
     template = "@clickhouse//contrib/librdkafka-cmake:config.h.in",
 )
 
-_GENERATED_LOCAL_DEFINES_0 = (select({
+_GENERATED_LOCAL_DEFINES_0 = select({
     "@platforms//cpu:x86_64": [
         "CJSON_HIDE_SYMBOLS",
     ],
@@ -68,7 +68,7 @@ _GENERATED_LOCAL_DEFINES_0 = (select({
         "X86_SSSE3",
     ],
     "@platforms//cpu:aarch64": [],
-})) + [
+}) + [
     "ZLIB_COMPAT",
     "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
     "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
@@ -110,7 +110,7 @@ _RDKAFKA_LOCAL_INCLUDES = [
 
 ch_cc_library(
     name = "_rdkafka__compile_0",
-    srcs = ([
+    srcs = [
         "src/cJSON.c",
         "src/crc32c.c",
         "src/rdaddr.c",
@@ -196,7 +196,7 @@ ch_cc_library(
         "src/rdkafka_sasl_scram.c",
         "src/rdkafka_sasl_oauthbearer.c",
         "@clickhouse//contrib/librdkafka-cmake:rdhttp_poco_transport.h",
-    ]),
+    ],
     hdrs = [
         "@clickhouse_cyrus_sasl//:config/contrib/cyrus-sasl-cmake/prop.h",
         "@clickhouse_cyrus_sasl//:config/contrib/cyrus-sasl-cmake/sasl/sasl.h",

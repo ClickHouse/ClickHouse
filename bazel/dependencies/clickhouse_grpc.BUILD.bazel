@@ -126,7 +126,7 @@ ch_cc_library(
     ],
 )
 
-_GENERATED_LOCAL_DEFINES_1 = (select({
+_GENERATED_LOCAL_DEFINES_1 = select({
     "@platforms//cpu:x86_64": [],
     "@platforms//cpu:aarch64": [
         "ARM_ACLE",
@@ -166,7 +166,7 @@ _GENERATED_LOCAL_DEFINES_1 = (select({
         "X86_SSSE3",
     ],
     "@platforms//cpu:aarch64": [],
-})) + [
+}) + [
     "ZLIB_COMPAT",
     "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
     "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
@@ -188,7 +188,7 @@ _GRPC_LOCAL_INCLUDES = [
 
 ch_cc_library(
     name = "grpc__compile_0",
-    srcs = ((glob(["src/core/call/call_*.cc"]) + [
+    srcs = glob(["src/core/call/call_*.cc"]) + [
         "src/core/call/client_call.cc",
         "src/core/call/interception_chain.cc",
         "src/core/call/message.cc",
@@ -205,7 +205,7 @@ ch_cc_library(
         "src/core/channelz/channelz.cc",
         "src/core/channelz/channelz_registry.cc",
         "src/core/channelz/text_encode.cc",
-    ]) + glob(["src/core/channelz/v2tov1/*.cc"]) + ([
+    ] + glob(["src/core/channelz/v2tov1/*.cc"]) + ([
         "src/core/client_channel/backup_poller.cc",
         "src/core/client_channel/buffered_call.cc",
     ] + glob(["src/core/client_channel/client_*.cc"]) + [
@@ -501,12 +501,12 @@ ch_cc_library(
         "src/core/util/work_serializer.cc",
         "src/core/xds/grpc/certificate_provider_store.cc",
         "src/core/xds/grpc/file_watcher_certificate_provider_factory.cc",
-    ] + glob(["src/core/xds/grpc/xds_*.cc"])) + glob(["src/core/xds/xds_client/*.cc"])),
-    hdrs = ([
+    ] + glob(["src/core/xds/grpc/xds_*.cc"])) + glob(["src/core/xds/xds_client/*.cc"]),
+    hdrs = [
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-    ] + _GENERATED_HEADER_INPUTS_2) + glob([
+    ] + _GENERATED_HEADER_INPUTS_2 + glob([
         "**/*.h",
         "**/*.hpp",
         "**/*.inc",
@@ -533,7 +533,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "grpc__compile_1",
-    srcs = ([
+    srcs = [
         "src/core/ext/upb-gen/cel/expr/checked.upb_minitable.c",
         "src/core/ext/upb-gen/cel/expr/syntax.upb_minitable.c",
         "src/core/ext/upb-gen/envoy/config/common/mutation_rules/v3/mutation_rules.upb_minitable.c",
@@ -690,12 +690,12 @@ ch_cc_library(
         "src/core/ext/upbdefs-gen/src/proto/grpc/lookup/v1/rls_config.upbdefs.c",
     ] + glob(["src/core/ext/upbdefs-gen/udpa/annotations/*.c"]) + [
         "src/core/ext/upbdefs-gen/validate/validate.upbdefs.c",
-    ] + glob(["src/core/ext/upbdefs-gen/xds/annotations/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/xds/core/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/xds/type/matcher/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/xds/type/v3/*.c"])),
-    hdrs = ([
+    ] + glob(["src/core/ext/upbdefs-gen/xds/annotations/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/xds/core/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/xds/type/matcher/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/xds/type/v3/*.c"]),
+    hdrs = [
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-    ] + _GENERATED_HEADER_INPUTS_2) + glob([
+    ] + _GENERATED_HEADER_INPUTS_2 + glob([
         "**/*.h",
         "**/*.hpp",
         "**/*.inc",
@@ -748,7 +748,7 @@ _GENERATED_LOCAL_INCLUDES_3 = [
 
 ch_cc_library(
     name = "grpc++",
-    srcs = (([
+    srcs = [
         "src/core/client_channel/virtual_channel.cc",
         "src/cpp/client/call_context_registry.cc",
         "src/cpp/client/call_credentials.cc",
@@ -775,7 +775,7 @@ ch_cc_library(
         "src/cpp/server/channel_argument_option.cc",
         "src/cpp/server/create_default_thread_pool.cc",
         "src/cpp/server/external_connection_acceptor_impl.cc",
-    ]) + glob(["src/cpp/server/health/*.cc"]) + ([
+    ] + glob(["src/cpp/server/health/*.cc"]) + ([
         "src/cpp/server/insecure_server_credentials.cc",
         "src/cpp/server/secure_server_credentials.cc",
     ] + glob(["src/cpp/server/server_*.cc"]) + [
@@ -786,7 +786,7 @@ ch_cc_library(
         "src/cpp/util/status.cc",
         "src/cpp/util/string_ref.cc",
         "src/cpp/util/time_cc.cc",
-    ])),
+    ]),
     copts = _GENERATED_COPTS_2,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
@@ -806,7 +806,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "grpc++_unsecure",
-    srcs = (([
+    srcs = [
         "src/core/client_channel/virtual_channel.cc",
         "src/cpp/client/call_context_registry.cc",
         "src/cpp/client/call_credentials.cc",
@@ -828,7 +828,7 @@ ch_cc_library(
         "src/cpp/server/channel_argument_option.cc",
         "src/cpp/server/create_default_thread_pool.cc",
         "src/cpp/server/external_connection_acceptor_impl.cc",
-    ]) + glob(["src/cpp/server/health/*.cc"]) + ([
+    ] + glob(["src/cpp/server/health/*.cc"]) + ([
         "src/cpp/server/insecure_server_credentials.cc",
     ] + glob(["src/cpp/server/server_*.cc"]) + [
         "src/cpp/thread_manager/thread_manager.cc",
@@ -836,7 +836,7 @@ ch_cc_library(
         "src/cpp/util/status.cc",
         "src/cpp/util/string_ref.cc",
         "src/cpp/util/time_cc.cc",
-    ])),
+    ]),
     copts = _GENERATED_COPTS_1,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
@@ -857,17 +857,17 @@ ch_cc_library(
 
 cc_binary(
     name = "grpc_cpp_plugin",
-    srcs = ([
+    srcs = [
         "src/compiler/cpp_plugin.cc",
     ] + glob([
         "**/*.h",
         "**/*.hpp",
         "**/*.inc",
-    ])),
+    ]),
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
     ],
-    copts = ((([
+    copts = [
         "--no-default-config",
         "-fdiagnostics-color=always",
         "-pipe",
@@ -892,7 +892,7 @@ cc_binary(
             "-mbranches-within-32B-boundaries",
         ],
         "@platforms//cpu:aarch64": [],
-    }))) + [
+    })) + [
         "-fstack-protector-strong",
         "-fstack-clash-protection",
         "-ffp-contract=off",
@@ -929,7 +929,7 @@ cc_binary(
         repository_path("contrib/grpc") + "/third_party/utf8_range",
         "-I",
         repository_path("contrib/grpc") + "/third_party/xxhash",
-    ]) + cmake_prefix_maps([
+    ] + cmake_prefix_maps([
         "aarch64",
         "x86_64",
     ]) + select({
@@ -944,7 +944,7 @@ cc_binary(
             "--gcc-toolchain=" + repository_path("contrib/sysroot") + "/linux-aarch64",
             "-nostdinc++",
         ],
-    })),
+    }),
     features = [
         "-static_link_cpp_runtimes",
         "-fortify_source",
@@ -1143,7 +1143,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "grpc_unsecure__compile_0",
-    srcs = ((glob(["src/core/call/call_*.cc"]) + [
+    srcs = glob(["src/core/call/call_*.cc"]) + [
         "src/core/call/client_call.cc",
         "src/core/call/interception_chain.cc",
         "src/core/call/message.cc",
@@ -1203,7 +1203,7 @@ ch_cc_library(
         "src/core/ext/transport/chttp2/chttp2_plugin.cc",
         "src/core/ext/transport/chttp2/client/chttp2_connector.cc",
         "src/core/ext/transport/chttp2/server/chttp2_server.cc",
-    ]) + glob(["src/core/ext/transport/chttp2/transport/*.cc"]) + [
+    ] + glob(["src/core/ext/transport/chttp2/transport/*.cc"]) + [
         "src/core/ext/transport/inproc/inproc_transport.cc",
         "src/core/ext/transport/inproc/legacy_inproc_transport.cc",
         "src/core/filter/auth/client_auth_filter.cc",
@@ -1412,7 +1412,7 @@ ch_cc_library(
         "src/core/util/uuid_v4.cc",
         "src/core/util/validation_errors.cc",
         "src/core/util/work_serializer.cc",
-    ])),
+    ]),
     hdrs = [
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
@@ -1442,7 +1442,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "grpc_unsecure__compile_1",
-    srcs = ([
+    srcs = [
         "src/core/ext/upb-gen/google/api/annotations.upb_minitable.c",
         "src/core/ext/upb-gen/google/api/http.upb_minitable.c",
     ] + glob(["src/core/ext/upb-gen/google/protobuf/*.c"]) + [
@@ -1458,7 +1458,7 @@ ch_cc_library(
         "src/core/ext/upbdefs-gen/google/protobuf/duration.upbdefs.c",
         "src/core/ext/upbdefs-gen/google/protobuf/empty.upbdefs.c",
         "src/core/ext/upbdefs-gen/google/protobuf/timestamp.upbdefs.c",
-    ] + glob(["src/core/ext/upbdefs-gen/src/proto/grpc/channelz/v2/*.c"])),
+    ] + glob(["src/core/ext/upbdefs-gen/src/proto/grpc/channelz/v2/*.c"]),
     hdrs = [
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
@@ -1503,7 +1503,7 @@ cc_library(
 
 ch_cc_library(
     name = "upb",
-    srcs = ([
+    srcs = [
         "third_party/upb/upb/base/status.c",
         "third_party/upb/upb/hash/common.c",
     ] + glob(["third_party/upb/upb/lex/*.c"]) + [
@@ -1518,7 +1518,7 @@ ch_cc_library(
         "third_party/upb/upb/wire/encode.c",
         "third_party/upb/upb/wire/eps_copy_input_stream.c",
         "third_party/upb/upb/wire/reader.c",
-    ]),
+    ],
     copts = _GRPC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
@@ -1593,11 +1593,11 @@ ch_cc_library(
 
 ch_cc_library(
     name = "upb_mini_descriptor_lib",
-    srcs = (glob(["third_party/upb/upb/mini_descriptor/**/*.c"]) + [
+    srcs = glob(["third_party/upb/upb/mini_descriptor/**/*.c"]) + [
         "third_party/upb/upb/wire/decode_fast/select.c",
         "third_party/upb/upb/wire/eps_copy_input_stream.c",
         "third_party/upb/upb/wire/reader.c",
-    ]),
+    ],
     copts = _GRPC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
@@ -1648,7 +1648,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "upb_reflection_lib",
-    srcs = ([
+    srcs = [
         "third_party/upb/upb/message/copy.c",
         "third_party/upb/upb/message/merge.c",
         "third_party/upb/upb/reflection/def_pool.c",
@@ -1666,7 +1666,7 @@ ch_cc_library(
         "third_party/upb/upb/reflection/method_def.c",
         "third_party/upb/upb/reflection/oneof_def.c",
         "third_party/upb/upb/reflection/service_def.c",
-    ]),
+    ],
     copts = _GRPC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",

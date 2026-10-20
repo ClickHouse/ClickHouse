@@ -31,7 +31,7 @@ expand_template(
 
 ch_cc_library(
     name = "_cassandra",
-    srcs = (([
+    srcs = [
         "src/abstract_data.cpp",
         "src/address.cpp",
         "src/address_factory.cpp",
@@ -127,7 +127,7 @@ ch_cc_library(
         "src/wkt.cpp",
         "src/ssl/ssl_openssl_impl.cpp",
         "src/ssl/ring_buffer_bio.cpp",
-    ]) + glob(
+    ] + glob(
         [
             "src/**/*.h",
             "src/**/*.hpp",
@@ -137,7 +137,7 @@ ch_cc_library(
             "src/third_party/hdr_histogram/hdr_histogram.hpp",
             "src/third_party/http-parser/http_parser.h",
         ],
-    )) + glob([
+    ) + glob([
         "src/third_party/curl/**/*.hpp",
         "src/third_party/hdr_histogram/**/*.hpp",
         "src/third_party/http-parser/**/*.h",
@@ -155,7 +155,7 @@ ch_cc_library(
         "-I",
         repository_path("contrib/minizip-ng") + "/compat",
     ],
-    local_defines = (select({
+    local_defines = select({
         "@platforms//cpu:x86_64": [
             "CASS_BUILDING",
         ],
@@ -199,7 +199,7 @@ ch_cc_library(
             "X86_SSSE3",
         ],
         "@platforms//cpu:aarch64": [],
-    })) + [
+    }) + [
         "ZLIB_COMPAT",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
@@ -239,12 +239,11 @@ ch_cc_library(
     srcs = [
         "src/third_party/curl/hostcheck.cpp",
     ] + glob(["src/third_party/curl/**/*.hpp"]),
-    copts = (
+    copts =
         [
             "-w",
             "-std=c++17",
-        ]
-    ),
+        ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
     alwayslink = True,
@@ -255,12 +254,11 @@ ch_cc_library(
     srcs = [
         "src/third_party/hdr_histogram/hdr_histogram.cpp",
     ] + glob(["src/third_party/hdr_histogram/**/*.hpp"]),
-    copts = (
+    copts =
         [
             "-w",
             "-std=c++17",
-        ]
-    ),
+        ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
     alwayslink = True,

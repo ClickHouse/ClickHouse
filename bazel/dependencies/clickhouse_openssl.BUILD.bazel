@@ -8,7 +8,7 @@ exports_files([
     "LICENSE.txt",
 ])
 
-_GENERATED_LOCAL_DEFINES_0 = (select({
+_GENERATED_LOCAL_DEFINES_0 = select({
     "@platforms//cpu:x86_64": [
         "AES_ASM",
         "BSAES_ASM",
@@ -79,7 +79,7 @@ _GENERATED_LOCAL_DEFINES_0 = (select({
     "@platforms//cpu:aarch64": [
         "VPSM4_ASM",
     ],
-})) + [
+}) + [
     "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
     "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
     "_LIBUNWIND_IS_NATIVE_ONLY",
@@ -105,7 +105,7 @@ _CRYPTO_LOCAL_INCLUDES = select({
 ch_cc_library(
     name = "crypto__compile_0",
     srcs = select({
-        "@platforms//cpu:x86_64": ([
+        "@platforms//cpu:x86_64": [
             "@clickhouse//contrib/openssl-cmake:common/providers/der_digests_gen.c",
             "@clickhouse//contrib/openssl-cmake:common/providers/der_dsa_gen.c",
             "@clickhouse//contrib/openssl-cmake:common/providers/der_ec_gen.c",
@@ -489,8 +489,8 @@ ch_cc_library(
             "crypto/bn/rsaz_exp_x2.c",
             "crypto/ec/ecp_nistz256.c",
             "@clickhouse//contrib/openssl-cmake:linux_x86_64/include_private/buildinf.h",
-        ]),
-        "@platforms//cpu:aarch64": ([
+        ],
+        "@platforms//cpu:aarch64": [
             "@clickhouse//contrib/openssl-cmake:common/providers/der_digests_gen.c",
             "@clickhouse//contrib/openssl-cmake:common/providers/der_dsa_gen.c",
             "@clickhouse//contrib/openssl-cmake:common/providers/der_ec_gen.c",
@@ -884,7 +884,7 @@ ch_cc_library(
             "crypto/rc4/rc4_skey.c",
             "crypto/whrlpool/wp_block.c",
             "@clickhouse//contrib/openssl-cmake:linux_aarch64/include_private/buildinf.h",
-        ]),
+        ],
     }),
     hdrs = glob([
         "**/*.h",
@@ -1028,7 +1028,7 @@ cc_library(
 
 ch_cc_library(
     name = "ssl",
-    srcs = (([
+    srcs = [
         "ssl/bio_ssl.c",
     ] + glob(["ssl/d1_*.c"]) + [
         "ssl/methods.c",
@@ -1082,7 +1082,7 @@ ch_cc_library(
         "ssl/record/methods/tlsany_meth.c",
         "ssl/record/rec_layer_d1.c",
         "ssl/record/rec_layer_s3.c",
-    ]) + glob(["ssl/rio/*.c"]) + (glob(["ssl/s3_*.c"]) + [
+    ] + glob(["ssl/rio/*.c"]) + (glob(["ssl/s3_*.c"]) + [
         "ssl/ssl_asn1.c",
         "ssl/ssl_cert.c",
         "ssl/ssl_cert_comp.c",
@@ -1100,7 +1100,7 @@ ch_cc_library(
     ]) + glob(["ssl/statem/*.c"]) + (glob(["ssl/t1_*.c"]) + [
         "ssl/tls13_enc.c",
         "ssl/tls_depr.c",
-    ])),
+    ]),
     additional_compiler_inputs = ["ms/applink.c"],
     copts = [
         "-w",

@@ -37,7 +37,7 @@ ch_cc_library(
     features = ["-static_link_cpp_runtimes"],
     link_runtime = True,
     llvm_headers = False,
-    local_defines = (select({
+    local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
             "ARM_ACLE",
@@ -93,7 +93,7 @@ ch_cc_library(
             "X86_SSSE3",
         ],
         "@platforms//cpu:aarch64": [],
-    })) + [
+    }) + [
         "ZLIB_COMPAT",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
@@ -113,7 +113,7 @@ ch_cc_library(
         "@clickhouse_llvm_project//:clang_rt_builtins",
         "@clickhouse_llvm_project//:clang_rt_xray",
         "@clickhouse_llvm_project//:libllvmlibc",
-    ] + (select({
+    ] + select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
             "@clickhouse_llvm_project//:LLVMAArch64CodeGen",
@@ -459,7 +459,7 @@ ch_cc_library(
             "//base:harmful",
         ],
         "@platforms//cpu:aarch64": [],
-    })) + [
+    }) + [
         "//src/Common/mysqlxx:mysqlxx",
         "//base/readpassphrase:readpassphrase",
         "@clickhouse_openssl//:ssl",
@@ -486,7 +486,7 @@ ch_cc_library(
         "@llvm-project//compiler-rt:headers",
         "@llvm-project//libc:libc_headers",
         "@llvm-project//libunwind:headers",
-    ] + ["@clickhouse_boost//:boost_headers"] + [
+        "@clickhouse_boost//:boost_headers",
         "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
         "@clickhouse_fast_float//:fast_float",
         "@clickhouse_jwt_cpp//:jwt_cpp",
@@ -496,7 +496,6 @@ ch_cc_library(
         "@clickhouse_msgpack_c//:msgpack_c",
         "@clickhouse_pocketfft//:pocketfft",
         "@clickhouse_sparsehash_c11//:sparsehash_c11",
-    ] + [
         "//base/glibc-compatibility:headers",
         "//base/glibc-rseq:headers",
         "//base/poco/Foundation:headers",

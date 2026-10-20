@@ -1103,9 +1103,8 @@ ch_cc_library(
         "llvm/lib/Transforms/AggressiveInstCombine/AggressiveInstCombine.cpp",
         "llvm/lib/Transforms/AggressiveInstCombine/TruncInstCombine.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMTransformUtils"],
 )
@@ -1239,9 +1238,8 @@ ch_cc_library(
         "llvm/lib/Analysis/ValueTracking.cpp",
         "llvm/lib/Analysis/VectorUtils.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":LLVMObject",
@@ -1253,9 +1251,8 @@ ch_cc_library(
 ch_cc_library(
     name = "LLVMAsmParser",
     srcs = glob(["llvm/lib/AsmParser/*.cpp"]),
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMCore"],
 )
@@ -1291,9 +1288,8 @@ ch_cc_library(
         "llvm/lib/CodeGen/AsmPrinter/WinCFGuard.cpp",
         "llvm/lib/CodeGen/AsmPrinter/WinException.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":LLVMMCParser",
@@ -1320,9 +1316,8 @@ ch_cc_library(
         "llvm/lib/BinaryFormat/Wasm.cpp",
         "llvm/lib/BinaryFormat/XCOFF.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMSupport"],
 )
@@ -1336,9 +1331,8 @@ ch_cc_library(
         "llvm/lib/Bitcode/Reader/MetadataLoader.cpp",
         "llvm/lib/Bitcode/Reader/ValueList.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMCore"],
 )
@@ -1351,9 +1345,8 @@ ch_cc_library(
         "llvm/lib/Bitcode/Writer/BitWriter.cpp",
         "llvm/lib/Bitcode/Writer/ValueEnumerator.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMCore"],
 )
@@ -1363,9 +1356,8 @@ ch_cc_library(
     srcs = [
         "llvm/lib/Bitstream/Reader/BitstreamReader.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMSupport"],
 )
@@ -1375,9 +1367,8 @@ ch_cc_library(
     srcs = [
         "llvm/lib/Transforms/CFGuard/CFGuard.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMCore"],
 )
@@ -1385,16 +1376,15 @@ ch_cc_library(
 ch_cc_library(
     name = "LLVMCGData",
     srcs = glob(["llvm/lib/CGData/*.cpp"]),
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMObject"],
 )
 
 ch_cc_library(
     name = "LLVMCodeGen",
-    srcs = ([
+    srcs = [
         "llvm/lib/CodeGen/AggressiveAntiDepBreaker.cpp",
         "llvm/lib/CodeGen/AllocationOrder.cpp",
         "llvm/lib/CodeGen/Analysis.cpp",
@@ -1630,10 +1620,9 @@ ch_cc_library(
         "llvm/lib/CodeGen/WindowsSecureHotPatching.cpp",
         "llvm/lib/CodeGen/WinEHPrepare.cpp",
         "llvm/lib/CodeGen/XRayInstrumentation.cpp",
-    ]),
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    ],
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":LLVMBitReader",
@@ -1650,9 +1639,8 @@ ch_cc_library(
     srcs = [
         "llvm/lib/CodeGenTypes/LowLevelType.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMSupport"],
 )
@@ -1741,9 +1729,8 @@ ch_cc_library(
         "llvm/lib/IR/Verifier.cpp",
         "llvm/lib/IR/VFABIDemangler.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":LLVMBinaryFormat",
@@ -1767,9 +1754,8 @@ ch_cc_library(
         "llvm/lib/Transforms/Coroutines/SpillUtils.cpp",
         "llvm/lib/Transforms/Coroutines/SuspendCrossingInfo.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMipo"],
 )
@@ -1818,16 +1804,15 @@ ch_cc_library(
         "llvm/lib/DebugInfo/CodeView/TypeStreamMerger.cpp",
         "llvm/lib/DebugInfo/CodeView/TypeTableCollection.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMSupport"],
 )
 
 ch_cc_library(
     name = "LLVMDebugInfoDWARF",
-    srcs = ([
+    srcs = [
         "llvm/lib/DebugInfo/DWARF/DWARFAbbreviationDeclaration.cpp",
         "llvm/lib/DebugInfo/DWARF/DWARFAcceleratorTable.cpp",
         "llvm/lib/DebugInfo/DWARF/DWARFAddressRange.cpp",
@@ -1857,10 +1842,9 @@ ch_cc_library(
         "llvm/lib/DebugInfo/DWARF/DWARFUnitIndex.cpp",
         "llvm/lib/DebugInfo/DWARF/DWARFUnwindTablePrinter.cpp",
         "llvm/lib/DebugInfo/DWARF/DWARFVerifier.cpp",
-    ] + glob(["llvm/lib/DebugInfo/DWARF/LowLevel/*.cpp"])),
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    ] + glob(["llvm/lib/DebugInfo/DWARF/LowLevel/*.cpp"]),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMObject"],
 )
@@ -1875,9 +1859,8 @@ ch_cc_library(
         "llvm/lib/Demangle/MicrosoftDemangleNodes.cpp",
         "llvm/lib/Demangle/RustDemangle.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":llvm_headers",
@@ -1894,9 +1877,8 @@ ch_cc_library(
         "llvm/lib/ExecutionEngine/SectionMemoryManager.cpp",
         "llvm/lib/ExecutionEngine/TargetSelect.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":LLVMTarget",
@@ -1909,9 +1891,8 @@ ch_cc_library(
     srcs = [
         "llvm/lib/Frontend/Atomic/Atomic.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMAnalysis"],
 )
@@ -1919,9 +1900,8 @@ ch_cc_library(
 ch_cc_library(
     name = "LLVMFrontendHLSL",
     srcs = glob(["llvm/lib/Frontend/HLSL/*.cpp"]),
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMCore"],
 )
@@ -1929,9 +1909,8 @@ ch_cc_library(
 ch_cc_library(
     name = "LLVMFrontendOffloading",
     srcs = glob(["llvm/lib/Frontend/Offloading/*.cpp"]),
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMCore"],
 )
@@ -1939,9 +1918,8 @@ ch_cc_library(
 ch_cc_library(
     name = "LLVMFrontendOpenMP",
     srcs = glob(["llvm/lib/Frontend/OpenMP/*.cpp"]),
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":LLVMTransformUtils",
@@ -1984,9 +1962,8 @@ ch_cc_library(
         "llvm/lib/CodeGen/GlobalISel/RegBankSelect.cpp",
         "llvm/lib/CodeGen/GlobalISel/Utils.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMCodeGen"],
 )
@@ -1996,9 +1973,8 @@ ch_cc_library(
     srcs = [
         "llvm/lib/Transforms/HipStdPar/HipStdPar.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMTransformUtils"],
 )
@@ -2008,9 +1984,8 @@ ch_cc_library(
     srcs = [
         "llvm/lib/IRPrinter/IRPrintingPasses.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMAnalysis"],
 )
@@ -2020,9 +1995,8 @@ ch_cc_library(
     srcs = [
         "llvm/lib/IRReader/IRReader.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":LLVMBitReader",
@@ -2033,9 +2007,8 @@ ch_cc_library(
 ch_cc_library(
     name = "LLVMInstCombine",
     srcs = glob(["llvm/lib/Transforms/InstCombine/*.cpp"]),
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMTransformUtils"],
 )
@@ -2072,9 +2045,8 @@ ch_cc_library(
         "llvm/lib/Transforms/Instrumentation/TypeSanitizer.cpp",
         "llvm/lib/Transforms/Instrumentation/ValueProfileCollector.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMTransformUtils"],
 )
@@ -2085,9 +2057,8 @@ ch_cc_library(
         "llvm/lib/Linker/IRMover.cpp",
         "llvm/lib/Linker/LinkModules.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMTransformUtils"],
 )
@@ -2166,9 +2137,8 @@ ch_cc_library(
         "llvm/lib/MC/WinCOFFObjectWriter.cpp",
         "llvm/lib/MC/XCOFFObjectWriter.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":LLVMBinaryFormat",
@@ -2179,9 +2149,8 @@ ch_cc_library(
 ch_cc_library(
     name = "LLVMMCDisassembler",
     srcs = glob(["llvm/lib/MC/MCDisassembler/*.cpp"]),
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMMC"],
 )
@@ -2203,9 +2172,8 @@ ch_cc_library(
         "llvm/lib/MC/MCParser/WasmAsmParser.cpp",
         "llvm/lib/MC/MCParser/XCOFFAsmParser.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMMC"],
 )
@@ -2213,9 +2181,8 @@ ch_cc_library(
 ch_cc_library(
     name = "LLVMObjCARCOpts",
     srcs = glob(["llvm/lib/Transforms/ObjCARC/*.cpp"]),
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMTransformUtils"],
 )
@@ -2260,9 +2227,8 @@ ch_cc_library(
         "llvm/lib/Object/WindowsResource.cpp",
         "llvm/lib/Object/XCOFFObjectFile.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":LLVMCore",
@@ -2304,9 +2270,8 @@ ch_cc_library(
         "llvm/lib/ObjectYAML/YAML.cpp",
         "llvm/lib/ObjectYAML/yaml2obj.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":LLVMDebugInfoCodeView",
@@ -2324,9 +2289,8 @@ ch_cc_library(
         "llvm/lib/Passes/PassBuilderPipelines.cpp",
         "llvm/lib/Passes/StandardInstrumentations.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":LLVMTarget",
@@ -2361,9 +2325,8 @@ ch_cc_library(
         "llvm/lib/ProfileData/SampleProfWriter.cpp",
         "llvm/lib/ProfileData/SymbolRemappingReader.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMCore"],
 )
@@ -2371,9 +2334,8 @@ ch_cc_library(
 ch_cc_library(
     name = "LLVMRemarks",
     srcs = glob(["llvm/lib/Remarks/*.cpp"]),
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMBitstreamReader"],
 )
@@ -2390,9 +2352,8 @@ ch_cc_library(
         "llvm/lib/ExecutionEngine/RuntimeDyld/RuntimeDyldMachO.cpp",
         "llvm/lib/ExecutionEngine/RuntimeDyld/Targets/RuntimeDyldELFMips.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMObject"],
 )
@@ -2400,9 +2361,8 @@ ch_cc_library(
 ch_cc_library(
     name = "LLVMSandboxIR",
     srcs = glob(["llvm/lib/SandboxIR/*.cpp"]),
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMCore"],
 )
@@ -2492,9 +2452,8 @@ ch_cc_library(
         "llvm/lib/Transforms/Scalar/TailRecursionElimination.cpp",
         "llvm/lib/Transforms/Scalar/WarnMissedTransforms.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMTransformUtils"],
 )
@@ -2529,16 +2488,15 @@ ch_cc_library(
         "llvm/lib/CodeGen/SelectionDAG/StatepointLowering.cpp",
         "llvm/lib/CodeGen/SelectionDAG/TargetLowering.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMCodeGen"],
 )
 
 ch_cc_library(
     name = "LLVMSupport__compile_0",
-    srcs = ([
+    srcs = [
         "llvm/lib/Support/AArch64AttributeParser.cpp",
         "llvm/lib/Support/AArch64BuildAttributes.cpp",
         "llvm/lib/Support/ABIBreak.cpp",
@@ -2706,23 +2664,22 @@ ch_cc_library(
         "llvm/lib/Support/YAMLTraits.cpp",
         "llvm/lib/Support/Z3Solver.cpp",
         "llvm/lib/Support/zOSLibFunctions.cpp",
-    ]),
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    ],
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = _GENERATED_DEPS_0,
 )
 
 ch_cc_library(
     name = "LLVMSupport__compile_1",
-    srcs = (glob(["llvm/lib/Support/*.c"]) + [
+    srcs = glob(["llvm/lib/Support/*.c"]) + [
         "llvm/lib/Support/BLAKE3/blake3.c",
         "llvm/lib/Support/BLAKE3/blake3_dispatch.c",
         "llvm/lib/Support/BLAKE3/blake3_portable.c",
         "llvm/lib/Support/BLAKE3/blake3_neon.c",
-    ]),
-    copts = ([
+    ],
+    copts = [
         "-w",
         "-std=gnu11",
         "-I",
@@ -2744,7 +2701,7 @@ ch_cc_library(
             "-I",
             repository_path("contrib/llvm-project") + "/llvm/lib/Target/AArch64",
         ],
-    }))),
+    })),
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2893,9 +2850,8 @@ ch_cc_library(
         "llvm/lib/Target/TargetMachineC.cpp",
         "llvm/lib/Target/TargetMachine.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMAnalysis"],
 )
@@ -2919,9 +2875,8 @@ ch_cc_library(
         "llvm/lib/TargetParser/X86TargetParser.cpp",
         "llvm/lib/TargetParser/XtensaTargetParser.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMSupport"],
 )
@@ -2945,9 +2900,8 @@ ch_cc_library(
         "llvm/lib/TextAPI/TextStubCommon.cpp",
         "llvm/lib/TextAPI/Utils.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":LLVMBinaryFormat",
@@ -3053,16 +3007,15 @@ ch_cc_library(
         "llvm/lib/Transforms/Utils/ValueMapper.cpp",
         "llvm/lib/Transforms/Utils/VNCoercion.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMAnalysis"],
 )
 
 ch_cc_library(
     name = "LLVMVectorize",
-    srcs = ([
+    srcs = [
         "llvm/lib/Transforms/Vectorize/LoadStoreVectorizer.cpp",
         "llvm/lib/Transforms/Vectorize/LoopIdiomVectorize.cpp",
         "llvm/lib/Transforms/Vectorize/LoopVectorizationLegality.cpp",
@@ -3090,10 +3043,9 @@ ch_cc_library(
         "llvm/lib/Transforms/Vectorize/VPlanUnroll.cpp",
         "llvm/lib/Transforms/Vectorize/VPlanUtils.cpp",
         "llvm/lib/Transforms/Vectorize/VPlanVerifier.cpp",
-    ]),
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    ],
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMTransformUtils"],
 )
@@ -3126,7 +3078,7 @@ _GENERATED_COPTS_1 = select({
 ch_cc_library(
     name = "LLVMX86CodeGen",
     srcs = select({
-        "@platforms//cpu:x86_64": (glob(["llvm/lib/Target/X86/GISel/*.cpp"]) + [
+        "@platforms//cpu:x86_64": glob(["llvm/lib/Target/X86/GISel/*.cpp"]) + [
             "llvm/lib/Target/X86/X86ArgumentStackSlotRebase.cpp",
             "llvm/lib/Target/X86/X86AsmPrinter.cpp",
             "llvm/lib/Target/X86/X86AvoidStoreForwardingBlocks.cpp",
@@ -3188,15 +3140,14 @@ ch_cc_library(
             "llvm/lib/Target/X86/X86VZeroUpper.cpp",
             "llvm/lib/Target/X86/X86WinEHState.cpp",
             "llvm/lib/Target/X86/X86WinEHUnwindV2.cpp",
-        ]),
+        ],
         "@platforms//cpu:aarch64": [],
     }),
     arches = [
         "x86_64",
     ],
-    copts = (
-        _GENERATED_COPTS_1
-    ),
+    copts =
+        _GENERATED_COPTS_1,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     deps = [
@@ -3233,9 +3184,8 @@ ch_cc_library(
     arches = [
         "x86_64",
     ],
-    copts = (
-        _GENERATED_COPTS_1
-    ),
+    copts =
+        _GENERATED_COPTS_1,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     deps = [
@@ -3255,9 +3205,8 @@ ch_cc_library(
     arches = [
         "x86_64",
     ],
-    copts = (
-        _GENERATED_COPTS_1
-    ),
+    copts =
+        _GENERATED_COPTS_1,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     deps = [":LLVMMC"],
@@ -3266,9 +3215,8 @@ ch_cc_library(
 ch_cc_library(
     name = "LLVMXRay",
     srcs = glob(["llvm/lib/XRay/*.cpp"]),
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":LLVMObject"],
 )
@@ -3322,9 +3270,8 @@ ch_cc_library(
         "llvm/lib/Transforms/IPO/ThinLTOBitcodeWriter.cpp",
         "llvm/lib/Transforms/IPO/WholeProgramDevirt.cpp",
     ],
-    copts = (
-        _LLVM_PROJECT_COPTS
-    ),
+    copts =
+        _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":LLVMScalarOpts",
@@ -10620,7 +10567,7 @@ llvm_runtime_objects(
         "LIBC_MATH_HAS_NO_EXCEPT=1",
         "LIBC_MATH_HAS_SKIP_ACCURATE_PASS=1",
         "LIBC_NAMESPACE=__llvm_libc",
-    ] + (select({
+    ] + select({
         "@platforms//cpu:x86_64": [
             "LIBC_TARGET_CPU_HAS_AVX2=1",
             "LIBC_TARGET_CPU_HAS_AVX=1",
@@ -10645,7 +10592,7 @@ llvm_runtime_objects(
             "LIBC_TARGET_CPU_HAS_FULLFP16=1",
             "LIBC_TARGET_CPU_HAS_NEAREST_INT=1",
         ],
-    })) + [
+    }) + [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
@@ -10960,7 +10907,7 @@ ch_cc_library(
     name = "LLVMAArch64CodeGen",
     srcs = select({
         "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": (glob(["llvm/lib/Target/AArch64/GISel/*.cpp"]) + [
+        "@platforms//cpu:aarch64": glob(["llvm/lib/Target/AArch64/GISel/*.cpp"]) + [
             "llvm/lib/Target/AArch64/AArch64A53Fix835769.cpp",
             "llvm/lib/Target/AArch64/AArch64A57FPLoadBalancing.cpp",
             "llvm/lib/Target/AArch64/AArch64AdvSIMDScalarPass.cpp",
@@ -11014,14 +10961,13 @@ ch_cc_library(
             "llvm/lib/Target/AArch64/MachineSMEABIPass.cpp",
             "llvm/lib/Target/AArch64/SMEPeepholeOpt.cpp",
             "llvm/lib/Target/AArch64/SVEIntrinsicOpts.cpp",
-        ]),
+        ],
     }),
     arches = [
         "aarch64",
     ],
-    copts = (
-        _GENERATED_COPTS_3
-    ),
+    copts =
+        _GENERATED_COPTS_3,
     local_defines = _GENERATED_LOCAL_DEFINES_5,
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_1,
     deps = [
@@ -11055,9 +11001,8 @@ ch_cc_library(
     arches = [
         "aarch64",
     ],
-    copts = (
-        _GENERATED_COPTS_3
-    ),
+    copts =
+        _GENERATED_COPTS_3,
     local_defines = _GENERATED_LOCAL_DEFINES_5,
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_1,
     deps = [
@@ -11077,9 +11022,8 @@ ch_cc_library(
     arches = [
         "aarch64",
     ],
-    copts = (
-        _GENERATED_COPTS_3
-    ),
+    copts =
+        _GENERATED_COPTS_3,
     local_defines = _GENERATED_LOCAL_DEFINES_5,
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_1,
     deps = [":LLVMMC"],

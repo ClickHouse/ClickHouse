@@ -49,7 +49,7 @@ expand_template(
 
 ch_cc_library(
     name = "_zlib",
-    srcs = (([
+    srcs = [
         "adler32.c",
         "adler32_fold.c",
         "chunkset.c",
@@ -69,8 +69,8 @@ ch_cc_library(
         "trees.c",
         "uncompr.c",
         "zutil.c",
-    ]) + (select({
-        "@platforms//cpu:x86_64": ([
+    ] + (select({
+        "@platforms//cpu:x86_64": [
             "arch/x86/x86_features.c",
             "arch/x86/slide_hash_avx2.c",
             "arch/x86/chunkset_avx2.c",
@@ -81,18 +81,18 @@ ch_cc_library(
             "arch/x86/adler32_ssse3.c",
             "arch/x86/chunkset_ssse3.c",
             "arch/x86/crc32_pclmulqdq.c",
-        ] + glob(["arch/x86/*_sse2.c"])),
-        "@platforms//cpu:aarch64": ([
+        ] + glob(["arch/x86/*_sse2.c"]),
+        "@platforms//cpu:aarch64": [
             "arch/arm/arm_features.c",
             "arch/arm/crc32_acle.c",
             "arch/arm/insert_string_acle.c",
-        ] + glob(["arch/arm/*_neon.c"])),
+        ] + glob(["arch/arm/*_neon.c"]),
     }) + [
         "gzlib.c",
         ":config/contrib/zlib-ng-cmake/gzread.c",
     ]) + [
         "gzwrite.c",
-    ]),
+    ],
     hdrs = [
         ":config/contrib/zlib-ng-cmake/zconf.h",
         ":config/contrib/zlib-ng-cmake/zlib.h",
@@ -109,7 +109,7 @@ ch_cc_library(
         "config/contrib/zlib-ng-cmake",
     ],
     language = "C",
-    local_defines = (select({
+    local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
             "ARM_ACLE",
@@ -150,7 +150,7 @@ ch_cc_library(
             "X86_SSSE3",
         ],
         "@platforms//cpu:aarch64": [],
-    })) + [
+    }) + [
         "ZLIB_COMPAT",
         "_LARGEFILE64_SOURCE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
