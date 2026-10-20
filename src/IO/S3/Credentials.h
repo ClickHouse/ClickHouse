@@ -256,6 +256,8 @@ private:
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> cached_provider;
     /// Unlike `cached_provider`, it is not reset by `SetNeedRefresh`.
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> last_used_provider;
+    /// Set if web identity is configured.
+    std::shared_ptr<Aws::Auth::AWSCredentialsProvider> web_identity_provider;
     Aws::Utils::Threading::ReaderWriterLock cached_provider_lock;
     LoggerPtr logger;
 };

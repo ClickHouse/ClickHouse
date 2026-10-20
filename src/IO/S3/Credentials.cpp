@@ -677,18 +677,26 @@ void AWSInstanceProfileCredentialsProvider::Reload()
     auto old_credentials = GetAWSCredentialsImpl();
 
     ProfileEvents::increment(ProfileEvents::S3CredentialsIMDSRequests);
+    bool loaded = false;
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::S3CredentialsIMDSMicroseconds);
-        ec2_metadata_config_loader->Load();
+        loaded = ec2_metadata_config_loader->Load();
     }
     AWSCredentialsProvider::Reload();
+
+    /// A failed load keeps the previous profile, so check the result of the load, not the credentials.
+    if (!loaded)
+        ProfileEvents::increment(ProfileEvents::S3CredentialsIMDSErrors);
 
     auto new_credentials = GetAWSCredentialsImpl();
     if (new_credentials.IsEmpty())
     {
-        ProfileEvents::increment(ProfileEvents::S3CredentialsIMDSErrors);
         /// Normal outside of EC2, so not a warning.
         LOG_INFO(logger, "Got empty credentials from EC2 Metadata Service");
+    }
+    else if (!loaded)
+    {
+        LOG_WARNING(logger, "Failed to reload credentials from EC2 Metadata Service, keeping the previous ones");
     }
     else
     {
@@ -1085,9 +1093,10 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.opt_disk_name,
                 configuration.request_throttler);
             aws_client_configuration.for_credentials = true;
-            AddProvider(
-                AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::create(
-                    aws_client_configuration, credentials_configuration.expiration_window_seconds, credentials_configuration.kms_role_arn));
+            /// It is an anonymous provider if web identity is configured only partially.
+            web_identity_provider = AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::create(
+                aws_client_configuration, credentials_configuration.expiration_window_seconds, credentials_configuration.kms_role_arn);
+            AddProvider(web_identity_provider);
         }
 
         AddProvider(std::make_shared<Aws::Auth::EnvironmentAWSCredentialsProvider>());
@@ -1222,7 +1231,7 @@ Aws::Auth::AWSCredentials S3CredentialsProviderChain::GetAWSCredentials()
         if (!is_usable(credentials))
         {
             /// Web identity is added only when configured, so other providers resolve a different identity.
-            if (dynamic_cast<AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider *>(provider.get()))
+            if (provider == web_identity_provider)
                 web_identity_skipped = true;
             continue;
         }

@@ -1820,6 +1820,9 @@ The server successfully detected this situation and will download merged part fr
     M(S3CredentialsGCPRequests, "Number of requests for a GCP OAuth access token, to the metadata server or with Application Default Credentials.", ValueType::Number) \
     M(S3CredentialsGCPErrors, "Number of failed requests for a GCP OAuth access token.", ValueType::Number) \
     M(S3CredentialsGCPMicroseconds, "Time spent requesting GCP OAuth access tokens.", ValueType::Microseconds) \
+    M(S3CredentialsHTTPRequests, "Number of HTTP requests made to fetch AWS credentials (IMDS, STS, SSO, ECS), including retries. They are not counted in the S3 request events.", ValueType::Number) \
+    M(S3CredentialsHTTPErrors, "Number of failed HTTP requests made to fetch AWS credentials (IMDS, STS, SSO, ECS).", ValueType::Number) \
+    M(S3CredentialsHTTPMicroseconds, "Time of HTTP requests made to fetch AWS credentials (IMDS, STS, SSO, ECS).", ValueType::Microseconds) \
     M(S3CredentialsProviderChainEmpty, "Number of times no provider in a non-empty AWS credentials provider chain returned credentials. Requests signed with them are sent unsigned.", ValueType::Number) \
     M(S3CredentialsProviderChainSwitches, "Number of times an AWS credentials provider chain started to use a different provider than before, so requests are signed with a different identity.", ValueType::Number) \
     \

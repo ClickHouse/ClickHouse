@@ -7,6 +7,8 @@
 #if USE_AWS_S3
 
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <string>
 
@@ -46,6 +48,13 @@ namespace ProfileEvents
     extern const Event S3ReadRequestsCount;
     extern const Event S3WriteRequestsCount;
     extern const Event S3WriteRequestsErrors;
+    extern const Event S3CredentialsHTTPRequests;
+    extern const Event S3CredentialsHTTPErrors;
+    extern const Event S3CredentialsIMDSRequests;
+    extern const Event S3CredentialsIMDSErrors;
+    extern const Event S3CredentialsWebIdentitySkipped;
+    extern const Event S3CredentialsProviderChainEmpty;
+    extern const Event S3CredentialsProviderChainSwitches;
 }
 
 namespace DB::S3RequestSetting
@@ -699,6 +708,8 @@ TEST(IOTestAwsS3Client, AssumeRoleProfileEvents)
     const auto empty = get(ProfileEvents::S3CredentialsAssumeRoleEmpty);
     const auto s3_requests = get(ProfileEvents::S3ReadRequestsCount) + get(ProfileEvents::S3WriteRequestsCount);
     const auto s3_errors = get(ProfileEvents::S3WriteRequestsErrors);
+    const auto http_requests = get(ProfileEvents::S3CredentialsHTTPRequests);
+    const auto http_errors = get(ProfileEvents::S3CredentialsHTTPErrors);
 
     {
         SCOPED_TRACE("AssumeRole fails");
@@ -729,9 +740,181 @@ TEST(IOTestAwsS3Client, AssumeRoleProfileEvents)
         EXPECT_EQ(get(ProfileEvents::S3CredentialsAssumeRoleEmpty), empty + 1);
     }
 
-    /// STS requests are not accounted as S3 requests.
+    /// STS requests are accounted as credential requests, not as S3 requests.
     EXPECT_EQ(get(ProfileEvents::S3ReadRequestsCount) + get(ProfileEvents::S3WriteRequestsCount), s3_requests);
     EXPECT_EQ(get(ProfileEvents::S3WriteRequestsErrors), s3_errors);
+    EXPECT_EQ(get(ProfileEvents::S3CredentialsHTTPRequests), http_requests + 2);
+    EXPECT_EQ(get(ProfileEvents::S3CredentialsHTTPErrors), http_errors + 1);
+}
+
+namespace
+{
+
+class MockEC2MetadataClient : public DB::S3::AWSEC2MetadataClient
+{
+public:
+    explicit MockEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration)
+        : DB::S3::AWSEC2MetadataClient(client_configuration, "http://127.0.0.1:1")
+    {
+    }
+
+    Aws::String getDefaultCredentialsSecurely() const override
+    {
+        if (fail)
+            return {};
+        return R"({"Code": "Success", "AccessKeyId": "IMDSKEY", "SecretAccessKey": "IMDSSECRET", "Token": "token"})";
+    }
+
+    std::atomic<bool> fail = false;
+};
+
+class TestInstanceProfileCredentialsProvider : public DB::S3::AWSInstanceProfileCredentialsProvider
+{
+public:
+    using DB::S3::AWSInstanceProfileCredentialsProvider::AWSInstanceProfileCredentialsProvider;
+    using DB::S3::AWSInstanceProfileCredentialsProvider::Reload;
+};
+
+/// Sets or unsets environment variables and restores them on destruction.
+class ScopedEnvironment
+{
+public:
+    void set(const char * name, const char * value)
+    {
+        save(name);
+        if (value)
+            ASSERT_EQ(0, ::setenv(name, value, 1)); // NOLINT(concurrency-mt-unsafe)
+        else
+            ASSERT_EQ(0, ::unsetenv(name)); // NOLINT(concurrency-mt-unsafe)
+    }
+
+    ~ScopedEnvironment()
+    {
+        for (const auto & [name, value] : saved)
+            restoreEnvVarForAwsS3ClientTests(name.c_str(), value.has_value(), value.value_or(""));
+    }
+
+private:
+    void save(const char * name)
+    {
+        for (const auto & [saved_name, _] : saved)
+            if (saved_name == name)
+                return;
+        const char * value = std::getenv(name); // NOLINT(concurrency-mt-unsafe)
+        saved.emplace_back(name, value ? std::optional<std::string>(value) : std::nullopt);
+    }
+
+    std::vector<std::pair<std::string, std::optional<std::string>>> saved;
+};
+
+}
+
+TEST(IOTestAwsS3Client, InstanceProfileProfileEvents)
+{
+    DB::RemoteHostFilter remote_host_filter;
+    DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
+        "us-east-1",
+        remote_host_filter,
+        /* s3_max_redirects = */ 100,
+        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
+        /* s3_slow_all_threads_after_network_error = */ true,
+        /* s3_slow_all_threads_after_retryable_error = */ true,
+        /* enable_s3_requests_logging = */ false,
+        /* for_disk_s3 = */ false,
+        /* opt_disk_name = */ {},
+        /* request_throttler = */ {},
+        "http");
+
+    auto metadata_client = std::make_shared<MockEC2MetadataClient>(client_configuration);
+    auto config_loader = std::make_shared<DB::S3::AWSEC2InstanceProfileConfigLoader>(metadata_client, /* use_secure_pull = */ true);
+    TestInstanceProfileCredentialsProvider provider(config_loader);
+
+    auto get = [](ProfileEvents::Event event) { return ProfileEvents::global_counters[event]; };
+    const auto requests = get(ProfileEvents::S3CredentialsIMDSRequests);
+    const auto errors = get(ProfileEvents::S3CredentialsIMDSErrors);
+
+    ASSERT_EQ(provider.GetAWSCredentials().GetAWSAccessKeyId(), "IMDSKEY");
+    EXPECT_EQ(get(ProfileEvents::S3CredentialsIMDSRequests), requests + 1);
+    EXPECT_EQ(get(ProfileEvents::S3CredentialsIMDSErrors), errors);
+
+    /// A failed refresh keeps the previous credentials, but it is still an error.
+    metadata_client->fail = true;
+    provider.Reload();
+    ASSERT_EQ(provider.GetAWSCredentials().GetAWSAccessKeyId(), "IMDSKEY");
+    EXPECT_EQ(get(ProfileEvents::S3CredentialsIMDSRequests), requests + 2);
+    EXPECT_EQ(get(ProfileEvents::S3CredentialsIMDSErrors), errors + 1);
+}
+
+TEST(IOTestAwsS3Client, CredentialsProviderChainProfileEvents)
+{
+    const auto credentials_file = std::filesystem::temp_directory_path() / fmt::format("clickhouse_gtest_aws_credentials_{}", getpid());
+    {
+        std::ofstream out(credentials_file);
+        out << "[default]\naws_access_key_id = FILEKEY\naws_secret_access_key = FILESECRET\n";
+    }
+    SCOPE_EXIT({ std::filesystem::remove(credentials_file); });
+
+    ScopedEnvironment env;
+    /// Web identity is configured, but the token file does not exist, so it never returns credentials.
+    env.set("AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/clickhouse_unit_test_role");
+    env.set("AWS_WEB_IDENTITY_TOKEN_FILE", (credentials_file.string() + "_missing_token").c_str());
+    env.set("AWS_ACCESS_KEY_ID", "ENVKEY");
+    env.set("AWS_SECRET_ACCESS_KEY", "ENVSECRET");
+    env.set("AWS_SESSION_TOKEN", nullptr);
+    env.set("AWS_PROFILE", nullptr);
+    env.set("AWS_SHARED_CREDENTIALS_FILE", credentials_file.c_str());
+    env.set("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", nullptr);
+    env.set("AWS_CONTAINER_CREDENTIALS_FULL_URI", nullptr);
+    env.set("AWS_EC2_METADATA_DISABLED", "true");
+
+    DB::RemoteHostFilter remote_host_filter;
+    DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
+        "us-east-1",
+        remote_host_filter,
+        /* s3_max_redirects = */ 100,
+        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
+        /* s3_slow_all_threads_after_network_error = */ true,
+        /* s3_slow_all_threads_after_retryable_error = */ true,
+        /* enable_s3_requests_logging = */ false,
+        /* for_disk_s3 = */ false,
+        /* opt_disk_name = */ {},
+        /* request_throttler = */ {},
+        "http");
+    const DB::S3::CredentialsConfiguration credentials_configuration{.use_environment_credentials = true, .forbid_implicit_credentials = false};
+
+    auto get = [](ProfileEvents::Event event) { return ProfileEvents::global_counters[event]; };
+    const auto skipped = get(ProfileEvents::S3CredentialsWebIdentitySkipped);
+    const auto switches = get(ProfileEvents::S3CredentialsProviderChainSwitches);
+    const auto empty = get(ProfileEvents::S3CredentialsProviderChainEmpty);
+
+    {
+        DB::S3::S3CredentialsProviderChain chain(client_configuration, {}, credentials_configuration);
+
+        ASSERT_EQ(chain.GetAWSCredentials().GetAWSAccessKeyId(), "ENVKEY");
+        EXPECT_EQ(get(ProfileEvents::S3CredentialsWebIdentitySkipped), skipped + 1);
+        EXPECT_EQ(get(ProfileEvents::S3CredentialsProviderChainSwitches), switches);
+
+        /// The selected provider is cached.
+        ASSERT_EQ(chain.GetAWSCredentials().GetAWSAccessKeyId(), "ENVKEY");
+        EXPECT_EQ(get(ProfileEvents::S3CredentialsWebIdentitySkipped), skipped + 1);
+
+        /// The environment credentials disappear: the chain switches to the credentials file.
+        env.set("AWS_ACCESS_KEY_ID", nullptr);
+        env.set("AWS_SECRET_ACCESS_KEY", nullptr);
+        chain.SetNeedRefresh();
+        ASSERT_EQ(chain.GetAWSCredentials().GetAWSAccessKeyId(), "FILEKEY");
+        EXPECT_EQ(get(ProfileEvents::S3CredentialsWebIdentitySkipped), skipped + 2);
+        EXPECT_EQ(get(ProfileEvents::S3CredentialsProviderChainSwitches), switches + 1);
+        EXPECT_EQ(get(ProfileEvents::S3CredentialsProviderChainEmpty), empty);
+    }
+
+    {
+        env.set("AWS_SHARED_CREDENTIALS_FILE", (credentials_file.string() + "_missing").c_str());
+        DB::S3::S3CredentialsProviderChain chain(client_configuration, {}, credentials_configuration);
+
+        ASSERT_TRUE(chain.GetAWSCredentials().IsEmpty());
+        EXPECT_EQ(get(ProfileEvents::S3CredentialsProviderChainEmpty), empty + 1);
+    }
 }
 
 TEST(IOTestAwsS3Client, ClientCacheRegistryGetOrCreateCacheForKey)

@@ -81,6 +81,9 @@ namespace ProfileEvents
     extern const Event S3CredentialsGCPRequests;
     extern const Event S3CredentialsGCPErrors;
     extern const Event S3CredentialsGCPMicroseconds;
+    extern const Event S3CredentialsHTTPRequests;
+    extern const Event S3CredentialsHTTPErrors;
+    extern const Event S3CredentialsHTTPMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -340,7 +343,19 @@ PocoHTTPClient::S3MetricKind PocoHTTPClient::getMetricKind(const Aws::Http::Http
 void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricType type, ProfileEvents::Count amount) const
 {
     if (for_credentials)
+    {
+        static const ProfileEvents::Event credentials_events_map[static_cast<size_t>(S3MetricType::EnumSize)] =
+        {
+            ProfileEvents::S3CredentialsHTTPMicroseconds,
+            ProfileEvents::S3CredentialsHTTPRequests,
+            ProfileEvents::S3CredentialsHTTPErrors,
+            ProfileEvents::S3CredentialsHTTPErrors, /// Throttling
+            ProfileEvents::end(), /// Redirects
+        };
+        if (auto event = credentials_events_map[static_cast<unsigned int>(type)]; event != ProfileEvents::end())
+            ProfileEvents::increment(event, amount);
         return;
+    }
 
     static const ProfileEvents::Event events_map[static_cast<size_t>(S3MetricType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] =
     {
