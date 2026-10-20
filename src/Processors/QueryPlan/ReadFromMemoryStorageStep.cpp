@@ -712,6 +712,16 @@ public:
 
     String getName() const override { return "LazyReadFromMemoryBlocks"; }
 
+    void cancel(CancelReason reason) noexcept override
+    {
+        /// A partial result must still get the deferred columns of the rows already selected by the main branch.
+        if (reason == CancelReason::PartialResult)
+            return;
+
+        ISource::cancel(reason);
+    }
+    using ISource::cancel;
+
 protected:
     Chunk generate() override
     {
