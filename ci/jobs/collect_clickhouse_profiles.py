@@ -600,6 +600,7 @@ def main():
                     name="Build (PGO instrumented)",
                     command="command time -v ninja clickhouse",
                     workdir=PGO_BUILD_DIR,
+                    info_extractor=Result.cpp_build_info_extractor,
                 )
             )
             res = results[-1].is_ok()

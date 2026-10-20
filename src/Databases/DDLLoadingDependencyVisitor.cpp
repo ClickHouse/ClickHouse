@@ -90,7 +90,8 @@ ssize_t DDLMatcherBase::getPositionOfTableNameArgumentToVisit(const ASTFunction 
         if (!args || args->children.size() != 2)
             return -1;
 
-        if (args->children[1]->as<ASTFunction>())
+        /// A literal, as in x IN ('db.table'), is a set of values, not a table name.
+        if (args->children[1]->as<ASTFunction>() || args->children[1]->as<ASTLiteral>())
             return -1;
 
         return 1;
