@@ -149,6 +149,7 @@
 #endif
 #include <Storages/System/StorageSystemWasmModules.h>
 
+#include <Core/ServerSettings.h>
 #include <Interpreters/Context.h>
 #include <Server/ConnectionRegistry.h>
 
@@ -173,6 +174,11 @@
 
 namespace DB
 {
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool collect_connection_metrics;
+}
 
 const char * const ATTACHED_SYSTEM_TABLE_DOCUMENTATION_SOURCE = __builtin_FILE();
 
@@ -2659,7 +2665,7 @@ moved to the TTL destination by a background move task (observable via
 [`perform_ttl_move_on_insert` setting on the MergeTree engine](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes_configure).
 )DOCS_MD");
     /// Attach the table also if `collect_connection_metrics` is `false`, because a reload of the configuration can change the setting.
-    ConnectionRegistry::instance().setEnabled(context->getConfigRef().getBool("collect_connection_metrics", false));
+    ConnectionRegistry::instance().setEnabled(context->getServerSettings()[ServerSetting::collect_connection_metrics]);
     attach<StorageSystemConnections>(context, system_database, "connections", R"DOCS_MD(
 .description
 Shows the open client connections of the native TCP and HTTP query interfaces.
