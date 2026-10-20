@@ -1,27 +1,11 @@
+CREATE samples_bucket_step_seconds=0: rejected
 full ATTACH samples_bucket_step_seconds=0: rejected
-replay samples_bucket_step_seconds=0: preserved
-tags-only read samples_bucket_step_seconds=0: available
-SELECT samples samples_bucket_step_seconds=0: rejected
-INSERT samples_bucket_step_seconds=0: rejected
+CREATE samples_bucket_step_seconds=4294967296: rejected
 full ATTACH samples_bucket_step_seconds=4294967296: rejected
-replay samples_bucket_step_seconds=4294967296: preserved
-tags-only read samples_bucket_step_seconds=4294967296: available
-SELECT samples samples_bucket_step_seconds=4294967296: rejected
-INSERT samples_bucket_step_seconds=4294967296: rejected
+CREATE recent_samples_bucket_step_seconds=0: rejected
 full ATTACH recent_samples_bucket_step_seconds=0: rejected
-replay recent_samples_bucket_step_seconds=0: preserved
-tags-only read recent_samples_bucket_step_seconds=0: available
-SELECT samples recent_samples_bucket_step_seconds=0: rejected
-INSERT recent_samples_bucket_step_seconds=0: rejected
+CREATE recent_samples_bucket_step_seconds=4294967296: rejected
 full ATTACH recent_samples_bucket_step_seconds=4294967296: rejected
-replay recent_samples_bucket_step_seconds=4294967296: preserved
-tags-only read recent_samples_bucket_step_seconds=4294967296: available
-SELECT samples recent_samples_bucket_step_seconds=4294967296: rejected
-INSERT recent_samples_bucket_step_seconds=4294967296: rejected
 maximum bucket steps: accepted
-TTL replay: preserved
-selector TTL guard: rejected
-PromQL TTL guard: rejected
-AS legacy external source version=9: rejected
-AS legacy external source version=10: rejected
-AS legacy external source version=DEFAULT: rejected
+CREATE TTL overflow: rejected
+full ATTACH TTL overflow: rejected

@@ -1,20 +1,41 @@
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinitionImpl.h>
 
 #include <Common/Exception.h>
+#include <Common/QueryScope.h>
+#include <Common/ThreadStatus.h>
+#include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Databases/DatabaseMemory.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/MemorySettings.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageMemory.h>
+#include <Storages/StorageTimeSeries.h>
+#include <Storages/StorageTimeSeriesSelector.h>
+#include <Storages/TimeSeries/TimeSeriesSettings.h>
+#include <Storages/TimeSeries/TimeSeriesSink.h>
+#include <Storages/TimeSeries/createTimeSeriesInnerTable.h>
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <atomic>
 #include <functional>
 #include <utility>
 #include <vector>
@@ -176,6 +197,126 @@ namespace
             return e.message();
         }
         return "";
+    }
+
+    /// Replays an owner in memory, without creating or editing server metadata files.
+    class InMemoryTimeSeriesReplay
+    {
+    private:
+        ThreadStatus thread_status;
+
+    public:
+        InMemoryTimeSeriesReplay()
+            : context(Context::createCopy(getContext().context))
+            , database_name("test_time_series_replay_" + std::to_string(next_database_id.fetch_add(1)))
+            , database(std::make_shared<DatabaseMemory>(database_name, context))
+        {
+            tryRegisterFunctions();
+            tryRegisterAggregateFunctions();
+            DatabaseCatalog::instance().attachDatabase(database_name, database);
+            context->setCurrentDatabase(database_name);
+            context->makeQueryContext();
+            context->setCurrentQueryId(database_name);
+            query_scope = QueryScope::create(context);
+        }
+
+        ~InMemoryTimeSeriesReplay()
+        {
+            DatabaseCatalog::instance().detachDatabase(context, database_name, false, false);
+        }
+
+        std::shared_ptr<StorageTimeSeries> attach(const SettingsChanges & stored_settings, bool create_targets = true)
+        {
+            const StorageID owner_id{database_name, "ts"};
+            auto definition = parseCreateQuery(normalizeNewTable(
+                "CREATE TABLE " + database_name + ".ts ENGINE = TimeSeries SETTINGS version = 10 "
+                "SAMPLES ENGINE = Memory "
+                "TAGS INNER COLUMNS (id UInt64 DEFAULT 1) TAGS ENGINE = Memory "
+                "TIME RANGES ENGINE = Memory METRIC FAMILIES ENGINE = Memory"));
+
+            if (create_targets)
+            {
+                for (const auto kind : StorageTimeSeries::getTargetKinds())
+                {
+                    const auto * inner_columns = definition->getTargetInnerColumns(kind);
+                    auto columns = InterpreterCreateQuery::getColumnsDescription(
+                        *inner_columns->columns, context, LoadingStrictnessLevel::FORCE_ATTACH);
+                    const auto target_name = getTimeSeriesInnerTableName(kind, owner_id, 10);
+                    auto target = std::make_shared<StorageMemory>(
+                        StorageID{database_name, target_name}, columns, ConstraintsDescription{}, String{}, MemorySettings{});
+                    database->attachTable(context, target_name, target, {});
+                }
+            }
+
+            /// Change only the persisted settings after normalizing a valid definition.
+            for (const auto & change : stored_settings)
+                definition->storage->settings->changes.setSetting(change.name, change.value);
+            definition->attach = true;
+            auto owner = std::make_shared<StorageTimeSeries>(
+                owner_id, context, LoadingStrictnessLevel::FORCE_ATTACH, false, *definition, ColumnsDescription{}, String{});
+            database->attachTable(context, owner_id.table_name, owner, {});
+            return owner;
+        }
+
+        ContextMutablePtr context;
+
+    private:
+        inline static std::atomic<UInt64> next_database_id{0};
+        String database_name;
+        std::shared_ptr<DatabaseMemory> database;
+        QueryScope query_scope;
+    };
+
+    void expectStoredSetting(const StorageTimeSeries & owner, const String & name, UInt64 value)
+    {
+        const auto changes = owner.getStorageSettings()->changes();
+        const auto it = std::find_if(changes.begin(), changes.end(), [&](const auto & change) { return change.name == name; });
+        ASSERT_NE(it, changes.end());
+        EXPECT_EQ(it->value.safeGet<UInt64>(), value);
+    }
+
+    void expectInvalidStoredSetting(const std::function<void()> & operation, const String & name, const String & expected_message)
+    {
+        try
+        {
+            operation();
+            FAIL() << "Runtime access accepted invalid " << name;
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::INVALID_SETTING_VALUE) << e.message();
+            EXPECT_TRUE(e.message().contains(name)) << e.message();
+            EXPECT_TRUE(e.message().contains(expected_message)) << e.message();
+        }
+    }
+
+    SelectQueryInfo makeRuntimeQueryInfo()
+    {
+        SelectQueryInfo query_info;
+        query_info.table_expression_modifiers.emplace();
+        query_info.storage_limits = std::make_shared<StorageLimitsList>();
+        return query_info;
+    }
+
+    void readTimeSeriesColumns(StorageTimeSeries & owner, const Names & columns, const ContextPtr & context, QueryPlan & plan)
+    {
+        const auto metadata = owner.getInMemoryMetadataPtr(context, false);
+        const auto snapshot = owner.getStorageSnapshot(metadata, context);
+        auto query_info = makeRuntimeQueryInfo();
+        owner.read(plan, columns, snapshot, query_info, context, QueryProcessingStage::FetchColumns, 8192, 1);
+    }
+
+    void createSamplesSink(StorageTimeSeries & owner, const ContextPtr & context)
+    {
+        auto insert = make_intrusive<ASTInsertQuery>();
+        insert->table_id = owner.getStorageID();
+        auto columns = make_intrusive<ASTExpressionList>();
+        for (const auto * name : {"metric_name", "tags", "samples"})
+            columns->children.emplace_back(make_intrusive<ASTIdentifier>(name));
+        insert->columns = columns;
+        const auto metadata = owner.getInMemoryMetadataPtr(context, false);
+        auto sink = owner.write(insert, metadata, context, false);
+        std::static_pointer_cast<TimeSeriesSink>(sink)->onFinish();
     }
 
     /// The generated columns and engines of the inner tables, with separate row and bucketed sample layouts.
@@ -353,6 +494,109 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, BucketStepsAreValidatedOnFullAttachBut
             + value + ", recent_samples_bucket_step_seconds = " + value);
         definition.replace(0, 6, "ATTACH");
         EXPECT_EQ(normalizeExistingTable(definition), definition);
+    }
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, ReplayedBucketStepsAreValidatedOnSamplesReadAndWrite)
+{
+    for (const String setting : {"samples_bucket_step_seconds", "recent_samples_bucket_step_seconds"})
+    {
+        for (const UInt64 value : {0ULL, 4294967296ULL})
+        {
+            SCOPED_TRACE(setting + " = " + std::to_string(value));
+            InMemoryTimeSeriesReplay replay;
+            std::shared_ptr<StorageTimeSeries> owner;
+            ASSERT_NO_THROW(owner = replay.attach({{setting, value}}));
+            expectStoredSetting(*owner, setting, value);
+
+            QueryPlan tags_plan;
+            ASSERT_NO_THROW(readTimeSeriesColumns(*owner, {"tags"}, replay.context, tags_plan));
+            EXPECT_TRUE(tags_plan.isInitialized());
+
+            /// These are ordinary owner access paths, independent of the selector's guard.
+            expectInvalidStoredSetting([&]
+            {
+                QueryPlan plan;
+                readTimeSeriesColumns(*owner, {"samples"}, replay.context, plan);
+            }, setting, "must be in the range [1, 4294967295]");
+            expectInvalidStoredSetting([&] { createSamplesSink(*owner, replay.context); },
+                setting, "must be in the range [1, 4294967295]");
+        }
+    }
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, ReplayedValidBucketStepBoundariesAllowSamplesReadAndWrite)
+{
+    for (const UInt64 value : {1ULL, 4294967295ULL})
+    {
+        SCOPED_TRACE(value);
+        InMemoryTimeSeriesReplay replay;
+        std::shared_ptr<StorageTimeSeries> owner;
+        ASSERT_NO_THROW(owner = replay.attach({
+            {"samples_bucket_step_seconds", value}, {"recent_samples_bucket_step_seconds", value}}));
+        expectStoredSetting(*owner, "samples_bucket_step_seconds", value);
+        expectStoredSetting(*owner, "recent_samples_bucket_step_seconds", value);
+
+        QueryPlan plan;
+        ASSERT_NO_THROW(readTimeSeriesColumns(*owner, {"samples"}, replay.context, plan));
+        EXPECT_TRUE(plan.isInitialized());
+        EXPECT_NO_THROW(createSamplesSink(*owner, replay.context));
+    }
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, ReplayedRecentSamplesTTLIsValidatedBeforeEmptySelectorRange)
+{
+    for (const UInt64 ttl : {345600ULL, 9223372036854775808ULL})
+    {
+        SCOPED_TRACE(ttl);
+        InMemoryTimeSeriesReplay replay;
+        std::shared_ptr<StorageTimeSeries> owner;
+        /// Missing targets make this specifically the selector's pre-shortcut settings check.
+        ASSERT_NO_THROW(owner = replay.attach({{"recent_samples_ttl_seconds", ttl}}, /* create_targets = */ false));
+        expectStoredSetting(*owner, "recent_samples_ttl_seconds", ttl);
+
+        StorageTimeSeriesSelector::Configuration config;
+        config.time_series_storage_id = owner->getStorageID();
+        config.time_series_version = 10;
+        config.table_id_type = DataTypeFactory::instance().get("UInt64");
+        config.table_timestamp_type = DataTypeFactory::instance().get("DateTime64(3)");
+        config.table_value_type = DataTypeFactory::instance().get("Float64");
+        config.selector = PrometheusQueryTree{"m"};
+        config.time_scale = 6;
+        config.min_time = DateTime64{1};
+        config.max_time = DateTime64{2};
+        const auto columns = makeColumns({
+            makeColumn("id", "UInt64"),
+            makeColumn("bucket", "DateTime64(3)"),
+            makeColumn("time_series", "Array(Tuple(DateTime64(3), Float64))")});
+        StorageTimeSeriesSelector selector{StorageID{"", "selector"}, columns, config};
+        ASSERT_TRUE(selector.hasEmptyTimeRange());
+        const auto metadata = selector.getInMemoryMetadataPtr(replay.context, false);
+        const auto snapshot = selector.getStorageSnapshot(metadata, replay.context);
+        auto query_info = makeRuntimeQueryInfo();
+        QueryPlan plan;
+        auto build_plan = [&]
+        {
+            return selector.buildQueryPlan(plan, {"id", "bucket", "time_series"}, snapshot, query_info, replay.context,
+                QueryProcessingStage::FetchColumns, 8192, 1, StorageTimeSeriesSelector::SamplesReadOrder::Unordered);
+        };
+
+        if (ttl == 345600)
+        {
+            ASSERT_TRUE(build_plan());
+            ASSERT_TRUE(plan.isInitialized());
+            EXPECT_EQ(plan.getRootNode()->step->getName(), "ReadFromPreparedSource");
+            EXPECT_TRUE(plan.getRootNode()->children.empty());
+        }
+        else
+        {
+            expectInvalidStoredSetting([&] { build_plan(); }, "recent_samples_ttl_seconds",
+                "must not exceed 9223372036854775807");
+            EXPECT_FALSE(plan.isInitialized());
+        }
     }
 }
 
