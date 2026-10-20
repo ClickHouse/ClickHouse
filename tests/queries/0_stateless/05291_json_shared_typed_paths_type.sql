@@ -110,7 +110,7 @@ SELECT name, value FROM system.merge_tree_settings WHERE name LIKE 'object_typed
 
 SELECT '-- functions over the type';
 SELECT toJSONString(json), JSONExtractKeys(toJSONString(json)), empty(json), json = json FROM t_shared ORDER BY x LIMIT 2;
-SELECT JSONMergePatch(toJSONString(a.json), toJSONString(b.json)) FROM t_shared AS a, t_shared AS b WHERE a.x = 1 AND b.x = 2;
+SELECT JSONExtractKeys(toJSONString(b.json)), JSONExtractUInt(toJSONString(a.json), 'a') + JSONExtractUInt(toJSONString(b.json), 'a') FROM t_shared AS a, t_shared AS b WHERE a.x = 1 AND b.x = 2;
 SELECT json.a, count() FROM t_shared GROUP BY json.a ORDER BY json.a LIMIT 3;
 SELECT arrayJoin(arr).c, tupleElement(t, 'j').a FROM t_containers WHERE x = 2 ORDER BY 1;
 SELECT JSONAllPaths(json), JSONDynamicPaths(json), JSONSharedDataPaths(json), JSONAllPathsWithTypes(json) FROM t_shared WHERE x = 2;

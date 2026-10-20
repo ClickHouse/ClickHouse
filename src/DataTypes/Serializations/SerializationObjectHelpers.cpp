@@ -447,8 +447,8 @@ void writeMarkDelta(const MarkInCompressedFile & mark, size_t previous_compresse
 
 MarkInCompressedFile readMarkDelta(size_t previous_compressed_offset, ReadBuffer & buf)
 {
-    MarkInCompressedFile mark;
-    size_t delta;
+    MarkInCompressedFile mark{};
+    size_t delta = 0;
     readVarUInt(delta, buf);
     mark.offset_in_compressed_file = previous_compressed_offset + delta;
     readVarUInt(mark.offset_in_decompressed_block, buf);

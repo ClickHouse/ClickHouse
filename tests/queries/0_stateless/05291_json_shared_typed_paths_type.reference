@@ -129,7 +129,7 @@ object_typed_shared_data_serialization_version	v1
 -- functions over the type
 {"a":0,"b":"","c":[],"d":0}	['a','b','c','d']	0	1
 {"a":10,"b":"x","c":[0]}	['a','b','c']	0	1
-{"a":20,"b":"xx","c":[0,1],"d":2}
+['a','b','c','d']	30
 0	1
 10	1
 20	1
