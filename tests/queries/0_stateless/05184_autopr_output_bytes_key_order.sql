@@ -27,6 +27,14 @@ SET distributed_aggregation_memory_efficient=1;
 SET group_by_two_level_threshold=0, group_by_two_level_threshold_bytes=0;
 SET max_block_size=65409, aggregation_in_order_max_block_bytes=50000000;
 
+-- These aggregation/merge settings are randomized in CI, and each can change which merge the output-bytes
+-- estimate is sampled from (read-stream count, adaptive vs single-level merge, the bucket / group-by Top-K
+-- pipelines), so pin them to their defaults, as with the merging and block sizing above.
+SET enable_adaptive_aggregator=1, adaptive_aggregator_freeze_threshold=16384, adaptive_aggregator_freeze_threshold_bytes=4194304,
+    enable_parallel_single_level_merge=1, enable_packed_string_keys_in_aggregation=1, merge_tree_min_bytes_per_read_stream=65536,
+    query_plan_aggregation_bucket_top_k=1, enable_group_by_top_k_optimization=1, enable_group_by_top_k_dynamic_filtering=1,
+    group_by_top_k_optimization_observation_rows=65536, optimize_aggregation_in_order_limit=1;
+
 DROP TABLE IF EXISTS okey_t;
 
 -- Monotonic `UInt64` keys, which compress about 7.8x in key order and about 2.4x in hash order, so the
