@@ -556,9 +556,8 @@ void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescriptio
 
     addPerStreamLimitByIfNeeded(pipeline, result_sort_desc);
 
-    /// If there are several streams, then we merge them into one.
-    /// An all-constant description orders nothing, and a merge would wait on inputs a shared upstream may block,
-    /// so such streams are only resized.
+    /// If there are several streams, then we merge them into one
+    /// (all-constant keys order nothing, and a merge can wait on inputs a shared upstream blocks, so those are resized).
     const bool merge_needed = pipeline.getNumStreams() > 1 && (partition_by_description.empty() || pipeline.getNumThreads() == 1);
     if (merge_needed && !sortDescriptionIsAllConstant(result_sort_desc, *pipeline.getSharedHeader()))
     {
