@@ -98,8 +98,7 @@ namespace
 
         auto target_user_id = context->getAccessControl().getID<User>(target_user_name);
 
-        /// Like the query form, start from the server defaults, so that the caller's values come back only
-        /// through the clamp below.
+        /// Start from the server defaults, as the query form does: the caller's values return only through the clamp below.
         auto previous_settings = context->getSettingsCopy();
         context->setSettings(context->getGlobalContext()->getSettingsRef());
         try

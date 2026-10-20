@@ -789,8 +789,7 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
                 "Not all of the initiator's current roles are known on this node: [{}]", fmt::join(role_names, ", "));
     }
 
-    /// On a secret interserver query, apply the values `EXECUTE AS ... SETTINGS` gave the user on the initiator;
-    /// `setUser` checks them against the constraints of the user on this node.
+    /// A secret interserver query carries the initiator's `EXECUTE AS ... SETTINGS` values; `setUser` checks them here.
     std::optional<SettingsChanges> execute_as_settings;
     if (getClientInfo().interface == ClientInfo::Interface::TCP_INTERSERVER && query_context->getClientInfo().execute_as_settings)
     {

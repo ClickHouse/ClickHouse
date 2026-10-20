@@ -158,8 +158,7 @@ public:
     /// Initiator's current roles for secondary queries; nullopt = not sent (remote uses default roles).
     std::optional<std::vector<String>> current_roles;
 
-    /// Initiator's values filled by `EXECUTE AS user SETTINGS ...`, as (name, `Field::dump`) pairs, for secondary
-    /// queries; nullopt = not sent.
+    /// Initiator's `EXECUTE AS ... SETTINGS` values as (name, `Field::dump`) pairs for secondary queries; nullopt = not sent.
     std::optional<std::vector<std::pair<String, String>>> execute_as_settings;
     /// `execute_as_settings` as written after its presence byte, which the interserver secret hash also covers.
     String serializeExecuteAsSettings() const;
