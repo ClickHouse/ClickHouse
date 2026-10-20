@@ -760,6 +760,12 @@ Enables or disables creating a new file on each insert in azure engine tables
     DECLARE(Bool, s3_check_objects_after_upload, false, R"(
 Check each uploaded object to s3 with head request to be sure that upload was successful
 )", 0) \
+    DECLARE(Bool, s3_use_idempotency_id, true, R"(
+Put a unique idempotency id into the user-defined metadata (the `x-amz-meta-clickhouse-idempotency-id` header) of every object uploaded to S3. When a write is retried after its response was lost, the id lets ClickHouse recognize that the object was written by the earlier attempt of the same write and treat the write as successful instead of failing it.
+
+Disable it for S3-compatible storages that reject user-defined object metadata. Such writes lose the recovery of lost responses. Writes into the tables of a `DataLakeCatalog` database with `catalog_type = 's3tables'` (Amazon S3 Tables) don't put the id unless this setting is explicitly enabled in the query, because S3 Tables doesn't support user-defined object metadata.
+)", 0, \
+        {"26.11", true, true, "New setting to disable the idempotency id in the metadata of objects uploaded to S3."}) \
     DECLARE(Bool, s3_validate_etag_on_read, true, R"(
 When reading an object from S3 (or an S3-compatible store such as GCS), check that every GET request returns the same ETag that was observed when the object was listed. A single file read issues many ranged GET requests; if the object is overwritten in place between them (for example by an external writer rewriting a fixed key), the reads can otherwise be stitched together from two different object generations and surface as a corrupted checksum or parse error. When a mismatch is detected the read fails with `S3_OBJECT_CHANGED_DURING_READ` instead of returning inconsistent data. Disable only for workloads that intentionally read objects that are being overwritten and can tolerate inconsistent reads.
 )", 0, \
@@ -7469,6 +7475,10 @@ Enable independent `DISTINCT` evaluation per partition on separate threads when 
 Force independent `DISTINCT` evaluation per partition when it is applicable, but the cost heuristic decided not to use it. Only bypasses the cost heuristic of [allow_distinct_partitions_independently](#allow_distinct_partitions_independently); the remaining conditions still apply.
 )", 0, \
         {"26.8", false, false, "New setting to force independent per-partition evaluation of `DISTINCT` even when the cost heuristic would skip it."}) \
+    DECLARE(Bool, optimize_uniq_exact_radix_partitioning, true, R"(
+Compute a single `uniqExact` (and `count(DISTINCT)`, which uses it by default) of a query without `GROUP BY` by partitioning the values by their hash instead of merging per-thread hash sets. Every thread routes its values into the partitions, then the partitions are deduplicated in parallel, each in a hash set small enough to stay in the CPU cache, and the result is the sum of their sizes. Applies to a single argument of a numeric type up to 64 bits, `Date`, `Date32`, `DateTime`, `Enum`, `IPv4`, `IPv6`, `UUID`, 128-bit integers, `String`, `FixedString`, or `Nullable` of them, when the result is finalized on the same server. A thread keeps inserting into its own small set, as the ordinary aggregation does, until the set outgrows the CPU cache, so the routing is only engaged for high-cardinality inputs, and a thread goes back to its own set if most of its values turn out to be repeated.
+)", 0, \
+        {"26.11", false, true, "New setting to compute a single `uniqExact` or `count(DISTINCT)` without `GROUP BY` by partitioning the values by their hash instead of merging per-thread hash sets."}) \
     DECLARE(Bool, allow_preliminary_distinct_abandoning, true, R"(
 Let the preliminary (per-stream) `DISTINCT` give up deduplicating mostly-unique input, freeing its hash table and passing the remaining rows through. The preliminary `DISTINCT` is best-effort by design - duplicates from different streams pass through it even when it deduplicates - and the final `DISTINCT` deduplicates its output again, so abandoning gives up the removal of almost nothing and saves the memory and hashing of a second copy of the unique keys. Not applied when the preliminary `DISTINCT` carries a limit hint (a plain `LIMIT` with no subsequent ordering).
 )", 0, \
@@ -10625,6 +10635,10 @@ Enable experimental IP address encryption functions (`ipcryptEncrypt`, `ipcryptD
 Enable the experimental XGBoost integration: the `XGBOOST` dictionary layout and the `predictXGBoost` function.
 )", EXPERIMENTAL, \
         {"26.10", false, false, "New setting to gate the experimental XGBoost integration (the `XGBOOST` dictionary layout and the `predictXGBoost` function)."}) \
+    DECLARE(Bool, enable_elasticsearch, false, R"(
+Enable the experimental Elasticsearch integration: the `Elasticsearch` table engine and the `elasticsearch` table function.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting to gate the experimental Elasticsearch integration (the `Elasticsearch` table engine and the `elasticsearch` table function)."}) \
     DECLARE_WITH_ALIAS(Bool, enable_time_series_table, false, R"(
 Allows creation of tables with the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine. Possible values:
 - 0 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is disabled.

@@ -1,6 +1,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/Allocator.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDynamic.h>
@@ -69,6 +70,9 @@ namespace ProfileEvents
     extern const Event ParquetColumnsFilterExpression;
     extern const Event ParquetReadPages;
     extern const Event ParquetPrunedPages;
+    extern const Event ParquetFooterReadMicroseconds;
+    extern const Event ParquetDecompressedBytes;
+    extern const Event ParquetPagesDecompressedToSkipRows;
     extern const Event ColumnsCacheHits;
     extern const Event ColumnsCacheMisses;
 }
@@ -166,6 +170,7 @@ static bool tryDecompressLZ4Hadoop(const char * data, size_t compressed_size, si
 
 static void decompress(const char * data, size_t compressed_size, size_t uncompressed_size, parq::CompressionCodec::type codec, char * out)
 {
+    ProfileEvents::increment(ProfileEvents::ParquetDecompressedBytes, uncompressed_size);
     CompressionMethod method = CompressionMethod::None;
     switch (codec)
     {
@@ -259,6 +264,8 @@ const parq::FileMetaData Reader::empty_file_metadata{};
 
 std::shared_ptr<const FileFooter> Reader::readFileFooter(Prefetcher & prefetcher, size_t footer_read_size)
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParquetFooterReadMicroseconds);
+
     /// Parquet file ends with:
     ///  * serialized FileMetaData struct,
     ///  * [4 bytes] size of serialized FileMetaData struct,
@@ -3700,6 +3707,8 @@ bool Reader::skipRowsInPage(size_t target_row_idx, PageState & page, ColumnChunk
 
     if (encoded_values_to_skip > 0)
     {
+        if (page.codec != parq::CompressionCodec::UNCOMPRESSED)
+            ProfileEvents::increment(ProfileEvents::ParquetPagesDecompressedToSkipRows);
         decompressPageIfCompressed(page);
         if (!page.decoder)
             createPageDecoder(page, column, column_info);
