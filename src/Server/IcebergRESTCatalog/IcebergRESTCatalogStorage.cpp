@@ -21,6 +21,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace IcebergRESTCatalog
+{
+
 CompressionMethod getMetadataFileCompressionMethod(const String & path)
 {
     constexpr std::string_view metadata_suffix = ".metadata.json";
@@ -65,6 +68,8 @@ void writeNewObject(
     auto compressed_buffer = wrapWriteBufferWithCompressionMethod(std::move(buffer), compression_method, compression_level);
     compressed_buffer->write(content.data(), content.size());
     compressed_buffer->finalize();
+}
+
 }
 
 }

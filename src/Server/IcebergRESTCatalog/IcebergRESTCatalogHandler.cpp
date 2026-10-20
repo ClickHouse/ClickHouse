@@ -953,22 +953,18 @@ void IcebergRESTCatalogHandler::commitTableMetadata(
 
     /// Update Keeper.
     using UpdateTableResult = KeeperIcebergRESTCatalogStore::UpdateTableResult;
-    const auto result = [&]() -> std::optional<UpdateTableResult>
+    std::optional<UpdateTableResult> result;
+    try
     {
-        try
-        {
-            return warehouse.store->updateTable(ns, table, pointer, {.uuid = pointer.uuid, .metadata_location = new_location});
-        }
-        catch (const zkutil::KeeperException & e)
-        {
-            /// The set may have been applied, so the new file must stay. The client reloads the table to find out.
-            LOG_WARNING(log, "Commit of {}.{} to {} has an unknown outcome: {}", joinNamespace(ns), table, new_location, e.message());
-            sendError(response, Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR, "CommitStateUnknownException", "Commit state is unknown");
-            return std::nullopt;
-        }
-    }();
-    if (!result)
+        result = warehouse.store->updateTable(ns, table, pointer, {.uuid = pointer.uuid, .metadata_location = new_location});
+    }
+    catch (const zkutil::KeeperException & e)
+    {
+        /// The set may have been applied, so the new file must stay. The client reloads the table to find out.
+        LOG_WARNING(log, "Commit of {}.{} to {} has an unknown outcome: {}", joinNamespace(ns), table, new_location, e.message());
+        sendError(response, Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR, "CommitStateUnknownException", "Commit state is unknown");
         return;
+    }
 
     if (*result != UpdateTableResult::Updated)
         warehouse.object_storage->removeObjectIfExists(StoredObject(object_key));

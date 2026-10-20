@@ -12,6 +12,9 @@ class IObjectStorage;
 struct ReadSettings;
 struct WriteSettings;
 
+namespace IcebergRESTCatalog
+{
+
 /// Metadata files with many snapshots reach tens of megabytes.
 constexpr size_t MAX_METADATA_FILE_SIZE = 64_MiB;
 
@@ -33,5 +36,7 @@ void writeNewObject(
     WriteSettings write_settings,
     CompressionMethod compression_method,
     int compression_level);
+
+}
 
 }

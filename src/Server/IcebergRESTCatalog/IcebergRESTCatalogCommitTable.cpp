@@ -225,27 +225,9 @@ void setSnapshotRef(Poco::JSON::Object & metadata, const Poco::JSON::Object & up
     /// Add ref to metadata.
     getObject(metadata, f_refs)->set(ref_name, ref);
 
-    /// If ref is main, update current_snapshot_id and snapshot_log.
+    /// If ref is main, update current_snapshot_id.
     if (ref_name == f_main)
-    {
         metadata.set(f_current_snapshot_id, snapshot_id);
-
-        /// The log records when main moved, which is now. The snapshot itself may be old, for example on a rollback.
-        const auto now = getInteger(metadata, f_last_updated_ms);
-        Poco::JSON::Object::Ptr entry = new Poco::JSON::Object;
-        entry->set(f_metadata_snapshot_id, snapshot_id);
-        entry->set(f_timestamp_ms, now);
-
-        /// An earlier move of main in this same commit was never visible to readers. Replace its entry.
-        auto snapshot_log = getArray(metadata, f_snapshot_log);
-        if (snapshot_log->size() > 0)
-        {
-            const auto last = static_cast<UInt32>(snapshot_log->size() - 1);
-            if (getInteger(*snapshot_log->getObject(last), f_timestamp_ms) == now)
-                snapshot_log->remove(last);
-        }
-        snapshot_log->add(entry);
-    }
 }
 
 void removeSnapshotRef(Poco::JSON::Object & metadata, const Poco::JSON::Object & update)
@@ -288,6 +270,21 @@ const std::set<String> UNSUPPORTED_UPDATE_ACTIONS = {
     "add-encryption-key", "remove-encryption-key",
 };
 
+/// Record the new current snapshot in snapshot-log.
+void appendSnapshotLog(Poco::JSON::Object & metadata, Int64 previous_current_snapshot_id)
+{
+    /// One entry per commit, because readers never saw the intermediate states.
+    const auto current_snapshot_id = getInteger(metadata, f_current_snapshot_id);
+    if (current_snapshot_id == previous_current_snapshot_id || current_snapshot_id == -1)
+        return;
+
+    /// The log records when main moved, which is now. The snapshot itself may be old, for example on a rollback.
+    Poco::JSON::Object::Ptr entry = new Poco::JSON::Object;
+    entry->set(f_metadata_snapshot_id, current_snapshot_id);
+    entry->set(f_timestamp_ms, getInteger(metadata, f_last_updated_ms));
+    getArray(metadata, f_snapshot_log)->add(entry);
+}
+
 /// Record the previous metadata in metadata-log.
 void appendMetadataLog(Poco::JSON::Object & metadata, const String & previous_metadata_location, Int64 previous_last_updated_ms)
 {
@@ -316,8 +313,8 @@ void applyTableUpdatesToJSON(Poco::JSON::Object & metadata, const Poco::JSON::Ar
 {
     /// Read before the updates, which change the metadata in place.
     const auto previous_last_updated_ms = getInteger(metadata, f_last_updated_ms);
-    /// Set before the updates, so set-snapshot-ref records the same time in the snapshot log.
-    /// Never earlier than the previous commit, because clocks differ between catalog servers and readers expect ordered history.
+    const auto previous_current_snapshot_id = getInteger(metadata, f_current_snapshot_id);
+    /// The commit time. Never earlier than the previous commit, because clocks differ between catalog servers.
     metadata.set(f_last_updated_ms, std::max(nowMs(), previous_last_updated_ms + 1));
 
     for (const auto & update : updates)
@@ -341,6 +338,7 @@ void applyTableUpdatesToJSON(Poco::JSON::Object & metadata, const Poco::JSON::Ar
         it->second(metadata, *update_object);
     }
 
+    appendSnapshotLog(metadata, previous_current_snapshot_id);
     appendMetadataLog(metadata, current_metadata_location, previous_last_updated_ms);
 }
 
