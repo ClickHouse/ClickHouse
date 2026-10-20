@@ -45,7 +45,7 @@ namespace ServerSetting
 {
     extern const ServerSettingsUInt64 s3_max_redirects;
     extern const ServerSettingsUInt64 s3_retry_attempts;
-    extern const ServerSettingsBool load_table_anonymously_if_credentials_restricted;
+    extern const ServerSettingsBool s3_load_table_anonymously_if_credentials_restricted;
 }
 
 namespace S3AuthSetting
@@ -220,7 +220,7 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
     /// by their bootstrap. It is not user-controllable, so it does not weaken the operator's hard-fail choice
     /// for user tables.
     if (credentials_configuration.forbid_implicit_credentials && is_loading_from_existing_metadata
-        && (server_settings[ServerSetting::load_table_anonymously_if_credentials_restricted]
+        && (server_settings[ServerSetting::s3_load_table_anonymously_if_credentials_restricted]
             || force_anonymous_load_fallback))
     {
         credentials_configuration.anonymous_fallback_for_server_credentials = true;

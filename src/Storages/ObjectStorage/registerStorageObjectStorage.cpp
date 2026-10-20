@@ -90,7 +90,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     /// regain the server identity on restart, since a user `CREATE`/`ATTACH` of the same definition would be
     /// refused. Flagging the load lets `getClient` downgrade such a table to an anonymous client (so the server
     /// still starts and the table is merely inaccessible) instead of escalating, controlled by the server
-    /// setting `load_table_anonymously_if_credentials_restricted`.
+    /// setting `s3_load_table_anonymously_if_credentials_restricted`.
     configuration->is_loading_from_existing_metadata = isLoadingFromExistingMetadata(args.mode);
 
     /// Only a user-issued `CREATE` may apply the `file_like_engine_default_partition_strategy`
@@ -102,7 +102,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     /// `<log>_s3` (the plain S3 engine sink) or `<log>_s3queue`. Users cannot create tables there, so this is a
     /// safe internal marker. These tables must never abort server startup when server-managed credentials are
     /// restricted: force the anonymous-load fallback in `getClient` even if the operator disabled
-    /// `load_table_anonymously_if_credentials_restricted`. Their bootstrap re-credentials the client afterwards.
+    /// `s3_load_table_anonymously_if_credentials_restricted`. Their bootstrap re-credentials the client afterwards.
     if (args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE
         && (args.table_id.table_name.ends_with("_s3") || args.table_id.table_name.ends_with("_s3queue")))
         configuration->force_anonymous_load_fallback = true;

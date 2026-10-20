@@ -120,7 +120,7 @@ namespace Setting
     extern const SettingsBool log_queries;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool database_datalake_require_metadata_access;
-    extern const SettingsBool allow_server_credentials_in_user_queries;
+    extern const SettingsBool s3_allow_server_credentials_in_user_queries;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
 }
 
@@ -133,7 +133,7 @@ namespace DataLakeStorageSetting
 
 namespace ServerSetting
 {
-    extern const ServerSettingsBool load_table_anonymously_if_credentials_restricted;
+    extern const ServerSettingsBool s3_load_table_anonymously_if_credentials_restricted;
 }
 
 namespace ErrorCodes
@@ -492,7 +492,7 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
                 "Recreate the database with explicit catalog credentials (for a Glue catalog, an IAM role via "
                 "aws_role_arn = '...'; for a BigLake catalog, a Google ADC triple). Reason: {}",
 #else
-                "Provide explicit credentials, or enable `allow_server_credentials_in_user_queries`. Reason: {}",
+                "Provide explicit credentials, or enable `s3_allow_server_credentials_in_user_queries`. Reason: {}",
 #endif
                 catalog_unavailable_reason);
     }
@@ -510,15 +510,15 @@ void DatabaseDataLake::initializeOrLeaveUnavailable() const
         /// On metadata load, a catalog that resolves the now-restricted server identity must not abort startup:
         /// leave it unavailable (`getCatalog` reports the reason on every query), mirroring S3/S3Queue tables.
         if (is_loading_from_existing_metadata && e.code() == ErrorCodes::ACCESS_DENIED
-            && Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::load_table_anonymously_if_credentials_restricted])
+            && Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::s3_load_table_anonymously_if_credentials_restricted])
         {
             LOG_WARNING(
                 log,
                 "Loading this DataLakeCatalog database without a working catalog client: it resolves "
                 "server-managed credentials that are restricted for user queries "
-                "(allow_server_credentials_in_user_queries = 0). The database will be inaccessible until "
+                "(s3_allow_server_credentials_in_user_queries = 0). The database will be inaccessible until "
                 "its credentials resolve to a permitted source. Set the server setting "
-                "load_table_anonymously_if_credentials_restricted = 0 to fail loading instead. Reason: {}",
+                "s3_load_table_anonymously_if_credentials_restricted = 0 to fail loading instead. Reason: {}",
                 e.message());
             resetCatalog(e.message());
         }
@@ -2032,7 +2032,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         /// The catalog client is cached for every later query, so capture the restriction now from the CREATE
         /// query rather than relying on the live per-session setting.
         const bool allow_server_credentials_in_user_queries
-            = args.context->getSettingsRef()[Setting::allow_server_credentials_in_user_queries];
+            = args.context->getSettingsRef()[Setting::s3_allow_server_credentials_in_user_queries];
 
         /// A database is replayed from its stored `ATTACH DATABASE` statement with plain `ATTACH` on startup
         /// (unlike tables, which use `FORCE_ATTACH`), so `isLoadingFromExistingMetadata` is too narrow. Treat the

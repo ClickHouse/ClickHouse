@@ -475,11 +475,11 @@ possible_properties = {
     "replicated_fetches_http_receive_timeout": threshold_generator(0.2, 0.2, 0, 30, 5),
     "replicated_fetches_http_send_timeout": threshold_generator(0.2, 0.2, 0, 30, 5),
     "restore_threads": no_zero_threads_lambda,
-    "allow_server_credentials_for_system_table_disks": true_false_lambda,
+    "s3_allow_server_credentials_for_system_table_disks": true_false_lambda,
     "s3_credentials_provider_max_cache_size": threshold_generator(
         0.2, 0.2, 0, 104857600
     ),
-    "load_table_anonymously_if_credentials_restricted": true_false_lambda,
+    "s3_load_table_anonymously_if_credentials_restricted": true_false_lambda,
     "s3_max_redirects": threshold_generator(0.2, 0.2, 0, 20, 5),
     "s3_retry_attempts": threshold_generator(0.2, 0.2, 1, 20, 5),
     "s3queue_disable_streaming": true_false_lambda,

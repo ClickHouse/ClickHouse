@@ -82,7 +82,7 @@ def test_token_request_goes_through_http_transport(started_cluster):
 
     error = node.query_and_get_error(
         "SELECT * FROM azureBlobStorage('https://localhost:1', 'cont', 'data.csv', 'CSV', 'auto', 'c UInt64') "
-        "SETTINGS allow_server_credentials_in_user_queries = 1"
+        "SETTINGS s3_allow_server_credentials_in_user_queries = 1"
     )
     assert "AuthenticationException" not in error
 
@@ -110,7 +110,7 @@ def test_table_created_with_opt_in_serves_no_restricted_session(started_cluster)
     restricted session is refused before any request, and the opt-in works again afterwards."""
 
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    allow = {"allow_server_credentials_in_user_queries": 1}
+    allow = {"s3_allow_server_credentials_in_user_queries": 1}
     node.query("DROP TABLE IF EXISTS t_opt_in SYNC")
     node.query(
         f"CREATE TABLE t_opt_in (c UInt64) ENGINE = AzureBlobStorage('https://127.0.0.1:{TOKEN_PORT}/account', 'cont', 'data.csv', 'CSV')",
@@ -141,7 +141,7 @@ def test_truncate_follows_the_session(started_cluster):
     refused before any delete is sent."""
 
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    allow = {"allow_server_credentials_in_user_queries": 1}
+    allow = {"s3_allow_server_credentials_in_user_queries": 1}
     node.query("DROP TABLE IF EXISTS t_truncate SYNC")
     node.query(
         f"CREATE TABLE t_truncate (c UInt64) ENGINE = AzureBlobStorage('https://127.0.0.1:{TOKEN_PORT}/account', 'cont', 'data.csv', 'CSV')",

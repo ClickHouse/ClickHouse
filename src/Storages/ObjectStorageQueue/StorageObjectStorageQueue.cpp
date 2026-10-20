@@ -363,14 +363,14 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
 
     /// The object storage S3 client is built once here and reused by background threads, so the effective
     /// per-session credential restriction must be captured now from the CREATE query (its
-    /// `allow_server_credentials_in_user_queries` value arrives as `allow_server_credentials_in_user_queries_`).
+    /// `s3_allow_server_credentials_in_user_queries` value arrives as `allow_server_credentials_in_user_queries_`).
     /// The restriction is NOT relaxed when loading from existing metadata: a queue whose definition resolves to
     /// server-managed credentials (e.g. a named collection later re-bound to `use_environment_credentials = 1`)
     /// must not silently regain the server identity on restart, since that is something a user `CREATE`/`ATTACH`
     /// of the same definition would be refused. Instead, flagging the load lets `getClient` downgrade such a
     /// queue to an anonymous client (so the server still starts and the queue is merely inaccessible) rather
     /// than escalating or aborting startup, controlled by the server setting
-    /// `load_table_anonymously_if_credentials_restricted`. `context_` stays the persistent global context
+    /// `s3_load_table_anonymously_if_credentials_restricted`. `context_` stays the persistent global context
     /// held weakly by `WithContext`, and `createObjectStorage` copies the context it is given into its
     /// credential refresher, so the transient settings copy here is safe.
     configuration->is_loading_from_existing_metadata = isLoadingFromExistingMetadata(mode);
@@ -378,14 +378,14 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     /// Server-internal log-pipeline S3Queue tables live in the `system` database and are named `<log>_s3queue`.
     /// Users cannot create tables there, so this is a safe internal marker. These tables must never abort server
     /// startup when server-managed credentials are restricted: force the anonymous-load fallback in `getClient`
-    /// even if the operator disabled `load_table_anonymously_if_credentials_restricted`. Their bootstrap
+    /// even if the operator disabled `s3_load_table_anonymously_if_credentials_restricted`. Their bootstrap
     /// re-credentials the client in place right after startup.
     if (table_id_.database_name == DatabaseCatalog::SYSTEM_DATABASE && table_id_.table_name.ends_with("_s3queue"))
         configuration->force_anonymous_load_fallback = true;
 
     auto object_storage_context = Context::createCopy(context_);
     object_storage_context->setSetting(
-        "allow_server_credentials_in_user_queries",
+        "s3_allow_server_credentials_in_user_queries",
         allow_server_credentials_in_user_queries_);
 
     object_storage = configuration->createObjectStorage(object_storage_context, /* is_readonly */true, std::nullopt);

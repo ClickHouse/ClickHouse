@@ -110,7 +110,7 @@ private:
     const LoggerPtr log;
     /// Crendetials to authenticate Iceberg Catalog.
     Poco::Net::HTTPBasicCredentials credentials;
-    /// Effective `allow_server_credentials_in_user_queries` captured when the database was created (or
+    /// Effective `s3_allow_server_credentials_in_user_queries` captured when the database was created (or
     /// implied when it is loaded from existing metadata). The catalog clients are built once and cached, so
     /// the restriction cannot be read from the query context of whichever query touches the catalog first.
     const bool allow_server_credentials_in_user_queries;

@@ -111,7 +111,7 @@ $CLICKHOUSE_CLIENT -m -q "
 # `readonly`, `container_already_exists` and `skip_access_check` keep it from contacting the endpoint.
 OPT_IN_DISK="disk(type = azure_blob_storage, storage_account_url = '${DISK_URL}', container_name = 'cont',
     readonly = 1, container_already_exists = 1, skip_access_check = 1)"
-$CLICKHOUSE_CLIENT --allow_server_credentials_in_user_queries=1 -q "
+$CLICKHOUSE_CLIENT --s3_allow_server_credentials_in_user_queries=1 -q "
     CREATE TABLE ${OPT_IN_TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple() SETTINGS disk = ${OPT_IN_DISK}"
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE ${DISK_TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple() SETTINGS disk = ${OPT_IN_DISK}; -- { serverError ACCESS_DENIED }
@@ -122,7 +122,7 @@ $CLICKHOUSE_CLIENT -q "
 "
 
 # As for `S3Queue`, a move destination must carry its own credentials, whoever creates or alters the queue.
-$CLICKHOUSE_CLIENT --allow_server_credentials_in_user_queries=1 -m -q "
+$CLICKHOUSE_CLIENT --s3_allow_server_credentials_in_user_queries=1 -m -q "
     CREATE TABLE ${QUEUE} (x UInt8) ENGINE = AzureQueue('${CONN_STRING}', '${CONTAINER}', 'queue/*', 'CSV')
         SETTINGS mode = 'unordered', after_processing = 'move',
             after_processing_move_connection_string = '${URL}', after_processing_move_container = 'cont'; -- { serverError ACCESS_DENIED }
@@ -135,14 +135,14 @@ $CLICKHOUSE_CLIENT -q "
 "
 
 # A queue created with the opt-in keeps it for background processing, but a restricted direct reader is refused.
-$CLICKHOUSE_CLIENT --allow_server_credentials_in_user_queries=1 -q "
+$CLICKHOUSE_CLIENT --s3_allow_server_credentials_in_user_queries=1 -q "
     CREATE TABLE ${IDENTITY_QUEUE} (x UInt8) ENGINE = AzureQueue('${URL}', 'cont', 'queue/*', 'CSV') SETTINGS mode = 'unordered'"
 $CLICKHOUSE_CLIENT -q "
     SELECT * FROM ${IDENTITY_QUEUE} SETTINGS stream_like_engine_allow_direct_select = 1; -- { serverError ACCESS_DENIED }
 "
 
 # A wrapper may name a disk an opted-in session created; the restricted session is refused, not given that disk.
-$CLICKHOUSE_CLIENT --allow_server_credentials_in_user_queries=1 -q "
+$CLICKHOUSE_CLIENT --s3_allow_server_credentials_in_user_queries=1 -q "
     CREATE TABLE ${NAMED_DISK_TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
         SETTINGS disk = disk(name = '${NAMED_DISK}', type = azure_blob_storage, storage_account_url = '${DISK_URL}',
             container_name = 'cont', readonly = 1, container_already_exists = 1, skip_access_check = 1)"
@@ -153,7 +153,7 @@ $CLICKHOUSE_CLIENT -q "
 
 # The endpoint of an opted-in disk may come from `from_zk`, which is substituted only after the opt-in is recorded.
 $CLICKHOUSE_CLIENT -q "INSERT INTO system.zookeeper (path, name, value) VALUES ('${ZK_PATH}', 'url', '${DISK_URL}')"
-$CLICKHOUSE_CLIENT --allow_server_credentials_in_user_queries=1 --dynamic_disk_allow_from_zk=1 -q "
+$CLICKHOUSE_CLIENT --s3_allow_server_credentials_in_user_queries=1 --dynamic_disk_allow_from_zk=1 -q "
     CREATE TABLE ${FROM_ZK_TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
         SETTINGS disk = disk(type = azure_blob_storage, storage_account_url = 'from_zk ${ZK_PATH}/url', container_name = 'cont',
             readonly = 1, container_already_exists = 1, skip_access_check = 1)"
@@ -181,7 +181,7 @@ run_and_classify "SAS token in the endpoint" \
 
 run_and_classify "server identity with the opt-in enabled" \
     "SELECT * FROM azureBlobStorage('${URL}', 'cont', 'f.csv', 'CSV', 'auto', 'x UInt8')" \
-    --allow_server_credentials_in_user_queries=1
+    --s3_allow_server_credentials_in_user_queries=1
 
 # In clickhouse-local the user is the operator.
 if ${CLICKHOUSE_LOCAL} --azure_sdk_max_retries=0 -q "

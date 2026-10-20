@@ -2073,7 +2073,7 @@ def test_invalid_upload_settings_do_not_affect_reads(cluster):
 
 def test_server_credentials_on_reload(cluster):
     # At startup a stored table whose definition now resolves to the server's own identity is loaded with a client
-    # that has no credentials (`load_table_anonymously_if_credentials_restricted`), so the server starts and
+    # that has no credentials (`s3_load_table_anonymously_if_credentials_restricted`), so the server starts and
     # the table cannot use that identity. `UNDROP` cannot cover it: a table without local data is removed at once on
     # `DROP`. A dynamic disk created with the opt-in records it in its definition and keeps the server's identity.
     node = cluster.instances["node"]
@@ -2105,7 +2105,7 @@ def test_server_credentials_on_reload(cluster):
         f"CREATE TABLE test_server_credentials_disk_reload (x UInt8) ENGINE = MergeTree ORDER BY tuple()"
         f" SETTINGS disk = disk(type = azure_blob_storage, storage_account_url = '{url}', container_name = 'cont',"
         f" readonly = 1, container_already_exists = 1, skip_access_check = 1)",
-        settings={"allow_server_credentials_in_user_queries": 1},
+        settings={"s3_allow_server_credentials_in_user_queries": 1},
     )
     assert "_azure_server_credentials_allowed" in node.query(
         "SHOW CREATE TABLE test_server_credentials_disk_reload"
@@ -2116,13 +2116,13 @@ def test_server_credentials_on_reload(cluster):
         "CREATE TABLE test_server_credentials_include_disk_reload (x UInt8) ENGINE = MergeTree ORDER BY tuple()"
         " SETTINGS disk = disk(type = azure_blob_storage, include = 'azure_server_identity', container_name = 'cont',"
         " readonly = 1, container_already_exists = 1, skip_access_check = 1)",
-        settings={"allow_server_credentials_in_user_queries": 1, "dynamic_disk_allow_include": 1},
+        settings={"s3_allow_server_credentials_in_user_queries": 1, "dynamic_disk_allow_include": 1},
     )
     assert "_azure_server_credentials_allowed" in node.query(
         "SHOW CREATE TABLE test_server_credentials_include_disk_reload"
     )
 
-    # A `system` table disk needs no opt-in with `allow_server_credentials_for_system_table_disks`, and the same
+    # A `system` table disk needs no opt-in with `s3_allow_server_credentials_for_system_table_disks`, and the same
     # definition outside `system` is still refused, although the disk is already created.
     system_disk = (
         f"disk(type = azure_blob_storage, storage_account_url = '{url}', container_name = 'cont',"

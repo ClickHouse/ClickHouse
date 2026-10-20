@@ -48,8 +48,8 @@ namespace Setting
 
 namespace ServerSetting
 {
-    extern const ServerSettingsBool load_table_anonymously_if_credentials_restricted;
-    extern const ServerSettingsBool allow_server_credentials_for_system_table_disks;
+    extern const ServerSettingsBool s3_load_table_anonymously_if_credentials_restricted;
+    extern const ServerSettingsBool s3_allow_server_credentials_for_system_table_disks;
 }
 
 [[noreturn]] static void throwBadConfiguration(const std::string & message = "")
@@ -247,7 +247,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     /// server setting allows it. Unlike the session setting this also applies on metadata reload, and `system`
     /// is not user-writable, so it does not relax the restriction for user queries.
     const bool system_disk_exempt = for_system_database
-        && context->getGlobalContext()->getServerSettings()[ServerSetting::allow_server_credentials_for_system_table_disks];
+        && context->getGlobalContext()->getServerSettings()[ServerSetting::s3_allow_server_credentials_for_system_table_disks];
 
     /// A disk created with the credential opt-in records it in its stored definition (see the write side and
     /// createCustomDisk). The marker is honored only on metadata load -- on a fresh create it is ignored and
@@ -273,14 +273,14 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     if (relies_on_server_credentials && context->shouldRestrictUserQueryS3Credentials() && !restriction_exempt)
     {
         if (is_loading_from_existing_metadata
-            && context->getGlobalContext()->getServerSettings()[ServerSetting::load_table_anonymously_if_credentials_restricted])
+            && context->getGlobalContext()->getServerSettings()[ServerSetting::s3_load_table_anonymously_if_credentials_restricted])
         {
             LOG_WARNING(
                 getLogger("getDiskConfigurationFromAST"),
                 "Loading a dynamic S3 disk anonymously: it resolves server-managed credentials that are "
-                "restricted for user queries (allow_server_credentials_in_user_queries = 0). The disk will "
+                "restricted for user queries (s3_allow_server_credentials_in_user_queries = 0). The disk will "
                 "be inaccessible until its credentials resolve to a permitted source. Set the server setting "
-                "load_table_anonymously_if_credentials_restricted = 0 to fail loading instead.");
+                "s3_load_table_anonymously_if_credentials_restricted = 0 to fail loading instead.");
 
             /// Force the disk anonymous once `include` is resolved (see forceAnonymousS3DiskConfig); we
             /// cannot rewrite the DOM here because DiskFromAST processes `include` after this returns.
@@ -295,7 +295,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
                 "(or, for `http_client = gcp_oauth`, a complete explicit Google ADC triple), with literal values "
                 "and no `include`. It may not fall back to the server's own credentials."
 #if !CLICKHOUSE_CLOUD
-                " Enable the setting `allow_server_credentials_in_user_queries` to allow it."
+                " Enable the setting `s3_allow_server_credentials_in_user_queries` to allow it."
 #endif
                 );
     }
@@ -445,14 +445,14 @@ void validateResolvedS3DiskCredentials(
         return;
 
     if (is_loading_from_existing_metadata
-        && context->getGlobalContext()->getServerSettings()[ServerSetting::load_table_anonymously_if_credentials_restricted])
+        && context->getGlobalContext()->getServerSettings()[ServerSetting::s3_load_table_anonymously_if_credentials_restricted])
     {
         LOG_WARNING(
             getLogger("getDiskConfigurationFromAST"),
             "Loading a dynamic S3 disk anonymously: an `include` resolves to an S3 backend whose credentials are "
             "not provided explicitly in the SQL definition, so they may be server-managed, which is restricted for "
-            "user queries (allow_server_credentials_in_user_queries = 0). The disk will be inaccessible. Set the "
-            "server setting load_table_anonymously_if_credentials_restricted = 0 to fail loading instead.");
+            "user queries (s3_allow_server_credentials_in_user_queries = 0). The disk will be inaccessible. Set the "
+            "server setting s3_load_table_anonymously_if_credentials_restricted = 0 to fail loading instead.");
         for (const auto & prefix : restricted_prefixes)
             forceAnonymousS3DiskConfigAtPrefix(config, prefix);
     }
@@ -465,7 +465,7 @@ void validateResolvedS3DiskCredentials(
             "triple). It may not take the S3 type or credentials from the included configuration, which could "
             "resolve the server's own credentials."
 #if !CLICKHOUSE_CLOUD
-            " Enable `allow_server_credentials_in_user_queries` to allow it."
+            " Enable `s3_allow_server_credentials_in_user_queries` to allow it."
 #endif
             );
 }
@@ -559,7 +559,7 @@ void validateResolvedAzureDiskCredentials(
 #if USE_AZURE_BLOB_STORAGE
     /// A `system` table disk is server-internal infrastructure, exempt like an S3 one.
     const bool system_table_disk_allowed = for_system_database
-        && context->getGlobalContext()->getServerSettings()[ServerSetting::allow_server_credentials_for_system_table_disks];
+        && context->getGlobalContext()->getServerSettings()[ServerSetting::s3_allow_server_credentials_for_system_table_disks];
 
     /// A wrapper such as `encrypted` or `cache` may name a disk another session created, which is reused as it is.
     if (!is_loading_from_existing_metadata && !system_table_disk_allowed && context->shouldRestrictUserQueryS3Credentials())
@@ -594,7 +594,7 @@ void validateResolvedAzureDiskCredentials(
         return;
 
     const bool anonymous_fallback = is_loading_from_existing_metadata
-        && context->getGlobalContext()->getServerSettings()[ServerSetting::load_table_anonymously_if_credentials_restricted];
+        && context->getGlobalContext()->getServerSettings()[ServerSetting::s3_load_table_anonymously_if_credentials_restricted];
     for (const auto & prefix : prefixes)
         getAzureDiskConnectionParams(config, prefix, anonymous_fallback).checkOrDropServerManagedCredentials();
 #endif

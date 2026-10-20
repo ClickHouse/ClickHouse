@@ -1101,7 +1101,7 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
 #if CLICKHOUSE_CLOUD
             ".");
 #else
-            ", or enable the setting `allow_server_credentials_in_user_queries`.");
+            ", or enable the setting `s3_allow_server_credentials_in_user_queries`.");
 #endif
 
     /// GCP metadata service (works inside GCP infrastructure)

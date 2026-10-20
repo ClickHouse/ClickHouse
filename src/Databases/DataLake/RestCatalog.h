@@ -362,7 +362,7 @@ private:
     const std::string google_adc_client_secret;
     const std::string google_adc_refresh_token;
     const std::string google_adc_quota_project_id;
-    /// Effective `allow_server_credentials_in_user_queries` captured when the database was created; the
+    /// Effective `s3_allow_server_credentials_in_user_queries` captured when the database was created; the
     /// catalog is cached and holds the global context, whose settings never reflect the creating session.
     const bool allow_server_credentials_in_user_queries;
 

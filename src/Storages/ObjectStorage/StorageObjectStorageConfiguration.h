@@ -391,7 +391,7 @@ public:
 
     /// Set by the storage when it is being loaded from existing metadata (server startup or RESTORE), so the
     /// S3 client build can downgrade restricted server-managed credentials to anonymous instead of aborting
-    /// startup (see `getClient` and the `load_table_anonymously_if_credentials_restricted` server setting).
+    /// startup (see `getClient` and the `s3_load_table_anonymously_if_credentials_restricted` server setting).
     /// Azure uses it the same way.
     bool is_loading_from_existing_metadata = false;
 
@@ -409,7 +409,7 @@ public:
 
     /// Set for server-internal tables (e.g. the system log-pipeline S3Queue tables) so their S3 client build
     /// always downgrades restricted server-managed credentials to anonymous instead of aborting, even when the
-    /// operator disabled `load_table_anonymously_if_credentials_restricted`. Not user-controllable: user
+    /// operator disabled `s3_load_table_anonymously_if_credentials_restricted`. Not user-controllable: user
     /// tables never set it, so it does not weaken the operator's hard-fail choice for user queries. The internal
     /// table's bootstrap re-credentials the client afterwards.
     bool force_anonymous_load_fallback = false;

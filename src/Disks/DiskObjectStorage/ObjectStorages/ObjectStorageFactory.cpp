@@ -48,7 +48,7 @@ namespace Setting
 
 namespace ServerSetting
 {
-    extern const ServerSettingsBool load_table_anonymously_if_credentials_restricted;
+    extern const ServerSettingsBool s3_load_table_anonymously_if_credentials_restricted;
 }
 
 namespace ErrorCodes
@@ -269,7 +269,7 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
                 && !server_credentials_allowed && context->shouldRestrictUserQueryS3Credentials(),
             /// A custom disk loaded from existing metadata gets no credentials instead of failing the table load.
             .anonymous_fallback_for_server_credentials = remote_host_filter_check == RemoteHostFilterCheck::Warn
-                && context->getGlobalContext()->getServerSettings()[ServerSetting::load_table_anonymously_if_credentials_restricted],
+                && context->getGlobalContext()->getServerSettings()[ServerSetting::s3_load_table_anonymously_if_credentials_restricted],
             .follows_session_restriction = false,
         };
 
@@ -278,8 +278,8 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
             LOG_WARNING(
                 getLogger("ObjectStorageFactory"),
                 "Loading the dynamic Azure disk {} with a client that has no credentials: it uses the server's own "
-                "identity, which is restricted for user queries (allow_server_credentials_in_user_queries = 0). "
-                "The disk stays inaccessible; set load_table_anonymously_if_credentials_restricted = 0 to fail "
+                "identity, which is restricted for user queries (s3_allow_server_credentials_in_user_queries = 0). "
+                "The disk stays inaccessible; set s3_load_table_anonymously_if_credentials_restricted = 0 to fail "
                 "loading instead.",
                 name);
 

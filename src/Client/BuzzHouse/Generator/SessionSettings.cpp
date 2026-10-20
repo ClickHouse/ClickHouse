@@ -1737,7 +1737,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"rows_before_aggregation", trueOrFalseSettingNoOracle},
     {"s3_allow_multipart_copy", trueOrFalseSettingNoOracle},
     {"s3_allow_parallel_part_upload", trueOrFalseSettingNoOracle},
-    {"allow_server_credentials_in_user_queries", trueOrFalseSettingNoOracle},
+    {"s3_allow_server_credentials_in_user_queries", trueOrFalseSettingNoOracle},
     {"s3_check_objects_after_upload", trueOrFalseSettingNoOracle},
     {"s3_create_new_file_on_insert", trueOrFalseSettingNoOracle},
     {"s3_ignore_file_doesnt_exist", trueOrFalseSettingNoOracle},

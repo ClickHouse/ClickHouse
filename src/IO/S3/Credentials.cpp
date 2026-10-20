@@ -1376,7 +1376,7 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::Reload()
 #else
 #define S3_SERVER_CREDENTIALS_HINT \
     "Provide explicit credentials, use NOSIGN for public buckets, grant access through an IAM role passed " \
-    "as extra_credentials(role_arn = '...'), or enable the setting `allow_server_credentials_in_user_queries`."
+    "as extra_credentials(role_arn = '...'), or enable the setting `s3_allow_server_credentials_in_user_queries`."
 #endif
 
 std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
@@ -1459,9 +1459,9 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
             LOG_WARNING(
                 getLogger("AWSClient"),
                 "Loading this table with an anonymous S3 client: it resolves server-managed credentials that "
-                "are restricted for user queries (allow_server_credentials_in_user_queries = 0). The table "
+                "are restricted for user queries (s3_allow_server_credentials_in_user_queries = 0). The table "
                 "will be inaccessible until its credentials resolve to a permitted source. Set the server "
-                "setting load_table_anonymously_if_credentials_restricted = 0 to fail loading instead.");
+                "setting s3_load_table_anonymously_if_credentials_restricted = 0 to fail loading instead.");
 
         /// Belt and suspenders: never let the provider chain fall back to the server's environment credentials.
         if (credentials_configuration.forbid_implicit_credentials)

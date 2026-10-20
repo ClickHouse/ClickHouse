@@ -95,7 +95,7 @@ bool DatabaseS3::isTableExist(const String & name, ContextPtr context_) const
 StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) const
 {
     /// Not cached across sessions: the built S3 client depends on the per-session
-    /// `allow_server_credentials_in_user_queries`, so reuse could let an allowed session prime a client for a
+    /// `s3_allow_server_credentials_in_user_queries`, so reuse could let an allowed session prime a client for a
     /// restricted one. Rebuild every time. Caching can return once it keys on the credential mode.
     auto url = getFullUrl(name);
     checkUrl(url, context_, /* throw_on_error */true);
