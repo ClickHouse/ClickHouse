@@ -12,7 +12,6 @@
 -- query, so a distributed insert has the initiator's own `Insert` row plus three shipped ones - 4. All
 -- three replicas are this same server, so every one of those rows lands in this `system.query_log`.
 
-SET enable_analyzer = 1; -- parallel distributed insert select for replicated tables works only with analyzer
 SET parallel_distributed_insert_select = 2;
 
 DROP TABLE IF EXISTS t_src;

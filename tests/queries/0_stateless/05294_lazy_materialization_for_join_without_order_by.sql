@@ -5,7 +5,6 @@
 -- Without ORDER BY the LIMIT may return any rows, so every filter below keeps exactly as many rows as the LIMIT
 -- does, and an ORDER BY above the LIMIT only sorts them for the output.
 
-SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_lazy_materialization_for_join = 1;
 SET query_plan_max_limit_for_lazy_materialization = 20;
