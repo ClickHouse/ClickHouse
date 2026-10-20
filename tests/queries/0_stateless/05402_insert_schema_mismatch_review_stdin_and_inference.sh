@@ -21,7 +21,7 @@ printf '(1);(2);' | $CLICKHOUSE_LOCAL \
     --query 'CREATE TABLE t (x UInt8) ENGINE = Memory' \
     --query 'INSERT INTO t FORMAT Values' \
     --query 'INSERT INTO t FORMAT Values' \
-    --query 'SELECT groupArray(x) FROM t'
+    --query 'SELECT arraySort(groupArray(x)) FROM t'
 
 echo "-- the same with a regular file as stdin"
 printf '(1);(2);' > "${DATA_FILE}.values"
@@ -29,7 +29,7 @@ $CLICKHOUSE_LOCAL \
     --query 'CREATE TABLE t (x UInt8) ENGINE = Memory' \
     --query 'INSERT INTO t FORMAT Values' \
     --query 'INSERT INTO t FORMAT Values' \
-    --query 'SELECT groupArray(x) FROM t' < "${DATA_FILE}.values"
+    --query 'SELECT arraySort(groupArray(x)) FROM t' < "${DATA_FILE}.values"
 
 echo "-- Parquet from a regular file as stdin"
 $CLICKHOUSE_LOCAL --query "SELECT number AS x FROM numbers(1000) FORMAT Parquet" > "${DATA_FILE}.parquet"
