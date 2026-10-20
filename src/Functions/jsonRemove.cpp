@@ -19,6 +19,7 @@
 
 #include <string_view>
 #include <utility>
+#include <variant>
 
 #if USE_RAPIDJSON
 
@@ -79,19 +80,14 @@ struct JSONObjectMember
     JSONNodeIndex value;
 };
 
+using JSONObjectMembers = VectorWithMemoryTracking<JSONObjectMember>;
+using JSONArrayElements = VectorWithMemoryTracking<JSONNodeIndex>;
+
+/// A node holds only the contents of its JSON type, avoiding two empty vectors for every scalar.
 struct JSONNode
 {
-    enum class Type
-    {
-        Scalar,
-        Object,
-        Array,
-    };
-
-    Type type = Type::Scalar;
-    JSONSlice raw_value;
-    VectorWithMemoryTracking<JSONObjectMember> members;
-    VectorWithMemoryTracking<JSONNodeIndex> elements;
+    using Value = std::variant<JSONSlice, JSONObjectMembers, JSONArrayElements>;
+    Value value;
 };
 
 using JSONNodes = VectorWithMemoryTracking<JSONNode>;
@@ -203,13 +199,13 @@ public:
 
     bool String(const char *, rapidjson::SizeType, bool)
     {
-        addNode(JSONNode::Type::Scalar, getRawStringSlice());
+        addNode(getRawStringSlice());
         return true;
     }
 
     bool StartObject()
     {
-        const auto node = addNode(JSONNode::Type::Object, {});
+        const auto node = addNode(JSONObjectMembers{});
         stack.push_back({node, {}, {}});
         return true;
     }
@@ -232,7 +228,7 @@ public:
 
     bool StartArray()
     {
-        const auto node = addNode(JSONNode::Type::Array, {});
+        const auto node = addNode(JSONArrayElements{});
         stack.push_back({node, {}, {}});
         return true;
     }
@@ -266,15 +262,12 @@ private:
     void addScalarFromEnd(size_t length)
     {
         const size_t end_offset = stream.Tell();
-        addNode(JSONNode::Type::Scalar, {end_offset - length, length});
+        addNode(JSONSlice{end_offset - length, length});
     }
 
-    JSONNodeIndex addNode(JSONNode::Type type, JSONSlice raw_value)
+    JSONNodeIndex addNode(JSONNode::Value value)
     {
-        JSONNode node;
-        node.type = type;
-        node.raw_value = raw_value;
-        nodes.push_back(std::move(node));
+        nodes.push_back({std::move(value)});
 
         const auto node_index = nodes.size() - 1;
         if (stack.empty())
@@ -285,14 +278,14 @@ private:
 
         auto & frame = stack.back();
         auto & parent = nodes[frame.node];
-        if (parent.type == JSONNode::Type::Object)
+        if (auto * members = std::get_if<JSONObjectMembers>(&parent.value))
         {
-            parent.members.push_back({frame.member_name, frame.raw_member_name, node_index});
+            members->push_back({frame.member_name, frame.raw_member_name, node_index});
             frame.member_name = nullptr;
         }
         else
         {
-            parent.elements.push_back(node_index);
+            std::get<JSONArrayElements>(parent.value).push_back(node_index);
         }
 
         return node_index;
@@ -373,18 +366,19 @@ void collectNextNodes(
         const auto & parent = nodes[parent_index];
         if (step.type == PathStep::Type::Member)
         {
-            if (parent.type != JSONNode::Type::Object)
-                continue;
-
-            for (const auto & member : parent.members)
+            if (const auto * members = std::get_if<JSONObjectMembers>(&parent.value))
             {
-                if (member.name && *member.name == step.member_name)
-                    next_parent_indices.push_back(member.value);
+                for (const auto & member : *members)
+                {
+                    if (member.name && *member.name == step.member_name)
+                        next_parent_indices.push_back(member.value);
+                }
             }
         }
-        else if (parent.type == JSONNode::Type::Array && step.index < parent.elements.size())
+        else if (const auto * elements = std::get_if<JSONArrayElements>(&parent.value);
+                 elements && step.index < elements->size())
         {
-            next_parent_indices.push_back(parent.elements[step.index]);
+            next_parent_indices.push_back((*elements)[step.index]);
         }
     }
 }
@@ -393,16 +387,18 @@ bool removePathStep(JSONNode & parent, const PathStep & step)
 {
     if (step.type == PathStep::Type::Member)
     {
-        if (parent.type != JSONNode::Type::Object)
+        auto * members = std::get_if<JSONObjectMembers>(&parent.value);
+        if (!members)
             return false;
 
-        return std::erase_if(parent.members, [&](const auto & member) { return member.name && *member.name == step.member_name; }) != 0;
+        return std::erase_if(*members, [&](const auto & member) { return member.name && *member.name == step.member_name; }) != 0;
     }
 
-    if (parent.type != JSONNode::Type::Array || step.index >= parent.elements.size())
+    auto * elements = std::get_if<JSONArrayElements>(&parent.value);
+    if (!elements || step.index >= elements->size())
         return false;
 
-    parent.elements.erase(parent.elements.begin() + step.index);
+    elements->erase(elements->begin() + step.index);
     return true;
 }
 
@@ -459,8 +455,7 @@ void serializeJSON(
     ColumnString::Chars & output,
     JSONSerializationStack & stack)
 {
-    /// Keep serialization off the C++ call stack so deeply nested valid JSON is limited by memory,
-    /// like the iterative RapidJSON parser above.
+    /// Use an explicit stack so deeply nested JSON cannot overflow the C++ call stack.
     stack.clear();
     stack.push_back({node_index});
 
@@ -469,22 +464,23 @@ void serializeJSON(
         auto & frame = stack.back();
         const auto & node = nodes[frame.node];
 
-        if (node.type == JSONNode::Type::Scalar)
+        if (const auto * slice = std::get_if<JSONSlice>(&node.value))
         {
-            appendSlice(output, json, node.raw_value);
+            appendSlice(output, json, *slice);
             stack.pop_back();
             continue;
         }
 
+        const auto * members = std::get_if<JSONObjectMembers>(&node.value);
         if (!frame.started)
         {
-            output.push_back(node.type == JSONNode::Type::Object ? '{' : '[');
+            output.push_back(members ? '{' : '[');
             frame.started = true;
         }
 
-        if (node.type == JSONNode::Type::Object)
+        if (members)
         {
-            if (frame.next_child == node.members.size())
+            if (frame.next_child == members->size())
             {
                 output.push_back('}');
                 stack.pop_back();
@@ -494,14 +490,15 @@ void serializeJSON(
             if (frame.next_child)
                 output.push_back(',');
 
-            const auto & member = node.members[frame.next_child++];
+            const auto & member = (*members)[frame.next_child++];
             appendSlice(output, json, member.raw_name);
             output.push_back(':');
             stack.push_back({member.value});
             continue;
         }
 
-        if (frame.next_child == node.elements.size())
+        const auto & elements = std::get<JSONArrayElements>(node.value);
+        if (frame.next_child == elements.size())
         {
             output.push_back(']');
             stack.pop_back();
@@ -511,7 +508,7 @@ void serializeJSON(
         if (frame.next_child)
             output.push_back(',');
 
-        stack.push_back({node.elements[frame.next_child++]});
+        stack.push_back({elements[frame.next_child++]});
     }
 }
 

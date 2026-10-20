@@ -82,3 +82,14 @@ FROM VALUES(
     (4, '{"keep":"last","drop":3}')
 )
 ORDER BY position FORMAT TSV;
+
+-- Scalar, object, and array nodes must retain only their own contents across removals.
+SELECT JSONRemove('{"a":[],"b":{},"drop":1}', '$.drop') FORMAT TSV;
+SELECT JSONRemove('{"a":1,"b":2}', '$.a', '$.b') FORMAT TSV;
+SELECT JSONRemove('[{"a":1},[],null]', '$[0].a') FORMAT TSV;
+SELECT JSONRemove('{"a":[{"b":1},{"b":2}]}', '$.a[0].b') FORMAT TSV;
+SELECT JSONRemove('{"a":[0,1,2]}', '$.a[1]', '$.a[1]') FORMAT TSV;
+SELECT JSONRemove('{"a":[0,1]}', '$.a[9].x') FORMAT TSV;
+SELECT JSONRemove('{"a":1}', '$.a.x') FORMAT TSV;
+SELECT JSONRemove('{"a":1}', '$[0]') FORMAT TSV;
+SELECT JSONRemove('{"a":true,"b":false,"c":null}', '$.a', '$.b') FORMAT TSV;
