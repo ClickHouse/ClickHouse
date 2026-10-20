@@ -1,9 +1,11 @@
 #pragma once
 
 #include <algorithm>
+#include <bit>
 #include <iterator>
 #include <span>
 #include <utility>
+#include <vector>
 
 #include <absl/container/inlined_vector.h>
 
@@ -240,6 +242,9 @@ private:
     static constexpr size_t MAX_EAGER_MERGE_RATIO = 16;
     /// An unsorted tail whose sorted runs are shorter than this on average is sorted instead of merged run by run.
     static constexpr size_t MIN_AVERAGE_RUN_LENGTH = 32;
+    /// A tail shorter than this is comparison-sorted at once; a longer one is first partitioned into groups of this many samples on average.
+    static constexpr size_t MIN_PARTITION_SORT_SIZE = 2048;
+    static constexpr size_t PARTITION_SORT_GROUP_SIZE = 8;
 
     /// Some buckets hold a single sample - the inline capacity of 1 keeps it in the state itself with no heap allocation.
     using Buffer = absl::InlinedVector<
@@ -284,13 +289,58 @@ private:
         {
             if (!mergeTailRuns(buf, unsorted_begin))
             {
-                ::sort(buf.begin() + unsorted_begin, buf.end(), lessByTimestamp);
+                sortSamples(buf.data() + unsorted_begin, buf.data() + buf.size());
                 std::inplace_merge(buf.begin(), buf.begin() + unsorted_begin, buf.end(), lessByTimestamp);
             }
         }
         else
             ::sort(buf.begin(), buf.end(), lessByTimestamp);
         deduplicateSorted(buf);
+    }
+
+    /// Sorts the samples in [first, last) by timestamp. A long range is first split into groups of consecutive timestamps
+    /// in one counting pass, and the small groups are sorted on their own, which costs much less per sample
+    /// than comparison-sorting the whole range.
+    static void sortSamples(Sample * first, Sample * last)
+    {
+        const size_t size = last - first;
+        if (size < MIN_PARTITION_SORT_SIZE)
+        {
+            ::sort(first, last, lessByTimestamp);
+            return;
+        }
+
+        const auto minmax = std::minmax_element(first, last, lessByTimestamp);
+        const UInt64 min_timestamp = static_cast<UInt64>(static_cast<Int64>(minmax.first->first));
+        auto offset = [&](TimestampType timestamp) { return static_cast<UInt64>(static_cast<Int64>(timestamp)) - min_timestamp; };
+
+        /// The offsets are scaled down to 32 bits, so that `(offset >> shift) * scale` fits 64 bits and a group index is below `groups`.
+        const UInt64 span = offset(minmax.second->first);
+        const unsigned shift = (span >> 32) ? std::bit_width(span >> 32) : 0;
+        const UInt64 scaled_span = (span >> shift) + 1;
+        const size_t groups = size / PARTITION_SORT_GROUP_SIZE;
+        const UInt64 scale = (static_cast<UInt64>(groups) << 32) / scaled_span;
+        auto group_of = [&](TimestampType timestamp) { return static_cast<size_t>(((offset(timestamp) >> shift) * scale) >> 32); };
+
+        /// `group_ends[g]` first holds the start of group `g` and ends up holding its end.
+        std::vector<UInt32, AllocatorWithMemoryTracking<UInt32>> group_ends(groups + 1);
+        for (const Sample * sample = first; sample != last; ++sample)
+            ++group_ends[group_of(sample->first) + 1];
+        for (size_t g = 0; g < groups; ++g)
+            group_ends[g + 1] += group_ends[g];
+
+        Buffer partitioned;
+        partitioned.resize(size);
+        for (const Sample * sample = first; sample != last; ++sample)
+            partitioned[group_ends[group_of(sample->first)]++] = *sample;
+
+        size_t group_begin = 0;
+        for (size_t g = 0; g < groups; ++g)
+        {
+            ::sort(partitioned.data() + group_begin, partitioned.data() + group_ends[g], lessByTimestamp);
+            group_begin = group_ends[g];
+        }
+        std::copy(partitioned.begin(), partitioned.end(), first);
     }
 
     /// Merges a tail made of long sorted runs (one per part read) into the buffer; returns false if the runs are short.
