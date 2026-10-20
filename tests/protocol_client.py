@@ -841,10 +841,24 @@ def is_binary(data):
     return False
 
 
+# A value of the `dialect` setting, e.g. in `SET dialect = 'kusto'`.
+DIALECT_RE = re.compile(r"""\bdialect\s*=\s*['"`]?(\w+)""", re.IGNORECASE)
+
+
+def uses_other_dialect(text):
+    """Whether the test switches to a dialect other than `clickhouse`. `split_queries` knows only the
+    statement boundaries of SQL: e.g. a `let` binding of KQL belongs to the following tabular expression,
+    so splitting `let F = (a:long) { a }; print F(5);` at the semicolon breaks the test."""
+    return any(match.group(1).lower() != "clickhouse" for match in DIALECT_RE.finditer(text))
+
+
 def supports(protocol, data):
     """Whether the test with the contents `data` can run over the protocol without changing its queries.
     `clickhouse-test` chooses the protocol of a test among the ones that support it."""
     if is_binary(data) and protocol not in BINARY_PROTOCOLS:
+        return False
+    # Only `ssh` passes the whole test to `ClientBase`, which splits it according to the dialect.
+    if protocol != "ssh" and uses_other_dialect(data.decode("utf-8")):
         return False
     if protocol == "ssh":
         return len(data) <= SSH_MAX_TEST_SIZE
