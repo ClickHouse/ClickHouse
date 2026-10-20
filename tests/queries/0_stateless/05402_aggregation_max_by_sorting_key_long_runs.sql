@@ -40,9 +40,11 @@ DROP TABLE t;
 
 -- One run of 100000 granules. Counting the rows of the run once per granule would take minutes here. Only the plans are
 -- checked: reading every granule of this table is slow, and the results are checked on the small table above.
+-- A `Wide` part: a `Compact` part compresses every granule separately, which takes minutes for 100000 granules in
+-- debug builds.
 DROP TABLE IF EXISTS t_long;
 CREATE TABLE t_long (k UInt8, m UInt32) ENGINE = MergeTree ORDER BY (k, m)
-    SETTINGS index_granularity = 1, index_granularity_bytes = '10Mi';
+    SETTINGS index_granularity = 1, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 INSERT INTO t_long SELECT 1, number FROM numbers(100000);
 
 SELECT '-- long run, LIMIT longer than the run, DESC and ASC';
