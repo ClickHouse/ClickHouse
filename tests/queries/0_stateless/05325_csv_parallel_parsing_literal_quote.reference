@@ -14,3 +14,9 @@ count_after_space	0	1
 count_literal	1	2
 count_after_delimiter	1	2
 count_after_space	1	1
+ws_literal_quote	0	a	 "x
+ws_literal_quote	0	b	y
+count_ws_literal_quote	0	2
+ws_literal_quote	1	a	 "x
+ws_literal_quote	1	b	y
+count_ws_literal_quote	1	2

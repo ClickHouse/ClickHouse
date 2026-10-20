@@ -33,4 +33,15 @@ do
     ${CLICKHOUSE_CLIENT} -q "SELECT 'count_after_space', ${parallel}, count() FROM file('${unique_name}/quoted_after_space.csv', 'CSV', 'a String, b String') SETTINGS input_format_parallel_parsing = ${parallel}, ${SETTINGS}"
 done
 
+# With `input_format_csv_allow_whitespace_or_tab_as_delimiter = 1` spaces are not skipped before a field,
+# so `, "x` is an unquoted field starting with a space and the `"` is a literal character.
+printf 'a, "x\nb,y\n' > "${tmp_dir}/ws_delimiter_literal_quote.csv"
+WS_SETTINGS="input_format_csv_allow_whitespace_or_tab_as_delimiter = 1, ${SETTINGS}"
+
+for parallel in 0 1
+do
+    ${CLICKHOUSE_CLIENT} -q "SELECT 'ws_literal_quote', ${parallel}, a, b FROM file('${unique_name}/ws_delimiter_literal_quote.csv', 'CSV', 'a String, b String') ORDER BY a SETTINGS input_format_parallel_parsing = ${parallel}, ${WS_SETTINGS}"
+    ${CLICKHOUSE_CLIENT} -q "SELECT 'count_ws_literal_quote', ${parallel}, count() FROM file('${unique_name}/ws_delimiter_literal_quote.csv', 'CSV', 'a String, b String') SETTINGS input_format_parallel_parsing = ${parallel}, ${WS_SETTINGS}"
+done
+
 rm -rf "${tmp_dir:?}"

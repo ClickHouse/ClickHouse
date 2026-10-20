@@ -164,7 +164,7 @@ void CSVFormatReader::skipRow()
             for (const char * p = pos; p > span_start; --p)
             {
                 char c = *(p - 1);
-                if (c != format_settings.csv.delimiter && format_settings.csv.trim_whitespaces && (c == ' ' || c == '\t'))
+                if (c != format_settings.csv.delimiter && format_settings.csv.trim_whitespaces && !format_settings.csv.allow_whitespace_or_tab_as_delimiter && (c == ' ' || c == '\t'))
                     continue;
                 at_field_start = (c == format_settings.csv.delimiter);
                 break;
@@ -885,7 +885,7 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
             for (const char * p = pos; p > span_start; --p)
             {
                 char c = *(p - 1);
-                if (c != settings.csv.delimiter && settings.csv.trim_whitespaces && (c == ' ' || c == '\t'))
+                if (c != settings.csv.delimiter && settings.csv.trim_whitespaces && !settings.csv.allow_whitespace_or_tab_as_delimiter && (c == ' ' || c == '\t'))
                     continue;
                 at_field_start = (c == settings.csv.delimiter);
                 break;
