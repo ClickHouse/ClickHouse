@@ -159,19 +159,20 @@ void ReadBufferFromGCS::initialize()
     Stopwatch watch;
     ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, data_capacity);
     /// GCS ReadRange is right-open [begin, end), which matches read_until_position (exclusive).
+    /// `AcceptEncodingGzip` disables decompressive transcoding, see `readBigAt`.
     if (read_until_position)
     {
         if (read_until_position < offset)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Attempt to read beyond the right offset ({} > {})", offset, read_until_position - 1);
 
-        read_stream = std::make_unique<gcs::ObjectReadStream>(
-            client->ReadObject(bucket, key, gcs::ReadRange(offset, read_until_position), generation_match));
+        read_stream = std::make_unique<gcs::ObjectReadStream>(client->ReadObject(
+            bucket, key, gcs::ReadRange(offset, read_until_position), gcs::AcceptEncodingGzip(), generation_match));
     }
     else
     {
-        read_stream = std::make_unique<gcs::ObjectReadStream>(
-            client->ReadObject(bucket, key, gcs::ReadFromOffset(offset), generation_match));
+        read_stream = std::make_unique<gcs::ObjectReadStream>(client->ReadObject(
+            bucket, key, gcs::ReadFromOffset(offset), gcs::AcceptEncodingGzip(), generation_match));
     }
     const size_t elapsed_microseconds = watch.elapsedMicroseconds();
     ProfileEvents::increment(ProfileEvents::ReadBufferFromGCSInitMicroseconds, elapsed_microseconds);
@@ -275,91 +276,86 @@ bool ReadBufferFromGCS::nextImpl()
 /// implementations do.
 size_t ReadBufferFromGCS::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const
 {
-    const size_t initial_n = n;
+    if (n == 0)
+        return 0;
 
-    /// A response that stops short of the requested range is finished off by requesting the
-    /// remainder, rather than by retrying the whole range: the client already retries a failed
-    /// request internally, and re-requesting bytes it has already delivered would be wasted
-    /// transfer.
-    while (n > 0)
+    ProfileEvents::increment(ProfileEvents::GCSGetObject);
+    if (for_disk)
+        ProfileEvents::increment(ProfileEvents::DiskGCSGetObject);
+
+    gcs::IfGenerationMatch generation_match;
+    if (expected_generation)
+        generation_match = gcs::IfGenerationMatch(*expected_generation);
+
+    Stopwatch watch;
+    ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, n);
+
+    /// GCS ReadRange is right-open [begin, end).
+    ///
+    /// `AcceptEncodingGzip` disables decompressive transcoding: without it GCS decompresses an object
+    /// stored with `Content-Encoding: gzip` on the fly, which returns other bytes than the stored ones,
+    /// makes the sizes from the metadata wrong, and ignores the requested range.
+    gcs::ObjectReadStream stream = client->ReadObject(
+        bucket, key, gcs::ReadRange(range_begin, range_begin + n), gcs::AcceptEncodingGzip(), generation_match);
+
+    const size_t init_microseconds = watch.elapsedMicroseconds();
+    ProfileEvents::increment(ProfileEvents::ReadBufferFromGCSInitMicroseconds, init_microseconds);
+    ProfileEvents::increment(ProfileEvents::ReadBufferFromGCSMicroseconds, init_microseconds);
+
+    if (!stream.status().ok())
     {
-        ProfileEvents::increment(ProfileEvents::GCSGetObject);
-        if (for_disk)
-            ProfileEvents::increment(ProfileEvents::DiskGCSGetObject);
-
-        gcs::IfGenerationMatch generation_match;
-        if (expected_generation)
-            generation_match = gcs::IfGenerationMatch(*expected_generation);
-
-        Stopwatch watch;
-        ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, n);
-
-        /// GCS ReadRange is right-open [begin, end).
-        gcs::ObjectReadStream stream = client->ReadObject(
-            bucket, key, gcs::ReadRange(range_begin, range_begin + n), generation_match);
-
-        const size_t init_microseconds = watch.elapsedMicroseconds();
-        ProfileEvents::increment(ProfileEvents::ReadBufferFromGCSInitMicroseconds, init_microseconds);
-        ProfileEvents::increment(ProfileEvents::ReadBufferFromGCSMicroseconds, init_microseconds);
-
-        if (!stream.status().ok())
-        {
-            ProfileEvents::increment(ProfileEvents::ReadBufferFromGCSRequestsErrors);
-            logGCSReadFailure(blob_storage_log, bucket, key, init_microseconds, stream.status());
-            throwReadFailure(stream.status(), bucket, key, expected_generation,
-                fmt::format("while opening a ranged read stream for '{}' in bucket '{}' at offset {} for {} bytes{}",
-                    key, bucket, range_begin, n,
-                    expected_generation
-                        ? fmt::format(" (pinned to generation {}; a precondition failure means the object was overwritten during the read)",
-                            *expected_generation)
-                        : ""));
-        }
-
-        size_t bytes_copied = 0;
-        bool cancelled = false;
-        copyFromIStreamWithProgressCallback(stream, to, n, progress_callback, &bytes_copied, &cancelled);
-
-        const size_t elapsed_microseconds = watch.elapsedMicroseconds();
-        ProfileEvents::increment(ProfileEvents::ReadBufferFromGCSMicroseconds, elapsed_microseconds - init_microseconds);
-        ProfileEvents::increment(ProfileEvents::ReadBufferFromGCSBytes, bytes_copied);
-
-        /// A transport failure part-way through leaves the stream bad with the bytes already copied
-        /// still valid, so report it rather than treating the truncation as the end of the object.
-        if (!stream.status().ok())
-        {
-            ProfileEvents::increment(ProfileEvents::ReadBufferFromGCSRequestsErrors);
-            logGCSReadFailure(blob_storage_log, bucket, key, elapsed_microseconds, stream.status());
-            throwReadFailure(stream.status(), bucket, key, expected_generation,
-                fmt::format("while reading '{}' in bucket '{}' at offset {} ({} of {} bytes read)",
-                    key, bucket, range_begin, bytes_copied, n));
-        }
-
-        if (blob_storage_log)
-        {
-            blob_storage_log->addEvent(
-                BlobStorageLogElement::EventType::Read,
-                bucket, key, /* local_path */ {},
-                bytes_copied,
-                elapsed_microseconds,
-                /* error_code */ 0, /* error_message */ {});
-        }
-
-        rlock.unlock(bytes_copied);
-
-        if (read_settings.remote_throttler)
-            read_settings.remote_throttler->throttle(bytes_copied);
-
-        range_begin += bytes_copied;
-        to += bytes_copied;
-        n -= bytes_copied;
-
-        /// No bytes and no error: the object ends before the requested range does. `readBigAt` is
-        /// specified to stop at end of file and return what it read.
-        if (cancelled || bytes_copied == 0)
-            break;
+        ProfileEvents::increment(ProfileEvents::ReadBufferFromGCSRequestsErrors);
+        logGCSReadFailure(blob_storage_log, bucket, key, init_microseconds, stream.status());
+        throwReadFailure(stream.status(), bucket, key, expected_generation,
+            fmt::format("while opening a ranged read stream for '{}' in bucket '{}' at offset {} for {} bytes{}",
+                key, bucket, range_begin, n,
+                expected_generation
+                    ? fmt::format(" (pinned to generation {}; a precondition failure means the object was overwritten during the read)",
+                        *expected_generation)
+                    : ""));
     }
 
-    return initial_n - n;
+    /// One request is enough. The client resumes a download interrupted by a transient failure
+    /// internally, from the last byte received, and reports a non-OK status once its retry policy
+    /// is exhausted; the transport reports a body cut short of its `Content-Length` or its last chunk
+    /// as an error, not as the end of the stream. So a stream that ends with an OK status before `n`
+    /// bytes were copied has reached the end of the object, and `readBigAt` is specified to stop at
+    /// end of file and return what it read. Requesting the remainder instead would ask for a range
+    /// that starts past the end of the object, which GCS rejects with HTTP 416.
+    size_t bytes_copied = 0;
+    copyFromIStreamWithProgressCallback(stream, to, n, progress_callback, &bytes_copied);
+
+    const size_t elapsed_microseconds = watch.elapsedMicroseconds();
+    ProfileEvents::increment(ProfileEvents::ReadBufferFromGCSMicroseconds, elapsed_microseconds - init_microseconds);
+    ProfileEvents::increment(ProfileEvents::ReadBufferFromGCSBytes, bytes_copied);
+
+    /// A transport failure part-way through leaves the stream bad with the bytes already copied
+    /// still valid, so report it rather than treating the truncation as the end of the object.
+    if (!stream.status().ok())
+    {
+        ProfileEvents::increment(ProfileEvents::ReadBufferFromGCSRequestsErrors);
+        logGCSReadFailure(blob_storage_log, bucket, key, elapsed_microseconds, stream.status());
+        throwReadFailure(stream.status(), bucket, key, expected_generation,
+            fmt::format("while reading '{}' in bucket '{}' at offset {} ({} of {} bytes read)",
+                key, bucket, range_begin, bytes_copied, n));
+    }
+
+    if (blob_storage_log)
+    {
+        blob_storage_log->addEvent(
+            BlobStorageLogElement::EventType::Read,
+            bucket, key, /* local_path */ {},
+            bytes_copied,
+            elapsed_microseconds,
+            /* error_code */ 0, /* error_message */ {});
+    }
+
+    rlock.unlock(bytes_copied);
+
+    if (read_settings.remote_throttler)
+        read_settings.remote_throttler->throttle(bytes_copied);
+
+    return bytes_copied;
 }
 
 off_t ReadBufferFromGCS::seek(off_t offset_, int whence)
