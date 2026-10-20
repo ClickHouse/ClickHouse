@@ -2090,7 +2090,22 @@ public:
         res.is_negative = is_negative;
 
         return res;
-    }
+TimeComponents toTimeComponents(Time t) const
+{
+    constexpr Time max_time = 1000 * 3600 - 1;
+
+    TimeComponents res;
+    res.is_negative = t < 0;
+
+    t = std::clamp(t, -max_time, max_time);
+    if (res.is_negative)
+        t = -t;
+
+    res.hour = t / 3600;
+    res.minute = t / 60 % 60;
+    res.second = t % 60;
+    return res;
+}
 
     template <typename DateOrTime>
     DateTimeComponents toDateTimeComponents(DateOrTime v) const
