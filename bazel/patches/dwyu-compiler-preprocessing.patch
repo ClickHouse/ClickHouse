@@ -31,7 +31,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      return includes, quote_includes, external_includes, system_includes
  
  def _process_target(ctx, target, config, output_path, is_target_under_inspection):
-@@ -386,12 +392,201 @@
+@@ -386,12 +392,220 @@
          return []
      return [OutputGroupInfo(dwyu = depset(transitive = _gather_transitive_reports(ctx)))]
  
@@ -124,6 +124,25 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +    return manifest
 +
 +def _preprocess_with_compiler(ctx, target, files, cc_toolchain, feature_configuration, attr_prefix, header_manifest):
++    # rules_cc expands and tokenizes rule-local options before registering CcCompile.
++    rule_ctx = struct(
++        attr = ctx.rule.attr,
++        expand_location = ctx.expand_location,
++        label = target.label,
++        var = ctx.var,
++    )
++    make_variables = cc_helper.get_toolchain_global_make_variables(cc_toolchain, feature_configuration)
++    make_variables.update(cc_helper.get_cc_flags_make_variable(ctx, feature_configuration, cc_toolchain))
++    rule_options = {
++        attr: cc_helper.get_copts(
++            rule_ctx,
++            feature_configuration,
++            make_variables,
++            attr = attr,
++            requested_features = ctx.features,
++        ) if hasattr(ctx.rule.attr, attr) else []
++        for attr in ["copts", "conlyopts", "cxxopts"]
++    }
 +    target_cc = target[CcInfo].compilation_context
 +    impl_contexts = [dep[CcInfo].compilation_context for dep in getattr(ctx.rule.attr, "implementation_deps", []) if CcInfo in dep]
 +    includes, quotes, external, system = _get_includes(ctx, target_cc)
@@ -147,15 +166,15 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +        if is_assembly:
 +            language = "assembler-with-cpp"
 +            action_name = PREPROCESS_ASSEMBLE_ACTION_NAME
-+            options = ctx.fragments.cpp.copts + ctx.rule.attr.copts
++            options = ctx.fragments.cpp.copts + rule_options["copts"]
 +        else:
 +            language = _compiler_language(file, private_files)
 +            action_name = C_COMPILE_ACTION_NAME if language == "c" else CPP_COMPILE_ACTION_NAME
 +            options = ctx.fragments.cpp.copts
 +            if language == "c":
-+                options = options + ctx.fragments.cpp.conlyopts + ctx.rule.attr.copts + getattr(ctx.rule.attr, "conlyopts", [])
++                options = options + ctx.fragments.cpp.conlyopts + rule_options["copts"] + rule_options["conlyopts"]
 +            else:
-+                options = options + ctx.fragments.cpp.cxxopts + ctx.rule.attr.copts + getattr(ctx.rule.attr, "cxxopts", [])
++                options = options + ctx.fragments.cpp.cxxopts + rule_options["copts"] + rule_options["cxxopts"]
 +        compiler_output = ctx.actions.declare_file("{}.dwyu_pp_{}_{}.i".format(target.label.name, attr_prefix, _hash(file.short_path)))
 +        public_output = ctx.actions.declare_file("{}.dwyu_psf_{}_{}_public.json".format(target.label.name, attr_prefix, _hash(file.short_path)))
 +        private_output = ctx.actions.declare_file("{}.dwyu_psf_{}_{}_private.json".format(target.label.name, attr_prefix, _hash(file.short_path)))
@@ -235,7 +254,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
      # Work around the bug described in https://github.com/bazelbuild/bazel/issues/19663
      # Implementation_deps are not added to CcInfo.compilation_context
-@@ -440,7 +635,7 @@
+@@ -440,7 +654,7 @@
  
          preprocessor_results.append(pp_output)
  
@@ -244,7 +263,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
  def dwyu_cc_aspect_impl(target, ctx):
      """
-@@ -510,8 +705,16 @@
+@@ -510,8 +724,16 @@
      #
  
      config = _make_dwyu_config(ctx)
@@ -263,7 +282,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      processed_target = _process_target(
          ctx,
          target = struct(label = target.label, cc_info = target[CcInfo]),
-@@ -529,26 +732,34 @@
+@@ -529,26 +751,34 @@
  
      report_file = ctx.actions.declare_file("{}_dwyu_report.json".format(target.label.name))
  
@@ -302,7 +321,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      args.add("--output", report_file)
      args.add("--target_under_inspection", str(target.label))
      args.add_all("--preprocessed_public_files", preprocessed_public_files, omit_if_empty = False)
-@@ -560,17 +771,20 @@
+@@ -560,17 +790,20 @@
          args.add("--ignored_includes_config", ctx.files._ignored_includes[0])
      args.add_all("--extra_ignored_includes", config.extra_ignored_includes, omit_if_empty = True)
      args.add_all("--ignored_unused_deps", config.ignored_unused_deps, omit_if_empty = True)

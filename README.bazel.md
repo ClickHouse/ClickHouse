@@ -178,6 +178,7 @@ CMake hash recorded below.
 | `637108a03` (verification snapshot) | Reduce unused Abseil dependencies; make private dependencies private and retain only active source headers across 25 checked targets | [669eba2d](https://app.buildbuddy.io/invocation/669eba2d-c274-4417-b5c2-980759c14b85) | [c5fe3d6f](https://app.buildbuddy.io/invocation/c5fe3d6f-8e87-4392-954c-20f8224398eb) |
 | `5c029cef8` (verification snapshot) | AWS: direct public dependencies, private implementation dependencies, active Linux source headers and no unused libc++ defaults in 11 overlays | [4bf078c3](https://app.buildbuddy.io/invocation/4bf078c3-9ef2-4b06-8819-0073be7f0d2a) | [3dc13d65](https://app.buildbuddy.io/invocation/3dc13d65-9e4e-4244-844d-acb3c8fa1b6f) |
 | `e4984d411` (verification snapshot) | gRPC: direct Abseil public dependencies and omit source headers for unbuilt TLS and telemetry implementations | [63213d8f](https://app.buildbuddy.io/invocation/63213d8f-a3f2-4444-be21-75919fb7a48d) | [8ef864af](https://app.buildbuddy.io/invocation/8ef864af-1e23-4f31-9e34-9b876c353453) |
+| `0964b777b` (verification snapshot) | LLVM: use implementation dependencies in 14 compiled libraries; DWYU expands compiler Make variables to inspect CCTZ embedded inputs | [7a810b1f](https://app.buildbuddy.io/invocation/7a810b1f-f74a-49f3-9cb6-3101775b488e) | [57baa8b8](https://app.buildbuddy.io/invocation/57baa8b8-d98c-400f-ad92-cf14a539b7b5) |
 
 The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`

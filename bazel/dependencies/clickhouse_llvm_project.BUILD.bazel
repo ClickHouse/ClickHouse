@@ -2168,11 +2168,12 @@ ch_cc_library(
     ],
     copts =
         _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMCore"],
     implementation_deps = [
         ":llvm_headers",
+        ":LLVMCore",
     ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [],
 )
 
 ch_cc_library(
@@ -2469,25 +2470,6 @@ ch_cc_library(
         "llvm/lib/CodeGen/*.h",
         "llvm/lib/CodeGen/LiveDebugValues/*.h",
     ]),
-    copts =
-        _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":LLVMBitReader",
-        ":LLVMBitWriter",
-        ":LLVMTarget",
-        ":LLVMScalarOpts",
-        ":LLVMCodeGenTypes",
-        ":LLVMCGData",
-        ":LLVMAnalysis",
-        ":LLVMCore",
-        ":LLVMTransformUtils",
-        ":llvm_headers",
-    ],
-    implementation_deps = [
-        ":LLVMMC",
-        ":LLVMProfileData",
-    ],
     hdrs = glob([
         "llvm/include/llvm/CodeGen/MIRParser/*.h",
         "llvm/include/llvm/CodeGen/PBQP/*.h",
@@ -2550,6 +2532,25 @@ ch_cc_library(
         "llvm/include/llvm/CodeGen/WasmEHFuncInfo.h",
         "llvm/include/llvm/CodeGen/WinEHFuncInfo.h",
         "llvm/include/llvm/CodeGen/WindowScheduler.h",
+    ],
+    copts =
+        _LLVM_PROJECT_COPTS,
+    implementation_deps = [
+        ":LLVMMC",
+        ":LLVMProfileData",
+        ":LLVMTarget",
+        ":LLVMCGData",
+    ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [
+        ":LLVMBitReader",
+        ":LLVMBitWriter",
+        ":LLVMScalarOpts",
+        ":LLVMCodeGenTypes",
+        ":LLVMAnalysis",
+        ":LLVMCore",
+        ":LLVMTransformUtils",
+        ":llvm_headers",
     ],
 )
 
@@ -2653,15 +2654,6 @@ ch_cc_library(
     ] + glob([
         "llvm/lib/IR/*.h",
     ]),
-    copts =
-        _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":LLVMRemarks",
-        ":llvm_headers",
-    ],
     hdrs = [
         "llvm/include/llvm/IR/AbstractCallSite.h",
         "llvm/include/llvm/IR/AssemblyAnnotationWriter.h",
@@ -2698,6 +2690,17 @@ ch_cc_library(
         "llvm/include/llvm/IR/Statepoint.h",
         "llvm/include/llvm/IR/TypeFinder.h",
         "llvm/include/llvm/IR/ValueSymbolTable.h",
+    ],
+    copts =
+        _LLVM_PROJECT_COPTS,
+    implementation_deps = [
+        ":LLVMRemarks",
+    ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [
+        ":LLVMBinaryFormat",
+        ":LLVMTargetParser",
+        ":llvm_headers",
     ],
 )
 
@@ -2853,13 +2856,6 @@ ch_cc_library(
         "llvm/lib/DebugInfo/DWARF/DWARFUnwindTablePrinter.cpp",
         "llvm/lib/DebugInfo/DWARF/DWARFVerifier.cpp",
     ] + glob(["llvm/lib/DebugInfo/DWARF/LowLevel/*.cpp"]),
-    copts =
-        _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":LLVMObject",
-        ":llvm_headers",
-    ],
     hdrs = [
         "llvm/include/llvm/DebugInfo/DWARF/DWARFAcceleratorTable.h",
         "llvm/include/llvm/DebugInfo/DWARF/DWARFCFIPrinter.h",
@@ -2880,6 +2876,15 @@ ch_cc_library(
         "llvm/include/llvm/DebugInfo/DWARF/DWARFTypeUnit.h",
         "llvm/include/llvm/DebugInfo/DWARF/DWARFUnwindTablePrinter.h",
         "llvm/include/llvm/DebugInfo/DWARF/DWARFVerifier.h",
+    ],
+    copts =
+        _LLVM_PROJECT_COPTS,
+    implementation_deps = [
+        ":LLVMObject",
+    ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [
+        ":llvm_headers",
     ],
 )
 
@@ -2920,14 +2925,6 @@ ch_cc_library(
         "llvm/lib/ExecutionEngine/GDBRegistrationListener.cpp",
         "llvm/lib/ExecutionEngine/SectionMemoryManager.cpp",
         "llvm/lib/ExecutionEngine/TargetSelect.cpp",
-    ],
-    copts =
-        _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":LLVMTarget",
-        ":LLVMRuntimeDyld",
-        ":llvm_headers",
     ],
     hdrs = glob([
         "llvm/include/llvm/ExecutionEngine/Orc/Debugging/*.h",
@@ -3042,6 +3039,16 @@ ch_cc_library(
         "llvm/include/llvm/ExecutionEngine/Orc/UnwindInfoRegistrationPlugin.h",
         "llvm/include/llvm/ExecutionEngine/SectionMemoryManager.h",
     ],
+    copts =
+        _LLVM_PROJECT_COPTS,
+    implementation_deps = [
+        ":LLVMTarget",
+    ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [
+        ":LLVMRuntimeDyld",
+        ":llvm_headers",
+    ],
 )
 
 ch_cc_library(
@@ -3101,24 +3108,24 @@ ch_cc_library(
 ch_cc_library(
     name = "LLVMFrontendOpenMP",
     srcs = glob(["llvm/lib/Frontend/OpenMP/*.cpp"]),
-    copts =
-        _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":LLVMTransformUtils",
-        ":LLVMFrontendAtomic",
-        ":LLVMFrontendOffloading",
-        ":llvm_headers",
-    ],
-    implementation_deps = [
-        ":LLVMAnalysis",
-        ":LLVMCore",
-    ],
     hdrs = glob([
         "llvm/include/llvm/Frontend/OpenMP/*.h",
     ]),
+    copts =
+        _LLVM_PROJECT_COPTS,
+    implementation_deps = [
+        ":LLVMAnalysis",
+        ":LLVMCore",
+        ":LLVMTransformUtils",
+        ":LLVMFrontendOffloading",
+    ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
     textual_hdrs = [
         "llvm/include/llvm/Frontend/OpenMP/OMPKinds.def",
+    ],
+    deps = [
+        ":LLVMFrontendAtomic",
+        ":llvm_headers",
     ],
 )
 
@@ -3222,13 +3229,13 @@ ch_cc_library(
     ],
     copts =
         _LLVM_PROJECT_COPTS,
+    implementation_deps = [
+        ":llvm_headers",
+        ":LLVMAsmParser",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":LLVMBitReader",
-        ":LLVMAsmParser",
-    ],
-    implementation_deps = [
-        ":llvm_headers",
     ],
 )
 
@@ -3239,13 +3246,14 @@ ch_cc_library(
     ],
     copts =
         _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMTransformUtils"],
     implementation_deps = [
         ":LLVMAnalysis",
         ":LLVMCore",
         ":llvm_headers",
+        ":LLVMTransformUtils",
     ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [],
 )
 
 ch_cc_library(
@@ -3283,19 +3291,6 @@ ch_cc_library(
         "llvm/lib/Transforms/Instrumentation/ValueProfileCollector.h",
         "llvm/lib/Transforms/Instrumentation/ValueProfilePlugins.inc",
     ],
-    copts =
-        _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":LLVMTransformUtils",
-        ":llvm_headers",
-    ],
-    implementation_deps = [
-        ":LLVMAnalysis",
-        ":LLVMCore",
-        ":LLVMMC",
-        ":LLVMProfileData",
-    ],
     hdrs = [
         "llvm/include/llvm/Transforms/Instrumentation/AllocToken.h",
         "llvm/include/llvm/Transforms/Instrumentation/BlockCoverageInference.h",
@@ -3320,6 +3315,19 @@ ch_cc_library(
         "llvm/include/llvm/Transforms/Instrumentation/SanitizerCoverage.h",
         "llvm/include/llvm/Transforms/Instrumentation/ThreadSanitizer.h",
         "llvm/include/llvm/Transforms/Instrumentation/TypeSanitizer.h",
+    ],
+    copts =
+        _LLVM_PROJECT_COPTS,
+    implementation_deps = [
+        ":LLVMAnalysis",
+        ":LLVMCore",
+        ":LLVMMC",
+        ":LLVMProfileData",
+        ":LLVMTransformUtils",
+    ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [
+        ":llvm_headers",
     ],
 )
 
@@ -3420,14 +3428,6 @@ ch_cc_library(
         "llvm/lib/MC/WinCOFFObjectWriter.cpp",
         "llvm/lib/MC/XCOFFObjectWriter.cpp",
     ],
-    copts =
-        _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":LLVMBinaryFormat",
-        ":LLVMTargetParser",
-        ":llvm_headers",
-    ],
     hdrs = [
         "llvm/include/llvm/MC/DXContainerPSVInfo.h",
         "llvm/include/llvm/MC/MCCodeView.h",
@@ -3459,6 +3459,16 @@ ch_cc_library(
         "llvm/include/llvm/MC/MCWin64EH.h",
         "llvm/include/llvm/MC/MCWinCOFFObjectWriter.h",
         "llvm/include/llvm/MC/MCXCOFFObjectWriter.h",
+    ],
+    copts =
+        _LLVM_PROJECT_COPTS,
+    implementation_deps = [
+        ":LLVMBinaryFormat",
+    ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [
+        ":LLVMTargetParser",
+        ":llvm_headers",
     ],
 )
 
@@ -3493,17 +3503,18 @@ ch_cc_library(
         "llvm/lib/MC/MCParser/WasmAsmParser.cpp",
         "llvm/lib/MC/MCParser/XCOFFAsmParser.cpp",
     ],
-    copts =
-        _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMMC"],
-    implementation_deps = [
-        ":llvm_headers",
-    ],
     hdrs = [
         "llvm/include/llvm/MC/MCParser/AsmCond.h",
         "llvm/include/llvm/MC/MCParser/MCAsmParserUtils.h",
     ],
+    copts =
+        _LLVM_PROJECT_COPTS,
+    implementation_deps = [
+        ":llvm_headers",
+        ":LLVMMC",
+    ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [],
 )
 
 ch_cc_library(
@@ -3513,13 +3524,14 @@ ch_cc_library(
     ]),
     copts =
         _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMTransformUtils"],
     implementation_deps = [
         ":LLVMAnalysis",
         ":LLVMCore",
         ":llvm_headers",
+        ":LLVMTransformUtils",
     ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [],
 )
 
 ch_cc_library(
@@ -3668,27 +3680,27 @@ ch_cc_library(
         "llvm/lib/Passes/PassBuilderPipelines.cpp",
         "llvm/lib/Passes/StandardInstrumentations.cpp",
     ],
+    hdrs = [
+        "llvm/include/llvm/Passes/StandardInstrumentations.h",
+    ],
     copts =
         _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":LLVMTarget",
-        ":LLVMVectorize",
-        ":LLVMipo",
-        ":LLVMInstrumentation",
-        ":LLVMCore",
-        ":llvm_headers",
-    ],
     implementation_deps = [
         ":LLVMAnalysis",
         ":LLVMScalarOpts",
         ":LLVMTransformUtils",
+        ":LLVMVectorize",
+        ":LLVMInstrumentation",
     ],
-    hdrs = [
-        "llvm/include/llvm/Passes/StandardInstrumentations.h",
-    ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
     textual_hdrs = [
         "llvm/lib/Passes/PassRegistry.def",
+    ],
+    deps = [
+        ":LLVMTarget",
+        ":LLVMipo",
+        ":LLVMCore",
+        ":llvm_headers",
     ],
 )
 
@@ -4016,14 +4028,15 @@ ch_cc_library(
     ]),
     copts =
         _LLVM_PROJECT_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMCodeGen"],
     implementation_deps = [
         ":LLVMAnalysis",
         ":LLVMCore",
         ":LLVMTransformUtils",
         ":llvm_headers",
+        ":LLVMCodeGen",
     ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    deps = [],
 )
 
 ch_cc_library(
