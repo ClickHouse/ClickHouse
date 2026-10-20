@@ -1374,6 +1374,7 @@ ClientFactory::ClientFactory()
 ClientFactory::~ClientFactory()
 {
     Aws::ShutdownAPI(aws_options);
+    Aws::Utils::Memory::InitializeAWSMemorySystem(no_dump_memory_manager);
 }
 
 ClientFactory & ClientFactory::instance()
