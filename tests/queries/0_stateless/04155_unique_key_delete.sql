@@ -95,7 +95,7 @@ INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.uk_lazy VALUES (1), (2), (3);
 
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
-SELECT 'lazy_stand_in' AS step, engine FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 'uk_lazy';
+SELECT 'lazy_stand_in' AS step, engine FROM system.tables WHERE database = currentDatabase() || '_1' AND name = 'uk_lazy';
 DELETE FROM {CLICKHOUSE_DATABASE_1:Identifier}.uk_lazy WHERE id = 1;
 
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
