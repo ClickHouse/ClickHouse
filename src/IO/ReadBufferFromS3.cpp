@@ -751,7 +751,7 @@ std::optional<Field> ReadBufferFromS3::getMetadata(const String & name) const
         std::lock_guard lock(response_version_id_mutex);
         if (!response_version_id.empty())
             return response_version_id;
-        return version_id;
+        return S3::pinnableVersionId(version_id);
     }
     return std::nullopt;
 }

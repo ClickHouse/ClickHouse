@@ -71,7 +71,7 @@ def started_cluster():
                 "configs/zookeeper.xml",
                 "configs/s3queue_log.xml",
                 "configs/disable_insertion.xml",
-                "configs/filesystem_cache.xml",
+                "configs/s3_multipart_copy.xml",
             ],
             stay_alive=True,
         )
@@ -87,6 +87,7 @@ def started_cluster():
             main_configs=[
                 "configs/zookeeper.xml",
                 "configs/s3queue_log.xml",
+                "configs/filesystem_cache.xml",
             ],
             stay_alive=True,
         )
@@ -1232,16 +1233,22 @@ def test_ordered_reads_a_rewritten_file_before_a_later_key(started_cluster):
     )
 
 
-def test_move_keeps_source_metadata_near_the_s3_limit(started_cluster):
+# Paths under `move_multipart_` are copied with a multipart copy (configs/s3_multipart_copy.xml),
+# which adds its idempotency id to the destination metadata.
+@pytest.mark.parametrize(
+    "table_prefix, description_size",
+    [("move_big_metadata", 1900), ("move_multipart_metadata", 1840)],
+)
+def test_move_keeps_source_metadata_near_the_s3_limit(started_cluster, table_prefix, description_size):
     """A flattening move whose stamp would push the copy past the 2 KiB S3 user metadata limit still
     archives the object with its own metadata."""
     node = started_cluster.instances["instance"]
     token = generate_random_string().lower()
-    table_name = f"move_big_metadata_{token}"
+    table_name = f"{table_prefix}_{token}"
     files_path = f"{table_name}_data"
     processed_prefix = f"{token}_moved"
     data = b"1,2,3\n"
-    description = "a" * 1900
+    description = "a" * description_size
     started_cluster.minio_client.put_object(
         started_cluster.minio_bucket,
         f"{files_path}/part.csv",
@@ -1878,10 +1885,19 @@ def test_delete_takes_the_version_a_random_access_read_saw(started_cluster):
     assert int(node.query(f"SELECT count() FROM {table_name}_dst")) == 200000
 
 
-def test_delete_takes_the_version_a_cached_read_saw(started_cluster):
-    """A read through the filesystem cache does not report the S3 version. The delete must still
-    remove only the version that was read, so a same-byte re-upload after the read stays the object."""
-    node = started_cluster.instances["instance"]
+@pytest.mark.parametrize(
+    "read_settings",
+    [
+        "filesystem_cache_name = 's3queue_cache', enable_filesystem_cache = 1",
+        "use_reader_executor = 1, remote_filesystem_read_prefetch = 0",
+    ],
+    ids=["filesystem_cache", "reader_executor"],
+)
+def test_delete_takes_the_version_a_cached_read_saw(started_cluster, read_settings):
+    """A read through the filesystem cache or the reader executor does not report the S3 version. The delete
+    must still remove only the version that was read, so a same-byte re-upload after the read stays the object."""
+    # A Keeper fault injected into a direct select fails the query itself instead of being retried.
+    node = started_cluster.instances["instance_no_keeper_fault_injection"]
     token = generate_random_string().lower()
     bucket = f"versioned-{token}"
     table_name = f"delete_cached_read_{token}"
@@ -1923,8 +1939,7 @@ def test_delete_takes_the_version_a_cached_read_saw(started_cluster):
     try:
         select = pool.submit(
             node.query,
-            f"SELECT * FROM {table_name} "
-            "SETTINGS filesystem_cache_name = 's3queue_cache', enable_filesystem_cache = 1",
+            f"SELECT * FROM {table_name} SETTINGS {read_settings}",
         )
         wait_failpoint_paused(node, PAUSE_BEFORE_POST_PROCESS_FAILPOINT)
         # The rows are read through the cache; the same bytes are uploaded again before the delete.
@@ -1939,6 +1954,51 @@ def test_delete_takes_the_version_a_cached_read_saw(started_cluster):
     # Only the version that was read is deleted; no delete marker hides the newer one.
     wait_until(lambda: source_versions() == {reuploaded})
     assert client.head_object(Bucket=bucket, Key=source_key)["VersionId"] == reuploaded
+
+
+def test_null_version_in_the_url_reads_the_listed_generation(started_cluster):
+    """`versionId=null` names whatever was last uploaded while versioning was off, so it pins no generation.
+    The queue reads and deletes the generation it listed, not the older `null` version."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    bucket = f"versioned-{token}"
+    table_name = f"null_version_url_{token}"
+    files_path = f"{table_name}_data"
+    source_key = f"{files_path}/part.csv"
+    minio = started_cluster.minio_client
+    minio.make_bucket(bucket)
+    client = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=started_cluster.minio_access_key,
+        aws_secret_access_key=started_cluster.minio_secret_key,
+    )
+    # The upload made before versioning is the `null` version; the listed one is newer.
+    client.put_object(Bucket=bucket, Key=source_key, Body=b"1,2,3\n")
+    minio.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
+    client.put_object(Bucket=bucket, Key=source_key, Body=b"4,5,6\n")
+
+    url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/*?versionId=null"
+    node.query(
+        f"""
+        CREATE TABLE {table_name} (column1 UInt32, column2 UInt32, column3 UInt32)
+        ENGINE = S3Queue('{url}', '{started_cluster.minio_access_key}', '{started_cluster.minio_secret_key}', CSV)
+        SETTINGS mode = 'unordered', after_processing = 'delete', keeper_path = '/clickhouse/test_{table_name}'
+        """
+    )
+    create_mv(node, table_name, f"{table_name}_dst")
+
+    wait_until(lambda: int(node.query(f"SELECT count() FROM {table_name}_dst")) == 1)
+    assert node.query(f"SELECT column1, column2, column3 FROM {table_name}_dst") == "4\t5\t6\n"
+    # Only the listed version is deleted; the `null` one stays as it was.
+    wait_until(
+        lambda: {
+            version["VersionId"]
+            for version in client.list_object_versions(Bucket=bucket, Prefix=source_key).get("Versions", [])
+        }
+        == {"null"}
+    )
+    assert client.get_object(Bucket=bucket, Key=source_key, VersionId="null")["Body"].read() == b"1,2,3\n"
 
 
 @pytest.mark.parametrize("after_processing", ["move", "delete"])

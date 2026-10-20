@@ -20,6 +20,7 @@
 
 #if USE_AWS_S3
 #include <IO/S3Common.h>
+#include <IO/S3/getObjectInfo.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #endif
 
@@ -60,6 +61,11 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
     /// Parse with the create context so a `SETTINGS s3_allow_server_credentials_in_user_queries = 1` on the
     /// `CREATE` is honored (see `StorageS3Configuration::fromAST`); the processing context stays global below.
     StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, args.getLocalContext(), false, &args.table_id);
+#if USE_AWS_S3
+    /// Every upload made while versioning is suspended is the version `null`, so it pins no generation.
+    if constexpr (std::is_same_v<Configuration, StorageS3Configuration>)
+        configuration->url.version_id = S3::pinnableVersionId(configuration->url.version_id);
+#endif
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current

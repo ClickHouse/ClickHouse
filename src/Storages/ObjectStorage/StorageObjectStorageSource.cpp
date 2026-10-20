@@ -1924,6 +1924,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// User's object may change, don't cache it.
     modified_read_settings.use_page_cache_for_disks_without_file_cache = false;
     modified_read_settings.filesystem_cache_settings.boundary_alignment = settings[Setting::filesystem_cache_boundary_alignment];
+    /// The reader executor does not report the S3 version it read either.
+    if (object_info.require_read_pinned_to_generation && object_storage->getType() == ObjectStorageType::S3)
+        modified_read_settings.reader_executor.enabled = false;
 
     /// Pin the read to the generation seen in `LIST`/`HEAD`, so an in-place overwrite throws instead of yielding torn data;
     /// `require_read_pinned_to_generation` forces this regardless of `s3_validate_etag_on_read`/`azure_validate_etag_on_read`.

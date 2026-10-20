@@ -13,6 +13,7 @@
 #include <Common/BlobStorageLogWriter.h>
 #include <IO/S3/copyS3File.h>
 #include <IO/S3/getObjectInfo.h>
+#include <IO/S3/Requests.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteSettings.h>
 #include <Interpreters/Context.h>
@@ -89,8 +90,18 @@ constexpr auto move_source_version_id_attribute = "clickhouse_move_source_versio
 /// The source generation alone does not prove who copied it, as it can be restamped onto other bytes.
 /// The token is a digest of it keyed by the queue's Keeper name and path, so only the same queue reproduces it.
 constexpr auto move_token_attribute = "clickhouse_move_token";
-/// S3 keeps at most 2 KiB of user metadata, counted as the bytes of all keys and values.
-constexpr size_t s3_user_metadata_limit = 2048;
+/// The bytes of user metadata keys and values a copy may carry: Azure keeps 8 KiB, S3 2 KiB.
+size_t userMetadataLimit(ObjectStorageType type)
+{
+    if (type == ObjectStorageType::Azure)
+        return 8192;
+#if USE_AWS_S3
+    /// A multipart copy adds its idempotency id to the metadata.
+    return 2048 - std::string_view(S3::IDEMPOTENCY_ID_METADATA_KEY).size() - S3::IDEMPOTENCY_ID_LENGTH;
+#else
+    return 2048;
+#endif
+}
 
 String makeMoveToken(
     const String & keeper_identity,
@@ -589,7 +600,7 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
                                         source_metadata->etag,
                                         source_metadata->last_modified.epochTime(),
                                         source_metadata->version_id,
-                                        s3_user_metadata_limit);
+                                        userMetadataLimit(type));
                                 /// The backend looks the source up again, so pin it to the generation this lookup describes:
                                 /// a rewrite in between fails the copy instead of copying newer bytes.
                                 write_settings.object_storage_copy_source_if_match = source_metadata->etag;
@@ -809,7 +820,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                                                                                  source_info.etag,
                                                                                  source_info.last_modification_time,
                                                                                  source_version_id,
-                                                                                 s3_user_metadata_limit);
+                                                                                 userMetadataLimit(ObjectStorageType::S3));
                         /// What the copy below consumes, and therefore the only generation the delete
                         /// that follows it may remove.
                         const SourceGeneration consumed{source_version_id, source_info.etag};
@@ -990,7 +1001,9 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                                   object_from.remote_path,
                                   current_etag,
                                   std::chrono::system_clock::to_time_t(
-                                      static_cast<std::chrono::system_clock::time_point>(properties.LastModified)));
+                                      static_cast<std::chrono::system_clock::time_point>(properties.LastModified)),
+                                  /*source_version_id=*/{},
+                                  userMetadataLimit(ObjectStorageType::Azure));
                         LOG_INFO(log, "Copying {} ({} Bytes) to container {}", object_from.remote_path, blob_size, move_container);
                         try
                         {

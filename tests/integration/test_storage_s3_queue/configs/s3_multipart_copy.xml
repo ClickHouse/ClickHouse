@@ -1,0 +1,8 @@
+<clickhouse>
+    <s3>
+        <multipart_copy>
+            <endpoint>http://minio1:9001/root/move_multipart_</endpoint>
+            <max_single_operation_copy_size>1</max_single_operation_copy_size>
+        </multipart_copy>
+    </s3>
+</clickhouse>
