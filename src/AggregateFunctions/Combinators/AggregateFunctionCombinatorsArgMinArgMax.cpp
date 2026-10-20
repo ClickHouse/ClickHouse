@@ -255,9 +255,11 @@ public:
         return DataTypes(arguments.begin(), arguments.end() - 1);
     }
 
-    bool needsVariantArgumentsConversion(const DataTypes & arguments) const override
+    VectorWithMemoryTracking<size_t> getVariantArgumentsToConvert(const DataTypes & arguments) const override
     {
-        return !arguments.empty() && isVariant(arguments.back());
+        if (!arguments.empty() && isVariant(arguments.back()))
+            return {arguments.size() - 1};
+        return {};
     }
 
     AggregateFunctionPtr transformAggregateFunction(

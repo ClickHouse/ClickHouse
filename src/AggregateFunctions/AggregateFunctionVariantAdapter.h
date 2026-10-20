@@ -1,6 +1,8 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnsNumber.h>
+#include <Common/assert_cast.h>
 #include <Interpreters/castColumn.h>
 
 
@@ -25,18 +27,18 @@ private:
     mutable InternalCastFunctionCache cast_cache;
 
     /// Holds the converted columns and the array of pointers to pass to the nested function.
-    /// If there is an `if` argument after the regular arguments, it is passed as is.
     struct ConvertedColumns
     {
         Columns holder;
         std::vector<const IColumn *> pointers; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        /// If the rows are filtered by the condition, the original numbers of the remaining rows.
+        PaddedPODArray<UInt64> row_numbers;
     };
 
-    ConvertedColumns convert(const IColumn ** columns, ssize_t if_argument_pos = -1) const
+    ConvertedColumns convert(const IColumn ** columns) const
     {
-        size_t num_columns = std::max(num_arguments, static_cast<size_t>(if_argument_pos + 1));
         ConvertedColumns res;
-        res.pointers.assign(columns, columns + num_columns);
+        res.pointers.assign(columns, columns + num_arguments);
         for (size_t i = 0; i < num_arguments; ++i)
         {
             if (argument_types[i]->equals(*nested_argument_types[i]))
@@ -50,23 +52,57 @@ private:
     /// Converts only the rows in [row_begin, row_end). If it is not the whole block, the columns are cut to this range
     /// and the rows are renumbered from zero. Otherwise, e.g. a window function that adds one row at a time
     /// would convert the whole block for every row.
+    /// If there is an `if` argument (from the -If combinator), only the rows where it is true are kept, and the condition
+    /// is not passed to the nested function: the `Null` combinator inside it does not support the `if` argument.
     ConvertedColumns convertRange(size_t row_begin, size_t row_end, const IColumn ** columns, ssize_t if_argument_pos = -1) const
     {
-        if (row_begin == 0 && row_end == columns[0]->size())
-            return convert(columns, if_argument_pos);
+        if (if_argument_pos < 0 && row_begin == 0 && row_end == columns[0]->size())
+            return convert(columns);
 
-        size_t num_columns = std::max(num_arguments, static_cast<size_t>(if_argument_pos + 1));
-        Columns cut_columns(num_columns);
-        std::vector<const IColumn *> cut_pointers(num_columns); // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        for (size_t i = 0; i < num_columns; ++i)
+        IColumn::Filter filter;
+        PaddedPODArray<UInt64> row_numbers;
+        if (if_argument_pos >= 0)
+        {
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            filter.assign(flags.begin() + row_begin, flags.begin() + row_end);
+            for (size_t i = row_begin; i < row_end; ++i)
+                if (flags[i])
+                    row_numbers.push_back(i);
+        }
+
+        Columns cut_columns(num_arguments);
+        std::vector<const IColumn *> cut_pointers(num_arguments); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        for (size_t i = 0; i < num_arguments; ++i)
         {
             cut_columns[i] = columns[i]->cut(row_begin, row_end - row_begin);
+            if (if_argument_pos >= 0)
+                cut_columns[i] = cut_columns[i]->filter(filter, row_numbers.size());
             cut_pointers[i] = cut_columns[i].get();
         }
 
-        auto res = convert(cut_pointers.data(), if_argument_pos);
+        auto res = convert(cut_pointers.data());
         res.holder.insert(res.holder.end(), cut_columns.begin(), cut_columns.end());
+        res.row_numbers = std::move(row_numbers);
         return res;
+    }
+
+    /// The number of rows to pass to the nested function after `convertRange`.
+    static size_t numRows(size_t row_begin, size_t row_end, const ConvertedColumns & converted, ssize_t if_argument_pos)
+    {
+        return if_argument_pos >= 0 ? converted.row_numbers.size() : row_end - row_begin;
+    }
+
+    /// The places of the rows passed to the nested function after `convertRange`.
+    static AggregateDataPtr * getPlaces(
+        AggregateDataPtr * places, size_t row_begin, const ConvertedColumns & converted, ssize_t if_argument_pos,
+        PaddedPODArray<AggregateDataPtr> & filtered_places)
+    {
+        if (if_argument_pos < 0)
+            return places + row_begin;
+        filtered_places.resize(converted.row_numbers.size());
+        for (size_t i = 0; i < converted.row_numbers.size(); ++i)
+            filtered_places[i] = places[converted.row_numbers[i]];
+        return filtered_places.data();
     }
 
 public:
@@ -119,7 +155,10 @@ public:
         const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const override
     {
         auto converted = convertRange(row_begin, row_end, columns, if_argument_pos);
-        nested_function->addBatch(0, row_end - row_begin, places + row_begin, place_offset, converted.pointers.data(), arena, if_argument_pos);
+        PaddedPODArray<AggregateDataPtr> filtered_places;
+        nested_function->addBatch(
+            0, numRows(row_begin, row_end, converted, if_argument_pos),
+            getPlaces(places, row_begin, converted, if_argument_pos, filtered_places), place_offset, converted.pointers.data(), arena);
     }
 
     void addBatchWithNonNullPlaces(
@@ -127,8 +166,10 @@ public:
         const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const override
     {
         auto converted = convertRange(row_begin, row_end, columns, if_argument_pos);
+        PaddedPODArray<AggregateDataPtr> filtered_places;
         nested_function->addBatchWithNonNullPlaces(
-            0, row_end - row_begin, places + row_begin, place_offset, converted.pointers.data(), arena, if_argument_pos);
+            0, numRows(row_begin, row_end, converted, if_argument_pos),
+            getPlaces(places, row_begin, converted, if_argument_pos, filtered_places), place_offset, converted.pointers.data(), arena);
     }
 
     void addBatchSinglePlace(
@@ -136,7 +177,7 @@ public:
         const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const override
     {
         auto converted = convertRange(row_begin, row_end, columns, if_argument_pos);
-        nested_function->addBatchSinglePlace(0, row_end - row_begin, place, converted.pointers.data(), arena, if_argument_pos);
+        nested_function->addBatchSinglePlace(0, numRows(row_begin, row_end, converted, if_argument_pos), place, converted.pointers.data(), arena);
     }
 
     void addBatchSinglePlaceNotNull(
@@ -144,8 +185,17 @@ public:
         const IColumn ** columns, const UInt8 * null_map, Arena * arena, ssize_t if_argument_pos) const override
     {
         auto converted = convertRange(row_begin, row_end, columns, if_argument_pos);
+        if (if_argument_pos < 0)
+        {
+            nested_function->addBatchSinglePlaceNotNull(0, row_end - row_begin, place, converted.pointers.data(), null_map + row_begin, arena);
+            return;
+        }
+
+        PaddedPODArray<UInt8> filtered_null_map(converted.row_numbers.size());
+        for (size_t i = 0; i < converted.row_numbers.size(); ++i)
+            filtered_null_map[i] = null_map[converted.row_numbers[i]];
         nested_function->addBatchSinglePlaceNotNull(
-            0, row_end - row_begin, place, converted.pointers.data(), null_map + row_begin, arena, if_argument_pos);
+            0, converted.row_numbers.size(), place, converted.pointers.data(), filtered_null_map.data(), arena);
     }
 
     void addBatchArray(

@@ -55,10 +55,10 @@ public:
       */
     virtual bool transformsArgumentTypes() const { return false; }
 
-    /** Whether the combinator itself does not support some of its `Variant` arguments (ex: the key of -ArgMin),
-      *  and they should be converted by `AggregateFunctionVariantAdapter`, see `VariantArgumentsConversion`.
+    /** The positions of the `Variant` arguments that the combinator itself does not support (ex: the key of -ArgMin).
+      *  They are converted by `AggregateFunctionVariantAdapter`, see `VariantArgumentsConversion`.
       */
-    virtual bool needsVariantArgumentsConversion(const DataTypes & /*arguments*/) const { return false; }
+    virtual VectorWithMemoryTracking<size_t> getVariantArgumentsToConvert(const DataTypes & /*arguments*/) const { return {}; }
 
     /** From the arguments for combined function (ex: UInt64, UInt8 for sumIf),
       *  get the arguments for nested function (ex: UInt64 for sum).

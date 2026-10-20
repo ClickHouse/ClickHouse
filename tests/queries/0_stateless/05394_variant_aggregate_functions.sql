@@ -48,6 +48,17 @@ SELECT min(v), max(v) FROM (SELECT '2020-01-01'::Date::Variant(Date, DateTime) A
 -- Nullable condition of -If with native and converted aggregate functions.
 SELECT uniqIf(number::Variant(UInt64), toNullable(number % 2 = 0)), anyIf(number::Variant(UInt64), toNullable(number % 2 = 1)), sumIf(number::Variant(UInt64), toNullable(number % 2 = 0)) FROM numbers(4);
 SELECT sumIf(number::Variant(UInt64), if(number = 2, NULL, toNullable(number % 2 = 0))) FROM numbers(5);
+SELECT number % 3 AS k, sumIf(number::Variant(UInt64), number % 2 = 0), maxIf(number::Variant(UInt64), toNullable(number % 2 = 1)) FROM numbers(10) GROUP BY k ORDER BY k;
+
+-- Only the key of -ArgMax, argMax and the weight of topKWeighted are converted, the payload keeps its type and NULL values.
+SELECT groupArrayArgMax(v, k), groupArrayArgMax(v, CAST(k AS Nullable(UInt8))), argMax(v, k), toTypeName(argMax(v, k))
+FROM values('v Variant(UInt64), k Variant(UInt8)', (NULL, 2), (1, 1));
+SELECT argMax(v, k), argMax(v, CAST(k AS Nullable(UInt8))), topKWeighted(2)(v, k), groupArrayResample(0, 2, 1)(v, k)
+FROM values('v Variant(String, UInt64), k Variant(UInt8)', ('a', 1), (2, 0), ('a', 3));
+
+-- DISTINCT distinguishes equal values of different alternatives, as a distinct subquery does.
+SELECT sum(DISTINCT v), sumDistinct(v), sumDistinctIf(v, 1), uniqExact(v), (SELECT sum(v) FROM (SELECT DISTINCT v FROM (SELECT arrayJoin([1::UInt8::Variant(UInt8, UInt16), 1::UInt16::Variant(UInt8, UInt16)]) AS v)))
+FROM (SELECT arrayJoin([1::UInt8::Variant(UInt8, UInt16), 1::UInt16::Variant(UInt8, UInt16)]) AS v);
 
 -- No common supertype.
 SELECT sum(v) FROM values('v Variant(String, UInt64)', 'a', 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

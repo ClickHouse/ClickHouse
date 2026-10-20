@@ -102,9 +102,9 @@ public:
     FunctionDocumentation getDocumentation(const String & name) const;
 
 private:
-    /// Whether the function, possibly with combinators, does not support some of its `Variant` arguments
-    /// according to `AggregateFunctionProperties::variant_arguments_conversion` and needs `AggregateFunctionVariantAdapter`.
-    bool needsVariantArgumentsConversion(const String & name, NullsAction action, const DataTypes & argument_types) const;
+    /// The positions of the `Variant` arguments that the function, or the outermost combinator, does not support
+    /// according to `AggregateFunctionProperties::variant_arguments_conversion`. They are converted by `AggregateFunctionVariantAdapter`.
+    VectorWithMemoryTracking<size_t> getVariantArgumentsToConvert(const String & name, NullsAction action, const DataTypes & argument_types) const;
 
     AggregateFunctionPtr getImpl(
         const String & name,

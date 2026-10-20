@@ -5,7 +5,7 @@
 12.5
 \N
 6	[1,-2,NULL,3.5,NULL,10]	Variant(Float64, Int32, UInt8)
-Variant(Float64, Int32, UInt8)	Array(Variant(Float64, Int32, UInt8))	Nullable(UInt8)	Nullable(Float64)
+Variant(Float64, Int32, UInt8)	Array(Variant(Float64, Int32, UInt8))	Nullable(UInt8)	Variant(Float64, Int32, UInt8)
 0	-1
 1	13.5
 0	0	\N	\N
@@ -27,3 +27,9 @@ Variant(Float64, Int32, UInt8)	Array(Variant(Float64, Int32, UInt8))	Nullable(UI
 2020-01-01 00:00:00	2021-01-01 00:00:00
 2	1	2
 4
+0	6	9
+1	4	7
+2	10	5
+[NULL]	[NULL]	\N	Variant(UInt64)
+a	a	['a',2]	[[2],['a']]
+2	2	2	2	2
