@@ -146,7 +146,7 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 ///   (see `QueryPlanStepRegistry::StepVersions`).
 ///
 /// Last bumped for release 26.11.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 21;
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 22;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
