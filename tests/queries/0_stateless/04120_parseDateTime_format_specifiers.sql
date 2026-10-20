@@ -82,6 +82,18 @@ SELECT parseDateTime('01/02/99', '%D');
 SELECT parseDateTime('12/31/00', '%D');
 SELECT parseDateTime('1st', '%D'); -- { serverError CANNOT_PARSE_DATETIME }
 
+SELECT '--- Composite date day components require two digits ---';
+SELECT parseDateTime('2024-11-06', '%F', 'UTC');
+SELECT parseDateTime('2024-11-0:', '%F', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT parseDateTime('2024-11-:0', '%F', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT parseDateTime('11/02/24', '%D', 'UTC');
+SELECT parseDateTime('11/0:/24', '%D', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT parseDateTime('11/:0/24', '%D', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT parseDateTime64('2024-11-06', '%F', 'UTC');
+SELECT parseDateTime64('2024-11-0:', '%F', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT parseDateTime64('11/02/24', '%D', 'UTC');
+SELECT parseDateTime64('11/0:/24', '%D', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
+
 SELECT '--- 12-hour format: %h / %I + %p ---';
 SELECT parseDateTime('11:30:00 PM', '%h:%i:%s %p', 'UTC');
 SELECT parseDateTime('11:30:00 AM', '%h:%i:%s %p', 'UTC');

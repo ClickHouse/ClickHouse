@@ -42,6 +42,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -2480,8 +2481,10 @@ Block MergeTreeData::getBlockWithVirtualsForFilter(
 
 
 std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
-    const ActionsDAG & filter_actions_dag, ContextPtr local_context, const RangesInDataParts & parts) const
+    const ActionsDAG & filter_actions_dag, ContextPtr local_context, const RangesInDataParts & parts, const DeleteBitmapSnapshot * uk_read_snapshot) const
 {
+    chassert(!hasUniqueKey() || uk_read_snapshot);
+
     if (parts.empty())
         return 0;
 
@@ -2531,7 +2534,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     {
         if ((part_values.empty() || part_values.contains(part.data_part->name))
             && !partition_pruner.canBePruned(*part.data_part))
-            res += part.data_part->rows_count;
+            res += uk_read_snapshot ? uk_read_snapshot->liveRows(*part.data_part) : part.data_part->rows_count;
     }
     return res;
 }
@@ -5161,6 +5164,30 @@ size_t MergeTreeData::clearPartsFromFilesystemAndRollbackIfError(const DataParts
 }
 
 /// ----- UNIQUE KEY -----
+
+DeleteBitmapSnapshotPtr MergeTreeData::makeDeleteBitmapSnapshot(CSN snapshot_csn) const
+{
+    return std::make_shared<const DeleteBitmapSnapshot>(uniqueKeyTxnManager().deleteBitmapStore(), snapshot_csn);
+}
+
+DeleteBitmapSnapshotPtr MergeTreeData::makeDeleteBitmapSnapshot(const ContextPtr & local_context) const
+{
+    /// An explicit transaction, or `implicit_transaction=1`, is already the pin.
+    if (auto txn = local_context->getCurrentTransaction())
+        return std::make_shared<const DeleteBitmapSnapshot>(uniqueKeyTxnManager().deleteBitmapStore(), txn->getSnapshot(), txn->tid);
+
+    /// Otherwise this read pins its own snapshot for as long as the returned value lives. Not
+    /// autocommit: nothing is written, and the holder's destructor rolls it back, which for a
+    /// read-only transaction is a list erase and no Keeper traffic.
+    auto txn = TransactionManager::instance().beginTransaction();
+    const CSN snapshot_csn = txn->getSnapshot();
+    auto pin = std::make_shared<const MergeTreeTransactionHolder>(txn, /*autocommit=*/false);
+
+    LOG_TRACE(log, "UNIQUE KEY READ: pinned csn {} on tid {} for the duration of the read",
+        snapshot_csn, txn->tid);
+
+    return std::make_shared<const DeleteBitmapSnapshot>(uniqueKeyTxnManager().deleteBitmapStore(), snapshot_csn, txn->tid, std::move(pin));
+}
 
 UniqueKeyTxnManager & MergeTreeData::uniqueKeyTxnManager() const
 {
@@ -13128,9 +13155,18 @@ std::optional<StreamFileNameCollision> findStreamFileNameCollision(
 
 void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const
 {
-    auto columns_list = settings[MergeTreeSetting::share_nested_offsets]
-        ? Nested::collect(columns.getAllPhysical())
-        : columns.getAllPhysical();
+    auto columns_list = columns.getAllPhysical();
+    if (settings[MergeTreeSetting::share_nested_offsets])
+    {
+        auto physical_columns = std::move(columns_list);
+        columns_list = Nested::collect(physical_columns);
+
+        /// `Nested::collect` drops a non-flattened Nested whose name prefix is a flattened Nested group, but its streams are still written.
+        auto collected_names = columns_list.getNameSet();
+        for (const auto & column : physical_columns)
+            if (isNested(column.type) && !collected_names.contains(column.name))
+                columns_list.push_back(column);
+    }
 
     MergeTreeMapSerializationVersion map_version = settings[MergeTreeSetting::map_serialization_version];
     MergeTreeObjectSharedDataSerializationVersion shared_data_version = settings[MergeTreeSetting::object_shared_data_serialization_version];
@@ -14929,7 +14965,21 @@ MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapsho
     auto snapshot_data = std::make_unique<SnapshotData>();
     snapshot_data->storage = shared_from_this();
 
-    auto [query_ranges, query_parts] = getPossiblySharedVisibleDataPartsRanges(query_context);
+    /// No later than the part list, so every kill visible at the csn has its writer's part in the list.
+    if (metadata_snapshot->hasUniqueKey())
+        snapshot_data->uk_read_snapshot = makeDeleteBitmapSnapshot(query_context);
+
+    RangesInDataPartsPtr query_ranges;
+    DataPartsVectorPtr query_parts;
+    if (const auto & uk_read_snapshot = snapshot_data->uk_read_snapshot)
+    {
+        /// Not every Active part: a UNIQUE KEY commit publishes its part Active before its commit point.
+        auto parts = getVisibleDataPartsVector(uk_read_snapshot->snapshotCSN(), uk_read_snapshot->readerTID());
+        query_ranges = std::make_shared<const RangesInDataParts>(parts);
+        query_parts = std::make_shared<const DataPartsVector>(std::move(parts));
+    }
+    else
+        std::tie(query_ranges, query_parts) = getPossiblySharedVisibleDataPartsRanges(query_context);
     snapshot_data->parts = query_ranges;
 
     auto parts_info = getPartsSnapshotInfo(*query_parts);
