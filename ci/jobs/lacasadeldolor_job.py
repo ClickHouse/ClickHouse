@@ -489,15 +489,16 @@ def main():
     # Always exercise the SharedMergeTree disk in private CI; a third of the time in
     # public, where `properties.py` only acts on the flag for a private binary anyway.
     set_smt_disk = detect_private_binary(clickhouse_path) or random.randint(1, 3) == 1
-    # Sanitizer servers overrun the stop/start windows the restart cycle budgets for (a
-    # freshly restarted TSan server needs >30s to stop gracefully, so the final shutdown
-    # force kills it and fails the run). Disable all mid-run restarts there: an interval
-    # of a day never fires within the 30-minute --timeout.
-    restart_args = (
-        "--time-between-shutdowns=86400,86400"
-        if is_sanitized
-        else "--time-between-shutdowns=240,240"
-    )
+    # Disable server restarts and kills on sanitizer builds: a mid-run restart's graceful stop
+    # overruns its window (slow sanitizer shutdown) or hangs on an in-flight async backup.
+    if is_sanitized:
+        restart_args = "--time-between-shutdowns=86400,86400"
+        kill_server_prob = 0
+        restart_clickhouse_prob = 0
+    else:
+        restart_args = "--time-between-shutdowns=240,240"
+        kill_server_prob = 50
+        restart_clickhouse_prob = 75
     # Same budget `generate_buzz_config` gave the BuzzHouse config's `time_to_run`, or on an
     # extended run `dolor.py` kills BuzzHouse halfway through.
     dolor_timeout_minutes = 60 if is_extended_run() else 30
@@ -511,12 +512,12 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
 --client-config={buzzconfig}
 --log-path={dolor_log}
 --timeout={dolor_timeout_minutes} --server-settings-prob=0
---kill-server-prob=50 --without-monitoring --without-transactions
+--kill-server-prob={kill_server_prob} --without-monitoring --without-transactions
 --replica-values=0 --shard-values=1
 --add-remote-server-settings-prob=0
 --add-disk-settings-prob=80 --number-disks=1,3 --add-policy-settings-prob=70
 --add-filesystem-caches-prob=80 --number-caches=1,1
-{restart_args} --restart-clickhouse-prob=75
+{restart_args} --restart-clickhouse-prob={restart_clickhouse_prob}
 --compare-table-dump-prob=0 --set-locales-prob=80 --set-timezones-prob=80
 --keeper-settings-prob=0 --mem-limit=32g
 {'--set-shared-mergetree-disk' if set_smt_disk else ''}
