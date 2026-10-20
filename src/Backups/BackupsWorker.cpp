@@ -527,6 +527,7 @@ struct BackupsWorker::BackupStarter
             auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements);
             query_context->checkAccess(required_access);
         }
+        query_context->onQueryExecutionStarted();
 
         chassert(backup_settings.data_file_name_prefix_length);
         backup_coordination = backups_worker.makeBackupCoordination(on_cluster, backup_settings, backup_context);

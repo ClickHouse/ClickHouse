@@ -25,6 +25,7 @@ run_query_in_background cannot be changed with SET
 THERE_IS_NO_SESSION
 --- a background query runs as the submitting user, and a missing grant is denied synchronously
 ACCESS_DENIED
+ACCESS_DENIED
 --- errors raised inside the interpreter before the main work are returned synchronously
 BAD_ARGUMENTS
 CANNOT_UPDATE_COLUMN
