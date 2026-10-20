@@ -1,4 +1,5 @@
--- Tags: no-fasttest, distributed
+-- Tags: no-fasttest, distributed, no-msan
+-- no-msan: PRQL is not built with MSan
 
 SET allow_experimental_prql_dialect = 1;
 
