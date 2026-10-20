@@ -72,8 +72,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    /// See `FunctionComparison::canThrowIfKnown`. Both sides are cast to their common type before they are
-    /// compared, so only the types that need no cast at all are reported as not throwing.
+    /// See `FunctionComparison::canThrowIfKnown`. Operands of different types are cast to their common type or compared
+    /// by `FunctionComparison`, either of which can throw, so only the types that need no cast at all are reported as not throwing.
     std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments) const override
     {
         if (arguments.size() != 2)
@@ -304,12 +304,12 @@ public:
         bool has_string_vs_non_string = hasAlignedStringVsNonStringElement(left_nested_type, right_nested_type);
         if (common_type)
         {
-            ColumnPtr c0_converted = castColumn(arguments[0], common_type);
-            ColumnPtr c1_converted = castColumn(arguments[1], common_type);
-
             // To address: Nullable vs Nullable
-            if (c0_converted->isNullable() && c1_converted->isNullable())
+            if (common_type->isNullable())
             {
+                ColumnPtr c0_converted = castColumn(arguments[0], common_type);
+                ColumnPtr c1_converted = castColumn(arguments[1], common_type);
+
                 auto c_res = ColumnUInt8::create();
                 ColumnUInt8::Container & vec_res = c_res->getData();
                 vec_res.resize(arguments[0].column->size());

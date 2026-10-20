@@ -56,7 +56,7 @@ wait_for() {
         bound="the harness cap of ${HARNESS_TIMEOUT_S}s on the whole test"
     fi
     wait_result='(no poll returned)'
-    while :
+    while clickhouse_test_time_left
     do
         remaining=$((poll_end - EPOCHSECONDS - WAIT_KILL_S))
         if ((remaining <= 0))
