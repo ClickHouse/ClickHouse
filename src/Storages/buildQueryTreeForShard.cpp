@@ -13,6 +13,7 @@
 #include <Analyzer/ListNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
+#include <Columns/ColumnConst.h>
 #include <Core/Block.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerCorrelatedSubqueries.h>
@@ -1709,6 +1710,7 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
 
     /// Every shard column must be accounted for: either it feeds an expected column directly, or a computed expression
     /// above reads it. A leftover column means the mapping does not explain this header, so fall back to be safe.
+    /// With `rewrite_for_shard` a leftover constant is what the shard folded from an expression computed above.
     {
         std::unordered_set<const ActionsDAG::Node *> reachable;
         std::vector<const ActionsDAG::Node *> to_visit = outputs;
@@ -1723,8 +1725,12 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
         }
 
         for (size_t i = 0; i < shard_header.columns(); ++i)
-            if (!shard_column_used[i] && !reachable.contains(shard_input_nodes[i]))
+        {
+            const auto & column = shard_header.getByPosition(i).column;
+            if (!shard_column_used[i] && !reachable.contains(shard_input_nodes[i])
+                && !(rewrite_for_shard && column && isColumnConst(*column)))
                 return {};
+        }
     }
 
     if (duplicate_to_representative)
