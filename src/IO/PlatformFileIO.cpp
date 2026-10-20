@@ -226,26 +226,41 @@ int platformTruncate(const std::string & path, UInt64 size)
 
 int platformOpenReadWrite(const std::string & path)
 {
-    return ::_wopen(pathFromString(path).c_str(), _O_RDWR | _O_BINARY);
+    return platformOpenFile(path, _O_RDWR, 0);
 }
 
 int platformOpenFile(const std::string & path, int flags, int mode)
 {
     const int fd = ::_wopen(pathFromString(path).c_str(), flags | _O_BINARY, mode);
-    if (fd < 0 || !(flags & _O_APPEND))
+    if (fd < 0)
         return fd;
 
-    /// `_O_APPEND` is implemented by the CRT's `_write`, which seeks to the end before every write, but
-    /// `platformWrite` calls `WriteFile` on the handle directly. Reopen the file with `FILE_APPEND_DATA`
-    /// and without `FILE_WRITE_DATA`: then the kernel itself puts every write at the end of the file,
-    /// atomically, as `O_APPEND` does on POSIX. `_wopen` has already applied `_O_CREAT`, `_O_EXCL`,
+    /// `_wopen` shares the file for reading and writing but not for deletion, and then the file cannot be
+    /// renamed or removed while it is open. POSIX allows that, and it is relied upon: for example,
+    /// `rename_files_after_processing` renames a file whose reader may still be open. So the file is
+    /// reopened with `FILE_SHARE_DELETE` added. `_wopen` has already applied `_O_CREAT`, `_O_EXCL`,
     /// `_O_TRUNC` and the mode, so the reopened handle only has to carry the access.
-    DWORD access = FILE_APPEND_DATA | FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES | SYNCHRONIZE;
-    if (flags & _O_RDWR)
-        access |= FILE_READ_DATA;
-    /// The share mode `_wopen` uses.
-    auto * append_handle = ReOpenFile(toHandle(fd), access, FILE_SHARE_READ | FILE_SHARE_WRITE, 0);
-    if (append_handle == INVALID_HANDLE_VALUE)
+    ///
+    /// `_O_APPEND` is implemented by the CRT's `_write`, which seeks to the end before every write, but
+    /// `platformWrite` calls `WriteFile` on the handle directly. So with `_O_APPEND` the access is
+    /// `FILE_APPEND_DATA` without `FILE_WRITE_DATA`: then the kernel itself puts every write at the end of
+    /// the file, atomically, as `O_APPEND` does on POSIX.
+    DWORD access = 0;
+    if (flags & _O_APPEND)
+    {
+        access = FILE_APPEND_DATA | FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES | SYNCHRONIZE;
+        if (flags & _O_RDWR)
+            access |= FILE_READ_DATA;
+    }
+    else if (flags & _O_RDWR)
+        access = GENERIC_READ | GENERIC_WRITE;
+    else if (flags & _O_WRONLY)
+        access = GENERIC_WRITE;
+    else
+        access = GENERIC_READ;
+
+    auto * reopened_handle = ReOpenFile(toHandle(fd), access, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0);
+    if (reopened_handle == INVALID_HANDLE_VALUE)
     {
         const DWORD error = GetLastError();
         ::_close(fd);
@@ -254,10 +269,10 @@ int platformOpenFile(const std::string & path, int flags, int mode)
     }
     ::_close(fd);
 
-    const int append_fd = ::_open_osfhandle(reinterpret_cast<intptr_t>(append_handle), _O_APPEND | _O_BINARY);
-    if (append_fd < 0)
-        CloseHandle(append_handle);
-    return append_fd;
+    const int reopened_fd = ::_open_osfhandle(reinterpret_cast<intptr_t>(reopened_handle), (flags & _O_APPEND) | _O_BINARY);
+    if (reopened_fd < 0)
+        CloseHandle(reopened_handle);
+    return reopened_fd;
 }
 
 int platformStat(const std::string & path, struct stat & out)
