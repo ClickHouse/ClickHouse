@@ -1,5 +1,6 @@
 -- Tags: no-parallel
 -- Tag no-parallel: the second read relies on the entries the first one wrote to the server-wide query condition cache, which other tests clear
+-- Random settings limits: index_granularity_bytes=(100000, None)
 -- The top-K granule skipping through the primary index must not stop the PREWHERE from recording the
 -- granules emptied by the top-K threshold in the query condition cache: a granule skipped by the primary
 -- key has all its rows beyond the threshold, so `__topKFilter` in the PREWHERE would have emptied it too.
@@ -19,6 +20,8 @@ SET max_block_size = 64;
 DROP TABLE IF EXISTS t_top_k_pk_qcc;
 
 -- `b` is the second key column; `a` is constant within most granules, so the primary key bounds `b` per granule.
+-- 64-row granules start every 1024-row group of `a` on a granule boundary, so the last granule of each group is read
+-- (the primary key cannot skip it) but has no row within the threshold: those are the granules the cache saves the second read.
 CREATE TABLE t_top_k_pk_qcc (a UInt64, b UInt64, s String) ENGINE = MergeTree
 ORDER BY (a, b) SETTINGS index_granularity = 64;
 
