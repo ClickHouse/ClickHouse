@@ -133,7 +133,7 @@ public:
         gate.notify_all();
     }
 
-    std::vector<Chunk> chunks;
+    Chunks chunks;
 
 protected:
     void consume(Chunk chunk) override
@@ -243,7 +243,7 @@ UInt64 eventCount(ProfileEvents::Event event)
     return ProfileEvents::global_counters[event];
 }
 
-size_t countRows(const std::vector<Chunk> & chunks)
+size_t countRows(const Chunks & chunks)
 {
     size_t rows = 0;
     for (const auto & chunk : chunks)
@@ -251,7 +251,7 @@ size_t countRows(const std::vector<Chunk> & chunks)
     return rows;
 }
 
-UInt64 sumOfValues(const std::vector<Chunk> & chunks)
+UInt64 sumOfValues(const Chunks & chunks)
 {
     UInt64 sum = 0;
     for (const auto & chunk : chunks)

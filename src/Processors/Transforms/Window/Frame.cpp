@@ -1,6 +1,7 @@
 #include <Processors/Transforms/Window/Frame.h>
 
 #include <Columns/findEqualRangeEndAssumeSorted.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/defines.h>
 
 #include <algorithm>
@@ -56,7 +57,7 @@ bool advanceToPeerGroup(const SlidingBlocks & blocks, const PartitionBounds & pa
     while (bound.location != partition_end)
     {
         const SlidingBlock & block = blocks.blockAt(bound.location.block);
-        const std::vector<int64_t> & groups = block.index.peer_group_indexes;
+        const VectorWithMemoryTracking<int64_t> & groups = block.index.peer_group_indexes;
         const int64_t rows_end = partition_end.block == bound.location.block ? partition_end.row : block.rows_count;
         const int64_t row = groups[bound.location.row] >= group
             ? bound.location.row

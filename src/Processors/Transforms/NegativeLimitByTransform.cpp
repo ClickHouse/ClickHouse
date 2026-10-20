@@ -1,4 +1,5 @@
 #include <Columns/ColumnSparse.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Core/SortCursor.h>
@@ -33,7 +34,7 @@ UInt64 computeWindowSize(UInt64 length, UInt64 offset)
 struct GroupingKeys
 {
     Names names;
-    std::vector<size_t> positions;
+    VectorWithMemoryTracking<size_t> positions;
 };
 
 GroupingKeys filterNonConstKeys(const SharedHeader & header, const Names & column_names)
@@ -199,6 +200,11 @@ void NegativeLimitByTransform::consumeImpl(
     size_t run_group = 0;
     for (UInt64 row = 0; row < num_rows; ++row)
     {
+        /// Grow `group_windows` before a key can be inserted: if the allocation threw between `emplaceKey` and
+        /// `setMapped`, the key would stay in the hash table without a group index.
+        if (group_windows.size() == group_windows.capacity())
+            group_windows.reserve(std::max<size_t>(16, group_windows.capacity() * 2));
+
         auto emplace_result = state.emplaceKey(method.data, row, *data.aggregates_pool);
         size_t group_idx = 0;
         if (emplace_result.isInserted()) /// New grouping key
@@ -277,7 +283,7 @@ Chunk NegativeLimitByTransform::generate()
         offset_rows_dropped = true;
         releaseHashTable(data);
         hash_method_context.reset();
-        std::vector<GroupWindow>{}.swap(group_windows);
+        VectorWithMemoryTracking<GroupWindow>{}.swap(group_windows);
     }
 
     if (candidate_list.empty())
