@@ -8,7 +8,7 @@ exports_files([
     "LICENSE",
 ])
 
-_GENERATED_LOCAL_DEFINES_0 = [
+_VECTORSCAN_LOCAL_DEFINES = [
     "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
     "BOOST_ASIO_STANDALONE=1",
     "BOOST_TIMER_ENABLE_DEPRECATED=1",
@@ -18,7 +18,7 @@ _GENERATED_LOCAL_DEFINES_0 = [
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-_GENERATED_DEPS_0 = select({
+_VECTORSCAN_DEPS = select({
     "@platforms//cpu:x86_64": [],
     "@platforms//cpu:aarch64": [
         "@clickhouse_sysroot//:linux_aarch64_hwcap",
@@ -93,9 +93,9 @@ ch_cc_library(
         "src",
     ],
     language = "C",
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = _VECTORSCAN_LOCAL_DEFINES,
     local_includes = _VECTORSCAN_LOCAL_INCLUDES,
-    deps = _GENERATED_DEPS_0 + [
+    deps = _VECTORSCAN_DEPS + [
         "@clickhouse_boost//:boost_headers",
     ],
 )
@@ -307,9 +307,9 @@ ch_cc_library(
             "contrib/vectorscan-cmake/aarch64",
         ],
     }),
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = _VECTORSCAN_LOCAL_DEFINES,
     local_includes = _VECTORSCAN_LOCAL_INCLUDES,
-    deps = _GENERATED_DEPS_0 + [
+    deps = _VECTORSCAN_DEPS + [
         "@clickhouse_boost//:boost_headers",
     ],
 )
@@ -355,9 +355,9 @@ ch_cc_library(
             "contrib/vectorscan-cmake/aarch64",
         ],
     }),
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = _VECTORSCAN_LOCAL_DEFINES,
     local_includes = _VECTORSCAN_LOCAL_INCLUDES,
-    deps = _GENERATED_DEPS_0 + [
+    deps = _VECTORSCAN_DEPS + [
         "@clickhouse_boost//:boost_headers",
     ],
 )

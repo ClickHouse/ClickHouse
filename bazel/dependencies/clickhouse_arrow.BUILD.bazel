@@ -185,9 +185,6 @@ _GENERATED_LOCAL_DEFINES_0 = select({
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-_GENERATED_TEXTUAL_HDRS_0 = [
-]
-
 _ARROW_LOCAL_INCLUDES = [
     repository_local_include("$(GENDIR)/bazel/gen/contrib/flatbuffers", "contrib/arrow"),
     repository_local_include("contrib/arrow-cmake/cpp/src", "contrib/arrow"),
@@ -411,7 +408,6 @@ ch_cc_library(
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _ARROW_LOCAL_INCLUDES,
-    textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     deps = [
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_flatbuffers//:_flatbuffers",
@@ -460,7 +456,6 @@ ch_cc_library(
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _ARROW_LOCAL_INCLUDES,
-    textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     deps = [
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_flatbuffers//:_flatbuffers",
@@ -684,7 +679,6 @@ ch_cc_library(
             "contrib/arrow",
         ),
     ],
-    textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     deps = [
         ":_arrow",
         "@clickhouse_boost//:_boost_regex",

@@ -885,7 +885,7 @@ _GENERATED_HDRS_0 = [
     "Interpreters/sortBlock.h",
 ] + glob(["Planner/*.h"]) + glob(["Processors/**/*.h"]) + glob(["QueryPipeline/*.h"]) + glob(["Server/**/*.h"]) + glob(["Storages/**/*.h"]) + glob(["WindowFunctions/*.h"])
 
-_GENERATED_LOCAL_DEFINES_0 = select({
+_CLICKHOUSE_COMMON_IO_LOCAL_DEFINES = select({
     "@platforms//cpu:x86_64": [],
     "@platforms//cpu:aarch64": [
         "ARM_ACLE",
@@ -951,7 +951,7 @@ _GENERATED_LOCAL_DEFINES_0 = select({
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-_GENERATED_LOCAL_INCLUDES_0 = [
+_CLICKHOUSE_COMMON_IO_LOCAL_INCLUDES = [
     "../" + (repository_path("contrib/StringZilla") + "/include"),
     "../" + (repository_path("contrib/replxx") + "/include"),
     "../" + repository_path("contrib/double-conversion"),
@@ -996,7 +996,7 @@ _GENERATED_LOCAL_INCLUDES_0 = [
     "../" + (repository_path("contrib/wasmtime") + "/crates/c-api/include"),
 ]
 
-_GENERATED_DEPS_0 = [
+_CLICKHOUSE_COMMON_IO_DEPS = [
     "@lz4//:lz4_frame",
     "@clickhouse_boost//:boost_headers",
     "@clickhouse_fmtlib//:_fmt",
@@ -1379,12 +1379,12 @@ ch_cc_library(
         "@clickhouse_simdjson//:_simdjson",
         "@clickhouse_stringzilla//:_stringzilla",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = _CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
     local_includes = [
         ".",
         "../bazel/gen/base",
-    ] + _GENERATED_LOCAL_INCLUDES_0,
-    deps = _GENERATED_DEPS_0,
+    ] + _CLICKHOUSE_COMMON_IO_LOCAL_INCLUDES,
+    deps = _CLICKHOUSE_COMMON_IO_DEPS,
 )
 
 ch_cc_library(
@@ -1422,12 +1422,12 @@ ch_cc_library(
         "$(GENDIR)/bazel/rust/delta_ffi_headers",
     ],
     implementation_deps = ["@clickhouse_c_ares//:_c-ares"],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = _CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
     local_includes = [
         ".",
         "../bazel/gen/base",
-    ] + _GENERATED_LOCAL_INCLUDES_0,
-    deps = _GENERATED_DEPS_0,
+    ] + _CLICKHOUSE_COMMON_IO_LOCAL_INCLUDES,
+    deps = _CLICKHOUSE_COMMON_IO_DEPS,
 )
 
 ch_cc_library(
@@ -1465,12 +1465,12 @@ ch_cc_library(
         "-I",
         "$(GENDIR)/bazel/rust/delta_ffi_headers",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = _CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
     local_includes = [
         ".",
         "../bazel/gen/base",
-    ] + _GENERATED_LOCAL_INCLUDES_0,
-    deps = _GENERATED_DEPS_0,
+    ] + _CLICKHOUSE_COMMON_IO_LOCAL_INCLUDES,
+    deps = _CLICKHOUSE_COMMON_IO_DEPS,
 )
 
 ch_cc_library(
@@ -1511,12 +1511,12 @@ ch_cc_library(
         "@clickhouse_silk//:_silk_fibers",
         "@clickhouse_wasmtime//:wasmtime_headers",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = _CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
     local_includes = [
         ".",
         "../bazel/gen/base",
-    ] + _GENERATED_LOCAL_INCLUDES_0,
-    deps = _GENERATED_DEPS_0,
+    ] + _CLICKHOUSE_COMMON_IO_LOCAL_INCLUDES,
+    deps = _CLICKHOUSE_COMMON_IO_DEPS,
 )
 
 cc_library(
@@ -2074,7 +2074,7 @@ _GENERATED_HDRS_1 = [
     "Interpreters/sortBlock.h",
 ] + glob(["Planner/*.h"]) + glob(["Processors/**/*.h"]) + glob(["QueryPipeline/*.h"]) + glob(["Server/**/*.h"]) + glob(["Storages/**/*.h"]) + glob(["WindowFunctions/*.h"])
 
-_GENERATED_LOCAL_DEFINES_1 = [
+_DBMS_LOCAL_DEFINES = [
     "AI_SDK_HAS_ANTHROPIC=1",
     "AI_SDK_HAS_OPENAI=1",
 ] + select({
@@ -3278,7 +3278,7 @@ ch_cc_library(
     }) + [
         "@clickhouse_sqlite_amalgamation//:_sqlite",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_1,
+    local_defines = _DBMS_LOCAL_DEFINES,
     local_includes = [
         "../bazel/gen/base",
     ] + _GENERATED_LOCAL_INCLUDES_1_BEFORE_WEB + [
@@ -3362,7 +3362,7 @@ ch_cc_library(
         "@clickhouse_double_conversion//:_double-conversion",
         "@clickhouse_nats_io//:_nats_io",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_1,
+    local_defines = _DBMS_LOCAL_DEFINES,
     local_includes = [
         ".",
         "../bazel/gen/base",
@@ -3433,7 +3433,7 @@ ch_cc_library(
         "@clickhouse_libfiu//:_libfiu",
         "@clickhouse_nats_io//:_nats_io",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_1,
+    local_defines = _DBMS_LOCAL_DEFINES,
     local_includes = [
         ".",
         "../bazel/gen/base",
@@ -3508,7 +3508,7 @@ ch_cc_library(
             "@clickhouse_replxx//:_replxx",
         ],
     }),
-    local_defines = _GENERATED_LOCAL_DEFINES_1,
+    local_defines = _DBMS_LOCAL_DEFINES,
     local_includes = [
         ".",
         "../bazel/gen/base",

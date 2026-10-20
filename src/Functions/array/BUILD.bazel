@@ -78,7 +78,7 @@ _GENERATED_HDRS_0 = [
     "@clickhouse_xgboost//:config/contrib/xgboost/dmlc-core/dmlc/build_config.h",
 ] + glob(["*.h"])
 
-_GENERATED_LOCAL_DEFINES_0 = [
+_CLICKHOUSE_FUNCTIONS_ARRAY_LOCAL_DEFINES = [
     "AI_SDK_HAS_ANTHROPIC=1",
     "AI_SDK_HAS_OPENAI=1",
 ] + select({
@@ -161,7 +161,7 @@ _GENERATED_LOCAL_DEFINES_0 = [
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-_GENERATED_LOCAL_INCLUDES_0 = [
+_CLICKHOUSE_FUNCTIONS_ARRAY_LOCAL_INCLUDES = [
     "../../../" + (repository_path("contrib/orc") + "/config/contrib/orc/c++/include"),
     "../../../" + (repository_path("contrib/croaring") + "/cpp"),
     "../../../" + (repository_path("contrib/croaring") + "/include"),
@@ -499,10 +499,10 @@ ch_cc_library(
         "@clickhouse_libfiu//:_libfiu",
         "@clickhouse_stringzilla//:_stringzilla",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = _CLICKHOUSE_FUNCTIONS_ARRAY_LOCAL_DEFINES,
     local_includes = [
         "../../../bazel/gen/base",
-    ] + _GENERATED_LOCAL_INCLUDES_0,
+    ] + _CLICKHOUSE_FUNCTIONS_ARRAY_LOCAL_INCLUDES,
     deps = _GENERATED_DEPS_0,
     alwayslink = True,
 )
@@ -546,10 +546,10 @@ ch_cc_library(
         "$(GENDIR)/bazel/gen/contrib/arrow-cmake/cpp/src",
     ],
     implementation_deps = ["@clickhouse_double_conversion//:_double-conversion"],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = _CLICKHOUSE_FUNCTIONS_ARRAY_LOCAL_DEFINES,
     local_includes = [
         "../../../bazel/gen/base",
-    ] + _GENERATED_LOCAL_INCLUDES_0,
+    ] + _CLICKHOUSE_FUNCTIONS_ARRAY_LOCAL_INCLUDES,
     deps = _GENERATED_DEPS_0,
     alwayslink = True,
 )
@@ -600,10 +600,10 @@ ch_cc_library(
         "-I",
         "$(GENDIR)/bazel/gen/contrib/arrow-cmake/cpp/src",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = _CLICKHOUSE_FUNCTIONS_ARRAY_LOCAL_DEFINES,
     local_includes = [
         "../../../bazel/gen/base",
-    ] + _GENERATED_LOCAL_INCLUDES_0,
+    ] + _CLICKHOUSE_FUNCTIONS_ARRAY_LOCAL_INCLUDES,
     deps = _GENERATED_DEPS_0,
     alwayslink = True,
 )
@@ -645,10 +645,10 @@ ch_cc_library(
         "-I",
         "$(GENDIR)/bazel/gen/contrib/arrow-cmake/cpp/src",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = _CLICKHOUSE_FUNCTIONS_ARRAY_LOCAL_DEFINES,
     local_includes = [
         "../../../bazel/gen/base",
-    ] + _GENERATED_LOCAL_INCLUDES_0,
+    ] + _CLICKHOUSE_FUNCTIONS_ARRAY_LOCAL_INCLUDES,
     deps = _GENERATED_DEPS_0,
     alwayslink = True,
 )

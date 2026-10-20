@@ -8,11 +8,11 @@ exports_files([
     "LICENSE",
 ])
 
-_GENERATED_HEADER_INPUTS_0 = [
+_ROARING_HDRS = [
     "@clickhouse//base:base/time.h",
 ]
 
-_GENERATED_LOCAL_DEFINES_0 = select({
+_ROARING_LOCAL_DEFINES = select({
     "@platforms//cpu:x86_64": [],
     "@platforms//cpu:aarch64": [
         "ARM_ACLE",
@@ -99,7 +99,7 @@ ch_cc_library(
         "@clickhouse_liburing//:config/contrib/liburing/src/include/liburing/io_uring_version.h",
         "@clickhouse_snappy//:config/contrib/snappy-cmake/config.h",
         "@clickhouse_snappy//:config/contrib/snappy-cmake/snappy-stubs-public.h",
-    ] + _GENERATED_HEADER_INPUTS_0 + glob([
+    ] + _ROARING_HDRS + glob([
         "cpp/**/*.hh",
         "include/**/*.h",
     ]),
@@ -135,7 +135,7 @@ ch_cc_library(
         "include",
     ],
     language = "C",
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = _ROARING_LOCAL_DEFINES,
     local_includes = [
         "include/roaring",
     ] + _ROARING_LOCAL_INCLUDES,
@@ -172,7 +172,7 @@ ch_cc_library(
         "@clickhouse_liburing//:config/contrib/liburing/src/include/liburing/io_uring_version.h",
         "@clickhouse_snappy//:config/contrib/snappy-cmake/config.h",
         "@clickhouse_snappy//:config/contrib/snappy-cmake/snappy-stubs-public.h",
-    ] + _GENERATED_HEADER_INPUTS_0 + glob([
+    ] + _ROARING_HDRS + glob([
         "cpp/**/*.hh",
         "include/**/*.h",
     ]),
@@ -206,7 +206,7 @@ ch_cc_library(
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = _ROARING_LOCAL_DEFINES,
     local_includes = [
         "include/roaring",
     ] + _ROARING_LOCAL_INCLUDES,

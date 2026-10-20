@@ -10,9 +10,6 @@ exports_files([
     "tests/gtest_zookeeper_args.cpp",
 ])
 
-_GENERATED_HDRS_0 = [
-]
-
 _GENERATED_LOCAL_INCLUDES_0 = [
     "../../../" + (repository_path("contrib/llvm-project") + "/llvm/include"),
 ]
@@ -20,7 +17,6 @@ _GENERATED_LOCAL_INCLUDES_0 = [
 ch_cc_library(
     name = "clickhouse_common_zookeeper",
     srcs = ["ZooKeeperImpl.cpp"],
-    hdrs = _GENERATED_HDRS_0,
     clickhouse_code = True,
     copts = [
         "-I",
@@ -390,7 +386,6 @@ ch_cc_library(
         "ZooKeeperPathUtils.cpp",
         "ZooKeeperWithFaultInjection.cpp",
     ]) + glob(["KeeperClientCLI/*.cpp"]),
-    hdrs = _GENERATED_HDRS_0,
     clickhouse_code = True,
     copts = [
         "-I",
@@ -615,7 +610,6 @@ ch_cc_library(
 ch_cc_library(
     name = "clickhouse_common_zookeeper_no_log",
     srcs = ["ZooKeeperImpl.cpp"],
-    hdrs = _GENERATED_HDRS_0,
     clickhouse_code = True,
     copts = [
         "-I",

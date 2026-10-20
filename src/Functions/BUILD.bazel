@@ -336,7 +336,7 @@ _GENERATED_HDRS_0 = [
     "vectorQuantization.h",
 ]
 
-_GENERATED_LOCAL_DEFINES_0 = [
+_CLICKHOUSE_FUNCTIONS_OBJ_LOCAL_DEFINES = [
     "AI_SDK_HAS_ANTHROPIC=1",
     "AI_SDK_HAS_OPENAI=1",
 ] + select({
@@ -420,7 +420,7 @@ _GENERATED_LOCAL_DEFINES_0 = [
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-_GENERATED_LOCAL_INCLUDES_0 = [
+_CLICKHOUSE_FUNCTIONS_OBJ_LOCAL_INCLUDES = [
     "../../" + (repository_path("contrib/replxx") + "/include"),
     "../../" + repository_path("contrib/zmij"),
     "../../" + repository_path("contrib/libdeflate"),
@@ -1301,10 +1301,10 @@ ch_cc_library(
         "@clickhouse_stringzilla//:_stringzilla",
         "@clickhouse_xxhash//:xxHash",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = _CLICKHOUSE_FUNCTIONS_OBJ_LOCAL_DEFINES,
     local_includes = [
         "../../bazel/gen/base",
-    ] + _GENERATED_LOCAL_INCLUDES_0,
+    ] + _CLICKHOUSE_FUNCTIONS_OBJ_LOCAL_INCLUDES,
     deps = _GENERATED_DEPS_0,
     alwayslink = True,
 )
@@ -1409,10 +1409,10 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = _CLICKHOUSE_FUNCTIONS_OBJ_LOCAL_DEFINES,
     local_includes = [
         "../../bazel/gen/base",
-    ] + _GENERATED_LOCAL_INCLUDES_0,
+    ] + _CLICKHOUSE_FUNCTIONS_OBJ_LOCAL_INCLUDES,
     deps = _GENERATED_DEPS_0,
     alwayslink = True,
 )

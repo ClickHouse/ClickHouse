@@ -3,9 +3,6 @@ load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_path")
 
 package(default_visibility = ["//visibility:public"])
 
-_GENERATED_HDRS_0 = [
-]
-
 _GENERATED_LOCAL_DEFINES_0 = [
     "AI_SDK_HAS_ANTHROPIC=1",
     "AI_SDK_HAS_OPENAI=1",
@@ -111,13 +108,9 @@ _GENERATED_LOCAL_INCLUDES_0 = [
     "../../../" + (repository_path("contrib/llvm-project") + "/llvm/include"),
 ]
 
-_GENERATED_TEXTUAL_HDRS_0 = [
-]
-
 ch_cc_library(
     name = "benchmark_compute_hash_into_objects",
     srcs = ["benchmark_compute_hash_into.cpp"],
-    hdrs = _GENERATED_HDRS_0,
     clickhouse_code = True,
     copts = [
         "-I",
@@ -145,7 +138,6 @@ ch_cc_library(
     local_includes = [
         "../../../bazel/gen/base",
     ] + _GENERATED_LOCAL_INCLUDES_0,
-    textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     deps = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -463,7 +455,6 @@ ch_cc_library(
 ch_cc_library(
     name = "column_insert_many_from_objects",
     srcs = ["benchmark_column_insert_many_from.cpp"],
-    hdrs = _GENERATED_HDRS_0,
     clickhouse_code = True,
     copts = [
         "-I",
@@ -491,7 +482,6 @@ ch_cc_library(
     local_includes = [
         "../../../bazel/gen/base",
     ] + _GENERATED_LOCAL_INCLUDES_0,
-    textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     deps = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [

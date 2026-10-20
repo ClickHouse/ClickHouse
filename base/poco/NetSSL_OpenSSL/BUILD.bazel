@@ -8,7 +8,7 @@ exports_files([
     "src/EmbeddedCertificates.cpp",
 ])
 
-_GENERATED_HDRS_0 = [
+_POCO_NET_SSL_HDRS = [
     "//bazel:gen/base/base/GitHash.generated.cpp",
     "@clickhouse_libssh//:config/contrib/libssh/include/libssh/libssh_version.h",
     "@clickhouse_liburing//:config/contrib/liburing/src/include-compat/liburing/compat.h",
@@ -20,7 +20,7 @@ _GENERATED_HDRS_0 = [
     "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
 ]
 
-_GENERATED_LOCAL_INCLUDES_0 = [
+_POCO_NET_SSL_LOCAL_INCLUDES = [
     "../../../" + (repository_path("contrib/replxx") + "/include"),
     "../../../" + repository_path("contrib/double-conversion"),
     "../../../" + repository_path("contrib/zmij"),
@@ -51,7 +51,7 @@ _GENERATED_LOCAL_INCLUDES_0 = [
     "../../../" + (repository_path("contrib/simdjson") + "/include"),
 ]
 
-_GENERATED_DEPS_0 = [
+_POCO_NET_SSL_DEPS = [
     "@clickhouse_boost//:boost_headers",
     "@clickhouse_fmtlib//:_fmt",
     "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
@@ -107,7 +107,7 @@ ch_cc_library(
         "src/Utility.cpp",
         "src/VerificationErrorArgs.cpp",
     ]),
-    hdrs = _GENERATED_HDRS_0,
+    hdrs = _POCO_NET_SSL_HDRS,
     clickhouse_code = True,
     copts = [
         "-Wno-cast-qual",
@@ -208,14 +208,14 @@ ch_cc_library(
     ],
     local_includes = [
         "../../../bazel/gen/base",
-    ] + _GENERATED_LOCAL_INCLUDES_0,
-    deps = _GENERATED_DEPS_0,
+    ] + _POCO_NET_SSL_LOCAL_INCLUDES,
+    deps = _POCO_NET_SSL_DEPS,
 )
 
 ch_cc_library(
     name = "_poco_net_ssl__compile_1",
     srcs = ["//bazel:gen/embedded/base/poco/NetSSL_OpenSSL/src/EmbeddedCertificates.cpp"],
-    hdrs = _GENERATED_HDRS_0,
+    hdrs = _POCO_NET_SSL_HDRS,
     additional_compiler_inputs = ["//bazel:gen/embedded/contrib/grpc/etc/roots.pem"],
     clickhouse_code = True,
     copts = [
@@ -317,8 +317,8 @@ ch_cc_library(
     ],
     local_includes = [
         "../../../bazel/gen/base",
-    ] + _GENERATED_LOCAL_INCLUDES_0,
-    deps = _GENERATED_DEPS_0,
+    ] + _POCO_NET_SSL_LOCAL_INCLUDES,
+    deps = _POCO_NET_SSL_DEPS,
 )
 
 cc_library(

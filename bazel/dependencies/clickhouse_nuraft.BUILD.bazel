@@ -7,9 +7,6 @@ exports_files([
     "LICENSE",
 ])
 
-_GENERATED_HEADER_INPUTS_0 = [
-]
-
 ch_cc_library(
     name = "_nuraft",
     srcs = [
@@ -46,7 +43,8 @@ ch_cc_library(
     ]),
     hdrs = [
         "@clickhouse//bazel:gen/base/base/GitHash.generated.cpp",
-    ] + _GENERATED_HEADER_INPUTS_0 + glob(["include/**/*.hxx"]),
+    ] + [
+    ] + glob(["include/**/*.hxx"]),
     copts = [
         "-w",
         "-std=c++23",

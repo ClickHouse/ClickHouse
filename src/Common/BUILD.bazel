@@ -510,9 +510,6 @@ _GENERATED_LOCAL_DEFINES_0 = select({
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-_GENERATED_LOCAL_INCLUDES_0 = [
-]
-
 _GENERATED_DEPS_0 = [
     "@clickhouse_boost//:boost_headers",
     "@clickhouse_fmtlib//:_fmt",
@@ -655,7 +652,8 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "../../bazel/gen/base",
-    ] + _GENERATED_LOCAL_INCLUDES_0,
+    ] + [
+    ],
     deps = _GENERATED_DEPS_0,
     alwayslink = True,
 )
@@ -679,7 +677,8 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "../../bazel/gen/base",
-    ] + _GENERATED_LOCAL_INCLUDES_0,
+    ] + [
+    ],
     deps = _GENERATED_DEPS_0,
 )
 

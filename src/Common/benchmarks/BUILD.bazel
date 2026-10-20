@@ -3,9 +3,6 @@ load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_path")
 
 package(default_visibility = ["//visibility:public"])
 
-_GENERATED_HDRS_0 = [
-]
-
 _GENERATED_LOCAL_DEFINES_0 = [
     "AI_SDK_HAS_ANTHROPIC=1",
     "AI_SDK_HAS_OPENAI=1",
@@ -111,13 +108,9 @@ _GENERATED_LOCAL_INCLUDES_0 = [
     "../../../" + (repository_path("contrib/llvm-project") + "/llvm/include"),
 ]
 
-_GENERATED_TEXTUAL_HDRS_0 = [
-]
-
 ch_cc_library(
     name = "benchmark_radix_sort_objects",
     srcs = ["radix_sort.cpp"],
-    hdrs = _GENERATED_HDRS_0,
     clickhouse_code = True,
     copts = [
         "-I",
@@ -145,7 +138,6 @@ ch_cc_library(
     local_includes = [
         "../../../bazel/gen/base",
     ] + _GENERATED_LOCAL_INCLUDES_0,
-    textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     deps = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -484,9 +476,6 @@ ch_cc_library(
     alwayslink = True,
 )
 
-_GENERATED_HDRS_1 = [
-]
-
 _GENERATED_LOCAL_DEFINES_1 = select({
     "@platforms//cpu:x86_64": [],
     "@platforms//cpu:aarch64": [
@@ -549,9 +538,6 @@ _GENERATED_LOCAL_DEFINES_1 = select({
     "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
     "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
     "_LIBUNWIND_IS_NATIVE_ONLY",
-]
-
-_GENERATED_LOCAL_INCLUDES_1 = [
 ]
 
 _GENERATED_DEPS_1 = [
@@ -679,7 +665,6 @@ _GENERATED_DEPS_1 = [
 ch_cc_library(
     name = "benchmark_stack_trace_objects",
     srcs = ["stack_trace.cpp"],
-    hdrs = _GENERATED_HDRS_1,
     clickhouse_code = True,
     copts = [
         "-I",
@@ -696,7 +681,8 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
         "../../../bazel/gen/base",
-    ] + _GENERATED_LOCAL_INCLUDES_1,
+    ] + [
+    ],
     deps = _GENERATED_DEPS_1,
     alwayslink = True,
 )
@@ -704,7 +690,6 @@ ch_cc_library(
 ch_cc_library(
     name = "integer_hash_tables_and_hashes_objects",
     srcs = ["integer_hash_tables_and_hashes.cpp"],
-    hdrs = _GENERATED_HDRS_1,
     clickhouse_code = True,
     copts = [
         "-I",
@@ -918,7 +903,6 @@ ch_cc_library(
 ch_cc_library(
     name = "orc_string_dictionary_objects",
     srcs = ["orc_string_dictionary.cpp"],
-    hdrs = _GENERATED_HDRS_1,
     clickhouse_code = True,
     copts = [
         "-I",
@@ -1068,7 +1052,6 @@ ch_cc_library(
 ch_cc_library(
     name = "profile_events_objects",
     srcs = ["profile_events.cpp"],
-    hdrs = _GENERATED_HDRS_1,
     clickhouse_code = True,
     copts = [
         "-I",
@@ -1085,7 +1068,8 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
         "../../../bazel/gen/base",
-    ] + _GENERATED_LOCAL_INCLUDES_1,
+    ] + [
+    ],
     deps = _GENERATED_DEPS_1,
     alwayslink = True,
 )
@@ -1093,7 +1077,6 @@ ch_cc_library(
 ch_cc_library(
     name = "wrap_in_nullable_objects",
     srcs = ["wrap_in_nullable.cpp"],
-    hdrs = _GENERATED_HDRS_0,
     clickhouse_code = True,
     copts = [
         "-I",
@@ -1121,7 +1104,6 @@ ch_cc_library(
     local_includes = [
         "../../../bazel/gen/base",
     ] + _GENERATED_LOCAL_INCLUDES_0,
-    textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     deps = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [

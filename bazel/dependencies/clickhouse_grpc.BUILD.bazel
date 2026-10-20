@@ -10,9 +10,6 @@ exports_files([
     "etc/roots.pem",
 ])
 
-_GENERATED_HEADER_INPUTS_2 = [
-]
-
 _GENERATED_LOCAL_DEFINES_0 = [
     "OPENSSL_NO_ENGINE",
     "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -443,7 +440,8 @@ ch_cc_library(
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-    ] + _GENERATED_HEADER_INPUTS_2 + glob([
+    ] + [
+    ] + glob([
         "**/*.h",
         "**/*.hpp",
         "**/*.inc",
@@ -631,7 +629,8 @@ ch_cc_library(
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-    ] + _GENERATED_HEADER_INPUTS_2 + glob([
+    ] + [
+    ] + glob([
         "**/*.h",
         "**/*.hpp",
         "**/*.inc",

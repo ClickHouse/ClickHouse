@@ -23,7 +23,7 @@ expand_template(
     template = "@clickhouse//contrib/librdkafka-cmake:config.h.in",
 )
 
-_GENERATED_LOCAL_DEFINES_0 = select({
+_RDKAFKA_LOCAL_DEFINES = select({
     "@platforms//cpu:x86_64": [
         "CJSON_HIDE_SYMBOLS",
     ],
@@ -217,7 +217,7 @@ ch_cc_library(
         "@clickhouse//contrib/librdkafka-cmake:headers",
     ],
     language = "C",
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = _RDKAFKA_LOCAL_DEFINES,
     local_includes = _RDKAFKA_LOCAL_INCLUDES,
     deps = [
         "@lz4//:lz4_frame",
@@ -248,7 +248,7 @@ ch_cc_library(
         "$(GENDIR)/" + repository_path("contrib/cyrus-sasl") + "/config/contrib/cyrus-sasl-cmake",
     ],
     implementation_deps = ["@clickhouse//contrib/librdkafka-cmake:headers"],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = _RDKAFKA_LOCAL_DEFINES,
     local_includes = _RDKAFKA_LOCAL_INCLUDES,
     deps = [
         "@lz4//:lz4_frame",

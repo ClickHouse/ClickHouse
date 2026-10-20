@@ -85,7 +85,7 @@ _GENERATED_HDRS_0 = [
     "@clickhouse_xgboost//:config/contrib/xgboost/dmlc-core/dmlc/build_config.h",
 ] + glob(["*.h"])
 
-_GENERATED_LOCAL_DEFINES_0 = [
+_CLICKHOUSE_DICTIONARIES_LOCAL_DEFINES = [
     "AI_SDK_HAS_ANTHROPIC=1",
     "AI_SDK_HAS_OPENAI=1",
 ] + select({
@@ -168,7 +168,7 @@ _GENERATED_LOCAL_DEFINES_0 = [
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-_GENERATED_LOCAL_INCLUDES_0 = [
+_CLICKHOUSE_DICTIONARIES_LOCAL_INCLUDES = [
     "../../" + (repository_path("contrib/replxx") + "/include"),
     "../../" + repository_path("contrib/zmij"),
     "../../" + repository_path("contrib/libdeflate"),
@@ -441,10 +441,10 @@ ch_cc_library(
         "@clickhouse_cctz//:_cctz",
         "@clickhouse_double_conversion//:_double-conversion",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = _CLICKHOUSE_DICTIONARIES_LOCAL_DEFINES,
     local_includes = [
         "../../bazel/gen/base",
-    ] + _GENERATED_LOCAL_INCLUDES_0,
+    ] + _CLICKHOUSE_DICTIONARIES_LOCAL_INCLUDES,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     deps = _GENERATED_DEPS_0,
 )
@@ -541,10 +541,10 @@ ch_cc_library(
         "@clickhouse_double_conversion//:_double-conversion",
         "@clickhouse_mongo_cxx_driver//:_mongocxx",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = _CLICKHOUSE_DICTIONARIES_LOCAL_DEFINES,
     local_includes = [
         "../../bazel/gen/base",
-    ] + _GENERATED_LOCAL_INCLUDES_0,
+    ] + _CLICKHOUSE_DICTIONARIES_LOCAL_INCLUDES,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     deps = _GENERATED_DEPS_0,
 )
@@ -598,10 +598,10 @@ ch_cc_library(
         repository_path("contrib/minizip-ng") + "/compat",
     ],
     implementation_deps = ["@clickhouse_double_conversion//:_double-conversion"],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = _CLICKHOUSE_DICTIONARIES_LOCAL_DEFINES,
     local_includes = [
         "../../bazel/gen/base",
-    ] + _GENERATED_LOCAL_INCLUDES_0,
+    ] + _CLICKHOUSE_DICTIONARIES_LOCAL_INCLUDES,
     textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     deps = _GENERATED_DEPS_0,
 )

@@ -18,7 +18,7 @@ exports_files([
     "src/proto/hdfs.proto",
 ])
 
-_GENERATED_HEADER_INPUTS_0 = [
+_HDFS3_HDRS = [
     "@clickhouse//contrib/libgsasl-cmake:linux_x86_64/include/config.h",
     "@clickhouse//contrib/libxml2-cmake:linux_x86_64/include/config.h",
     "@clickhouse//contrib/libxml2-cmake:linux_x86_64/include/libxml/xmlversion.h",
@@ -87,7 +87,7 @@ expand_template(
     template = ":src/platform.h.in",
 )
 
-_GENERATED_LOCAL_DEFINES_0 = select({
+_HDFS3_LOCAL_DEFINES = select({
     "@platforms//cpu:x86_64": [],
     "@platforms//cpu:aarch64": [
         "ARM_ACLE",
@@ -148,12 +148,10 @@ _GENERATED_LOCAL_DEFINES_0 = select({
     "__STDC_FORMAT_MACROS",
 ]
 
-_GENERATED_DEPS_0 = []
-
 _HDFS3_LOCAL_INCLUDES = [
 ]
 
-_GENERATED_TEXTUAL_HDRS_0 = [
+_HDFS3_TEXTUAL_HDRS = [
     "@clickhouse//bazel:gen/contrib/libhdfs3-cmake/ClientDatanodeProtocol.pb.cc",
     "@clickhouse//bazel:gen/contrib/libhdfs3-cmake/ClientNamenodeProtocol.pb.cc",
     "@clickhouse//bazel:gen/contrib/libhdfs3-cmake/IpcConnectionContext.pb.cc",
@@ -293,7 +291,7 @@ ch_cc_library(
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-    ] + _GENERATED_HEADER_INPUTS_0,
+    ] + _HDFS3_HDRS,
     additional_compiler_inputs = glob([
         "src/*.in",
         "src/proto/*.proto",
@@ -342,14 +340,14 @@ ch_cc_library(
         "@clickhouse_libxml2//:_libxml2",
     ],
     llvm_headers = True,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = _HDFS3_LOCAL_DEFINES,
     local_includes = [
         "src",
         "src/common",
         "config/contrib/libhdfs3-cmake",
     ] + _HDFS3_LOCAL_INCLUDES,
-    textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
-    deps = _GENERATED_DEPS_0 + [
+    textual_hdrs = _HDFS3_TEXTUAL_HDRS,
+    deps = [] + [
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_abseil_cpp//:abseil_cpp_headers",
     ],
@@ -402,7 +400,7 @@ ch_cc_library(
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zconf.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib.h",
         "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-    ] + _GENERATED_HEADER_INPUTS_0,
+    ] + _HDFS3_HDRS,
     additional_compiler_inputs = glob([
         "src/*.in",
         "src/client/*.cpp",
@@ -463,14 +461,14 @@ ch_cc_library(
         "@clickhouse_libxml2//:_libxml2",
     ],
     llvm_headers = True,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = _HDFS3_LOCAL_DEFINES,
     local_includes = [
         "src",
         "src/common",
         "config/contrib/libhdfs3-cmake",
     ] + _HDFS3_LOCAL_INCLUDES,
-    textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
-    deps = _GENERATED_DEPS_0 + [
+    textual_hdrs = _HDFS3_TEXTUAL_HDRS,
+    deps = [] + [
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_abseil_cpp//:abseil_cpp_headers",
     ],

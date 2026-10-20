@@ -163,8 +163,6 @@ _GENERATED_LOCAL_DEFINES_0 = select({
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-_GENERATED_DEPS_0 = []
-
 _GOOGLE_PROTOBUF_LOCAL_INCLUDES = [
     "src",
     "third_party/utf8_range",
@@ -462,7 +460,7 @@ ch_cc_library(
         ".",
         "upb/reflection/cmake",
     ] + _GOOGLE_PROTOBUF_LOCAL_INCLUDES,
-    deps = _GENERATED_DEPS_0 + ["@clickhouse_abseil_cpp//:abseil_cpp_headers"],
+    deps = [] + ["@clickhouse_abseil_cpp//:abseil_cpp_headers"],
 )
 
 ch_cc_library(
@@ -537,7 +535,7 @@ ch_cc_library(
         "src",
         "third_party/utf8_range",
     ],
-    deps = _GENERATED_DEPS_0 + ["@clickhouse_abseil_cpp//:abseil_cpp_headers"],
+    deps = [] + ["@clickhouse_abseil_cpp//:abseil_cpp_headers"],
 )
 
 cc_library(

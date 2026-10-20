@@ -7,7 +7,7 @@ exports_files([
     "LICENSE",
 ])
 
-_GENERATED_LOCAL_DEFINES_0 = [
+_ZSTD_LOCAL_DEFINES = [
     "STD_EXCEPTION_HAS_STACK_TRACE=1",
     "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
     "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
@@ -48,7 +48,7 @@ ch_cc_library(
     ],
     language = "C",
     llvm_headers = True,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = _ZSTD_LOCAL_DEFINES,
     local_includes = [
         "lib/legacy",
         "lib/common",
@@ -70,7 +70,7 @@ ch_cc_library(
     ],
     language = "ASM",
     llvm_headers = True,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = _ZSTD_LOCAL_DEFINES,
     local_includes = [
         "lib",
         "lib/legacy",
