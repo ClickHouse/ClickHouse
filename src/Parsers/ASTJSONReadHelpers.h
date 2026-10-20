@@ -150,24 +150,16 @@ public:
     /// `ASTIdentifier` subclasses are accepted. Returns nullptr when the key is absent.
     ASTPtr readIdentifierChild(const char * key) const;
 
-    /// Read a child AST node and require it to be a parser-owned special function slot: the column
-    /// `CODEC(...)`/`STATISTICS(...)` modifiers and the TTL `RECOMPRESS CODEC(...)` slot. `ParserCodec`
-    /// and `ParserStatisticsType` always synthesize an `ASTFunction` named `CODEC`/`STATISTICS`, with the
-    /// matching `ASTFunction::Kind`, a non-empty `arguments` expression list, and every element of that
-    /// list produced by `ParserIdentifierWithOptionalParameters` (hence an `ASTFunction` as well).
-    /// Consumers rely on exactly that shape: `CompressionCodecFactory::validateCodecAndGetPreprocessedAST`
-    /// dereferences `arguments->children`, and `ColumnStatisticsDescription::fromStatisticsDescriptionAST`
-    /// downcasts each entry to `ASTFunction`. Checking only the outer `ASTFunction` type would let
-    /// malformed `clickhouse_json` format parser-impossible DDL and reach a later `UNKNOWN_CODEC` /
-    /// `UNEXPECTED_AST_STRUCTURE` / null-dereference path instead of failing here with `BAD_ARGUMENTS`.
-    /// `function_name` is either `CODEC` or `STATISTICS`. Returns nullptr when the key is absent.
-    ASTPtr readSpecialFunctionChild(const char * key, const char * function_name) const;
+    /// Read an `ASTExpressionList` of `ASTNameWithParameters`: the elements of `CODEC(...)` and
+    /// `STATISTICS(...)`, and the `TYPE` list of `ALTER ... STATISTICS`. The parser never produces it
+    /// empty, and the consumers downcast every element. Returns nullptr when the key is absent.
+    ASTPtr readNameWithParametersListChild(const char * key) const;
 
     /// Read a child AST node filling a parser-produced *expression* slot, and reject an `ASTFunction`
     /// without an `arguments` list anywhere under its `children`: a consumer of an unanalyzed expression
     /// dereferences that list unconditionally, while `ASTFunction::readJSON` cannot require the member,
-    /// because a function without arguments is legitimate outside an expression (a table engine, a
-    /// `CODEC`/`STATISTICS` element, an index `TYPE`). Returns nullptr when the key is absent.
+    /// because a function without arguments is legitimate outside an expression (a table engine).
+    /// Returns nullptr when the key is absent.
     ASTPtr readExpressionChild(const char * key) const;
 
     /// `readExpressionChild`'s screen applied to every element of the "children" array.

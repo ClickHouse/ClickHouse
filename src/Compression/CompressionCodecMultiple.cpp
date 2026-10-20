@@ -5,7 +5,7 @@
 #include <Common/typeid_cast.h>
 #include <Compression/CompressionFactory.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTCodec.h>
 #include <base/arithmeticOverflow.h>
 #include <base/defines.h>
 
@@ -68,10 +68,10 @@ ASTPtr CompressionCodecMultiple::getCodecDescription() const
 ASTPtr CompressionCodecMultiple::getFullCodecDescription() const
 {
     auto description = getCodecDescription();
-    /// A single nested `Multiple` still contributes one argument to `CODEC`.
+    /// A single nested `Multiple` still contributes one element to `CODEC`.
     if (codecs->size() == 1)
-        return makeASTFunction("CODEC", description);
-    return makeASTFunction("CODEC", std::move(description->children));
+        return make_intrusive<ASTCodec>(ASTs{description});
+    return make_intrusive<ASTCodec>(std::move(description->children));
 }
 
 uint8_t CompressionCodecMultiple::getMethodByte() const

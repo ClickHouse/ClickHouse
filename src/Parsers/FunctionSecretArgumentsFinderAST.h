@@ -95,8 +95,7 @@ private:
 /// The secret arguments of a function as the installed finder sees them.
 inline SecretArgumentsResult findSecretArguments(const ASTFunction & function)
 {
-    /// Codecs, statistics, window functions and lambdas take no secrets, so the programs that format only
-    /// those (`keeper` and `compressor` format codecs) need no finder.
+    /// Window functions and lambdas take no secrets.
     switch (function.getKind())
     {
         case ASTFunction::Kind::ORDINARY_FUNCTION:
@@ -106,8 +105,6 @@ inline SecretArgumentsResult findSecretArguments(const ASTFunction & function)
             break;
         case ASTFunction::Kind::WINDOW_FUNCTION:
         case ASTFunction::Kind::LAMBDA_FUNCTION:
-        case ASTFunction::Kind::CODEC:
-        case ASTFunction::Kind::STATISTICS:
             return {};
     }
     return getSecretArgumentsFinder().find(function.getKind(), FunctionAST(function));

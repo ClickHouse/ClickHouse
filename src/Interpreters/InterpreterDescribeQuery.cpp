@@ -25,6 +25,8 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTCodec.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
@@ -296,7 +298,7 @@ void InterpreterDescribeQuery::addColumn(const ColumnDescription & column, bool 
         res_columns[i++]->insert(column.comment);
 
         if (column.codec)
-            res_columns[i++]->insert(column.codec->as<ASTFunction>()->arguments->formatForLogging());
+            res_columns[i++]->insert(column.codec->as<const ASTCodec &>().elements().formatForLogging());
         else
             res_columns[i++]->insertDefault();
 
@@ -334,7 +336,7 @@ void InterpreterDescribeQuery::addSubcolumns(const ColumnDescription & column, b
             res_columns[i++]->insert(column.comment);
 
             if (column.codec && ISerialization::isSpecialCompressionAllowed(path))
-                res_columns[i++]->insert(column.codec->as<ASTFunction>()->arguments->formatForLogging());
+                res_columns[i++]->insert(column.codec->as<const ASTCodec &>().elements().formatForLogging());
             else
                 res_columns[i++]->insertDefault();
 

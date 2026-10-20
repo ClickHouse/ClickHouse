@@ -176,8 +176,6 @@ void ASTFunction::writeJSON(WriteBuffer & out) const
             case Kind::TABLE_ENGINE: kind_str = "TABLE_ENGINE"; break;
             case Kind::DATABASE_ENGINE: kind_str = "DATABASE_ENGINE"; break;
             case Kind::BACKUP_NAME: kind_str = "BACKUP_NAME"; break;
-            case Kind::CODEC: kind_str = "CODEC"; break;
-            case Kind::STATISTICS: kind_str = "STATISTICS"; break;
             default: break;
         }
         if (kind_str)
@@ -241,10 +239,6 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
         setKind(Kind::DATABASE_ENGINE);
     else if (kind_str == "BACKUP_NAME")
         setKind(Kind::BACKUP_NAME);
-    else if (kind_str == "CODEC")
-        setKind(Kind::CODEC);
-    else if (kind_str == "STATISTICS")
-        setKind(Kind::STATISTICS);
     else if (!kind_str.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown 'kind' value '{}' during AST JSON deserialization", kind_str);
 
@@ -539,8 +533,7 @@ static bool quantifierNameNeedsQuoting(const String & name, const ASTPtr & argum
 void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.expression_list_prepend_whitespace = false;
-    auto kind = getKind();
-    if (kind == Kind::CODEC || kind == Kind::STATISTICS || kind == Kind::BACKUP_NAME)
+    if (getKind() == Kind::BACKUP_NAME)
         frame.allow_operators = false;
     FormatStateStacked nested_need_parens = frame;
     FormatStateStacked nested_dont_need_parens = frame;

@@ -10,6 +10,7 @@
 #include <Interpreters/HypotheticalObjectStore.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTNameWithParameters.h>
 
 namespace DB
 {

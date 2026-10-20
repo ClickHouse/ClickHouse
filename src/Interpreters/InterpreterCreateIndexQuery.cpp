@@ -6,6 +6,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTNameWithParameters.h>
 #include <Parsers/ASTFunction.h>
 
 #include <Core/Settings.h>

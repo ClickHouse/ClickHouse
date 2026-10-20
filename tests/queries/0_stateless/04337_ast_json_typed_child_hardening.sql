@@ -100,7 +100,7 @@ SELECT formatQueryFromJSON('{"type":"DataType","name":"Nullable","arguments":{"t
 -- ASTSelectQuery: `tables` must be an `ASTTablesInSelectQuery`; analysis helpers downcast `tables()`.
 SELECT formatQueryFromJSON('{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]},"tables":{"type":"Identifier","name":"system.one"}}'); -- { serverError BAD_ARGUMENTS }
 
--- ASTProjectionDeclaration: `projection_type` must be an `ASTFunction`.
+-- ASTProjectionDeclaration: `projection_type` must be an `ASTNameWithParameters`.
 SELECT formatQueryFromJSON('{"type":"ProjectionDeclaration","name":"p","index":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]},"projection_type":{"type":"Identifier","name":"minmax"}}'); -- { serverError BAD_ARGUMENTS }
 
 -- ASTBackupQuery: `backup_name` must be the parser-owned `ASTFunction` (marked `BACKUP_NAME`).

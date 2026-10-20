@@ -7,7 +7,7 @@ namespace Poco::JSON { class Object; }
 namespace DB
 {
 
-class ASTFunction;
+class ASTNameWithParameters;
 
 /** name BY expr TYPE typename(args) GRANULARITY int in create query
   */
@@ -34,7 +34,7 @@ public:
     void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr getExpression() const;
-    boost::intrusive_ptr<ASTFunction> getType() const;
+    boost::intrusive_ptr<ASTNameWithParameters> getType() const;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
@@ -44,7 +44,6 @@ private:
     static constexpr size_t type_idx = 1;
 };
 
-class ASTFunction;
-UInt64 getSecondaryIndexGranularity(const boost::intrusive_ptr<ASTFunction> & type, const ASTPtr & granularity);
+UInt64 getSecondaryIndexGranularity(const boost::intrusive_ptr<ASTNameWithParameters> & type, const ASTPtr & granularity);
 
 }

@@ -7,7 +7,7 @@ namespace Poco::JSON { class Object; }
 namespace DB
 {
 
-class ASTFunction;
+class ASTNameWithParameters;
 class ASTSetQuery;
 
 class ASTProjectionDeclaration : public IAST
@@ -16,7 +16,7 @@ public:
     String name;
     IAST * query = nullptr;
     IAST * index = nullptr;
-    ASTFunction * type = nullptr;
+    ASTNameWithParameters * type = nullptr;
     ASTSetQuery * with_settings = nullptr;
 
     String getID(char) const override { return "Projection"; }

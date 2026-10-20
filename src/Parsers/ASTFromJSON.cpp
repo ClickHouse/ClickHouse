@@ -21,6 +21,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
+#include <Parsers/ASTCodec.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTEnumDataType.h>
 #include <Parsers/ASTTupleDataType.h>
@@ -59,6 +60,7 @@
 #include <Parsers/ASTShowColumnsQuery.h>
 #include <Parsers/ASTShowIndexesQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
+#include <Parsers/ASTNameWithParameters.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTStreamSettings.h>
 #include <Parsers/ASTSubquery.h>
@@ -186,6 +188,8 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
         {"RenameQuery", [] { return make_intrusive<ASTRenameQuery>(); }},
         {"NameTypePair", [] { return make_intrusive<ASTNameTypePair>(); }},
         {"DataType", [] { return make_intrusive<ASTDataType>(); }},
+        {"NameWithParameters", [] { return make_intrusive<ASTNameWithParameters>(); }},
+        {"Codec", [] { return make_intrusive<ASTCodec>(); }},
         {"EnumDataType", [] { return make_intrusive<ASTEnumDataType>(); }},
         {"TupleDataType", [] { return make_intrusive<ASTTupleDataType>(); }},
         {"FunctionWithKeyValueArguments", [] { return make_intrusive<ASTFunctionWithKeyValueArguments>(); }},

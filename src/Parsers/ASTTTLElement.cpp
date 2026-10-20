@@ -2,6 +2,7 @@
 #include <Common/quoteString.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTCodec.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTWithAlias.h>
 #include <IO/Operators.h>
@@ -128,12 +129,9 @@ void ASTTTLElement::readJSON(const Poco::JSON::Object & json)
         setGroupByAssignments(std::move(assignments));
     }
 
-    /// `RECOMPRESS` is not a free-form expression slot: `ParserTTLElement` always fills it through
-    /// `ParserCodec`, so it is a `CODEC(...)` function with a non-empty argument list, and
-    /// `TTLDescription::getTTLFromAST` hands the node to `CompressionCodecFactory::validateCodecAndGetPreprocessedAST`,
-    /// which assumes that shape. Only `RECOMPRESS` carries a codec; `formatImpl` drops it for every other
-    /// mode, so a codec on a non-`RECOMPRESS` element would be silently lost.
-    setRecompressionCodec(r.readSpecialFunctionChild("recompression_codec", "CODEC"));
+    /// Only `RECOMPRESS` carries a codec; `formatImpl` drops it for every other mode, so a codec on a
+    /// non-`RECOMPRESS` element would be silently lost.
+    setRecompressionCodec(r.readChildOfType<ASTCodec>("recompression_codec"));
     if (mode == TTLMode::RECOMPRESS && !recompressionCodec())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Required field 'recompression_codec' is missing for RECOMPRESS mode during AST JSON deserialization");
     if (mode != TTLMode::RECOMPRESS && recompressionCodec())

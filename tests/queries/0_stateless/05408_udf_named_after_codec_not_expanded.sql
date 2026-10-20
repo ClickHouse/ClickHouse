@@ -1,5 +1,7 @@
--- Codec elements are names that only look like functions: a parameterless one such as `LZ4HC` has no
--- argument list at all, so a UDF of the same name must not be expanded into them.
+-- Tags: no-parallel
+-- The UDF is a server-global object whose name has to be a codec name.
+
+-- Codec elements are names, not function calls, so a UDF of the same name must not be expanded into them.
 DROP FUNCTION IF EXISTS LZ4HC;
 CREATE FUNCTION LZ4HC AS x -> x + 1;
 

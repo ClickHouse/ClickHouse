@@ -7,8 +7,8 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTNameWithParameters.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithAlias.h>
 
@@ -70,8 +70,8 @@ ASTIndexDeclaration::ASTIndexDeclaration(ASTPtr expression, ASTPtr type, const S
 
     if (type)
     {
-        if (!dynamic_cast<const ASTFunction *>(type.get()))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Index declaration type must be a function");
+        if (!type->as<ASTNameWithParameters>())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Index declaration type must be a name with parameters");
         children.push_back(type);
     }
 }
@@ -114,14 +114,14 @@ ASTPtr ASTIndexDeclaration::getExpression() const
     return children[expression_idx];
 }
 
-boost::intrusive_ptr<ASTFunction> ASTIndexDeclaration::getType() const
+boost::intrusive_ptr<ASTNameWithParameters> ASTIndexDeclaration::getType() const
 {
     if (children.size() <= type_idx)
         return nullptr;
-    auto func_ast = boost::dynamic_pointer_cast<ASTFunction>(children[type_idx]);
-    if (!func_ast)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index declaration type must be a function");
-    return func_ast;
+    auto type = boost::dynamic_pointer_cast<ASTNameWithParameters>(children[type_idx]);
+    if (!type)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index declaration type must be a name with parameters");
+    return type;
 }
 
 void ASTIndexDeclaration::writeJSON(WriteBuffer & out) const
@@ -148,13 +148,8 @@ void ASTIndexDeclaration::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index declaration must have an expression during AST JSON deserialization");
     children.push_back(expression);
 
-    auto index_type = r.readChild("index_type");
-    if (index_type)
-    {
-        if (!dynamic_cast<const ASTFunction *>(index_type.get()))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index declaration type must be a function during AST JSON deserialization");
+    if (auto index_type = r.readChildOfType<ASTNameWithParameters>("index_type"))
         children.push_back(index_type);
-    }
 }
 
 void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
@@ -220,7 +215,7 @@ void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & 
     ostr << " GRANULARITY " << granularity;
 }
 
-UInt64 getSecondaryIndexGranularity(const boost::intrusive_ptr<ASTFunction> & type, const ASTPtr & granularity)
+UInt64 getSecondaryIndexGranularity(const boost::intrusive_ptr<ASTNameWithParameters> & type, const ASTPtr & granularity)
 {
     /// Text index is always built for the whole part and granularity is ignored.
     if (type && type->name == "text")

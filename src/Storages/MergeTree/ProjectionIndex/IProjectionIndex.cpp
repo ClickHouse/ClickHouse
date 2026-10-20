@@ -1,7 +1,7 @@
 #include <Storages/MergeTree/ProjectionIndex/IProjectionIndex.h>
 
 #include <numeric>
-#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTNameWithParameters.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ProjectionIndex/ProjectionIndexBasic.h>

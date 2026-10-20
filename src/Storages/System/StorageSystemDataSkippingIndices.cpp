@@ -15,6 +15,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTNameWithParameters.h>
 #include <Parsers/ASTFunction.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>

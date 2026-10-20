@@ -4,13 +4,13 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTNameWithParameters.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTProjectionSelectQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTTTLElement.h>
 #include <Common/checkStackSize.h>
 #include <IO/ReadHelpers.h>
 
@@ -47,35 +47,19 @@ ASTPtr JSONObjectReader::readIdentifierChild(const char * key) const
     return child;
 }
 
-ASTPtr JSONObjectReader::readSpecialFunctionChild(const char * key, const char * function_name) const
+ASTPtr JSONObjectReader::readNameWithParametersListChild(const char * key) const
 {
-    ASTPtr child = readChild(key);
+    ASTPtr child = readChildOfType<ASTExpressionList>(key);
     if (!child)
         return nullptr;
 
-    const std::string_view expected_name(function_name);
-    const ASTFunction::Kind expected_kind
-        = expected_name == "CODEC" ? ASTFunction::Kind::CODEC : ASTFunction::Kind::STATISTICS;
+    if (child->children.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty list for key '{}' during AST JSON deserialization", key);
 
-    const auto * function = child->as<ASTFunction>();
-    if (!function || function->name != expected_name || function->getKind() != expected_kind)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Expected a `{}` function for key '{}' during AST JSON deserialization", expected_name, key);
-
-    /// `ParserCodec`/`ParserStatisticsType` parse the argument list with `ParserList` disallowing an empty
-    /// list, so the `arguments` slot is always a non-empty expression list.
-    if (!function->arguments || !function->arguments->as<ASTExpressionList>() || function->arguments->children.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "A `{}` function for key '{}' requires a non-empty list of arguments during AST JSON deserialization",
-            expected_name, key);
-
-    /// Every element comes from `ParserIdentifierWithOptionalParameters`, which produces an `ASTFunction`
-    /// even for a bare identifier such as `LZ4` or `tdigest`.
-    for (const auto & argument : function->arguments->children)
-        if (!argument || !argument->as<ASTFunction>())
+    for (const auto & element : child->children)
+        if (!element || !element->as<ASTNameWithParameters>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Every argument of a `{}` function for key '{}' must be a function during AST JSON deserialization",
-                expected_name, key);
+                "Every element for key '{}' must be a name with parameters during AST JSON deserialization", key);
 
     return child;
 }
@@ -93,15 +77,10 @@ void rejectArgumentlessFunctions(const IAST & ast, const char * key)
             "Function '{}' for key '{}' has no 'arguments' list during AST JSON deserialization, "
             "which the SQL parser produces only outside an expression", function->name, key);
 
-    /// A `RECOMPRESS CODEC(...)` element without parameters, such as `LZ4`, is a function without an
-    /// `arguments` list; the TTL element validates that slot itself when reading it.
-    const auto * ttl_element = ast.as<ASTTTLElement>();
-    const ASTPtr recompression_codec = ttl_element ? ttl_element->recompressionCodec() : nullptr;
-
     /// A nested query is walked too: `ParserSubquery` accepts only a SELECT, which has no such slot.
     for (const auto & child : ast.children)
     {
-        if (child && child != recompression_codec)
+        if (child)
             rejectArgumentlessFunctions(*child, key);
     }
 }
