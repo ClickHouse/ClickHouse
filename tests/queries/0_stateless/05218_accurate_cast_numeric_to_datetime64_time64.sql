@@ -3,17 +3,17 @@
 -- saturates (`ignore`, `saturate`) or throws (`throw`). The checks below run under every mode.
 
 SELECT '-- accurateCast rejects an out-of-range value under every mode';
-SELECT accurateCast(999999999999::UInt64, 'DateTime64(0, \'UTC\')') SETTINGS date_time_overflow_behavior = 'ignore'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-SELECT accurateCast(999999999999::UInt64, 'DateTime64(0, \'UTC\')') SETTINGS date_time_overflow_behavior = 'saturate'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-SELECT accurateCast(999999999999::UInt64, 'DateTime64(0, \'UTC\')') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-SELECT accurateCast(-999999999999::Int64, 'DateTime64(3, \'UTC\')') SETTINGS date_time_overflow_behavior = 'ignore'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-SELECT accurateCast(999999999999.0::Float64, 'DateTime64(3, \'UTC\')') SETTINGS date_time_overflow_behavior = 'saturate'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-SELECT accurateCast(999999999999::Int128, 'DateTime64(3, \'UTC\')') SETTINGS date_time_overflow_behavior = 'ignore'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-SELECT accurateCast(3600000::UInt64, 'Time64(0)') SETTINGS date_time_overflow_behavior = 'ignore'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-SELECT accurateCast(3600000::UInt32, 'Time64(3)') SETTINGS date_time_overflow_behavior = 'saturate'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-SELECT accurateCast(-3600000::Int64, 'Time64(3)') SETTINGS date_time_overflow_behavior = 'ignore'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-SELECT accurateCast(3600000.0::Float64, 'Time64(3)') SETTINGS date_time_overflow_behavior = 'ignore'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-SELECT accurateCast(3600000::UInt256, 'Time64(3)') SETTINGS date_time_overflow_behavior = 'ignore'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT accurateCast(999999999999::UInt64, 'DateTime64(0, \'UTC\')') SETTINGS date_time_overflow_behavior = 'ignore'; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCast(999999999999::UInt64, 'DateTime64(0, \'UTC\')') SETTINGS date_time_overflow_behavior = 'saturate'; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCast(999999999999::UInt64, 'DateTime64(0, \'UTC\')') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCast(-999999999999::Int64, 'DateTime64(3, \'UTC\')') SETTINGS date_time_overflow_behavior = 'ignore'; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCast(999999999999.0::Float64, 'DateTime64(3, \'UTC\')') SETTINGS date_time_overflow_behavior = 'saturate'; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCast(999999999999::Int128, 'DateTime64(3, \'UTC\')') SETTINGS date_time_overflow_behavior = 'ignore'; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCast(3600000::UInt64, 'Time64(0)') SETTINGS date_time_overflow_behavior = 'ignore'; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCast(3600000::UInt32, 'Time64(3)') SETTINGS date_time_overflow_behavior = 'saturate'; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCast(-3600000::Int64, 'Time64(3)') SETTINGS date_time_overflow_behavior = 'ignore'; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCast(3600000.0::Float64, 'Time64(3)') SETTINGS date_time_overflow_behavior = 'ignore'; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCast(3600000::UInt256, 'Time64(3)') SETTINGS date_time_overflow_behavior = 'ignore'; -- { serverError CANNOT_CONVERT_TYPE }
 
 SELECT '-- the same values are accepted by the ordinary CAST, which follows the setting';
 SELECT CAST(999999999999::UInt64, 'DateTime64(0, \'UTC\')') SETTINGS date_time_overflow_behavior = 'ignore';
@@ -49,7 +49,7 @@ SELECT accurateCastOrNull(-100::Int8, 'Time64(0)') SETTINGS date_time_overflow_b
 SELECT '-- the scale-dependent Int64 bound of DateTime64 is respected too';
 SELECT accurateCastOrNull(9223372037::Int64, 'DateTime64(9, \'UTC\')') SETTINGS date_time_overflow_behavior = 'ignore';
 SELECT accurateCastOrNull(9223372036::Int64, 'DateTime64(9, \'UTC\')') SETTINGS date_time_overflow_behavior = 'ignore';
-SELECT accurateCast(9223372037::Int64, 'DateTime64(9, \'UTC\')') SETTINGS date_time_overflow_behavior = 'ignore'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT accurateCast(9223372037::Int64, 'DateTime64(9, \'UTC\')') SETTINGS date_time_overflow_behavior = 'ignore'; -- { serverError CANNOT_CONVERT_TYPE }
 
 SELECT '-- accurateCastOrDefault follows accurateCastOrNull';
 SELECT accurateCastOrDefault(999999999999::UInt64, 'DateTime64(0, \'UTC\')') SETTINGS date_time_overflow_behavior = 'throw';
