@@ -61,6 +61,9 @@ barrier_first	2	100	3	30
 materialized_barrier	0	0	1	10
 materialized_barrier	1	1	2	-1
 materialized_barrier	2	2	3	30
+queued_drop	0	0	0
+queued_drop	1	1	-1
+queued_drop	2	2	20
 stored	0	0
 stored	1	10
 stored	2	20

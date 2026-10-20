@@ -687,6 +687,11 @@ static void splitAndModifyMutationCommands(
             case MutationCommand::Type::APPLY_DELETED_MASK:
             case MutationCommand::Type::REWRITE_PARTS:
                 break;
+            case MutationCommand::Type::DROP_COLUMN:
+                /// No DEFAULT reads a column the table no longer has.
+                if (!table_columns.has(command.column_name) && !table_columns.hasNested(command.column_name))
+                    break;
+                [[fallthrough]];
             default:
                 updated_ordinary_columns.clear();
                 materialized_ordinary_columns.clear();
