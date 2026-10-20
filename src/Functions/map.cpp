@@ -276,6 +276,32 @@ public:
     }
 };
 
+/// Extract a component of Nullable(Tuple(K, V)) using tupleElement's NULL rules.
+/// Scalar, LowCardinality and null-aware components absorb the outer null map.
+/// Components that cannot represent NULL (e.g. Array or Map) use their defaults.
+ColumnPtr extractNullableMapEntryElement(
+    const ColumnPtr & column, const DataTypePtr & type, const ColumnNullable & nullable_tuple)
+{
+    if (canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(type) || canContainNull(*type))
+        return NullableSubcolumnCreator(nullable_tuple.getNullMapColumnPtr()).create(column);
+
+    const auto & null_map = nullable_tuple.getNullMapData();
+    if (memoryIsZero(null_map.data(), 0, null_map.size()))
+        return column;
+
+    auto result = type->createColumn();
+    result->reserve(column->size());
+    const auto default_value = type->getDefault();
+    for (size_t i = 0; i < column->size(); ++i)
+    {
+        if (null_map[i])
+            result->insert(default_value);
+        else
+            result->insertFrom(*column, i);
+    }
+    return result;
+}
+
 /// mapFromEntries(entries) creates a map from an array of key-value tuples.
 class FunctionMapFromEntries final : public IFunction
 {
@@ -368,33 +394,8 @@ public:
         if (nullable_tuple)
         {
             const auto & tuple_type = assert_cast<const DataTypeTuple &>(*removeNullable(nested_type));
-            const auto & null_map = nullable_tuple->getNullMapData();
-
-            /// Match tupleElement's extraction of components from a Nullable(Tuple).
-            auto extract = [&](const ColumnPtr & column, const DataTypePtr & type) -> ColumnPtr
-            {
-                if (canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(type) || canContainNull(*type))
-                    return NullableSubcolumnCreator(nullable_tuple->getNullMapColumnPtr()).create(column);
-
-                /// Non-nullable composite components use defaults for NULL tuples.
-                if (memoryIsZero(null_map.data(), 0, null_map.size()))
-                    return column;
-
-                auto result = type->createColumn();
-                result->reserve(column->size());
-                const auto default_value = type->getDefault();
-                for (size_t i = 0; i < column->size(); ++i)
-                {
-                    if (null_map[i])
-                        result->insert(default_value);
-                    else
-                        result->insertFrom(*column, i);
-                }
-                return result;
-            };
-
-            keys = extract(keys, tuple_type.getElement(0));
-            values = extract(values, tuple_type.getElement(1));
+            keys = extractNullableMapEntryElement(keys, tuple_type.getElement(0), *nullable_tuple);
+            values = extractNullableMapEntryElement(values, tuple_type.getElement(1), *nullable_tuple);
         }
 
         keys = normalizeMapKeyColumn(std::move(keys), getName());

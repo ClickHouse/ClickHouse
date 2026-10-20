@@ -29,3 +29,7 @@ Map(String, Nullable(UInt8))
 {'a':1,'b':NULL}	Map(String, Nullable(UInt8))
 0	{'0':0,'fixed':42}
 1	{'1':1,'fixed':42}
+1	1
+0	1
+1	1
+1

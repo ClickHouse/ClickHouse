@@ -73,6 +73,7 @@ SELECT mapFromEntries(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT mapFromEntries(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT mapFromEntries([('a', 1)], [('b', 2)]); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
+-- Nullable tuples must retain the behavior of the former Trino arrayMap rewrite.
 SELECT mapFromEntries(CAST([('a', 1), ('b', 2)], 'Array(Nullable(Tuple(String, UInt8)))')) FORMAT TabSeparatedRaw;
 SELECT toTypeName(mapFromEntries(CAST([('a', 1)], 'Array(Nullable(Tuple(String, UInt8)))'))) FORMAT TabSeparatedRaw;
 SELECT
@@ -103,6 +104,28 @@ FORMAT TabSeparatedRaw;
 
 SELECT mapFromEntries(CAST([('a', 1), NULL], 'Array(Nullable(Tuple(String, UInt8)))')); -- { serverError BAD_ARGUMENTS }
 SELECT mapFromEntries(CAST([('a', 1), (NULL, 2)], 'Array(Nullable(Tuple(Nullable(String), UInt8)))')); -- { serverError BAD_ARGUMENTS }
+
+-- Nullable tuple values keep LowCardinality and actual NULL values.
+WITH CAST([('a', 'x'), ('b', NULL)], 'Array(Nullable(Tuple(String, LowCardinality(Nullable(String)))))') AS entries
+SELECT
+    mapEntries(mapFromEntries(entries)) =
+        mapEntries(mapFromArrays(arrayMap(e -> tupleElement(e, 1), entries), arrayMap(e -> tupleElement(e, 2), entries))),
+    toTypeName(mapFromEntries(entries)) = 'Map(String, LowCardinality(Nullable(String)))'
+FORMAT TabSeparatedRaw;
+
+-- Array keys/values cannot be Nullable. Outer NULL tuples become default arrays.
+WITH CAST([([number], [number + 1]), NULL], 'Array(Nullable(Tuple(Array(UInt64), Array(UInt64))))') AS entries
+SELECT
+    number,
+    mapEntries(mapFromEntries(entries)) =
+        mapEntries(mapFromArrays(arrayMap(e -> tupleElement(e, 1), entries), arrayMap(e -> tupleElement(e, 2), entries)))
+FROM numbers(2)
+ORDER BY number
+FORMAT TabSeparatedRaw;
+
+-- Typed empty arrays preserve their inferred key and value types.
+SELECT toTypeName(mapFromEntries(CAST([], 'Array(Nullable(Tuple(Array(UInt8), Array(UInt8))))'))) =
+    'Map(Array(UInt8), Array(UInt8))' FORMAT TabSeparatedRaw;
 
 -- A nullable tuple may also contain a nullable value.
 WITH CAST([('a', 1), ('b', NULL)], 'Array(Nullable(Tuple(String, Nullable(UInt8))))') AS entries
