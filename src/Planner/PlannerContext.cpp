@@ -2,6 +2,7 @@
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
+#include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
@@ -204,7 +205,19 @@ const ColumnIdentifier * PlannerContext::getColumnNodeIdentifierOrNull(const Que
     return table_expression_data->getColumnIdentifierOrNull(column_name);
 }
 
-PlannerContext::SetKey PlannerContext::createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node)
+FutureSetPtr PlannerContext::createSetForJoinRewrite(const QueryTreeNodePtr & in_node)
+{
+    const auto & subquery = in_node->as<const FunctionNode &>().getArguments().getNodes().at(1);
+    auto set = std::make_shared<FutureSetFromSubquery>(
+        subquery->getTreeHash({.ignore_cte = true}),
+        subquery->toAST({.set_subquery_cte_name = false}),
+        subquery,
+        FutureSetSettings(query_context->getSettingsRef()));
+    sets_for_join_rewrite.insert(set);
+    return set;
+}
+
+PlannerContext::SetKey PlannerContext::createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node, bool for_join_rewrite)
 {
     /// Here and in other places, ignore the CTE name to make the distributed header compatible (we substitute CTE with a subquery).
     const auto set_source_hash = set_source_node->getTreeHash({ .compare_aliases = false, .ignore_cte = true });
@@ -218,11 +231,11 @@ PlannerContext::SetKey PlannerContext::createSetKey(const DataTypePtr & left_ope
          *   - `{1, 2.5} :: Set(Decimal(9, 1))` for a
          *   - `{1} :: Set(Decimal(9, 0))` for b (2.5 omitted because it's not representable as Decimal(9, 0)).
          */
-        return "__set_" + left_operand_type->getName() + '_' + toString(set_source_hash);
+        return "__set_" + left_operand_type->getName() + '_' + toString(set_source_hash) + (for_join_rewrite ? "_join" : "");
     }
 
     /// For other cases we will cast left operand to the type of the set source, so no difference in types.
-    return "__set_" + toString(set_source_hash);
+    return "__set_" + toString(set_source_hash) + (for_join_rewrite ? "_join" : "");
 }
 
 }

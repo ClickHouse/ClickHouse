@@ -6,7 +6,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/PreparedSets.h>
 
-#include <Planner/PlannerUncorrelatedSubqueries.h>
 #include <Planner/TableExpressionData.h>
 #include <Interpreters/SelectQueryOptions.h>
 
@@ -21,8 +20,6 @@ namespace DB
 class QueryNode;
 class TableNode;
 class UnionNode;
-
-using QueryTreeNodes = std::vector<QueryTreeNodePtr>;
 
 struct FiltersForTableExpression
 {
@@ -197,33 +194,17 @@ public:
     using SetKey = std::string;
 
     /// Create set key for set source node
-    static SetKey createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node);
+    static SetKey createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node, bool for_join_rewrite = false);
 
     PreparedSets & getPreparedSets() { return prepared_sets; }
 
-    void addInSubqueryForJoinRewrite(InToJoinScope scope, const QueryTreeNodePtr & node)
-    {
-        in_to_join_subqueries.insert(node.get());
-        in_to_join_subqueries_by_scope[scope].push_back(node);
-    }
-
-    void removeInSubqueryForJoinRewrite(const QueryTreeNodePtr & node)
-    {
-        in_to_join_subqueries.erase(node.get());
-
-        for (auto & [_, nodes] : in_to_join_subqueries_by_scope)
-            std::erase(nodes, node);
-    }
-
+    void addInSubqueryForJoinRewrite(const QueryTreeNodePtr & node) { in_to_join_subqueries.insert(node.get()); }
+    void removeInSubqueryForJoinRewrite(const QueryTreeNodePtr & node) { in_to_join_subqueries.erase(node.get()); }
     bool isInSubqueryForJoinRewrite(const QueryTreeNodePtr & node) const { return in_to_join_subqueries.contains(node.get()); }
+    bool hasInSubqueriesForJoinRewrite() const { return !in_to_join_subqueries.empty(); }
 
-    const QueryTreeNodes & getInSubqueriesForJoinRewrite(InToJoinScope scope) const
-    {
-        static const QueryTreeNodes none;
-
-        auto it = in_to_join_subqueries_by_scope.find(scope);
-        return it == in_to_join_subqueries_by_scope.end() ? none : it->second;
-    }
+    FutureSetPtr createSetForJoinRewrite(const QueryTreeNodePtr & in_node);
+    bool isSetForJoinRewrite(const FutureSetPtr & set) const { return sets_for_join_rewrite.contains(set); }
 
     /// Returns false if any of following conditions met:
     /// 1. Query is executed on a follower node.
@@ -264,7 +245,7 @@ private:
     PreparedSets prepared_sets;
 
     std::unordered_set<const IQueryTreeNode *> in_to_join_subqueries;
-    std::unordered_map<InToJoinScope, QueryTreeNodes> in_to_join_subqueries_by_scope;
+    std::unordered_set<FutureSetPtr> sets_for_join_rewrite;
 };
 
 }

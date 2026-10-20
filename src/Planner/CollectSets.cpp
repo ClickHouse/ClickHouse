@@ -1,6 +1,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Planner/CollectSets.h>
 
+#include <Storages/StorageMerge.h>
 #include <Storages/StorageSet.h>
 #include <Storages/StorageProxy.h>
 #if CLICKHOUSE_CLOUD
@@ -12,6 +13,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/SetUtils.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
@@ -43,6 +45,32 @@ namespace ErrorCodes
 
 namespace
 {
+
+bool storageMayCarryTotals(const StoragePtr & storage)
+{
+    if (storage->isView() || storage->isRemote())
+        return true;
+
+    const auto * merge = typeid_cast<const StorageMerge *>(storage.get());
+    return merge && merge->hasChildTable(storageMayCarryTotals);
+}
+
+bool joinTreeReadsStorageWithTotals(const QueryNode & query_node)
+{
+    for (const auto & table_expression : extractTableExpressions(query_node.getJoinTreeNodeTyped(), /*add_array_join=*/ false, /*recursive=*/ true))
+    {
+        StoragePtr storage;
+        if (const auto * table_node = table_expression->as<TableNode>())
+            storage = table_node->getStorage();
+        else if (const auto * table_function_node = table_expression->as<TableFunctionNode>())
+            storage = table_function_node->getStorage();
+
+        if (storage && storageMayCarryTotals(storage))
+            return true;
+    }
+
+    return false;
+}
 
 class CollectSetsVisitor : public InDepthQueryTreeVisitorWithContext<CollectSetsVisitor>
 {
@@ -85,13 +113,10 @@ public:
         /// The planner evaluates this `IN` with a join, so it needs no set. This is the only occurrence
         /// that leaves without building one: an occurrence in a blocked scope takes the rewrite back and
         /// builds the set on its way through here.
-        if (auto in_to_join_rewrite_scope = getUnblockedJoinRewriteScope(node))
+        if (isUnblockedJoinRewriteScope(node) && canRewriteInToJoin(node, query_node, planner_context))
         {
-            if (canRewriteInToJoin(node, query_node, planner_context))
-            {
-                planner_context.addInSubqueryForJoinRewrite(*in_to_join_rewrite_scope, node);
-                return;
-            }
+            planner_context.addInSubqueryForJoinRewrite(node);
+            return;
         }
 
         auto in_first_argument = function_node->getArguments().getNodes().at(0);
@@ -205,7 +230,9 @@ private:
             if (visits_planned_query)
             {
                 query_node = node;
-                carries_totals = node->as<QueryNode &>().isGroupByWithTotals() || queryHasWithTotalsInAnySubqueryInJoinTree(node);
+                const auto & typed_query_node = node->as<QueryNode &>();
+                has_totals_in_group_by = typed_query_node.isGroupByWithTotals();
+                has_totals_in_join_tree = queryHasWithTotalsInAnySubqueryInJoinTree(node) || joinTreeReadsStorageWithTotals(typed_query_node);
             }
             return;
         }
@@ -227,8 +254,8 @@ private:
             return;
         }
 
-        if (auto step = scopeFor(node))
-            scope_stack.push_back(*step);
+        if (!where && node == query_node->as<const QueryNode &>().getWhere())
+            where = node.get();
     }
 
     void leaveJoinRewriteScope(const QueryTreeNodePtr & node)
@@ -242,49 +269,16 @@ private:
             return;
         }
 
-        if (blocked_depth == 0 && scopeFor(node))
-            scope_stack.pop_back();
+        if (where == node.get())
+            where = nullptr;
     }
 
-    /// The step of the chain that computes the expressions of this scope, when it is one the rewrite can insert its join under.
-    std::optional<InToJoinScope> scopeFor(const QueryTreeNodePtr & node) const
+    /// Whether this `IN` can become a join. A join can not match a totals row and in a correlated query only
+    /// `WHERE` qualifies, because decorrelation does not support a join above the correlated filter.
+    bool isUnblockedJoinRewriteScope(const QueryTreeNodePtr & node) const
     {
-        const auto & typed_query_node = query_node->as<const QueryNode &>();
-        if (node == typed_query_node.getWhere())
-            return InToJoinScope::Where;
-        if (node == typed_query_node.getGroupByNode())
-            return InToJoinScope::Aggregation;
-        if (node == typed_query_node.getHaving())
-            return InToJoinScope::Having;
-        if (node == typed_query_node.getWindowNode())
-            return InToJoinScope::Window;
-        if (node == typed_query_node.getQualify())
-            return InToJoinScope::Qualify;
-        if (node == typed_query_node.getProjectionNode())
-            return InToJoinScope::Projection;
-        if (node == typed_query_node.getOrderByNode())
-            return InToJoinScope::OrderBy;
-        if (node == typed_query_node.getLimitByNode())
-            return InToJoinScope::LimitBy;
-
-        if (const auto * function_node = node->as<FunctionNode>())
-        {
-            if (function_node->isAggregateFunction())
-                return InToJoinScope::Aggregation;
-            if (function_node->isWindowFunction())
-                return InToJoinScope::Window;
-        }
-
-        return {};
-    }
-
-    /// The step the rewrite would insert the join for `node` under, or nothing when a scope is blocked.
-    std::optional<InToJoinScope> getUnblockedJoinRewriteScope(const QueryTreeNodePtr & node) const
-    {
-        if (blocked_in_subqueries.contains(node.get()) || scope_stack.empty())
-            return {};
-
-        return scope_stack.back();
+        return query_node && !blocked_in_subqueries.contains(node.get()) && !has_totals_in_join_tree
+            && (!query_node->as<const QueryNode &>().isCorrelated() || where);
     }
 
     /// A scope whose expressions no join the rewrite can add is below, so an `IN` here is evaluated with
@@ -302,13 +296,9 @@ private:
 
         /// These clauses are also computed for the `WITH TOTALS` row, and a join never matches that row
         /// against the subquery, so `IN` would always be false there.
-        if (carries_totals && (node == typed_query_node.getWindowNode() || node == typed_query_node.getProjectionNode()
+        if (has_totals_in_group_by && (node == typed_query_node.getHaving() || node == typed_query_node.getWindowNode()
+                || node == typed_query_node.getQualify() || node == typed_query_node.getProjectionNode()
                 || node == typed_query_node.getOrderByNode() || node == typed_query_node.getLimitByNode()))
-            return true;
-
-        /// A join drops the `AggregatedChunkInfo` that tells `TotalsHavingStep` which row is the overflow row.
-        if (node == typed_query_node.getHaving()
-            && hasAggregateOverflowRow(typed_query_node, planner_context.getQueryContext()->getSettingsRef()))
             return true;
 
         const auto * function_node = node->as<FunctionNode>();
@@ -326,10 +316,12 @@ private:
     const bool visits_planned_query;
     /// The query being visited.
     QueryTreeNodePtr query_node;
-    /// Whether the stream of the query has a totals row by the time its window functions and projection are computed.
-    bool carries_totals = false;
-    /// The scopes being walked, innermost last.
-    std::vector<InToJoinScope> scope_stack;
+    /// Whether the query has `WITH TOTALS`.
+    bool has_totals_in_group_by = false;
+    /// Whether the input of the query already carries a totals row.
+    bool has_totals_in_join_tree = false;
+    /// The `WHERE` of the query while it is being walked.
+    const IQueryTreeNode * where = nullptr;
     int blocked_depth = 0;
     /// IN subqueries that occurred in a blocked scope.
     std::unordered_set<const IQueryTreeNode *> blocked_in_subqueries;

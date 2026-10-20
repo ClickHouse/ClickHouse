@@ -307,6 +307,34 @@ FROM (EXPLAIN SELECT count() FROM t WHERE id IN (SELECT k FROM s) AND b >= (SELE
 SELECT count() FROM t WHERE id IN (SELECT k FROM s) AND b >= (SELECT max(k) FROM w WHERE w.v = t.id) SETTINGS rewrite_in_to_join = 0;
 SELECT count() FROM t WHERE id IN (SELECT k FROM s) AND b >= (SELECT max(k) FROM w WHERE w.v = t.id) SETTINGS rewrite_in_to_join = 1;
 
+SELECT '-- A computed key and another correlated subquery inside WHERE';
+SELECT countIf(explain LIKE '%JoinLogical%'), countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN keep_logical_steps = 1 SELECT count() FROM t WHERE id + 1 IN (SELECT k FROM s) AND b >= (SELECT max(k) FROM w WHERE w.v = t.id));
+
+SELECT count() FROM t WHERE id + 1 IN (SELECT k FROM s) AND b >= (SELECT max(k) FROM w WHERE w.v = t.id) SETTINGS rewrite_in_to_join = 0;
+SELECT count() FROM t WHERE id + 1 IN (SELECT k FROM s) AND b >= (SELECT max(k) FROM w WHERE w.v = t.id) SETTINGS rewrite_in_to_join = 1;
+
+SELECT '-- The same IN in WHERE and in the projection WITH TOTALS, where only the one in WHERE is rewritten';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT id, id IN (SELECT k FROM s) FROM t WHERE id IN (SELECT k FROM s) GROUP BY id WITH TOTALS);
+
+SELECT id, id IN (SELECT k FROM s) FROM t WHERE id IN (SELECT k FROM s) GROUP BY id WITH TOTALS ORDER BY id SETTINGS rewrite_in_to_join = 0;
+SELECT id, id IN (SELECT k FROM s) FROM t WHERE id IN (SELECT k FROM s) GROUP BY id WITH TOTALS ORDER BY id SETTINGS rewrite_in_to_join = 1;
+
+SELECT '-- An IN inside a GROUP BY key that the projection and HAVING read, WITH TOTALS';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT key, count() FROM t GROUP BY if(id IN (SELECT k FROM s), 'a', 'b') AS key WITH TOTALS HAVING key != 'c');
+
+SELECT key, count() FROM t GROUP BY if(id IN (SELECT k FROM s), 'a', 'b') AS key WITH TOTALS HAVING key != 'c' ORDER BY key SETTINGS rewrite_in_to_join = 0;
+SELECT key, count() FROM t GROUP BY if(id IN (SELECT k FROM s), 'a', 'b') AS key WITH TOTALS HAVING key != 'c' ORDER BY key SETTINGS rewrite_in_to_join = 1;
+
+SELECT '-- A key that is not deterministic and also read elsewhere in the step';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT sum(((rand() % 6) AS r) IN (SELECT number FROM numbers(3)) != (r < 3)) FROM numbers(1000));
+
+SELECT sum(((rand() % 6) AS r) IN (SELECT number FROM numbers(3)) != (r < 3)) FROM numbers(1000) SETTINGS rewrite_in_to_join = 0;
+SELECT sum(((rand() % 6) AS r) IN (SELECT number FROM numbers(3)) != (r < 3)) FROM numbers(1000) SETTINGS rewrite_in_to_join = 1;
+
 DROP TABLE t;
 DROP TABLE s;
 DROP TABLE w;

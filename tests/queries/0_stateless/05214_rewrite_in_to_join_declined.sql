@@ -53,6 +53,17 @@ SELECT '-- IN read on the totals row of a subquery';
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
 FROM (EXPLAIN SELECT id, id + 1 IN (SELECT k FROM s) FROM (SELECT id FROM t GROUP BY id WITH TOTALS));
 
+SELECT '-- IN read on the totals row of a view';
+DROP VIEW IF EXISTS vt;
+CREATE VIEW vt AS SELECT id FROM t GROUP BY id WITH TOTALS;
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT id, id IN (SELECT k FROM s) FROM vt);
+DROP VIEW vt;
+
+SELECT '-- IN inside the projection of a correlated subquery';
+SELECT countIf(explain LIKE '%JoinLogical%'), countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN keep_logical_steps = 1 SELECT id, (SELECT v IN (SELECT k FROM s) FROM w WHERE w.k = t.id) FROM t);
+
 DROP TABLE t;
 DROP TABLE s;
 DROP TABLE w;

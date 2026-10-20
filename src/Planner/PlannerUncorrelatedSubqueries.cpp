@@ -9,8 +9,14 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
+
+#include <Columns/ColumnSet.h>
+
+#include <Core/Block.h>
 
 #include <Core/Joins.h>
 #include <Core/Settings.h>
@@ -26,6 +32,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/JoinOperator.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/SelectQueryOptions.h>
 
 #include <Planner/Planner.h>
@@ -35,6 +42,8 @@
 
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+
+#include <Storages/StorageProxy.h>
 
 namespace DB
 {
@@ -52,6 +61,8 @@ namespace Setting
 extern const SettingsJoinAlgorithm join_algorithm;
 extern const SettingsBool join_use_nulls;
 extern const SettingsBool rewrite_in_to_join;
+extern const SettingsBool make_distributed_plan;
+extern const SettingsBool distributed_plan_fallback_to_local_execution;
 
 }
 
@@ -111,7 +122,10 @@ const ActionsDAG::Node & addNodesForNullKeyMask(
 /// negated for `NOT IN`, and cast to the type the `IN` function it replaces has.
 void addStepForMarkerResult(
     QueryPlan & query_plan,
-    const UncorrelatedInSubquery & in_subquery,
+    const String & result_name,
+    const DataTypePtr & result_type,
+    bool is_negated,
+    const String & key_column_name,
     const PlannerContextPtr & planner_context)
 {
     auto & function_factory = FunctionFactory::instance();
@@ -120,30 +134,23 @@ void addStepForMarkerResult(
     const auto & header = query_plan.getCurrentHeader();
     ActionsDAG result_dag(header->getColumnsWithTypeAndName());
 
-    const auto * marker = result_dag.tryFindInOutputs(in_subquery.action_node_name);
+    const auto * marker = result_dag.tryFindInOutputs(result_name);
     if (!marker)
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "The join that evaluates `IN` did not deliver its result '{}'", in_subquery.action_node_name);
+            ErrorCodes::LOGICAL_ERROR, "The join that evaluates `IN` did not deliver its result '{}'", result_name);
 
     const auto * result = marker;
-    if (isNullableOrLowCardinalityNullable(in_subquery.result_type))
-    {
-        if (in_subquery.key_column_names_before_cast.size() != 1)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "`IN` with a nullable result has {} key columns, expected one",
-                in_subquery.key_column_names_before_cast.size());
-        result = &addNodesForNullKeyMask(result_dag, *result, in_subquery.key_column_names_before_cast.front(), query_context);
-    }
+    if (isNullableOrLowCardinalityNullable(result_type))
+        result = &addNodesForNullKeyMask(result_dag, *result, key_column_name, query_context);
 
-    if (in_subquery.is_negated)
+    if (is_negated)
         result = &result_dag.addFunction(function_factory.get("not", query_context), {result}, {});
 
     /// The expression reads the marker as an input of the `IN` function's result type, so the plan has to deliver exactly that type.
-    if (!result->result_type->equals(*in_subquery.result_type))
-        result = &result_dag.addCast(*result, in_subquery.result_type, {}, query_context);
+    if (!result->result_type->equals(*result_type))
+        result = &result_dag.addCast(*result, result_type, {}, query_context);
 
-    const auto & result_alias = result_dag.addAlias(*result, in_subquery.action_node_name);
+    const auto & result_alias = result_dag.addAlias(*result, result_name);
 
     ActionsDAG::NodeRawConstPtrs outputs;
     outputs.reserve(result_dag.getOutputs().size());
@@ -170,8 +177,28 @@ bool readsCorrelatedColumn(const QueryTreeNodePtr & node, const ColumnNodePtrWit
     return false;
 }
 
+/// Whether a worker of `make_distributed_plan` can run every read of the subquery.
+bool canDistributeSubquery(const QueryTreeNodePtr & subquery)
+{
+    for (const auto & table_expression : extractTableExpressions(std::static_pointer_cast<ITableExpressionNode>(subquery), /*add_array_join=*/ false, /*recursive=*/ true))
+    {
+        StoragePtr storage;
+        if (const auto * table = table_expression->as<TableNode>())
+            storage = table->getStorage();
+        else if (const auto * table_function = table_expression->as<TableFunctionNode>())
+            storage = table_function->getStorage();
+        else
+            continue;
+
+        storage = unwrapStorageProxy(storage);
+        if (!storage->isMergeTree() && !storage->isObjectStorage() && storage->getName() != "SystemOne")
+            return false;
+    }
+
+    return true;
 }
 
+/// The expressions the join keys on: the left argument of the `IN`, or its elements.
 QueryTreeNodes getInToJoinKeyElements(const FunctionNode & function_node)
 {
     const auto & left_key = function_node.getArguments().getNodes()[0];
@@ -187,10 +214,76 @@ QueryTreeNodes getInToJoinKeyElements(const FunctionNode & function_node)
     return {left_key};
 }
 
-bool canRewriteInToJoin(
-    const QueryTreeNodePtr & in_node,
-    const QueryTreeNodePtr & query_node,
-    const PlannerContext & planner_context)
+struct JoinKeyActions
+{
+    ActionsDAG actions;
+    /// One per column of the subquery.
+    Names key_column_names;
+};
+
+/// Removes the computation of the `IN` from `actions` and keeps only its key.
+JoinKeyActions buildJoinKeyActions(ActionsDAG actions, const ActionsDAG::Node & in_node, const QueryTreeNodePtr & subquery, const Block & input_header, const ContextPtr & query_context)
+{
+    const auto subquery_columns = getSubqueryProjectionColumns(subquery);
+
+    /// A tuple written as `(a, b)` is compared element by element.
+    const auto & key = *in_node.children.at(0);
+    ActionsDAG::NodeRawConstPtrs key_outputs = {&key};
+    if (subquery_columns.size() > 1 && key.type == ActionsDAG::ActionType::FUNCTION && key.function_base->getName() == "tuple"
+        && key.children.size() == subquery_columns.size())
+        key_outputs = key.children;
+
+    /// Split a tuple key into one element per subquery column.
+    if (key_outputs.size() != subquery_columns.size())
+    {
+        chassert(isTuple(key.result_type), "A key that `IN` does not compare column by column has to be a tuple");
+
+        key_outputs.clear();
+        auto index_type = std::make_shared<DataTypeUInt64>();
+        auto tuple_element = FunctionFactory::instance().get("tupleElement", query_context);
+        for (size_t i = 0; i < subquery_columns.size(); ++i)
+        {
+            const auto & index_node = actions.addColumn(index_type->createColumnConst(0, i + 1), index_type, calculateConstantActionNodeName(i + 1, index_type));
+            key_outputs.push_back(&actions.addFunction(tuple_element, {&key, &index_node}, {}));
+        }
+    }
+
+    auto & outputs = actions.getOutputs();
+    std::erase(outputs, &in_node);
+    auto column_names = actions.updateHeader(input_header).getNameSet();
+
+    auto add_output = [&](const ActionsDAG::Node & node)
+    {
+        if (column_names.insert(node.result_name).second)
+            outputs.push_back(&node);
+        return node.result_name;
+    };
+
+    Names key_column_names;
+    for (size_t i = 0; i < key_outputs.size(); ++i)
+    {
+        const auto * key_output = key_outputs[i];
+
+        /// The cast a set applies to the key before it probes.
+        auto key_type = removeNullable(removeLowCardinality(key_output->result_type));
+        auto target_type = removeNullable(removeLowCardinality(subquery_columns[i].type));
+        if (key_type->getName() != target_type->getName())
+            key_output = &actions.addAccurateCastOrNull(*key_output, target_type, {}, query_context);
+
+        key_column_names.push_back(add_output(*key_output));
+    }
+
+    /// The `NULL` mask reads the key after the join.
+    if (isNullableOrLowCardinalityNullable(in_node.result_type))
+        add_output(key);
+
+    actions.removeUnusedActions(/*allow_remove_inputs=*/ false);
+    return {std::move(actions), std::move(key_column_names)};
+}
+
+}
+
+bool canRewriteInToJoin(const QueryTreeNodePtr & in_node, const QueryTreeNodePtr & query_node, const PlannerContext & planner_context)
 {
     const auto & function_node = in_node->as<const FunctionNode &>();
 
@@ -219,6 +312,11 @@ bool canRewriteInToJoin(
     if (subquery_columns.empty())
         return false;
 
+    /// A set is built on the initiator, but a join is sent to the workers with the reads of the subquery.
+    if (settings[Setting::make_distributed_plan] && !settings[Setting::distributed_plan_fallback_to_local_execution]
+        && !canDistributeSubquery(arguments[1]))
+        return false;
+
     /// A set ignores the `WITH TOTALS` row of its subquery, but a join would add it to the query.
     if (queryTreeHasWithTotalsInAnySubqueryInJoinTree(arguments[1].get()))
         return false;
@@ -241,7 +339,7 @@ bool canRewriteInToJoin(
     {
         auto column_base = removeNullable(removeLowCardinality(subquery_columns[i].type));
         auto key_base = removeNullable(removeLowCardinality(key_types[i]));
-        if (key_base->hasDynamicStructure() || isVariant(key_base))
+        if (key_base->hasDynamicStructure() || isVariant(key_base) || column_base->hasDynamicStructure() || isVariant(column_base))
             return false;
 
         /// A set turns a key carrying a sub-second part into no match when it casts it to a type that cannot hold one.
@@ -259,21 +357,68 @@ bool canRewriteInToJoin(
     return true;
 }
 
+std::optional<UncorrelatedInSubquery> findInnermostUncorrelatedInSubquery(const ActionsDAG & actions, const PlannerContext & planner_context)
+{
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    std::vector<std::pair<const ActionsDAG::Node *, bool>> stack;
+    for (const auto * output : actions.getOutputs())
+        stack.emplace_back(output, false);
+
+    while (!stack.empty())
+    {
+        auto [node, children_visited] = stack.back();
+        stack.pop_back();
+
+        if (children_visited)
+        {
+            if (node->type != ActionsDAG::ActionType::FUNCTION || node->children.size() != 2 || !node->children[1]->column)
+                continue;
+
+            const auto * column_set = typeid_cast<const ColumnSet *>(&node->children[1]->column->getDataColumn());
+            if (column_set && planner_context.isSetForJoinRewrite(column_set->getData()))
+                return UncorrelatedInSubquery{.in_node = node, .subquery = typeid_cast<const FutureSetFromSubquery &>(*column_set->getData()).getQueryTree(), .actions = {}};
+            continue;
+        }
+
+        if (!visited.insert(node).second)
+            continue;
+
+        stack.emplace_back(node, true);
+        for (const auto * child : node->children)
+            stack.emplace_back(child, false);
+    }
+
+    return {};
+}
+
 void buildQueryPlanForUncorrelatedInSubquery(
     const PlannerContextPtr & planner_context,
     QueryPlan & query_plan,
-    const UncorrelatedInSubquery & in_subquery,
+    UncorrelatedInSubquery in_subquery,
     const SelectQueryOptions & select_query_options,
-    GlobalPlannerContextPtr subquery_global_planner_context)
+    GlobalPlannerContextPtr subquery_global_planner_context,
+    UsefulSets & useful_sets)
 {
+    const auto & query_context = planner_context->getQueryContext();
+
+    const auto & in_node = *in_subquery.in_node;
+    const auto in_result_name = in_node.result_name;
+    const auto in_result_type = in_node.result_type;
+    const bool is_negated = in_node.function_base->getName() == "notIn";
+    const auto in_left_argument_name = in_node.children.at(0)->result_name;
+
+    auto [key_actions, key_column_names] = buildJoinKeyActions(std::move(in_subquery.actions), in_node, in_subquery.subquery, *query_plan.getCurrentHeader(), query_context);
+    auto key_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(key_actions));
+    appendSetsFromActionsDAG(key_step->getExpression(), useful_sets);
+    key_step->setStepDescription("Compute the left arguments of IN");
+    query_plan.addStep(std::move(key_step));
+
     auto subquery_options = select_query_options.subquery();
     subquery_options.forceMaterializeCTE();
     subquery_options.ignore_limits = false;
     Planner subquery_planner(in_subquery.subquery, subquery_options, std::move(subquery_global_planner_context));
     subquery_planner.buildQueryPlanIfNeeded();
     auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
-    for (const auto & context : subquery_plan.getInterpretersContexts())
-        query_plan.addInterpreterContext(context);
 
     ///`IN` matches the columns of its subquery with the elements of its key by position, while a join reads
     /// its input columns by name, so subquery columns must be renamed to have unique names. A column of the
@@ -294,11 +439,10 @@ void buildQueryPlanForUncorrelatedInSubquery(
     }
 
     auto subquery_column_names = subquery_plan.getCurrentHeader()->getNames();
-    const auto & key_column_names = in_subquery.key_column_names;
     if (key_column_names.size() != subquery_column_names.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`IN` has {} key columns against {} columns of its subquery", key_column_names.size(), subquery_column_names.size());
 
-    addStepForMarker(subquery_plan, in_subquery.action_node_name);
+    addStepForMarker(subquery_plan, in_result_name);
 
     auto lhs_header = query_plan.getCurrentHeader();
     auto rhs_header = subquery_plan.getCurrentHeader();
@@ -315,9 +459,9 @@ void buildQueryPlanForUncorrelatedInSubquery(
     }
 
     /// The outer rows are the result, plus the marker the subquery side contributes.
-    NameSet output_columns;
-    output_columns.insert_range(lhs_header->getNames());
-    output_columns.insert(in_subquery.action_node_name);
+    auto lhs_column_names = lhs_header->getNames();
+    NameSet output_columns(lhs_column_names.begin(), lhs_column_names.end());
+    output_columns.insert(in_result_name);
 
     const auto & settings = planner_context->getQueryContext()->getSettingsRef();
     auto join_step = std::make_unique<JoinStepLogical>(
@@ -340,8 +484,8 @@ void buildQueryPlanForUncorrelatedInSubquery(
     QueryPlan result_plan;
     result_plan.unitePlans(std::move(join_step), std::move(plans));
 
-    if (in_subquery.is_negated || !in_subquery.result_type->equals(DataTypeUInt8{}))
-        addStepForMarkerResult(result_plan, in_subquery, planner_context);
+    if (is_negated || !in_result_type->equals(DataTypeUInt8{}))
+        addStepForMarkerResult(result_plan, in_result_name, in_result_type, is_negated, in_left_argument_name, planner_context);
 
     query_plan = std::move(result_plan);
 }
