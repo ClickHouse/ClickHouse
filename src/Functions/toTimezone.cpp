@@ -20,8 +20,9 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -35,6 +36,17 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
     {
+        if (arguments.size() > 1)
+        {
+            /// The result type has a single time zone, therefore a non-constant time zone
+            /// argument cannot be taken into account: silently returning wrong values is not allowed.
+            const auto & tz_column = arguments[1].column;
+            if (!tz_column || !isColumnConst(*tz_column))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal column {} of time zone argument of function {}, must be a constant string",
+                    arguments[1].name, getName());
+        }
+
         return arguments[0].column;
     }
 };
@@ -97,10 +109,6 @@ public:
         : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
     {}
 
-    /// Not declarative: the timezone argument's constness requirement is
-    /// gated by the `allow_nonconst_timezone_arguments` setting, which the DSL
-    /// cannot express. With the setting enabled, a non-constant timezone is
-    /// accepted and the result becomes tz-less `DateTime`/`DateTime64`.
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2)
