@@ -719,8 +719,9 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
 
     pool->setReadRangesRefiner(createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
 
-    /// Default mode needs the announcement response only for the analyzed ranges, so it is requested only then.
-    const bool wants_analyzed_ranges = index_build_context && index_build_context->read_ranges_are_whole_parts;
+    /// Default mode needs the announcement response only for the analyzed ranges, so it is requested only by a follower
+    /// whose read-time skip-index reader would otherwise evaluate over whole parts.
+    const bool wants_analyzed_ranges = index_build_context && index_build_context->needs_analyzed_ranges;
     auto response = extension.sendInitialRequest(
         CoordinationMode::Default,
         pool->buildAnnouncementDescriptions(),
@@ -1015,12 +1016,14 @@ Pipe ReadFromMergeTree::readInOrder(
 
         /// The response tells us exactly which parts this stream owns: phantom parts are skipped
         /// during source construction below, so the pool never sees `getTask` for them.
+        /// Ordered modes always get the response; the flag only says what this replica uses it for.
+        const bool wants_analyzed_ranges = index_build_context && index_build_context->needs_analyzed_ranges;
         auto response = extension.sendInitialRequest(
             mode,
             in_order_pool->buildAnnouncementDescriptions(),
             /*mark_segment_size=*/0,
             in_order_pool->getMinMarksPerRequest(),
-            /*wants_analyzed_ranges=*/false);
+            wants_analyzed_ranges);
 
         if (response)
         {
@@ -1028,7 +1031,7 @@ Pipe ReadFromMergeTree::readInOrder(
             for (const auto & part : response->parts)
                 initiator_selected_parts->emplace(part.info, part.projection_name);
 
-            if (index_build_context && index_build_context->read_ranges_are_whole_parts)
+            if (wants_analyzed_ranges)
                 setAnalyzedSkipIndexReadRanges(*index_build_context, parts_with_ranges, response->parts);
         }
 
@@ -5833,7 +5836,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             std::move(projection_index_read_desc.read_ranges),
             std::move(index_read_result_pool),
             std::move(part_remaining_marks));
-        index_build_context->read_ranges_are_whole_parts
+        index_build_context->needs_analyzed_ranges
             = result.index_analysis_skipped && index_build_context->index_reader_pool->hasSkipIndexReader();
     }
 

@@ -93,9 +93,11 @@ struct MergeTreeIndexBuildContext
     /// For each part, stores all ranges need to be read.
     RangesByIndex read_ranges;
 
-    /// Set on a parallel replicas replica that skipped its own index analysis: `read_ranges` are whole parts until
-    /// `addAnalyzedReadRanges` replaces them with the ranges analyzed on the initiator.
-    bool read_ranges_are_whole_parts = false;
+    /// Set on a parallel replicas follower that skipped its own index analysis and has a read-time skip-index reader
+    /// (`use_skip_indexes_on_data_read`, the join runtime filter or the top-K primary key pruning): the reader would
+    /// evaluate over `read_ranges`, which are whole parts until `addAnalyzedReadRanges` replaces them with the ranges
+    /// analyzed on the initiator.
+    bool needs_analyzed_ranges = false;
 
     /// Parts whose `read_ranges` were replaced by `addAnalyzedReadRanges`.
     std::unordered_set<size_t> parts_with_analyzed_ranges;

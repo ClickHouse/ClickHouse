@@ -157,10 +157,10 @@ void MergeTreeIndexBuildContext::addAnalyzedReadRanges(size_t part_index, const 
     if (parts_with_analyzed_ranges.insert(part_index).second)
         part_ranges.clear();
 
-    for (const auto & range : ranges)
-        part_ranges.push_back(range);
+    part_ranges.insert(part_ranges.end(), ranges.begin(), ranges.end());
     std::sort(part_ranges.begin(), part_ranges.end());
 
+    /// Merge adjacent ranges, as `optimizeRanges` in `RangesInPatchParts.cpp` does.
     MarkRanges merged;
     for (const auto & range : part_ranges)
     {
