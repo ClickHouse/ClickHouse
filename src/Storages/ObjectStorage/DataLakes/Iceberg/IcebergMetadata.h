@@ -114,6 +114,8 @@ public:
 
     std::optional<String> getRefreshCursor(ContextPtr local_context) const override;
 
+    std::optional<UUID> getTableUUID() const override;
+
     IcebergHistory getHistory(ContextPtr local_context) const;
 
     /// Returns file records contributed by a single manifest list entry of `data_snapshot`.
