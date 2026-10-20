@@ -10,6 +10,7 @@ DROP TABLE IF EXISTS t_tuple;
 DROP TABLE IF EXISTS t_materialize;
 DROP TABLE IF EXISTS t_all;
 DROP TABLE IF EXISTS t_intdiv;
+DROP TABLE IF EXISTS t_alias;
 
 -- The `ORDER BY` columns are not selected: every `INSERT` used to fail with `UNKNOWN_IDENTIFIER`.
 CREATE TABLE t_offsets (k UInt64, v UInt64, s String) ENGINE = MergeTree ORDER BY k;
@@ -102,9 +103,23 @@ SELECT 'no projection', count(), sum(k), sum(v) FROM t_all WHERE s = 'a' SETTING
 SELECT 'projection', count(), sum(k), sum(v) FROM t_intdiv WHERE s = 'a' SETTINGS force_optimize_projection = 1;
 SELECT 'no projection', count(), sum(k), sum(v) FROM t_intdiv WHERE s = 'a' SETTINGS optimize_use_projections = 0;
 
+-- An alias named like a column the `ORDER BY` reads would replace that column.
+CREATE TABLE t_alias (k UInt64, v UInt64, s String, PROJECTION p (SELECT _part_offset, v + 1 AS v WHERE s = 'a' ORDER BY (v, k)))
+ENGINE = MergeTree ORDER BY k; -- { serverError ILLEGAL_PROJECTION }
+CREATE TABLE t_alias (k UInt64, v UInt64, s String) ENGINE = MergeTree ORDER BY k;
+ALTER TABLE t_alias ADD PROJECTION p (SELECT k WHERE (v + 1 AS v) > 3 ORDER BY v); -- { serverError ILLEGAL_PROJECTION }
+ALTER TABLE t_alias ADD PROJECTION p (WITH v + 1 AS v SELECT _part_offset WHERE s = 'a' ORDER BY (v, k)); -- { serverError ILLEGAL_PROJECTION }
+ALTER TABLE t_alias ADD PROJECTION p (SELECT _part_offset, v + 1 AS w WHERE s IN (SELECT 'a' AS v) ORDER BY (w, k));
+INSERT INTO t_alias SELECT number, number % 10, if(number % 2 = 0, 'a', 'b') FROM numbers(1000);
+
+SELECT 'projection rows', sum(rows) FROM system.projection_parts WHERE database = currentDatabase() AND active AND table = 't_alias';
+SELECT 'projection columns', arrayStringConcat(arraySort(groupUniqArray(column)), ', ')
+FROM system.projection_parts_columns WHERE database = currentDatabase() AND active AND table = 't_alias';
+
 DROP TABLE t_offsets;
 DROP TABLE t_select_k;
 DROP TABLE t_tuple;
 DROP TABLE t_materialize;
 DROP TABLE t_all;
 DROP TABLE t_intdiv;
+DROP TABLE t_alias;

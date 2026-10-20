@@ -22,3 +22,5 @@ projection	1000	999000	478947
 no projection	1000	999000	478947
 projection	1000	999000	478947
 no projection	1000	999000	478947
+projection rows	500
+projection columns	_parent_part_offset, k, plus(v, 1), v
