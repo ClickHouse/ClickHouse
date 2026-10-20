@@ -200,7 +200,7 @@ inline ALWAYS_INLINE size_t untrackMemory(void * ptr [[maybe_unused]], Allocatio
         else
             actual_size = malloc_size(ptr);
 #    elif defined(OS_WINDOWS)
-        /// `_aligned_msize` has to be told the alignment the block was allocated with.
+        /// `__mingw_aligned_msize` has to be told the alignment the block was allocated with.
         else if (ptr != nullptr)
         {
             if constexpr (sizeof...(TAlign) == 1)

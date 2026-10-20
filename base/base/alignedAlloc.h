@@ -21,6 +21,13 @@
 ///
 /// A request for zero bytes is served with a one-byte block on Windows, because `_aligned_malloc`
 /// fails for size zero, while `malloc(0)` and `operator new(0)` must succeed on any platform.
+///
+/// On Windows the functions are mingw-w64's own `__mingw_aligned_*` rather than the CRT's
+/// `_aligned_*`. The import library `libmsvcrt.a` forwards `_aligned_malloc` to the C runtime DLL
+/// but implements `_aligned_msize` itself, assuming the block layout of `__mingw_aligned_malloc`;
+/// the DLL's layout differs (Wine's `_aligned_malloc` keeps a different overhead), so the size
+/// read back would not match the one requested. Using one implementation for the whole family
+/// keeps the layout and the size query consistent with each other.
 
 #if defined(OS_WINDOWS)
 #include <cerrno>
@@ -41,7 +48,7 @@ inline int alignedPosixMemalign(void ** out, size_t alignment, size_t size)
 #if defined(OS_WINDOWS)
     /// `_aligned_malloc` rejects a non-power-of-two alignment with EINVAL, matching
     /// `posix_memalign`, but reports it through `errno` rather than the return value.
-    void * ptr = ::_aligned_malloc(size ? size : 1, alignment);
+    void * ptr = ::__mingw_aligned_malloc(size ? size : 1, alignment);
     if (!ptr)
         return errno == EINVAL ? EINVAL : ENOMEM;
     *out = ptr;
@@ -55,7 +62,7 @@ inline int alignedPosixMemalign(void ** out, size_t alignment, size_t size)
 inline void * alignedAlloc(size_t alignment, size_t size)
 {
 #if defined(OS_WINDOWS)
-    return ::_aligned_malloc(size ? size : 1, alignment);
+    return ::__mingw_aligned_malloc(size ? size : 1, alignment);
 #else
     return ::aligned_alloc(alignment, size);
 #endif
@@ -64,7 +71,7 @@ inline void * alignedAlloc(size_t alignment, size_t size)
 inline void * alignedMalloc(size_t size)
 {
 #if defined(OS_WINDOWS)
-    return ::_aligned_malloc(size ? size : 1, DEFAULT_MALLOC_ALIGNMENT);
+    return ::__mingw_aligned_malloc(size ? size : 1, DEFAULT_MALLOC_ALIGNMENT);
 #else
     return ::malloc(size);
 #endif
@@ -78,7 +85,7 @@ inline void * alignedCalloc(size_t nmemb, size_t size)
     if (nmemb != 0 && size > static_cast<size_t>(-1) / nmemb)
         return nullptr;
     const size_t bytes = nmemb * size;
-    void * ptr = ::_aligned_malloc(bytes ? bytes : 1, DEFAULT_MALLOC_ALIGNMENT);
+    void * ptr = ::__mingw_aligned_malloc(bytes ? bytes : 1, DEFAULT_MALLOC_ALIGNMENT);
     if (ptr)
         ::memset(ptr, 0, bytes);
     return ptr;
@@ -93,7 +100,8 @@ inline void * alignedCalloc(size_t nmemb, size_t size)
 inline void * alignedRealloc(void * ptr, size_t size)
 {
 #if defined(OS_WINDOWS)
-    return ::_aligned_realloc(ptr, size, DEFAULT_MALLOC_ALIGNMENT);
+    /// The third parameter is the alignment, although mingw-w64's header calls it `_Offset`.
+    return ::__mingw_aligned_realloc(ptr, size, DEFAULT_MALLOC_ALIGNMENT);
 #else
     return ::realloc(ptr, size);
 #endif
@@ -102,20 +110,20 @@ inline void * alignedRealloc(void * ptr, size_t size)
 inline void alignedFree(void * ptr) noexcept
 {
 #if defined(OS_WINDOWS)
-    ::_aligned_free(ptr);
+    ::__mingw_aligned_free(ptr);
 #else
     ::free(ptr);
 #endif
 }
 
 #if defined(OS_WINDOWS)
-/// The size of the block `ptr` points to, as it was requested from `_aligned_malloc` (a request
+/// The size of the block `ptr` points to, as it was requested from `__mingw_aligned_malloc` (a request
 /// for zero bytes counts as one, see above). `alignment` must be the one it was allocated with.
 /// This is the Windows counterpart of `malloc_usable_size`, which memory tracking uses to learn
 /// the size freed by an unsized `operator delete`.
 inline size_t alignedAllocationSize(void * ptr, size_t alignment) noexcept
 {
-    return ::_aligned_msize(ptr, alignment, 0);
+    return ::__mingw_aligned_msize(ptr, alignment, 0);
 }
 #endif
 
