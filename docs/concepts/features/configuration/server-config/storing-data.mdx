@@ -454,7 +454,7 @@ Starting from `24.5` it is possible to configure any object storage disk
 between a part and its mutated successor with hard links, instead of copying
 them. The `enable_hard_links` setting (`1` by default) allows a disk with the
 `plain_rewritable` metadata to create real hard links, which unlocks these
-operations. Set it to `0` to keep the disk readable by servers older than `26.9`;
+operations. Set it to `0` to keep the disk readable by servers older than `26.10`;
 then the hard links are emulated by copies, and `ALTER` operations that modify
 data and mutations are not supported:
 
