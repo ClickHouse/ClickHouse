@@ -155,7 +155,10 @@ Chunk PulsarSource::generateImpl()
 
     while (true)
     {
-        if (storage.isConsumeCancelRequested(cancel_epoch))
+        /// `KILL QUERY` or the client cancels the query through `isCancelled`, `SYSTEM STOP/CANCEL STREAMING`
+        /// through the epoch. Without the former, a direct SELECT reading messages that parse to zero rows
+        /// would never reach its row limit or the failed-poll limit and would ignore the cancellation.
+        if (isCancelled() || storage.isConsumeCancelRequested(cancel_epoch))
         {
             cancelled = true;
             break;
@@ -167,7 +170,7 @@ Chunk PulsarSource::generateImpl()
         {
             /// The cancel may have arrived while `consume` was blocked polling; check again so the
             /// just-polled message is dropped with the rest of the block rather than acknowledged.
-            if (storage.isConsumeCancelRequested(cancel_epoch))
+            if (isCancelled() || storage.isConsumeCancelRequested(cancel_epoch))
             {
                 cancelled = true;
                 break;
