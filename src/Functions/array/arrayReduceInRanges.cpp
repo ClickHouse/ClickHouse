@@ -482,6 +482,8 @@ REGISTER_FUNCTION(ArrayReduceInRanges)
     FunctionDocumentation::Description description = R"(
 Applies an aggregate function to array elements in the given ranges and returns an array containing the result corresponding to each range.
 The function will return the same result as multiple `arrayReduce(agg_func, arraySlice(arr1, index, length), ...)`.
+The only difference is that the length is unsigned: a length greater than the maximum `Int64` value selects the rest of the array,
+while `arraySlice` interprets such a value as a negative length.
 )";
     FunctionDocumentation::Syntax syntax = "arrayReduceInRanges(agg_f, ranges, arr1[, arr2, ... ,arrN])";
     FunctionDocumentation::Arguments arguments = {
