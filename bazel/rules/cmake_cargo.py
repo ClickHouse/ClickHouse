@@ -24,7 +24,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__, fromfile_prefix_chars="@")
     for name in [
         "output", "evidence", "cargo", "rustc", "rust-sysroot-anchor", "config", "manifest",
-        "workspace-manifest", "sysroot-marker", "cc", "cxx", "ar",
+        "workspace-manifest", "cc", "cxx", "ar",
     ]:
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--target", choices=["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"], required=True)
@@ -258,7 +258,7 @@ def main():
     # symlinks changes which multicall program LLVM runs.
     for key in [
         "output", "evidence", "cargo", "rustc", "rust_sysroot_anchor", "config", "manifest",
-        "workspace_manifest", "sysroot_marker", "cc", "cxx", "ar",
+        "workspace_manifest", "cc", "cxx", "ar",
     ]:
         setattr(args, key, getattr(args, key).absolute())
     if args.openssl_headers:

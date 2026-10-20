@@ -824,7 +824,7 @@ def main():
                           | llvm_overlay_inputs | llvm_root_inputs | rust_root_inputs)
     (ROOT / 'BUILD.bazel').write_text(
         root.load_statements() +
-        'load("//bazel/rules:root_inputs.bzl", "declare_inputs")\n\n'
+        'load("//bazel/initial_migration:root_inputs.bzl", "declare_inputs")\n\n'
         'package(default_visibility = ["//visibility:public"])\n\n'
         'declare_inputs()\n\nexports_files(' + starlark(root_exports) + ')\n\n' + root.text())
     (ROOT / 'bazel/headers.bzl').unlink(missing_ok=True)

@@ -1,12 +1,3 @@
 package(default_visibility = ["//visibility:public"])
 
 exports_files(["config.toml.in"])
-
-filegroup(
-    name = "delta_cbindgen_sources",
-    srcs = [
-        "@clickhouse_delta_kernel_rs//:cbindgen_sources",
-        "@clickhouse_rust_vendor//:sources",
-        "config.toml.in",
-    ],
-)

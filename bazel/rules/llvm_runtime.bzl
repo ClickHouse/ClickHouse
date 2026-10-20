@@ -42,9 +42,9 @@ def _llvm_runtime_objects_impl(ctx):
         action_name = action,
     )
     triple = ctx.attr.arch + "-linux-gnu"
-    gcc_root = ctx.file._sysroot_marker.dirname + "/linux-" + ctx.attr.arch
+    gcc_root = ctx.attr._sysroot.label.workspace_root + "/linux-" + ctx.attr.arch
     header_inputs = depset(
-        ctx.files.hdrs + [ctx.file._sysroot_marker],
+        ctx.files.hdrs,
         transitive = [toolchain.all_files, ctx.attr._sysroot[DefaultInfo].files],
     )
     labels = {target.label: target for target in ctx.attr.srcs + ctx.attr.hdrs}.values()
@@ -102,7 +102,6 @@ llvm_runtime_objects = rule(
         "reference_source_root": attr.string(),
         "_cmake_metadata": attr.label(default = "@clickhouse//bazel:cmake_metadata"),
         "_sysroot": attr.label(default = "@clickhouse_sysroot//:linux_compile_files"),
-        "_sysroot_marker": attr.label(default = "@clickhouse_sysroot//:BUILD.bazel", allow_single_file = True),
     },
     fragments = ["cpp"],
     toolchains = use_cc_toolchain(),

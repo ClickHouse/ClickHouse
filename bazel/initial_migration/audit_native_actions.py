@@ -295,7 +295,7 @@ class ArchiveEvidence:
         plan. Cargo archive member bytes remain the responsibility of the
         archive and final ELF comparisons.
         """
-        from cmake_cargo import native_flags
+        from rules.cmake_cargo import native_flags
 
         action, label, outputs, _, _ = record
         argv = expanded_arguments(action)
@@ -303,7 +303,7 @@ class ArchiveEvidence:
         if (action.get('mnemonic') != 'ClickHouseCargo' or label != '//bazel/rust:skim_cargo'
                 or not source.endswith('/bazel/rust/skim_cargo/lib_ch_rust_skim_rust.a')
                 or set(outputs) != {source, evidence_output}
-                or not argv or not argv[0].endswith('/bazel/cmake_cargo')):
+                or not argv or not argv[0].endswith('/bazel/rules/cmake_cargo')):
             raise ValueError('Skim native input is not the captured skim_cargo ClickHouseCargo action')
 
         def values(option):
@@ -326,7 +326,6 @@ class ArchiveEvidence:
         manifest = single('--manifest')
         workspace_manifest = single('--workspace-manifest')
         config = single('--config')
-        marker = single('--sysroot-marker')
         tools = {name: single('--' + name) for name in
                  ('cargo', 'rustc', 'rust-sysroot-anchor', 'cc', 'cxx', 'ar')}
         declared = self.inputs(record)
@@ -336,10 +335,9 @@ class ArchiveEvidence:
                 or argv.count('--native-compilation') != 1
                 or values('--cargo-feature') or values('--openssl-headers') or values('--cmake')
                 or single('--native-source-root') != self.repo_root
-                or not {manifest, workspace_manifest, config, marker, *tools.values()}.issubset(declared)
+                or not {manifest, workspace_manifest, config, *tools.values()}.issubset(declared)
                 or not sources or not sources.issubset(declared)
-                or self.cfg.map_include(config) != 'contrib/corrosion-cmake/config.toml.in'
-                or self.cfg.map_include(marker) != 'contrib/sysroot/BUILD.bazel'):
+                or self.cfg.map_include(config) != 'contrib/corrosion-cmake/config.toml.in'):
             raise ValueError('Skim Cargo package, native mode, tools, configuration or inputs differ')
 
         mounts = {}
@@ -352,9 +350,12 @@ class ArchiveEvidence:
             if destination in mounts:
                 raise ValueError('Skim Cargo mount has duplicate destination: ' + destination)
             mounts[destination] = original
-        for destination in ('rust/workspace', 'contrib/rust_vendor', 'contrib/llvm-project'):
+        for destination in ('rust/workspace', 'contrib/rust_vendor', 'contrib/llvm-project', 'contrib/sysroot'):
             if destination not in mounts or self.cfg.map_include(mounts[destination]) != destination:
                 raise ValueError('Skim Cargo lacks its declared repository mount: ' + destination)
+        sysroot = mounts['contrib/sysroot'].rstrip('/') + '/'
+        if not any(path.startswith(sysroot) for path in sources):
+            raise ValueError('Skim Cargo has no declared sysroot sources')
 
         def staged(destination, relative):
             return str(Path(mounts[destination]) / relative)
@@ -446,7 +447,7 @@ class ArchiveEvidence:
             'native_cxx_flags': values('--native-cxx-flag'),
             'required_bridge_sources': sorted(bridge),
             'required_native_headers': sorted(headers),
-            'sysroot_marker': marker,
+            'sysroot': mounts['contrib/sysroot'],
             'tools': tools,
             'limits': 'Captured Cargo producer and declared native inputs/flags only; Cargo member byte identity is not checked.',
         }

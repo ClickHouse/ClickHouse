@@ -5,7 +5,7 @@ def _openssl_headers_impl(ctx):
     args = ctx.actions.args()
     args.add(output.path)
     for root, files in [
-        (ctx.file.source_root.dirname + "/include/", ctx.files.source_headers),
+        (ctx.attr.source_headers.label.workspace_root + "/include/", ctx.files.source_headers),
         ("contrib/openssl-cmake/common/include/", ctx.files.configured_headers),
     ]:
         for header in files:
@@ -26,7 +26,6 @@ openssl_headers = rule(
     implementation = _openssl_headers_impl,
     attrs = {
         "source_headers": attr.label(default = "@clickhouse_openssl//:headers"),
-        "source_root": attr.label(default = "@clickhouse_openssl//:BUILD.bazel", allow_single_file = True),
         "configured_headers": attr.label(mandatory = True),
     },
 )

@@ -134,10 +134,9 @@ def _cmake_link_impl(ctx):
                 archives.append(original)
 
     output = ctx.actions.declare_file(ctx.label.name)
-    root = ctx.file._sysroot_marker.dirname
 
     # Only relative Bazel artifact names are used for filesystem access.
-    gcc_root = root + "/linux-" + ctx.attr.arch
+    gcc_root = ctx.attr._sysroot.label.workspace_root + "/linux-" + ctx.attr.arch
     args = ctx.actions.args()
     args.use_param_file("@%s", use_always = True)
     args.set_param_file_format("multiline")
@@ -166,7 +165,7 @@ def _cmake_link_impl(ctx):
     args.add(output)
     ctx.actions.run(
         executable = clang,
-        inputs = depset(inputs + [ctx.file._sysroot_marker], transitive = [
+        inputs = depset(inputs, transitive = [
             toolchain.all_files,
             ctx.attr._sysroot[DefaultInfo].files,
         ]),
@@ -186,7 +185,6 @@ _cmake_link = rule(
         "cargo_archives": attr.bool(mandatory = True),
         "refs": attr.label_list(mandatory = True, providers = [CcInfo]),
         "_sysroot": attr.label(default = "@clickhouse_sysroot//:linux_link_files"),
-        "_sysroot_marker": attr.label(default = "@clickhouse_sysroot//:BUILD.bazel", allow_single_file = True),
         "_lld": attr.label(default = "@llvm//tools:ld.lld", executable = True, cfg = "exec"),
     },
     fragments = ["cpp"],

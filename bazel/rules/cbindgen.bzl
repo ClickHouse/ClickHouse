@@ -11,7 +11,7 @@ def _rust_cbindgen_impl(ctx):
     args.add("--manifest", ctx.file.manifest)
     args.add("--config", ctx.file.config)
     args.add("--cargo-config", ctx.file.cargo_config)
-    args.add("--vendor", ctx.file.vendor.dirname)
+    args.add("--vendor", ctx.attr.vendor.label.workspace_root)
     for language, filename in ctx.attr.headers.items():
         output = ctx.actions.declare_file(ctx.label.name + "/" + filename)
         outputs.append(output)
@@ -20,8 +20,8 @@ def _rust_cbindgen_impl(ctx):
         executable = ctx.attr._generator[DefaultInfo].files_to_run,
         arguments = [args],
         inputs = depset(
-            ctx.files.srcs + [ctx.file.manifest, ctx.file.config, ctx.file.cargo_config, ctx.file.vendor],
-            transitive = [rust.all_files],
+            ctx.files.srcs + [ctx.file.manifest, ctx.file.config, ctx.file.cargo_config],
+            transitive = [rust.all_files, ctx.attr.vendor[DefaultInfo].files],
         ),
         tools = [ctx.attr.cbindgen_tool[DefaultInfo].files_to_run],
         outputs = outputs,
@@ -38,7 +38,7 @@ rust_cbindgen = rule(
         "manifest": attr.label(allow_single_file = True, mandatory = True),
         "config": attr.label(allow_single_file = True, mandatory = True),
         "cargo_config": attr.label(allow_single_file = True, mandatory = True),
-        "vendor": attr.label(allow_single_file = True, mandatory = True),
+        "vendor": attr.label(mandatory = True),
         "headers": attr.string_dict(mandatory = True, doc = "cbindgen language to header filename, relative to the target name."),
         "cbindgen_tool": attr.label(executable = True, cfg = "exec", mandatory = True),
         "_generator": attr.label(default = "//bazel/rules:cbindgen", executable = True, cfg = "exec"),

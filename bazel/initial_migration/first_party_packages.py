@@ -408,7 +408,6 @@ class Migration:
             'krb5_gen': '@clickhouse_krb5//:gen',
             'cmake_cargo_config': '//contrib/corrosion-cmake:config.toml.in',
         })
-        self.target_packages['', 'delta_cbindgen_sources'] = 'contrib/corrosion-cmake'
         self.target_packages['', 'openssl_configured_headers'] = 'contrib/openssl-cmake'
         self.packages.update({'contrib/corrosion-cmake', 'contrib/openssl-cmake'})
 
@@ -560,10 +559,6 @@ class Migration:
         self.textual_names = textual_source_names(None)
         if any(call_name(stmt.value) == 'declare_inputs' for stmt in self.root_build.source.module.body
                if isinstance(stmt, ast.Expr)):
-            self.rows['contrib/corrosion-cmake'].append(expr_stmt(
-                'filegroup(name="delta_cbindgen_sources",srcs=['
-                '"@clickhouse_delta_kernel_rs//:cbindgen_sources",'
-                '"@clickhouse_rust_vendor//:sources","config.toml.in"])'))
             self.rows['contrib/openssl-cmake'].append(expr_stmt(
                 'filegroup(name="openssl_configured_headers",srcs=glob(["common/include/**"]))'))
         for build in self.builds:
@@ -759,7 +754,7 @@ class Migration:
                     filename.endswith(('.bzl', '.BUILD.bazel', '.MODULE.bazel')) or
                     path.name in {'BUILD', 'BUILD.bazel', 'MODULE.bazel'}):
                 continue
-            if filename == 'bazel/rules/root_inputs.bzl':
+            if filename == 'bazel/initial_migration/root_inputs.bzl':
                 continue
             try:
                 source = Source(path.read_text())

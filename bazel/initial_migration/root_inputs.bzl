@@ -1,22 +1,15 @@
-"""First-party headers and generator inputs shared by native targets."""
+"""Temporary root targets used before first_party_packages.py lays out BUILD files."""
 
 load("//bazel/rules:codegen_rules.bzl", "CODEGEN_RULES")
 
 def declare_inputs():
     native.exports_files(["cmake/localize_rust_c_symbols.sh", "cmake/strip_rust_symbols.sh"])
+
     # ClickHouse's sysroot carries newer ARM capability bits than the base
     # kernel headers selected for glibc 2.28 by hermetic-llvm.
     native.alias(
         name = "linux_aarch64_hwcap",
         actual = "@clickhouse_sysroot//:linux_aarch64_hwcap",
-    )
-    native.filegroup(
-        name = "delta_cbindgen_sources",
-        srcs = [
-            "@clickhouse_delta_kernel_rs//:cbindgen_sources",
-            "@clickhouse_rust_vendor//:sources",
-            "contrib/corrosion-cmake/config.toml.in",
-        ],
     )
     native.filegroup(
         name = "cmake_cargo_config",

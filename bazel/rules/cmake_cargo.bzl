@@ -20,6 +20,7 @@ def _cmake_cargo_impl(ctx):
     archive = ctx.actions.declare_file(ctx.label.name + "/lib" + ctx.attr.cargo_package + ".a")
     evidence = ctx.actions.declare_file(ctx.label.name + "/cargo-evidence.json")
     args = ctx.actions.args()
+
     # A complete vendor input list exceeds argv limits. Python reads Bazel's
     # one-argument-per-line response file without shell interpretation.
     args.set_param_file_format("multiline")
@@ -36,7 +37,6 @@ def _cmake_cargo_impl(ctx):
     args.add("--config", ctx.file.config)
     args.add("--manifest", ctx.file.manifest)
     args.add("--workspace-manifest", ctx.file.workspace_manifest)
-    args.add("--sysroot-marker", ctx.file.sysroot_marker)
     for name, action in [
         ("cc", ACTION_NAMES.c_compile),
         ("cxx", ACTION_NAMES.cpp_compile),
@@ -46,6 +46,7 @@ def _cmake_cargo_impl(ctx):
             feature_configuration = features,
             action_name = action,
         ))
+
     # MODULE.bazel supplies the target CPU, target features and v0 mangling.
     # Cargo adds its own package metadata; the driver adds the CMake sanitizer
     # metadata. Do not replace Cargo's package metadata with Bazel label hashes.
@@ -53,9 +54,10 @@ def _cmake_cargo_impl(ctx):
     if ctx.attr.native_source_root:
         args.add("--native-source-root", ctx.attr.native_source_root)
     args.add_all(["--mount", ctx.file.workspace_manifest.dirname, "rust/workspace"])
+
     # RUSTFLAGS uses the literal CMake sysroot spelling. Only stage the
     # target sysroot files already declared by this action.
-    args.add_all(["--mount", ctx.file.sysroot_marker.dirname, "contrib/sysroot"])
+    args.add_all(["--mount", ctx.attr.sysroot_files.label.workspace_root, "contrib/sysroot"])
     args.add_all(ctx.attr.sysroot_files[DefaultInfo].files, before_each = "--source")
     source_depsets = [ctx.attr.workspace_sources[DefaultInfo].files]
     args.add_all(ctx.attr.workspace_sources[DefaultInfo].files, before_each = "--source")
@@ -78,6 +80,7 @@ def _cmake_cargo_impl(ctx):
     if rust.target_flag_value == "aarch64-unknown-linux-gnu":
         args.add("--native-linker", ctx.executable._native_linker)
         tools.append(ctx.executable._native_linker)
+
         # ClickHouse's pinned sysroot contains libgcc.a but no libgcc_s or
         # libutil. Use the registered LLVM runtime's own libgcc_s convention
         # and link its real libunwind archive.
@@ -118,7 +121,7 @@ def _cmake_cargo_impl(ctx):
         executable = ctx.attr._driver[DefaultInfo].files_to_run,
         arguments = [args],
         inputs = depset(
-            [ctx.file.config, ctx.file.manifest, ctx.file.workspace_manifest, ctx.file.sysroot_marker, rust.sysroot_anchor] + additional_inputs,
+            [ctx.file.config, ctx.file.manifest, ctx.file.workspace_manifest, rust.sysroot_anchor] + additional_inputs,
             transitive = source_depsets + [rust.all_files, cc.all_files, ctx.attr.sysroot_files[DefaultInfo].files],
         ),
         outputs = [archive, evidence],
@@ -162,7 +165,6 @@ cmake_cargo = rule(
         # valid when Cargo resolves the complete ClickHouse Rust workspace.
         "repositories": attr.label_keyed_string_dict(mandatory = True, allow_files = True),
         "config": attr.label(mandatory = True, allow_single_file = True),
-        "sysroot_marker": attr.label(default = "@clickhouse_sysroot//:BUILD.bazel", allow_single_file = True),
         "sysroot_files": attr.label(default = "@clickhouse_sysroot//:linux_compile_files"),
         # Cargo hashes the absolute SourceId of path dependencies outside
         # rust/workspace. Use the recorded CMake source root in an isolated RBE
