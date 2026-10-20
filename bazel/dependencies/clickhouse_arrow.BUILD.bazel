@@ -332,30 +332,73 @@ ch_cc_library(
             "cpp/src/arrow/util/byte_stream_split_internal_avx2.cc",
         ],
         "@platforms//cpu:aarch64": [],
-    }),
-    additional_compiler_inputs = [
-        "cpp/src/arrow/compute/kernels/aggregate_basic.inc.cc",
-        "cpp/src/arrow/vendored/datetime/tz.cpp",
+    }) + [
+        "cpp/src/arrow/integration/c_data_integration_internal.h",
+        "cpp/src/arrow/integration/json_integration.h",
+        "cpp/src/arrow/testing/extension_type.h",
+        "cpp/src/arrow/testing/visibility.h",
     ],
+    hdrs = glob(
+        [
+            "cpp/src/arrow/*.h",
+            "cpp/src/arrow/array/**/*.h",
+            "cpp/src/arrow/c/**/*.h",
+            "cpp/src/arrow/compute/**/*.h",
+            "cpp/src/arrow/csv/**/*.h",
+            "cpp/src/arrow/extension/**/*.h",
+            "cpp/src/arrow/filesystem/**/*.h",
+            "cpp/src/arrow/io/**/*.h",
+            "cpp/src/arrow/ipc/**/*.h",
+            "cpp/src/arrow/json/**/*.h",
+            "cpp/src/arrow/tensor/**/*.h",
+            "cpp/src/arrow/util/**/*.h",
+            "cpp/src/arrow/vendored/**/*.h",
+            "cpp/src/arrow/vendored/**/*.hpp",
+            "cpp/src/arrow/adapters/orc/**/*.h",
+        ],
+        exclude = [
+            "cpp/src/arrow/util/visibility.h",
+            "cpp/src/arrow/vendored/uriparser/*.h",
+            "cpp/src/arrow/vendored/strptime.h",
+            "**/*_test.h",
+            "**/*test_util*.h",
+            "**/test_*.h",
+            "**/*test_common.h",
+            "**/*benchmark*.h",
+            "**/s3_test_*.h",
+        ],
+    ),
     copts = [
         "-w",
         "-std=c++23",
         "-g1",
     ],
     implementation_deps = [
-        "@clickhouse//contrib/arrow-cmake:arrow_cmake_headers",
         "@clickhouse_brotli//:_brotli",
         "@clickhouse_bzip2//:_bzip2",
         "@clickhouse_libhdfs3//:_hdfs3",
+        "@lz4//:lz4",
+        "@lz4//:lz4_frame",
+        "@lz4//:lz4_hc",
+        "@clickhouse_snappy//:_snappy",
+        "@clickhouse_zlib_ng//:_zlib",
+        "@clickhouse_zstd//:_zstd",
     ],
+    includes = ["cpp/src"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    textual_hdrs = [
+        "cpp/src/arrow/compute/kernels/aggregate_basic.inc.cc",
+        "cpp/src/arrow/vendored/datetime/tz.cpp",
+    ],
     deps = [
         "@clickhouse//bazel:arrow_flatbuffer_headers",
+        "@clickhouse//contrib/arrow-cmake:arrow_cmake_headers",
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_flatbuffers//:_flatbuffers",
         "@clickhouse_xsimd//:xsimd",
         "@clickhouse_orc//:_orc",
-        ":arrow_source_headers",
+        ":_arrow__compile_1",
+        "@clickhouse_abseil_cpp//:absl_status",
     ],
 )
 
@@ -364,37 +407,20 @@ ch_cc_library(
     srcs = [
         "cpp/src/arrow/vendored/musl/strptime.c",
     ] + glob(["cpp/src/arrow/vendored/uriparser/*.c"]),
-    additional_compiler_inputs = [
-        "cpp/src/arrow/vendored/uriparser/UriCommon.c",
-        "cpp/src/arrow/vendored/uriparser/UriCompare.c",
-        "cpp/src/arrow/vendored/uriparser/UriEscape.c",
-        "cpp/src/arrow/vendored/uriparser/UriFile.c",
-        "cpp/src/arrow/vendored/uriparser/UriIp4.c",
-        "cpp/src/arrow/vendored/uriparser/UriNormalize.c",
-        "cpp/src/arrow/vendored/uriparser/UriParse.c",
-        "cpp/src/arrow/vendored/uriparser/UriQuery.c",
-        "cpp/src/arrow/vendored/uriparser/UriRecompose.c",
-        "cpp/src/arrow/vendored/uriparser/UriResolve.c",
-        "cpp/src/arrow/vendored/uriparser/UriShorten.c",
-    ],
+    hdrs = glob([
+        "cpp/src/arrow/util/visibility.h",
+        "cpp/src/arrow/vendored/uriparser/*.h",
+        "cpp/src/arrow/vendored/strptime.h",
+    ]),
     copts = [
         "-w",
         "-std=gnu11",
         "-g1",
     ],
-    implementation_deps = [
-        ":arrow_source_headers",
-        "@clickhouse_llvm_project//:libcxxabi_headers",
-    ],
+    includes = ["cpp/src"],
     language = "C",
+    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        "@clickhouse//bazel:arrow_flatbuffer_headers",
-        "@clickhouse_boost//:boost_headers",
-        "@clickhouse_flatbuffers//:_flatbuffers",
-        "@clickhouse_xsimd//:xsimd",
-        "@clickhouse_orc//:_orc",
-    ],
 )
 
 cc_library(
@@ -436,47 +462,31 @@ ch_cc_library(
         "cpp/src/arrow/flight/sql/server.cc",
         "cpp/src/arrow/flight/sql/sql_info_internal.cc",
     ],
-    additional_compiler_inputs = glob(
-        ["cpp/src/**"],
+    hdrs = glob(
+        [
+            "cpp/src/arrow/flight/*.h",
+            "cpp/src/arrow/flight/sql/*.h",
+            "cpp/src/arrow/flight/transport/grpc/*.h",
+        ],
         exclude = [
-            "cpp/src/**/*.h",
-            "cpp/src/**/*.hpp",
-            "cpp/src/**/*.tcc",
-            "cpp/src/arrow/flight/client.cc",
-            "cpp/src/arrow/flight/client_cookie_middleware.cc",
-            "cpp/src/arrow/flight/client_tracing_middleware.cc",
-            "cpp/src/arrow/flight/cookie_internal.cc",
-            "cpp/src/arrow/flight/middleware.cc",
-            "cpp/src/arrow/flight/serialization_internal.cc",
-            "cpp/src/arrow/flight/server.cc",
-            "cpp/src/arrow/flight/server_auth.cc",
-            "cpp/src/arrow/flight/server_tracing_middleware.cc",
-            "cpp/src/arrow/flight/sql/client.cc",
-            "cpp/src/arrow/flight/sql/column_metadata.cc",
-            "cpp/src/arrow/flight/sql/protocol_internal.cc",
-            "cpp/src/arrow/flight/sql/server.cc",
-            "cpp/src/arrow/flight/sql/server_session_middleware.cc",
-            "cpp/src/arrow/flight/sql/sql_info_internal.cc",
-            "cpp/src/arrow/flight/transport.cc",
-            "cpp/src/arrow/flight/transport/grpc/grpc_client.cc",
-            "cpp/src/arrow/flight/transport/grpc/grpc_server.cc",
-            "cpp/src/arrow/flight/transport/grpc/protocol_grpc_internal.cc",
-            "cpp/src/arrow/flight/transport/grpc/serialization_internal.cc",
-            "cpp/src/arrow/flight/transport/grpc/util_internal.cc",
-            "cpp/src/arrow/flight/transport_server.cc",
-            "cpp/src/arrow/flight/types.cc",
+            "**/test_*.h",
+            "**/*test_util*.h",
         ],
     ),
     copts = [
         "-w",
         "-std=c++23",
     ],
+    includes = ["cpp/src"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = ["config/contrib/arrow-cmake/cpp/src"],
     deps = [
         "@clickhouse//bazel:arrow_flight_generated_headers",
         ":_arrow",
+        ":_arrow__compile_0",
         "@clickhouse_grpc//:grpc++",
+        "@clickhouse_grpc//:grpc__compile_0",
+        "@clickhouse_google_protobuf//:_libprotobuf",
     ],
 )
 
@@ -540,21 +550,37 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
+    hdrs = glob(
+        [
+            "cpp/src/parquet/**/*.h",
+            "cpp/src/generated/parquet_types.h",
+            "cpp/src/generated/parquet_types.tcc",
+        ],
+        exclude = [
+            "cpp/src/parquet/arrow/test_util.h",
+            "cpp/src/parquet/encryption/test_encryption_util.h",
+            "cpp/src/parquet/test_util.h",
+        ],
+    ),
     copts = [
         "-w",
         "-std=c++23",
         "-g1",
     ],
+    implementation_deps = [
+        "@clickhouse_xsimd//:xsimd",
+        "@clickhouse_openssl//:crypto",
+    ],
+    includes = ["cpp/src"],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     deps = [
         ":_arrow",
+        ":_arrow__compile_0",
         "@clickhouse_boost//:_boost_regex",
         "@clickhouse_thrift//:_thrift",
         "@clickhouse_rapidjson//:rapidjson",
     ],
 )
-
-_GENERATED_DEPS_2 = ["@clickhouse_llvm_project//:clang_rt_builtins", "@clickhouse_llvm_project//:clang_rt_xray", "@clickhouse_llvm_project//:libllvmlibc", ":_arrow", "@clickhouse_boost//:_boost_filesystem", "@clickhouse_boost//:_boost_regex", "@clickhouse_brotli//:_brotli", "@clickhouse_bzip2//:_bzip2", "@clickhouse_double_conversion//:_double-conversion", "@clickhouse_flatbuffers//:_flatbuffers", "@clickhouse_google_protobuf//:_libprotobuf", "@clickhouse//contrib/lz4-cmake:_lz4", ":_orc", ":_parquet", "@clickhouse_snappy//:_snappy", "@clickhouse_thrift//:_thrift", "@clickhouse_zlib_ng//:_zlib", "@clickhouse_zstd//:_zstd", "@clickhouse_abseil_cpp//:absl_base_cpu_detect", "@clickhouse_abseil_cpp//:absl_examine_stack", "@clickhouse_abseil_cpp//:absl_exponential_biased", "@clickhouse_abseil_cpp//:absl_flags_private_handle_accessor", "@clickhouse_abseil_cpp//:absl_flags_program_name", "@clickhouse_abseil_cpp//:absl_graphcycles_internal", "@clickhouse_abseil_cpp//:absl_leak_check", "@clickhouse_abseil_cpp//:absl_log_globals", "@clickhouse_abseil_cpp//:absl_log_internal_fnmatch", "@clickhouse_abseil_cpp//:absl_log_internal_format", "@clickhouse_abseil_cpp//:absl_log_internal_globals", "@clickhouse_abseil_cpp//:absl_log_internal_log_sink_set", "@clickhouse_abseil_cpp//:absl_malloc_internal", "@clickhouse_abseil_cpp//:absl_stacktrace", "@clickhouse_abseil_cpp//:absl_strerror", "@clickhouse_abseil_cpp//:absl_symbolize", "@clickhouse_openssl//:crypto", "@clickhouse_llvm_project//:cxx", "@clickhouse_llvm_project//:cxxabi", "@clickhouse//base/glibc-compatibility", "@clickhouse_openssl//:ssl", "@clickhouse_llvm_project//:unwind", "@clickhouse_google_protobuf//:utf8_validity", "@llvm-project//compiler-rt:headers", "@llvm-project//libc:libc_headers", "@llvm-project//libunwind:headers"]
 
 _GENERATED_LINKOPTS_0 = [
     "--no-default-config",
@@ -711,9 +737,19 @@ cc_binary(
     features = _GENERATED_FEATURES_1,
     linkopts = _GENERATED_LINKOPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    deps = _GENERATED_DEPS_2 + [
-        "@clickhouse_boost//:boost_headers",
-        "@clickhouse_xsimd//:xsimd",
+    deps = [
+        "@clickhouse_llvm_project//:clang_rt_builtins",
+        "@clickhouse_llvm_project//:clang_rt_xray",
+        "@clickhouse_llvm_project//:libllvmlibc",
+        ":_arrow",
+        "@clickhouse//contrib/lz4-cmake:_lz4",
+        ":_orc",
+        ":_parquet",
+        "@clickhouse_zstd//:_zstd",
+        "@clickhouse_llvm_project//:cxx",
+        "@clickhouse_llvm_project//:cxxabi",
+        "@clickhouse//base/glibc-compatibility",
+        "@clickhouse_llvm_project//:unwind",
     ],
 )
 
@@ -729,9 +765,19 @@ cc_binary(
     features = _GENERATED_FEATURES_1,
     linkopts = _GENERATED_LINKOPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    deps = _GENERATED_DEPS_2 + [
-        "@clickhouse_boost//:boost_headers",
-        "@clickhouse_xsimd//:xsimd",
+    deps = [
+        "@clickhouse_llvm_project//:clang_rt_builtins",
+        "@clickhouse_llvm_project//:clang_rt_xray",
+        "@clickhouse_llvm_project//:libllvmlibc",
+        ":_arrow",
+        "@clickhouse//contrib/lz4-cmake:_lz4",
+        ":_orc",
+        ":_parquet",
+        "@clickhouse_zstd//:_zstd",
+        "@clickhouse_llvm_project//:cxx",
+        "@clickhouse_llvm_project//:cxxabi",
+        "@clickhouse//base/glibc-compatibility",
+        "@clickhouse_llvm_project//:unwind",
     ],
 )
 
@@ -747,18 +793,41 @@ cc_binary(
     features = _GENERATED_FEATURES_1,
     linkopts = _GENERATED_LINKOPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    deps = _GENERATED_DEPS_2 + [
-        "@clickhouse_boost//:boost_headers",
-        "@clickhouse_xsimd//:xsimd",
+    deps = [
+        "@clickhouse_llvm_project//:clang_rt_builtins",
+        "@clickhouse_llvm_project//:clang_rt_xray",
+        "@clickhouse_llvm_project//:libllvmlibc",
+        ":_arrow",
+        "@clickhouse//contrib/lz4-cmake:_lz4",
+        ":_orc",
+        ":_parquet",
+        "@clickhouse_zstd//:_zstd",
+        "@clickhouse_llvm_project//:cxx",
+        "@clickhouse_llvm_project//:cxxabi",
+        "@clickhouse//base/glibc-compatibility",
+        "@clickhouse_llvm_project//:unwind",
     ],
 )
 
 cc_library(
     name = "arrow_headers",
-    # Match contrib/arrow-cmake/CMakeLists.txt: generated IPC, CMake, then source.
-    includes = (["cpp/src"]) + ["config/contrib/arrow-cmake/cpp/src"],
-    deps = ["@clickhouse//bazel:arrow_flatbuffer_headers", "@clickhouse//contrib/arrow-cmake:arrow_cmake_headers", ":arrow_source_headers", "@clickhouse_flatbuffers//:_flatbuffers", "@clickhouse_google_protobuf//:_libprotobuf", "@clickhouse_grpc//:address_sorting", "@clickhouse_rapidjson//:rapidjson", "@clickhouse_re2//:_re2", "@clickhouse_thrift//:_thrift", "@clickhouse_xsimd//:xsimd"],
     hdrs = [":configure_cpp_src_arrow_util_config_h"],
+    # Match contrib/arrow-cmake/CMakeLists.txt: generated IPC, CMake, then source.
+    includes = ["cpp/src"] + ["config/contrib/arrow-cmake/cpp/src"],
+    deps = [
+        "@clickhouse//bazel:arrow_flatbuffer_headers",
+        "@clickhouse//contrib/arrow-cmake:arrow_cmake_headers",
+        ":_arrow__compile_0",
+        ":_arrow_flight",
+        ":_parquet",
+        "@clickhouse_flatbuffers//:_flatbuffers",
+        "@clickhouse_google_protobuf//:_libprotobuf",
+        "@clickhouse_grpc//:address_sorting",
+        "@clickhouse_rapidjson//:rapidjson",
+        "@clickhouse_re2//:_re2",
+        "@clickhouse_thrift//:_thrift",
+        "@clickhouse_xsimd//:xsimd",
+    ],
 )
 
 cc_library(
@@ -770,23 +839,4 @@ cc_library(
     ],
     strip_include_prefix = "config/contrib/arrow-cmake/cpp/src",
     visibility = ["@clickhouse//src:__pkg__"],
-)
-
-cc_library(
-    name = "arrow_source_headers",
-    hdrs = glob(
-        [
-            "cpp/src/**/*.h",
-            "cpp/src/**/*.hpp",
-            "cpp/src/**/*.tcc",
-        ],
-        exclude = ["cpp/src/generated/*_generated.h"],
-    ),
-    includes = [
-        "cpp/src",
-    ],
-    visibility = ["//visibility:private"],
-    deps = [
-        "@clickhouse_abseil_cpp//:absl_status",
-    ],
 )

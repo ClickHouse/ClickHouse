@@ -1153,6 +1153,28 @@ _PRIVATE_IO_HEADERS = [
     "IO/SnappyFramedWriteBuffer.h",
 ]
 
+_IO_COMPILED_API_HEADERS = [
+    "IO/Archives/ArchiveUtils.h",
+    "IO/Archives/createArchiveReader.h",
+    "IO/Archives/createArchiveWriter.h",
+    "IO/Archives/hasRegisteredArchiveFileExtension.h",
+    "IO/AzureBlobStorage/PocoHTTPClient.h",
+    "IO/AzureBlobStorage/copyAzureBlobStorageFile.h",
+    "IO/AzureBlobStorage/isRetryableAzureException.h",
+    "IO/Protobuf/ProtobufZeroCopyInputStreamFromReadBuffer.h",
+    "IO/Protobuf/ProtobufZeroCopyOutputStreamFromWriteBuffer.h",
+    "IO/S3/AWSLogger.h",
+    "IO/S3/Client.h",
+    "IO/S3/ProviderType.h",
+    "IO/S3/ReadBufferFromGetObjectResult.h",
+    "IO/S3/Requests.h",
+    "IO/S3/S3Capabilities.h",
+    "IO/S3/URI.h",
+    "IO/S3/copyS3File.h",
+    "IO/S3/deleteFileFromS3.h",
+    "IO/S3/getObjectInfo.h",
+]
+
 ch_cc_library(
     name = "clickhouse_common_io__compile_0",
     srcs = [
@@ -1429,7 +1451,7 @@ ch_cc_library(
     hdrs = glob(
         ["IO/**/*.h"],
         exclude = _PRIVATE_IO_HEADERS,
-    ),
+    ) + ["//src/Common:IO.h"],
     additional_compiler_inputs = ["//bazel:gen/embedded/contrib/nlp-data/charset.zst"],
     clickhouse_code = True,
     implementation_deps = [
@@ -1480,6 +1502,12 @@ ch_cc_library(
     }) + [
         "//base:common",
         "//src/Common/Config:clickhouse_common_config",
+        "//contrib/jemalloc-cmake:headers",
+        "@clickhouse_openssl//:ssl",
+        "@clickhouse_silk//:_silk_util",
+        "@clickhouse_abseil_cpp//:absl_base_config",
+        "@lz4//:lz4",
+        "@lz4//:lz4_frame",
     ],
     includes = ["."],
     local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
@@ -1504,6 +1532,10 @@ ch_cc_library(
         "@clickhouse_xz//:_liblzma",
         "@clickhouse_zlib_ng//:_zlib",
         "@clickhouse_zstd//:_zstd",
+        "//bazel:clickhouse_config_headers",
+        "//base/poco/Util:_poco_util",
+        "@clickhouse_aws//:_aws__compile_0",
+        "@clickhouse_zstd//:_zstd__compile_0",
     ],
 )
 
@@ -1716,7 +1748,10 @@ _GENERATED_HDRS_1 = [
         "Formats/*.h",
     ],
     exclude = _PRIVATE_DBMS_0_HEADERS,
-) + glob(["IO/**/*.h"]) + glob(
+) + glob(
+    ["IO/**/*.h"],
+    exclude = _IO_COMPILED_API_HEADERS,
+) + glob(
     [
         "Interpreters/Access/*.h",
     ],
@@ -2998,6 +3033,7 @@ ch_cc_library(
         "@clickhouse_mongo_cxx_driver//:_bsoncxx",
         "@clickhouse_mongo_cxx_driver//:_mongocxx",
         "//src/Common/Config:clickhouse_common_config",
+        "//src:clickhouse_common_io__compile_0",
     ],
 )
 
@@ -3403,7 +3439,10 @@ ch_cc_library(
                 "Formats/*.h",
             ],
             exclude = _PRIVATE_DBMS_0_HEADERS,
-        ) + glob(["IO/**/*.h"]) + glob(
+        ) + glob(
+            ["IO/**/*.h"],
+            exclude = _IO_COMPILED_API_HEADERS,
+        ) + glob(
             [
                 "Interpreters/Access/*.h",
             ],
@@ -4859,7 +4898,7 @@ cc_library(
         exclude = _PRIVATE_DBMS_0_HEADERS,
     ) + glob(
         ["IO/**/*.h"],
-        exclude = _PRIVATE_IO_HEADERS,
+        exclude = _PRIVATE_IO_HEADERS + _IO_COMPILED_API_HEADERS,
     ) + glob(
         [
             "Interpreters/Access/*.h",
@@ -5155,7 +5194,7 @@ cc_library(
         [
             "**/*.h",
         ],
-        exclude = _PRIVATE_IO_HEADERS + _PRIVATE_DBMS_0_HEADERS,
+        exclude = _PRIVATE_IO_HEADERS + _PRIVATE_DBMS_0_HEADERS + _IO_COMPILED_API_HEADERS,
     ),
     includes = [
         ".",

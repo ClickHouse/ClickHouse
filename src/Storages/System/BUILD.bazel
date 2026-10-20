@@ -471,7 +471,10 @@ ch_cc_library(
         "@clickhouse_simsimd//:_simsimd",
         "@clickhouse_sha3iuf//:_sha3iuf",
         "@clickhouse_icu//:_icui18n",
-    ] + ["@clickhouse_libpqxx//:_libpqxx"],
+    ] + [
+        "@clickhouse_libpqxx//:_libpqxx",
+        "//src:clickhouse_common_io__compile_0",
+    ],
     local_defines = _CLICKHOUSE_STORAGES_SYSTEM_LOCAL_DEFINES,
     local_includes = [
         "../../../" + "bazel/gen/contrib/google-cloud-cpp-cmake",

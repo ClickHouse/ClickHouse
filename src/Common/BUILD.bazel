@@ -548,6 +548,11 @@ ch_cc_library(
     ],
 )
 
+exports_files(
+    ["IO.h"],
+    visibility = ["//src:__pkg__"],
+)
+
 ch_cc_library(
     name = "Common",
     srcs = [
@@ -557,7 +562,10 @@ ch_cc_library(
     ],
     hdrs = glob(
         ["**/*.h"],
-        exclude = ["CaresPTRResolver.h"],
+        exclude = [
+            "CaresPTRResolver.h",
+            "IO.h",
+        ],
     ),
     clickhouse_code = True,
     implementation_deps = [
