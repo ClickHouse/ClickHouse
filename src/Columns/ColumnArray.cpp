@@ -42,16 +42,17 @@ namespace
     /// materialize a filter with one byte per nested element. The temporary array owns both of its
     /// columns exclusively: `nested` is deep-COWed via `IColumn::mutate`, so we never silently mutate
     /// a column that is shared with another owner, and the offsets are copied, because the caller
-    /// still needs them. The filtered column is written back to `nested`, which is restored even when
-    /// `filter` throws, so it is never left moved-from.
+    /// still needs them. The filtered column is written back to `nested`, which is never left moved-from:
+    /// the temporary array is allocated (empty) before `nested` is consumed, the restoration guard exists
+    /// before `IColumn::mutate` releases the slot, and handing the result over to the temporary cannot throw.
     void filterNestedArrayElements(ColumnPtr & nested, const ColumnPtr & offsets, const IColumn::Filter & filt)
     {
-        auto offsets_copy = IColumn::mutate(offsets);
-        auto * nested_slot = &nested;
-        auto temporary = ColumnArray::create(IColumn::mutate(std::move(*nested_slot)), std::move(offsets_copy));
-        SCOPE_EXIT({ if (!*nested_slot) *nested_slot = std::move(temporary->getDataPtr()); });
+        auto temporary = ColumnArray::create(nested->cloneEmpty(), ColumnArray::ColumnOffsets::create());
+        temporary->getOffsetsPtr() = IColumn::mutate(offsets);
+        SCOPE_EXIT({ if (!nested) nested = std::move(temporary->getDataPtr()); });
+        temporary->getDataPtr() = IColumn::mutate(std::move(nested));
         temporary->filter(filt);
-        *nested_slot = std::move(temporary->getDataPtr());
+        nested = std::move(temporary->getDataPtr());
     }
 }
 
