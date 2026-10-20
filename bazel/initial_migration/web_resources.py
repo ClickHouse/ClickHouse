@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Keep Web UI compiler inputs only in the library compiling WebUIRequestHandler.cpp.
 
-This migration runs after native BUILD rendering and pruning.  A future Next
-source build may replace the generators behind //bazel:web_ui_resources.
+This migration runs after native BUILD rendering and pruning. It replaces the
+captured ClickStack inventory with the source export after checking ownership.
 """
 import argparse
 import ast
@@ -28,6 +28,18 @@ filegroup(
     ] + select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [],
+    }),
+)
+"""
+CLICKSTACK_LOAD = 'load("//bazel/rules/clickstack:embed.bzl", "embed_clickstack")'
+CLICKSTACK_BUILD = """
+embed_clickstack(
+    name = "generate_native_ClickStack",
+    src = "//bazel/rules/clickstack:source_export",
+    gzip_mtime = select({
+        ":use_cmake_metadata_x86_64": CMAKE_METADATA["x86_64"]["resource_gzip_mtimes"]["ClickStack"],
+        ":use_cmake_metadata_aarch64": CMAKE_METADATA["aarch64"]["resource_gzip_mtimes"]["ClickStack"],
+        "//conditions:default": -1,
     }),
 )
 """
@@ -68,7 +80,9 @@ def resource_file(value):
         return False
     return any(
         '/contrib/' + directory + '-cmake/' in value and
-        (value.endswith('/' + ns + 'Resources.generated.h') or '/' + directory.replace('-', '_') + '_compressed/' in value)
+        (value.endswith('/' + ns + 'Resources.generated.h')
+         or '/' + directory.replace('-', '_') + '_compressed/' in value
+         or value.endswith('/' + directory.replace('-', '_') + '_compressed'))
         for ns, directory in NAMESPACES.items()
     )
 
@@ -245,22 +259,33 @@ def expanded_inputs(node, definitions, cpu, group=None):
     return string_constants(eval_node(node, definitions, cpu, group))
 
 
-def generator_outputs(root, Source):
+def codegen_table(root, Source):
     source = Source((root / 'bazel/rules/codegen_rules.bzl').read_text())
     tables = [value for node in source.module.body if isinstance(node, ast.Assign)
               and any(isinstance(t, ast.Name) and t.id == 'CODEGEN_RULES' for t in node.targets)
               for value in [node.value] if isinstance(value, ast.Dict)]
     if len(tables) != 1:
         raise ValueError('expected one literal CODEGEN_RULES table')
-    table = {key.value: value for key, value in zip(tables[0].keys, tables[0].values, strict=True)
+    return source, tables[0]
+
+
+def generator_outputs(root, Source):
+    _, entries = codegen_table(root, Source)
+    table = {key.value: value for key, value in zip(entries.keys, entries.values, strict=True)
              if isinstance(key, ast.Constant)}
     result = {}
     for cpu in CPUS:
         outputs = set()
         for ns in NAMESPACES:
-            gen = table['generate_native_' + ns]
-            attrs = {k.value: v for k, v in zip(gen.keys, gen.values, strict=True)}
-            labels = {'//bazel:' + path for path in ast.literal_eval(attrs['outs'])}
+            gen = table.get('generate_native_' + ns)
+            if gen is None and ns == 'ClickStack':
+                labels = {
+                    '//bazel:gen/contrib/clickstack-cmake/ClickStackResources.generated.h',
+                    '//bazel:gen/contrib/clickstack-cmake/clickstack_compressed',
+                }
+            else:
+                attrs = {k.value: v for k, v in zip(gen.keys, gen.values, strict=True)}
+                labels = {'//bazel:' + path for path in ast.literal_eval(attrs['outs'])}
             if not labels or not all(resource_file(label) for label in labels):
                 raise ValueError('unexpected generator outputs: ' + ns + ' ' + cpu)
             if outputs & labels:
@@ -268,6 +293,71 @@ def generator_outputs(root, Source):
             outputs |= labels
         result[cpu] = outputs
     return result
+
+
+def publish_clickstack(root, Source, bazel_text):
+    """Replace the recorded genrule after its outputs passed the owner proof."""
+    changes = {}
+    source, table = codegen_table(root, Source)
+    edits = []
+    for name, value in zip(table.keys, table.values, strict=True):
+        if isinstance(name, ast.Constant) and name.value == 'generate_native_ClickStack':
+            start = source.span(name)[0]
+            end = source.span(value)[1]
+            if source.bytes[end:end + 1] != b',':
+                raise ValueError('expected a comma after generate_native_ClickStack')
+            edits.append((start, end + 1, ''))
+    if edits:
+        changes[root / 'bazel/rules/codegen_rules.bzl'] = source.rewrite(edits)
+
+    # The pinned export is no longer a build input. Its repository still
+    # supplies LICENSE to generate_licenses.
+    exported = root / 'bazel/dependencies/clickhouse_clickstack.BUILD.bazel'
+    export_source = Source(exported.read_text())
+    old_names = []
+    for statement in export_source.module.body:
+        if not isinstance(statement, ast.Expr):
+            raise ValueError('unexpected ClickStack repository declaration')
+        name = rule_kind(statement.value)
+        if name == 'exports_files':
+            old_names.extend(ast.literal_eval(statement.value.args[0]))
+        elif name != 'package':
+            raise ValueError('unexpected ClickStack repository rule: ' + name)
+    if old_names.count('LICENSE') != 1 or any(name != 'LICENSE' and not name.startswith('out/')
+                                               for name in old_names):
+        raise ValueError('unexpected ClickStack repository exports')
+    changes[exported] = ('package(default_visibility = ["//visibility:public"])\n\n'
+                         'exports_files(["LICENSE"])\n')
+
+    source = Source(bazel_text)
+    edits = []
+    loads = [s for s in source.module.body if isinstance(s, ast.Expr) and rule_kind(s.value) == 'load']
+    if CLICKSTACK_LOAD not in bazel_text:
+        if not loads:
+            raise ValueError('missing bazel/BUILD.bazel loads')
+        end = source.span(loads[-1])[1]
+        edits.append((end, end, '\n' + CLICKSTACK_LOAD))
+    existing = [rule for _, rule in source.rules() if rule_name(rule) == 'generate_native_ClickStack']
+    if not existing:
+        end = len(source.bytes)
+        edits.append((end, end, '\n' + CLICKSTACK_BUILD))
+    elif len(existing) != 1 or key(existing[0]) != key(next(Source(CLICKSTACK_BUILD).rules())[1]):
+        raise ValueError('unexpected ClickStack generator declaration')
+    groups = []
+    for node in ast.walk(source.module):
+        if rule_kind(node) != 'filegroup':
+            continue
+        attrs = rule_attrs(node)
+        if string_constants(attrs.get('name', ast.Constant(None))) == ['generated_']:
+            groups.append(attrs['srcs'])
+    if len(groups) != 1:
+        raise ValueError('expected one generated_<arch> filegroup comprehension')
+    srcs = groups[0]
+    if ':generate_native_ClickStack' not in string_constants(srcs):
+        start, end = source.span(srcs)
+        edits.append((start, end, '[' + repr(':generate_native_ClickStack') + '] + (' + source.text(srcs) + ')'))
+    changes[root / 'bazel/BUILD.bazel'] = source.rewrite(edits)
+    return changes
 
 
 def prove(old, new, rel, generated, counts):
@@ -425,6 +515,10 @@ def prepare(root, paths=None):
         expected = list(Source(GROUP_BUILD).rules())[0][1]
         if key(known[0]) != key(expected):
             raise ValueError('unexpected web_ui_resources target')
+    published = publish_clickstack(root, Source, changes.get(bazel, before))
+    for path, text in published.items():
+        if text != path.read_text():
+            changes[path] = text
     return changes, counts
 
 

@@ -1,0 +1,26 @@
+load("@aspect_rules_js//js:defs.bzl", "js_binary")
+load(":hyperdx.bzl", "hyperdx_source_export")
+
+exports_files([
+    "hyperdx.BUILD.bazel",
+    "hyperdx-release.patch",
+    "google-fonts.json",
+    "native-yarn-checksums.json",
+    "populate_yarn_cache.cjs",
+])
+
+exports_files(glob(["google_css/*.css"]))
+
+js_binary(
+    name = "build_hyperdx",
+    entry_point = "build_hyperdx.cjs",
+)
+
+hyperdx_source_export(
+    name = "source_export",
+    font_manifest = "@clickstack_google_fonts//:manifest",
+    fonts = "@clickstack_google_fonts//:fonts",
+    visibility = ["//bazel:__pkg__"],
+    yarn_cache = "@clickstack_yarn_cache//:cache",
+    yarn_manifest = "@clickstack_yarn_cache//:manifest",
+)

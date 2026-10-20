@@ -10,6 +10,7 @@ load("//bazel/rules:build_options.bzl", "build_options")
 load("//bazel/rules:build_options_data.bzl", "BUILD_OPTIONS")
 load("//bazel/rules:codegen_actions.bzl", "declare_codegen")
 load("//bazel/rules:codegen_rules.bzl", "CODEGEN_RULES")
+load("//bazel/rules/clickstack:embed.bzl", "embed_clickstack")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -251,11 +252,11 @@ build_options(
 [
     filegroup(
         name = "generated_" + arch,
-        srcs = [":build_options"] + [
+        srcs = [":generate_native_ClickStack"] + ([":build_options"] + [
             ":" + name
             for name in CODEGEN_RULES
             if name.startswith("generate_" + arch + "_") or name.startswith("generate_contrib_") or name.startswith("generate_native_") or name.startswith("generate_googleapis_") or name == "extract_googleapis"
-        ],
+        ]),
     )
     for arch in [
         "x86_64",
@@ -271,5 +272,15 @@ filegroup(
     ] + select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [],
+    }),
+)
+
+embed_clickstack(
+    name = "generate_native_ClickStack",
+    src = "//bazel/rules/clickstack:source_export",
+    gzip_mtime = select({
+        ":use_cmake_metadata_x86_64": CMAKE_METADATA["x86_64"]["resource_gzip_mtimes"]["ClickStack"],
+        ":use_cmake_metadata_aarch64": CMAKE_METADATA["aarch64"]["resource_gzip_mtimes"]["ClickStack"],
+        "//conditions:default": -1,
     }),
 )

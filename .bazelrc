@@ -68,7 +68,7 @@ common:cmake_match --//bazel:cmake_metadata
 
 # Compile and run the ARM64 comparison on native ARM64 workers.
 common:cmake_match_aarch64 --config=remote
-common:cmake_match_aarch64 --extra_execution_platforms=//bazel:buildbuddy_linux_aarch64,//bazel:buildbuddy_linux_aarch64_test
+common:cmake_match_aarch64 --extra_execution_platforms=//bazel:buildbuddy_linux_aarch64,//bazel:buildbuddy_linux_aarch64_test,//bazel:buildbuddy_linux_x86_64
 common:cmake_match_aarch64 --config=aarch64
 common:cmake_match_aarch64 --//bazel:cmake_metadata
 
