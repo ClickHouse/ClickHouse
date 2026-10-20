@@ -2,3 +2,4 @@
 # by a pull request to be reachable (see ci/jobs/scripts/check_style/check_broken_links.py).
 #
 # One URL prefix per line: a link that starts with any of them is not checked.
+https://storage.azure.com

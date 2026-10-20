@@ -119,7 +119,7 @@ struct ResolvedWebIdentitySettings
     Aws::String role_arn;
     Aws::String token_file;
     Aws::String session_name;
-    String tmp_region;
+    Aws::String tmp_region;
 };
 
 ResolvedWebIdentitySettings resolveWebIdentitySettingsFromEnvironmentAndProfile(std::string_view role_arn_)
@@ -725,7 +725,7 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleWebIdenti
     Aws::String role_arn = std::move(resolved.role_arn);
     Aws::String token_file = std::move(resolved.token_file);
     Aws::String session_name = std::move(resolved.session_name);
-    String tmp_region = std::move(resolved.tmp_region);
+    Aws::String tmp_region = std::move(resolved.tmp_region);
 
     auto empty_credentials = std::make_shared<Aws::Auth::AnonymousAWSCredentialsProvider>();
     if (token_file.empty())
@@ -786,7 +786,7 @@ AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::AwsAuthSTSAssumeRoleWebIdent
     Aws::String role_arn_,
     Aws::String token_file_,
     Aws::String session_name_,
-    String tmp_region)
+    Aws::String tmp_region)
     : role_arn(std::move(role_arn_))
     , token_file(std::move(token_file_))
     , session_name(std::move(session_name_))

@@ -154,7 +154,7 @@ public:
         Aws::String role_arn_,
         Aws::String token_file_,
         Aws::String session_name_,
-        String tmp_region);
+        Aws::String tmp_region);
 
     Aws::Auth::AWSCredentials GetAWSCredentials() override;
 

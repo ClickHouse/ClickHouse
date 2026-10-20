@@ -22,7 +22,7 @@ public:
 
     SecretString & operator=(std::string_view str) { bytes.assign(str.begin(), str.end()); return *this; }
 
-    operator std::string_view() const { return {bytes.data(), bytes.size()}; }
+    operator std::string_view() const { return {bytes.data(), bytes.size()}; } /// NOLINT(google-explicit-constructor)
 
     bool empty() const { return bytes.empty(); }
     size_t size() const { return bytes.size(); }

@@ -87,7 +87,7 @@ struct ThreadCache
 
     explicit ThreadCache(int arena_flags_) : arena_flags(arena_flags_)
     {
-        unsigned created_index;
+        unsigned created_index = 0;
         size_t index_size = sizeof(created_index);
         if (je_mallctl("tcache.create", &created_index, &index_size, nullptr, 0) == 0)
             index = created_index;
