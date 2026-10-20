@@ -7,42 +7,42 @@
       "versionId": "9b3345383ff3389c6681dbde6573112bd992f08e5b332453425e342f66849919",
       "translations": {
         "es": {
-          "updatedAt": "2026-10-20T15:01:31.455Z",
+          "updatedAt": "2026-10-20T16:32:59.764Z",
           "fileName": "docs.json",
           "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         },
         "ja": {
-          "updatedAt": "2026-10-20T15:01:31.642Z",
+          "updatedAt": "2026-10-20T16:32:59.965Z",
           "fileName": "docs.json",
           "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         },
         "ko": {
-          "updatedAt": "2026-10-20T15:01:31.868Z",
+          "updatedAt": "2026-10-20T16:33:00.162Z",
           "fileName": "docs.json",
           "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         },
         "pt-BR": {
-          "updatedAt": "2026-10-20T15:01:32.048Z",
+          "updatedAt": "2026-10-20T16:33:00.355Z",
           "fileName": "docs.json",
           "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         },
         "ru": {
-          "updatedAt": "2026-10-20T15:01:32.234Z",
+          "updatedAt": "2026-10-20T16:33:00.561Z",
           "fileName": "docs.json",
           "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         },
         "zh": {
-          "updatedAt": "2026-10-20T15:01:32.442Z",
+          "updatedAt": "2026-10-20T16:33:00.754Z",
           "fileName": "docs.json",
           "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         },
         "ar": {
-          "updatedAt": "2026-10-20T15:01:32.617Z",
+          "updatedAt": "2026-10-20T16:33:00.944Z",
           "fileName": "docs.json",
           "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         },
         "fr": {
-          "updatedAt": "2026-10-20T15:01:32.818Z",
+          "updatedAt": "2026-10-20T16:33:01.146Z",
           "fileName": "docs.json",
           "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         }
@@ -97337,94 +97337,94 @@
     },
     {
       "fileId": "a3004df79b430edcb77d254005f3397255e73abde366e7d812086c4a0b8d91c2",
-      "versionId": "b018c0f9acdde1bdfeabb18b3b52c82c43370f4515fdcf47f450634cca8d1794",
+      "versionId": "9b878fc137e5a38296022e5ab18735813eaf07b08928b6b3f5ffe787e616e00d",
       "translations": {
+        "pt-BR": {
+          "updatedAt": "2026-10-20T16:33:04.888Z",
+          "fileName": "pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx",
+          "postProcessHash": "4f1f098748a94d86ce68b659b9cf266ad6781212c2860cdecbf834d271e091c9"
+        },
         "ru": {
-          "updatedAt": "2026-08-26T23:12:58.666Z",
+          "updatedAt": "2026-10-20T16:33:04.889Z",
           "fileName": "ru/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx",
-          "postProcessHash": "1e6b93715fa7344c036fea45b1ff18cd7b99b7af4c8c5e21bcb8c5f92b5dbfaf"
-        },
-        "ko": {
-          "updatedAt": "2026-08-26T23:12:58.679Z",
-          "fileName": "ko/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx",
-          "postProcessHash": "6953d705fef640aa0adfc0962fb2657d336a291b1cc33378e269c60cb23e6b5f"
-        },
-        "ar": {
-          "updatedAt": "2026-08-26T23:12:58.704Z",
-          "fileName": "ar/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx",
-          "postProcessHash": "28b52a608ddb72565c8d943391151fce76611da11994b208cd6c112c7b60e031"
+          "postProcessHash": "87d67eb9ee8e99a9c2d5f3c0daa761e9366b6acfb9e35ba09e6af965de02f7bd"
         },
         "zh": {
-          "updatedAt": "2026-08-26T23:12:58.705Z",
+          "updatedAt": "2026-10-20T16:33:04.889Z",
           "fileName": "zh/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx",
-          "postProcessHash": "181c94cb76a8eca5ed30ee6dc64f3cd831a068bc00570f57d91d457e00eec115"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-26T23:12:58.711Z",
-          "fileName": "pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx",
-          "postProcessHash": "4e4ca1c94d91ebeebaebe6a0ee586b8194a213cb6c7b6316f0757c27e25b0d8d"
-        },
-        "fr": {
-          "updatedAt": "2026-08-26T23:12:58.714Z",
-          "fileName": "fr/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx",
-          "postProcessHash": "06fe04927e89b2f8ab9d4de5ab30ef084c0daf292ef7f253d2e44ede8f2d6a6e"
-        },
-        "es": {
-          "updatedAt": "2026-08-26T23:12:58.717Z",
-          "fileName": "es/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx",
-          "postProcessHash": "baf9571364e3d9f57ab022d3918f5def4710dfab5d35c4136d2d4944be824071"
+          "postProcessHash": "30a42ecb2836235edb23decd51e858ee8702a5317d4b1a0d65baf18cf0e0ccfc"
         },
         "ja": {
-          "updatedAt": "2026-08-26T23:12:58.721Z",
+          "updatedAt": "2026-10-20T16:33:04.890Z",
           "fileName": "ja/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx",
-          "postProcessHash": "66f43ef34dc9f4f071f82e615836da57d01dec12a35ee3c30ce6fa359d315080"
+          "postProcessHash": "00816e1055fdf531d468693046a2e8c44114021dfc050976f81b0c851171c0bd"
+        },
+        "ko": {
+          "updatedAt": "2026-10-20T16:33:04.890Z",
+          "fileName": "ko/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx",
+          "postProcessHash": "2229a0476640a6b58c3edbb1c6e3df75904b45b0fd948e9d03f2c1b1ad2b54f2"
+        },
+        "es": {
+          "updatedAt": "2026-10-20T16:33:04.891Z",
+          "fileName": "es/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx",
+          "postProcessHash": "d8297d1b45de6d22573bb32d1ceaac1de14bf36878f611967d813498b3e29ada"
+        },
+        "ar": {
+          "updatedAt": "2026-10-20T16:33:04.891Z",
+          "fileName": "ar/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx",
+          "postProcessHash": "4b0a3dd52f009eaae76e1742874709b0fdb2cd4b0698f4ec53ed9bd378eb0a71"
+        },
+        "fr": {
+          "updatedAt": "2026-10-20T16:33:04.892Z",
+          "fileName": "fr/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx",
+          "postProcessHash": "54ea996eb91817ee8f65dbf58e3bc78292dbd77c26643f0a2e4b5b3417245121"
         }
       },
       "fileName": "integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view.mdx"
     },
     {
       "fileId": "5ba7f14eef0794d5bbb77aeae25ba62fbc2f05a1d574278aabfb8614343b56b8",
-      "versionId": "1557b03520ee0cb5e75727ce931918d7b7f7b112429ccb914b6d7dbe9336531e",
+      "versionId": "fa3d2e3102b57d7a31938bad4c714dbd0ca696d1f92aee1974017f0e1d3230f7",
       "translations": {
-        "es": {
-          "updatedAt": "2026-09-24T10:24:07.857Z",
-          "fileName": "es/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
-          "postProcessHash": "839fc69f108de36230c730d93579639b4170704b847f05cbb0728256987df736"
+        "zh": {
+          "updatedAt": "2026-10-20T16:33:04.884Z",
+          "fileName": "zh/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
+          "postProcessHash": "35e8106ea283058576241af2bb10135665700ae78537beae251d2214fa601529"
         },
-        "ja": {
-          "updatedAt": "2026-09-24T10:24:07.857Z",
-          "fileName": "ja/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
-          "postProcessHash": "01f65226846572642b284645296ad81269dc47ddc94a76c0e30fd010e3b04d53"
+        "es": {
+          "updatedAt": "2026-10-20T16:33:04.885Z",
+          "fileName": "es/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
+          "postProcessHash": "c7861fb9231e43b7a6222d793aa2356ad1f2f88bfed0a5b98bfcbfa7d3227926"
         },
         "ko": {
-          "updatedAt": "2026-09-24T10:24:07.858Z",
+          "updatedAt": "2026-10-20T16:33:04.885Z",
           "fileName": "ko/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
-          "postProcessHash": "cd927cd19f35bd0e5001e8e60e9a91b8aa95cdcbad90cc4694e10fea81c90cd0"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-24T10:24:07.858Z",
-          "fileName": "pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
-          "postProcessHash": "07c67a3206c5788878877667de5338cc6a13e69cdd67059f3a739cc3e0be5e4e"
+          "postProcessHash": "c181070f6c68bff9f596072fa6985cc5c14df6d38ad514f37f8f47b7d8fbd0db"
         },
         "ru": {
-          "updatedAt": "2026-09-24T10:24:07.859Z",
+          "updatedAt": "2026-10-20T16:33:04.886Z",
           "fileName": "ru/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
-          "postProcessHash": "65befbc5cb05e42ba08722a8c6bcc0701cb27306b45d4d476f29d3b218fb3502"
+          "postProcessHash": "286988f4059b8bdc863ae42450cb67b8f32f4a0eae15cf93a99985fa3453b79d"
         },
-        "zh": {
-          "updatedAt": "2026-09-24T10:24:07.860Z",
-          "fileName": "zh/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
-          "postProcessHash": "c4b93354c51c6cc7f69effb636c72c1eb89c13fe41ad96b6dd982e281719a965"
-        },
-        "ar": {
-          "updatedAt": "2026-09-24T10:24:07.860Z",
-          "fileName": "ar/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
-          "postProcessHash": "23db692dd11be202e4e4ad69a90f6cf7358bdbd4dd3716702f2a0149c88fc7c1"
+        "pt-BR": {
+          "updatedAt": "2026-10-20T16:33:04.886Z",
+          "fileName": "pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
+          "postProcessHash": "768556d030d64bc1a4c2e9b529b7b0ca0b3d9c3146b3205ab0fdc202076d01df"
         },
         "fr": {
-          "updatedAt": "2026-09-24T10:24:07.861Z",
+          "updatedAt": "2026-10-20T16:33:04.887Z",
           "fileName": "fr/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
-          "postProcessHash": "bec784b1a0faba9534126375ecd8f9b60ab6426c50a1b808ed4d00ba09681c32"
+          "postProcessHash": "85bce393013a459ff02ef70996d1c840e054543b317ed4959f0ae5c50c030400"
+        },
+        "ar": {
+          "updatedAt": "2026-10-20T16:33:04.887Z",
+          "fileName": "ar/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
+          "postProcessHash": "f2cbd9c83c0b52e6a4256f1c1a99b0e30f6a3ef1016e848b65c6beb9fe4942ad"
+        },
+        "ja": {
+          "updatedAt": "2026-10-20T16:33:04.888Z",
+          "fileName": "ja/integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx",
+          "postProcessHash": "0b12cd209aa3e0de43922458adf7f1d0a9692796ac65f33afc3b2b85bb720279"
         }
       },
       "fileName": "integrations/connectors/data-ingestion/etl-tools/dbt/materializations.mdx"

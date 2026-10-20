@@ -13,21 +13,21 @@ import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupp
 
 このセクションでは、dbt-clickhouse で利用可能なすべてのマテリアライゼーション (実験的な機能を含む) について説明します。
 
-## 一般的なマテリアライゼーション設定 {#general-materialization-configurations}
+## 一般的なマテリアライズ設定 {#general-materialization-configurations}
 
-次の表は、利用可能なマテリアライゼーションの一部で共通して使用される設定を示しています。一般的な dbt モデル設定の詳細については、[dbt documentation](https://docs.getdbt.com/category/general-configs)を参照してください。
+次の表は、利用可能なマテリアライズの一部で共通して使用される設定を示しています。一般的な dbt モデル設定の詳細については、[dbt documentation](https://docs.getdbt.com/category/general-configs)を参照してください。
 
-| Option             | Description                                                                                                                       | Default if any |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| engine             | テーブルの作成時に使用するテーブルエンジン (テーブルの種類)                                                                                                | `MergeTree()`  |
-| order&#95;by       | カラム名のタプル、または任意の式です。これにより、データをより速く見つけるのに役立つ小さなスパースインデックスを作成できます。                                                                   | `tuple()`      |
-| partition&#95;by   | パーティションは、指定した条件に基づいてテーブル内のレコードを論理的にまとめたものです。パーティションキーには、テーブルのカラムを使った任意の式を指定できます。                                                  |                |
-| primary&#95;key    | order&#95;by と同様の、ClickHouse の主キー式です。指定しない場合、ClickHouse は order&#95;by 式を主キーとして使用します。                                             |                |
-| settings           | このモデルで `CREATE TABLE` などの DDL ステートメントに使用する `"TABLE"` settings の map/dictionary                                                    |                |
-| query&#95;settings | このモデルと組み合わせて `INSERT` または `DELETE` ステートメントで使用する、ClickHouse のユーザーレベル settings の map/dictionary                                     |                |
-| ttl                | テーブルで使用する TTL 式です。TTL 式は文字列で指定し、テーブルの TTL を設定するために使用できます。                                                                         |                |
-| sql&#95;security   | view の基になるクエリの実行時に使用する ClickHouse ユーザーです。[Accepted values](/ja/reference/statements/create/view#sql_security): `definer`, `invoker`. |                |
-| definer            | `sql_security` を `definer` に設定した場合は、`definer` clause に既存のユーザー、または `CURRENT_USER` を指定する必要があります。                                    |                |
+| Option             | Description                                                                                                                             | Default if any |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| engine             | テーブルの作成時に使用するテーブルエンジン (テーブルの種類)                                                                                                         | `MergeTree()`  |
+| order&#95;by       | カラム名のタプル、または任意の式です。これにより、データをより速く見つけるのに役立つ小さなスパースインデックスを作成できます。                                                                         | `tuple()`      |
+| partition&#95;by   | パーティションは、指定した条件に基づいてテーブル内のレコードを論理的にまとめたものです。パーティションキーには、テーブルのカラムを使った任意の式を指定できます。                                                        |                |
+| primary&#95;key    | order&#95;by と同様の、ClickHouse の主キー式です。指定しない場合、ClickHouse は order&#95;by 式を主キーとして使用します。                                                   |                |
+| settings           | このモデルで `CREATE TABLE` などの DDL ステートメントに使用する `"TABLE"` settings の map/dictionary                                                          |                |
+| query&#95;settings | モデルの `INSERT`/`DELETE` ステートメントに、また ビュー および materialized ビュー の場合は保存される ビュー クエリに、`SETTINGS` 句として追加されるユーザーレベル settings の map/dictionary |                |
+| ttl                | テーブルで使用する TTL 式です。TTL 式は文字列で指定し、テーブルの TTL を設定するために使用できます。                                                                               |                |
+| sql&#95;security   | ビュー の基になるクエリの実行時に使用する ClickHouse ユーザーです。[Accepted values](/ja/reference/statements/create/view#sql_security): `definer`, `invoker`.       |                |
+| definer            | `sql_security` を `definer` に設定した場合は、`definer` 句 に既存のユーザー、または `CURRENT_USER` を指定する必要があります。                                          |                |
 
 ### サポートされているテーブルエンジン {#supported-table-engines}
 
@@ -55,14 +55,12 @@ import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupp
 ### モデル設定に関する注意 {#a-note-on-model-settings}
 
 ClickHouse には、「設定」にいくつかの種類やレベルがあります。上記のモデル構成では、そのうち 2 種類を
-設定できます。`settings` は、`CREATE TABLE/VIEW` 型の DDL ステートメントで使用される `SETTINGS`
-句を指し、一般に特定の ClickHouse テーブルエンジン固有の設定を意味します。新しい
-`query_settings` は、モデルのマテリアライゼーションで使用される `INSERT` および `DELETE` クエリに `SETTINGS` 句を追加するためのものです (
-増分マテリアライゼーションを含む) 。
-ClickHouse には何百もの設定があり、どれが「テーブル」設定で、どれが「ユーザー」
-設定なのかが必ずしも明確ではありません (ただし後者は、一般に
-`system.settings` テーブルで確認できます) 。基本的にはデフォルト値の使用が推奨されており、これらのプロパティを使用する場合は
-十分に調査と検証を行ってください。
+設定できます。
+
+* `settings` は、`CREATE TABLE/VIEW` 型の DDL ステートメントで使用される `SETTINGS` 句を指し、一般に特定の ClickHouse テーブルエンジン固有の設定を意味します。
+* `query_settings` は、モデルのマテリアライズ (増分マテリアライズを含む) で使用される `INSERT` および `DELETE` クエリに `SETTINGS` 句を追加するためのものです。ビューおよび materialized view の場合、`SETTINGS` 句は保存されるビューのクエリにも追加されるため、materialized view はソーステーブルへの挿入時やリフレッシュ時に毎回これらの設定を適用します。
+
+ClickHouse には何百もの設定があり、どれが「テーブル」設定で、どれが「ユーザー」設定なのかが必ずしも明確ではありません (ただし後者は、一般に `system.settings` テーブルで確認できます) 。基本的にはデフォルト値の使用が推奨されており、これらのプロパティを使用する場合は十分に調査と検証を行ってください。
 
 ### カラム設定 {#column-configuration}
 
