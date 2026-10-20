@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <string_view>
 
 #include <Core/Field.h>
@@ -91,6 +92,26 @@ ASTPtr makeAsterisk(const std::vector<std::string> & excluded)
     return asterisk;
 }
 
+/// Whether a field of a projection is a field of the source kept as itself, which keeps everything
+/// under it as well, rather than a value computed under that name.
+bool isKeptAsItself(const MongoProjectedField & field)
+{
+    const auto * identifier = field.expression->as<ASTIdentifier>();
+    return identifier && identifier->name() == field.name;
+}
+
+/// Whether the value of a member of a projection is a nested document of further members, such as
+/// `{"age": 1}` in `{"profile": {"age": 1}}`, rather than an expression or a constant.
+bool isNestedProjectionDocument(const rapidjson::Value & value)
+{
+    if (!value.IsObject())
+        return false;
+    if (value.MemberCount() == 0)
+        return true;
+    /// An operator, and an Extended JSON constant such as `{"$date": ...}`, start with `$`.
+    return !stringView(value.MemberBegin()->name).starts_with("$");
+}
+
 /// Whether a select of `* EXCEPT (excluded)` keeps every field the stream is ordered by, so a later
 /// order-sensitive stage can still name them.
 bool exclusionPreservesOrderKeys(const MongoGroupOrder & order, const std::vector<std::string> & excluded)
@@ -106,6 +127,96 @@ bool exclusionPreservesOrderKeys(const MongoGroupOrder & order, const std::vecto
     return true;
 }
 
+/// `(<select>)`, a subquery in the `FROM` of a select or a scalar one in an expression.
+ASTPtr makeSubquery(ASTPtr select)
+{
+    auto union_query = make_intrusive<ASTSelectWithUnionQuery>();
+    auto list_of_selects = make_intrusive<ASTExpressionList>();
+    list_of_selects->children.push_back(std::move(select));
+    union_query->list_of_selects = list_of_selects;
+    union_query->children.push_back(list_of_selects);
+    return make_intrusive<ASTSubquery>(std::move(union_query));
+}
+
+/** The names of the fields of the documents of a stream, where the pipeline determines them.
+  *
+  * The branches of a SQL `UNION ALL` are matched by position and named after the first one, while
+  * `$unionWith` appends documents with their own field names. So a union is only translated when
+  * both of its sides are known to produce the same fields (see `translateUnionWith`), and this is
+  * what that is decided by.
+  */
+struct StreamFields
+{
+    enum class Kind : uint8_t
+    {
+        /// The columns of the collection `database`.`collection`, in its order.
+        Collection,
+        /// Exactly the columns in `names`, in that order.
+        Names,
+        /// Depends on which columns the source has, which the translation does not know.
+        Unknown,
+    };
+
+    Kind kind = Kind::Unknown;
+    std::string database;
+    std::string collection;
+    std::vector<std::string> names;
+
+    static StreamFields ofCollection(const std::string & database, const std::string & collection)
+    {
+        StreamFields fields;
+        fields.kind = Kind::Collection;
+        fields.database = database;
+        fields.collection = collection;
+        return fields;
+    }
+
+    static StreamFields ofNames(std::vector<std::string> names)
+    {
+        StreamFields fields;
+        fields.kind = Kind::Names;
+        fields.names = std::move(names);
+        return fields;
+    }
+
+    static StreamFields ofProjectedFields(const std::vector<MongoProjectedField> & projected)
+    {
+        std::vector<std::string> names;
+        names.reserve(projected.size());
+        for (const auto & field : projected)
+            names.push_back(field.name);
+        return ofNames(std::move(names));
+    }
+
+    /// The fields that remain after a `* EXCEPT` of the subtrees under `paths`.
+    void removeSubtrees(const std::vector<std::string> & paths)
+    {
+        if (paths.empty())
+            return;
+        if (kind != Kind::Names)
+        {
+            *this = {};
+            return;
+        }
+        std::erase_if(
+            names,
+            [&](const std::string & name)
+            { return std::any_of(paths.begin(), paths.end(), [&](const std::string & path) { return isInFieldSubtree(name, path); }); });
+    }
+
+    /// The fields under `path`, in their order, which is what a select of `path` as itself keeps.
+    std::optional<std::vector<std::string>> subtree(const std::string & path) const
+    {
+        if (kind != Kind::Names)
+            return std::nullopt;
+        std::vector<std::string> result;
+        for (const auto & name : names)
+            if (isInFieldSubtree(name, path))
+                result.push_back(name);
+        return result;
+    }
+};
+
 /** The `SELECT` a pipeline is being translated into, and the ones already finished below it.
   *
   * A stage either fills a clause that is still free, or wraps everything built so far into a
@@ -115,6 +226,14 @@ class SelectChain
 {
 public:
     explicit SelectChain(ASTPtr source_) : source(std::move(source_)) { }
+
+    /// The chain that reads a collection as it is.
+    static SelectChain ofCollection(const std::string & database, const std::string & collection)
+    {
+        SelectChain chain(makeCollectionSource(database, collection));
+        chain.fields = StreamFields::ofCollection(database, collection);
+        return chain;
+    }
 
     /// `nullptr` means `SELECT *`.
     ASTPtr select_list;
@@ -133,6 +252,9 @@ public:
     /// has that property unless it replaces a sort key; `$project` and `$group` do not in general.
     bool select_list_preserves_order_keys = false;
 
+    /// The fields of the documents the chain produces. A stage that changes them updates this.
+    StreamFields fields;
+
     /// True when nothing but a `WHERE` has been collected, so a stage that produces the list of
     /// columns can be folded into the select being built.
     bool onlyFiltered() const { return !select_list && !group_by && !having && !order_by && !limit && !offset; }
@@ -144,13 +266,7 @@ public:
         if (select_list && !select_list_preserves_order_keys)
             order.keys_in_scope = false;
 
-        auto union_query = make_intrusive<ASTSelectWithUnionQuery>();
-        auto list_of_selects = make_intrusive<ASTExpressionList>();
-        list_of_selects->children.push_back(build());
-        union_query->list_of_selects = list_of_selects;
-        union_query->children.push_back(list_of_selects);
-
-        source = make_intrusive<ASTSubquery>(std::move(union_query));
+        source = makeSubquery(build());
         select_list = nullptr;
         where = nullptr;
         group_by = nullptr;
@@ -162,7 +278,8 @@ public:
         select_list_preserves_order_keys = false;
     }
 
-    /// Appends the documents of another pipeline to the stream, for `$unionWith`.
+    /// Appends the documents of another pipeline to the stream, for `$unionWith`. The other
+    /// pipeline must produce the same fields in the same order (see `translateUnionWith`).
     void unionWith(ASTPtr other_select)
     {
         wrap();
@@ -263,7 +380,8 @@ UInt64 parseCount(const rapidjson::Value & value, std::string_view stage, bool p
     return static_cast<UInt64>(count);
 }
 
-ASTPtr translatePipeline(const rapidjson::Value & pipeline, ASTPtr source, const std::shared_ptr<QueryMetadata> & metadata);
+SelectChain translatePipeline(
+    const rapidjson::Value & pipeline, const std::string & collection, const std::shared_ptr<QueryMetadata> & metadata);
 
 /** The aggregation of the whole stream into one document - a `$group` with a `_id` of `null`, a
   * `$count` - produces no document at all when the stream is empty, while an aggregation without
@@ -316,20 +434,26 @@ void translateGroup(SelectChain & chain, const rapidjson::Value & stage)
 
     auto select_list = make_intrusive<ASTExpressionList>();
     auto group_by = make_intrusive<ASTExpressionList>();
+    std::vector<std::string> names;
 
     if (id_it->value.IsNull())
     {
         /// `{"_id": null}` aggregates the whole stream into one document.
         select_list->children.push_back(withAlias(makeLiteral(Field()), "_id"));
+        names.emplace_back("_id");
         chain.having = makeNonEmptyGroupCondition();
     }
     else
     {
+        /// A constant key, such as `{"_id": 42}`, groups by that value: the generated query
+        /// disables positional arguments, so `GROUP BY 42` is not the 42nd column of the select
+        /// (see `ParserMongoAggregateQuery::parseImpl`).
         std::vector<MongoProjectedField> key_fields;
         expandMongoProjectedField("_id", id_it->value, key_fields);
         for (auto & field : key_fields)
         {
             group_by->children.push_back(field.expression->clone());
+            names.push_back(field.name);
             select_list->children.push_back(withAlias(field.expression, field.name));
         }
     }
@@ -340,11 +464,52 @@ void translateGroup(SelectChain & chain, const rapidjson::Value & stage)
         if (name == "_id")
             continue;
         select_list->children.push_back(withAlias(parseMongoAccumulator(it->value, order), name));
+        names.push_back(std::move(name));
     }
+
+    chain.fields = StreamFields::ofNames(std::move(names));
 
     chain.select_list = std::move(select_list);
     if (!group_by->children.empty())
         chain.group_by = std::move(group_by);
+}
+
+/** One member of a `$project` document: a field to keep, a field to remove, or a field to compute.
+  *
+  * A number or a boolean says whether to keep the field, at any depth: `{"profile": {"age": 1}}`
+  * keeps `profile.age` and `{"profile": {"age": 0}}` removes it, as in Mongo, where a literal value
+  * has to be spelled as `$literal` inside a projection. A `$` prefixed expression, or any other value,
+  * computes the field. This is what tells a projection from `$set`, where every value is computed.
+  */
+void collectProjectionMember(
+    const std::string & name,
+    const rapidjson::Value & value,
+    std::vector<MongoProjectedField> & fields,
+    std::vector<std::string> & excluded)
+{
+    if (name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "A field name of a projection must not be empty");
+
+    if (value.IsBool() || value.IsNumber())
+    {
+        const bool included = value.IsBool() ? value.GetBool() : value.GetDouble() != 0;
+        if (included)
+            fields.push_back({name, make_intrusive<ASTIdentifier>(name)});
+        else
+            excluded.push_back(name);
+        return;
+    }
+
+    if (isNestedProjectionDocument(value))
+    {
+        if (value.MemberCount() == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The projection of '{}' must not be an empty document", name);
+        for (auto it = value.MemberBegin(); it != value.MemberEnd(); ++it)
+            collectProjectionMember(name + "." + std::string(stringView(it->name)), it->value, fields, excluded);
+        return;
+    }
+
+    expandMongoProjectedField(name, value, fields);
 }
 
 void translateProject(SelectChain & chain, const rapidjson::Value & stage)
@@ -356,28 +521,7 @@ void translateProject(SelectChain & chain, const rapidjson::Value & stage)
     std::vector<std::string> excluded;
 
     for (auto it = stage.MemberBegin(); it != stage.MemberEnd(); ++it)
-    {
-        std::string name(stringView(it->name));
-        const auto & value = it->value;
-
-        if (name.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "A field name of a projection must not be empty");
-
-        /// A number or a boolean says whether to keep the field; only a document or a `$` prefixed
-        /// expression computes one.
-        const bool is_flag = value.IsBool() || value.IsNumber();
-        if (is_flag)
-        {
-            const bool included = value.IsBool() ? value.GetBool() : value.GetDouble() != 0;
-            if (included)
-                fields.push_back({name, make_intrusive<ASTIdentifier>(name)});
-            else
-                excluded.push_back(std::move(name));
-            continue;
-        }
-
-        expandMongoProjectedField(name, value, fields);
-    }
+        collectProjectionMember(std::string(stringView(it->name)), it->value, fields, excluded);
 
     if (!fields.empty() && !excluded.empty())
     {
@@ -408,8 +552,7 @@ void translateProject(SelectChain & chain, const rapidjson::Value & stage)
         {
             /// A field kept as itself is kept together with everything under it, the same way as
             /// in the projection of a `find`: `{"profile": 1}` keeps `profile.name` and `profile.age`.
-            const auto * identifier = field.expression->as<ASTIdentifier>();
-            if (identifier && identifier->name() == field.name)
+            if (isKeptAsItself(field))
             {
                 auto matcher = make_intrusive<ASTColumnsRegexpMatcher>();
                 matcher->setPattern(makeFieldSubtreePattern({field.name}));
@@ -428,8 +571,28 @@ void translateProject(SelectChain & chain, const rapidjson::Value & stage)
     {
         chain.select_list_preserves_order_keys = exclusionPreservesOrderKeys(chain.order, excluded);
         chain.select_list = std::move(select_list);
+        chain.fields.removeSubtrees(excluded);
         return;
     }
+
+    std::vector<std::string> names;
+    bool names_known = true;
+    for (const auto & field : fields)
+    {
+        if (!isKeptAsItself(field))
+        {
+            names.push_back(field.name);
+            continue;
+        }
+        auto subtree = chain.fields.subtree(field.name);
+        if (!subtree)
+        {
+            names_known = false;
+            break;
+        }
+        names.insert(names.end(), subtree->begin(), subtree->end());
+    }
+    chain.fields = names_known ? StreamFields::ofNames(std::move(names)) : StreamFields{};
 
     chain.select_list_preserves_order_keys = true;
     for (const auto & [key, _] : chain.order.keys)
@@ -441,15 +604,13 @@ void translateProject(SelectChain & chain, const rapidjson::Value & stage)
             break;
         }
 
+        /// A field kept as itself keeps everything under it, so keeping `profile` keeps the sort
+        /// key `profile.age` as well.
         const auto & name = identifier->name();
         const bool preserved = std::any_of(
             fields.begin(),
             fields.end(),
-            [&](const MongoProjectedField & field)
-            {
-                const auto * expression = field.expression->as<ASTIdentifier>();
-                return field.name == name && expression && expression->name() == name;
-            });
+            [&](const MongoProjectedField & field) { return isKeptAsItself(field) && isInFieldSubtree(name, field.name); });
 
         if (!preserved)
         {
@@ -495,6 +656,15 @@ void translateSet(SelectChain & chain, const rapidjson::Value & stage)
             break;
         }
     }
+
+    if (chain.fields.kind == StreamFields::Kind::Names)
+    {
+        chain.fields.removeSubtrees(replaced);
+        for (const auto & field : fields)
+            chain.fields.names.push_back(field.name);
+    }
+    else
+        chain.fields = {};
 
     auto select_list = make_intrusive<ASTExpressionList>();
     select_list->children.push_back(makeAsterisk(replaced));
@@ -550,6 +720,7 @@ void translateCount(SelectChain & chain, const rapidjson::Value & stage)
     select_list->children.push_back(withAlias(makeASTFunction("count"), std::string(stringView(stage))));
     chain.select_list = std::move(select_list);
     chain.having = makeNonEmptyGroupCondition();
+    chain.fields = StreamFields::ofNames({std::string(stringView(stage))});
 }
 
 void translateUnset(SelectChain & chain, const rapidjson::Value & stage)
@@ -584,6 +755,7 @@ void translateUnset(SelectChain & chain, const rapidjson::Value & stage)
     /// `$unset` is the exclusion form of `$project`, so it carries the sort keys it does not remove.
     chain.select_list_preserves_order_keys = exclusionPreservesOrderKeys(chain.order, removed);
     chain.select_list = std::move(select_list);
+    chain.fields.removeSubtrees(removed);
 }
 
 void translateSortByCount(SelectChain & chain, const rapidjson::Value & stage)
@@ -603,6 +775,13 @@ void translateSortByCount(SelectChain & chain, const rapidjson::Value & stage)
     auto group_by = make_intrusive<ASTExpressionList>();
     group_by->children.push_back(std::move(key));
     chain.group_by = std::move(group_by);
+    chain.fields = StreamFields::ofNames({"_id", "count"});
+
+    /** The sort runs on top of the grouping rather than next to it. In the same select `count` and
+      * `_id` would name the columns of the source, if it has columns of these names, because the
+      * generated query prefers a column name to an alias (see `ParserMongoAggregateQuery::parseImpl`).
+      */
+    chain.wrap();
 
     auto element = make_intrusive<ASTOrderByElement>();
     element->children.push_back(make_intrusive<ASTIdentifier>("count"));
@@ -648,6 +827,113 @@ void translateSample(SelectChain & chain, const rapidjson::Value & stage)
     chain.order = {};
 }
 
+ASTPtr makeArrayJoin(ASTPtr expressions)
+{
+    auto array_join = make_intrusive<ASTArrayJoin>();
+    array_join->kind = ASTArrayJoin::Kind::Inner;
+    array_join->expression_list = expressions;
+    array_join->children.push_back(std::move(expressions));
+    return array_join;
+}
+
+/** `if(notEmpty(array), <elements>, [NULL])`: an array with one null element in place of an empty one.
+  * The type of the result is the common one of both arrays: an array of `Nullable` elements, or of the
+  * elements themselves when they hold a null on their own, as a `Dynamic` and a `Variant` do.
+  */
+ASTPtr makeNullIfEmpty(const std::string & path, ASTPtr elements)
+{
+    auto null_array = makeASTFunction("array", makeLiteral(Field()));
+    auto is_not_empty = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(path));
+    return makeASTFunction("if", std::move(is_not_empty), std::move(elements), std::move(null_array));
+}
+
+/// `arrayMap(name -> body, array)`.
+ASTPtr makeArrayMap(const std::string & parameter, ASTPtr body, ASTPtr array)
+{
+    auto parameters = makeASTFunction("tuple", make_intrusive<ASTIdentifier>(parameter));
+    return makeASTFunction("arrayMap", makeASTFunction("lambda", std::move(parameters), std::move(body)), std::move(array));
+}
+
+void addUnwindIndexField(SelectChain & chain, const std::string & index_name)
+{
+    if (chain.fields.kind == StreamFields::Kind::Names)
+        chain.fields.names.push_back(index_name);
+    else
+        chain.fields = {};
+}
+
+/** `$unwind` with `preserveNullAndEmptyArrays`, which keeps a document whose array is empty, with
+  * the field missing and the index, if asked for, null. A left `ARRAY JOIN` would keep it with the
+  * default value of the element type in place of the field, which is a value the document does not
+  * have, so the empty array is replaced with an array of one null element before the join instead:
+  *
+  *     SELECT * EXCEPT (__mongo_unwind_element, __mongo_unwind_index)
+  *            REPLACE (__mongo_unwind_element AS a), __mongo_unwind_index AS index
+  *     FROM (SELECT *, if(notEmpty(a), a, [NULL]) AS __mongo_unwind_element,
+  *                     if(notEmpty(a), arrayMap(i -> i - 1, arrayEnumerate(a)), [NULL]) AS __mongo_unwind_index
+  *           FROM ...)
+  *     ARRAY JOIN __mongo_unwind_element, __mongo_unwind_index
+  *
+  * The arrays are computed under names of their own, below the join, because both are computed from
+  * the array itself. An array of elements that can hold no null, such as an array of arrays, has no
+  * array type in common with `[NULL]`, so the query is rejected rather than unwound into fabricated
+  * values.
+  */
+void translateUnwindPreservingEmpty(SelectChain & chain, const std::string & path, const std::string & index_name)
+{
+    static constexpr auto element_column = "__mongo_unwind_element";
+    static constexpr auto index_column = "__mongo_unwind_index";
+
+    auto lower_select_list = make_intrusive<ASTExpressionList>();
+    lower_select_list->children.push_back(makeAsterisk({}));
+    lower_select_list->children.push_back(withAlias(makeNullIfEmpty(path, make_intrusive<ASTIdentifier>(path)), element_column));
+
+    auto join_expressions = make_intrusive<ASTExpressionList>();
+    join_expressions->children.push_back(make_intrusive<ASTIdentifier>(element_column));
+
+    std::vector<std::string> helper_columns{element_column};
+    if (!index_name.empty())
+    {
+        /// `arrayEnumerate` counts from one and Mongo's index from zero.
+        auto index = makeASTFunction("minus", make_intrusive<ASTIdentifier>("__mongo_index"), makeLiteral(Field(UInt64(1))));
+        auto positions = makeASTFunction("arrayEnumerate", make_intrusive<ASTIdentifier>(path));
+        lower_select_list->children.push_back(
+            withAlias(makeNullIfEmpty(path, makeArrayMap("__mongo_index", std::move(index), std::move(positions))), index_column));
+        join_expressions->children.push_back(make_intrusive<ASTIdentifier>(index_column));
+        helper_columns.emplace_back(index_column);
+    }
+
+    chain.select_list = std::move(lower_select_list);
+    chain.select_list_preserves_order_keys = true;
+    chain.wrap();
+
+    chain.array_join = makeArrayJoin(std::move(join_expressions));
+
+    /// The element takes the place of the array, in the position of its column.
+    auto replacement = make_intrusive<ASTColumnsReplaceTransformer::Replacement>();
+    replacement->name = path;
+    replacement->children.push_back(make_intrusive<ASTIdentifier>(element_column));
+    auto replace_transformer = make_intrusive<ASTColumnsReplaceTransformer>();
+    replace_transformer->children.push_back(std::move(replacement));
+
+    auto asterisk = makeAsterisk(helper_columns);
+    asterisk->as<ASTAsterisk &>().transformers->children.push_back(std::move(replace_transformer));
+
+    auto select_list = make_intrusive<ASTExpressionList>();
+    select_list->children.push_back(std::move(asterisk));
+    if (!index_name.empty())
+    {
+        select_list->children.push_back(withAlias(make_intrusive<ASTIdentifier>(index_column), index_name));
+        addUnwindIndexField(chain, index_name);
+    }
+    chain.select_list = std::move(select_list);
+    /// The join keeps the order of the documents, and every field but the unwound one keeps its value.
+    chain.select_list_preserves_order_keys = exclusionPreservesOrderKeys(chain.order, {path});
+
+    /// The stages that follow see documents in which the field is one element of the array.
+    chain.wrap();
+}
+
 void translateUnwind(SelectChain & chain, const rapidjson::Value & stage)
 {
     std::string path;
@@ -691,6 +977,12 @@ void translateUnwind(SelectChain & chain, const rapidjson::Value & stage)
     if (chain.where || !chain.onlyFiltered() || chain.array_join)
         chain.wrap();
 
+    if (preserve_empty)
+    {
+        translateUnwindPreservingEmpty(chain, path, index_name);
+        return;
+    }
+
     auto expressions = make_intrusive<ASTExpressionList>();
     expressions->children.push_back(make_intrusive<ASTIdentifier>(path));
 
@@ -698,23 +990,14 @@ void translateUnwind(SelectChain & chain, const rapidjson::Value & stage)
     {
         /// A second array of the same length is joined element by element with the first one.
         /// `arrayEnumerate` counts from one and Mongo's index from zero.
-        auto parameters = makeASTFunction("tuple", make_intrusive<ASTIdentifier>("__mongo_index"));
         auto body = makeASTFunction("minus", make_intrusive<ASTIdentifier>("__mongo_index"), makeLiteral(Field(UInt64(1))));
-        auto indexes = makeASTFunction(
-            "arrayMap",
-            makeASTFunction("lambda", std::move(parameters), std::move(body)),
-            makeASTFunction("arrayEnumerate", make_intrusive<ASTIdentifier>(path)));
+        auto positions = makeASTFunction("arrayEnumerate", make_intrusive<ASTIdentifier>(path));
+        auto indexes = makeArrayMap("__mongo_index", std::move(body), std::move(positions));
         expressions->children.push_back(withAlias(std::move(indexes), index_name));
     }
 
-    auto unwind = make_intrusive<ASTArrayJoin>();
-    /// Mongo drops a document whose array is empty or missing unless it is asked to keep it, which
-    /// is exactly the difference between an inner and a left `ARRAY JOIN`.
-    unwind->kind = preserve_empty ? ASTArrayJoin::Kind::Left : ASTArrayJoin::Kind::Inner;
-    unwind->expression_list = expressions;
-    unwind->children.push_back(std::move(expressions));
-
-    chain.array_join = std::move(unwind);
+    /// Mongo drops a document whose array is empty or missing, which is what an inner `ARRAY JOIN` does.
+    chain.array_join = makeArrayJoin(std::move(expressions));
 
     if (!index_name.empty())
     {
@@ -724,6 +1007,7 @@ void translateUnwind(SelectChain & chain, const rapidjson::Value & stage)
         select_list->children.push_back(makeAsterisk({}));
         select_list->children.push_back(make_intrusive<ASTIdentifier>(index_name));
         chain.select_list = std::move(select_list);
+        addUnwindIndexField(chain, index_name);
     }
 
     /** The stages that follow see documents in which the field is one element of the array, so the
@@ -750,10 +1034,51 @@ void translateReplaceRoot(SelectChain & chain, const rapidjson::Value & new_root
     if (!chain.onlyFiltered())
         chain.wrap();
 
+    chain.fields = StreamFields::ofProjectedFields(fields);
+
     auto select_list = make_intrusive<ASTExpressionList>();
     for (auto & field : fields)
         select_list->children.push_back(withAlias(field.expression, field.name));
     chain.select_list = std::move(select_list);
+}
+
+/** The names of the columns a `*` of a collection expands to, in order, as a scalar subquery:
+  *
+  *     (SELECT arrayMap(c -> c.2, arraySort(groupArray((position, name)))) FROM system.columns
+  *      WHERE database = '<database>' AND table = '<collection>' AND default_kind NOT IN ('MATERIALIZED', 'ALIAS', 'EPHEMERAL'))
+  */
+ASTPtr makeCollectionColumnNames(const std::string & database, const std::string & collection)
+{
+    auto lambda = makeASTFunction(
+        "lambda",
+        makeASTFunction("tuple", make_intrusive<ASTIdentifier>("__mongo_column")),
+        makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("__mongo_column"), makeLiteral(Field(UInt64(2)))));
+    auto names = makeASTFunction(
+        "arrayMap",
+        std::move(lambda),
+        makeASTFunction(
+            "arraySort",
+            makeASTFunction(
+                "groupArray",
+                makeASTFunction("tuple", make_intrusive<ASTIdentifier>("position"), make_intrusive<ASTIdentifier>("name")))));
+
+    /// A `*` does not expand to the columns that are computed rather than stored.
+    auto kinds = makeASTFunction(
+        "tuple", makeLiteral(Field(String("MATERIALIZED"))), makeLiteral(Field(String("ALIAS"))), makeLiteral(Field(String("EPHEMERAL"))));
+    auto condition = makeASTFunction(
+        "and",
+        makeASTFunction(
+            "equals",
+            make_intrusive<ASTIdentifier>("database"),
+            database.empty() ? makeASTFunction("currentDatabase") : makeLiteral(Field(database))),
+        makeASTFunction("equals", make_intrusive<ASTIdentifier>("table"), makeLiteral(Field(collection))),
+        makeASTFunction("notIn", make_intrusive<ASTIdentifier>("default_kind"), std::move(kinds)));
+
+    SelectChain columns(makeCollectionSource("system", "columns"));
+    columns.select_list = make_intrusive<ASTExpressionList>();
+    columns.select_list->children.push_back(std::move(names));
+    columns.where = std::move(condition);
+    return makeSubquery(columns.build());
 }
 
 void translateUnionWith(SelectChain & chain, const rapidjson::Value & stage, const std::shared_ptr<QueryMetadata> & metadata)
@@ -775,22 +1100,91 @@ void translateUnionWith(SelectChain & chain, const rapidjson::Value & stage, con
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '$unionWith' must be a collection name or a document");
 
-    auto source = makeCollectionSource(metadata->getDatabaseName(), collection);
-    ASTPtr other_select;
-    if (sub_pipeline)
-        other_select = translatePipeline(*sub_pipeline, std::move(source), metadata);
-    else
-        other_select = SelectChain(std::move(source)).build();
+    SelectChain other = sub_pipeline ? translatePipeline(*sub_pipeline, collection, metadata)
+                                     : SelectChain::ofCollection(metadata->getDatabaseName(), collection);
 
-    chain.unionWith(std::move(other_select));
+    /** A SQL `UNION ALL` matches the columns of its branches by position and names them after the
+      * first branch, while `$unionWith` appends documents with their own field names. So the union
+      * is translated only when both sides produce the same fields in the same order: both read a
+      * collection with its columns as they are, and the columns of the two collections are checked
+      * to be the same when the query runs, or both produce the same set of fields named by the
+      * pipeline, which the other side is then reordered to. Otherwise a field could be silently
+      * renamed, or the values of two fields swapped, so the query is rejected.
+      */
+    const auto & ours = chain.fields;
+    const auto & theirs = other.fields;
+
+    using Kind = StreamFields::Kind;
+    if (ours.kind == Kind::Collection && theirs.kind == Kind::Collection)
+    {
+        /// Two different collections may have the same fields, which only the server knows, so the
+        /// query checks that they do: the names of the columns of both, in order, must be equal.
+        if (ours.database != theirs.database || ours.collection != theirs.collection)
+        {
+            auto check = makeASTFunction(
+                "equals",
+                makeASTFunction(
+                    "throwIf",
+                    makeASTFunction(
+                        "notEquals",
+                        makeCollectionColumnNames(ours.database, ours.collection),
+                        makeCollectionColumnNames(theirs.database, theirs.collection)),
+                    makeLiteral(Field(fmt::format(
+                        "'$unionWith' of the collection '{}' requires it to have the same fields in the same order as the collection "
+                        "'{}', because the documents of a union are matched by the position of a field rather than by its name",
+                        theirs.collection,
+                        ours.collection)))),
+                makeLiteral(Field(UInt64(0))));
+
+            if (!other.onlyFiltered())
+                other.wrap();
+            other.where = other.where ? makeASTFunction("and", other.where, std::move(check)) : std::move(check);
+        }
+
+        chain.unionWith(other.build());
+        return;
+    }
+
+    auto has_duplicates = [](std::vector<std::string> names)
+    {
+        std::sort(names.begin(), names.end());
+        return std::adjacent_find(names.begin(), names.end()) != names.end();
+    };
+
+    auto same_set = [](std::vector<std::string> lhs, std::vector<std::string> rhs)
+    {
+        std::sort(lhs.begin(), lhs.end());
+        std::sort(rhs.begin(), rhs.end());
+        return lhs == rhs;
+    };
+
+    if (ours.kind != Kind::Names || theirs.kind != Kind::Names || has_duplicates(ours.names) || has_duplicates(theirs.names)
+        || !same_set(ours.names, theirs.names))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "'$unionWith' is supported only when both pipelines produce the same fields: either both read a collection with "
+            "its fields as they are, or both end with stages that name every field they produce, such as '$group' or a "
+            "'$project' of computed fields, with the same names on both sides");
+
+    if (theirs.names != ours.names)
+    {
+        auto select_list = make_intrusive<ASTExpressionList>();
+        for (const auto & name : ours.names)
+            select_list->children.push_back(make_intrusive<ASTIdentifier>(name));
+        other.wrap();
+        other.select_list = std::move(select_list);
+    }
+
+    chain.unionWith(other.build());
 }
 
-ASTPtr translatePipeline(const rapidjson::Value & pipeline, ASTPtr source, const std::shared_ptr<QueryMetadata> & metadata)
+SelectChain translatePipeline(
+    const rapidjson::Value & pipeline, const std::string & collection, const std::shared_ptr<QueryMetadata> & metadata)
 {
     if (!pipeline.IsArray())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "A pipeline must be an array of stages");
 
-    SelectChain chain(std::move(source));
+    auto chain = SelectChain::ofCollection(metadata->getDatabaseName(), collection);
 
     for (const auto & stage : pipeline.GetArray())
     {
@@ -844,14 +1238,14 @@ ASTPtr translatePipeline(const rapidjson::Value & pipeline, ASTPtr source, const
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The aggregation stage '{}' is not supported", name);
     }
 
-    return chain.build();
+    return chain;
 }
 
 }
 
 bool ParserMongoAggregateQuery::parseImpl(ASTPtr & node)
 {
-    auto select = translatePipeline(data, makeCollectionSource(metadata->getDatabaseName(), metadata->getCollectionName()), metadata);
+    auto select = translatePipeline(data, metadata->getCollectionName(), metadata).build();
 
     /** A field path inside a stage always names a field of the document the stage receives, while
       * a stage folded into the same select - a `$sort` after a `$group` - names a field of the
@@ -865,6 +1259,9 @@ bool ParserMongoAggregateQuery::parseImpl(ASTPtr & node)
     /// A `$sort` on a `JSON` or a `Dynamic` column is a sort on a suspicious type, and a collection
     /// created by `createCollection` is a single `JSON` column.
     settings->changes.emplace_back("allow_suspicious_types_in_order_by", Field(UInt64(1)));
+    /// A number in a stage is a value, never the position of a column: `{"$group": {"_id": 42}}`
+    /// groups every document under the key 42, which is `GROUP BY 42` without positional arguments.
+    settings->changes.emplace_back("enable_positional_arguments", Field(UInt64(0)));
     select->as<ASTSelectQuery &>().setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings));
 
     node = std::move(select);
