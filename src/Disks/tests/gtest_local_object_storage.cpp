@@ -941,6 +941,7 @@ TEST(LocalObjectStorage, AtomicWritePublishesOnlyCompleteContents)
 
 /// A process killed while it writes an object atomically leaves the staging file of the write behind, and nothing else
 /// refers to it. The next startup removes such a file, but not the staging file of a write that is still in progress.
+#if defined(OS_LINUX)
 TEST(LocalObjectStorage, StartupRemovesAbandonedStagingFiles)
 {
     ScopedTempDir tmp("ch_gtest_local_object_storage_abandoned_staging");
@@ -950,39 +951,58 @@ TEST(LocalObjectStorage, StartupRemovesAbandonedStagingFiles)
     const auto directory = root / "__meta" / "directory";
     const auto path = directory / "prefix.path";
 
+    DB::WriteSettings atomic_settings;
+    atomic_settings.object_storage_write_atomically = true;
+
     writeObject(storage, path, "previous", DB::WriteSettings{});
 
-    /// What a killed writer leaves: its lock is gone with the process.
+    /// What a killed writer leaves: a marked staging file, whose lock is gone with the process.
     {
         std::ofstream abandoned(directory / ".tmp_prefix.path_abcdefgh");
         abandoned << "partial";
     }
-    /// A file of the same look that is not a staging file.
+    fs::permissions(directory / ".tmp_prefix.path_abcdefgh", fs::perms::sticky_bit, fs::perm_options::add);
+
+    /// Files of the same look that are not staging files: without the mark, or with another suffix.
+    {
+        std::ofstream unmarked(directory / ".tmp_prefix.path_bcdefghi");
+        unmarked << "unmarked";
+    }
     {
         std::ofstream other(directory / ".tmp_prefix.path_ABCDEFGH");
         other << "other";
     }
 
-    DB::WriteSettings atomic_settings;
-    atomic_settings.object_storage_write_atomically = true;
+    /// Objects whose keys look like staging files, published by a direct and by an atomic write.
+    writeObject(storage, directory / ".tmp_user_abcdefgh", "published", DB::WriteSettings{});
+    writeObject(storage, directory / ".tmp_user_bcdefghi", "published atomically", atomic_settings);
 
     auto buffer = storage->writeObject(
         DB::StoredObject(path.string()), DB::WriteMode::Rewrite, /*attributes=*/ {}, /*buf_size=*/ 4096, atomic_settings);
     buffer->write("new", 3);
     buffer->next();
 
-    EXPECT_EQ(listDirectory(directory).size(), 4u);
+    EXPECT_EQ(listDirectory(directory).size(), 7u);
 
     storage->startup();
 
     const auto remaining = listDirectory(directory);
-    EXPECT_EQ(remaining.size(), 3u) << "only the abandoned staging file must be removed";
+    EXPECT_EQ(remaining.size(), 6u) << "only the abandoned staging file must be removed";
     EXPECT_TRUE(std::find(remaining.begin(), remaining.end(), ".tmp_prefix.path_abcdefgh") == remaining.end());
-    EXPECT_TRUE(std::find(remaining.begin(), remaining.end(), ".tmp_prefix.path_ABCDEFGH") != remaining.end());
 
     buffer->finalize();
     buffer.reset();
 
     EXPECT_EQ(readObject(storage, path).data, "new") << "the write in progress must not be disturbed";
-    EXPECT_EQ(listDirectory(directory), (std::vector<std::string>{".tmp_prefix.path_ABCDEFGH", "prefix.path"}));
+    EXPECT_EQ(readObject(storage, directory / ".tmp_user_abcdefgh").data, "published");
+    EXPECT_EQ(readObject(storage, directory / ".tmp_user_bcdefghi").data, "published atomically");
+    EXPECT_EQ(fs::status(path).permissions() & fs::perms::sticky_bit, fs::perms::none)
+        << "a published object must not carry the mark of a staging file";
+    EXPECT_EQ(listDirectory(directory), (std::vector<std::string>{
+        ".tmp_prefix.path_ABCDEFGH", ".tmp_prefix.path_bcdefghi", ".tmp_user_abcdefgh", ".tmp_user_bcdefghi", "prefix.path"}));
+
+    /// A restart does not remove published objects either.
+    storage->startup();
+    EXPECT_EQ(listDirectory(directory).size(), 5u);
 }
+#endif

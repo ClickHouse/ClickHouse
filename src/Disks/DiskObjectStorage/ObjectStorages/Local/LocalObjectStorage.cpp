@@ -18,6 +18,7 @@
 #include <IO/WriteBufferFromFileDecorator.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
+#include <Common/assert_cast.h>
 #include <Interpreters/BlobStorageLog.h>
 #include <Interpreters/Context.h>
 #include <base/scope_guard.h>
@@ -147,8 +148,28 @@ bool isStagingFileName(std::string_view name)
         && std::all_of(suffix.begin(), suffix.end(), [](char c) { return c >= 'a' && c <= 'z'; });
 }
 
+/// A name alone does not tell a staging file from an object: any key, also one like `.tmp_<name>_<suffix>`, can be written
+/// and published. So a staging file also carries a mark in its inode, the sticky bit, which has no meaning for a regular
+/// file on Linux and which nothing else sets on objects. The writer clears it right before it publishes the file.
+/// Other systems do not let an unprivileged process set the bit on a regular file, so there staging files are not marked,
+/// and the ones left by a killed process are not removed.
+void setStagingMark(int fd, const String & path, bool mark)
+{
+#if defined(OS_LINUX)
+    struct stat file_stat{};
+    if (0 != ::fstat(fd, &file_stat))
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STAT, path, "Cannot stat file {}", path);
+
+    const mode_t permissions = file_stat.st_mode & 07777;
+    if (0 != ::fchmod(fd, mark ? (permissions | S_ISVTX) : (permissions & ~S_ISVTX)))
+        ErrnoException::throwFromPath(ErrorCodes::SYSTEM_ERROR, path, "Cannot change the mode of file {}", path);
+#else
+    UNUSED(fd, path, mark);
+#endif
+}
+
 /// The writer of a staging file holds an exclusive `flock` on it until the file is closed, and the kernel releases
-/// the lock when the process dies. So a staging file that can be locked has no writer anymore: it is left by a
+/// the lock when the process dies. So a marked staging file that can be locked has no writer anymore: it is left by a
 /// process that was killed before it published or removed the file. Returns whether the file was removed.
 bool removeAbandonedStagingFile(const String & path)
 {
@@ -184,6 +205,10 @@ bool removeAbandonedStagingFile(const String & path)
     if (locked_stat.st_dev != path_stat.st_dev || locked_stat.st_ino != path_stat.st_ino)
         return false;
 
+    /// Without the mark, it is an object that only looks like a staging file, see `setStagingMark`.
+    if (!S_ISREG(locked_stat.st_mode) || !(locked_stat.st_mode & S_ISVTX))
+        return false;
+
     if (0 != ::unlink(path.c_str()))
     {
         if (errno == ENOENT)
@@ -193,17 +218,22 @@ bool removeAbandonedStagingFile(const String & path)
     return true;
 }
 
-/// Creates a staging file and takes the lock that tells it from an abandoned one, see `removeAbandonedStagingFile`.
-/// A cleanup can still remove the file between its creation and the lock; then the write fails to publish it.
+/// Creates a staging file, takes the lock that tells it from an abandoned one, see `removeAbandonedStagingFile`,
+/// and marks it as a staging file, see `setStagingMark`. The file is not marked before it is locked,
+/// so a cleanup cannot remove it in between.
 std::unique_ptr<WriteBufferFromFile> createStagingFile(const String & path, size_t buf_size)
 {
     auto buffer = std::make_unique<WriteBufferFromFile>(path, buf_size, O_WRONLY | O_CREAT | O_EXCL);
-    if (0 != ::flock(buffer->getFD(), LOCK_EX | LOCK_NB))
+    try
     {
-        const int saved_errno = errno;
+        if (0 != ::flock(buffer->getFD(), LOCK_EX | LOCK_NB))
+            ErrnoException::throwFromPath(ErrorCodes::SYSTEM_ERROR, path, "Cannot lock file {}", path);
+        setStagingMark(buffer->getFD(), path, true);
+    }
+    catch (...)
+    {
         [[maybe_unused]] int err = ::unlink(path.c_str());
-        errno = saved_errno;
-        ErrnoException::throwFromPath(ErrorCodes::SYSTEM_ERROR, path, "Cannot lock file {}", path);
+        throw;
     }
     return buffer;
 }
@@ -612,6 +642,9 @@ private:
         WriteBufferFromFileDecorator::finalizeImpl();
 
         const size_t data_size = count();
+        /// The published object must not look like a staging file. If the process is killed right after this,
+        /// the staging file stays, but it is never mistaken for an object.
+        setStagingMark(assert_cast<const WriteBufferFromFile &>(getImpl()).getFD(), temp_path, false);
         publishConditionally(temp_path, target_path, mode, if_match_etag);
         removeTemporaryFile();
 
