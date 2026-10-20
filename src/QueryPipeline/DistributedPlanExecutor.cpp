@@ -10,6 +10,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/DequeWithMemoryTracking.h>
 #include <Common/getMultipleKeysFromConfig.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
@@ -1176,7 +1177,7 @@ public:
         /// InMemoryExchange::getChunk never returns. The exchanges are not removed here: the result
         /// reader still drains final_result after the driver finishes; removal happens when the query
         /// pipeline is destroyed (see makeInMemoryExchangesCleaner).
-        InMemoryExchanges::instance()->cancelQuery(toString(unique_query_id), cancellation->getFailure());
+        cancelDistributedQueryInMemoryExchanges(unique_query_id, cancellation->getFailure());
 
         joinAllThreads();
         stage_tasks.clear();
@@ -1229,22 +1230,21 @@ protected:
 
     void startStage(const String & stage_name, const DistributedQueryStage & stage) override
     {
-        VectorWithMemoryTracking<std::shared_future<void>> started_tasks;
-        VectorWithMemoryTracking<std::thread> started_threads;
-        started_tasks.reserve(stage.tasks.size());
-        started_threads.reserve(stage.tasks.size());
         DistributedQueryTaskDescription task_description;
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
+
+        /// Owned by the members before the first thread starts, so `cleanup` joins it if anything below throws.
+        auto & started_tasks = stage_tasks[stage_name];
+        auto & started_threads = stage_threads[stage_name];
+        started_tasks.reserve(stage.tasks.size());
+        started_threads.reserve(stage.tasks.size());
 
         for (const auto & task : stage.tasks)
         {
             task_description.task = task;
             started_tasks.emplace_back(startTask(task_description, started_threads).share());
         }
-
-        stage_tasks[stage_name] = std::move(started_tasks);
-        stage_threads[stage_name] = std::move(started_threads);
     }
 
     bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms) override
@@ -2311,6 +2311,8 @@ std::unique_ptr<DistributedQueryPlanExecutor> createDistributedQueryExecutor(
 
 void cancelDistributedQueryInMemoryExchanges(const UUID & unique_query_id, std::exception_ptr failure)
 {
+    /// Must not fail on the memory limit: it unblocks the task threads that are joined next.
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     InMemoryExchanges::instance()->cancelQuery(toString(unique_query_id), failure);
 }
 
