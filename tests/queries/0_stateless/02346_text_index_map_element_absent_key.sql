@@ -67,10 +67,11 @@ SELECT 'S5 prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_
 SELECT 'S6 oracle', count() FROM t_dyn WHERE m[nk] LIKE concat('%', char(0), char(0), char(0), '%') SETTINGS use_skip_indexes = 0;
 SELECT 'S6 rows', count() FROM t_dyn WHERE m[nk] LIKE concat('%', char(0), char(0), char(0), '%');
 
--- S7: as S1, for a regular expression that the six NUL bytes match.
+-- S7: as S1 and S2, for regular expressions.
 SELECT 'S7 oracle', count() FROM t_fs WHERE match(m['k'], concat(char(0), char(0), char(0), '.*')) SETTINGS use_skip_indexes = 0;
 SELECT 'S7 subcolumn', count() FROM t_fs WHERE match(m['k'], concat(char(0), char(0), char(0), '.*'));
 SELECT 'S7 arrayElement', count() FROM t_fs WHERE match(m['k'], concat(char(0), char(0), char(0), '.*')) SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'S7 prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_fs WHERE match(m['k'], 'zzz')) WHERE explain LIKE '%Granules: 0/2%';
 
 DROP TABLE IF EXISTS t_arr;
 CREATE TABLE t_arr (id UInt32, m Map(String, FixedString(6)),
