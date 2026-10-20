@@ -336,14 +336,15 @@ ALWAYS_INLINE inline DigitGroups digitGroups(UInt64 value)
 }
 
 /// Groups of 4 digits to their characters, each lane with the first in the highest byte, whatever the endianness.
+/// 32-byte vectors use `__builtin_bit_cast`: `std::bit_cast` is a call that returns them in AVX registers, an ABI change without AVX.
 ALWAYS_INLINE inline UInt8x32 textOfGroups(UInt32x8 groups)
 {
     using UInt16x16 = UInt16 __attribute__((vector_size(32)));
     using UInt32x16 = UInt32 __attribute__((vector_size(64)));
     UInt32x8 pairs = groups + ((groups * 5243) >> 19) * (65536 - 100);
-    UInt16x16 pair_lanes = std::bit_cast<UInt16x16>(pairs);
+    UInt16x16 pair_lanes = __builtin_bit_cast(UInt16x16, pairs);
     UInt16x16 tens = __builtin_convertvector((__builtin_convertvector(pair_lanes, UInt32x16) * 6554) >> 16, UInt16x16);
-    return std::bit_cast<UInt8x32>(pair_lanes + 0x3030 + tens * UInt16(256 - 10));
+    return __builtin_bit_cast(UInt8x32, pair_lanes + 0x3030 + tens * UInt16(256 - 10));
 }
 
 ALWAYS_INLINE inline UInt8x16 lowHalf(UInt8x32 text)
@@ -405,15 +406,15 @@ ALWAYS_INLINE inline UInt8x32 textOfTwo(UInt64 head, UInt64 tail)
     /// The zeros are explicit, so that the compiler knows the halves fit in 32 bits, and multiplies 32 x 32 to 64 bits.
     UInt64x4 halves;
     if constexpr (std::endian::native == std::endian::little)
-        halves = std::bit_cast<UInt64x4>(UInt32x8{head_first, 0, head_last, 0, tail_first, 0, tail_last, 0});
+        halves = __builtin_bit_cast(UInt64x4, UInt32x8{head_first, 0, head_last, 0, tail_first, 0, tail_last, 0});
     else
-        halves = std::bit_cast<UInt64x4>(UInt32x8{0, head_first, 0, head_last, 0, tail_first, 0, tail_last});
+        halves = __builtin_bit_cast(UInt64x4, UInt32x8{0, head_first, 0, head_last, 0, tail_first, 0, tail_last});
     /// The last 4 digits of each half in its low 32 bits, the first 4 in its high 32 bits. Not `halves / 10000`: clang
     /// divides 64-bit lanes as if they could be any 64-bit value, with two multiplications. A half is below 10^8, and
     /// for that n * ceil(2^40 / 10^4) / 2^40 is n / 10^4, as zmij does.
     constexpr UInt64 reciprocal = (UInt64(1) << 40) / 10000 + 1;
     UInt64x4 groups = halves + ((halves * reciprocal) >> 40) * ((UInt64(1) << 32) - 10000);
-    return textOfGroups(std::bit_cast<UInt32x8>(groups));
+    return textOfGroups(__builtin_bit_cast(UInt32x8, groups));
 }
 
 /// All the 32 digits of `textOfTwo` in reading order: on little-endian each 64-bit lane is reversed, as `chunk_order`.
