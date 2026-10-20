@@ -2193,6 +2193,8 @@ Disables query execution if indexing by the primary key is not possible.
 Works with tables in the MergeTree family.
 
 If `force_primary_key=1`, ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition reduces the amount of data to read. For more information about data ranges in MergeTree tables, see [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree).
+
+The check applies to the primary key of the table itself. A projection serves the query only when the query also restricts data ranges by that projection's own key; otherwise the projection is skipped and the table is read instead. A projection forced with [force_optimize_projection](#force_optimize_projection) whose key is not used makes the query throw an exception.
 )", 0) \
     DECLARE(Bool, use_skip_indexes, true, R"(
 Use data skipping indexes during query execution.
@@ -3802,6 +3804,19 @@ start using external aggregation.
 )", 0, \
         {"25.1", 0.0, 0.5, "Enable automatic spilling to disk by default."}, \
         {"24.12", 0., 0., "New setting."}) \
+    DECLARE(UInt64, min_bytes_before_external_group_by, 0, R"(
+The minimum size in bytes of the aggregation state of one thread before external `GROUP BY` writes it to disk.
+
+When the memory of the query is over `max_bytes_before_external_group_by` or `max_bytes_ratio_before_external_group_by` because of other operators, for example a hash join that holds a large table, each thread would otherwise write every block it aggregates to disk as a separate small file. Reading many small files back costs more memory than the writes saved. With this setting a thread keeps aggregating until its own state reaches the given size, and only then writes it out as one file.
+
+The memory used above the threshold is bounded by this value multiplied by the number of threads.
+
+Possible values:
+
+- A positive integer, the size in bytes.
+- `0` — no minimum, the state is written as soon as the threshold is reached.
+)", 0, \
+        {"26.11", 0, 0, "New setting: the minimum size of the aggregation state of one thread before external `GROUP BY` writes it to disk, so that a query that is already over the threshold does not write every block as a separate file."}) \
     \
     DECLARE(UInt64, max_rows_to_sort, 0, R"(
 The maximum number of rows before sorting. This allows you to limit memory consumption when sorting.
@@ -7025,7 +7040,7 @@ Possible values:
 If non-zero, skip fetching iceberg metadata from remote catalog if there is a cached metadata snapshot, more recent than the given staleness window. Zero means to always fetch the latest metadata version from the remote catalog. Setting this a non-zero trades staleness to a lower latency of read operations.
 )", 0, \
         {"26.3", 0, 0, "New setting allowing using cached metadata version at READ operations to prevent fetching from remote catalog"}) \
-    DECLARE_WITH_ALIAS(NonZeroUInt64, iceberg_manifest_decode_concurrency, 4, R"(
+    DECLARE_WITH_ALIAS(NonZeroUInt64, iceberg_manifest_decode_concurrency, 16, R"(
 Maximum number of Iceberg manifest files decoded concurrently while reading a table.
 
 Delete manifests are all decoded before any data file is read; data manifests are decoded while the list of data files for the query is produced, and new ones are decoded only as the query consumes already decoded entries. Decoding several manifests at a time overlaps the object storage round-trips and the per-entry pruning work.
@@ -7034,6 +7049,7 @@ Higher values raise peak memory when the Iceberg metadata files cache is disable
 
 Must be greater than zero; `1` decodes the manifests one at a time.
 )", 0, iceberg_delete_manifest_decode_concurrency, \
+        {"26.11", 4, 16, "Raise the default number of Iceberg manifest files decoded concurrently from 4 to 16 to overlap more object storage round-trips on tables with many manifests."}, \
         {"26.9", 2, 4, "New setting bounding how many Iceberg manifest files are decoded concurrently, for delete and data manifests alike. It replaces `iceberg_delete_manifest_decode_concurrency` (kept as an alias). `2` approximates the pre-26.9 data path, which decoded one manifest at a time with the next one's fetch already in flight; under `compatibility` at or below 26.8 the delete decode therefore also runs at 2 rather than its released default of 4, preserving the older data-path memory envelope at the cost of some delete-decode overlap."}, \
         {"26.8", 2, 4, "New setting bounding how many Iceberg delete manifest files are decoded concurrently before the first row is read. Before 26.8 one manifest was decoded at a time with the next one's fetch already in flight, so `2` is the closest equivalent of the previous behavior, which put the sum of their object storage round-trips on the critical path before the first row. At the time the setting was named `iceberg_delete_manifest_decode_concurrency`, which is now an alias of it."}) \
     DECLARE(NonZeroUInt64, iceberg_file_entries_queue_size, 100, R"(
@@ -7453,7 +7469,7 @@ Force per-partition pre-deduplication for `IN (subquery)` set building when it i
     DECLARE(Bool, allow_distinct_partitions_independently, true, R"(
 Enable independent `DISTINCT` evaluation per partition on separate threads when the partition expression is a deterministic function of the `DISTINCT` columns, skipping the cross-stream merge. Beneficial when the number of partitions is close to the number of cores and partitions have roughly the same size; otherwise a cost heuristic skips it, see [max_number_of_partitions_for_independent_distinct](#max_number_of_partitions_for_independent_distinct) and [force_distinct_partitions_independently](#force_distinct_partitions_independently). Not applied with `FINAL` or parallel replicas.
 
-Not applied when [max_rows_in_distinct](#max_rows_in_distinct) or [max_bytes_in_distinct](#max_bytes_in_distinct) is set: those limits are enforced by the single `DISTINCT` transform that sees the whole merged result, so the cross-stream merge is kept to preserve their global meaning.
+[max_rows_in_distinct](#max_rows_in_distinct) and [max_bytes_in_distinct](#max_bytes_in_distinct) apply to the combined size of all partition sets while the streams remain separate.
 )", 0, \
         {"26.8", false, true, "New setting to enable independent per-partition evaluation of `DISTINCT` when the partition expression is a deterministic function of the `DISTINCT` columns."}) \
     DECLARE(Bool, force_distinct_partitions_independently, false, R"(
@@ -7464,6 +7480,16 @@ Force independent `DISTINCT` evaluation per partition when it is applicable, but
 Let the preliminary (per-stream) `DISTINCT` give up deduplicating mostly-unique input, freeing its hash table and passing the remaining rows through. The preliminary `DISTINCT` is best-effort by design - duplicates from different streams pass through it even when it deduplicates - and the final `DISTINCT` deduplicates its output again, so abandoning gives up the removal of almost nothing and saves the memory and hashing of a second copy of the unique keys. Not applied when the preliminary `DISTINCT` carries a limit hint (a plain `LIMIT` with no subsequent ordering).
 )", 0, \
         {"26.9", false, true, "New setting that lets the preliminary `DISTINCT` give up deduplicating mostly-unique input, because the final `DISTINCT` deduplicates its output again."}) \
+    DECLARE(Bool, allow_parallel_distinct, true, R"(
+Evaluate the final `DISTINCT` on multiple threads by partitioning input streams by the hash of the `DISTINCT` columns. Equal keys reach the same stream, allowing each partition to be deduplicated independently.
+
+Unlike [allow_distinct_partitions_independently](#allow_distinct_partitions_independently), this does not require a relationship between the table's partition key and the `DISTINCT` columns. The number of input streams and hash partitions is capped independently of `max_threads` to bound the cost of splitting blocks and connecting streams.
+
+Hash partitioning is not applied to globally sorted input because `DISTINCT` preserves that order. [max_rows_in_distinct](#max_rows_in_distinct) and [max_bytes_in_distinct](#max_bytes_in_distinct) apply to the combined size of all hash partitions.
+
+`DISTINCT` without `ORDER BY` has no defined row order, so this optimization may return the same distinct values in a different order. As a result, `LIMIT`, `OFFSET`, or `LIMIT BY` over unordered `DISTINCT` results may select a different subset of rows.
+)", 0, \
+        {"26.11", false, true, "New setting to evaluate final `DISTINCT` in parallel using hash partitioning."}) \
     DECLARE(Bool, allow_window_partitions_independently, true, R"(
 Enable independent evaluation of window functions per partition on separate threads when the partition expression of the `MergeTree` table is a deterministic function of the window `PARTITION BY` columns. Each partition is read through a separate stream, sorted independently by the window sort description, and processed by its own window transform, skipping the hash scatter that ordinarily reshuffles every row across threads. Beneficial when the number of partitions is close to the number of cores and partitions have roughly the same size; otherwise a cost heuristic skips it, see [max_number_of_partitions_for_independent_window](#max_number_of_partitions_for_independent_window) and [force_window_partitions_independently](#force_window_partitions_independently). Not applied with `FINAL` or parallel replicas.
 )", 0, \
@@ -7587,7 +7613,21 @@ Possible values:
 Execute DETACH TABLE as DETACH TABLE PERMANENTLY if database engine is Replicated
 )", 0) \
     DECLARE(Bool, database_replicated_allow_only_replicated_engine, false, R"(
-Allow to create only Replicated tables in database with engine Replicated
+Allow creating a table in a database with the `Replicated` engine only if the table either replicates its own
+data stored on disk or does not store its own data on disk.
+
+This restriction applies only to table-owned on-disk data, including data on remote disks. It does not guarantee
+the durability of in-memory data or data managed by external systems.
+
+For example, `ReplicatedMergeTree`, in-memory engines such as `Memory` and `Buffer`, metadata-only engines
+such as `Merge` and `Alias`, and external-storage or data lake engines such as `S3` and `AzureBlobStorage` are
+allowed. Non-replicated engines that store table data on disk, such as `MergeTree`, `Log`, `File`, and `Set`, are
+rejected, including when their writable storage policy uses remote disks. `Set` and `Join` tables created with
+`SETTINGS persistent = 0` keep their data only in memory and are allowed.
+
+`Distributed`, `Remote`, and `RemoteSecure` tables are allowed. Their optional local background `INSERT` queue
+is a transient send buffer, not data of the table itself. It is not replicated, and setting
+`distributed_foreground_insert = 1` avoids the queue.
 
 Cloud default value: `1`.
 )", 0) \

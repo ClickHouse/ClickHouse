@@ -5,11 +5,6 @@ SET max_threads = 8;
 -- The optimization is disabled under parallel replicas.
 SET enable_parallel_replicas = 0;
 
--- Independent per-partition DISTINCT is not applied when a DISTINCT size limit is set, and some CI
--- configurations set these limits at the server level, so pin them to unlimited.
-SET max_rows_in_distinct = 0;
-SET max_bytes_in_distinct = 0;
-
 -- Some CI configurations also set `max_rows_to_group_by` as a safety net, which would disable
 -- independent per-partition aggregation and hide the `Skip merging: 1` markers below.
 SET max_rows_to_group_by = 0;
