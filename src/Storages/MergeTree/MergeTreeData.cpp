@@ -1474,6 +1474,12 @@ void MergeTreeData::checkProperties(
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "TTL is not supported on tables with UNIQUE KEY");
 
+    /// A sorted merge reads which source each row came from through the `_part_index` virtual column,
+    /// which a stored column of that name would shadow.
+    if (new_metadata.hasUniqueKey() && new_metadata.getColumns().has("_part_index") && !attach)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "A table with UNIQUE KEY cannot have a column named `_part_index`, which its merges read as a virtual column");
+
     if (!new_metadata.projections.empty())
     {
         /// TODO(unique-key): support projections; ATTACH must still load.
