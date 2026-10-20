@@ -1476,7 +1476,7 @@ void MergeTreeData::checkProperties(
 
     /// A sorted merge reads which source each row came from through the `_part_index` virtual column,
     /// which a stored column of that name would shadow.
-    if (new_metadata.hasUniqueKey() && new_metadata.getColumns().has("_part_index") && !attach)
+    if (new_metadata.hasUniqueKey() && new_metadata.getColumns().has("_part_index"))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "A table with UNIQUE KEY cannot have a column named `_part_index`, which its merges read as a virtual column");
 
