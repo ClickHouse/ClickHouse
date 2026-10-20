@@ -630,12 +630,12 @@ private:
 
         foreground_logs_output
             = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(foreground_stderr_fd);
-        auto redirectable_logs = std::make_unique<AutoCanceledWriteBuffer<RedirectableWriteBuffer>>(
-            *foreground_logs_output, diagnostic_spool_fd);
-        redirectable_logs_output = redirectable_logs.get();
+        auto * redirectable_logs = new AutoCanceledWriteBuffer<RedirectableWriteBuffer>(*foreground_logs_output, diagnostic_spool_fd);
+        std::unique_ptr<WriteBuffer> result(redirectable_logs);
+        redirectable_logs_output = redirectable_logs;
         if (detachment_acknowledged->load(std::memory_order_acquire))
             redirectable_logs_output->detach();
-        return redirectable_logs;
+        return result;
     }
     void onLogsOutputBufferReset() override
     {
@@ -931,10 +931,9 @@ struct BackgroundQueryManager::Impl
             int client_error_fd = job->diagnostics.getFD();
             if (job->attached)
             {
-                auto redirectable = std::make_unique<AutoCanceledWriteBuffer<RedirectableWriteBuffer>>(
+                attached_output = std::make_unique<AutoCanceledWriteBuffer<RedirectableWriteBuffer>>(
                     *job->foreground_output, job->output.getFD());
-                redirectable_output = redirectable.get();
-                attached_output = std::move(redirectable);
+                redirectable_output = static_cast<RedirectableWriteBuffer *>(attached_output.get());
 
                 output_stream_buffer
                     = std::make_unique<RedirectableStreamBuf>(*job->foreground_output_stream, job->output.stream());
