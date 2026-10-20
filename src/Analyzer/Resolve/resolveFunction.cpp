@@ -23,6 +23,7 @@
 
 #include <Storages/getEffectiveRowPolicyFilter.h>
 
+#include <Common/StringUtils.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/HiddenSecret.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
@@ -379,7 +380,16 @@ bool hasFunctionNotSuitableForEarlyShortCircuit(const QueryTreeNodePtr & node, b
                 arguments.reserve(argument_nodes.size());
 
                 for (const auto & argument : argument_nodes)
+                {
+                    /// IN-family functions keep their set subquery as a QueryNode/UnionNode
+                    /// argument. Such nodes have no expression result type, and the speculative
+                    /// early-fold check must fall back instead of trying to inspect one.
+                    if (argument->getNodeType() == QueryTreeNodeType::QUERY
+                        || argument->getNodeType() == QueryTreeNodeType::UNION)
+                        return true;
+
                     arguments.push_back({argument->getResultType(), argument->as<ConstantNode>() != nullptr});
+                }
 
                 if (!function_base->isSuitableForShortCircuitArgumentsExecution(arguments)
                     && !isComparisonOfEarlyShortCircuitScalar(*function))
@@ -1386,6 +1396,31 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     FunctionNodePtr function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
     auto function_name = function_node_ptr->getFunctionName();
 
+    /// The parser cannot distinguish the single element array constructor `ARRAY[x]` from subscripting
+    /// a column named `ARRAY`, and parses it as a subscript. If there is no such column, it is the constructor.
+    /// Only the bracket syntax is rewritten, not an explicit `arrayElement(array, x)` call.
+    if (function_name == "arrayElement"
+        && function_node_ptr->isOperator()
+        && !function_node_ptr->isWindowFunction()
+        && function_node_ptr->getParameters().getNodes().empty()
+        && function_node_ptr->getArguments().getNodes().size() == 2)
+    {
+        const auto & arguments = function_node_ptr->getArguments().getNodes();
+        const auto * array_identifier = arguments[0]->as<IdentifierNode>();
+        if (array_identifier
+            && array_identifier->getIdentifier().isShort()
+            && equalsCaseInsensitive(array_identifier->getIdentifier().getFullName(), "array")
+            && !tryResolveIdentifier({array_identifier->getIdentifier(), IdentifierLookupContext::EXPRESSION}, scope).resolved_identifier)
+        {
+            auto array_function_node = std::make_shared<FunctionNode>("array");
+            array_function_node->getArguments().getNodes().push_back(arguments[1]);
+            array_function_node->setAlias(node->getAlias());
+            array_function_node->setOriginalAST(node->getOriginalAST());
+            node = std::move(array_function_node);
+            return resolveFunction(node, scope, allow_niladic_functions);
+        }
+    }
+
     /// Resolve function parameters
 
     auto parameters_projection_names = resolveExpressionNodeList(
@@ -1495,6 +1530,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             type_inference_analyzer.subquery_counter = subquery_counter;
 
             bool type_inference_succeeded = false;
+            bool post_resolution_is_safe = false;
             ProjectionNames type_inference_projection_names;
             try
             {
@@ -1506,6 +1542,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     false /*ignore_alias*/,
                     allow_niladic_functions);
                 type_inference_succeeded = !type_inference_analyzer.early_short_circuit_type_inference_failed;
+
+                /// Post-resolution safety is also speculative: an unfamiliar non-expression
+                /// argument must decline the optimization, never make the original query fail.
+                if (type_inference_succeeded)
+                    post_resolution_is_safe = !hasFunctionNode(node_for_type_inference, "arrayJoin")
+                        && !hasUnsafeEarlyShortCircuitScalarUsage(node_for_type_inference)
+                        && !hasFunctionNotSuitableForEarlyShortCircuit(node_for_type_inference);
             }
             catch (...)
             {
@@ -1514,10 +1557,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// cannot provide it, so fall back to the regular path which evaluates the scalar.
                 type_inference_succeeded = false;
             }
-
-            const bool post_resolution_is_safe = !hasFunctionNode(node_for_type_inference, "arrayJoin")
-                && !hasUnsafeEarlyShortCircuitScalarUsage(node_for_type_inference)
-                && !hasFunctionNotSuitableForEarlyShortCircuit(node_for_type_inference);
             if (type_inference_succeeded && (is_strict_safe_logical_tree || post_resolution_is_safe))
             {
                 auto result_type = node_for_type_inference->getResultType();
@@ -2129,7 +2168,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto function_exists = std::make_shared<FunctionExists>();
             function_node_ptr->resolveAsFunction(
                 std::make_shared<FunctionToFunctionBaseAdaptor>(
-                    function_exists, DataTypes{}, function_exists->getReturnTypeImpl({})
+                    function_exists, DataTypes{}, function_exists->getReturnTypeImpl(DataTypes{})
                 )
             );
 
@@ -2979,30 +3018,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             argument_is_deterministic = constant_node->isDeterministic();
             argument_is_constant = true;
         }
-        else if (const auto * get_scalar_function_node = function_argument->as<FunctionNode>();
-                get_scalar_function_node && get_scalar_function_node->getFunctionName() == "__getScalar")
+        else if (auto scalar_column = tryGetScalarConstantColumn(function_argument, scope.context))
         {
             /// Allow constant folding through getScalar
-            const auto * get_scalar_const_arg = get_scalar_function_node->getArguments().getNodes().at(0)->as<ConstantNode>();
-            if (get_scalar_const_arg && scope.context->hasQueryContext())
-            {
-                auto query_context = scope.context->getQueryContext();
-                auto scalar_string = fieldToString(get_scalar_const_arg->getValue());
-                if (query_context->hasScalar(scalar_string))
-                {
-                    auto scalar = query_context->getScalar(scalar_string);
-                    const auto & scalar_column = scalar.getByPosition(0).column;
-                    const auto & get_scalar_result_type = get_scalar_function_node->getResultType();
-                    /// The column comes from the scalars map while the type comes from the resolved node, and the
-                    /// two disagree when the overload resolver wrapped the node's result type (a Nullable name).
-                    if (scalar_column->size() == 1 && columnMatchesType(*scalar_column, *get_scalar_result_type))
-                    {
-                        argument_column.column = ColumnConst::create(scalar_column, 1);
-                        argument_column.type = get_scalar_result_type;
-                        argument_is_constant = true;
-                    }
-                }
-            }
+            argument_column.column = std::move(scalar_column);
+            argument_column.type = function_argument->getResultType();
+            argument_is_constant = true;
         }
 
         all_arguments_constants &= argument_is_constant;

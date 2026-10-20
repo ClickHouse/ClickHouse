@@ -52,6 +52,10 @@ public:
     virtual bool hasStaticStructure() const { return false; }
     /// Returns false if storage returned by table function supports type conversion (e.g. StorageDistributed)
     virtual bool needStructureConversion() const { return true; }
+    /// Returns true if the storage created by this table function can store its own unreplicated data on disk.
+    /// Used to classify `CREATE TABLE ... AS table_function(...)` without executing the table function,
+    /// see `IStorage::hasUnreplicatedTableDataOnDisk`.
+    virtual bool hasUnreplicatedTableDataOnDisk() const { return false; }
 
     /** Return array of table function arguments indexes for which query tree analysis must be skipped.
       * It is important for table functions that take subqueries, because otherwise analyzer will resolve them.
