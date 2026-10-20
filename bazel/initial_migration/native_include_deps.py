@@ -14,6 +14,7 @@ import shutil
 import json
 from pathlib import Path
 import posixpath
+import re
 import subprocess
 import sys
 
@@ -22,10 +23,138 @@ from initial_migration.repository_inputs import ROOT
 from initial_migration.compact_build import Source, Expand, ast_key
 from initial_migration.first_party_packages import canonical_dependency
 from initial_migration.native_public_includes import directory, list_elements
+from initial_migration.native_cc_inputs import Sources, TUS, FORCED
 from initial_migration.prune_inherited_headers import CC_COMPILERS, CC_PROVIDERS, Document, Graph
 
 CPUS = ('x86_64','aarch64','default')
 LLVM_DIRS = ('contrib/llvm-project/', 'external/llvm')
+
+def rejects_cpu(node, doc, cpu, seen=()):
+    """A CPU select must fail here, outside any opaque function argument."""
+    if isinstance(node, ast.Name) and node.id in doc.constants and node.id not in seen:
+        return rejects_cpu(doc.constants[node.id], doc, cpu, (*seen, node.id))
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return rejects_cpu(node.left, doc, cpu, seen) or rejects_cpu(node.right, doc, cpu, seen)
+    if (isinstance(node, ast.Call) and getattr(node.func, 'id', '') == 'select'
+            and len(node.args) == 1 and not node.keywords and isinstance(node.args[0], ast.Dict)
+            and all(isinstance(key, ast.Constant) and isinstance(key.value, str)
+                    for key in node.args[0].keys)):
+        keys = {key.value for key in node.args[0].keys}
+        known = {'@platforms//cpu:' + arch for arch in CPUS[:2]} | {'//conditions:default'}
+        return bool(keys) and keys <= known and (
+            '@platforms//cpu:' + cpu not in keys and '//conditions:default' not in keys)
+    return False
+
+def active_cpus(doc, attrs, changing):
+    """Never use a rewritten attribute as evidence of unsupported CPUs."""
+    return tuple(cpu for cpu in CPUS if not any(
+        rejects_cpu(value, doc, cpu) for field, value in attrs.items() if field not in changing
+    ))
+
+def explicit_list(node, doc, seen=()):
+    """Lists with understood selects; globs and arbitrary calls need inventory."""
+    if isinstance(node, ast.Name) and node.id in doc.constants and node.id not in seen:
+        return explicit_list(doc.constants[node.id], doc, (*seen, node.id))
+    if isinstance(node, ast.List):
+        return True
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return explicit_list(node.left, doc, seen) and explicit_list(node.right, doc, seen)
+    if (isinstance(node, ast.Call) and getattr(node.func, 'id', '') == 'select'
+            and len(node.args) == 1 and not node.keywords and isinstance(node.args[0], ast.Dict)
+            and all(isinstance(key, ast.Constant) and isinstance(key.value, str)
+                    for key in node.args[0].keys)):
+        keys = {key.value for key in node.args[0].keys}
+        known = {'@platforms//cpu:' + arch for arch in CPUS[:2]} | {'//conditions:default'}
+        return bool(keys) and keys <= known and all(
+            explicit_list(value, doc, seen) for value in node.args[0].values)
+    return False
+
+def without_include_options(doc, node, cpu):
+    """Remove only complete -I operand pairs from a fully understood copts list."""
+    if node is None:
+        return []
+    if not explicit_list(node, doc):
+        return None
+    rows = list_elements(node, doc, cpu)
+    retained = []
+    index = 0
+    while index < len(rows):
+        item = rows[index]
+        value = directory(item, doc)
+        if value is None or any(value.startswith(flag) for flag in FORCED):
+            return None
+        if value == '-I':
+            if index + 1 >= len(rows) or directory(rows[index + 1], doc) is None:
+                return None
+            index += 2
+        else:
+            retained.append(doc.source.text(item))
+            index += 1
+    return retained
+
+def clear_include_free_generated(doc, sources):
+    """No explicit include roots for sources proved free of preprocessor inputs."""
+    edits, report = [], []
+    for _, call in doc.source.rules():
+        attrs = {kw.arg: kw.value for kw in call.keywords}
+        name = attrs.get('name')
+        if (getattr(call.func, 'id', '') not in CC_COMPILERS
+                or not isinstance(name, ast.Constant) or not isinstance(name.value, str)
+                or not explicit_list(attrs.get('srcs'), doc)):
+            continue
+        # Keep forced include options from the macro/toolchain out of this
+        # proof. Only ordinary ch_cc_library C/C++ calls are modeled here.
+        if getattr(call.func, 'id', '') != 'ch_cc_library':
+            continue
+        cpus = active_cpus(doc, attrs, {'local_includes', 'copts'})
+        if not cpus:
+            continue
+        wanted = {}
+        for cpu in cpus:
+            entries = list_elements(attrs.get('srcs'), doc, cpu)
+            if not entries or any(not isinstance(n, ast.Constant) or not isinstance(n.value, str)
+                                  for n in entries):
+                break
+            files = [doc.reference(n.value) for n in entries]
+            if (not all(f.endswith(TUS) and f in sources.directives
+                        and not sources.directives[f] for f in files)):
+                break
+            options = without_include_options(doc, attrs.get('copts'), cpu)
+            if options is None:
+                break
+            wanted[cpu] = options
+        if set(wanted) != set(cpus):
+            continue
+        selected = next(iter(wanted.values()))
+        if any(options != selected for options in wanted.values()):
+            continue
+        changed = False
+        for kw in call.keywords:
+            if kw.arg == 'local_includes':
+                start, end = doc.source.span(kw)
+                if doc.source.bytes[end:end + 1] == b',':
+                    end += 1
+                edits.append((start, end, ''))
+                changed = True
+            elif kw.arg == 'copts':
+                replacement = '[\n' + ''.join('    ' + item + ',\n' for item in selected) + ']'
+                if any(directory(item, doc) == '-I' for cpu in cpus
+                       for item in list_elements(kw.value, doc, cpu)):
+                    edits.append((*doc.source.span(kw.value), replacement))
+                    changed = True
+        if changed:
+            report.append({'target': doc.reference(':' + name.value), 'cpus': list(cpus),
+                           'retained_copts': selected})
+    return doc.source.rewrite(edits), report
+
+def prove_generated_options(root):
+    """Abort if fixed native build flags have acquired a forced header input."""
+    files = ['.bazelrc', 'bazel/rules/ch_cc_library.bzl', 'bazel/rules/repository_paths.bzl']
+    forced = re.compile(r'(^|[\s"=\x27])(?:-include|-imacros|-ivfsoverlay|-fmodule-file|-fmodule-map-file)')
+    for filename in files:
+        for line in (root / filename).read_text().splitlines():
+            if forced.search(line):
+                raise ValueError('Forced header inputs in ' + filename + ': ' + line)
 
 def canonical_dir(node, doc):
     value = directory(node, doc)
@@ -152,7 +281,8 @@ class Rewrite:
             kind=getattr(rule.func,'id','')
             if kind not in CC_COMPILERS or not isinstance(name,ast.Constant) or not isinstance(name.value,str):
                 continue
-            self.walk(attrs.get('local_includes'),self.doc.reference(':'+name.value),CPUS,True)
+            self.walk(attrs.get('local_includes'),self.doc.reference(':'+name.value),
+                      active_cpus(self.doc, attrs, {'local_includes'}), True)
         # A constant also used in a different attribute or a non-compiler rule
         # cannot be rewritten through this pass.
         for stmt in source.module.body:
@@ -235,13 +365,15 @@ def expanded_rules(text):
         result[name.value]=(getattr(call.func,'id',''),attrs)
     return result
 
-def prove_unchanged(before,after,path):
+def prove_unchanged(before,after,path, generated=()):
     old,new=expanded_rules(before),expanded_rules(after)
     if set(old)!=set(new):
         raise ValueError('changed target names '+str(path))
     for name,(kind,fields) in old.items():
         nk, nf=new[name]
         skip={'local_includes'} if kind in CC_COMPILERS else set()
+        if name in generated:
+            skip.add('copts')
         if kind!=nk or (set(fields)-skip)!=(set(nf)-skip):
             raise ValueError(f'changed attr names {path} {name}')
         for field in set(fields)-skip:
@@ -259,8 +391,22 @@ def run(root, *, write=False):
             continue
         package=path.parent.relative_to(root).as_posix().removeprefix('.') if path.name=='BUILD.bazel' else ''
         docs.append(Document(path,package=package))
+    prove_generated_options(root)
+    # The generated-source registry is sufficient for this pass. Source
+    # archive receipts are not evidence of generated contents.
+    sources=Sources(None, root)
+    originals={doc.path:doc.source.bytes.decode() for doc in docs}
+    generated={}
+    prepared=[]
+    for doc in docs:
+        after, records=clear_include_free_generated(doc, sources)
+        names={r['target'].partition(':')[2] for r in records}
+        prove_unchanged(doc.source.bytes.decode(), after, doc.path, names)
+        if records:
+            generated[doc.path]=records
+        prepared.append(Document(doc.path, package=doc.package, text=after))
+    docs=prepared
     graph=PublicIncludes(docs)
-    originals={}
     outputs={}
     report={}
     counts=Counter()
@@ -274,17 +420,17 @@ def run(root, *, write=False):
         after,removals=rewrite.text()
         protected['not_published_in_all_consumers'] += sum(
             not r['valid'] or not r['witness'] for r in rewrite.records.values())
-        if not removals:
+        if not removals and path not in generated:
             continue
         proc=subprocess.run([shutil.which('buildifier'), '-type=build', '-mode=fix'],
             input=after, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
         after=proc.stdout
         prove_unchanged(original,after,path)
-        originals[path]=original
         outputs[path]=after
         report[path.relative_to(root).as_posix()]=removals
         counts['files']+=1
         counts['directories_removed']+=len(removals)
+        counts['include_free_generated_targets']+=len(generated.get(path, ()))
         counts['targets']+=len({t for d in removals for t,_,_ in d['witness']})
         for d in removals:
             by_directory[d['directory']]+=1
@@ -294,11 +440,15 @@ def run(root, *, write=False):
     docs2=[Document(d.path,package=d.package,text=outputs.get(d.path,d.source.bytes.decode())) for d in docs]
     graph2=PublicIncludes(docs2)
     for d in docs2:
+        same, repeated = clear_include_free_generated(d, sources)
+        if repeated or same != d.source.bytes.decode():
+            raise ValueError('generated include cleanup is not idempotent: '+str(d.path))
         after,more=Rewrite(d,graph2).text()
         if more or after != d.source.bytes.decode():
             raise ValueError('include cleanup is not idempotent: '+str(d.path))
     if write:
-        for path, original in originals.items():
+        for path in outputs:
+            original=originals[path]
             if path.read_text()!=original:
                 raise ValueError('BUILD changed during include proof: '+str(path))
         for path,after in outputs.items():
@@ -309,9 +459,10 @@ def run(root, *, write=False):
         'repositories': dict(by_repo.most_common()),
         'protected': dict(protected),
         'checks': {'unrelated_expanded_attrs':True,'buildifier':True,'idempotent':True},
-        'before_sha256':{str(p.relative_to(root)):file_hash(s) for p,s in originals.items()},
+        'before_sha256':{str(p.relative_to(root)):file_hash(originals[p]) for p in outputs},
         'after_sha256':{str(p.relative_to(root)):file_hash(s) for p,s in outputs.items()},
         'files': report,
+        'include_free_generated':{str(p.relative_to(root)):rows for p,rows in generated.items()},
     }
 
 

@@ -45,7 +45,7 @@ class Sources:
         self.complete = set()
         self.source_copies = {}
         self.root = root
-        paths = sorted(receipt_dir.glob('*-v[23]-*.json.gz'))
+        paths = sorted(receipt_dir.glob('*-v[23]-*.json.gz')) if receipt_dir is not None else []
         newest = {}
         for path in paths:
             with gzip.open(path, 'rt') as file:
