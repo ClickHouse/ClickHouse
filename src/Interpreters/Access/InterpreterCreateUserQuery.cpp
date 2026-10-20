@@ -386,7 +386,7 @@ BlockIO InterpreterCreateUserQuery::execute()
         const auto authenticated_user_id = access->getUserID();
         const auto authenticated_user_name = access->getUserName();
         const bool self_service = isAuthenticationOnlyAlter(query)
-            && names.size() == 1 && query.cluster.empty() && query.storage_name.empty()
+            && names.size() == 1 && query.storage_name.empty()
             && authenticated_user_id && names.front() == authenticated_user_name;
         const bool token_addition = isSelfServiceAuthenticationMethodAddition(query, authenticated_user_name);
         const auto rights = access->getAccessRightsWithImplicit();

@@ -219,9 +219,9 @@ deny_change "ALTER USER IF EXISTS $alice, $missing IDENTIFIED BY '$denied_passwo
 deny_change "ALTER USER IF EXISTS $missing, $alice IDENTIFIED BY '$denied_password'"
 deny_change "ALTER USER IF EXISTS $missing IDENTIFIED BY '$denied_password'"
 as_user "$alice" "$alice_password" "ALTER USER IF EXISTS $alice IDENTIFIED BY '$alice_password'"
-# Authorization precedes lookup of an explicit storage or cluster, so no fixture is needed.
+# Account/storage authorization precedes lookup of an explicit storage or cluster.
 deny_change "ALTER USER $alice IN nonexistent_self_password_storage IDENTIFIED BY '$denied_password'"
-deny_change "ALTER USER $alice ON CLUSTER nonexistent_self_password_cluster IDENTIFIED BY '$denied_password'"
+deny_change "ALTER USER $bob ON CLUSTER nonexistent_self_password_cluster IDENTIFIED BY '$denied_password'"
 deny_change "CREATE USER $created IDENTIFIED BY '$denied_password'"
 deny_change "CREATE USER OR REPLACE $alice IDENTIFIED BY '$denied_password'"
 deny_change "DROP USER $alice"
