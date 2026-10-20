@@ -136,8 +136,8 @@ public:
         if (!query_node)
             return;
 
-        /// The planner matches an INTERPOLATE target to its result column by expression, and the target is a copy of it.
-        if (query_node->hasInterpolate())
+        /// A row that WITH FILL adds has values only in the ORDER BY and INTERPOLATE copies of the projection expression.
+        if (hasWithFill(*query_node))
             return;
 
         /// Check that query has only single table expression which is subquery

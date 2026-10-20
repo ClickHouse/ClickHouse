@@ -800,8 +800,8 @@ public:
         optimize_filter(query_node->getPrewhere());
         optimize_filter(query_node->getHaving());
 
-        /// The planner matches an INTERPOLATE target to its result column by expression, and the target is a copy of it.
-        if (has_filter && settings[Setting::optimize_substitute_columns] && !query_node->hasInterpolate())
+        /// A row that WITH FILL adds has values only in the ORDER BY and INTERPOLATE copies of the projection expression.
+        if (has_filter && settings[Setting::optimize_substitute_columns] && !hasWithFill(*query_node))
             substituteColumns(*query_node, table_expressions, context);
     }
 };
