@@ -46,11 +46,16 @@ $CLICKHOUSE_CLIENT -q "SELECT mutation_id FROM system.mutations WHERE database =
 start_time=$($CLICKHOUSE_CLIENT -q "SELECT now64(6)")
 queue_log="SELECT count() > 0 FROM system.text_log WHERE event_time_microseconds >= '$start_time'
     AND logger_name = currentDatabase() || '.r1 (ReplicatedMergeTreeQueue)' AND message LIKE"
+r2_queue_log="SELECT count() > 0 FROM system.text_log WHERE event_time_microseconds >= '$start_time'
+    AND logger_name = currentDatabase() || '.r2 (ReplicatedMergeTreeQueue)' AND message LIKE"
 
 # The rebuild clears the queue; with pulling stopped it does not load the mutations yet.
 $CLICKHOUSE_CLIENT -q "SYSTEM STOP PULLING REPLICATION LOG r1"
 $CLICKHOUSE_CLIENT -q "SYSTEM RECONNECT ZOOKEEPER"
 wait_for "$queue_log 'Queue initialized'"
+# r2 rebuilds too and must finish loading its mutations, so that only r1 reaches the global pause.
+wait_for "$r2_queue_log 'Queue initialized'"
+wait_for "$(mutations_are r2 2)"
 
 # The reload lists both mutations and stops before it fetches their entries.
 $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT replicated_queue_pause_before_loading_mutations"
