@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Joins.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLSubquery.h>
 #include <base/types.h>
@@ -14,8 +15,12 @@ class SelectQueryBuilder
 {
 public:
     ASTs select_list;
+
+    /// The source of the query: a table by its name or by its id, or a table function (at most one of them is set).
     String from_table;
+    StorageID from_table_id = StorageID::createEmpty();
     ASTPtr from_table_function;
+
     ASTPtr where;
     ASTs group_by;
     ASTPtr having;

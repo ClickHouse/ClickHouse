@@ -1,0 +1,5 @@
+-- the reader with the policy on the tag 'env' selects the tag 'job' only
+b
+-- the definer with a policy keeping all rows
+a
+b

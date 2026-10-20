@@ -97,7 +97,12 @@ public:
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr) const override;
 
     /// Check access right, validate definer statement and replace `CURRENT USER` with actual name.
-    static void processSQLSecurityOption(ContextMutablePtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view = false, LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE);
+    static void processSQLSecurityOption(
+        ContextMutablePtr context_,
+        ASTSQLSecurity & sql_security,
+        bool is_materialized_view = false,
+        bool is_time_series_table = false,
+        LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE);
 
     /// Remove transaction metadata files (txn_version.txt and txn_version.txt.tmp) from all parts for a table.
     /// Both routes converting a table to a replicated engine call it: `ATTACH TABLE ... AS REPLICATED` and the

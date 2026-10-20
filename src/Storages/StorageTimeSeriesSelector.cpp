@@ -11,6 +11,7 @@
 #include <Core/Joins.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -264,8 +265,13 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
+    /// Reading through the selector requires the same privileges as reading the metric names, the tags and the samples
+    /// from the TimeSeries table itself. The samples column is checked after the table is found because its name depends on the version.
+    context->checkAccess(AccessType::SELECT, time_series_storage_id, Strings{TimeSeriesColumnNames::MetricName, TimeSeriesColumnNames::Tags});
+
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
+    context->checkAccess(AccessType::SELECT, time_series_storage_id, Strings{TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion())});
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
     auto [table_timestamp_type, table_value_type] = splitTimeSeriesType(
         time_series_metadata->columns.get(TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion())).type);
@@ -1066,6 +1072,14 @@ void StorageTimeSeriesSelector::readImpl(
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
     auto time_series_settings = time_series_storage->getStorageSettings();
 
+    /// The caller needs the SELECT privilege on the read columns of the TimeSeries table; the generated queries over its
+    /// target tables run with the permissions given by the SQL security of the TimeSeries table.
+    context->checkAccess(
+        AccessType::SELECT,
+        config.time_series_storage_id,
+        Strings{TimeSeriesColumnNames::MetricName, TimeSeriesColumnNames::Tags, TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion())});
+    auto target_tables_context = time_series_storage->getSQLSecurityOverriddenContext(context);
+
     const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*config.selector.getRoot()).matchers;
 
     /// Prefer the recent samples table when the whole range fits in its TTL window: it's a much smaller copy of the recent samples.
@@ -1107,15 +1121,14 @@ void StorageTimeSeriesSelector::readImpl(
     auto samples_table_metadata = time_series_storage->getTargetTable(samples_table_kind, context)->getInMemoryMetadataPtr(context, false);
     auto tags_table_metadata = time_series_storage->getTargetTable(ViewTarget::Tags, context)->getInMemoryMetadataPtr(context, false);
 
-    auto modified_context = Context::createCopy(context);
-    ContextPtr interpreter_context = modified_context;
-    applySettingsForSelectIDsQuery(*modified_context);
+    ContextPtr interpreter_context = target_tables_context;
+    applySettingsForSelectIDsQuery(*target_tables_context);
 
     if (!context->getSettingsRef().isChanged("merge_tree_min_bytes_for_concurrent_read"))
-        modified_context->setSetting("merge_tree_min_bytes_for_concurrent_read", UInt64{4 * 1024 * 1024});
+        target_tables_context->setSetting("merge_tree_min_bytes_for_concurrent_read", UInt64{4 * 1024 * 1024});
 
     if (!context->getSettingsRef().isChanged("merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem"))
-        modified_context->setSetting("merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem", UInt64{4 * 1024 * 1024});
+        target_tables_context->setSetting("merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem", UInt64{4 * 1024 * 1024});
 
     const auto metric_id_ranges = tryGetTimeSeriesIDRanges(
         matchers, getIDGenerator(*time_series_settings, tags_table_metadata->getColumns(), config.table_id_type), config.table_id_type);
@@ -1143,7 +1156,7 @@ void StorageTimeSeriesSelector::readImpl(
         /// The `id IN <tags subquery>` condition stays in the WHERE for exact row-level filtering,
         /// but its set is excluded from the primary-key index analysis: `KeyCondition` would run an expensive
         /// exclusion search with the whole set, while the range conditions select the same granules cheaply.
-        modified_context->setSetting("use_index_for_in_with_subqueries_max_values", UInt64{1});
+        target_tables_context->setSetting("use_index_for_in_with_subqueries_max_values", UInt64{1});
         LOG_DEBUG(log, "Selector {} matches the whole metric: adding a primary-key range on id and excluding the id set from index analysis",
                   quoteString(config.selector.toString()));
     }
