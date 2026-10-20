@@ -183,7 +183,9 @@ struct QueryPlanOptimizationSettings
     bool distributed_plan_fallback_to_local_execution
         = true; /// Fall back to local execution instead of throwing when the plan cannot be distributed
     UInt64 distributed_plan_default_shuffle_join_bucket_count = 8;
-    UInt64 distributed_plan_default_reader_bucket_count = 8; /// Default bucket count for read steps in distributed query plan
+    UInt64 distributed_plan_default_reader_bucket_count = 0; /// Bucket count for read steps in distributed query plan, 0 - automatic
+    UInt64 distributed_plan_min_rows_per_reader = 1000000; /// Minimum rows per read task for the automatic bucket count
+    size_t distributed_plan_worker_count = 0; /// Workers the plan runs on, caps the automatic bucket count; 0 - unknown
     bool distributed_plan_optimize_exchanges = true; /// Removes unnecessary exchanges in distributed query plan
     String distributed_plan_force_exchange_kind; /// Force exchange kind for all exchanges in distributed query plan
     UInt64 distributed_plan_max_rows_to_broadcast = 20000; /// Max number of rows to broadcast in distributed query plan

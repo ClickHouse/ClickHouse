@@ -549,6 +549,26 @@ static bool shuffleJoinKeysHaveCommonType(const JoinOperator & join_info)
     return true;
 }
 
+/// One read task per `distributed_plan_min_rows_per_reader` rows, at most one per worker.
+static size_t chooseReaderBucketCount(size_t rows, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    size_t bucket_count = std::max<size_t>(1, rows / optimization_settings.distributed_plan_min_rows_per_reader);
+    if (optimization_settings.distributed_plan_worker_count)
+        bucket_count = std::min(bucket_count, optimization_settings.distributed_plan_worker_count);
+    return std::min<size_t>(bucket_count, MAX_DISTRIBUTED_PLAN_BUCKET_COUNT);
+}
+
+/// A keyless scatter with the bucket count of the distributed input below it is removed by
+/// `optimizeExchanges`, so the step above it runs in the tasks that produce its input.
+static size_t getKeylessScatterBucketCount(const QueryPlan::Node * source, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    while (source->children.size() == 1 && canHoistGatherThroughStep(*source->step))
+        source = source->children.front();
+    if (const auto * gather_step = typeid_cast<const GatherExchangeStep *>(source->step.get()))
+        return gather_step->getSourceBucketCount();
+    return optimization_settings.distributed_plan_default_shuffle_join_bucket_count;
+}
+
 /// Replaces LogicalJoin step with a subtree like this:
 ///
 ///   GatherExchange
@@ -612,6 +632,8 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
 
     if (strategy == Broadcast)
     {
+        bucket_count = getKeylessScatterBucketCount(source_a, optimization_settings);
+
         LOG_DEBUG(getLogger("tryMakeDistributedJoin"),
             "Estimated number of rows in right source: {}. Using broadcast join",
             row_count_b.transform(toString<UInt64>).value_or("unknown"));
@@ -821,7 +843,7 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
 
     if (strategy == PartialAggregation)
     {
-        const size_t bucket_count = optimization_settings.distributed_plan_default_shuffle_join_bucket_count;    /// TODO: estimate number of buckets based on statistics and available nodes and memory
+        const size_t bucket_count = getKeylessScatterBucketCount(source, optimization_settings);
 
         /// Add any-scatter
         auto & exchange_scatter_node = nodes.emplace_back();
@@ -937,7 +959,7 @@ void tryMakeDistributedSorting(const Stack & stack, QueryPlan::Node & node, Quer
         return;
     QueryPlan::Node * source = node.children[0];
 
-    const size_t bucket_count = optimization_settings.distributed_plan_default_shuffle_join_bucket_count;    /// TODO: estimate number of buckets based on statistics and available nodes and memory
+    const size_t bucket_count = getKeylessScatterBucketCount(source, optimization_settings);
     auto sort_description = sorting_step->getSortDescription();
 
     /// Add "any" scatter exchange step above source. It will allow to optimize out unnecessary shuffle if the input is already parallelized in any way.
@@ -991,8 +1013,9 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
     if (!node.children.empty())
         return;
 
-    /// TODO: estimate number of buckets based on statistics and available nodes and memory
-    size_t bucket_count = optimization_settings.distributed_plan_default_reader_bucket_count;
+    /// TODO: estimate number of buckets based on statistics and memory
+    const size_t configured_bucket_count = optimization_settings.distributed_plan_default_reader_bucket_count;
+    size_t bucket_count = configured_bucket_count;
 
     if (read_from_merge_tree_step)
     {
@@ -1001,6 +1024,13 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
         auto analysis_result = read_from_merge_tree_step->getOrCreateAnalyzedResult();
         if (analysis_result && analysis_result->selected_rows <= optimization_settings.distributed_plan_max_rows_to_broadcast)
             return;
+
+        if (configured_bucket_count == 0)
+        {
+            if (!analysis_result)
+                return;
+            bucket_count = chooseReaderBucketCount(analysis_result->selected_rows, optimization_settings);
+        }
 
         /// The coordinator computes each bucket's authoritative marks: contiguous mark slices for a plain
         /// read, primary-key-range layers for FINAL (one merge per layer, so rows sharing a sort key are
@@ -1017,8 +1047,12 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
 #if CLICKHOUSE_CLOUD
         /// Check if table is big enough for distributed read
         /// TODO: implement better logic for choosing number of parallel readers
-        if (read_from_object_storage_step->totalRows() <= optimization_settings.distributed_plan_max_rows_to_broadcast)
+        const auto total_rows = read_from_object_storage_step->totalRows();
+        if (total_rows <= optimization_settings.distributed_plan_max_rows_to_broadcast)
             return;
+
+        if (configured_bucket_count == 0)
+            bucket_count = chooseReaderBucketCount(*total_rows, optimization_settings);
 
         read_from_object_storage_step->setDistributedRead(bucket_count);
 #else
