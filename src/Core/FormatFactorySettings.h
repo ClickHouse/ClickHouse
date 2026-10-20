@@ -773,7 +773,7 @@ Read data types in binary format instead of type names in Native input format
 )", 0, \
         {"24.7", false, false, "Added new setting to allow to read type names in binary format in Native output format"}) \
     DECLARE(UInt64, output_format_compression_level, 3, R"(
-Default compression level if query output is compressed. The setting is applied when `SELECT` query has `INTO OUTFILE` or when writing to table functions `file`, `url`, `hdfs`, `s3`, or `azureBlobStorage`.
+Default compression level if query output is compressed. The setting is applied when `SELECT` query has `INTO OUTFILE` or when writing to table functions `file`, `url`, `hdfs`, `s3`, or `azureBlobStorage`. It is also applied to the compressed response to an HTTP request with a method other than `gzip` and `deflate`, for which [http_zlib_compression_level](/reference/settings/session-settings/http#http_zlib_compression_level) is used.
 
 Possible values: from `1` to `22`
 )", 0, \
