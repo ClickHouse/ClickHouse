@@ -78,28 +78,33 @@ size_t countWindows(const MarkRanges & windows, size_t granularity)
 
 /// all windows, or a sample of them as the projection estimate takes granules
 /// the same `GRANULARITY` gives every candidate the same windows
-MarkRanges windowsToScan(const MarkRanges & windows, size_t granularity, size_t step, const String & part_name)
+/// `weights` gets the windows that each sampled window stands for, the last run of `step` can be shorter
+MarkRanges windowsToScan(
+    const MarkRanges & windows, size_t granularity, size_t step, const String & part_name, std::vector<double> & weights)
 {
     if (step <= 1)
         return windows;
 
+    const size_t count = countWindows(windows, granularity);
+    const auto sampled = sampleUnits(count, step, part_name);
     MarkRanges ranges;
     auto range = windows.begin();
     /// the windows in the ranges before `range`
     size_t windows_before = 0;
-    for (size_t index : sampleUnits(countWindows(windows, granularity), step, part_name))
+    for (size_t i = 0; i < sampled.size(); ++i)
     {
-        while (index >= windows_before + windowsInRange(*range, granularity))
+        while (sampled[i] >= windows_before + windowsInRange(*range, granularity))
         {
             windows_before += windowsInRange(*range, granularity);
             ++range;
         }
-        const size_t begin = range->begin + (index - windows_before) * granularity;
+        const size_t begin = range->begin + (sampled[i] - windows_before) * granularity;
         const size_t end = std::min(begin + granularity, range->end);
         if (!ranges.empty() && ranges.back().end == begin)
             ranges.back().end = end;
         else
             ranges.emplace_back(begin, end);
+        weights.push_back(static_cast<double>(std::min(step, count - i * step)));
     }
     return ranges;
 }
@@ -171,10 +176,11 @@ bool tryEstimateEmpirical(
 
     bool sampled = false;
     std::vector<bool> part_sampled(saved_parts.size());
+    std::vector<std::vector<double>> sample_weights(saved_parts.size());
     UInt64 rows_planned = 0;
     for (size_t i = 0; i < saved_parts.size(); ++i)
     {
-        read_ranges[i] = windowsToScan(read_ranges[i], skip_index_granularity, step, saved_parts[i].data_part->name);
+        read_ranges[i] = windowsToScan(read_ranges[i], skip_index_granularity, step, saved_parts[i].data_part->name, sample_weights[i]);
         part_sampled[i] = countWindows(read_ranges[i], skip_index_granularity) < part_windows[i];
         sampled |= part_sampled[i];
         rows_planned += saved_parts[i].data_part->index_granularity->getRowsCountInRanges(read_ranges[i]);
@@ -198,6 +204,8 @@ bool tryEstimateEmpirical(
     size_t sampled_part_windows = 0;
     UInt64 baseline_marks = 0;
     std::vector<double> window_survives;
+    /// a sampled window counts with its baseline marks times the windows it stands for
+    std::vector<double> window_weights;
 
     /// Position of the next baseline mark, gives every candidate's bitmap the same coordinates
     size_t baseline_mark_pos = 0;
@@ -225,6 +233,9 @@ bool tryEstimateEmpirical(
         const UInt64 total_before = total_data_granules;
         const UInt64 skipped_before = skipped_data_granules;
         const UInt64 rows_before = total_rows_read;
+        const size_t window_weights_before = window_weights.size();
+        double part_weighted_marks = 0;
+        double part_weighted_survivors = 0;
 
         /// Apply patch parts / on-the-fly mutations so we see the up-to-date values
         auto alter_conversions = mutations_snapshot
@@ -302,7 +313,17 @@ bool tryEstimateEmpirical(
                     for (size_t pos : window_baseline_marks)
                         (*surviving_marks)[pos] = 1;
                 if (part_sampled[part_idx])
+                {
+                    /// every sampled window overlaps the baseline, so the windows flush in the order of the sample
+                    chassert(window_weights.size() - window_weights_before < sample_weights[part_idx].size());
+                    const double weight = sample_weights[part_idx][window_weights.size() - window_weights_before]
+                        * static_cast<double>(baseline_marks_in_window);
+                    part_weighted_marks += weight;
+                    if (survives)
+                        part_weighted_survivors += weight;
                     window_survives.push_back(survives);
+                    window_weights.push_back(weight);
+                }
             };
 
             auto on_mark_finished = [&]
@@ -395,8 +416,8 @@ bool tryEstimateEmpirical(
             continue;
         }
         /// the scan does not count a trailing window with an empty aggregator, so a sampled part can count no marks
-        estimated_survivors += static_cast<double>(part_survivors) * static_cast<double>(part_baseline_marks)
-            / static_cast<double>(std::max<UInt64>(part_sampled_marks, 1));
+        estimated_survivors
+            += part_weighted_survivors * static_cast<double>(part_baseline_marks) / std::max(part_weighted_marks, 1.0);
         sampled_part_marks += part_baseline_marks;
         sampled_part_windows += part_windows[part_idx];
     }
@@ -427,7 +448,7 @@ bool tryEstimateEmpirical(
     if (window_survives.size() > 1)
     {
         /// a sample with no change has no spread, so take the rule of three: the other outcome is under 3 in the count
-        const double sample_error = standardErrorOfSample(window_survives);
+        const double sample_error = standardErrorOfSample(window_survives, window_weights);
         const double standard_error = sample_error != 0 ? sample_error : 1.5 / static_cast<double>(window_survives.size());
         spread += 2.0 * standard_error * static_cast<double>(sampled_part_marks);
     }
