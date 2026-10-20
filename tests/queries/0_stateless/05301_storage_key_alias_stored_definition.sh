@@ -102,18 +102,22 @@ CREATE TABLE db.t_ttl_udf (k UInt64, v UInt64, d DateTime) ENGINE = MergeTree OR
 TTL d + INTERVAL 1 DAY GROUP BY k SET v = max(alias_udf_ttl(v));
 " 2>&1 | grep -c "Alias 'c9' is not allowed in TTL"
 
-# CREATE HYPOTHETICAL INDEX reports an alias from the definition of an ALIAS column only to a user who may read its columns.
+# CREATE HYPOTHETICAL INDEX reports an alias from the definition of an ALIAS column only to a user who may read
+# that column and the columns it uses, also when the expression folds to a constant (`isNull` of a non-nullable column).
 user="u_05301_${CLICKHOUSE_DATABASE}"
 $CLICKHOUSE_CLIENT -q "
-CREATE TABLE t_alias_access (public UInt64, secret UInt64, hidden UInt64 ALIAS (secret * 1000 AS confidential)) ENGINE = MergeTree ORDER BY public;
+CREATE TABLE t_alias_access (public UInt64, secret UInt64, hidden UInt64 ALIAS (secret AS confidential) * 1000 + confidential) ENGINE = MergeTree ORDER BY public;
 DROP USER IF EXISTS ${user};
 CREATE USER ${user} NOT IDENTIFIED;
 "
-for grant in "" "SELECT(public)" "SELECT(secret)"
+for grant in "" "SELECT(public)" "SELECT(hidden)" "SELECT(secret)"
 do
     [ -z "${grant}" ] || $CLICKHOUSE_CLIENT -q "GRANT ${grant} ON ${CLICKHOUSE_DATABASE}.t_alias_access TO ${user}"
-    $CLICKHOUSE_CLIENT --user "${user}" -q "CREATE HYPOTHETICAL INDEX h ON ${CLICKHOUSE_DATABASE}.t_alias_access hidden TYPE minmax" 2>&1 \
-        | grep -o -m1 -E "ACCESS_DENIED|Alias 'confidential' is not allowed in INDEX"
+    for expression in "hidden" "(public, isNull(hidden))"
+    do
+        $CLICKHOUSE_CLIENT --user "${user}" -q "CREATE HYPOTHETICAL INDEX h ON ${CLICKHOUSE_DATABASE}.t_alias_access ${expression} TYPE minmax" 2>&1 \
+            | grep -o -m1 -E "ACCESS_DENIED|Alias 'confidential' is not allowed in INDEX"
+    done
 done
 $CLICKHOUSE_CLIENT -q "DROP USER ${user}; DROP TABLE t_alias_access;"
 

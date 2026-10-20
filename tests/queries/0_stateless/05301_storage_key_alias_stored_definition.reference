@@ -19,4 +19,9 @@ Int32
 1
 ACCESS_DENIED
 ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+Alias 'confidential' is not allowed in INDEX
 Alias 'confidential' is not allowed in INDEX
