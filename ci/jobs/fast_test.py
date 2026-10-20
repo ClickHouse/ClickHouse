@@ -67,6 +67,7 @@ def clone_submodules():
         "contrib/clickstack",
         "contrib/heks",
         "contrib/sql-console",
+        "contrib/optimized-routines",
     ]
 
     res = Shell.check("git submodule sync", verbose=True, strict=True)
