@@ -654,6 +654,8 @@ struct Reader
     const std::vector<FileColumnChunksPtr> & getColumnChunks() const { return column_chunks; }
     size_t numColumnChunks(size_t row_group_idx) const;
     void preparePrewhere();
+    /// After preparePrewhere(): tells the prefetcher which column chunks may be decoded only in part.
+    void markDataPagesThatMayBeReadPartially();
 
     /// Deserialize bf header and determine which bf blocks to read.
     void processBloomFilterHeader(ColumnChunk & column, const PrimitiveColumnInfo & column_info);

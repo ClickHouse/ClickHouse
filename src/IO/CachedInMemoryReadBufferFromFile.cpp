@@ -390,11 +390,14 @@ VectorWithMemoryTracking<SeekableReadBuffer::CachedRegion> CachedInMemoryReadBuf
         size_t usable = std::min(block_data_size - offset_in_block, end_offset - current_offset);
 
         const char * data_ptr = cells[i]->data() + offset_in_block;
+        size_t readable_after = cells[i]->size() - offset_in_block - usable;
         regions.push_back(CachedRegion{
             .handle = std::move(cells[i]),
             .data = data_ptr,
             .size = usable,
             .file_offset = current_offset,
+            .readable_before = offset_in_block,
+            .readable_after = readable_after,
         });
 
         current_offset += usable;
