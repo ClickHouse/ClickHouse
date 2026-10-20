@@ -2,34 +2,24 @@
 slug: /clickstack/observability/migration/elastic/migrating-data
 title: 'Migrating data to ClickHouse Observability from Elastic'
 sidebarTitle: 'Migrating data'
-description: 'Migrating data to ClickHouse Observability from Elastic setup and configuration for ClickHouse Observability and self-configured deployments.'
+description: 'Plan parallel ingestion from Elastic, with retention and historical-data guidance for managed and self-configured deployments.'
 show_related_blogs: true
 keywords: ['ClickHouse Observability']
 doc_type: 'guide'
 ---
 
-<Tabs>
-<Tab title="ClickHouse Observability">
-
-<Note>
-The ClickHouse Observability configuration for this guide is still being adapted. For the managed OTLP endpoint and authentication settings, see [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry). The **Self configured** tab contains the existing self-configured instructions.
-</Note>
-
-</Tab>
-<Tab title="Self configured">
-
 ## Parallel operation strategy {#parallel-operation-strategy-self-configured}
 
-When migrating from Elastic to Self Configured ClickHouse Observability for observability use cases, we recommend a **parallel operation** approach rather than attempting to migrate historical data. This strategy offers several advantages:
+When migrating from Elastic to ClickHouse Observability for observability use cases, we recommend a **parallel operation** approach rather than attempting to migrate historical data. This strategy offers several advantages:
 
-1. **Minimal risk**: by running both systems concurrently, you maintain access to existing data and dashboards while validating Self Configured ClickHouse Observability and familiarizing your users with the new system.
+1. **Minimal risk**: by running both systems concurrently, you maintain access to existing data and dashboards while validating ClickHouse Observability and familiarizing your users with the new system.
 2. **Natural data expiration**: most observability data has a limited retention period (typically 30 days or less), allowing for a natural transition as data expires from Elastic.
 3. **Simplified migration**: no need for complex data transfer tools or processes to move historical data between systems.
 <br/>
 <Info>
 **Migrating data**
 
-We demonstrate an approach for migrating essential data from Elasticsearch to ClickHouse in the section ["Migrating data"](#migrating-data-self-configured). This shouldn't be used for larger datasets as it is rarely performant - limited by the ability for Elasticsearch to export efficiently, with only JSON format supported.
+For self-configured deployments, we demonstrate an approach for migrating essential data from Elasticsearch to ClickHouse in the section ["Migrating data"](#migrating-data-self-configured). This shouldn't be used for larger datasets as it is rarely performant - limited by the ability for Elasticsearch to export efficiently, with only JSON format supported.
 </Info>
 
 ### Implementation steps {#implementation-steps-self-configured}
@@ -37,25 +27,25 @@ We demonstrate an approach for migrating essential data from Elasticsearch to Cl
 <Steps>
 <Step title="Configure dual ingestion" id="configure-dual-ingestion-self-configured">
 
-Set up your data collection pipeline to send data to both Elastic and Self Configured ClickHouse Observability simultaneously.
+Set up your data collection pipeline to send data to both Elastic and ClickHouse Observability simultaneously.
 
 How this is achieved depends on your current agents for collection - see ["Migrating Agents"](/clickstack/observability/migration/elastic/migrating-agents).
 </Step>
 <Step title="Adjust retention periods" id="adjust-retention-period-self-configured">
 
-Configure Elastic's TTL settings to match your desired retention period. Set up the Self Configured ClickHouse Observability [TTL](/clickstack/self-configured/managing/production#configure-ttl-managed) to maintain data for the same duration.
+Review the retention periods in both systems so historical data remains available during the transition. See [Retention and TTL](#retention-and-ttl-self-configured) for deployment-specific guidance.
 </Step>
 <Step title="Validate and compare" id="validate-and-compare-self-configured">
 
 - Run queries against both systems to ensure data consistency
 - Compare query performance and results
-- Migrate dashboards and alerts to Self Configured ClickHouse Observability. This is currently a manual process.
-- Verify that all critical dashboards and alerts work as expected in Self Configured ClickHouse Observability
+- Migrate dashboards and alerts to ClickHouse Observability. This is currently a manual process.
+- Verify that all critical dashboards and alerts work as expected in ClickHouse Observability
 </Step>
 <Step title="Gradual transition" id="graudal-transition-self-configured">
 
-- As data naturally expires from Elastic, you will increasingly rely on Self Configured ClickHouse Observability
-- Once confidence in Self Configured ClickHouse Observability is established, you can begin redirecting queries and dashboards
+- As data naturally expires from Elastic, you will increasingly rely on ClickHouse Observability
+- Once confidence in ClickHouse Observability is established, you can begin redirecting queries and dashboards
 </Step>
 </Steps>
 
@@ -64,7 +54,7 @@ Configure Elastic's TTL settings to match your desired retention period. Set up 
 For organizations requiring longer retention periods:
 
 - Continue running both systems in parallel until all data has expired from Elastic
-- Consider using [materialized views](/concepts/features/materialized-views/incremental-materialized-view) to maintain aggregated or filtered historical data while allowing raw data to expire.
+- For self-configured deployments, consider using [materialized views](/concepts/features/materialized-views/incremental-materialized-view) to maintain aggregated or filtered historical data while allowing raw data to expire.
 
 ### Migration timeline {#migration-timeline-self-configured}
 
@@ -72,23 +62,34 @@ The migration timeline will depend on your data retention requirements:
 
 - **30-day retention**: Migration can be completed within a month.
 - **Longer retention**: Continue parallel operation until data expires from Elastic.
-- **Historical data**: If absolutely necessary, consider using [Migrating data](#migrating-data-self-configured) to import specific historical data.
+- **Historical data**: Review the deployment-specific guidance in [Migrating data](#migrating-data-self-configured) before planning an import.
 
-## Migrating settings {#migration-settings-self-configured}
+## Retention and TTL {#retention-and-ttl-self-configured}
 
-Self Configured ClickHouse Observability uses ClickHouse Cloud for storage and querying. Storage and compute scale independently.
+<Tabs>
+<Tab title="ClickHouse Observability">
 
-### Retention and TTL {#retention-and-ttl-self-configured}
+Plan the transition around the retention configured for your managed service and Elastic. Keep Elastic available for historical searches until that data is no longer required.
+
+</Tab>
+<Tab title="Self configured">
 
 ClickHouse uses [TTL clauses](/clickstack/self-configured/managing/production#configure-ttl-managed) on `MergeTree` tables to automatically delete expired data.
 
-We recommend aligning your ClickHouse TTL configuration with your existing Elastic retention policies to maintain a consistent data lifecycle during the migration. For examples, see [Self Configured ClickHouse Observability production TTL setup](/clickstack/self-configured/managing/production#configure-ttl-managed).
+Align your table retention with your migration requirements. For examples, see [self-configured production TTL setup](/clickstack/self-configured/managing/production#configure-ttl-managed).
+
+</Tab>
+</Tabs>
 
 ## Migrating data {#migrating-data-self-configured}
 
-<Warning>
-The historical-data import examples below require review before use. The destination database/table names and JSON format descriptions contain inconsistencies that still need to be resolved and verified.
-</Warning>
+<Tabs>
+<Tab title="ClickHouse Observability">
+
+Use parallel ingestion to send new telemetry to your managed service while retaining access to historical data in Elastic. See [Sending OpenTelemetry data](/clickstack/observability/ingesting-data/opentelemetry) for the managed endpoint and authentication settings.
+
+</Tab>
+<Tab title="Self configured">
 
 While we recommend parallel operation for most observability data, there are specific cases where direct data migration from Elasticsearch to ClickHouse may be necessary:
 
@@ -98,7 +99,7 @@ While we recommend parallel operation for most observability data, there are spe
 
 This approach is only viable for datasets under 10 million rows, as Elasticsearch's export capabilities are limited to JSON over HTTP and don't scale well for larger datasets.
 
-The following steps allow the migration of a single Elasticsearch index from ClickHouse.
+The following steps allow the migration of a single Elasticsearch index to ClickHouse. Create the tables and run the insert commands in the same ClickHouse database; the examples use the default database.
 
 <Steps>
 <Step title="Migrate schema" id="migrate-scheme-self-configured">
@@ -108,7 +109,7 @@ Create a table in ClickHouse for the index being migrated from Elasticsearch. Yo
 Consider the following Elasticsearch mapping for an index containing `syslog` data:
 
 <Accordion title="Elasticsearch mapping">
-```javascripton
+```text
 GET .ds-logs-system.syslog-default-2025.06.03-000001/_mapping
 {
   ".ds-logs-system.syslog-default-2025.06.03-000001": {
@@ -536,6 +537,8 @@ For more details on using the JSON type in schemas, and how to efficiently apply
 </Step>
 <Step title={<>Install <code>elasticdump</code></>} id="install-elasticdump-self-configured">
 
+The commands below use `searchAfter` and PIT and require Elasticsearch 7.17 or newer.
+
 We recommend [`elasticdump`](https://github.com/elasticsearch-dump/elasticsearch-dump) for exporting data from Elasticsearch. This tool requires `node` and should be installed on a machine with network proximity to both Elasticsearch and ClickHouse. We recommend a dedicated server with at least 4 cores and 16GB of RAM for most exports.
 
 ```shell
@@ -571,7 +574,7 @@ export CLICKHOUSE_USER=default
 # command to run - modify as required
 elasticdump --input=${ELASTICSEARCH_URL} --type=data --input-index ${ELASTICSEARCH_INDEX} --output=$ --sourceOnly --searchAfter --pit=true |
 clickhouse-client --host ${CLICKHOUSE_HOST} --secure --password ${CLICKHOUSE_PASSWORD} --user ${CLICKHOUSE_USER} --max_insert_block_size=1000 \
---min_insert_block_size_bytes=0 --min_insert_block_size_rows=1000 --query="INSERT INTO test.logs_system_syslog FORMAT JSONEachRow"
+--min_insert_block_size_bytes=0 --min_insert_block_size_rows=1000 --query="INSERT INTO logs_system_syslog FORMAT JSONEachRow"
 ```
 
 Note the use of the following flags for `elasticdump`:
@@ -588,7 +591,7 @@ Our ClickHouse client parameters here (aside from credentials):
 - `max_insert_block_size=1000` - ClickHouse client will send data once this number of rows is reached. Increasing improves throughput at the expense of time to formulate a block - thus increasing time till data appears in ClickHouse.
 - `min_insert_block_size_bytes=0` - Turns off server block squashing by bytes.
 - `min_insert_block_size_rows=1000` - Squashes blocks from clients on the server side. In this case, we set to `max_insert_block_size` so rows appear immediately. Increase to improve throughput.
-- `query="INSERT INTO logs_system_syslog FORMAT JSONAsRow"` - Inserting the data as [JSONEachRow format](/guides/clickhouse/data-formats/json/formats). This is appropriate if sending to a well-defined schema such as `logs_system_syslog.`
+- `query="INSERT INTO logs_system_syslog FORMAT JSONEachRow"` - Inserting the data as [JSONEachRow format](/guides/clickhouse/data-formats/json/formats). This is appropriate if sending to a well-defined schema such as `logs_system_syslog`.
 <br/>
 **You can expect throughput on the order of thousands of rows per second.**
 
@@ -600,7 +603,7 @@ If inserting into a single JSON column (see the `syslog_json` schema above), the
 ```shell
 elasticdump --input=${ELASTICSEARCH_URL} --type=data --input-index ${ELASTICSEARCH_INDEX} --output=$ --sourceOnly --searchAfter --pit=true |
 clickhouse-client --host ${CLICKHOUSE_HOST} --secure --password ${CLICKHOUSE_PASSWORD} --user ${CLICKHOUSE_USER} --max_insert_block_size=1000 \
---min_insert_block_size_bytes=0 --min_insert_block_size_rows=1000 --query="INSERT INTO test.logs_system_syslog FORMAT JSONAsObject"
+--min_insert_block_size_bytes=0 --min_insert_block_size_rows=1000 --query="INSERT INTO syslog_json FORMAT JSONAsObject"
 ```
 
 See ["Reading JSON as an object"](/guides/clickhouse/data-formats/json/formats#reading-json-as-an-object) for further details.
@@ -629,7 +632,7 @@ To insert from `elasticdump` into this table, we can simply use the `input` tabl
 ```shell
 elasticdump --input=${ELASTICSEARCH_URL} --type=data --input-index ${ELASTICSEARCH_INDEX} --output=$ --sourceOnly --searchAfter --pit=true |
 clickhouse-client --host ${CLICKHOUSE_HOST} --secure --password ${CLICKHOUSE_PASSWORD} --user ${CLICKHOUSE_USER} --max_insert_block_size=1000 \
---min_insert_block_size_bytes=0 --min_insert_block_size_rows=1000 --query="INSERT INTO test.logs_system_syslog_v2 SELECT json.\`@timestamp\` as timestamp, json.host.hostname as hostname FROM input('json JSON') FORMAT JSONAsObject"
+--min_insert_block_size_bytes=0 --min_insert_block_size_rows=1000 --query="INSERT INTO logs_system_syslog_v2 SELECT json.\`@timestamp\` as timestamp, json.host.hostname as hostname FROM input('json JSON') FORMAT JSONAsObject"
 ```
 
 Note the need to escape the `@timestamp` field name and use the `JSONAsObject` input format.

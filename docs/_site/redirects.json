@@ -56049,7 +56049,7 @@
   },
   {
     "source": "/clickstack/self-configured/migration/datadog",
-    "destination": "/clickstack/observability/migration/datadog"
+    "destination": "/clickstack/observability/migration/datadog#self-configured"
   },
   {
     "source": "/clickstack/self-configured/migration/elastic",
