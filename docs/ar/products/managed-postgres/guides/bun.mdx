@@ -1,0 +1,290 @@
+---
+slug: /cloud/managed-postgres/guides/bun
+sidebarTitle: 'Bun'
+title: 'استخدام Bun مع ClickHouse Managed Postgres'
+description: 'ربط تطبيق Bun بخدمة ClickHouse Managed Postgres باستخدام العميل Bun.sql المدمج واتصال TLS مع التحقق من الشهادة'
+keywords: ['managed postgres', 'bun', 'bun.sql', 'typescript', 'javascript', 'tls', 'verify-full', 'pgbouncer']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-bun-beta" />
+
+[Bun](https://bun.sh) هو بيئة تشغيل للغتي JavaScript وTypeScript تتضمن عميل Postgres مدمجًا هو `Bun.sql`، لذا لا حاجة إلى تثبيت أي مشغّل.
+في هذا الدليل، ستربط Bun بخدمة ClickHouse Managed Postgres عبر اتصال TLS مُتحقَّق منه، ثم تنشئ جدولًا، وتنفّذ استعلامات ومعاملة، وأخيرًا تعرض الصفوف عبر HTTP باستخدام `Bun.serve`.
+
+## المتطلبات الأساسية {#prerequisites}
+
+* [Bun](https://bun.sh/docs/installation) الإصدار 1.4 أو أحدث. اختُبر هذا الدليل باستخدام Bun 1.4.2 وPostgres 18.
+* حساب على ClickHouse Cloud.
+* [`psql`](https://www.postgresql.org/download/)، لإنشاء قاعدة البيانات. ويمكنك بدلًا من ذلك تنفيذ عبارة `CREATE DATABASE` في [SQL console](/ar/integrations/connectors/sql-clients/sql-console).
+
+## إنشاء خدمة ClickHouse Managed Postgres {#create-service}
+
+في وحدة تحكم ClickHouse Cloud، انقر على **New service** ثم اختر **Postgres**. سيصبح المثيل جاهزًا خلال بضع دقائق. للاطلاع على شرح مفصّل للخطوات، راجع [دليل البدء السريع](/ar/products/managed-postgres/quickstart).
+
+## احصل على بيانات الاتصال {#connection-details}
+
+افتح خدمتك وانقر على **Connect** في الشريط الجانبي الأيسر. أبقِ الخيار **Directly** محددًا وفعّل **Use SSL**. سينتهي عنوان URL حينها بـ `sslmode=verify-full&sslrootcert=...`. انقر على **Download CA certificate** لتنزيل شهادة CA الخاصة بالمثيل.
+
+يعتمد هذا الدليل على الاتصال **المباشر** عبر المنفذ `5432`. فتطبيق `Bun.serve` عملية تعمل لفترات طويلة، كما يدير `Bun.sql` مجمّع الاتصالات الخاص به، لذا لا حاجة إلى أداة تجميع اتصالات من جهة الخادم. أما إذا كنت تشغّل عددًا كبيرًا من عمليات Bun قصيرة الأمد، فراجع [الاتصال عبر PgBouncer](#pgbouncer).
+
+## إعداد المشروع {#setup}
+
+أنشئ مشروعًا:
+
+```bash
+mkdir bun-postgres && cd bun-postgres
+bun init -y
+```
+
+<Tip>
+  **هل تُضيف ذلك إلى تطبيق قائم؟**
+
+  تخطَّ الأمرين `mkdir` و`bun init -y`، فـ `Bun.sql` مدمج في Bun ولا حاجة إلى تثبيت أي شيء. من المجلد الجذر لمشروعك، انتقل مباشرةً إلى [تهيئة الاتصال](#configure)، وأضف كذلك `NODE_EXTRA_CA_CERTS=./ca-certificate.pem` في بداية البرنامج النصي الذي يشغّل تطبيقك حتى يتمكن من التحقق من الخادم.
+</Tip>
+
+## تهيئة الاتصال {#configure}
+
+انقل شهادة CA التي نزّلتها إلى المشروع، ثم أعد تسميتها إلى `ca-certificate.pem`:
+
+```bash
+mv ~/Downloads/<service-name>-ca-certificate.pem ca-certificate.pem
+```
+
+أنشئ قاعدة بيانات للتطبيق. استبدل `<PASSWORD>` واسم المضيف بالقيم المعروضة في النافذة المنبثقة **Connect**:
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_bun;"
+```
+
+```text
+CREATE DATABASE
+```
+
+أضف عنوان URL للاتصال بقاعدة البيانات `guide_bun` إلى الملف `.env`، وأنشئ الملف إن لم يكن موجودًا. يحمّل Bun الملف `.env` تلقائيًا، ويقرأ التصدير `sql` من `bun` المتغير `DATABASE_URL`:
+
+```bash title=".env"
+DATABASE_URL=postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_bun?sslmode=verify-full
+```
+
+رمّز كلمة المرور بترميز URL إذا كانت تحتوي على محارف خاصة، واحرص على عدم إضافة `.env` إلى نظام التحكم في الإصدارات.
+
+أضف هذه النصوص البرمجية إلى `package.json`، وادمجها في قسم `scripts` إن كان موجودًا بالفعل. تمرّر هذه النصوص البرمجية شهادة CA إلى Bun عبر `NODE_EXTRA_CA_CERTS`:
+
+```json title="package.json"
+"scripts": {
+  "setup": "NODE_EXTRA_CA_CERTS=./ca-certificate.pem bun run setup.ts",
+  "queries": "NODE_EXTRA_CA_CERTS=./ca-certificate.pem bun run queries.ts",
+  "serve": "NODE_EXTRA_CA_CERTS=./ca-certificate.pem bun run server.ts"
+}
+```
+
+<Note>
+  **كيف يتحقق Bun من شهادة الخادم**
+
+  * يجعل `sslmode=verify-full` الأداة `Bun.sql` تتحقق من سلسلة الشهادات ومن اسم المضيف معًا.
+  * لا تنسخ المعلمة `sslrootcert` من عنوان URL الظاهر في وحدة التحكم، فالأداة `Bun.sql` لا تقرؤها، بل تمررها إلى الخادم على أنها إعداد وقت تشغيل، فيفشل الاتصال بالخطأ `unrecognized configuration parameter "sslrootcert"`.
+  * يجب تعيين `NODE_EXTRA_CA_CERTS` في البيئة عند بدء تشغيل Bun، إذ لا يقرؤه Bun من الملف `.env`، ولهذا يُضاف في النصوص البرمجية.
+  * في الإصدار Bun 1.4.2، يفشل تمرير الشهادة التي نزّلتها عبر الخيار `tls: { ca }` في `SQL` بالخطأ `certificate signature failure`. استخدم `NODE_EXTRA_CA_CERTS` بدلًا من ذلك.
+</Note>
+
+## إنشاء جدول {#create-table}
+
+أنشئ الملف `setup.ts`. يعرض هذا الملف حالة TLS الخاصة بالـ session، ثم ينشئ جدول `todos`:
+
+```ts title="setup.ts"
+import { sql } from "bun";
+
+const [tls] = await sql`SELECT ssl, version FROM pg_stat_ssl WHERE pid = pg_backend_pid()`;
+console.log("TLS:", tls);
+
+await sql`
+  CREATE TABLE IF NOT EXISTS todos (
+    id         integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    title      text NOT NULL,
+    done       boolean NOT NULL DEFAULT false,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )
+`;
+console.log("Table todos is ready");
+
+await sql.close();
+```
+
+نفّذه:
+
+```bash
+bun run setup
+```
+
+```text
+$ NODE_EXTRA_CA_CERTS=./ca-certificate.pem bun run setup.ts
+TLS: {
+  ssl: true,
+  version: "TLSv1.3",
+}
+Table todos is ready
+```
+
+للتأكد من أن الشهادة يجري التحقق منها فعلًا، شغّل الملف دون شهادة CA، وستلاحظ رفض الاتصال:
+
+```bash
+bun run setup.ts
+```
+
+```text
+error: unable to verify the first certificate
+ errno: 0,
+  code: "UNABLE_TO_VERIFY_LEAF_SIGNATURE"
+```
+
+## الاستعلام عن قاعدة البيانات {#query}
+
+يعتمد `Bun.sql` على القوالب الموسومة (tagged templates)، إذ تُرسَل كل قيمة مُضمَّنة بوصفها معلمة ربط (bind parameter)، ولذلك يمكن تمرير مدخلات المستخدم بأمان. أنشئ الملف `queries.ts`:
+
+```ts title="queries.ts"
+import { sql } from "bun";
+
+// Interpolated values are sent as bind parameters, never spliced into the SQL text
+const title = "Download the CA certificate";
+const [first] = await sql`INSERT INTO todos (title, done) VALUES (${title}, true) RETURNING *`;
+console.log("Inserted:", first);
+
+// Insert several rows at once with the sql(array) helper
+const rows = [{ title: "Connect with Bun.sql" }, { title: "Serve rows with Bun.serve" }];
+await sql`INSERT INTO todos ${sql(rows)}`;
+
+// Both statements commit together, or neither does
+await sql.begin(async (tx) => {
+  const [todo] = await tx`INSERT INTO todos (title) VALUES ('Write a transaction') RETURNING id`;
+  await tx`UPDATE todos SET done = true WHERE id = ${todo.id}`;
+});
+
+const open = await sql`SELECT id, title FROM todos WHERE done = ${false} ORDER BY id`;
+console.log("Open todos:", open);
+
+await sql.close();
+```
+
+تُنفِّذ `sql.begin` دالة الاستدعاء (callback) ضمن معاملة (transaction)، فتُثبِّت المعاملة عند انتهاء دالة الاستدعاء، وتتراجع عنها إذا رفعت الدالة استثناءً.
+
+شغِّلها:
+
+```bash
+bun run queries
+```
+
+```text
+$ NODE_EXTRA_CA_CERTS=./ca-certificate.pem bun run queries.ts
+Inserted: {
+  id: 1,
+  title: "Download the CA certificate",
+  done: true,
+  created_at: 2026-09-30T16:51:23.040Z,
+}
+Open todos: [
+  {
+    id: 2,
+    title: "Connect with Bun.sql",
+  }, {
+    id: 3,
+    title: "Serve rows with Bun.serve",
+  }, count: 2, command: "SELECT", lastInsertRowid: null,
+  affectedRows: null
+]
+```
+
+## تقديم الصفوف عبر HTTP {#serve}
+
+أنشئ الملف `server.ts` يتضمّن نقطة نهاية `/todos` لاستعراض الصفوف وإنشائها:
+
+```ts title="server.ts"
+import { sql } from "bun";
+
+const server = Bun.serve({
+  port: 3106,
+  routes: {
+    "/todos": {
+      GET: async () => {
+        const todos = await sql`SELECT id, title, done, created_at FROM todos ORDER BY id`;
+        return Response.json(todos);
+      },
+      POST: async (req) => {
+        const { title } = await req.json();
+        const [todo] = await sql`INSERT INTO todos (title) VALUES (${title}) RETURNING *`;
+        return Response.json(todo, { status: 201 });
+      },
+    },
+  },
+});
+
+console.log(`Listening on ${server.url}`);
+```
+
+شغِّل الخادم:
+
+```bash
+bun run serve
+```
+
+```text
+$ NODE_EXTRA_CA_CERTS=./ca-certificate.pem bun run server.ts
+Listening on http://localhost:3106/
+```
+
+في طرفية أخرى، أضف صفًا:
+
+```bash
+curl -X POST http://localhost:3106/todos -H 'Content-Type: application/json' -d '{"title": "Take a screenshot"}'
+```
+
+```json
+{"id":5,"title":"Take a screenshot","done":false,"created_at":"2026-09-30T16:51:30.372Z"}
+```
+
+## التحقق {#verify}
+
+افتح [http://localhost:3106/todos](http://localhost:3106/todos) في متصفحك لعرض جميع الصفوف. ستظهر الاستجابة على النحو التالي، بعد تنسيقها لتسهيل قراءتها:
+
+```json
+[
+  {"id":1,"title":"Download the CA certificate","done":true,"created_at":"2026-09-30T16:51:23.040Z"},
+  {"id":2,"title":"Connect with Bun.sql","done":false,"created_at":"2026-09-30T16:51:23.136Z"},
+  {"id":3,"title":"Serve rows with Bun.serve","done":false,"created_at":"2026-09-30T16:51:23.136Z"},
+  {"id":4,"title":"Write a transaction","done":true,"created_at":"2026-09-30T16:51:23.184Z"},
+  {"id":5,"title":"Take a screenshot","done":false,"created_at":"2026-09-30T16:51:30.372Z"}
+]
+```
+
+في وحدة التحكم، افتح **SQL console** ثم وسّع **guide&#95;bun**، ثم **public**، ثم **todos** لتظهر لك الصفوف نفسها:
+
+| id | title                       | done  | created&#95;at                |
+| -- | --------------------------- | ----- | ----------------------------- |
+| 1  | Download the CA certificate | true  | 2026-09-30 16:51:23.04083+00  |
+| 2  | Connect with Bun.sql        | false | 2026-09-30 16:51:23.136975+00 |
+| 3  | Serve rows with Bun.serve   | false | 2026-09-30 16:51:23.136975+00 |
+| 4  | Write a transaction         | true  | 2026-09-30 16:51:23.184716+00 |
+| 5  | Take a screenshot           | false | 2026-09-30 16:51:30.372292+00 |
+
+## الاتصال عبر PgBouncer {#pgbouncer}
+
+إذا كنت تشغّل عددًا كبيرًا من عمليات Bun قصيرة العمر، فاتصل عبر [PgBouncer](/ar/products/managed-postgres/connection#pgbouncer) المضمَّن بدلًا من ذلك. اختر **via PgBouncer** في نافذة **Connect** المنبثقة، وغيّر المنفذ في `DATABASE_URL` إلى `6432`. أما شهادة CA و`sslmode=verify-full` فتبقى كما هي.
+
+يعمل PgBouncer في وضع تجميع الاتصالات على مستوى المعاملة (transaction pooling). يستخدم `Bun.sql` افتراضيًا العبارات المُعدّة المسمّاة (named prepared statements)، وقد عملت عبر PgBouncer في اختباراتنا دون أي أخطاء. إذا ظهرت لك أخطاء `prepared statement does not exist`، فأنشئ العميل مع الخيار `prepare: false`:
+
+```ts
+import { SQL } from "bun";
+
+const sql = new SQL(process.env.DATABASE_URL!, { prepare: false });
+```
+
+مرِّر `prepare` كخيار، لا ضمن عنوان URL. فكما هو الحال مع `sslrootcert`، تُمرَّر معلمة URL ‏`prepare=false` إلى الخادم فيرفضها.
+
+## الخطوات التالية {#next-steps}
+
+* [الاتصال](/ar/products/managed-postgres/connection): سلاسل الاتصال وPgBouncer وTLS
+* [الإعدادات](/ar/products/managed-postgres/settings): تغيير معلمات Postgres وPgBouncer
+* [النسخ المتماثلة للقراءة](/ar/products/managed-postgres/read-replicas): توسيع نطاق عمليات القراءة
+* [توثيق Bun SQL](https://bun.sh/docs/runtime/sql): المرجع الكامل لواجهة برمجة التطبيقات `Bun.sql`

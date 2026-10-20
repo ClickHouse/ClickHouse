@@ -319,7 +319,9 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDNf0r6vRl24Ix3tv2IgPmNPO2ATa2krvt80DdcTatLj
 
 此设置用于为用户启用或禁用 `SHOW NAMED COLLECTIONS SECRETS` 特权，该特权允许用户查看存储在 [命名集合](/zh/concepts/features/configuration/server-config/named-collections) 中的值，例如通过 [`system.named_collections`](/zh/reference/system-tables/named_collections) 表查看。
 
-该设置默认禁用：能够管理命名集合并不意味着可以读取其中已存储的 credentials。
+在使用命名集合时，若要覆盖集合中已存储的某个键，同样需要此特权，例如 `s3(my_collection, url = '...')` 中的 `url`、表引擎的 `SETTINGS` 子句，或字典源中的某个键。添加集合中未存储的键则无需此特权。
+
+该设置默认禁用：能够管理命名集合并不意味着可以读取其中已存储的 凭证。
 
 此设置只有与 `named_collection_control` 配合使用才会生效，因为一旦禁用 `named_collection_control`，所有命名集合特权 (包括 `SHOW NAMED COLLECTIONS SECRETS`) 都会被撤销。
 

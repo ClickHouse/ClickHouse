@@ -492,6 +492,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"optimize_trivial_count_with_sparsity_filter", trueOrFalseSetting},
        {"optimize_trivial_group_by_limit_query", trueOrFalseSetting},
        {"optimize_truncate_order_by_after_group_by_keys", trueOrFalseSetting},
+       {"optimize_uniq_exact_radix_partitioning", trueOrFalseSetting},
        {"optimize_uniq_to_count", trueOrFalseSetting},
        {"optimize_use_implicit_projections", trueOrFalseSetting},
        {"optimize_use_projection_filtering", trueOrFalseSetting},
@@ -1577,6 +1578,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_parquet_enum_as_byte_array", CHSetting(trueOrFalse, {}, false)},
     {"output_format_parquet_fixed_string_as_fixed_byte_array", trueOrFalseSettingNoOracle},
     {"output_format_parquet_geometadata", trueOrFalseSettingNoOracle},
+    {"output_format_parquet_write_file_logical_type", trueOrFalseSettingNoOracle},
     {"output_format_parquet_max_dictionary_size",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
@@ -2467,6 +2469,11 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"iceberg_metadata_staleness_ms",
               CHSetting(
                   [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.3, 0, 60000)); },
+                  {},
+                  false)},
+             {"iceberg_orphan_files_min_retention_seconds",
+              CHSetting(
+                  [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.3, 0, 600)); },
                   {},
                   false)},
              {"iceberg_orphan_files_older_than_seconds",

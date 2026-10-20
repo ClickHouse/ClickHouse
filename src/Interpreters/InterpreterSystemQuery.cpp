@@ -73,6 +73,7 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/ManualMergeSelector.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageQueryRunner.h>
 #include <Storages/StorageProxy.h>
@@ -569,6 +570,10 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
             system_context->clearPrimaryIndexCache();
+            break;
+        case Type::CLEAR_STATISTICS_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_STATISTICS_CACHE);
+            system_context->clearStatisticsCache();
             break;
         case Type::CLEAR_UNCOMPRESSED_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
@@ -1783,27 +1788,59 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
             DatabasePtr & database = elem.second;
             for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
             {
-                if (auto * storage_replicated = castStorage<StorageReplicatedMergeTree>(iterator->table(), DeferredTable::Skip).get())
+                /// The loaded storage if there is one, otherwise the lazy stand-in.
+                const StoragePtr table = resolveStorageProxy(iterator->table());
+                const auto * lazy_stand_in = dynamic_cast<const StorageProxy *>(table.get());
+                String local_zookeeper_path;
+                String local_replica_name;
+                String local_zookeeper_name;
+                if (lazy_stand_in && lazy_stand_in->isLazyStandIn())
                 {
-                    /// getReplicaPath() is built from getZooKeeperPath(), which strips only a single trailing
-                    /// slash, so a table created from "/a///" metadata keeps "/a//replicas/..." and would slip
-                    /// past this guard against a query path canonicalized to "/a/replicas/...".
-                    const String local_replica_path
-                        = fs::path(zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(
-                              storage_replicated->getZooKeeperPath(), /*check_starts_with_slash*/ false))
-                        / "replicas" / storage_replicated->getReplicaName();
-                    /// Match the keeper too: a table on a different keeper with the same path string is a
-                    /// different znode, so it must not block a drop targeting query.zk_name.
-                    if (local_replica_path == canonical_remote_replica_path
-                        && storage_replicated->getZooKeeperName() == query.zk_name)
-                        throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED,
-                                        "There is a local table {}, which has the same table path in ZooKeeper. "
-                                        "Please check the path in query. "
-                                        "If you want to drop replica "
-                                        "of this table, use `DROP TABLE` "
-                                        "or `SYSTEM DROP REPLICA 'name' FROM TABLE db.table`",
-                                        storage_replicated->getStorageID().getNameForLogs());
+                    /// A lazily loaded table that nothing has accessed yet holds no session in ZooKeeper, so the
+                    /// `is_active` check below would not catch it either. Skipping it is the destructive outcome,
+                    /// and loading every such table defeats `lazy_load_tables`, so resolve its path from the stored
+                    /// `CREATE TABLE` query the way loading the table would.
+                    ASTPtr create_ast = database->tryGetCreateTableQuery(iterator->name(), getContext());
+                    if (!create_ast)
+                        continue; /// Dropped meanwhile.
+                    create_ast = create_ast->clone();
+                    auto & create_query = create_ast->as<ASTCreateQuery &>();
+                    create_query.attach = true;
+                    auto znode_info = extractZnodeInfoFromReplicatedTableDef(
+                        create_query, table->getStorageID(), LoadingStrictnessLevel::ATTACH, getContext());
+                    if (!znode_info)
+                        continue;
+                    local_zookeeper_path = znode_info->path;
+                    local_replica_name = znode_info->replica_name;
+                    local_zookeeper_name = znode_info->zookeeper_name;
                 }
+                else if (auto * storage_replicated = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Skip).get())
+                {
+                    local_zookeeper_path = storage_replicated->getZooKeeperPath();
+                    local_replica_name = storage_replicated->getReplicaName();
+                    local_zookeeper_name = storage_replicated->getZooKeeperName();
+                }
+                else
+                {
+                    continue;
+                }
+
+                /// getReplicaPath() is built from getZooKeeperPath(), which strips only a single trailing
+                /// slash, so a table created from "/a///" metadata keeps "/a//replicas/..." and would slip
+                /// past this guard against a query path canonicalized to "/a/replicas/...".
+                const String local_replica_path
+                    = fs::path(zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(local_zookeeper_path, /*check_starts_with_slash*/ false))
+                    / "replicas" / local_replica_name;
+                /// Match the keeper too: a table on a different keeper with the same path string is a
+                /// different znode, so it must not block a drop targeting query.zk_name.
+                if (local_replica_path == canonical_remote_replica_path && local_zookeeper_name == query.zk_name)
+                    throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED,
+                                    "There is a local table {}, which has the same table path in ZooKeeper. "
+                                    "Please check the path in query. "
+                                    "If you want to drop replica "
+                                    "of this table, use `DROP TABLE` "
+                                    "or `SYSTEM DROP REPLICA 'name' FROM TABLE db.table`",
+                                    table->getStorageID().getNameForLogs());
             }
         }
 
@@ -2901,6 +2938,9 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
             required_access.emplace_back(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
+            break;
+        case Type::CLEAR_STATISTICS_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_STATISTICS_CACHE);
             break;
         case Type::CLEAR_MMAP_CACHE:
             required_access.emplace_back(AccessType::SYSTEM_DROP_MMAP_CACHE);
