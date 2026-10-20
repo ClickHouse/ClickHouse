@@ -237,7 +237,7 @@ void ManifestColumnStatistics::addFile(const ProcessedManifestFileEntry & entry,
     }
 }
 
-ManifestColumnStatistics::DistinctValues ManifestColumnStatistics::estimateDistinctValues(
+std::optional<ManifestColumnStatistics::DistinctValues> ManifestColumnStatistics::estimateDistinctValues(
     const Target & target, const DistinctValuesInputs & inputs, const ColumnStats & column, UInt64 rows)
 {
     const UInt64 nulls = column.null_fraction ? static_cast<UInt64>(std::llround(*column.null_fraction * static_cast<Float64>(rows))) : 0;
@@ -248,13 +248,13 @@ ManifestColumnStatistics::DistinctValues ManifestColumnStatistics::estimateDisti
         range_width = valueRangeWidth(*column.min_value, *column.max_value);
 
     UInt64 num_distinct_values = 1;
-    bool counted = false;
+    bool measured = false;
     if (non_null_rows == 0)
         num_distinct_values = 1;
     else if (inputs.identity_partition_known)
     {
         num_distinct_values = inputs.identity_partition_values.size();
-        counted = true;
+        measured = true;
     }
     /// A timestamp counts microseconds, but its values usually step by thousands of them or more, so its range is far
     /// above the rows and the clamp below gives the estimate.
@@ -263,42 +263,44 @@ ManifestColumnStatistics::DistinctValues ManifestColumnStatistics::estimateDisti
         num_distinct_values = *range_width;
         /// As MergeTree interpolates ranges between min and max, the values are taken to fill the range, so equality and
         /// `IN` use it; a column with gaps would look more selective than it is
-        counted = *range_width <= non_null_rows;
+        measured = *range_width <= non_null_rows;
     }
-    /// `column_sizes` over the width of a fixed-width type; a variable-width type skips to the guess below.
+    /// `column_sizes` over the width of a fixed-width type.
     else if (inputs.sizes_known && target.nested_type->haveMaximumSizeOfValue())
         num_distinct_values = inputs.sizes / target.nested_type->getSizeOfValueInMemory();
-    /// The estimator's own guess, as for MergeTree without a `uniq` statistic.
     else
-        num_distinct_values = column.num_distinct_values;
+        return std::nullopt;
 
     /// A distinct count excludes NULL, as for MergeTree statistics, and 0 would make a join a cross product.
-    return {std::clamp<UInt64>(num_distinct_values, 1, std::max<UInt64>(non_null_rows, 1)), counted};
+    return DistinctValues{std::clamp<UInt64>(num_distinct_values, 1, std::max<UInt64>(non_null_rows, 1)), measured};
 }
 
 void ManifestColumnStatistics::finalize(DataLakeReadEstimate & estimate)
 {
-    auto & profile = estimate.profile.emplace();
-    profile.rows = total_rows;
+    estimate.rows = total_rows;
+
+    /// Selectivities are shares of these rows.
+    statistics_builder.incrementRowCount(total_rows);
     const auto estimator = statistics_builder.getEstimator();
     if (!estimator)
         return;
 
-    /// Selectivities are shares of these rows.
-    statistics_builder.incrementRowCount(total_rows);
-    profile.column_stats = estimator->estimateRelationProfile().column_stats;
-    /// Without a `uniq` sketch the estimator guesses a fixed share of the rows; the manifests give better.
+    /// The merged bounds and NULL counts the numbers of distinct values come from.
+    const auto merged = estimator->estimateRelationProfile();
+    /// Next step estimates NDV count when possible, from data we have from min/max, primary key info, etc.
+    /// Similar to MergeTree without `uniq` statistics, estimator would make a blind guess.
     for (size_t i = 0; i < targets.size(); ++i)
     {
-        const auto it = profile.column_stats.find(targets[i].name);
-        if (it == profile.column_stats.end())
+        const auto & col_target = targets[i];
+        const auto & col_name = col_target.name;
+        const auto it = merged.column_stats.find(col_name);
+        if (it == merged.column_stats.end())
             continue;
-
-        const auto distinct_values = estimateDistinctValues(targets[i], distinct_values_inputs[i], it->second, total_rows);
-        it->second.num_distinct_values = distinct_values.count;
-        /// Equality and `IN` then divide the rows by it, as with a `uniq` statistic; otherwise they get the default factor.
-        if (distinct_values.counted)
-            statistics_builder.setCardinality(targets[i].name, distinct_values.count);
+        const auto & column_stats = it->second;
+        const auto & distinct_value_input = distinct_values_inputs[i];
+        /// Without one, the estimator keeps its own guess, as for MergeTree without a `uniq` statistic.
+        if (const auto distinct_values = estimateDistinctValues(col_target, distinct_value_input, column_stats, total_rows))
+            statistics_builder.setCardinality(col_name, distinct_values->count, distinct_values->measured);
     }
     estimate.estimator = estimator;
 }

@@ -662,9 +662,9 @@ void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_n
     /// estimator still works with the compatible parts instead of crashing.
 }
 
-void ConditionSelectivityEstimatorBuilder::setCardinality(const String & column_name, UInt64 cardinality)
+void ConditionSelectivityEstimatorBuilder::setCardinality(const String & column_name, UInt64 cardinality, bool measured)
 {
-    estimator->column_estimators.at(column_name).stats->setCardinality(cardinality);
+    estimator->column_estimators.at(column_name).stats->setCardinality(cardinality, measured);
 }
 
 ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstimator() const
@@ -772,7 +772,7 @@ ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::estima
     /// guess would make the condition look arbitrarily selective and promote it into PREWHERE on no
     /// evidence.
     const UInt64 cardinality = it->second.estimateCardinality();
-    if (cardinality && it->second.stats->hasCardinality())
+    if (cardinality && it->second.stats->hasMeasuredCardinality())
         selectivity.true_sel
             = std::min(selectivity.true_sel, static_cast<Float64>(set_size) / static_cast<Float64>(cardinality));
 
