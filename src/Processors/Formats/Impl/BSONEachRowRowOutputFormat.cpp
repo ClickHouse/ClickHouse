@@ -20,6 +20,7 @@
 
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferValidUTF8.h>
+#include <Common/quoteString.h>
 
 #include <Processors/Port.h>
 
@@ -34,21 +35,24 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/// In BSON all names should be valid UTF8 sequences
-static String toValidUTF8String(const String & name, const FormatSettings & settings)
+/// BSON element names (column names, `Tuple` element names, `Map` keys) are NUL-terminated UTF-8 strings. Write
+/// them as they are, only replacing invalid UTF-8; the input format reads them back verbatim. A NUL byte would end
+/// the name early and corrupt the document, so reject it.
+static String toValidUTF8String(const String & name)
 {
+    if (name.find('\0') != String::npos)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot write the name {} in BSON: it contains a zero byte", quoteString(name));
+
     WriteBufferFromOwnString buf;
     {
         WriteBufferValidUTF8 validating_buf(buf);
-        writeJSONString(name, validating_buf, settings);
+        writeString(name, validating_buf);
         /// The destructor of `WriteBufferValidUTF8` catches and suppresses a failure of the final
-        /// flush, which would leave `buf` empty (or partial) and make the `substr` below throw
-        /// `std::out_of_range` - an exception in a release build instead of the real error. Flush
-        /// explicitly so a failure propagates as itself.
+        /// flush, which would leave `buf` empty (or partial). Flush explicitly so a failure
+        /// propagates as itself.
         validating_buf.finalize();
     }
-    /// Return value without quotes
-    return buf.str().substr(1, buf.str().size() - 2);
+    return buf.str();
 }
 
 BSONEachRowRowOutputFormat::BSONEachRowRowOutputFormat(
@@ -58,7 +62,7 @@ BSONEachRowRowOutputFormat::BSONEachRowRowOutputFormat(
     const auto & sample = getPort(PortKind::Main).getHeader();
     fields.reserve(sample.columns());
     for (const auto & field : sample.getNamesAndTypes())
-        fields.emplace_back(toValidUTF8String(field.name, settings), field.type);
+        fields.emplace_back(toValidUTF8String(field.name), field.type);
 }
 
 static void writeBSONSize(size_t size, WriteBuffer & buf)
@@ -235,7 +239,7 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
             String current_path = path + "." + name;
             for (size_t i = 0; i < nested_columns.size(); ++i)
             {
-                String key_name = toValidUTF8String(nested_names[i], settings);
+                String key_name = toValidUTF8String(nested_names[i]);
                 document_size += countBSONFieldSize(*nested_columns[i], nested_types[i], row_num, key_name, current_path, nested_document_sizes); // Add size of each value from tuple
             }
 
@@ -265,7 +269,7 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
             for (size_t i = 0; i < map_size; ++i)
             {
                 key_type->getDefaultSerialization()->serializeText(*key_column, offset + i, buf, settings);
-                auto s = countBSONFieldSize(*value_column, value_type, offset + i, toValidUTF8String(buf.str(), settings), current_path, nested_document_sizes);
+                auto s = countBSONFieldSize(*value_column, value_type, offset + i, toValidUTF8String(buf.str()), current_path, nested_document_sizes);
                 document_size += s;
                 buf.restart();
             }
@@ -473,7 +477,7 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
             writeBSONSize(document_size, out);
 
             for (size_t i = 0; i < nested_columns.size(); ++i)
-                serializeField(*nested_columns[i], nested_types[i], row_num, toValidUTF8String(nested_names[i], settings), current_path, nested_document_sizes);
+                serializeField(*nested_columns[i], nested_types[i], row_num, toValidUTF8String(nested_names[i]), current_path, nested_document_sizes);
 
             writeChar(BSON_DOCUMENT_END, out);
             break;
@@ -503,7 +507,7 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
             for (size_t i = 0; i < map_size; ++i)
             {
                 key_type->getDefaultSerialization()->serializeText(*key_column, offset + i, buf, settings);
-                serializeField(*value_column, value_type, offset + i, toValidUTF8String(buf.str(), settings), current_path, nested_document_sizes);
+                serializeField(*value_column, value_type, offset + i, toValidUTF8String(buf.str()), current_path, nested_document_sizes);
                 buf.restart();
             }
 
