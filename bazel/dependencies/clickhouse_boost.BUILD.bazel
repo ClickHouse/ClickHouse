@@ -257,10 +257,10 @@ cc_library(
         "boost/**/*.h",
         "boost/**/*.hpp",
         "boost/**/*.ipp",
-        "boost/**/*.inc",
     ]),
     features = ["external_include_paths"],
     includes = ["."],
+    textual_hdrs = glob(["boost/**/*.inc"]),
 )
 
 cc_library(

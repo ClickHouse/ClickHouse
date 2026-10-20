@@ -258,7 +258,6 @@ cc_binary(
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
-        ".",
         "grpc",
     ],
     deps = [

@@ -794,11 +794,7 @@ cc_binary(
     name = "grpc_cpp_plugin",
     srcs = [
         "src/compiler/cpp_plugin.cc",
-    ] + glob([
-        "**/*.h",
-        "**/*.hpp",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
     ],

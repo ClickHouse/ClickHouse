@@ -551,11 +551,7 @@ cc_binary(
     name = "protoc",
     srcs = [
         "src/google/protobuf/compiler/main.cc",
-    ] + glob([
-        "**/*.h",
-        "**/*.hpp",
-        "**/*.inc",
-    ]),
+    ],
     additional_compiler_inputs = [
         "@clickhouse_sysroot//:linux_compile_files",
     ],
@@ -804,7 +800,6 @@ ch_cc_library(
         "src/**/*.h",
         "src/**/*.inc",
         "third_party/utf8_range/**/*.h",
-        "third_party/utf8_range/**/*.inc",
     ]),
     copts = _UTF8_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
@@ -814,6 +809,7 @@ ch_cc_library(
         "src",
         "third_party/utf8_range",
     ],
+    textual_hdrs = glob(["third_party/utf8_range/**/*.inc"]),
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )
 
@@ -826,7 +822,6 @@ ch_cc_library(
         "src/**/*.h",
         "src/**/*.inc",
         "third_party/utf8_range/**/*.h",
-        "third_party/utf8_range/**/*.inc",
     ]),
     copts = _UTF8_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
@@ -836,5 +831,6 @@ ch_cc_library(
         "src",
         "third_party/utf8_range",
     ],
+    textual_hdrs = glob(["third_party/utf8_range/**/*.inc"]),
     deps = ["@clickhouse_abseil_cpp//:absl_strings"],
 )

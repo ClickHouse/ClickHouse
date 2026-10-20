@@ -635,7 +635,6 @@ _GENERATED_DEPS_0 = [
 ch_cc_library(
     name = "clickhouse_malloc",
     srcs = ["malloc.cpp"],
-    hdrs = _GENERATED_HDRS_0,
     clickhouse_code = True,
     copts = [
         "-fno-builtin",
@@ -654,6 +653,7 @@ ch_cc_library(
         "../../bazel/gen/base",
     ] + [
     ],
+    textual_hdrs = _GENERATED_HDRS_0,
     deps = _GENERATED_DEPS_0,
     alwayslink = True,
 )
@@ -661,7 +661,6 @@ ch_cc_library(
 ch_cc_library(
     name = "clickhouse_new_delete",
     srcs = ["AllocationInterceptors.cpp"],
-    hdrs = _GENERATED_HDRS_0,
     clickhouse_code = True,
     copts = [
         "-I",
@@ -679,6 +678,7 @@ ch_cc_library(
         "../../bazel/gen/base",
     ] + [
     ],
+    textual_hdrs = _GENERATED_HDRS_0,
     deps = _GENERATED_DEPS_0,
 )
 
