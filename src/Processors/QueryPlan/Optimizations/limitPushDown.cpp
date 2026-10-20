@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -130,6 +131,11 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
     /// Disable for WindowStep.
     /// TODO: we can push down limit in some cases if increase the limit value.
     if (typeid_cast<const WindowStep *>(child.get()))
+        return 0;
+
+    /// The query result cache must store the complete result of the (sub)query below it.
+    /// A LIMIT pushed below the cache step would truncate the cached entry.
+    if (typeid_cast<const StreamInQueryResultCacheStep *>(child.get()))
         return 0;
 
     /// Now we should decide if pushing down limit possible for this step.
