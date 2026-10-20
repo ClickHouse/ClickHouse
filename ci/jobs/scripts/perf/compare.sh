@@ -373,17 +373,18 @@ function restart
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.tables where database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')"
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.build_options"
 
+    # Compare only two running servers: a server that failed to start keeps the callers' handling.
+    # exit, not return: confirm_changes only skips its rerun when the restart fails.
+    if [ -n "$no_aslr_prefix" ] && kill -0 $left_pid && kill -0 $right_pid
+    then
+        python3 "$script_dir/check_executable_base.py" left/db right/db || exit 1
+    fi
+
     # Check again that both servers we started are running -- this is important
     # for running locally, when there might be some other servers started and we
     # will connect to them instead.
     kill -0 $left_pid
     kill -0 $right_pid
-
-    if [ -n "$no_aslr_prefix" ]
-    then
-        # exit, not return: confirm_changes only skips its rerun when the restart fails.
-        python3 "$script_dir/check_executable_base.py" left/db right/db || exit 1
-    fi
 }
 
 function run_tests
