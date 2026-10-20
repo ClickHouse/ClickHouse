@@ -1232,7 +1232,9 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             {
                 doDebugAsserts();
                 LOG_TRACE(log, "Skipping inserting block with {} rows", rows);
-                data->allocated_size -= data_allocated_bytes;
+                /// Not `data_allocated_bytes`: with several clauses, the in-memory compression started
+                /// after an earlier clause may have compressed this very block, changing its size.
+                data->allocated_size -= stored_columns->allocatedBytes();
                 /// A set map references no block at all, so every block is dropped here even though its
                 /// rows did take part in the join and must stay counted.
                 if (maps_kind != JoinMapsKind::Set)
