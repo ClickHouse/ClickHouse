@@ -17,6 +17,7 @@
 #include <DataTypes/TypeTree.h>
 #include <Formats/FormatSettings.h>
 #include <Functions/FunctionsMiscellaneous.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
@@ -33,11 +34,13 @@
 #include <Interpreters/extractStringValueFilters.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/PredicateStatisticsLog.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSubquery.h>
 #include <Planner/Utils.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Processors/ConcatProcessor.h>
@@ -91,6 +94,7 @@
 #include <Common/thread_local_rng.h>
 
 #include <algorithm>
+#include <functional>
 #include <iterator>
 #include <memory>
 #include <set>
@@ -4804,7 +4808,112 @@ Names ReadFromMergeTree::getLazilyReadColumns(const NameSet & required_outputs) 
         if (!columns_to_keep.contains(column_name) && !virtuals.has(column_name))
             columns_to_remove.push_back(column_name);
 
+    const NameSet removed(columns_to_remove.begin(), columns_to_remove.end());
+    NameSet columns_kept;
+    for (const auto & column_name : all_column_names)
+        if (!removed.contains(column_name))
+            columns_kept.insert(column_name);
+
+    const auto columns_to_keep_for_defaults = getColumnsToKeepForTheirDefaults(columns_kept, columns_to_remove);
+    std::erase_if(columns_to_remove, [&](const String & column_name) { return columns_to_keep_for_defaults.contains(column_name); });
     return columns_to_remove;
+}
+
+namespace
+{
+
+/// Whether `ast` calls a function whose result its arguments do not determine, such as `rand64` or `now`. A function
+/// that is not known here, such as a user-defined one, is taken as one, and a subquery as well.
+bool callsNonDeterministicFunction(const IAST & ast, const ContextPtr & context)
+{
+    if (ast.as<ASTSubquery>())
+        return true;
+
+    if (const auto * function = ast.as<ASTFunction>(); function && function->name != "lambda")
+    {
+        const auto resolver = FunctionFactory::instance().tryGet(function->name, context);
+        if (!resolver || !resolver->isDeterministic())
+            return true;
+    }
+
+    return std::ranges::any_of(ast.children, [&](const ASTPtr & child) { return callsNonDeterministicFunction(*child, context); });
+}
+
+}
+
+NameSet ReadFromMergeTree::getColumnsToKeepForTheirDefaults(const NameSet & kept, const Names & candidates) const
+{
+    /// For a part that lacks a column, a read fills it from its `DEFAULT`, and it fills the same way the columns the
+    /// default reads that the part lacks too. So a lazy read fills such a column from columns it fills on its own, even
+    /// from ones the main read reads. That gives the values the main read gives, unless a default on the way to one of
+    /// them is not deterministic: then the lazy read makes values of its own for that column, and the column it reads
+    /// would be computed from values the query does not see, such as `s DEFAULT toString(n)` from `n DEFAULT rand64()`.
+    const auto defaults = storage_snapshot->metadata->getColumns().getDefaults();
+    const auto & virtuals = getStorageMetadata()->virtuals;
+    const auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+    auto get_name_in_storage = [&](const String & column) { return storage_snapshot->getColumn(options, column).getNameInStorage(); };
+
+    auto get_default_inputs = [&](const String & column)
+    {
+        RequiredSourceColumnsVisitor::Data required_columns;
+        auto expression = defaults.at(column).expression->clone();
+        RequiredSourceColumnsVisitor(required_columns).visit(expression);
+        return required_columns.requiredColumns();
+    };
+
+    /// Whether two reads may fill a column with different values.
+    std::unordered_map<String, bool> filled_differently;
+    std::function<bool(const String &)> is_filled_differently = [&](const String & column)
+    {
+        if (!defaults.contains(column))
+            return false;
+
+        if (const auto it = filled_differently.find(column); it != filled_differently.end())
+            return it->second;
+
+        const bool result = callsNonDeterministicFunction(*defaults.at(column).expression, context)
+            || std::ranges::any_of(get_default_inputs(column), is_filled_differently);
+        filled_differently.emplace(column, result);
+        return result;
+    };
+
+    NameSet kept_in_storage;
+    for (const auto & column : kept)
+    {
+        if (!virtuals.has(column))
+            kept_in_storage.insert(get_name_in_storage(column));
+    }
+
+    NameSet columns_to_keep;
+    for (const auto & candidate : candidates)
+    {
+        /// The columns the lazy read fills on its own to read `candidate`. It reads a subcolumn by its column.
+        std::vector<String> to_visit;
+        NameSet visited;
+        auto visit = [&](const String & column)
+        {
+            if (kept_in_storage.contains(column))
+                return !is_filled_differently(column);
+
+            if (visited.insert(column).second)
+                to_visit.push_back(column);
+            return true;
+        };
+
+        bool can_be_read_lazily = visit(get_name_in_storage(candidate));
+        while (can_be_read_lazily && !to_visit.empty())
+        {
+            const auto column = std::move(to_visit.back());
+            to_visit.pop_back();
+            if (defaults.contains(column))
+                can_be_read_lazily = std::ranges::all_of(get_default_inputs(column), visit);
+        }
+
+        if (!can_be_read_lazily)
+            columns_to_keep.insert(candidate);
+    }
+
+    return columns_to_keep;
 }
 
 std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs)
@@ -6884,14 +6993,33 @@ std::vector<size_t> ReadFromMergeTree::getLazilyReadablePositions(const ColumnPr
     const auto & virtuals = getStorageMetadata()->virtuals;
 
     std::vector<size_t> positions;
+    Names candidates;
     for (size_t position : pruning.dropped_output_positions)
     {
         const auto storage_position = pruning.storage_position_of_output.at(position);
         if (storage_position && std::ranges::binary_search(pruning.dropped_storage_positions, *storage_position)
             && !virtuals.has(all_column_names.at(*storage_position)))
+        {
             positions.push_back(position);
+            candidates.push_back(all_column_names.at(*storage_position));
+        }
     }
-    return positions;
+
+    NameSet kept;
+    for (size_t storage_position = 0; storage_position < all_column_names.size(); ++storage_position)
+    {
+        if (!std::ranges::binary_search(pruning.dropped_storage_positions, storage_position))
+            kept.insert(all_column_names[storage_position]);
+    }
+
+    const auto columns_to_keep = getColumnsToKeepForTheirDefaults(kept, candidates);
+    std::vector<size_t> readable_positions;
+    for (size_t i = 0; i < positions.size(); ++i)
+    {
+        if (!columns_to_keep.contains(candidates[i]))
+            readable_positions.push_back(positions[i]);
+    }
+    return readable_positions;
 }
 
 std::vector<size_t> ReadFromMergeTree::getLazilyReadablePositions(const std::vector<size_t> & unneeded_output_positions) const

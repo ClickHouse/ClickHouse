@@ -744,6 +744,10 @@ private:
     std::vector<size_t> getLazilyReadablePositions(const ColumnPruning & pruning) const;
     /// Prunes the filters and the columns of this read as `pruning` says.
     RemoveUnusedColumnsResult applyColumnPruning(const ColumnPruning & pruning);
+    /// Of `candidates`, the columns to move to a lazy read, the ones the read has to keep, together with `kept`: a lazy
+    /// read can fill such a column from a `DEFAULT` that reads a column of `kept` with values other than the ones the
+    /// main read gives to it.
+    NameSet getColumnsToKeepForTheirDefaults(const NameSet & kept, const Names & candidates) const;
 
     static void buildPartitionPruningIndexes(
         Indexes & indexes,
