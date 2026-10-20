@@ -63,7 +63,7 @@ HEADER_SUFFIXES = (".h", ".hpp")
 # several translation units (`RangeHashedDictionaryGetItemsImpl.txx`). The full
 # check never reports a finding located in one, but a change to one can still
 # break the compilation of its includers, which it does report as
-# `clang-diagnostic-error`. So a changed fragment is covered like a changed
+# a compiler error. So a changed fragment is covered like a changed
 # header, through the translation units including it, and only their compile
 # errors and their own findings are reported.
 FRAGMENT_SUFFIXES = (".inc", ".inl", ".ipp", ".tcc", ".tpp", ".txx")
@@ -271,10 +271,13 @@ TIDY_TIMEOUT = 1800
 # config file unless the option is given a non-empty one.
 NO_WARNINGS_AS_ERRORS = "--warnings-as-errors=-*"
 
-# Diagnostics whose check list contains this are not clang-tidy findings but the
-# compiler failing to parse the translation unit, so they are reported wherever
-# they occur: the analysis did not actually run.
-COMPILE_ERROR_CHECK = "clang-diagnostic-error"
+# With `NO_WARNINGS_AS_ERRORS`, a diagnostic at these levels is not a clang-tidy
+# finding but a compiler error, so it is reported wherever it occurs: the
+# translation unit failed to compile, and the full check fails on it. That is
+# not only `clang-diagnostic-error`: the tidy build compiles with `-Werror`, and
+# a compiler warning promoted to an error keeps the name of its warning option,
+# such as `clang-diagnostic-unused-variable`.
+ERROR_LEVELS = ("fatal error", "error")
 
 # clang-tidy prints these when it crashes. A crash is an infrastructure error,
 # not a finding.
@@ -448,9 +451,22 @@ def is_tidy_disabled_path(path, repo_dir):
     return is_under_any(path, tidy_disabled_dirs(repo_dir))
 
 
+def is_local_tidy_config_path(path):
+    """True for a directory-local `.clang-tidy` under the analyzed roots.
+
+    Such a file (`src/Functions/.clang-tidy`, ...) changes the arguments the full
+    check analyzes the translation units beneath it with, but none of the
+    `CANARY_TRANSLATION_UNITS` lies beneath it. So a change to it is validated
+    on a translation unit of its own subtree instead, see
+    `representative_translation_unit`.
+    """
+    root = path.split("/", 1)[0]
+    return root in ANALYZED_ROOTS and os.path.basename(path) == ".clang-tidy"
+
+
 def is_tidy_config_path(path):
     """True for a file that changes what the clang-tidy checks report."""
-    return path in TIDY_CONFIG_PATHS
+    return path in TIDY_CONFIG_PATHS or is_local_tidy_config_path(path)
 
 
 def generator_input_path_entry(path, table=GENERATOR_INPUT_PATHS):
@@ -829,6 +845,67 @@ def lookup_translation_unit(path, repo_dir, compile_commands):
     return compile_commands.get(os.path.normpath(f"{repo_dir}/{path}"))
 
 
+def representative_translation_unit(config, repo_dir, compile_commands):
+    """A translation unit analyzed with the directory-local `config`, or `None`.
+
+    The first one in path order beneath the directory of `config` that no
+    deeper `.clang-tidy` overrides. `config` itself need not exist: a removed
+    configuration is validated on the translation units that used it.
+    """
+    config_dir = os.path.normpath(f"{repo_dir}/{os.path.dirname(config)}")
+    for unit in sorted(compile_commands):
+        if not unit.startswith(f"{config_dir}/"):
+            continue
+        directory = os.path.dirname(unit)
+        while directory != config_dir and not os.path.isfile(
+            f"{directory}/.clang-tidy"
+        ):
+            directory = os.path.dirname(directory)
+        if directory == config_dir:
+            return compile_commands[unit]
+    return None
+
+
+def canary_translation_units(config_changed, repo_dir, compile_commands):
+    """The translation units validating `config_changed`, analyzed as canaries.
+
+    Returns `(units, notes)`: the paths as the compilation database spells them,
+    mapped to the reason they are analyzed, and notes about the changed
+    configurations no translation unit of the build uses. A change to a global
+    configuration is validated on the `CANARY_TRANSLATION_UNITS`, and a change
+    to a directory-local one on a translation unit of its subtree.
+    """
+    units = {}
+    notes = []
+    global_changed = [
+        path for path in config_changed if not is_local_tidy_config_path(path)
+    ]
+    if global_changed:
+        for canary in CANARY_TRANSLATION_UNITS:
+            entry = lookup_translation_unit(canary, repo_dir, compile_commands)
+            # A fixed list: a canary missing from the build is a bug in this
+            # module, and skipping it would leave the change unvalidated.
+            if entry is None:
+                raise RuntimeError(
+                    f"Canary translation unit {canary} is not in the compilation database"
+                )
+            units.setdefault(
+                entry["file"], f"canary for changed {', '.join(global_changed)}"
+            )
+    for config in config_changed:
+        if not is_local_tidy_config_path(config):
+            continue
+        entry = representative_translation_unit(config, repo_dir, compile_commands)
+        if entry is None:
+            notes.append(
+                f"No translation unit in the build is analyzed with the changed "
+                f"{config}, so it is covered only by the full clang-tidy check"
+            )
+            continue
+        units.setdefault(entry["file"], f"canary for changed {config}")
+    return units, notes
+
+
 def is_coverable(path, repo_dir, compile_commands):
     """True when `select_translation_units` finds a translation unit for `path`.
 
@@ -858,7 +935,7 @@ def select_translation_units(
     Returns `(translation_units, notes)`: the selected paths as the compilation
     database spells them, and human-readable notes about what the selection
     could and could not cover. When `config_changed` is not empty, the
-    `CANARY_TRANSLATION_UNITS` are selected as well.
+    translation units of `canary_translation_units` are selected as well.
 
     The canaries and the translation units selected for the paths of `changed`
     that are also in `pinned` are kept ahead of `MAX_TRANSLATION_UNITS`: they
@@ -884,16 +961,13 @@ def select_translation_units(
             pinned_units.add(entry["file"])
         return True
 
-    if config_changed:
-        for canary in CANARY_TRANSLATION_UNITS:
-            # A fixed list: a canary missing from the build is a bug in this
-            # module, and skipping it would leave the change unvalidated.
-            if not add(
-                canary, f"canary for changed {', '.join(config_changed)}", pin=True
-            ):
-                raise RuntimeError(
-                    f"Canary translation unit {canary} is not in the compilation database"
-                )
+    canaries, canary_notes = canary_translation_units(
+        config_changed, repo_dir, compile_commands
+    )
+    for unit, reason in canaries.items():
+        selected.setdefault(unit, reason)
+        pinned_units.add(unit)
+    notes.extend(canary_notes)
 
     for path in changed:
         pin = path in pinned
@@ -1044,7 +1118,7 @@ def infrastructure_error(output, returncode):
         if match and "clang-diagnostic" not in match.group("message"):
             return f"clang-tidy failed to run: {match.group('message')}"
     if returncode != 0 and not any(
-        diagnostic["level"] in ("fatal error", "error")
+        diagnostic["level"] in ERROR_LEVELS
         for diagnostic in parse_diagnostics(output)
     ):
         return f"clang-tidy exited with code {returncode} without reporting an error"
@@ -1057,14 +1131,15 @@ def relevant_diagnostics(
     """The diagnostics this check reports: those in the files the change touches.
 
     That includes the headers regenerated from the changed generator inputs
-    (`generated`, a `GeneratedHeaders`). A compile error is reported wherever it
-    occurs - it means the translation unit was never analyzed, so silence about
-    it would be a false green. With `report_all`, every diagnostic is reported
+    (`generated`, a `GeneratedHeaders`). A compiler error is reported wherever it
+    occurs, whatever its check name (see `ERROR_LEVELS`) - it means the
+    translation unit failed to compile, so silence about it would be a false
+    green. With `report_all`, every diagnostic is reported
     (see `run_one`).
     """
     relevant = []
     for diagnostic in diagnostics:
-        if report_all or COMPILE_ERROR_CHECK in diagnostic["message"]:
+        if report_all or diagnostic["level"] in ERROR_LEVELS:
             relevant.append(diagnostic)
         elif diagnostic["file"]:
             path = os.path.realpath(diagnostic["file"])
@@ -1455,6 +1530,26 @@ def self_test(repo_dir, build_dir, compile_commands):
         f"or kept {len(units)} units",
     )
 
+    # A directory-local configuration is validated on a translation unit of its
+    # own subtree, which the global canaries are not part of.
+    for dir_path, _, file_names in sorted(os.walk(f"{repo_dir}/src")):
+        if ".clang-tidy" not in file_names:
+            continue
+        config = os.path.relpath(f"{dir_path}/.clang-tidy", repo_dir)
+        local_units, local_notes = canary_translation_units(
+            [config], repo_dir, compile_commands
+        )
+        expect(
+            changed_tidy_config_files([config]) == [config]
+            and len(local_units) == 1
+            and all(
+                unit.startswith(f"{os.path.normpath(dir_path)}/") for unit in local_units
+            )
+            and not local_notes,
+            f"The changed {config} is not validated on a translation unit beneath "
+            f"it: {local_units}, {local_notes}",
+        )
+
     generator_input = SELF_TEST_GENERATOR_INPUT
     expect(
         changed_generator_inputs([generator_input]) == [generator_input],
@@ -1547,15 +1642,23 @@ def self_test(repo_dir, build_dir, compile_commands):
             f"{changed_path}:1:1: note: a note of the warning above",
             f"{other_path}:2:2: warning: unchanged [bugprone-test]",
             f"{other_path}:3:3: error: does not compile [clang-diagnostic-error]",
+            f"{other_path}:5:5: error: promoted [clang-diagnostic-unused-variable]",
             f"{generated_path}:4:4: warning: regenerated [bugprone-test]",
-            "4 warnings and 1 error generated.",
+            "4 warnings and 2 errors generated.",
             "error: unattributed [clang-diagnostic-error]",
         ]
     )
     diagnostics = parse_diagnostics(output)
     expect(
         [d["message"].split(" [")[0] for d in diagnostics]
-        == ["changed", "unchanged", "does not compile", "regenerated", "unattributed"],
+        == [
+            "changed",
+            "unchanged",
+            "does not compile",
+            "promoted",
+            "regenerated",
+            "unattributed",
+        ],
         f"`parse_diagnostics` split the output wrongly: {diagnostics}",
     )
     expect(
@@ -1570,7 +1673,7 @@ def self_test(repo_dir, build_dir, compile_commands):
     relevant = relevant_diagnostics(diagnostics, {changed_path}, generated=generated)
     expect(
         [d["message"].split(" [")[0] for d in relevant]
-        == ["changed", "does not compile", "regenerated", "unattributed"],
+        == ["changed", "does not compile", "promoted", "regenerated", "unattributed"],
         f"`relevant_diagnostics` selected the wrong diagnostics: {relevant}",
     )
     expect(
@@ -1758,13 +1861,8 @@ def run(changed_files, repo_dir, build_dir, temp_dir):
         for path in changed
         if not is_fragment_path(path)
     }
-    canary_units = (
-        {
-            lookup_translation_unit(canary, repo_dir, compile_commands)["file"]
-            for canary in CANARY_TRANSLATION_UNITS
-        }
-        if config_changed
-        else set()
+    canary_units, _ = canary_translation_units(
+        config_changed, repo_dir, compile_commands
     )
     workers = max_workers(len(translation_units))
     print(
