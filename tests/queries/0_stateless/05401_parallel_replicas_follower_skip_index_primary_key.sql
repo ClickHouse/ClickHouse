@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+-- Tag no-parallel: the failpoint is server-wide.
 -- Random settings limits: use_lightweight_primary_key_index_analysis=(1, None)
 -- A parallel replicas follower skips its own index analysis, so the input of its read-time skip-index
 -- evaluation must be the ranges analyzed on the initiator: it must not select more marks than a single-node read.
@@ -26,35 +28,40 @@ FROM numbers(64000);
 SELECT sum(v), sum(k) FROM t_pr_follower_skip_idx WHERE (k BETWEEN 30 AND 39 OR p = 100) AND v = 42
 SETTINGS enable_parallel_replicas = 0, log_comment = '05401_single';
 
--- `sleepEachRow` slows the initiator's local replica, so the followers usually read some of the data before it is done.
-SELECT sum(v), sum(k) FROM t_pr_follower_skip_idx WHERE sleepEachRow(0.0005) = 0 AND (k BETWEEN 30 AND 39 OR p = 100) AND v = 42
-SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
-    parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_min_number_of_rows_per_replica = 0,
-    parallel_replicas_local_plan = 1, parallel_replicas_index_analysis_only_on_coordinator = 1,
-    parallel_replicas_plan_based = 0, max_threads = 2, function_sleep_max_microseconds_per_block = 0,
-    log_comment = '05401_query_based';
+-- Slow down the initiator's local replica, so it does not take all the work before the followers announce.
+SYSTEM ENABLE FAILPOINT slowdown_parallel_replicas_local_plan_read;
 
-SELECT sum(v), sum(k) FROM t_pr_follower_skip_idx WHERE sleepEachRow(0.0005) = 0 AND (k BETWEEN 30 AND 39 OR p = 100) AND v = 42
+SELECT sum(v), sum(k) FROM t_pr_follower_skip_idx WHERE (k BETWEEN 30 AND 39 OR p = 100) AND v = 42
 SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_min_number_of_rows_per_replica = 0,
     parallel_replicas_local_plan = 1, parallel_replicas_index_analysis_only_on_coordinator = 1,
-    parallel_replicas_plan_based = 1, max_threads = 2, function_sleep_max_microseconds_per_block = 0,
-    log_comment = '05401_plan_based';
+    parallel_replicas_plan_based = 0, max_threads = 2, log_comment = '05401_query_based';
+
+SELECT sum(v), sum(k) FROM t_pr_follower_skip_idx WHERE (k BETWEEN 30 AND 39 OR p = 100) AND v = 42
+SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+    parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_min_number_of_rows_per_replica = 0,
+    parallel_replicas_local_plan = 1, parallel_replicas_index_analysis_only_on_coordinator = 1,
+    parallel_replicas_plan_based = 1, max_threads = 2, log_comment = '05401_plan_based';
+
+SYSTEM DISABLE FAILPOINT slowdown_parallel_replicas_local_plan_read;
 
 SYSTEM FLUSH LOGS query_log;
 
 SELECT ProfileEvents['SelectedMarks'] > 0 FROM system.query_log
 WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish' AND log_comment = '05401_single';
 
--- A follower the coordinator gave no work to never starts reading, so only the followers that finished are counted.
-SELECT countIf(ProfileEvents['SelectedMarks'] > (
+SELECT
+    replaceOne(log_comment, '05401_', '') AS mode,
+    max(ProfileEvents['SelectedMarks']) <= (
         SELECT ProfileEvents['SelectedMarks'] FROM system.query_log
-        WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish' AND log_comment = '05401_single'))
+        WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish' AND log_comment = '05401_single')
 FROM system.query_log
 WHERE event_date >= yesterday() AND type = 'QueryFinish' AND NOT is_initial_query
     AND initial_query_id IN (
         SELECT query_id FROM system.query_log
         WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query
-            AND log_comment IN ('05401_query_based', '05401_plan_based'));
+            AND log_comment IN ('05401_query_based', '05401_plan_based'))
+GROUP BY mode
+ORDER BY mode;
 
 DROP TABLE t_pr_follower_skip_idx;
