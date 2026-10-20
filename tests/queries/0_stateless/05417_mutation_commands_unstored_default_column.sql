@@ -169,18 +169,18 @@ ALTER TABLE t_materialized_barrier UPDATE d = -1 WHERE id = 1, MATERIALIZE COLUM
 SELECT 'materialized_barrier', id, x, c, d FROM t_materialized_barrier ORDER BY id;
 DROP TABLE t_materialized_barrier;
 
--- Queued mutations with a DROP COLUMN of another column between the UPDATE and the MATERIALIZE COLUMN.
+-- Queued mutations with a DROP COLUMN of another column, added again, between the UPDATE and the MATERIALIZE COLUMN.
 DROP TABLE IF EXISTS t_queued_drop;
 CREATE TABLE t_queued_drop (id Int64, x Int64, z Int64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_queued_drop SELECT number, number, number FROM numbers(3);
 ALTER TABLE t_queued_drop ADD COLUMN d Int64 DEFAULT x * 10;
 SYSTEM STOP MERGES t_queued_drop;
 ALTER TABLE t_queued_drop UPDATE d = -1 WHERE id = 1 SETTINGS mutations_sync = 0, alter_sync = 0;
-ALTER TABLE t_queued_drop DROP COLUMN z SETTINGS mutations_sync = 0, alter_sync = 0;
+ALTER TABLE t_queued_drop DROP COLUMN z, ADD COLUMN z Int64 DEFAULT 7 SETTINGS mutations_sync = 0, alter_sync = 0;
 ALTER TABLE t_queued_drop MATERIALIZE COLUMN d SETTINGS mutations_sync = 0, alter_sync = 0;
 SYSTEM START MERGES t_queued_drop;
 ALTER TABLE t_queued_drop DELETE WHERE 0;
-SELECT 'queued_drop', id, x, d FROM t_queued_drop ORDER BY id;
+SELECT 'queued_drop', id, x, z, d FROM t_queued_drop ORDER BY id;
 DROP TABLE t_queued_drop;
 
 -- A stored column is not recomputed.

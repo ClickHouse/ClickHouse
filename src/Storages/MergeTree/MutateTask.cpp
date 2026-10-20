@@ -688,9 +688,21 @@ static void splitAndModifyMutationCommands(
             case MutationCommand::Type::REWRITE_PARTS:
                 break;
             case MutationCommand::Type::DROP_COLUMN:
-                /// No DEFAULT reads a column the table no longer has.
-                if (!table_columns.has(command.column_name) && !table_columns.hasNested(command.column_name))
+                if (!command.clear)
+                {
+                    /// The dropped column, even if added again, no longer holds what earlier commands wrote or read.
+                    auto is_dropped = [&](const String & name)
+                    {
+                        return name == command.column_name || name.starts_with(command.column_name + ".");
+                    };
+                    std::erase_if(updated_ordinary_columns, [&](const auto & entry)
+                    {
+                        return is_dropped(entry.first) || std::ranges::any_of(entry.second, is_dropped);
+                    });
+                    std::erase_if(materialized_ordinary_columns, is_dropped);
+                    std::erase_if(stored_by_materialize, is_dropped);
                     break;
+                }
                 [[fallthrough]];
             default:
                 updated_ordinary_columns.clear();
