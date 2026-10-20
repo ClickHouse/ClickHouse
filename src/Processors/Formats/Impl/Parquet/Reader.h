@@ -534,7 +534,13 @@ struct Reader
         /// top-level row's `metadata` dictionary, so composing these levels maps one of its rows
         /// back to the top-level row that owns the dictionary. Entries point into offsets columns
         /// owned by the enclosing formOutputColumn frames and are valid only while they are alive.
-        std::vector<const IColumn::Offsets *> nested_array_offsets;
+        struct NestedArrayLevel
+        {
+            /// Repetition level of the array, see `OutputColumnInfo::rep`.
+            size_t rep = 0;
+            const IColumn::Offsets * offsets = nullptr;
+        };
+        std::vector<NestedArrayLevel> nested_array_offsets;
 
         std::atomic<ReadStage> stage {ReadStage::NotStarted};
         std::atomic<size_t> stage_tasks_remaining {0};

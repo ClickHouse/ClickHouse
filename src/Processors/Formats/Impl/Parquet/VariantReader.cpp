@@ -265,28 +265,32 @@ void rebuildMetadataByRow(MetadataState & state, const FormatSettings & format_s
 /// Map each of `num_rows` nested rows back to the `metadata` dictionary of the top-level row that
 /// owns it. Nested `VARIANT` values (elements of a shredded array, and the values of a shredded
 /// object inside one) share their enclosing top-level row's dictionary, so composing the array
-/// offsets of every repeated level that `Reader::formOutputColumn` is currently inside yields the
-/// element-to-top-level-row mapping. Returns an empty vector when the levels do not line up, in
-/// which case the caller reports malformed data rather than indexing the wrong row's dictionary.
+/// offsets of every repeated level that `Reader::formOutputColumn` is currently inside, below the
+/// repetition level of the `metadata` column, yields the element-to-top-level-row mapping. All of
+/// these levels are composed even when an intermediate level happens to have as many rows as the
+/// result: equal cardinality does not mean the rows map to themselves. Returns an empty vector when
+/// the levels do not line up, in which case the caller reports malformed data rather than indexing
+/// the wrong row's dictionary.
 std::vector<const VariantMetadata *> buildNestedMetadataByRow(
+    const Reader & reader,
     const Reader::RowSubgroup & row_subgroup,
+    const Reader::VariantSourceInfo & source_info,
     const MetadataState & metadata_state,
     size_t num_rows)
 {
-    const size_t top_level_rows = metadata_state.metadata_by_row.size();
+    const auto & metadata_levels = reader.primitive_columns.at(source_info.metadata_primitive_idx).levels;
+    const size_t metadata_rep = metadata_levels.empty() ? 0 : metadata_levels.back().rep;
 
-    /// Skip the levels above the one the `metadata` column itself lives at.
-    size_t level = 0;
-    while (level < row_subgroup.nested_array_offsets.size()
-           && row_subgroup.nested_array_offsets[level]->size() != top_level_rows)
-        ++level;
-
-    std::vector<size_t> owner_row(top_level_rows);
+    std::vector<size_t> owner_row(metadata_state.metadata_by_row.size());
     std::iota(owner_row.begin(), owner_row.end(), 0);
 
-    for (; owner_row.size() != num_rows && level < row_subgroup.nested_array_offsets.size(); ++level)
+    for (const auto & level : row_subgroup.nested_array_offsets)
     {
-        const auto & offsets = *row_subgroup.nested_array_offsets[level];
+        /// Skip the levels the `metadata` column itself repeats at.
+        if (level.rep <= metadata_rep)
+            continue;
+
+        const auto & offsets = *level.offsets;
         if (offsets.size() != owner_row.size())
             return {};
 
@@ -679,7 +683,7 @@ SourceState & getOrPrepareSourceState(
     if (!state->metadata_state->metadata_is_shared_across_rows
         && (source_info.rows_deeper_than_metadata || num_rows != state->metadata_state->metadata_by_row.size()))
     {
-        state->nested_metadata_by_row = buildNestedMetadataByRow(row_subgroup, *state->metadata_state, num_rows);
+        state->nested_metadata_by_row = buildNestedMetadataByRow(reader, row_subgroup, source_info, *state->metadata_state, num_rows);
     }
 
     if (source_info.value_primitive_idx != UINT64_MAX)
@@ -1041,7 +1045,7 @@ static MutableColumnPtr tryFormDirectSubcolumnExactFastPaths(
     if (!metadata_state.metadata_is_shared_across_rows
         && (source_info.rows_deeper_than_metadata || num_rows != metadata_state.metadata_by_row.size()))
     {
-        nested_metadata_by_row = buildNestedMetadataByRow(row_subgroup, metadata_state, num_rows);
+        nested_metadata_by_row = buildNestedMetadataByRow(reader, row_subgroup, source_info, metadata_state, num_rows);
         if (nested_metadata_by_row.size() != num_rows)
             return {};
     }

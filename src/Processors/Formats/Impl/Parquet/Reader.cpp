@@ -4486,7 +4486,7 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
 
         /// Nested shredded `VARIANT` values inherit the enclosing top-level row's `metadata`
         /// dictionary; publish this level so VariantReader can map element rows back to it.
-        row_subgroup.nested_array_offsets.push_back(&offsets);
+        row_subgroup.nested_array_offsets.push_back({output_info.rep, &offsets});
         SCOPE_EXIT({ row_subgroup.nested_array_offsets.pop_back(); });
 
         MutableColumnPtr nested = formOutputColumn(row_subgroup, output_info.nested_columns.at(0), offsets.back(), skip_cast);
