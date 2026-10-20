@@ -48,6 +48,7 @@ const ReleaseSchedule = ({ releases = [] }) => {
       <colgroup span={2} />
       <colgroup span={2} />
       <colgroup span={2} />
+      <colgroup />
       <thead>
         <tr>
           <th rowSpan={2} scope="col">Version</th>
@@ -60,6 +61,7 @@ const ReleaseSchedule = ({ releases = [] }) => {
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
             <a href="/products/cloud/features/admin-features/upgrades#slow-release-channel-deferred-upgrades">Slow Channel</a>
           </th>
+          <th rowSpan={2} scope="col" style={groupStartStyle}>EOL date</th>
         </tr>
         <tr>
           <th scope="col" style={groupStartStyle}>Start</th>
@@ -106,6 +108,7 @@ const ReleaseSchedule = ({ releases = [] }) => {
                   <td><DateCell date={release.slow_end_date} status={release.slow_progress} /></td>
                 </>
               )}
+              <td style={groupStartStyle}><DateCell date={release.eol_date} /></td>
             </tr>
           );
         })}
