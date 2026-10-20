@@ -1,4 +1,5 @@
 load("@clickhouse_crates//:defs.bzl", "aliases", "all_crate_deps")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_rs//rs:rust_static_library.bzl", "rust_static_library")
 load("@rules_rs//rs:rust_test.bzl", "rust_test")
 
@@ -30,6 +31,20 @@ filegroup(
         ],
     ),
 )
+
+[
+    cc_library(
+        name = name + "_headers",
+        hdrs = glob([name + "/include/*.h"]),
+        includes = [name + "/include"],
+    )
+    for name in [
+        "pco",
+        "polyglot",
+        "prql",
+        "skim",
+    ]
+]
 
 [
     rust_static_library(

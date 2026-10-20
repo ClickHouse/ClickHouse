@@ -20,6 +20,7 @@ ch_cc_library(
         "-std=gnu11",
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    includes = ["libfiu"],
     language = "C",
     local_defines = [
         "DUMMY_BACKTRACE",
@@ -28,9 +29,6 @@ ch_cc_library(
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
-    local_includes = [
-        "libfiu",
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )

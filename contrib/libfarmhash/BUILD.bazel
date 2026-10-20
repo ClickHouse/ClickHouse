@@ -14,9 +14,8 @@ ch_cc_library(
     copts = [
         "-w",
         "-std=c++23",
-        "-I",
-        "contrib/libfarmhash",
     ],
+    includes = ["."],
     link_runtime = True,
     llvm_headers = True,
     local_defines = [

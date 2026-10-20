@@ -1,12 +1,11 @@
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//base:poco/poco_cc_library.bzl", "poco_cc_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-ch_cc_library(
+poco_cc_library(
     name = "_poco_redis",
     srcs = glob(["src/*.cpp"]),
-    clickhouse_code = True,
     copts = [
         "-Wno-deprecated-dynamic-exception-spec",
         "-Wno-shadow",

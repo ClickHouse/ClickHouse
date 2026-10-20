@@ -20,9 +20,8 @@ ch_cc_library(
     copts = [
         "-w",
         "-std=c++23",
-        "-I",
-        "contrib/murmurhash/include",
     ],
+    includes = ["include"],
     link_runtime = True,
     llvm_headers = True,
     local_defines = [

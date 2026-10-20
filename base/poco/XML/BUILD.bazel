@@ -1,5 +1,5 @@
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "CLICKHOUSE_WARNINGS", "llvm_toolchain_path", "repository_path")
+load("@clickhouse//base:poco/poco_cc_library.bzl", "poco_cc_library")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "llvm_toolchain_path", "repository_path")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -11,11 +11,10 @@ exports_files([
 
 _GENERATED_HDRS_0 = glob(["**/*.h"])
 
-ch_cc_library(
+poco_cc_library(
     name = "_poco_xml",
     srcs = glob(["src/*.cpp"]),
     hdrs = _GENERATED_HDRS_0,
-    clickhouse_code = True,
     copts = [
         "-Wno-c99-extensions",
         "-Wno-cast-qual",
@@ -23,7 +22,6 @@ ch_cc_library(
         "-Wno-deprecated-dynamic-exception-spec",
         "-Wno-disabled-macro-expansion",
         "-Wno-implicit-fallthrough",
-        "-Wno-missing-noreturn",
         "-Wno-old-style-cast",
         "-Wno-reserved-identifier",
         "-Wno-shadow",
@@ -59,7 +57,7 @@ ch_cc_library(
     ],
 )
 
-ch_cc_library(
+poco_cc_library(
     name = "_poco_xml_expat",
     srcs = glob(["src/*.c"]),
     hdrs = _GENERATED_HDRS_0,
@@ -68,12 +66,6 @@ ch_cc_library(
         "src/xmltok_ns.c",
     ],
     copts = [
-        "-fxray-instrument",
-        "-fxray-modes=none",
-        "-fxray-instrumentation-bundle=function",
-        "-Wframe-larger-than=65536",
-    ] + CLICKHOUSE_WARNINGS + [
-        "-std=gnu11",
         "-Wno-cast-qual",
         "-Wno-disabled-macro-expansion",
         "-Wno-empty-translation-unit",
@@ -87,8 +79,6 @@ ch_cc_library(
         "$(GENDIR)/bazel/gen/includes/configs",
     ],
     language = "C",
-    link_runtime = True,
-    llvm_headers = True,
     local_defines = [
         "PRIVATE",
         "STD_EXCEPTION_HAS_STACK_TRACE=1",

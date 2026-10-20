@@ -30,14 +30,12 @@ ch_cc_library(
             "-w",
             "-std=c++23",
         ],
+    includes = ["include"],
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
-    local_includes = [
-        "include",
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )

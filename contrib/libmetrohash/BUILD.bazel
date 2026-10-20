@@ -17,9 +17,8 @@ ch_cc_library(
     copts = [
         "-w",
         "-std=c++23",
-        "-I",
-        "contrib/libmetrohash/src",
     ],
+    includes = ["src"],
     link_runtime = True,
     llvm_headers = True,
     local_defines = [
