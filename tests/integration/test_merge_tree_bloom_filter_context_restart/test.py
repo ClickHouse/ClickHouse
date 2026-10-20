@@ -425,6 +425,24 @@ def _create_float_index_tables(database):
             "tupleElement(CAST(t AS Tuple(b Float64, a String)), 1)",
             f"tuple(toFloat64(0), '{FLOAT_TEXT}')",
         ),
+        (
+            "folded_cast",
+            "n Float64, a Array(Float64)",
+            f"plus(n, CAST('{FLOAT_TEXT}' AS Float64))",
+            "toFloat64(0), [toFloat64(0)]",
+        ),
+        (
+            "folded_native",
+            "n Float64, a Array(Float64)",
+            f"plus(n, toFloat64('{FLOAT_TEXT}'))",
+            "toFloat64(0), [toFloat64(0)]",
+        ),
+        (
+            "folded_lambda",
+            "n Float64, a Array(Float64)",
+            f"arrayMap(x -> plus(x, CAST('{FLOAT_TEXT}' AS Float64)), a)",
+            "toFloat64(0), [toFloat64(0)]",
+        ),
     )
     for table, source_column, expression, inserted_value in tables:
         node.query(f"""
@@ -497,6 +515,22 @@ def _assert_float_context_indexes_declined(database, target):
         (
             "named_tuple",
             f"tupleElement(CAST(t AS Tuple(b Float64, a String)), 1) IN ({target})",
+        ),
+        (
+            "folded_cast",
+            f"plus(n, CAST('{FLOAT_TEXT}' AS Float64)) = {target}",
+        ),
+        (
+            "folded_cast",
+            f"plus(n, CAST('{FLOAT_TEXT}' AS Float64)) IN ({target})",
+        ),
+        (
+            "folded_native",
+            f"plus(n, toFloat64('{FLOAT_TEXT}')) IN ({target})",
+        ),
+        (
+            "folded_lambda",
+            f"has(arrayMap(x -> plus(x, CAST('{FLOAT_TEXT}' AS Float64)), a), {target})",
         ),
     )
     for table, predicate in cases:
