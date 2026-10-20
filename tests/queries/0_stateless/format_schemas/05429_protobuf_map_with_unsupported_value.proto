@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+message Empty {
+}
+
+message Recursive {
+  Recursive next = 1;
+}
+
+enum BigEnum {
+  SMALL = 0;
+  BIG = 100000;
+}
+
+message MessageWithMaps {
+  uint32 x = 1;
+  map<string, Empty> empty_values = 2;
+  map<string, Recursive> recursive_values = 3;
+  map<string, BigEnum> big_enum_values = 4;
+  map<string, uint32> supported_values = 5;
+}
