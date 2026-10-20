@@ -140,8 +140,8 @@ ffi::EngineError * KernelUtils::allocateError(ffi::KernelError etype, ffi::Kerne
 
     LOG_TRACE(
         getLogger("KernelUtils"),
-        "Allocated KernelError (Pointer: {}, EType: {}, Message: {})",
-        ptrToInt(error), etype, error_message);
+        "Allocated KernelError (EType: {}, Message: {})",
+        etype, error_message);
 
     return error;
 }
@@ -157,8 +157,8 @@ ffi::EngineError * KernelUtils::allocateError(ffi::KernelError etype, ffi::Kerne
     {
         LOG_TRACE(
             getLogger("KernelUtils"),
-            "Deallocating KernelError (Pointer: {}) (in {})",
-            error_ptr, from);
+            "Deallocating KernelError (in {})",
+            from);
 
         ffi::KernelError etype = error->etype;
         delete error;
@@ -177,13 +177,13 @@ ffi::EngineError * KernelUtils::allocateError(ffi::KernelError etype, ffi::Kerne
 
         LOG_ERROR(
             getLogger("KernelUtils"),
-            "Received unknown error from DeltaLake kernel. (Pointer: {}, EType: {}) (in {})",
-            error_ptr, etype, from);
+            "Received unknown error from DeltaLake kernel. (EType: {}) (in {})",
+            etype, from);
 
         throw DB::Exception(
             DB::ErrorCodes::LOGICAL_ERROR,
-            "Received unknown error from DeltaLake kernel. (Pointer: {}, EType: {}) (in {})",
-            error_ptr, etype, from);
+            "Received unknown error from DeltaLake kernel. (EType: {}) (in {})",
+            etype, from);
     }
 }
 
