@@ -1552,14 +1552,6 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                     column_name, query_plan.getCurrentHeader()->dumpNames());
             };
 
-            /// An INTERPOLATE expression reads the previous value of its target by the target name.
-            for (const auto & interpolate_node : interpolate_list_nodes)
-            {
-                const auto & target_name = interpolate_node->as<InterpolateNode &>().getExpressionName();
-                if (const auto & column_name = target_column_names.at(target_name); column_name != target_name)
-                    interpolate_actions_dag.addAlias(find_target_column(column_name), target_name);
-            }
-
             /// A later item resolves names against every node of the DAG, so the conversions and outputs are added after all items are visited.
             std::vector<std::tuple<const ActionsDAG::Node *, DataTypePtr, String>> interpolated_columns;
 
@@ -1568,10 +1560,21 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                 auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
                 const auto & column_name = target_column_names.at(interpolate_node_typed.getExpressionName());
 
+                /// The expression reads the previous value of its target through a column named by the target name.
+                QueryTreeNodePtr interpolate_expression_node = interpolate_node_typed.getInterpolateExpression();
+                if (column_name != interpolate_node_typed.getExpressionName())
+                {
+                    interpolate_expression_node = interpolate_expression_node->clone();
+                    auto target_column_node = std::make_shared<ColumnNode>(
+                        NameAndTypePair(column_name, interpolate_node_typed.getExpression()->getResultType()),
+                        std::static_pointer_cast<ITableExpressionNode>(interpolate_node));
+                    replaceColumns(interpolate_expression_node, interpolate_node, {{interpolate_node_typed.getExpressionName(), target_column_node}});
+                }
+
                 ColumnNodePtrWithHashSet empty_correlated_columns_set;
                 PlannerActionsVisitor planner_actions_visitor(planner_context, empty_correlated_columns_set);
                 auto [interpolate_expression_nodes, interpolate_correlated_subtrees] = planner_actions_visitor.visit(interpolate_actions_dag,
-                    interpolate_node_typed.getInterpolateExpression());
+                    interpolate_expression_node);
                 interpolate_correlated_subtrees.assertEmpty("in interpolate expression");
                 if (interpolate_expression_nodes.size() != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interpolate expression expected to have single action node");

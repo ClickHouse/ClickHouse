@@ -10,7 +10,7 @@ SELECT n, count() AS c, toUInt64(n * 2) AS `count()` FROM (SELECT number * 3 AS 
 SELECT n, count() AS `count()` FROM (SELECT number * 3 AS n FROM numbers(3)) GROUP BY n ORDER BY n WITH FILL STEP 1 INTERPOLATE (`count()` AS `count()` + 10);
 
 -- The target is named like a constant.
-SELECT n, 5 AS `5_UInt8` FROM (SELECT number * 3 AS n FROM numbers(3)) ORDER BY n WITH FILL STEP 1 INTERPOLATE (`5_UInt8` AS `5_UInt8` + 1);
+SELECT n, 5 AS `5_UInt8` FROM (SELECT number * 3 AS n FROM numbers(3)) ORDER BY n WITH FILL STEP 1 INTERPOLATE (`5_UInt8` AS `5_UInt8` + 5);
 
 -- Another target reads the column the first one is named like.
 SELECT n, count() AS c, toString(n) AS `count()` FROM (SELECT number * 3 AS n FROM numbers(3)) GROUP BY n ORDER BY n WITH FILL STEP 1 INTERPOLATE (`count()`, c AS c + 10);
