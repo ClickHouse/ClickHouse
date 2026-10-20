@@ -96,7 +96,15 @@ SocketImpl* SocketImpl::acceptConnection(SocketAddress& clientAddr)
 	while (sd == POCO_INVALID_SOCKET && lastError() == POCO_EINTR);
 	if (sd != POCO_INVALID_SOCKET)
 	{
-#ifndef SOCK_CLOEXEC
+#if defined(POCO_OS_FAMILY_WINDOWS)
+		// A socket is a handle on Windows, and Winsock creates it inheritable.
+		if (!::SetHandleInformation(reinterpret_cast<HANDLE>(sd), HANDLE_FLAG_INHERIT, 0))
+		{
+			int err = static_cast<int>(::GetLastError());
+			poco_closesocket(sd);
+			error(err); // will throw
+		}
+#elif !defined(SOCK_CLOEXEC)
 		if (::fcntl(sd, F_SETFD, FD_CLOEXEC) == -1)
 		{
 			int err = lastError();
