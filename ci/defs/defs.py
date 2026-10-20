@@ -28,6 +28,7 @@ class RunnerLabels:
     ARM_MEDIUM_CPU = ["self-hosted", "arm-medium-cpu"]
     AMD_MEDIUM_MEM = ["self-hosted", "amd-medium-mem"]
     ARM_MEDIUM_MEM = ["self-hosted", "arm-medium-mem"]
+    ARM_MEDIUM_STORAGE = ["self-hosted", "arm-medium-storage"]
     AMD_SMALL = ["self-hosted", "amd-small"]
     ARM_SMALL = ["self-hosted", "arm-small"]
     AMD_SMALL_MEM = ["self-hosted", "amd-small-mem"]
@@ -358,18 +359,17 @@ DOCKERS = [
 class BuildTypes(metaclass=MetaClasses.WithIter):
     AMD_DEBUG = "amd_debug"
     AMD_RELEASE = "amd_release"
-    # sccache-warmup variants of the release builds (MasterCI only): PR-style
-    # cmake flags (no official-build flag, debug symbols stripped, no PGO/BOLT),
-    # but built on master so the shared sccache is populated read-write for
-    # read-only PR builds to reuse. See build_clickhouse.py and
-    # PR_CACHE_WARMUP_BUILD_TYPES.
-    AMD_RELEASE_PR_CACHE_WARMUP = "amd_release_pr_cache_warmup"
+    # The release builds of master made exactly like a PR release build (MasterCI
+    # only, see PERFORMANCE_REFERENCE_TO_RELEASE in build_clickhouse.py). Their
+    # server binary is the reference of the PR performance comparison, and as
+    # master builds they also fill the shared sccache that PR builds read.
+    AMD_RELEASE_PERFORMANCE_REFERENCE = "amd_release_performance_reference"
     AMD_BINARY = "amd_binary"
     AMD_ASAN_UBSAN = "amd_asan_ubsan"
     AMD_TSAN = "amd_tsan"
     AMD_MSAN = "amd_msan"
     ARM_RELEASE = "arm_release"
-    ARM_RELEASE_PR_CACHE_WARMUP = "arm_release_pr_cache_warmup"
+    ARM_RELEASE_PERFORMANCE_REFERENCE = "arm_release_performance_reference"
     ARM_DEBUG = "arm_debug"
     ARM_ASAN_UBSAN = "arm_asan_ubsan"
     ARM_TSAN = "arm_tsan"
@@ -384,6 +384,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     ARM_DARWIN = "arm_darwin"
     ARM_V80COMPAT = "arm_v80compat"
     AMD_FREEBSD = "amd_freebsd"
+    AMD_ILLUMOS = "amd_illumos"
     PPC64LE = "ppc64le"
     AMD_COMPAT = "amd_compat"
     AMD_MUSL = "amd_musl"
@@ -495,11 +496,13 @@ class ArtifactNames:
     LLVM_COVERAGE_FILE = "LLVM_COVERAGE_FILE"  # .profdata file
     LLVM_COVERAGE_INFO_FILE = "LLVM_COVERAGE_INFO_FILE"  # .info file generated from .profdata, used for debugging coverage results
     CH_AMD_RELEASE = "CH_AMD_RELEASE"
+    CH_AMD_RELEASE_PERFORMANCE_REFERENCE = "CH_AMD_RELEASE_PERFORMANCE_REFERENCE"
     CH_AMD_ASAN_UBSAN = "CH_AMD_ASAN_UBSAN"
     CH_AMD_TSAN = "CH_AMD_TSAN"
     CH_AMD_MSAN = "CH_AMD_MSAN"
     CH_AMD_BINARY = "CH_AMD_BINARY"
     CH_ARM_RELEASE = "CH_ARM_RELEASE"
+    CH_ARM_RELEASE_PERFORMANCE_REFERENCE = "CH_ARM_RELEASE_PERFORMANCE_REFERENCE"
     CH_ARM_DEBUG = "CH_ARM_DEBUG"
     CH_ARM_ASAN_UBSAN = "CH_ARM_ASAN_UBSAN"
     CH_ARM_TSAN = "CH_ARM_TSAN"
@@ -516,6 +519,7 @@ class ArtifactNames:
     CH_ARM_DARWIN_SIGNED = "CH_ARM_DARWIN_SIGNED"
     CH_ARM_V80COMPAT = "CH_ARMV80C_DARWIN_BIN"
     CH_AMD_FREEBSD = "CH_ARM_FREEBSD_BIN"
+    CH_AMD_ILLUMOS = "CH_AMD_ILLUMOS_BIN"
     CH_PPC64LE = "CH_PPC64LE_BIN"
     CH_AMD_COMPAT = "CH_AMD_COMPAT_BIN"
     CH_AMD_MUSL = "CH_AMD_MUSL_BIN"
@@ -585,6 +589,10 @@ LLVM_FT_S3_DB_REPL_NUM_BATCHES = 3
 # The sequential counterpart is lighter than the parallel variant but still slow
 # enough to benefit from being split, so it gets its own (smaller) batch count.
 LLVM_FT_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES = 2
+# The ParallelReplicas and AsyncInsert s3 variants run the whole stateless
+# suite, but only their parallel flavors come close to the job timeout, so only
+# those two are batched; the sequential ones stay un-batched.
+LLVM_FT_S3_PARALLEL_NUM_BATCHES = 2
 LLVM_FT_ARTIFACTS_LIST = [
     # default.profdata files for 3 batches from Stateless(Functional) tests
     ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_{batch}"
@@ -607,10 +615,16 @@ LLVM_FT_ARTIFACTS_LIST += [
 ]
 
 LLVM_FT_ARTIFACTS_LIST += [
-    # default.profdata files for jobs from Functional tests with S3 + AsyncInsert + parallel/sequential execution
-    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_parallel",
+    # default.profdata files for batches from Functional tests with ParallelReplicas/AsyncInsert + S3, parallel execution
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3{flavor}_parallel_{batch}"
+    for flavor in ("", "_async")
+    for total_batches in (LLVM_FT_S3_PARALLEL_NUM_BATCHES,)
+    for batch in range(1, total_batches + 1)
+]
+
+LLVM_FT_ARTIFACTS_LIST += [
+    # default.profdata files for jobs from Functional tests with ParallelReplicas/AsyncInsert + S3, sequential execution
     ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_sequential",
-    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_async_parallel",
     ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_async_sequential",
 ]
 
@@ -689,6 +703,25 @@ class ArtifactConfigs:
             ArtifactNames.CH_S390X,
             ArtifactNames.CH_LOONGARCH64,
             ArtifactNames.CH_AMD_CFI,
+        ]
+    )
+    clickhouse_binaries.append(
+        Artifact.Config(
+            name=ArtifactNames.CH_AMD_ILLUMOS,
+            type=Artifact.Type.S3,
+            path=f"{TEMP_DIR}/build/programs/clickhouse",
+            compress_zst=True,
+        )
+    )
+    # Built by MasterCI only, hence not part of the shared `clickhouse_binaries`.
+    clickhouse_performance_reference_binaries = Artifact.Config(
+        name="...",
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/programs/self-extracting/clickhouse",
+    ).parametrize(
+        names=[
+            ArtifactNames.CH_AMD_RELEASE_PERFORMANCE_REFERENCE,
+            ArtifactNames.CH_ARM_RELEASE_PERFORMANCE_REFERENCE,
         ]
     )
     clickhouse_darwin_plain_binaries = Artifact.Config(

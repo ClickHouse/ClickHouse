@@ -9,7 +9,8 @@ WHERE exists((
     SELECT number
     FROM numbers(1)
     WHERE number >= tbl.number
-));
+))
+ORDER BY number;
 
 SELECT '--';
 
@@ -19,7 +20,8 @@ WHERE exists((
     SELECT number
     FROM numbers(2)
     WHERE number >= tbl.number
-));
+))
+ORDER BY number;
 
 SELECT number
 FROM mem2 AS tbl
@@ -27,6 +29,7 @@ WHERE length(arrayFilter(x -> (x OR exists((
     SELECT number
     FROM numbers(1)
     WHERE number >= tbl.number
-))), range(number))) > 0;
+))), range(number))) > 0
+ORDER BY number;
 
 SELECT number FROM mem2 AS tbl INNER JOIN (SELECT number FROM numbers(1) WHERE tbl.number >= number) AS alias4 ON alias4.number = number; -- { serverError NOT_IMPLEMENTED}

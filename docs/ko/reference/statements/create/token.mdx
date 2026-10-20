@@ -33,7 +33,7 @@ CREATE TOKEN
 인증한 사용자가 토큰을 이용해 동일한 계정에 대해 장기간 유효한 비밀번호를 생성할 수 있기 때문입니다. 동일한 권한으로
 이에 상응하는 `ALTER USER <current user> ADD IDENTIFIED ...` SQL 문도 실행할 수 있습니다.
 
-## 결과
+## 결과 {#result}
 
 이 쿼리는 두 개의 컬럼으로 구성된 행 하나를 반환합니다:
 
@@ -52,7 +52,7 @@ CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
 [비밀번호 복잡성 규칙](/ko/reference/statements/create/user#identification)을 검사할 필요가 없으며 실제로 검사하지도 않습니다.
 해당 규칙은 사람이 직접 정한 비밀번호를 제약하기 위해 존재합니다.
 
-## VALID UNTIL 및 VALID FOR 절
+## VALID UNTIL 및 VALID FOR 절 {#valid-until-clause}
 
 토큰의 수명을 제한합니다. [`CREATE USER`](/ko/reference/statements/create/user#valid-until-clause)의 인증 메서드에 사용되는 동일한 이름의 절과 정확히 같은 방식으로 동작합니다. `VALID UNTIL`은 절대 날짜와 시간을 지정하고, `VALID FOR`는 [인터벌](/ko/reference/data-types/special-data-types/interval)을 지정하며, 이 값은 쿼리가 실행되는 시점의 현재 시간에 더해집니다.
 
@@ -64,7 +64,7 @@ CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
 * `CREATE TOKEN VALID FOR INTERVAL 30 DAY`
 * `CREATE TOKEN VALID UNTIL 'infinity'`
 
-## GRANTS 절
+## GRANTS 절 {#grants-clause}
 
 토큰으로 인증된 세션의 접근 권한을 나열된 권한과의 교집합으로 제한합니다. [`CREATE USER`의 `GRANTS` 절](/ko/reference/statements/create/user#grants-clause)과 정확히 동일하게 동작하며, 그 제약 사항까지 그대로 적용됩니다. 특히 이 제한은 쿼리를 수신한 노드에서만 적용되며 클러스터의 다른 노드로는 전파되지 않습니다. 이 절은 접근 권한을 추가하지 않습니다. 즉, 사용자에게 부여되지 않은 권한은 토큰에서도 사용할 수 없습니다. 이 절을 지정하지 않으면 토큰은 해당 사용자의 모든 접근 권한을 갖습니다.
 
@@ -75,17 +75,17 @@ CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
 
 이 권한 제한과 시간 제한은 모두 토큰의 세션이 남긴 결과물에는 적용되지 않습니다. [보안 고려 사항](#security-considerations)을 참고하십시오.
 
-## 토큰 관리
+## 토큰 관리 {#managing-tokens}
 
 토큰은 사용자의 인증 메서드이므로 [`SHOW CREATE USER`](/ko/reference/statements/show#show-create-user)의 출력에 (`VALID UNTIL` 및 `GRANTS` 절과 함께, 시크릿은 제외하고) 표시되며, [`system.users`](/ko/reference/system-tables/users) 테이블의 `auth_type`, `auth_params`, `auth_grants` 컬럼에도 나타납니다.
 
-개별 토큰 하나만 삭제하는 SQL 문은 없습니다. 사용자의 모든 토큰을 취소하려면 `ALTER USER <name> IDENTIFIED WITH ...` 등으로 인증 메서드를 대체하거나, `ALTER USER <name> RESET AUTHENTICATION METHODS TO NEW`를 사용해 가장 최근에 추가된 것만 남기십시오. 한 사용자가 동시에 보유할 수 있는 인증 메서드의 개수는 `max_authentication_methods_per_user` 서버 설정으로 제한됩니다.
+개별 토큰 하나만 삭제하는 SQL 문은 없습니다. 사용자의 모든 토큰을 취소하려면 `ALTER USER <name> IDENTIFIED WITH ...` 등으로 인증 메서드를 대체하거나, `ALTER USER <name> RESET AUTHENTICATION METHODS TO NEW`를 사용해 가장 최근에 추가된 것만 남기십시오. 한 사용자가 동시에 보유할 수 있는 인증 메서드의 개수는 `max_authentication_methods_per_user` 서버 설정으로 제한됩니다. 만료된 토큰이 이 제한에 포함되는 기간은 길지 않습니다. 모든 `ALTER USER`와 마찬가지로 `CREATE TOKEN`도 새 인증 메서드를 추가하기 전에 사용자의 인증 메서드 중 유효 기간이 지난 것을 삭제하므로, `VALID UNTIL` 또는 `VALID FOR` 절(또는 기본 TTL)이 적용된 토큰은 개수 제한 없이 계속 생성할 수 있습니다. [`VALID UNTIL`](/ko/reference/statements/create/user#valid-until-clause)을 참조하십시오.
 
-시크릿은 쿼리 자체가 생성하고 저장하므로, 결과가 클라이언트에 전달되지 못한 `CREATE TOKEN`(행을 전송하는 도중 연결이 끊기거나, 클라이언트가 열 수 없는 `INTO OUTFILE`을 지정한 경우)은 아무도 사용할 수 없으면서 위 제한에는 계속 포함되는 인증 메서드를 남깁니다. 그런 시크릿은 아무도 보유하지 않으며, 쿼리가 실행되는 동안에만 존재합니다. 사용할 수 없는 포맷을 `FORMAT` 절에 지정한 경우를 포함해, 실행 전에 거부된 쿼리는 아무것도 추가하지 않습니다.
+시크릿은 쿼리 자체가 생성하고 저장하므로, 결과가 클라이언트에 전달되지 못한 `CREATE TOKEN`(행을 전송하는 도중 연결이 끊기거나, 클라이언트가 열 수 없는 `INTO OUTFILE`을 지정한 경우)은 아무도 사용할 수 없으면서 만료될 때까지 위 제한에 포함되는 인증 메서드를 남깁니다. 그런 시크릿은 아무도 보유하지 않으며, 쿼리가 실행되는 동안에만 존재합니다. 사용할 수 없는 포맷을 `FORMAT` 절에 지정한 경우를 포함해, 실행 전에 거부된 쿼리는 아무것도 추가하지 않습니다.
 
 `CREATE TOKEN`은 `ON CLUSTER` 절을 지원하지 않습니다. 액세스 엔터티가 로컬에 저장되는 클러스터 전체에서 토큰이 동작하도록 하려면 복제된 액세스 스토리지를 사용하거나, 모든 노드에서 이에 상응하는 `ALTER USER ... ADD IDENTIFIED WITH sha256_hash` 문을 실행하십시오.
 
-## 보안 고려 사항
+## 보안 고려 사항 {#security-considerations}
 
 `VALID UNTIL`과 `GRANTS`는 해당 토큰으로 인증하는 세션을 제한합니다. 그러나 그 세션이 남긴 결과물까지 제한하지는 않습니다.
 

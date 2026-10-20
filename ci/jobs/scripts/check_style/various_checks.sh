@@ -120,6 +120,7 @@ FUNCTIONS_CONTEXT_PTR_EXCEPTIONS=(
     -e /generateSerialID.cpp
     -e /evalMLMethod.cpp
     -e /FunctionNaiveBayesClassifier.cpp
+    -e /FunctionPredictXGBoost.cpp
     -e /FunctionBinaryArithmetic.h
     -e /FunctionUnaryArithmetic.h
     -e /ITupleFunction.h
@@ -166,6 +167,14 @@ FUNCTIONS_WITH_CONTEXT_EXCEPTIONS=(
     # Diagnostic helper, the file is disabled via `#if 0` in production builds;
     # `WithContext` is required so `trap('access context')` exercises runtime context access.
     -e /trap.cpp
+    # Defer query-context access to `executeImpl` so the function can be instantiated
+    # without a query context (e.g. by `system.functions` which only needs to read
+    # `getSignatureString`). These are non-deterministic functions and are not used
+    # in default expressions.
+    -e /timeSeriesTagsToGroup.cpp
+    -e /timeSeriesStoreTags.cpp
+    -e /FunctionsTransactionCounters.cpp
+    -e /FunctionNaiveBayesClassifier.cpp
     # Holds the context weakly and only touches it from getReturnTypeImpl (type analysis, while the
     # context is alive); executeImpl uses builders precomputed at construction time and never reaches
     # getContext(), so a stored expression stays evaluable after its query context is gone. See #54890.
@@ -182,7 +191,7 @@ find $ROOT_PATH/{base,src,programs,utils,docs} -name '*.md' -or -name '*.h' -or 
 
 # Check for misuse of timeout in .sh tests
 find $ROOT_PATH/tests/queries -name '*.sh' |
-    grep -vP '02835_drop_user_during_session|02922_deduplication_with_zero_copy|00738_lock_for_inner_table|shared_merge_tree|_sc_|03710_parallel_alter_comment_rename_selects' |
+    grep -vP 'queries/shell_config\.sh|02835_drop_user_during_session|02922_deduplication_with_zero_copy|00738_lock_for_inner_table|shared_merge_tree|_sc_|03710_parallel_alter_comment_rename_selects' |
     xargs grep -l -P 'export -f' |
     xargs grep -l -F 'timeout' &&
     echo ".sh tests cannot use the 'timeout' command, because it leads to race conditions, when the timeout is expired, and waiting for the command is done, but the server still runs some queries"
@@ -259,6 +268,17 @@ for test_case in "${curl_flush_logs_tests[@]}"; do
     if [ "$has_retry" = false ]; then
         echo "$test_case uses curl and SYSTEM FLUSH LOGS without a retry loop. Add a retry loop to handle the race between HTTP response and log entry writing. See https://github.com/ClickHouse/ClickHouse/issues/84364"
     fi
+done
+
+# Unbounded loops spin forever on the host when the runner dies before `clickhouse-test` kills the test.
+git grep -nP '^[^#]*\bwhile\s+(true|:)\s*(;|$)' -- "$ROOT_PATH/tests/queries/0_stateless/*.sh" "$ROOT_PATH/tests/queries/0_stateless/*.lib" &&
+    echo "Use 'while clickhouse_test_time_left' instead of an unbounded loop in tests, see shell_config.sh"
+
+# `clickhouse-test` passes non-SQL tests to the interpreter for their extension (`TEST_INTERPRETERS`), so the shebang
+# must name that interpreter.
+for ext_shebang in "sh:#!/usr/bin/env bash" "py:#!/usr/bin/env python3" "expect:#!/usr/bin/expect -f"; do
+    awk -v shebang="${ext_shebang#*:}" 'FNR == 1 && $0 != shebang {print FILENAME ": the first line must be \"" shebang "\""}' \
+        "$ROOT_PATH"/tests/queries/0_stateless/*."${ext_shebang%%:*}"
 done
 
 # CLICKHOUSE_URL already includes "?"
