@@ -75,6 +75,19 @@ namespace ErrorCodes
 namespace
 {
 
+/** Notes:
+  * Only one query from the table can be processed at the moment of time.
+  * This is ensured by the mutex in StorageSystemStackTraceSource.
+  * On Linux, we obtain information about threads by sending signal and receiving info from the signal handler.
+  * Information is passed via global variables and pipe is used for signaling.
+  * Actually we can send all information via pipe, but we read from it with timeout just in case,
+  * so it's convenient to use it only for signaling.
+  */
+std::mutex mutex;
+
+constexpr size_t max_query_id_size = 128;
+
+#ifdef OS_LINUX
 // Initialized in StorageSystemStackTrace's ctor and used in signalHandler.
 std::atomic<pid_t> server_pid;
 
@@ -82,25 +95,8 @@ std::atomic<int> sequence_num = 0;    /// For messages sent via pipe.
 std::atomic<int> data_ready_num = 0;
 std::atomic<bool> signal_latch = false;   /// Only need for thread sanitizer.
 
-#ifdef OS_DARWIN
-/// On macOS we cannot pass data via signals to specific threads (no rt_tgsigqueueinfo),
-/// so we identify the expected responding thread via pthread_self().
-std::atomic<uintptr_t> expected_responding_thread = 0;
-#endif
-
-/** Notes:
-  * Only one query from the table can be processed at the moment of time.
-  * This is ensured by the mutex in StorageSystemStackTraceSource.
-  * We obtain information about threads by sending signal and receiving info from the signal handler.
-  * Information is passed via global variables and pipe is used for signaling.
-  * Actually we can send all information via pipe, but we read from it with timeout just in case,
-  * so it's convenient to use it only for signaling.
-  */
-std::mutex mutex;
-
 StackTrace stack_trace{NoCapture{}};
 
-constexpr size_t max_query_id_size = 128;
 char query_id_data[max_query_id_size];
 size_t query_id_size = 0;
 
@@ -108,19 +104,16 @@ Int64 untracked_memory_data = 0;
 
 LazyPipeFDs notification_pipe;
 
-#ifdef OS_LINUX
 int rt_tgsigqueueinfo(pid_t tgid, pid_t tid, int sig, siginfo_t *info)
 {
     return static_cast<int>(syscall(__NR_rt_tgsigqueueinfo, tgid, tid, sig, info));
 }
-#endif
 
 void signalHandler(int, siginfo_t * info, void * context)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
-#ifdef OS_LINUX
     /// In case malicious user is sending signals manually (for unknown reason).
     /// If we don't check - it may break our synchronization.
     if (info->si_pid != server_pid)
@@ -130,29 +123,13 @@ void signalHandler(int, siginfo_t * info, void * context)
     int notification_num = info->si_value.sival_int;
     if (notification_num != sequence_num.load(std::memory_order_acquire))
         return;
-#else
-    UNUSED(info);
-    /// On macOS, we verify the expected responding thread instead of signal payload,
-    /// because pthread_kill does not allow passing data with the signal.
-    if (reinterpret_cast<uintptr_t>(pthread_self()) != expected_responding_thread.load(std::memory_order_acquire))
-        return;
-#endif
 
     bool expected = false;
     if (!signal_latch.compare_exchange_strong(expected, true, std::memory_order_acquire))
         return;
 
-#ifdef OS_DARWIN
-    /// Load before the check below: a number loaded after it could already belong to the next thread.
-    int notification_num = sequence_num.load(std::memory_order_acquire);
-#endif
-
     /// Re-check under the latch: a handler delayed past the reader's timeout must not overwrite the next thread's data.
-#ifdef OS_LINUX
     const bool still_expected = notification_num == sequence_num.load(std::memory_order_acquire);
-#else
-    const bool still_expected = reinterpret_cast<uintptr_t>(pthread_self()) == expected_responding_thread.load(std::memory_order_acquire);
-#endif
     if (!still_expected)
     {
         signal_latch.store(false, std::memory_order_release);
@@ -246,6 +223,7 @@ bool wait(int timeout_ms)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Read wrong number of bytes from pipe");
     }
 }
+#endif
 
 using ThreadIdToName = std::unordered_map<UInt64, String, DefaultHash<UInt64>>;
 
@@ -351,7 +329,7 @@ ThreadIdToName getFilteredThreadNames(
     const ActionsDAG::Node * predicate,
     ContextPtr context,
     const PaddedPODArray<UInt64> & thread_ids,
-    const std::unordered_map<UInt64, pthread_t, DefaultHash<UInt64>> & tid_to_pthread,
+    const std::unordered_map<UInt64, mach_port_t, DefaultHash<UInt64>> & tid_to_mach_thread,
     LoggerPtr log)
 {
     ThreadIdToName tid_to_name;
@@ -360,12 +338,14 @@ ThreadIdToName getFilteredThreadNames(
     Stopwatch watch;
     for (UInt64 tid : thread_ids)
     {
-        auto it = tid_to_pthread.find(tid);
-        if (it == tid_to_pthread.end())
+        auto it = tid_to_mach_thread.find(tid);
+        if (it == tid_to_mach_thread.end())
             continue;
 
+        /// Null once the thread has exited.
+        pthread_t thread = pthread_from_mach_thread_np(it->second);
         char name_buf[256];
-        if (pthread_getname_np(it->second, name_buf, sizeof(name_buf)) != 0)
+        if (!thread || pthread_getname_np(thread, name_buf, sizeof(name_buf)) != 0)
             continue;
 
         String thread_name(name_buf);
@@ -397,10 +377,13 @@ ThreadIdToName getFilteredThreadNames(
 }
 #endif
 
-/// Send a signal to every thread and wait for result.
+/// Linux: send a signal to every thread and wait for result.
 /// We must wait for every thread one by one sequentially,
 ///  because there is a limit on number of queued signals in OS and otherwise signals may get lost.
 /// Also, non-RT signals are not delivered if previous signal is handled right now (by default; but we use RT signals).
+/// macOS: stop every thread in turn with `thread_suspend` and read its stack and state directly. No
+/// signal is sent: one delivered to a thread waiting on a Darwin psynch lock can make the lock lose
+/// the wakeup and deadlock the process (Apple FB24027930).
 class StackTraceSource final : public ISource
 {
 public:
@@ -425,7 +408,9 @@ public:
 #endif
         /// It shouldn't be possible to do concurrent reads from this table.
         , lock(mutex)
+#ifdef OS_LINUX
         , signal_str(strsignal(STACK_TRACE_SERVICE_SIGNAL)) /// NOLINT(concurrency-mt-unsafe) // not thread-safe but ok in this context
+#endif
     {
         /// Create a mask of what columns are needed in the result.
         NameSet names_set(column_names.begin(), column_names.end());
@@ -436,6 +421,14 @@ public:
         enumerateThreads();
 #endif
     }
+
+#ifdef OS_DARWIN
+    ~StackTraceSource() override
+    {
+        for (const auto & [tid, mach_thread] : tid_to_mach_thread)
+            mach_port_deallocate(mach_task_self(), mach_thread);
+    }
+#endif
 
     String getName() const override { return "StackTrace"; }
 
@@ -462,7 +455,7 @@ protected:
 #ifdef OS_LINUX
             thread_names = getFilteredThreadNames(predicate, context, thread_ids_data, log);
 #else
-            thread_names = getFilteredThreadNames(predicate, context, thread_ids_data, tid_to_pthread, log);
+            thread_names = getFilteredThreadNames(predicate, context, thread_ids_data, tid_to_mach_thread, log);
 #endif
         }
 
@@ -498,15 +491,12 @@ protected:
                 /// - it will incorrectly detect that the signal is not blocked
                 ///   then it will wait storage_system_stack_trace_pipe_read_timeout_ms
                 bool signal_blocked = isSignalBlocked(tid, STACK_TRACE_SERVICE_SIGNAL);
-#else
-                bool signal_blocked = false;
-#endif
                 if (!signal_blocked)
                 {
-                    ++signals_sent;
+                    ++threads_captured;
                     Stopwatch watch;
                     SCOPE_EXIT({
-                        signals_sent_ms += watch.elapsedMilliseconds();
+                        threads_captured_ms += watch.elapsedMilliseconds();
 
                         /// Signed integer overflow is undefined behavior in both C and C++. However, according to
                         /// C++ standard, Atomic signed integer arithmetic is defined to use two's complement; there
@@ -515,7 +505,6 @@ protected:
                         ++sequence_num;
                     });
 
-#ifdef OS_LINUX
                     siginfo_t sig_info{};
                     sig_info.si_code = SI_QUEUE; /// sigqueue()
                     sig_info.si_pid = server_pid;
@@ -532,37 +521,6 @@ protected:
 
                     /// Just in case we will wait for pipe with timeout. In case signal didn't get processed.
                     if (wait(pipe_read_timeout_ms) && sig_info.si_value.sival_int == data_ready_num.load(std::memory_order_acquire))
-#else
-                    auto pt_it = tid_to_pthread.find(tid);
-                    if (pt_it == tid_to_pthread.end())
-                        continue;
-
-                    expected_responding_thread.store(reinterpret_cast<uintptr_t>(pt_it->second), std::memory_order_release);
-
-                    /// pthread_kill returns error codes directly (not via errno).
-                    int err = pthread_kill(pt_it->second, STACK_TRACE_SERVICE_SIGNAL);
-                    if (err != 0)
-                    {
-                        /// The thread may have been already finished.
-                        if (err == ESRCH)
-                            continue;
-
-                        errno = err;
-                        throw ErrnoException(ErrorCodes::CANNOT_SIGQUEUE, "Cannot send a signal");
-                    }
-
-                    /// Just in case we will wait for pipe with timeout. In case signal didn't get processed.
-                    bool got_response = wait(pipe_read_timeout_ms)
-                        && sequence_num.load(std::memory_order_acquire) == data_ready_num.load(std::memory_order_acquire);
-
-                    /// Reset expected_responding_thread immediately after wait to close the race window:
-                    /// a delayed signal handler from this thread must not pass the pthread_self() check
-                    /// after the SCOPE_EXIT increments sequence_num (which would let it write the new
-                    /// sequence number to the pipe and have its response misattributed to the next thread).
-                    expected_responding_thread.store(0, std::memory_order_release);
-
-                    if (got_response)
-#endif
                     {
                         size_t stack_trace_size = stack_trace.getSize();
                         size_t stack_trace_offset = stack_trace.getOffset();
@@ -593,9 +551,73 @@ protected:
                 res_columns[res_index++]->insertDefault();
                 res_columns[res_index++]->insertDefault();
                 res_columns[res_index++]->insertDefault();
+#else
+                ++threads_captured;
+                Stopwatch watch;
+                SCOPE_EXIT({ threads_captured_ms += watch.elapsedMilliseconds(); });
+
+                auto it = tid_to_mach_thread.find(tid);
+                if (it == tid_to_mach_thread.end())
+                    continue;
+                auto handle = StackTrace::ThreadHandle::fromMachThread(it->second);
+                if (!handle)
+                    continue; /// the thread has exited
+
+                StackTrace stack_trace{NoCapture{}};
+                char query_id_data[max_query_id_size];
+                size_t query_id_size = 0;
+                Int64 untracked_memory = 0;
+
+                if (handle->thread == pthread_self())
+                {
+                    stack_trace = StackTrace();
+                    auto query_id = CurrentThread::getQueryId();
+                    query_id_size = std::min(query_id.size(), max_query_id_size);
+                    memcpy(query_id_data, query_id.data(), query_id_size);
+                    untracked_memory = CurrentThread::isInitialized() ? CurrentThread::get().untracked_memory.load() : 0;
+                }
+                else
+                {
+                    /// Taken before the thread is stopped, so the stopped thread can never hold it. No
+                    /// allocation may happen until the thread is resumed: it may hold malloc's lock.
+                    auto [registry_lock, thread_status] = ThreadStatus::findByThreadId(tid);
+                    StackTrace::SuspendedThread suspended(*handle);
+                    stack_trace = suspended.captureStackTrace();
+                    if (suspended.isSuspended() && thread_status)
+                    {
+                        auto query_id = thread_status->getQueryId();
+                        query_id_size = std::min(query_id.size(), max_query_id_size);
+                        memcpy(query_id_data, query_id.data(), query_id_size);
+                        untracked_memory = thread_status->untracked_memory.load();
+                    }
+                }
+
+                if (stack_trace.getSize() != 0)
+                {
+                    Array arr;
+                    arr.reserve(stack_trace.getSize());
+                    for (size_t i = 0; i < stack_trace.getSize(); ++i)
+                        arr.emplace_back(StackTrace::resolveAddressForStorage(stack_trace.getFramePointers()[i]));
+
+                    res_columns[res_index++]->insert(thread_name);
+                    res_columns[res_index++]->insert(tid);
+                    res_columns[res_index++]->insertData(query_id_data, query_id_size);
+                    res_columns[res_index++]->insert(arr);
+                    res_columns[res_index++]->insert(untracked_memory);
+                    continue;
+                }
+
+                LOG_DEBUG(log, "Cannot obtain a stack trace for thread {} ({})", tid, thread_name);
+
+                res_columns[res_index++]->insert(thread_name);
+                res_columns[res_index++]->insert(tid);
+                res_columns[res_index++]->insertDefault();
+                res_columns[res_index++]->insertDefault();
+                res_columns[res_index++]->insertDefault();
+#endif
             }
         }
-        LOG_TRACE(log, "Send signal to {} threads (total), took {} ms", signals_sent, signals_sent_ms);
+        LOG_TRACE(log, "Captured stack traces of {} threads (total), took {} ms", threads_captured, threads_captured_ms);
 
         UInt64 num_rows = res_columns.at(0)->size();
         Chunk chunk(std::move(res_columns), num_rows);
@@ -619,7 +641,9 @@ private:
     std::filesystem::directory_iterator proc_it;
     std::filesystem::directory_iterator end;
 #elif defined(OS_DARWIN)
-    std::unordered_map<UInt64, pthread_t, DefaultHash<UInt64>> tid_to_pthread;
+    /// The ports are held until the source is destroyed: a port of a thread that has exited meanwhile
+    /// stays valid and just makes the Mach calls fail, unlike its pthread_t, which dangles.
+    std::unordered_map<UInt64, mach_port_t, DefaultHash<UInt64>> tid_to_mach_thread;
     PaddedPODArray<UInt64> enumerated_tids;
     size_t tid_index = 0;
 
@@ -631,31 +655,47 @@ private:
         if (kr != KERN_SUCCESS)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "task_threads failed: {}", mach_error_string(kr));
 
+        /// Every port right is released exactly once: by the map's owner (the destructor) once stored,
+        /// here otherwise. The destructor does not run if this constructor-time call throws.
+        mach_msg_type_number_t i = 0;
         SCOPE_EXIT({
-            for (mach_msg_type_number_t i = 0; i < thread_count; ++i)
+            for (; i < thread_count; ++i)
                 mach_port_deallocate(mach_task_self(), thread_list[i]);
             vm_deallocate(mach_task_self(), reinterpret_cast<vm_address_t>(thread_list), sizeof(thread_act_t) * thread_count);
         });
 
-        for (mach_msg_type_number_t i = 0; i < thread_count; ++i)
+        try
         {
-            pthread_t pt = pthread_from_mach_thread_np(thread_list[i]);
-            if (!pt)
-                continue;
-            uint64_t tid = 0;
-            if (pthread_threadid_np(pt, &tid) != 0)
-                continue;
-            tid_to_pthread[tid] = pt;
-            enumerated_tids.push_back(tid);
+            for (; i < thread_count; ++i)
+            {
+                pthread_t pt = pthread_from_mach_thread_np(thread_list[i]);
+                uint64_t tid = 0;
+                if (!pt || pthread_threadid_np(pt, &tid) != 0)
+                {
+                    mach_port_deallocate(mach_task_self(), thread_list[i]);
+                    continue;
+                }
+                enumerated_tids.push_back(tid);
+                tid_to_mach_thread[tid] = thread_list[i]; /// throws only before storing; the SCOPE_EXIT then releases port i
+            }
+        }
+        catch (...)
+        {
+            for (const auto & [tid, mach_thread] : tid_to_mach_thread)
+                mach_port_deallocate(mach_task_self(), mach_thread);
+            tid_to_mach_thread.clear();
+            throw;
         }
     }
 #endif
 
-    size_t signals_sent = 0;
-    size_t signals_sent_ms = 0;
+    size_t threads_captured = 0;
+    size_t threads_captured_ms = 0;
 
     std::unique_lock<std::mutex> lock;
+#ifdef OS_LINUX
     const char * signal_str;
+#endif
 
     ColumnPtr getFilteredThreadIds()
     {
@@ -741,6 +781,7 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 
+#ifdef OS_LINUX
     notification_pipe.open();
 
     /// Setup signal handler.
@@ -770,6 +811,7 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
 
     if (sigaction(STACK_TRACE_SERVICE_SIGNAL, &sa, nullptr))
         throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler");
+#endif
 }
 
 
