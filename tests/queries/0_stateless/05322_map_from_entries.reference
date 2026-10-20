@@ -26,3 +26,6 @@ Map(String, Nullable(UInt8))
 1	1
 1	Map(String, LowCardinality(Nullable(String)))
 {'a':[1,2],'b':[3]}	Map(String, Array(UInt8))
+{'a':1,'b':NULL}	Map(String, Nullable(UInt8))
+0	{'0':0,'fixed':42}
+1	{'1':1,'fixed':42}

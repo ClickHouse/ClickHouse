@@ -103,3 +103,20 @@ FORMAT TabSeparatedRaw;
 
 SELECT mapFromEntries(CAST([('a', 1), NULL], 'Array(Nullable(Tuple(String, UInt8)))')); -- { serverError BAD_ARGUMENTS }
 SELECT mapFromEntries(CAST([('a', 1), (NULL, 2)], 'Array(Nullable(Tuple(Nullable(String), UInt8)))')); -- { serverError BAD_ARGUMENTS }
+
+-- A nullable tuple may also contain a nullable value.
+WITH CAST([('a', 1), ('b', NULL)], 'Array(Nullable(Tuple(String, Nullable(UInt8))))') AS entries
+SELECT
+    mapFromEntries(entries),
+    toTypeName(mapFromEntries(entries))
+FORMAT TabSeparatedRaw;
+
+-- Exercise offsets and null maps for non-constant arrays across multiple rows.
+SELECT
+    number,
+    mapFromEntries(CAST(
+        [(toString(number), toUInt8(number)), ('fixed', toUInt8(42))],
+        'Array(Nullable(Tuple(String, UInt8)))'))
+FROM numbers(2)
+ORDER BY number
+FORMAT TabSeparatedRaw;
