@@ -1841,11 +1841,10 @@ void MutationsInterpreter::prepare(bool dry_run)
             columns_written_by_stages.insert(column_name);
     }
 
-    /// Unlike an ordinary INSERT, a mutation does not go through InsertDependenciesBuilder. Reject
-    /// only columns that this mutation actually regenerates: untouched legacy states can still be
-    /// hardlinked or rewritten by background maintenance, while UPDATE, MATERIALIZE COLUMN and
-    /// dependent MATERIALIZED-column recomputation cannot create new lossy version-0 states.
-    if (source.getMergeTreeData())
+    /// Unlike an ordinary INSERT, a mutation does not go through InsertDependenciesBuilder.
+    /// MergeTree and Memory mutations both regenerate local columns, which can later be serialized
+    /// through an unsafe legacy version. Reject only the columns the mutation regenerates.
+    if (!source.getStorage()->isRemote())
     {
         const auto & storage_columns = metadata_snapshot->getColumns();
         for (const auto & column_name : columns_written_by_stages)

@@ -14,3 +14,9 @@ AggregateFunction(1, singleValueOrNullTuple, Tuple(UInt64, UInt64))
 (42,43)
 AggregateFunction(singleValueOrNull, UInt64)
 42
+any_state	AggregateFunction(any, AggregateFunction(1, singleValueOrNull, UInt64))
+array_state	AggregateFunction(groupArray, AggregateFunction(1, singleValueOrNull, UInt64))
+42	[42]
+AggregateFunction(any, AggregateFunction(singleValueOrNull, UInt64))
+AggregateFunction(groupArray, AggregateFunction(singleValueOrNull, UInt64))
+42	[42]

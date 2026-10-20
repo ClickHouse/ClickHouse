@@ -75,6 +75,17 @@ size_t DataTypeAggregateFunction::getVersion() const
     return function->getDefaultVersion();
 }
 
+DataTypePtr DataTypeAggregateFunction::doCloneWithChildren(const DataTypes & new_children) const
+{
+    /// The outer function's serializer can depend on the argument types (any/groupArray over
+    /// AggregateFunction states). Keep its function object in sync with the rewritten arguments.
+    AggregateFunctionProperties properties;
+    auto new_function = AggregateFunctionFactory::instance().get(
+        function->getName(), NullsAction::EMPTY, new_children, parameters, properties, function->getStateVariant());
+    return std::make_shared<DataTypeAggregateFunction>(
+        std::move(new_function), new_children, parameters, version, print_explicit_zero_in_name);
+}
+
 DataTypePtr DataTypeAggregateFunction::getReturnType() const
 {
     return function->getResultType();

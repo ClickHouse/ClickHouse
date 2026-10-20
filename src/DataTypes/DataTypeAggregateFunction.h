@@ -57,6 +57,14 @@ public:
     DataTypePtr getReturnTypeToPredict() const;
     DataTypes getArgumentsDataTypes() const { return argument_types; }
 
+    /// Aggregate arguments are children for type rewriting, even though the stored state is opaque.
+    size_t getNumberOfChildren() const override { return argument_types.size(); }
+    const DataTypePtr & getChild(size_t index) const override
+    {
+        chassert(index < argument_types.size());
+        return argument_types[index];
+    }
+
     MutableColumnPtr createColumn() const override;
 
     Field getDefault() const override;
@@ -103,6 +111,9 @@ public:
     /// Whether the version was pinned explicitly, as opposed to falling back to the default one.
     bool hasExplicitVersion() const { return version.has_value(); }
     bool printsExplicitZeroInName() const { return print_explicit_zero_in_name; }
+
+protected:
+    DataTypePtr doCloneWithChildren(const DataTypes & new_children) const override;
 };
 
 /// Pins the state version of every versioned aggregate function nested in `type` to the one that
