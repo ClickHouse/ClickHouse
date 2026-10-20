@@ -414,16 +414,24 @@ bool tryBuildPrewhereSteps(
     /// Steps pass columns to each other by name, so nodes sharing a name (a condition of ON repeated in WHERE
     /// under `join_use_nulls`) are cloned under new names. The outputs of PREWHERE keep their names.
     NodeToNewNameMap new_names;
+    NameSet used_names;
+    /// Readers do not read a stored column that a step already produced, so a new name must not be one.
+    auto is_stored_column = [&](const String & name)
+    {
+        return columns && columns->hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+    };
+    auto make_new_name = [&](const String & name)
+    {
+        String new_name = "__prewhere_" + name;
+        for (size_t suffix = 1; used_names.contains(new_name) || is_stored_column(new_name); ++suffix)
+            new_name = fmt::format("__prewhere_{}_{}", name, suffix);
+        used_names.insert(new_name);
+        return new_name;
+    };
     {
         const auto & dag = prewhere_info->prewhere_actions;
-        /// Readers do not read a stored column that a step already produced, so a new name must not be one.
-        auto is_stored_column = [&](const String & name)
-        {
-            return columns && columns->hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
-        };
         const std::unordered_set<const ActionsDAG::Node *> output_nodes(dag.getOutputs().begin(), dag.getOutputs().end());
         std::unordered_map<std::string_view, size_t> name_count;
-        NameSet used_names;
         for (const auto & node : dag.getNodes())
         {
             ++name_count[node.result_name];
@@ -433,11 +441,7 @@ bool tryBuildPrewhereSteps(
         {
             if (node.type == ActionsDAG::ActionType::INPUT || output_nodes.contains(&node) || name_count[node.result_name] < 2)
                 continue;
-            String new_name = "__prewhere_" + node.result_name;
-            for (size_t suffix = 1; used_names.contains(new_name) || is_stored_column(new_name); ++suffix)
-                new_name = fmt::format("__prewhere_{}_{}", node.result_name, suffix);
-            used_names.insert(new_name);
-            new_names.emplace(&node, std::move(new_name));
+            new_names.emplace(&node, make_new_name(node.result_name));
         }
     }
 
@@ -479,6 +483,8 @@ bool tryBuildPrewhereSteps(
             FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
             const auto & and_function_node = addFunction(step_dag, func_builder_and, new_condition_nodes);
             result_node = &and_function_node;
+            if (is_stored_column(result_node->result_name))
+                result_node = &step_dag->addAlias(*result_node, make_new_name(result_node->result_name));
         }
         else
         {
