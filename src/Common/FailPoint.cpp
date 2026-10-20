@@ -248,6 +248,7 @@ static struct InitFiu
     REGULAR(refresh_mv_incremental_fail_after_append) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
     ONCE(space_saving_copy_arena_throw) \
+    ONCE(adaptive_aggregation_drain_create_states_throw) \
     REGULAR(keepermap_fail_drop_data) \
     PAUSEABLE_ONCE(keepermap_create_pause_before_drop_lock_version) \
     REGULAR(keeper_fault_on_watch_request) \
@@ -335,6 +336,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(restore_pause_on_start) \
     PAUSEABLE_ONCE(restore_pause_before_data_restore_tasks) \
     PAUSEABLE_ONCE(backups_pause_before_publishing_progress) \
+    REGULAR(backups_hold_registration_until_ddl_worker_stops) \
     PAUSEABLE_ONCE(restore_pause_before_publishing_final_progress) \
     PAUSEABLE(sc_state_application_pause) \
     PAUSEABLE(sc_state_application_pause_after_fetch) \

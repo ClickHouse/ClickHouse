@@ -53,6 +53,8 @@ Test template:
 </test>
 ```
 
+The drop queries also run when the test fails, and a test whose drop queries cannot be shown to have cleaned up stops the rest of its batch.
+
 If your test takes more than 10 minutes, please, add tag `long` to have an opportunity to run all tests and skip long ones.
 
 ### Setup queries that cannot run on the reference server

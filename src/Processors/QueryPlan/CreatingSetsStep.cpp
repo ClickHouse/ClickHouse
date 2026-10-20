@@ -144,7 +144,8 @@ void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 /// table and passes rows through under the spill threshold of the set.
                 return std::make_shared<DistinctTransform>(
                     header, SizeLimits{}, 0, Names{}, /*allow_abandoning_=*/true, skip_null_keys,
-                    max_bytes_before_external_set, /*allow_spilling_=*/ true);
+                    max_bytes_before_external_set, /*shared_set_bytes_=*/ nullptr, /*coalesce_rows_=*/ 0,
+                    /*allow_spilling_=*/ true);
             });
     }
 
