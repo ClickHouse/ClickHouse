@@ -547,10 +547,16 @@ void tryPushDownExpressionsBelowWindow(const Stack & stack, QueryPlan::Nodes & n
     /// expressions it computes are computed for the same rows below them. With `QUALIFY`, the projection is
     /// a separate step above the `Filter` and is not changed.
     ActionsDAG * parent_actions_ptr = nullptr;
+    const FilterStep * parent_filter = nullptr;
     if (auto * expression_step = typeid_cast<ExpressionStep *>(parent_node->step.get()))
+    {
         parent_actions_ptr = &expression_step->getExpression();
+    }
     else if (auto * filter_step = typeid_cast<FilterStep *>(parent_node->step.get()); filter_step && !hasConstantFilter(*filter_step))
+    {
         parent_actions_ptr = &filter_step->getExpression();
+        parent_filter = filter_step;
+    }
 
     if (!parent_actions_ptr)
         return;
@@ -616,7 +622,22 @@ void tryPushDownExpressionsBelowWindow(const Stack & stack, QueryPlan::Nodes & n
         ++bottom_column_counts[column.name];
 
     /// The expressions that can be computed below the chain, grouped by the column they read.
-    const auto maybe_lazily_executed_nodes = collectMaybeLazilyExecutedNodes(parent_actions);
+    auto maybe_lazily_executed_nodes = collectMaybeLazilyExecutedNodes(parent_actions);
+
+    /// With short-circuit evaluation disabled, a `Filter` still applies the arguments of an `and` condition one after
+    /// another, so an argument is not executed for the rows removed by the previous ones (`s != 'x' AND toUInt64(s) > 0`).
+    /// Computed in another step, the `and` would execute all its arguments for all rows, like in `tryFuseFilterIntoArrayJoin`.
+    if (parent_filter && settings.short_circuit_function_evaluation_disabled)
+    {
+        const auto * filter_node = &parent_actions.findInOutputs(parent_filter->getFilterColumnName());
+        while (filter_node->type == ActionsDAG::ActionType::ALIAS)
+            filter_node = filter_node->children.front();
+
+        if (filter_node->type == ActionsDAG::ActionType::FUNCTION && filter_node->function_base
+            && filter_node->function_base->getName() == "and")
+            maybe_lazily_executed_nodes.insert(filter_node);
+    }
+
     std::unordered_map<const Node *, ExpressionInfo> expression_info_cache;
     std::unordered_map<const Node *, std::vector<const Node *>> candidates_by_input;
     for (const auto & node : parent_actions.getNodes())
