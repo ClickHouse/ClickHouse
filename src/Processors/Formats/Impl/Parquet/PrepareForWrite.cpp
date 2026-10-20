@@ -12,6 +12,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnSparse.h>
 #include <Core/Block.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFilterInfo.h>
@@ -943,7 +944,7 @@ void prepareColumnRecursive(
 {
     /// Remove const and sparse but leave LowCardinality as the encoder can directly use it for
     /// parquet dictionary-encoding.
-    column = column->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse()->convertToFullColumnIfConst();
+    column = removeSpecialRepresentations(column)->convertToFullColumnIfConst();
 
     switch (type->getTypeId())
     {
@@ -1018,6 +1019,10 @@ static bool prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
 {
     if (!type->getCustomName())
         return false;
+
+    /// The conversions below cast the column to its concrete type, which a constant column is not
+    /// (e.g. `SELECT readWKT(...) FORMAT Parquet`). Materialize it.
+    column = removeSpecialRepresentations(column)->convertToFullColumnIfConst();
 
     if (type->getCustomName()->getName() == "Geometry")
     {
