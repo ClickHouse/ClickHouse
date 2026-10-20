@@ -141,14 +141,14 @@ DOCKERS = [
         name="clickhouse/fasttest",
         path="./ci/docker/fasttest",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
+        depends_on=["clickhouse/cctools"],
         build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
         name="clickhouse/binary-builder",
         path="./ci/docker/binary-builder",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/fasttest"],
+        depends_on=["clickhouse/fasttest", "clickhouse/cctools"],
     ),
     Docker.Config(
         name="clickhouse/wasm-builder",
@@ -160,13 +160,14 @@ DOCKERS = [
         name="clickhouse/stateless-test",
         path="./ci/docker/stateless-test",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base"],
+        depends_on=["clickhouse/test-base", "clickhouse/cctools"],
     ),
     Docker.Config(
         name="clickhouse/cctools",
         path="./ci/docker/cctools",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/fasttest"],
+        depends_on=[],
+        build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
         name="clickhouse/utils",
@@ -178,7 +179,7 @@ DOCKERS = [
         name="clickhouse/test-base",
         path="./ci/docker/test-base",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
+        depends_on=["clickhouse/cctools"],
         build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
@@ -197,7 +198,7 @@ DOCKERS = [
         name="clickhouse/performance-comparison",
         path="./ci/docker/performance-comparison",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base"],
+        depends_on=["clickhouse/test-base", "clickhouse/cctools"],
     ),
     Docker.Config(
         name="clickhouse/keeper-jepsen-test",
@@ -215,13 +216,13 @@ DOCKERS = [
         name="clickhouse/integration-test",
         path="./ci/docker/integration/base",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base"],
+        depends_on=["clickhouse/test-base", "clickhouse/cctools"],
     ),
     Docker.Config(
         name="clickhouse/integration-tests-runner",
         path="./ci/docker/integration/runner",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base"],
+        depends_on=["clickhouse/test-base", "clickhouse/cctools"],
     ),
     Docker.Config(
         name="clickhouse/integration-test-with-unity-catalog",
