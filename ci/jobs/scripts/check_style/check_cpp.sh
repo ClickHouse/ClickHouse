@@ -123,6 +123,7 @@ EXTERN_TYPES_EXCLUDES=(
     CurrentMetrics::size
 
     ErrorCodes::ErrorCode
+    ErrorCodes::Error
     ErrorCodes::getName
     ErrorCodes::increment
     ErrorCodes::extendedMessage
@@ -279,6 +280,7 @@ directories_to_lint_std_containers_usages=(
     src/Loggers
     src/Processors/Merges
     src/Processors/Executors
+    src/Processors/Sources
     src/QueryPipeline
     src/TableFunctions
 )
