@@ -503,28 +503,21 @@ def test_max_set_age(started_cluster, mode):
         )
     )
 
-    ## In ordered mode, once a file fails and successful files after it have been processed,
-    ## the failed file won't be reprocessed even after failed_files_ttl_sec cleanup because
-    ## ordered mode only processes up to max_processed_file marker. The failed file (named with 'z_'
-    ## prefix to be lexicographically last) is now "in the past" relative to successful files
-    ## processed earlier, so TTL cleanup doesn't allow reprocessing in ordered mode.
-    if mode != "ordered":
-        ## Exclusive mode does not re-fail the file after the cleanup, the others do.
-        n_fails = 2 if mode != "exclusive" else 1
+    n_fails = 2 if mode != "exclusive" else 1
 
-        wait_for_condition(
-            lambda: failed_count + n_fails == get_object_storage_failures()
-        )
+    wait_for_condition(
+        lambda: failed_count + n_fails == get_object_storage_failures()
+    )
 
-        node.query("SYSTEM FLUSH LOGS")
-        assert "Cannot parse input" in node.query(
-            f"SELECT exception FROM system.s3queue_metadata_cache WHERE file_name ilike '%{file_with_error}' ORDER BY processing_end_time DESC LIMIT 1"
+    node.query("SYSTEM FLUSH LOGS")
+    assert "Cannot parse input" in node.query(
+        f"SELECT exception FROM system.s3queue_metadata_cache WHERE file_name ilike '%{file_with_error}' ORDER BY processing_end_time DESC LIMIT 1"
+    )
+    assert (n_fails - 1) < int(
+        node.query(
+            f"SELECT count() FROM system.s3queue_log WHERE file_name ilike '%{file_with_error}' AND notEmpty(exception)"
         )
-        assert (n_fails - 1) < int(
-            node.query(
-                f"SELECT count() FROM system.s3queue_log WHERE file_name ilike '%{file_with_error}' AND notEmpty(exception)"
-            )
-        )
+    )
 
     node.restart_clickhouse()
 
