@@ -112,6 +112,9 @@ public:
     AggregateFunctionPtr getAggregateFunction() { return func; }
     AggregateFunctionPtr getAggregateFunction() const { return func; }
 
+    /// The version the states are serialized in, unless a `NativeWriter` replaces it for a peer.
+    std::optional<size_t> getVersion() const { return version; }
+
     /// If we have another column as a source (owner of data), copy all data to ourself and reset source.
     /// This is needed before inserting new elements, because we must own these elements (to destroy them in destructor),
     ///  but ownership of different elements cannot be mixed by different columns.

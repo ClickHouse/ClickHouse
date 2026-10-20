@@ -589,9 +589,22 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
     };
     /// The key of a leaf: the output column, the state type, and the position among the leaves of that type
     /// in the column. `ordinals` counts the leaves of each state type already seen in the column.
-    auto leaf_key = [](size_t column_index, const ColumnAggregateFunction & leaf, std::unordered_map<String, size_t> & ordinals)
+    /// `getStateType` builds the type with the function's default version, so the version the states are
+    /// serialized in is added separately: below `Dynamic` the wire keeps the column's own version, and the
+    /// versions of a function can differ in size several-fold (`sumMap` writes 4-byte `Decimal32` values in
+    /// version 0 and 16-byte `Decimal128` in version 1). Elsewhere `NativeWriter` pins the version to the
+    /// peer's revision, so the column's version does not matter there.
+    auto leaf_key = [](size_t column_index,
+                       const ColumnAggregateFunction & leaf,
+                       bool below_dynamic,
+                       std::unordered_map<String, size_t> & ordinals)
     {
         String state_type = leaf.getAggregateFunction()->getStateType()->getName();
+        if (below_dynamic)
+        {
+            const auto version = leaf.getVersion();
+            state_type += version ? fmt::format("\tversion {}", *version) : String("\tdefault version");
+        }
         const size_t ordinal = ordinals[state_type]++;
         return fmt::format("{}\t{}\t{}", column_index, state_type, ordinal);
     };
@@ -620,7 +633,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
             [&](const ColumnAggregateFunction & leaf, size_t skip_rows, const ColumnPtr & owner, size_t carrier_byte_size, bool below_dynamic)
             {
                 col_has_states[i] = 1;
-                state_leaves.emplace_back(&leaf, owner, repetitions, skip_rows, below_dynamic, leaf_key(i, leaf, ordinals));
+                state_leaves.emplace_back(&leaf, owner, repetitions, skip_rows, below_dynamic, leaf_key(i, leaf, below_dynamic, ordinals));
                 state_leaves_byte_size += carrier_byte_size;
             });
         /// The carrier's own payload (null maps, sibling tuple elements, array offsets, ...) is sized by
@@ -713,7 +726,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
                     [&](const ColumnAggregateFunction & leaf, size_t skip_rows, const ColumnPtr & owner, size_t, bool below_dynamic)
                     {
                         sorted_state_leaves.emplace_back(
-                            &leaf, owner ? owner : column, repetitions, skip_rows, below_dynamic, leaf_key(column_index, leaf, ordinals));
+                            &leaf, owner ? owner : column, repetitions, skip_rows, below_dynamic, leaf_key(column_index, leaf, below_dynamic, ordinals));
                     });
                 ++column_index;
             }

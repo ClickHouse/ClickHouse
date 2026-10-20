@@ -1219,16 +1219,10 @@ TEST(RuntimeDataflowStatisticsStateSampling, MixedOutputAboveStateCapNormalizesC
     EXPECT_LE(stats->output_bytes, exact_compressed_bytes * 2);
 }
 
-/// `NativeWriter` pins the state versions of the types in the block header to the peer's revision, but a
-/// `Dynamic` type has no type children to pin: `SerializationDynamic` writes its alternatives with the
-/// variant type the column carries. So a `Dynamic` value holding `AggregateFunction(0, sumMap, Array(UInt8),
-/// Array(Decimal(9, 2)))` states goes out in version 0, with 4-byte `Decimal32` values, and measuring it in
-/// the current revision's version 1 counts them as 16-byte `Decimal128` - several times the bytes sent.
-TEST(RuntimeDataflowStatisticsStateSampling, DynamicStatesKeepTheColumnStateVersion)
+/// A `Dynamic` column of `rows` `AggregateFunction(version, sumMap, Array(UInt8), Array(Decimal(9, 2)))` states,
+/// each with 50 entries.
+static ColumnPtr createSumMapStatesDynamicColumn(size_t rows, size_t version)
 {
-    tryRegisterAggregateFunctions();
-
-    constexpr size_t rows = 1000;
     constexpr size_t entries_in_state = 50;
 
     DataTypes argument_types
@@ -1236,7 +1230,7 @@ TEST(RuntimeDataflowStatisticsStateSampling, DynamicStatesKeepTheColumnStateVers
            std::make_shared<DataTypeArray>(std::make_shared<DataTypeDecimal<Decimal32>>(9, 2))};
     AggregateFunctionProperties properties;
     auto function = AggregateFunctionFactory::instance().get("sumMap", NullsAction::EMPTY, argument_types, Array{}, properties);
-    const DataTypePtr state_type = std::make_shared<DataTypeAggregateFunction>(function, argument_types, Array{}, /*version=*/0);
+    const DataTypePtr state_type = std::make_shared<DataTypeAggregateFunction>(function, argument_types, Array{}, version);
 
     auto states = state_type->createColumn();
     auto & states_column = assert_cast<ColumnAggregateFunction &>(*states);
@@ -1263,7 +1257,7 @@ TEST(RuntimeDataflowStatisticsStateSampling, DynamicStatesKeepTheColumnStateVers
 
     /// `DataTypeVariant` sorts the alternatives by name: 0 = the state, 1 = "SharedVariant" (empty here).
     const auto variant_type = std::make_shared<DataTypeVariant>(DataTypes{state_type, ColumnDynamic::getSharedVariantDataType()});
-    ASSERT_EQ(variant_type->getVariants()[0]->getName(), state_type->getName());
+    EXPECT_EQ(variant_type->getVariants()[0]->getName(), state_type->getName());
     auto discriminators = ColumnVariant::ColumnDiscriminators::create();
     auto offsets = ColumnVariant::ColumnOffsets::create();
     for (size_t row = 0; row < rows; ++row)
@@ -1275,8 +1269,21 @@ TEST(RuntimeDataflowStatisticsStateSampling, DynamicStatesKeepTheColumnStateVers
     variant_alternatives.emplace_back(std::move(states));
     variant_alternatives.emplace_back(ColumnDynamic::getSharedVariantDataType()->createColumn());
     auto variant_column = ColumnVariant::create(std::move(discriminators), std::move(offsets), variant_alternatives);
-    ColumnPtr dynamic_column = ColumnDynamic::create(
+    return ColumnDynamic::create(
         variant_column->assumeMutable(), variant_type, /*max_dynamic_types_=*/2, /*global_max_dynamic_types_=*/2);
+}
+
+/// `NativeWriter` pins the state versions of the types in the block header to the peer's revision, but a
+/// `Dynamic` type has no type children to pin: `SerializationDynamic` writes its alternatives with the
+/// variant type the column carries. So a `Dynamic` value holding `AggregateFunction(0, sumMap, Array(UInt8),
+/// Array(Decimal(9, 2)))` states goes out in version 0, with 4-byte `Decimal32` values, and measuring it in
+/// the current revision's version 1 counts them as 16-byte `Decimal128` - several times the bytes sent.
+TEST(RuntimeDataflowStatisticsStateSampling, DynamicStatesKeepTheColumnStateVersion)
+{
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t rows = 1000;
+    const ColumnPtr dynamic_column = createSumMapStatesDynamicColumn(rows, /*version=*/0);
 
     Block block;
     block.insert(ColumnWithTypeAndName{dynamic_column, std::make_shared<DataTypeDynamic>(), "dynamic_state"});
@@ -1295,6 +1302,54 @@ TEST(RuntimeDataflowStatisticsStateSampling, DynamicStatesKeepTheColumnStateVers
         RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, rows, none));
         Block header = block.cloneEmpty();
         updater.recordOutputChunk(Chunk(Columns{dynamic_column}, rows), header);
+    }
+
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    EXPECT_GE(stats->output_bytes * 5, wire_bytes * 4);
+    EXPECT_LE(stats->output_bytes * 4, wire_bytes * 5);
+}
+
+/// The per-value figure that an unsampled block is extrapolated from must also tell the state versions of a
+/// `Dynamic` alternative apart: the version is kept below `Dynamic`, and `sumMap` writes 4-byte values in
+/// version 0 and 16-byte ones in version 1. Here the first, sampled block carries version 0 states and the
+/// second, unsampled one version 1 states of the same function; extrapolating the second from the first
+/// would undercount it several-fold.
+TEST(RuntimeDataflowStatisticsStateSampling, DynamicStateVersionChangeIsNotExtrapolated)
+{
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t rows = 1000;
+    const ColumnPtr first = createSumMapStatesDynamicColumn(rows, /*version=*/0);
+    const ColumnPtr second = createSumMapStatesDynamicColumn(rows, /*version=*/1);
+
+    Block header;
+    header.insert(ColumnWithTypeAndName{nullptr, std::make_shared<DataTypeDynamic>(), "dynamic_state"});
+
+    /// Without compression the estimate is the uncompressed size, so the ground truth is what `NativeWriter`
+    /// writes for both blocks to a peer of the current revision.
+    const auto none = CompressionCodecFactory::instance().get("NONE", {});
+    WriteBufferFromOwnString wire;
+    NativeWriter writer(wire, DBMS_TCP_PROTOCOL_VERSION, std::make_shared<const Block>(header.cloneEmpty()));
+    size_t first_wire_bytes = 0;
+    for (const auto & column : {first, second})
+    {
+        Block block = header.cloneEmpty();
+        block.getByPosition(0).column = column;
+        writer.write(block);
+        if (!first_wire_bytes)
+            first_wire_bytes = wire.count();
+    }
+    wire.finalize();
+    const size_t wire_bytes = wire.str().size();
+    /// The version 1 block is several times larger than the version 0 one.
+    ASSERT_GT(wire_bytes - first_wire_bytes, first_wire_bytes * 2);
+
+    const size_t cache_key = 0x111985 + 21;
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, 2 * rows, none));
+        updater.recordOutputChunk(Chunk(Columns{first}, rows), header);
+        updater.recordOutputChunk(Chunk(Columns{second}, rows), header);
     }
 
     const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
