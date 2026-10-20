@@ -39,7 +39,7 @@ common --@llvm-project//third-party:llvm_enable_zlib=false
 common --@llvm-project//third-party:llvm_enable_zstd=false
 
 common:x86_64 --platforms=@rules_rs//rs/platforms:x86_64-unknown-linux-gnu
-common:x86_64 --per_file_copt=//bazel:google_type_date_proto$@-w,-std=c++23,-march=x86-64-v3,-mpclmul,-mbranches-within-32B-boundaries,-DSTD_EXCEPTION_HAS_STACK_TRACE=1,-D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS,-D_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1,-D_LIBUNWIND_IS_NATIVE_ONLY
+common:x86_64 --per_file_copt=//bazel:google_(api|cloud|iam|longrunning|rpc|storage|type)_.*_proto$@-w,-std=c++23,-march=x86-64-v3,-mpclmul,-mbranches-within-32B-boundaries,-DSTD_EXCEPTION_HAS_STACK_TRACE=1,-D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS,-D_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1,-D_LIBUNWIND_IS_NATIVE_ONLY
 # Match CMake's code-generation flags for the LLVM libraries in ClickHouse.
 # per_file_copt leaves exec tools and the separately configured runtimes alone.
 common:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/.*@--no-default-config,-O3,-march=x86-64-v3,-mpclmul,-falign-functions=64,-falign-loops=32,-fasynchronous-unwind-tables,-faddrsig,-mbranches-within-32B-boundaries,-fstack-protector-strong,-fstack-clash-protection,-ffp-contract=off,-fno-math-errno,-fdebug-compilation-dir=.
@@ -48,7 +48,7 @@ common:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/.*[.]c
 common:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/.*[.]c$@-std=gnu11
 common:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/lib/Support/BLAKE3/blake3_avx512_x86-64_unix[.]S$@-mavx512f,-mavx512vl
 common:aarch64 --platforms=@rules_rs//rs/platforms:aarch64-unknown-linux-gnu
-common:aarch64 --per_file_copt=//bazel:google_type_date_proto$@-w,-std=c++23,-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16,-DSTD_EXCEPTION_HAS_STACK_TRACE=1,-D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS,-D_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1,-D_LIBUNWIND_IS_NATIVE_ONLY
+common:aarch64 --per_file_copt=//bazel:google_(api|cloud|iam|longrunning|rpc|storage|type)_.*_proto$@-w,-std=c++23,-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16,-DSTD_EXCEPTION_HAS_STACK_TRACE=1,-D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS,-D_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1,-D_LIBUNWIND_IS_NATIVE_ONLY
 
 # Use LLVM's Linux x86-64 execution platform for C++, Rust, and code generators.
 common:remote --extra_execution_platforms=//bazel:buildbuddy_linux_x86_64

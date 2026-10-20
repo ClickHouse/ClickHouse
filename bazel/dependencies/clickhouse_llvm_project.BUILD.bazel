@@ -3,7 +3,7 @@ load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 load("@clickhouse//bazel/rules:llvm_runtime.bzl", "llvm_runtime_objects")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_prefix_maps", "repository_path")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_prefix_maps")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -4335,16 +4335,12 @@ llvm_runtime_objects(
     ],
     hdrs = _GENERATED_HDRS_2,
     arch = _RUNTIME_ARCH,
-    copts = [
-        "--no-default-config",
-    ] + select({
+    copts = ["--no-default-config"] + select({
         "@platforms//cpu:x86_64": [
             "-march=x86-64-v3",
             "-mpclmul",
         ],
-        "@platforms//cpu:aarch64": [
-            "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-        ],
+        "@platforms//cpu:aarch64": ["-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16"],
     }) + [
         "-std=c11",
         "-D",
@@ -4360,17 +4356,16 @@ llvm_runtime_objects(
         "-fno-sanitize=all",
         "-w",
         "-Werror",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/compiler-rt/include",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/libcxxabi/include",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/libunwind/include",
     ],
     language = "C",
-    local_includes = _CLANG_RT_BUILTINS_LOCAL_INCLUDES,
     local_defines = _GENERATED_LOCAL_DEFINES_2,
+    local_includes = _CLANG_RT_BUILTINS_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = [
+        "compiler-rt/include",
+        "libcxxabi/include",
+        "libunwind/include",
+    ],
 )
 
 cc_library(
@@ -4395,9 +4390,7 @@ llvm_runtime_objects(
     }),
     hdrs = _GENERATED_HDRS_2,
     arch = _RUNTIME_ARCH,
-    copts = [
-        "--no-default-config",
-    ] + select({
+    copts = ["--no-default-config"] + select({
         "@platforms//cpu:x86_64": [
             "-march=x86-64-v3",
             "-mpclmul",
@@ -4420,27 +4413,27 @@ llvm_runtime_objects(
         "-fno-sanitize=all",
         "-w",
         "-Werror",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/compiler-rt/include",
-    ] + select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            "-isystem",
-            repository_path("contrib/llvm-project") + "/libcxx/include",
-        ],
-    }) + [
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/libcxxabi/include",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/libunwind/include",
     ],
     language = select({
         "@platforms//cpu:x86_64": "ASM",
         "@platforms//cpu:aarch64": "CXX",
     }),
-    local_includes = _CLANG_RT_BUILTINS_LOCAL_INCLUDES,
     local_defines = _GENERATED_LOCAL_DEFINES_2,
+    local_includes = _CLANG_RT_BUILTINS_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = select({
+        "@platforms//cpu:x86_64": [
+            "compiler-rt/include",
+            "libcxxabi/include",
+            "libunwind/include",
+        ],
+        "@platforms//cpu:aarch64": [
+            "compiler-rt/include",
+            "libcxx/include",
+            "libcxxabi/include",
+            "libunwind/include",
+        ],
+    }),
 )
 
 cc_library(
@@ -4484,12 +4477,15 @@ _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS = select({
         "-fno-sanitize=all",
         "-w",
         "-Werror",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/compiler-rt/include",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/libcxxabi/include",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/libunwind/include",
+    ],
+})
+
+_CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES = select({
+    "@platforms//cpu:x86_64": [],
+    "@platforms//cpu:aarch64": [
+        "compiler-rt/include",
+        "libcxxabi/include",
+        "libunwind/include",
     ],
 })
 
@@ -4505,7 +4501,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -4519,7 +4514,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -4542,7 +4539,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -4556,7 +4552,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -4579,7 +4577,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -4593,7 +4590,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -4616,7 +4615,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -4630,7 +4628,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -4653,7 +4653,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -4667,7 +4666,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -4690,7 +4691,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -4704,7 +4704,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -4727,7 +4729,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -4741,7 +4742,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -4764,7 +4767,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -4778,7 +4780,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -4801,7 +4805,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -4815,7 +4818,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -4838,7 +4843,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -4852,7 +4856,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -4875,7 +4881,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -4889,7 +4894,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -4912,7 +4919,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -4926,7 +4932,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -4949,7 +4957,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -4963,7 +4970,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -4986,7 +4995,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5000,7 +5008,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -5023,7 +5033,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5037,7 +5046,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -5060,7 +5071,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5074,7 +5084,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -5097,7 +5109,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5111,7 +5122,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -5134,7 +5147,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5148,7 +5160,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -5171,7 +5185,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5185,7 +5198,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -5208,7 +5223,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5222,7 +5236,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -5245,7 +5261,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5259,7 +5274,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -5282,7 +5299,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5296,7 +5312,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -5319,7 +5337,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5333,7 +5350,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -5356,7 +5375,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5370,7 +5388,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -5393,7 +5413,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5407,7 +5426,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -5430,7 +5451,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5444,7 +5464,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -5467,7 +5489,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5481,7 +5502,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -5504,7 +5527,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5518,7 +5540,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -5541,7 +5565,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5555,7 +5578,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -5578,7 +5603,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5592,7 +5616,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -5615,7 +5641,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5629,7 +5654,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -5652,7 +5679,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5666,7 +5692,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -5689,7 +5717,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5703,7 +5730,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -5726,7 +5755,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5740,7 +5768,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -5763,7 +5793,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5777,7 +5806,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -5800,7 +5831,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5814,7 +5844,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -5837,7 +5869,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5851,7 +5882,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -5874,7 +5907,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5888,7 +5920,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -5911,7 +5945,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5925,7 +5958,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -5948,7 +5983,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5962,7 +5996,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -5985,7 +6021,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -5999,7 +6034,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -6022,7 +6059,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6036,7 +6072,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -6059,7 +6097,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6073,7 +6110,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -6096,7 +6135,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6110,7 +6148,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -6133,7 +6173,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6147,7 +6186,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -6170,7 +6211,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6184,7 +6224,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -6207,7 +6249,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6221,7 +6262,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -6244,7 +6287,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6258,7 +6300,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -6281,7 +6325,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6295,7 +6338,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -6318,7 +6363,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6332,7 +6376,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -6355,7 +6401,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6369,7 +6414,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -6392,7 +6439,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6406,7 +6452,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -6429,7 +6477,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6443,7 +6490,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -6466,7 +6515,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6480,7 +6528,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -6503,7 +6553,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6517,7 +6566,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -6540,7 +6591,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6554,7 +6604,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -6577,7 +6629,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6591,7 +6642,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -6614,7 +6667,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6628,7 +6680,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -6651,7 +6705,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6665,7 +6718,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -6688,7 +6743,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6702,7 +6756,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -6725,7 +6781,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6739,7 +6794,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -6762,7 +6819,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6776,7 +6832,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -6799,7 +6857,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6813,7 +6870,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -6836,7 +6895,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6850,7 +6908,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -6873,7 +6933,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6887,7 +6946,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -6910,7 +6971,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6924,7 +6984,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -6947,7 +7009,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6961,7 +7022,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -6984,7 +7047,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -6998,7 +7060,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -7021,7 +7085,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7035,7 +7098,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -7058,7 +7123,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7072,7 +7136,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -7095,7 +7161,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7109,7 +7174,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -7132,7 +7199,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7146,7 +7212,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -7169,7 +7237,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7183,7 +7250,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -7206,7 +7275,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7220,7 +7288,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -7243,7 +7313,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7257,7 +7326,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -7280,7 +7351,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7294,7 +7364,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -7317,7 +7389,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7331,7 +7402,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -7354,7 +7427,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7368,7 +7440,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -7391,7 +7465,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7405,7 +7478,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -7428,7 +7503,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7442,7 +7516,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -7465,7 +7541,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7479,7 +7554,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -7502,7 +7579,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7516,7 +7592,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -7539,7 +7617,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7553,7 +7630,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -7576,7 +7655,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7590,7 +7668,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -7613,7 +7693,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7627,7 +7706,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -7650,7 +7731,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7664,7 +7744,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -7687,7 +7769,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7701,7 +7782,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -7724,7 +7807,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7738,7 +7820,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -7761,7 +7845,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7775,7 +7858,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -7798,7 +7883,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7812,7 +7896,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -7835,7 +7921,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7849,7 +7934,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -7872,7 +7959,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7886,7 +7972,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -7909,7 +7997,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7923,7 +8010,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -7946,7 +8035,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7960,7 +8048,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -7983,7 +8073,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -7997,7 +8086,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -8020,7 +8111,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8034,7 +8124,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -8057,7 +8149,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8071,7 +8162,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -8094,7 +8187,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8108,7 +8200,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -8131,7 +8225,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8145,7 +8238,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -8168,7 +8263,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8182,7 +8276,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -8205,7 +8301,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8219,7 +8314,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -8242,7 +8339,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8256,7 +8352,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -8279,7 +8377,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8293,7 +8390,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -8316,7 +8415,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8330,7 +8428,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -8353,7 +8453,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8367,7 +8466,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -8390,7 +8491,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8404,7 +8504,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -8427,7 +8529,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8441,7 +8542,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -8464,7 +8567,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8478,7 +8580,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -8501,7 +8605,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8515,7 +8618,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -8538,7 +8643,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8552,7 +8656,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -8575,7 +8681,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8589,7 +8694,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -8612,7 +8719,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8626,7 +8732,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -8649,7 +8757,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8663,7 +8770,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -8686,7 +8795,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8700,7 +8808,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -8723,7 +8833,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8737,7 +8846,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -8760,7 +8871,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8774,7 +8884,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -8797,7 +8909,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8811,7 +8922,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -8834,7 +8947,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8848,7 +8960,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -8871,7 +8985,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8885,7 +8998,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -8908,7 +9023,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8922,7 +9036,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -8945,7 +9061,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8959,7 +9074,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -8982,7 +9099,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -8996,7 +9112,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -9019,7 +9137,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -9033,7 +9150,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -9056,7 +9175,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -9070,7 +9188,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -9093,7 +9213,6 @@ llvm_runtime_objects(
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     language = "ASM",
-    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -9107,7 +9226,9 @@ llvm_runtime_objects(
             "_LIBUNWIND_IS_NATIVE_ONLY",
         ],
     }),
+    local_includes = _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES,
 )
 
 cc_library(
@@ -9336,16 +9457,12 @@ llvm_runtime_objects(
     ],
     hdrs = _GENERATED_HDRS_2,
     arch = _RUNTIME_ARCH,
-    copts = [
-        "--no-default-config",
-    ] + select({
+    copts = ["--no-default-config"] + select({
         "@platforms//cpu:x86_64": [
             "-march=x86-64-v3",
             "-mpclmul",
         ],
-        "@platforms//cpu:aarch64": [
-            "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-        ],
+        "@platforms//cpu:aarch64": ["-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16"],
     }) + [
         "-std=c++23",
         "-D",
@@ -9365,24 +9482,22 @@ llvm_runtime_objects(
         "-w",
         "-Werror",
         "-nostdinc++",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/compiler-rt/include",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/libcxx/include",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/libcxxabi/include",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/libunwind/include",
     ],
     language = "CXX",
+    local_defines = _GENERATED_LOCAL_DEFINES_3,
     local_includes = [
         "compiler-rt/lib",
         "third-party/siphash/include",
         "gen/libcxx/include/c++/v1",
         "libc",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_3,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = [
+        "compiler-rt/include",
+        "libcxx/include",
+        "libcxxabi/include",
+        "libunwind/include",
+    ],
 )
 
 cc_library(
@@ -9405,16 +9520,12 @@ llvm_runtime_objects(
     }),
     hdrs = _GENERATED_HDRS_2,
     arch = _RUNTIME_ARCH,
-    copts = [
-        "--no-default-config",
-    ] + select({
+    copts = ["--no-default-config"] + select({
         "@platforms//cpu:x86_64": [
             "-march=x86-64-v3",
             "-mpclmul",
         ],
-        "@platforms//cpu:aarch64": [
-            "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-        ],
+        "@platforms//cpu:aarch64": ["-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16"],
     }) + [
         "-D",
         "OS_LINUX",
@@ -9432,22 +9543,21 @@ llvm_runtime_objects(
         "-fno-sanitize=all",
         "-w",
         "-Werror",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/compiler-rt/include",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/libcxxabi/include",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/libunwind/include",
     ],
     language = "ASM",
+    local_defines = _GENERATED_LOCAL_DEFINES_3,
     local_includes = [
         "compiler-rt/lib",
         "third-party/siphash/include",
         "gen/libcxx/include/c++/v1",
         "libc",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_3,
     reference_source_root = "/home/buildbuddy/workspace/repo-root",
+    system_includes = [
+        "compiler-rt/include",
+        "libcxxabi/include",
+        "libunwind/include",
+    ],
 )
 
 cc_library(
@@ -9538,9 +9648,7 @@ llvm_runtime_objects(
             "-march=x86-64-v3",
             "-mpclmul",
         ],
-        "@platforms//cpu:aarch64": [
-            "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-        ],
+        "@platforms//cpu:aarch64": ["-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16"],
     }) + [
         "-fasynchronous-unwind-tables",
         "-fdebug-compilation-dir=.",
@@ -9550,9 +9658,7 @@ llvm_runtime_objects(
         "-fdata-sections",
         "-faddrsig",
     ] + select({
-        "@platforms//cpu:x86_64": [
-            "-mbranches-within-32B-boundaries",
-        ],
+        "@platforms//cpu:x86_64": ["-mbranches-within-32B-boundaries"],
         "@platforms//cpu:aarch64": [],
     }) + [
         "-fstack-protector-strong",
@@ -9571,26 +9677,11 @@ llvm_runtime_objects(
         "-gz=zlib",
         "-nostdinc++",
         "-w",
-    ]) + [
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/libcxx/include",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/libcxx/src",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/compiler-rt/include",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/libcxxabi/include",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/libunwind/include",
-    ] + cmake_prefix_maps([
+    ]) + cmake_prefix_maps([
         "aarch64",
         "x86_64",
     ]),
     language = "CXX",
-    local_includes = [
-        "gen/libcxx/include/c++/v1",
-        "libc",
-    ],
     local_defines = [
         "LIBCXX_BUILDING_LIBCXXABI",
         "LIBC_NAMESPACE=__llvm_libc",
@@ -9599,6 +9690,17 @@ llvm_runtime_objects(
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+    local_includes = [
+        "gen/libcxx/include/c++/v1",
+        "libc",
+    ],
+    system_includes = [
+        "libcxx/include",
+        "libcxx/src",
+        "compiler-rt/include",
+        "libcxxabi/include",
+        "libunwind/include",
     ],
 )
 
@@ -9650,9 +9752,7 @@ llvm_runtime_objects(
             "-march=x86-64-v3",
             "-mpclmul",
         ],
-        "@platforms//cpu:aarch64": [
-            "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-        ],
+        "@platforms//cpu:aarch64": ["-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16"],
     }) + [
         "-fasynchronous-unwind-tables",
         "-fdebug-compilation-dir=.",
@@ -9662,9 +9762,7 @@ llvm_runtime_objects(
         "-fdata-sections",
         "-faddrsig",
     ] + select({
-        "@platforms//cpu:x86_64": [
-            "-mbranches-within-32B-boundaries",
-        ],
+        "@platforms//cpu:x86_64": ["-mbranches-within-32B-boundaries"],
         "@platforms//cpu:aarch64": [],
     })) + [
         "-fstack-protector-strong",
@@ -9687,16 +9785,6 @@ llvm_runtime_objects(
         "-Wno-macro-redefined",
         "-fomit-frame-pointer",
         "-momit-leaf-frame-pointer",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/libcxxabi/../libcxx/src",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/libcxxabi/../libcxx/include",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/libcxxabi/include",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/compiler-rt/include",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/libunwind/include",
     ] + cmake_prefix_maps([
         "aarch64",
         "x86_64",
@@ -9707,6 +9795,13 @@ llvm_runtime_objects(
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_BUILDING_LIBRARY",
         "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+    system_includes = [
+        "libcxxabi/../libcxx/src",
+        "libcxxabi/../libcxx/include",
+        "libcxxabi/include",
+        "compiler-rt/include",
+        "libunwind/include",
     ],
 )
 
@@ -9787,9 +9882,7 @@ llvm_runtime_objects(
             "-march=x86-64-v3",
             "-mpclmul",
         ],
-        "@platforms//cpu:aarch64": [
-            "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-        ],
+        "@platforms//cpu:aarch64": ["-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16"],
     }) + [
         "-fasynchronous-unwind-tables",
         "-fdebug-compilation-dir=.",
@@ -9799,9 +9892,7 @@ llvm_runtime_objects(
         "-fdata-sections",
         "-faddrsig",
     ] + select({
-        "@platforms//cpu:x86_64": [
-            "-mbranches-within-32B-boundaries",
-        ],
+        "@platforms//cpu:x86_64": ["-mbranches-within-32B-boundaries"],
         "@platforms//cpu:aarch64": [],
     }) + [
         "-fstack-protector-strong",
@@ -9826,23 +9917,11 @@ llvm_runtime_objects(
         "-fno-builtin",
         "-Werror",
         "-nostdinc++",
-    ]) + [
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/libc",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/compiler-rt/include",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/libcxx/include",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/libcxxabi/include",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/libunwind/include",
-    ] + cmake_prefix_maps([
+    ]) + cmake_prefix_maps([
         "aarch64",
         "x86_64",
     ]),
     language = "CXX",
-    local_includes = ["gen/libcxx/include/c++/v1"],
     local_defines = [
         "LIBC_COPT_PUBLIC_PACKAGING=1",
         "LIBC_ERRNO_MODE=6",
@@ -9880,6 +9959,14 @@ llvm_runtime_objects(
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+    local_includes = ["gen/libcxx/include/c++/v1"],
+    system_includes = [
+        "libc",
+        "compiler-rt/include",
+        "libcxx/include",
+        "libcxxabi/include",
+        "libunwind/include",
     ],
 )
 
@@ -9924,9 +10011,7 @@ llvm_runtime_objects(
             "-march=x86-64-v3",
             "-mpclmul",
         ],
-        "@platforms//cpu:aarch64": [
-            "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-        ],
+        "@platforms//cpu:aarch64": ["-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16"],
     }) + [
         "-fasynchronous-unwind-tables",
         "-fdebug-compilation-dir=.",
@@ -9936,9 +10021,7 @@ llvm_runtime_objects(
         "-fdata-sections",
         "-faddrsig",
     ] + select({
-        "@platforms//cpu:x86_64": [
-            "-mbranches-within-32B-boundaries",
-        ],
+        "@platforms//cpu:x86_64": ["-mbranches-within-32B-boundaries"],
         "@platforms//cpu:aarch64": [],
     })) + [
         "-fstack-protector-strong",
@@ -9962,16 +10045,16 @@ llvm_runtime_objects(
         "-fno-rtti",
         "-Wno-unused-but-set-variable",
         "-Wno-register",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/libunwind/include",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/compiler-rt/include",
     ] + cmake_prefix_maps([
         "aarch64",
         "x86_64",
     ]),
     language = "CXX",
     local_defines = _GENERATED_LOCAL_DEFINES_4,
+    system_includes = [
+        "libunwind/include",
+        "compiler-rt/include",
+    ],
 )
 
 cc_library(
@@ -10000,9 +10083,7 @@ llvm_runtime_objects(
             "-march=x86-64-v3",
             "-mpclmul",
         ],
-        "@platforms//cpu:aarch64": [
-            "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-        ],
+        "@platforms//cpu:aarch64": ["-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16"],
     }) + [
         "-fasynchronous-unwind-tables",
         "-fdebug-compilation-dir=.",
@@ -10012,9 +10093,7 @@ llvm_runtime_objects(
         "-fdata-sections",
         "-faddrsig",
     ] + select({
-        "@platforms//cpu:x86_64": [
-            "-mbranches-within-32B-boundaries",
-        ],
+        "@platforms//cpu:x86_64": ["-mbranches-within-32B-boundaries"],
         "@platforms//cpu:aarch64": [],
     })) + [
         "-fstack-protector-strong",
@@ -10035,16 +10114,16 @@ llvm_runtime_objects(
         "-fno-sanitize=all",
         "-Wno-unused-but-set-variable",
         "-std=c99",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/libunwind/include",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/compiler-rt/include",
     ] + cmake_prefix_maps([
         "aarch64",
         "x86_64",
     ]),
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_4,
+    system_includes = [
+        "libunwind/include",
+        "compiler-rt/include",
+    ],
 )
 
 cc_library(
@@ -10071,9 +10150,7 @@ llvm_runtime_objects(
             "-march=x86-64-v3",
             "-mpclmul",
         ],
-        "@platforms//cpu:aarch64": [
-            "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-        ],
+        "@platforms//cpu:aarch64": ["-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16"],
     }) + [
         "-fasynchronous-unwind-tables",
         "-fdebug-compilation-dir=.",
@@ -10083,9 +10160,7 @@ llvm_runtime_objects(
         "-fdata-sections",
         "-faddrsig",
     ] + select({
-        "@platforms//cpu:x86_64": [
-            "-mbranches-within-32B-boundaries",
-        ],
+        "@platforms//cpu:x86_64": ["-mbranches-within-32B-boundaries"],
         "@platforms//cpu:aarch64": [],
     })) + [
         "-fstack-protector-strong",
@@ -10102,16 +10177,16 @@ llvm_runtime_objects(
         "-funwind-tables",
         "-fno-sanitize=all",
         "-Wno-unused-but-set-variable",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/libunwind/include",
-        "-isystem",
-        repository_path("contrib/llvm-project") + "/compiler-rt/include",
     ] + cmake_prefix_maps([
         "aarch64",
         "x86_64",
     ]),
     language = "ASM",
     local_defines = _GENERATED_LOCAL_DEFINES_4,
+    system_includes = [
+        "libunwind/include",
+        "compiler-rt/include",
+    ],
 )
 
 cc_library(

@@ -1,9 +1,101 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_prefix_maps", "repository_path")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
+
+proto_library(
+    name = "any_proto",
+    srcs = ["src/google/protobuf/any.proto"],
+    strip_import_prefix = "src",
+)
+
+proto_library(
+    name = "api_proto",
+    srcs = ["src/google/protobuf/api.proto"],
+    strip_import_prefix = "src",
+    deps = [
+        ":source_context_proto",
+        ":type_proto",
+    ],
+)
+
+proto_library(
+    name = "descriptor_proto",
+    srcs = ["src/google/protobuf/descriptor.proto"],
+    strip_import_prefix = "src",
+)
+
+proto_library(
+    name = "duration_proto",
+    srcs = ["src/google/protobuf/duration.proto"],
+    strip_import_prefix = "src",
+)
+
+proto_library(
+    name = "empty_proto",
+    srcs = ["src/google/protobuf/empty.proto"],
+    strip_import_prefix = "src",
+)
+
+proto_library(
+    name = "field_mask_proto",
+    srcs = ["src/google/protobuf/field_mask.proto"],
+    strip_import_prefix = "src",
+)
+
+proto_library(
+    name = "source_context_proto",
+    srcs = ["src/google/protobuf/source_context.proto"],
+    strip_import_prefix = "src",
+)
+
+proto_library(
+    name = "struct_proto",
+    srcs = ["src/google/protobuf/struct.proto"],
+    strip_import_prefix = "src",
+)
+
+proto_library(
+    name = "timestamp_proto",
+    srcs = ["src/google/protobuf/timestamp.proto"],
+    strip_import_prefix = "src",
+)
+
+proto_library(
+    name = "type_proto",
+    srcs = ["src/google/protobuf/type.proto"],
+    strip_import_prefix = "src",
+    deps = [
+        ":any_proto",
+        ":source_context_proto",
+    ],
+)
+
+proto_library(
+    name = "wrappers_proto",
+    srcs = ["src/google/protobuf/wrappers.proto"],
+    strip_import_prefix = "src",
+)
+
+proto_library(
+    name = "libprotobuf_well_known_protos",
+    deps = [
+        ":any_proto",
+        ":api_proto",
+        ":descriptor_proto",
+        ":duration_proto",
+        ":empty_proto",
+        ":field_mask_proto",
+        ":source_context_proto",
+        ":struct_proto",
+        ":timestamp_proto",
+        ":type_proto",
+        ":wrappers_proto",
+    ],
+)
 
 exports_files([
     "LICENSE",
@@ -266,14 +358,14 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GOOGLE_PROTOBUF_LOCAL_INCLUDES,
     deps = [
-        "@clickhouse_zlib_ng//:_zlib",
+        ":utf8_validity",
         "@clickhouse_abseil_cpp//:absl_die_if_null",
         "@clickhouse_abseil_cpp//:absl_flags_internal",
         "@clickhouse_abseil_cpp//:absl_flags_reflection",
         "@clickhouse_abseil_cpp//:absl_log_initialize",
         "@clickhouse_abseil_cpp//:absl_log_internal_check_op",
         "@clickhouse_abseil_cpp//:absl_statusor",
-        ":utf8_validity",
+        "@clickhouse_zlib_ng//:_zlib",
     ],
 )
 
@@ -447,6 +539,7 @@ ch_cc_library(
         "-w",
         "-std=c++17",
     ],
+    implementation_deps = ["@clickhouse_zlib_ng//:_zlib"],
     llvm_headers = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -454,7 +547,6 @@ ch_cc_library(
         "upb/reflection/cmake",
     ] + _GOOGLE_PROTOBUF_LOCAL_INCLUDES,
     deps = [] + ["@clickhouse_abseil_cpp//:abseil_cpp_headers"],
-    implementation_deps = ["@clickhouse_zlib_ng//:_zlib"],
 )
 
 ch_cc_library(
@@ -691,14 +783,16 @@ cc_binary(
         "-lpthread",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = (_GOOGLE_PROTOBUF_LOCAL_INCLUDES) + [".", "upb/reflection/cmake"],
+    local_includes = _GOOGLE_PROTOBUF_LOCAL_INCLUDES + [
+        ".",
+        "upb/reflection/cmake",
+    ],
     deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-        "@clickhouse_llvm_project//:clang_rt_xray",
-        "@clickhouse_llvm_project//:libllvmlibc",
         ":_libprotobuf",
         ":_libprotoc",
-        "@clickhouse_zlib_ng//:_zlib",
+        ":utf8_validity",
+        "@clickhouse//base/glibc-compatibility",
+        "@clickhouse_abseil_cpp//:abseil_cpp_headers",
         "@clickhouse_abseil_cpp//:absl_base",
         "@clickhouse_abseil_cpp//:absl_base_cpu_detect",
         "@clickhouse_abseil_cpp//:absl_city",
@@ -762,15 +856,16 @@ cc_binary(
         "@clickhouse_abseil_cpp//:absl_time",
         "@clickhouse_abseil_cpp//:absl_time_zone",
         "@clickhouse_abseil_cpp//:absl_vlog_config_internal",
+        "@clickhouse_llvm_project//:clang_rt_builtins",
+        "@clickhouse_llvm_project//:clang_rt_xray",
         "@clickhouse_llvm_project//:cxx",
         "@clickhouse_llvm_project//:cxxabi",
-        "@clickhouse//base/glibc-compatibility:glibc-compatibility",
+        "@clickhouse_llvm_project//:libllvmlibc",
         "@clickhouse_llvm_project//:unwind",
-        ":utf8_validity",
+        "@clickhouse_zlib_ng//:_zlib",
         "@llvm-project//compiler-rt:headers",
         "@llvm-project//libc:libc_headers",
         "@llvm-project//libunwind:headers",
-        "@clickhouse_abseil_cpp//:abseil_cpp_headers",
     ],
 )
 

@@ -57,12 +57,16 @@ def _llvm_runtime_objects_impl(ctx):
     for directory in ctx.attr.local_includes:
         include_dir = paths.join(ctx.label.workspace_root, ctx.label.package, directory)
         include_flags.extend(["-I", include_dir, "-I", paths.join(ctx.bin_dir.path, include_dir)])
+    system_flags = []
+    for directory in ctx.attr.system_includes:
+        include_dir = paths.join(ctx.label.workspace_root, ctx.label.package, directory)
+        system_flags.extend(["-isystem", include_dir])
     flags = [
         "--target=" + triple,
         "--sysroot=" + gcc_root + "/" + triple + "/libc",
         "--gcc-toolchain=" + gcc_root,
         _resource_dir(ctx, toolchain, features, action),
-    ] + ["-D" + define for define in ctx.attr.local_defines] + include_flags + copts
+    ] + ["-D" + define for define in ctx.attr.local_defines] + include_flags + copts + system_flags
     if ctx.attr._cmake_metadata[BuildSettingInfo].value and ctx.attr.reference_source_root:
         # These CMake groups lack -ffile-prefix-map. Their absolute __FILE__
         # strings are part of the executable and must use the recorded root.
@@ -103,6 +107,7 @@ llvm_runtime_objects = rule(
         "copts": attr.string_list(),
         "local_defines": attr.string_list(),
         "local_includes": attr.string_list(doc = "Private package-relative source and generated include directories."),
+        "system_includes": attr.string_list(doc = "Private package-relative LLVM source directories searched as system headers."),
         "language": attr.string(values = ["C", "CXX", "ASM"], mandatory = True),
         "arch": attr.string(values = ["x86_64", "aarch64"], mandatory = True),
         "reference_source_root": attr.string(),

@@ -102,6 +102,7 @@ CMake hash recorded below.
 | `68cb1a885` | Share Poco C compiler options and inherit generated and external headers | [3a860b85](https://app.buildbuddy.io/invocation/3a860b85-30d4-4e8c-a179-3be5c4daa7aa) | [cb9c0bab](https://app.buildbuddy.io/invocation/cb9c0bab-3a60-466d-b4c2-c2c621a51f5c) |
 | `ba14ec929` | Use source globs for Arrow, Parquet, Avro, cppkafka and other external libraries, preserving CMake archive order | [ede33140](https://app.buildbuddy.io/invocation/ede33140-b8f8-418c-8b1c-1264cd36beda) | [ff1d6800](https://app.buildbuddy.io/invocation/ff1d6800-9f0e-44db-9206-524a9c05e768) |
 | `7030218f2` (verification snapshot) | Replace raw include options with header dependencies across ClickHouse and external libraries; use protobuf 36.1 and the upstream Delta Cargo.lock | [990aaa99](https://app.buildbuddy.io/invocation/990aaa99-3fcd-4b07-97ab-ec7f82fbc252) | [09ba3815](https://app.buildbuddy.io/invocation/09ba3815-1d12-4485-a088-d5f9734a6a90) |
+| `af5de0992` (verification snapshot) | Use native C++ proto rules for all 65 Google Cloud protos and typed LLVM runtime includes, retaining protobuf archive order | [e1b2cf7a](https://app.buildbuddy.io/invocation/e1b2cf7a-8453-4e39-8f11-b03f7cf95366) | [3047e868](https://app.buildbuddy.io/invocation/3047e868-4a34-42a6-97ce-8931c754ddf7) |
 
 For these checks, `llvm-strip --strip-all --remove-section=.note.gnu.build-id`
 produced SHA-256 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`

@@ -422,7 +422,19 @@ CMAKE_LINK = {
     "//src/Functions/array:clickhouse_functions_array__compile_3",
     "//src/Functions/TimeSeries:clickhouse_functions_time_series",
     "//src/Functions/UniqTheta:clickhouse_functions_uniqtheta",
-    "//bazel:google_type_date_cc_proto"
+    "//bazel:google_type_date_cc_proto",
+    "//bazel:google_storage_v2_storage_cc_proto",
+    "//bazel:google_api_routing_cc_proto",
+    "//bazel:google_iam_v1_iam_policy_cc_proto",
+    "//bazel:google_api_client_cc_proto",
+    "//bazel:google_api_launch_stage_cc_proto",
+    "//bazel:google_api_field_behavior_cc_proto",
+    "//bazel:google_api_resource_cc_proto",
+    "//bazel:google_iam_v1_options_cc_proto",
+    "//bazel:google_iam_v1_policy_cc_proto",
+    "//bazel:google_api_annotations_cc_proto",
+    "//bazel:google_api_http_cc_proto",
+    "//bazel:google_type_expr_cc_proto"
   ],
   "expected_objects": [
     170,
@@ -643,19 +655,19 @@ CMAKE_LINK = {
     100,
     41,
     51,
-    2,
-    2,
-    2,
-    2,
-    2,
-    2,
-    2,
-    2,
-    2,
-    2,
-    2,
     1,
-    2,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
     1,
     25,
     216,
@@ -843,6 +855,18 @@ CMAKE_LINK = {
     2,
     1,
     20,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
     1,
     1
   ],
@@ -2212,47 +2236,47 @@ CMAKE_LINK = {
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_common.a"
     },
     {
-      "file": 218,
+      "objects": [[420, 0, 1], [218, 0, 1]],
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_storage_protos.a"
     },
     {
-      "file": 219,
+      "objects": [[421, 0, 1], [219, 0, 1]],
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_api_routing_protos.a"
     },
     {
-      "file": 220,
+      "objects": [[422, 0, 1], [220, 0, 1]],
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_iam_v1_iam_policy_protos.a"
     },
     {
-      "file": 221,
+      "objects": [[423, 0, 1], [221, 0, 1]],
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_api_client_protos.a"
     },
     {
-      "file": 222,
+      "objects": [[424, 0, 1], [222, 0, 1]],
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_api_launch_stage_protos.a"
     },
     {
-      "file": 223,
+      "objects": [[425, 0, 1], [223, 0, 1]],
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_api_field_behavior_protos.a"
     },
     {
-      "file": 224,
+      "objects": [[426, 0, 1], [224, 0, 1]],
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_api_resource_protos.a"
     },
     {
-      "file": 225,
+      "objects": [[427, 0, 1], [225, 0, 1]],
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_iam_v1_options_protos.a"
     },
     {
-      "file": 226,
+      "objects": [[428, 0, 1], [226, 0, 1]],
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_iam_v1_policy_protos.a"
     },
     {
-      "file": 227,
+      "objects": [[429, 0, 1], [227, 0, 1]],
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_api_annotations_protos.a"
     },
     {
-      "file": 228,
+      "objects": [[430, 0, 1], [228, 0, 1]],
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_api_http_protos.a"
     },
     {
@@ -2260,7 +2284,7 @@ CMAKE_LINK = {
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_type_date_protos.a"
     },
     {
-      "file": 230,
+      "objects": [[431, 0, 1], [230, 0, 1]],
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_type_expr_protos.a"
     },
     {
