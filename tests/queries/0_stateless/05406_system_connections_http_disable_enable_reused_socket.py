@@ -10,6 +10,7 @@
 
 import http.client
 import os
+import threading
 import urllib.parse
 import urllib.request
 
@@ -48,13 +49,29 @@ def set_collection(enabled):
 connection = http.client.HTTPConnection(CLICKHOUSE_HOST, CLICKHOUSE_PORT_HTTP, timeout=60)
 
 
-def keep_alive_query(sql, user, user_agent):
-    connection.request("POST", "/?" + urllib.parse.urlencode({"user": user}), body=sql, headers={"User-Agent": user_agent})
+def keep_alive_request(method, path, body=None, user_agent=""):
+    connection.request(method, path, body=body, headers={"User-Agent": user_agent})
     response = connection.getresponse()
     data = response.read().decode().strip()
     assert response.status == 200, (response.status, data)
     assert not response.will_close, "the server closed the keep-alive connection"
     return data
+
+
+def keep_alive_query(sql, user, user_agent):
+    return keep_alive_request("POST", "/?" + urllib.parse.urlencode({"user": user}), sql, user_agent)
+
+
+def set_collection_keeping_socket_alive(enabled):
+    # A reload can take longer than `keep_alive_timeout` on a slow build. Then the server closes the idle socket.
+    # Thus, send `/ping` on the socket until the reload ends. `/ping` does not change the registration of the connection.
+    result = {}
+    reload_thread = threading.Thread(target=lambda: result.update(value=set_collection(enabled)))
+    reload_thread.start()
+    while reload_thread.is_alive():
+        keep_alive_request("GET", "/ping")
+        reload_thread.join(timeout=1)
+    return result["value"]
 
 
 for name in (ALICE, BOB):
@@ -65,10 +82,10 @@ for name in (ALICE, BOB):
 try:
     connection_id = keep_alive_query(OWN_ID_QUERY, ALICE, "alice-agent")
 
-    print("--- collection disabled:", set_collection(False))
+    print("--- collection disabled:", set_collection_keeping_socket_alive(False))
     keep_alive_query("SELECT 1", BOB, "bob-agent")
 
-    print("--- collection enabled:", set_collection(True))
+    print("--- collection enabled:", set_collection_keeping_socket_alive(True))
     print(query(f"SELECT user = '{BOB}', client_name FROM system.connections WHERE connection_id = '{connection_id}'"))
     print("bob sees the connection:", query(f"SELECT count() FROM system.connections WHERE connection_id = '{connection_id}'", BOB))
     print("alice sees the connection:", query(f"SELECT count() FROM system.connections WHERE connection_id = '{connection_id}'", ALICE))
