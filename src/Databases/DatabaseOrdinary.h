@@ -162,6 +162,12 @@ protected:
     /// metadata scan and consumed by `restoreMetadataAfterConvertingToReplicated` at table startup.
     std::unordered_map<String, ASTPtr> lazy_replicated_create_queries TSA_GUARDED_BY(mutex);
 
+    /// The registrations of the disks defined inline with `disk(...)` that the metadata scan created. They keep the
+    /// disks registered until the tables are loaded and acquire their own registrations, because a table may refer
+    /// by name to a disk that another table defines (e.g. `disk(type = cache, disk = '<name>')`).
+    /// Released when the database is started up or its loading is stopped.
+    CustomDiskRegistrations custom_disk_registrations_of_metadata_scan TSA_GUARDED_BY(mutex);
+
 private:
     bool shouldLazyLoad(const ASTCreateQuery & query, const QualifiedTableName & name, LoadingStrictnessLevel mode) const;
     void loadTableLazy(
@@ -172,6 +178,7 @@ private:
 
     void convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name);
     void restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name);
+    void releaseCustomDiskRegistrationsOfMetadataScan();
     /// The flag lives in the table's data directory. Take the create query for a table that is not
     /// attached yet: the data path then comes from the UUID in the query, whereas the name overload
     /// resolves the path through the database's attached-table map.

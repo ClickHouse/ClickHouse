@@ -317,6 +317,11 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
         create_query,
         /* create_custom_disk = */ !database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables],
         custom_disk_registration);
+    if (custom_disk_registration)
+    {
+        std::lock_guard lock(mutex);
+        custom_disk_registrations_of_metadata_scan.push_back(std::move(custom_disk_registration));
+    }
     if (!policy)
         return;
 
@@ -908,11 +913,14 @@ LoadTaskPtr DatabaseOrdinary::startupDatabaseAsync(
         TablesLoaderBackgroundStartupPoolId,
         fmt::format("startup Ordinary database {}", getDatabaseName()),
         ignoreDependencyFailure,
-        [] (AsyncLoader &, const LoadJobPtr &)
+        [this] (AsyncLoader &, const LoadJobPtr &)
         {
-            // NOTE: this job is no-op, but it is required for correct dependency handling
+            // NOTE: this job is required for correct dependency handling
             // 1) startup should be done after tables loading
             // 2) load or startup errors for tables should not lead to not starting up the whole database
+
+            /// The tables are loaded, so they hold the registrations of their disks themselves.
+            releaseCustomDiskRegistrationsOfMetadataScan();
         });
     std::scoped_lock lock(mutex);
     return startup_database_task = makeLoadTask(async_loader, {job});
@@ -961,6 +969,19 @@ void DatabaseOrdinary::stopLoading()
     stop_startup_database.reset();
     stop_startup_table.clear();
     stop_load_table.clear();
+
+    releaseCustomDiskRegistrationsOfMetadataScan();
+}
+
+void DatabaseOrdinary::releaseCustomDiskRegistrationsOfMetadataScan()
+{
+    CustomDiskRegistrations registrations;
+    {
+        std::lock_guard lock(mutex);
+        registrations.swap(custom_disk_registrations_of_metadata_scan);
+    }
+    /// Destroying a registration may release a disk, which must not be done under `mutex`.
+    registrations.clear();
 }
 
 DatabaseTablesIteratorPtr DatabaseOrdinary::getTablesIterator(ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
