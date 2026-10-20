@@ -15,6 +15,7 @@ ch_cc_library(
         "//bazel:clickhouse_config_headers",
         "//bazel:clickhouse_grpc_headers",
         "//rust/workspace:pco_headers",
+        "//src/Common/Config:clickhouse_common_config",
     ],
     local_defines = select({
         "@platforms//cpu:x86_64": [],

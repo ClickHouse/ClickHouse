@@ -21,6 +21,7 @@ ch_cc_library(
         "//base/readpassphrase",
         "//base/poco/Util:_poco_util",
         "//src/Common",
+        "//src/Common/Config:clickhouse_common_config",
     ],
     link_runtime = True,
     local_defines = [

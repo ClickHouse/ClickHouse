@@ -16,6 +16,7 @@ ch_cc_library(
         "//bazel:arrow_flight_generated_headers",
         "//bazel:arrow_flatbuffer_headers",
         "@clickhouse_arrow//:arrow_headers",
+        "//src/Common/Config:clickhouse_common_config",
     ],
     link_runtime = True,
     local_defines = [

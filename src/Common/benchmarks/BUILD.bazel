@@ -90,7 +90,6 @@ ch_cc_library(
     clickhouse_code = True,
     implementation_deps = [
         "@clickhouse_google_benchmark//:google_benchmark",
-        "//bazel:clickhouse_config_headers",
         "//src/Functions:clickhouse_functions_obj__compile_0",
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
         "@clickhouse_llvm_project//:LLVMAnalysis",
@@ -154,11 +153,9 @@ ch_cc_library(
         "@clickhouse_jemalloc//:_jemalloc",
         "@clickhouse_openldap//:_ldap",
         "//contrib/lz4-cmake:_lz4",
-        "@clickhouse_arrow//:_orc",
         "@clickhouse_arrow//:_parquet",
         "//base/poco/XML:_poco_xml_expat",
         "@clickhouse_librdkafka//:_rdkafka",
-        "@clickhouse_croaring//:_roaring",
         "@clickhouse_silk//:_silk_fibers",
         "@clickhouse_vectorscan//:_vectorscan",
         "@clickhouse_zstd//:_zstd",
@@ -166,8 +163,6 @@ ch_cc_library(
         "//src/Access/Common:clickhouse_common_access",
         "//src/Common/Config:clickhouse_common_config",
         "//src/Common/ZooKeeper:clickhouse_common_zookeeper",
-        "//src/Common/ZooKeeper:clickhouse_common_zookeeper_base",
-        "//src/Compression:clickhouse_compression",
         "//base:common",
         "//src:dbms",
         "//base/glibc-compatibility",
@@ -206,8 +201,6 @@ ch_cc_library(
         "../../../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
         "../../../" + "bazel/gen",
     ],
-    deps = [
-    ],
     alwayslink = True,
 )
 
@@ -217,7 +210,6 @@ ch_cc_library(
     clickhouse_code = True,
     implementation_deps = [
         "@clickhouse_google_benchmark//:google_benchmark",
-        "//bazel:clickhouse_config_headers",
         "@clickhouse_llvm_project//:clang_rt_builtins",
         "//base/glibc-compatibility",
     ],
@@ -229,8 +221,7 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = [
-    ],
+    source_headers = False,
     alwayslink = True,
 )
 
@@ -425,7 +416,6 @@ ch_cc_library(
     clickhouse_code = True,
     implementation_deps = [
         "@clickhouse_google_benchmark//:google_benchmark",
-        "//bazel:clickhouse_config_headers",
         "//src/Common",
         "@clickhouse_aws//:_aws",
         "@clickhouse_boost//:_boost_context",
@@ -438,14 +428,11 @@ ch_cc_library(
         "//base:common",
         "//base/glibc-compatibility",
         "@clickhouse_cctz//:tzdata",
-        "@clickhouse_libbcrypt//:_bcrypt",
-        "@clickhouse_boost//:_boost_program_options",
-        "//contrib/consistent-hashing:_consistent_hashing",
+        "//base:base_headers",
     ],
     link_runtime = True,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    deps = [
-    ],
+    source_headers = False,
     alwayslink = True,
 )
 
@@ -551,7 +538,6 @@ ch_cc_library(
     clickhouse_code = True,
     implementation_deps = [
         "@clickhouse_google_benchmark//:google_benchmark",
-        "//bazel:clickhouse_config_headers",
         "@clickhouse_aws//:_aws",
         "@clickhouse_boost//:_boost_context",
         "@clickhouse_jemalloc//:_jemalloc",
@@ -563,9 +549,7 @@ ch_cc_library(
         "//base:common",
         "//base/glibc-compatibility",
         "@clickhouse_cctz//:tzdata",
-        "@clickhouse_libbcrypt//:_bcrypt",
-        "@clickhouse_boost//:_boost_program_options",
-        "//contrib/consistent-hashing:_consistent_hashing",
+        "//base:base_headers",
     ],
     link_runtime = True,
     local_defines = [
@@ -582,8 +566,7 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = [
-    ],
+    source_headers = False,
     alwayslink = True,
 )
 
@@ -593,7 +576,6 @@ ch_cc_library(
     clickhouse_code = True,
     implementation_deps = [
         "@clickhouse_google_benchmark//:google_benchmark",
-        "//bazel:clickhouse_config_headers",
         "//src/Common",
         "@clickhouse_aws//:_aws",
         "@clickhouse_boost//:_boost_context",
@@ -606,14 +588,10 @@ ch_cc_library(
         "//base:common",
         "//base/glibc-compatibility",
         "@clickhouse_cctz//:tzdata",
-        "@clickhouse_libbcrypt//:_bcrypt",
-        "@clickhouse_boost//:_boost_program_options",
-        "//contrib/consistent-hashing:_consistent_hashing",
     ],
     link_runtime = True,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    deps = [
-    ],
+    source_headers = False,
     alwayslink = True,
 )
 
@@ -623,7 +601,6 @@ ch_cc_library(
     clickhouse_code = True,
     implementation_deps = [
         "@clickhouse_google_benchmark//:google_benchmark",
-        "//bazel:clickhouse_config_headers",
         "//src/Functions:clickhouse_functions_obj__compile_0",
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
         "@clickhouse_llvm_project//:LLVMAnalysis",
@@ -687,11 +664,9 @@ ch_cc_library(
         "@clickhouse_jemalloc//:_jemalloc",
         "@clickhouse_openldap//:_ldap",
         "//contrib/lz4-cmake:_lz4",
-        "@clickhouse_arrow//:_orc",
         "@clickhouse_arrow//:_parquet",
         "//base/poco/XML:_poco_xml_expat",
         "@clickhouse_librdkafka//:_rdkafka",
-        "@clickhouse_croaring//:_roaring",
         "@clickhouse_silk//:_silk_fibers",
         "@clickhouse_vectorscan//:_vectorscan",
         "@clickhouse_zstd//:_zstd",
@@ -699,8 +674,6 @@ ch_cc_library(
         "//src/Access/Common:clickhouse_common_access",
         "//src/Common/Config:clickhouse_common_config",
         "//src/Common/ZooKeeper:clickhouse_common_zookeeper",
-        "//src/Common/ZooKeeper:clickhouse_common_zookeeper_base",
-        "//src/Compression:clickhouse_compression",
         "//base:common",
         "//src:dbms",
         "//base/glibc-compatibility",
@@ -738,8 +711,6 @@ ch_cc_library(
     local_includes = [
         "../../../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
         "../../../" + "bazel/gen",
-    ],
-    deps = [
     ],
     alwayslink = True,
 )

@@ -1477,7 +1477,10 @@ ch_cc_library(
     ] + select({
         "@platforms//cpu:x86_64": ["@clickhouse_libcpuid//:_cpuid"],
         "@platforms//cpu:aarch64": [],
-    }) + ["//base:common"],
+    }) + [
+        "//base:common",
+        "//src/Common/Config:clickhouse_common_config",
+    ],
     includes = ["."],
     local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
     source_headers = False,
@@ -2994,6 +2997,7 @@ ch_cc_library(
     deps = _GENERATED_DEPS_1 + [
         "@clickhouse_mongo_cxx_driver//:_bsoncxx",
         "@clickhouse_mongo_cxx_driver//:_mongocxx",
+        "//src/Common/Config:clickhouse_common_config",
     ],
 )
 

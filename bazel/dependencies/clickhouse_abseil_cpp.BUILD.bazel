@@ -180,9 +180,7 @@ ch_cc_library(
         ":absl_span",
         ":absl_strings",
     ],
-    implementation_deps = [
-        ":absl_debugging_internal",
-    ],
+    implementation_deps = [],
 )
 
 ch_cc_library(
@@ -919,7 +917,6 @@ ch_cc_library(
         ":absl_base_config",
     ],
     implementation_deps = [
-        ":absl_log_globals",
         ":absl_log_internal_globals",
         ":absl_time",
     ],
@@ -1085,7 +1082,6 @@ ch_cc_library(
     implementation_deps = [
         ":absl_examine_stack",
         ":absl_inlined_vector_internal",
-        ":absl_leak_check",
         ":absl_log_globals",
         ":absl_log_internal_format",
         ":absl_log_internal_globals",

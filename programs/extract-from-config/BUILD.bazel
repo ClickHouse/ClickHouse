@@ -11,6 +11,7 @@ ch_cc_library(
         "//base/poco/Util:_poco_util",
         "//src/Common",
         "//src/Common/ZooKeeper:clickhouse_common_zookeeper_base",
+        "//src/Common/Config:clickhouse_common_config",
     ],
     link_runtime = True,
     local_defines = select({
@@ -77,7 +78,5 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = ["."],
-    deps = [
-        "//src/Common/Config:clickhouse_common_config",
-    ],
+    source_headers = False,
 )

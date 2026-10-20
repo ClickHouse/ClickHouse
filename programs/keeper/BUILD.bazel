@@ -25,6 +25,7 @@ ch_cc_library(
         "//src/Common",
         "@clickhouse_fmtlib//:_fmt",
         "//src/Common/ZooKeeper:clickhouse_common_zookeeper_base",
+        "//src/Common/Config:clickhouse_common_config",
     ],
     link_runtime = True,
     local_defines = [

@@ -37,6 +37,7 @@ ch_cc_library(
         "//base/poco/Util:_poco_util",
         "//src/Common",
         "@clickhouse_fmtlib//:_fmt",
+        "//src/Common/Config:clickhouse_common_config",
     ],
     link_runtime = True,
     local_defines = [

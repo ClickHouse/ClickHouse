@@ -2747,7 +2747,6 @@ ch_cc_library(
         "third_party/upb/upb/mini_descriptor/internal/decoder.h",
         "third_party/upb/upb/mini_descriptor/internal/wire_constants.h",
         "third_party/upb/upb/wire/decode_fast/data.h",
-        "third_party/upb/upb/wire/decode_fast/function_array.h",
         "third_party/upb/upb/wire/decode_fast/select.h",
     ],
     copts = _GRPC_COPTS,

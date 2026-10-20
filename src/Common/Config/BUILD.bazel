@@ -17,9 +17,12 @@ ch_cc_library(
         "ConfigHelper.cpp",
         "parseConnectionCredentials.cpp",
     ],
+    hdrs = [
+        "ConfigProcessor.h",
+        "ConfigReloader.h",
+    ],
     clickhouse_code = True,
     implementation_deps = [
-        "//bazel:clickhouse_config_headers",
         "//rust/workspace:pco_headers",
         "//src/Common/ZooKeeper:clickhouse_common_zookeeper_base",
     ],
@@ -289,12 +292,23 @@ ch_cc_library(
         "@clickhouse_google_protobuf//:utf8_validity",
         "//base/widechar_width",
         "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
+        "//src/Common",
+        "//base/poco/Foundation:_poco_foundation",
+        "//base/poco/Util:_poco_util",
+        "//base/poco/XML:_poco_xml",
+        "//bazel:clickhouse_config_headers",
     ],
 )
 
 cc_library(
     name = "headers",
-    hdrs = glob(["**/*.h"]),
+    hdrs = glob(
+        ["**/*.h"],
+        exclude = [
+            "ConfigProcessor.h",
+            "ConfigReloader.h",
+        ],
+    ),
     deps = [
         "//base/poco/Util:_poco_util",
         "//base/poco/XML:_poco_xml",
