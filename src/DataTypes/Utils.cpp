@@ -1,4 +1,5 @@
 #include <DataTypes/Utils.h>
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -10,6 +11,30 @@
 
 namespace DB
 {
+
+namespace
+{
+
+/// The stored integer of a decimal is bounded by its native type, not by the declared precision.
+std::pair<Int256, Int256> decimalNativeRange(TypeIndex type)
+{
+    switch (type)
+    {
+        case TypeIndex::Decimal32:
+            return {std::numeric_limits<Int32>::min(), std::numeric_limits<Int32>::max()};
+        case TypeIndex::Decimal64:
+            return {std::numeric_limits<Int64>::min(), std::numeric_limits<Int64>::max()};
+        case TypeIndex::Decimal128:
+            return {std::numeric_limits<Int128>::min(), std::numeric_limits<Int128>::max()};
+        case TypeIndex::Decimal256:
+            return {std::numeric_limits<Int256>::min(), std::numeric_limits<Int256>::max()};
+        default:
+            break;
+    }
+    UNREACHABLE();
+}
+
+}
 
 bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
 {
@@ -104,7 +129,10 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
                 if (from_type_decimal_scale > to_type_decimal_scale)
                     return false;
 
-                return true;
+                auto [from_min, from_max] = decimalNativeRange(from_which_type.idx);
+                auto [to_min, to_max] = decimalNativeRange(to_which_type.idx);
+                Int256 multiplier = DecimalUtils::scaleMultiplier<Int256>(to_type_decimal_scale - from_type_decimal_scale);
+                return from_max <= to_max / multiplier && from_min >= to_min / multiplier;
             }
 
             if (to_which_type.isString())
