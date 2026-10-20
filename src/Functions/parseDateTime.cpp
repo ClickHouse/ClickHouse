@@ -912,12 +912,31 @@ namespace
                 return cur;
             }
 
+            template <size_t digits>
+            [[nodiscard]]
+            static VoidOrError checkDigits(Pos cur, Pos end, const String & fragment)
+            {
+                for (size_t i = 0; i < digits; ++i)
+                {
+                    if (cur[i] < '0' || cur[i] > '9') [[unlikely]]
+                        RETURN_ERROR(
+                            ErrorCodes::CANNOT_PARSE_DATETIME,
+                            "Unable to parse fragment {} from {} because {} digits are expected",
+                            fragment,
+                            std::string_view(cur, end - cur),
+                            digits)
+                }
+                return {};
+            }
+
             template <typename T, NeedCheckSpace need_check_space>
             [[nodiscard]]
-            static PosOrError readNumber2(Pos cur, Pos end, [[maybe_unused]] const String & fragment, T & res)
+            static PosOrError readNumber2(Pos cur, Pos end, const String & fragment, T & res)
             {
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
                     RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 2, "readNumber2 requires size >= 2", fragment))
+
+                RETURN_ERROR_IF_FAILED(checkDigits<2>(cur, end, fragment))
 
                 res = (*cur - '0');
                 ++cur;
@@ -942,10 +961,12 @@ namespace
 
             template <typename T, NeedCheckSpace need_check_space>
             [[nodiscard]]
-            static PosOrError readNumber3(Pos cur, Pos end, [[maybe_unused]] const String & fragment, T & res)
+            static PosOrError readNumber3(Pos cur, Pos end, const String & fragment, T & res)
             {
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
                     RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 3, "readNumber3 requires size >= 3", fragment))
+                RETURN_ERROR_IF_FAILED(checkDigits<3>(cur, end, fragment))
+
                 res = (*cur - '0');
                 ++cur;
                 res = res * 10 + (*cur - '0');
@@ -957,10 +978,12 @@ namespace
 
             template <typename T, NeedCheckSpace need_check_space>
             [[nodiscard]]
-            static PosOrError readNumber4(Pos cur, Pos end, [[maybe_unused]] const String & fragment, T & res)
+            static PosOrError readNumber4(Pos cur, Pos end, const String & fragment, T & res)
             {
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
                     RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 4, "readNumber4 requires size >= 4", fragment))
+
+                RETURN_ERROR_IF_FAILED(checkDigits<4>(cur, end, fragment))
 
                 res = (*cur - '0');
                 ++cur;
@@ -1158,6 +1181,14 @@ namespace
             static PosOrError mysqlDayOfMonthMandatorySpacePadding(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 2, "mysqlDayOfMonthMandatorySpacePadding requires size >= 2", fragment))
+
+                if ((cur[0] != ' ' && (cur[0] < '0' || cur[0] > '9'))
+                    || cur[1] < '0' || cur[1] > '9') [[unlikely]]
+                    RETURN_ERROR(
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                        "Unable to parse fragment {} from {} because a space-padded day of month must contain digits",
+                        fragment,
+                        std::string_view(cur, end - cur))
 
                 Int32 day_of_month = *cur == ' ' ? 0 : (*cur - '0');
                 ++cur;
