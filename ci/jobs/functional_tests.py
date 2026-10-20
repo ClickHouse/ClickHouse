@@ -2,12 +2,14 @@ import argparse
 import json
 import os
 import random
+import re
 import subprocess
 import traceback
 import zlib
 from collections.abc import Mapping
 from pathlib import Path
 
+from ci.jobs.ci_utils import SANITIZERS
 from ci.jobs.scripts.bugfix_validation import (
     bugfix_build_types,
     download_master_builds,
@@ -34,7 +36,6 @@ temp_dir = f"{Utils.cwd()}/ci/tmp"
 # a job parameter string ("amd_asan_ubsan, distributed plan, parallel"), or a
 # job name. Sanitizer builds get the tighter server memory cap (see the
 # `set_memory_ratio` logic in `main`).
-SANITIZERS = ("asan", "tsan", "msan", "ubsan")
 
 # Full stacktrace dumps `clickhouse-test` writes on an abort (hung check,
 # server died, per-test timeout). Names must match `SQL_STACKTRACES_LOG` and
@@ -597,6 +598,19 @@ def main():
             is_coverage_replacement_with_ci_script_changes = info.job_name in [
                 j.name for j in JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
             ]
+        if changed_files:
+            # A changed test data submodule is owned by the tests that read it:
+            # treat it as a change of their source files, so that a bump of the
+            # submodule runs only the batches containing these tests.
+            changed_files = [
+                expanded
+                for f in changed_files
+                for expanded in (
+                    Targeting.test_files_using_test_data_submodule(f)
+                    if Targeting.is_test_data_submodule(f)
+                    else [f]
+                )
+            ]
         if (
             changed_files
             and not is_coverage_replacement_with_ci_script_changes
@@ -750,9 +764,10 @@ def main():
         # hunt: the PR CI already ran the full flaky check, and this rerun only
         # needs to catch new tests broken by the current `master` state (e.g. a
         # setting randomization added to `tests/clickhouse-test` after the PR's
-        # last CI run). A randomized setting drawn with probability 0.4 per run
-        # escapes 20 iterations with probability 0.6^20 ~= 4e-5, so a reduced
-        # count keeps merge-queue latency bounded without losing the signal.
+        # last CI run), or new `master` tests broken by the PR. A randomized
+        # setting drawn with probability 0.4 per run escapes 20 iterations with
+        # probability 0.6^20 ~= 4e-5, so a reduced count keeps merge-queue
+        # latency bounded without losing the signal.
         rerun_count = 20
     elif is_flaky_check:
         # Large repeat count so the 45-min global_time_limit is the effective stopping
@@ -892,6 +907,8 @@ def main():
             if is_bugfix_validation and not is_labeled_bugfix_validation:
                 # Not a bugfix PR - run a simple sanity test
                 tests = ["00001_select_1"]
+            elif is_flaky_check and info.is_merge_queue_event:
+                tests = targeter.get_merge_queue_tests()
             elif is_flaky_check:
                 # Flaky check runs only changed/new test files in this PR.
                 # Previously failed and coverage-relevant tests are handled
@@ -995,6 +1012,51 @@ def main():
             else:
                 print("skip log export config for local run")
 
+        def job_may_run_test_file(test_file):
+            # Whether this job can select the stateless test `test_file` (the file name with
+            # extension): the same filters as `clickhouse-test` applies to the test list.
+            if tests and not any(re.search(t, test_file) for t in tests):
+                return False
+            is_sequential_test = Targeting.is_sequential_functional_test(test_file)
+            # Compare whole options: `--no-parallel` is a prefix of `--no-parallel-replicas`.
+            runner_option_list = runner_options.split()
+            if "--no-sequential" in runner_option_list and is_sequential_test:
+                return False
+            if "--no-parallel" in runner_option_list and not is_sequential_test:
+                return False
+            if (
+                batch_num
+                and total_batches
+                and not is_flaky_check
+                and not is_targeted_check
+                and zlib.crc32(test_file.encode("utf-8")) % total_batches
+                != batch_num - 1
+            ):
+                return False
+            return True
+
+        def checkout_test_data_submodules():
+            # Check out a test data submodule only if this job can run a test reading it,
+            # so that the other jobs do not depend on fetching it. The job runs as `root`
+            # in docker on a checkout owned by another user, hence `safe.directory`.
+            submodules = [
+                submodule
+                for submodule in Targeting.TEST_DATA_SUBMODULES
+                if any(
+                    job_may_run_test_file(Path(f).name)
+                    for f in Targeting.test_files_using_test_data_submodule(submodule)
+                )
+            ]
+            if not submodules:
+                print("No test of this job reads test data submodules")
+                return True
+            return Shell.check(
+                "git -c safe.directory='*' submodule update --init --depth 1 --single-branch -- "
+                + " ".join(submodules),
+                retries=3,
+                verbose=True,
+            )
+
         # Randomize the mark and uncompressed cache policy (cache_policy.xml) across LRU, SLRU
         # and SIEVE to exercise all eviction policies. SIEVE is only implemented for the
         # CacheBase-backed caches, so it is not applied to the filesystem cache (storage_conf,
@@ -1006,6 +1068,7 @@ def main():
         print(f"Using mark/uncompressed cache policy: {cache_policy}")
 
         commands = [
+            checkout_test_data_submodules,
             "rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/* /etc/clickhouse-server1/* /etc/clickhouse-server2/*",
             # google *.proto files
             "mkdir -p /usr/share/clickhouse/ && ln -sf /usr/local/include /usr/share/clickhouse/protos",
@@ -1208,6 +1271,7 @@ def main():
             Path(stale).unlink()
 
     test_result = None
+    test_run_completed = False
     if res and JobStages.TEST in stages:
         stop_watch_ = Utils.Stopwatch()
         step_name = "Tests"
@@ -1287,6 +1351,7 @@ def main():
             is_bugfix_validation=is_labeled_bugfix_validation,
             allow_no_tests=is_flaky_check or is_targeted_check,
         )
+        test_run_completed = ft_res_processor.run_completed
         if is_bugfix_validation:
             # The job name carries only the architecture, so a row is attributable
             # to a build type only through this label. Set before it is published.
@@ -1791,14 +1856,17 @@ def main():
             print(f"Removing pre-existing {merged_file}")
             os.unlink(merged_file)
 
-        # A missing test_result means the test stage never ran, and a runner-level
-        # ERROR means it terminated unexpectedly; either way the .profraw files
-        # understate coverage. FAIL is a completed run and still publishes.
-        if test_result is None or test_result.is_error():
+        # A missing test_result means the test stage never ran, and an incomplete
+        # run (unexpected termination, server death, kill by signal, early stop)
+        # leaves .profraw files that understate coverage. A completed run with
+        # failed tests still publishes. `test_result.status` is not enough here:
+        # aborts are reported as `FAIL`, and the check-errors aggregation can turn
+        # a runner-level `ERROR` into `FAIL`.
+        if test_result is None or not test_run_completed:
             _gate_reason = (
                 "the test stage did not run"
                 if test_result is None
-                else "the test runner terminated unexpectedly (runner-level ERROR)"
+                else "the test run did not complete"
             )
             print(
                 f"ERROR: {_gate_reason}, so this shard's coverage is incomplete; "
@@ -1850,6 +1918,10 @@ def main():
                 # unconditionally (even when tests fail) and visible in the CI report.
                 if os.path.exists(merged_file):
                     R.files.append(merged_file)
+                    # The job's goal is only to collect coverage: once the
+                    # profile of a completed run is published, failed tests do
+                    # not make the job fail. They stay visible in sub-results.
+                    reset_success = True
                 else:
                     print(f"ERROR: coverage merge produced no profile:\n{merge_output}")
 
@@ -1857,7 +1929,7 @@ def main():
             print("No usable .profraw files found for coverage")
 
     if reset_success:
-        # coverage job ignores test failures
+        # coverage jobs ignore test failures
         R.set_success()
 
     R.complete_job(do_not_block_pipeline_on_failure=force_ok_exit)

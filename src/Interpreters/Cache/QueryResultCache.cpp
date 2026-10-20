@@ -12,6 +12,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
@@ -58,6 +59,7 @@ namespace Setting
 {
     extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsBool extremes;
+    extern const SettingsString obfuscate_seed;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsQueryResultCacheNondeterministicFunctionHandling query_cache_nondeterministic_function_handling;
@@ -214,12 +216,114 @@ using HasSystemTablesVisitor = InDepthNodeVisitor<HasSystemTablesMatcher, true>;
 
 }
 
+/// Returns the context a (sub)query runs with after its query-level `SETTINGS` clause has been applied
+/// to `context`, as far as `obfuscate_seed` is concerned. Besides `obfuscate_seed` itself, the seed can
+/// be changed by `profile`, which applies all settings of a settings profile, so replay both - in the
+/// same way as `applyQueryLevelSettings` in `QueryTreeBuilder` does when it builds the context of the
+/// nested query: changes one at a time, each clamped to the settings constraints, then the resets.
+/// Returns `context` itself when the clause can not change the seed, to avoid copying the context.
+static ContextPtr applyObfuscateSeedChanges(const ASTPtr & settings_ast, const ContextPtr & context)
+{
+    const auto * set_query = settings_ast ? settings_ast->as<ASTSetQuery>() : nullptr;
+    if (!set_query)
+        return context;
+
+    auto affects_seed = [](const String & name) { return name == "obfuscate_seed" || name == "profile"; };
+
+    SettingsChanges changes;
+    for (const auto & change : set_query->changes)
+        if (affects_seed(change.name))
+            changes.push_back(change);
+
+    /// `SETTINGS name = DEFAULT` is stored separately.
+    std::vector<String> resets;
+    for (const auto & name : set_query->default_settings)
+        if (affects_seed(name))
+            resets.push_back(name);
+
+    if (changes.empty() && resets.empty())
+        return context;
+
+    auto updated_context = Context::createCopy(context);
+    for (const auto & change : changes)
+    {
+        SettingsChanges single_change{change};
+        updated_context->clampToSettingsConstraints(single_change, SettingSource::QUERY);
+        updated_context->applySettingsChanges(single_change);
+    }
+
+    if (!resets.empty())
+    {
+        SettingsChanges clamped_resets;
+        updated_context->clampSettingsConstraintsForSettingsReset(resets, clamped_resets, SettingSource::QUERY);
+        updated_context->resetSettingsToDefaultValue(resets);
+        updated_context->applySettingsChanges(clamped_resets);
+    }
+
+    return updated_context;
+}
+
+/// The `obfuscate` table function with an empty seed derives a fresh random seed per execution
+/// (see `ObfuscateStep`), so its result is non-deterministic and must not be cached. A non-empty
+/// `obfuscate_seed` makes the output reproducible and therefore cacheable. The setting can be
+/// overridden by the SETTINGS clause of any enclosing (sub)query, and that override is what the
+/// table function effectively runs with, so track the effective value while descending into the AST.
+static bool hasNonDeterministicObfuscate(const ASTPtr & node, ContextPtr context)
+{
+    if (!node)
+        return false;
+
+    /// A query-level `SETTINGS` clause governs the whole (sub)query it belongs to, including the
+    /// parts of the AST that syntactically precede it, so it has to be applied before descending
+    /// into the children. There are three places that can carry it:
+    ///  - `ASTQueryWithOutput::settings_ast` - the top-level query, including the form after `FORMAT`;
+    ///  - `ASTSelectQuery::settings()` - a plain `SELECT`;
+    ///  - the *last* arm of a `UNION` - in every nested position the parser leaves a trailing
+    ///    union-level clause there instead of filling `settings_ast`. After
+    ///    `SelectIntersectExceptQueryVisitor` has normalized the arms, the same carrier is the last
+    ///    operand of an `ASTSelectIntersectExceptQuery`.
+    if (const auto * query_with_output = node->as<ASTQueryWithOutput>())
+        context = applyObfuscateSeedChanges(query_with_output->settings_ast, context);
+
+    if (const auto * select_with_union = node->as<ASTSelectWithUnionQuery>())
+    {
+        const auto & arms = select_with_union->list_of_selects->children;
+        if (!arms.empty())
+            if (const auto * last_arm = arms.back()->as<ASTSelectQuery>())
+                context = applyObfuscateSeedChanges(last_arm->settings(), context);
+    }
+
+    /// Check the intersect/except node before the plain-select check: it inherits `ASTSelectQuery`,
+    /// but its query-level clause lives on its last operand, not on the node itself.
+    if (const auto * intersect_except = node->as<ASTSelectIntersectExceptQuery>())
+    {
+        const auto & operands = intersect_except->children;
+        if (!operands.empty())
+            if (const auto * last_operand = operands.back()->as<ASTSelectQuery>())
+                context = applyObfuscateSeedChanges(last_operand->settings(), context);
+    }
+
+    if (const auto * select = node->as<ASTSelectQuery>())
+        context = applyObfuscateSeedChanges(select->settings(), context);
+
+    if (const auto * function = node->as<ASTFunction>())
+        if (function->name == "obfuscate" && context->getSettingsRef()[Setting::obfuscate_seed].value.empty())
+            return true;
+
+    for (const auto & child : node->children)
+        if (hasNonDeterministicObfuscate(child, context))
+            return true;
+
+    return false;
+}
+
 /// Does AST contain non-deterministic functions like rand() and now()?
 static bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
 {
     HasNonDeterministicFunctionsMatcher::Data finder_data{context};
     HasNonDeterministicFunctionsVisitor(finder_data).visit(ast);
-    return finder_data.has_non_deterministic_functions;
+    return finder_data.has_non_deterministic_functions
+        || hasNonDeterministicObfuscate(ast, context);
 }
 
 /// Does AST contain system tables like "system.processes"?
@@ -343,6 +447,12 @@ public:
             };
 
             std::erase_if(set_clause->changes, is_query_cache_related_setting);
+
+            /// `SETTINGS x = DEFAULT` resets are stored separately in `default_settings`, but a reset
+            /// can target a query-cache-related setting just as well (e.g. `query_cache_ttl = DEFAULT`,
+            /// `log_comment = DEFAULT`). Normalize them with the same predicate, otherwise the reset would
+            /// keep a non-empty SETTINGS clause and hash differently from the equivalent query without it.
+            std::erase_if(set_clause->default_settings, [](const String & name) { return isSettingIgnoredInQueryResultCache(name); });
         };
 
         if (auto * select_clause = ast->as<ASTSelectQuery>())
@@ -357,7 +467,10 @@ public:
                 /// E.g. SELECT 1 SETTINGS use_query_cache = true
                 /// and SET use_query_cache = true; SELECT 1;
                 /// will match.
-                if (set_clause->changes.empty())
+                /// `default_settings` (i.e. `SETTINGS x = DEFAULT`) is normalized above too, so any reset
+                /// that survives targets a setting which does affect the result and must remain part of the
+                /// cache key (see `ASTSetQuery::updateTreeHashImpl`).
+                if (set_clause->changes.empty() && set_clause->default_settings.empty() && set_clause->query_parameters.empty())
                     select_clause->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
             }
         }
@@ -724,6 +837,11 @@ void QueryResultCacheWriter::buffer(Chunk && chunk, ChunkType chunk_type)
     }
 }
 
+void QueryResultCacheWriter::markResultIncomplete()
+{
+    result_is_incomplete = true;
+}
+
 void QueryResultCacheWriter::finalizeWrite()
 {
     if (skip_insert)
@@ -740,6 +858,12 @@ void QueryResultCacheWriter::finalizeWrite()
     std::lock_guard lock(mutex);
 
     /// Check some reasons why the entry must not be cached:
+
+    if (result_is_incomplete)
+    {
+        LOG_TRACE(logger, "Skipped insert because the query result is incomplete (a consumer stopped reading it before the end), query: {}", doubleQuoteString(key.query_string));
+        return;
+    }
 
     if (auto query_runtime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - query_start_time); query_runtime < min_query_runtime)
     {
