@@ -10,10 +10,9 @@
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
+#include <Storages/MergeTree/WhatIfSampling.h>
 
 #include <Columns/ColumnSparse.h>
-#include <Common/HashTable/Hash.h>
-#include <Common/SipHash.h>
 #include <Common/Stopwatch.h>
 #include <Core/Settings.h>
 
@@ -72,10 +71,7 @@ size_t countWindows(const MarkRanges & windows, size_t granularity)
     return count;
 }
 
-/// fewer sampled windows can't give an error estimate
-constexpr size_t min_sampled_windows = 30;
-
-/// all windows, or one from every run of `step` at a hashed position, as the projection estimate picks granules
+/// all windows, or a sample of them as the projection estimate takes granules
 /// the same `GRANULARITY` gives every candidate the same windows
 MarkRanges windowsToScan(const MarkRanges & windows, size_t granularity, size_t step, const String & part_name)
 {
@@ -87,11 +83,10 @@ MarkRanges windowsToScan(const MarkRanges & windows, size_t granularity, size_t 
         for (size_t begin = range.begin; begin < range.end; begin += granularity)
             each.emplace_back(begin, std::min(begin + granularity, range.end));
 
-    const UInt64 seed = sipHash64(part_name);
     MarkRanges ranges;
-    for (size_t first = 0; first < each.size(); first += step)
+    for (size_t index : sampleUnits(each.size(), step, part_name))
     {
-        const auto & window = each[first + intHash64(seed ^ first) % std::min(step, each.size() - first)];
+        const auto & window = each[index];
         if (!ranges.empty() && ranges.back().end == window.begin)
             ranges.back().end = window.end;
         else
@@ -163,13 +158,7 @@ bool tryEstimateEmpirical(
         windows_to_scan += part_windows[i];
     }
     const UInt64 read_limit = limit_settings[Setting::max_rows_to_read];
-    UInt64 budget = index_scan_budget_rows;
-    if (read_limit != 0)
-        budget = budget == 0 ? read_limit : std::min(budget, read_limit);
-    size_t step = budget != 0 && rows_to_scan > budget ? (rows_to_scan + budget - 1) / budget : 1;
-    /// the largest step that still samples `min_sampled_windows`
-    if (step > 1)
-        step = std::min<size_t>(step, std::max<size_t>(1, (windows_to_scan - 1) / (min_sampled_windows - 1)));
+    const size_t step = samplingStep(rows_to_scan, windows_to_scan, index_scan_budget_rows, read_limit);
 
     bool sampled = false;
     std::vector<bool> part_sampled(saved_parts.size());
@@ -187,7 +176,7 @@ bool tryEstimateEmpirical(
             "The estimate would read {} rows, over max_rows_to_read = {} (a sample keeps at least ~{} index windows and one per part)",
             rows_planned,
             read_limit,
-            min_sampled_windows);
+            min_sampled_units);
         return false;
     }
     /// the windows out of the sample are unknown, so the caller does not combine this candidate
@@ -199,7 +188,7 @@ bool tryEstimateEmpirical(
     UInt64 sampled_part_marks = 0;
     size_t sampled_part_windows = 0;
     UInt64 baseline_marks = 0;
-    std::vector<UInt8> window_survives;
+    std::vector<double> window_survives;
 
     /// Position of the next baseline mark, gives every candidate's bitmap the same coordinates
     size_t baseline_mark_pos = 0;
@@ -428,14 +417,9 @@ bool tryEstimateEmpirical(
     double spread = 2.0 * static_cast<double>(step) * window_marks;
     if (window_survives.size() > 1)
     {
-        /// with 0/1 shares the sum of squared differences is the number of changes
-        size_t changes = 0;
-        for (size_t i = 1; i < window_survives.size(); ++i)
-            changes += window_survives[i] != window_survives[i - 1];
-        const double count = static_cast<double>(window_survives.size());
-        /// a sample with no change has no spread, so take the rule of three: the other outcome is under 3 in `count`
-        const double standard_error
-            = changes != 0 ? std::sqrt(static_cast<double>(changes) / (2.0 * count * (count - 1.0))) : 1.5 / count;
+        /// a sample with no change has no spread, so take the rule of three: the other outcome is under 3 in the count
+        const double sample_error = standardErrorOfSample(window_survives);
+        const double standard_error = sample_error != 0 ? sample_error : 1.5 / static_cast<double>(window_survives.size());
         spread += 2.0 * standard_error * static_cast<double>(sampled_part_marks);
     }
 
