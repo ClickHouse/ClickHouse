@@ -4,6 +4,8 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Types.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/HTTPHeaderEntries.h>
+#include <Interpreters/Context_fwd.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <memory>
@@ -29,12 +31,25 @@ private:
     const char * className() const noexcept override { return "DB::AIProviderHTTPException"; }
 };
 
+/// Extra info sent with each request. Useful for debugging.
+struct AIRequest
+{
+    /// Name of the AI SQL function that produced this request, e.g. "aiGenerate".
+    String function_name;
+
+    /// The current query id. Different on different shards of a distributed query.
+    String query_id;
+
+    /// The initial query id. Same on all shards of a distributed query, empty for a background mutation.
+    String initial_query_id;
+};
+
 /** Parameters for a single AI chat completion request.
   *
-  * Each row processed by an AI function produces one AIRequest.
+  * Each row processed by an AI chat function produces one AIChatRequest.
   * The provider serializes it into the HTTP body format expected by the API.
   */
-struct AIRequest
+struct AIChatRequest : AIRequest
 {
     /// Constant instruction that guides the model's behavior (persona, format, constraints).
     /// Sent as a system message (OpenAI) or top-level field (Anthropic).
@@ -61,10 +76,6 @@ struct AIRequest
 
     /// Maximum number of tokens the model may generate in its response. This is a per-request limit, not a per-query limit.
     UInt64 max_tokens = 0;
-
-    /// SQL name of the AI function that produced this request (e.g. "aiGenerate").
-    /// Emitted by OpenAIProvider as the `X-ClickHouse-AI-Function` header; ignored by other providers.
-    String function_name;
 };
 
 /// Canonical, provider-independent reason the model stopped generating. Each provider maps its
@@ -102,7 +113,7 @@ struct AIResponse
   * Embedding APIs typically accept multiple inputs per call, so inputs is a vector.
   * The provider serializes it into the HTTP body format expected by the API.
   */
-struct AIEmbeddingRequest
+struct AIEmbeddingRequest : AIRequest
 {
     /// Texts to embed. Providers send these in a single batched HTTP request.
     VectorWithMemoryTracking<String> inputs;
@@ -113,10 +124,6 @@ struct AIEmbeddingRequest
     /// Optional target dimensionality for the output vectors. 0 means use the model's native size.
     /// Supported by OpenAI's `text-embedding-3-*` models; providers that ignore it return the native size.
     UInt64 dimensions = 0;
-
-    /// SQL name of the AI function that produced this request (e.g. "aiEmbed").
-    /// Emitted by OpenAIProvider as the `X-ClickHouse-AI-Function` header; ignored by other providers.
-    String function_name;
 };
 
 /// Response from a single embedding request. `embeddings` is aligned 1:1 with `AIEmbeddingRequest::inputs`.
@@ -142,7 +149,10 @@ public:
 
     /// Send a chat completion request. Replaces the contents of `response`, filling the token counts
     /// before the payload is validated: so a failed request can still update token counts.
-    virtual void call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response) = 0;
+    virtual void call(const AIChatRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response) = 0;
+
+    /// Provider-specific headers (credentials, API version) sent with every request.
+    virtual HTTPHeaderEntries getHeaders() const = 0;
 
     /// Whether this provider exposes an embeddings endpoint.
     virtual bool supportsEmbeddings() const { return false; }
@@ -155,13 +165,16 @@ public:
 
 using AIProviderPtr = std::unique_ptr<IAIProvider>;
 
-AIProviderPtr createAIProvider(const String & provider_name, const String & endpoint, const String & api_key, const String & api_version);
+/// Also validates the provider's headers with `HTTPHeaderFilter`.
+AIProviderPtr createAIProvider(
+    const ContextPtr & context,
+    const String & provider_name, const String & endpoint, const String & api_key, const String & api_version);
 
 /// Build an error message from a provider's non-200 HTTP response, for use in an exception that is logged.
 String formatProviderError(int status_code, const String & response_body);
 
-/// Replace control characters (including `\t \n \r`) with spaces so provider-controlled text cannot
-/// forge log lines or corrupt a terminal when embedded in a logged exception.
-String sanitizeForLog(std::string_view input);
+/// Replace control characters (including `\t \n \r`) with spaces.
+/// Needed to block provider-controlled text from forging log lines or corrupt a terminal when embedded in a logged exception.
+String sanitize(std::string_view input);
 
 }
