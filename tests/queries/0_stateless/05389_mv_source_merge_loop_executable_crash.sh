@@ -24,9 +24,12 @@ DROP TABLE IF EXISTS buf;
 DROP TABLE IF EXISTS dist;
 DROP TABLE IF EXISTS dist_target;
 DROP TABLE IF EXISTS src;
+DROP TABLE IF EXISTS src_dup;
 
 CREATE TABLE src (x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO src SELECT number + 100 FROM numbers(10);
+CREATE TABLE src_dup (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO src_dup SELECT number + 100 FROM numbers(10);
 
 CREATE TABLE dist_target (x UInt64) ENGINE = MergeTree ORDER BY x;
 CREATE TABLE dist AS dist_target ENGINE = Distributed(test_shard_localhost, ${CLICKHOUSE_DATABASE}, dist_target);
@@ -42,29 +45,31 @@ CREATE MATERIALIZED VIEW mv_merge TO dst AS
     FROM src;
 
 -- The NOT IN subquery is part of the view query, so it reads the inserted block even inside the 'merge' child,
--- also when 'src' is not its leftmost table.
+-- also when 'src' is not its leftmost table. It maps the inserted rows onto three rows of the table: the block
+-- keeps 7 rows, the table 0, and no predicate 10.
 CREATE MATERIALIZED VIEW mv_merge_not_in TO dst AS
     SELECT 'merge_not_in' AS name, count() AS block_rows,
         (SELECT count() FROM merge(${CLICKHOUSE_DATABASE}, '^(src|dist)\$')
-         WHERE x >= 100 AND x NOT IN (SELECT n.number FROM numbers(200) AS n JOIN src AS s ON n.number = s.x)) AS value
+         WHERE x >= 100 AND x NOT IN (SELECT n.number + 100 * (s.x < 100) FROM numbers(200) AS n JOIN src AS s ON n.number = s.x)) AS value
     FROM src;
 
--- So does a table on the right of NOT IN.
+-- So does a table on the right of NOT IN. 'src_dup' gets three rows it already has: the block keeps 7 rows, the
+-- table 0, and no predicate 10 or 13.
 CREATE MATERIALIZED VIEW mv_merge_not_in_table TO dst AS
     SELECT 'merge_not_in_table' AS name, count() AS block_rows,
-        (SELECT count() FROM merge(${CLICKHOUSE_DATABASE}, '^(src|dist)\$') WHERE x >= 100 AND x NOT IN src) AS value
-    FROM src;
+        (SELECT count() FROM merge(${CLICKHOUSE_DATABASE}, '^(src_dup|dist)\$') WHERE x >= 100 AND x NOT IN src_dup) AS value
+    FROM src_dup;
 
 -- So does NOT IN over a 'Buffer', whose blocks are planned again for 'dist'.
 CREATE MATERIALIZED VIEW mv_buffer_not_in TO dst AS
     SELECT 'buffer_not_in' AS name, count() AS block_rows,
-        (SELECT count() FROM buf WHERE x NOT IN (SELECT x FROM src)) AS value
+        (SELECT count() FROM buf WHERE x NOT IN (SELECT x + 100 * (x < 100) FROM src)) AS value
     FROM src;
 
 CREATE MATERIALIZED VIEW mv_buffer_not_in_table TO dst AS
     SELECT 'buffer_not_in_table' AS name, count() AS block_rows,
-        (SELECT count() FROM buf WHERE x NOT IN src) AS value
-    FROM src;
+        (SELECT count() FROM buf WHERE x NOT IN src_dup) AS value
+    FROM src_dup;
 
 CREATE MATERIALIZED VIEW mv_loop TO dst AS
     SELECT 'loop' AS name, count() AS block_rows,
@@ -72,6 +77,7 @@ CREATE MATERIALIZED VIEW mv_loop TO dst AS
     FROM src;
 
 INSERT INTO src VALUES (1), (2), (3);
+INSERT INTO src_dup VALUES (101), (102), (103);
 
 SELECT * FROM dst ORDER BY name;
 
@@ -86,6 +92,7 @@ DROP TABLE buf;
 DROP TABLE dist;
 DROP TABLE dist_target;
 DROP TABLE src;
+DROP TABLE src_dup;
 "
 
 # The input query of `executable` needs `user_scripts_path`, which is a server config option.
@@ -122,7 +129,7 @@ CREATE MATERIALIZED VIEW db_05389.mv_executable TO db_05389.dst AS
 CREATE MATERIALIZED VIEW db_05389.mv_executable_in TO db_05389.dst AS
     SELECT 'executable_in' AS name, count() AS block_rows,
         (SELECT sum(x) FROM executable('echo_rows.sh', 'TSV', 'x UInt64',
-            (SELECT x FROM db_05389.src WHERE x >= 100 AND x IN (SELECT x FROM db_05389.src)))) AS value
+            (SELECT x FROM db_05389.src WHERE x >= 100 AND x IN (SELECT x FROM db_05389.src WHERE x < 105)))) AS value
     FROM db_05389.src;
 
 CREATE MATERIALIZED VIEW db_05389.mv_executable_scalar TO db_05389.dst AS
@@ -181,7 +188,7 @@ CREATE MATERIALIZED VIEW db_05389.rmv_read REFRESH EVERY 1 YEAR APPEND TO db_053
     FROM db_05389.src
     UNION ALL
     SELECT 'executable_in', count(), (SELECT sum(x) FROM executable('echo_rows.sh', 'TSV', 'x UInt64',
-        (SELECT x FROM db_05389.src WHERE x >= 100 AND x IN (SELECT x FROM db_05389.src))))
+        (SELECT x FROM db_05389.src WHERE x >= 100 AND x IN (SELECT x FROM db_05389.src WHERE x < 105))))
     FROM db_05389.src
     UNION ALL
     SELECT 'executable_scalar', count(), (SELECT sum(x) FROM executable('echo_rows.sh', 'TSV', 'x UInt64',
