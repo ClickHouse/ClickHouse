@@ -53,15 +53,7 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = [
-        "@clickhouse_boost//:boost_headers",
-        "@clickhouse_fmtlib//:_fmt",
-        "//base/poco/Foundation:_poco_foundation",
-        "@clickhouse_magic_enum//:magic_enum",
-        "//contrib/cityhash102:headers",
-        ":base_headers",
-        "//base/poco/Util:poco_util_headers",
-    ],
+    deps = ["//base/poco/Foundation:_poco_foundation"],
 )
 
 ch_cc_library(

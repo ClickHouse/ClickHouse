@@ -37,10 +37,7 @@ ch_cc_library(
         "../../" + (llvm_toolchain_path() + "/compiler-rt/include"),
         "../../" + (repository_path("contrib/llvm-project") + "/libcxxabi/include"),
     ],
-    deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-        "//base/glibc-compatibility:glibc-compatibility",
-    ],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )
 
 cc_library(

@@ -333,7 +333,6 @@ cc_library(
         "//base/poco/Util:_poco_util",
         ":_poco_net_ssl__compile_0",
         ":_poco_net_ssl__compile_1",
-        ":poco_net_ssl_headers",
     ],
 )
 
@@ -343,7 +342,6 @@ cc_library(
     includes = ["include"],
     deps = [
         "//contrib/openssl-cmake:openssl_cmake_headers",
-        "//base/poco/Foundation:poco_foundation_headers",
         "//base/poco/Net:poco_net_headers",
         "//base/poco/Util:poco_util_headers",
     ],

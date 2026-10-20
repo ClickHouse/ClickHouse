@@ -34,10 +34,6 @@ ch_cc_library(
     deps = [
         "//base/poco/XML:_poco_xml",
         ":poco_util_headers",
-        "//base/poco/Foundation:headers",
-        "//base/poco/JSON:headers",
-        "//base/poco/Net:headers",
-        "//base/poco/XML:headers",
     ],
 )
 
@@ -46,7 +42,6 @@ cc_library(
     hdrs = glob(["include/**/*.h"]),
     includes = ["include"],
     deps = [
-        "//base/poco/Foundation:poco_foundation_headers",
         "//base/poco/JSON:poco_json_headers",
         "//base/poco/XML:poco_xml_headers",
     ],
