@@ -129,7 +129,8 @@ static NO_INLINE size_t getStackSize(void ** out_address)
     throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Frame address is greater than stack begin address");
 }
 
-/// The stack and frame addresses are not printed: the message reaches the client and system tables.
+/// The message is sent to the client, so it does not contain the addresses of the stack and the frame,
+/// to not disclose the layout of the address space of the server.
 [[noreturn]] [[gnu::cold]] NO_INLINE static void throwTooDeepRecursion(size_t used_stack_size, size_t total_stack_size)
 {
     throw DB::Exception(DB::ErrorCodes::TOO_DEEP_RECURSION,

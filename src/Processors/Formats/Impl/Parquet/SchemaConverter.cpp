@@ -1397,12 +1397,12 @@ void SchemaConverter::processPrimitiveColumn(
         return get_output_type_index() == TypeIndex::String;
     };
 
-    auto set_plain_int64_decoder = [&]
+    auto set_plain_int64_decoder = [&](bool allow_datetime_and_ipv4)
     {
         out_inferred_type = std::make_shared<DataTypeInt64>();
         auto converter = std::make_shared<IntConverter>();
         converter->input_size = 8;
-        out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);
+        out_decoder.allow_stats = dispatch_int_stats_converter(allow_datetime_and_ipv4, *converter);
         out_decoder.allow_hash_filters = allow_int_hash_filters(64, true, 64);
         out_decoder.fixed_size_converter = std::move(converter);
     };
@@ -1571,7 +1571,7 @@ void SchemaConverter::processPrimitiveColumn(
 
         if (time_as_stored_integer && is_time_of_day && scale == 6 && type == parq::Type::INT64)
         {
-            set_plain_int64_decoder();
+            set_plain_int64_decoder(/*allow_datetime_and_ipv4=*/ false);
             return;
         }
 
@@ -1922,7 +1922,7 @@ void SchemaConverter::processPrimitiveColumn(
         }
         case parq::Type::INT64:
         {
-            set_plain_int64_decoder();
+            set_plain_int64_decoder(/*allow_datetime_and_ipv4=*/ true);
             return;
         }
         case parq::Type::INT96:
