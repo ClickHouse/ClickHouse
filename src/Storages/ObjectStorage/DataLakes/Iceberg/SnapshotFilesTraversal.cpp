@@ -35,7 +35,8 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
     ContextPtr context,
     LoggerPtr log,
     Int32 current_schema_id,
-    ExternalStorageCache & external_storages)
+    ExternalStorageCache & external_storages,
+    bool include_deleted_entries)
 {
     SnapshotReferencedFiles files;
 
@@ -66,6 +67,18 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
                 files.data_file_paths.insert(entry->parsed_entry->file_path_key);
             for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE))
                 files.data_file_paths.insert(entry->parsed_entry->file_path_key);
+
+            if (include_deleted_entries)
+            {
+                const auto manifest = getManifestFile(
+                    object_storage, persistent_table_components, context, log, manifest_entry.manifest_file_path, external_storages);
+                for (size_t row = 0; row < manifest.deserializer->rows(); ++row)
+                {
+                    auto entry = manifest.deserializer->getParsedManifestFileEntry(row);
+                    if (entry->status == ManifestEntryStatus::DELETED)
+                        files.data_file_paths.insert(entry->file_path_key);
+                }
+            }
         }
     }
 
@@ -288,7 +301,8 @@ ReachableFilesResult collectReachableFiles(
     const std::shared_ptr<DataLake::ICatalog> & catalog,
     const String & table_identifier,
     bool scan_metadata_log_history,
-    bool ignore_explicit_metadata_file_path)
+    bool ignore_explicit_metadata_file_path,
+    bool include_deleted_entries)
 {
     /// A higher metadata version may be uncommitted; follow the catalog head.
     auto [version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
@@ -345,7 +359,7 @@ ReachableFilesResult collectReachableFiles(
     if (snapshots && snapshots->size() > 0)
         snapshot_files = collectSnapshotReferencedFiles(
             snapshots, object_storage, persistent_table_components, context, log,
-            metadata->getValue<Int32>(f_current_schema_id), external_storages);
+            metadata->getValue<Int32>(f_current_schema_id), external_storages, include_deleted_entries);
 
     if (scan_metadata_log_history)
     {

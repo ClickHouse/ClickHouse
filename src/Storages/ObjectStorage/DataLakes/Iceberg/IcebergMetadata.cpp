@@ -1775,20 +1775,20 @@ SinkToStoragePtr IcebergMetadata::write(
     }
 }
 
-std::vector<Iceberg::ExternalFile> IcebergMetadata::collectExternalFilesToDeleteOnDrop(ContextPtr context) const
+std::vector<Iceberg::ExternalFile> IcebergMetadata::collectExternalFilesToDeleteOnDrop(ContextPtr context, bool include_deleted_entries) const
 {
     /// `drop` runs after the catalog entry is removed, so use the configured metadata head, not an uncommitted higher version.
     return Iceberg::collectReachableFiles(
         object_storage, persistent_components, data_lake_settings, context, log, *external_storages,
         /* catalog */ nullptr, /* table_identifier */ "", /* scan_metadata_log_history */ false,
-        /* ignore_explicit_metadata_file_path */ false).external_files;
+        /* ignore_explicit_metadata_file_path */ false, include_deleted_entries).external_files;
 }
 
 std::vector<Iceberg::ExternalFile> IcebergMetadata::tryCollectExternalFilesToDeleteOnDrop(ContextPtr context) const
 {
     try
     {
-        return collectExternalFilesToDeleteOnDrop(context);
+        return collectExternalFilesToDeleteOnDrop(context, /* include_deleted_entries */ false);
     }
     catch (const Exception & e)
     {
@@ -1824,8 +1824,9 @@ void IcebergMetadata::checkCanBeDropped(ContextPtr query_context, bool catalog_p
 
     /// The catalog purges even the files that cannot be enumerated here, so their check must fail the `DROP`.
     const auto global_context = Context::getGlobalContextInstance();
-    const auto external_files = catalog_purges_files ? collectExternalFilesToDeleteOnDrop(global_context)
-                                                     : tryCollectExternalFilesToDeleteOnDrop(global_context);
+    const auto external_files = catalog_purges_files
+        ? collectExternalFilesToDeleteOnDrop(global_context, /* include_deleted_entries */ true)
+        : tryCollectExternalFilesToDeleteOnDrop(global_context);
 
     std::unordered_set<String> authorized;
     for (const auto & file : external_files)

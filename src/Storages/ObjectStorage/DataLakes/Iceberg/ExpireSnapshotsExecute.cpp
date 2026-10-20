@@ -396,7 +396,8 @@ SnapshotReferencedFiles collectRetainedFiles(
     ExternalStorageCache & external_storages)
 {
     auto referenced = collectSnapshotReferencedFiles(
-        retained_snapshots, object_storage, persistent_table_components, context, log, current_schema_id, external_storages);
+        retained_snapshots, object_storage, persistent_table_components, context, log, current_schema_id, external_storages,
+        /* include_deleted_entries */ false);
 
     SnapshotReferencedFiles retained;
     for (const auto & path : referenced.manifest_list_paths)

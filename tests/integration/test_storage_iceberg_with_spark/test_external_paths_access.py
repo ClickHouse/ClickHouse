@@ -128,6 +128,45 @@ def test_external_local_file_requires_file_grant(started_cluster_iceberg_with_sp
     instance.query(f"DROP USER {user}")
 
 
+def test_columns_cache_does_not_expose_external_files(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+
+    TABLE_NAME = f"test_columns_cache_external_{get_uuid_str()}"
+    base_bucket = started_cluster_iceberg_with_spark.minio_bucket
+    target_dir = f"/var/lib/clickhouse/user_files/external_columns_cache/{TABLE_NAME}"
+    user = f"user_{TABLE_NAME}"
+
+    create_and_upload_table(started_cluster_iceberg_with_spark, TABLE_NAME)
+    base_path = _rewrite_paths_to_local_uri(
+        started_cluster_iceberg_with_spark, TABLE_NAME, "", target_dir=target_dir)
+
+    minio_url = f"http://{started_cluster_iceberg_with_spark.minio_host}:{started_cluster_iceberg_with_spark.minio_port}"
+    table_function = (f"icebergS3('{minio_url}/{base_bucket}/{base_path}/', "
+                      f"'minio', 'ClickHouse_Minio_P@ssw0rd')")
+    _create_iceberg_s3_table(started_cluster_iceberg_with_spark, TABLE_NAME, base_path)
+
+    # The admission control of the cache can skip a write, so the files are read several times.
+    instance.query("SYSTEM DROP COLUMNS CACHE")
+    for _ in range(10):
+        for source in (table_function, TABLE_NAME):
+            instance.query(
+                f"SELECT * FROM {source} FORMAT Null SETTINGS use_columns_cache = 1, "
+                f"columns_cache_max_bytes_to_write_to_cache = 0, columns_cache_max_estimated_bytes_to_write_to_cache = 0")
+
+    # The user may see the cached entries of the table and of `S3` files, but cannot read the external local files.
+    instance.query(f"DROP USER IF EXISTS {user}")
+    instance.query(f"CREATE USER {user}")
+    instance.query(f"GRANT SHOW TABLES, SHOW COLUMNS ON *.* TO {user}")
+    instance.query(f"GRANT READ ON S3 TO {user}")
+    instance.query(f"GRANT SELECT ON system.columns_cache TO {user}")
+
+    assert instance.query(
+        f"SELECT count() FROM system.columns_cache WHERE startsWith(part, '{target_dir}/')", user=user) == "0\n"
+
+    instance.query(f"DROP USER {user}")
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+
+
 def test_external_local_file_grant_rejects_parent_traversal(started_cluster_iceberg_with_spark):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
 

@@ -1,4 +1,3 @@
-#include <filesystem>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 
 #include <Databases/DataLake/ICatalog.h>
@@ -146,8 +145,11 @@ String IcebergPathResolver::resolve(const IcebergPathFromMetadata & metadata_pat
     if (raw_path.starts_with(table_location)
         && (raw_path.size() == table_location.size() || raw_path[table_location.size()] == '/'))
     {
-        auto result = std::filesystem::path{table_root} / trim_forward_slash(raw_path.substr(table_location.size()));
-        return result;
+        /// Not joined as `fs::path`, so that an absolute suffix such as `//abs/path` stays below `table_root`.
+        auto suffix = trim_forward_slash(std::string_view(raw_path).substr(table_location.size()));
+        if (table_root.empty())
+            return String(suffix);
+        return table_root + "/" + String(suffix);
     }
 
     if (isInForeignNamespace(raw_path))

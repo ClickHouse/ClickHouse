@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 
@@ -6,7 +7,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.s3_tools import LocalUploader, S3Downloader, S3Uploader, prepare_s3_bucket
 from helpers.spark_tools import ResilientSparkSession
-from helpers.iceberg_utils import get_uuid_str
+from helpers.iceberg_utils import default_upload_directory, get_uuid_str
 from .conftest import get_spark
 from .external_paths_utils import (
     create_and_upload_table,
@@ -18,6 +19,7 @@ from .external_paths_utils import (
     _rewrite_manifests_and_reupload,
     _rewrite_paths_to_local_uri,
     find_files,
+    modify_avro_file,
     relocate_data_files_to_bucket,
 )
 
@@ -180,6 +182,48 @@ def test_delete_data_on_drop_write_grant_does_not_normalize_dot_segments(started
 
     error = instance.query_and_get_error(f"DROP TABLE {TABLE_NAME} SYNC", user=user)
     assert "ACCESS_DENIED" in error, error
+
+    instance.query(f"DROP USER {user}")
+
+
+def test_delete_data_on_drop_keeps_file_named_by_absolute_suffix_of_location(started_cluster):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+
+    TABLE_NAME = f"test_drop_absolute_suffix_{get_uuid_str()}"
+    user = f"user_{TABLE_NAME}"
+    host_path = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+    outside_dir = f"/var/lib/clickhouse/user_files/outside_{TABLE_NAME}"
+
+    spark.sql(f"CREATE TABLE {TABLE_NAME} (id INT, value STRING) USING iceberg OPTIONS('format-version'='2')")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'alpha'), (2, 'beta'), (3, 'gamma')")
+
+    # `file://<location>//<absolute path>` names a file below the table directory, not the absolute path.
+    metadata_dir = os.path.join(host_path, "metadata")
+    for metadata_json in find_files(metadata_dir, ".metadata.json"):
+        with open(metadata_json) as f:
+            metadata = json.load(f)
+        metadata["location"] = f"file://{host_path}"
+        with open(metadata_json, "w") as f:
+            json.dump(metadata, f)
+    for manifest in [f for f in find_files(metadata_dir, ".avro") if not os.path.basename(f).startswith("snap-")]:
+        modify_avro_file(
+            manifest, ["data_file", "file_path"], lambda p: f"file://{host_path}/{outside_dir}/{os.path.basename(p)}")
+
+    default_upload_directory(started_cluster, "local", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
+    instance.exec_in_container(["bash", "-c", f"mkdir -p {outside_dir} && mv {host_path}/data/*.parquet {outside_dir}/"])
+    outside_files = instance.exec_in_container(["bash", "-c", f"ls {outside_dir}"]).split()
+    assert outside_files
+
+    instance.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
+    instance.query(f"CREATE TABLE {TABLE_NAME} ENGINE=IcebergLocal(local, path = '{host_path}', format=Parquet)")
+
+    instance.query(f"DROP USER IF EXISTS {user}")
+    instance.query(f"CREATE USER {user}")
+    instance.query(f"GRANT DROP TABLE ON {TABLE_NAME} TO {user}")
+    instance.query(f"DROP TABLE {TABLE_NAME} SYNC", user=user)
+
+    assert instance.exec_in_container(["bash", "-c", f"ls {outside_dir}"]).split() == outside_files
 
     instance.query(f"DROP USER {user}")
 

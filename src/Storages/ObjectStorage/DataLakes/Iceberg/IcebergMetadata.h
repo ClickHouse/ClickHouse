@@ -256,7 +256,8 @@ private:
     void checkTableRootIsQueriedPath(std::string_view operation) const;
 
     /// Files outside the table directory that `iceberg_delete_data_on_drop` deletes.
-    std::vector<Iceberg::ExternalFile> collectExternalFilesToDeleteOnDrop(ContextPtr context) const;
+    /// A catalog purge also deletes the files of `DELETED` manifest entries, see `include_deleted_entries`.
+    std::vector<Iceberg::ExternalFile> collectExternalFilesToDeleteOnDrop(ContextPtr context, bool include_deleted_entries) const;
     /// Same, but returns nothing when the files cannot be enumerated for a reason that retrying does not fix.
     std::vector<Iceberg::ExternalFile> tryCollectExternalFilesToDeleteOnDrop(ContextPtr context) const;
 

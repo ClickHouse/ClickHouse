@@ -1639,9 +1639,18 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
             if (object_info->isArchive())
                 object_with_metadata->relative_path = getArchiveEntryKey(object_info->getPath(), object_info->archive_entry_index);
+            bool is_outside_table_directory = false;
+#if USE_AVRO
+            /// The cached entries of a data lake file outside the table directory would be visible under the grants
+            /// of the table and its base storage rather than of the file's own source, so such a file is not cached.
+            if (object_info->getPathInDataLakeMetadata())
+                is_outside_table_directory = !isObjectInTableDirectory(
+                    object_info->getResolvedStorage(object_storage), object_info->getPath(), object_storage,
+                    configuration->getPathForRead().path);
+#endif
             /// The relative path alone does not identify the object: another bucket, container or
             /// endpoint can have an object with the same key and version token.
-            if (auto table_uuid = getColumnsCacheTableUUIDOfExternalFile(storage_id))
+            if (auto table_uuid = getColumnsCacheTableUUIDOfExternalFile(storage_id); table_uuid && !is_outside_table_directory)
             {
                 object_with_metadata->path_for_content_cache = getUniqueStoragePathIdentifier(*configuration, *object_info);
                 object_with_metadata->storage_type_for_content_cache = configuration->getType();

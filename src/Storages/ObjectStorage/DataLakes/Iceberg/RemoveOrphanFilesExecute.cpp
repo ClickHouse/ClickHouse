@@ -267,7 +267,8 @@ RemoveOrphanFilesResult removeOrphanFiles(
 
     auto [reachable, metadata_version, metadata_path, external_files] = collectReachableFiles(
         object_storage, persistent_table_components, data_lake_settings, context, log, external_storages,
-        catalog, table_name, /* scan_metadata_log_history */ true, /* ignore_explicit_metadata_file_path */ true);
+        catalog, table_name, /* scan_metadata_log_history */ true, /* ignore_explicit_metadata_file_path */ true,
+        /* include_deleted_entries */ false);
 
     if (!external_files.empty())
         throw Exception(
@@ -296,7 +297,8 @@ RemoveOrphanFilesResult removeOrphanFiles(
 
     auto [_recheck_files, recheck_version, recheck_path, _recheck_external_files] = collectReachableFiles(
         object_storage, persistent_table_components, data_lake_settings, context, log, external_storages,
-        catalog, table_name, /* scan_metadata_log_history */ false, /* ignore_explicit_metadata_file_path */ true);
+        catalog, table_name, /* scan_metadata_log_history */ false, /* ignore_explicit_metadata_file_path */ true,
+        /* include_deleted_entries */ false);
     if (recheck_path != metadata_path)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Current metadata file changed during orphan scan ('{}' v{} -> '{}' v{}); "

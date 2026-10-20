@@ -34,6 +34,7 @@ struct SnapshotReferencedFiles
     std::unordered_set<IcebergPathFromMetadata> data_file_paths;
 };
 
+/// `include_deleted_entries` also collects the files of `DELETED` manifest entries, which a catalog purge deletes too.
 SnapshotReferencedFiles collectSnapshotReferencedFiles(
     const Poco::JSON::Array::Ptr & snapshots,
     ObjectStoragePtr object_storage,
@@ -41,7 +42,8 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
     ContextPtr context,
     LoggerPtr log,
     Int32 current_schema_id,
-    ExternalStorageCache & external_storages);
+    ExternalStorageCache & external_storages,
+    bool include_deleted_entries);
 
 struct ExternalFile
 {
@@ -73,7 +75,8 @@ ReachableFilesResult collectReachableFiles(
     const std::shared_ptr<DataLake::ICatalog> & catalog,
     const String & table_identifier,
     bool scan_metadata_log_history,
-    bool ignore_explicit_metadata_file_path);
+    bool ignore_explicit_metadata_file_path,
+    bool include_deleted_entries);
 
 }
 
