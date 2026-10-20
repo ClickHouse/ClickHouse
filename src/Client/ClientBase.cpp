@@ -128,6 +128,11 @@
 #include <Common/XDGBaseDirectories.h>
 #include <base/find_symbols.h>
 
+#if defined(OS_WINDOWS)
+#include <Poco/UnWindows.h>
+#include <io.h>
+#endif
+
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -491,6 +496,25 @@ private:
     std::function<void()> on_flush_callback;
 };
 
+namespace
+{
+
+/// Whether the descriptor is a terminal. On Windows `isatty` is true for every character device,
+/// `NUL` included, and treating `NUL` as a terminal would select the interactive mode, which waits
+/// for console input that never comes. Only a console handle is a terminal there.
+bool isTerminal(int fd)
+{
+#if defined(OS_WINDOWS)
+    const auto handle = reinterpret_cast<HANDLE>(_get_osfhandle(fd));
+    DWORD mode = 0;
+    return handle != INVALID_HANDLE_VALUE && GetConsoleMode(handle, &mode);
+#else
+    return isatty(fd);
+#endif
+}
+
+}
+
 ClientBase::~ClientBase() = default;
 
 ClientBase::ClientBase(
@@ -514,9 +538,9 @@ ClientBase::ClientBase(
     , output_stream(output_stream_)
     , error_stream(error_stream_)
 {
-    stdin_is_a_tty = isatty(in_fd_);
-    stdout_is_a_tty = isatty(out_fd_);
-    stderr_is_a_tty = isatty(err_fd_);
+    stdin_is_a_tty = isTerminal(in_fd_);
+    stdout_is_a_tty = isTerminal(out_fd_);
+    stderr_is_a_tty = isTerminal(err_fd_);
     terminal_width = getTerminalWidth(in_fd_, err_fd_);
 }
 
