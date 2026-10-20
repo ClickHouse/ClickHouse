@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <limits>
+#include <optional>
 
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -530,6 +531,58 @@ void FillingRow::initUsingTo(size_t from_pos)
         row[i] = getFillDescription(i).fill_to;
 }
 
+/// The exact sum of a value and a numeric step, in a type wide enough to hold it, or Null for the types without a
+/// wider one (`Int256`, `UInt256`, `Decimal256`, and `Float64`, which saturates instead of wrapping around).
+static Field exactNumericSum(const Field & value, const Field & step)
+{
+    /// The value of an integer or a decimal field as a number of units, with the scale of the decimal.
+    struct Units
+    {
+        Int256 units;
+        std::optional<UInt32> scale;
+    };
+
+    auto to_units = [](const Field & field) -> std::optional<Units>
+    {
+        switch (field.getType())
+        {
+            case Field::Types::Int64: return Units{Int256(field.safeGet<Int64>()), {}};
+            case Field::Types::UInt64: return Units{Int256(field.safeGet<UInt64>()), {}};
+            case Field::Types::Int128: return Units{Int256(field.safeGet<Int128>()), {}};
+            case Field::Types::UInt128: return Units{Int256(field.safeGet<UInt128>()), {}};
+            case Field::Types::Decimal32:
+            {
+                const auto & decimal = field.safeGet<DecimalField<Decimal32>>();
+                return Units{Int256(decimal.getValue().value), decimal.getScale()};
+            }
+            case Field::Types::Decimal64:
+            {
+                const auto & decimal = field.safeGet<DecimalField<Decimal64>>();
+                return Units{Int256(decimal.getValue().value), decimal.getScale()};
+            }
+            case Field::Types::Decimal128:
+            {
+                const auto & decimal = field.safeGet<DecimalField<Decimal128>>();
+                return Units{Int256(decimal.getValue().value), decimal.getScale()};
+            }
+            default:
+                return std::nullopt;
+        }
+    };
+
+    const auto lhs = to_units(value);
+    const auto rhs = to_units(step);
+
+    /// The step is converted to the type of the column, so a decimal step has the scale of the value.
+    if (!lhs || !rhs || lhs->scale != rhs->scale)
+        return {};
+
+    if (!lhs->scale)
+        return Field(lhs->units + rhs->units);
+
+    return Field(DecimalField<Decimal256>(Decimal256(lhs->units + rhs->units), *lhs->scale));
+}
+
 void FillingRow::updateConstraintsWithStalenessRow(const Columns& base_row, size_t row_ind)
 {
     for (size_t i = 0; i < size(); ++i)
@@ -543,9 +596,21 @@ void FillingRow::updateConstraintsWithStalenessRow(const Columns& base_row, size
             /// orders greatest so a NaN border is handled in `next`) simply generates nothing, and a border
             /// past the range of the column type only matters if the sequence actually reaches values the
             /// column cannot hold - which `checkGeneratedValueFitsColumnType` rejects per generated value.
-            Field staleness_border = (*base_row[i])[row_ind];
+            const Field base_value = (*base_row[i])[row_ind];
+            Field staleness_border = base_value;
             descr.staleness_step_func(staleness_border, 1);
-            constraints[i] = findBorder(descr.fill_to, staleness_border, getDirection(i));
+
+            /// A numeric step wraps around in its carrier (`Int64`, `UInt64`, the `Decimal64` ticks of `DateTime64`),
+            /// so a border past the end of the carrier lands behind the base value and would stop the filling before
+            /// the values in between that the column can hold. Recompute such a border exactly in a wider type.
+            const int direction = getDirection(i);
+            if (!staleness_border.isNaN() && !base_value.isNaN() && less(staleness_border, base_value, direction))
+            {
+                if (auto exact_border = exactNumericSum(base_value, descr.fill_staleness); !exact_border.isNull())
+                    staleness_border = std::move(exact_border);
+            }
+
+            constraints[i] = findBorder(descr.fill_to, staleness_border, direction);
         }
     }
 }
