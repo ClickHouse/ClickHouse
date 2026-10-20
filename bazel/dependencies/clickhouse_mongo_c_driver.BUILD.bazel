@@ -203,11 +203,7 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = [
-        "src/libmongoc/src",
         "config/contrib/mongo-c-driver/src/libmongoc/src",
-        "src/libmongoc/src/mongoc",
-        "src/utf8proc-2.11.3",
-        "src/uthash",
     ],
     textual_hdrs = ["src/libmongoc/src/mongoc/mongoc-counters.defs"],
     deps = [

@@ -7,7 +7,6 @@ exports_files([
 ])
 
 _AI_SDK_CPP_LOCAL_INCLUDES = [
-    "include",
     "src",
     "third_party/httplib-header-only",
     "third_party/concurrentqueue-header-only",
@@ -60,6 +59,9 @@ ch_cc_library(
     copts = [
         "-std=c++20",
         "-w",
+    ],
+    includes = [
+        "include",
     ],
     local_defines = [
         "CPPHTTPLIB_BROTLI_SUPPORT=1",

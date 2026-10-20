@@ -74,7 +74,6 @@ ch_cc_library(
     ],
     local_includes = [
         "../../../" + "bazel/gen/src/Server/grpc_protos",
-        "../../../" + "contrib/c-ares-cmake/linux",
     ],
     textual_hdrs = [
         "//bazel:gen/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc",

@@ -21,17 +21,12 @@ _GENERATED_HDRS_0 = [
 ]
 
 _GENERATED_LOCAL_INCLUDES_0 = [
-    "../../../" + "contrib/jemalloc-cmake/include",
     "../../../" + (repository_path("contrib/replxx") + "/include"),
     "../../../" + repository_path("contrib/double-conversion"),
     "../../../" + repository_path("contrib/zmij"),
-    "../../../" + "contrib/libdivide-cmake",
     "../../../" + repository_path("contrib/zlib-ng"),
     "../../../" + (repository_path("contrib/zlib-ng") + "/config/contrib/zlib-ng-cmake"),
     "../../../" + repository_path("contrib/libdeflate"),
-    "../../../" + "contrib/pdqsort",
-    "../../../" + "contrib/ipnsort",
-    "../../../" + "contrib/driftsort",
     "../../../" + (repository_path("contrib/xz") + "/src/liblzma/api"),
     "../../../" + (repository_path("contrib/google-protobuf") + "/src"),
     "../../../" + (repository_path("contrib/google-protobuf") + "/third_party/utf8_range"),
@@ -218,9 +213,7 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = [
-        "../../../src",
         "../../../bazel/gen/base",
-        "../../pcg-random",
     ] + _GENERATED_LOCAL_INCLUDES_0,
     deps = _GENERATED_DEPS_0,
 )
@@ -367,9 +360,7 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = [
-        "../../../src",
         "../../../bazel/gen/base",
-        "../../pcg-random",
     ] + _GENERATED_LOCAL_INCLUDES_0,
     deps = _GENERATED_DEPS_0,
 )
@@ -399,4 +390,7 @@ cc_library(
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
+    includes = [
+        "include",
+    ],
 )

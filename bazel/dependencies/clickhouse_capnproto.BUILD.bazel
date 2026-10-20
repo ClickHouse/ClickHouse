@@ -40,9 +40,6 @@ ch_cc_library(
     ],
     copts = _CAPNPROTO_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        "c++/src",
-    ],
     deps = [":_kj"],
 )
 
@@ -63,9 +60,6 @@ ch_cc_library(
     ],
     copts = _CAPNPROTO_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        "c++/src",
-    ],
     deps = [":_capnp"],
 )
 
@@ -98,9 +92,9 @@ ch_cc_library(
     ],
     hdrs = glob(["c++/src/**/*.h"]),
     copts = _CAPNPROTO_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
+    includes = [
         "c++/src",
     ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )

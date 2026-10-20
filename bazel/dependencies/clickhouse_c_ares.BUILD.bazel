@@ -88,9 +88,6 @@ ch_cc_library(
         "_XOPEN_SOURCE=600",
     ],
     local_includes = [
-        "src/lib/include",
-        "src/lib",
-        "include",
         repository_local_include("contrib/c-ares-cmake/linux", "contrib/c-ares"),
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],

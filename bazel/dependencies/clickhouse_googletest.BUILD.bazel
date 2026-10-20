@@ -50,11 +50,12 @@ ch_cc_library(
         "-w",
         "-std=c++23",
     ],
+    includes = [
+        "googlemock/include",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "googlemock",
-        "googlemock/include",
-        "googletest/include",
     ],
     deps = [":_gtest"],
 )
@@ -69,10 +70,6 @@ ch_cc_library(
         "-std=c++23",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        "googlemock/include",
-        "googletest/include",
-    ],
     deps = [":_gmock"],
 )
 
@@ -124,10 +121,12 @@ ch_cc_library(
         "-w",
         "-std=c++23",
     ],
+    includes = [
+        "googletest/include",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "googletest",
-        "googletest/include",
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )

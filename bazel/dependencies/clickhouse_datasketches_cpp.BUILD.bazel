@@ -14,4 +14,9 @@ cc_library(
         "count/include/**/*.hpp",
         "theta/include/**/*.hpp",
     ]),
+    includes = [
+        "common/include",
+        "count/include",
+        "theta/include",
+    ],
 )

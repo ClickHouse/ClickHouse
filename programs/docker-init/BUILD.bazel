@@ -82,14 +82,7 @@ ch_cc_library(
     ],
     local_includes = [
         ".",
-        "../../src",
         "../../bazel/gen/base",
-        "../../base/pcg-random",
-        "../../" + "contrib/jemalloc-cmake/include",
-        "../../" + "contrib/libdivide-cmake",
-        "../../" + "contrib/pdqsort",
-        "../../" + "contrib/ipnsort",
-        "../../" + "contrib/driftsort",
     ],
     deps = [
         "@clickhouse_boost//:boost_headers",

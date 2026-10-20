@@ -225,11 +225,13 @@ ch_cc_library(
         "-w",
         "-std=c++23",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
+    includes = [
         "src/bsoncxx/include",
         "src/bsoncxx/include/bsoncxx/v_noabi",
         "src/bsoncxx/lib",
+    ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_includes = [
         "src/bsoncxx/lib/bsoncxx/v_noabi",
         "config/contrib/mongo-cxx-driver/src/bsoncxx/lib",
         "config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi",
@@ -259,17 +261,16 @@ ch_cc_library(
         "-w",
         "-std=c++23",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
+    includes = [
         "src/mongocxx/include",
         "src/mongocxx/include/mongocxx/v_noabi",
         "src/mongocxx/lib",
         "src/mongocxx/lib/mongocxx/v_noabi",
+    ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_includes = [
         "config/contrib/mongo-cxx-driver/src/mongocxx/lib",
         "config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi",
-        "src/bsoncxx/include",
-        "src/bsoncxx/include/bsoncxx/v_noabi",
-        "src/bsoncxx/lib",
         "src/bsoncxx/lib/bsoncxx/v_noabi",
         "config/contrib/mongo-cxx-driver/src/bsoncxx/lib",
         "config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi",

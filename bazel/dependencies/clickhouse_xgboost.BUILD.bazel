@@ -273,6 +273,9 @@ ch_cc_library(
         "-include",
         "exception",
     ],
+    includes = [
+        "include",
+    ],
     local_defines = [
         "DMLC_CORE_USE_CMAKE",
         "DMLC_USE_CXX11=1",
@@ -283,7 +286,6 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = [
-        "include",
         "config/contrib/xgboost/dmlc-core",
     ],
     deps = [":_dmlc_core"],

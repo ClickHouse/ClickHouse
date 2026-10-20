@@ -62,13 +62,6 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    local_includes = [
-        "sdk/core/azure-core/inc",
-        "sdk/identity/azure-identity/inc",
-        "sdk/storage/azure-storage-common/inc",
-        "sdk/storage/azure-storage-blobs/inc",
-        "sdk/storage/azure-storage-files-datalake/inc",
-    ],
     deps = [
         "@clickhouse_libxml2//:_libxml2",
         "@clickhouse_openssl//:ssl",

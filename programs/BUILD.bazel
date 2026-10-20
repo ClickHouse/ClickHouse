@@ -100,14 +100,7 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = [
-        "../src",
         "../bazel/gen/base",
-        "../base/pcg-random",
-        "../" + "contrib/jemalloc-cmake/include",
-        "../" + "contrib/libdivide-cmake",
-        "../" + "contrib/pdqsort",
-        "../" + "contrib/ipnsort",
-        "../" + "contrib/driftsort",
     ],
     deps = [
         "@clickhouse_llvm_project//:clang_rt_builtins",

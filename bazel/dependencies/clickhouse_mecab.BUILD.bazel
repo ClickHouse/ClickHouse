@@ -39,6 +39,9 @@ ch_cc_library(
         "-I",
         "contrib/MeCab-cmake",
     ],
+    includes = [
+        "mecab/src",
+    ],
     local_defines = [
         "HAVE_CONFIG_H",
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -46,9 +49,6 @@ ch_cc_library(
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
-    local_includes = [
-        "mecab/src",
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )

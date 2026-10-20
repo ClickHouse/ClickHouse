@@ -304,14 +304,7 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = [
-        "../../../src",
         "../../../bazel/gen/base",
-        "../../pcg-random",
-        "../../../" + "contrib/jemalloc-cmake/include",
-        "../../../" + "contrib/libdivide-cmake",
-        "../../../" + "contrib/pdqsort",
-        "../../../" + "contrib/ipnsort",
-        "../../../" + "contrib/driftsort",
     ],
     deps = [
         "@lz4//:lz4_frame",
@@ -405,4 +398,7 @@ cc_library(
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
+    includes = [
+        "include",
+    ],
 )

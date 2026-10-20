@@ -9,4 +9,7 @@ exports_files([
 cc_library(
     name = "heks",
     hdrs = glob(["include/fast_hex/**/*.hpp"]),
+    includes = [
+        "include",
+    ],
 )

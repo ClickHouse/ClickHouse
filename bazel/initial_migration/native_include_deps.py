@@ -198,7 +198,8 @@ class PublicIncludes(Graph):
             pending += list(doc.labels(attrs.get('implementation_deps'),cpu))
         # Only public deps propagate after the consumer's direct private deps.
         visited = {target}
-        result={}
+        # cc_library includes apply to its own compilation as well as deps.
+        result=dict(self.own_public_dirs(target,cpu)) if kind in CC_COMPILERS else {}
         while pending:
             ref=pending.pop()
             if ref in visited or ref not in self.rules:
@@ -380,7 +381,9 @@ def prove_unchanged(before,after,path, generated=()):
             if ast_key(fields[field])!=ast_key(nf[field]):
                 raise ValueError(f'changed protected attr {path} {name} {field}')
 
-def run(root, *, write=False):
+def run(root, *, write=False, receipts=None):
+    from initial_migration.publish_existing_cpp_owners import publish
+    publication, published = publish(root, receipts=receipts)
     paths=subprocess.check_output(
         ['git','ls-files','-z','--cached','--others','--exclude-standard','--','*.bazel'],
         cwd=root).decode().split('\0')
@@ -391,11 +394,18 @@ def run(root, *, write=False):
             continue
         package=path.parent.relative_to(root).as_posix().removeprefix('.') if path.name=='BUILD.bazel' else ''
         docs.append(Document(path,package=package))
+    originals={doc.path:doc.source.bytes.decode() for doc in docs}
+    for doc in docs:
+        before = next((record['before_sha256'] for record in publication['files']
+                       if record['path'] == str(doc.path.relative_to(root))), None)
+        if before is not None and before != file_hash(originals[doc.path]):
+            raise ValueError('BUILD changed during include publication: ' + str(doc.path))
+    docs=[Document(doc.path,package=doc.package,
+                   text=published.get(doc.path,doc.source.bytes.decode())) for doc in docs]
     prove_generated_options(root)
     # The generated-source registry is sufficient for this pass. Source
     # archive receipts are not evidence of generated contents.
     sources=Sources(None, root)
-    originals={doc.path:doc.source.bytes.decode() for doc in docs}
     generated={}
     prepared=[]
     for doc in docs:
@@ -420,7 +430,7 @@ def run(root, *, write=False):
         after,removals=rewrite.text()
         protected['not_published_in_all_consumers'] += sum(
             not r['valid'] or not r['witness'] for r in rewrite.records.values())
-        if not removals and path not in generated:
+        if not removals and path not in generated and path not in published:
             continue
         proc=subprocess.run([shutil.which('buildifier'), '-type=build', '-mode=fix'],
             input=after, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
@@ -455,6 +465,7 @@ def run(root, *, write=False):
             path.write_text(after)
     return {
         'counts': dict(counts),
+        'public_source_owners': publication,
         'provider_directories': dict(by_directory.most_common()),
         'repositories': dict(by_repo.most_common()),
         'protected': dict(protected),
@@ -471,9 +482,11 @@ if __name__=='__main__':
     parser.add_argument('--root',type=Path,default=ROOT)
     parser.add_argument('--report',type=Path)
     parser.add_argument('--write',action='store_true')
+    parser.add_argument('--receipts',type=Path,
+                        help='Pinned v3 source archive receipts; generator uses its archive inventory')
     args=parser.parse_args()
-    result=run(args.root.resolve(),write=args.write)
+    result=run(args.root.resolve(),write=args.write,receipts=args.receipts)
     if args.report:
         args.report.write_text(json.dumps(result,indent=2)+'\n')
     print(json.dumps({key:value for key,value in result.items()
-                      if key not in {'files','before_sha256','after_sha256'}},indent=2))
+                      if key not in {'files','before_sha256','after_sha256','public_source_owners'}},indent=2))

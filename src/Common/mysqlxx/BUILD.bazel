@@ -100,18 +100,8 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = [
-        ".",
-        "../..",
         "../../../bazel/gen/base",
-        "../../../base/pcg-random",
-        "../../../" + "contrib/jemalloc-cmake/include",
-        "../../../" + "contrib/libdivide-cmake",
-        "../../../" + "contrib/pdqsort",
-        "../../../" + "contrib/ipnsort",
-        "../../../" + "contrib/driftsort",
         "../../../" + (repository_path("contrib/mariadb-connector-c") + "/config/contrib/mariadb-connector-c-cmake/include-public"),
-        "../../../" + (repository_path("contrib/mariadb-connector-c") + "/include"),
-        "../../../" + (repository_path("contrib/mariadb-connector-c") + "/libmariadb"),
     ],
     deps = [
         "@clickhouse_boost//:boost_headers",
@@ -288,4 +278,7 @@ ch_cc_library(
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
+    includes = [
+        ".",
+    ],
 )

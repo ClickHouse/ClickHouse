@@ -16,4 +16,13 @@ exports_files([
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
+    includes = select({
+        "@platforms//cpu:x86_64": [
+            "linux_x86_64/include",
+        ],
+        "@platforms//cpu:aarch64": [
+            "linux_aarch64/include",
+        ],
+        "//conditions:default": [],
+    }),
 )

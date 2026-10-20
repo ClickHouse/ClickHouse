@@ -170,6 +170,10 @@ ch_cc_library(
         repository_path("contrib/libarchive") + "/libarchive",
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    includes = [
+        "cpp",
+        "include",
+    ],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [

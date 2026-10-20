@@ -102,25 +102,13 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = [
-        "../../base/pcg-random",
-        "..",
         "../../bazel/gen/base",
-        "../../" + (repository_path("contrib/sz3") + "/include"),
-        "../../" + "contrib/sz3-cmake",
-        "../../" + "contrib/jemalloc-cmake/include",
-        "../../" + "contrib/libdivide-cmake",
-        "../../" + "contrib/pdqsort",
-        "../../" + "contrib/ipnsort",
-        "../../" + "contrib/driftsort",
-        "../../" + (repository_path("contrib/zxc") + "/include"),
-        "../../" + (repository_path("contrib/croaring") + "/cpp"),
-        "../../" + (repository_path("contrib/croaring") + "/include"),
-        "../../" + (repository_path("contrib/NuRaft") + "/include"),
     ] + select({
-        "@platforms//cpu:x86_64": ["../../" + "contrib/openldap-cmake/linux_x86_64/include"],
-        "@platforms//cpu:aarch64": ["../../" + "contrib/openldap-cmake/linux_aarch64/include"],
+        "@platforms//cpu:x86_64": [
+        ],
+        "@platforms//cpu:aarch64": [
+        ],
     }) + [
-        "../../" + (repository_path("contrib/openldap") + "/include"),
         "../../" + (repository_path("contrib/llvm-project") + "/llvm/include"),
     ],
     deps = select({

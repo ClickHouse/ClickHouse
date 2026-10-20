@@ -31,9 +31,6 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    local_includes = [
-        "../../../" + "base/poco/Net/include",
-    ],
     deps = [
         "//base/poco/XML:_poco_xml",
         ":poco_util_headers",
@@ -58,4 +55,7 @@ cc_library(
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
+    includes = [
+        "include",
+    ],
 )

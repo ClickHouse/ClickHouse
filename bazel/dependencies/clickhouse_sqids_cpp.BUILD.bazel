@@ -9,4 +9,7 @@ exports_files([
 cc_library(
     name = "sqids_cpp",
     hdrs = glob(["include/sqids/**/*.hpp"]),
+    includes = [
+        "include",
+    ],
 )

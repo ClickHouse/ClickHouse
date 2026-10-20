@@ -695,6 +695,9 @@ ch_cc_library(
         ],
     }),
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    includes = [
+        "src",
+    ],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _VECTORSCAN_LOCAL_INCLUDES,

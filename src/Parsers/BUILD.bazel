@@ -129,15 +129,7 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = [
-        "..",
         "../../bazel/gen/base",
-        "../../base/pcg-random",
-        "Prometheus/grammar/generated",
-        "../../" + "contrib/jemalloc-cmake/include",
-        "../../" + "contrib/libdivide-cmake",
-        "../../" + "contrib/pdqsort",
-        "../../" + "contrib/ipnsort",
-        "../../" + "contrib/driftsort",
     ],
     deps = [
         "@clickhouse_boost//:boost_headers",

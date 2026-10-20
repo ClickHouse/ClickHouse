@@ -11,4 +11,7 @@ exports_files([
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
+    includes = [
+        ".",
+    ],
 )

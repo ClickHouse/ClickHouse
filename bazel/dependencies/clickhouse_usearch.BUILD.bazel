@@ -9,4 +9,7 @@ exports_files([
 cc_library(
     name = "usearch",
     hdrs = glob(["include/usearch/**/*.hpp"]),
+    includes = [
+        "include",
+    ],
 )

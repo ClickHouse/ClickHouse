@@ -9,4 +9,7 @@ exports_files([
 cc_library(
     name = "morton_nd",
     hdrs = glob(["include/morton-nd/**/*.h"]),
+    includes = [
+        "include",
+    ],
 )

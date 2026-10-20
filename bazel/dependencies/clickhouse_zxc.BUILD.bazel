@@ -35,7 +35,6 @@ ch_cc_library(
     local_includes = [
         "src/lib",
         "src/lib/vendors",
-        "include",
     ],
     deps = select({
         "@platforms//cpu:x86_64": [
@@ -114,6 +113,13 @@ ch_cc_library(
     implementation_deps = select({
         "@platforms//cpu:x86_64": ["@clickhouse_llvm_project//:libcxxabi_headers"],
         "@platforms//cpu:aarch64": [],
+    }),
+    includes = select({
+        "@platforms//cpu:x86_64": [
+            "include",
+        ],
+        "@platforms//cpu:aarch64": [],
+        "//conditions:default": [],
     }),
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -212,6 +218,13 @@ ch_cc_library(
     ]),
     copts = _ZXC_COPTS,
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    includes = select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "include",
+        ],
+        "//conditions:default": [],
+    }),
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_2,
     local_includes = [

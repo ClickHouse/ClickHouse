@@ -46,6 +46,9 @@ ch_cc_library(
         "-std=gnu11",
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    includes = [
+        "src/h3lib/include",
+    ],
     language = "C",
     local_defines = [
         "H3_HAVE_VLA",
@@ -55,7 +58,6 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = [
-        "src/h3lib/include",
         "config/contrib/h3/src/h3lib/include",
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],

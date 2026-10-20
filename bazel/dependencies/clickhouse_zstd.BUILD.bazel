@@ -50,7 +50,6 @@ ch_cc_library(
     llvm_headers = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
-        "lib",
         "lib/legacy",
         "lib/common",
     ],

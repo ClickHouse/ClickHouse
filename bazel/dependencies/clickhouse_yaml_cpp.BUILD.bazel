@@ -89,6 +89,9 @@ ch_cc_library(
         "-w",
         "-std=c++23",
     ],
+    includes = [
+        "include",
+    ],
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
@@ -97,7 +100,6 @@ ch_cc_library(
     ],
     local_includes = [
         "include/yaml-cpp",
-        "include",
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )

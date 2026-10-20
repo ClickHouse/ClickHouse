@@ -10,4 +10,7 @@ exports_files([
 cc_library(
     name = "sz3",
     hdrs = glob(["include/SZ3/**/*.hpp"]),
+    includes = [
+        "include",
+    ],
 )

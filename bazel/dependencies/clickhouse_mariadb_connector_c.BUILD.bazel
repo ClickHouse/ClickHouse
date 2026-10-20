@@ -277,6 +277,10 @@ ch_cc_library(
         "$(GENDIR)/" + repository_path("contrib/mariadb-connector-c") + "/config/contrib/mariadb-connector-c-cmake/include-private",
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    includes = [
+        "include",
+        "libmariadb",
+    ],
     language = "C",
     local_defines = select({
         "@platforms//cpu:x86_64": [],
@@ -337,8 +341,6 @@ ch_cc_library(
     ],
     local_includes = [
         "config/contrib/mariadb-connector-c-cmake/include-public",
-        "include",
-        "libmariadb",
     ],
     deps = [
         "@clickhouse_zlib_ng//:_zlib",

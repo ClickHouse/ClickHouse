@@ -26,7 +26,6 @@ ch_cc_library(
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
-        "include",
         "src",
     ],
     deps = [
@@ -45,9 +44,11 @@ ch_cc_library(
         "-w",
         "-std=c++23",
     ],
+    includes = [
+        "include",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
-        "include",
         "src",
     ],
     deps = [

@@ -84,7 +84,6 @@ ch_cc_library(
     local_includes = [
         ".",
         "gl",
-        "src",
         "digest-md5",
     ],
     deps = ["@clickhouse_krb5//:_krb5"],

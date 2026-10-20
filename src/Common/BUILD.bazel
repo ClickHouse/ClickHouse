@@ -511,11 +511,6 @@ _GENERATED_LOCAL_DEFINES_0 = select({
 ]
 
 _GENERATED_LOCAL_INCLUDES_0 = [
-    "../../" + "contrib/jemalloc-cmake/include",
-    "../../" + "contrib/libdivide-cmake",
-    "../../" + "contrib/pdqsort",
-    "../../" + "contrib/ipnsort",
-    "../../" + "contrib/driftsort",
 ]
 
 _GENERATED_DEPS_0 = [
@@ -707,9 +702,7 @@ ch_cc_library(
     link_runtime = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
-        "..",
         "../../bazel/gen/base",
-        "../../base/pcg-random",
     ] + _GENERATED_LOCAL_INCLUDES_0,
     deps = _GENERATED_DEPS_0,
     alwayslink = True,
@@ -733,9 +726,7 @@ ch_cc_library(
     link_runtime = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
-        "..",
         "../../bazel/gen/base",
-        "../../base/pcg-random",
     ] + _GENERATED_LOCAL_INCLUDES_0,
     deps = _GENERATED_DEPS_0,
 )

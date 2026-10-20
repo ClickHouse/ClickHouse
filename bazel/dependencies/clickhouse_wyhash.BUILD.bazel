@@ -12,4 +12,7 @@ exports_files([
 cc_library(
     name = "wyhash",
     hdrs = glob(["**/*.h"]),
+    includes = [
+        ".",
+    ],
 )

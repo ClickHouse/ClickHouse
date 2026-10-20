@@ -85,17 +85,7 @@ ch_cc_library(
     ],
     local_includes = [
         ".",
-        "../../src",
         "../../bazel/gen/base",
-        "../../base/pcg-random",
-        "../../" + "contrib/jemalloc-cmake/include",
-        "../../" + "contrib/libdivide-cmake",
-        "../../" + "contrib/pdqsort",
-        "../../" + "contrib/ipnsort",
-        "../../" + "contrib/driftsort",
-        "../../" + (repository_path("contrib/sz3") + "/include"),
-        "../../" + "contrib/sz3-cmake",
-        "../../" + (repository_path("contrib/NuRaft") + "/include"),
         "../../" + (repository_path("contrib/llvm-project") + "/llvm/include"),
     ],
     deps = select({

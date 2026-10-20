@@ -196,7 +196,6 @@ ch_cc_library(
             "$(GENDIR)/" + repository_path("contrib/orc") + "/config/contrib/orc/c++/include",
             "contrib/orc",
         ),
-        "c++/include",
         repository_local_include("contrib/arrow-cmake/cpp/src/orc/c++/include", "contrib/orc"),
         "c++/src",
         repository_local_include("$(GENDIR)/bazel/gen/contrib/arrow-cmake", "contrib/orc"),

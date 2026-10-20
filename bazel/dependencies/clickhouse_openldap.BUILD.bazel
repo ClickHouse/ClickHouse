@@ -51,6 +51,9 @@ ch_cc_library(
         "-std=gnu11",
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    includes = [
+        "include",
+    ],
     language = "C",
     local_defines = [
         "LBER_LIBRARY",
@@ -67,7 +70,6 @@ ch_cc_library(
             repository_local_include("contrib/openldap-cmake/linux_aarch64/include", "contrib/openldap"),
         ],
     }) + [
-        "include",
         "libraries/liblber",
     ],
     deps = ["@clickhouse_openssl//:ssl"],
@@ -179,7 +181,6 @@ ch_cc_library(
             repository_local_include("contrib/openldap-cmake/linux_aarch64/include", "contrib/openldap"),
         ],
     }) + [
-        "include",
         "libraries/libldap",
     ],
     deps = [":_lber"],

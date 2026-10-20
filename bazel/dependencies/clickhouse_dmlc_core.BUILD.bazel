@@ -66,7 +66,6 @@ ch_cc_library(
         "__USE_XOPEN2K8",
     ],
     local_includes = [
-        "include",
         repository_local_include(
             repository_path("contrib/xgboost") + "/config/contrib/xgboost/dmlc-core",
             "contrib/dmlc-core",

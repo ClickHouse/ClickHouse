@@ -109,7 +109,6 @@ ch_cc_library(
         "__EXTENSIONS__",
     ],
     local_includes = [
-        "src/liblzma/api",
         "src/liblzma/common",
         "src/liblzma/check",
         "src/liblzma/lz",

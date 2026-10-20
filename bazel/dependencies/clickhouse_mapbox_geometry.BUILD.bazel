@@ -9,4 +9,7 @@ exports_files([
 cc_library(
     name = "mapbox_geometry",
     hdrs = glob(["include/mapbox/**/*.hpp"]),
+    includes = [
+        "include",
+    ],
 )

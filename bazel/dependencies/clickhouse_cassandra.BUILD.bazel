@@ -155,6 +155,9 @@ ch_cc_library(
         "-I",
         repository_path("contrib/minizip-ng") + "/compat",
     ],
+    includes = [
+        "include",
+    ],
     local_defines = select({
         "@platforms//cpu:x86_64": [
             "CASS_BUILDING",
@@ -215,7 +218,6 @@ ch_cc_library(
         "src/third_party/mt19937_64",
         "src/third_party/rapidjson/rapidjson",
         "src",
-        "include",
     ],
     deps = [
         "@clickhouse_libuv//:_uv",

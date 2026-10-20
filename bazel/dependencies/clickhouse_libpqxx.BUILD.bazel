@@ -11,6 +11,9 @@ exports_files([
 cc_library(
     name = "libpqxx_headers",
     hdrs = glob(["include/**/*.hxx"]),
+    includes = [
+        "include",
+    ],
     textual_hdrs = glob(
         ["include/pqxx/*"],
         exclude = ["include/pqxx/*.*"],
@@ -49,7 +52,6 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = [
-        "include",
         "config/contrib/libpqxx-cmake",
     ],
     deps = [

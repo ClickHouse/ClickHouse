@@ -34,6 +34,13 @@ ch_cc_library(
         "@platforms//cpu:x86_64": ["@clickhouse_llvm_project//:libcxxabi_headers"],
         "@platforms//cpu:aarch64": [],
     }),
+    includes = select({
+        "@platforms//cpu:x86_64": [
+            "include",
+        ],
+        "@platforms//cpu:aarch64": [],
+        "//conditions:default": [],
+    }),
     language = "C",
     local_defines = select({
         "@platforms//cpu:x86_64": [
@@ -46,7 +53,6 @@ ch_cc_library(
     }),
     local_includes = select({
         "@platforms//cpu:x86_64": [
-            "include",
             "src",
         ],
         "@platforms//cpu:aarch64": [],
