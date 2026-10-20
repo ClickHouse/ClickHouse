@@ -25,6 +25,7 @@
 #include <boost/algorithm/string/trim.hpp>
 
 #if USE_AZURE_BLOB_STORAGE
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #endif
 
@@ -526,6 +527,28 @@ bool hasAzureServerCredentialsMarker(const Poco::Util::AbstractConfiguration & c
     return config.getBool("." + String(AZURE_SERVER_CREDENTIALS_MARKER), false);
 }
 
+#if USE_AZURE_BLOB_STORAGE
+/// The connection of a disk created from user SQL, possibly behind wrappers, that authenticates with the server's own
+/// identity. A disk from the server configuration may use it, so the walk stops there.
+static std::shared_ptr<const AzureBlobStorage::ConnectionParams> getCustomDiskServerIdentity(DiskPtr disk)
+{
+    for (; disk && disk->isCustomDisk(); disk = disk->getDelegateDiskIfExists())
+    {
+        auto * object_storage_disk = dynamic_cast<DiskObjectStorage *>(disk.get());
+        if (!object_storage_disk)
+            continue;
+
+        const auto object_storage = object_storage_disk->getObjectStorage();
+        if (object_storage->getType() != ObjectStorageType::Azure)
+            return nullptr;
+
+        auto params = object_storage->getAzureBlobStorageConnectionParams();
+        return params->usesServerManagedCredentials() && !params->forbid_implicit_credentials ? params : nullptr;
+    }
+    return nullptr;
+}
+#endif
+
 void validateResolvedAzureDiskCredentials(
     [[maybe_unused]] Poco::Util::AbstractConfiguration & config,
     [[maybe_unused]] ContextPtr context,
@@ -533,16 +556,35 @@ void validateResolvedAzureDiskCredentials(
     [[maybe_unused]] bool for_system_database)
 {
 #if USE_AZURE_BLOB_STORAGE
+    /// A `system` table disk is server-internal infrastructure, exempt like an S3 one.
+    const bool system_table_disk_allowed = for_system_database
+        && context->getGlobalContext()->getServerSettings()[ServerSetting::allow_server_credentials_for_system_table_disks];
+
+    /// A wrapper such as `encrypted` or `cache` may name a disk another session created, which is reused as it is.
+    if (!is_loading_from_existing_metadata && !system_table_disk_allowed && context->shouldRestrictUserQueryS3Credentials())
+    {
+        const String wrapped_disk = config.getString(".disk", "");
+        const auto disks = context->getDisksMap();
+        if (auto it = disks.find(wrapped_disk); !wrapped_disk.empty() && it != disks.end())
+        {
+            if (const auto params = getCustomDiskServerIdentity(it->second))
+            {
+                auto restricted = *params;
+                restricted.forbid_implicit_credentials = true;
+                restricted.anonymous_fallback_for_server_credentials = false;
+                restricted.checkOrDropServerManagedCredentials();
+            }
+        }
+    }
+
     /// Only an Azure disk: the other disk types reject keys they do not know, e.g. a `cache` disk.
     const auto prefixes = getAzureDiskPrefixes(config);
     if (prefixes.empty())
         return;
 
-    /// The marker is written only by the server, for a disk created with the opt-in, and honored only on reload. A
-    /// `system` table disk is server-internal infrastructure, exempt like an S3 one.
+    /// The marker is written only by the server, for a disk created with the opt-in, and honored only on reload.
     const bool server_credentials_allowed = (is_loading_from_existing_metadata && hasAzureServerCredentialsMarker(config))
-        || (for_system_database
-            && context->getGlobalContext()->getServerSettings()[ServerSetting::allow_server_credentials_for_system_table_disks]);
+        || system_table_disk_allowed;
 
     /// Written over the resolved configuration, so the object storage factory can trust it.
     config.setBool(AZURE_SERVER_CREDENTIALS_MARKER, server_credentials_allowed);

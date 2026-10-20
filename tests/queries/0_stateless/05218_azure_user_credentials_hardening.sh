@@ -19,6 +19,8 @@ DISK_TABLE="azure_hardening_disk_${DB}"
 OPT_IN_TABLE="azure_hardening_opt_in_${DB}"
 QUEUE="azure_hardening_queue_${DB}"
 FROM_ZK_TABLE="azure_hardening_from_zk_${DB}"
+NAMED_DISK_TABLE="azure_hardening_named_disk_${DB}"
+NAMED_DISK="azure_hardening_trusted_${DB}"
 ZK_PATH="/clickhouse/test_azure_hardening_${DB}"
 
 # The Azure SDK attaches a bearer token only to an `https` endpoint.
@@ -39,6 +41,7 @@ cleanup() {
         DROP TABLE IF EXISTS ${OPT_IN_TABLE} SYNC;
         DROP TABLE IF EXISTS ${QUEUE} SYNC;
         DROP TABLE IF EXISTS ${FROM_ZK_TABLE} SYNC;
+        DROP TABLE IF EXISTS ${NAMED_DISK_TABLE} SYNC;
         DROP NAMED COLLECTION IF EXISTS ${NC_URL_ONLY};
         DROP NAMED COLLECTION IF EXISTS ${NC_ACCOUNT_KEY};
     " 2>/dev/null
@@ -127,6 +130,16 @@ $CLICKHOUSE_CLIENT --allow_server_credentials_in_user_queries=1 -m -q "
 "
 $CLICKHOUSE_CLIENT -q "
     ALTER TABLE ${QUEUE} MODIFY SETTING after_processing_move_connection_string = '${URL}'; -- { serverError ACCESS_DENIED }
+"
+
+# A wrapper may name a disk an opted-in session created; the restricted session is refused, not given that disk.
+$CLICKHOUSE_CLIENT --allow_server_credentials_in_user_queries=1 -q "
+    CREATE TABLE ${NAMED_DISK_TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS disk = disk(name = '${NAMED_DISK}', type = azure_blob_storage, storage_account_url = '${DISK_URL}',
+            container_name = 'cont', readonly = 1, container_already_exists = 1, skip_access_check = 1)"
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE ${DISK_TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS disk = disk(type = encrypted, disk = '${NAMED_DISK}', key = '0123456789abcdef', path = 'restricted/'); -- { serverError ACCESS_DENIED }
 "
 
 # The endpoint of an opted-in disk may come from `from_zk`, which is substituted only after the opt-in is recorded.
