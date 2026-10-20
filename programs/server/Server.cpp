@@ -277,6 +277,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt32 dns_max_consecutive_failures;
     extern const ServerSettingsBool enable_azure_sdk_logging;
     extern const ServerSettingsBool enable_silk_runtime;
+    extern const ServerSettingsBool enable_gpu;
     extern const ServerSettingsUInt64 global_profiler_cpu_time_period_ns;
     extern const ServerSettingsUInt64 global_profiler_real_time_period_ns;
     extern const ServerSettingsUInt64 http_connections_soft_limit;
@@ -2292,6 +2293,15 @@ try
     }
     global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size, uncompressed_cache_size_ratio);
 
+    if (server_settings[ServerSetting::enable_gpu])
+    {
+#if USE_GPU
+        global_context->setGPU(server_settings);
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server setting `enable_gpu` is set, but the server is built without GPU support");
+#endif
+    }
+
     String mark_cache_policy = server_settings[ServerSetting::mark_cache_policy];
     size_t mark_cache_size = server_settings[ServerSetting::mark_cache_size];
     double mark_cache_size_ratio = server_settings[ServerSetting::mark_cache_size_ratio];
@@ -3899,8 +3909,11 @@ try
             stop_oom_canary();
 
             /// Killing remaining queries.
+            /// In wait mode the DDL worker's parts of ON CLUSTER backups and restores are spared, and waited for below.
+            /// Any other backup or restore that missed the wait above is cancelled: an initiator's own part needs this host's DDL worker.
+            const bool wait_backups_and_restores = server_settings[ServerSetting::shutdown_wait_backups_and_restores];
             if (!server_settings[ServerSetting::shutdown_wait_unfinished_queries])
-                global_context->getProcessList().killAllQueries();
+                global_context->getProcessList().killAllQueries(/* except_ddl_backups_and_restores= */ wait_backups_and_restores);
 
             size_t wait_limit_seconds = server_settings[ServerSetting::shutdown_wait_unfinished];
             auto wait_start = std::chrono::steady_clock::now();
@@ -3942,6 +3955,14 @@ try
                 /// No leak check: remaining connection handlers, refresh tasks or background queries still own memory
                 /// it would report as leaked. Reported, because here stderr is the server log.
                 safeExit(0, LeakCheck::SkipAndReport);
+            }
+
+            /// Before the AsyncLoader stops, because a restore can create a database, and after the forced exit, because stopping
+            /// the DDL worker waits for the task it runs, which the kill cancels unless it is such a part.
+            if (wait_backups_and_restores)
+            {
+                global_context->getProcessList().killAllQueries(/* except_ddl_backups_and_restores= */ true);
+                global_context->stopDDLWorkerAndWaitAllBackupsAndRestores();
             }
         });
 
