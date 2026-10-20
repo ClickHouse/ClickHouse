@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1236355",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1255061",
       "email": "support@clickhouse.com"
     }
   },
@@ -1847,7 +1847,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Creates a new service in the organization, and returns the current service state and a password to access the service. The service is started asynchronously.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:create-service` permission.\n\n</div>\n</div>"
+          "content": "Creates a new service in the organization, and returns the current service state and a password to access the service. The service is started asynchronously.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permissions</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:create-service`, `control-plane:service:manage` permissions.\n\n</div>\n</div>"
         }
       }
     },
@@ -8111,6 +8111,200 @@
         "x-mint": {
           "content": "Returns a single organization activity by ID.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view-activities` permission.\n\n</div>\n</div>"
         }
+      }
+    },
+    "/v1/organizations/{organizationId}/notifications": {
+      "get": {
+        "summary": "List of organization notifications",
+        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns notifications for the organization, most recent first. Only notifications about resources the caller can access are returned, so two keys in the same organization can see different results. The [notification types endpoint](#tag/Notifications/operation/notificationTypesGetList) lists the types this organization can receive, so it shows what to expect here. Notifications are retained for 180 days. A page holds at most `limit` notifications (default 100, maximum 250; a larger value is clamped) and the server may return fewer. Every response carries `limit` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null.",
+        "operationId": "notificationGetList",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization the notifications belong to.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of results to return.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 250,
+              "default": 100
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "description": "Opaque cursor from a previous response's `nextCursor`, marking where to resume the list.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "severity",
+            "description": "Filter to notifications of this severity: 'info', 'warning', 'critical'.",
+            "schema": {
+              "type": "string",
+              "example": "warning"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "description": "Filter to notifications of this type. New types are added over time; the [notification types endpoint](#tag/Notifications/operation/notificationTypesGetList) lists the ones this organization can receive.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "resource_id",
+            "description": "Filter to notifications about this resource. A service also matches the notifications of its ClickPipes; pass `resource_type` to narrow to one kind of resource.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "resource_type",
+            "description": "Filter to notifications about resources of this kind. One of 'service', 'organization', 'clickpipe', 'postgres'.",
+            "schema": {
+              "type": "string",
+              "example": "service"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from_date",
+            "description": "Return notifications created at or after this time. An RFC 3339 timestamp, not a bare date.",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2026-10-01T00:00:00Z"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to_date",
+            "description": "Return notifications created at or before this time. An RFC 3339 timestamp, not a bare date.",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2026-10-08T00:00:00Z"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Notification"
+                      }
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "description": "Maximum number of results returned in this page."
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Cursor for the next page, to be sent as the `cursor` query parameter. Null on the last page."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Notifications"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
       }
     },
     "/v1/organizations/{organizationId}/notificationTypes": {
@@ -15766,7 +15960,7 @@
     "/v1/organizations/{organizationId}/postgres/{postgresId}/metrics": {
       "get": {
         "summary": "Get Postgres time-series metrics",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns bucketed time-series metrics for a PostgreSQL service over the requested window (CPU, memory, disk, network, connections, cache hit ratio, throughput, transactions, and more). Use this to chart or analyze how a service behaved over time.",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns bucketed time-series metrics for a PostgreSQL service over the requested window (CPU, memory, disk, network, connections, cache hit ratio, throughput, transactions, wait events, lock waits, and more). Use this to chart or analyze how a service behaved over time.",
         "operationId": "postgresInstanceMetricsGet",
         "parameters": [
           {
@@ -28159,11 +28353,38 @@
       "ClickPipeBigQueryPipeSettings": {
         "properties": {
           "replicationMode": {
-            "description": "Replication mode. BigQuery only supports snapshot mode.",
+            "description": "Replication mode: \"cdc\" (change data capture with initial snapshot), \"snapshot\" (one-time snapshot only), or \"cdc_only\" (CDC without initial snapshot).",
             "type": "string",
-            "enum": [
-              "snapshot"
-            ]
+            "example": "cdc"
+          },
+          "replicationMethod": {
+            "description": "How changes are captured from BigQuery. \"query_based\" polls each table using a watermark timestamp column, \"events_based\" reads the BigQuery change history using the APPENDS or CHANGES table function. Required for \"cdc\" and \"cdc_only\" replication modes and not allowed for \"snapshot\".",
+            "type": "string",
+            "example": "query_based"
+          },
+          "syncIntervalSeconds": {
+            "description": "Interval in seconds between CDC syncs. Not allowed for \"snapshot\" replication mode.",
+            "type": "integer",
+            "minimum": 1,
+            "example": 60
+          },
+          "queryCdcPullSyncParallelism": {
+            "description": "Number of tables pulled in parallel during a CDC sync. Not allowed for \"snapshot\" replication mode.",
+            "type": "integer",
+            "minimum": 1,
+            "example": 4
+          },
+          "syncDelaySeconds": {
+            "description": "Each CDC sync reads data only up to now minus this delay, giving recently written rows time to become visible in BigQuery. Increase it if your tables are loaded via batch jobs or Google Cloud Dataflow; if set too low, late-visible rows may be skipped. Not allowed for \"snapshot\" replication mode.",
+            "type": "integer",
+            "minimum": 0,
+            "example": 60
+          },
+          "pullWindowSizeSeconds": {
+            "description": "Maximum amount of time one pull (query) can cover. Applies when the pipe has fallen behind, e.g. on the first CDC sync or when resuming after a pause: with a 6 hour limit, a pipe that is 3 days behind catches up in 12 smaller pulls instead of one large query. If a pull fails, only that pull is retried. Not allowed for \"snapshot\" replication mode.",
+            "type": "integer",
+            "minimum": 1,
+            "example": 86400
           },
           "allowNullableColumns": {
             "description": "Allow nullable columns in the destination table.",
@@ -28226,6 +28447,15 @@
               "ReplacingMergeTree",
               "Null"
             ]
+          },
+          "queryCdcWatermarkColumn": {
+            "description": "Source column of type TIMESTAMP used as the CDC watermark. Required for every table when replicationMethod is \"query_based\"; not allowed otherwise.",
+            "type": "string"
+          },
+          "eventsFunction": {
+            "description": "BigQuery table function used to read changes: \"appends\" (newly appended rows) or \"changes\" (all row changes). Required for every table when replicationMethod is \"events_based\"; not allowed otherwise.",
+            "type": "string",
+            "example": "appends"
           }
         },
         "required": [
@@ -28484,6 +28714,77 @@
           }
         }
       },
+      "ClickPipeMongoDBPipeColumn": {
+        "properties": {
+          "name": {
+            "description": "Top-level document field name.",
+            "type": "string",
+            "example": "amount"
+          },
+          "type": {
+            "description": "ClickHouse type the field is replicated as. Must be a valid ClickHouse column type supported by structured ingestion.",
+            "type": "string",
+            "example": "Float64"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ]
+      },
+      "ClickPipeMongoDBStructuredIngestion": {
+        "properties": {
+          "enabled": {
+            "description": "Replicate the collection into typed ClickHouse columns instead of a single JSON document column.",
+            "type": "boolean",
+            "example": true
+          },
+          "dropUnexpectedValues": {
+            "description": "When true, values that don't fit their column are reported with only the field name and reason, without the value.",
+            "type": "boolean",
+            "example": false,
+            "default": false
+          },
+          "columns": {
+            "type": "array",
+            "description": "Typed columns of the collection, taken as provided. When omitted, the columns are inferred from a sample of the collection documents. The _id document is always replicated and uses String type.",
+            "items": {
+              "$ref": "#/components/schemas/ClickPipeMongoDBPipeColumn"
+            }
+          },
+          "excludedColumns": {
+            "type": "array",
+            "description": "Names of columns, provided or inferred, to leave out of replication. Names that match no column are ignored. Column names must be unique within this list.",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "internal_notes"
+            ],
+            "uniqueItems": true
+          },
+          "sortingKeys": {
+            "type": "array",
+            "description": "Ordered list of column names to use as the sorting (ORDER BY) key in ClickHouse. When omitted, the sorting key is the _id document key.",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "_id",
+              "created_at"
+            ],
+            "uniqueItems": true
+          },
+          "partitionByExpr": {
+            "description": "ClickHouse PARTITION BY expression applied to the destination table when ClickPipes creates it.",
+            "type": "string",
+            "example": "toYYYYMM(created_at)"
+          }
+        },
+        "required": [
+          "enabled"
+        ]
+      },
       "ClickPipeMongoDBPipeTableMapping": {
         "properties": {
           "sourceDatabaseName": {
@@ -28510,6 +28811,9 @@
               "Null"
             ],
             "example": "ReplacingMergeTree"
+          },
+          "structuredIngestion": {
+            "$ref": "#/components/schemas/ClickPipeMongoDBStructuredIngestion"
           }
         },
         "required": [
@@ -30484,6 +30788,65 @@
             ]
           }
         }
+      },
+      "Notification": {
+        "properties": {
+          "id": {
+            "description": "Unique notification ID.",
+            "type": "string",
+            "format": "uuid",
+            "example": "1b7e0a94-2d0f-4c3a-8f1e-6c9b2d5a4e7f"
+          },
+          "type": {
+            "description": "Notification type. New types are added over time, so treat this as an open set.",
+            "type": "string",
+            "example": "service_backup_failed"
+          },
+          "severity": {
+            "description": "Severity of the notification. One of 'info', 'warning', 'critical'.",
+            "type": "string",
+            "example": "warning"
+          },
+          "resourceType": {
+            "description": "Kind of resource the notification is about. One of 'service', 'organization', 'clickpipe', 'postgres'.",
+            "type": "string",
+            "example": "service"
+          },
+          "resourceId": {
+            "description": "ID of the resource the notification is about.",
+            "type": "string"
+          },
+          "resourceName": {
+            "description": "Name the resource had when the notification was created. Absent for most notification types; use `resourceId` to identify the resource.",
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "When the notification was created. ISO-8601.",
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-10-07T09:30:00Z"
+          },
+          "title": {
+            "description": "Short human-readable summary.",
+            "type": "string",
+            "example": "Backup failed for analytics-prod"
+          },
+          "description": {
+            "description": "Human-readable body as plain text, with any links written as \"label (url)\".",
+            "type": "string",
+            "example": "A scheduled backup for analytics-prod did not complete. Review the backup settings (https://console.clickhouse.cloud/services/abc/backups)."
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "severity",
+          "resourceType",
+          "resourceId",
+          "createdAt",
+          "title",
+          "description"
+        ]
       },
       "SnapshotConfiguration": {
         "properties": {
@@ -37726,6 +38089,19 @@
             "example": 2,
             "minimum": 0
           },
+          "shared_memory_percent": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Percent of VM memory reserved for the shared_memory, from 25% to 75%. shared_buffers sized to fit in it. Limited to 50% on VMs with memory less or equal 16GB",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/shared_buffers/"
+            },
+            "example": 25,
+            "minimum": 25,
+            "maximum": 75
+          },
           "statement_timeout": {
             "type": [
               "string",
@@ -37834,6 +38210,19 @@
             "example": "5GB",
             "minimum": 32768
           },
+          "checkpoint_timeout": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Sets the maximum time between automatic WAL checkpoints.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/checkpoint_timeout/"
+            },
+            "example": "5min",
+            "minimum": 30,
+            "maximum": 3600
+          },
           "max_slot_wal_keep_size": {
             "type": [
               "string",
@@ -37852,13 +38241,26 @@
             "externalDocs": {
               "url": "https://postgresqlco.nf/doc/en/param/wal_compression/"
             },
-            "example": "off",
+            "example": "lz4",
             "enum": [
               "off",
               "on",
               "lz4",
               "zstd"
             ]
+          },
+          "wal_buffers": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Sets the number of disk-page buffers in shared memory for WAL. A number without a unit is in 8 kB pages.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/wal_buffers/"
+            },
+            "example": "16MB",
+            "minimum": 32,
+            "maximum": 262144
           },
           "autovacuum_max_workers": {
             "type": [
@@ -37931,6 +38333,58 @@
             },
             "example": 0.2,
             "minimum": 0
+          },
+          "autovacuum_vacuum_threshold": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Minimum number of tuple updates or deletes prior to vacuum.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/autovacuum_vacuum_threshold/"
+            },
+            "example": 50,
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "autovacuum_analyze_threshold": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Minimum number of tuple inserts, updates, or deletes prior to analyze.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/autovacuum_analyze_threshold/"
+            },
+            "example": 50,
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "autovacuum_vacuum_insert_threshold": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Minimum number of tuple inserts prior to vacuum, or -1 to disable insert vacuums.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/autovacuum_vacuum_insert_threshold/"
+            },
+            "example": 1000,
+            "minimum": -1,
+            "maximum": 2147483647
+          },
+          "autovacuum_freeze_max_age": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Age at which to autovacuum a table to prevent transaction ID wraparound.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/autovacuum_freeze_max_age/"
+            },
+            "example": 200000000,
+            "minimum": 100000,
+            "maximum": 2000000000
           },
           "autovacuum_vacuum_cost_limit": {
             "type": [
@@ -38549,7 +39003,7 @@
       "PostgresMetricSeries": {
         "properties": {
           "label": {
-            "description": "Distinguishing label for this series within the metric (for example a CPU mode, a database name, or \"Reads\").",
+            "description": "Distinguishing label for this series within the metric (for example a CPU mode, a database name, a wait event such as \"Lock:relation\", or \"Reads\").",
             "type": "string"
           },
           "dataPoints": {
@@ -38568,7 +39022,7 @@
       "PostgresMetric": {
         "properties": {
           "key": {
-            "description": "Stable metric identifier (for example cpu_usage, connection_count, cache_hit_ratio).",
+            "description": "Stable metric identifier (for example cpu_usage, connection_count, cache_hit_ratio, active_sessions_by_wait).",
             "type": "string"
           },
           "name": {
