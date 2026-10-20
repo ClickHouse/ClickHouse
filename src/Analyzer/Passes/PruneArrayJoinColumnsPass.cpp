@@ -356,7 +356,7 @@ public:
             }
         }
 
-        /// `join_use_nulls` and `group_by_use_nulls` make a reference `Nullable` while the ARRAY JOIN expression is not.
+        /// `join_use_nulls` makes a reference `Nullable` while the ARRAY JOIN expression is not.
         auto new_column_type = expr_usage->pruned_type;
         if (isNullableOrLowCardinalityNullable(column_node->getColumnType()))
             new_column_type = makeNullableOrLowCardinalityNullableSafe(new_column_type);
