@@ -1695,7 +1695,6 @@ _GENERATED_HDRS_1 = [
     "Client/ConnectionString.h",
     "Client/IConnections.h",
     "Client/IServerConnection.h",
-    "Client/JWTProvider.h",
     "Client/LineReader.h",
     "Client/LocalConnection.h",
     "Client/OAuthDeviceFlow.h",
@@ -1718,12 +1717,12 @@ _GENERATED_HDRS_1 = [
     [
         "Coordination/**/*.h",
     ],
-    exclude = _PRIVATE_DBMS_0_HEADERS,
+    exclude = _PRIVATE_DBMS_0_HEADERS + ["Coordination/tests/gtest_coordination_common.h"],
 ) + glob(
     [
         "Core/**/*.h",
     ],
-    exclude = _PRIVATE_DBMS_0_HEADERS,
+    exclude = _PRIVATE_DBMS_0_HEADERS + ["Core/YTsaurus/YTsaurusQueries.h"],
 ) + glob(
     [
         "DataTypes/**/*.h",
@@ -1777,7 +1776,7 @@ _GENERATED_HDRS_1 = [
     [
         "Storages/**/*.h",
     ],
-    exclude = _PRIVATE_DBMS_0_HEADERS,
+    exclude = _PRIVATE_DBMS_0_HEADERS + ["Storages/YTsaurus/YTsaurusSettings.h"],
 ) + glob(["WindowFunctions/*.h"])
 
 _DBMS_LOCAL_DEFINES = [
@@ -2765,7 +2764,6 @@ ch_cc_library(
     }) + [
         "@clickhouse_sqlite_amalgamation//:_sqlite",
     ] + [
-        "//bazel:clickhouse_config_headers",
         "//bazel:clickhouse_grpc_headers",
         "//rust/workspace:skim_headers",
         "@clickhouse_libfiu//:_libfiu",
@@ -2801,12 +2799,17 @@ ch_cc_library(
             "../" + "bazel/gen",
         ],
     }),
+    textual_hdrs = [
+        "Client/JWTProvider.h",
+        "Core/YTsaurus/YTsaurusQueries.h",
+        "Storages/YTsaurus/YTsaurusSettings.h",
+    ],
     deps = _GENERATED_DEPS_1 + [
         "@clickhouse_mongo_cxx_driver//:_bsoncxx",
         "@clickhouse_mongo_cxx_driver//:_mongocxx",
         "//src/Common/Config:clickhouse_common_config",
         "//src:clickhouse_common_io__compile_0",
-    ] + ["@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-core"],
+    ] + ["@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-core"] + ["//bazel:clickhouse_config_headers"],
 )
 
 ch_cc_library(
@@ -3414,7 +3417,15 @@ cc_test(
         "Storages/Statistics/tests/gtest_stats.cpp",
         "Storages/Streaming/tests/gtest_subscription_manager.cpp",
         "Storages/TimeSeries/tests/gtest_normalize_time_series_definition.cpp",
-    ] + glob(["Storages/tests/*.cpp"]),
+    ] + glob(["Storages/tests/*.cpp"]) + [
+        "//src/Common:Scheduler/Nodes/tests/ResourceTest.h",
+        "//src/Common:tests/gtest_ephemeral_certificate.h",
+        "//src/Common:tests/gtest_global_context.h",
+        "//src/Common:tests/gtest_global_register.h",
+        "//src/Common:tests/gtest_helper_functions.h",
+        "//src/Common:tests/gtest_silk_scheduler.h",
+        "Coordination/tests/gtest_coordination_common.h",
+    ],
     additional_compiler_inputs = [
         "//bazel:gen/base/base/GitHash.generated.cpp",
         "//bazel:gen/includes/configs/config_version.cpp",
@@ -4060,7 +4071,7 @@ cc_library(
         [
             "Coordination/**/*.h",
         ],
-        exclude = _PRIVATE_DBMS_0_HEADERS,
+        exclude = _PRIVATE_DBMS_0_HEADERS + ["Coordination/tests/gtest_coordination_common.h"],
     ) + glob(
         [
             "Core/**/*.h",
@@ -4159,7 +4170,10 @@ cc_library(
         [
             "**/*.h",
         ],
-        exclude = _PRIVATE_IO_HEADERS + _PRIVATE_DBMS_0_HEADERS + _IO_COMPILED_API_HEADERS + ["Client/BuzzHouse/**/*.h"],
+        exclude = _PRIVATE_IO_HEADERS + _PRIVATE_DBMS_0_HEADERS + _IO_COMPILED_API_HEADERS + [
+            "Client/BuzzHouse/**/*.h",
+            "Coordination/tests/gtest_coordination_common.h",
+        ],
     ),
     includes = [
         ".",

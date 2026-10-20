@@ -1,0 +1,34 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "api",
+    hdrs = ["api/api.h"],
+)
+
+cc_library(
+    name = "bridge",
+    deps = [":api"],
+)
+
+# Recursive preprocessing must still observe this implementation dependency.
+cc_library(
+    name = "declared",
+    srcs = ["self.c"],
+    implementation_deps = [":api"],
+)
+
+# The same recursive source gets api.h only through a transitive dependency.
+cc_library(
+    name = "missing_direct",
+    srcs = ["self.c"],
+    implementation_deps = [":bridge"],
+)
+
+# Matching basenames must not make collision/other/self.c this target's TU.
+cc_library(
+    name = "foreign_same_basename",
+    srcs = ["collision/self.c"],
+    additional_compiler_inputs = ["collision/other/self.c"],
+)

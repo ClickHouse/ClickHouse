@@ -442,7 +442,7 @@ new file mode 100644
 +                           " but DWYU cannot attribute the guarded header; inspect Clang's include dirs.");
 +        }
 +        resolved = execPath(resolved);
-+        if (!search.isToolchain(resolved))
++        if (resolved != own_file && !search.isToolchain(resolved))
 +            observations(pending_file, pending_public).push_back({{"include", pending_statement}, {"file", resolved}});
 +        pending_statement.clear();
 +        pending_file.clear();

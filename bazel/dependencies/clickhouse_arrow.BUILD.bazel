@@ -366,6 +366,12 @@ ch_cc_library(
             "**/*test_common.h",
             "**/*benchmark*.h",
             "**/s3_test_*.h",
+        ] + [
+            "cpp/src/arrow/compute/row/row_util_avx2_internal.h",
+            "cpp/src/arrow/extension/tensor_internal.h",
+            "cpp/src/arrow/filesystem/gcsfs_internal.h",
+            "cpp/src/arrow/filesystem/s3_internal.h",
+            "cpp/src/arrow/io/mman.h",
         ],
     ),
     copts = [
@@ -477,6 +483,10 @@ ch_cc_library(
         "-w",
         "-std=c++23",
     ],
+    implementation_deps = [
+        "@clickhouse_grpc//:grpc__compile_0",
+        "@clickhouse_google_protobuf//:_libprotobuf",
+    ],
     includes = ["cpp/src"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = ["config/contrib/arrow-cmake/cpp/src"],
@@ -485,8 +495,9 @@ ch_cc_library(
         ":_arrow",
         ":_arrow__compile_0",
         "@clickhouse_grpc//:grpc++",
-        "@clickhouse_grpc//:grpc__compile_0",
-        "@clickhouse_google_protobuf//:_libprotobuf",
+        "@clickhouse//contrib/arrow-cmake:arrow_cmake_headers",
+        "@clickhouse_abseil_cpp//:absl_synchronization",
+        "@clickhouse_abseil_cpp//:absl_status",
     ],
 )
 
@@ -560,6 +571,9 @@ ch_cc_library(
             "cpp/src/parquet/arrow/test_util.h",
             "cpp/src/parquet/encryption/test_encryption_util.h",
             "cpp/src/parquet/test_util.h",
+        ] + [
+            "cpp/src/parquet/level_comparison_inc.h",
+            "cpp/src/parquet/level_conversion_inc.h",
         ],
     ),
     copts = [
@@ -573,6 +587,10 @@ ch_cc_library(
     ],
     includes = ["cpp/src"],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
+    textual_hdrs = [
+        "cpp/src/parquet/level_comparison_inc.h",
+        "cpp/src/parquet/level_conversion_inc.h",
+    ],
     deps = [
         ":_arrow",
         ":_arrow__compile_0",

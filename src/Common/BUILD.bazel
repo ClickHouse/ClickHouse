@@ -553,6 +553,11 @@ exports_files(
     visibility = ["//src:__pkg__"],
 )
 
+exports_files(
+    glob(["**/tests/**/*.h"]),
+    visibility = ["//src:__pkg__"],
+)
+
 ch_cc_library(
     name = "Common",
     srcs = [
@@ -565,6 +570,7 @@ ch_cc_library(
         exclude = [
             "CaresPTRResolver.h",
             "IO.h",
+            "**/tests/**/*.h",
         ],
     ),
     clickhouse_code = True,
@@ -640,5 +646,6 @@ ch_cc_library(
         "//base/poco/Foundation:_poco_foundation",
         "@clickhouse_fmtlib//:_fmt",
         "@clickhouse_double_conversion//:_double-conversion",
+        "@clickhouse_rapidjson//:rapidjson",
     ],
 )
