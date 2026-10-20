@@ -81,7 +81,7 @@ struct GCSObjectStorageSettings
     String google_adc_client_secret;
     String google_adc_refresh_token;
     /// Where the refresh token is exchanged. Empty means Google's own OAuth 2.0 endpoint
-    /// (`https://oauth2.googleapis.com/token`), which is what a real deployment uses; an override is
+    /// (the `/token` endpoint of host `oauth2.googleapis.com`), which is what a real deployment uses; an override is
     /// for a private token endpoint, and it is validated against `remote_url_allow_hosts` like the
     /// storage endpoint is. Disk-only: the shared `s3` argument grammar has no key for it.
     String google_adc_token_uri;
