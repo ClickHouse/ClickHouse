@@ -102,17 +102,8 @@ static void checkTemporaryTableMemoryUsage(UInt64 total_bytes, UInt64 max_tempor
 /// `allocatedBytes` of a stored block after it was accounted in `BlocksWithCounts::bytes`, so create them beforehand.
 static void materializeNullMaps(const Block & block)
 {
-    auto materialize = [](const IColumn & column)
-    {
-        if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
-            nullable->materializeNullMap();
-    };
-
     for (const auto & elem : block)
-    {
-        materialize(*elem.column);
-        elem.column->forEachSubcolumnRecursively(materialize);
-    }
+        materializeNullMapsRecursively(*elem.column);
 }
 
 class MemorySink final : public SinkToStorage

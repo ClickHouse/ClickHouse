@@ -1464,6 +1464,18 @@ ColumnPtr makeNullableOrLowCardinalityNullableSafe(const ColumnPtr & column)
     return column;
 }
 
+void materializeNullMapsRecursively(const IColumn & column)
+{
+    auto materialize = [](const IColumn & subcolumn)
+    {
+        if (const auto * nullable = typeid_cast<const ColumnNullable *>(&subcolumn))
+            nullable->materializeNullMap();
+    };
+
+    materialize(column);
+    column.forEachSubcolumnRecursively(materialize);
+}
+
 ColumnPtr removeNullable(const ColumnPtr & column)
 {
     if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))

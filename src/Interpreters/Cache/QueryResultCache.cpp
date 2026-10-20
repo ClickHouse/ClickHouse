@@ -23,6 +23,7 @@
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
@@ -986,6 +987,22 @@ void QueryResultCacheWriter::finalizeWrite()
         }
         query_result->chunks = std::move(compressed_chunks);
     }
+
+    /// The readers share the uncompressed columns of the entry and may create a missing null map lazily, which would change
+    /// the weight of the entry after it was accounted, so create the null maps now. Compressed columns are decompressed
+    /// into new columns on every read.
+    auto materialize_null_maps = [](const Chunk & chunk)
+    {
+        for (const auto & column : chunk.getColumns())
+            materializeNullMapsRecursively(*column);
+    };
+    if (!key.is_compressed)
+        for (const auto & chunk : query_result->chunks)
+            materialize_null_maps(chunk);
+    if (query_result->totals.has_value())
+        materialize_null_maps(*query_result->totals);
+    if (query_result->extremes.has_value())
+        materialize_null_maps(*query_result->extremes);
 
     /// Check more reasons why the entry must not be cached.
 

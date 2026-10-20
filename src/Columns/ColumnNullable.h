@@ -382,4 +382,10 @@ ColumnPtr makeNullableOrLowCardinalityNullableSafe(const ColumnPtr & column);
 ColumnPtr removeNullable(const ColumnPtr & column);
 ColumnPtr removeNullableOrLowCardinalityNullable(const ColumnPtr & column);
 
+/// Create the missing null maps of `column` and its subcolumns, if they are `ColumnNullable`.
+/// The readers of a shared `Nullable` column may create its null map lazily, which changes `allocatedBytes`
+/// and `byteSize` of the column. Call it for the columns that are retained and accounted (e.g. stored
+/// in a table, in a hash join, or in a cache) before they are accounted and shared with the readers.
+void materializeNullMapsRecursively(const IColumn & column);
+
 }

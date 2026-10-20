@@ -261,17 +261,8 @@ void StoredBlock::rebuildReplicatedColumns()
 
 void StoredBlock::materializeNullMaps() const
 {
-    auto materialize = [](const IColumn & column)
-    {
-        if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
-            nullable->materializeNullMap();
-    };
-
     for (const auto & column : columns)
-    {
-        materialize(*column);
-        column->forEachSubcolumnRecursively(materialize);
-    }
+        materializeNullMapsRecursively(*column);
 }
 
 bool StoredBlock::hasRowStore() const { return row_store != nullptr; }
