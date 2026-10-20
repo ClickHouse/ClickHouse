@@ -222,13 +222,13 @@ bool mergeTreeColumnHasOwnMemory(const ReadFromMergeTree & read, const String & 
     if (columns.getDefault(column_name))
         return false;
 
-    /// A part can store the column in a sparse serialization, which is read as a sparse column that takes much
-    /// less than the offset per row, while the result of an expression of it can be a full column.
-    for (const auto & part : read.getParts())
+    /// The mutations and patches applied on the fly can make a column the same as another one (`UPDATE t = s`).
+    if (const auto & mutations_snapshot = read.getMutationsSnapshot())
     {
-        const auto & serialization_infos = part.data_part->getSerializationInfos();
-        if (auto it = serialization_infos.find(column_name); it != serialization_infos.end() && it->second->hasCustomSerialization())
-            return false;
+        const auto columns_changed_on_fly = mutations_snapshot->getColumnsChangedOnFly();
+        for (const auto & column : *read.getOutputHeader())
+            if (columns_changed_on_fly.contains(column.name))
+                return false;
     }
 
     /// The columns whose default expressions read the column, directly or through other columns.
@@ -376,6 +376,77 @@ bool hasOwnMemory(const QueryPlan::Node & node, const String & column_name, size
         return hasOwnMemory(*node.children.front(), column_name, depth + 1);
 
     return false;
+}
+
+/// Whether the column `column_name` of the output of `node` may be a sparse column, which takes much less than
+/// the offset of a `String` per row, while the result of an expression of it can be a full column. A part can store
+/// a column in a sparse serialization, and functions keep their results sparse if they map the default value to
+/// the default value (`toFixedString(s, 8)`), so all the inputs of the expressions are followed to the reads.
+bool mayBeSparse(const QueryPlan::Node & node, const String & column_name, size_t depth = 0)
+{
+    static constexpr size_t max_depth = 100;
+    if (depth > max_depth)
+        return true;
+
+    const auto * step = node.step.get();
+
+    const ActionsDAG * actions = nullptr;
+    if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
+        actions = &expression->getExpression();
+    else if (const auto * filter = typeid_cast<const FilterStep *>(step))
+        actions = &filter->getExpression();
+
+    if (actions)
+    {
+        const auto * column_output = actions->tryFindInOutputs(column_name);
+        if (!column_output || node.children.size() != 1)
+            return true;
+
+        NodeSet column_nodes;
+        collectSubtree(column_output, column_nodes);
+        for (const auto * column_node : column_nodes)
+            if (column_node->type == ActionsDAG::ActionType::INPUT && mayBeSparse(*node.children.front(), column_node->result_name, depth + 1))
+                return true;
+
+        return false;
+    }
+
+    if (const auto * read = typeid_cast<const ReadFromMergeTree *>(step))
+    {
+        for (const auto & part : read->getParts())
+        {
+            const auto & serialization_infos = part.data_part->getSerializationInfos();
+            if (auto it = serialization_infos.find(column_name); it != serialization_infos.end() && it->second->hasCustomSerialization())
+                return true;
+        }
+        return false;
+    }
+
+    if (typeid_cast<const ReadFromSystemNumbersStep *>(step) || typeid_cast<const AggregatingStep *>(step)
+        || typeid_cast<const MergingAggregatedStep *>(step))
+        return false;
+
+    if (typeid_cast<const UnionStep *>(step))
+    {
+        for (const auto * child : node.children)
+            if (mayBeSparse(*child, column_name, depth + 1))
+                return true;
+        return false;
+    }
+
+    if (const auto * window = typeid_cast<const WindowStep *>(step))
+    {
+        for (const auto & window_function : window->getWindowFunctions())
+            if (window_function.column_name == column_name)
+                return false;
+        return node.children.size() != 1 || mayBeSparse(*node.children.front(), column_name, depth + 1);
+    }
+
+    const auto & input_headers = step->getInputHeaders();
+    if (node.children.size() == 1 && input_headers.size() == 1 && blocksHaveEqualStructure(*input_headers.front(), *step->getOutputHeader()))
+        return mayBeSparse(*node.children.front(), column_name, depth + 1);
+
+    return true;
 }
 
 bool hasConstantFilter(const FilterStep & filter)
@@ -641,7 +712,7 @@ void tryPushDownExpressionsBelowWindow(const Stack & stack, QueryPlan::Nodes & n
         else if (can_replace_column(input, lowest_candidates))
             replacing_candidates = &lowest_candidates;
 
-        if (!replacing_candidates || !hasOwnMemory(*bottom_node, column_name))
+        if (!replacing_candidates || !hasOwnMemory(*bottom_node, column_name) || mayBeSparse(*bottom_node, column_name))
             continue;
 
         for (const auto * candidate : *replacing_candidates)

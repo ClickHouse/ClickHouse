@@ -209,7 +209,27 @@ SELECT if(explain LIKE '%Window (%', 'Window', 'cityHash64') FROM
     SELECT cityHash64(s), count() OVER () FROM t_window_push_down_sparse
 )
 WHERE explain LIKE '%Window (%' OR explain LIKE '%FUNCTION cityHash64%';
+SELECT if(explain LIKE '%Window (%', 'Window', 'cityHash64') FROM
+(
+    EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT cityHash64(t), count() OVER () FROM (SELECT toFixedString(s, 8) AS t FROM t_window_push_down_sparse)
+)
+WHERE explain LIKE '%Window (%' OR explain LIKE '%FUNCTION cityHash64%';
 DROP TABLE t_window_push_down_sparse;
+
+SELECT 'a column changed by a mutation on the fly';
+DROP TABLE IF EXISTS t_window_push_down_mutation;
+CREATE TABLE t_window_push_down_mutation (s String, t String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_window_push_down_mutation SELECT toString(number % 10), '0' FROM numbers(10);
+SYSTEM STOP MERGES t_window_push_down_mutation;
+ALTER TABLE t_window_push_down_mutation UPDATE t = s WHERE 1 SETTINGS mutations_sync = 0;
+SELECT if(explain LIKE '%Window (%', 'Window', 'cityHash64') FROM
+(
+    EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT s, cityHash64(t), count() OVER () FROM t_window_push_down_mutation SETTINGS apply_mutations_on_fly = 1
+)
+WHERE explain LIKE '%Window (%' OR explain LIKE '%FUNCTION cityHash64%';
+DROP TABLE t_window_push_down_mutation;
 
 SELECT 'arrayJoin below the window functions';
 SELECT toUInt64(s), count() OVER ()
