@@ -54,6 +54,7 @@ void ASTDropQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases)
     hash_state.update(is_view);
     hash_state.update(sync);
     hash_state.update(permanently);
+    hash_state.update(detached);
     ASTQueryWithTableAndOutput::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
@@ -108,6 +109,7 @@ void ASTDropQuery::writeJSON(WriteBuffer & out) const
     w.writeBool("is_view", is_view);
     w.writeBool("sync", sync);
     w.writeBool("permanently", permanently);
+    w.writeBool("detached", detached);
     /// `TEMPORARY` is part of the formatted DDL (`DROP TEMPORARY TABLE ...`) and selects a
     /// different target object class, so it must survive the round-trip.
     if (isTemporary())
@@ -185,6 +187,7 @@ void ASTDropQuery::readJSON(const Poco::JSON::Object & json)
     is_view = r.getBool("is_view");
     sync = r.getBool("sync");
     permanently = r.getBool("permanently");
+    detached = r.getBool("detached");
     if (r.getBool("is_temporary"))
         setIsTemporary(true);
 
@@ -242,6 +245,20 @@ void ASTDropQuery::readJSON(const Poco::JSON::Object & json)
     if (permanently && kind != Kind::Detach)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'permanently' is only valid for DETACH during AST JSON deserialization");
 
+    /// `DETACHED` changes `DROP TABLE` from dropping an attached table to removing a detached
+    /// table. It is parser-valid only for non-temporary tables, never for views or dictionaries.
+    if (detached)
+    {
+        if (kind != Kind::Drop)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'detached' is only valid for DROP during AST JSON deserialization");
+        if (if_empty)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'detached' cannot be used with 'if_empty' during AST JSON deserialization");
+        if ((!table && !database_and_tables) || is_view || is_dictionary)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'detached' requires a table target during AST JSON deserialization");
+        if (isTemporary())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'detached' cannot be used with 'is_temporary' during AST JSON deserialization");
+    }
+
     /// The LIKE filter (`like`/`not_like`/`case_insensitive_like`) is parsed only in the
     /// `TRUNCATE [ALL] TABLES FROM <db>` branch. `formatQueryImpl` prints it unconditionally while
     /// `InterpreterDropQuery` consults it only when `kind == Truncate && has_tables`, so on any other
@@ -275,6 +292,8 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
 
     if (isTemporary())
         ostr << "TEMPORARY ";
+    if (detached)
+        ostr << "DETACHED ";
 
     if (has_all)
         ostr << "ALL ";

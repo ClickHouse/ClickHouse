@@ -8,6 +8,7 @@
 
 namespace DB
 {
+struct PermanentlyDetachedTableInfo;
 
 /** Default engine of databases.
   * It stores tables list in filesystem using list of .sql files,
@@ -90,13 +91,11 @@ public:
         const StorageInMemoryMetadata & metadata,
         bool validate_new_create_query) override;
 
-    Strings getNamesOfPermanentlyDetachedTables() const override
-    {
-        std::lock_guard lock(mutex);
-        return permanently_detached_tables;
-    }
+    Strings getNamesOfPermanentlyDetachedTables() const override;
 
     DiskPtr getDisk() const override { return metadata_disk_ptr; }
+
+    void removeTableFromPermanentlyDetachedTables(const UUID & uuid) override;
 
     /// `ordinary_znode_info` is the result of `checkReplicaPathIsSafe` for a conversion to a replicated engine
     /// of a table of an `Ordinary` database, and null otherwise. Such a table stores the path as a literal and
@@ -131,7 +130,7 @@ protected:
         const String & statement,
         ContextPtr query_context);
 
-    Strings permanently_detached_tables TSA_GUARDED_BY(mutex);
+    std::vector<PermanentlyDetachedTableInfo> permanently_detached_tables TSA_GUARDED_BY(mutex);
 
     /// Weak references: tracking must never extend the lifetime of a detached storage.
     /// A name may have several live detached instances at once: a plain `ATTACH TABLE` of an `Ordinary` table
