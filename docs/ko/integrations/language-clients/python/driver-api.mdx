@@ -35,7 +35,7 @@ doc_type: 'reference'
 | `headers`                  | dict 또는 None                          | `None`                      | 클라이언트 초기화를 포함한 모든 요청에 적용되는 HTTP headers입니다. 사용자 headers는 driver 기본값 다음에 적용되며, 이를 재정의할 수 있습니다.                                                                                                                                                                                                                                                   |
 | `compress`                 | bool 또는 str                           | `True`                      | 압축을 활성화하거나 `"lz4"`, `"zstd"`, `"br"`, `"gzip"` 중 하나를 선택합니다. [Compression](/ko/integrations/language-clients/python/additional-options#compression)을 참조하세요.                                                                                                                                                                                         |
 | `query_limit`              | int                                   | `0`                         | 적용 가능한 쿼리에 기본 행 수 제한이 추가됩니다. 0은 무제한을 의미합니다. 큰 결과는 모두 메모리에 구체화하지 말고 스트리밍하십시오.                                                                                                                                                                                                                                                                    |
-| `query_retries`            | int                                   | `2`                         | 재시도 가능한 읽기 실패에 허용되는 재시도 한도입니다. 명령과 삽입 작업은 다시 실행할 경우 부수 효과가 중복될 수 있으므로 일반적으로 재시도하지 않습니다.                                                                                                                                                                                                                                                         |
+| `query_retries`            | int                                   | `2`                         | 쿼리 메서드를 통한 적용 가능한 읽기 작업에 허용되는 재시도 한도입니다. 연결 종료 시 재시도, 명령 및 삽입 작업에 대해서는 [HTTP 재시도](#http-retries)를 참조하십시오.                                                                                                                                                                                                                                       |
 | `connect_timeout`          | 동기는 int, 비동기는 float                   | `10`                        | 새 연결을 수립할 때 적용되는 초 단위 타임아웃입니다. 연결 풀의 빈 슬롯을 기다리는 시간은 포함되지 않습니다. 비동기 클라이언트는 소수점 이하 초 단위 값도 허용합니다.                                                                                                                                                                                                                                                 |
 | `send_receive_timeout`     | 동기는 int, 비동기는 float                   | `300`                       | 초 단위의 소켓 읽기 타임아웃입니다. 비동기 클라이언트는 소수점 이하 초 단위 값도 허용합니다.                                                                                                                                                                                                                                                                                           |
 | `client_name`              | str or None                           | `None`                      | `system.query_log`에서 식별할 수 있도록 HTTP User-Agent 앞에 추가되는 접두사입니다.                                                                                                                                                                                                                                                                                  |
@@ -148,6 +148,16 @@ with clickhouse_connect.get_client(interface="chdb") as client:
 ```
 
 기본값은 인메모리 데이터베이스입니다. 영구 저장소를 사용하려면 `path="/data/my_chdb"`를 지정하거나 `dsn="chdb:///data/my_chdb"`를 사용하십시오. 백엔드는 프로세스당 하나의 엔진 경로만 허용하며 `get_async_client` 또는 외부 데이터를 지원하지 않습니다.
+
+### HTTP 재시도 {#http-retries}
+
+동기 및 비동기 HTTP 클라이언트는 특정 원격 연결 종료나 HTTP 429, 503, 504 응답이 발생하면 재시도 대상인 읽기 작업을 재시도합니다. `query`와 이에 특화된 쿼리 메서드, `raw_query`, `raw_stream`에서는 `query_retries`로 추가 시도 횟수를 설정합니다. 재시도 대상인 읽기 작업은 `query_retries=0`이어도 원격 연결이 종료되면 최소 1회 재시도합니다. `command`를 통해 전송된 읽기 작업은 원격 연결 종료 후 1회 재시도할 수 있지만, `query_retries` 한도를 사용하지 않으며 앞서 언급한 HTTP 상태에 대해서는 재시도하지 않습니다.
+
+클라이언트는 지원되는 `WITH` 및 `EXPLAIN` 형식을 포함하여 `SELECT`, `SHOW`, `DESCRIBE`, `EXISTS`와 같은 읽기 SQL 문을 인식합니다. 읽기로 인식되지 않는 SQL은 이러한 실패가 발생해도 재시도되지 않습니다. `PARALLEL WITH`나 `INTO OUTFILE`이 포함된 SQL 문, 그리고 여러 개의 SQL 문으로 구성된 경우도 재시도 대상에서 제외됩니다.
+
+`command`, `query`, `raw_query`, `raw_stream`을 통해 전송된 SQL 쓰기, DDL, 뮤테이션은 이러한 실패가 발생해도 다시 실행되지 않습니다. DB-API 또는 SQLAlchemy가 이들 메서드를 통해 SQL을 실행하는 경우에도 마찬가지입니다. 연결 오류만으로는 쓰기가 커밋되었는지 알 수 없으므로, 애플리케이션에서 재시도하기 전에 결과를 확인하십시오.
+
+삽입 API는 요청 body를 다시 전송할 수 있는 경우 연결 종료 시 재시도를 그대로 수행합니다. 이 경우 재시도로 인해 행이 중복될 수 있습니다. 자세한 내용은 [삽입 재시도와 중복 제거](/ko/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication)를 참조하십시오.
 
 ## 클라이언트 수명 주기와 모범 사례 {#client-lifecycle-and-best-practices}
 
@@ -812,32 +822,29 @@ client.insert(
 ```python
 from clickhouse_connect import dbapi
 
-connection = dbapi.connect(
+with dbapi.connect(
     host="localhost",
     username="default",
     password="password",
     database="default",
-)
-cursor = connection.cursor()
-
-try:
-    cursor.execute(
-        "SELECT name FROM system.tables "
-        "WHERE database = %(database)s ORDER BY name LIMIT 5",
-        {"database": "system"},
-    )
-    print(cursor.description)
-    print(cursor.fetchall())
-finally:
-    cursor.close()
-    connection.close()
+) as connection:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT name FROM system.tables "
+            "WHERE database = %(database)s ORDER BY name LIMIT 5",
+            {"database": "system"},
+        )
+        print(cursor.description)
+        print(cursor.fetchall())
 ```
 
-`Cursor.execute` 및 `Cursor.executemany`는 추가 `settings` 및 `query_formats` 키워드 인수를 받습니다. `settings`는 ClickHouse 설정을 전달합니다. `query_formats`는 SQL 문이 행을 반환할 때 `Client.query`와 동일한 매핑을 사용하여 ClickHouse 타입별 읽기 포맷을 적용합니다. 두 메서드 모두 키워드 전용 `pyformat_encoded` 인수도 받습니다. 기본값 `True`는 DB-API `pyformat` 규약을 따릅니다. SQLAlchemy 방언은 SQL 문 컴파일러가 원시 백분율 기호를 생성한 경우 이를 `False`로 설정하므로, 일반적으로 애플리케이션에서 설정할 필요가 없습니다. 매개변수화된 `Cursor.executemany` 작업은 SQL 바인딩 및 표현식 의미 체계를 유지하면서 매개변수 세트마다 한 번씩 실행됩니다. HTTP를 사용하는 경우 매개변수 세트마다 요청이 하나씩 전송됩니다. 뒤쪽의 매개변수 세트가 실패하더라도 앞서 수행된 쓰기는 커밋된 상태로 남습니다. 이러한 `executemany` 삽입에서 `Cursor.rowcount`는 ClickHouse가 보고한 `written_rows` 값의 합계이며, 해당 값을 사용할 수 없으면 `-1`입니다. `Cursor.execute`로 전송한 INSERT SQL 문은 `0`을 보고합니다. 플레이스홀더가 없는 `INSERT INTO table (columns) VALUES` 호환 형식은 네이티브 삽입을 사용합니다. `VALUES`로 끝나는 플레이스홀더 없는 INSERT가 이 호환 형식으로 인식되지 않으면 `ProgrammingError`가 발생합니다. 명시적인 네이티브 대량 삽입이 필요한 애플리케이션에서는 `Client.insert`를 사용하십시오. `fetchone`, `fetchmany`, `fetchall`은 현재 구체화된 결과에서 데이터를 가져옵니다.
+드라이버 확장 기능으로, `Connection` 및 `Cursor` 컨텍스트 관리자는 기존 객체를 반환하며 정상 종료 시와 예외로 인한 종료 시 모두 `close()`를 호출합니다. 단, 블록에서 발생한 예외를 억제하지는 않습니다.
 
-`Cursor.description`은 각 결과 컬럼 타입을 바탕으로 `null_ok`를 결정합니다. 널을 허용하지 않는 타입은 `False`를 보고하고, `Nullable` 래퍼, `Variant`, `Dynamic`을 포함한 널 허용 타입은 `True`를 보고합니다. `None`은 널 허용 여부를 알 수 없음을 의미합니다. 선행 주석을 무시하고 `SELECT` 또는 `WITH`로 시작하는 쿼리가 행이나 컬럼 메타데이터를 반환하지 않으면, cursor는 `description`을 채우기 위해 `LIMIT 0` 메타데이터 쿼리를 실행합니다. 해당 메타데이터 쿼리가 실패하면 `description`은 비어 있는 상태로 유지됩니다.
+`Cursor.execute` 및 `Cursor.executemany`는 추가 `settings` 및 `query_formats` 키워드 인수를 받습니다. `settings`는 ClickHouse 설정을 전달합니다. `query_formats`는 SQL 문이 행을 반환할 때 `Client.query`와 동일한 매핑을 사용하여 ClickHouse 유형별 읽기 포맷을 적용합니다. 두 메서드 모두 키워드 전용 `pyformat_encoded` 인수도 받습니다. 기본값 `True`는 DB-API `pyformat` 규약을 따릅니다. SQLAlchemy 방언은 SQL 문 컴파일러가 원시 백분율 기호를 생성한 경우 이를 `False`로 설정하므로, 일반적으로 애플리케이션에서 설정할 필요가 없습니다. 매개변수화된 `Cursor.executemany` 작업은 SQL 바인딩 및 표현식 의미 체계를 유지하면서 매개변수 세트마다 한 번씩 실행됩니다. HTTP를 사용하는 경우 매개변수 세트마다 요청이 하나씩 전송됩니다. 뒤쪽의 매개변수 세트가 실패하더라도 앞서 수행된 쓰기는 커밋된 상태로 남습니다. 이러한 `executemany` 삽입에서 `Cursor.rowcount`는 ClickHouse가 보고한 `written_rows` 값의 합계이며, 해당 값을 사용할 수 없으면 `-1`입니다. `Cursor.execute`로 전송한 INSERT SQL 문은 `0`을 보고합니다. 플레이스홀더가 없는 `INSERT INTO table (columns) VALUES` 호환 형식은 네이티브 삽입을 사용합니다. `VALUES`로 끝나는 플레이스홀더 없는 INSERT가 이 호환 형식으로 인식되지 않으면 `ProgrammingError`가 발생합니다. 명시적인 네이티브 대량 삽입이 필요한 애플리케이션에서는 `Client.insert`를 사용하십시오. `fetchone`, `fetchmany`, `fetchall`은 현재 구체화된 결과에서 데이터를 가져옵니다.
 
-ClickHouse는 이 HTTP 인터페이스를 통해 전통적인 트랜잭션을 제공하지 않습니다. `Connection.commit()` 및 `Connection.rollback()`은 아무 작업도 수행하지 않습니다. 연결을 공유하는 경우에도 [session ID 동시성 규칙](/ko/integrations/language-clients/python/advanced-usage#managing-clickhouse-session-ids)이 계속 적용됩니다.
+`Cursor.description`은 각 결과 컬럼 유형을 바탕으로 `null_ok`를 결정합니다. 널을 허용하지 않는 유형은 `False`를 보고하고, `Nullable` 래퍼, `Variant`, `Dynamic`을 포함한 널 허용 유형은 `True`를 보고합니다. `None`은 널 허용 여부를 알 수 없음을 의미합니다. 선행 주석을 무시하고 `SELECT` 또는 `WITH`로 시작하는 쿼리가 행이나 컬럼 메타데이터를 반환하지 않으면, cursor는 `description`을 채우기 위해 `LIMIT 0` 메타데이터 쿼리를 실행합니다. 해당 메타데이터 쿼리가 실패하면 `description`은 비어 있는 상태로 유지됩니다.
+
+ClickHouse는 이 HTTP 인터페이스를 통해 전통적인 트랜잭션을 제공하지 않습니다. `Connection.commit()` 및 `Connection.rollback()`은 아무 작업도 수행하지 않으므로, 연결 컨텍스트를 벗어날 때는 커밋이나 롤백 대신 `Connection.close()`가 호출됩니다. 연결을 공유하는 경우에도 [세션 ID 동시성 규칙](/ko/integrations/language-clients/python/advanced-usage#managing-clickhouse-session-ids)이 계속 적용됩니다.
 
 ## 유틸리티 클래스와 함수 {#utility-classes-and-functions}
 

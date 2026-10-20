@@ -57,6 +57,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 group_by_two_level_threshold;
     extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_group_by;
+    extern const QueryPlanSerializationSettingsUInt64 min_bytes_before_external_group_by;
     extern const QueryPlanSerializationSettingsUInt64 max_entries_for_hash_table_stats;
     extern const QueryPlanSerializationSettingsUInt64 max_rows_to_group_by;
     extern const QueryPlanSerializationSettingsUInt64 max_size_to_preallocate_for_aggregation;
@@ -77,6 +78,7 @@ namespace QueryPlanSerializationSetting
 namespace Setting
 {
     extern const SettingsBool use_aggregation_memory_tracker;
+    extern const SettingsUInt64 min_bytes_before_external_group_by;
 }
 
 namespace ErrorCodes
@@ -1164,6 +1166,9 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_MEMORY_TRACKER)
         settings[QueryPlanSerializationSetting::use_aggregation_memory_tracker] = params.use_aggregation_memory_tracker;
 
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MIN_BYTES_BEFORE_EXTERNAL_GROUP_BY)
+        settings[QueryPlanSerializationSetting::min_bytes_before_external_group_by] = params.min_bytes_before_external_group_by;
+
     /// Both values, every version: a peer predating the name serializes String keys the way `false` does, so
     /// omitting either one would silently leave it on the other layout.
     settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte] = params.serialize_string_with_zero_byte;
@@ -1261,13 +1266,13 @@ void AggregatingStep::serialize(Serialization & ctx) const
 
     if (!sort_description_for_merging.empty())
     {
-        serializeSortDescription(sort_description_for_merging, ctx.out, ctx.version);
-        serializeSortDescription(group_by_sort_description, ctx.out, ctx.version);
+        serializeSortDescription(sort_description_for_merging, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
+        serializeSortDescription(group_by_sort_description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
     }
 
     writeVarUInt(params.keys.size(), ctx.out);
     for (const auto & key : params.keys)
-        writeStringBinary(key, ctx.out);
+        ctx.writeColumnName(key);
 
     if (!grouping_sets_params.empty())
     {
@@ -1277,11 +1282,11 @@ void AggregatingStep::serialize(Serialization & ctx) const
             /// Only used keys are needed.
             writeVarUInt(grouping_set.used_keys.size(), ctx.out);
             for (const auto & used_key : grouping_set.used_keys)
-                writeStringBinary(used_key, ctx.out);
+                ctx.writeColumnName(used_key);
         }
     }
 
-    serializeAggregateDescriptions(params.aggregates, ctx.out);
+    serializeAggregateDescriptions(params.aggregates, ctx.out, ctx.for_cache_key, ctx.input_header);
 
     if (params.stats_collecting_params.isCollectionAndUseEnabled() && !ctx.for_cache_key)
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
@@ -1444,6 +1449,9 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::group_by_two_level_threshold],
         ctx.settings[QueryPlanSerializationSetting::group_by_two_level_threshold_bytes],
         ctx.settings[QueryPlanSerializationSetting::max_bytes_before_external_group_by],
+        ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MIN_BYTES_BEFORE_EXTERNAL_GROUP_BY
+            ? size_t(ctx.settings[QueryPlanSerializationSetting::min_bytes_before_external_group_by])
+            : size_t(ctx.context->getSettingsRef()[Setting::min_bytes_before_external_group_by]),
         ctx.settings[QueryPlanSerializationSetting::empty_result_for_aggregation_by_empty_set],
         Context::getGlobalContextInstance()->getTempDataOnDisk(),
         0, //settings[QueryPlanSerializationSetting::max_threads],

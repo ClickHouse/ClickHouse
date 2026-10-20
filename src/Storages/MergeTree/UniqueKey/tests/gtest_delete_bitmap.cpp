@@ -7,6 +7,8 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 
+#include <algorithm>
+#include <numeric>
 #include <random>
 #include <string>
 #include <vector>
@@ -42,7 +44,7 @@ namespace
 /// ---------- primitive ----------
 ///
 /// One smoke test gates the wrapper layer; the rest of the suite exercises
-/// our own logic: `containsBulk`, `rangeCardinality`, the dynamic-width
+/// our own logic: `buildKeepFilterRange`, `rangeCardinality`, the dynamic-width
 /// upgrade, serialize/deserialize invariants, and filename helpers.
 
 TEST(DeleteBitmapTest, WrapperSmoke)
@@ -70,70 +72,6 @@ TEST(DeleteBitmapTest, WrapperSmoke)
 
     auto v = a.toVector();
     EXPECT_EQ(v, (std::vector<UInt64>{10, 20, 30, 40, 50}));
-}
-
-TEST(DeleteBitmapTest, ContainsBulkMatchesScalar)
-{
-    /// Correctness lock for the bulk API: must produce the same keep/drop
-    /// decision as per-row `contains`. Exercises empty-bitmap fast path,
-    /// n==0, sparse + dense shapes, and offsets inside + outside the
-    /// bitmap.
-    DeleteBitmap bm;
-    /// Mixed shape: singletons + a dense run — crosses the CRoaring
-    /// container-type boundary (array vs bitset), so containsBulk must
-    /// handle both paths in a single call.
-    for (UInt32 i = 0; i < 5000; ++i)
-        bm.add(100 + i);
-    bm.add(1'000'000);
-    bm.add(2'000'000);
-    bm.add(std::numeric_limits<UInt32>::max());
-
-    /// n == 0 is a no-op.
-    {
-        uint8_t dummy = 0xAA;
-        bm.containsBulk(nullptr, 0, &dummy);
-        EXPECT_EQ(dummy, 0xAA);
-    }
-
-    /// Empty bitmap → all 1s.
-    {
-        DeleteBitmap empty;
-        std::vector<UInt64> rows = {0, 1, 999, std::numeric_limits<UInt32>::max()};
-        std::vector<uint8_t> keep(rows.size(), 0);
-        empty.containsBulk(rows.data(), rows.size(), keep.data());
-        for (auto k : keep)
-            EXPECT_EQ(k, 1u);
-    }
-
-    /// Mixed hit / miss pattern. Final probe is above UInt32::max — the
-    /// narrow path must short-circuit it as "keep".
-    constexpr UInt64 kU32Max = std::numeric_limits<UInt32>::max();
-    std::vector<UInt64> rows = {
-        0, 50, 99, 100, 500, 5099, 5100, 1'000'000, 1'000'001,
-        2'000'000, 4'000'000, kU32Max, kU32Max + 1};
-    std::vector<uint8_t> keep(rows.size(), 0xFF);
-    bm.containsBulk(rows.data(), rows.size(), keep.data());
-    for (size_t i = 0; i < rows.size(); ++i)
-    {
-        const uint8_t expected = bm.contains(rows[i]) ? 0 : 1;
-        EXPECT_EQ(keep[i], expected)
-            << "row " << rows[i] << " idx " << i
-            << " bulk=" << int(keep[i]) << " scalar=" << int(expected);
-    }
-
-    /// Randomised cross-check: 10k random probes against a sparse bitmap.
-    std::mt19937 rng(424242); // NOLINT(bugprone-random-generator-seed,cert-msc32-c, cert-msc51-cpp)
-    std::uniform_int_distribution<UInt32> dist(0, 10'000'000);
-    std::vector<UInt64> many(10'000);
-    for (auto & r : many)
-        r = dist(rng);
-    std::vector<uint8_t> bulk_keep(many.size(), 0);
-    bm.containsBulk(many.data(), many.size(), bulk_keep.data());
-    for (size_t i = 0; i < many.size(); ++i)
-    {
-        const uint8_t expected = bm.contains(many[i]) ? 0 : 1;
-        EXPECT_EQ(bulk_keep[i], expected) << "random idx " << i << " row " << many[i];
-    }
 }
 
 TEST(DeleteBitmapTest, RangeCardinality)
@@ -705,15 +643,57 @@ TEST(DeleteBitmapTest, KeepFilterRangeOnWideRepresentation)
     EXPECT_EQ(bm.buildKeepFilterRange(/*begin=*/0, narrow.size(), narrow.data()), 6u);
 }
 
-TEST(DeleteBitmapTest, KeepFilterTakesExplicitRows)
+/// ---------- clearInFilter ----------
+
+TEST(DeleteBitmapTest, ClearInFilterOverSparseRows)
 {
     DeleteBitmap bm;
-    bm.addMany({4, 9});
+    bm.addMany({3, 11, 13, 16, 50});
 
-    const std::vector<UInt64> rows{9, 1, 4, 7};
-    std::vector<UInt8> keep(rows.size(), 0);
-    EXPECT_EQ(bm.buildKeepFilter(rows.data(), rows.size(), keep.data()), 2u);
-    EXPECT_EQ(keep, (std::vector<UInt8>{0, 1, 0, 1}));
+    /// Rows [11, 16): starts on a set row, 16 is one past the end and stays, 3 and 50 are outside.
+    /// Row 13 is set and already filtered out: it stays out and still counts. Rows 12 and 15 are not set.
+    std::vector<UInt8> filter{1, 0, 0, 1, 0};
+    EXPECT_EQ(bm.clearInFilter(/*begin=*/11, filter.size(), filter.data()), 2u);
+    EXPECT_EQ(filter, (std::vector<UInt8>{0, 0, 0, 1, 0}));
+}
+
+TEST(DeleteBitmapTest, ClearInFilterOverDenseRows)
+{
+    DeleteBitmap bm;
+    std::vector<UInt64> rows(10'000);
+    std::iota(rows.begin(), rows.end(), 0);
+    bm.addMany(rows);
+
+    std::vector<UInt8> whole(rows.size(), 1);
+    EXPECT_EQ(bm.clearInFilter(/*begin=*/0, whole.size(), whole.data()), rows.size());
+    EXPECT_EQ(std::ranges::count(whole, 0), static_cast<ptrdiff_t>(rows.size()));
+
+    std::vector<UInt8> window(100, 1);
+    EXPECT_EQ(bm.clearInFilter(/*begin=*/5'000, window.size(), window.data()), 100u);
+    EXPECT_EQ(std::ranges::count(window, 0), 100);
+}
+
+TEST(DeleteBitmapTest, ClearInFilterOnWideRepresentation)
+{
+    constexpr UInt64 kAboveU32 = static_cast<UInt64>(std::numeric_limits<UInt32>::max()) + 5;
+    DeleteBitmap wide;
+    wide.addMany({7, kAboveU32, kAboveU32 + 2});
+
+    std::vector<UInt8> filter(4, 1);
+    EXPECT_EQ(wide.clearInFilter(kAboveU32, filter.size(), filter.data()), 2u);
+    EXPECT_EQ(filter, (std::vector<UInt8>{0, 1, 0, 1}));
+
+    /// The truncated row numbers are not set, so a low window clears only the low row.
+    std::vector<UInt8> narrow(8, 1);
+    EXPECT_EQ(wide.clearInFilter(/*begin=*/5, narrow.size(), narrow.data()), 1u);
+    EXPECT_EQ(narrow, (std::vector<UInt8>{1, 1, 0, 1, 1, 1, 1, 1}));
+
+    /// A 32-bit bitmap holds nothing above `UInt32`.
+    DeleteBitmap narrow_bitmap;
+    narrow_bitmap.add(5);
+    std::vector<UInt8> high(4, 1);
+    EXPECT_EQ(narrow_bitmap.clearInFilter(kAboveU32, high.size(), high.data()), 0u);
+    EXPECT_EQ(high, (std::vector<UInt8>{1, 1, 1, 1}));
 }
 
 TEST(DeleteBitmapCacheTest, RemoveEntriesForPartTakesEveryVersionOfThatPartOnly)

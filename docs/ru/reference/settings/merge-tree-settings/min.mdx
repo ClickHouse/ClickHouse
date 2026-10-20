@@ -13,14 +13,14 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.merge&#95;tree&#95;settings](/ru/reference/system-tables/merge_tree_settings) и автоматически генерируются на основе исходного кода ClickHouse.
 
-## min_absolute_delay_to_close
+## min_absolute_delay_to_close {#min_absolute_delay_to_close}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Минимальная абсолютная задержка перед закрытием, прекращением обработки запросов и
 возвратом не-Ok при проверке status.
 
-## min_columns_to_activate_adaptive_write_buffer
+## min_columns_to_activate_adaptive_write_buffer {#min_columns_to_activate_adaptive_write_buffer}
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 
@@ -37,7 +37,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 - отключено
 * 1 - всегда включено
 
-## min_compress_block_size
+## min_compress_block_size {#min_compress_block_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -47,7 +47,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Значение, указанное при создании table, переопределяет глобальное значение
 этого параметра.
 
-## min_index_granularity_bytes
+## min_index_granularity_bytes {#min_index_granularity_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
@@ -56,7 +56,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Используется как защита от случайного создания таблиц с очень низким значением
 `index_granularity_bytes`.
 
-## min_marks_to_honor_max_concurrent_queries
+## min_marks_to_honor_max_concurrent_queries {#min_marks_to_honor_max_concurrent_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -77,7 +77,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 <min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
 ```
 
-## min_merge_bytes_to_use_direct_io
+## min_merge_bytes_to_use_direct_io {#min_merge_bytes_to_use_direct_io}
 
 <SettingsInfoBlock type="UInt64" default_value="10737418240" />
 
@@ -88,7 +88,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 данные на диск хранилища через интерфейс прямого I/O (опция `O_DIRECT`).
 Если `min_merge_bytes_to_use_direct_io = 0`, прямой I/O отключается.
 
-## min_partition_age_to_force_merge_seconds
+## min_partition_age_to_force_merge_seconds {#min_partition_age_to_force_merge_seconds}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -138,7 +138,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 * Положительное целое число.
 
-## min_parts_to_merge_at_once
+## min_parts_to_merge_at_once {#min_parts_to_merge_at_once}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -146,7 +146,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 (настройка экспертного уровня; не изменяйте её, если не понимаете, как она работает).
 0 — отключено. Работает для селекторов слияний Simple и StochasticSimple.
 
-## min_replicated_logs_to_keep
+## min_replicated_logs_to_keep {#min_replicated_logs_to_keep}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -157,5 +157,49 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Possible values:
 
 * Любое положительное целое число.
+
+## min_unreserved_disk_space_for_merge {#min_unreserved_disk_space_for_merge}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Новая настройка, которая оставляет часть незарезервированного дискового пространства недоступной для фоновых слияний, чтобы они не лишали ресурсов операции вставки."}]}]} />
+
+Оставляет указанный объём незарезервированного дискового пространства (в байтах) недоступным для
+фоновых слияний, чтобы они не лишали ресурсов операции вставки. Этот объём вычитается
+из свободного пространства, а ограничение на суммарный размер исходных частей слияния
+вычисляется из остатка с дополнительным коэффициентом запаса, поэтому
+максимально допустимое слияние остаётся значительно меньше этого значения. По мере заполнения диска ограничение уменьшается
+и достигает нуля, когда свободного пространства остаётся ровно указанный объём; с этого момента
+фоновые слияния не выбираются вовсе. (0 — настройка отключена)
+
+В отличие от `keep_free_space_bytes`, защищённое пространство остаётся доступным для самого ClickHouse:
+оно лишь исключается из планирования слияний. Мутации эта настройка не ограничивает,
+и они по-прежнему могут занимать защищённое пространство; кроме того, настройка не действует на
+диски с неограниченным пространством (например, объектное хранилище).
+
+Слияния, инициированные командой [OPTIMIZE](/ru/reference/statements/optimize) с `FINAL` или
+с явно указанной `PARTITION`, игнорируют эту настройку. Слияния, удаляющие полностью
+устаревшие части, выбираются всякий раз, когда ограничение больше нуля, независимо от их
+размера, а при нулевом ограничении не выбирается ничего. Каждое слияние резервирует не менее 1 MiB, поэтому
+слияние, запущенное, когда сверх защищённого пространства осталось меньше 1 MiB, может занять
+до 1 MiB из него. Реплика `ReplicatedMergeTree` выполняет стоящие в очереди удаления и при нулевом
+собственном ограничении, если единственный TTL таблицы — TTL строк без `WHERE`. При TTL с
+`GROUP BY`, `WHERE` или TTL столбцов такое удаление перезаписывает оставшиеся строки:
+`ReplicatedMergeTree` откладывает его с учётом размера затрагиваемых частей, а `MergeTree`
+этого не делает и может записать строки в защищённое пространство.
+
+Когда ограничение равно нулю, обычный `OPTIMIZE` ничего не назначает: он либо ничего не делает, либо
+генерирует исключение `CANNOT_ASSIGN_OPTIMIZE` при `optimize_throw_if_noop = 1`. Чтобы выполнить слияние с использованием защищённого пространства, используйте `FINAL`
+или явно указанную `PARTITION`. В
+`ReplicatedMergeTree` это исключение фиксируется в записи журнала репликации,
+только если настройка имеет ненулевое значение на реплике, которая ставит слияние в очередь, поэтому
+`OPTIMIZE`, поставленный в очередь при значении 0, по-прежнему выполняется с учётом запаса.
+
+`ALTER TABLE ... MODIFY SETTING` не реплицируется, поэтому задайте на всех репликах
+одинаковое значение: реплика с бо́льшим запасом повторно применяет его к слияниям, назначенным
+на других репликах, и может откладывать их бесконечно. Оставляйте значение `0`, пока все
+реплики не будут обновлены до версии, поддерживающей эту настройку: более старая реплика не может разобрать
+записи журнала, созданные для слияний-исключений, и перестаёт получать последующие
+записи для таблицы, в том числе записи для обычных вставок.
 
 {/*AUTOGENERATED_END*/}
