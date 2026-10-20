@@ -7580,7 +7580,21 @@ Possible values:
 Execute DETACH TABLE as DETACH TABLE PERMANENTLY if database engine is Replicated
 )", 0) \
     DECLARE(Bool, database_replicated_allow_only_replicated_engine, false, R"(
-Allow to create only Replicated tables in database with engine Replicated
+Allow creating a table in a database with the `Replicated` engine only if the table either replicates its own
+data stored on disk or does not store its own data on disk.
+
+This restriction applies only to table-owned on-disk data, including data on remote disks. It does not guarantee
+the durability of in-memory data or data managed by external systems.
+
+For example, `ReplicatedMergeTree`, in-memory engines such as `Memory` and `Buffer`, metadata-only engines
+such as `Merge` and `Alias`, and external-storage or data lake engines such as `S3` and `AzureBlobStorage` are
+allowed. Non-replicated engines that store table data on disk, such as `MergeTree`, `Log`, `File`, and `Set`, are
+rejected, including when their writable storage policy uses remote disks. `Set` and `Join` tables created with
+`SETTINGS persistent = 0` keep their data only in memory and are allowed.
+
+`Distributed`, `Remote`, and `RemoteSecure` tables are allowed. Their optional local background `INSERT` queue
+is a transient send buffer, not data of the table itself. It is not replicated, and setting
+`distributed_foreground_insert = 1` avoids the queue.
 
 Cloud default value: `1`.
 )", 0) \
@@ -8083,6 +8097,16 @@ Use lazy materialization optimization for reading Parquet files from object stor
 Use lazy materialization optimization for reading local Parquet files with the `file` table function and the `File` table engine: for `ORDER BY ... LIMIT n` queries, the columns that are not needed for sorting and filtering are read only for the `n` rows that survive the `LIMIT`. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
 )", 0, \
         {"26.8", false, true, "New setting to use lazy materialization for `ORDER BY ... LIMIT n` queries reading local Parquet files with the `file` table function and the `File` table engine."}) \
+    DECLARE(Bool, query_plan_lazy_materialization_for_join, true, R"(
+Use lazy materialization for `LIMIT n` queries over joins, with or without `ORDER BY`: the columns of the
+`MergeTree` tables, and of the object storage tables if
+`query_plan_optimize_lazy_materialization_for_object_storage` is enabled, are read only for the `n` rows that
+survive the `LIMIT`, rather than for every row the joins produce. The decision is made on one merged
+`ActionsDAG` for the whole subtree below the `LIMIT`, so a value that a filter needs and the result needs
+again is computed twice, cheaply, above the `LIMIT`, instead of becoming a column carried through every join
+in between. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
+)", 0, \
+        {"26.11", false, true, "New setting to use lazy materialization for `LIMIT n` queries over joins."}) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10000, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0, \
         {"25.12", 100, 10000, "Increase the limit after performance improvement"}, \
