@@ -489,9 +489,9 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
                 /// Ask the same preflight that `ReadFromMerge::requestReadingInOrder` runs in pass 2, so
                 /// that every child which refuses the request there (a reverse direction with `FINAL`,
-                /// a prefix longer than a child's sorting key, an object storage child) also keeps the
-                /// explicit `Sort + Limit` here.
-                if (order_info && merge->canReadInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction))
+                /// a prefix longer than a child's sorting key, a child read sorted by another key such as a
+                /// projection's, an object storage child) also keeps the explicit `Sort + Limit` here.
+                if (order_info && merge->canReadInOrder(*order_info))
                     return 0;
             }
         }
