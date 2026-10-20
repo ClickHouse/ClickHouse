@@ -30,7 +30,7 @@
 #include <fmt/format.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
-#include "config.h" // USE_SKIM
+#include "config.h" // USE_SKIM, USE_CLIENT_AI
 
 #if USE_SKIM
 #include <skim.h>
@@ -810,6 +810,12 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     /// A leading `?` on an empty line is a mode switch into AI chat rather than a character:
     /// the prompt becomes the magenta `:?` and the line stays empty. Any other `?` (mid-line,
     /// or already in AI mode) is inserted normally.
+    ///
+    /// Only a client built with the AI chat has the mode: the line of the mode reaches the caller
+    /// without its `?`, and a client without the AI chat would run it as SQL - a question like
+    /// `? DROP TABLE t` would drop the table. There the `?` stays a character, so the line fails
+    /// to parse as SQL instead.
+#if USE_CLIENT_AI
     rx.bind_key('?', [this](char32_t code)
     {
         if (!ai_mode && rx.get_state().text()[0] == '\0')
@@ -820,6 +826,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         }
         return rx.invoke(Replxx::ACTION::INSERT_CHARACTER, code);
     });
+#endif
 
     /// Backspace on the empty `:?` line leaves AI chat mode and restores the SQL prompt; a
     /// backspace with text present deletes a character as usual.
@@ -1014,6 +1021,10 @@ void ReplxxLineReader::restoreHistoryPrefix()
 
 void ReplxxLineReader::syncModeFromHistory()
 {
+    /// A client without the AI chat has no mode to recall the questions into, so it recalls them as
+    /// they are stored, with the prefix: stripped of it, a question would be run as SQL (see the
+    /// binding of `?`).
+#if USE_CLIENT_AI
     const replxx::Replxx::State state = rx.get_state();
     const std::string text = state.text();
     /// AI questions are stored in history with a `? ` prefix (see addToHistory).
@@ -1035,6 +1046,7 @@ void ReplxxLineReader::syncModeFromHistory()
         ai_mode = false;
         rx.set_prompt(sql_prompt);
     }
+#endif
 }
 
 replxx::Replxx::ACTION_RESULT ReplxxLineReader::historyNavigate(replxx::Replxx::ACTION action, char32_t code)
