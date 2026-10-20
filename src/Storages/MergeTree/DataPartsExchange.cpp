@@ -442,7 +442,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     int port,
     const ConnectionTimeouts & timeouts,
     const String & user,
-    const SensitiveString & password,
+    const SecretString & password,
     const String & interserver_scheme,
     ThrottlerPtr throttler,
     bool to_detached,

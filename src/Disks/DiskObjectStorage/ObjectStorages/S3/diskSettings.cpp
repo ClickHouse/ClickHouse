@@ -59,9 +59,9 @@ namespace S3AuthSetting
     extern const S3AuthSettingsBool no_sign_request;
     extern const S3AuthSettingsString region;
     extern const S3AuthSettingsUInt64 request_timeout_ms;
-    extern const S3AuthSettingsSensitiveString secret_access_key;
-    extern const S3AuthSettingsSensitiveString server_side_encryption_customer_key_base64;
-    extern const S3AuthSettingsSensitiveString session_token;
+    extern const S3AuthSettingsSecretString secret_access_key;
+    extern const S3AuthSettingsSecretString server_side_encryption_customer_key_base64;
+    extern const S3AuthSettingsSecretString session_token;
     extern const S3AuthSettingsBool use_adaptive_timeouts;
     extern const S3AuthSettingsBool use_environment_credentials;
     extern const S3AuthSettingsBool use_insecure_imds_request;
@@ -75,8 +75,8 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString metadata_service;
     extern const S3AuthSettingsString request_token_path;
     extern const S3AuthSettingsString google_adc_client_id;
-    extern const S3AuthSettingsSensitiveString google_adc_client_secret;
-    extern const S3AuthSettingsSensitiveString google_adc_refresh_token;
+    extern const S3AuthSettingsSecretString google_adc_client_secret;
+    extern const S3AuthSettingsSecretString google_adc_refresh_token;
 }
 
 namespace S3RequestSetting
@@ -233,10 +233,10 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
     }
 
     String access_key_id = auth_settings[S3AuthSetting::access_key_id];
-    SensitiveString secret_access_key = auth_settings[S3AuthSetting::secret_access_key];
-    SensitiveString session_token = auth_settings[S3AuthSetting::session_token];
+    SecretString secret_access_key = auth_settings[S3AuthSetting::secret_access_key];
+    SecretString session_token = auth_settings[S3AuthSetting::session_token];
     auto headers = auth_settings.getHeaders();
-    SensitiveString server_side_encryption_customer_key_base64 = auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64];
+    SecretString server_side_encryption_customer_key_base64 = auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64];
     auto server_side_encryption_kms_config = auth_settings.server_side_encryption_kms_config;
 
     /// When a persistent S3-engine table is downgraded to anonymous on metadata load, drop the request-auth

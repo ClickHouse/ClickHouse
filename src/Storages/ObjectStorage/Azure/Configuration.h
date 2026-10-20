@@ -8,7 +8,7 @@
 #include <filesystem>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/Common.h>
-#include <Common/SensitiveString.h>
+#include <Common/SecretString.h>
 
 namespace DB
 {
@@ -158,9 +158,9 @@ private:
     DiskPtr disk;
 
     String onelake_client_id;
-    SensitiveString onelake_client_secret;
+    SecretString onelake_client_secret;
     String onelake_tenant_id;
-    SensitiveString onelake_access_token;
+    SecretString onelake_access_token;
     /// Set in refresh-token mode: yields a currently valid access token (renewed by the
     /// catalog client with the Entra ID refresh token) for every storage request.
     AzureBlobStorage::TokenProviderCredential::TokenProvider onelake_access_token_provider;

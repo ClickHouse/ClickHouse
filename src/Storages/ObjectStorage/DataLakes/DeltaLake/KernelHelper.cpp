@@ -480,7 +480,7 @@ namespace DB
 namespace S3AuthSetting
 {
     extern const S3AuthSettingsString access_key_id;
-    extern const S3AuthSettingsSensitiveString secret_access_key;
+    extern const S3AuthSettingsSecretString secret_access_key;
     extern const S3AuthSettingsString region;
 }
 

@@ -58,7 +58,7 @@ namespace
 
     struct Key
     {
-        SensitiveString plain;
+        SecretString plain;
         std::optional<String> encrypted;
     };
 
@@ -143,7 +143,7 @@ namespace
     }
 
     /// Reads the current encryption key from the configuration.
-    SensitiveString getCurrentKeyFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix,
+    SecretString getCurrentKeyFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix,
                                    const std::map<UInt64, Key> & keys_by_id, const std::vector<Key> & keys_without_id)
     {
         String key_path = config_prefix + ".current_key";
@@ -153,7 +153,7 @@ namespace
         if (config.has(key_path) + config.has(key_hex_path) + config.has(key_id_path) > 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The current key is specified multiple times");
 
-        auto check_current_key_found = [&](const SensitiveString & current_key_)
+        auto check_current_key_found = [&](const SecretString & current_key_)
         {
             for (const auto & [_, key] : keys_by_id)
             {
@@ -176,12 +176,12 @@ namespace
 
         if (config.has(key_path))
         {
-            SensitiveString current_key(config.getString(key_path));
+            SecretString current_key(config.getString(key_path));
             return check_current_key_found(current_key);
         }
         if (config.has(key_hex_path))
         {
-            SensitiveString current_key(unhexKey(config.getString(key_hex_path)));
+            SecretString current_key(unhexKey(config.getString(key_hex_path)));
             return check_current_key_found(current_key);
         }
         if (config.has(key_id_path))
@@ -274,7 +274,7 @@ namespace
                 res->all_keys[fingerprint] = key.plain;
             }
 
-            SensitiveString current_key = getCurrentKeyFromConfig(config, config_prefix, keys_by_id, keys_without_id);
+            SecretString current_key = getCurrentKeyFromConfig(config, config_prefix, keys_by_id, keys_without_id);
             res->current_key = current_key;
             res->current_key_fingerprint = calculateKeyFingerprint(current_key);
 
@@ -506,7 +506,7 @@ void DiskEncrypted::prepareRead(
     pipeline.needDecryption(
         path,
         settings.local_fs_settings.buffer_size,
-        [encryption_settings](UInt128 key_fingerprint, const String & path_for_logs) -> SensitiveString
+        [encryption_settings](UInt128 key_fingerprint, const String & path_for_logs) -> SecretString
         {
             return encryption_settings->findKeyByFingerprint(key_fingerprint, path_for_logs);
         });

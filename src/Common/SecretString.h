@@ -11,16 +11,16 @@ namespace DB
 {
 
 /// Bytes are kept in memory that is excluded from core dumps.
-class SensitiveString
+class SecretString
 {
 public:
-    SensitiveString() = default;
+    SecretString() = default;
 
-    explicit SensitiveString(std::string_view str) : bytes(str.begin(), str.end()) {}
+    explicit SecretString(std::string_view str) : bytes(str.begin(), str.end()) {}
 
-    SensitiveString(size_t count, char c) : bytes(count, c) {}
+    SecretString(size_t count, char c) : bytes(count, c) {}
 
-    SensitiveString & operator=(std::string_view str) { bytes.assign(str.begin(), str.end()); return *this; }
+    SecretString & operator=(std::string_view str) { bytes.assign(str.begin(), str.end()); return *this; }
 
     operator std::string_view() const { return {bytes.data(), bytes.size()}; }
 
@@ -29,7 +29,7 @@ public:
     const char * data() const { return bytes.data(); }
     void clear() { bytes.clear(); }
 
-    bool operator==(const SensitiveString & rhs) const = default;
+    bool operator==(const SecretString & rhs) const = default;
     bool operator==(std::string_view rhs) const { return std::string_view(*this) == rhs; }
 
 private:
@@ -39,9 +39,9 @@ private:
 }
 
 template <>
-struct fmt::formatter<DB::SensitiveString> : fmt::formatter<std::string_view>
+struct fmt::formatter<DB::SecretString> : fmt::formatter<std::string_view>
 {
-    auto format(const DB::SensitiveString & str, format_context & ctx) const
+    auto format(const DB::SecretString & str, format_context & ctx) const
     {
         return fmt::formatter<std::string_view>::format(str, ctx);
     }

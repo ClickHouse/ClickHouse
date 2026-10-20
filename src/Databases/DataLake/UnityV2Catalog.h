@@ -114,7 +114,7 @@ private:
     /// Auth state: a user-supplied header, or a Bearer token (static or minted via OAuth).
     std::optional<DB::HTTPHeaderEntry> auth_header;
     std::string client_id;
-    DB::SensitiveString client_secret;
+    DB::SecretString client_secret;
     std::string auth_scope;
     std::string oauth_server_uri;
     bool use_oauth = false;
@@ -139,7 +139,7 @@ private:
         const std::string & route,
         std::function<void(DB::WriteBuffer &)> out_stream_callback) const;
 
-    DB::SensitiveString getBearerToken(bool force_refresh = false) const;
+    DB::SecretString getBearerToken(bool force_refresh = false) const;
 
     /// `auth_header` when set, otherwise the Bearer token.
     DB::HTTPHeaderEntries getAuthHeaders(bool force_refresh) const;

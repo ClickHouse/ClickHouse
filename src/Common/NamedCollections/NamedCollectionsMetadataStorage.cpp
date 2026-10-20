@@ -439,7 +439,7 @@ public:
     }
 
 private:
-    SensitiveString key;
+    SecretString key;
     UInt128 key_fingerprint{};
     FileEncryption::Algorithm algorithm;
 };

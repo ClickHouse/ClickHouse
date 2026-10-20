@@ -1,6 +1,6 @@
 #pragma once
 #include <Core/Types.h>
-#include <Common/SensitiveString.h>
+#include <Common/SecretString.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -64,8 +64,8 @@ public:
 
 private:
     std::string access_key_id;
-    DB::SensitiveString secret_access_key;
-    DB::SensitiveString session_token;
+    DB::SecretString secret_access_key;
+    DB::SecretString session_token;
 };
 
 class GCSCredentials final : public IStorageCredentials
@@ -94,7 +94,7 @@ public:
     std::string_view getToken() const { return oauth_token; }
 
 private:
-    DB::SensitiveString oauth_token;
+    DB::SecretString oauth_token;
 };
 
 class AzureCredentials final : public IStorageCredentials
@@ -114,7 +114,7 @@ public:
     }
 
 private:
-    DB::SensitiveString sas_token;
+    DB::SecretString sas_token;
 };
 
 }

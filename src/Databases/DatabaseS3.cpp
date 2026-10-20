@@ -221,7 +221,7 @@ DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPt
         result.use_environment_credentials = collection.getOrDefault<bool>("use_environment_credentials", false);
 
         auto key_id = collection.getOrDefault<String>("access_key_id", "");
-        auto secret_key = collection.getOrDefault<SensitiveString>("secret_access_key");
+        auto secret_key = collection.getOrDefault<SecretString>("secret_access_key");
 
         if (!key_id.empty())
             result.access_key_id = key_id;

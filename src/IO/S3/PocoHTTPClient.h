@@ -8,7 +8,7 @@
 #if USE_AWS_S3
 
 #include <Common/HistogramMetrics.h>
-#include <Common/SensitiveString.h>
+#include <Common/SecretString.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/ProxyConfiguration.h>
 #include <IO/ConnectionTimeouts.h>
@@ -91,8 +91,8 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     String metadata_service;
     String request_token_path;
     String google_adc_client_id;
-    SensitiveString google_adc_client_secret;
-    SensitiveString google_adc_refresh_token;
+    SecretString google_adc_client_secret;
+    SecretString google_adc_refresh_token;
 
     /// See PoolBase::BehaviourOnLimit
     bool s3_use_adaptive_timeouts = true;
@@ -283,7 +283,7 @@ private:
 
     struct BearerToken
     {
-        SensitiveString token;
+        SecretString token;
         std::chrono::system_clock::time_point is_valid_to;
     };
 
@@ -291,8 +291,8 @@ private:
     const String metadata_service;
     const String request_token_path;
     const String google_adc_client_id;
-    const SensitiveString google_adc_client_secret;
-    const SensitiveString google_adc_refresh_token;
+    const SecretString google_adc_client_secret;
+    const SecretString google_adc_refresh_token;
 
     mutable std::mutex mutex;
     mutable std::optional<BearerToken> bearer_token TSA_GUARDED_BY(mutex);

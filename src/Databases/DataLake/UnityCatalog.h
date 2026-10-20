@@ -71,7 +71,7 @@ private:
     const std::filesystem::path base_url;
     const LoggerPtr log;
 
-    const DB::SensitiveString bearer_token;
+    const DB::SecretString bearer_token;
 
     std::pair<Poco::Dynamic::Var, std::string> getJSONRequest(const std::string & route, const Poco::URI::QueryParameters & params = {}) const;
     std::pair<Poco::Dynamic::Var, std::string> postJSONRequest(const std::string & route, std::function<void(DB::WriteBuffer &)> out_stream_callaback) const;

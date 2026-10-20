@@ -46,7 +46,7 @@ ConnectionPoolPtr ConnectionPoolFactory::get(
     Priority priority)
 {
     Key key{
-        max_connections, host, port, default_database, user, SensitiveString(password), proto_send_chunked, proto_recv_chunked, quota_key, cluster, SensitiveString(cluster_secret), client_name, compression, secure, bind_host, priority};
+        max_connections, host, port, default_database, user, SecretString(password), proto_send_chunked, proto_recv_chunked, quota_key, cluster, SecretString(cluster_secret), client_name, compression, secure, bind_host, priority};
 
     std::lock_guard lock(mutex);
     auto [it, inserted] = pools.emplace(key, ConnectionPoolPtr{});

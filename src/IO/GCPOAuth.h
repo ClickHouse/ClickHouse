@@ -4,14 +4,14 @@
 #include <base/types.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
-#include <Common/SensitiveString.h>
+#include <Common/SecretString.h>
 
 namespace DB
 {
 
 struct GCPOAuthToken
 {
-    SensitiveString access_token;
+    SecretString access_token;
     Int64 expires_in = 3600; /// seconds until expiry as reported by the token endpoint
 };
 

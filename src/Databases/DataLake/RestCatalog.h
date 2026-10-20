@@ -5,7 +5,7 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Common/MultiVersion.h>
-#include <Common/SensitiveString.h>
+#include <Common/SecretString.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Databases/DataLake/HTTPBasedCatalogUtils.h>
@@ -122,10 +122,10 @@ public:
     {
         std::optional<DB::HTTPHeaderEntry> auth_header;
         std::string client_id;
-        DB::SensitiveString client_secret;
+        DB::SecretString client_secret;
         std::string tenant_id;
-        DB::SensitiveString bearer_token;
-        DB::SensitiveString refresh_token;
+        DB::SecretString bearer_token;
+        DB::SecretString refresh_token;
         Config config;
     };
     using CatalogStateVersion = MultiVersion<CatalogState>::Version;
@@ -307,7 +307,7 @@ public:
 
     /// A currently valid access token together with its expiration time, for object storage
     /// access in refresh-token mode. Renews the token transparently when it is expired.
-    std::pair<DB::SensitiveString, std::chrono::system_clock::time_point> getCurrentAccessToken() const;
+    std::pair<DB::SecretString, std::chrono::system_clock::time_point> getCurrentAccessToken() const;
 
 protected:
     void applySettingsChangesToState(
@@ -360,8 +360,8 @@ private:
     const std::string google_service_account;
     const std::string google_metadata_service;
     const std::string google_adc_client_id;
-    const DB::SensitiveString google_adc_client_secret;
-    const DB::SensitiveString google_adc_refresh_token;
+    const DB::SecretString google_adc_client_secret;
+    const DB::SecretString google_adc_refresh_token;
     const std::string google_adc_quota_project_id;
     /// Effective `s3_allow_server_credentials_in_user_queries` captured when the database was created; the
     /// catalog is cached and holds the global context, whose settings never reflect the creating session.
@@ -419,7 +419,7 @@ public:
     static void validateSettingsChanges(const DB::SettingsChanges & changes, bool credential_mode, bool header_mode);
 
     /// Horizon credentials are secret-only: the whole string is the OAuth client_secret.
-    static std::pair<std::string, DB::SensitiveString> parseHorizonCredential(std::string_view catalog_credential);
+    static std::pair<std::string, DB::SecretString> parseHorizonCredential(std::string_view catalog_credential);
 
 protected:
     void applySettingsChangesToState(

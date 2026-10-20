@@ -980,7 +980,7 @@ PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken()
 
     return
     {
-        .token = SensitiveString(token),
+        .token = SecretString(token),
         .is_valid_to = std::chrono::system_clock::now() + std::chrono::seconds(object->getValue<Int64>("expires_in"))
     };
 }

@@ -4,7 +4,7 @@
 
 #include <gtest/gtest.h>
 
-#include <Common/SensitiveString.h>
+#include <Common/SecretString.h>
 
 #include <Poco/AutoPtr.h>
 #include <Poco/DOM/DOMParser.h>
@@ -44,18 +44,18 @@ bool isExcludedFromCoreDump(const void * ptr)
 
 }
 
-TEST(NoDumpArenas, SensitiveStringIsExcludedFromCoreDump)
+TEST(NoDumpArenas, SecretStringIsExcludedFromCoreDump)
 {
     std::string secret(1 << 20, 's');
-    DB::SensitiveString sensitive(secret);
+    DB::SecretString sensitive(secret);
     EXPECT_EQ(std::string_view(sensitive), secret);
     EXPECT_TRUE(isExcludedFromCoreDump(std::string_view(sensitive).data()));
     EXPECT_FALSE(isExcludedFromCoreDump(secret.data()));
 }
 
-TEST(NoDumpArenas, SmallSensitiveStringIsExcludedFromCoreDump)
+TEST(NoDumpArenas, SmallSecretStringIsExcludedFromCoreDump)
 {
-    DB::SensitiveString sensitive(std::string(3, 's'));
+    DB::SecretString sensitive(std::string(3, 's'));
     EXPECT_TRUE(isExcludedFromCoreDump(std::string_view(sensitive).data()));
 }
 

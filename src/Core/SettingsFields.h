@@ -3,7 +3,7 @@
 #include <Core/Field.h>
 #include <Core/MultiEnum.h>
 #include <base/types.h>
-#include <Common/SensitiveString.h>
+#include <Common/SecretString.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Poco/Timespan.h>
 #include <Poco/URI.h>
@@ -325,29 +325,29 @@ struct SettingFieldString final
     void readBinary(ReadBuffer & in);
 };
 
-struct SettingFieldSensitiveString final
+struct SettingFieldSecretString final
 {
-    SensitiveString value;
+    SecretString value;
     bool changed = false;
-    using ValueType = SensitiveString;
+    using ValueType = SecretString;
 
-    explicit SettingFieldSensitiveString(std::string_view str = {}) : value(str) {}
-    explicit SettingFieldSensitiveString(const String & str) : SettingFieldSensitiveString(std::string_view{str}) {}
-    explicit SettingFieldSensitiveString(const char * str) : SettingFieldSensitiveString(std::string_view{str}) {}
-    explicit SettingFieldSensitiveString(const Field & f) : SettingFieldSensitiveString(f.safeGet<String>()) {}
-    SettingFieldSensitiveString(const SettingFieldSensitiveString &) = default;
-    SettingFieldSensitiveString & operator=(const SettingFieldSensitiveString &) = default;
+    explicit SettingFieldSecretString(std::string_view str = {}) : value(str) {}
+    explicit SettingFieldSecretString(const String & str) : SettingFieldSecretString(std::string_view{str}) {}
+    explicit SettingFieldSecretString(const char * str) : SettingFieldSecretString(std::string_view{str}) {}
+    explicit SettingFieldSecretString(const Field & f) : SettingFieldSecretString(f.safeGet<String>()) {}
+    SettingFieldSecretString(const SettingFieldSecretString &) = default;
+    SettingFieldSecretString & operator=(const SettingFieldSecretString &) = default;
 
-    SettingFieldSensitiveString & operator =(const SensitiveString & str) { value = str; changed = true; return *this; }
-    SettingFieldSensitiveString & operator =(std::string_view str) { value = str; changed = true; return *this; }
-    SettingFieldSensitiveString & operator =(const String & str) { *this = std::string_view{str}; return *this; }
-    SettingFieldSensitiveString & operator =(const char * str) { *this = std::string_view{str}; return *this; }
-    SettingFieldSensitiveString & operator =(const Field & f) { *this = f.safeGet<String>(); return *this; }
+    SettingFieldSecretString & operator =(const SecretString & str) { value = str; changed = true; return *this; }
+    SettingFieldSecretString & operator =(std::string_view str) { value = str; changed = true; return *this; }
+    SettingFieldSecretString & operator =(const String & str) { *this = std::string_view{str}; return *this; }
+    SettingFieldSecretString & operator =(const char * str) { *this = std::string_view{str}; return *this; }
+    SettingFieldSecretString & operator =(const Field & f) { *this = f.safeGet<String>(); return *this; }
 
     bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
-    operator const SensitiveString &() const { return value; } /// NOLINT
+    operator const SecretString &() const { return value; } /// NOLINT
     explicit operator Field() const { return String(value); }
 
     String toString() const { return String(value); }

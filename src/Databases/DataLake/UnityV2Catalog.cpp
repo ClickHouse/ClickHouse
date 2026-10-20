@@ -160,7 +160,7 @@ UnityV2Catalog::UnityV2Catalog(
     else
     {
         use_oauth = false;
-        access_token = AccessToken{.token = DB::SensitiveString(catalog_credential_), .expires_at = std::nullopt};
+        access_token = AccessToken{.token = DB::SecretString(catalog_credential_), .expires_at = std::nullopt};
     }
 }
 
@@ -224,7 +224,7 @@ void UnityV2Catalog::ensureBearerToken(bool force_refresh) const
     access_token = retrieveAccessToken();
 }
 
-DB::SensitiveString UnityV2Catalog::getBearerToken(bool force_refresh) const
+DB::SecretString UnityV2Catalog::getBearerToken(bool force_refresh) const
 {
     std::lock_guard lock(token_mutex);
     ensureBearerToken(force_refresh);
@@ -775,7 +775,7 @@ ICatalog::CredentialsRefreshCallback UnityV2Catalog::getDeltaCredentialsCallback
 
 std::shared_ptr<RestCatalog> UnityV2Catalog::getIcebergRestCatalog(bool force_refresh) const
 {
-    DB::SensitiveString token;
+    DB::SecretString token;
     std::string rest_auth_header;
     {
         std::lock_guard lock(token_mutex);

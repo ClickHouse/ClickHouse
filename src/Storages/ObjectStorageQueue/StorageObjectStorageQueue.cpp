@@ -147,7 +147,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsString after_processing_move_prefix;
     extern const ObjectStorageQueueSettingsBool after_processing_move_preserve_path;
     extern const ObjectStorageQueueSettingsString after_processing_move_access_key_id;
-    extern const ObjectStorageQueueSettingsSensitiveString after_processing_move_secret_access_key;
+    extern const ObjectStorageQueueSettingsSecretString after_processing_move_secret_access_key;
     extern const ObjectStorageQueueSettingsString after_processing_move_connection_string;
     extern const ObjectStorageQueueSettingsString after_processing_move_container;
     extern const ObjectStorageQueueSettingsString after_processing_tag_key;

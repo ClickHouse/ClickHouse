@@ -7,7 +7,7 @@
 #include <IO/HashingWriteBuffer.h>
 #include <IO/copyData.h>
 #include <IO/ConnectionTimeouts.h>
-#include <Common/SensitiveString.h>
+#include <Common/SecretString.h>
 #include <Common/Throttler.h>
 #include <Common/ActionBlocker.h>
 #include <IO/ReadBuffer.h>
@@ -75,7 +75,7 @@ public:
         int port,
         const ConnectionTimeouts & timeouts,
         const String & user,
-        const SensitiveString & password,
+        const SecretString & password,
         const String & interserver_scheme,
         ThrottlerPtr throttler,
         bool to_detached = false,

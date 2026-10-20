@@ -96,7 +96,7 @@ void validate(BigQueryConfiguration & configuration)
         configuration.base_url.pop_back();
 }
 
-using ConfigurationFields = std::unordered_map<std::string_view, std::variant<String BigQueryConfiguration::*, SensitiveString BigQueryConfiguration::*>>;
+using ConfigurationFields = std::unordered_map<std::string_view, std::variant<String BigQueryConfiguration::*, SecretString BigQueryConfiguration::*>>;
 
 const ConfigurationFields & configurationFields()
 {

@@ -119,7 +119,7 @@ BigQueryTokenProvider::BigQueryTokenProvider(BigQueryConfiguration configuration
 {
 }
 
-std::pair<SensitiveString, Int64> BigQueryTokenProvider::fetchTokenWithExpiration(const ContextPtr & context) const
+std::pair<SecretString, Int64> BigQueryTokenProvider::fetchTokenWithExpiration(const ContextPtr & context) const
 {
     const auto timeouts = ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
 
@@ -152,7 +152,7 @@ std::pair<SensitiveString, Int64> BigQueryTokenProvider::fetchTokenWithExpiratio
     }
 }
 
-SensitiveString BigQueryTokenProvider::getToken(const ContextPtr & context, bool force_refresh)
+SecretString BigQueryTokenProvider::getToken(const ContextPtr & context, bool force_refresh)
 {
     std::lock_guard lock(mutex);
 

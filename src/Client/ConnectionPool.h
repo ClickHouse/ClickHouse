@@ -161,14 +161,14 @@ protected:
 private:
     String default_database;
     String user;
-    SensitiveString password;
+    SecretString password;
     String proto_send_chunked;
     String proto_recv_chunked;
     String quota_key;
 
     /// For inter-server authorization
     String cluster;
-    SensitiveString cluster_secret;
+    SecretString cluster_secret;
 
     String client_name;
     Protocol::Compression compression; /// Whether to compress data when interacting with the server.
@@ -192,12 +192,12 @@ public:
         UInt16 port;
         String default_database;
         String user;
-        SensitiveString password;
+        SecretString password;
         String proto_send_chunked;
         String proto_recv_chunked;
         String quota_key;
         String cluster;
-        SensitiveString cluster_secret;
+        SecretString cluster_secret;
         String client_name;
         Protocol::Compression compression;
         Protocol::Secure secure;

@@ -4,7 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/SettingsEnums.h>
 #include <Common/SettingsChanges.h>
-#include <Common/SensitiveString.h>
+#include <Common/SecretString.h>
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/StorageCredentials.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
@@ -202,7 +202,7 @@ struct CatalogSettings
 {
     String storage_endpoint;
     String aws_access_key_id;
-    DB::SensitiveString aws_secret_access_key;
+    DB::SecretString aws_secret_access_key;
     String region;
     String aws_role_arn;
     String aws_role_session_name;

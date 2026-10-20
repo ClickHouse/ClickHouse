@@ -11,7 +11,7 @@
 #include <Storages/ObjectStorage/S3/Serde.h>
 #endif
 #include <Parsers/IAST_fwd.h>
-#include <Common/SensitiveString.h>
+#include <Common/SecretString.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 
 namespace DB
@@ -165,8 +165,8 @@ public:
     bool static_configuration = true;
 
     String biglake_adc_client_id;
-    SensitiveString biglake_adc_client_secret;
-    SensitiveString biglake_adc_refresh_token;
+    SecretString biglake_adc_client_secret;
+    SecretString biglake_adc_refresh_token;
 
 protected:
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;

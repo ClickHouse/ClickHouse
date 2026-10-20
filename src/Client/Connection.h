@@ -5,7 +5,7 @@
 #include <functional>
 #include <memory>
 
-#include <Common/SensitiveString.h>
+#include <Common/SecretString.h>
 #include <Common/callOnce.h>
 #include <Common/SSHWrapper.h>
 #include <Common/SettingsChanges.h>
@@ -235,7 +235,7 @@ private:
     UInt16 port;
     String default_database;
     String user;
-    SensitiveString password;
+    SecretString password;
     String proto_send_chunked;
     String proto_recv_chunked;
     String proto_send_chunked_srv;
@@ -251,7 +251,7 @@ private:
 
     /// For inter-server authorization
     String cluster;
-    SensitiveString cluster_secret;
+    SecretString cluster_secret;
     /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET
     String salt;
     /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2

@@ -56,9 +56,9 @@ static constexpr auto NEW_LINE = "\n";
 struct PaimonToken
 {
     const String token_provider;
-    const DB::SensitiveString bearer_token;
+    const DB::SecretString bearer_token;
     const String dlf_access_key_id;
-    const DB::SensitiveString dlf_access_key_secret;
+    const DB::SecretString dlf_access_key_secret;
 
     explicit PaimonToken(std::string_view bearer_token_)
         : token_provider("bearer")

@@ -24,17 +24,17 @@ class BigQueryTokenProvider
 public:
     explicit BigQueryTokenProvider(BigQueryConfiguration configuration_);
 
-    SensitiveString getToken(const ContextPtr & context, bool force_refresh);
+    SecretString getToken(const ContextPtr & context, bool force_refresh);
     /// Whether requesting a fresh token can produce a different one (false for a static access token).
     bool canRefresh() const { return configuration.credentials_kind != BigQueryConfiguration::CredentialsKind::AccessToken; }
 
 private:
-    std::pair<SensitiveString, Int64> fetchTokenWithExpiration(const ContextPtr & context) const;
+    std::pair<SecretString, Int64> fetchTokenWithExpiration(const ContextPtr & context) const;
 
     const BigQueryConfiguration configuration;
 
     std::mutex mutex;
-    SensitiveString cached_token;
+    SecretString cached_token;
     std::chrono::system_clock::time_point expires_at{};
 };
 

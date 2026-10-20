@@ -9,7 +9,7 @@
 #include <Disks/DiskCommitTransactionOptions.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
-#include <Common/SensitiveString.h>
+#include <Common/SecretString.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -21,13 +21,13 @@ struct DiskEncryptedSettings
 {
     DiskPtr wrapped_disk;
     String disk_path;
-    SensitiveString current_key;
+    SecretString current_key;
     UInt128 current_key_fingerprint{};
     FileEncryption::Algorithm current_algorithm{};
-    std::unordered_map<UInt128 /* fingerprint */, SensitiveString /* key */> all_keys;
+    std::unordered_map<UInt128 /* fingerprint */, SecretString /* key */> all_keys;
 
     /// Returns an encryption key found by its fingerprint.
-    SensitiveString findKeyByFingerprint(UInt128 key_fingerprint, const String & path_for_logs) const;
+    SecretString findKeyByFingerprint(UInt128 key_fingerprint, const String & path_for_logs) const;
 };
 
 

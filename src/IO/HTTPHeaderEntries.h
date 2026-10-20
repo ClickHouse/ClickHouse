@@ -5,7 +5,7 @@
 #include <vector>
 
 #include <base/types.h>
-#include <Common/SensitiveString.h>
+#include <Common/SecretString.h>
 
 namespace DB
 {
@@ -13,7 +13,7 @@ namespace DB
 struct HTTPHeaderEntry
 {
     String name;
-    SensitiveString value;
+    SecretString value;
 
     HTTPHeaderEntry(std::string_view name_, std::string_view value_) : name(name_), value(value_) {}
     bool operator==(const HTTPHeaderEntry & other) const = default;

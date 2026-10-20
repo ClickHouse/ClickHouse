@@ -3,9 +3,9 @@
 namespace DB::DatabaseDataLakeSetting
 {
     extern const DatabaseDataLakeSettingsString aws_access_key_id;
-    extern const DatabaseDataLakeSettingsSensitiveString aws_secret_access_key;
+    extern const DatabaseDataLakeSettingsSecretString aws_secret_access_key;
     extern const DatabaseDataLakeSettingsString storage_aws_access_key_id;
-    extern const DatabaseDataLakeSettingsSensitiveString storage_aws_secret_access_key;
+    extern const DatabaseDataLakeSettingsSecretString storage_aws_secret_access_key;
 }
 
 namespace DataLake

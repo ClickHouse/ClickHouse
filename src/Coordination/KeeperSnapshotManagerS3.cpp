@@ -36,9 +36,9 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
     extern const S3AuthSettingsString external_id;
-    extern const S3AuthSettingsSensitiveString secret_access_key;
-    extern const S3AuthSettingsSensitiveString server_side_encryption_customer_key_base64;
-    extern const S3AuthSettingsSensitiveString session_token;
+    extern const S3AuthSettingsSecretString secret_access_key;
+    extern const S3AuthSettingsSecretString server_side_encryption_customer_key_base64;
+    extern const S3AuthSettingsSecretString session_token;
     extern const S3AuthSettingsBool use_environment_credentials;
     extern const S3AuthSettingsBool use_insecure_imds_request;
 }

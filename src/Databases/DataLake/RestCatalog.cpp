@@ -87,13 +87,13 @@ namespace ProfileEvents
 
 namespace DB::DatabaseDataLakeSetting
 {
-    extern const DatabaseDataLakeSettingsSensitiveString catalog_credential;
+    extern const DatabaseDataLakeSettingsSecretString catalog_credential;
     extern const DatabaseDataLakeSettingsString auth_header;
     extern const DatabaseDataLakeSettingsString onelake_tenant_id;
-    extern const DatabaseDataLakeSettingsSensitiveString onelake_bearer_token;
-    extern const DatabaseDataLakeSettingsSensitiveString onelake_refresh_token;
+    extern const DatabaseDataLakeSettingsSecretString onelake_bearer_token;
+    extern const DatabaseDataLakeSettingsSecretString onelake_refresh_token;
     extern const DatabaseDataLakeSettingsString onelake_client_id;
-    extern const DatabaseDataLakeSettingsSensitiveString onelake_client_secret;
+    extern const DatabaseDataLakeSettingsSecretString onelake_client_secret;
 }
 
 namespace DataLake
@@ -145,13 +145,13 @@ std::pair<std::string_view, std::string_view> splitLocationURI(std::string_view 
     return {authority, path};
 }
 
-std::pair<std::string, DB::SensitiveString> parseCatalogCredential(std::string_view catalog_credential)
+std::pair<std::string, DB::SecretString> parseCatalogCredential(std::string_view catalog_credential)
 {
     /// Parse a string of format "<client_id>:<client_secret>"
     /// into separare strings client_id and client_secret.
 
     std::string client_id;
-    DB::SensitiveString client_secret;
+    DB::SecretString client_secret;
     if (!catalog_credential.empty())
     {
         auto pos = catalog_credential.find(':');
@@ -615,7 +615,7 @@ AccessToken OneLakeCatalog::getValidAccessToken(const CatalogState & catalog_sta
     return *current;
 }
 
-std::pair<DB::SensitiveString, std::chrono::system_clock::time_point> OneLakeCatalog::getCurrentAccessToken() const
+std::pair<DB::SecretString, std::chrono::system_clock::time_point> OneLakeCatalog::getCurrentAccessToken() const
 {
     const auto state_snapshot = state.get();
     const auto token = getValidAccessToken(*state_snapshot, /* force_update */ false);
@@ -700,10 +700,10 @@ void OneLakeCatalog::applySettingsChangesToState(
     }
 }
 
-std::pair<std::string, DB::SensitiveString> HorizonCatalog::parseHorizonCredential(std::string_view catalog_credential)
+std::pair<std::string, DB::SecretString> HorizonCatalog::parseHorizonCredential(std::string_view catalog_credential)
 {
     /// Always secret-only. Snowflake PATs may contain `:`, so we must not split like RestCatalog.
-    return {"", DB::SensitiveString(catalog_credential)};
+    return {"", DB::SecretString(catalog_credential)};
 }
 
 HorizonCatalog::HorizonCatalog(

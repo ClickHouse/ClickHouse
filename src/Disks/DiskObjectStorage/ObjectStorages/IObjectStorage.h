@@ -19,7 +19,7 @@
 #include <Common/Exception.h>
 #include <Common/ObjectStorageKey.h>
 #include <Common/ObjectStorageKeyGenerator.h>
-#include <Common/SensitiveString.h>
+#include <Common/SecretString.h>
 #include <Common/ThreadPool_fwd.h>
 
 #include <Disks/DirectoryIterator.h>
@@ -61,7 +61,7 @@ public:
     }
 
 private:
-    SensitiveString token;
+    SecretString token;
     std::chrono::system_clock::time_point expires_on;
 };
 
@@ -71,7 +71,7 @@ private:
 class TokenProviderCredential : public Azure::Core::Credentials::TokenCredential
 {
 public:
-    using TokenProvider = std::function<std::pair<SensitiveString, std::chrono::system_clock::time_point>()>;
+    using TokenProvider = std::function<std::pair<SecretString, std::chrono::system_clock::time_point>()>;
 
     explicit TokenProviderCredential(TokenProvider provider_)
         : provider(std::move(provider_))

@@ -372,12 +372,12 @@ void SettingFieldString::readBinary(ReadBuffer & in)
     *this = std::move(str);
 }
 
-void SettingFieldSensitiveString::writeBinary(WriteBuffer & out) const
+void SettingFieldSecretString::writeBinary(WriteBuffer & out) const
 {
     writeStringBinary(value, out);
 }
 
-void SettingFieldSensitiveString::readBinary(ReadBuffer & in)
+void SettingFieldSecretString::readBinary(ReadBuffer & in)
 {
     String str;
     readStringBinary(str, in);

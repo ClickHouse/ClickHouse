@@ -2,7 +2,7 @@
 
 #include <IO/HTTPCommon.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
-#include <Common/SensitiveString.h>
+#include <Common/SecretString.h>
 #include <functional>
 #include <chrono>
 #include <optional>
@@ -14,7 +14,7 @@ namespace DataLake
 
 struct AccessToken
 {
-    DB::SensitiveString token;
+    DB::SecretString token;
     std::optional<std::chrono::system_clock::time_point> expires_at;
 
     bool isExpired() const
