@@ -13,14 +13,15 @@ SET join_use_nulls = 0;
 -- The shared `FixedHashMap` filter is published only by a non-spilling `hash` join.
 SET join_algorithm = 'hash', max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 SET join_runtime_filter_from_fixed_hash_table = 1;
--- Without statistics Cascades keeps the whole plan in the main stage, and nothing is shipped.
-SET use_statistics = 1;
+-- Without column statistics Cascades may keep the whole plan in the main stage, and nothing is shipped.
+-- The tables pin `auto_statistics_types` with distinct-count statistics, materialized on insert.
+SET use_statistics = 1, materialize_statistics_on_insert = 1;
 
 DROP TABLE IF EXISTS probe;
 DROP TABLE IF EXISTS build;
 
-CREATE TABLE probe (k UInt64, v String) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1024;
-CREATE TABLE build (k UInt64, c UInt8) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1024;
+CREATE TABLE probe (k UInt64, v String) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1024, auto_statistics_types = 'basic, uniq_v2';
+CREATE TABLE build (k UInt64, c UInt8) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1024, auto_statistics_types = 'basic, uniq_v2';
 
 INSERT INTO probe SELECT number, toString(number) FROM numbers(200000);
 -- Dense keys, so the hash join converts its map into a `FixedHashMap` and publishes the shared filter.
