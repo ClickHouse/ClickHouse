@@ -9,6 +9,8 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 #include <Common/FloatUtils.h>
+#include <Common/UTF8Helpers.h>
+#include <base/unaligned.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -35,6 +37,34 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// A NumPy `<U<n>` (or `>U<n>`) value is fixed-width UTF-32, padded with trailing zero code points. Convert it to
+/// UTF-8, keeping zero code points inside the value as `np.load` does.
+String decodeNumpyUnicode(std::string_view data, NumpyDataType::Endianness endianness)
+{
+    auto code_point_at = [&](size_t i)
+    {
+        const char * address = data.data() + i * sizeof(UInt32);
+        return endianness == NumpyDataType::Endianness::BIG ? unalignedLoadBigEndian<UInt32>(address)
+                                                             : unalignedLoadLittleEndian<UInt32>(address);
+    };
+
+    size_t length = data.size() / sizeof(UInt32);
+    while (length > 0 && code_point_at(length - 1) == 0)
+        --length;
+
+    String result;
+    result.reserve(length);
+    for (size_t i = 0; i < length; ++i)
+    {
+        const UInt32 code_point = code_point_at(i);
+        if (code_point > 0x10FFFF || UTF8::isSurrogateCodePoint(code_point))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Numpy unicode string contains an invalid code point {:#x}", code_point);
+        char utf8[4];
+        result.append(utf8, UTF8::convertCodePointToUTF8(static_cast<int>(code_point), utf8, sizeof(utf8)));
+    }
+    return result;
+}
 
 DataTypePtr getDataTypeFromNumpyType(const std::shared_ptr<NumpyDataType> & numpy_type)
 {
@@ -454,8 +484,12 @@ void NpyRowInputFormat::readAndInsertString(MutableColumnPtr column, const DataT
 
         tmp.resize(size);
         in->readStrict(tmp.data(), size);
-        tmp.erase(std::remove(tmp.begin(), tmp.end(), '\0'), tmp.end());
-        column_string.insertData(tmp.c_str(), tmp.size());
+        if (npy_type.getTypeIndex() == NumpyDataTypeIndex::Unicode)
+            tmp = decodeNumpyUnicode(tmp, npy_type.getEndianness());
+        else
+            /// NumPy pads `|S<n>` byte strings with zero bytes; zero bytes inside the value are part of it.
+            tmp.erase(tmp.find_last_not_of('\0') + 1);
+        column_string.insertData(tmp.data(), tmp.size());
     }
 }
 
