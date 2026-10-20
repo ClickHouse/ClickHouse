@@ -19,7 +19,7 @@ ch_cc_library(
     implementation_deps = [
         "@clickhouse_rapidjson//:rapidjson",
         "//src/Common/Config:clickhouse_common_config",
-        "//base:base_headers",
+        "//base:common",
         "//base:pcg_random",
         "//base/poco/Foundation:_poco_foundation",
         "//base/poco/Net:_poco_net",

@@ -123,7 +123,6 @@ ch_cc_library(
         "@clickhouse_minizip_ng//:_minizip",
         "//base/poco/Foundation:_poco_foundation_pcre",
         "//base/poco/JSON:_poco_json_pdjson",
-        "//base/poco/XML:_poco_xml_expat",
         "@clickhouse_re2//:_re2",
         "@clickhouse_replxx//:_replxx",
         "@clickhouse_silk//:_silk_fibers",

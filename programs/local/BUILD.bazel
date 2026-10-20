@@ -13,7 +13,6 @@ ch_cc_library(
         "@clickhouse_azure//:_azure_sdk",
         "//bazel:clickhouse_config_headers",
         "//src/Common/Config:clickhouse_common_config",
-        "//base:base_headers",
         "//base/poco/Foundation:_poco_foundation",
         "//base/poco/Net:_poco_net",
         "//base/poco/Util:_poco_util",

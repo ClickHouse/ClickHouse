@@ -116,7 +116,7 @@ ch_cc_library(
         "//src/Parsers:headers",
         "//src/Common",
         "//src:headers",
-        "//base:base_headers",
+        "//base:common",
         "@clickhouse_jemalloc//:_jemalloc",
     ],
 )

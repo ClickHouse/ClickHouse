@@ -90,7 +90,7 @@ ch_cc_library(
     deps = [
         "//src/Common",
         "//src:headers",
-        "//base:base_headers",
+        "//base:common",
         "//base/poco/Foundation:_poco_foundation",
         "//base/poco/Util:_poco_util",
         "@clickhouse_boost//:boost_headers",

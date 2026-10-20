@@ -11,12 +11,6 @@ _PRIVATE_COMMON_HEADERS = [
     "base/mremap.h",
 ]
 
-_COMMON_HEADERS = [
-    "base/argsToConfig.h",
-    "base/JSON.h",
-    "base/chrono_io.h",
-]
-
 ch_cc_library(
     name = "common",
     srcs = [
@@ -48,7 +42,10 @@ ch_cc_library(
         "//bazel:gen/base/base/GitHash.generated.cpp",
         "base/wide_integer_to_string.cpp",
     ] + _PRIVATE_COMMON_HEADERS,
-    hdrs = _COMMON_HEADERS,
+    hdrs = glob(
+        ["base/**/*.h"],
+        exclude = _PRIVATE_COMMON_HEADERS + ["base/crc32c_s390x.h"],
+    ),
     clickhouse_code = True,
     implementation_deps = ["@llvm-project//compiler-rt:headers"],
     includes = ["."],
@@ -65,42 +62,12 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
+    source_headers = False,
     deps = [
         "@clickhouse_cctz//:_cctz",
         "//base/poco/Foundation:_poco_foundation",
         "//base/poco/Net:_poco_net",
         "//base/poco/Util:_poco_util",
-        ":base_headers",
-    ],
-)
-
-ch_cc_library(
-    name = "harmful",
-    srcs = [
-        "harmful/harmful.c",
-    ],
-    copts = [
-        "-std=gnu11",
-        "-Wno-error",
-    ],
-    language = "C",
-    libcxx_headers = False,
-    deps = [
-        "@llvm-project//compiler-rt:headers",
-        ":base_headers",
-    ],
-)
-
-cc_library(
-    name = "base_headers",
-    hdrs = glob(
-        [
-            "base/**/*.h",
-        ],
-        exclude = _PRIVATE_COMMON_HEADERS + _COMMON_HEADERS + ["base/crc32c_s390x.h"],
-    ),
-    includes = ["."],
-    deps = [
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_fmtlib//:_fmt",
         "@clickhouse_magic_enum//:magic_enum",
@@ -113,8 +80,27 @@ cc_library(
     ],
 )
 
+ch_cc_library(
+    name = "harmful",
+    srcs = [
+        "harmful/harmful.c",
+        "base/sanitizer_defs.h",
+    ],
+    copts = [
+        "-std=gnu11",
+        "-Wno-error",
+    ],
+    language = "C",
+    libcxx_headers = False,
+    local_includes = ["."],
+    deps = ["@llvm-project//compiler-rt:headers"],
+)
+
 cc_library(
     name = "pcg_random",
     hdrs = glob(["pcg-random/*.hpp"]),
-    includes = [".", "pcg-random"],
+    includes = [
+        ".",
+        "pcg-random",
+    ],
 )

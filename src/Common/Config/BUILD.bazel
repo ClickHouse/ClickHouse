@@ -146,7 +146,6 @@ ch_cc_library(
         "@clickhouse_jemalloc//:_jemalloc",
         "@clickhouse_openldap//:_ldap",
         "//contrib/lz4-cmake:_lz4",
-        "//base/poco/XML:_poco_xml_expat",
         "@clickhouse_silk//:_silk_fibers",
         "@clickhouse_zstd//:_zstd",
         "@clickhouse_llvm_project//:clang_rt_builtins",
@@ -159,7 +158,7 @@ ch_cc_library(
         "//base/poco/Util:_poco_util",
         "//base/poco/XML:_poco_xml",
         "//bazel:clickhouse_config_headers",
-        "//base:base_headers",
+        "//base:common",
         "//src:headers",
     ] + select({
         "@platforms//cpu:x86_64": [

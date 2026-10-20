@@ -13,13 +13,12 @@ ch_cc_library(
     clickhouse_code = True,
     features = ["-static_link_cpp_runtimes"],
     implementation_deps = [
-        "//base:base_headers",
+        "//base:common",
         "//src/Common",
         "//bazel:clickhouse_config_headers",
     ],
     link_runtime = True,
     llvm_headers = False,
-    source_headers = False,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -82,6 +81,7 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
+    source_headers = False,
     deps = [
         "//programs/benchmark:clickhouse-benchmark-lib",
         "//programs/check-marks:clickhouse-check-marks-lib",

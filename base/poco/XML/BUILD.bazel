@@ -12,6 +12,8 @@ poco_cc_library(
             "src/latin1tab.h",
             "src/nametab.h",
             "src/utf8tab.h",
+            "src/xmlrole.h",
+            "src/xmltok.h",
             "src/xmltok_impl.h",
         ],
     ),
@@ -53,6 +55,7 @@ poco_cc_library(
         "_poco_xml",
     ],
     deps = ["//base/poco/Foundation:_poco_foundation"],
+    implementation_deps = [":_poco_xml_expat"],
 )
 
 poco_cc_library(
@@ -65,8 +68,14 @@ poco_cc_library(
         exclude = [
             "src/hash_table.h",
             "src/siphash.h",
+            "src/xmlrole.h",
+            "src/xmltok.h",
         ],
     ),
+    hdrs = [
+        "src/xmlrole.h",
+        "src/xmltok.h",
+    ],
     textual_hdrs = [
         "src/xmltok_impl.c",
         "src/xmltok_ns.c",

@@ -141,6 +141,7 @@ poco_cc_library(
     implementation_deps = [
         ":_poco_net_ssl__compile_0",
         "//src/Common",
+        "//src:clickhouse_common_io__compile_0",
         "//base/poco/Foundation:_poco_foundation",
         "//base/poco/Net:_poco_net",
         "@clickhouse_openssl//:crypto",

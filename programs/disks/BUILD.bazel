@@ -38,7 +38,7 @@ ch_cc_library(
         "//src/Common",
         "@clickhouse_fmtlib//:_fmt",
         "//src/Common/Config:clickhouse_common_config",
-        "//base:base_headers",
+        "//base:common",
         "@clickhouse_boost//:boost_headers",
     ],
     link_runtime = True,

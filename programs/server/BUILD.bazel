@@ -45,7 +45,6 @@ ch_cc_library(
         "//bazel:clickhouse_config_headers",
         "//src/Common/ZooKeeper:clickhouse_common_zookeeper_base",
         "//src/Common/Config:clickhouse_common_config",
-        "//base:base_headers",
         "//base/poco/Foundation:_poco_foundation",
         "//base/poco/Net:_poco_net",
         "//base/poco/Util:_poco_util",

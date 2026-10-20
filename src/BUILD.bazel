@@ -1038,7 +1038,6 @@ ch_cc_library(
         "//base/poco/Foundation:_poco_foundation_pcre",
         "//base/poco/JSON:_poco_json_pdjson",
         "//base/poco/Redis:_poco_redis",
-        "//base/poco/XML:_poco_xml_expat",
         "//contrib/prometheus-protobufs-cmake:_prometheus_protobufs",
         "@clickhouse_librdkafka//:_rdkafka",
         "@clickhouse_re2//:_re2",
@@ -1494,7 +1493,6 @@ ch_cc_library(
         "@platforms//cpu:x86_64": ["@clickhouse_libcpuid//:_cpuid"],
         "@platforms//cpu:aarch64": [],
     }) + [
-        "//base:common",
         "//src/Common/Config:clickhouse_common_config",
         "//contrib/jemalloc-cmake:headers",
         "@clickhouse_openssl//:ssl",
@@ -1508,7 +1506,6 @@ ch_cc_library(
     source_headers = False,
     deps = [
         ":headers",
-        "//base:base_headers",
         "//base:pcg_random",
         "//base/poco/Foundation:_poco_foundation",
         "//base/poco/Net:_poco_net",
@@ -1530,6 +1527,7 @@ ch_cc_library(
         "//base/poco/Util:_poco_util",
         "@clickhouse_aws//:_aws__compile_0",
         "@clickhouse_zstd//:_zstd__compile_0",
+        "//base:common",
     ],
 )
 
@@ -1543,7 +1541,7 @@ ch_cc_library(
     ],
     implementation_deps = [
         ":headers",
-        "//base:base_headers",
+        "//base:common",
         "//src/Common",
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_jemalloc//:_jemalloc",
@@ -1563,7 +1561,7 @@ ch_cc_library(
     implementation_deps = [
         ":clickhouse_common_io__compile_0",
         ":headers",
-        "//base:base_headers",
+        "//base:common",
         "//base:pcg_random",
         "//bazel:clickhouse_config_headers",
         "//src/Common",
@@ -1610,7 +1608,6 @@ cc_library(
         "@clickhouse_minizip_ng//:_minizip",
         "//base/poco/Foundation:_poco_foundation_pcre",
         "//base/poco/JSON:_poco_json_pdjson",
-        "//base/poco/XML:_poco_xml_expat",
         "@clickhouse_re2//:_re2",
         "@clickhouse_replxx//:_replxx",
         "@clickhouse_silk//:_silk_fibers",
@@ -1914,7 +1911,7 @@ _GENERATED_DEPS_1 = [
     "//contrib/postgres-cmake:headers",
     "//contrib/sz3-cmake:headers",
     "//contrib/vectorscan-cmake:headers",
-    "//base:base_headers",
+    "//base:common",
     "//src/Access/Common:clickhouse_common_access",
     "//src/AggregateFunctions:headers",
     "//src/Common",
@@ -2826,7 +2823,7 @@ ch_cc_library(
     copts = ["-g1"],
     implementation_deps = [
         "//base/poco/Foundation:_poco_foundation",
-        "//base:base_headers",
+        "//base:common",
         "//src/AggregateFunctions:headers",
         "//src/Common",
         "//src/Functions:headers",
@@ -2865,7 +2862,7 @@ ch_cc_library(
     implementation_deps = [
         "@clickhouse_fmtlib//:_fmt",
         "//base/poco/Util:_poco_util",
-        "//base:base_headers",
+        "//base:common",
         "//src/AggregateFunctions:headers",
         "//src/Common",
         "//src/Compression:clickhouse_compression",
@@ -3096,7 +3093,7 @@ ch_cc_library(
             "//contrib/postgres-cmake:headers",
             "//contrib/sz3-cmake:headers",
             "//contrib/vectorscan-cmake:headers",
-            "//base:base_headers",
+            "//base:common",
             "//src/Access/Common:clickhouse_common_access",
             "//src/AggregateFunctions:headers",
             "//src/Common",
@@ -3891,7 +3888,6 @@ cc_test(
         "//base/poco/Foundation:_poco_foundation_pcre",
         "//base/poco/JSON:_poco_json_pdjson",
         "//base/poco/Redis:_poco_redis",
-        "//base/poco/XML:_poco_xml_expat",
         "//contrib/prometheus-protobufs-cmake:_prometheus_protobufs",
         "@clickhouse_librdkafka//:_rdkafka",
         "@clickhouse_re2//:_re2",
@@ -4118,7 +4114,7 @@ cc_library(
     ],
     textual_hdrs = ["Client/SQLKeywordsForHighlighting.inc"],
     deps = [
-        "//base:base_headers",
+        "//base:common",
         "//src/Access/Common:headers",
         "//src/AggregateFunctions:headers",
         "//src/Common",

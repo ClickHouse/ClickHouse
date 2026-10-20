@@ -247,6 +247,13 @@ poco_cc_library(
             "include/Poco/RWLock_Android.h",
         ],
     ),
+    copts = _FOUNDATION_COPTS,
+    implementation_deps = [
+        ":_poco_foundation_pcre",
+        "@clickhouse_double_conversion//:_double-conversion",
+    ],
+    includes = ["include"],
+    local_defines = _FOUNDATION_DEFINES,
     textual_hdrs = [
         "src/DirectoryIterator_UNIX.cpp",
         "src/Environment_UNIX.cpp",
@@ -268,13 +275,6 @@ poco_cc_library(
         "src/Thread_POSIX.cpp",
         "src/Timezone_UNIX.cpp",
     ],
-    copts = _FOUNDATION_COPTS,
-    implementation_deps = [
-        ":_poco_foundation_pcre",
-        "@clickhouse_double_conversion//:_double-conversion",
-    ],
-    includes = ["include"],
-    local_defines = _FOUNDATION_DEFINES,
     deps = [
         "@lz4//:lz4",
         "@lz4//:lz4_frame",
@@ -289,7 +289,7 @@ poco_cc_library(
     implementation_deps = [
         ":_poco_foundation",
         "//src:clickhouse_common_io__compile_0",
-        "//base:base_headers",
+        "//base:common",
         "//src/Common",
     ],
     local_defines = _FOUNDATION_DEFINES,

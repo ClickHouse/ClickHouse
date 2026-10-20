@@ -8,7 +8,7 @@ ch_cc_library(
     clickhouse_code = True,
     implementation_deps = [
         "//src/Common",
-        "//base:base_headers",
+        "//base:common",
         "@clickhouse_boost//:boost_headers",
     ],
     link_runtime = True,

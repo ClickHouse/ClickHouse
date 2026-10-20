@@ -46,7 +46,6 @@ ch_cc_library(
         "@clickhouse_minizip_ng//:_minizip",
         "//base/poco/Foundation:_poco_foundation_pcre",
         "//base/poco/JSON:_poco_json_pdjson",
-        "//base/poco/XML:_poco_xml_expat",
         "@clickhouse_re2//:_re2",
         "@clickhouse_replxx//:_replxx",
         "@clickhouse_silk//:_silk_fibers",
@@ -123,7 +122,6 @@ ch_cc_library(
         "@clickhouse_abseil_cpp//:absl_time_zone",
         "@clickhouse_abseil_cpp//:absl_vlog_config_internal",
         "@clickhouse_llvm_project//:clang_rt_builtins",
-        "//base:common",
         "@clickhouse_openssl//:crypto",
         "//base/glibc-compatibility",
         "@clickhouse_openssl//:ssl",
@@ -131,15 +129,6 @@ ch_cc_library(
         "@clickhouse_google_protobuf//:utf8_validity",
         "//base/widechar_width",
     ],
-    deps = [
-        ":headers",
-        "//src/Common",
-        "//src:headers",
-        "//src/Parsers:headers",
-        "//base:base_headers",
-        "//base/poco/Net:_poco_net",
-    ],
-    source_headers = False,
     link_runtime = True,
     llvm_headers = False,
     local_defines = select({
@@ -204,6 +193,15 @@ ch_cc_library(
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+    source_headers = False,
+    deps = [
+        ":headers",
+        "//src/Common",
+        "//src:headers",
+        "//src/Parsers:headers",
+        "//base/poco/Net:_poco_net",
+        "//base:common",
     ],
 )
 

@@ -98,7 +98,6 @@ ch_cc_library(
         "@clickhouse//base:common",
         "@clickhouse//src/Common",
         "@clickhouse//src:headers",
-        "@clickhouse//base:base_headers",
         "@clickhouse//base:pcg_random",
         "@clickhouse//base/poco/Foundation:_poco_foundation",
         "@clickhouse_boost//:boost_headers",

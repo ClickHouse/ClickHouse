@@ -3109,7 +3109,7 @@ ch_cc_library(
         _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
-        ":LLVMAnalysis",
+        ":LLVMCore",
         ":llvm_headers",
     ],
 )

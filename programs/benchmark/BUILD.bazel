@@ -8,7 +8,7 @@ ch_cc_library(
     clickhouse_code = True,
     implementation_deps = [
         "//src/Common/Config:clickhouse_common_config",
-        "//base:base_headers",
+        "//base:common",
         "//base:pcg_random",
         "//base/poco/Foundation:_poco_foundation",
         "//base/poco/Util:_poco_util",

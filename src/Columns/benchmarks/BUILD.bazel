@@ -154,7 +154,6 @@ ch_cc_library(
         "@clickhouse_openldap//:_ldap",
         "//contrib/lz4-cmake:_lz4",
         "@clickhouse_arrow//:_parquet",
-        "//base/poco/XML:_poco_xml_expat",
         "@clickhouse_librdkafka//:_rdkafka",
         "@clickhouse_silk//:_silk_fibers",
         "@clickhouse_vectorscan//:_vectorscan",
@@ -273,7 +272,6 @@ ch_cc_library(
         "@clickhouse_openldap//:_ldap",
         "//contrib/lz4-cmake:_lz4",
         "@clickhouse_arrow//:_parquet",
-        "//base/poco/XML:_poco_xml_expat",
         "@clickhouse_librdkafka//:_rdkafka",
         "@clickhouse_silk//:_silk_fibers",
         "@clickhouse_vectorscan//:_vectorscan",
@@ -301,7 +299,6 @@ ch_cc_library(
         "@clickhouse_grpc//:grpc",
         "//src/Common/mysqlxx",
         "@clickhouse_cctz//:tzdata",
-        "//base:base_headers",
     ] + select({
         "@platforms//cpu:x86_64": [
             "@clickhouse_llvm_project//:LLVMX86CodeGen",
