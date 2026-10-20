@@ -940,9 +940,11 @@ static std::optional<Block> getVirtualRowBound(const RangesInDataPart & part_wit
         if ((*index)[j]->size() <= mark_pos)
             return std::nullopt;
 
+    /// Insert via `Field`: the index may have the type before an `ALTER MODIFY COLUMN`
+    /// (e.g. `String` vs `LowCardinality(String)`), because a mutation can keep the source part's index.
     auto pk_columns = pk_header.cloneEmptyColumns();
     for (size_t j = 0; j < pk_columns.size(); ++j)
-        pk_columns[j]->insertFrom(*(*index)[j], mark_pos);
+        pk_columns[j]->insert((*(*index)[j])[mark_pos]);
     return pk_header.cloneWithColumns(std::move(pk_columns));
 }
 
