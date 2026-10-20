@@ -3502,6 +3502,17 @@ bool isAuditedPrimitiveNumericType(const IDataType & type)
         || typeid(type) == typeid(DataTypeFloat64);
 }
 
+bool isAuditedPrimitiveIntegerType(const IDataType & type)
+{
+    const bool is_native_integer = typeid(type) == typeid(DataTypeUInt8) || typeid(type) == typeid(DataTypeUInt16)
+        || typeid(type) == typeid(DataTypeUInt32) || typeid(type) == typeid(DataTypeUInt64) || typeid(type) == typeid(DataTypeUInt128)
+        || typeid(type) == typeid(DataTypeUInt256) || typeid(type) == typeid(DataTypeInt8) || typeid(type) == typeid(DataTypeInt16)
+        || typeid(type) == typeid(DataTypeInt32) || typeid(type) == typeid(DataTypeInt64) || typeid(type) == typeid(DataTypeInt128)
+        || typeid(type) == typeid(DataTypeInt256);
+
+    return is_native_integer && hasNoCustomConversionSerialization(type);
+}
+
 template <typename Type>
 bool isConcreteDataType(const IDataType & type)
 {
@@ -3655,6 +3666,27 @@ bool areCastsEquivalentForBloomFilterExpressionMatching(const IFunctionBase & le
     return left_cast && right_cast && left_cast->isEquivalentForBloomFilterExpressionMatching(*right_cast);
 }
 
+bool isNativeCastForBloomFilterExpressionMatching(const IFunctionBase & function)
+{
+    return dynamic_cast<const detail::FunctionCast *>(&function) != nullptr;
+}
+
+bool isNativeDateTimeModeDependentConversionForBloomFilterExpressionMatching(const IFunctionBase & function)
+{
+    const auto * adaptor = dynamic_cast<const FunctionToFunctionBaseAdaptor *>(&function);
+    if (!adaptor)
+        return false;
+
+    const auto * native_function = adaptor->getFunction().get();
+    if (!native_function)
+        return false;
+
+    return typeid(*native_function) == typeid(detail::FunctionToDateTime)
+        || typeid(*native_function) == typeid(detail::FunctionToDateTime32)
+        || typeid(*native_function) == typeid(detail::FunctionToDateTime64)
+        || typeid(*native_function) == typeid(detail::FunctionToUnixTimestamp);
+}
+
 bool areNativeConversionsEquivalentForBloomFilterExpressionMatching(const IFunctionBase & left, const IFunctionBase & right)
 {
     const auto * left_adaptor = dynamic_cast<const FunctionToFunctionBaseAdaptor *>(&left);
@@ -3678,6 +3710,14 @@ bool areNativeConversionsEquivalentForBloomFilterExpressionMatching(const IFunct
     const auto & right_result = right_adaptor->getResultType();
     if (!left_result || !right_result)
         return false;
+
+    if (typeid(left_function) == typeid(detail::FunctionToUInt8))
+    {
+        return left_arguments.size() == 1 && right_arguments.size() == 1 && left_arguments[0] && right_arguments[0]
+            && isAuditedPrimitiveIntegerType(*left_arguments[0]) && isAuditedPrimitiveIntegerType(*right_arguments[0])
+            && haveEqualConcreteNonDecimalTypes(*left_arguments[0], *right_arguments[0]) && isConcreteDataType<DataTypeUInt8>(*left_result)
+            && isConcreteDataType<DataTypeUInt8>(*right_result) && haveEqualConcreteNonDecimalTypes(*left_result, *right_result);
+    }
 
     if (isFunctionToDecimal(left_function))
     {

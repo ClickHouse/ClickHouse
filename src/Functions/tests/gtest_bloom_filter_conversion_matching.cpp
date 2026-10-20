@@ -51,6 +51,18 @@ FunctionBasePtr buildFunctionBase(
     return resolver->build(arguments);
 }
 
+FunctionBasePtr buildCast(const ContextPtr & context, const DataTypePtr & source, const String & target)
+{
+    tryRegisterFunctions();
+    auto string_type = std::make_shared<DataTypeString>();
+    return FunctionFactory::instance()
+        .get("CAST", context)
+        ->build({
+            {nullptr, source, "value"},
+            {string_type->createColumnConst(1, Field(target)), string_type, "target_type"},
+        });
+}
+
 UInt64 getFunctionHash(const IFunctionBase & function)
 {
     SipHash hash;
@@ -177,4 +189,98 @@ TEST(BloomFilterConversionMatching, UnsupportedStringAndCustomSerializationPaths
     auto left_wrapped_string = buildFunctionBase("toString", left_context, {nullable_decimal});
     auto right_wrapped_string = buildFunctionBase("toString", right_context, {nullable_decimal});
     EXPECT_FALSE(areNativeConversionsEquivalentForBloomFilterExpressionMatching(*left_wrapped_string, *right_wrapped_string));
+}
+
+TEST(BloomFilterConversionMatching, NativeIntegerToUInt8IgnoresInputParsingSettings)
+{
+    auto left_context = makeContextWithSetting("input_format_parallel_parsing", "0");
+    auto right_context = makeContextWithSetting("input_format_parallel_parsing", "1");
+    const std::vector<String> integer_type_names{
+        "UInt8",
+        "UInt16",
+        "UInt32",
+        "UInt64",
+        "UInt128",
+        "UInt256",
+        "Int8",
+        "Int16",
+        "Int32",
+        "Int64",
+        "Int128",
+        "Int256",
+    };
+
+    for (const auto & type_name : integer_type_names)
+    {
+        const auto input_type = getType(type_name);
+        auto left = buildFunctionBase("toUInt8", left_context, {input_type});
+        auto right = buildFunctionBase("toUInt8", right_context, {input_type});
+
+        ASSERT_NE(getFunctionHash(*left), getFunctionHash(*right)) << type_name;
+        EXPECT_TRUE(areNativeConversionsEquivalentForBloomFilterExpressionMatching(*left, *right)) << type_name;
+    }
+}
+
+TEST(BloomFilterConversionMatching, UInt8ConversionDeclinesUnauditedOrDifferentInputTypes)
+{
+    auto left_context = makeContextWithSetting("input_format_parallel_parsing", "0");
+    auto right_context = makeContextWithSetting("input_format_parallel_parsing", "1");
+    const std::vector<String> unsupported_type_names{
+        "String",
+        "Float32",
+        "Float64",
+        "BFloat16",
+        "Decimal64(2)",
+        "Nullable(Int64)",
+        "LowCardinality(Int64)",
+        "Bool",
+    };
+
+    for (const auto & type_name : unsupported_type_names)
+    {
+        const auto input_type = getType(type_name);
+        auto left = buildFunctionBase("toUInt8", left_context, {input_type});
+        auto right = buildFunctionBase("toUInt8", right_context, {input_type});
+        EXPECT_FALSE(areNativeConversionsEquivalentForBloomFilterExpressionMatching(*left, *right)) << type_name;
+    }
+
+    auto signed_input = buildFunctionBase("toUInt8", left_context, {getType("Int64")});
+    auto unsigned_input = buildFunctionBase("toUInt8", right_context, {getType("UInt64")});
+    auto different_result = buildFunctionBase("toUInt16", right_context, {getType("Int64")});
+    EXPECT_FALSE(areNativeConversionsEquivalentForBloomFilterExpressionMatching(*signed_input, *unsigned_input));
+    EXPECT_FALSE(areNativeConversionsEquivalentForBloomFilterExpressionMatching(*signed_input, *different_result));
+}
+
+TEST(BloomFilterConversionMatching, NativeCastAuthenticationIncludesWholeArrayConversions)
+{
+    auto context = makeContextWithSetting("cast_string_to_date_time_mode", "best_effort");
+    auto scalar = buildCast(context, getType("String"), "DateTime('UTC')");
+    auto array = buildCast(context, getType("Array(String)"), "Array(DateTime('UTC'))");
+    auto non_cast = buildFunctionBase("toUInt8", context, {getType("UInt64")});
+
+    EXPECT_TRUE(isNativeCastForBloomFilterExpressionMatching(*scalar));
+    EXPECT_TRUE(isNativeCastForBloomFilterExpressionMatching(*array));
+    EXPECT_FALSE(isNativeCastForBloomFilterExpressionMatching(*non_cast));
+}
+
+TEST(BloomFilterConversionMatching, AuthenticatesOnlyExactDateTimeModeDependentConversionFamilies)
+{
+    auto context = makeContextWithSetting("cast_string_to_date_time_mode", "best_effort");
+    const auto string_type = getType("String");
+    const auto scale_type = getType("UInt8");
+
+    const auto to_datetime = buildFunctionBase("toDateTime", context, {string_type});
+    const auto to_datetime32 = buildFunctionBase("toDateTime32", context, {string_type});
+    const auto to_datetime64 = buildFunctionBase("toDateTime64", context, {string_type, scale_type}, 3);
+    const auto to_unix_timestamp = buildFunctionBase("toUnixTimestamp", context, {string_type});
+
+    EXPECT_TRUE(isNativeDateTimeModeDependentConversionForBloomFilterExpressionMatching(*to_datetime));
+    EXPECT_TRUE(isNativeDateTimeModeDependentConversionForBloomFilterExpressionMatching(*to_datetime32));
+    EXPECT_TRUE(isNativeDateTimeModeDependentConversionForBloomFilterExpressionMatching(*to_datetime64));
+    EXPECT_TRUE(isNativeDateTimeModeDependentConversionForBloomFilterExpressionMatching(*to_unix_timestamp));
+
+    const auto fixed_parser = buildFunctionBase("toDateTimeOrNull", context, {string_type});
+    const auto unrelated_conversion = buildFunctionBase("toUInt8", context, {getType("UInt64")});
+    EXPECT_FALSE(isNativeDateTimeModeDependentConversionForBloomFilterExpressionMatching(*fixed_parser));
+    EXPECT_FALSE(isNativeDateTimeModeDependentConversionForBloomFilterExpressionMatching(*unrelated_conversion));
 }

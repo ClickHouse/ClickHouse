@@ -9,9 +9,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/FieldAccurateComparison.h>
-#include <Common/DateLUTImpl.h>
-#include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustom.h>
@@ -32,31 +29,35 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/SerializationBool.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
+#include <Functions/FunctionConversionMatching.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsMiscellaneous.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/array/emptyArrayToSingle.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
-#include <Functions/FunctionConversionMatching.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/IFunctionAdaptors.h>
-#include <Functions/FunctionsMiscellaneous.h>
-#include <Functions/array/emptyArrayToSingle.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSubquery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/FieldAccurateComparison.h>
+#include <Common/SipHash.h>
 
 #include <array>
 #include <bit>
@@ -274,6 +275,372 @@ struct ExpressionMatchBudget
         return true;
     }
 };
+
+bool isNativeTypeTree(const IDataType & type, ExpressionMatchBudget & budget, size_t depth = 0)
+{
+    if (depth > 32 || !budget.consume())
+        return false;
+
+    const auto * raw = &type;
+    auto is_leaf = [&]
+    {
+        return typeid(*raw) == typeid(DataTypeNothing) || typeid(*raw) == typeid(DataTypeString)
+            || typeid(*raw) == typeid(DataTypeFixedString) || typeid(*raw) == typeid(DataTypeDate) || typeid(*raw) == typeid(DataTypeDate32)
+            || typeid(*raw) == typeid(DataTypeDateTime) || typeid(*raw) == typeid(DataTypeDateTime64)
+            || typeid(*raw) == typeid(DataTypeEnum8) || typeid(*raw) == typeid(DataTypeEnum16) || typeid(*raw) == typeid(DataTypeUUID)
+            || typeid(*raw) == typeid(DataTypeIPv4) || typeid(*raw) == typeid(DataTypeIPv6) || typeid(*raw) == typeid(DataTypeUInt8)
+            || typeid(*raw) == typeid(DataTypeUInt16) || typeid(*raw) == typeid(DataTypeUInt32) || typeid(*raw) == typeid(DataTypeUInt64)
+            || typeid(*raw) == typeid(DataTypeUInt128) || typeid(*raw) == typeid(DataTypeUInt256) || typeid(*raw) == typeid(DataTypeInt8)
+            || typeid(*raw) == typeid(DataTypeInt16) || typeid(*raw) == typeid(DataTypeInt32) || typeid(*raw) == typeid(DataTypeInt64)
+            || typeid(*raw) == typeid(DataTypeInt128) || typeid(*raw) == typeid(DataTypeInt256) || typeid(*raw) == typeid(DataTypeBFloat16)
+            || typeid(*raw) == typeid(DataTypeFloat32) || typeid(*raw) == typeid(DataTypeFloat64)
+            || typeid(*raw) == typeid(DataTypeDecimal32) || typeid(*raw) == typeid(DataTypeDecimal64)
+            || typeid(*raw) == typeid(DataTypeDecimal128) || typeid(*raw) == typeid(DataTypeDecimal256);
+    };
+
+    if (is_leaf())
+        return !raw->getCustomName() && !raw->getCustomSerialization();
+    if (typeid(*raw) == typeid(DataTypeArray))
+    {
+        if (raw->getCustomName() || raw->getCustomSerialization())
+            return false;
+        return isNativeTypeTree(*static_cast<const DataTypeArray &>(*raw).getNestedType(), budget, depth + 1);
+    }
+    if (typeid(*raw) == typeid(DataTypeNullable))
+    {
+        if (raw->getCustomName() || raw->getCustomSerialization())
+            return false;
+        return isNativeTypeTree(*static_cast<const DataTypeNullable &>(*raw).getNestedType(), budget, depth + 1);
+    }
+    if (typeid(*raw) == typeid(DataTypeLowCardinality))
+    {
+        if (raw->getCustomName() || raw->getCustomSerialization())
+            return false;
+        return isNativeTypeTree(*static_cast<const DataTypeLowCardinality &>(*raw).getDictionaryType(), budget, depth + 1);
+    }
+    if (typeid(*raw) == typeid(DataTypeTuple))
+    {
+        if (raw->getCustomName() || raw->getCustomSerialization())
+            return false;
+        const auto & elements = static_cast<const DataTypeTuple &>(*raw).getElements();
+        if (!budget.consume(elements.size()))
+            return false;
+        for (const auto & element : elements)
+            if (!element || !isNativeTypeTree(*element, budget, depth + 1))
+                return false;
+        return true;
+    }
+    if (typeid(*raw) == typeid(DataTypeMap))
+    {
+        if (raw->getCustomName() || raw->getCustomSerialization() || !budget.consume(2))
+            return false;
+        const auto & map = static_cast<const DataTypeMap &>(*raw);
+        return map.getKeyType() && map.getValueType() && isNativeTypeTree(*map.getKeyType(), budget, depth + 1)
+            && isNativeTypeTree(*map.getValueType(), budget, depth + 1);
+    }
+
+    /// Dynamic, Variant, and custom/opaque types can hide a conversion-sensitive concrete value.
+    return false;
+}
+
+bool isSettingsDependentDateTimeCast(const DataTypePtr & source, const DataTypePtr & destination, ExpressionMatchBudget & budget)
+{
+    struct PendingPair
+    {
+        const IDataType * source;
+        const IDataType * destination;
+        size_t depth;
+    };
+
+    if (!source || !destination)
+        return true;
+    std::vector<PendingPair> pending{{source.get(), destination.get(), 0}};
+
+    while (!pending.empty())
+    {
+        if (!budget.consume())
+            return true;
+        const auto [left, right, depth] = pending.back();
+        pending.pop_back();
+        if (!left || !right || depth > 32 || !isNativeTypeTree(*left, budget, depth) || !isNativeTypeTree(*right, budget, depth))
+            return true;
+
+        const bool right_datetime = typeid(*right) == typeid(DataTypeDateTime) || typeid(*right) == typeid(DataTypeDateTime64);
+        const bool left_stable_datetime_source
+            = typeid(*left) == typeid(DataTypeUInt8) || typeid(*left) == typeid(DataTypeUInt16) || typeid(*left) == typeid(DataTypeUInt32);
+        if (right_datetime && !left_stable_datetime_source)
+            return true;
+
+        auto enqueue = [&](const IDataType * left_child, const IDataType * right_child)
+        {
+            if (!budget.consume())
+                return false;
+            pending.push_back({left_child, right_child, depth + 1});
+            return true;
+        };
+
+        if (typeid(*left) == typeid(DataTypeArray) || typeid(*right) == typeid(DataTypeArray))
+        {
+            if (typeid(*left) != typeid(DataTypeArray) || typeid(*right) != typeid(DataTypeArray)
+                || !enqueue(
+                    static_cast<const DataTypeArray &>(*left).getNestedType().get(),
+                    static_cast<const DataTypeArray &>(*right).getNestedType().get()))
+                return true;
+            continue;
+        }
+        if (typeid(*left) == typeid(DataTypeNullable) || typeid(*right) == typeid(DataTypeNullable))
+        {
+            if (typeid(*left) != typeid(DataTypeNullable) || typeid(*right) != typeid(DataTypeNullable)
+                || !enqueue(
+                    static_cast<const DataTypeNullable &>(*left).getNestedType().get(),
+                    static_cast<const DataTypeNullable &>(*right).getNestedType().get()))
+                return true;
+            continue;
+        }
+        if (typeid(*left) == typeid(DataTypeLowCardinality) || typeid(*right) == typeid(DataTypeLowCardinality))
+        {
+            if (typeid(*left) != typeid(DataTypeLowCardinality) || typeid(*right) != typeid(DataTypeLowCardinality)
+                || !enqueue(
+                    static_cast<const DataTypeLowCardinality &>(*left).getDictionaryType().get(),
+                    static_cast<const DataTypeLowCardinality &>(*right).getDictionaryType().get()))
+                return true;
+            continue;
+        }
+        if (typeid(*left) == typeid(DataTypeTuple) || typeid(*right) == typeid(DataTypeTuple))
+        {
+            if (typeid(*left) != typeid(DataTypeTuple) || typeid(*right) != typeid(DataTypeTuple))
+                return true;
+            const auto & left_elements = static_cast<const DataTypeTuple &>(*left).getElements();
+            const auto & right_elements = static_cast<const DataTypeTuple &>(*right).getElements();
+            if (left_elements.size() != right_elements.size() || !budget.consume(left_elements.size()))
+                return true;
+            for (size_t i = 0; i < left_elements.size(); ++i)
+                if (!enqueue(left_elements[i].get(), right_elements[i].get()))
+                    return true;
+            continue;
+        }
+        if (typeid(*left) == typeid(DataTypeMap) || typeid(*right) == typeid(DataTypeMap))
+        {
+            if (typeid(*left) != typeid(DataTypeMap) || typeid(*right) != typeid(DataTypeMap)
+                || !enqueue(
+                    static_cast<const DataTypeMap &>(*left).getKeyType().get(), static_cast<const DataTypeMap &>(*right).getKeyType().get())
+                || !enqueue(
+                    static_cast<const DataTypeMap &>(*left).getValueType().get(),
+                    static_cast<const DataTypeMap &>(*right).getValueType().get()))
+                return true;
+        }
+    }
+
+    return false;
+}
+
+bool isStableSourceForDateTimeModeConversion(const DataTypePtr & source, ExpressionMatchBudget & budget)
+{
+    if (!source || !isNativeTypeTree(*source, budget))
+        return false;
+
+    const IDataType * current = source.get();
+    for (size_t depth = 0; depth <= 32; ++depth)
+    {
+        if (!budget.consume())
+            return false;
+
+        if (typeid(*current) == typeid(DataTypeNullable))
+        {
+            current = static_cast<const DataTypeNullable &>(*current).getNestedType().get();
+            if (!current)
+                return false;
+            continue;
+        }
+        if (typeid(*current) == typeid(DataTypeLowCardinality))
+        {
+            current = static_cast<const DataTypeLowCardinality &>(*current).getDictionaryType().get();
+            if (!current)
+                return false;
+            continue;
+        }
+
+        /// Only narrow unsigned integers have been established as stable across conversion modes.
+        /// Other numeric inputs fail closed until their range and overflow behavior is separately established.
+        return typeid(*current) == typeid(DataTypeUInt8) || typeid(*current) == typeid(DataTypeUInt16)
+            || typeid(*current) == typeid(DataTypeUInt32);
+    }
+
+    return false;
+}
+
+bool sameType(const DataTypePtr & left, const DataTypePtr & right, ExpressionMatchBudget & budget);
+
+bool sameNativeTypeTree(const DataTypePtr & left, const DataTypePtr & right, ExpressionMatchBudget & budget)
+{
+    /// Authenticate both trees before sameType reads custom-name/serialization or child accessors.
+    /// A lambda capture and its outer expression commonly own distinct instances of the same type.
+    return left && right && isNativeTypeTree(*left, budget) && isNativeTypeTree(*right, budget) && sameType(left, right, budget);
+}
+
+bool isBloomIndexExpressionContextStable(const ActionsDAG & indexed_expression_dag)
+{
+    size_t work_remaining = ExpressionMatchBudget::max_work;
+    ExpressionMatchBudget budget(work_remaining);
+    std::vector<const ActionsDAG *> pending_dags{&indexed_expression_dag};
+    std::vector<const ActionsDAG::Node *> pending_nodes;
+    std::unordered_set<const ActionsDAG *> visited_dags;
+    std::unordered_set<const ActionsDAG::Node *> visited_nodes;
+    const auto * canonical_cast = FunctionFactory::instance().tryGetCanonicalCreator("CAST");
+    const auto * canonical_internal_cast = FunctionFactory::instance().tryGetCanonicalCreator("_CAST");
+    const auto * canonical_accurate_cast = FunctionFactory::instance().tryGetCanonicalCreator("accurateCast");
+    const auto * canonical_accurate_cast_or_null = FunctionFactory::instance().tryGetCanonicalCreator("accurateCastOrNull");
+    const auto * canonical_to_datetime = FunctionFactory::instance().tryGetCanonicalCreator("toDateTime");
+    const auto * canonical_to_datetime32 = FunctionFactory::instance().tryGetCanonicalCreator("toDateTime32");
+    const auto * canonical_to_datetime64 = FunctionFactory::instance().tryGetCanonicalCreator("toDateTime64");
+    const auto * canonical_to_unix_timestamp = FunctionFactory::instance().tryGetCanonicalCreator("toUnixTimestamp");
+    if (!canonical_cast || !canonical_internal_cast || !canonical_accurate_cast || !canonical_accurate_cast_or_null
+        || !canonical_to_datetime || !canonical_to_datetime32 || !canonical_to_datetime64 || !canonical_to_unix_timestamp)
+        return false;
+
+    while (!pending_dags.empty() || !pending_nodes.empty())
+    {
+        if (!pending_dags.empty())
+        {
+            if (!budget.consume())
+                return false;
+            const auto * dag = pending_dags.back();
+            pending_dags.pop_back();
+            if (!dag || !visited_dags.insert(dag).second)
+                continue;
+
+            const auto & outputs = dag->getOutputs();
+            if (outputs.empty() || !budget.consume(outputs.size()))
+                return false;
+            pending_nodes.insert(pending_nodes.end(), outputs.begin(), outputs.end());
+            continue;
+        }
+
+        if (!budget.consume())
+            return false;
+        const ActionsDAG::Node * node = pending_nodes.back();
+        pending_nodes.pop_back();
+        if (!node)
+            return false;
+        if (!visited_nodes.insert(node).second)
+            continue;
+        if (!budget.consume(node->children.size()))
+            return false;
+        pending_nodes.insert(pending_nodes.end(), node->children.begin(), node->children.end());
+        const auto * node_result_type = node->result_type.get();
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            if (!node->function_base || node->is_function_compiled)
+                return false;
+            const auto * function_base = node->function_base.get();
+
+            /// The factory handle is a non-virtual identity check. Authenticate native CASTs by
+            /// exact final implementation identity before reading their types. A non-native
+            /// function carrying any canonical CAST-family handle is malformed and fails closed.
+            const auto * handle = node->function_base->getFactoryHandle();
+            const bool is_native_cast = isNativeCastForBloomFilterExpressionMatching(*function_base);
+            const bool claims_native_cast = handle == canonical_cast || handle == canonical_internal_cast
+                || handle == canonical_accurate_cast || handle == canonical_accurate_cast_or_null;
+            const bool is_native_datetime_conversion
+                = isNativeDateTimeModeDependentConversionForBloomFilterExpressionMatching(*function_base);
+            const bool claims_native_datetime_conversion = handle == canonical_to_datetime || handle == canonical_to_datetime32
+                || handle == canonical_to_datetime64 || handle == canonical_to_unix_timestamp;
+            if (!is_native_cast && claims_native_cast)
+                return false;
+            if (!is_native_datetime_conversion && claims_native_datetime_conversion)
+                return false;
+            if (is_native_cast)
+            {
+                /// Exact final class identity is authoritative here: native internal CAST
+                /// variants and createInternalCast nodes may legitimately have other or no
+                /// factory handle. Their source and result types still receive the same hazard
+                /// check below.
+                const auto & argument_types = node->function_base->getArgumentTypes();
+                const auto & result_type = node->function_base->getResultType();
+                if (argument_types.size() != 2 || node->children.size() != 2 || !result_type || !node->children[0]
+                    || !node->children[0]->result_type || argument_types[0].get() != node->children[0]->result_type.get()
+                    || node->result_type.get() != result_type.get()
+                    || isSettingsDependentDateTimeCast(argument_types[0], result_type, budget))
+                    return false;
+            }
+            if (is_native_datetime_conversion)
+            {
+                /// Authenticate the exact final FunctionConvert implementation before virtual
+                /// type access. Requiring every child/result type to match its native signature
+                /// prevents malformed DAG edges from bypassing the source check.
+                const auto & argument_types = node->function_base->getArgumentTypes();
+                const auto & result_type = node->function_base->getResultType();
+                if (argument_types.empty() || argument_types.size() != node->children.size() || !budget.consume(argument_types.size())
+                    || !result_type || node->result_type.get() != result_type.get())
+                    return false;
+                for (size_t i = 0; i < argument_types.size(); ++i)
+                    if (!argument_types[i] || !node->children[i] || !node->children[i]->result_type
+                        || argument_types[i].get() != node->children[i]->result_type.get())
+                        return false;
+                if (!isNativeTypeTree(*result_type, budget) || !isStableSourceForDateTimeModeConversion(argument_types[0], budget))
+                    return false;
+            }
+
+            if (typeid(*function_base) == typeid(FunctionCapture))
+            {
+                const auto & function_capture = static_cast<const FunctionCapture &>(*function_base);
+                const auto & capture = function_capture.getCapture();
+                const auto & body = function_capture.getAcionsDAG();
+                pending_dags.push_back(&body);
+                /// Captures are separate children of FunctionCapture, but scan their declared
+                /// types as well so malformed/missing capture edges fail closed.
+                if (capture.captured_types.size() != node->children.size() || !budget.consume(capture.captured_types.size()))
+                    return false;
+                for (size_t i = 0; i < capture.captured_types.size(); ++i)
+                    if (!node->children[i] || !node->children[i]->result_type
+                        || !sameNativeTypeTree(node->children[i]->result_type, capture.captured_types[i], budget))
+                        return false;
+            }
+            else if (node_result_type && typeid(*node_result_type) == typeid(DataTypeFunction))
+            {
+                /// An unrecognized callable carrier can hide a lambda ActionsDAG.
+                return false;
+            }
+        }
+        else if (node->type == ActionsDAG::ActionType::COLUMN && node_result_type && typeid(*node_result_type) == typeid(DataTypeFunction))
+        {
+            if (!node->column || !node->children.empty() || node->is_runtime_filter_id || node->is_masked_secret
+                || !node->is_deterministic_constant)
+                return false;
+            const auto * column_const = typeid_cast<const ColumnConst *>(node->column.get());
+            const auto * column_function = column_const ? typeid_cast<const ColumnFunction *>(&column_const->getDataColumn()) : nullptr;
+            const auto * function_expression
+                = column_function ? typeid_cast<const FunctionExpression *>(column_function->getFunction().get()) : nullptr;
+            if (!column_function || !function_expression || typeid(*column_function) != typeid(ColumnFunction)
+                || typeid(*function_expression) != typeid(FunctionExpression))
+                return false;
+            const auto & capture = function_expression->getCapture();
+            pending_dags.push_back(&function_expression->getAcionsDAG());
+
+            const auto & captures = column_function->getCapturedColumns();
+            if (captures.size() != capture.captured_types.size() || !budget.consume(captures.size()))
+                return false;
+            for (size_t i = 0; i < captures.size(); ++i)
+            {
+                const auto & captured_column = captures[i];
+                if (!captured_column.type || !captured_column.column
+                    || !sameNativeTypeTree(captured_column.type, capture.captured_types[i], budget)
+                    || isSettingsDependentDateTimeCast(captured_column.type, captured_column.type, budget))
+                    return false;
+            }
+        }
+        else if (
+            node->type != ActionsDAG::ActionType::INPUT && node->type != ActionsDAG::ActionType::COLUMN
+            && node->type != ActionsDAG::ActionType::ALIAS && node->type != ActionsDAG::ActionType::ARRAY_JOIN
+            && node->type != ActionsDAG::ActionType::PLACEHOLDER)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
 
 enum class ExpressionMatchMode : UInt8
 {
@@ -1409,11 +1776,11 @@ const char * getAuditedDirectFunctionName(const FunctionCreator * handle)
 {
     /// This is deliberately a closed set. A registered function handle is not enough to
     /// certify an empty/default semantic hash: its implementation must be admitted here.
-    static constexpr std::array<const char *, 29> names{
+    static constexpr std::array<const char *, 30> names{
         "lower",        "toYear",        "plus",        "modulo",         "length",   "arrayReverse", "arraySort",   "tuple",
         "cityHash64",   "arraySlice",    "arrayResize", "arrayIntersect", "mapKeys",  "if",           "isNull",      "arraySum",
         "arrayMap",     "arrayDistinct", "arrayConcat", "CAST",           "toString", "toDecimal32",  "toDecimal64", "toDecimal128",
-        "toDecimal256", "abs",           "negate",      "sign",           "bitNot"};
+        "toDecimal256", "abs",           "negate",      "sign",           "bitNot",   "toUInt8"};
 
     if (!handle)
         return nullptr;
@@ -1540,6 +1907,9 @@ bool isSupportedDirectFunctionSignature(const String & name, const IFunctionBase
     /// This guard excludes negate's context-dispatched tupleNegate path and every non-integer overload.
     if (name == "abs" || name == "negate" || name == "sign" || name == "bitNot")
         return arguments.size() == 1 && isPrimitiveIntegerType(arguments[0]) && isPrimitiveIntegerType(result);
+    if (name == "toUInt8")
+        return arguments.size() == 1 && isPrimitiveIntegerType(arguments[0]) && typeid_cast<const DataTypeUInt8 *>(result.get())
+            && !result->getCustomName() && !result->getCustomSerialization();
     if (name == "lower")
         return arguments.size() == 1 && isStringType(arguments[0]) && isStringType(result);
     if (name == "toYear")
@@ -1667,6 +2037,8 @@ bool isSupportedArrayFunctionPair(
     const auto & right_function = right_adaptor->getFunction();
     if (!left_function || !right_function)
         return false;
+    const auto * left_function_raw = left_function.get();
+    const auto * right_function_raw = right_function.get();
 
     const FunctionCreator * left_handle = left.function_base->getFactoryHandle();
     const FunctionCreator * right_handle = right.function_base->getFactoryHandle();
@@ -1702,6 +2074,11 @@ bool isSupportedArrayFunctionPair(
         else
             return false;
     }
+
+    if (function_name == "emptyArrayToSingle"
+        && (typeid(*left_function_raw) != typeid(FunctionEmptyArrayToSingle)
+            || typeid(*right_function_raw) != typeid(FunctionEmptyArrayToSingle)))
+        return false;
 
     /// These authenticated native IFunction creators have no separate function parameters.
     if (!left_function || !right_function
@@ -1851,7 +2228,13 @@ bool isSupportedArrayJoinFunctionPair(
     if (!left.function_base || !right.function_base)
         return false;
 
-    if (left.function_base->getFactoryHandle() && right.function_base->getFactoryHandle())
+    const auto * canonical_empty_array_to_single = getCanonicalArrayFunctionHandle("emptyArrayToSingle");
+    const FunctionCreator * left_handle = left.function_base->getFactoryHandle();
+    const FunctionCreator * right_handle = right.function_base->getFactoryHandle();
+    if (left_handle && right_handle && left_handle == canonical_empty_array_to_single && right_handle == canonical_empty_array_to_single)
+        return isSupportedArrayFunctionPair(left, right, budget);
+
+    if (left_handle && right_handle)
         return isSupportedDirectFunctionPair(left, right, budget, inside_lambda_body, {}, pending);
 
     /// ArrayJoinStep creates emptyArrayToSingle outside FunctionFactory. When either handle is absent,
@@ -2473,7 +2856,7 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     , json_argument_types(std::move(json_argument_types_))
     , validate_enum_literals_in_operators(context_->getSettingsRef()[Setting::validate_enum_literals_in_operators])
 {
-    if (!predicate)
+    if (!predicate || !isBloomIndexExpressionContextStable(indexed_expression_dag_))
     {
         rpn.push_back(RPNElement::FUNCTION_UNKNOWN);
         return;

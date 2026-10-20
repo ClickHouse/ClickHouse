@@ -148,7 +148,7 @@ toYear UTC: named index prunes 2/16	1
 plus(x,1): named index prunes 2/16	1
 arrayDistinct direct Array result: named index prunes 2/16	1
 nested length(arrayDistinct) FUNCTION control: named index prunes 1/4	1
-CAST same best_effort context: named index prunes 2/16	1
+CAST persisted context unknown: declines named index, reads 16/16	1
 empty Array IN declines index, reads 4/4	1
 quoted INPUT collision declines idx_direct_in_length, reads 4/4	1
 CAST best_effort_us mismatch declines idx_direct_in_cast_context, reads 16/16	1
@@ -175,10 +175,14 @@ Nullable-LHS IN NULL-bearing Set full OFF/ON exact multiset	1
 Nullable-LHS GLOBAL IN NULL-bearing Set full OFF/ON exact multiset	1
 UInt8 CAST allow-special serialization flag 0 keeps named index at 2/16	1
 UInt8 CAST parallel-formatting flag 0 keeps named index at 2/16	1
-String-to-DateTime four format flags 0 keep named index at 2/16	1
+String-to-DateTime format flags cannot prove persisted context, reads 16/16	1
 UInt8 CAST precise-float context mismatch declines named index, reads 16/16	1
 UInt8 CAST allow-special serialization flag 0 full OFF/ON typed rows	1
 UInt8 CAST parallel-formatting flag 0 full OFF/ON typed rows	1
 UInt8 CAST two format flags 0 full OFF/ON typed rows	1
 String-to-DateTime four format flags 0 full OFF/ON typed rows	1
 UInt8 CAST precise-float context mismatch full OFF/ON typed rows	1
+signed toUInt8 IN across parsing settings prunes 2/16	1
+signed toUInt8 negative and wrapped inputs preserve typed rows	1
+unsigned toUInt8 IN across parsing settings prunes 2/16	1
+unsigned toUInt8 in-range and wrapped inputs preserve typed rows	1

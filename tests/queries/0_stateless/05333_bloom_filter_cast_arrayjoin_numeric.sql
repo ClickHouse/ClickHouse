@@ -106,10 +106,11 @@ SELECT 'DateTime64(3, UTC) CAST preserves typed rows', indexed = full_scan AND i
 WITH
     groupArray(explain) AS plan,
     arrayFirstIndex(x -> position(x, 'Name: idx_dt64_cast') > 0, plan) AS name_row,
-    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1)) AS granules_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
     toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
     toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
-SELECT 'DateTime64(3, UTC) CAST prunes 1/16', name_row > 0 AND selected = 1 AND total = 16
+SELECT 'DateTime64(3, UTC) CAST declines unknown persisted context, reads 16/16', name_row = 0 AND selected = 16 AND total = 16
 FROM (EXPLAIN indexes = 1 SELECT id, CAST(ts AS DateTime64(3, 'UTC')) AS value FROM t_bf_cast_numeric WHERE CAST(ts AS DateTime64(3, 'UTC')) IN (toDateTime64('2020-01-01 00:00:01.001', 3, 'UTC')));
 
 WITH
@@ -306,10 +307,11 @@ FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_signedzero WHERE reinterpretAsUInt
 WITH
     groupArray(explain) AS plan,
     arrayFirstIndex(x -> position(x, 'Name: idx_dt64_cast') > 0, plan) AS name_row,
-    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1)) AS granules_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
     toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
     toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
-SELECT 'DateTime64 CAST parquet dictionary flag 0 keeps named index at 1/16', name_row > 0 AND selected = 1 AND total = 16
+SELECT 'DateTime64 CAST format flag cannot prove persisted context, reads 16/16', name_row = 0 AND selected = 16 AND total = 16
 FROM (EXPLAIN indexes = 1 SELECT id, CAST(ts AS DateTime64(3, 'UTC')) AS value FROM t_bf_cast_numeric
       WHERE CAST(ts AS DateTime64(3, 'UTC')) IN (toDateTime64('2020-01-01 00:00:01.001', 3, 'UTC'))
       SETTINGS input_format_parquet_dictionary_filter_push_down = 0, use_skip_indexes = 1, max_rows_to_read = 16);

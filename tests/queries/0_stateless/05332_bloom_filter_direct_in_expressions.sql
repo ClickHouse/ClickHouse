@@ -271,11 +271,11 @@ FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_direct_in_nested_input_collis
 WITH
     groupArray(explain) AS plan,
     arrayFirstIndex(x -> position(x, 'Name: idx_direct_in_cast_context') > 0, plan) AS name_row,
-    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1)) AS granules_row,
-    name_row > 0 AS has_index,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
     toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
     toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
-SELECT 'CAST same best_effort context: named index prunes 2/16', has_index AND selected = 2 AND total = 16
+SELECT 'CAST persisted context unknown: declines named index, reads 16/16', name_row = 0 AND selected = 16 AND total = 16
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_direct_in_cast_context WHERE CAST(s AS DateTime('UTC')) IN (toDateTime('2020-02-01 20:00:00', 'UTC')) SETTINGS use_skip_indexes = 1, max_rows_to_read = 16) SETTINGS max_rows_to_read = 128;
 
 WITH
@@ -485,10 +485,11 @@ SETTINGS max_rows_to_read = 128;
 WITH
     groupArray(explain) AS plan,
     arrayFirstIndex(x -> position(x, 'Name: idx_direct_in_cast_context') > 0, plan) AS name_row,
-    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1)) AS granules_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
     toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
     toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
-SELECT 'String-to-DateTime four format flags 0 keep named index at 2/16', name_row > 0 AND selected = 2 AND total = 16
+SELECT 'String-to-DateTime format flags cannot prove persisted context, reads 16/16', name_row = 0 AND selected = 16 AND total = 16
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_direct_in_cast_context
       WHERE CAST(s AS DateTime('UTC')) IN (toDateTime('2020-02-01 20:00:00', 'UTC'))
       SETTINGS allow_special_serialization_kinds_in_output_formats = 0,
@@ -594,3 +595,63 @@ DROP TABLE IF EXISTS t_bf_direct_in_array_distinct;
 DROP TABLE IF EXISTS t_bf_direct_in_array_empty;
 DROP TABLE IF EXISTS t_bf_direct_in_nested_input_collision;
 DROP TABLE IF EXISTS t_bf_direct_in_cast_context;
+
+-- Primitive integer conversion is independent of input parsing settings, including wrapping values.
+SET input_format_parallel_parsing = 1;
+SET max_rows_to_read = 128;
+DROP TABLE IF EXISTS t_bf_direct_in_to_uint8;
+CREATE TABLE t_bf_direct_in_to_uint8
+(
+    id UInt64,
+    x Int64,
+    u UInt64,
+    INDEX idx_signed_to_uint8 toUInt8(x) TYPE bloom_filter(0.000001) GRANULARITY 1,
+    INDEX idx_unsigned_to_uint8 toUInt8(u) TYPE bloom_filter(0.000001) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0,
+         add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_bf_direct_in_to_uint8
+SELECT number,
+       multiIf(number = 3, toInt64(-253), number = 9, toInt64(259), toInt64(1000 + number)),
+       multiIf(number = 3, toUInt64(259), number = 9, toUInt64(9), toUInt64(1000 + number))
+FROM numbers(16)
+SETTINGS input_format_parallel_parsing = 1;
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_signed_to_uint8') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'signed toUInt8 IN across parsing settings prunes 2/16', name_row > 0 AND selected = 2 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_direct_in_to_uint8 WHERE toUInt8(x) IN (3)
+      SETTINGS input_format_parallel_parsing = 0, use_skip_indexes = 1);
+
+WITH
+    (SELECT arraySort(groupArray(tuple(id, x, toUInt8(x)))) FROM t_bf_direct_in_to_uint8 WHERE toUInt8(x) IN (3)
+     SETTINGS input_format_parallel_parsing = 0, use_skip_indexes = 0) AS full_scan,
+    (SELECT arraySort(groupArray(tuple(id, x, toUInt8(x)))) FROM t_bf_direct_in_to_uint8 WHERE toUInt8(x) IN (3)
+     SETTINGS input_format_parallel_parsing = 0, use_skip_indexes = 1) AS indexed
+SELECT 'signed toUInt8 negative and wrapped inputs preserve typed rows',
+       full_scan = indexed AND full_scan = [(toUInt64(3), toInt64(-253), toUInt8(3)), (toUInt64(9), toInt64(259), toUInt8(3))];
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_unsigned_to_uint8') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'unsigned toUInt8 IN across parsing settings prunes 2/16', name_row > 0 AND selected = 2 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_direct_in_to_uint8 WHERE toUInt8(u) IN (3, 9)
+      SETTINGS input_format_parallel_parsing = 0, use_skip_indexes = 1);
+
+WITH
+    (SELECT arraySort(groupArray(tuple(id, u, toUInt8(u)))) FROM t_bf_direct_in_to_uint8 WHERE toUInt8(u) IN (3, 9)
+     SETTINGS input_format_parallel_parsing = 0, use_skip_indexes = 0) AS full_scan,
+    (SELECT arraySort(groupArray(tuple(id, u, toUInt8(u)))) FROM t_bf_direct_in_to_uint8 WHERE toUInt8(u) IN (3, 9)
+     SETTINGS input_format_parallel_parsing = 0, use_skip_indexes = 1) AS indexed
+SELECT 'unsigned toUInt8 in-range and wrapped inputs preserve typed rows',
+       full_scan = indexed AND full_scan = [(toUInt64(3), toUInt64(259), toUInt8(3)), (toUInt64(9), toUInt64(9), toUInt8(9))];
+DROP TABLE t_bf_direct_in_to_uint8;

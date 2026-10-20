@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <cast_string_to_date_time_mode>best_effort</cast_string_to_date_time_mode>
+        </default>
+    </profiles>
+</clickhouse>

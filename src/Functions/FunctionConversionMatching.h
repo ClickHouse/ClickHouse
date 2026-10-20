@@ -9,7 +9,15 @@ class IFunctionBase;
 /// Unsupported conversions must continue to use the complete IFunctionBase::updateHash value.
 bool areCastsEquivalentForBloomFilterExpressionMatching(const IFunctionBase & left, const IFunctionBase & right);
 
-/// Checks the audited native numeric-to-Decimal and Decimal-to-String conversions whose values do
+/// Authenticates the native final CAST implementation before inspecting its conversion types.
+/// This checks implementation identity only; callers must prove the required semantics separately.
+bool isNativeCastForBloomFilterExpressionMatching(const IFunctionBase & function);
+
+/// Authenticates the exact native conversions that consult cast_string_to_date_time_mode
+/// while parsing String/FixedString input. Callers must still validate source types.
+bool isNativeDateTimeModeDependentConversionForBloomFilterExpressionMatching(const IFunctionBase & function);
+
+/// Checks the audited native integer-to-UInt8, numeric-to-Decimal and numeric/Decimal-to-String conversions whose values do
 /// not depend on captured conversion settings. Unsupported conversions must continue to use the
 /// complete IFunctionBase::updateHash value. Callers remain responsible for comparing constant
 /// argument values.
