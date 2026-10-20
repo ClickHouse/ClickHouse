@@ -11,6 +11,7 @@
 #include <Poco/URIStreamFactory.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/ProxyConfiguration.h>
+#include <Core/Types.h>
 
 #include <IO/ConnectionTimeouts.h>
 
@@ -28,9 +29,10 @@ public:
         const std::string & uri,
         Poco::Net::HTTPResponse::HTTPStatus http_status_,
         const std::string & reason,
-        const std::string & body
+        const std::string & body,
+        const Strings & body_secrets = {}
     )
-        : Exception(makeExceptionMessage(code, uri, http_status_, reason, body))
+        : Exception(makeExceptionMessage(code, uri, http_status_, reason, body, body_secrets))
         , http_status(http_status_)
     {}
 
@@ -47,7 +49,8 @@ private:
         const std::string & uri,
         Poco::Net::HTTPResponse::HTTPStatus http_status,
         const std::string & reason,
-        const std::string & body);
+        const std::string & body,
+        const Strings & body_secrets);
 
     const char * name() const noexcept override { return "DB::HTTPException"; }
     const char * className() const noexcept override { return "DB::HTTPException"; }
@@ -76,7 +79,15 @@ bool isRedirect(Poco::Net::HTTPResponse::HTTPStatus status);
 std::istream * receiveResponse(
     Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, bool allow_redirects);
 
+/// Returns the Bearer token carried by a request's `Authorization` header, so a caller can scrub it
+/// from an error response body that reflects it back. A `Basic` header is not decoded, so a password
+/// is not scrubbed. Empty when there is no bearer token.
+Strings requestCredentialSecrets(const Poco::Net::HTTPRequest & request);
+
+/// `body_secrets` are credential strings to scrub from the reflected response body (see
+/// `requestCredentialSecrets`): a remote error body can echo the request's own credentials.
 void assertResponseIsOk(
-    const String & uri, Poco::Net::HTTPResponse & response, std::istream & istr, bool allow_redirects = false);
+    const String & uri, Poco::Net::HTTPResponse & response, std::istream & istr, bool allow_redirects = false,
+    const Strings & body_secrets = {});
 
 }
