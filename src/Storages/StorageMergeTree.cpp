@@ -1949,10 +1949,11 @@ void StorageMergeTree::loadMutations()
                 /** Only the command text is persisted with the entry, so resolve the partition ids of the
                   * scoped commands again here - once, and not while a storage snapshot is built. An entry
                   * created by this version names its partitions as `ID '...'` already, so this reads back
-                  * exactly the partitions resolved at creation and evaluates nothing; an older entry may
-                  * still carry a partition expression.
+                  * exactly the partitions resolved at creation and evaluates nothing. An older entry may
+                  * still carry a partition expression; it is left unresolved, because the table is not
+                  * attached yet and the expression may refer to it.
                   */
-                resolvePartitionIdsOfScopedCommands(*entry.commands, getContext());
+                resolvePartitionIdsOfScopedCommands(*entry.commands, getContext(), /* only_pinned = */ true);
 
                 LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", it->name(), entry.commands->size());
 

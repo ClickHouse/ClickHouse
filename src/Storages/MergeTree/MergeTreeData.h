@@ -1475,8 +1475,12 @@ public:
       * `ID '...'` it resolved to, so the persisted entry pins the partitions: loading it again after a
       * restart or on another replica resolves the same ids and evaluates nothing. Only the commands that
       * have a partition are parsed, so an entry of the ordinary kind pays nothing here.
+      *
+      * With @only_pinned, which is used when a persisted entry is read back, only the commands whose
+      * partitions are all named as `ID '...'` are resolved; a partition expression of an entry created
+      * by an older version is left unresolved and is not evaluated.
       */
-    void resolvePartitionIdsOfScopedCommands(MutationCommands & commands, ContextPtr local_context) const;
+    void resolvePartitionIdsOfScopedCommands(MutationCommands & commands, ContextPtr local_context, bool only_pinned = false) const;
 
     /// Return alter conversions for part which must be applied on fly.
     static AlterConversionsPtr getAlterConversionsForPart(

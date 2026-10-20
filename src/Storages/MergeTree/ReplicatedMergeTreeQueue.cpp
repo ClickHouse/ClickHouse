@@ -1258,10 +1258,11 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
           * The submitting replica already replaced every partition expression of an entry with the
           * `ID '...'` it resolved to (`StorageReplicatedMergeTree::mutate`), so for such an entry this
           * evaluates nothing - no user SQL runs under `update_mutations_mutex` - and every replica gets
-          * the same partitions. Only an entry created by an older version may still carry an expression.
+          * the same partitions. Only an entry created by an older version may still carry an expression;
+          * it is left unresolved and not evaluated here.
           */
         for (const auto & entry : new_mutations)
-            storage.resolvePartitionIdsOfScopedCommands(entry->commands, storage.getContext());
+            storage.resolvePartitionIdsOfScopedCommands(entry->commands, storage.getContext(), /* only_pinned = */ true);
 
         bool some_mutations_are_probably_done = false;
         {

@@ -816,8 +816,14 @@ void MergeTreeData::MutationsSnapshotBase::filterCommandsOutsidePartition(Mutati
     });
 }
 
-void MergeTreeData::resolvePartitionIdsOfScopedCommands(MutationCommands & commands, ContextPtr local_context) const
+void MergeTreeData::resolvePartitionIdsOfScopedCommands(MutationCommands & commands, ContextPtr local_context, bool only_pinned) const
 {
+    auto is_pinned = [](const IAST * partition_ast)
+    {
+        const auto * partition = partition_ast->as<ASTPartition>();
+        return partition && partition->id;
+    };
+
     auto make_partition_id_ast = [](const String & partition_id)
     {
         auto partition = make_intrusive<ASTPartition>();
@@ -833,6 +839,28 @@ void MergeTreeData::resolvePartitionIdsOfScopedCommands(MutationCommands & comma
         auto command_ast = command.ast();
         if (!command_ast)
             continue;
+
+        if (only_pinned)
+        {
+            bool all_pinned = true;
+            if (const auto * partitions = command_ast->partitions)
+            {
+                for (const auto & partition : partitions->children)
+                    all_pinned = all_pinned && is_pinned(partition.get());
+            }
+            else if (const auto * partition = command_ast->partition)
+            {
+                all_pinned = is_pinned(partition);
+            }
+
+            /// An entry written by an older version may still carry a partition expression. It is not
+            /// evaluated here: this runs while the table is being loaded (the expression may contain a
+            /// subquery over the very table, which is not in the catalog yet) or while the mutations of a
+            /// replicated table are updated. Such a command stays unresolved and is not applied on the fly;
+            /// its partitions are evaluated when the mutation materializes, as before.
+            if (!all_pinned)
+                continue;
+        }
 
         /// Resolved before the AST is opened for editing, so that an expression which cannot be
         /// resolved throws with the command left untouched.
