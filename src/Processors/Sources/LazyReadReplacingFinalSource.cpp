@@ -271,6 +271,7 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
             /*group_by_two_level_threshold_=*/settings[Setting::group_by_two_level_threshold],
             /*group_by_two_level_threshold_bytes_=*/settings[Setting::group_by_two_level_threshold_bytes],
             /*max_bytes_before_external_group_by_=*/0,
+            /*min_bytes_before_external_group_by_=*/0,
             /*empty_result_for_aggregation_by_empty_set_=*/true,
             /*tmp_data_scope_=*/nullptr,
             /*max_threads_=*/settings[Setting::max_threads],
