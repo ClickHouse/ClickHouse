@@ -7,42 +7,42 @@
       "versionId": "9b3345383ff3389c6681dbde6573112bd992f08e5b332453425e342f66849919",
       "translations": {
         "es": {
-          "updatedAt": "2026-10-20T16:32:59.764Z",
+          "updatedAt": "2026-10-20T18:43:04.072Z",
           "fileName": "docs.json",
           "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         },
         "ja": {
-          "updatedAt": "2026-10-20T16:32:59.965Z",
+          "updatedAt": "2026-10-20T18:43:04.265Z",
           "fileName": "docs.json",
           "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         },
         "ko": {
-          "updatedAt": "2026-10-20T16:33:00.162Z",
+          "updatedAt": "2026-10-20T18:43:04.453Z",
           "fileName": "docs.json",
           "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         },
         "pt-BR": {
-          "updatedAt": "2026-10-20T16:33:00.355Z",
+          "updatedAt": "2026-10-20T18:43:04.638Z",
           "fileName": "docs.json",
           "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         },
         "ru": {
-          "updatedAt": "2026-10-20T16:33:00.561Z",
+          "updatedAt": "2026-10-20T18:43:04.833Z",
           "fileName": "docs.json",
           "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         },
         "zh": {
-          "updatedAt": "2026-10-20T16:33:00.754Z",
+          "updatedAt": "2026-10-20T18:43:05.021Z",
           "fileName": "docs.json",
           "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         },
         "ar": {
-          "updatedAt": "2026-10-20T16:33:00.944Z",
+          "updatedAt": "2026-10-20T18:43:05.205Z",
           "fileName": "docs.json",
           "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         },
         "fr": {
-          "updatedAt": "2026-10-20T16:33:01.146Z",
+          "updatedAt": "2026-10-20T18:43:05.400Z",
           "fileName": "docs.json",
           "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         }
@@ -69267,47 +69267,47 @@
     },
     {
       "fileId": "ebfcb2ae41a78fe48a2df43069560a1b612021ffdc85eab8646ab49e5f1ac4df",
-      "versionId": "27c930f924aecf9aa8d75f2842c6d9193ebfbb138015ef403a8020bb691cb927",
+      "versionId": "1adf7398b616e60078dc7743be35e80746b70aca38aaabd4049e69da6906ca08",
       "translations": {
         "zh": {
-          "updatedAt": "2026-10-19T23:17:01.239Z",
+          "updatedAt": "2026-10-20T18:43:09.087Z",
           "fileName": "zh/resources/changelogs/cloud/release-status.mdx",
-          "postProcessHash": "b2c86a67ab4eb6c1e6d83ac5a6677a5954ac808f4c633db50b6e1205074ec7c1"
-        },
-        "ko": {
-          "updatedAt": "2026-10-19T23:17:01.240Z",
-          "fileName": "ko/resources/changelogs/cloud/release-status.mdx",
-          "postProcessHash": "cb402a80292faa29c9ff89f4d6c561c99038fd75b6800546cf83ae028b9aeae8"
-        },
-        "ja": {
-          "updatedAt": "2026-10-19T23:17:01.244Z",
-          "fileName": "ja/resources/changelogs/cloud/release-status.mdx",
-          "postProcessHash": "7fe422e56ad1680d8d115f4fb826bb4da52d8026cc1dbfaa055adfb2acd233f8"
-        },
-        "fr": {
-          "updatedAt": "2026-10-19T23:17:01.246Z",
-          "fileName": "fr/resources/changelogs/cloud/release-status.mdx",
-          "postProcessHash": "478595a2b1f1d7279c3d191ca312c525a4072bcf21daf6a89986beed2a108bec"
+          "postProcessHash": "5ec95c39ebef5d89def9d1ab5124894141a11a271aaaf3ca0e567eed0d9736c3"
         },
         "ru": {
-          "updatedAt": "2026-10-19T23:17:01.246Z",
+          "updatedAt": "2026-10-20T18:43:09.088Z",
           "fileName": "ru/resources/changelogs/cloud/release-status.mdx",
-          "postProcessHash": "89560c10c57d158719e94eeac413b7673b87c2713d1f92957e273dc5bcec9ffd"
-        },
-        "ar": {
-          "updatedAt": "2026-10-19T23:17:01.248Z",
-          "fileName": "ar/resources/changelogs/cloud/release-status.mdx",
-          "postProcessHash": "7aa5005e2af74e55e88354bb6a5319248b9468e67bd01f2b9212a4f1267b9068"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-10-19T23:17:01.250Z",
-          "fileName": "pt-BR/resources/changelogs/cloud/release-status.mdx",
-          "postProcessHash": "e9f953b72b2fb283fa54478f700b5bf85e6ec62da2e5ede72a49b366d1fca652"
+          "postProcessHash": "b451428411b3fb4ff0b0edc9b64e2c09acd70fc4ab3722958c5e96a79c2748b6"
         },
         "es": {
-          "updatedAt": "2026-10-19T23:17:01.250Z",
+          "updatedAt": "2026-10-20T18:43:09.088Z",
           "fileName": "es/resources/changelogs/cloud/release-status.mdx",
-          "postProcessHash": "90442d4ed64f5367dee70fef628a832233c0fe0069226ad84ff9a8bcee305ad4"
+          "postProcessHash": "2f6f986f06ce1a3fb1202cdf6cba658a2418ea8fb481f32477fbc92191fe5265"
+        },
+        "ko": {
+          "updatedAt": "2026-10-20T18:43:09.089Z",
+          "fileName": "ko/resources/changelogs/cloud/release-status.mdx",
+          "postProcessHash": "4bd9c3d02b1727e2f48feacf1d8341cc7d008b8384cdf45cd6f895586044f20c"
+        },
+        "ja": {
+          "updatedAt": "2026-10-20T18:43:09.089Z",
+          "fileName": "ja/resources/changelogs/cloud/release-status.mdx",
+          "postProcessHash": "e780f5e281752f2bf7dc39d96dc0d50e1111200081c32e3dac94183e6da9ff12"
+        },
+        "ar": {
+          "updatedAt": "2026-10-20T18:43:09.090Z",
+          "fileName": "ar/resources/changelogs/cloud/release-status.mdx",
+          "postProcessHash": "e920ffd34861b31ee4344d339e33c8a781d4f8b4cf224b4f696477feadb46536"
+        },
+        "fr": {
+          "updatedAt": "2026-10-20T18:43:09.090Z",
+          "fileName": "fr/resources/changelogs/cloud/release-status.mdx",
+          "postProcessHash": "d6a84862b8f57a2fa8a090c136d46e8522be818cfcbc2c2045bd831542ff7635"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-10-20T18:43:09.090Z",
+          "fileName": "pt-BR/resources/changelogs/cloud/release-status.mdx",
+          "postProcessHash": "95f0f77f69cb0a175fc013bef28c299b2203728120244914294ceb55497bd621"
         }
       },
       "fileName": "resources/changelogs/cloud/release-status.mdx"
