@@ -145,7 +145,8 @@ void FillingStep::serialize(Serialization & ctx) const
     if (!interpolate_description)
         return;
 
-    interpolate_description->actions.serialize(ctx.out, ctx.registry, ctx.input_header);
+    const auto index_hint_actions = ctx.step_version >= 1 ? ActionsDAG::IndexHintActions::Write : ActionsDAG::IndexHintActions::Refuse;
+    interpolate_description->actions.serialize(ctx.out, ctx.registry, index_hint_actions, ctx.input_header);
 
     /// The reader rebuilds `result_columns_order` from the DAG's outputs, which is exactly how
     /// `InterpolateDescription` built it - unless the query's aliases renamed an output. Only the analyzer
@@ -296,6 +297,9 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
 void registerFillingStep(QueryPlanStepRegistry & registry);
 void registerFillingStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Filling", FillingStep::deserialize);
+    registry.registerStep(
+        "Filling",
+        FillingStep::deserialize,
+        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_INDEX_HINT_ACTIONS}});
 }
 }

@@ -9,6 +9,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/SettingsEnums.h>
 
 namespace DB
@@ -190,7 +191,8 @@ void TotalsHavingStep::serialize(Serialization & ctx) const
     if (actions_dag)
     {
         ctx.writeColumnName(filter_column_name);
-        actions_dag->serialize(ctx.out, ctx.registry, ctx.input_header);
+        const auto index_hint_actions = ctx.step_version >= 1 ? ActionsDAG::IndexHintActions::Write : ActionsDAG::IndexHintActions::Refuse;
+        actions_dag->serialize(ctx.out, ctx.registry, index_hint_actions, ctx.input_header);
     }
 }
 
@@ -239,7 +241,10 @@ QueryPlanStepPtr TotalsHavingStep::clone() const
 void registerTotalsHavingStep(QueryPlanStepRegistry & registry);
 void registerTotalsHavingStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("TotalsHaving", TotalsHavingStep::deserialize);
+    registry.registerStep(
+        "TotalsHaving",
+        TotalsHavingStep::deserialize,
+        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_INDEX_HINT_ACTIONS}});
 }
 
 }
