@@ -973,20 +973,24 @@ static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataPart
 
     RangesInDataPartsBuilder result(ranges_in_data_parts);
 
-    auto skip_and_return_all_part_ranges = [&]()
+    auto return_ranges_selected_by_primary_key = [&]()
     {
         RangesInDataParts all_part_ranges(std::move(ranges_in_data_parts));
         for (auto & all_part_range : all_part_ranges)
         {
-            const auto & index_granularity = all_part_range.data_part->index_granularity;
-            all_part_range.ranges = MarkRanges{{MarkRange{0, index_granularity->getMarksCountWithoutFinal()}}};
+            if (!all_part_range.ranges_snapshot_after_pk_analysis)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ranges selected by primary key for part {}",
+                        all_part_range.data_part->name);
+            all_part_range.ranges = *all_part_range.ranges_snapshot_after_pk_analysis;
         }
+        std::erase_if(all_part_ranges, [](const auto & part) { return part.ranges.empty(); });
         return all_part_ranges;
     };
 
-    if (cannot_sort_primary_key) /// just expand to all parts + ranges
+    /// The ranges selected by the primary key are what FINAL reads without skip indexes.
+    if (cannot_sort_primary_key)
     {
-        return skip_and_return_all_part_ranges();
+        return return_ranges_selected_by_primary_key();
     }
 
     /// Closed primary key intervals of the selected ranges.
@@ -1008,7 +1012,7 @@ static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataPart
         {
             LOG_TRACE(logger, "use_skip_indexes_if_final_exact_mode processing is not applied, because {} does not have the final mark",
                         ranges_in_data_parts[part_index].data_part->name);
-            return skip_and_return_all_part_ranges();
+            return return_ranges_selected_by_primary_key();
         }
 
         for (const auto & range : ranges_in_data_parts[part_index].ranges)
@@ -1016,7 +1020,7 @@ static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataPart
             const bool value_is_defined_at_end_mark = range.end < index_granularity->getMarksCount();
             if (!value_is_defined_at_end_mark)
             {
-                return skip_and_return_all_part_ranges();
+                return return_ranges_selected_by_primary_key();
             }
 
             intervals.push_back({index_access.getValue(part_index, range.begin), index_access.getValue(part_index, range.end)});
@@ -1321,7 +1325,7 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndex(
     bool cannot_sort_primary_key = false;
     if (!isSafePrimaryKey(primary_key) || !sorting_key.reverse_flags.empty())
     {
-        LOG_TRACE(logger, "Primary key is not sortable, expanding PK range to entire due to exact_mode.");
+        LOG_TRACE(logger, "Primary key is not sortable, using the ranges selected by the primary key due to exact_mode.");
         cannot_sort_primary_key = true;
     }
     return findPKRangesForFinalAfterSkipIndexImpl(ranges_in_data_parts, cannot_sort_primary_key, logger);
