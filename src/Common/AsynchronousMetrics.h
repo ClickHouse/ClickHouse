@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Server/ServerType.h>
 #include <Common/AsynchronousMetricsKeyValuesMode.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/MemoryStatisticsOS.h>
@@ -74,9 +75,15 @@ String getLegacyAsynchronousMetricName(const String & metric, const String & key
 /// representation and/or removes the key-value one. Families with no legacy name are left as they are.
 void applyAsynchronousMetricsKeyValuesMode(AsynchronousMetricValues & values, AsynchronousMetricsKeyValuesMode mode);
 
+/// The frequency of every CPU core in MHz, keyed by the core number, read from the contents of `/proc/cpuinfo`.
+/// Lines that do not parse are skipped.
+AsynchronousMetricKeyValues readCPUFrequenciesFromProcCPUInfo(ReadBuffer & in);
+
 struct ProtocolServerMetrics
 {
     String port_name;
+    /// `ServerType::Type::END` for servers with no protocol type of their own (Keeper listeners).
+    ServerType::Type protocol_type = ServerType::Type::END;
     size_t current_threads;
     size_t rejected_connections;
 };
@@ -160,7 +167,7 @@ private:
     /// Values store the result of the last update prepared for reading.
     AsynchronousMetricValues values TSA_GUARDED_BY(values_mutex);
 
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
+#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SUNOS)
     MemoryStatisticsOS memory_stat TSA_GUARDED_BY(data_mutex);
 #endif
 

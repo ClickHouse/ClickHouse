@@ -106,6 +106,9 @@ protected:
 
     virtual void addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc) = 0;
 
+    /// Per-column min_compress_block_size override if set, otherwise the table default.
+    UInt64 getEffectiveMinCompressBlockSize(const NameAndTypePair & name_and_type) const;
+
     /// Codec for one substream of a column whose codec is `effective_codec_desc`.
     CompressionCodecPtr getSubstreamCodec(
         const ASTPtr & effective_codec_desc, const ISerialization::SubstreamPath & substream_path, bool column_uses_default_codec) const;
@@ -177,6 +180,10 @@ protected:
     Block block_sample;
 
     bool streams_initialized = false;
+
+    /// Cleared before the finalize path initializes streams: that path runs only when no block was
+    /// ever written, and such a part has no marks for a column to share with a skip index.
+    bool claim_column_stream_bases = true;
 
     /// List of substreams for each column in order of serialization.
     ColumnsSubstreams columns_substreams;

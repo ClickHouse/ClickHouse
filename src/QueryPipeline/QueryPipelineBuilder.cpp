@@ -18,8 +18,10 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/RowsBeforeStepCounter.h>
+#include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Transforms/BuildRuntimeFilterTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/Transforms/DroppingTransform.h>
 #include <Processors/Transforms/InputSelectorTransform.h>
@@ -34,8 +36,10 @@
 #include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/Transforms/CopyTransform.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
 
@@ -205,6 +209,11 @@ void QueryPipelineBuilder::dropTotalsAndExtremes()
     pipe.dropTotalsAndExtremes();
 }
 
+void QueryPipelineBuilder::dropExtremes()
+{
+    pipe.dropExtremes();
+}
+
 void QueryPipelineBuilder::addExtremesTransform()
 {
     checkInitializedAndNotCompleted();
@@ -281,6 +290,11 @@ QueryPipelineBuilderPtr QueryPipelineBuilder::mergePipelines(
 {
     if (transform->getOutputs().size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge transform must have exactly 1 output, got {}", transform->getOutputs().size());
+
+    /// Both sides of a merging transform are consumed concurrently: gating one on the other
+    /// could deadlock, so gated reads (if any) fall back to ungated reading.
+    terminatePendingSealInputs(*left, collected_processors);
+    terminatePendingSealInputs(*right, collected_processors);
 
     connect(*left->pipe.output_ports.front(), transform->getInputs().front());
     connect(*right->pipe.output_ports.front(), transform->getInputs().back());
@@ -364,6 +378,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
 
     left->pipe.dropExtremes();
     right->pipe.dropExtremes();
+
+    /// Gated reads are not supported by this join pipeline shape; fall back to ungated reading.
+    terminatePendingSealInputs(*left, collected_processors);
+    terminatePendingSealInputs(*right, collected_processors);
     if ((left->getNumStreams() != 1 || right->getNumStreams() != 1) && join->getTableJoin().kind() == JoinKind::Paste)
     {
         left->pipe.resize(1);
@@ -462,6 +480,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
     left->pipe.dropExtremes();
     right->pipe.dropExtremes();
 
+    /// Gated reads are not supported by this join pipeline shape; fall back to ungated reading.
+    terminatePendingSealInputs(*left, collected_processors);
+    terminatePendingSealInputs(*right, collected_processors);
+
     if (left->getNumStreams() != right->getNumStreams())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Join by layers is supported only for pipelines equal number of output ports, got {} and {}", left->getNumStreams(), right->getNumStreams());
 
@@ -493,6 +515,86 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
     return left;
 }
 
+void QueryPipelineBuilder::terminatePendingSealInputs(QueryPipelineBuilder & builder, Processors * collected_processors)
+{
+    /// The gates never get a seal: the null sources finish immediately and the gated reads
+    /// proceed without the runtime filter, which is always correct.
+    for (InputPort * seal_input : builder.pipe.pending_seal_inputs)
+    {
+        auto null_source = std::make_shared<NullSource>(seal_input->getSharedHeader());
+        connect(null_source->getPort(), *seal_input);
+        if (collected_processors)
+            collected_processors->emplace_back(null_source);
+        builder.pipe.processors->emplace_back(std::move(null_source));
+    }
+
+    builder.pipe.pending_seal_inputs.clear();
+}
+
+void QueryPipelineBuilder::wireSealGatedReading(
+    QueryPipelineBuilder & probe,
+    QueryPipelineBuilder & build,
+    const FillingRightJoinSideTransformRawPtrs & filling_transforms,
+    const String & runtime_filter_key,
+    Processors * collected_processors)
+{
+    auto & pending_inputs = probe.pipe.pending_seal_inputs;
+    if (pending_inputs.empty() || filling_transforms.empty())
+        return;
+
+    auto add_processor = [&](ProcessorPtr processor)
+    {
+        if (collected_processors)
+            collected_processors->emplace_back(processor);
+        build.pipe.processors->emplace_back(std::move(processor));
+    };
+
+    /// The optional seal payload: the runtime filter built from this join's build side. It is
+    /// complete by the time the seal is emitted: each build stream publishes its part before
+    /// closing (see `BuildRuntimeFilterTransform::prepare`), and the seal follows the last close.
+    FillingRightJoinSideTransform::SealPayloadGetter payload_getter;
+    if (!runtime_filter_key.empty())
+    {
+        if (auto query_context = CurrentThread::get().tryGetQueryContext())
+            payload_getter = [query_context, runtime_filter_key] { return query_context->getRuntimeFilterLookup()->find(runtime_filter_key); };
+    }
+
+    /// Exactly one of the concurrent filling transforms emits the seal (the one which
+    /// completes the build), the others just finish their seal ports.
+    OutputPortRawPtrs seal_ports;
+    seal_ports.reserve(filling_transforms.size());
+    for (auto * filling : filling_transforms)
+        seal_ports.push_back(filling->addSealPort(payload_getter));
+
+    OutputPort * seal_output = seal_ports.front();
+    if (seal_ports.size() > 1)
+    {
+        auto resize = std::make_shared<ResizeProcessor>(seal_output->getSharedHeader(), seal_ports.size(), 1);
+        auto input_it = resize->getInputs().begin();
+        for (auto * seal_port : seal_ports)
+            connect(*seal_port, *(input_it++));
+        seal_output = &resize->getOutputs().front();
+        add_processor(std::move(resize));
+    }
+
+    /// One seal for all gated reads of the probe subtree.
+    if (pending_inputs.size() == 1)
+    {
+        connect(*seal_output, *pending_inputs.front());
+    }
+    else
+    {
+        auto copy = std::make_shared<CopyTransform>(seal_output->getSharedHeader(), pending_inputs.size());
+        connect(*seal_output, copy->getInputs().front());
+        auto output_it = copy->getOutputs().begin();
+        for (auto * seal_input : pending_inputs)
+            connect(*(output_it++), *seal_input);
+        add_processor(std::move(copy));
+    }
+
+    pending_inputs.clear();
+}
+
 std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLeft(
     std::unique_ptr<QueryPipelineBuilder> left,
     std::unique_ptr<QueryPipelineBuilder> right,
@@ -504,6 +606,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     size_t max_streams,
     IQueryPlanStep * join_step,
     bool keep_left_read_in_order,
+    const std::optional<String> & seal_gate,
     Processors * collected_processors)
 {
     left->checkInitializedAndNotCompleted();
@@ -521,6 +624,16 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             collected_processors->emplace_back(processor);
         left->pipe.processors->emplace_back(std::move(processor));
     };
+
+    /// A gated read on the build (right) side of the join cannot be wired: gating it on the
+    /// left side would deadlock, because the left side is consumed only after the right one
+    /// completes; it falls back to an ungated read instead. The probe (left) side gates are
+    /// wired below, after the filling transforms are created.
+    terminatePendingSealInputs(*right, collected_processors);
+
+    /// A join not marked as gating carries the probe-side pending seal inputs upward.
+    FillingRightJoinSideTransformRawPtrs filling_transforms_for_seal;
+    const bool wire_seal_gates = seal_gate.has_value() && !left->pipe.pending_seal_inputs.empty();
 
     /// Collect the NEW processors for the right pipeline.
     QueryPipelineProcessorsCollector collector(*right, join_step);
@@ -554,12 +667,17 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             num_streams = max_streams;
         }
 
-        auto filling_finish_counter = std::make_shared<FinishCounter>(max_streams);
+        size_t fill_streams = max_streams;
+        if (const size_t cap = join->getMaxBuildThreads())
+            fill_streams = std::min(cap, max_streams);
 
-        right->resize(max_streams);
+        auto filling_finish_counter = std::make_shared<FinishCounter>(fill_streams);
+
+        right->resize(fill_streams);
         auto concurrent_right_filling_transform = [&](const OutputPortRawPtrs & outports)
         {
             Processors processors;
+            size_t next_stream = 0;
             if (min_block_size_rows > 0 || min_block_size_bytes > 0)
             {
                 for (const auto & outport : outports)
@@ -567,7 +685,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
                     auto squashing = std::make_shared<SimpleSquashingChunksTransform>(right->getSharedHeader(), min_block_size_rows, min_block_size_bytes);
                     connect(*outport, squashing->getInputs().front());
                     processors.emplace_back(squashing);
-                    auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getSharedHeader(), join, filling_finish_counter);
+                    auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(
+                        right->getSharedHeader(), join, filling_finish_counter, JoinBuildContext::forStream(next_stream++, outports.size()));
+                    if (wire_seal_gates)
+                        filling_transforms_for_seal.push_back(adding_joined.get());
                     connect(squashing->getOutputPort(), adding_joined->getInputs().front());
                     processors.emplace_back(std::move(adding_joined));
                 }
@@ -576,7 +697,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             {
                 for (const auto & outport : outports)
                 {
-                    auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getSharedHeader(), join, filling_finish_counter);
+                    auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(
+                        right->getSharedHeader(), join, filling_finish_counter, JoinBuildContext::forStream(next_stream++, outports.size()));
+                    if (wire_seal_gates)
+                        filling_transforms_for_seal.push_back(adding_joined.get());
                     connect(*outport, adding_joined->getInputs().front());
                     processors.emplace_back(std::move(adding_joined));
                 }
@@ -591,7 +715,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         right->resize(1);
 
         auto filling_finish_counter = std::make_shared<FinishCounter>(1);
-        auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getSharedHeader(), join, filling_finish_counter);
+        auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(
+            right->getSharedHeader(), join, filling_finish_counter, JoinBuildContext::serial());
+        if (wire_seal_gates)
+            filling_transforms_for_seal.push_back(adding_joined.get());
         InputPort * totals_port = nullptr;
         if (right->hasTotals())
             totals_port = adding_joined->addTotalsPort();
@@ -602,12 +729,16 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     size_t num_streams_including_totals = num_streams + (left->hasTotals() ? 1 : 0);
     right->resize(num_streams_including_totals);
 
+    /// Gate the probe-side reading by the build completion. The seal ports are added after all
+    /// pipe transformations of the right pipeline, so they do not interfere with the resizes.
+    if (wire_seal_gates)
+        wireSealGatedReading(*left, *right, filling_transforms_for_seal, *seal_gate, collected_processors);
+
     auto lit = left->pipe.output_ports.begin();
     auto rit = right->pipe.output_ports.begin();
 
     OutputPortRawPtrs joined_output_ports;
     OutputPortRawPtrs delayed_root_output_ports;
-    OutputPortRawPtrs non_joined_output_ports;
 
     std::shared_ptr<DelayedJoinedBlocksTransform> delayed_root = nullptr;
     if (join->hasDelayedBlocks())
@@ -625,10 +756,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             delayed_root_output_ports.emplace_back(&outport);
     }
 
-    /// When true, non-joined rows are emitted by separate NonJoinedBlocksTransform sources in parallel.
-    /// Can be combined with delayed_root: in that case two DelayedPorts are created:
-    ///  - the first for the DelayedJoinedBlocksWorkerTransforms until all JoiningTransforms finish
-    ///  - the second for the NonJoinedBlocksTransforms until the first DelayedPorts finishes
+    /// When true, non-joined rows are emitted by separate NonJoinedBlocksTransform sources in parallel,
+    /// which a DelayedPortsProcessor starts after all JoiningTransforms (and so all delayed blocks) finish.
     bool use_parallel_non_joined = join->supportParallelNonJoinedBlocksProcessing();
 
     /// When delayed blocks exist, JoiningTransform still needs non-joined rows emission for the main bucket (GraceHashJoin spilled case).
@@ -658,7 +787,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         connect(**rit, joining->getInputs().back());
         if (delayed_root)
         {
-            // Process delayed joined blocks when all JoiningTransform are finished.
+            // The JoiningTransform forwards the delayed joined blocks of its worker after its own rows.
             auto delayed = std::make_shared<DelayedJoinedBlocksWorkerTransform>(
                 output_header,
                 [left_header, output_header, max_block_size, join]()
@@ -667,23 +796,12 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "DelayedJoinedBlocksWorkerTransform should have one input and one output");
 
             connect(*delayed_root_output_ports[i], delayed->getInputs().front());
-
-            joined_output_ports.push_back(&joining->getOutputs().front());
-            joined_output_ports.push_back(&delayed->getOutputs().front());
+            connect(delayed->getOutputs().front(), joining->addDelayedBlocksInput());
 
             add_to_left_pipe(std::move(delayed));
-
-            if (use_parallel_non_joined)
-            {
-                auto non_joined = std::make_shared<NonJoinedBlocksTransform>(
-                    output_header, join, *left_header, max_block_size, i, num_streams);
-
-                non_joined_output_ports.push_back(&non_joined->getPort());
-
-                add_to_left_pipe(std::move(non_joined));
-            }
         }
-        else if (use_parallel_non_joined)
+
+        if (use_parallel_non_joined)
         {
             /// Parallel non-joined source, activated by DelayedPortsProcessor after all probing finishes
             auto non_joined = std::make_shared<NonJoinedBlocksTransform>(
@@ -705,9 +823,9 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         add_to_left_pipe(std::move(joining));
     }
 
-    if (delayed_root || use_parallel_non_joined)
+    if (use_parallel_non_joined)
     {
-        // Process DelayedJoinedBlocksTransform after all JoiningTransforms.
+        // Process NonJoinedBlocksTransforms after all JoiningTransforms.
         VectorWithMemoryTracking<UInt64> delayed_ports_numbers;
         delayed_ports_numbers.reserve(joined_output_ports.size() / 2);
         for (size_t i = 1; i < joined_output_ports.size(); i += 2)
@@ -716,7 +834,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         auto delayed_processor = std::make_shared<DelayedPortsProcessor>(output_header, 2 * num_streams, delayed_ports_numbers);
         add_to_left_pipe(delayed_processor);
 
-        // Connect @delayed_processor ports with inputs (JoiningTransforms & DelayedJoinedBlocksTransforms) / pipe outputs
+        // Connect @delayed_processor ports with inputs (JoiningTransforms & NonJoinedBlocksTransforms) / pipe outputs
         auto next_delayed_input = delayed_processor->getInputs().begin();
         for (OutputPort * port : joined_output_ports)
             connect(*port, *next_delayed_input++);
@@ -725,32 +843,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             left->pipe.output_ports.push_back(&port);
         left->pipe.header = output_header;
         left->resize(num_streams);
-
-        // Second DelayedPortsProcessor: when both delayed blocks and parallel non-joined are active,
-        // delays the NonJoinedBlocksTransforms until all delayed-block workers finish.
-        if (delayed_root && use_parallel_non_joined)
-        {
-            VectorWithMemoryTracking<UInt64> non_joined_delayed_ports;
-            non_joined_delayed_ports.reserve(num_streams);
-            for (size_t i = 0; i < num_streams; ++i)
-                non_joined_delayed_ports.push_back(2 * i + 1);
-
-            auto non_joined_processor = std::make_shared<DelayedPortsProcessor>(
-                output_header, 2 * num_streams, non_joined_delayed_ports);
-            add_to_left_pipe(non_joined_processor);
-
-            auto next_input = non_joined_processor->getInputs().begin();
-            for (size_t i = 0; i < num_streams; ++i)
-            {
-                connect(*left->pipe.output_ports[i], *next_input++);
-                connect(*non_joined_output_ports[i], *next_input++);
-            }
-            left->pipe.output_ports.clear();
-            for (OutputPort & port : non_joined_processor->getOutputs())
-                left->pipe.output_ports.push_back(&port);
-            left->pipe.header = output_header;
-            left->resize(num_streams);
-        }
     }
 
     if (left->hasTotals())
@@ -798,6 +890,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
 
     left->pipe.collected_processors = collected_processors;
 
+    /// Gated reads are not supported by this join pipeline shape; fall back to ungated reading.
+    terminatePendingSealInputs(*left, collected_processors);
+    terminatePendingSealInputs(*right, collected_processors);
+
     /// Collect the NEW processors for the right pipeline.
     QueryPipelineProcessorsCollector collector(*right, join_step);
 
@@ -828,7 +924,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
     {
         joins.push_back(join->cloneNoParallel(std::make_shared<TableJoin>(join->getTableJoin()), left->getSharedHeader(), header));
         auto finish_counter = std::make_shared<FinishCounter>(1);
-        return std::make_shared<FillingRightJoinSideTransform>(header, joins.back(), finish_counter);
+        return std::make_shared<FillingRightJoinSideTransform>(header, joins.back(), finish_counter, JoinBuildContext::serial());
     });
 
     auto lit = left->pipe.output_ports.begin();
@@ -872,7 +968,9 @@ void QueryPipelineBuilder::addCreatingSetsTransform(
     SharedHeader res_header,
     SetAndKeyPtr set_and_key,
     const SizeLimits & limits,
-    PreparedSetsCachePtr prepared_sets_cache)
+    PreparedSetsCachePtr prepared_sets_cache,
+    SetSpillSettings spill_settings,
+    bool recoverable_build)
 {
     dropTotalsAndExtremes();
     resize(1);
@@ -882,7 +980,9 @@ void QueryPipelineBuilder::addCreatingSetsTransform(
             res_header,
             std::move(set_and_key),
             limits,
-            std::move(prepared_sets_cache));
+            std::move(prepared_sets_cache),
+            std::move(spill_settings),
+            recoverable_build);
 
     pipe.addTransform(std::move(transform));
 }
@@ -954,6 +1054,10 @@ Pipe QueryPipelineBuilder::getPipe(QueryPipelineBuilder pipeline, QueryPlanResou
 
 QueryPipeline QueryPipelineBuilder::getPipeline(QueryPipelineBuilder builder)
 {
+    /// Gated reads whose seals were never wired (e.g. no join marked as gating above them):
+    /// terminate the pending inputs so the reads proceed without a filter.
+    terminatePendingSealInputs(builder, builder.pipe.collected_processors);
+
     QueryPipeline res(std::move(builder.pipe));
     res.addResources(std::move(builder.resources));
     res.setNumThreads(builder.getNumThreads());

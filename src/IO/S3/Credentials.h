@@ -251,21 +251,22 @@ public:
 class AssumeRoleRequest : public Aws::AmazonSerializableWebServiceRequest
 {
 public:
-    AssumeRoleRequest(Aws::String role_arn_, Aws::String role_session_name_, Aws::String external_id_);
+    AssumeRoleRequest(Aws::String role_arn_, Aws::String role_session_name_, Aws::String external_id_, Aws::String policy_);
 
     Aws::Http::HeaderValueCollection GetHeaders() const override;
 
     const char * GetServiceRequestName() const override { return "AssumeRole"; }
 
-    Aws::String SerializePayload() const override { return {}; }
-
-    void AddQueryStringParameters(Aws::Http::URI & uri) const override;
+    /// The parameters go into a form-encoded POST body, as the AWS SDK does. A session policy is too long for a URL.
+    Aws::String SerializePayload() const override;
 
 private:
     Aws::String role_arn;
     Aws::String role_session_name;
     Aws::String external_id;
+    Aws::String policy;
 };
+
 class AssumeRoleResult
 {
 public:
@@ -294,6 +295,12 @@ using AssumeRoleOutcome = Aws::Utils::Outcome<AssumeRoleResult, Aws::S3::S3Error
 class AWSAssumeRoleClient : public Aws::Client::AWSXMLClient
 {
 public:
+    /// Builds a client with bounded retries and timeouts for the credential request.
+    static std::shared_ptr<AWSAssumeRoleClient> create(
+        const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
+        const DB::S3::PocoHTTPClientConfiguration & client_configuration,
+        std::string_view sts_endpoint_override = "");
+
     AWSAssumeRoleClient(
         const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
         const Aws::Client::ClientConfiguration & client_configuration,

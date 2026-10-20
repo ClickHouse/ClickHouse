@@ -33,6 +33,17 @@ public:
         std::string_view error_message,
         BlobStorageLogElement::EvenTime time_now = {});
 
+    /// A server-side copy of `source_bucket`/`source_remote_path` to `bucket`/`remote_path`.
+    void addCopyEvent(
+        const String & source_bucket,
+        const String & source_remote_path,
+        const String & bucket,
+        const String & remote_path,
+        size_t data_size,
+        size_t elapsed_microseconds,
+        Int32 error_code,
+        std::string_view error_message);
+
     bool isInitialized() const { return log != nullptr; }
 
     /// Optional context information
@@ -43,6 +54,19 @@ public:
     static BlobStorageLogWriterPtr create(const String & disk_name = "");
 
 private:
+    void addEventImpl(
+        BlobStorageLogElement::EventType event_type,
+        std::string_view bucket,
+        std::string_view remote_path,
+        const String & local_path_,
+        const String & source_bucket,
+        const String & source_remote_path,
+        size_t data_size,
+        size_t elapsed_microseconds,
+        Int32 error_code,
+        std::string_view error_message,
+        BlobStorageLogElement::EvenTime time_now);
+
     BlobStorageLogPtr log;
 };
 

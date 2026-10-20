@@ -96,6 +96,8 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 nuraft_max_log_gap_in_stream;
     extern const CoordinationSettingsUInt64 nuraft_max_bytes_in_flight_in_stream;
     extern const CoordinationSettingsUInt64 nuraft_max_uncommitted_log_entries;
+    extern const CoordinationSettingsMilliseconds slow_member_backpressure_no_progress_timeout_ms;
+    extern const CoordinationSettingsUInt64 slow_member_backpressure_max_uncommitted_log_entries;
     extern const CoordinationSettingsUInt64 nuraft_append_entries_backward_probe_throttle_threshold;
     extern const CoordinationSettingsMilliseconds nuraft_snapshot_sync_ctx_timeout_ms;
     extern const CoordinationSettingsBool use_new_dispatcher;
@@ -108,6 +110,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int OPENSSL_ERROR;
+    extern const int CORRUPTED_DATA;
 }
 
 using namespace std::chrono_literals;
@@ -157,6 +160,10 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
     const String cipher_list_property = config_prefix + "cipherList";
     if (config.has(cipher_list_property))
         params.cipherList = config.getString(cipher_list_property);
+
+    const String cipher_suites_property = config_prefix + "cipherSuites";
+    if (config.has(cipher_suites_property))
+        params.cipherSuites = config.getString(cipher_suites_property);
 
     const String dh_params_file_property = config_prefix + "dhParamsFile";
     if (config.has(dh_params_file_property))
@@ -619,6 +626,19 @@ nuraft::raft_params buildRaftParams(const CoordinationSettings & coordination_se
     params.max_bytes_in_flight_in_stream_
         = static_cast<int64_t>(coordination_settings[CoordinationSetting::nuraft_max_bytes_in_flight_in_stream]);
     params.max_uncommitted_log_entries_ = coordination_settings[CoordinationSetting::nuraft_max_uncommitted_log_entries];
+    params.slow_member_backpressure_no_progress_timeout_ = getValueOrMaxInt32AndLogWarning(
+        coordination_settings[CoordinationSetting::slow_member_backpressure_no_progress_timeout_ms].totalMilliseconds(),
+        "slow_member_backpressure_no_progress_timeout_ms",
+        log);
+    params.slow_member_backpressure_max_uncommitted_
+        = coordination_settings[CoordinationSetting::slow_member_backpressure_max_uncommitted_log_entries];
+
+    if (params.max_uncommitted_log_entries_ == 0 && params.slow_member_backpressure_max_uncommitted_ == 0)
+        LOG_WARNING(
+            log,
+            "Both nuraft_max_uncommitted_log_entries and slow_member_backpressure_max_uncommitted_log_entries are 0, so "
+            "nothing bounds the log while the slow member backpressure is switched on with `bpon`: the leader keeps "
+            "appending while the commit index is held at the slowest voting replica. Set at least one of them before using it.");
     params.append_entries_backward_probe_throttle_threshold_ = getValueOrMaxInt32AndLogWarning(
         coordination_settings[CoordinationSetting::nuraft_append_entries_backward_probe_throttle_threshold],
         "nuraft_append_entries_backward_probe_throttle_threshold",
@@ -763,6 +783,37 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
     auto log_store = state_manager->load_log_store();
     last_log_idx_on_disk = log_store->next_slot() - 1;
     LOG_TRACE(log, "Last local log idx {}", last_log_idx_on_disk.load());
+
+    /// `init()` above may have removed orphaned nodes from the snapshot
+    /// (`keeper_server.remove_orphaned_nodes_on_startup`). Only now, with the log store loaded, can we
+    /// tell whether there are local log entries above the snapshot -- those get re-preprocessed and
+    /// committed once the raft server starts (see the comment at the nuraft callback below), and with
+    /// digest checking disabled, which orphan removal requires, an entry referencing a removed path
+    /// would silently resolve differently instead of failing.
+    ///
+    /// A successful check also persists the repaired snapshot, so Raft can only serve the repaired
+    /// tree and a restart no longer needs orphan removal enabled.
+    /// This must stay between `setLogStore` above and `launchRaftServer` below: throwing here is a
+    /// clean startup failure, whereas failing later inside `KeeperStateMachine::preprocess` would
+    /// `abort()` the process.
+    if (auto conflict = state_machine->findOrphanConflictInLogTail(
+            state_machine->last_commit_index() + 1, last_log_idx_on_disk.load() + 1))
+    {
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Orphaned nodes were removed while loading the snapshot at index {}, but local log entry {}{}{} cannot be replayed on top "
+            "of the repaired tree: {}{}. Replaying it would silently produce a state that differs from the rest of the cluster, and "
+            "digest checking is disabled. Refusing to start. Recover this node from a healthy peer (stop it, remove its coordination "
+            "directory and let it re-sync from the leader), or restore its snapshots and changelog from a backup. Setting "
+            "'keeper_server.remove_orphaned_nodes_on_startup' back to false restores the original snapshot-load error",
+            state_machine->last_commit_index(),
+            conflict->log_idx,
+            conflict->op_num.empty() ? "" : fmt::format(" ({})", conflict->op_num),
+            conflict->request_path.empty() ? "" : fmt::format(" on '{}'", conflict->request_path),
+            conflict->reason,
+            conflict->subtree_root.empty() ? "" : fmt::format(" (removed subtree rooted at '{}')", conflict->subtree_root));
+    }
+
     if (state_machine->last_commit_index() >= last_log_idx_on_disk)
     {
         LOG_INFO(log, "No log preprocessing needed (last_commit_index={} >= last_log_idx_on_disk={})", state_machine->last_commit_index(), last_log_idx_on_disk.load());
@@ -1638,6 +1689,7 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
     }
     result.is_standalone = !result.is_follower && result.follower_count == 0;
     result.is_exceeding_mem_soft_limit = isExceedingMemorySoftLimit();
+    result.is_slow_member_backpressure = isSlowMemberBackpressure();
     return result;
 }
 
@@ -1688,6 +1740,16 @@ std::vector<KeeperChangelogStatus> KeeperServer::getChangelogsStatus() const
 bool KeeperServer::requestLeader()
 {
     return isLeader() || raft_instance->request_leadership();
+}
+
+bool KeeperServer::requestSlowMemberBackpressure(bool enable)
+{
+    return raft_instance->request_slow_member_backpressure(enable);
+}
+
+bool KeeperServer::isSlowMemberBackpressure() const
+{
+    return raft_instance->get_current_params().slow_member_backpressure_enabled_;
 }
 
 int64_t KeeperServer::getLeaderID() const

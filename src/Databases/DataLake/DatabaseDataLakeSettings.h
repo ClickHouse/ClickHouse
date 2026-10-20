@@ -24,6 +24,7 @@ class SettingsChanges;
 /// Merged and deduplicated type list for DatabaseDataLake + StorageObjectStorage settings.
 #define LIST_OF_DATABASE_ICEBERG_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, ArrowCompression) \
+    M(CLASS_NAME, ArrowUnsupportedTypes) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, CapnProtoEnumComparingMode) \
     M(CLASS_NAME, Char) \
@@ -76,8 +77,11 @@ struct DatabaseDataLakeSettings
 
     /// Name of the setting referenced by its `DatabaseDataLakeSetting::*` index,
     /// so catalog code can match `SettingsChanges` entries without magic strings.
-    template <typename FieldType>
-    static const String & getSettingName(SettingIndex<DatabaseDataLakeSettings, FieldType> setting);
+    static const String & getSettingName(DatabaseDataLakeSettingsString setting);
+    static const String & getSettingName(DatabaseDataLakeSettingsSensitiveString setting);
+    static const String & getSettingName(DatabaseDataLakeSettingsBool setting);
+
+    static bool hasBuiltin(std::string_view name);
 
 private:
     std::unique_ptr<DatabaseDataLakeSettingsImpl> impl;

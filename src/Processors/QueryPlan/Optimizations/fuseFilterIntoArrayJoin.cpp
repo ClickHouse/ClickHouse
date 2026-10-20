@@ -9,12 +9,12 @@
 namespace DB::QueryPlanOptimizations
 {
 
-/// Move a filter's element-only conjuncts into the ArrayJoinStep below it, so they run in element
+/// Move a filter on the ARRAY JOINed elements into the ArrayJoinStep below it, so it runs in element
 /// space before expansion. Runs after filterPushDown, which already pushed the non-element conjuncts down
 size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & settings)
 {
     /// fused filter can't be read by older workers, and it's perf-only - skip if the plan may be shipped out
-    if (settings.make_distributed_plan || settings.serialize_query_plan)
+    if (settings.make_distributed_plan || settings.serialize_query_plan || settings.enable_parallel_replicas)
         return 0;
 
     auto & parent = parent_node->step;
@@ -24,8 +24,7 @@ size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node
 
     auto * child_node = parent_node->children.front();
     auto * array_join = typeid_cast<ArrayJoinStep *>(child_node->step.get());
-    /// skip LEFT: optimizeReadInOrder keeps LIMIT through it, but a fused filter drops rows
-    if (!array_join || array_join->isLeft() || array_join->hasElementFilter())
+    if (!array_join || array_join->hasElementFilter())
         return 0;
 
     auto & expression = filter->getExpression();
@@ -34,15 +33,22 @@ size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node
         return 0;
 
     const auto & joined_columns = array_join->getColumns();
+
+    if (!expression.splitActionsBeforeArrayJoin(joined_columns).first.trivial())
+        return 0;
+
     NameSet joined_set(joined_columns.begin(), joined_columns.end());
 
-    /// The element filter runs on just the joined columns, so its inputs must be exactly those
+    /// The filter may read row columns too (the step broadcasts them), but it must read at least one element.
+    const auto required
+        = ActionsDAG::cloneSubDAG({&expression.findInOutputs(filter->getFilterColumnName())}, false).getRequiredColumnsNames();
+    if (std::ranges::none_of(required, [&](const auto & name) { return joined_set.contains(name); }))
+        return 0;
+    NameSet required_set(required.begin(), required.end());
     ColumnsWithTypeAndName all_inputs;
     for (const auto & column : filter->getInputHeaders().front()->getColumnsWithTypeAndName())
-        if (joined_set.contains(column.name))
+        if (required_set.contains(column.name))
             all_inputs.push_back(column);
-    if (all_inputs.empty())
-        return 0;
 
     /// Only fuse when the WHOLE filter moves into the ARRAY JOIN. If any conjunct must stay above, lifting
     /// an element conjunct out of the AND changes short-circuit evaluation - a throwing element predicate
@@ -52,7 +58,7 @@ size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node
     auto split = residual.splitActionsForFilterPushDown(
         filter->getFilterColumnName(),
         filter->removesFilterColumn(),
-        joined_columns,
+        required,
         all_inputs,
         /*allow_non_deterministic_functions=*/false);
     if (!split)

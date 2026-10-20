@@ -19,7 +19,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -124,6 +123,9 @@ public:
 
     String getName() const override { return function_name; }
 
+    /// The setting decides which paths count for the same arguments, see `IFunctionBase::updateHash`.
+    void updateHash(SipHash & hash) const override { hash.update(skip_null_typed_paths); }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
@@ -173,18 +175,9 @@ public:
             return std::make_shared<FunctionToFunctionBaseAdaptor>(std::make_shared<FunctionStringOrArrayToT<EmptyImpl<false>, NameEmpty, UInt8, false>>(), argument_types, return_type);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isStringOrFixedString(arguments[0])
-            && !isArray(arguments[0])
-            && !isMap(arguments[0])
-            && !isUUID(arguments[0])
-            && !isIPv6(arguments[0])
-            && !isIPv4(arguments[0])
-            && !isObject(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
-
-        return std::make_shared<DataTypeUInt8>();
+        return "(String | FixedString | Array | Map | UUID | IPv4 | IPv6 | JSON) -> UInt8";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -207,9 +200,9 @@ Checks whether the input array is empty.
 
 An array is considered empty if it does not contain any elements.
 
-:::note
+<Note>
 Can be optimized by enabling the [`optimize_functions_to_subcolumns` setting](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
-:::
+</Note>
 
 The function also works for Strings or UUIDs.
     )";
@@ -218,9 +211,9 @@ Checks whether the input array is non-empty.
 
 An array is considered non-empty if it contains at least one element.
 
-:::note
+<Note>
 Can be optimized by enabling the [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`.
-:::
+</Note>
 
 The function also works for Strings or UUIDs.
     )";

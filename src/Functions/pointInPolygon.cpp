@@ -117,7 +117,7 @@ PreprocessedPolygonsCache<PolygonImpl, MultiPolygonImpl> & preprocessedPolygonsC
 #pragma clang diagnostic ignored "-Wused-but-marked-unused"
 
 /// Feed a string into an in-progress XXH3 state, length-prefixed so concatenations are unambiguous.
-void updateHashWithString(XXH3_state_t & state, std::string_view s)
+void updateHashWithString(XXH_INLINE_XXH3_state_t & state, std::string_view s)
 {
     UInt64 size = s.size();
     XXH_INLINE_XXH3_128bits_update(&state, &size, sizeof(size));
@@ -128,7 +128,7 @@ void updateHashWithString(XXH3_state_t & state, std::string_view s)
 /// feeding contiguous leaf buffers in bulk (the same structural walk as updateHashFast, but XXH3).
 /// The structure is mixed in (array offsets, tuple arity) so distinct shapes that share leaf bytes
 /// cannot collide.
-void updateHashWithColumn(XXH3_state_t & state, const IColumn & column)
+void updateHashWithColumn(XXH_INLINE_XXH3_state_t & state, const IColumn & column)
 {
     if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
     {
@@ -184,7 +184,7 @@ void updateHashWithColumn(XXH3_state_t & state, const IColumn & column)
 ///    lookup and skip the validation that would otherwise raise an exception.
 UInt128 hashConstPolygonArguments(const ColumnsWithTypeAndName & arguments, bool validate, UInt8 discriminator)
 {
-    XXH3_state_t state;
+    XXH_INLINE_XXH3_state_t state;
     XXH_INLINE_XXH3_128bits_reset(&state);
 
     XXH_INLINE_XXH3_128bits_update(&state, &discriminator, sizeof(discriminator));
@@ -237,6 +237,47 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool isSpatialPredicate() const override { return true; }
+
+    /// `pointInPolygon((x, y), ring | rings | nested_rings...)` accepts a single
+    /// point tuple followed by one or more polygon/hole arrays. The polygon
+    /// arrays can be shaped as:
+    ///   Array(Tuple(N, N))                          — simple ring
+    ///   Array(Array(Tuple(N, N)))                   — polygon with holes
+    ///   Array(Array(Array(Tuple(N, N))))            — multi-polygon
+    /// or multiple ring/array arguments. The DSL's `Array` matcher with a bare
+    /// `Any` inner type accepts all of these; the runtime then validates the
+    /// nested shape, the tuple arity (must be 2), and the element types
+    /// (must be `NativeNumber`).
+    String getSignatureString() const override
+    {
+        /// This signature is documentation-only: the polygon arguments' full contract — the
+        /// array nesting depth (1 to 3), the innermost tuple arity (exactly 2) and its element
+        /// types (`NativeNumber`), and the cross-argument consistency between the first polygon
+        /// and the subsequent hole/polygon arguments — is not expressible with the current DSL
+        /// vocabulary, so a bare `Array` matcher is used for them. The authoritative validation
+        /// runs in `getReturnTypeImpl`, which the `getReturnTypeImpl(ColumnsWithTypeAndName)`
+        /// override below routes to on the column path (the base column-path implementation
+        /// would otherwise short-circuit to this loose signature, letting a malformed polygon
+        /// argument such as an array of one-element tuples reach `executeImpl` and abort while
+        /// reading the missing coordinate). The point tuple is documented as
+        /// `Tuple(NativeNumber, NativeNumber)` here to match the `isNativeNumber` check the
+        /// legacy `getReturnTypeImpl` performs.
+        return "(Tuple(NativeNumber, NativeNumber), Array, ...) -> UInt8";
+    }
+
+    /// Route the column path through the hand-written `getReturnTypeImpl(DataTypes)` above so its
+    /// authoritative validation runs. Without this override the base
+    /// `IFunction::getReturnTypeImpl(ColumnsWithTypeAndName)` short-circuits to the (deliberately
+    /// loose) declarative signature and skips the per-shape checks, allowing malformed polygon
+    /// arguments to slip through to `executeImpl`. The return type is fully determined by the
+    /// argument types, so no column-level information is required here.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes argument_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            argument_types[i] = arguments[i].type;
+        return getReturnTypeImpl(argument_types);
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -613,12 +654,18 @@ private:
             /// First condition checks that the point is inside horizontal row between edge top and bottom y-coordinate.
             /// Second condition checks for intersection with the edge.
 
-            if (((ring_y_data[vertex1_idx] > point_y) != (ring_y_data[vertex2_idx] > point_y))
-                && (point_x < (ring_x_data[vertex2_idx] - ring_x_data[vertex1_idx])
-                    * (point_y - ring_y_data[vertex1_idx]) / (ring_y_data[vertex2_idx] - ring_y_data[vertex1_idx])
-                    + ring_x_data[vertex1_idx]))
+            if ((ring_y_data[vertex1_idx] > point_y) != (ring_y_data[vertex2_idx] > point_y))
             {
-                res = !res;
+                if (std::abs(ring_x_data[vertex1_idx]) > max_abs_polygon_coordinate
+                    || std::abs(ring_y_data[vertex1_idx]) > max_abs_polygon_coordinate
+                    || std::abs(ring_x_data[vertex2_idx]) > max_abs_polygon_coordinate
+                    || std::abs(ring_y_data[vertex2_idx]) > max_abs_polygon_coordinate)
+                    throwPolygonCoordinateIsTooLarge();
+
+                if (point_x < (ring_x_data[vertex2_idx] - ring_x_data[vertex1_idx])
+                        * (point_y - ring_y_data[vertex1_idx]) / (ring_y_data[vertex2_idx] - ring_y_data[vertex1_idx])
+                        + ring_x_data[vertex1_idx])
+                    res = !res;
             }
 
             vertex2_idx = vertex1_idx;
@@ -932,11 +979,12 @@ REGISTER_FUNCTION(PointInPolygon)
     FunctionDocumentation::Description description = R"(
 Checks whether the point belongs to the polygon on the plane.
 
-:::note
+<Note>
 - You can set `validate_polygons = 0` to bypass geometry validation.
 - `pointInPolygon` assumes every polygon is well-formed. If the input is self-intersecting, has mis-ordered rings, or overlapping edges, results become unreliable—especially for points that sit exactly on an edge, a vertex, or inside a self-intersection where the notion of "inside" vs. "outside" is undefined.
+- Polygon coordinates must not exceed `1e150` in absolute value; the function throws an exception when it would compute with a larger one.
 - The polygon-shaped types (`Ring`, `Polygon`, `MultiPolygon`, and `Geometry`) may be passed either as constants or as regular (non-constant) table columns. When the polygon is provided across several separate arguments (an outer ring followed by holes, or several polygons of a multipolygon), all of those arguments must be constant.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = "pointInPolygon((x, y), [(a, b), (c, d) ...], ...)";
     FunctionDocumentation::Arguments arguments = {
