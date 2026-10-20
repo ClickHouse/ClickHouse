@@ -154,10 +154,22 @@ private:
     /// must be dropped and the initial synchronization must run from scratch.
     bool checkReplicationStateOnAttach(pqxx::nontransaction & tx);
 
-    /// `table_name` -> `start_lsn`, see `snapshot_positions_path`.
-    using SnapshotPositions = std::map<String, String>;
+    /// See `snapshot_positions_path`.
+    struct SnapshotPosition
+    {
+        String start_lsn;
+        /// False while the snapshot is being loaded. A nested table whose snapshot did not complete (the server
+        /// was terminated while loading it) holds only a part of the rows, so it is dropped and loaded again.
+        bool completed = false;
+    };
+    /// `table_name` -> its snapshot position.
+    using SnapshotPositions = std::map<String, SnapshotPosition>;
     SnapshotPositions loadSnapshotPositions() const;
     void saveSnapshotPositions(const SnapshotPositions & positions) const;
+    void markSnapshotCompleted(const String & table_name) const;
+
+    /// Drops the nested table of a table whose snapshot did not complete.
+    void dropNestedTable(StorageMaterializedPostgreSQL * materialized_storage) const;
 
     void assertInitialized() const;
 
@@ -243,9 +255,11 @@ private:
     /// A table that takes its snapshot from a temporary replication slot (`ATTACH TABLE`, or the first snapshot of a table
     /// on attach) must not get the changes before the snapshot position applied, but the shared replication slot may be
     /// behind it. The consumer skips them until it reaches that position, and the position is persisted here, so that
-    /// it is not lost if the server restarts before the shared replication slot passes it. An entry is removed on attach
-    /// once the shared replication slot has passed it. Not set for the single-table engine: its replication slot is
-    /// moved to the snapshot position instead, because it does not stream changes of other tables.
+    /// it is not lost if the server restarts before the shared replication slot passes it. The entry is written before
+    /// the snapshot is loaded and marked completed after it, so that a nested table left by an interrupted snapshot is
+    /// loaded again on attach rather than resumed. A completed entry is removed on attach once the shared replication
+    /// slot has passed it. Not set for the single-table engine: its replication slot is moved to the snapshot position
+    /// instead, because it does not stream changes of other tables.
     DiskPtr snapshot_positions_disk;
     String snapshot_positions_path;
 

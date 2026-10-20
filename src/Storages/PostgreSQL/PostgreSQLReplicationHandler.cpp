@@ -82,6 +82,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char materialized_postgresql_fail_after_snapshot_on_attach[];
+    extern const char materialized_postgresql_pause_before_attach_table_snapshot[];
 }
 
 class TemporaryReplicationSlot
@@ -455,12 +456,14 @@ PostgreSQLReplicationHandler::SnapshotPositions PostgreSQLReplicationHandler::lo
     while (!in.eof())
     {
         String table_name;
-        String lsn;
+        SnapshotPosition position;
         readEscapedString(table_name, in);
         assertChar('\t', in);
-        readEscapedString(lsn, in);
+        readEscapedString(position.start_lsn, in);
+        assertChar('\t', in);
+        readBoolText(position.completed, in);
         assertChar('\n', in);
-        positions.emplace(std::move(table_name), std::move(lsn));
+        positions.emplace(std::move(table_name), std::move(position));
     }
     return positions;
 }
@@ -478,17 +481,40 @@ void PostgreSQLReplicationHandler::saveSnapshotPositions(const SnapshotPositions
     }
 
     WriteBufferFromOwnString out;
-    for (const auto & [table_name, lsn] : positions)
+    for (const auto & [table_name, position] : positions)
     {
         writeEscapedString(table_name, out);
         writeChar('\t', out);
-        writeEscapedString(lsn, out);
+        writeEscapedString(position.start_lsn, out);
+        writeChar('\t', out);
+        writeBoolText(position.completed, out);
         writeChar('\n', out);
     }
 
     const String tmp_path = snapshot_positions_path + ".tmp";
     writeMetadataFile(snapshot_positions_disk, tmp_path, out.str(), /* fsync_metadata */ true);
     snapshot_positions_disk->replaceFile(tmp_path, snapshot_positions_path);
+}
+
+
+void PostgreSQLReplicationHandler::markSnapshotCompleted(const String & table_name) const
+{
+    auto positions = loadSnapshotPositions();
+    auto it = positions.find(table_name);
+    if (it == positions.end() || it->second.completed)
+        return;
+
+    it->second.completed = true;
+    saveSnapshotPositions(positions);
+}
+
+
+void PostgreSQLReplicationHandler::dropNestedTable(StorageMaterializedPostgreSQL * materialized_storage) const
+{
+    if (materialized_storage->tryGetNested())
+        InterpreterDropQuery::executeDropQuery(
+            ASTDropQuery::Kind::Drop, getContext(), materialized_storage->getNestedTableContext(),
+            materialized_storage->getNestedStorageID(), /* sync */ true, /* ignore_sync_setting */ true);
 }
 
 
@@ -960,12 +986,15 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         std::vector<std::pair<String, StorageMaterializedPostgreSQL *>> tables_without_nested;
         std::optional<std::set<std::pair<String, String>>> published;
 
-        /// Forget the snapshot positions that the replication slot has durably passed (`start_lsn` is its
-        /// `confirmed_flush_lsn`), and the ones of the tables that are not replicated anymore.
+        /// Forget the snapshot positions of the completed snapshots that the replication slot has durably passed
+        /// (`start_lsn` is its `confirmed_flush_lsn`), and the ones of the tables that are not replicated anymore.
+        /// The position of an interrupted snapshot is kept regardless of the replication slot: its table is loaded again.
         auto snapshot_positions = loadSnapshotPositions();
         if (std::erase_if(snapshot_positions, [&](const auto & position)
             {
-                return MaterializedPostgreSQLConsumer::getLSNValue(position.second) <= MaterializedPostgreSQLConsumer::getLSNValue(start_lsn)
+                return (position.second.completed
+                        && MaterializedPostgreSQLConsumer::getLSNValue(position.second.start_lsn)
+                            <= MaterializedPostgreSQLConsumer::getLSNValue(start_lsn))
                     || !materialized_storages.contains(position.first);
             }))
             saveSnapshotPositions(snapshot_positions);
@@ -973,6 +1002,18 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         for (const auto & [table_name, storage] : materialized_storages)
         {
             auto * materialized_storage = storage->as <StorageMaterializedPostgreSQL>();
+
+            /// The server was terminated while this table was being loaded from a snapshot, so the cleanup after
+            /// a failed snapshot did not run. Its nested table holds only a part of the rows: drop it, and take
+            /// a new snapshot below, as for a table without a nested table.
+            if (auto position = snapshot_positions.find(table_name);
+                position != snapshot_positions.end() && !position->second.completed && materialized_storage->tryGetNested())
+            {
+                LOG_INFO(log, "The snapshot of table {}.{} did not complete in a previous run, its nested table will be "
+                         "dropped and loaded again", postgres_database, table_name);
+                dropNestedTable(materialized_storage);
+            }
+
             if (!materialized_storage->tryGetNested())
             {
                 if (!published)
@@ -1003,8 +1044,8 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                 {
                     LOG_INFO(log, "Table {}.{} was loaded from a snapshot at position {}, which replication slot {} has not "
                              "passed yet: its earlier changes will be skipped",
-                             postgres_database, table_name, position->second, replication_slot);
-                    tables_after_snapshot_position.emplace(table_name, std::make_pair(std::move(storage_info), position->second));
+                             postgres_database, table_name, position->second.start_lsn, replication_slot);
+                    tables_after_snapshot_position.emplace(table_name, std::make_pair(std::move(storage_info), position->second.start_lsn));
                 }
                 else
                     nested_storages.emplace(table_name, std::move(storage_info));
@@ -1036,7 +1077,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             if (is_materialized_postgresql_database)
             {
                 for (const auto & [table_name, materialized_storage] : tables_without_nested)
-                    snapshot_positions[table_name] = temporary_start_lsn;
+                    snapshot_positions[table_name] = SnapshotPosition{.start_lsn = temporary_start_lsn, .completed = false};
                 saveSnapshotPositions(snapshot_positions);
             }
             else
@@ -1054,24 +1095,20 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                 LOG_INFO(log, "Table {}.{} has no nested table yet, loading it from a new snapshot", postgres_database, table_name);
                 try
                 {
-                    tables_after_snapshot_position.emplace(
-                        table_name,
-                        std::make_pair(
-                            loadFromSnapshot(*tmp_connection, temporary_snapshot_name, table_name, materialized_storage),
-                            temporary_start_lsn));
+                    auto storage_info = loadFromSnapshot(*tmp_connection, temporary_snapshot_name, table_name, materialized_storage);
+                    markSnapshotCompleted(table_name);
+                    tables_after_snapshot_position.emplace(table_name, std::make_pair(std::move(storage_info), temporary_start_lsn));
                 }
                 catch (...)
                 {
                     /// Not only `DB::Exception`: a lost connection during the snapshot throws `pqxx::failure`.
                     tryLogCurrentException(log, fmt::format("while loading table `{}`.`{}`", postgres_database, table_name));
 
-                    /// A partially loaded nested table would be taken for a completed snapshot on the next attach.
+                    /// A partially loaded nested table must not stay. The next attach would also drop it, because
+                    /// its snapshot is not marked completed, but dropping it now frees the space at once.
                     try
                     {
-                        if (materialized_storage->tryGetNested())
-                            InterpreterDropQuery::executeDropQuery(
-                                ASTDropQuery::Kind::Drop, getContext(), materialized_storage->getNestedTableContext(),
-                                materialized_storage->getNestedStorageID(), /* sync */ true, /* ignore_sync_setting */ true);
+                        dropNestedTable(materialized_storage);
                     }
                     catch (...)
                     {
@@ -2069,6 +2106,15 @@ bool PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
         String start_lsn;
         StorageInfo nested_storage_info{ nullptr, {} };
 
+        /// See `snapshot_positions_path`. The snapshot is marked incomplete before the table is published: otherwise, after
+        /// a restart in between, a published table with an empty nested table would be resumed. The snapshot position is
+        /// not known until the temporary replication slot is created. An entry left by a failure is dropped on the next
+        /// attach if the table is not replicated then. Otherwise (it is discovered from `materialized_postgresql_schema_list`),
+        /// the nested table is loaded again, because its snapshot is not marked completed.
+        auto snapshot_positions = loadSnapshotPositions();
+        snapshot_positions[postgres_table_name] = SnapshotPosition{};
+        saveSnapshotPositions(snapshot_positions);
+
         /// The table must be in the publication before the snapshot is taken: `pgoutput` decides publication membership
         /// by the catalog at the LSN of each change, so the changes between the snapshot and `ALTER PUBLICATION`
         /// would be neither in the snapshot nor in the replication stream.
@@ -2085,10 +2131,7 @@ bool PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
 
             TemporaryReplicationSlot temporary_slot(this, tx, start_lsn, snapshot_name);
 
-            /// See `snapshot_positions_path`. An entry left by a failure is dropped on the next attach,
-            /// because the table is not replicated then.
-            auto snapshot_positions = loadSnapshotPositions();
-            snapshot_positions[postgres_table_name] = start_lsn;
+            snapshot_positions[postgres_table_name] = SnapshotPosition{.start_lsn = start_lsn, .completed = false};
             saveSnapshotPositions(snapshot_positions);
 
             /// Protect against deadlock.
@@ -2096,8 +2139,11 @@ bool PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
             if (!nested)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal table was not created");
 
+            FailPointInjection::pauseFailPoint(FailPoints::materialized_postgresql_pause_before_attach_table_snapshot);
+
             postgres::Connection tmp_connection(connection_info);
             nested_storage_info = loadFromSnapshot(tmp_connection, snapshot_name, postgres_table_name, materialized_storage);
+            markSnapshotCompleted(postgres_table_name);
             materialized_storage->set(nested_storage_info.storage);
         }
 
