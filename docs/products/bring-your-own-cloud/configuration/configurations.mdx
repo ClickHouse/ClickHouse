@@ -58,6 +58,15 @@ By default, the Kubernetes API server endpoint for your BYOC cluster is accessib
 
 Which private connection options are available depends on your cloud provider:
 
+### AWS VPC Lattice {#k8s-api-private-connection-vpc-lattice}
+
+For AWS deployments, the Kubernetes API server can be reached privately over [AWS VPC Lattice](https://aws.amazon.com/vpc/lattice/), with no third-party components involved:
+
+- ClickHouse Cloud automatically provisions a VPC Lattice Resource Gateway and a Resource Configuration targeting the EKS API server endpoint inside your BYOC VPC, and shares the Resource Configuration with the ClickHouse Cloud management account via AWS Resource Access Manager (RAM).
+- Traffic between ClickHouse management services and your Kubernetes API server stays entirely on the AWS private network.
+- The RAM share is created from your account and scoped to a single BYOC cluster; deleting it immediately revokes the private access path.
+- Because access does not depend on an agent running inside your Kubernetes cluster, ClickHouse Support retains access for troubleshooting even if in-cluster components are unavailable.
+
 ### Tailscale {#k8s-api-private-connection-tailscale}
 
 <Warning>
@@ -69,15 +78,6 @@ When a private API endpoint is enabled, ClickHouse management services connect t
 <Note>
 If you rely solely on Tailscale for private connectivity, there is a risk that ClickHouse Support will lose access to your environment if the Tailscale agent becomes unavailable. This could delay troubleshooting or support response times.
 </Note>
-
-### AWS VPC Lattice {#k8s-api-private-connection-vpc-lattice}
-
-For AWS deployments, the Kubernetes API server can instead be reached privately over [AWS VPC Lattice](https://aws.amazon.com/vpc/lattice/), with no third-party components involved:
-
-- ClickHouse Cloud automatically provisions a VPC Lattice Resource Gateway and a Resource Configuration targeting the EKS API server endpoint inside your BYOC VPC, and shares the Resource Configuration with the ClickHouse Cloud management account via AWS Resource Access Manager (RAM).
-- Traffic between ClickHouse management services and your Kubernetes API server stays entirely on the AWS private network.
-- The RAM share is created from your account and scoped to a single BYOC cluster; deleting it immediately revokes the private access path.
-- Because access does not depend on an agent running inside your Kubernetes cluster, ClickHouse Support retains access for troubleshooting even if in-cluster components are unavailable.
 
 ### GCP private control-plane endpoint {#k8s-api-private-connection-gcp}
 
