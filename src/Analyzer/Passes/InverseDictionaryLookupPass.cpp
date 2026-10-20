@@ -480,10 +480,8 @@ bool canReplaceWithDictGetKeys(
     return supertype && supertype->equals(*stripped_attr_type);
 }
 
-/// The comparisons of `query_node`, outside of its subqueries, kept as written because the planner reads a `GROUP BY` key
-/// from the aggregation result by its expression: those comparing a `dictGet` that is a key, whose rewrite reads the `dictGet`
-/// argument, and, when `group_by_use_nulls` reads the keys as `Nullable` copies, those that are a key or a copy, which the
-/// rewrite does not turn into the same expression.
+/// Comparisons of `query_node`, outside of its subqueries, kept as written because the planner reads a `GROUP BY` key from the
+/// aggregation result by its expression: those comparing a `dictGet` key, and those that are a key or its `group_by_use_nulls` copy.
 std::unordered_set<QueryTreeNodePtr> collectKeptComparisons(const QueryNode & query_node, bool group_by_use_nulls)
 {
     const QueryTreeNodes group_by_keys = getGroupByKeys(query_node);
@@ -494,7 +492,6 @@ std::unordered_set<QueryTreeNodePtr> collectKeptComparisons(const QueryNode & qu
     if (group_by_keys.empty())
         return result;
 
-    /// The clauses computed after aggregation, and the keys themselves.
     QueryTreeNodes nodes;
     for (const auto & clause : {query_node.getProjectionNode(), query_node.getGroupByNode(), query_node.getHaving(),
              query_node.getWindowNode(), query_node.getQualify(), query_node.getOrderByNode(), query_node.getInterpolate(),
