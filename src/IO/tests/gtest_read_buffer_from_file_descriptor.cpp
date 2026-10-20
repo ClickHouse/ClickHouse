@@ -320,6 +320,9 @@ TEST(WriteBufferFromFileDescriptor, DoesNotBlockWhenAnotherWriterTakesRoom)
     }
     flusher.join();
 
+    /// The interrupted `next` only discarded the pending bytes; the buffer itself is not cancelled yet.
+    out.cancel();
+
     EXPECT_TRUE(returned_promptly);
     EXPECT_EQ(0, ::fcntl(pipe_fds[1], F_GETFL) & O_NONBLOCK);
 
