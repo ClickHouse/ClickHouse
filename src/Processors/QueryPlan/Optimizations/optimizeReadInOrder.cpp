@@ -443,8 +443,8 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
     if (const auto * array_join = typeid_cast<const ArrayJoinStep *>(step))
     {
         /// Should ignore limit because ARRAY JOIN can reduce the number of rows in case of empty array.
-        /// But in case of LEFT ARRAY JOIN the result number of rows is always bigger.
-        if (!array_join->isLeft())
+        /// But in case of LEFT ARRAY JOIN the result number of rows is always bigger, unless a fused filter drops them.
+        if (!array_join->isLeft() || array_join->hasElementFilter())
             limit = 0;
 
         if (dag)
