@@ -17,6 +17,8 @@ namespace DB::PrometheusQueryToSQL
 
     using ColumnNames = TimeSeriesColumnNames;
     constexpr const char * kMetricName = TimeSeriesTagNames::MetricName;
+    constexpr const char * kDroppedMetricNameMarker = TimeSeriesTagNames::DroppedMetricNameMarker;
+    constexpr const char * kDroppedMetricNameMarkerValue = TimeSeriesTagNames::DroppedMetricNameMarkerValue;
 }
 
 

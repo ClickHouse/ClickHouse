@@ -73,8 +73,10 @@ void checkArgumentTypes(
 
 ASTPtr setValueLabel(ASTPtr group, const String & label_name)
 {
+    /// The result of count_values never has a pending drop of the metric name, so the marker is removed with the value label.
     auto tags_without_value_label = makeASTFunction(
-        "timeSeriesGroupToTags", makeASTFunction("timeSeriesRemoveTag", std::move(group), make_intrusive<ASTLiteral>(label_name)));
+        "timeSeriesGroupToTags",
+        makeASTFunction("timeSeriesRemoveTags", std::move(group), make_intrusive<ASTLiteral>(Array{label_name, kDroppedMetricNameMarker})));
 
     return makeASTFunction(
         "timeSeriesTagsToGroup",
@@ -89,6 +91,7 @@ ASTPtr transformGroup(const PrometheusQueryTree::AggregationOperator * operator_
     {
         std::vector<std::string_view> tags_to_remove{operator_node->labels.begin(), operator_node->labels.end()};
         tags_to_remove.push_back(kMetricName);
+        tags_to_remove.push_back(kDroppedMetricNameMarker);
         std::sort(tags_to_remove.begin(), tags_to_remove.end());
         tags_to_remove.erase(std::unique(tags_to_remove.begin(), tags_to_remove.end()), tags_to_remove.end());
 

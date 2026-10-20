@@ -220,6 +220,180 @@ namespace
 
         return &it->second;
     }
+
+    /// The empty-name marker is a pending metric-name drop. It is not part of the series identity.
+    ASTPtr groupWithoutDroppedMetricNameMarker()
+    {
+        return makeASTFunction(
+            "timeSeriesRemoveTag",
+            make_intrusive<ASTIdentifier>(ColumnNames::Group),
+            make_intrusive<ASTLiteral>(kDroppedMetricNameMarker));
+    }
+
+    /// True when two grids of one series both have a sample at the same point.
+    ASTPtr gridsOverlap()
+    {
+        return makeASTFunction(
+            "arrayExists",
+            makeASTFunction(
+                "lambda",
+                makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x")),
+                makeASTFunction("greater", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(1u))),
+            makeASTFunction("countForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+    }
+
+    /// 1 where this row carries the pending drop, 0 where it does not, NULL where the grid has no sample.
+    ASTPtr markerGridAlignedToValues()
+    {
+        return makeASTFunction(
+            "arrayMap",
+            makeASTFunction(
+                "lambda",
+                makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x")),
+                makeASTFunction(
+                    "if",
+                    makeASTFunction("isNull", make_intrusive<ASTIdentifier>("x")),
+                    make_intrusive<ASTLiteral>(Field{}),
+                    makeASTFunction(
+                        "if",
+                        makeASTFunction(
+                            "isNotNull",
+                            makeASTFunction(
+                                "timeSeriesExtractTag",
+                                make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                                make_intrusive<ASTLiteral>(kDroppedMetricNameMarker))),
+                        make_intrusive<ASTLiteral>(1.0),
+                        make_intrusive<ASTLiteral>(0.0)))),
+            make_intrusive<ASTIdentifier>(ColumnNames::Values));
+    }
+
+    /// Samples for the same window function, read from the marker grid instead of the values.
+    ASTs markerSamplesFromGrid(const SQLQueryPiece & range_vector, ConverterContext & context)
+    {
+        ASTPtr marker_samples = makeASTFunction(
+            "timeSeriesFromGrid",
+            timeSeriesTimestampToAST(range_vector.start_time, context.result_timestamp_type),
+            timeSeriesTimestampToAST(range_vector.end_time, context.result_timestamp_type),
+            timeSeriesDurationToAST(range_vector.step, context.result_timestamp_type),
+            markerGridAlignedToValues());
+        marker_samples->setAlias("marker_samples");
+
+        ASTPtr timestamps = makeASTFunction("tupleElement", std::move(marker_samples), make_intrusive<ASTLiteral>(1));
+        ASTPtr values = makeASTFunction(
+            "tupleElement", make_intrusive<ASTIdentifier>("marker_samples"), make_intrusive<ASTLiteral>(2));
+        return {std::move(timestamps), std::move(values)};
+    }
+
+    ASTPtr markerEquals(Float64 expected)
+    {
+        return makeASTFunction(
+            "lambda",
+            makeASTFunction("tuple", make_intrusive<ASTIdentifier>("m")),
+            makeASTFunction(
+                "and",
+                makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("m")),
+                makeASTFunction(
+                    "equals",
+                    makeASTFunction("ifNull", make_intrusive<ASTIdentifier>("m"), make_intrusive<ASTLiteral>(0.0)),
+                    make_intrusive<ASTLiteral>(expected))));
+    }
+
+    ASTPtr uint64Array(UInt64 first)
+    {
+        return makeASTFunction("array", make_intrusive<ASTLiteral>(first));
+    }
+
+    ASTPtr uint64Array(UInt64 first, UInt64 second)
+    {
+        return makeASTFunction("array", make_intrusive<ASTLiteral>(first), make_intrusive<ASTLiteral>(second));
+    }
+
+    /// `first_over_time` and `last_over_time` keep the metric name of the sample they return.
+    /// `marker_grid` is that function applied to the pending-drop flags, so each output point
+    /// keeps the flag of its own sample. An empty window does not gain the marker.
+    ASTPtr gridWithMarkerOfSelectedSample(ASTPtr aggregation_query, ConverterContext & context)
+    {
+        constexpr const char * marker_grid = "marker_grid";
+        constexpr const char * marker_side = "marker_side";
+
+        SelectQueryBuilder sides;
+        context.subqueries.emplace_back(context.subqueries.size(), std::move(aggregation_query), SQLSubqueryType::TABLE);
+        sides.from_table = context.subqueries.back().name;
+        sides.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
+        sides.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewValues));
+        sides.select_list.push_back(make_intrusive<ASTIdentifier>(marker_grid));
+
+        /// Side 1 carries the pending drop. Side 0 keeps the metric name.
+        /// A side is present only when a selected sample has that flag. An empty window stays on side 0.
+        ASTPtr has_marker = makeASTFunction(
+            "arrayExists", markerEquals(1.0), make_intrusive<ASTIdentifier>(marker_grid));
+        ASTPtr lacks_marker = makeASTFunction(
+            "arrayExists", markerEquals(0.0), make_intrusive<ASTIdentifier>(marker_grid));
+        sides.select_list.push_back(makeASTFunction(
+            "arrayJoin",
+            makeASTFunction(
+                "if",
+                std::move(has_marker),
+                makeASTFunction("if", std::move(lacks_marker), uint64Array(0, 1), uint64Array(1)),
+                uint64Array(0))));
+        sides.select_list.back()->setAlias(marker_side);
+
+        context.subqueries.emplace_back(context.subqueries.size(), sides.getSelectQuery(), SQLSubqueryType::TABLE);
+
+        SelectQueryBuilder builder;
+        builder.from_table = context.subqueries.back().name;
+
+        ASTPtr marked_group = makeASTFunction(
+            "timeSeriesReplaceTag",
+            make_intrusive<ASTIdentifier>(ColumnNames::NewGroup),
+            make_intrusive<ASTLiteral>(kDroppedMetricNameMarker),
+            make_intrusive<ASTLiteral>(kDroppedMetricNameMarkerValue),
+            make_intrusive<ASTLiteral>(String{}),
+            make_intrusive<ASTLiteral>(String{}));
+        builder.select_list.push_back(makeASTFunction(
+            "if",
+            makeASTFunction("equals", make_intrusive<ASTIdentifier>(marker_side), make_intrusive<ASTLiteral>(1u)),
+            std::move(marked_group),
+            make_intrusive<ASTIdentifier>(ColumnNames::NewGroup)));
+        builder.select_list.back()->setAlias(ColumnNames::Group);
+
+        ASTPtr value_on_marked_side = makeASTFunction(
+            "if",
+            makeASTFunction(
+                "and",
+                makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("m")),
+                makeASTFunction(
+                    "equals",
+                    makeASTFunction("ifNull", make_intrusive<ASTIdentifier>("m"), make_intrusive<ASTLiteral>(0.0)),
+                    make_intrusive<ASTLiteral>(1.0))),
+            make_intrusive<ASTIdentifier>("v"),
+            make_intrusive<ASTLiteral>(Field{}));
+        ASTPtr value_on_unmarked_side = makeASTFunction(
+            "if",
+            makeASTFunction(
+                "or",
+                makeASTFunction("isNull", make_intrusive<ASTIdentifier>("m")),
+                makeASTFunction(
+                    "equals",
+                    makeASTFunction("ifNull", make_intrusive<ASTIdentifier>("m"), make_intrusive<ASTLiteral>(0.0)),
+                    make_intrusive<ASTLiteral>(0.0))),
+            make_intrusive<ASTIdentifier>("v"),
+            make_intrusive<ASTLiteral>(Field{}));
+        builder.select_list.push_back(makeASTFunction(
+            "arrayMap",
+            makeASTFunction(
+                "lambda",
+                makeASTFunction("tuple", make_intrusive<ASTIdentifier>("v"), make_intrusive<ASTIdentifier>("m")),
+                makeASTFunction(
+                    "if",
+                    makeASTFunction("equals", make_intrusive<ASTIdentifier>(marker_side), make_intrusive<ASTLiteral>(1u)),
+                    std::move(value_on_marked_side),
+                    std::move(value_on_unmarked_side))),
+            make_intrusive<ASTIdentifier>(ColumnNames::NewValues),
+            make_intrusive<ASTIdentifier>(marker_grid)));
+        builder.select_list.back()->setAlias(ColumnNames::Values);
+        return builder.getSelectQuery();
+    }
 }
 
 
@@ -271,6 +445,31 @@ SQLQueryPiece applyFunctionOverRange(
     /// tags, because the aggregate function returns NULL for a window without enough samples and only VECTOR_GRID can hold NULL.
     const bool from_scalar = (argument.store_method != StoreMethod::VECTOR_GRID) && (argument.store_method != StoreMethod::RAW_DATA);
 
+    /// A subquery stores one grid per group. The pending drop can differ between points of one series,
+    /// so those grids share the original labels, including `__name__`, and are merged before the window.
+    const bool merge_vector_grids = argument.store_method == StoreMethod::VECTOR_GRID;
+    const bool drops_metric_name = drop_metric_name.value_or(impl_info->drop_metric_name);
+    /// `first_over_time` and `last_over_time` keep the metric name of the sample they return.
+    /// The pending drop of that sample is stored beside the merge key and applied to the output group.
+    const bool track_selected_sample_marker = merge_vector_grids && !drops_metric_name
+        && (function_name == "last_over_time" || function_name == "first_over_time");
+
+    auto wrap_grid_aggregate = [&](ASTPtr aggregate) -> ASTPtr
+    {
+        if (impl_info->needs_cast_to_float64)
+        {
+            /// CAST(<aggregate_function>(timestamp, value), 'Array(Nullable(Float64))')
+            /// See `needs_cast_to_float64`; a timestamp becomes seconds since 1970-01-01 as in Prometheus. The cast does nothing
+            /// for Float64 and is cheap anyway: the aggregated grid is much smaller than the raw data.
+            aggregate = makeASTFunction("CAST", std::move(aggregate), make_intrusive<ASTLiteral>("Array(Nullable(Float64))"));
+        }
+
+        if (fixed_at_node)
+            aggregate = repeatFixedAtResultOverGrid(
+                std::move(aggregate), aggregation_range, stepsInTimeSeriesRange(start_time, end_time, step));
+        return aggregate;
+    };
+
     SelectQueryBuilder builder;
 
     if (from_scalar)
@@ -278,36 +477,49 @@ SQLQueryPiece applyFunctionOverRange(
         builder.select_list.push_back(timeSeriesNoTagsGroupToAST());
         builder.select_list.back()->setAlias(ColumnNames::Group);
     }
+    else if (merge_vector_grids)
+    {
+        auto merge_key = groupWithoutDroppedMetricNameMarker();
+        merge_key->setAlias(ColumnNames::NewGroup);
+        builder.select_list.push_back(std::move(merge_key));
+        builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
+
+        builder.having = makeASTFunction(
+            "equals",
+            makeASTFunction(
+                "timeSeriesThrowDuplicateSeriesIf",
+                gridsOverlap(),
+                make_intrusive<ASTIdentifier>(ColumnNames::NewGroup)),
+            make_intrusive<ASTLiteral>(0u));
+    }
     else
     {
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
     }
 
     /// <aggregate_function>(<timestamps>, <values>) AS values
-    ASTPtr aggregate_values = addParametersToAggregateFunction(
+    ASTPtr aggregate_values = wrap_grid_aggregate(addParametersToAggregateFunction(
         makeASTFunction(impl_info->ch_function_name, std::move(aggregate_function_arguments)),
         timeSeriesTimestampToAST(aggregation_range.start_time, context.result_timestamp_type),
         timeSeriesTimestampToAST(aggregation_range.end_time, context.result_timestamp_type),
         timeSeriesDurationToAST(aggregation_range.step, context.result_timestamp_type),
-        timeSeriesDurationToAST(window, context.result_timestamp_type));
-
-    if (impl_info->needs_cast_to_float64)
-    {
-        /// CAST(<aggregate_function>(timestamp, value), 'Array(Nullable(Float64))')
-        /// See `needs_cast_to_float64`; a timestamp becomes seconds since 1970-01-01 as in Prometheus. The cast does nothing
-        /// for Float64 and is cheap anyway: the aggregated grid is much smaller than the raw data.
-        aggregate_values = makeASTFunction("CAST", std::move(aggregate_values), make_intrusive<ASTLiteral>("Array(Nullable(Float64))"));
-    }
-
-    if (fixed_at_node)
-        aggregate_values = repeatFixedAtResultOverGrid(
-            std::move(aggregate_values), aggregation_range, stepsInTimeSeriesRange(start_time, end_time, step));
+        timeSeriesDurationToAST(window, context.result_timestamp_type)));
 
     builder.select_list.push_back(std::move(aggregate_values));
-    builder.select_list.back()->setAlias(ColumnNames::Values);
+    builder.select_list.back()->setAlias(merge_vector_grids ? ColumnNames::NewValues : ColumnNames::Values);
 
-    if (!from_scalar)
-        builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+    if (track_selected_sample_marker)
+    {
+        ASTPtr marker_values = wrap_grid_aggregate(addParametersToAggregateFunction(
+            makeASTFunction(impl_info->ch_function_name, markerSamplesFromGrid(argument, context)),
+            timeSeriesTimestampToAST(aggregation_range.start_time, context.result_timestamp_type),
+            timeSeriesTimestampToAST(aggregation_range.end_time, context.result_timestamp_type),
+            timeSeriesDurationToAST(aggregation_range.step, context.result_timestamp_type),
+            timeSeriesDurationToAST(window, context.result_timestamp_type)));
+        builder.select_list.push_back(std::move(marker_values));
+        builder.select_list.back()->setAlias("marker_grid");
+    }
 
     if (argument.select_query)
     {
@@ -320,7 +532,22 @@ SQLQueryPiece applyFunctionOverRange(
     res.node = node;
     res.scalar_value = {};
 
-    res.select_query = builder.getSelectQuery();
+    if (track_selected_sample_marker)
+        res.select_query = gridWithMarkerOfSelectedSample(builder.getSelectQuery(), context);
+    else if (merge_vector_grids)
+    {
+        SelectQueryBuilder rename;
+        context.subqueries.emplace_back(context.subqueries.size(), builder.getSelectQuery(), SQLSubqueryType::TABLE);
+        rename.from_table = context.subqueries.back().name;
+        rename.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
+        rename.select_list.back()->setAlias(ColumnNames::Group);
+        rename.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewValues));
+        rename.select_list.back()->setAlias(ColumnNames::Values);
+        res.select_query = rename.getSelectQuery();
+    }
+    else
+        res.select_query = builder.getSelectQuery();
+
     res.type = ResultType::INSTANT_VECTOR;
     res.store_method = StoreMethod::VECTOR_GRID;
     res.start_time = start_time;
@@ -332,8 +559,11 @@ SQLQueryPiece applyFunctionOverRange(
         /// A scalar has no metric name.
         res.metric_name_dropped = true;
     }
-    else if (drop_metric_name.value_or(impl_info->drop_metric_name))
+    else if (drops_metric_name)
     {
+        /// The merge key does not carry the marker. This function drops the metric name of every series.
+        if (merge_vector_grids)
+            res.metric_name_dropped = false;
         res = dropMetricName(std::move(res), context);
     }
 

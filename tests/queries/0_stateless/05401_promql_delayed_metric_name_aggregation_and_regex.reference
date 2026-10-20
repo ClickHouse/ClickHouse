@@ -1,0 +1,25 @@
+-- series with and without a dropped metric name aggregate into one bucket, which drops the name
+[]	31
+[]	20
+[('__name__','foo'),('job','b')]	20
+1
+-- a bucket without a dropped metric name keeps the name
+[('__name__','foo')]	30
+-- the regex of label_replace matches a newline in the source label
+[('__name__','renamed'),('job','a\nb')]	6
+-- a metric name with a newline is dropped
+[]	2
+-- buckets of one histogram stay in one group when only some of them dropped the metric name
+[]	1
+-- an or operand with an all-NULL grid does not drop the metric name
+[('__name__','foo')]	10
+[('__name__','foo')]	10
+-- a range counts every sample of one series when only some samples dropped the metric name
+[('job','a')]	2
+-- limitk selects the same series when a name rewrite only changes the pending drop
+[('__name__','foo'),('job','11')]	12
+[('__name__','foo'),('job','17')]	18
+[('__name__','foo'),('job','4')]	5
+[('__name__','foo'),('job','11')]	12
+[('__name__','foo'),('job','17')]	18
+[('__name__','foo'),('job','4')]	5

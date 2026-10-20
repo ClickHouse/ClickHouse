@@ -148,12 +148,11 @@ namespace
 
         /// `original_group` is `group` of the argument, it's selected at steps 1-2 and used at step 3 to make the result group:
         /// - on the side "many" always,
-        /// - on the left side of a one-to-one match if the metric name should be kept in the result but was dropped from `join_group`
-        ///   (e.g. `a > b`: `join_group` has no `__name__` while the result must keep `__name__` of `a`).
-        ///   That's not the case with `on(...)` because then the result has only the listed labels, i.e. it's `join_group`.
+        /// - on the left side of a one-to-one match if the metric name should be kept.
+        ///   `join_group` drops `__name__`, and `on()` also drops the pending-drop marker.
         side.use_original_group = is_side_many
-            || (one_to_one && left_side && !operator_node->on && !drop_metric_name && !side.metric_name_dropped_from_argument
-                && side.metric_name_dropped_from_join_group);
+            || (one_to_one && left_side && !drop_metric_name && !side.metric_name_dropped_from_argument
+                && (side.metric_name_dropped_from_join_group || operator_node->on));
 
         /// The extra labels are copied from the side "one" of a many-to-one match.
         side.use_extra_labels_group = is_side_one && !one_to_one && !operator_node->extra_labels.empty();
@@ -241,7 +240,8 @@ namespace
         {
             /// For example `a + on(__name__) b`
             /// - here `join_group` has the __name__ tag, but the result shouldn't have it.
-            new_group = makeASTFunction("timeSeriesRemoveTag", new_group, make_intrusive<ASTLiteral>(kMetricName));
+            new_group = makeASTFunction(
+                "timeSeriesRemoveTags", new_group, make_intrusive<ASTLiteral>(Array{kMetricName, kDroppedMetricNameMarker}));
             metric_name_dropped_from_result = true;
             check_no_duplicate_groups = true;
         }
@@ -280,7 +280,8 @@ namespace
 
         if (drop_metric_name && !metric_name_dropped_from_result)
         {
-            new_group = makeASTFunction("timeSeriesRemoveTag", new_group, make_intrusive<ASTLiteral>(kMetricName));
+            new_group = makeASTFunction(
+                "timeSeriesRemoveTags", new_group, make_intrusive<ASTLiteral>(Array{kMetricName, kDroppedMetricNameMarker}));
             metric_name_dropped_from_result = true;
             check_no_duplicate_groups = true;
         }
@@ -289,8 +290,15 @@ namespace
         if (!operator_node->extra_labels.empty())
         {
             /// `tags_to_copy` has `__name__` only if copying the metric name is allowed.
+            /// A one side that kept its name clears the many side's pending-drop marker, so the copied name stays.
             if (std::binary_search(tags_to_copy.begin(), tags_to_copy.end(), kMetricName) && !metric_name_dropped_from_side_one)
+            {
                 metric_name_dropped_from_result = false;
+                new_group = makeASTFunction(
+                    "timeSeriesRemoveTag",
+                    std::move(new_group),
+                    make_intrusive<ASTLiteral>(kDroppedMetricNameMarker));
+            }
 
             new_group = makeASTFunction(
                 "timeSeriesCopyTags",
