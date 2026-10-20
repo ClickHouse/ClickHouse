@@ -78,55 +78,46 @@ inline char * itoa(int8_t i, char * p)
 }
 
 /// ----------------------------------------------------------------------------------------------------
-/// 16 bits: SWAR (SIMD within a register), no table. The quotients of the value by 10000, 1000, 100 and 10 are
-/// computed in parallel, a byte apart in one register, and one multiplication turns them into digits.
+/// 16 bits: as jeaiii (https://github.com/jeaiii/itoa) does, which branches on the length: the lengths of a column
+/// usually come in runs, where the branches are predicted and this is fewer instructions than vector code. The pairs
+/// of digits come from `one_byte_to_string_lookup_table`.
 /// ----------------------------------------------------------------------------------------------------
 
 namespace itoa_impl
 {
-/// `value` is below 65536. One 8-byte store whatever the length.
+/// The 2 bytes from byte `offset` of the text of `value` in `one_byte_to_string_lookup_table`.
+ALWAYS_INLINE inline void copyTwoTextBytes(UInt32 value, UInt32 offset, char * p)
+{
+    memcpy(p, reinterpret_cast<const char *>(&one_byte_to_string_lookup_table[value]) + offset, 2);
+}
+
+/// `value` is below 65536.
 ALWAYS_INLINE inline char * writeUInt16Text(UInt32 value, char * p)
 {
-    /// As in `writeUInt32Text`: short values usually come in runs, where this branch is predicted.
     if (value < 256)
         return writeUInt8Text(value, p);
 
-    /// [n / 10000][n / 1000][n / 100][n / 10][n], a byte apart, all computed from `n` directly. The larger quotients
-    /// overflow into the following bytes, so they are added, not OR-ed.
-    /// The first three in one vector multiplication. Each lane divides by multiplying with a rounded-up reciprocal,
-    /// as compilers do for a division by a constant (these are the constants clang emits for a 16-bit `n`):
-    /// d = 2^a * o with o odd, and n / d = ((n >> a) * m) >> b with m = ceil(2^b / o):
-    ///     10000 = 2^4 * 625: m = ceil(2^19 / 625) = 839
-    ///      1000 = 2^3 * 125: m = ceil(2^20 / 125) = 8389
-    ///       100 = 2^2 * 25:  m = ceil(2^17 / 25) = 5243
-    /// `b` is the smallest shift for which rounding `m` up stays exact for every `n` below 2^16, and all products fit
-    /// in 32 bits. The fourth lane is unused. Then one shuffle gathers the quotients a byte apart; `n / 100` is wider
-    /// than a byte, so it takes two.
-    using UInt32x4 = UInt32 __attribute__((vector_size(16)));
-    using UInt8x16 = uint8_t __attribute__((vector_size(16)));
-    UInt32x4 lanes = (UInt32x4{value, value, value, value} >> UInt32x4{4, 3, 2, 0}) * UInt32x4{839, 8389, 5243, 0}
-        >> UInt32x4{19, 20, 17, 0};
-    /// Only the first four bytes are used. A full 16-byte shuffle is one instruction (`pshufb`, `tbl`), extracting
-    /// four bytes is several on ARM.
-    UInt8x16 lane_bytes = std::bit_cast<UInt8x16>(lanes);
-    UInt8x16 gathered;
-    if constexpr (std::endian::native == std::endian::little)
-        gathered = __builtin_shufflevector(lane_bytes, lane_bytes, 0, 4, 8, 9, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1);
-    else
-        gathered = __builtin_shufflevector(lane_bytes, lane_bytes, 10, 11, 7, 3, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1);
-    UInt32 low_quotients = std::bit_cast<UInt32x4>(gathered)[0];
-    UInt64 quotients = low_quotients + (UInt64(value / 10) << 24) + (UInt64(value) << 32);
-    /// Subtracting ten times the previous quotient leaves one digit per byte, and the overflow cancels out:
-    /// byte k becomes (n / 10^(4 - k)) - 10 * (n / 10^(5 - k)), the digit, and the rest goes above byte 4.
-    UInt64 digits = quotients - 10 * (quotients << 8);
-    /// The leading zero digits, in parallel with the multiplication: the lowest nonzero quotient is in byte k when the
-    /// first k digits are zero, and it is at most 65 there, so its lowest set bit stays in that byte. In the low
-    /// 32 bits, so that no quotient is nonzero there for `n` below 10, including 0: 32 / 8 is 4 zeros.
-    UInt32 zeros = std::countr_zero(static_cast<UInt32>(quotients)) / 8;
-    UInt64 text = (digits + 0x3030303030) >> (8 * zeros);
-    /// The first digit is in the lowest byte of `text`.
-    unalignedStoreLittleEndian<UInt64>(p, text);
-    return p + 5 - zeros;
+    /// As jeaiii: the value times a rounded-up 2^k / 10^(length - 1) has the first digits in the bits above k and the
+    /// rest as a fraction below, and each multiplication of the fraction by 100 brings the next two digits above k.
+    /// The first pair is the text of a value below 100, a digit and a zero byte when below 10, overwritten next. Any
+    /// other pair is the last two digits of the text of 100 to 199.
+    if (value < 10000)
+    {
+        UInt32 first = UInt32(10 * (1 << 24) / 1000 + 1) * value;
+        copyTwoTextBytes(first >> 24, 0, p);
+        p -= value < 1000;
+        UInt32 second = (first & ((1 << 24) - 1)) * 100;
+        copyTwoTextBytes(100 + (second >> 24), 1, p + 2);
+        return p + 4;
+    }
+
+    UInt64 first = UInt64(10 * (UInt64(1) << 32) / 100000 + 1) * value;
+    *p = static_cast<char>('0' + (first >> 32));
+    UInt64 second = (first & 0xFFFFFFFF) * 100;
+    copyTwoTextBytes(100 + static_cast<UInt32>(second >> 32), 1, p + 1);
+    UInt64 third = (second & 0xFFFFFFFF) * 100;
+    copyTwoTextBytes(100 + static_cast<UInt32>(third >> 32), 1, p + 3);
+    return p + 5;
 }
 
 ALWAYS_INLINE inline char * writeInt16Text(Int32 value, char * p)
