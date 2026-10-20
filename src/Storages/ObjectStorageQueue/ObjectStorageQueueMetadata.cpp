@@ -146,7 +146,8 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     /// need a sweep" answer cannot disagree with what a run actually does.
     , cleanup_failed_files(
           (!isExclusive(mode) && table_metadata.tracked_files_limit)
-          || (isUnordered(mode) && table_metadata.failed_files_ttl_sec))
+          || (!isExclusive(mode)
+              && (isUnordered(mode) ? table_metadata.failed_files_ttl_sec.load() : table_metadata.tracked_files_ttl_sec.load())))
     , cleanup_processing_files(!isExclusive(mode) && use_persistent_processing_nodes_ && persistent_processing_nodes_ttl_seconds_)
     , cleanup_interval_min_ms(cleanup_interval_min_ms_)
     , cleanup_interval_max_ms(cleanup_interval_max_ms_)
@@ -1386,7 +1387,13 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
         /// `/processed`; letting it enable a `/failed` pass would put the two sets back on one knob, and
         /// would reach `cleanupTrackedNodes` with no limit and no TTL, which it asserts against.
         const bool sweep_failed_by_limit = !isExclusive(mode) && table_metadata.tracked_files_limit;
-        const bool sweep_failed_by_ttl = isUnordered(mode) && table_metadata.failed_files_ttl_sec;
+        /// Ordered mode keeps its pre-existing expiry of `/failed` by `tracked_file_ttl_sec`, so tables created
+        /// before `failed_files_ttl_sec` existed keep expiring failed files. `failed_files_ttl_sec` applies to
+        /// unordered mode only.
+        const UInt64 failed_ttl_sec = isUnordered(mode)
+            ? static_cast<UInt64>(table_metadata.failed_files_ttl_sec.load())
+            : static_cast<UInt64>(table_metadata.tracked_files_ttl_sec.load());
+        const bool sweep_failed_by_ttl = !isExclusive(mode) && failed_ttl_sec;
 
         if (sweep_processed || sweep_failed_by_limit || sweep_failed_by_ttl)
         {
@@ -1402,7 +1409,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
                 cleanupTrackedNodes(zk_client, zookeeper_path / "failed", "failed", /* ttl_seconds */0, table_metadata.tracked_files_limit);
 
             if (sweep_failed_by_ttl)
-                cleanupTrackedNodes(zk_client, zookeeper_path / "failed", "failed", table_metadata.failed_files_ttl_sec, 0);
+                cleanupTrackedNodes(zk_client, zookeeper_path / "failed", "failed", failed_ttl_sec, 0);
 
             /// One reconciliation covers both passes: either may have removed terminal nodes, and the
             /// cache has to stop claiming a file is Failed once its node is gone.
