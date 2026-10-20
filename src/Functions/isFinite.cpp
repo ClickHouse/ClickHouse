@@ -58,6 +58,7 @@ otherwise this function returns `0`.
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIsFinite>(documentation);
+    factory.registerAlias("is_finite", "isFinite", FunctionFactory::Case::Insensitive);
 }
 
 }
