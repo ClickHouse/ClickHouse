@@ -3,6 +3,7 @@
 #include <Client/AI/AITextTruncation.h>
 
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/IDataType.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBufferFromString.h>
@@ -57,8 +58,20 @@ private:
     bool full = false;
 };
 
+/// The columns whose values are not sampled: the text of an aggregate function state is its
+/// binary serialization, which says nothing to the model, and it is built whole in memory before
+/// the first byte of it is written - the bounded buffer of the sample cannot stop that, so the
+/// state of `groupArrayState` over millions of rows would be serialized whole for a short sample.
+std::vector<bool> columnsNotSampled(const Block & block)
+{
+    std::vector<bool> not_sampled(block.columns());
+    for (size_t i = 0; i < block.columns(); ++i)
+        not_sampled[i] = hasAggregateFunctionType(block.getByPosition(i).type);
+    return not_sampled;
+}
+
 /// Format one row of a block as an escaped tab-separated line, capped in length.
-String formatRow(const Block & block, size_t row)
+String formatRow(const Block & block, const std::vector<bool> & not_sampled, size_t row)
 {
     static const FormatSettings format_settings;
 
@@ -69,6 +82,11 @@ String formatRow(const Block & block, size_t row)
         {
             if (i)
                 writeChar('\t', out);
+            if (not_sampled[i])
+            {
+                writeCString("[aggregate function state]", out);
+                continue;
+            }
             const auto & column_with_type = block.getByPosition(i);
             column_with_type.type->getDefaultSerialization()->serializeTextEscaped(*column_with_type.column, row, out, format_settings);
         }
@@ -125,14 +143,15 @@ void QueryContextBuffer::addBlock(const Block & block)
 
     /// Const and sparse columns cannot be serialized row by row directly.
     const Block materialized = materializeBlock(block);
+    const std::vector<bool> not_sampled = columnsNotSampled(materialized);
 
     for (size_t row = 0; row < rows && entry->head_lines.size() < head_rows; ++row)
-        entry->head_lines.push_back(formatRow(materialized, row));
+        entry->head_lines.push_back(formatRow(materialized, not_sampled, row));
 
     size_t tail_from = rows > tail_rows ? rows - tail_rows : 0;
     for (size_t row = tail_from; row < rows; ++row)
     {
-        entry->tail_lines.push_back(formatRow(materialized, row));
+        entry->tail_lines.push_back(formatRow(materialized, not_sampled, row));
         while (entry->tail_lines.size() > tail_rows)
             entry->tail_lines.pop_front();
     }
@@ -271,6 +290,7 @@ String formatBlockAsTextForAI(const Block & block)
         return out.str();
 
     const Block materialized = materializeBlock(block);
+    const std::vector<bool> not_sampled = columnsNotSampled(materialized);
     size_t row = 0;
     for (; row < materialized.rows(); ++row)
     {
@@ -279,7 +299,7 @@ String formatBlockAsTextForAI(const Block & block)
             writeString(fmt::format("(truncated: {} of {} rows shown)\n", row, materialized.rows()), out);
             break;
         }
-        writeString(formatRow(materialized, row), out);
+        writeString(formatRow(materialized, not_sampled, row), out);
         writeChar('\n', out);
     }
 

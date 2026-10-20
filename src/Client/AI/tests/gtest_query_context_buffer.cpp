@@ -3,13 +3,17 @@
 
 #if USE_CLIENT_AI
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Client/AI/QueryContextBuffer.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Common/tests/gtest_global_register.h>
 
 using namespace DB;
 
@@ -264,6 +268,40 @@ TEST(QueryContextBuffer, SampleOfAHugeValueIsBounded)
     EXPECT_EQ(line.size(), QueryContextBuffer::max_line_bytes + String("…").size());
     EXPECT_TRUE(line.ends_with("…"));
     EXPECT_EQ(text.find("after\n"), String::npos);
+}
+
+TEST(QueryContextBuffer, AggregateFunctionStateIsNotSampled)
+{
+    /// The text of an aggregate function state is built whole before any of it is written, so the
+    /// bounded sample cannot stop it: such a value is not serialized at all, and the columns after it
+    /// are still sampled.
+    tryRegisterAggregateFunctions();
+
+    const DataTypes argument_types{std::make_shared<DataTypeUInt64>()};
+    AggregateFunctionProperties properties;
+    const auto function = AggregateFunctionFactory::instance().get("groupArray", NullsAction::EMPTY, argument_types, {}, properties);
+
+    auto state = ColumnAggregateFunction::create(function);
+    state->insertDefault();
+    auto values = ColumnUInt64::create();
+    for (size_t i = 0; i < 100'000; ++i)
+        values->insertValue(i);
+    const IColumn * arguments[] = {values.get()};
+    for (size_t i = 0; i < values->size(); ++i)
+        function->add(state->getData()[0], arguments, i, &state->createOrGetArena());
+
+    auto string = ColumnString::create();
+    string->insert(Field(String("after")));
+
+    QueryContextBuffer buffer;
+    buffer.startQuery("SELECT groupArrayState(number), 'after' FROM numbers(100000)", false);
+    buffer.addBlock(Block{
+        ColumnWithTypeAndName{std::move(state), std::make_shared<DataTypeAggregateFunction>(function, argument_types, Array{}), "a"},
+        ColumnWithTypeAndName{std::move(string), std::make_shared<DataTypeString>(), "s"}});
+    buffer.finishQuery(0.1, false);
+
+    const String text = buffer.format(0, false);
+    EXPECT_NE(text.find("[aggregate function state]\tafter"), String::npos) << text;
 }
 
 TEST(QueryContextBuffer, SampleOfALineAtTheLimitIsNotCut)
