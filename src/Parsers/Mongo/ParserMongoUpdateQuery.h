@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 #include <memory>
 
 #include <Parsers/IParserBase.h>
@@ -31,7 +33,12 @@ ASTPtr parseMongoUpdateStatement(const rapidjson::Value & update);
   * assigned document does not name are reset to their defaults here as well:
   * `{"$set": {"profile": {"name": "y"}}}` also resets `profile.age`. Any other query is left as is.
   */
-void expandMongoSubtreeAssignments(ASTPtr & ast, const std::vector<std::string> & columns);
+/// `check_columns`, when given, is called with the columns each command writes after the expansion,
+/// before anything else about them is checked or reported, see `expandMongoSubtreeAssignmentsCheckingAccess`.
+void expandMongoSubtreeAssignments(
+    ASTPtr & ast,
+    const std::vector<std::string> & columns,
+    const std::function<void(const std::vector<std::string> &)> & check_columns = {});
 
 class ParserMongoUpdateQuery : public IMongoParser
 {

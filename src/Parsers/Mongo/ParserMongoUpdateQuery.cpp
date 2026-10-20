@@ -131,6 +131,33 @@ std::vector<ASTPtr> parseAppendedValues(const rapidjson::Value & value, std::str
     return values;
 }
 
+/** A constant converted to the type of the column `column` with `accurateCast`, which rejects a
+  * value the type cannot represent - a number out of its range, a fraction for an integer -
+  * instead of storing it wrapped around or truncated the way the conversion of the assigned value
+  * to the column type would. The conversion of a constant is folded when the mutation is
+  * validated, so the error is raised before the mutation is submitted. Anything else is returned
+  * as it is: a conversion that fails while the mutation runs would leave a failed mutation behind,
+  * retried with every merge and blocking the later ones.
+  */
+ASTPtr checkedConstant(ASTPtr value, const std::string & column)
+{
+    const auto is_constant = [](const ASTPtr & ast)
+    {
+        if (ast->as<ASTLiteral>())
+            return true;
+        const auto * function = ast->as<ASTFunction>();
+        if (!function || function->name != "array" || !function->arguments)
+            return false;
+        for (const auto & element : function->arguments->children)
+            if (!element->as<ASTLiteral>())
+                return false;
+        return true;
+    };
+    if (!is_constant(value))
+        return value;
+    return makeASTFunction("accurateCast", std::move(value), makeASTFunction("toTypeName", make_intrusive<ASTIdentifier>(column)));
+}
+
 void parseUpdateOperator(std::string_view name, const rapidjson::Value & argument, std::vector<ASTPtr> & assignments)
 {
     if (!argument.IsObject())
@@ -154,21 +181,27 @@ void parseUpdateOperator(std::string_view name, const rapidjson::Value & argumen
                 assignments.push_back(makeAssignment(column, makeSubtreeReplacementMarker()));
             }
             else
-                assignments.push_back(makeAssignment(column, parseUpdateValue(it->value, name, /* documents_are_values = */ true)));
+                assignments.push_back(
+                    makeAssignment(column, checkedConstant(parseUpdateValue(it->value, name, /* documents_are_values = */ true), column)));
         }
         else if (name == "$unset")
             assignments.push_back(makeAssignment(column, makeDefaultValue(column)));
         /// The arithmetic operators take a number, so an embedded document is not a value they can
         /// write: they pass `documents_are_values = false` and keep the error message about what
         /// they do accept.
+        /// The operand has to fit the column, see `checkedConstant`.
         else if (name == "$inc")
-            assignments.push_back(makeAssignment(column, makeASTFunction("plus", field(), parseUpdateValue(it->value, name, false))));
+            assignments.push_back(
+                makeAssignment(column, makeASTFunction("plus", field(), checkedConstant(parseUpdateValue(it->value, name, false), column))));
         else if (name == "$mul")
-            assignments.push_back(makeAssignment(column, makeASTFunction("multiply", field(), parseUpdateValue(it->value, name, false))));
+            assignments.push_back(makeAssignment(
+                column, makeASTFunction("multiply", field(), checkedConstant(parseUpdateValue(it->value, name, false), column))));
         else if (name == "$min")
-            assignments.push_back(makeAssignment(column, makeASTFunction("least", field(), parseUpdateValue(it->value, name, false))));
+            assignments.push_back(
+                makeAssignment(column, makeASTFunction("least", field(), checkedConstant(parseUpdateValue(it->value, name, false), column))));
         else if (name == "$max")
-            assignments.push_back(makeAssignment(column, makeASTFunction("greatest", field(), parseUpdateValue(it->value, name, false))));
+            assignments.push_back(makeAssignment(
+                column, makeASTFunction("greatest", field(), checkedConstant(parseUpdateValue(it->value, name, false), column))));
         else if (name == "$currentDate")
         {
             /// The legal forms are `true` and `{"$type": "date"}`. `{"$type": "timestamp"}` asks
@@ -208,17 +241,21 @@ void parseUpdateOperator(std::string_view name, const rapidjson::Value & argumen
         }
         else if (name == "$push" || name == "$addToSet")
         {
-            auto values = parseAppendedValues(it->value, name);
-            ASTPtr result = field();
-            for (auto & value : values)
+            auto values = makeASTFunction("array");
+            for (auto & value : parseAppendedValues(it->value, name))
+                values->arguments->children.push_back(std::move(value));
+            ASTPtr appended = checkedConstant(std::move(values), column);
+            /// `$addToSet` appends only what the array does not hold yet, and every value once.
+            /// The array is referred to once per operator rather than once per value, so that the
+            /// size of the expression is linear in the number of values.
+            if (name == "$addToSet")
             {
-                auto appended = makeASTFunction("arrayPushBack", result, value);
-                /// `$addToSet` appends only what the array does not hold yet.
-                result = name == "$push"
-                    ? appended
-                    : makeASTFunction("if", makeASTFunction("has", result->clone(), value->clone()), result->clone(), appended);
+                static constexpr auto element_name = "__mongo_element";
+                auto absent = makeASTFunction("not", makeASTFunction("has", field(), make_intrusive<ASTIdentifier>(element_name)));
+                auto lambda = makeASTFunction("lambda", makeASTFunction("tuple", make_intrusive<ASTIdentifier>(element_name)), std::move(absent));
+                appended = makeASTFunction("arrayFilter", std::move(lambda), makeASTFunction("arrayDistinct", std::move(appended)));
             }
-            assignments.push_back(makeAssignment(column, std::move(result)));
+            assignments.push_back(makeAssignment(column, makeASTFunction("arrayConcat", field(), std::move(appended))));
         }
         else if (name == "$pop")
         {
@@ -240,7 +277,10 @@ void parseUpdateOperator(std::string_view name, const rapidjson::Value & argumen
                 auto constant = tryParseMongoConstant(it->value);
                 if (!constant)
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only a constant is supported as the argument of '$pull'");
-                predicate = makeASTFunction("notEquals", element, constant);
+                /// A `null` matches the `null` elements only, and a value never matches a `null`
+                /// element, so the comparison is the null-safe one: `notEquals` would be `NULL`
+                /// - false for `arrayFilter` - for every element as soon as either side is `NULL`.
+                predicate = makeASTFunction("not", makeASTFunction("isNotDistinctFrom", element, constant));
             }
             else
             {
@@ -345,7 +385,8 @@ ASTPtr parseMongoUpdateStatement(const rapidjson::Value & update)
     return expression_list;
 }
 
-void expandMongoSubtreeAssignments(ASTPtr & ast, const std::vector<std::string> & columns)
+void expandMongoSubtreeAssignments(
+    ASTPtr & ast, const std::vector<std::string> & columns, const std::function<void(const std::vector<std::string> &)> & check_columns)
 {
     auto * alter = ast ? ast->as<ASTAlterQuery>() : nullptr;
     if (!alter || !alter->command_list)
@@ -436,6 +477,16 @@ void expandMongoSubtreeAssignments(ASTPtr & ast, const std::vector<std::string> 
                 }
             }
             expanded.push_back(child_assignment);
+        }
+
+        /// The columns are checked before the duplicates are reported, because the error about a
+        /// duplicate names a leaf that the expansion may have found among the hidden columns.
+        if (check_columns)
+        {
+            std::vector<std::string> written;
+            for (const auto & assignment : expanded)
+                written.push_back(assignment->as<const ASTAssignment &>().column_name);
+            check_columns(written);
         }
 
         if (!expanded_any)

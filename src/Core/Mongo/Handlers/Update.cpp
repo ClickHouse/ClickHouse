@@ -9,8 +9,8 @@
 #include <Parsers/Mongo/parseMongoQuery.h>
 
 #include <IO/WriteBufferFromString.h>
+#include <Interpreters/MongoUpdateAccess.h>
 #include <Common/Exception.h>
-#include <Common/quoteString.h>
 
 #include <bson/bson.h>
 #include <fmt/format.h>
@@ -42,83 +42,6 @@ String serializeRequiredMember(const rapidjson::Value & json, const char * name)
     rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
     it->value.Accept(writer);
     return buffer.GetString();
-}
-
-/// The columns of the collection, in the order of the table.
-std::vector<String> getColumnNames(const CollectionRef & collection, std::shared_ptr<QueryExecutor> executor)
-{
-    auto output = executor->execute(fmt::format(
-        "SELECT name FROM system.columns WHERE database = {} AND table = {} ORDER BY position FORMAT JSONCompactEachRow",
-        quoteString(collection.database),
-        quoteString(collection.collection)));
-
-    std::vector<String> names;
-    size_t line_begin = 0;
-    while (line_begin < output.size())
-    {
-        size_t line_end = output.find('\n', line_begin);
-        if (line_end == String::npos)
-            line_end = output.size();
-        if (line_end > line_begin)
-        {
-            rapidjson::Document row;
-            row.Parse(output.data() + line_begin, line_end - line_begin);
-            if (row.HasParseError() || !row.IsArray() || row.Size() != 1 || !row[0].IsString())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected row in the list of the columns of '{}'", collection.getQualifiedName());
-            names.emplace_back(row[0].GetString(), row[0].GetStringLength());
-        }
-        line_begin = line_end + 1;
-    }
-    return names;
-}
-
-/** A nested document is stored as one column per leaf, named by its dotted path (see
-  * `flattenAssignedDocument` and the insert paths). `$set` of a subdocument expands into these
-  * leaves by the shape of the value it assigns, but `$unset` names only the path, so the leaves of
-  * a path that is not a column itself are taken from the columns of the collection:
-  * `{"$unset": {"profile": ""}}` unsets `profile.name` and `profile.age`. `$rename` is left to
-  * `expandMongoSubtreeAssignments`, because the renamed subdocument replaces the target as a whole,
-  * which a rename of each leaf on its own would no longer say.
-  */
-void expandSubtreeUpdates(rapidjson::Value & update, const std::vector<String> & columns, rapidjson::Document::AllocatorType & allocator)
-{
-    if (!update.IsObject())
-        return;
-
-    const std::unordered_set<std::string_view> column_set(columns.begin(), columns.end());
-    auto operator_it = update.FindMember("$unset");
-    if (operator_it == update.MemberEnd() || !operator_it->value.IsObject())
-        return;
-
-    rapidjson::Value expanded(rapidjson::kObjectType);
-    for (auto & member : operator_it->value.GetObject())
-    {
-        const std::string_view path(member.name.GetString(), member.name.GetStringLength());
-        const String prefix = String(path) + ".";
-        bool expanded_member = false;
-        if (!path.empty() && !column_set.contains(path))
-        {
-            for (const auto & column : columns)
-            {
-                if (!column.starts_with(prefix))
-                    continue;
-
-                rapidjson::Value value;
-                value.CopyFrom(member.value, allocator);
-                expanded.AddMember(
-                    rapidjson::Value(column.data(), static_cast<rapidjson::SizeType>(column.size()), allocator), value, allocator);
-                expanded_member = true;
-            }
-        }
-
-        if (!expanded_member)
-        {
-            rapidjson::Value name(member.name, allocator);
-            rapidjson::Value value(member.value, allocator);
-            expanded.AddMember(name, value, allocator);
-        }
-    }
-    operator_it->value = expanded;
 }
 
 /// Throws if an assignment of the `ALTER TABLE ... UPDATE` that `ast` is names a column that the
@@ -169,9 +92,10 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
     /// `createCollection`, which has no columns for the filter to name yet.
     const bool collection_exists = collectionHasSchema(collection, executor);
 
+    /// All the columns, including the ones the user may not see, see `getMongoCollectionColumns`.
     std::vector<String> columns;
     if (collection_exists)
-        columns = getColumnNames(collection, executor);
+        columns = getMongoCollectionColumns(collection.database, collection.collection, executor->getQueryContext());
 
     /// The 'update' command carries one or more update specs, each with its own 'q', 'u',
     /// 'multi', and 'upsert'. Execute every spec; 'multi: false' (updateOne) cannot be
@@ -193,7 +117,7 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
         /// `$set` of a subdocument resets the leaves of the field it does not name, which only
         /// the columns of the collection tell, see `expandMongoSubtreeAssignments`.
         if (collection_exists)
-            Mongo::expandMongoSubtreeAssignments(ast, columns);
+            expandMongoSubtreeAssignmentsCheckingAccess(ast, columns, executor->getQueryContext());
 
         /// A collection gets its columns from the first inserted document and an update does not
         /// add any, so `$set` or `$inc` of a field that is not a column, or `$rename` to one, is
@@ -217,8 +141,6 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
         {
             auto json_representation = update_spec.getRapidJSONRepresentation();
             rejectUnsupportedOptions(json_representation, "update", {"collation", "arrayFilters"});
-            if (auto update_it = json_representation.FindMember("u"); update_it != json_representation.MemberEnd())
-                expandSubtreeUpdates(update_it->value, columns, json_representation.GetAllocator());
             serialized_filter = serializeRequiredMember(json_representation, "q");
             serialized_update = serializeRequiredMember(json_representation, "u");
 

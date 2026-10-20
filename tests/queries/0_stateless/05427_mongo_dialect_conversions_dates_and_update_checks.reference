@@ -1,0 +1,32 @@
+-- conversions
+{"b1":true,"b2":true,"b3":false,"b4":true,"b5":null,"l":1615647600500,"f":1615647600500,"m":9223372036854775807,"t":-1,"any":1,"all":0}
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+-- date arithmetic in $add and $subtract
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+{"v":13,"w":7}
+-- $dateAdd, $dateDiff and $dateToString
+{"added":"2021-03-14T14:00:00.500Z","utc":"2021-03-14T15:00:00.500Z"}
+{"sunday":0,"monday":1,"saturday":1,"days":0}
+{"default":"1970-01-01T00:00:00.000Z","kolkata":"1970-01-01T05:30:00.000"}
+-- arrays, sets, regular expressions and variables
+{"past":99,"before":99,"first":99,"difference":[1],"mapped":[11,12],"nested":[2,1]}
+{"anchored.match":"a","anchored.idx":2,"anchored.captures":[],"multibyte.match":"foo","multibyte.idx":1,"multibyte.captures":[]}
+{"id":1}
+(NOT_IMPLEMENTED)
+-- bounded growth
+{"v":10}
+40	820
+-- update values
+[1,2,3]	[NULL,2]
+(CANNOT_CONVERT_TYPE)
+(CANNOT_CONVERT_TYPE)
+(CANNOT_CONVERT_TYPE)
+1	[1,2,3]
+0
+-- max_query_size
+(SYNTAX_ERROR)
+-- an update of a subdocument with hidden leaves
+(ACCESS_DENIED)
+1	b	1

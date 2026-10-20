@@ -200,28 +200,39 @@ std::optional<std::string> tryParseMongoRegularExpression(const rapidjson::Value
 
 std::string applyMongoRegularExpressionOptions(std::string_view pattern, std::string_view options)
 {
-    /// RE2 spells the Mongo options as inline flags. `x` (extended) and `s` (dot matches newline)
-    /// have the same meaning in both; `u` only says the pattern is UTF-8, which RE2 already is.
+    /** RE2 spells the Mongo options as inline flags: `i`, `m` and `s` have the same meaning in both,
+      * and `u` only says the pattern is UTF-8, which RE2 already is. ClickHouse compiles a pattern
+      * with the dot matching a newline, while Mongo's dot only matches it with the `s` option, so
+      * the flag is always spelled out: turned on with `s`, and off without it. RE2 has no extended
+      * mode, so the `x` option is rejected rather than forwarded as a flag RE2 does not know.
+      */
+    bool dot_matches_newline = false;
     std::string flags;
     for (char option : options)
     {
         switch (option)
         {
             case 'i': [[fallthrough]];
-            case 'm': [[fallthrough]];
-            case 's': [[fallthrough]];
-            case 'x':
-                flags.push_back(option);
+            case 'm':
+                if (flags.find(option) == std::string::npos)
+                    flags.push_back(option);
+                break;
+            case 's':
+                dot_matches_newline = true;
                 break;
             case 'u':
                 break;
+            case 'x':
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The extended regular expression option 'x' is not supported");
             default:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported regular expression option '{}'", option);
         }
     }
 
-    if (flags.empty())
-        return std::string(pattern);
+    if (dot_matches_newline)
+        flags.push_back('s');
+    else
+        flags.append("-s");
     return "(?" + flags + ")" + std::string(pattern);
 }
 

@@ -11,6 +11,8 @@
 
 #include <Common/StringUtils.h>
 
+#include <fmt/format.h>
+
 namespace DB
 {
 
@@ -111,6 +113,15 @@ ASTPtr tryParseMongoQuery(
       */
     const char * statement_end = findStatementEnd(_out_query_end, end);
 
+    /// The statement is read as a whole, rather than token by token, so `max_query_size` is checked
+    /// on the text of the statement itself: the translated query can be much smaller than it, e.g.
+    /// when a filter carries a large `$comment`, which the translation drops.
+    if (max_query_size && static_cast<size_t>(statement_end - _out_query_end) > max_query_size)
+    {
+        out_error_message = fmt::format("Max query size exceeded: the Mongo query is longer than {} bytes", max_query_size);
+        return nullptr;
+    }
+
     auto [data_begin, data_end] = getSettingsSubstring(_out_query_end, statement_end);
     metadata = extractMetadataFromRequest(_out_query_end, statement_end);
     metadata->max_parser_depth = max_parser_depth;
@@ -193,6 +204,10 @@ ASTPtr parseMongoQuery(
             if (!isWhitespaceASCII(*pos))
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Only a single Mongo statement is expected, but there is text after it");
     }
+
+    /// See `tryParseMongoQuery`.
+    if (max_query_size && static_cast<size_t>(end - begin) > max_query_size)
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Max query size exceeded: the Mongo query is longer than {} bytes", max_query_size);
 
     Expected expected;
     ASTPtr res;

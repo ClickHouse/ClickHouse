@@ -70,7 +70,6 @@
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
-#include <Storages/StorageInMemoryMetadata.h>
 
 #include <Access/ContextAccess.h>
 #include <Access/EnabledQuota.h>
@@ -119,6 +118,7 @@
 #include <Parsers/Mongo/ParserMongoQuery.h>
 #include <Parsers/Mongo/ParserMongoUpdateQuery.h>
 #include <Parsers/Mongo/parseMongoQuery.h>
+#include <Interpreters/MongoUpdateAccess.h>
 #endif
 #include <Core/SettingsSecrets.h>
 
@@ -2502,27 +2502,15 @@ static BlockIO executeQueryImpl(
                 /// the leaves it does not name, and the parser does not know the columns it is
                 /// stored as, see `expandMongoSubtreeAssignments`. A
                 /// collection that does not exist is left to the interpreter to report.
-                /// The expansion only sees the columns the user may see, the same ones
-                /// `system.columns` shows them: it runs before the interpreter checks the access
-                /// rights, and its errors name columns, so a column the user has no access to
-                /// must not influence it. A column the user may update is always visible, because
-                /// any grant on a column implies `SHOW COLUMNS` on it. Without a visible column
-                /// nothing is expanded, and the interpreter reports the missing grant.
+                /// The expansion covers the whole subdocument, including the columns the user
+                /// may not see, and then the user has to be allowed to write all of it, see
+                /// `getMongoCollectionColumns` and `expandMongoSubtreeAssignmentsCheckingAccess`.
                 if (const auto * alter = out_ast->as<ASTAlterQuery>())
                 {
                     const String database = alter->getDatabase().empty() ? context->getCurrentDatabase() : alter->getDatabase();
-                    const String table = alter->getTable();
-                    if (auto storage = DatabaseCatalog::instance().tryGetTable(StorageID(database, table), context))
-                    {
-                        auto metadata = storage->getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
-                        const auto access = context->getAccess();
-                        std::vector<String> column_names;
-                        for (const auto & column : metadata->getColumns())
-                            if (access->isGranted(AccessType::SHOW_COLUMNS, database, table, column.name))
-                                column_names.push_back(column.name);
-                        if (!column_names.empty())
-                            Mongo::expandMongoSubtreeAssignments(out_ast, column_names);
-                    }
+                    auto column_names = getMongoCollectionColumns(database, alter->getTable(), context);
+                    if (!column_names.empty())
+                        expandMongoSubtreeAssignmentsCheckingAccess(out_ast, column_names, context);
                 }
 #else
                 /// A build without rapidjson must not strand a session whose dialect was set to
