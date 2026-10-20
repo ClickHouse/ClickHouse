@@ -274,6 +274,9 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
     Field const_value;
     DataTypePtr const_type;
     String column_name;
+    /// The IN set, when the atom is an IN whose set was turned into `const_value` below.
+    /// `const_type` stays null on that path, so this carries the element type instead.
+    SetPtr set_for_equal_factor;
     DataTypePtr column_type;
 
     if (node.isFunction())
@@ -384,6 +387,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     tuple[i] = (*columns[0])[i];
 
                 const_value = std::move(tuple);
+                set_for_equal_factor = prepared_set;
                 column_name = func.getArgumentAt(0).getColumnName();
             }
             else if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
@@ -427,8 +431,9 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     /// Skip range analysis to avoid bad cast when merging ranges of incompatible Field types.
                     /// Pre-set selectivity based on the function type so prewhere ordering is still reasonable.
                     /// Compared with a `Bool` literal or set, the expression is assumed to be boolean.
-                    const Float64 equal_factor = set_for_ranges
-                        ? getEqualFactor(set_for_ranges->getElementsTypes().front(), set_for_ranges->getTotalRowCount())
+                    const Float64 equal_factor = set_for_equal_factor
+                        ? getEqualFactor(
+                              set_for_equal_factor->getElementsTypes().front(), set_for_equal_factor->getTotalRowCount())
                         : getEqualFactor(const_type);
                     if (func_name == "equals" || func_name == "in")
                         out.selectivity.true_sel = equal_factor;
