@@ -192,8 +192,9 @@ public:
         return static_cast<DenominatorType>(val);
     }
 
-    /// The counts of a valid state add up to the number of buckets, and the count of rank 0 is the number of zero registers.
-    bool isConsistent(UInt64 bucket_count, UInt64 zeros) const
+    /// Only the counts are checked, not the registers: a state whose registers disagree with its counts passes, and
+    /// merging into it can make its counts wrap, so the merged state then fails this check.
+    bool countsAddUp(UInt64 bucket_count, UInt64 zeros) const
     {
         UInt64 sum = 0;
         for (size_t i = 0; i < size; ++i)
@@ -377,11 +378,11 @@ public:
 
         if constexpr (details::isBigRankStore(precision) && denominator_mode == DenominatorMode::StableIfBig)
         {
-            if (!denominator.isConsistent(bucket_count, zeros))
+            if (!denominator.countsAddUp(bucket_count, zeros))
                 throw DB::Exception(
                     DB::ErrorCodes::INCORRECT_DATA,
-                    "Corrupted HyperLogLog state: the rank counts do not add up to the number of buckets {} or do not "
-                    "match the number of zero registers {}",
+                    "Corrupted HyperLogLog state: the rank counts do not add up to the number of buckets {} or the count of rank 0 "
+                    "is not the stored number of zero registers {}",
                     bucket_count, zeros);
         }
     }
