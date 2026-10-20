@@ -434,6 +434,46 @@ TEST_P(CoordinationTest, PlainCreateWithContainerFlagRejected)
     EXPECT_THROW(request_read->readImpl(rbuf), Coordination::Exception);
 }
 
+TEST_P(CoordinationTest, CreateRequestDoesNotPreallocateOversizedACLs)
+{
+    /// Invariant: memory must track bytes actually read, not the declared element count.
+    {
+        Coordination::ACLs acls;
+        acls.push_back(Coordination::ACL{Coordination::ACL::All, "world", "anyone"});
+        acls.push_back(Coordination::ACL{Coordination::ACL::Read, "digest", "user:hash"});
+
+        DB::WriteBufferFromNuraftBuffer wbuf;
+        Coordination::write(std::string{"/node"}, wbuf);
+        Coordination::write(std::string{"data"}, wbuf);
+        Coordination::write(acls, wbuf);
+        Coordination::write(static_cast<int32_t>(0), wbuf);
+
+        auto request_read = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Create);
+        DB::ReadBufferFromNuraftBuffer rbuf(wbuf.getBuffer());
+        request_read->readImpl(rbuf);
+        auto & create_read = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*request_read);
+        ASSERT_EQ(create_read.acls.size(), 2);
+        EXPECT_EQ(create_read.acls[0].permissions, Coordination::ACL::All);
+        EXPECT_EQ(create_read.acls[0].scheme, "world");
+        EXPECT_EQ(create_read.acls[0].id, "anyone");
+        EXPECT_EQ(create_read.acls[1].permissions, Coordination::ACL::Read);
+        EXPECT_EQ(create_read.acls[1].scheme, "digest");
+        EXPECT_EQ(create_read.acls[1].id, "user:hash");
+    }
+
+    {
+        /// Declared ACL count is within the cap, but no element bytes follow.
+        DB::WriteBufferFromNuraftBuffer wbuf;
+        Coordination::write(std::string{"/node"}, wbuf);
+        Coordination::write(std::string{}, wbuf);
+        Coordination::write(static_cast<int32_t>(Coordination::MAX_STRING_OR_ARRAY_SIZE), wbuf);
+
+        auto request_read = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Create);
+        DB::ReadBufferFromNuraftBuffer rbuf(wbuf.getBuffer());
+        EXPECT_THROW(request_read->readImpl(rbuf), DB::Exception);
+    }
+}
+
 template <typename StateMachine>
 struct SimpliestRaftServer
 {
