@@ -2215,6 +2215,10 @@ private:
             auto function_type = function_node.getResultType();
             chassert(!function_type->isNullable());
 
+            /// A value of type `Nothing` cannot be constructed, so an AND of that type is left as it is.
+            if (isNothing(function_type))
+                return;
+
             /// The sole remaining operand may be a bare numeric constant (e.g. `256`).
             /// A plain cast to UInt8 would silently truncate (e.g. 256 → 0),
             /// so evaluate it as a boolean by checking for non-zero instead.

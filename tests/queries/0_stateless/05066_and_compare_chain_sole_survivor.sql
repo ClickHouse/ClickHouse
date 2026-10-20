@@ -166,3 +166,7 @@ SELECT count() FROM (SELECT number AS x, number * 2 AS y FROM numbers(10)) t0
 JOIN (SELECT number AS z FROM numbers(10)) t1 ON (t1.z = t0.x) AND (t0.x < t0.y) AND (t0.y < 3)
 GROUP BY t0.x WITH ROLLUP
 SETTINGS optimize_and_compare_chain = 1, group_by_use_nulls = 0) WHERE explain ILIKE '%indexHint%';
+
+-- An `AND` typed `Nothing` is left as it is, because no value of that type can stand in for it.
+SELECT count() FROM numbers(1) AS tx ARRAY JOIN [] AS a0 LEFT JOIN numbers(1) AS t2 ON a0 AND (materialize(7::UInt8) < 300);
+SELECT count() FROM (SELECT count() FROM numbers(1) ARRAY JOIN [] AS a0 GROUP BY a0 AND (materialize(7::UInt8) < 300));
