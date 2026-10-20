@@ -16,3 +16,9 @@ serialized plan, inner disabled, outer enabled
 serialized plan, inner enabled, outer disabled
 1
 1
+lazy materialization, inner disabled, outer enabled
+0	1000
+0	1000
+lazy materialization, inner enabled, outer disabled
+1	1000
+1	1000
