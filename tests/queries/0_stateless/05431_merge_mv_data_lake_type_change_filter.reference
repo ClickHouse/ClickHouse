@@ -1,5 +1,5 @@
-Merge, row policy	10	45
-materialized view, row policy	10	45
-refreshable materialized view, row policy	10	45
-table AS merge(), row policy	10	45
-lazy Merge, row policy	10	45
+Merge, row policy	11	50
+materialized view, row policy	11	50
+refreshable materialized view, row policy	11	50
+table AS merge(), row policy	11	50
+lazy Merge, row policy	11	50

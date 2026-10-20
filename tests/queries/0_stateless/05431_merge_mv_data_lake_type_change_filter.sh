@@ -3,9 +3,10 @@
 # Tag no-replicated-database: a refreshable materialized view in a `Replicated` database rejects a non-replicated target.
 
 # A row policy or `PREWHERE` on a `Merge` table or a materialized view over a data lake table must be checked
-# against the snapshot the read uses: after another writer widens `k` to `Int64`, the filter must not be
-# pushed into the read as built for `Int32`. Each case has its own table, so its read is the first after its
-# own widening. `t_writer*` is a second table object over the same Iceberg table, standing in for an external writer.
+# against the snapshot the read uses: after another writer widens `k` to `Int64` and inserts a row, the read
+# must see that row, and the filter must not be pushed into it as built for `Int32`. Each case has its own
+# table, so its read is the first after its own widening. `t_writer*` is a second table object over the same
+# Iceberg table, standing in for an external writer.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -41,6 +42,7 @@ CREATE TABLE t_merge1 ENGINE = Merge(currentDatabase(), '^t_lake1\$');
 CREATE ROW POLICY p1 ON t_merge1 USING -k > -10 TO ALL;
 SELECT count() FROM t_lake1 FORMAT Null;
 ALTER TABLE t_writer1 MODIFY COLUMN k Int64;
+INSERT INTO t_writer1 VALUES (5);
 SELECT 'Merge, row policy', count(), sum(k) FROM t_merge1;
 
 CREATE TABLE t_merge2 ENGINE = Merge(currentDatabase(), '^t_lake2\$');
@@ -53,12 +55,14 @@ CREATE MATERIALIZED VIEW mv3 TO t_lake3 (k Int32) AS SELECT k FROM src;
 CREATE ROW POLICY p3 ON mv3 USING -k > -10 TO ALL;
 SELECT count() FROM t_lake3 FORMAT Null;
 ALTER TABLE t_writer3 MODIFY COLUMN k Int64;
+INSERT INTO t_writer3 VALUES (5);
 SELECT 'materialized view, row policy', count(), sum(k) FROM mv3;
 
 CREATE MATERIALIZED VIEW rmv4 REFRESH EVERY 1 YEAR APPEND TO t_lake4 (k Int32) EMPTY AS SELECT k FROM src;
 CREATE ROW POLICY p4 ON rmv4 USING -k > -10 TO ALL;
 SELECT count() FROM t_lake4 FORMAT Null;
 ALTER TABLE t_writer4 MODIFY COLUMN k Int64;
+INSERT INTO t_writer4 VALUES (5);
 SELECT 'refreshable materialized view, row policy', count(), sum(k) FROM rmv4;
 
 CREATE TABLE t_tf5 AS merge(currentDatabase(), '^t_lake5\$');
@@ -66,6 +70,7 @@ CREATE ROW POLICY p5 ON t_tf5 USING -k > -10 TO ALL;
 SELECT count() FROM t_lake5 FORMAT Null;
 SELECT count() FROM t_tf5 FORMAT Null;
 ALTER TABLE t_writer5 MODIFY COLUMN k Int64;
+INSERT INTO t_writer5 VALUES (5);
 SELECT 'table AS merge(), row policy', count(), sum(k) FROM t_tf5;
 "
 
@@ -80,6 +85,7 @@ CREATE TABLE ${DB_LAZY}.t_writer ENGINE = IcebergLocal('${DIR}_6/', 'Parquet');
 CREATE TABLE ${DB_LAZY}.t_merge ENGINE = Merge('${DB_LAZY}', '^t_lake\$');
 CREATE ROW POLICY p6 ON ${DB_LAZY}.t_merge USING -k > -10 TO ALL;
 ALTER TABLE ${DB_LAZY}.t_writer MODIFY COLUMN k Int64;
+INSERT INTO ${DB_LAZY}.t_writer VALUES (5);
 DETACH DATABASE ${DB_LAZY};
 ATTACH DATABASE ${DB_LAZY};
 SELECT 'lazy Merge, row policy', count(), sum(k) FROM ${DB_LAZY}.t_merge;
