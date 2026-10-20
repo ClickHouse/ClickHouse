@@ -81,13 +81,25 @@ constexpr size_t adaptive_thaw_wasted_bytes_per_key = 300;
 constexpr size_t adaptive_seal_target_bytes = 4 << 20;
 /// A drain table is detached and written only once it holds at least this many keys, so the
 /// spilled parts stay reasonably sized instead of one tiny file per chunk; the same floor
-/// sizes the batch a pressure sweep claims for a producer-local drain.
+/// sizes the batch a pressure sweep claims for a producer-local drain. A key count cannot
+/// bound memory on its own - a million wide keys with their states is hundreds of megabytes -
+/// so it is paired with a byte bound derived from the query's own external-aggregation
+/// threshold (see `Aggregator::adaptivePressurePartBytes`), whichever comes first.
 constexpr size_t adaptive_pressure_spill_min_keys = 1'000'000;
+/// The floor under that byte bound. A part smaller than this is a false economy: a drain table
+/// carries an arena per bucket, so below a few tens of megabytes its footprint is mostly chunk
+/// padding rather than keys, and every extra part costs a reader with its own deserialization
+/// arena at merge time. Measured on a 3M-key external `GROUP BY` spilling at 20 MB, the peak is
+/// a U in this bound - 200 MB of peak at 8 MiB (90 parts), 150 MB at 32 MiB (26 parts), 200 MB
+/// again at 64 MiB (15 parts) - so the middle is where the residue and the readers balance.
+constexpr size_t adaptive_pressure_min_part_bytes = 32 << 20;
 /// The in-flight concurrency budget for detached tables awaiting serialization, across the
 /// session (roughly four floor-sized tables). It bounds how much detached work exists at
 /// once, not memory exactly: a reservation is corrected upward once the table is built, and
 /// `allocatedBytes` cannot see heap owned internally by complex aggregate states. The finish
-/// drain ignores the budget because it must leave nothing behind.
+/// drain ignores the budget because it must leave nothing behind. Like the key floor it is a
+/// ceiling that the external-aggregation threshold narrows where it is set (see
+/// `Aggregator::adaptivePressureDetachedBytesBudget`).
 constexpr size_t adaptive_pressure_detached_bytes_budget = 256 << 20;
 
 /// The staged records route by the two-level bucket of their key's hash, so the backlogs and
@@ -159,6 +171,9 @@ struct StagedChunk
 
     bool countsOnly() const { return std::holds_alternative<CountPayload>(payload); }
 
+    /// The chunk's heap footprint: the key side plus the payload's arrays or columns.
+    size_t allocatedBytes() const;
+
     /// Debug-only structural invariants, checked at publication.
     bool wellFormed() const
     {
@@ -229,6 +244,9 @@ struct AdaptiveAggregationSession
         void recordDrained(size_t records) { undrained_records.fetch_sub(records, std::memory_order_relaxed); }
         size_t undrainedRecords() const { return undrained_records.load(std::memory_order_relaxed); }
 
+        /// The footprint of the chunks currently enqueued: registered chunks in, claimed chunks out.
+        size_t enqueuedBytes() const { return enqueued_bytes.load(std::memory_order_relaxed); }
+
         /// Retires a bucket's chunk references after its merge-and-convert completed: the
         /// borrow of staged key bytes ends at conversion. A chunk frees once the last bucket
         /// holding it retires.
@@ -256,6 +274,7 @@ struct AdaptiveAggregationSession
         SharedMutex registry_mutex;
 
         std::atomic<size_t> undrained_records{0};
+        std::atomic<size_t> enqueued_bytes{0};
     };
 
     StagedBacklog backlog;
@@ -265,13 +284,23 @@ struct AdaptiveAggregationSession
     /// records into it early (see `drainStagedChunksUnderMemoryPressure`); it joins the merge
     /// set when it holds data.
     AggregatedDataVariantsPtr early_drain_variants;
+    /// The variant of `early_drain_variants` and of every table the drains build, fixed at
+    /// initialization: the sweeps replace the table but never its type, and a producer reads
+    /// this to size its chunks at publication without taking the coordinator lock.
+    AggregatedDataVariants::Type drain_type = AggregatedDataVariants::Type::EMPTY;
+    /// The drain table's footprint estimate: grows by each drain's tracked allocations and is
+    /// at least its `allocatedBytes`, which includes preallocated arenas and hash-table buffers.
+    /// Tracking also includes heap owned by states such as `uniqExact` and `groupBitmap`.
+    /// Writers hold `pressure_sweep_mutex`; the scheduler reads without inspecting the mutable table.
+    /// Reset when the table is replaced, so an empty replacement is not reported as reclaimable.
+    std::atomic<size_t> early_drain_tracked_bytes{0};
 
     /// Serializes pressure sweeps: one sweeper at a time sheds memory, and a single sweeper
     /// needs no per-bucket coordination; merge-time drains run after the finish barrier and
     /// need none either. Producers over the trigger block on it deliberately - pausing
     /// production is the backpressure that lets the sweep win.
     std::mutex pressure_sweep_mutex;
-    /// Reservations of detached-table bytes against `adaptive_pressure_detached_bytes_budget`,
+    /// Reservations of detached-table bytes against the budget the caller passes in,
     /// released as their writes finish. Guarded by a mutex with a condition variable so a
     /// producer that cannot reserve waits for a writer instead of staging on into an
     /// unbounded backlog; the wait breaks on cancellation (`cancel` notifies).
@@ -291,13 +320,15 @@ struct AdaptiveAggregationSession
 
         /// Waits for writers to release enough budget; gives up only when the query is
         /// cancelled. A request larger than the whole budget is granted when it is alone, so
-        /// one oversized table cannot deadlock the valve.
-        bool reserveOrWait(AdaptiveAggregationSession & session_, size_t bytes_)
+        /// one oversized table cannot deadlock the valve. The budget is passed in because it
+        /// is derived from the aggregator's external-aggregation threshold, which the session
+        /// does not carry (see `Aggregator::adaptivePressureDetachedBytesBudget`).
+        bool reserveOrWait(AdaptiveAggregationSession & session_, size_t bytes_, size_t budget_)
         {
             std::unique_lock lock(session_.detached_spill_mutex);
             session_.detached_spill_cv.wait(
-                lock, [&] { return fits(session_, bytes_) || session_.cancelled.load(std::memory_order_relaxed); });
-            if (session_.cancelled.load(std::memory_order_relaxed) || !fits(session_, bytes_))
+                lock, [&] { return fits(session_, bytes_, budget_) || session_.cancelled.load(std::memory_order_relaxed); });
+            if (session_.cancelled.load(std::memory_order_relaxed) || !fits(session_, bytes_, budget_))
                 return false;
             grab(session_, bytes_);
             return true;
@@ -336,12 +367,12 @@ struct AdaptiveAggregationSession
         }
 
     private:
-        static bool fits(const AdaptiveAggregationSession & session_, size_t bytes_)
+        static bool fits(const AdaptiveAggregationSession & session_, size_t bytes_, size_t budget_)
         {
             if (session_.estimated_detached_spill_bytes == 0)
                 return true;
-            return session_.estimated_detached_spill_bytes < adaptive_pressure_detached_bytes_budget
-                && bytes_ <= adaptive_pressure_detached_bytes_budget - session_.estimated_detached_spill_bytes;
+            return session_.estimated_detached_spill_bytes < budget_
+                && bytes_ <= budget_ - session_.estimated_detached_spill_bytes;
         }
 
         void grab(AdaptiveAggregationSession & session_, size_t bytes_)
@@ -358,6 +389,12 @@ struct AdaptiveAggregationSession
     /// chunks and buckets, so a dying query does not wait out a full sweep - which can include
     /// spilling gigabytes to disk - before it stops.
     std::atomic<bool> cancelled{false};
+
+    /// Set when a drain into `early_drain_variants` threw midway, leaving keys with null states
+    /// there. Unlike `cancelled`, which a successful query can also see (a `LIMIT` cancelling the
+    /// pipeline), this means the table must never be merged or written: the last finisher
+    /// checks it after quiescing the scheduled spills and fails instead of finalizing.
+    std::atomic<bool> shared_table_broken{false};
 
     /// Stops the sweeps at their next check and wakes any producer waiting for spill budget;
     /// the fence keeps the store from racing past a waiter that already checked the flag.
@@ -430,6 +467,8 @@ struct AdaptiveAggregationProducer
             /// The global thaw: the session-wide staged-key sample proved the whole stream
             /// repeat-dominated (see `publishDelayedRecords`).
             RepeatedStagedKeys,
+            /// The local table has to be flushed to disk, which only the baseline path can do.
+            MemoryPressure,
         };
         Reason reason;
     };

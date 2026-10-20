@@ -1,13 +1,55 @@
 {
   "icon": "/images/icons/icon-get-started.svg",
-  "item": "开始使用",
+  "item": "入门",
   "pages": [
     {
-      "group": "开始使用",
+      "group": "入门",
       "icon": "/images/menu-icon-lightning.svg",
       "pages": [
         "zh/get-started/index",
-        "zh/get-started/quickstarts/home",
+        {
+          "expandable": true,
+          "expanded": false,
+          "group": "快速入门",
+          "pages": [
+            "zh/get-started/quickstarts/home",
+            {
+              "expanded": false,
+              "group": "所有用例",
+              "pages": [
+                "zh/get-started/setup/cloud",
+                "zh/get-started/quickstarts/obtain-your-cloud-connection-details",
+                "zh/get-started/quickstarts/insert-data-using-clickhouse-client",
+                "zh/get-started/quickstarts/creating-tables",
+                "zh/get-started/quickstarts/writing-queries",
+                "zh/get-started/quickstarts/create-your-first-mergetree-table"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "实时分析",
+              "pages": [
+                "zh/get-started/quickstarts/create-your-first-materialized-view",
+                "zh/get-started/quickstarts/create-your-first-projection"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "数据仓库",
+              "pages": [
+                "zh/get-started/quickstarts/connect-your-iceberg-catalog",
+                "zh/get-started/quickstarts/mutations"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "可观测性",
+              "pages": [
+                "zh/get-started/quickstarts/working-with-the-map-type"
+              ]
+            }
+          ]
+        },
         {
           "expandable": true,
           "expanded": true,
@@ -23,6 +65,7 @@
           "group": "用例",
           "pages": [
             "zh/get-started/use-cases/overview",
+            "zh/get-started/use-cases/choosing-a-service",
             "zh/get-started/use-cases/real-time-analytics",
             "zh/get-started/use-cases/observability",
             "zh/get-started/use-cases/data-warehousing",
@@ -34,14 +77,14 @@
     },
     {
       "expanded": true,
-      "group": "设置",
+      "group": "部署",
       "icon": "/images/menu-icon-gear.svg",
       "pages": [
         "zh/get-started/setup/install",
         "zh/get-started/setup/cloud",
         {
           "expanded": true,
-          "group": "自管理",
+          "group": "自托管",
           "pages": [
             "zh/get-started/setup/self-managed/overview",
             {
@@ -54,7 +97,7 @@
               ]
             },
             {
-              "group": "生产服务器",
+              "group": "生产环境服务器",
               "pages": [
                 "zh/get-started/setup/self-managed/debian-ubuntu",
                 "zh/get-started/setup/self-managed/redhat",
@@ -86,7 +129,7 @@
           ]
         },
         {
-          "group": "向量搜索与嵌入向量",
+          "group": "向量搜索与向量嵌入",
           "pages": [
             "zh/get-started/sample-datasets/dbpedia",
             "zh/get-started/sample-datasets/hacker-news-vector-search",
@@ -95,7 +138,7 @@
           ]
         },
         {
-          "group": "Web 与社交媒体分析",
+          "group": "网站与社交媒体分析",
           "pages": [
             "zh/get-started/sample-datasets/amazon-reviews",
             "zh/get-started/sample-datasets/anon-web-analytics-metrica",
@@ -115,7 +158,7 @@
           ]
         },
         {
-          "group": "时序数据与传感器",
+          "group": "时间序列与传感器",
           "pages": [
             "zh/get-started/sample-datasets/environmental-sensors",
             "zh/get-started/sample-datasets/noaa",
@@ -187,7 +230,7 @@
           ]
         },
         {
-          "group": "OSS 到 Cloud",
+          "group": "从开源版迁移到云服务",
           "pages": [
             "zh/get-started/migrate/oss-to-cloud/clickhouse-to-cloud",
             "zh/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore"

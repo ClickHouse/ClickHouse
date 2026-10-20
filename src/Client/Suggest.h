@@ -37,6 +37,7 @@ public:
               const ConnectionTimeouts & timeouts,
               Int32 suggestion_limit,
               const ClientInfo & client_info,
+              const Settings & settings,
               std::ostream & error_stream);
 
     /// Older server versions cannot execute the query loading suggestions.
@@ -53,7 +54,7 @@ public:
     bool lastExchangeEndedInSync() const { return last_exchange_ended_in_sync.load(); }
 
 private:
-    void fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info);
+    void fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info, const Settings & settings);
 
     void fillWordsFromBlock(const Block & block);
 

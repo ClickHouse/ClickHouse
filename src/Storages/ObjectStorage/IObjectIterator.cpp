@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/Archives/ArchiveEntryPositions.h>
 #include <Core/Settings.h>
 #include <Core/Defines.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -37,7 +38,7 @@ static ExpressionActionsPtr getExpressionActions(
     if (filter.has_value())
     {
         VirtualColumnUtils::buildSetsForDAG(*filter, context_);
-        return std::make_shared<ExpressionActions>(std::move(*filter));
+        return std::make_shared<ExpressionActions>(std::move(*filter), ExpressionActionsSettings(context_));
     }
     return nullptr;
 }
@@ -47,12 +48,12 @@ ObjectIteratorWithPathAndFileFilter::ObjectIteratorWithPathAndFileFilter(
     const DB::ActionsDAG & filter_,
     const NamesAndTypesList & virtual_columns_,
     const NamesAndTypesList & hive_partition_columns_,
-    const std::string & object_namespace_,
+    StorageObjectStorageConfigurationPtr configuration_,
     const ContextPtr & context_,
     std::function<void(FileProgress)> file_progress_callback_)
     : WithContext(context_)
     , iterator(iterator_)
-    , object_namespace(object_namespace_)
+    , configuration(std::move(configuration_))
     , virtual_columns(virtual_columns_)
     , hive_partition_columns(hive_partition_columns_)
     , filter_actions(getExpressionActions(filter_, virtual_columns, context_))
@@ -78,7 +79,7 @@ ObjectInfoPtr ObjectIteratorWithPathAndFileFilter::next(size_t id)
 
             /// Must be the formatter the `_path` column is produced with: this filter is
             /// evaluated against that column's values.
-            const auto path = joinPathUnderPrefix(object_namespace, key);
+            const auto path = formatObjectPath(*configuration, key, /*include_connection_info=*/false);
 
             VirtualColumnUtils::filterByPathOrFile(
                 keys, std::vector<std::string>{path}, filter_actions,
@@ -194,7 +195,7 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
 
 String ObjectInfo::getIdentifier(bool include_file_bucket_info) const
 {
-    return getIdentifierForPath(getPath(), include_file_bucket_info);
+    return getArchiveEntryKey(getIdentifierForPath(getPath(), include_file_bucket_info), archive_entry_index);
 }
 
 String ObjectInfo::getIdentifierForPath(const String & path, bool include_file_bucket_info) const

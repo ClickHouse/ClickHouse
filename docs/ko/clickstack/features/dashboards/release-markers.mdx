@@ -1,0 +1,98 @@
+---
+slug: /use-cases/observability/clickstack/dashboards/release-markers
+title: '대시보드 차트의 릴리스 마커'
+sidebarTitle: '릴리스 마커'
+description: '타일 소스에 구성된 서비스 버전 표현식을 기반으로, 각 서비스 버전이 처음 나타난 시점을 대시보드 시간 차트에 오버레이합니다'
+doc_type: 'guide'
+keywords: ['clickstack', 'dashboards', 'release markers', 'deployment tracking', 'service.version', 'annotations', 'observability']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+지연 시간 또는 오류가 급증했을 때 가장 먼저 드는 질문은 대개 무언가가 배포되었는지입니다. 대시보드의 시간 차트에서 바로 확인할 수 있습니다. 릴리스 마커를 켜면 각 타일에 서비스 버전이 텔레메트리에 처음 나타난 시점에 점선 수직선이 표시됩니다.
+
+버전 정보는 이미 전송 중인 텔레메트리에서 가져오며, 타일의 소스에 설정된 표현식을 통해 읽습니다. 연결할 CI 통합도 없고 배포 시 푸시할 항목도 없습니다.
+
+<div id="turn-on">
+  ## 마커 켜기
+</div>
+
+릴리스 마커는 기본적으로 꺼져 있습니다. 대시보드의 더보기 메뉴를 열고 **릴리스 마커 표시**를 선택하십시오.
+
+<Image img="/images/clickstack/dashboards/release-markers-menu.webp" alt="보기 섹션에서 알림 어노테이션 표시 아래에 릴리스 마커 표시 항목이 있는 대시보드 더보기 메뉴" size="sm" />
+
+토글을 켜면 대시보드 URL에 `releaseMarkers=true`가 추가되므로 공유한 링크를 열면 마커가 이미 켜진 상태로 표시됩니다. 이는 대시보드 구성이 아닌 보기 상태이므로 대시보드와 함께 저장되지 않으며, 끄면 매개변수가 다시 제거됩니다.
+
+마커는 소스가 로그 또는 트레이스 소스인 시계열 타일에 표시됩니다. [알림 어노테이션](/ko/clickstack/features/alerts)도 같은 메뉴에서 설정할 수 있으며 동시에 표시할 수 있습니다. 두 마커 집합은 함께 표시되며, 각각 고유한 레이블을 유지합니다.
+
+<div id="version-expression">
+  ## 버전의 출처 구성
+</div>
+
+기본적으로 ClickStack은 OpenTelemetry 리소스 속성인 `ResourceAttributes['service.version']`을 읽습니다. 서비스가 [서비스 리소스 의미 체계 규약](https://opentelemetry.io/docs/specs/semconv/registry/attributes/service/)을 따른다면 별도의 설정 없이 마커가 작동합니다.
+
+다른 위치에서 버전을 읽으려면 로그 또는 트레이스 소스에서 **Service Version Expression**을 설정하십시오. **Team Settings → Sources**에서 소스를 편집합니다. 로그 소스에서는 **Configure Optional Fields**를 통해 이 필드에 접근할 수 있으며, 트레이스 소스에서는 **Service Name Expression** 아래 양식에 바로 표시됩니다.
+
+<Image img="/images/clickstack/dashboards/service-version-expression.webp" alt="로그 소스의 선택적 필드에 있는 Service Version Expression 필드이며, 기본 자리 표시자로 ResourceAttributes['service.version']가 표시됨" size="lg" />
+
+값은 속성 이름이 아닌 SQL 표현식이므로 다음과 같은 일반적인 두 가지 경우를 지원합니다.
+
+* **릴리스 식별자가 다른 속성에 있습니다.** GitOps 환경에서는 일반적으로 `container.image.tag`로 전달되는 컨테이너 이미지 태그가 릴리스를 식별합니다. 소스가 `ResourceAttributes['container.image.tag']`를 참조하도록 하는 편이 전체 환경의 계측을 변경하는 것보다 훨씬 비용이 적게 듭니다.
+* **하나의 테이블에 있는 서비스들의 값이 서로 다릅니다.** `coalesce`를 사용하여 여러 속성에 걸쳐 폴백합니다:
+
+```sql
+coalesce(
+  nullIf(ResourceAttributes['service.version'], ''),
+  nullIf(ResourceAttributes['container.image.tag'], '')
+)
+```
+
+이 필드는 [sources API](/ko/clickstack/api-reference)의 로그 및 트레이스 소스에서도 `serviceVersionExpression`으로 제공되므로, source를 프로그래밍 방식으로 Provisioning할 때 설정할 수 있습니다. [logs](/ko/clickstack/managing/config#logs) 및 [traces](/ko/clickstack/managing/config#traces)의 전체 source 설정 목록을 참조하십시오.
+
+<div id="what-a-marker-means">
+  ## marker의 의미
+</div>
+
+marker는 표시된 윈도우 내 타일 데이터에 특정 버전 값이 처음 나타났음을 기록합니다. 이는 배포와 유사하지만 의도적으로 배포와 동일한 것을 의미하지는 않으므로, 배포 marker가 아닌 릴리스 마커입니다.
+
+* 버전 문자열을 변경하지 않는 배포는 marker를 전혀 생성하지 않습니다.
+* 서비스가 룩백 기간보다 길게 idle 상태였다가 다시 확장되면 marker가 표시됩니다.
+
+윈도우가 열릴 때 이미 실행 중이던 버전은 실제로 발생하지 않은 릴리스로 표시하지 않고 인식하여 제외합니다. 이를 위해 쿼리는 기존 버전을 찾기 위해 윈도우 시작 시점보다 30분 전 또는 윈도우 기간의 10% 전 중 더 긴 시점까지 거슬러 올라갑니다.
+
+<div id="scoping">
+  ## 타일에 표시되는 릴리스
+</div>
+
+릴리스 쿼리는 타일 자체의 소스에서 타일에 설정된 프레디케이트, 즉 `WHERE` 절, 각 시리즈의 필터, [dashboard 필터](/ko/clickstack/features/dashboards/overview#custom-filters)를 적용하여 실행됩니다. 타일에 표시되는 내용은 무엇을 차트로 표현하는지에 따라 달라집니다.
+
+| 타일              | 마커                                         |
+| :-------------- | :----------------------------------------- |
+| 하나의 서비스로 필터링됨   | 해당 서비스의 릴리스                                |
+| 서비스별로 그룹화됨      | 차트에 표시된 모든 서비스의 릴리스. 각 릴리스는 해당 선의 색상으로 표시됨 |
+| 여러 서비스에 대한 집계 선 | 윈도우 내의 모든 릴리스가 하나의 서비스에서 발생한 경우가 아니면 None  |
+
+세 번째 경우에는 마커의 서비스에 해당하는 선이 차트에 없으므로 마커가 표시되지 않습니다. 윈도우 내의 모든 릴리스가 단일 서비스에서 발생한 경우에는 기본 마커 색상으로 표시됩니다.
+
+<div id="reading-markers">
+  ## 복잡한 차트에서 마커 읽기
+</div>
+
+마커 레이블에 마우스를 올리면 해당 시점의 모든 릴리스를 확인할 수 있으며, 각 릴리스의 제공 서비스, 버전, 시간이 표시됩니다.
+
+<Image img="/images/clickstack/dashboards/release-marker-tooltip.webp" alt="두 서비스가 표시된 차트에서 서비스 frontend, 버전 2.0.2 및 해당 버전이 처음 나타난 시간이 표시된 릴리스 마커의 호버 툴팁" size="sm" />
+
+색상은 마커와 해당 시리즈를 연결하지만, 차트 범례에는 최대 4개의 항목만 표시되며 나머지는 &quot;+N more&quot; 뒤로 축약됩니다. 그러면 화면에서 색상을 대조할 대상이 없습니다. 툴팁에는 서비스 이름이 직접 표시되므로 타일에 표시되는 시리즈 수와 관계없이 사용할 수 있습니다.
+
+개별 레이블을 표시하기에 너무 가까운 마커는 `N releases`라고 표시된 하나의 앵커로 축약되며, 마우스를 올리면 모든 릴리스의 이름이 표시됩니다. 여러 서비스에 걸친 클러스터는 특정 서비스의 색상이 아닌 중립 색상으로 표시되므로, 소유자를 암시하지 않으면서 개수의 정확성을 유지합니다.
+
+마커가 표시된 상태에서도 플롯을 가로로 드래그하여 확대할 수 있습니다.
+
+<div id="limitations">
+  ## 제한 사항
+</div>
+
+* **시계열 타일에서만 지원합니다.** 테이블, 숫자, 히트맵에는 마커가 표시되지 않습니다.
+* **로그 및 트레이스 소스에서만 지원합니다.** 메트릭 소스는 메트릭 유형별로 테이블을 결정하므로 다시 집계할 단일 테이블이 없으며, 타일의 필터를 의미 있게 적용할 방법도 없습니다. 메트릭 데이터에 주석을 추가하려면 동일한 대시보드에 로그 또는 트레이스 타일을 함께 배치하십시오.
+* **비어 있는 버전 값은 건너뜁니다.** 버전 정보를 내보내지 않는 서비스는 마커를 생성하지 않습니다. 타일에서 버전 변경 사항을 전혀 찾지 못하면 기능이 제대로 작동하지 않는지 알 수 없도록 방치하는 대신 ClickStack이 `No releases found`를 표시합니다.
+* **윈도우당 최대 500개의 고유 버전**을 읽습니다.

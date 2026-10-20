@@ -51,6 +51,13 @@ quantileExactWeightedInterpolated(level)(expr, weight)
 **正確な重み付き補間分位点を計算する**
 
 ```sql title=Query
+CREATE TABLE t (
+    n Int32,
+    val UInt32
+) ENGINE = Memory;
+
+INSERT INTO t VALUES (0, 3), (1, 2), (2, 1), (5, 4);
+
 SELECT quantileExactWeightedInterpolated(n, val) FROM t;
 ```
 

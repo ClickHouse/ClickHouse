@@ -1,25 +1,27 @@
-#include <Processors/QueryPlan/Optimizations/Cascades/StatisticsDerivation.h>
-#include <Processors/QueryPlan/Optimizations/Cascades/OptimizerDefaults.h>
-#include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
+#include <Columns/ColumnConst.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/IntersectOrExceptStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
-#include <Processors/QueryPlan/Optimizations/joinOrder.h>
-#include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/OptimizerDefaults.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/StatisticsDerivation.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
-#include <Processors/QueryPlan/LimitStep.h>
-#include <Storages/Statistics/ConditionSelectivityEstimator.h>
-#include <Columns/ColumnConst.h>
 #include <Storages/IStorage.h>
-#include <Interpreters/Context.h>
-#include <Core/Settings.h>
-#include <Common/logger_useful.h>
-#include <Common/Exception.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <base/types.h>
+#include <Common/Exception.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -94,6 +96,56 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
     else if (const auto * limit_step = typeid_cast<const LimitStep *>(plan_step))
     {
         group->statistics = deriveLimitStatistics(*limit_step, input_statistics(0));
+    }
+    else if (const auto * distinct_step = typeid_cast<const DistinctStep *>(plan_step); distinct_step && !distinct_step->isPreliminary())
+    {
+        group->statistics = deriveDistinctStatistics(*distinct_step, input_statistics(0));
+    }
+    else if (const auto * intersect_or_except_step = typeid_cast<const IntersectOrExceptStep *>(plan_step))
+    {
+        /// The output reuses the first input's header and so its column statistics. Only
+        /// `INTERSECT ALL` is bounded by the smallest input; the `DISTINCT` variants keep every
+        /// matching duplicate of the first input at this step (a separate `Distinct` above
+        /// deduplicates), and `EXCEPT` keeps at most the first input.
+        ExpressionStatistics result = input_statistics(0);
+        const auto op = intersect_or_except_step->getOperator();
+        if (op == IntersectOrExceptStep::Operator::INTERSECT_ALL
+            || op == IntersectOrExceptStep::Operator::INTERSECT_DISTINCT)
+        {
+            /// Every output row also matches a row of each other input, so a column's NDV is
+            /// bounded by every input's NDV at the same position. Without this the `Distinct`
+            /// above would estimate from the first input's NDVs alone.
+            const auto & input_headers = intersect_or_except_step->getInputHeaders();
+            for (size_t input_index = 1; input_index < expression->inputs.size(); ++input_index)
+            {
+                const auto & other = input_statistics(input_index);
+                if (op == IntersectOrExceptStep::Operator::INTERSECT_ALL)
+                {
+                    result.estimated_row_count = std::min(result.estimated_row_count, other.estimated_row_count);
+                    result.max_row_count = std::min(result.max_row_count, other.max_row_count);
+                }
+                /// The distinct output rows cannot exceed any input, with or without NDVs.
+                result.estimated_distinct_bound = std::min(
+                    {result.estimated_distinct_bound, other.estimated_row_count, other.estimated_distinct_bound});
+                for (size_t position = 0; position < input_headers.at(0)->columns(); ++position)
+                {
+                    auto output_column = result.column_statistics.find(input_headers.at(0)->getByPosition(position).name);
+                    if (output_column == result.column_statistics.end())
+                        continue;
+                    auto other_column = other.column_statistics.find(input_headers.at(input_index)->getByPosition(position).name);
+                    if (other_column == other.column_statistics.end())
+                        continue;
+                    output_column->second.num_distinct_values
+                        = std::min(output_column->second.num_distinct_values, other_column->second.num_distinct_values);
+                }
+            }
+            /// Without the clamp a row-count reduction could leave a column NDV above the row count.
+            for (auto & [column_name, column_stats] : result.column_statistics)
+                column_stats.num_distinct_values = std::min(column_stats.num_distinct_values,
+                    QueryPlanOptimizations::toUInt64Saturating(std::max(result.estimated_row_count, 1.0)));
+        }
+        result.min_row_count = 0;
+        group->statistics = std::move(result);
     }
     else if (!expression->inputs.empty())
     {
@@ -202,8 +254,11 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
 
     /// Equality key pairs, for the output column equivalences.
     std::vector<std::pair<String, String>> equi_pairs;
+    const auto & join_operator = join_step.getJoinOperator();
+    const UInt64 left_row_count = QueryPlanOptimizations::toUInt64Saturating(left_statistics.estimated_row_count);
+    const UInt64 right_row_count = QueryPlanOptimizations::toUInt64Saturating(right_statistics.estimated_row_count);
 
-    for (const auto & predicate_expression : join_step.getJoinOperator().expression)
+    for (const auto & predicate_expression : join_operator.expression)
     {
         const auto & predicate = predicate_expression.asBinaryPredicate();
         auto left_column_actions = get<1>(predicate);
@@ -231,17 +286,10 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
 
         UInt64 left_number_of_distinct_values = 1;
         UInt64 right_number_of_distinct_values = 1;
-        UInt64 min_number_of_distinct_values = UInt64(std::min(left_statistics.estimated_row_count, right_statistics.estimated_row_count));
         if (left_column_statistics != left_statistics.column_statistics.end())
-        {
             left_number_of_distinct_values = left_column_statistics->second.num_distinct_values;
-            min_number_of_distinct_values = std::min(min_number_of_distinct_values, left_number_of_distinct_values);
-        }
         if (right_column_statistics != right_statistics.column_statistics.end())
-        {
             right_number_of_distinct_values = right_column_statistics->second.num_distinct_values;
-            min_number_of_distinct_values = std::min(min_number_of_distinct_values, right_number_of_distinct_values);
-        }
 
         /// Estimate `JOIN` equality predicate selectivity as 1 / max(NDV(A), NDV(B)) based on assumption that distinct values have equal probabilities.
         /// An empty relation or a supplied hint can carry NDV = 0; clamp to 1, otherwise the division
@@ -249,9 +297,23 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
         UInt64 max_number_of_distinct_values = std::max<UInt64>({left_number_of_distinct_values, right_number_of_distinct_values, 1});
         Float64 predicate_selectivity = 1.0 / Float64(max_number_of_distinct_values);
 
-        /// NDV for join predicate columns can decrease if the other column has smaller NDV
-        statistics.column_statistics[left_column].num_distinct_values = min_number_of_distinct_values;
-        statistics.column_statistics[right_column].num_distinct_values = min_number_of_distinct_values;
+        /// An input's key NDV is bounded by its own row count. The shared update then narrows only
+        /// sides whose rows can be filtered by this join.
+        statistics.column_statistics[left_column].num_distinct_values = std::min(
+            left_column_statistics != left_statistics.column_statistics.end()
+                ? left_column_statistics->second.num_distinct_values
+                : left_row_count,
+            left_row_count);
+        statistics.column_statistics[right_column].num_distinct_values = std::min(
+            right_column_statistics != right_statistics.column_statistics.end()
+                ? right_column_statistics->second.num_distinct_values
+                : right_row_count,
+            right_row_count);
+        QueryPlanOptimizations::updateJoinKeyDistinctCounts(
+            statistics.column_statistics.at(left_column),
+            statistics.column_statistics.at(right_column),
+            join_operator.kind,
+            join_operator.strictness);
 
         /// Predicate reuses a column already seen on one side - redundant for selectivity.
         if (left_already_bound || right_already_bound)
@@ -285,7 +347,6 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
     /// Constrain the inner-product estimate to the join semantics (outer joins keep the preserved side,
     /// semi/anti/any bound it). Applied after the join-order hint so a hint cannot exceed a semantic
     /// upper bound (e.g. a semi join above its preserved-side row count).
-    const auto & join_operator = join_step.getJoinOperator();
     statistics.estimated_row_count = clampJoinRowCount(join_operator.kind, join_operator.strictness,
         statistics.estimated_row_count, left_statistics.estimated_row_count, right_statistics.estimated_row_count);
     statistics.max_row_count = clampJoinMaxRowCount(join_operator.kind, join_operator.strictness,
@@ -308,7 +369,7 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
 
     for (auto & column_statistics : statistics.column_statistics)
         if (Float64(column_statistics.second.num_distinct_values) > statistics.estimated_row_count)
-            column_statistics.second.num_distinct_values = UInt64(statistics.estimated_row_count);
+            column_statistics.second.num_distinct_values = QueryPlanOptimizations::toUInt64Saturating(statistics.estimated_row_count);
 
     if (statistics.estimated_row_count < 0.01)
     {
@@ -405,11 +466,6 @@ void StatisticsDerivation::fillReadColumnWidths(ExpressionStatistics & statistic
         if (hint)
             statistics.column_statistics[column_name].avg_bytes = *hint;
     }
-}
-
-namespace QueryPlanOptimizations
-{
-void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions);
 }
 
 /// Output names that carry an input column through unchanged: `INPUT`/`ALIAS` chains only.
@@ -577,7 +633,7 @@ ExpressionStatistics StatisticsDerivation::deriveFilterStatistics(const FilterSt
         /// A column cannot have more distinct values than there are rows.
         for (auto & [column_name, column_stats] : result_statistics.column_statistics)
             if (Float64(column_stats.num_distinct_values) > result_statistics.estimated_row_count)
-                column_stats.num_distinct_values = UInt64(result_statistics.estimated_row_count);
+                column_stats.num_distinct_values = QueryPlanOptimizations::toUInt64Saturating(result_statistics.estimated_row_count);
         LOG_TEST(getLogger("StatisticsDerivation"), "Filter '{}' selectivity: {}", filter_step.getFilterColumnName(), selectivity);
     }
 
@@ -596,35 +652,46 @@ ExpressionStatistics StatisticsDerivation::deriveExpressionStatistics(const Expr
     return result_statistics;
 }
 
+/// Fraction of the input rows assumed distinct for a key column without statistics.
+static constexpr Float64 DEFAULT_DISTINCT_VALUES_RATIO = 0.1;
+
+/// NDV of a group key in the input; without stats, fall back to `DEFAULT_DISTINCT_VALUES_RATIO`.
+static Float64 keyDistinctValues(const String & column, const ExpressionStatistics & input_statistics)
+{
+    auto column_stats = input_statistics.column_statistics.find(column);
+    if (column_stats != input_statistics.column_statistics.end())
+        return std::min(Float64(column_stats->second.num_distinct_values), input_statistics.max_row_count);
+    return DEFAULT_DISTINCT_VALUES_RATIO * input_statistics.estimated_row_count;
+}
+
+/// Estimated and maximum count of distinct value combinations of the given columns: the
+/// estimate takes the largest single-column NDV, the maximum takes the product. This is the
+/// output row count of an aggregation on the columns and of a `DISTINCT` over them.
+static std::pair<Float64, Float64> estimateGroupCount(const Names & columns, const ExpressionStatistics & input_statistics)
+{
+    Float64 largest_ndv = 1;
+    Float64 ndv_product = 1;
+    for (const auto & column : columns)
+    {
+        Float64 ndv = keyDistinctValues(column, input_statistics);
+        largest_ndv = std::max(largest_ndv, ndv);
+        ndv_product *= ndv;
+    }
+    return {std::min(largest_ndv, input_statistics.estimated_row_count),
+            std::min(ndv_product, input_statistics.max_row_count)};
+}
+
 ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(const AggregatingStep & aggregating_step, const ExpressionStatistics & input_statistics)
 {
     const auto & aggregator_params = aggregating_step.getAggregatorParameters();
-    Float64 max_key_number_of_distinct_values = 1;
-    Float64 max_total_number_of_distinct_values = 1;
     ExpressionStatistics aggregation_statistics;
     for (const auto & key : aggregator_params.keys)
-    {
-        /// Without stats for the key, assume its NDV is 10% of the input rows.
-        Float64 key_number_of_distinct_values = 0.1 * input_statistics.estimated_row_count;
-
-        auto key_stats = input_statistics.column_statistics.find(key);
-        if (key_stats != input_statistics.column_statistics.end())
-        {
-            key_number_of_distinct_values = Float64(key_stats->second.num_distinct_values);
-            key_number_of_distinct_values = std::min(key_number_of_distinct_values, input_statistics.max_row_count);
-        }
-
-        aggregation_statistics.column_statistics[key].num_distinct_values = UInt64(key_number_of_distinct_values);
-
-        max_key_number_of_distinct_values = std::max(max_key_number_of_distinct_values, key_number_of_distinct_values);
-        max_total_number_of_distinct_values *= key_number_of_distinct_values;
-    }
+        aggregation_statistics.column_statistics[key].num_distinct_values
+            = QueryPlanOptimizations::toUInt64Saturating(keyDistinctValues(key, input_statistics));
 
     aggregation_statistics.min_row_count = 0;
-    /// Estimate cardinality of aggregation as max NDV across individual aggregation keys
-    aggregation_statistics.estimated_row_count = std::min(max_key_number_of_distinct_values, input_statistics.estimated_row_count);
-    /// Maximum number of rows is the product of all aggregation key NDVs
-    aggregation_statistics.max_row_count = std::min(max_total_number_of_distinct_values, input_statistics.max_row_count);
+    std::tie(aggregation_statistics.estimated_row_count, aggregation_statistics.max_row_count)
+        = estimateGroupCount(aggregator_params.keys, input_statistics);
     /// Group-by keys pass through with their input value sizes.
     for (auto & [column_name, column_stats] : aggregation_statistics.column_statistics)
     {
@@ -660,7 +727,7 @@ static void trimStatisticsByLimit(ExpressionStatistics & statistics, UInt64 limi
     statistics.max_row_count = std::min(statistics.max_row_count, Float64(limit));
     for (auto & column_statistics : statistics.column_statistics)
         if (Float64(column_statistics.second.num_distinct_values) > statistics.estimated_row_count)
-            column_statistics.second.num_distinct_values = UInt64(statistics.estimated_row_count);
+            column_statistics.second.num_distinct_values = QueryPlanOptimizations::toUInt64Saturating(statistics.estimated_row_count);
 }
 
 ExpressionStatistics StatisticsDerivation::deriveSortingStatistics(const SortingStep & sorting_step, const ExpressionStatistics & input_statistics)
@@ -683,6 +750,23 @@ ExpressionStatistics StatisticsDerivation::deriveLimitStatistics(const LimitStep
         trimStatisticsByLimit(result_statistics, limit_step.getLimit());
     }
     return result_statistics;
+}
+
+ExpressionStatistics StatisticsDerivation::deriveDistinctStatistics(const DistinctStep & distinct_step, const ExpressionStatistics & input_statistics)
+{
+    /// One output row per distinct value combination.
+    ExpressionStatistics result = input_statistics;
+    std::tie(result.estimated_row_count, result.max_row_count)
+        = estimateGroupCount(distinct_step.getColumnNames(), input_statistics);
+    result.estimated_row_count = std::min(result.estimated_row_count, input_statistics.estimated_distinct_bound);
+    result.min_row_count = input_statistics.min_row_count > 0 ? 1 : 0;
+    /// Every output row is distinct.
+    result.estimated_distinct_bound = result.estimated_row_count;
+    /// Without the clamp the row-count reduction could leave a column NDV above the row count.
+    for (auto & [column_name, column_stats] : result.column_statistics)
+        column_stats.num_distinct_values = std::min(column_stats.num_distinct_values,
+            QueryPlanOptimizations::toUInt64Saturating(std::max(result.estimated_row_count, 1.0)));
+    return result;
 }
 
 Float64 StatisticsDerivation::estimateReadBytesPerRow(const ReadFromMergeTree & read_step, const ExpressionStatistics & statistics)

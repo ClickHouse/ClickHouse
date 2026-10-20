@@ -38,11 +38,11 @@ struct DeserializeBinaryBulkStateObjectDynamicPath : public ISerialization::Dese
     SerializationPtr shared_data_path_serialization;
     bool read_from_shared_data{};
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateObjectDynamicPath>(*this);
-        new_state->structure_state = structure_state ? structure_state->clone() : nullptr;
-        new_state->nested_state = nested_state ? nested_state->clone() : nullptr;
+        new_state->structure_state = structure_state ? structure_state->clone(context) : nullptr;
+        new_state->nested_state = nested_state ? nested_state->clone(context) : nullptr;
         return new_state;
     }
 };
@@ -147,8 +147,13 @@ void SerializationObjectDynamicPath::deserializeBinaryBulkStatePrefix(
     if (dynamic_path_state->read_from_shared_data)
     {
         settings.path.push_back(Substream::ObjectSharedData);
+        /// The shared data stores each path as a separate column, so its subcolumns are resolved
+        /// from that root, while `nested_serialization` was resolved inside the enclosing types.
+        auto shared_data_subcolumn_serialization = path_subcolumn.empty()
+            ? nested_serialization
+            : dynamic_type->getSubcolumnSerialization(path_subcolumn, dynamic_serialization);
         dynamic_path_state->shared_data_path_serialization = SerializationObjectSharedDataPath::create(
-            nested_serialization,
+            shared_data_subcolumn_serialization,
             object_structure_state->shared_data_serialization_version,
             path,
             path_subcolumn,

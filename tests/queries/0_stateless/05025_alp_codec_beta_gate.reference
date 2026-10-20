@@ -1,9 +1,0 @@
-a beta codec is gated by default
-the umbrella does not enable a beta codec
-the dedicated setting enables the beta codec
-4
-the umbrella still enables experimental-tier codecs
-system.codecs reports the tier
-ALP	Beta	0
-LZ4	Production	0
-ZXC	Experimental	1

@@ -21,6 +21,8 @@ CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]]
 
 `ON CLUSTER` clause allows creating settings profiles on a cluster, see [Distributed DDL](/reference/statements/distributed-ddl).
 
+`CREATE SETTINGS PROFILE` requires the [CREATE SETTINGS PROFILE](/reference/statements/grant#access-management) privilege. `OR REPLACE` throws away an existing profile of the same name, including which roles it applies to, so it additionally requires the [DROP SETTINGS PROFILE](/reference/statements/grant#access-management) privilege. The `DROP SETTINGS PROFILE` privilege is required whether or not the profile already exists, so the statement cannot be used to find out which profiles exist.
+
 ## Example {#example}
 
 Create a user:

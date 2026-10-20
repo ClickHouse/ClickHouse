@@ -82,7 +82,7 @@ namespace JSONUtils
     /// types, not the element names, so a `Tuple` of clean value types with a non-UTF-8 element
     /// name skips the buffer even with validation on. The element names come from the header
     /// (walked recursively through `Array`, `Map`, `Nullable`, nested `Tuple`, etc. via
-    /// `IDataType::forEachChild`), so text framings can reject or base64-encode accordingly.
+    /// `forEachInTypeTree`), so text framings can reject or base64-encode accordingly.
     /// Pass `validate_utf8 = false` when the format does not install the validating buffer at all
     /// (for example `CustomSeparated` with the `JSON` escaping rule).
     bool tupleElementNamesMayProduceRawBytesInJSON(const Block & header, const FormatSettings & settings, bool validate_utf8);

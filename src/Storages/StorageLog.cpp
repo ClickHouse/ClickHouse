@@ -8,6 +8,7 @@
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
+#include <Common/saturatedDuration.h>
 #include <Core/Settings.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
@@ -27,6 +28,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/TypeTree.h>
 
 #include <Interpreters/Context.h>
 #include <Processors/ISource.h>
@@ -46,6 +48,7 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/IDiskTransaction.h>
 
+#include <algorithm>
 #include <chrono>
 
 #include <boost/range/adaptor/map.hpp>
@@ -158,13 +161,17 @@ private:
             if (offset)
                 plain->seek(offset, SEEK_SET);
 
+            /// `allow_different_codecs = true`: the data file is append-only, so blocks written by
+            /// different inserts may use different codecs - in particular after a server upgrade that
+            /// changes the default compression codec (e.g. `LZ4` -> `ZSTD`). Each compressed block is
+            /// self-describing (the codec method byte is in its header), so a mixed-codec stream is valid.
             if (limited_by_file_size)
             {
                 limited.emplace(*plain, LimitReadBuffer::Settings{.read_no_more = file_size - offset});
-                compressed.emplace(*limited);
+                compressed.emplace(*limited, /* allow_different_codecs = */ true);
             }
             else
-                compressed.emplace(*plain);
+                compressed.emplace(*plain, /* allow_different_codecs = */ true);
         }
 
         std::unique_ptr<ReadBufferFromFileBase> plain;
@@ -304,7 +311,7 @@ void LogSource::readPrefix(const NameAndTypePair & name_and_type, ISerialization
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.getter = [&](const ISerialization::SubstreamPath & path) -> ReadBuffer *
     {
-        if (cache.contains(ISerialization::getSubcolumnNameForStream(path)))
+        if (cache.contains(ISerialization::getSubstreamsCacheKeyForStream(path)))
             return nullptr;
 
         String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
@@ -333,7 +340,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, MutableColumnPtr
 
     settings.getter = [&] (const ISerialization::SubstreamPath & path) -> ReadBuffer *
     {
-        if (cache.contains(ISerialization::getSubcolumnNameForStream(path)))
+        if (cache.contains(ISerialization::getSubstreamsCacheKeyForStream(path)))
             return nullptr;
 
         String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
@@ -399,8 +406,11 @@ bool LogSource::isFinished()
 
     if (limited_by_file_sizes)
     {
-        /// Check for EOF.
-        if (!streams.empty() && streams.begin()->second.compressed->eof())
+        /// One data file can be exhausted while the others still hold rows: an array of only empty
+        /// arrays writes no elements at all, and a LowCardinality dictionary file holds only a header,
+        /// read before the first row.
+        auto at_eof = [](auto & name_and_stream) { return name_and_stream.second.compressed->eof(); };
+        if (!streams.empty() && std::ranges::all_of(streams, at_eof))
         {
             is_finished = true;
             return true;
@@ -726,8 +736,7 @@ namespace
                 if (isVariant(type))
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Engine {} doesn't support Variant data type", storage_name);
             };
-            callback(*column.type);
-            column.type->forEachChild(callback);
+            forEachInTypeTree(*column.type, callback);
         }
     }
 }
@@ -988,7 +997,7 @@ static std::chrono::seconds getLockTimeout(ContextPtr context)
     Int64 lock_timeout = settings[Setting::lock_acquire_timeout].totalSeconds();
     if (settings[Setting::max_execution_time].totalSeconds() != 0 && settings[Setting::max_execution_time].totalSeconds() < lock_timeout)
         lock_timeout = settings[Setting::max_execution_time].totalSeconds();
-    return std::chrono::seconds{lock_timeout};
+    return saturatedSeconds(lock_timeout);
 }
 
 size_t StorageLog::getMaxReadStreams(size_t num_streams, ContextPtr local_context)
@@ -1207,6 +1216,25 @@ void StorageLog::updateTotalRows(const WriteLock &)
         total_rows = 0;
 }
 
+bool StorageLog::hasNothingToBackUp() const
+{
+    if (!num_data_files)
+        return true;
+
+    /// Recorded bytes in any column mean there is something to preserve, whatever the row signal says:
+    /// a leading column can serialize to nothing while a later one holds the rows, and a table whose
+    /// marks file went missing still has its data on disk.
+    for (const auto & data_file : data_files)
+        if (file_checker.getFileSize(data_file.path))
+            return false;
+
+    /// No column occupies bytes, which is legitimate for a column of empty aggregate states. For `Log`
+    /// the marks are then what say whether there are rows; `TinyLog` keeps none and cannot tell.
+    return !use_marks_file
+        || data_files[INDEX_WITH_REAL_ROW_COUNT].marks.empty()
+        || data_files[INDEX_WITH_REAL_ROW_COUNT].marks.back().rows == 0;
+}
+
 std::optional<UInt64> StorageLog::totalRows(ContextPtr) const
 {
     if (use_marks_file && marks_loaded)
@@ -1233,7 +1261,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
-    if (!num_data_files || !file_checker.getFileSize(data_files[INDEX_WITH_REAL_ROW_COUNT].path))
+    if (hasNothingToBackUp())
         return;
 
     fs::path data_path_in_backup_fs = data_path_in_backup;
@@ -1426,6 +1454,8 @@ void registerStorageLog(StorageFactory & factory)
 
     auto create_fn = [](const StorageFactory::Arguments & args)
     {
+        checkStorageSettingNames(args);
+
         if (!args.engine_args.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
                 args.engine_name, args.engine_args.size());
@@ -1445,7 +1475,7 @@ void registerStorageLog(StorageFactory & factory)
             args.getContext());
     };
 
-    factory.registerStorage("Log", create_fn, features, Documentation{
+    factory.registerStorage("Log", create_fn, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
@@ -1547,7 +1577,7 @@ SELECT * FROM log_table ORDER BY timestamp
         .syntax = "ENGINE = Log",
         .related = {"TinyLog", "StripeLog"}});
 
-    factory.registerStorage("TinyLog", create_fn, features, Documentation{
+    factory.registerStorage("TinyLog", create_fn, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 

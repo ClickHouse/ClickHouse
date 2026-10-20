@@ -43,9 +43,7 @@ keywords: ['ClickStack', '常见问题', '告警', '仪表盘', '下钻', '指�
 </div>
 
 <Accordion title="ClickStack 是否支持参数化仪表盘或仪表盘变量？">
-  ClickStack 支持仪表盘中的自定义下拉过滤器，过滤器选项由从 ClickHouse 查询的数据填充。这些过滤器可让你根据特定值 (例如服务名称、环境或主机) 动态限定仪表盘上所有卡片的范围。
-
-  ClickStack 目前尚不支持类似 Grafana 模板变量的可复用仪表盘变量。由于 ClickStack 仅使用 ClickHouse 作为数据源，因此无需额外的变量抽象层，也能原生提供下钻和过滤能力。
+  是，ClickStack 支持通过自定义过滤器和变量进行参数化的仪表盘，这些过滤器和变量的值由从 ClickHouse 查询的数据填充。这些过滤器可让你根据特定值 (例如服务名称、环境或主机) 动态限定仪表盘上部分或全部卡片的范围。
 
   有关创建仪表盘和应用过滤器的详细信息，请参阅 [仪表盘](/zh/clickstack/features/dashboards/overview)。
 </Accordion>

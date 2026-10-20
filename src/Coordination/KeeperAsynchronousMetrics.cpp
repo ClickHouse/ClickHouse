@@ -108,7 +108,7 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
     new_values["KeeperLastSnapshotIdx"] = { keeper_log_info.last_snapshot_idx, "Index of the last log present in the last created snapshot." };
 
     new_values["KeeperLatestLogsCacheEntries"] = {keeper_log_info.latest_logs_cache_entries, "Number of entries stored in the in-memory cache for latest logs"};
-    new_values["KeeperLatestLogsCacheSize"] = {keeper_log_info.latest_logs_cache_size, "Total size of in-memory cache for latest logs"};
+    new_values["KeeperLatestLogsCacheSize"] = {keeper_log_info.latest_logs_cache_size, "Memory held by the in-memory cache for latest logs: the log entries themselves plus the per-entry allocation overhead. This is the value bounded by `latest_logs_cache_size_threshold`"};
 
     new_values["KeeperCommitLogsCacheEntries"] = {keeper_log_info.commit_logs_cache_entries, "Number of decoded log entries currently buffered ahead of the commit thread by the changelog read-ahead reader"};
     new_values["KeeperCommitLogsCacheSize"] = {keeper_log_info.commit_logs_cache_size, "Total size of decoded log entries currently buffered ahead of the commit thread by the changelog read-ahead reader"};

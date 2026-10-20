@@ -8,6 +8,7 @@
 #include <Common/PODArray.h>
 #include <Common/SetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <IO/ReadHelpersArena.h>
 
 // Include this header last, because it is an auto-generated dump of questionable
 // garbage that breaks the build (e.g. it changes _POSIX_C_SOURCE).
@@ -48,8 +49,9 @@ private:
     using UnsignedT = std::make_unsigned_t<T>;
     SmallSet<T, small_set_size> small;
     using ValueBuffer = VectorWithMemoryTracking<T>;
-    using RoaringBitmap = std::conditional_t<sizeof(T) >= 8, roaring::Roaring64Map, roaring::Roaring>;
-    using Value = std::conditional_t<sizeof(T) >= 8, UInt64, UInt32>;
+    static constexpr bool use_roaring64 = sizeof(T) >= 8;
+    using RoaringBitmap = std::conditional_t<use_roaring64, roaring::Roaring64Map, roaring::Roaring>;
+    using Value = std::conditional_t<use_roaring64, UInt64, UInt32>;
     std::shared_ptr<RoaringBitmap> roaring_bitmap;
 
     void toLarge()
@@ -84,6 +86,31 @@ public:
         else
         {
             roaring_bitmap->add(static_cast<Value>(value));
+        }
+    }
+
+    void remove(T value)
+    {
+        if (isSmall())
+        {
+            if (small.find(value) == small.end())
+                return;
+
+            /// `SmallSet` has no erase, so rebuild it without the value. It holds at most
+            /// `small_set_size` values, so this is a bounded amount of work.
+            std::array<T, small_set_size> kept{};
+            size_t kept_size = 0;
+            for (const auto & x : small)
+                if (x.getValue() != value)
+                    kept[kept_size++] = x.getValue();
+
+            small.clear();
+            for (size_t i = 0; i < kept_size; ++i)
+                small.insert(kept[i]);
+        }
+        else
+        {
+            roaring_bitmap->remove(static_cast<Value>(value));
         }
     }
 
@@ -132,10 +159,16 @@ public:
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in groupBitmap (maximum: {})", max_size);
 
             /// TODO: this is unnecessary copying - it will be better to read and deserialize in one pass.
-            std::unique_ptr<char[]> buf(new char[size]);
-            in.readStrict(buf.get(), size);
+            /// A `String` is counted against the memory tracker but not refused by it, so a large legitimate bitmap still loads.
+            String buf;
+            readStringGrowing(buf, size, in);
 
-            roaring_bitmap = std::make_shared<RoaringBitmap>(RoaringBitmap::readSafe(buf.get(), size));
+            roaring_bitmap = std::make_shared<RoaringBitmap>(RoaringBitmap::readSafe(buf.data(), size));
+
+            /// `readSafe` does not validate structure. Reject malformed bitmaps before any set operation.
+            const char * reason = nullptr;
+            if (!roaring_bitmap->internal_validate(&reason))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid roaring bitmap in groupBitmap state: {}", reason ? reason : "unknown reason");
         }
         else
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown type of roaring bitmap");
@@ -301,10 +334,17 @@ public:
                     ++ret;
             }
         }
+        else if (r1.isSmall())
+        {
+            for (const auto & x : r1.small)
+            {
+                if (roaring_bitmap->contains(static_cast<Value>(x.getValue())))
+                    ++ret;
+            }
+        }
         else
         {
-            std::shared_ptr<RoaringBitmap> new_rb = r1.isSmall() ? r1.getNewRoaringBitmapFromSmall() : r1.roaring_bitmap;
-            ret = (*roaring_bitmap & *new_rb).cardinality();
+            ret = roaring_bitmap->and_cardinality(*r1.roaring_bitmap);
         }
         return ret;
     }
@@ -386,7 +426,7 @@ public:
         }
         else
         {
-            if ((*roaring_bitmap & *r1.roaring_bitmap).cardinality() > 0)
+            if (roaring_bitmap->intersect(*r1.roaring_bitmap))
                 return 1;
         }
 

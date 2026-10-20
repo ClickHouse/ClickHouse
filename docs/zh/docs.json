@@ -64,7 +64,7 @@
     {
       "menu": [
         {
-          "item": "生态",
+          "item": "生态系统",
           "pages": [
             "zh/integrations/home",
             "zh/integrations/data-catalogs"

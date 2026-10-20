@@ -1,0 +1,2 @@
+SELECT number\nFROM numbers(5)\nORDER BY number ASC\nLIMIT 1 BY number\nLIMIT 2\n WITH TIES\n AFTER number >= 1
+SELECT number\nFROM numbers(5)\nORDER BY number ASC\nLIMIT 1 BY number\nLIMIT 2\n WITH TIES\n AFTER number >= 1

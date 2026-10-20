@@ -2,6 +2,9 @@
 
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Common/SharedMutex.h>
+
+#include <shared_mutex>
 
 
 namespace Poco
@@ -67,7 +70,9 @@ public:
 
     void removeObjectIfExists(const StoredObject & object) override;
 
-    void removeObjectsIfExist(const StoredObjects & objects) override;
+    void removeObjectsIfExist( /// NOLINT
+        const StoredObjects & objects,
+        StoredObjects * successful_objects = nullptr) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
 
@@ -96,6 +101,8 @@ public:
 
     ReadSettings patchSettings(const ReadSettings & read_settings) const override;
 
+    ObjectStoragePtr cloneImpl() const override;
+
 private:
     void removeObject(const StoredObject & object) const;
     void removeObjects(const StoredObjects &  objects) const;
@@ -106,6 +113,12 @@ private:
     LocalObjectStorageSettings settings;
     LoggerPtr log;
     std::string description;
+
+    /// Removing an object also removes its directory if it became empty, and a local filesystem has no atomic
+    /// "create a file in a directory unless it is being removed": a concurrent writer that has just created the directory
+    /// would fail to create its file, and even path resolution canonicalizes the path and fails if a component vanishes
+    /// in the middle. So the removal is exclusive with the operations resolving a path, which are shared among themselves.
+    mutable SharedMutex directories_mutex;
 };
 
 String resolvePathRelativelyToBase(const String & path, const String & base_path);

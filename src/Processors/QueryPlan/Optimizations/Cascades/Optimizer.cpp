@@ -101,6 +101,7 @@ static OptimizerContext buildContext(const ContextPtr & query_context, const Que
     context.distributed_plan_execute_locally = optimization_settings.distributed_plan_execute_locally;
     context.distributed_aggregation_memory_efficient = optimization_settings.distributed_aggregation_memory_efficient;
     context.distributed_plan_force_shuffle_aggregation = optimization_settings.distributed_plan_force_shuffle_aggregation;
+    context.cascades_aggregation_pushdown = optimization_settings.cascades_aggregation_pushdown;
     context.exact_rows_before_limit = optimization_settings.exact_rows_before_limit;
 
     return context;
@@ -120,6 +121,12 @@ CascadesOptimizer::CascadesOptimizer(QueryPlan & query_plan_, const QueryPlanOpt
     addRule(createDefaultImplementation());
     addRule(createDistributionPassthrough());
     addRule(createTwoStageAggregationTransformation());
+    /// Registered conditionally: the rule can never apply when the setting is off,
+    /// and the optimizer is built per query, so the gate belongs here.
+    /// `distributed_plan_force_shuffle_aggregation` does not disable the whole rule: it forbids
+    /// only the partial + merge split (variant A), which the rule skips itself.
+    if (memo.getContext().cascades_aggregation_pushdown)
+        addRule(createAggregationPushdown());
     addRule(createAggregationImplementation());
     addRule(createLocalReadImplementation());
     addRule(createParallelReadImplementation());

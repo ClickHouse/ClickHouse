@@ -1,6 +1,8 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <string>
+#include <string_view>
 
 #include <Processors/ISource.h>
 #include <mysqlxx/PoolWithFailover.h>
@@ -11,6 +13,11 @@ namespace DB
 {
 
 struct Settings;
+
+/// Converts the payload of a MySQL `BIT` field into a `UInt64`. The value is transferred in the
+/// big-endian order and holds at most 64 bits; a longer value coming from the server is rejected
+/// instead of overflowing the destination.
+UInt64 parseMySQLBitValue(std::string_view value);
 
 struct MySQLStreamSettings
 {
@@ -58,7 +65,7 @@ protected:
     std::unique_ptr<Connection> connection;
 
     const std::unique_ptr<MySQLStreamSettings> settings;
-    std::vector<size_t> position_mapping;
+    VectorWithMemoryTracking<size_t> position_mapping;
     ExternalResultDescription description;
 };
 

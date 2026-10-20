@@ -2,6 +2,7 @@
 
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/QueryPlan/JoinEstimation.h>
 #include <Core/Joins.h>
 
 namespace DB
@@ -13,8 +14,9 @@ using JoinPtr = std::shared_ptr<IJoin>;
 struct LogicalJoinInfo
 {
     String readable_relation_name;
-    std::optional<UInt64> result_rows_estimation;
+    JoinEstimation estimation;
     JoinLocality locality{};
+    UInt64 cluster_id = 0;
 };
 
 /// Join two data streams.
@@ -81,6 +83,10 @@ public:
     /// Set names of PK columns for optimized for JOIN sharder by PK ranges.
     /// Names are required for EXPLAIN only.
     void enableJoinByLayers(PrimaryKeySharding sharding) { primary_key_sharding = std::move(sharding); }
+
+    /// Gate the probe-side reads on the build completion seal carrying the given runtime
+    /// filter. Set by markSealGatedReading; not serialized (the key is per-plan-build).
+    void enableSealGatedProbeReading(const String & runtime_filter_key) { seal_gate = runtime_filter_key; }
     void keepLeftPipelineInOrder(bool disable_squashing = false);
 
     bool isOptimized() const { return optimized; }
@@ -90,6 +96,9 @@ public:
     String getStepGroupName(size_t group) const override;
 
     StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
+
+    const JoinEstimation & getEstimation() const { return estimation; }
+    UInt64 getClusterId() const { return cluster_id; }
 
 private:
     bool optimized = false;
@@ -102,7 +111,8 @@ private:
     String join_readable_relation_name;
 
     JoinPtr join;
-    std::optional<size_t> result_rows_estimation;
+    JoinEstimation estimation;
+    UInt64 cluster_id = 0;
     size_t max_block_size;
     size_t min_block_size_rows;
     size_t min_block_size_bytes;
@@ -116,6 +126,9 @@ private:
     bool use_join_disjunctions_push_down;
     bool disjunctions_optimization_applied = false;    /// Flag that indicates that disjunction optimization was already applied
     /// to prevent infinite optimization loop
+
+    /// See enableSealGatedProbeReading.
+    std::optional<String> seal_gate;
 
 public:
     /// Check if disjunction optimization was already applied to this JoinStep

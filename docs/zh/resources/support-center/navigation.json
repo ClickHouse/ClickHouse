@@ -99,7 +99,7 @@
           ]
         },
         {
-          "group": "表与 schema",
+          "group": "表与模式",
           "pages": [
             "zh/resources/support-center/knowledge-base/tables-schema/add-column",
             "zh/resources/support-center/knowledge-base/tables-schema/delete-old-data",
@@ -126,12 +126,13 @@
           ]
         },
         {
-          "group": "物化视图 & 投影",
+          "group": "物化视图与投影",
           "pages": [
             "zh/resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously",
             "zh/resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv",
             "zh/resources/support-center/knowledge-base/materialized-views/how-to-use-parametrised-views",
-            "zh/resources/support-center/knowledge-base/materialized-views/projection-example"
+            "zh/resources/support-center/knowledge-base/materialized-views/projection-example",
+            "zh/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts"
           ]
         },
         {
@@ -173,7 +174,7 @@
           ]
         },
         {
-          "group": "设置与安装",
+          "group": "配置与安装",
           "pages": [
             "zh/resources/support-center/knowledge-base/setup-installation/difference-between-official-builds-and-3rd-party",
             "zh/resources/support-center/knowledge-base/setup-installation/enabling-ssl-with-lets-encrypt",
@@ -185,7 +186,7 @@
           ]
         },
         {
-          "group": "常规与 FAQ",
+          "group": "常规与常见问题",
           "pages": [
             "zh/resources/support-center/knowledge-base/general-faqs/faq-index",
             {
@@ -241,7 +242,7 @@
           ]
         },
         {
-          "group": "技巧与提示",
+          "group": "实用技巧",
           "pages": [
             "zh/resources/support-center/tips-and-tricks/community-wisdom",
             "zh/resources/support-center/tips-and-tricks/cost-optimization",

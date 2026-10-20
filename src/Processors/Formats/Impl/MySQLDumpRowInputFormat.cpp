@@ -223,12 +223,18 @@ static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_defini
             /// Note: Enum would be transformed to Enum8 if number of elements is less then 128, otherwise it would be transformed to Enum16.
             if (type_name_upper.contains("ENUM"))
             {
+                ASTPtr arguments = data_type_node->getArguments();
+                if (!arguments)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Type {} in MySQL dump requires a list of values", data_type_node->name);
+
                 UInt16 i = 0;
-                for (ASTPtr & child : data_type_node->getArguments()->children)
+                for (ASTPtr & child : arguments->children)
                 {
                     auto new_child = make_intrusive<ASTFunction>();
                     new_child->name = "equals";
                     auto * literal = child->as<ASTLiteral>();
+                    if (!literal || literal->value.getType() != Field::Types::String)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Values of type {} in MySQL dump must be string literals", data_type_node->name);
 
                     new_child->arguments = make_intrusive<ASTExpressionList>();
                     new_child->arguments->children.push_back(make_intrusive<ASTLiteral>(literal->value.safeGet<String>()));
@@ -581,9 +587,9 @@ ClickHouse supports reading MySQL [dumps](https://dev.mysql.com/doc/refman/8.0/e
 It reads all the data from `INSERT` queries belonging to a single table in the dump. 
 If there is more than one table, by default it reads data from the first one.
 
-:::note
+<Note>
 This format supports schema inference: if the dump contains a `CREATE` query for the specified table, the structure is inferred from it, otherwise the schema is inferred from the data of `INSERT` queries.
-:::
+</Note>
 
 ## Example usage {#example-usage}
 

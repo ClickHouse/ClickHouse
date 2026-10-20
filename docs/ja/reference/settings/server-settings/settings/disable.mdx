@@ -18,7 +18,9 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
-insert/alter/delete クエリを無効にします。挿入やミューテーションが読み取り性能に影響しないよう、ノードを読み取り専用にする必要がある場合に有効にします。この設定にかかわらず、外部エンジン (S3、DataLake、MySQL、PostrgeSQL、Kafka など) への insert は許可されます。
+読み取り専用レプリカで、読み取り性能に影響するデータパーツ、ミューテーション、マージ処理が作成されないよう、`INSERT`、`ALTER`、`DELETE` クエリを無効にします。
+
+`S3`、`DataLake`、`MySQL`、`PostgreSQL`、`Kafka` などのエンジンを介した外部ストレージへの書き込みは引き続き許可されます。`Kafka`、`RabbitMQ`、`NATS`、`S3Queue` テーブルからアタッチされた materialized view へのバックグラウンドストリーミングは、このレプリカ上で `MergeTree` パーツとマージ処理を生成するため無効になります。
 
 <div id="disable_internal_dns_cache">
   ## disable_internal_dns_cache

@@ -1,0 +1,15 @@
+<!-- The whole column is validated by one simdutf call, restarted after each invalid row, so the valid inputs differ in
+     their mix of ASCII and 2-, 3- and 4-byte code points and in row length, and the last input is mostly valid with one
+     malformed row in 1000. materialize() keeps the argument out of constant folding; the malformed input needs its alias,
+     because its raw bytes would otherwise be in the result column's name and the harness client decodes header strings
+     as strict UTF-8. -->
+<test>
+    <query>SELECT isValidUTF8(materialize(repeat('a', 8))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('a', 1023))) FROM numbers(300000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 21) || 'aa')) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 341))) FROM numbers(300000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('a', 96) || repeat('\xD0\xB0', 26))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 6))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xF0\x9F\x98\x80', 4))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(if(number % 1000 = 0, '\xFF', repeat('\xD0\xB0', 6))) AS v FROM numbers(3000000) FORMAT Null</query>
+</test>

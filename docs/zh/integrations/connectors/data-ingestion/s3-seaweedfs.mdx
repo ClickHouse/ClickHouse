@@ -47,8 +47,10 @@ ClickHouse 的 `s3` 表函数和 `S3` 磁盘类型兼容 [SeaweedFS](https://git
 docker run -d --name seaweedfs -p 8333:8333 \
   -v "$(pwd)/s3config.json:/etc/seaweedfs/s3config.json" \
   chrislusf/seaweedfs:latest \
-  mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -bucket=clickhouse
+  mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -bucket=clickhouse -admin.port=12646
 ```
+
+`-admin.port=12646` 可确保 SeaweedFS 由此派生的管理 gRPC 端口低于 Linux 临时端口范围，避免启动时的连接抢先占用该端口。
 
 S3 端点监听 8333 端口；请等待其响应后再继续：
 

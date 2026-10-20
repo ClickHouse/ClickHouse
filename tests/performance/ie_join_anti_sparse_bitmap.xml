@@ -1,0 +1,39 @@
+<test>
+    <settings>
+        <enable_analyzer>1</enable_analyzer>
+        <join_algorithm>ie_join</join_algorithm>
+        <max_threads>1</max_threads>
+        <query_plan_join_swap_table>0</query_plan_join_swap_table>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>n</name>
+            <values>
+                <value>250000</value>
+                <value>500000</value>
+                <value>1000000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <query>
+        SELECT count()
+        FROM
+        (
+            SELECT
+                number + 1 AS a,
+                intHash64(number) % 1000000000 + 1 AS b
+            FROM numbers({n})
+        ) AS l
+        LEFT ANTI JOIN
+        (
+            SELECT
+                if(number = 0, toUInt64({n}) + 1, toUInt64(0)) AS a,
+                number % 1 AS b
+            FROM numbers(1025)
+        ) AS r
+        ON l.a &lt; r.a AND l.b &gt; r.b
+        FORMAT Null
+    </query>
+</test>

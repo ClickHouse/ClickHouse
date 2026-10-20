@@ -24,7 +24,7 @@
 #include <Interpreters/Cache/ReverseLookupCache.h>
 #include <Interpreters/Context.h>
 
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISink.h>
 #include <Processors/Port.h>
@@ -32,7 +32,6 @@
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/ReadProgressCallback.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
@@ -259,6 +258,28 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
 
+    /// Documentation-only — the result type is `Array(K)` where `K` is the
+    /// dictionary's key type (or `Array(Tuple(K1, K2, ...))` for composite
+    /// keys), looked up from the const-string dictionary name and attribute.
+    String getSignatureString() const override
+    {
+        return "(const String, const String, Any) -> Array";
+    }
+
+    /// The declarative signature above is documentation-only — the exact result type isn't
+    /// expressible in the DSL, so the `ColumnsWithTypeAndName` override below is authoritative.
+    /// Route the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
+    /// fallback never evaluates the bare container return type (which would yield a wrong type or
+    /// an internal error).
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const auto * dict_name_const_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
@@ -385,19 +406,18 @@ private:
             sinks.emplace_back(std::move(sink));
         }
 
-        auto process_list_element = helper.context->getProcessListElement();
-        PipelineExecutor executor(processors, process_list_element);
-
-        auto read_progress_callback = std::make_unique<ReadProgressCallback>();
-        read_progress_callback->setProgressCallback(helper.context->getProgressCallback());
-        read_progress_callback->setQuota(helper.context->getQuota());
+        QueryPipeline pipeline(QueryPlanResourceHolder{}, processors);
+        pipeline.setNumThreads(num_threads);
+        pipeline.setConcurrencyControl(settings[Setting::use_concurrency_control]);
+        pipeline.setProcessListElement(helper.context->getProcessListElement());
+        pipeline.setProgressCallback(helper.context->getProgressCallback());
+        pipeline.setQuota(helper.context->getQuota());
         /// Carry the query hash so this dictionary scan's `read_rows`/`read_bytes` are accounted to the
         /// query's own bucket under a `KEYED BY normalized_query_hash` quota, not the shared hash-0 one.
-        read_progress_callback->setNormalizedQueryHash(helper.context->getNormalizedQueryHash());
-        read_progress_callback->setProcessListElement(process_list_element);
-        executor.setReadProgressCallback(std::move(read_progress_callback));
+        pipeline.setNormalizedQueryHash(helper.context->getNormalizedQueryHash());
 
-        executor.execute(num_threads, settings[Setting::use_concurrency_control]);
+        CompletedPipelineExecutor executor(pipeline);
+        executor.execute();
 
         size_t matched_rows = 0;
         for (const auto & sink : sinks)

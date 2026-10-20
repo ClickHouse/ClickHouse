@@ -1,0 +1,60 @@
+---
+description: 'Uma porta de protocolo nativo que atende a consultas enquanto o servidor está sendo iniciado ou desligado, quando as portas regulares não aceitam conexões.'
+sidebarTitle: 'Porta de introspecção'
+slug: /operations/introspection-port
+title: 'Porta de introspecção'
+doc_type: 'reference'
+---
+
+Quando o `clickhouse-server` fica travado durante a inicialização ou o desligamento, as portas regulares não aceitam conexões, e não é possível perguntar ao servidor o que ele está fazendo.
+
+Uma porta de introspecção é um listener TCP de protocolo nativo que é iniciado antes de o servidor começar a anexar tabelas e só é interrompido após a conclusão da desanexação das tabelas. Durante esses períodos, um operador pode se conectar a ela usando um `clickhouse-client` padrão e executar consultas como `SHOW PROCESSLIST`, `SELECT * FROM system.stack_trace` ou `SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 0.5`.
+
+<div id="configuration">
+  ## Configuração
+</div>
+
+Uma porta de introspecção é um endpoint de [protocolo componível](/pt-BR/concepts/features/configuration/server-config/composable-protocols) marcado com `<introspection>true</introspection>`. Por padrão, nenhuma porta de introspecção é configurada:
+
+```xml
+<protocols>
+    <introspection_native>
+        <type>tcp</type>
+        <introspection>true</introspection>
+        <description>introspection native protocol (tcp)</description>
+        <host>127.0.0.1</host>
+        <port>9010</port>
+    </introspection_native>
+
+    <introspection_native_secure>
+        <type>tls</type>
+        <impl>introspection_native</impl>
+        <introspection>true</introspection>
+        <description>secure introspection native protocol (tcp_secure)</description>
+        <host>127.0.0.1</host>
+        <port>9011</port>
+    </introspection_native_secure>
+</protocols>
+```
+
+Por ser um endpoint de protocolo componível comum, ele é compatível com tudo o que um endpoint oferece: `host`, `port`, `description`, uma lista de permissões `networks`, `default_database` e encapsulamento em camadas `tls` e `proxy1`.
+
+A flag `introspection` é uma propriedade do endpoint — a entrada que contém a `port` — e não é herdada por referências `impl`; portanto, uma camada pode ser compartilhada entre um endpoint de introspecção e um endpoint comum.
+
+A stack deve terminar em uma camada `tcp`, pois a semântica descrita abaixo é implementada pelo handler do protocolo nativo. A marcação de um endpoint cuja stack contém uma camada `http`, `mysql`, `postgres`, `prometheus` ou `interserver` é rejeitada com `INVALID_CONFIG_PARAMETER` na inicialização, em vez de resultar em uma porta que deixa de responder justamente quando é necessária.
+
+| Chave           | Descrição                                                                                  |
+| --------------- | ------------------------------------------------------------------------------------------ |
+| `introspection` | Marca um endpoint de protocolo componível como uma porta de introspecção. Padrão: `false`. |
+
+<div id="behavior">
+  ## Comportamento
+</div>
+
+* As consultas aceitas são `SELECT`, `SHOW`, `DESCRIBE`, `EXPLAIN`, `EXISTS`, `KILL QUERY`, `SYSTEM`, `SET` e `USE`. Todas as demais, incluindo DDL e consultas que modificam dados, são rejeitadas com `QUERY_IS_PROHIBITED`, pois a porta permanece aberta enquanto o servidor ainda não foi totalmente inicializado ou está sendo encerrado.
+* `SYSTEM RELOAD CONFIG` e `SYSTEM RELOAD USERS` são rejeitados com `QUERY_IS_PROHIBITED` até que o servidor seja completamente iniciado, pois recarregar a configuração durante a inicialização pode interromper a ordem de inicialização.
+* As consultas nessas portas ignoram `max_concurrent_queries` e o scheduler de workload, assim como `SHOW PROCESSLIST`.
+* As conexões são atendidas por um pool de threads dedicado, portanto, o esgotamento do pool regular de conexões não afeta essas portas. O pool é dimensionado por `max_connections`.
+* As conexões são aceitas mesmo quando o servidor recusa conexões regulares devido à sobrecarga de CPU.
+* Aplicam-se a autenticação e a autorização normais: conectar-se a essa porta não concede direitos de acesso adicionais. No entanto, isso remove os limites de concorrência mencionados acima; portanto, vincule-a a um endereço acessível apenas aos operadores.
+* Essas portas não estão sujeitas a `SYSTEM START LISTEN` / `SYSTEM STOP LISTEN` (incluindo `ALL` e `CUSTOM`) e não são reconfiguradas durante a recarga da configuração.
