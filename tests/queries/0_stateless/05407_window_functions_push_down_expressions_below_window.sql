@@ -95,6 +95,14 @@ SELECT 'QUALIFY';
 SELECT number, throwIf(length(s) = 3) AS t, row_number() OVER (ORDER BY number) AS rn
 FROM (SELECT number, if(number = 3, 'abc', 'a') AS s FROM numbers(5)) QUALIFY rn != 4 ORDER BY number;
 
+SELECT 'an AND condition of a filter with short-circuit evaluation disabled';
+SELECT count() OVER () AS n FROM (SELECT if(number = 0, 'x', '1') AS s FROM numbers(2))
+QUALIFY s != 'x' AND toUInt64(s) > 0
+SETTINGS short_circuit_function_evaluation = 'disable', query_plan_merge_filters = 1;
+SELECT count() OVER () AS n FROM (SELECT if(number = 0, 'x', '1') AS s FROM numbers(2))
+QUALIFY s != 'x' AND toUInt64(s) > 0
+SETTINGS short_circuit_function_evaluation = 'disable', query_plan_merge_filters = 1, query_plan_push_down_expressions_below_window = 0;
+
 SELECT 'lazily executed arguments of short-circuit functions';
 SELECT if(count() OVER () = 0, toUInt64(s), 0) AS a FROM (SELECT concat('x', toString(number)) AS s FROM numbers(2)) SETTINGS short_circuit_function_evaluation = 'enable';
 SELECT multiIf(count() OVER () = 0, toUInt64(s), count() OVER () = 1, toUInt64(s) + 1, 0) AS a FROM (SELECT concat('x', toString(number)) AS s FROM numbers(2)) SETTINGS short_circuit_function_evaluation = 'enable';
