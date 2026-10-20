@@ -2786,6 +2786,7 @@ ch_cc_library(
         "//bazel:arrow_flatbuffer_headers",
         "@clickhouse_sha3iuf//:_sha3iuf",
     ] + ["@clickhouse_libpqxx//:_libpqxx"] + ["//src/Common/ZooKeeper:clickhouse_common_zookeeper_base"],
+    includes = ["."],
     local_defines = _DBMS_LOCAL_DEFINES,
     local_includes = [
         "../" + "bazel/gen/contrib/sql-console-cmake",
@@ -2827,7 +2828,6 @@ ch_cc_library(
         "//src/Functions/GatherUtils:resizeConstantSize.cpp",
         "//src/Functions/GatherUtils:resizeDynamicSize.cpp",
     ],
-    hdrs = _GENERATED_HDRS_1,
     clickhouse_code = True,
     copts = ["-g1"],
     implementation_deps = [
@@ -2859,7 +2859,7 @@ ch_cc_library(
         "@clickhouse_libarchive//:_libarchive",
         "//rust/workspace:pco_headers",
         "//bazel:arrow_flight_generated_headers",
-        "//src:headers",
+        ":dbms__compile_0",
         "@clickhouse_replxx//:_replxx",
         "@clickhouse_xxhash//:xxHash",
         "@clickhouse_zmij//:_zmij",
@@ -2908,6 +2908,7 @@ ch_cc_library(
             "../" + "bazel/gen",
         ],
     }),
+    source_headers = False,
     deps = _GENERATED_DEPS_1 + [
         "@clickhouse_mongo_cxx_driver//:_bsoncxx",
         "@clickhouse_mongo_cxx_driver//:_mongocxx",
@@ -2921,7 +2922,6 @@ ch_cc_library(
         "Columns/IColumn.cpp",
         "Processors/Transforms/WindowTransform.cpp",
     ] + glob(["Processors/Transforms/Window/*.cpp"]) + glob(["WindowFunctions/WindowFunction*.cpp"]),
-    hdrs = _GENERATED_HDRS_1,
     clickhouse_code = True,
     copts = [
         "-U_LIBCPP_HARDENING_MODE",
@@ -2955,7 +2955,7 @@ ch_cc_library(
         "@clickhouse_libarchive//:_libarchive",
         "//rust/workspace:pco_headers",
         "//bazel:arrow_flight_generated_headers",
-        "//src:headers",
+        ":dbms__compile_0",
         "@clickhouse_replxx//:_replxx",
         "@clickhouse_xxhash//:xxHash",
         "@clickhouse_zmij//:_zmij",
@@ -3005,6 +3005,7 @@ ch_cc_library(
             "../" + "bazel/gen",
         ],
     }),
+    source_headers = False,
     deps = _GENERATED_DEPS_1 + [
         "@clickhouse_mongo_cxx_driver//:_bsoncxx",
         "@clickhouse_mongo_cxx_driver//:_mongocxx",
@@ -3017,7 +3018,6 @@ ch_cc_library(
         "@platforms//cpu:x86_64": ["Storages/StorageGenerateRandom.cpp"],
         "@platforms//cpu:aarch64": ["Client/ClientApplicationBaseParser.cpp"],
     }),
-    hdrs = _GENERATED_HDRS_1,
     clickhouse_code = True,
     copts = select({
         "@platforms//cpu:x86_64": [
@@ -3053,7 +3053,7 @@ ch_cc_library(
         "@clickhouse_libarchive//:_libarchive",
         "//rust/workspace:pco_headers",
         "//bazel:arrow_flight_generated_headers",
-        "//src:headers",
+        ":dbms__compile_0",
         "@clickhouse_xxhash//:xxHash",
         "@clickhouse_silk//:_silk_util",
         "@clickhouse_croaring//:_roaring",
@@ -3111,6 +3111,7 @@ ch_cc_library(
             "../" + "bazel/gen",
         ],
     }),
+    source_headers = False,
     deps = _GENERATED_DEPS_1 + [
         "@clickhouse_mongo_cxx_driver//:_bsoncxx",
         "@clickhouse_mongo_cxx_driver//:_mongocxx",
@@ -3121,127 +3122,6 @@ ch_cc_library(
     name = "dbms__compile_4",
     srcs = select({
         "@platforms//cpu:x86_64": ["Client/ClientApplicationBaseParser.cpp"],
-        "@platforms//cpu:aarch64": [],
-    }),
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            "//rust/workspace:pco/include/pco.h",
-            "//rust/workspace:skim/include/skim.h",
-        ] + glob(
-            [
-                "Access/**/*.h",
-            ],
-            exclude = _PRIVATE_DBMS_0_HEADERS,
-        ) + glob(
-            [
-                "Analyzer/**/*.h",
-            ],
-            exclude = _PRIVATE_DBMS_0_HEADERS,
-        ) + glob(
-            [
-                "Backups/*.h",
-            ],
-            exclude = _PRIVATE_DBMS_0_HEADERS,
-        ) + [
-            "BridgeHelper/IBridgeHelper.h",
-            "BridgeHelper/XDBCBridgeHelper.h",
-        ] + glob(["Client/AI/*.h"]) + [
-            "Client/ClientApplicationBase.h",
-            "Client/ClientApplicationBaseParser.h",
-            "Client/ClientBase.h",
-            "Client/ClientBaseHelpers.h",
-            "Client/Connection.h",
-            "Client/ConnectionParameters.h",
-            "Client/ConnectionPool.h",
-            "Client/ConnectionPoolWithFailover.h",
-            "Client/ConnectionPool_fwd.h",
-            "Client/ConnectionString.h",
-            "Client/IConnections.h",
-            "Client/IServerConnection.h",
-            "Client/JWTProvider.h",
-            "Client/LineReader.h",
-            "Client/LocalConnection.h",
-            "Client/OAuthDeviceFlow.h",
-            "Client/PortsProbe.h",
-            "Client/ProgressTable.h",
-            "Client/ReplxxLineReader.h",
-            "Client/SQLKeywordsForHighlighting.inc",
-            "Client/SecondaryQuerySettings.h",
-            "Client/SilkConnectionPool.h",
-            "Client/Suggest.h",
-            "Client/TerminalMarkdownRenderer.h",
-            "Client/sanitizeUntrustedServerString.h",
-            "Client/scaleInteractiveDelayByFanout.h",
-        ] + glob(
-            [
-                "Columns/*.h",
-            ],
-            exclude = _PRIVATE_DBMS_0_HEADERS,
-        ) + glob(
-            [
-                "Coordination/**/*.h",
-            ],
-            exclude = _PRIVATE_DBMS_0_HEADERS,
-        ) + glob(
-            [
-                "Core/**/*.h",
-            ],
-            exclude = _PRIVATE_DBMS_0_HEADERS,
-        ) + glob(
-            [
-                "DataTypes/**/*.h",
-            ],
-            exclude = _PRIVATE_DBMS_0_HEADERS,
-        ) + glob(
-            [
-                "Databases/**/*.h",
-            ],
-            exclude = _PRIVATE_DBMS_0_HEADERS,
-        ) + glob(
-            [
-                "Disks/**/*.h",
-            ],
-            exclude = _PRIVATE_DBMS_0_HEADERS,
-        ) + [
-            "Examples/clickhouse_examples.h",
-            "Examples/storage_memory_profiler.h",
-        ] + glob(
-            [
-                "Formats/*.h",
-            ],
-            exclude = _PRIVATE_DBMS_0_HEADERS,
-        ) + glob(
-            ["IO/**/*.h"],
-            exclude = _IO_COMPILED_API_HEADERS,
-        ) + glob(
-            ["Interpreters/**/*.h"],
-            exclude = _PRIVATE_DBMS_0_HEADERS,
-        ) + glob(
-            [
-                "Planner/*.h",
-            ],
-            exclude = _PRIVATE_DBMS_0_HEADERS,
-        ) + glob(
-            [
-                "Processors/**/*.h",
-            ],
-            exclude = _PRIVATE_DBMS_0_HEADERS,
-        ) + glob(
-            [
-                "QueryPipeline/*.h",
-            ],
-            exclude = _PRIVATE_DBMS_0_HEADERS,
-        ) + glob(
-            [
-                "Server/**/*.h",
-            ],
-            exclude = _PRIVATE_DBMS_0_HEADERS,
-        ) + glob(
-            [
-                "Storages/**/*.h",
-            ],
-            exclude = _PRIVATE_DBMS_0_HEADERS,
-        ) + glob(["WindowFunctions/*.h"]),
         "@platforms//cpu:aarch64": [],
     }),
     arches = ["x86_64"],
@@ -3269,7 +3149,6 @@ ch_cc_library(
         "@clickhouse_libarchive//:_libarchive",
         "//rust/workspace:pco_headers",
         "//bazel:arrow_flight_generated_headers",
-        "//src:headers",
         "@clickhouse_xxhash//:xxHash",
         "@clickhouse_silk//:_silk_util",
         "@clickhouse_croaring//:_roaring",
@@ -3325,6 +3204,9 @@ ch_cc_library(
             "@clickhouse_mongo_cxx_driver//:_bsoncxx",
             "@clickhouse_mongo_cxx_driver//:_mongocxx",
         ],
+    }) + select({
+        "@platforms//cpu:x86_64": [":dbms__compile_0"],
+        "@platforms//cpu:aarch64": [],
     }),
     local_defines = select({
         "@platforms//cpu:x86_64": [
@@ -3389,6 +3271,7 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
+    source_headers = False,
     deps = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse_llvm_project//:LLVMDebugInfoDWARF",
@@ -4373,7 +4256,10 @@ cc_test(
         "//rust/workspace:skim_headers",
         "//bazel:arrow_flight_generated_headers",
         "//bazel:arrow_flatbuffer_headers",
-    ] + ["@clickhouse_arrow//:arrow_headers"],
+    ] + [
+        "@clickhouse_arrow//:arrow_headers",
+        "@clickhouse_heks//:heks",
+    ],
 )
 
 cc_library(
