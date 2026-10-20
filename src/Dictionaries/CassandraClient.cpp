@@ -614,7 +614,8 @@ void Connection::handshake(const ConnectionSettings & settings)
         throwServerError(frame);
 
     BodyReader authenticate_reader(frame.body, frame.message_offset);
-    std::string_view authenticator = authenticate_reader.readString();
+    /// Copy the name: `frame` is reused for the next response, and the name is still needed for the error message.
+    String authenticator(authenticate_reader.readString());
 
     if (settings.user.empty())
         throw Exception(ErrorCodes::AUTHENTICATION_FAILED,

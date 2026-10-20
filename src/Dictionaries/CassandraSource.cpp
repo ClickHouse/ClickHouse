@@ -66,8 +66,6 @@ VectorWithMemoryTracking<ColumnType> compatibleTypes(ExternalResultDescription::
             return {ColumnType::Float};
         case ValueType::vtFloat64:
             return {ColumnType::Double};
-        case ValueType::vtEnum8:
-        case ValueType::vtEnum16:
         case ValueType::vtString:
             return {ColumnType::Varchar, ColumnType::Ascii, ColumnType::Blob};
         case ValueType::vtDate:
@@ -125,8 +123,6 @@ void CassandraSource::insertValue(IColumn & column, ValueType type, std::string_
         case ValueType::vtFloat64:
             assert_cast<ColumnFloat64 &>(column).insertValue(std::bit_cast<Float64>(readFixed<UInt64>(value)));
             break;
-        case ValueType::vtEnum8:
-        case ValueType::vtEnum16:
         case ValueType::vtString:
             assert_cast<ColumnString &>(column).insertData(value.data(), value.size());
             break;
