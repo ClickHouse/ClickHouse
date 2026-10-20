@@ -2,6 +2,9 @@
 
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/StreamWithSizeHint.h>
+
+#include <functional>
 
 namespace DB
 {
@@ -66,7 +69,16 @@ private:
 
     void addStreamToColumnSize(const String & stream_name, ColumnSize & size) const;
 
-    std::vector<String> getListOfStreamsForColumn(const NameAndTypePair & column) const;
+    /// Adds the stream's share of its file where it has a size hint, else the whole file.
+    void addStreamWithSizeHintToColumnSize(const StreamWithSizeHint & stream, ColumnSize & size) const;
+
+    /// The names of the column's streams that exist in the part, from columns_substreams.txt where the part has it, else
+    /// from the serialization, whose state-less enumeration misses the data-dependent streams of dynamic subcolumns.
+    void forEachExistingStreamOfColumn(const String & column_name, const std::function<void(const String & stream_name)> & callback) const;
+
+    /// The streams a read of the columns touches, listed by a reader after it has read the prefixes.
+    std::unordered_map<String, std::vector<StreamWithSizeHint>> getListOfStreamsForColumns(const NamesAndTypesList & columns) const;
+    std::vector<StreamWithSizeHint> getListOfStreamsForColumn(const NameAndTypePair & column) const;
 };
 
 }

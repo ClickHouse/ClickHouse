@@ -1631,23 +1631,40 @@ void MergeTreeReaderWide::readData(
         column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
 }
 
-std::unordered_map<String, std::vector<String>> MergeTreeReaderWide::getAllColumnsSubstreams()
+std::unordered_map<String, std::vector<StreamWithSizeHint>> MergeTreeReaderWide::getAllColumnsSubstreams()
 {
     /// We need to read prefixes to be able to collect all streams (because of dynamic structure of some columns).
     deserializePrefixForAllColumns(columns_to_read.size(), 0);
-    std::unordered_map<String, std::vector<String>> column_to_streams;
+    std::unordered_map<String, std::vector<StreamWithSizeHint>> column_to_streams;
     for (size_t i = 0; i < columns_to_read.size(); ++i)
     {
         const auto & name_and_type = columns_to_read[i];
         const auto & serialization = serializations[i];
+        auto & streams_of_column = column_to_streams[name_and_type.name];
+        std::unordered_map<String, size_t> stream_positions;
 
         ISerialization::StreamCallback callback = [&] (const ISerialization::SubstreamPath & substream_path)
         {
             if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
                 return;
 
-            if (const auto & stream_name = getStreamName(name_and_type, substream_path))
-                column_to_streams[name_and_type.name].push_back(*stream_name);
+            const auto & stream_name = getStreamName(name_and_type, substream_path);
+            if (!stream_name)
+                return;
+
+            /// A file shared by several subcolumns is reported once per subcolumn: their hints add up, a stream without
+            /// a hint counts its file once.
+            const auto & size_hint = substream_path.back().size_hint;
+            auto [it, inserted] = stream_positions.try_emplace(*stream_name, streams_of_column.size());
+            if (inserted)
+            {
+                streams_of_column.push_back({*stream_name, size_hint});
+            }
+            else if (size_hint && streams_of_column[it->second].size_hint)
+            {
+                streams_of_column[it->second].size_hint->compressed += size_hint->compressed;
+                streams_of_column[it->second].size_hint->uncompressed += size_hint->uncompressed;
+            }
         };
 
         auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withDeserializeState(deserialize_binary_bulk_state_map[name_and_type.name]);

@@ -320,7 +320,8 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
                 fuzzObjectPathsToSkip(type_object->getPathsToSkip()),
                 fuzzObjectPathRegexpsToSkip(type_object->getPathRegexpsToSkip()),
                 type_object->getMaxDynamicPaths(),
-                type_object->getMaxDynamicTypes());
+                type_object->getMaxDynamicTypes(),
+                type_object->getSharedTypedPaths());
         }
         catch (...) // NOLINT(bugprone-empty-catch) Ok: a fuzzed typed-path type may violate an Object invariant
         {
@@ -477,9 +478,11 @@ DataTypePtr QueryFuzzer::makeRandomObject(
     std::unordered_set<String> paths_to_skip,
     std::vector<String> path_regexps_to_skip,
     std::optional<size_t> source_max_dynamic_paths,
-    std::optional<size_t> source_max_dynamic_types)
+    std::optional<size_t> source_max_dynamic_types,
+    std::unordered_set<String> shared_typed_paths)
 {
-    /// Only the numeric parameters are randomized here; the typed paths and SKIP lists are used as given.
+    /// Only the numeric parameters are randomized here; the typed paths, their SHARED marks and the SKIP lists
+    /// are used as given.
     /// An unfired roll keeps the source limit, so mutating one part of the type does not reset the others.
     const size_t max_dynamic_paths = (fuzz_rand() % 4 == 0)
         ? fuzz_rand() % (DataTypeObject::MAX_DYNAMIC_PATHS_LIMIT + 1)
@@ -493,7 +496,8 @@ DataTypePtr QueryFuzzer::makeRandomObject(
         std::move(paths_to_skip),
         std::move(path_regexps_to_skip),
         max_dynamic_paths,
-        max_dynamic_types);
+        max_dynamic_types,
+        std::move(shared_typed_paths));
 }
 
 DataTypePtr QueryFuzzer::makeAggregateFunctionType(

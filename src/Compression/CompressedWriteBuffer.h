@@ -6,6 +6,8 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <Compression/ICompressionCodec.h>
 
+#include <functional>
+
 
 namespace DB
 {
@@ -47,6 +49,10 @@ public:
     /// Returns the buffer that compressed data is written into.
     WriteBuffer * getNestedBuffer() const { return &out; }
 
+    /// Called after each compressed block is written to `out` with `out.count()`, the offset right after the block.
+    using BlockWrittenCallback = std::function<void(size_t offset_after_block)>;
+    void setBlockWrittenCallback(BlockWrittenCallback callback) { block_written_callback = std::move(callback); }
+
 private:
     void nextImpl() override;
     /// finalize call does not affect the out buffer.
@@ -60,6 +66,8 @@ private:
     CompressionCodecPtr codec;
 
     PODArray<char> compressed_buffer;
+
+    BlockWrittenCallback block_written_callback;
 };
 
 }

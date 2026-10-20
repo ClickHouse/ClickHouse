@@ -38,7 +38,8 @@ public:
         std::unordered_set<String> paths_to_skip_ = {},
         std::vector<String> path_regexps_to_skip_ = {},
         size_t max_dynamic_paths_ = DEFAULT_MAX_DYNAMIC_PATHS,
-        size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES);
+        size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES,
+        std::unordered_set<String> shared_typed_paths_ = {});
 
     DataTypeObject(const SchemaFormat & schema_format_, size_t max_dynamic_paths_, size_t max_dynamic_types_);
 
@@ -62,6 +63,8 @@ public:
     bool haveSubtypes() const override { return false; }
 
     bool equals(const IDataType & rhs) const override;
+    /// Equal except for the set of SHARED typed paths. Such types have identical columns.
+    bool equalsIgnoringSharedTypedPaths(const DataTypeObject & rhs) const;
 
     void updateHashImpl(SipHash & hash) const override;
 
@@ -75,12 +78,17 @@ public:
     bool hasDynamicSubcolumnsData() const override { return true; }
     bool hasDynamicStructure() const override { return true; }
     std::unique_ptr<SubcolumnInfo> getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const override;
+    void forEachKnownDynamicSubcolumnName(const SubcolumnNameCallback & callback, size_t array_level) const override;
 
     SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
 
     const SchemaFormat & getSchemaFormat() const { return schema_format; }
     String getSchemaFormatString() const;
     const std::unordered_map<String, DataTypePtr> & getTypedPaths() const { return typed_paths; }
+    /// Typed paths declared SHARED: stored in the typed shared data of a part instead of separate streams.
+    const std::unordered_set<String> & getSharedTypedPaths() const { return shared_typed_paths; }
+    bool hasSharedTypedPaths() const { return !shared_typed_paths.empty(); }
+    bool isSharedTypedPath(const String & path) const { return shared_typed_paths.contains(path); }
 
     /// Returns a map from typed-path name to its default serialization, resolved once.
     /// Used by mergedJSONPatch to serialize/deserialize typed-path values without a type tag.
@@ -118,6 +126,8 @@ private:
     /// `typed_paths` is a hash map, so an order has to be imposed rather than read off it, and it is
     /// imposed once here so that enumerating the children does not sort or allocate.
     std::vector<std::pair<String, DataTypePtr>> sorted_typed_paths;
+    /// The typed paths declared `SHARED`.
+    std::unordered_set<String> shared_typed_paths;
     /// Set of paths that should be skipped during data parsing.
     std::unordered_set<String> paths_to_skip;
     /// List of regular expressions that should be used to skip paths during data parsing.
