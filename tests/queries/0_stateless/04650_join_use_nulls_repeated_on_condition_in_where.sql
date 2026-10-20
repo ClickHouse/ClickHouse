@@ -4,6 +4,9 @@
 -- options in the statement itself instead of relying on a session default, so this file stays
 -- runnable on release branches that predate `explain_query_plan_default`.
 SET enable_analyzer = 1;
+-- `WHERE` is not moved to `PREWHERE`, so the conditions under the join stay in the filter step
+-- whose split this file tests.
+SET optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
