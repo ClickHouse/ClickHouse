@@ -1526,7 +1526,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             type_inference_scope.projection_mask_map
                 = std::make_shared<std::map<IQueryTreeNode::Hash, size_t>>(*scope.projection_mask_map);
 
-            QueryAnalyzer type_inference_analyzer(/*only_analyze_=*/ false);
+            QueryAnalyzer type_inference_analyzer(
+                /*only_analyze_=*/ false,
+                /*positional_arguments_already_resolved_=*/ false,
+                view_source_substituted,
+                view_source_in_subqueries);
             type_inference_analyzer.early_short_circuit_type_inference_in_process = true;
             type_inference_analyzer.subquery_counter = subquery_counter;
 
@@ -2580,8 +2584,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
 
         /// Replace storage with values storage of insertion block.
-        /// The inner query of an ordinary view and the query of another engine, like `executable`, read the table itself.
-        if (StoragePtr storage = scope.context->getViewSourceForSubqueries(); storage && !in_second_argument->as<TableFunctionNode>())
+        /// The inner query of an ordinary view referenced by the view query reads the table itself.
+        if (StoragePtr storage = getViewSourceIfRead(scope.context, view_source_in_subqueries);
+            storage && !in_second_argument->as<TableFunctionNode>())
             replaceStorageInQueryTree(in_second_argument, scope.context, storage);
 
         auto * table_node = in_second_argument->as<TableNode>();

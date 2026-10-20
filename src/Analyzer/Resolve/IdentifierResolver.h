@@ -109,9 +109,11 @@ public:
         const IdentifierLookup & identifier_lookup,
         const IdentifierResolveScope & scope);
 
+    /// `view_source_substituted`: see `SelectQueryOptions`.
     static std::shared_ptr<TableNode> tryResolveTableIdentifier(
         const Identifier & table_identifier,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        bool view_source_substituted = false);
 
     /// Build a `nested(...)` FunctionNode for the given identifier prefix by combining
     /// per-field Array columns of the table expression (e.g. `loc.x`, `loc.y`).
@@ -123,7 +125,8 @@ public:
 
     static IdentifierResolveResult tryResolveTableIdentifierFromDatabaseCatalog(
         const Identifier & table_identifier,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        bool view_source_substituted = false);
 
     /// Suggest a same/similar-named table when a table identifier cannot be resolved,
     /// possibly in another database (e.g. `system.functions` for a bare `functions`).

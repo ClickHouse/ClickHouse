@@ -658,10 +658,6 @@ protected:
     /// enable_positional_arguments would otherwise be skipped (views are expanded on remote nodes,
     /// not on the initiator).
     bool is_view_inner_query = false;
-    /// True in the analysis of an interpreter that swaps the view source in for the source table after the passes.
-    bool view_source_substituted = false;
-    /// True where IN and scalar subqueries read the view source: in such an analysis and in its replan for a `Merge` child or a `Buffer`.
-    bool view_source_in_subqueries = false;
     /// Set by local shard plans, whose query is printed from a resolved query tree. Inherited by context copies and
     /// ignored in view bodies; `withUnresolvedPositionalArguments` resets it for other queries.
     bool positional_arguments_already_resolved = false;
@@ -1265,8 +1261,6 @@ public:
 
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;
-    /// The view source if IN and scalar subqueries read it instead of the source table, else nullptr.
-    StoragePtr getViewSourceForSubqueries() const;
     void clearViewSource();
 
     String getCurrentDatabase() const;
@@ -2021,12 +2015,6 @@ public:
 
     bool isViewInnerQuery() const { return is_view_inner_query; }
     void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }
-
-    bool isViewSourceSubstituted() const { return view_source_substituted; }
-    void setViewSourceSubstituted(bool value) { view_source_substituted = value; }
-
-    bool isViewSourceInSubqueries() const { return view_source_in_subqueries; }
-    void setViewSourceInSubqueries(bool value) { view_source_in_subqueries = value; }
 
     bool isPositionalArgumentsAlreadyResolved() const { return positional_arguments_already_resolved; }
     void setPositionalArgumentsAlreadyResolved(bool value) { positional_arguments_already_resolved = value; }

@@ -192,7 +192,7 @@ std::shared_ptr<InterpreterSelectQueryAnalyzer> interpretSubqueryWithAnalyzer(
     /// resolving it through the context; the analyzer substitutes it only when given the storage explicitly.
     return std::make_shared<InterpreterSelectQueryAnalyzer>(
         query, prepared.context, prepared.options,
-        prepared.context->getViewSourceForSubqueries(), required_source_columns);
+        prepared.context->isViewInnerQuery() ? nullptr : prepared.context->getViewSource(), required_source_columns);
 }
 
 }
