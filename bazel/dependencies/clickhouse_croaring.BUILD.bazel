@@ -98,6 +98,7 @@ ch_cc_library(
         "include",
     ],
     language = "C",
+    libcxx_headers = False,
     local_defines = _ROARING_LOCAL_DEFINES,
     local_includes = [
         "include/roaring",
@@ -120,6 +121,7 @@ ch_cc_library(
         "@clickhouse//contrib/croaring-cmake:page_aligned_functions",
     ],
     language = "C",
+    libcxx_headers = False,
     local_defines = _ROARING_LOCAL_DEFINES,
     local_includes = [
         "include/roaring",

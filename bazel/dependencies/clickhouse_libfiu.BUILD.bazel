@@ -19,9 +19,9 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     includes = ["libfiu"],
     language = "C",
+    libcxx_headers = False,
     local_defines = [
         "DUMMY_BACKTRACE",
         "FIU_ENABLE",

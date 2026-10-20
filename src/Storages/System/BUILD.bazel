@@ -329,6 +329,7 @@ ch_cc_library(
         "StorageSystemDisks.cpp",
         "StorageSystemDistributionQueue.cpp",
         "StorageSystemDocumentation.cpp",
+        "//src/Common:AsynchronousMetricDocumentation.inc",
         "StorageSystemDroppedTables.cpp",
         "StorageSystemDroppedTablesParts.cpp",
         "StorageSystemEnabledRoles.cpp",

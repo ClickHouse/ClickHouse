@@ -182,6 +182,7 @@ CMake hash recorded below.
 | `95dd32354` (verification snapshot) | gRPC unsecure: compiled Abseil owners for its public and private includes; c-ares implementation dependency | [7c7ac607](https://app.buildbuddy.io/invocation/7c7ac607-6df0-424d-bc80-7574d02383e1) | [bd0d4ccc](https://app.buildbuddy.io/invocation/bd0d4ccc-e41d-43df-9bd0-bcfebcf7b452) |
 | `31ca0af80` (verification snapshot) | glibc/OpenSSL assembly: actual native assembly dependency checks and ARM-only OpenSSL header | [2fcde940](https://app.buildbuddy.io/invocation/2fcde940-2f99-4e6c-b79e-d77f171c58a9) | [97d13d35](https://app.buildbuddy.io/invocation/97d13d35-2517-4090-b8fe-e51e9e363364) |
 | `025dd9050` (verification snapshot) | Generated headers from their Rust/gRPC owners; Google Cloud public/private headers and protobuf dependencies | [5222418a](https://app.buildbuddy.io/invocation/5222418a-fcd0-43d4-9097-18317049969b) | [3eaeb1fc](https://app.buildbuddy.io/invocation/3eaeb1fc-bb3b-40bf-90c0-b7a0e4788adb) |
+| `bca4a5ef2` (verification snapshot) | Remove C-only libraries' unused libc++ headers; private Common implementation dependencies and System fragment | [4f9e9b21](https://app.buildbuddy.io/invocation/4f9e9b21-2cd7-4c6a-ad27-b2fca52fd713) | [a856ced1](https://app.buildbuddy.io/invocation/a856ced1-259b-476a-b3c0-75d1643edc25) |
 
 The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`

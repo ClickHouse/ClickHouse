@@ -4,6 +4,11 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(
+    ["AsynchronousMetricDocumentation.inc"],
+    visibility = ["//src/Storages/System:__pkg__"],
+)
+
 exports_files([
     "ActionLock.cpp",
     "AddressToLineCache.cpp",
@@ -583,7 +588,6 @@ ch_cc_library(
         "//src/Parsers:headers",
         "//src/TableFunctions:headers",
         "//base/poco/JSON:_poco_json",
-        "//base/poco/XML:_poco_xml",
         "//base/widechar_width",
         "//contrib/driftsort:headers",
         "//contrib/ipnsort:headers",
@@ -598,17 +602,13 @@ ch_cc_library(
         "@clickhouse_heks//:heks",
         "@clickhouse_jemalloc//:_jemalloc",
         "@clickhouse_libdeflate//:_libdeflate",
-        "@clickhouse_libfiu//:_libfiu",
         "@clickhouse_magic_enum//:magic_enum",
         "@clickhouse_miniselect//:miniselect",
         "@clickhouse_minizip_ng//:_minizip",
-        "@clickhouse_re2//:_re2",
         "@clickhouse_replxx//:_replxx",
         "@clickhouse_silk//:_silk_fibers",
-        "@clickhouse_simdjson//:_simdjson",
         "@clickhouse_simdutf//:_simdutf",
         "@clickhouse_snappy//:_snappy",
-        "@clickhouse_stringzilla//:_stringzilla",
         "@clickhouse_zmij//:_zmij",
         "@llvm-project//compiler-rt:headers",
         "@llvm-project//libunwind:headers",
@@ -616,36 +616,39 @@ ch_cc_library(
         "@platforms//cpu:x86_64": ["@clickhouse_libcpuid//:_cpuid"],
         "@platforms//cpu:aarch64": [],
     }) + [
-        "//base:pcg_random",
         "//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_0",
-        "//contrib/cityhash102:_cityhash",
         "@clickhouse_aws//:_aws",
         "@clickhouse_azure//:_azure_sdk",
-        "@clickhouse_boost//:boost_headers",
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse_libarchive//:_libarchive",
-        "@clickhouse_openssl//:crypto",
         "@clickhouse_xz//:_liblzma",
         "@clickhouse_zlib_ng//:_zlib",
         "@clickhouse_zstd//:_zstd",
     ],
     local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
     source_headers = False,
-    textual_hdrs = glob(["**/*.inc"]),
     deps = [
         "//src:headers",
         "//base:base_headers",
         "//bazel:clickhouse_config_headers",
         "//base/poco/Net:_poco_net",
-    ] + [
         "@clickhouse_abseil_cpp//:absl_synchronization",
-    ] + [
         "@clickhouse_libssh//:_ssh",
         "@clickhouse_mongo_cxx_driver//:_mongocxx",
-    ] + [
         "//base/poco/Foundation:_poco_foundation",
         "@clickhouse_fmtlib//:_fmt",
         "@clickhouse_double_conversion//:_double-conversion",
         "@clickhouse_rapidjson//:rapidjson",
+        "//base/poco/Util:_poco_util",
+        "//base/poco/XML:_poco_xml",
+        "//base:pcg_random",
+        "//contrib/cityhash102:_cityhash",
+        "//contrib/jemalloc-cmake:headers",
+        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_libfiu//:_libfiu",
+        "@clickhouse_openssl//:crypto",
+        "@clickhouse_re2//:_re2",
+        "@clickhouse_simdjson//:_simdjson",
+        "@clickhouse_stringzilla//:_stringzilla",
     ],
 )

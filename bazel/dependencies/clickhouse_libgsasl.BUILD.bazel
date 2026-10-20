@@ -52,11 +52,11 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
     ],
-    implementation_deps = (["@clickhouse_llvm_project//:libcxxabi_headers"]) + ["@clickhouse//contrib/libgsasl-cmake:libgsasl_config_headers"],
     includes = [
         "src",
     ],
     language = "C",
+    libcxx_headers = False,
     local_defines = [
         "HAVE_CONFIG_H=1",
         "HAVE_GSSAPI_H=1",
@@ -73,5 +73,7 @@ ch_cc_library(
     ],
     deps = [
         "@clickhouse_krb5//:_krb5",
+        "@clickhouse//contrib/libgsasl-cmake:libgsasl_config_headers",
+        "@clickhouse_openssl//:crypto",
     ],
 )
