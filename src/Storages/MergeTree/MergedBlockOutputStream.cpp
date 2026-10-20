@@ -273,6 +273,26 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         /// dedicated arena directly, rather than assigning and re-homing with a second copy later.
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
         new_part->checksums = checksums;
+        /// Later queries read this map from the in-memory part. `loadColumnsChecksumsIndexes`
+        /// does not run again until the part is reloaded from disk. Copy the lists built while
+        /// writing `<column>.key_columns.txt`. Do not read the files here: on object storage the
+        /// name is published only when the buffer is finalized, in `Finalizer::finish`. Vertical
+        /// gather may already have stored lists for columns this writer did not emit; keep those
+        /// and re-home every entry into this arena.
+        const auto & part_columns = new_part->getColumns();
+        std::unordered_map<String, MapKeyManifest> manifests;
+        manifests.reserve(new_part->map_key_columns_manifests.size() + writer->getMapKeyColumnsManifests().size());
+        for (const auto & [name, manifest] : new_part->map_key_columns_manifests)
+        {
+            if (part_columns.contains(name))
+                manifests.emplace(name, manifest);
+        }
+        for (const auto & [name, manifest] : writer->getMapKeyColumnsManifests())
+        {
+            if (part_columns.contains(name))
+                manifests.insert_or_assign(name, manifest);
+        }
+        new_part->map_key_columns_manifests = std::move(manifests);
     }
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->setBytesUncompressedOnDisk(checksums.getTotalSizeUncompressedOnDisk());

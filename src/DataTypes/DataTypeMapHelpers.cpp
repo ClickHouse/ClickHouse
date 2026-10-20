@@ -8,6 +8,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/LowCardinalityValueIndex.h>
 #include <Core/CompareHelper.h>
 #include <Common/assert_cast.h>
@@ -566,30 +567,73 @@ void extractKeyValueFromMap(
     extractValuesDispatch(values_column, result, matched_positions);
 }
 
+void extractKeyPresenceFromMap(
+    const IColumn & nested_column,
+    const IColumn & key,
+    IColumn & result,
+    size_t start,
+    size_t end)
+{
+    const auto & array_column = assert_cast<const ColumnArray &>(nested_column);
+    const auto & tuple_column = assert_cast<const ColumnTuple &>(array_column.getData());
+    const auto & offsets = array_column.getOffsets();
+    const auto & keys_column = tuple_column.getColumn(0);
+
+    PaddedPODArray<size_t> matched_positions;
+    findKeyPositionsDispatch(keys_column, offsets, key, start, end, matched_positions);
+
+    auto & result_data = assert_cast<ColumnUInt8 &>(result).getData();
+    result_data.reserve(result_data.size() + matched_positions.size());
+    for (size_t pos : matched_positions)
+        result_data.push_back(pos != KEY_NOT_FOUND ? static_cast<UInt8>(1) : static_cast<UInt8>(0));
+}
+
 namespace
 {
 
 constexpr std::string_view map_key_marker = ".key_";
+constexpr std::string_view map_exists_marker = ".exists_";
+
+struct MapSubcolumnMarker
+{
+    size_t pos;
+    size_t marker_size;
+};
+
+/// The leftmost marker wins, so a serialized key may itself contain the other marker.
+std::optional<MapSubcolumnMarker> findMapSubcolumnMarker(const String & column_name)
+{
+    const auto key_pos = column_name.find(map_key_marker);
+    const auto exists_pos = column_name.find(map_exists_marker);
+
+    if (key_pos == String::npos && exists_pos == String::npos)
+        return {};
+
+    if (exists_pos == String::npos || (key_pos != String::npos && key_pos < exists_pos))
+        return MapSubcolumnMarker{key_pos, map_key_marker.size()};
+
+    return MapSubcolumnMarker{exists_pos, map_exists_marker.size()};
+}
 
 }
 
 bool looksLikeMapSubcolumnName(const String & column_name)
 {
-    return column_name.contains(map_key_marker);
+    return findMapSubcolumnMarker(column_name).has_value();
 }
 
 std::optional<std::pair<String, String>> tryParseMapSubcolumnName(
     const String & column_name, const NameSet & shadowing_columns)
 {
-    auto pos = column_name.find(map_key_marker);
-    if (pos == String::npos)
+    const auto marker = findMapSubcolumnMarker(column_name);
+    if (!marker)
         return std::nullopt;
 
     if (shadowing_columns.contains(column_name))
         return std::nullopt;
 
-    auto map_column_name = column_name.substr(0, pos);
-    auto serialized_key = column_name.substr(pos + map_key_marker.size());
+    auto map_column_name = column_name.substr(0, marker->pos);
+    auto serialized_key = column_name.substr(marker->pos + marker->marker_size);
     return std::pair{std::move(map_column_name), std::move(serialized_key)};
 }
 

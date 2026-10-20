@@ -23,10 +23,20 @@ void extractKeyValueFromMap(
     size_t start,
     size_t end);
 
-/// Whether the name has the `map.key_<serialized_key>` shape used for a single Map key subcolumn.
+/// For each row in [start, end), writes `1` into `result` when `key` occurs in that row's map, otherwise `0`.
+/// `result` is `ColumnUInt8`. `nested_column` is `Array(Tuple(key, value))`.
+void extractKeyPresenceFromMap(
+    const IColumn & nested_column,
+    const IColumn & key,
+    IColumn & result,
+    size_t start,
+    size_t end);
+
+/// Whether the name has the `map.key_<serialized_key>` or `map.exists_<serialized_key>` shape
+/// used for a single Map key subcolumn.
 bool looksLikeMapSubcolumnName(const String & column_name);
 
-/// Try to parse a Map subcolumn reference like `map.key_<serialized_key>`.
+/// Try to parse a Map subcolumn reference like `map.key_<serialized_key>` or `map.exists_<serialized_key>`.
 /// Returns {map_column_name, serialized_key} if the column name has the expected format.
 ///
 /// Dots are legal in column names, so a real column `m.key_x` may exist beside a Map `m`. It shadows

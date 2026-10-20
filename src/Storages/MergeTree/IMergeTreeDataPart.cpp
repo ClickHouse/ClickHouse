@@ -1,5 +1,6 @@
 #include <Storages/ColumnSize.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MapWithKeyColumnsMerge.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
@@ -76,6 +77,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 #include <Common/thread_local_rng.h>
 
@@ -153,6 +155,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NO_FILE_IN_DATA_PART;
+    extern const int INCORRECT_DATA;
     extern const int EXPECTED_END_OF_FILE;
     extern const int CORRUPTED_DATA;
     extern const int NOT_FOUND_EXPECTED_DATA_PART;
@@ -1657,6 +1660,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
             loadColumnsSubstreams();
             loadInvalidatedSystemColumns();
             loadChecksums(require_columns_checksums);
+            loadMapKeyColumnsManifests();
             loadIndexGranularity();
 
             /// Load `source_parts.dat` before the primary index: a v2 patch's rebuilt metadata takes
@@ -2613,6 +2617,37 @@ void IMergeTreeDataPart::loadChecksums(bool require)
 
         bytes_on_disk = checksums.getTotalSizeOnDisk();
         bytes_uncompressed_on_disk = checksums.getTotalSizeUncompressedOnDisk();
+    }
+}
+
+void IMergeTreeDataPart::loadMapKeyColumnsManifests()
+{
+    map_key_columns_manifests.clear();
+
+    for (const auto & column : getColumns())
+    {
+        if (!partUsesMapWithKeyColumns(*this, column.name))
+            continue;
+
+        const auto * per_key = typeid_cast<const SerializationMapWithKeyColumns *>(getSerialization(column.name).get());
+        if (!per_key)
+            continue;
+
+        /// Checksums record the name written at part creation. Re-hashing with the current
+        /// `replace_long_file_name_to_hash` / `max_file_name_length` misses that file after a setting change.
+        const auto file_name = findMapKeyColumnsFileName(column.name, checksums);
+        if (!file_name)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Missing key_columns.txt for with_key_columns Map column {} in part {}",
+                column.name,
+                name);
+
+        const auto checksum_it = checksums.files.find(*file_name);
+
+        auto file = getDataPartStorage().readFile(*file_name, {}, checksum_it->second.file_size);
+        map_key_columns_manifests.emplace(
+            column.name, SerializationMapWithKeyColumns::readKeyColumnsText(*file, per_key->getKeyType()));
     }
 }
 

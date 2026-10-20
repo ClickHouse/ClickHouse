@@ -9,6 +9,7 @@ namespace DB
 class SerializationMapSize;
 class SerializationMapKeysOrValues;
 class SerializationMapKeyValue;
+class SerializationMapKeyExists;
 
 class SerializationMap final : public SimpleTextSerialization
 {
@@ -52,6 +53,9 @@ public:
 
     /// Whether a resolved subcolumn is really the value stored under one key (`m.key_<key>`).
     static bool isKeyValueSubcolumn(const SubstreamPath & path);
+
+    /// Whether a resolved subcolumn is one key's presence (`m.exists_<key>`).
+    static bool isKeyExistsSubcolumn(const SubstreamPath & path);
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -117,6 +121,7 @@ private:
     friend SerializationMapSize;
     friend SerializationMapKeysOrValues;
     friend SerializationMapKeyValue;
+    friend SerializationMapKeyExists;
 
     /// State read from the buckets info stream during deserialization prefix.
     /// Contains the bucket count and optional statistics that were written
