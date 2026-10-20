@@ -11,8 +11,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 collection="nc_${CLICKHOUSE_DATABASE}"
 
 $CLICKHOUSE_CLIENT -n -q "
--- A secret is shown as [HIDDEN], as in SHOW CREATE TABLE. An unstated kafka_sasl_password has no row: the engine takes
--- it from the server configuration.
+-- A secret is shown as [HIDDEN], as in SHOW CREATE TABLE. An unstated kafka_sasl_password is listed with the engine's
+-- empty default: the engine takes it from the server configuration, whose value is not shown.
 CREATE TABLE kafka_secret (a Int) ENGINE = Kafka
 SETTINGS kafka_broker_list = 'localhost:9092', kafka_topic_list = 't', kafka_group_name = 'g', kafka_format = 'JSONEachRow',
     kafka_sasl_password = 'secret_password_05296';

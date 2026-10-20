@@ -22,14 +22,14 @@ SELECT '-- a table that states nothing has exactly its engine rows';
 CREATE TABLE mem (a Int) ENGINE = Memory;
 SELECT count() FROM
 (
-    SELECT engine_name, name, value, default, changed, description, min, max, disallowed_values, readonly, type, is_obsolete, tier
+    SELECT engine_name, name, value, default, changed, description, min, max, disallowed_values, readonly, type, is_obsolete, tier, inherited
     FROM system.table_settings WHERE database = currentDatabase() AND table = 'mem'
-    EXCEPT SELECT engine_name, name, value, default, changed, description, min, max, disallowed_values, readonly, type, is_obsolete, tier FROM system.engine_settings WHERE engine_name = 'Memory'
+    EXCEPT SELECT engine_name, name, value, default, changed, description, min, max, disallowed_values, readonly, type, is_obsolete, tier, inherited FROM system.engine_settings WHERE engine_name = 'Memory'
 );
 SELECT count() FROM
 (
-    SELECT engine_name, name, value, default, changed, description, min, max, disallowed_values, readonly, type, is_obsolete, tier FROM system.engine_settings WHERE engine_name = 'Memory'
-    EXCEPT SELECT engine_name, name, value, default, changed, description, min, max, disallowed_values, readonly, type, is_obsolete, tier
+    SELECT engine_name, name, value, default, changed, description, min, max, disallowed_values, readonly, type, is_obsolete, tier, inherited FROM system.engine_settings WHERE engine_name = 'Memory'
+    EXCEPT SELECT engine_name, name, value, default, changed, description, min, max, disallowed_values, readonly, type, is_obsolete, tier, inherited
     FROM system.table_settings WHERE database = currentDatabase() AND table = 'mem'
 );
 CREATE TABLE mem_stated (a Int) ENGINE = Memory SETTINGS max_rows_to_keep = 100;
@@ -44,7 +44,7 @@ ORDER BY table;
 SELECT value = (SELECT value FROM system.engine_settings WHERE engine_name = 'Distributed' AND name = 'background_insert_sleep_time_ms')
 FROM system.table_settings WHERE database = currentDatabase() AND table = 'dist_stated' AND name = 'background_insert_sleep_time_ms';
 
-SELECT '-- a setting a table takes from elsewhere, such as a format setting, is shown only where the definition states it';
+SELECT '-- a setting the engine never reads, such as a format setting of Set, is shown only where the definition states it';
 CREATE TABLE set_plain (a Int) ENGINE = Set;
 CREATE TABLE set_stated (a Int) ENGINE = Set SETTINGS format_csv_delimiter = ';';
 SELECT table, name, value, changed FROM system.table_settings

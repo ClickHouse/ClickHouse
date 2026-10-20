@@ -10,7 +10,7 @@ max_rows_to_keep	100
 dist_alias	1	1
 dist_stated	1	1
 1
--- a setting a table takes from elsewhere, such as a format setting, is shown only where the definition states it
+-- a setting the engine never reads, such as a format setting of Set, is shown only where the definition states it
 set_plain	disk	default	0
 set_plain	persistent	1	0
 set_stated	disk	default	0

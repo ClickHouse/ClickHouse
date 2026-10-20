@@ -22,7 +22,9 @@ ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode none \
 
 ${CLICKHOUSE_CLIENT} --query "
     SELECT
-        (SELECT groupArraySorted(1000)(name) FROM system.table_settings WHERE database = currentDatabase() AND table = 't')
-        = (SELECT groupArraySorted(1000)(name) FROM system.engine_settings WHERE engine_name = 'IcebergLocal' AND NOT inherited),
+        (SELECT arraySort(groupArray(name)) FROM system.table_settings WHERE database = currentDatabase() AND table = 't')
+        = (SELECT arraySort(groupArray(name)) FROM system.engine_settings WHERE engine_name = 'IcebergLocal'),
+        (SELECT arraySort(groupArray(name)) FROM system.table_settings WHERE database = currentDatabase() AND table = 't' AND inherited)
+        = (SELECT arraySort(groupArray(name)) FROM system.engine_settings WHERE engine_name = 'IcebergLocal' AND inherited),
         (SELECT count() FROM system.table_settings WHERE database = currentDatabase() AND table = 't'
             AND name IN ('storage_catalog_type', 'storage_catalog_url', 'storage_aws_access_key_id'))"

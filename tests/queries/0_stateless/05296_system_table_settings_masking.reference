@@ -1,4 +1,5 @@
 kafka_no_secret	kafka_broker_list	localhost:9092
+kafka_no_secret	kafka_sasl_password	
 kafka_secret	kafka_broker_list	localhost:9092
 kafka_secret	kafka_sasl_password	[HIDDEN]
 kafka_broker_list	localhost:9092	1

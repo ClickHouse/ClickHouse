@@ -72,6 +72,10 @@ development and the expectations one might have when using them:
 * PRIVATE PREVIEW: The feature is on a clear path to general availability. Its applicability is still limited and it is not recommended for production use.
 * OBSOLETE: No longer supported. Either it is already removed or it will be removed in future releases.
 )"},
+        {"inherited", std::make_shared<DataTypeUInt8>(),
+            "1 if the table's definition does not state the setting and the table takes it from elsewhere: from the query or "
+            "server settings (the format settings, for example), from the server configuration, or from the session that "
+            "created the table. `value` is then the engine's own value, which the table does not use."},
     };
 }
 
@@ -295,11 +299,10 @@ void StorageSystemTableSettings::fillData(
         {
             const auto & setting = settings[j];
 
-            /// A setting the table takes from elsewhere unless its definition states it has a value only if stated. The
-            /// engines with such settings start from compiled defaults, so `changed` means the definition, or its named
-            /// collection, states it.
-            if (!setting.changed && StorageFactory::isInheritedSetting(engine->second.features, setting.name))
-                continue;
+            /// The engines with settings a table takes from elsewhere start from compiled defaults, so `changed` means the
+            /// definition, its engine arguments or its named collection state the setting, or the engine sets it itself.
+            const bool inherited = !setting.changed && !setting.set_by_engine
+                && StorageFactory::isInheritedSetting(engine->second.features, setting.name);
 
             Array disallowed_values;
             for (const auto & value : setting.disallowed_values)
@@ -322,6 +325,7 @@ void StorageSystemTableSettings::fillData(
             res_columns[col++]->insert(setting.type);
             res_columns[col++]->insert(setting.tier == SettingsTierType::OBSOLETE);
             res_columns[col++]->insert(setting.tier);
+            res_columns[col++]->insert(inherited);
         }
     }
 }
