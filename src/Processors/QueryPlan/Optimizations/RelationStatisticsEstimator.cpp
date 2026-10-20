@@ -131,6 +131,23 @@ bool prunesNothingAtPlanTime(const ActionsDAG::Node * node)
     return false;
 }
 
+/// The conditions on the rows of a read: the filter above it and the `PREWHERE`, as MergeTree estimates them, and the row policy.
+std::vector<RPNBuilderTreeNode> getConditionsToEstimate(const SourceStepWithFilter & reading, const ActionsDAG::Node * filter)
+{
+    std::vector<RPNBuilderTreeNode> conditions;
+    auto add_condition = [&](const ActionsDAG::Node * condition)
+    {
+        if (condition && !prunesNothingAtPlanTime(condition))
+            conditions.emplace_back(condition, reading.getContext());
+    };
+    add_condition(filter);
+    if (const auto & prewhere_info = reading.getPrewhereInfo())
+        add_condition(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name));
+    if (const auto & row_level_filter = reading.getRowLevelFilter())
+        add_condition(row_level_filter->actions.tryFindInOutputs(row_level_filter->column_name));
+    return conditions;
+}
+
 }
 
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter, bool for_runtime_filter_transport)
@@ -284,19 +301,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             return stats;
         const auto & profile = *estimate->profile;
 
-        /// As for MergeTree, the filter above the read and the `PREWHERE`; also the row policy, as its columns have statistics here.
-        std::vector<RPNBuilderTreeNode> conditions;
-        auto add_condition = [&](const ActionsDAG::Node * condition)
-        {
-            if (condition && !prunesNothingAtPlanTime(condition))
-                conditions.emplace_back(condition, reading->getContext());
-        };
-        add_condition(filter);
-        if (const auto & prewhere_info = reading->getPrewhereInfo())
-            add_condition(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name));
-        if (const auto & row_level_filter = reading->getRowLevelFilter())
-            add_condition(row_level_filter->actions.tryFindInOutputs(row_level_filter->column_name));
-
+        const auto conditions = getConditionsToEstimate(*reading, filter);
         if (conditions.empty() || profile.rows == 0)
         {
             stats.estimated_rows = profile.rows;
@@ -309,7 +314,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         if (estimate->estimator)
         {
             auto filtered = estimate->estimator->estimateRelationProfile(reading->getStorageMetadata(), conditions);
-            /// The numbers of distinct values from the manifests, at most the rows left.
+            /// Only the counted numbers of distinct values reach the estimator; take all from the manifests, at most the rows left.
             for (auto & [name, column] : filtered.column_stats)
                 if (const auto it = profile.column_stats.find(name); it != profile.column_stats.end())
                     column.num_distinct_values = std::clamp<UInt64>(it->second.num_distinct_values, 1, std::max<UInt64>(filtered.rows, 1));
