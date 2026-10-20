@@ -183,6 +183,10 @@ try
             marks_loader, profile_callback, clock_type);
     };
 
+    /// A reader can have no columns of the part to read, e.g. the main reader of a task when `PREWHERE` has read all
+    /// the columns, or a reader of columns missing in the part. It must not create a stream, which would be prefetched.
+    bool has_columns_in_part = std::ranges::any_of(column_positions, [](const auto & position) { return position.has_value(); });
+
     /// A part is written in stripes if, for some granule, the next granule of the first column precedes this granule
     /// of the second column: both granules are in the same stripe of more than one granule. Otherwise all columns of
     /// every granule are adjacent, and separate buffers for the columns would read the whole file each, so one buffer
@@ -193,7 +197,7 @@ try
     /// of all substreams of one column of one granule are adjacent in both layouts.
     size_t num_columns = data_part_info_for_read->getColumns().size();
     bool is_striped = false;
-    if (marks_count >= 2 && num_columns >= 2)
+    if (has_columns_in_part && marks_count >= 2 && num_columns >= 2)
     {
         size_t second_column_position = has_substream_marks ? columns_substreams.getFirstSubstreamPosition(1) : 1;
         marks_getter = marks_loader->loadMarks();
@@ -203,7 +207,7 @@ try
 
     streams.assign(columns_to_read.size(), nullptr);
 
-    if (!is_striped)
+    if (!is_striped && has_columns_in_part)
     {
         shared_stream.emplace(Stream{.stream = create_stream.operator()<MergeTreeReaderStreamAllOfMultipleColumns>(), .first_position = 0});
         for (size_t i = 0; i < columns_to_read.size(); ++i)
