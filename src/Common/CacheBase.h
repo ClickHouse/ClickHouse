@@ -289,6 +289,19 @@ public:
         return true;
     }
 
+    /// "Compare and set" by key: replaces the resident under `key` with `mapped` only when the
+    /// resident is `expected` (the same object). Returns whether it was replaced. Atomic like
+    /// removeIfMatches, and like it bumps the LRU position of the resident.
+    bool replaceIfMatches(const Key & key, const MappedPtr & expected, const MappedPtr & mapped)
+    {
+        std::lock_guard lock(mutex);
+        auto value = cache_policy->get(key);
+        if (!value || value != expected)
+            return false;
+        cache_policy->set(key, mapped);
+        return true;
+    }
+
     size_t sizeInBytes() const
     {
         std::lock_guard lock(mutex);
