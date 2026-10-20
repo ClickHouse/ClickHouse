@@ -1050,7 +1050,9 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                 /// `CAST(x AS String)` writes numbers, decimals, dates and times with fixed text
                 /// (`FormatImpl` in `FunctionsConversion.h`), so `date_time_output_format` or
                 /// `decimal_trailing_zeros` do not apply to them, and it serializes every other type
-                /// with the query's format settings, so `bool_true_representation` does apply. Mirror
+                /// with the query's format settings, so `bool_true_representation` does apply. A type with
+                /// a custom serialization (`Bool`, also wrapped as `SimpleAggregateFunction(any, Bool)`)
+                /// takes the latter path in `CAST` even though its underlying type is a number. Mirror
                 /// that split, or the set would hold a text that `CAST` never produces. The one setting
                 /// that `CAST` does apply to the fixed text is
                 /// `date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands`, for
@@ -1063,8 +1065,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                     return settings;
                 }();
                 WhichDataType which_hint(*unwrapped_hint);
-                bool fixed_text = (which_hint.isNumber() && unwrapped_hint->getName() != "Bool")
-                    || which_hint.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64();
+                bool fixed_text = !unwrapped_hint->getCustomSerialization()
+                    && (which_hint.isNumber() || which_hint.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64());
                 bool cut_trailing_zeros = format_settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
 
                 WriteBufferFromOwnString out;

@@ -317,19 +317,20 @@ bool convertAlternative(
     bool strict,
     bool convert_inexact_floats)
 {
-    if (!field.isNull())
-    {
-        const ActiveAlternative alternative = resolveActiveAlternative(column, from, row);
-        retagBoolInField(field, alternative.type);
-        /// The alternative can be a composite holding `Variant`/`Dynamic` members of its own.
-        const DataTypePtr source = rewriteNestedAlternativesType(alternative.type, to);
-        if (source != alternative.type
-            && !rewriteNestedAlternatives(
-                field, *alternative.column, alternative.row, alternative.type, to, format_settings, strict, convert_inexact_floats))
-            return false;
-        field = convertFieldToType(field, *to, source.get(), format_settings, strict, convert_inexact_floats);
-    }
-    return !field.isNull() || canContainNull(*to);
+    if (field.isNull())
+        return canContainNull(*to);
+
+    const ActiveAlternative alternative = resolveActiveAlternative(column, from, row);
+    retagBoolInField(field, alternative.type);
+    /// The alternative can be a composite holding `Variant`/`Dynamic` members of its own.
+    const DataTypePtr source = rewriteNestedAlternativesType(alternative.type, to);
+    if (source != alternative.type
+        && !rewriteNestedAlternatives(
+            field, *alternative.column, alternative.row, alternative.type, to, format_settings, strict, convert_inexact_floats))
+        return false;
+    field = convertFieldToType(field, *to, source.get(), format_settings, strict, convert_inexact_floats);
+    /// Strict: a member that is not representable is not a `NULL` member, even if `to` can hold one.
+    return !field.isNull() || (canContainNull(*to) && !strict);
 }
 
 bool rewriteNestedAlternatives(
