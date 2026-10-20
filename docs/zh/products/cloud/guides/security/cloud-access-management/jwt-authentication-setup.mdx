@@ -25,8 +25,14 @@ ClickHouse Cloud 支持使用 JSON Web Token (JWT) 对服务连接进行身份�
 
 您可以在 ClickHouse Cloud 控制台的 **设置 → 安全** 中，按服务自行配置这些 JWKS 提供商。
 
+<Tip>
+  **使用 Microsoft Entra ID？**
+
+  请参阅[使用 Microsoft Entra ID 进行 JWT 身份验证](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id)，了解 Entra ID 的配置方法、需要填写的提供商配置值，以及如何将 Entra ID 应用角色映射到 ClickHouse 角色。
+</Tip>
+
 <div id="before-you-begin">
-  ## 开始前准备
+  ## 开始前准备 {#before-you-begin}
 </div>
 
 要为服务配置 JWT 提供商，您需要：
@@ -51,7 +57,7 @@ ClickHouse Cloud 支持使用 JSON Web Token (JWT) 对服务连接进行身份�
 添加或更新提供商时，ClickHouse 会验证并拉取 JWKS URL，因此会预先拒绝配置错误或无法访问的 URL。
 
 <div id="add-a-jwt-provider">
-  ## 添加 JWT 提供商
+  ## 添加 JWT 提供商 {#add-a-jwt-provider}
 </div>
 
 <Steps>
@@ -87,7 +93,7 @@ ClickHouse Cloud 支持使用 JSON Web Token (JWT) 对服务连接进行身份�
 </Warning>
 
 <div id="limits">
-  ## 限制
+  ## 限制 {#limits}
 </div>
 
 * 每个服务最多可配置 **五个** JWT 提供商。
@@ -95,7 +101,8 @@ ClickHouse Cloud 支持使用 JSON Web Token (JWT) 对服务连接进行身份�
 * JWKS URL 必须是公网 HTTPS 端点。私网、内部或链路本地地址均会被拒绝。
 
 <div id="related">
-  ## 相关内容
+  ## 相关内容 {#related}
 </div>
 
 * [JWT 身份验证](/zh/concepts/features/security/external-authenticators/jwt) — 标记声明、临时用户和客户端使用。
+* [使用 Microsoft Entra ID 进行 JWT 身份验证](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id) — 将 Entra ID 配置为 JWT 提供程序。

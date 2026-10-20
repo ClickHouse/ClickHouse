@@ -7,44 +7,44 @@
       "versionId": "9b3345383ff3389c6681dbde6573112bd992f08e5b332453425e342f66849919",
       "translations": {
         "es": {
-          "updatedAt": "2026-10-20T05:18:31.648Z",
+          "updatedAt": "2026-10-20T13:59:22.520Z",
           "fileName": "docs.json",
-          "postProcessHash": "55415e25822c1ea183fad6813f17279f1000bc69f4071bbfa49ffbba8b65ddb9"
+          "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         },
         "ja": {
-          "updatedAt": "2026-10-20T05:18:31.844Z",
+          "updatedAt": "2026-10-20T13:59:22.628Z",
           "fileName": "docs.json",
-          "postProcessHash": "55415e25822c1ea183fad6813f17279f1000bc69f4071bbfa49ffbba8b65ddb9"
+          "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         },
         "ko": {
-          "updatedAt": "2026-10-20T05:18:32.062Z",
+          "updatedAt": "2026-10-20T13:59:22.729Z",
           "fileName": "docs.json",
-          "postProcessHash": "55415e25822c1ea183fad6813f17279f1000bc69f4071bbfa49ffbba8b65ddb9"
+          "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         },
         "pt-BR": {
-          "updatedAt": "2026-10-20T05:18:32.254Z",
+          "updatedAt": "2026-10-20T13:59:22.833Z",
           "fileName": "docs.json",
-          "postProcessHash": "55415e25822c1ea183fad6813f17279f1000bc69f4071bbfa49ffbba8b65ddb9"
+          "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         },
         "ru": {
-          "updatedAt": "2026-10-20T05:18:32.441Z",
+          "updatedAt": "2026-10-20T13:59:22.942Z",
           "fileName": "docs.json",
-          "postProcessHash": "55415e25822c1ea183fad6813f17279f1000bc69f4071bbfa49ffbba8b65ddb9"
+          "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         },
         "zh": {
-          "updatedAt": "2026-10-20T05:18:32.635Z",
+          "updatedAt": "2026-10-20T13:59:23.046Z",
           "fileName": "docs.json",
-          "postProcessHash": "55415e25822c1ea183fad6813f17279f1000bc69f4071bbfa49ffbba8b65ddb9"
+          "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         },
         "ar": {
-          "updatedAt": "2026-10-20T05:18:32.820Z",
+          "updatedAt": "2026-10-20T13:59:23.146Z",
           "fileName": "docs.json",
-          "postProcessHash": "55415e25822c1ea183fad6813f17279f1000bc69f4071bbfa49ffbba8b65ddb9"
+          "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         },
         "fr": {
-          "updatedAt": "2026-10-20T05:18:33.007Z",
+          "updatedAt": "2026-10-20T13:59:23.270Z",
           "fileName": "docs.json",
-          "postProcessHash": "55415e25822c1ea183fad6813f17279f1000bc69f4071bbfa49ffbba8b65ddb9"
+          "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         }
       },
       "fileName": "docs.json"
@@ -73797,47 +73797,47 @@
     },
     {
       "fileId": "810e929dfdb2aec4e14ed6044f290fce1f375d771610d942b2be171e2c37a420",
-      "versionId": "476ee61a205a4d809a7a7ff02cd413203444b69019855562639bb259a5234e6c",
+      "versionId": "3ecd648c74ef898a17a9b41d82726c80058477d4b5342801bbc6f221f1443759",
       "translations": {
-        "es": {
-          "updatedAt": "2026-10-09T08:37:56.380Z",
-          "fileName": "es/concepts/features/security/external-authenticators/jwt.mdx",
-          "postProcessHash": "f9432800d6facfe53785ebaf58e95fd1e8e70758c41b5b90bfb8e91bc64711a0"
-        },
-        "ja": {
-          "updatedAt": "2026-10-09T08:37:56.381Z",
-          "fileName": "ja/concepts/features/security/external-authenticators/jwt.mdx",
-          "postProcessHash": "8546d554a391b17338a7c3a0b08a481efbf924cfb6eb163d6117d790187d1fb2"
-        },
-        "ko": {
-          "updatedAt": "2026-10-09T08:37:56.382Z",
-          "fileName": "ko/concepts/features/security/external-authenticators/jwt.mdx",
-          "postProcessHash": "563c7e449a68ff969edd83ee27b06231efe47c553eabb35422655db5754a5cb4"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-10-09T08:37:56.383Z",
-          "fileName": "pt-BR/concepts/features/security/external-authenticators/jwt.mdx",
-          "postProcessHash": "ae31d2ca21f3a71548f69c5f1f2269bf089b37f68ebac6e31ec4a0702b4abe30"
-        },
         "ru": {
-          "updatedAt": "2026-10-09T08:37:56.384Z",
+          "updatedAt": "2026-10-20T13:59:25.499Z",
           "fileName": "ru/concepts/features/security/external-authenticators/jwt.mdx",
-          "postProcessHash": "f92d9e72fdf26f7a003e8bc0325e18e4ec0309f101aa6a86bb7c75dcd3db134e"
+          "postProcessHash": "d0cd9d52c6eb99fe6004151ad833e623093d20b5d14705d239459b8e50438d98"
         },
         "zh": {
-          "updatedAt": "2026-10-09T08:37:56.385Z",
+          "updatedAt": "2026-10-20T13:59:25.500Z",
           "fileName": "zh/concepts/features/security/external-authenticators/jwt.mdx",
-          "postProcessHash": "d53841fba18fa8e7da410410e1035e632b6a339ab7ba55775ed7cdfd80ebfb42"
+          "postProcessHash": "49df69f47bfb84e3abe4869c888bf34f637368499e33d4d9f297bdb8980063b9"
+        },
+        "ko": {
+          "updatedAt": "2026-10-20T13:59:25.502Z",
+          "fileName": "ko/concepts/features/security/external-authenticators/jwt.mdx",
+          "postProcessHash": "fa3a0186abb7dadaba078836d3f3d42d95713bdd8221a686ebe81f2b05bb2c31"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-10-20T13:59:25.503Z",
+          "fileName": "pt-BR/concepts/features/security/external-authenticators/jwt.mdx",
+          "postProcessHash": "b01171e1bb4ad1fd1290706ae2bc8500aba97df6dba4d6ada2e13433f2a37774"
         },
         "ar": {
-          "updatedAt": "2026-10-09T08:37:56.386Z",
+          "updatedAt": "2026-10-20T13:59:25.504Z",
           "fileName": "ar/concepts/features/security/external-authenticators/jwt.mdx",
-          "postProcessHash": "4d19a3f3d13b2b6852ffaee3e6ef01238bbd8ff73b4b40d7b0d76b77774acf7c"
+          "postProcessHash": "7f92381c26a13c8e0b04e70af09b0125b422c910f160dee250ed97b45a2fc479"
         },
         "fr": {
-          "updatedAt": "2026-10-09T08:37:56.387Z",
+          "updatedAt": "2026-10-20T13:59:25.504Z",
           "fileName": "fr/concepts/features/security/external-authenticators/jwt.mdx",
-          "postProcessHash": "75f8f2796478d23cd4014a4b59a2200a6e560185b6f7d8993693515ea6b036c2"
+          "postProcessHash": "eb818935125af0813610109294a64ab73043a3e0a8a223a73ce09f4ce23f03d3"
+        },
+        "ja": {
+          "updatedAt": "2026-10-20T13:59:25.505Z",
+          "fileName": "ja/concepts/features/security/external-authenticators/jwt.mdx",
+          "postProcessHash": "07a52b37514ee5e47c2cbe8b49c7b10dfbcf112bfd8de404cde3c19777a31079"
+        },
+        "es": {
+          "updatedAt": "2026-10-20T13:59:25.506Z",
+          "fileName": "es/concepts/features/security/external-authenticators/jwt.mdx",
+          "postProcessHash": "bdedd431aee235465effccd9e6387de6bb34156be9f9b21223c2a56cf7ac746c"
         }
       },
       "fileName": "concepts/features/security/external-authenticators/jwt.mdx"
@@ -135991,47 +135991,47 @@
     },
     {
       "fileId": "6ffef4f84ad534f547a2b6f82754a46066eba5dcda1c2d67065d63531b54584b",
-      "versionId": "4eaf4799a0a392a89fc76826edfe9fe2e6877c5910679762c27de51b7ded9b25",
+      "versionId": "a283fb9153ef14650e9001ec1331c0bcd331f4778a12afa33dbbf1339393bf76",
       "translations": {
-        "es": {
-          "updatedAt": "2026-09-24T10:24:07.901Z",
-          "fileName": "es/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup.mdx",
-          "postProcessHash": "88ad3b505e2fc174c951cc4885029aaf288acfd86f97445fee14f884cb41552e"
-        },
-        "ja": {
-          "updatedAt": "2026-09-24T10:24:07.902Z",
-          "fileName": "ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup.mdx",
-          "postProcessHash": "a3ff2c8b8e3091fcdd14e58fc92fb533850dc2b7c32924932f1e1086ab310808"
-        },
-        "ko": {
-          "updatedAt": "2026-09-24T10:24:07.902Z",
-          "fileName": "ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup.mdx",
-          "postProcessHash": "429cb8bd3911cbbfa357b23b8fde46e0f50e60d45167aaf3bfa6f64c5e1581cc"
+        "fr": {
+          "updatedAt": "2026-10-20T13:59:25.496Z",
+          "fileName": "fr/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup.mdx",
+          "postProcessHash": "49a8041d27b5a15a68eb22ce003394515edc73742e819e322e66327b04620a70"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-24T10:24:07.903Z",
+          "updatedAt": "2026-10-20T13:59:25.497Z",
           "fileName": "pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup.mdx",
-          "postProcessHash": "bf273faeba420d622966c369ecb93300e671c08fb014ca92f7c2752b21a4cb58"
-        },
-        "ru": {
-          "updatedAt": "2026-09-24T10:24:07.903Z",
-          "fileName": "ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup.mdx",
-          "postProcessHash": "063702b9155e3eedd075d3fc39b9ee7e9dee510275e759aff46365a618d908a7"
+          "postProcessHash": "fc4a3493a5ff14d76075e029658d2502efdd943133f47378a5a3217342ccdfc5"
         },
         "zh": {
-          "updatedAt": "2026-09-24T10:24:07.904Z",
+          "updatedAt": "2026-10-20T13:59:25.497Z",
           "fileName": "zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup.mdx",
-          "postProcessHash": "770d7c3d12c6353a3eee83916c34c20c4cc89569810f21aa1dfb2c6d4cb7888e"
+          "postProcessHash": "2fc400ceb3e07265c8cca1af159e4a5b1476bfc7c91d6a3e79c245ba501df103"
+        },
+        "es": {
+          "updatedAt": "2026-10-20T13:59:25.498Z",
+          "fileName": "es/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup.mdx",
+          "postProcessHash": "01f917f81cf2107d176ab473237b1057c333ef47d3fbf8f3a1ed2d937baf6856"
         },
         "ar": {
-          "updatedAt": "2026-09-24T10:24:07.904Z",
+          "updatedAt": "2026-10-20T13:59:25.498Z",
           "fileName": "ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup.mdx",
-          "postProcessHash": "23bb44b2eea0354b4038697000644c1785209ca7c330a40f0bc92ba7bbeb70de"
+          "postProcessHash": "e24c77a58d26a834dea47be3e805abf494dcf6bcc981ae1b864df091b8440910"
         },
-        "fr": {
-          "updatedAt": "2026-09-24T10:24:07.904Z",
-          "fileName": "fr/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup.mdx",
-          "postProcessHash": "376d09ce5085979c156b19af70fd70bf38f6eead21fc3c8ba547ae6964c48713"
+        "ru": {
+          "updatedAt": "2026-10-20T13:59:25.499Z",
+          "fileName": "ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup.mdx",
+          "postProcessHash": "d0d52a678c5c57e69679d69a82cccec41048e97a7a54c14460ec4a2705c9dd5f"
+        },
+        "ko": {
+          "updatedAt": "2026-10-20T13:59:25.501Z",
+          "fileName": "ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup.mdx",
+          "postProcessHash": "ef7e213282460b48f994c545971c3a24fa11b98ee1d539f28e4737ee5263df50"
+        },
+        "ja": {
+          "updatedAt": "2026-10-20T13:59:25.502Z",
+          "fileName": "ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup.mdx",
+          "postProcessHash": "27fdea8d1bfd7736573a89487f9749a39e27e046e3a2164d543bc3263c5f9129"
         }
       },
       "fileName": "products/cloud/guides/security/cloud-access-management/jwt-authentication-setup.mdx"
@@ -142709,6 +142709,53 @@
         }
       },
       "fileName": "reference/settings/server-settings/settings/statistics-cache.mdx"
+    },
+    {
+      "fileId": "7d546cc4c86f76e62712fb391ce16099c8fca12b8a2052bae035205a623052c2",
+      "versionId": "8e714c38e15dbf692b09a8f1cda317fa361088c7369ee893f443ce97fb564196",
+      "translations": {
+        "es": {
+          "updatedAt": "2026-10-20T13:59:25.499Z",
+          "fileName": "es/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id.mdx",
+          "postProcessHash": "36401102c82987aede4ea4bb0002a34c398dc9172c1182159f10632fa36cf2d7"
+        },
+        "ja": {
+          "updatedAt": "2026-10-20T13:59:25.500Z",
+          "fileName": "ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id.mdx",
+          "postProcessHash": "11c17c8f0ed7c0edfbfba4bb6b39f3ea53081c57e843d5c9bff9cdf3369c1a78"
+        },
+        "ru": {
+          "updatedAt": "2026-10-20T13:59:25.501Z",
+          "fileName": "ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id.mdx",
+          "postProcessHash": "22b9f2e7d1681710084a43b0e63e7f45ce4a245cc49bbc0e3aafc1f93f84b0bb"
+        },
+        "ko": {
+          "updatedAt": "2026-10-20T13:59:25.502Z",
+          "fileName": "ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id.mdx",
+          "postProcessHash": "6e1c64423d9540777c7d8dbd4c91f4f677cf145eb254156e85486d724a5ead6f"
+        },
+        "fr": {
+          "updatedAt": "2026-10-20T13:59:25.503Z",
+          "fileName": "fr/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id.mdx",
+          "postProcessHash": "519866d1bfb582ef3fc1dbc87bfa183796c1481a983eba3ccd5680374225763e"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-10-20T13:59:25.504Z",
+          "fileName": "pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id.mdx",
+          "postProcessHash": "1d2f640fc993dd620dcfdc8bcc8d85065681ec7ac8b38ada1476d84e43a0c49d"
+        },
+        "ar": {
+          "updatedAt": "2026-10-20T13:59:25.505Z",
+          "fileName": "ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id.mdx",
+          "postProcessHash": "773cfa8d8b8eed99d2243c4fd91fc109bbf8af5eff145cec4570aa5ebd144cff"
+        },
+        "zh": {
+          "updatedAt": "2026-10-20T13:59:25.506Z",
+          "fileName": "zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id.mdx",
+          "postProcessHash": "8cfa2068b299358eee27c3e3c36675006040eb29c294209d3088cd287afcb10d"
+        }
+      },
+      "fileName": "products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id.mdx"
     }
   ]
 }

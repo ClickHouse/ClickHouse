@@ -1,0 +1,322 @@
+---
+sidebarTitle: 'JWT-аутентификация через Entra ID'
+slug: /cloud/security/jwt-authentication-entra-id
+title: 'JWT-аутентификация через Microsoft Entra ID'
+description: 'Как настроить Microsoft Entra ID для выдачи JWT сервису ClickHouse Cloud и сопоставить роли приложения Entra ID с ролями ClickHouse'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'JWT', 'JWKS', 'Entra ID', 'Azure AD', 'Microsoft', 'OAuth', 'OIDC', 'роли приложения', 'аутентификация', 'провайдер идентификации']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+import { EnterprisePlanFeatureBadge } from "/snippets/ru/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+import { VersionBadge } from "/snippets/ru/components/VersionBadge/VersionBadge.jsx";
+
+<VersionBadge minVersion="26.4" />
+
+<EnterprisePlanFeatureBadge feature="JWT-аутентификация с пользовательским поставщиком удостоверений" />
+
+В этом руководстве описано, как настроить **Microsoft Entra ID** (ранее Azure Active Directory), чтобы пользователи и приложения подключались к сервису ClickHouse Cloud с помощью токенов доступа Entra ID, а не паролей базы данных. Роли приложений Entra ID сопоставляются с ролями ClickHouse, поэтому доступом можно управлять, назначая пользователям, группам и приложениям роли приложений в Entra ID.
+
+<Tip>
+  В этом руководстве рассматривается настройка на стороне Entra ID, а также значения, которые нужно указать в ClickHouse Cloud. Общие сведения о провайдерах JWT см. в разделе [Настройка JWT-аутентификации](/ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup). Об утверждениях токенов и работе эфемерных пользователей см. в справочнике [JWT-аутентификация](/ru/concepts/features/security/external-authenticators/jwt).
+</Tip>
+
+## Перед началом работы {#before-you-begin}
+
+Вам потребуется:
+
+* Организация на тарифном плане **Enterprise** и сервис с **ClickHouse версии 26.4 или новее**.
+* Роль ClickHouse Cloud с разрешением `control-plane:service:manage` для сервиса (например, **Администратор** или **Администратор сервиса**), чтобы добавить провайдер JWT.
+* Доступ к **Microsoft Entra admin center** с ролью не ниже **Cloud Application Administrator**.
+* Microsoft Entra ID P1 или P2, если вы хотите назначать ролям приложения группы, а не отдельных пользователей.
+* [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) (`az`) и [`clickhouse-client`](/ru/concepts/features/interfaces/client) для проверки настройки.
+* Список ролей ClickHouse, которые вы хотите выдавать через Entra ID. Каждая из них станет ролью приложения Entra ID с тем же именем. В этом руководстве используются две роли:
+
+  | Значение роли приложения | Привилегии ClickHouse                |
+  | ------------------------ | ------------------------------------ |
+  | `ch_analyst`             | `SELECT` и `INSERT` на `analytics.*` |
+  | `ch_readonly`            | `SELECT` на `*.*`                    |
+
+## Как это работает {#how-it-works}
+
+1. Вы регистрируете в Entra ID приложение, представляющее ваш сервис ClickHouse Cloud, и определяете по одной роли приложения для каждой роли ClickHouse.
+2. Вы назначаете этим ролям приложения пользователей, группы и приложения Entra ID.
+3. Пользователь входит в систему через Azure CLI или `clickhouse-client --login`, либо приложение использует поток client credentials grant (предоставление учётных данных клиента). Entra ID выдаёт токен доступа версии 2.0, в котором утверждение `aud` содержит идентификатор приложения (клиента), а утверждение `roles` — список ролей приложения, назначенных вызывающей стороне.
+4. ClickHouse Cloud проверяет подпись токена по открытым ключам Entra ID, проверяет утверждения `iss` и `aud` и создаёт эфемерного пользователя с привилегиями ролей ClickHouse, перечисленных в утверждении `roles`. При этом привилегии такого пользователя не могут превышать привилегии пользователя `default`.
+
+## Регистрация ClickHouse в Entra ID {#register-in-entra-id}
+
+<Steps>
+  <Step title="Зарегистрируйте приложение" id="create-app-registration">
+    В центре администрирования Microsoft Entra откройте **App registrations** и выберите **New registration**:
+
+    * **Name**: отображаемое имя, например `clickhouse-cloud-production`.
+    * **Supported account types**: один тенант. В зависимости от версии портала этот вариант называется **Single tenant only** или **Accounts in this organizational directory only**.
+    * **Redirect URI**: оставьте пустым. Пользователи входят в систему через device code flow, в котором URI перенаправления не используется.
+
+    <Image img="/images/cloud/security/jwt/entra-register-application.webp" size="lg" alt="Форма регистрации приложения в центре администрирования Microsoft Entra с типом учетных записей для одного тенанта и без URI перенаправления" />
+
+    Нажмите **Register**. На странице **Overview** скопируйте следующие значения:
+
+    * **Application (client) ID** — далее `<CLIENT_ID>`. Это значение становится утверждением `aud` в токенах.
+    * **Directory (tenant) ID** — далее `<TENANT_ID>`. Это значение входит в состав издателя и URL набора JWKS.
+  </Step>
+
+  <Step title="Запросите токены доступа v2.0" id="request-v2-tokens">
+    По умолчанию Entra ID выдает токены доступа версии v1.0, издателем которых является `https://sts.windows.net/<TENANT_ID>/`. Вместо этого настройте приложение на получение токенов версии v2.0: их издатель — `https://login.microsoftonline.com/<TENANT_ID>/v2.0`, а утверждение `aud` всегда содержит идентификатор клиента (client ID).
+
+    В регистрации приложения откройте раздел **Manifest**, укажите версию токена доступа `2` и нажмите **Save**. Имя свойства зависит от формата манифеста, отображаемого в редакторе:
+
+    * Формат Microsoft Graph: `requestedAccessTokenVersion` в разделе `api`.
+    * Формат Azure AD Graph: `accessTokenAcceptedVersion` на верхнем уровне, как показано на снимке экрана ниже.
+
+    <Image img="/images/cloud/security/jwt/entra-manifest-token-version.webp" size="lg" alt="Редактор манифеста приложения, в котором для accessTokenAcceptedVersion задано значение 2" />
+  </Step>
+
+  <Step title="Предоставление API" id="expose-an-api">
+    Откройте **Expose an API**:
+
+    1. Рядом с **Application ID URI** нажмите **Add**, оставьте значение по умолчанию `api://<CLIENT_ID>` и сохраните изменения. Клиенты используют этот URI для запроса токенов к ClickHouse. Он не влияет на утверждение `aud` в токенах v2.0 — в нём по-прежнему указывается ID клиента.
+
+       <Image img="/images/cloud/security/jwt/entra-application-id-uri.webp" size="lg" alt="Страница Expose an API с панелью Application ID URI, на которой отображается значение api:// по умолчанию" />
+
+    2. Нажмите **Add a scope** и заполните форму. Пользователи запрашивают эту область при входе в систему. Приложения, которые проходят аутентификацию от собственного имени, её не используют.
+
+       | Поле                           | Значение                                            |
+       | ------------------------------ | --------------------------------------------------- |
+       | **Scope name**                 | `access_as_application`                             |
+       | **Who can consent?**           | **Admins only**                                     |
+       | **Admin consent display name** | Например, `Access ClickHouse as the signed-in user` |
+       | **Admin consent description**  | Любое описание                                      |
+       | **State**                      | **Enabled**                                         |
+
+       <Image img="/images/cloud/security/jwt/entra-add-scope.webp" size="lg" alt="Панель Add a scope с областью access_as_application, согласием только для администраторов и состоянием Enabled" />
+  </Step>
+
+  <Step title="Предоставьте клиентскому приложению разрешение на вход пользователей" id="authorize-client-application">
+    Пользователи получают токены через публичное клиентское приложение. Если заранее авторизовать это приложение для области `access_as_application`, пользователям не придётся давать согласие. В этом руководстве используется Azure CLI с идентификатором клиента `04b07795-8ddb-461a-bbee-02f9e1bf7b46` — как для `az`, так и для `clickhouse-client --login`.
+
+    В разделе **Expose an API** в блоке **Authorized client applications** выберите **Add a client application**. Введите `04b07795-8ddb-461a-bbee-02f9e1bf7b46`, выберите область `api://<CLIENT_ID>/access_as_application` и нажмите **Add application**.
+
+    <Image img="/images/cloud/security/jwt/entra-authorize-client-application.webp" size="lg" alt="Панель Add a client application с идентификатором клиента Azure CLI и выбранной областью access_as_application" />
+
+    <Note>
+      Чтобы использовать вместо Azure CLI собственное клиентское приложение, зарегистрируйте отдельное приложение, в разделе **Authentication** установите для **Allow public client flows** значение **Yes** и заранее авторизуйте здесь его идентификатор клиента. Затем передайте этот идентификатор клиента в параметре `--oauth-client-id` при [входе с помощью clickhouse-client](#sign-in-with-clickhouse-client). Если в вашем тенанте пользователям запрещено давать согласие, администратор также должен предоставить согласие на разрешения `openid`, `profile` и `offline_access` для этого приложения.
+    </Note>
+  </Step>
+
+  <Step title="Создайте роли приложения" id="create-app-roles">
+    Каждая роль приложения соответствует одной роли ClickHouse. **Value** роли приложения — это значение, которое попадает в утверждение `roles` токена, поэтому оно должно в точности совпадать с именем роли ClickHouse, включая регистр.
+
+    Откройте **App roles** и для каждой роли ClickHouse выберите **Create app role**:
+
+    | Поле                                     | Значение                                                                                                                                                     |
+    | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+    | **Display name**                         | Понятное имя, например `ClickHouse analyst`                                                                                                                  |
+    | **Allowed member types**                 | **Both (Users/Groups + Applications)**. Выберите **Users/Groups**, если подключаются только люди, или **Applications**, если подключаются только приложения. |
+    | **Value**                                | Имя роли ClickHouse, например `ch_analyst`                                                                                                                   |
+    | **Description**                          | Произвольное описание                                                                                                                                        |
+    | **Do you want to enable this app role?** | Флажок установлен                                                                                                                                            |
+
+    В следующем примере определены три роли приложения, значениями которых служат имена ролей ClickHouse:
+
+    <Image img="/images/cloud/security/jwt/entra-app-roles.webp" size="lg" alt="Страница App roles со списком ролей ClickHouse Admin, ClickHouse Analyst DB и ClickHouse Read Only со значениями ch_admin, ch_analyst и ch_readonly" />
+  </Step>
+
+  <Step title="Требовать назначения" id="require-assignment">
+    По умолчанию токен для приложения может получить любой пользователь вашего тенанта. Чтобы выдавать токены только пользователям, группам и приложениям, которым назначена роль приложения, откройте **Enterprise applications**, выберите приложение с тем же именем, что и у регистрации вашего приложения, откройте **Properties**, задайте для параметра **Assignment required?** значение **Yes** и нажмите **Save**.
+
+    <Image img="/images/cloud/security/jwt/entra-assignment-required.webp" size="lg" alt="Свойства корпоративного приложения: для параметра Assignment required задано значение Yes" />
+  </Step>
+
+  <Step title="Назначьте пользователям и группам роли приложения" id="assign-users-and-groups">
+    В том же корпоративном приложении откройте **Users and groups** и нажмите **Add user/group**. Выберите пользователя или группу, укажите роль приложения и нажмите **Assign**. Повторите эти действия для каждого пользователя или группы.
+
+    <Image img="/images/cloud/security/jwt/entra-assign-users-and-groups.webp" size="lg" alt="Страница Users and groups корпоративного приложения, на которой пользователю назначена роль приложения ClickHouse Read Only" />
+
+    Если пользователю назначено несколько ролей приложения (напрямую или через группы), в утверждении `roles` он получает их все.
+
+    <Note>
+      Для назначения ролей приложения группам требуется Microsoft Entra ID P1 или P2. Вложенные группы не поддерживаются: роль приложения получают только непосредственные участники назначенной группы.
+    </Note>
+  </Step>
+</Steps>
+
+## Создание соответствующих ролей в ClickHouse {#create-clickhouse-roles}
+
+Подключитесь к сервису от имени пользователя `default` (например, через консоль SQL) и создайте роль для каждого значения роли приложения:
+
+```sql
+CREATE ROLE ch_analyst;
+GRANT SELECT, INSERT ON analytics.* TO ch_analyst;
+
+CREATE ROLE ch_readonly;
+GRANT SELECT ON *.* TO ch_readonly;
+```
+
+Имейте в виду:
+
+* Имена ролей чувствительны к регистру и должны совпадать со значениями ролей приложения.
+* ClickHouse игнорирует имена в утверждении `roles`, которым не соответствует ни одна существующая роль в сервисе.
+* Верхней границей разрешений для провайдеров JWT в ClickHouse Cloud служит пользователь `default`. ClickHouse отбрасывает все привилегии роли, которых нет у пользователя `default`.
+
+## Добавление Entra ID в качестве провайдера JWT {#add-jwt-provider}
+
+Выполните шаги из раздела [Добавление провайдера JWT](/ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup#add-a-jwt-provider) и укажите следующие значения:
+
+| Поле            | Значение                                                                                |
+| --------------- | --------------------------------------------------------------------------------------- |
+| **Name**        | Любое имя, например `entra-id`                                                          |
+| **Issuer**      | `https://login.microsoftonline.com/<TENANT_ID>/v2.0`                                    |
+| **Audience**    | `<CLIENT_ID>` — идентификатор приложения (клиента). Не используйте `api://<CLIENT_ID>`. |
+| **JWKS URL**    | `https://login.microsoftonline.com/<TENANT_ID>/discovery/v2.0/keys`                     |
+| **Roles claim** | `roles`                                                                                 |
+
+<Warning>
+  Укажите в поле **Roles claim** значение `roles`. Если оставить его пустым, ClickHouse будет считывать роли из утверждения `clickhouse:roles`, которого нет в токенах Entra ID, и пользователи пройдут аутентификацию, не получив никаких привилегий.
+</Warning>
+
+## Подключение от имени пользователя {#connect-as-a-user}
+
+Задайте значения из регистрации приложения и имя хоста сервиса в качестве переменных командной оболочки:
+
+```bash
+TENANT_ID="<TENANT_ID>"
+CLIENT_ID="<CLIENT_ID>"
+CH_HOST="<your-service-hostname>"
+```
+
+### Передача токена Azure CLI {#pass-an-azure-cli-token}
+
+Войдите в Azure CLI, запросите токен доступа для приложения ClickHouse и передайте его в `clickhouse-client` через параметр `--jwt`:
+
+```bash
+az login --tenant "$TENANT_ID" --allow-no-subscriptions
+TOKEN=$(az account get-access-token --resource "api://$CLIENT_ID" --query accessToken --output tsv)
+
+clickhouse-client --host "$CH_HOST" --secure --jwt "$TOKEN"
+```
+
+Этот же токен подходит и для HTTP-интерфейса:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "https://$CH_HOST:8443/?query=SELECT%20currentUser()"
+```
+
+По умолчанию токены доступа Entra ID действительны от 60 до 90 минут. Когда срок действия токена истечёт, запросите новый, а для длительных сеансов используйте `--login`.
+
+### Вход с помощью clickhouse-client {#sign-in-with-clickhouse-client}
+
+`clickhouse-client` может самостоятельно выполнять авторизацию по OAuth 2.0 device code flow и обновлять токен в течение сеанса:
+
+```bash
+clickhouse-client --host "$CH_HOST" --secure --login \
+  --oauth-url "https://login.microsoftonline.com/$TENANT_ID/v2.0" \
+  --oauth-client-id 04b07795-8ddb-461a-bbee-02f9e1bf7b46 \
+  --oauth-scope "openid profile offline_access api://$CLIENT_ID/access_as_application"
+```
+
+Клиент выведет URL и код. Откройте URL, введите код и войдите в свой аккаунт Entra ID. Не удаляйте `offline_access` из области видимости: благодаря этому Entra ID возвращает токен обновления, с помощью которого клиент обновляет токен доступа. Без него после истечения срока действия токена доступа придётся входить заново.
+
+## Подключение от имени приложения {#connect-as-an-application}
+
+Приложения, такие как ETL-задания и серверные сервисы, проходят аутентификацию от собственного имени с помощью OAuth 2.0 client credentials grant. Роли приложения, назначаемые приложению, должны допускать тип участника **Applications**.
+
+1. В разделе **App registrations** зарегистрируйте отдельное приложение для рабочей нагрузки. В разделе **Certificates &amp; secrets** создайте секрет клиента или загрузите сертификат. В приведённых ниже командах идентификатор клиента и секрет рабочей нагрузки обозначены как `<WORKLOAD_CLIENT_ID>` и `<WORKLOAD_CLIENT_SECRET>`.
+2. В регистрации приложения рабочей нагрузки откройте **API permissions** и выберите **Add a permission**. В разделе **APIs my organization uses** найдите приложение ClickHouse, выберите **Application permissions**, отметьте роли приложения, необходимые рабочей нагрузке, и нажмите **Add permissions**.
+3. Нажмите **Grant admin consent**, чтобы назначить роли приложения рабочей нагрузке.
+
+Запросите токен у конечной точки токенов Entra ID и передайте его в ClickHouse:
+
+```bash
+TOKEN=$(curl -s "https://login.microsoftonline.com/$TENANT_ID/oauth2/v2.0/token" \
+  -d grant_type=client_credentials \
+  -d client_id="<WORKLOAD_CLIENT_ID>" \
+  --data-urlencode client_secret="<WORKLOAD_CLIENT_SECRET>" \
+  --data-urlencode scope="api://$CLIENT_ID/.default" | jq -r .access_token)
+
+curl -H "Authorization: Bearer $TOKEN" "https://$CH_HOST:8443/?query=SELECT%20currentUser()"
+```
+
+В продакшн-коде используйте [Microsoft Authentication Library (MSAL)](https://learn.microsoft.com/entra/identity-platform/msal-overview) или библиотеку Azure Identity для вашего языка программирования. Они кэшируют токены и запрашивают новые до того, как истечёт срок действия старых.
+
+## Проверка {#verify}
+
+После подключения проверьте идентичность и привилегии текущего сеанса:
+
+```sql
+SELECT currentUser();
+SHOW GRANTS;
+SHOW CURRENT ROLES;
+```
+
+| Запрос                 | Ожидаемый результат                                                                                                   |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `SELECT currentUser()` | Имя вида `JWT::<sub>::<hash>`, где `<sub>` — значение утверждения `sub` токена                                        |
+| `SHOW GRANTS`          | Привилегии ролей, перечисленных в утверждении `roles` токена, например `GRANT SELECT ON *.* TO ...` для `ch_readonly` |
+| `SHOW CURRENT ROLES`   | Нет строк                                                                                                             |
+
+ClickHouse не назначает эфемерному пользователю сами роли. Он собирает привилегии ролей, указанных в токене, находит их пересечение с привилегиями пользователя `default` и назначает полученный результат непосредственно пользователю. Именно поэтому `SHOW CURRENT ROLES` не возвращает ни одной строки.
+
+Для пользовательских токенов Entra ID записывает в `sub` непрозрачный идентификатор, уникальный для каждой пары «пользователь — приложение». Это не адрес электронной почты пользователя и не его object ID.
+
+## Рекомендуемые практики {#best-practices}
+
+### Назначайте группы, а не отдельных пользователей {#assign-groups}
+
+Назначьте каждой роли приложения одну группу Entra ID, а затем предоставляйте или отзывайте доступ, меняя состав участников группы. Тогда при приходе сотрудников в команду или их уходе никому не придётся вносить изменения в приложение.
+
+### Используйте отдельную регистрацию приложения для каждого окружения {#separate-app-registrations}
+
+В утверждении `aud` токены содержат идентификатор клиента (client ID) регистрации приложения, для которой они выданы. Если для продакшн- и staging-окружения используются отдельные регистрации приложений, токен, выданный для одного окружения, не позволит пройти аутентификацию в другом.
+
+### Изменения ролей вступают в силу только с новым токеном {#role-changes}
+
+Entra ID записывает утверждение `roles` в момент выдачи токена. Поэтому после изменения назначений ролей приложения для пользователя изменения вступят в силу, только когда пользователь получит новый токен. Уже выданные токены сохраняют прежние роли до истечения срока их действия. Чтобы сразу получить новый токен в Azure CLI, выполните `az logout` и `az login`.
+
+## Устранение неполадок {#troubleshooting}
+
+<AccordionGroup>
+  <Accordion title="Токен отклоняется, а его издатель начинается с https://sts.windows.net" id="v1-token">
+    Entra ID выдал токен версии v1.0. Задайте для `requestedAccessTokenVersion` значение `2` в манифесте приложения, как описано в разделе [Запрос токенов доступа v2.0](#request-v2-tokens), и запросите новый токен.
+  </Accordion>
+
+  <Accordion title="Токен отклоняется из-за аудитории" id="audience-mismatch">
+    * Значением **Audience** провайдера в ClickHouse Cloud должен быть идентификатор клиента, а не `api://<CLIENT_ID>`.
+    * Убедитесь, что вы запросили токен именно для приложения ClickHouse. Без `--resource` команда `az account get-access-token` вернёт токен для Azure Resource Manager.
+  </Accordion>
+
+  <Accordion title="Entra ID возвращает AADSTS65001 или запрашивает согласие" id="consent-required">
+    Клиентское приложение не имеет предварительной авторизации для области видимости `access_as_application`. Добавьте его идентификатор клиента в разделе **Expose an API → Authorized client applications**, как описано в разделе [Авторизация клиентского приложения для входа пользователей](#authorize-client-application).
+  </Accordion>
+
+  <Accordion title="Entra ID возвращает AADSTS50105 или AADSTS501051" id="not-assigned">
+    Пользователь или приложение не назначены приложению ClickHouse, а для параметра **Assignment required?** установлено значение **Yes**. Назначьте роль приложения пользователю, одной из его групп или приложению. Если вы назначили роль группе, убедитесь, что пользователь является её непосредственным участником.
+  </Accordion>
+
+  <Accordion title="Аутентификация проходит успешно, но запросы завершаются ошибкой ACCESS_DENIED" id="no-privileges">
+    У эфемерного пользователя нет привилегий, необходимых для выполнения запроса. Проверьте следующее:
+
+    * Для параметра **Roles claim** провайдера задано значение `roles`.
+    * Токен содержит утверждение `roles`. Оно отсутствует, если вызывающая сторона назначена приложению без роли приложения.
+    * Каждое значение в утверждении `roles` совпадает с одной из существующих ролей ClickHouse в сервисе, включая регистр.
+    * У пользователя `default` есть привилегии, которые вы выдаёте роли.
+
+    Чтобы просмотреть утверждения токена, декодируйте его полезную нагрузку локально:
+
+    ```bash
+    python3 -c 'import sys, base64, json; p = sys.argv[1].split(".")[1]; print(json.dumps(json.loads(base64.urlsafe_b64decode(p + "=" * (-len(p) % 4))), indent=2))' "$TOKEN"
+    ```
+  </Accordion>
+
+  <Accordion title="Токен отклоняется после настройки политики сопоставления утверждений" id="app-signing-key">
+    Если вы настроили для приложения политику сопоставления утверждений или пользовательский ключ подписи, Entra ID подписывает токены этого приложения ключом, которого нет в JWKS тенанта. Задайте для параметра **JWKS URL** провайдера значение `https://login.microsoftonline.com/<TENANT_ID>/discovery/v2.0/keys?appid=<CLIENT_ID>`.
+  </Accordion>
+</AccordionGroup>
+
+## См. также {#related}
+
+* [Настройка JWT-аутентификации](/ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup): добавление, изменение и удаление провайдеров JWT в консоли Cloud.
+* [JWT-аутентификация](/ru/concepts/features/security/external-authenticators/jwt): утверждения токенов, эфемерные пользователи и использование в клиентах.

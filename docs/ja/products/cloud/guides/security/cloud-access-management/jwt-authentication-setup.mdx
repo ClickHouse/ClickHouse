@@ -4,7 +4,7 @@ slug: /cloud/security/jwt-authentication-setup
 title: 'JWT 認証の設定'
 description: 'Console から ClickHouse Cloud サービスごとに JWT（JWKS）認証プロバイダを設定する方法'
 doc_type: 'guide'
-keywords: ['ClickHouse Cloud', 'JWT', 'JWKS', '認証', 'ID プロバイダ', 'RS256']
+keywords: ['ClickHouse Cloud', 'JWT', 'JWKS', '認証', 'identity provider', 'RS256']
 ---
 
 import { Image } from "/snippets/ja/components/Image.jsx";
@@ -21,12 +21,18 @@ import { VersionBadge } from "/snippets/ja/components/VersionBadge/VersionBadge.
   このガイドでは、Cloud Console で JWKS プロバイダを設定する方法を説明します。JWT の生成方法や構造 (必須のクレーム、ロールおよび権限付与のクレーム、一時ユーザーの仕組みを含む) については、[JWT Authentication](/ja/concepts/features/security/external-authenticators/jwt) リファレンスを参照してください。
 </Tip>
 
-ClickHouse Cloud では、独自の JSON Web Key Set (JWKS) エンドポイントに対して検証された JSON Web Token (JWT) を使用して、サービスへの接続を認証できます。データベース認証情報を管理する代わりに、アイデンティティプロバイダが短期間有効なトークンを発行し、ClickHouse は設定した JWKS URL で公開されている公開鍵を使用してそのトークンを検証します。
+ClickHouse Cloud では、独自の JSON Web Key Set (JWKS) エンドポイントに対して検証された JSON Web Token (JWT) を使用して、サービスへの接続を認証できます。データベース認証情報を管理する代わりに、identity provider が短期間有効なトークンを発行し、ClickHouse は設定した JWKS URL で公開されている公開鍵を使用してそのトークンを検証します。
 
 ClickHouse Cloud Console の **Settings → Security** から、サービスごとにこれらの JWKS プロバイダを設定できます。
 
+<Tip>
+  **Microsoft Entra ID をお使いですか？**
+
+  Entra ID 側の設定、入力するプロバイダの設定値、Entra ID のアプリロールを ClickHouse ロールにマッピングする方法については、[Microsoft Entra ID を使用した JWT 認証](/ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id)を参照してください。
+</Tip>
+
 <div id="before-you-begin">
-  ## 始める前に
+  ## 始める前に {#before-you-begin}
 </div>
 
 サービスの JWT プロバイダを設定するには、次の要件を満たす必要があります。
@@ -41,7 +47,7 @@ ClickHouse Cloud Console の **Settings → Security** から、サービスご�
 </Note>
 
 <div id="how-it-works">
-  ## 仕組み
+  ## 仕組み {#how-it-works}
 </div>
 
 クライアント (アイデンティティプロバイダまたはアプリケーション) は JWT を生成し、**秘密鍵**で署名します。トークンは、想定される[トークン形式](/ja/concepts/features/security/external-authenticators/jwt#token-claims)に従う必要があります。ClickHouse は、JWKS URL で公開されている**公開鍵**を使用してトークンを検証します。
@@ -53,7 +59,7 @@ ClickHouse Cloud Console の **Settings → Security** から、サービスご�
 ClickHouse はプロバイダーの追加または更新時に JWKS URL を検証して取得するため、設定が不適切な URL や到達できない URL は事前に拒否されます。
 
 <div id="add-a-jwt-provider">
-  ## JWT プロバイダを追加する
+  ## JWT プロバイダを追加する {#add-a-jwt-provider}
 </div>
 
 <Steps>
@@ -89,7 +95,7 @@ ClickHouse はプロバイダーの追加または更新時に JWKS URL を検�
 </Warning>
 
 <div id="limits">
-  ## 制限事項
+  ## 制限事項 {#limits}
 </div>
 
 * 1サービスあたり最大**5つ**のJWTプロバイダを設定できます。
@@ -97,7 +103,8 @@ ClickHouse はプロバイダーの追加または更新時に JWKS URL を検�
 * JWKS URLはPublic HTTPSエンドポイントである必要があります。Private、内部、またはリンクローカルアドレスは拒否されます。
 
 <div id="related">
-  ## 関連情報
+  ## 関連情報 {#related}
 </div>
 
 * [JWT Authentication](/ja/concepts/features/security/external-authenticators/jwt) — トークンのクレーム、一時ユーザー、クライアントの使用方法。
+* [Microsoft Entra ID を使用した JWT 認証](/ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id) — Entra ID を JWT プロバイダーとして設定する方法。

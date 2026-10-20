@@ -147,7 +147,8 @@
             "zh/products/cloud/guides/security/saml-sso-removal",
             "zh/products/cloud/guides/security/cloud-access-management/scim-setup",
             "zh/products/cloud/guides/security/cloud-access-management/scim-setup-entra",
-            "zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup"
+            "zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup",
+            "zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id"
           ]
         }
       ]
