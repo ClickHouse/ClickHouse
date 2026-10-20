@@ -9,16 +9,15 @@ keywords: ['مراجعات أمازون', 'مجموعة بيانات مراجع�
 
 import { RunnableCode } from "/snippets/ar/components/RunnableCode/RunnableCode.jsx";
 
-تحتوي مجموعة البيانات هذه على أكثر من 150 مليون مراجعة للعملاء على منتجات أمازون. توجد البيانات في ملفات Parquet مضغوطة بخوارزمية snappy على AWS S3، ويبلغ حجمها الإجمالي 49 جيجابايت (بعد الضغط). لنستعرض خطوات إدراجها في ClickHouse.
+تحتوي مجموعة البيانات هذه على أكثر من 150 مليون مراجعة للعملاء على منتجات أمازون. توجد البيانات في ملفات Parquet مضغوطة بخوارزمية snappy على AWS S3، ويبلغ حجمها الإجمالي 49 جيجابايت (بعد الضغط).
 
 <Note>
-  نُفِّذت الاستعلامات أدناه على مثيل **Production** في ClickHouse Cloud. لمزيد من المعلومات، راجع
-  [&quot;مواصفات Playground&quot;](/ar/get-started/sample-datasets/playground#specifications).
+  يمكنك تجربة ذلك على ClickHouse مستضاف ذاتيًا أو على ClickHouse Cloud. إذا لم يكن لديك حساب بالفعل، يمكنك بدء [فترة تجريبية مجانية لـ ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-amazon-reviews).
 </Note>
 
-<div id="loading-the-dataset">
-  ## تحميل مجموعة البيانات
-</div>
+لنستعرض خطوات إدراج البيانات في ClickHouse.
+
+## تحميل مجموعة البيانات {#loading-the-dataset}
 
 1. من دون إدراج البيانات في ClickHouse، يمكننا الاستعلام عنها مباشرةً. لنستعرض بعض الصفوف حتى نرى كيف تبدو:
 
@@ -118,7 +117,11 @@ ENGINE = MergeTree
 ORDER BY (review_date, product_category)
 ```
 
-3. يستخدم أمر `INSERT` التالي دالة الجدول `s3Cluster`، ما يتيح معالجة عدة ملفات S3 بالتوازي باستخدام جميع عُقد العنقود لديك. ونستخدم أيضًا محرف بدل لإدراج أي ملف يبدأ بالاسم `https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_*.snappy.parquet`:
+3. يستخدم أمر `INSERT` التالي دالة الجدول [`s3Cluster`](/ar/reference/functions/table-functions/s3Cluster)، التي توزّع ملفات S3 على عُقد العنقود لديك لتُقرأ بالتوازي.
+
+في ClickHouse Cloud، يُسمّى العنقود لديك `default`، ويمكنك تنفيذ الأمر كما هو موضح. أما على خادم مُدار ذاتيًا، فاستبدل `default` باسم العنقود لديك — أو إذا كنت تستخدم خادمًا واحدًا، فاستخدم دالة الجدول [`s3`](/ar/reference/functions/table-functions/s3) بدلًا منها، واحذف الوسيط الأول ليبدأ استدعاء الدالة بعنوان URL.
+
+نستخدم محرف بدل في عنوان URL لإدراج جميع ملفات المراجعة المطابقة.
 
 ```sql
 INSERT INTO amazon.amazon_reviews SELECT *
@@ -126,11 +129,7 @@ FROM s3Cluster('default',
 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_*.snappy.parquet', NOSIGN)
 ```
 
-<Tip>
-  في ClickHouse Cloud، يكون اسم الـ عنقود هو `default`. غيّر `default` إلى اسم الـ عنقود لديك... أو استخدم دالة الجدول ‏`s3` (بدلًا من `s3Cluster`) إذا لم يكن لديك عنقود.
-</Tip>
-
-5. هذا الاستعلام لا يستغرق وقتًا طويلًا — إذ يبلغ المتوسط نحو 300,000 صف في الثانية. وخلال 5 دقائق تقريبًا، ينبغي أن ترى أنه قد تم insert جميع الصفوف:
+5. هذا الاستعلام لا يستغرق وقتًا طويلًا — إذ يبلغ المتوسط نحو 300,000 صف في الثانية. وخلال 5 دقائق تقريبًا، ينبغي أن ترى أنه قد تم إدراج جميع الصفوف:
 
 <RunnableCode>
   ```sql
@@ -159,9 +158,7 @@ FROM s3Cluster('default',
 
 كان حجم البيانات الأصلي نحو 70G، لكن بعد ضغطها في ClickHouse أصبحت تشغل نحو 30G.
 
-<div id="example-queries">
-  ## أمثلة على الاستعلامات
-</div>
+## أمثلة على الاستعلامات {#example-queries}
 
 7. لنُشغِّل بعض الاستعلامات. فيما يلي أكثر 10 مراجعات فائدةً في مجموعة البيانات:
 

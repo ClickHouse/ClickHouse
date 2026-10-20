@@ -198,9 +198,10 @@ void StorageExecutable::readImpl(
     QueryPlanResourceHolder resources;
     inputs.reserve(input_queries.size());
 
+    auto input_context = Context::withUnresolvedPositionalArguments(context);
     for (auto & input_query : input_queries)
     {
-        QueryPipelineBuilder builder = InterpreterSelectQueryAnalyzer(input_query, context, {}).buildQueryPipeline();
+        QueryPipelineBuilder builder = InterpreterSelectQueryAnalyzer(input_query, input_context, {}).buildQueryPipeline();
         inputs.emplace_back(QueryPipelineBuilder::getPipe(std::move(builder), resources));
     }
 
@@ -297,7 +298,7 @@ void registerStorageExecutable(StorageFactory & factory)
     factory.registerStorage("Executable", [&](const StorageFactory::Arguments & args)
     {
         return register_storage(args, false /*is_executable_pool*/);
-    }, storage_features,
+    }, SecretArgumentsSpec{}, storage_features,
     Documentation{
         .description = R"DOCS_MD(
 The `Executable` and `ExecutablePool` table engines allow you to define a table whose rows are generated from a script that you define (by writing rows to **stdout**). The executable script is stored in the `user_scripts` directory and can read data from any source.
@@ -523,7 +524,7 @@ ClickHouse will maintain 4 processes on-demand when your client queries the `sen
     factory.registerStorage("ExecutablePool", [&](const StorageFactory::Arguments & args)
     {
         return register_storage(args, true /*is_executable_pool*/);
-    }, storage_features,
+    }, SecretArgumentsSpec{}, storage_features,
     Documentation{
         .description = R"DOCS_MD(
 The `Executable` and `ExecutablePool` table engines allow you to define a table whose rows are generated from a script that you define (by writing rows to **stdout**). The executable script is stored in the `user_scripts` directory and can read data from any source.

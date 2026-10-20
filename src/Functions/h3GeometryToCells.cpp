@@ -6,6 +6,9 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <IO/WriteHelpers.h>
 
+#include <algorithm>
+#include <array>
+
 #include <constants.h>
 #include <h3api.h>
 /// H3's polygon internals: private to the library, and not declared for C++. The candidate walk below
@@ -39,6 +42,9 @@ namespace
 constexpr double MAX_SIZE_CELL_THRESHOLD = 10;
 /// The coordinate range `latLngToCell` accepts, `VALID_RANGE_BBOX` in H3's `polyfill.c`.
 constexpr BBox VALID_RANGE_BBOX = {M_PI_2, -M_PI_2, M_PI, -M_PI};
+/// Closer to the poles or at coarser resolutions, the bounding boxes of cells reach too far for `findSubtreeRoots`.
+constexpr int MIN_ROOT_RESOLUTION = 2;
+constexpr double MAX_ROOT_LATITUDE = 80 * M_PI / 180;
 
 SphericalPointInRadians toRadianPoint(const SphericalPoint & degree_point)
 {
@@ -103,7 +109,7 @@ H3Index nextCellInSequence(H3Index cell)
 /// The candidate walk of `iterStepPolygonCompact` in H3's `polyfill.c`, over the same H3 primitives, with a
 /// cancellation checkpoint per candidate. H3 wraps the walk in one call, which can reject millions of
 /// candidates before it returns a cell, leaving no place to observe `max_execution_time` or `KILL QUERY`.
-/// Keep in sync with H3 when the submodule is bumped.
+/// Starting at `root` confines the walk to that cell's subtree. Keep in sync with H3 when the submodule is bumped.
 class CompactCellScan
 {
 public:
@@ -114,7 +120,8 @@ public:
         UInt32 flags_,
         std::string_view function_name_,
         CancellationBudget & budget_,
-        size_t units_per_candidate_)
+        size_t units_per_candidate_,
+        H3Index root_ = H3_NULL)
         : polygon(polygon_)
         , bboxes(bboxes_)
         , res(res_)
@@ -122,6 +129,8 @@ public:
         , function_name(function_name_)
         , budget(budget_)
         , units_per_candidate(units_per_candidate_)
+        , root_res(root_ == H3_NULL ? -1 : H3_GET_RESOLUTION(root_))
+        , cell(root_ == H3_NULL ? baseCellNumToCell(0) : root_)
     {
     }
 
@@ -134,7 +143,7 @@ public:
 
         /// The first candidate is the cell the walk starts at; after that, the one after the last output.
         if (started)
-            cell = nextCellInSequence(cell);
+            cell = nextCandidate(cell);
         else
             started = true;
 
@@ -176,13 +185,20 @@ public:
                 }
             }
 
-            cell = nextCellInSequence(cell);
+            cell = nextCandidate(cell);
         }
 
         return H3_NULL;
     }
 
 private:
+    /// Leaving the subtree of `root` yields a cell at its resolution or coarser.
+    H3Index nextCandidate(H3Index candidate) const
+    {
+        const H3Index next_cell = nextCellInSequence(candidate);
+        return H3_GET_RESOLUTION(next_cell) <= root_res ? H3_NULL : next_cell;
+    }
+
     bool matchesContainmentMode(H3Index candidate, int candidate_res)
     {
         if (mode == CONTAINMENT_CENTER || mode == CONTAINMENT_OVERLAPPING || mode == CONTAINMENT_OVERLAPPING_BBOX)
@@ -251,8 +267,10 @@ private:
     const std::string_view function_name;
     CancellationBudget & budget;
     const size_t units_per_candidate;
+    /// The walk covers the subtree of its root, or every cell when it has none.
+    const int root_res;
 
-    H3Index cell = baseCellNumToCell(0);
+    H3Index cell;
     bool started = false;
 };
 
@@ -299,6 +317,61 @@ Int64 estimateCellCount(
     }
 
     return estimate;
+}
+
+/// The cells whose subtrees hold everything the walk descends into, in ascending order, at a resolution whose cells
+/// are at least twice as large as the polygon; none when the walk has to start from the base cells. The walk only
+/// descends into a cell whose bounding box of children overlaps the polygon's. Those cells are connected and include
+/// the cell of the first vertex, so none is missed unless one is three steps away from it.
+VectorWithMemoryTracking<H3Index> findSubtreeRoots(
+    const GeoPolygon * polygon, const BBox & bbox, int res, std::string_view function_name)
+{
+    if (polygon->geoloop.numVerts == 0 || bboxIsTransmeridian(&bbox) || bbox.north > MAX_ROOT_LATITUDE
+        || bbox.south < -MAX_ROOT_LATITUDE)
+        return {};
+
+    /// Bounds the distance between any two points of the bounding box.
+    const double min_abs_latitude = bbox.south > 0 ? bbox.south : (bbox.north < 0 ? -bbox.north : 0);
+    const double diameter = bboxHeightRads(&bbox) + bboxWidthRads(&bbox) * cos(min_abs_latitude);
+
+    int root_res = res - 1;
+    for (; root_res >= MIN_ROOT_RESOLUTION; --root_res)
+    {
+        double edge_km = 0;
+        checkH3Error(getHexagonEdgeLengthAvgKm(root_res, &edge_km), function_name);
+        if (diameter <= 0.5 * edge_km / EARTH_RADIUS_KM)
+            break;
+    }
+    if (root_res < MIN_ROOT_RESOLUTION)
+        return {};
+
+    H3Index origin = H3_NULL;
+    checkH3Error(latLngToCell(&polygon->geoloop.verts[0], root_res, &origin), function_name);
+
+    constexpr int disk_radius = 3;
+    constexpr size_t disk_size = 1 + 3 * disk_radius * (disk_radius + 1);
+    std::array<H3Index, disk_size> disk{};
+    std::array<int, disk_size> distances{};
+    checkH3Error(gridDiskDistances(origin, disk_radius, disk.data(), distances.data()), function_name);
+
+    VectorWithMemoryTracking<H3Index> roots;
+    for (size_t i = 0; i < disk.size(); ++i)
+    {
+        if (disk[i] == H3_NULL)
+            continue;
+
+        BBox children_bbox;
+        checkH3Error(cellToBBox(disk[i], &children_bbox, true), function_name);
+        if (!bboxOverlapsBBox(&bbox, &children_bbox))
+            continue;
+
+        if (distances[i] == disk_radius)
+            return {};
+        roots.push_back(disk[i]);
+    }
+
+    std::sort(roots.begin(), roots.end());
+    return roots;
 }
 
 LatLng toH3LatLng(const SphericalPointInRadians & point)
@@ -392,38 +465,62 @@ void appendH3Cells(
         /// A candidate at the target resolution is tested against every vertex of the polygon.
         const size_t units_per_candidate = 1 + vertex_count;
 
+        const VectorWithMemoryTracking<H3Index> roots = findSubtreeRoots(geo_polygon, bboxes[0], resolution, function_name);
+
+        /// Every covering cell descends from a root, so this bounds the result and the estimate below.
+        Int64 roots_children = 0;
+        for (const H3Index root : roots)
+        {
+            Int64 children_size = 0;
+            checkH3Error(cellToChildrenSize(root, resolution, &children_size), function_name);
+            roots_children += children_size;
+        }
+
         /// Cheap bbox-based estimate: rejects a polygon that cannot fit before enumerating it. Rough in
         /// both directions, hence the exact check per cell below.
         const size_t row_size_so_far = dst_data.size() - row_start_offset;
-        const size_t estimate = static_cast<size_t>(
-            estimateCellCount(geo_polygon, bboxes.data(), resolution, function_name, budget, units_per_candidate));
-        if (estimate > MAX_ARRAY_SIZE || row_size_so_far + estimate > MAX_ARRAY_SIZE)
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                "The result of function {} (array of {} elements) will be too large with resolution = {}",
-                function_name, row_size_so_far + estimate, toString(resolution));
-
-        CompactCellScan scan(
-            geo_polygon, bboxes.data(), resolution, flags, function_name, budget, units_per_candidate);
-
-        while (H3Index compact_cell = scan.next())
+        if (roots.empty() || row_size_so_far + static_cast<size_t>(roots_children) > MAX_ARRAY_SIZE)
         {
-            /// A cell coarser than the requested resolution stands for all of its children.
-            IterCellsChildren children = iterInitParent(compact_cell, resolution);
-            for (; children.h; iterStepChild(&children))
-            {
-                /// The candidates rejected on the way here are charged by the walk; a child of a covered
-                /// cell only costs the index arithmetic that produced it.
-                budget.charge(sizeof(H3Index));
-
-                if (dst_data.size() - row_start_offset >= MAX_ARRAY_SIZE)
-                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                        "The result of function {} (array of {} elements) will be too large with resolution = {}",
-                        function_name, dst_data.size() - row_start_offset + 1, toString(resolution));
-
-                /// `PODArray::push_back` grows geometrically; `IColumn::reserve` would size it exactly.
-                dst_data.getData().push_back(children.h);
-            }
+            const size_t estimate = static_cast<size_t>(
+                estimateCellCount(geo_polygon, bboxes.data(), resolution, function_name, budget, units_per_candidate));
+            if (estimate > MAX_ARRAY_SIZE || row_size_so_far + estimate > MAX_ARRAY_SIZE)
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                    "The result of function {} (array of {} elements) will be too large with resolution = {}",
+                    function_name, row_size_so_far + estimate, toString(resolution));
         }
+
+        /// The cells of the walk from `root`, or from the base cells when it is `H3_NULL`.
+        const auto append_walk = [&](H3Index root)
+        {
+            CompactCellScan scan(
+                geo_polygon, bboxes.data(), resolution, flags, function_name, budget, units_per_candidate, root);
+
+            while (H3Index compact_cell = scan.next())
+            {
+                /// A cell coarser than the requested resolution stands for all of its children.
+                IterCellsChildren children = iterInitParent(compact_cell, resolution);
+                for (; children.h; iterStepChild(&children))
+                {
+                    /// The candidates rejected on the way here are charged by the walk; a child of a covered
+                    /// cell only costs the index arithmetic that produced it.
+                    budget.charge(sizeof(H3Index));
+
+                    if (dst_data.size() - row_start_offset >= MAX_ARRAY_SIZE)
+                        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                            "The result of function {} (array of {} elements) will be too large with resolution = {}",
+                            function_name, dst_data.size() - row_start_offset + 1, toString(resolution));
+
+                    /// `PODArray::push_back` grows geometrically; `IColumn::reserve` would size it exactly.
+                    dst_data.getData().push_back(children.h);
+                }
+            }
+        };
+
+        /// Subtrees of distinct cells of one resolution are disjoint, ascending ranges of the walk.
+        if (roots.empty())
+            append_walk(H3_NULL);
+        for (const H3Index root : roots)
+            append_walk(root);
     }
 }
 
