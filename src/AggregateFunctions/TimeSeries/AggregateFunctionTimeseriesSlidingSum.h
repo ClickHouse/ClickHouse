@@ -128,6 +128,14 @@ public:
         }
     }
 
+    /// Sums the in-window values again, for an invertible sum that can't undo an overflow or an infinity.
+    void recomputeCurrentSum() requires is_invertible
+    {
+        current_sum = SummaryType{};
+        for (const auto & timestamp_and_value : window)
+            current_sum.merge(timestamp_and_value.second);
+    }
+
     /// The reference is valid until the next `add` or `removeBefore`.
     const SummaryType & getCurrentSum() const
     {

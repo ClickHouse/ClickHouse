@@ -27,6 +27,12 @@
 [4]
 [0.1]
 [4,2]
+--- An infinite or overflowed reset leaving the window does not spoil the later windows ---
+[2]
+[2,2,2,2,2]
+[2,2,2,2,2]
+[0.05,0.05,0.05,0.05,0.05]
+[nan,1,2]
 --- The sample before the window of the first grid point: used only in the exact mode ---
 [NULL]
 [0.25]
