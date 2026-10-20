@@ -16,6 +16,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/FailPoint.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
 #include <Core/UUID.h>
@@ -923,6 +924,12 @@ void MergeTreeReaderWide::accumulateRowsForColumnsCache(
         accumulated_columns.resize(res_columns.size());
     }
 
+    /// The copies are for the shared cache, not for this query: they are charged to the server
+    /// (the global memory tracker, which the cache gives memory back to, see `ColumnsCache::autoResize`)
+    /// and not to the memory limits of the query and the user, which a streaming read would
+    /// otherwise exceed by the size of a stripe. The same for their release, see below.
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+
     for (size_t pos = 0; pos < res_columns.size(); ++pos)
     {
         const auto * column = rows_of(pos);
@@ -956,6 +963,9 @@ void MergeTreeReaderWide::finishAccumulatedGranules()
     if (!accumulating)
         return;
 
+    /// The copies are cut and released as they were allocated, see `accumulateRowsForColumnsCache`.
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+
     /// Only the granules read to their end become an entry; the rows of a granule the block
     /// ended in are dropped.
     if (accumulated_next_mark > accumulated_first_mark)
@@ -982,6 +992,10 @@ void MergeTreeReaderWide::flushPendingColumnsCacheWrites()
 {
     if (pending_entries.empty())
         return;
+
+    /// The entries are moved to the shared cache, merged with what it holds, or released if it does not
+    /// admit them, see `accumulateRowsForColumnsCache`.
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
     std::vector<ColumnsCache::MappedPtr> entries;
     entries.swap(pending_entries);
