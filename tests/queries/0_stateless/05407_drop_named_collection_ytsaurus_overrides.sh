@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-replicated-database
 # no-fasttest: named collections are stored in SQL, which the fast test does not set up.
+# no-replicated-database: the named collection is created on one replica only, so the other replicas cannot create the table.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
