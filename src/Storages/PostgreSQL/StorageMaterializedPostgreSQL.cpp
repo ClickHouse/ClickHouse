@@ -707,6 +707,10 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "MaterializedPostgreSQL is an experimental table engine."
                                 " You can enable it with the `enable_materialized_postgresql_table` setting");
 
+        /// Checked before the storage is constructed: the constructor starts replication, which creates the publication
+        /// and the replication slot in PostgreSQL and the nested table, and a rejected `CREATE` would not remove them.
+        throwIfUnreplicatedTableDataNotAllowed(args);
+
         if (!args.storage_def->order_by && args.storage_def->primary_key)
             args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());
 
