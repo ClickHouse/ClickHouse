@@ -237,10 +237,11 @@ void tryPushDownExpressionsBelowWindow(const Stack & stack, QueryPlan::Nodes & n
     /// The expressions that can be computed below the chain, grouped by the column they read.
     auto maybe_lazily_executed_nodes = collectMaybeLazilyExecutedNodes(parent_actions);
 
-    /// With short-circuit evaluation disabled, a `Filter` still applies the arguments of an `and` condition one after
-    /// another, so an argument is not executed for the rows removed by the previous ones (`s != 'x' AND toUInt64(s) > 0`).
-    /// Computed in another step, the `and` would execute all its arguments for all rows, like in `tryFuseFilterIntoArrayJoin`.
-    if (parent_filter && settings.short_circuit_function_evaluation_disabled)
+    /// A `Filter` applies the arguments of an `and` condition one after another, so an argument is not executed for
+    /// the rows removed by the previous ones (`s != 'x' AND toUInt64(s) > 0`). Computed in another step, the `and`
+    /// would execute for all rows the arguments that are not executed lazily: all of them with short-circuit evaluation
+    /// disabled, and the functions not suitable for it (`toBool`) otherwise.
+    if (parent_filter)
     {
         const auto * filter_node = &parent_actions.findInOutputs(parent_filter->getFilterColumnName());
         while (filter_node->type == ActionsDAG::ActionType::ALIAS)

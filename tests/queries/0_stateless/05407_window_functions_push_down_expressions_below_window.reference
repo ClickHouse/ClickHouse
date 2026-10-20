@@ -40,7 +40,9 @@ QUALIFY
 1	0	2
 2	0	3
 4	0	5
-an AND condition of a filter with short-circuit evaluation disabled
+an AND condition of a filter
+2
+2
 2
 2
 lazily executed arguments of short-circuit functions
