@@ -717,6 +717,7 @@
     M(1022, SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED) \
     M(1023, XGBOOST_ERROR) \
     M(1024, BUZZHOUSE_ORACLE) \
+    M(1025, GPU_ERROR) \
     /* Error codes do not have to be contiguous, they only have to be unique - this is checked by a `static_assert` below. */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES
