@@ -235,6 +235,28 @@ void FileCacheFactory::remove(FileCachePtr cache)
     }
 }
 
+void FileCacheFactory::removeNameOfReleasedDisk(const std::string & cache_name)
+{
+    /// Destroying the cache stops its background operations, which is not done under `mutex`.
+    FileCacheDataPtr removed;
+
+    std::lock_guard lock(mutex);
+    auto it = caches_by_name.find(cache_name);
+    if (it == caches_by_name.end())
+        return;
+
+    const bool has_other_names = std::any_of(caches_by_name.begin(), caches_by_name.end(), [&](const auto & cache_by_name)
+    {
+        return cache_by_name.first != cache_name && cache_by_name.second == it->second;
+    });
+
+    if (!has_other_names && (!it->second->config_path.empty() || it->second->cache.use_count() != 1))
+        return;
+
+    removed = std::move(it->second);
+    caches_by_name.erase(it);
+}
+
 void FileCacheFactory::clear()
 {
     std::lock_guard lock(mutex);

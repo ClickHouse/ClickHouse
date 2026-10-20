@@ -64,6 +64,11 @@ public:
 
     void remove(FileCachePtr cache);
 
+    /// Removes the name `cache_name` of the cache of a custom cache disk (see `disk(type = cache, ...)`) that has been shut down,
+    /// so that the name can be used again, possibly with another path. A cache that has other names stays under them. A cache with
+    /// no other name is removed only if it was not defined in the configuration and nothing else uses it anymore.
+    void removeNameOfReleasedDisk(const std::string & cache_name);
+
     void clear();
 
 private:

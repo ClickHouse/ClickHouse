@@ -1,6 +1,7 @@
 #include <Disks/CustomDiskRegistry.h>
 
 #include <Disks/IDisk.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
@@ -26,6 +27,20 @@ static void shutdownDisk(const String & name, const DiskPtr & disk, const Logger
     catch (...)
     {
         tryLogCurrentException(log, "while shutting down custom disk " + backQuote(name));
+    }
+}
+
+/// The filesystem cache of a `cache` disk is registered under the name of the disk, and it would outlive the disk and keep
+/// the name taken. Called when the disk has been shut down and destroyed, so the cache is not used by it anymore.
+static void releaseFilesystemCacheName(const String & name, const LoggerPtr & log)
+{
+    try
+    {
+        FileCacheFactory::instance().removeNameOfReleasedDisk(name);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "while releasing the filesystem cache of custom disk " + backQuote(name));
     }
 }
 
@@ -266,10 +281,13 @@ void CustomDiskRegistry::finishShutdown(DiskToShutdown disk_to_shutdown)
         }
 
         if (!referenced)
+        {
             shutdownDisk(disk_to_shutdown.name, disk, log);
-
-        /// The reference is dropped before the next disk is taken: that may be the disk this one
-        /// wraps, which is shut down only if nothing else references it.
+            /// The reference is dropped before the next disk is taken: that may be the disk this one
+            /// wraps, which is shut down only if nothing else references it.
+            disk.reset();
+            releaseFilesystemCacheName(disk_to_shutdown.name, log);
+        }
     }
 
     std::lock_guard lock(mutex);
@@ -304,6 +322,7 @@ void CustomDiskRegistry::shutdownUnreferencedLingeringDisks(std::unique_lock<std
     {
         shutdownDisk(disk_to_shutdown.name, disk_to_shutdown.disk, log);
         disk_to_shutdown.disk.reset();
+        releaseFilesystemCacheName(disk_to_shutdown.name, log);
     }
     lock.lock();
 
