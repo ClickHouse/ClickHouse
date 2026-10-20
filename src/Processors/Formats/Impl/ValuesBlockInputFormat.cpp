@@ -147,7 +147,7 @@ Chunk ValuesBlockInputFormat::read()
         }
         catch (Exception & e)
         {
-            if (isParseError(e.code()))
+            if (isInsertDataErrorWorthExplaining(e.code()))
                 e.addMessage(" at row " + std::to_string(total_rows));
             throw;
         }
@@ -192,8 +192,9 @@ Chunk ValuesBlockInputFormat::read()
         /// The batched evaluation covers rows that were already read completely, so the failing row is
         /// unknown here, but it is one of the `total_rows` rows read so far. Report that bound: it tells
         /// the user where to look, and it lets the parse-error diagnostics limit schema inference to the
-        /// rows the parser has actually read (see `getRowsReachedFromParseErrorMessage`).
-        if (isParseError(e.code()))
+        /// rows the parser has actually read (see `getRowsReachedFromParseErrorMessage`). The marker must
+        /// cover every error that the diagnostics explain, not only parse errors.
+        if (isInsertDataErrorWorthExplaining(e.code()))
             e.addMessage(" in one of the first " + std::to_string(total_rows) + " rows");
         throw;
     }
