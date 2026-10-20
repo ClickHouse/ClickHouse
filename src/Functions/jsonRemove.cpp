@@ -132,7 +132,7 @@ public:
             return '\0';
 
         const Ch value = data[position];
-        return in_exponent && value >= '0' && value <= '9' ? '0' : value;
+        return maskExponentDigit(value);
     }
 
     Ch Take()
@@ -142,7 +142,7 @@ public:
 
         const size_t offset = position;
         const Ch value = data[position++];
-        bool exponent_digit = false;
+        const Ch masked_value = maskExponentDigit(value);
         if (in_string)
         {
             if (escaped)
@@ -160,9 +160,7 @@ public:
         }
         else if (in_exponent)
         {
-            if (value >= '0' && value <= '9')
-                exponent_digit = true;
-            else if (value != '+' && value != '-')
+            if (!isDigit(value) && value != '+' && value != '-')
                 in_exponent = false;
         }
         else if (value == 'e' || value == 'E')
@@ -170,7 +168,7 @@ public:
             in_exponent = true;
         }
 
-        return exponent_digit ? '0' : value;
+        return masked_value;
     }
 
     size_t Tell() const { return position; }
@@ -181,6 +179,9 @@ public:
     size_t PutEnd(Ch *) { return 0; }
 
 private:
+    static bool isDigit(Ch value) { return value >= '0' && value <= '9'; }
+    Ch maskExponentDigit(Ch value) const { return in_exponent && isDigit(value) ? '0' : value; }
+
     std::string_view data;
     size_t position = 0;
     size_t last_string_start = 0;
@@ -408,26 +409,21 @@ void collectNextNodes(
     }
 }
 
-bool removePathStep(JSONNode & parent, const PathStep & step)
+void removePathStep(JSONNode & parent, const PathStep & step)
 {
     if (step.type == PathStep::Type::Member)
     {
-        auto * members = std::get_if<JSONObjectMembers>(&parent.value);
-        if (!members)
-            return false;
-
-        return std::erase_if(*members, [&](const auto & member) { return member.name && *member.name == step.member_name; }) != 0;
+        if (auto * members = std::get_if<JSONObjectMembers>(&parent.value))
+            std::erase_if(*members, [&](const auto & member) { return member.name && *member.name == step.member_name; });
+        return;
     }
 
     auto * elements = std::get_if<JSONArrayElements>(&parent.value);
-    if (!elements || step.index >= elements->size())
-        return false;
-
-    elements->erase(elements->begin() + step.index);
-    return true;
+    if (elements && step.index < elements->size())
+        elements->erase(elements->begin() + step.index);
 }
 
-bool removeAtPath(
+void removeAtPath(
     JSONNodes & nodes,
     JSONNodeIndex root,
     const ParsedPath & path,
@@ -443,19 +439,13 @@ bool removeAtPath(
     {
         collectNextNodes(nodes, parent_indices, path[i], next_parent_indices);
         if (next_parent_indices.empty())
-            return false;
+            return;
 
         parent_indices.swap(next_parent_indices);
     }
 
-    bool removed = false;
     for (const auto parent_index : parent_indices)
-    {
-        if (removePathStep(nodes[parent_index], path.back()))
-            removed = true;
-    }
-
-    return removed;
+        removePathStep(nodes[parent_index], path.back());
 }
 
 void appendSlice(ColumnString::Chars & output, std::string_view json, JSONSlice slice)
@@ -537,6 +527,60 @@ void serializeJSON(
     }
 }
 
+/// Retains parser, tree, traversal, and serialization buffers across all rows in a block.
+class JSONRemoveProcessor
+{
+public:
+    explicit JSONRemoveProcessor(const ParsedPaths & paths_)
+        : paths(paths_)
+        , stream(std::string_view{})
+        , builder(stream, member_names)
+    {
+        /// Constant paths outlive the processor, so matched member names need no per-row copies.
+        for (const auto & path : paths)
+            for (const auto & step : path)
+                if (step.type == PathStep::Type::Member)
+                    member_names.emplace(step.member_name, &step.member_name);
+    }
+
+    /// The builder references the stream and lookup, so the processor must not move or copy.
+    JSONRemoveProcessor(const JSONRemoveProcessor &) = delete;
+    JSONRemoveProcessor & operator=(const JSONRemoveProcessor &) = delete;
+
+    void appendResult(std::string_view json, ColumnString::Chars & output)
+    {
+        /// RapidJSON treats '\0' as end-of-stream and would silently ignore a suffix.
+        if (json.find('\0') != std::string_view::npos)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid JSON string in function JSONRemove: embedded NULL byte");
+
+        stream.reset(json);
+        builder.reset();
+        const auto parse_result
+            = reader.Parse<rapidjson::kParseIterativeFlag | rapidjson::kParseNumbersAsStringsFlag>(stream, builder);
+        if (parse_result.IsError())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Wrong JSON string passed to function JSONRemove: {}",
+                rapidjson::GetParseError_En(parse_result.Code()));
+
+        const auto root = builder.getRoot();
+        auto & nodes = builder.getNodes();
+        for (const auto & path : paths)
+            removeAtPath(nodes, root, path, traversal_scratch);
+
+        serializeJSON(nodes, root, json, output, serialization_stack);
+    }
+
+private:
+    const ParsedPaths & paths;
+    MemberNameLookup member_names;
+    JSONInputStream stream;
+    JSONTreeBuilder builder;
+    TrackedReader reader;
+    JSONPathTraversalScratch traversal_scratch;
+    JSONSerializationStack serialization_stack;
+};
+
 class FunctionJSONRemove final : public IFunction
 {
 public:
@@ -579,22 +623,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        ParsedPaths paths;
-        paths.reserve(arguments.size() - 1);
-
-        const auto parse_depth = static_cast<uint32_t>(max_parser_depth);
-        const auto parse_backtracks = static_cast<uint32_t>(max_parser_backtracks);
-        for (size_t i = 1; i < arguments.size(); ++i)
-        {
-            if (!isColumnConst(*arguments[i].column))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Path arguments of function {} must be constant Strings", getName());
-
-            const auto * path_column = checkAndGetColumnConstData<ColumnString>(arguments[i].column.get());
-            if (!path_column)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Path arguments of function {} must be Strings", getName());
-
-            paths.push_back(parseJSONPath(String{path_column->getDataAt(0)}, parse_depth, parse_backtracks));
-        }
+        const auto paths = parseConstantPaths(arguments);
 
         const bool json_is_const = isColumnConst(*arguments[0].column);
         const auto * json_column = json_is_const ? checkAndGetColumnConstData<ColumnString>(arguments[0].column.get())
@@ -611,44 +640,13 @@ public:
         auto & result_offsets = result->getOffsets();
         result_chars.reserve_exact(json_is_const ? json_column->getDataAt(0).size() : json_column->getChars().size());
 
-        /// Paths are constant, so object keys can refer to their canonical names without copies.
-        MemberNameLookup member_names;
-        for (const auto & path : paths)
-            for (const auto & step : path)
-                if (step.type == PathStep::Type::Member)
-                    member_names.emplace(step.member_name, &step.member_name);
-
-        JSONInputStream stream(std::string_view{});
-        JSONTreeBuilder builder(stream, member_names);
-        TrackedReader reader;
-        JSONPathTraversalScratch traversal_scratch;
-        JSONSerializationStack serialization_stack;
+        JSONRemoveProcessor processor(paths);
 
         const size_t rows_to_process = json_is_const ? 1 : input_rows_count;
         for (size_t row = 0; row < rows_to_process; ++row)
         {
             const auto json = json_column->getDataAt(json_is_const ? 0 : row);
-            /// RapidJSON uses '\0' as the end-of-stream marker, so accepting an embedded NUL would
-            /// silently ignore the suffix after it instead of reporting trailing invalid JSON.
-            if (json.contains('\0'))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid JSON string in function {}: embedded NULL byte", getName());
-
-            stream.reset(json);
-            builder.reset();
-            const auto parse_result
-                = reader.Parse<rapidjson::kParseIterativeFlag | rapidjson::kParseNumbersAsStringsFlag>(stream, builder);
-            if (parse_result.IsError())
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Wrong JSON string passed to function JSONRemove: {}",
-                    rapidjson::GetParseError_En(parse_result.Code()));
-
-            const auto root = builder.getRoot();
-            auto & nodes = builder.getNodes();
-            for (const auto & path : paths)
-                removeAtPath(nodes, root, path, traversal_scratch);
-
-            serializeJSON(nodes, root, json, result_chars, serialization_stack);
+            processor.appendResult(json, result_chars);
             result_offsets.push_back(result_chars.size());
         }
 
@@ -659,6 +657,27 @@ public:
     }
 
 private:
+    ParsedPaths parseConstantPaths(const ColumnsWithTypeAndName & arguments) const
+    {
+        ParsedPaths paths;
+        paths.reserve(arguments.size() - 1);
+
+        const auto parse_depth = static_cast<uint32_t>(max_parser_depth);
+        const auto parse_backtracks = static_cast<uint32_t>(max_parser_backtracks);
+        for (size_t i = 1; i < arguments.size(); ++i)
+        {
+            if (!isColumnConst(*arguments[i].column))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Path arguments of function {} must be constant Strings", getName());
+
+            const auto * path_column = checkAndGetColumnConstData<ColumnString>(arguments[i].column.get());
+            if (!path_column)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Path arguments of function {} must be Strings", getName());
+
+            paths.push_back(parseJSONPath(String{path_column->getDataAt(0)}, parse_depth, parse_backtracks));
+        }
+        return paths;
+    }
+
     const UInt64 max_parser_depth;
     const UInt64 max_parser_backtracks;
 };

@@ -115,3 +115,16 @@ SELECT JSONRemove('{"a":[0,1]}', '$.a[9].x') FORMAT TSV;
 SELECT JSONRemove('{"a":1}', '$.a.x') FORMAT TSV;
 SELECT JSONRemove('{"a":1}', '$[0]') FORMAT TSV;
 SELECT JSONRemove('{"a":true,"b":false,"c":null}', '$.a', '$.b') FORMAT TSV;
+
+-- Missing intermediate paths and out-of-bounds positions do not stop later removals.
+SELECT JSONRemove('{"a":[0,1],"b":2}', '$.missing.child', '$.a[9]', '$.b') FORMAT TSV;
+
+-- Reusing the parser across rows must not leak exponent or quoted-string state.
+SELECT JSONRemove(json, '$.drop')
+FROM VALUES(
+    'position UInt8, json String',
+    (1, '{"keep":1e309,"drop":0}'),
+    (2, '{"keep":"1e309","drop":0}'),
+    (3, '{"keep":true,"drop":0}')
+)
+ORDER BY position FORMAT TSV;
