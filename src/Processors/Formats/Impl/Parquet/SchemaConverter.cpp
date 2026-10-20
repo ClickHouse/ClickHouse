@@ -43,9 +43,9 @@ namespace DB::Parquet
 {
 
 SchemaConverter::SchemaConverter(
-    const parq::FileMetaData & file_metadata_, const ReadOptions & options_,
+    const FileFooter & file_footer_, const ReadOptions & options_,
     const Block * sample_block_, std::optional<std::unordered_map<String, GeoColumnMetadata>> precomputed_geo_columns)
-    : file_metadata(file_metadata_), options(options_), sample_block(sample_block_)
+    : file_footer(file_footer_), file_metadata(file_footer_.metadata), options(options_), sample_block(sample_block_)
     , levels {LevelInfo {.def = 0, .rep = 0, .is_array = true}}
 {
     if (precomputed_geo_columns.has_value())
@@ -1216,16 +1216,22 @@ std::optional<GeoType> SchemaConverter::getGeoTypeFromGeospatialStatistics(size_
     /// 2000 or 3000. Such geometries have no corresponding ClickHouse type and cannot be parsed.
     auto is_2d_geometry_type = [](Int32 geospatial_type) { return geospatial_type >= 1 && geospatial_type <= 6; };
 
+    /// The footer is parsed without column chunks, parse the chunks of only this column.
+    std::vector<FileColumnChunks> parsed;
+    deserializeColumnChunks(
+        file_footer.serialized.data(), file_footer.serialized.size(), file_footer.column_chunk_offsets, {column_idx}, parsed);
+    const auto & chunks = parsed.at(0).chunks;
+
     std::optional<Int32> single_type;
     bool is_mixed = false;
-    for (const auto & row_group : file_metadata.row_groups)
+    for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
     {
-        if (column_idx >= row_group.columns.size())
+        if (column_idx >= file_footer.numColumnChunks(row_group_idx))
         {
             is_mixed = true;
             continue;
         }
-        const auto & column_meta = row_group.columns[column_idx].meta_data;
+        const auto & column_meta = chunks.at(row_group_idx).meta_data;
 
         /// A column chunk with only NULLs has no geometry types.
         if (column_meta.statistics.__isset.null_count && column_meta.statistics.null_count == column_meta.num_values)

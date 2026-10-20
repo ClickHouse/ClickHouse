@@ -20,6 +20,8 @@ struct SchemaConverter
     using OutputColumnInfo = Reader::OutputColumnInfo;
     using LevelInfo = Reader::LevelInfo;
 
+    /// Its column chunks are parsed only where needed, see getGeoTypeFromGeospatialStatistics.
+    const FileFooter & file_footer;
     const parq::FileMetaData & file_metadata;
     const ReadOptions & options;
     const Block * sample_block;
@@ -49,7 +51,7 @@ struct SchemaConverter
     /// failed parse caught by the caller (which leaves an empty map) does not cause
     /// SchemaConverter to re-parse and rethrow. Pass std::nullopt to let SchemaConverter
     /// parse according to its own settings.
-    SchemaConverter(const parq::FileMetaData &, const ReadOptions &, const Block *,
+    SchemaConverter(const FileFooter &, const ReadOptions &, const Block *,
                     std::optional<std::unordered_map<String, GeoColumnMetadata>> precomputed_geo_columns = std::nullopt);
 
     void prepareForReading();

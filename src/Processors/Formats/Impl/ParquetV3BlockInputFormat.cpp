@@ -371,21 +371,21 @@ void NativeParquetSchemaReader::initializeIfNeeded()
         return;
     Parquet::Prefetcher prefetcher;
     prefetcher.init(&in, read_options, /*parser_shared_resources_=*/ nullptr);
-    file_metadata = Parquet::Reader::readFileFooter(prefetcher, read_options.format.parquet.footer_read_size)->metadata;
+    file_footer = Parquet::Reader::readFileFooter(prefetcher, read_options.format.parquet.footer_read_size);
     initialized = true;
 }
 
 NamesAndTypesList NativeParquetSchemaReader::readSchema()
 {
     initializeIfNeeded();
-    Parquet::SchemaConverter schemer(file_metadata, read_options, /*sample_block*/ nullptr);
+    Parquet::SchemaConverter schemer(*file_footer, read_options, /*sample_block*/ nullptr);
     return schemer.inferSchema();
 }
 
 std::optional<size_t> NativeParquetSchemaReader::readNumberOrRows()
 {
     initializeIfNeeded();
-    return size_t(file_metadata.num_rows);
+    return size_t(file_footer->metadata.num_rows);
 }
 
 void ParquetFileBucketInfo::serialize(WriteBuffer & buffer)
