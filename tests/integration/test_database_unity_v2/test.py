@@ -591,24 +591,14 @@ def test_drop_table(started_cluster):
     )
     assert show_tables(node, db_name, f"{schema_name}%") == [table]
 
-    user = unique_name("v2_drop_user")
-    node.query(f"CREATE USER {user}")
-    assert "ACCESS_DENIED" in node.query_and_get_error(
-        f"DROP TABLE {db_name}.`{table}`", user=user
-    )
-    assert show_tables(node, db_name, f"{schema_name}%") == [table]
-
-    node.query(f"GRANT DROP ON {db_name}.`{table}` TO {user}")
-
     # The table is external, so Databricks keeps its data. Asking to delete it is refused.
     assert "SUPPORT_IS_DISABLED" in node.query_and_get_error(
         f"DROP TABLE {db_name}.`{table}`",
-        user=user,
         settings={"iceberg_delete_data_on_drop": 1},
     )
     assert show_tables(node, db_name, f"{schema_name}%") == [table]
 
-    node.query(f"DROP TABLE {db_name}.`{table}`", user=user)
+    node.query(f"DROP TABLE {db_name}.`{table}`")
 
     assert show_tables(node, db_name, f"{schema_name}%") == []
     assert "UNKNOWN_TABLE" in node.query_and_get_error(

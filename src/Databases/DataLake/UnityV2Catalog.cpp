@@ -444,7 +444,7 @@ std::optional<std::string> UnityV2Catalog::getDefaultTableLocation(
     checkNamespaceExists(namespace_name);
 
     auto json = getJSONRequest(std::filesystem::path{SCHEMAS_ENDPOINT} / fmt::format("{}.{}", warehouse, namespace_name)).first;
-    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+    const auto & object = json.extract<Poco::JSON::Object::Ptr>();
 
     /// Only Unity on Databricks reports a location for a schema; the open-source server does not,
     /// and then the table engine arguments have to name the location explicitly.
