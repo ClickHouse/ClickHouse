@@ -1110,7 +1110,10 @@ bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
 
                 /// Constant folding. A lambda that captures nothing has no children, but its folded value is a
                 /// constant like any other, and a FUNCTION node left behind would cross plan steps as a column.
-                if (allow_constant_folding && node->column && (!node->children.empty() || WhichDataType(node->result_type).isFunction()))
+                /// An INPUT is never folded: `ExpressionActions` binds each entry of `inputs` to a required column as an INPUT.
+                if (allow_constant_folding && node->column
+                    && (!node->children.empty()
+                        || (node->type == ActionType::FUNCTION && WhichDataType(node->result_type).isFunction())))
                 {
                     node->type = ActionsDAG::ActionType::COLUMN;
                     node->children.clear();
@@ -2099,6 +2102,8 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
                             node_to_column[node] = executeActionForPartialResult(node, std::move(arguments), input_rows_count, true);
                         else if (params.allow_unknown_function_arguments)
                             node_to_column[node] = executeActionForPartialResult(node, std::move(arguments), input_rows_count, false);
+                        else /// Recorded as unknown, so that a node shared by several parents is walked once.
+                            node_to_column.try_emplace(node, ColumnWithTypeAndName{nullptr, node->result_type, node->result_name});
                     }
                 }
             }
