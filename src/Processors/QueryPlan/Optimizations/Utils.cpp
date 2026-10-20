@@ -252,6 +252,20 @@ FilterResult filterResultForNotMatchedRows(
     return FilterResult::UNKNOWN;
 }
 
+bool canReadSelectedRowsByAddress(ReadFromMergeTree * reading)
+{
+    if (reading->getMutationsSnapshot()->hasPatchParts())
+        return false;
+
+    /// A row is addressed by the virtual columns `_part_starting_offset` and `_part_offset`, which a column of the table
+    /// with the same name takes the place of: the second read would fetch the rows that column's values point to.
+    const auto & columns = reading->getStorageMetadata()->getColumns();
+    if (columns.has("_part_offset") || columns.has("_part_starting_offset"))
+        return false;
+
+    return true;
+}
+
 bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
 {
     /// A STREAM read selects its parts and ranges during execution, so the range set captured
@@ -267,16 +281,7 @@ bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
     if (reading->isQueryWithSampling())
         return false;
 
-    if (reading->getMutationsSnapshot()->hasPatchParts())
-        return false;
-
-    /// A row is addressed by the virtual columns `_part_starting_offset` and `_part_offset`, which a column of the table
-    /// with the same name takes the place of: the second read would fetch the rows that column's values point to.
-    const auto & columns = reading->getStorageMetadata()->getColumns();
-    if (columns.has("_part_offset") || columns.has("_part_starting_offset"))
-        return false;
-
-    return true;
+    return canReadSelectedRowsByAddress(reading);
 }
 
 }

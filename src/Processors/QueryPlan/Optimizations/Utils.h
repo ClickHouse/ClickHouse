@@ -120,6 +120,10 @@ bool isPassthroughExpressionWithRenames(const IQueryPlanStep & step);
 /// needs. Shared by both lazy materialization paths, so that they agree on it.
 bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading);
 
+/// Whether the rows a MergeTree read selected can be read again by their row address (`_part_starting_offset`,
+/// `_part_offset`): that read cannot apply patch parts, and a table column with such a name takes the address's place.
+bool canReadSelectedRowsByAddress(ReadFromMergeTree * reading);
+
 template <typename Func1, typename Func2 = NoOp>
 void traverseQueryPlan(Stack & stack, QueryPlan::Node & root, Func1 && on_enter, Func2 && on_leave = {})
 {

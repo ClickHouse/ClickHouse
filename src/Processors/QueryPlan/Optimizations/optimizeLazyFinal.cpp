@@ -20,6 +20,7 @@
 #include <Processors/Sources/LazyFinalSharedState.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/Transforms/LazyMaterializingTransform.h>
@@ -486,19 +487,22 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     const bool stops_reading_early = reading_in_order
         || (limit_above_reading && analyzed_result && limit_above_reading < analyzed_result->selected_rows);
 
+    /// The set-building plan reads the rows it selected again, by row address.
+    const bool can_read_rows_again = canReadSelectedRowsByAddress(reading_step);
+
     /// Split parts into non-intersecting (unique key ranges, no FINAL needed) and
     /// intersecting (overlapping, need FINAL). This avoids running the expensive
     /// aggregation-based FINAL on parts that have no duplicates.
     /// When all parts are non-intersecting, replaceNodeWithPlan is called inside
     /// and fully_replaced is set — in that case we're done.
     auto split_result = trySplitNonIntersectingParts(
-        reading_step, analyzed_result, filter_step, read_node, query_plan, /*allow_partial_split=*/ !stops_reading_early);
+        reading_step, analyzed_result, filter_step, read_node, query_plan, /*allow_partial_split=*/ !stops_reading_early && can_read_rows_again);
 
     if (split_result.fully_replaced)
         return;
 
     /// `trySplitNonIntersectingParts` can return before running these checks, e.g. for a `Nullable` key.
-    if (stops_reading_early || !reading_step->getIndexReadTasks().empty())
+    if (stops_reading_early || !can_read_rows_again || !reading_step->getIndexReadTasks().empty())
         return;
 
     const auto & context = reading_step->getContext();
