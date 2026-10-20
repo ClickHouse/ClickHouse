@@ -228,8 +228,7 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDI
 /// rejected: the peer aggregates without the heap and returns partial states for all its groups,
 /// which the initiator's merge, sort and limit handle correctly - the safe direction.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K = 20;
-/// First global query-plan version that writes version 2 of `Aggregating`, which carries the collation of each
-/// `GROUP BY` top-K key. Towards an older peer a top-K with a collated key is omitted, as above.
+/// First global query-plan version that writes `Aggregating` version 2 (top-K key collations); older peers get no collated top-K.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K_COLLATION = 21;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.

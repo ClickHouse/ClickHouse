@@ -601,7 +601,6 @@ static Aggregator::AggregateColumnsConstData makeAggregateColumnsData(const Colu
     return aggregate_columns;
 }
 
-/// The `COLLATE` locale of each ranked key, empty for a key without one.
 static Strings topKCollationLocales(const Aggregator::Params::TopKParams & top_k)
 {
     Strings locales;
@@ -2618,7 +2617,6 @@ bool Aggregator::executeOnBlock(Columns columns,
                 if ((result_size >= params.adaptive_aggregator_freeze_threshold || freeze_bytes_reached)
                     && result.isConvertibleToTwoLevel())
                 {
-                    /// A collated heap that has not started by the freeze gives up, so the table freezes as it would with a frozen heap.
                     if (auto * heap = params.top_k ? result.topKHeap() : nullptr; heap && topKHeapWaits(params, *heap))
                     {
                         heap->frozen = true;
