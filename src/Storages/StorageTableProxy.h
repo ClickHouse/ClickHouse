@@ -159,6 +159,14 @@ public:
 
     bool storesDataOnDisk() const override { return true; }
 
+    /// Until the table is loaded, report the restrictive answer instead of loading it just to inspect its on-disk data.
+    bool hasUnreplicatedTableDataOnDisk() const override
+    {
+        if (auto loaded = getLoadedLazyTable())
+            return loaded->hasUnreplicatedTableDataOnDisk();
+        return true;
+    }
+
     /// Not worth loading the table for, e.g. for `system.tables`.
     StoragePolicyPtr getStoragePolicy() const override
     {

@@ -402,5 +402,6 @@ check_logs_for_critical_errors
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 
 collect_query_and_trace_logs
+collect_jemalloc_profiles /var/log/clickhouse-server/clickhouse-server*.log
 
 mv /var/log/clickhouse-server/stderr.log /test_output/
