@@ -77,7 +77,7 @@ private:
     const std::shared_ptr<PlainRewritableMetrics> metrics;
 
     /// Set after all validation and before the write, so `undo` runs exactly when `execute` may have changed object
-    /// storage; see `blob_move_attempted` of the move operation.
+    /// storage; see `source_copy_attempted` of the move operation.
     bool write_attempted = false;
 
 public:
@@ -132,7 +132,7 @@ private:
     const std::shared_ptr<PlainRewritableMetrics> metrics;
 
     DirectoryRemoteInfo info;
-    /// Set once `info` is captured and before the removal; see `blob_move_attempted` of the move operation.
+    /// Set once `info` is captured and before the removal; see `source_copy_attempted` of the move operation.
     bool remove_attempted = false;
 
 public:
@@ -201,8 +201,9 @@ private:
     std::filesystem::path remote_source_path;
     std::string tmp_name;
     std::filesystem::path remote_tmp_path;
-    /// Set once both keys are known and before the first write; see `blob_move_attempted` of the move operation.
-    bool blob_removal_attempted = false;
+    /// Set right before their steps; see `source_copy_attempted` of the move operation.
+    bool copy_attempted = false;
+    bool remove_attempted = false;
 
     /// Otherwise the file is removed from the explicit file list of the directory (switching the directory to that form
     /// if needed), and the blob is removed after the commit if this was its last link.
@@ -243,7 +244,7 @@ private:
 
     std::filesystem::path remote_path_from;
     std::filesystem::path remote_path_to;
-    /// Set once both keys are known and before the copy; see `blob_move_attempted` of the move operation.
+    /// Set right before the copy; see `source_copy_attempted` of the move operation.
     bool copy_attempted = false;
     std::optional<DirectoryRemoteInfo> previous_directory_info;
     bool prefix_path_written = false;
@@ -334,9 +335,11 @@ private:
     std::optional<FileRemoteInfo> file_from_remote_info;
     /// What the marker of the backup of an existing target says until the replacement is in place.
     std::optional<PlainRewritableLayout::PendingReplace> pending_replace;
-    /// Set once the keys above are known and before the first write, so that `undo` knows `execute` may have changed
-    /// object storage. It does not claim that any particular write landed; `undo` finds that out for itself.
-    bool blob_move_attempted{false};
+    /// Each flag is set right before its step: a step can land even when it throws, so a set flag says that the step
+    /// may have changed object storage and that the steps before it completed. `undo` asks object storage for the rest.
+    bool source_copy_attempted{false};
+    bool target_remove_attempted{false};
+    bool source_remove_attempted{false};
     bool had_existing_target{false};
 
 public:
@@ -351,19 +354,19 @@ public:
         StoredObjects & removed_objects_);
     /**
      * @brief Move a file from remote_path_from to remote_path_to
-     *  1. Copy remote_path_to (if exists) to tmp_remote_path_from, which is used to restore the target file in case of failure.
-     *  2. Copy remote_path_from to tmp_remote_path_to, which is used to restore the source file in case of failure.
+     *  1. Copy remote_path_from to tmp_remote_path_from.
+     *  2. If the target exists, copy remote_path_to to tmp_remote_path_to and remove remote_path_to.
      *  3. Copy remote_path_from to remote_path_to.
-     *  4. Remove remote_path_to.
+     *  4. Remove remote_path_from.
      *  5. Update fs_tree
      */
     void execute() override;
     /**
      * @brief Undo the `execute` logic:
-     *  1. If remote_path_from is copied to remote_path_to, remove remote_path_to
-     *  2. Restore remote_path_from from tmp_remote_path_from if it is copied.
-     *  3. Restore remote_path_to from tmp_remote_path_to if it is copied.
-     *  5. Update fs_tree
+     *  1. Restore remote_path_from from tmp_remote_path_from, if its removal was attempted.
+     *  2. Restore remote_path_to from tmp_remote_path_to, if its removal was attempted,
+     *     or remove it if there was no target.
+     *  3. Remove the temporary copies.
      */
     void undo() override;
     /**
