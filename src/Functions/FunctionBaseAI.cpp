@@ -487,7 +487,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     /// Shared with the submitted requests so each one is self-contained and nothing dangles even
     /// if this call stops waiting for a future it handed out.
     std::shared_ptr<IAIProvider> provider = createAIProvider(
-        params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
+        getContext(), params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
 
     if (input_rows_count == 0)
         return result_type->createColumn();

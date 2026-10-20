@@ -28,6 +28,7 @@ class RunnerLabels:
     ARM_MEDIUM_CPU = ["self-hosted", "arm-medium-cpu"]
     AMD_MEDIUM_MEM = ["self-hosted", "amd-medium-mem"]
     ARM_MEDIUM_MEM = ["self-hosted", "arm-medium-mem"]
+    ARM_MEDIUM_STORAGE = ["self-hosted", "arm-medium-storage"]
     AMD_SMALL = ["self-hosted", "amd-small"]
     ARM_SMALL = ["self-hosted", "arm-small"]
     AMD_SMALL_MEM = ["self-hosted", "amd-small-mem"]
@@ -384,6 +385,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     ARM_DARWIN = "arm_darwin"
     ARM_V80COMPAT = "arm_v80compat"
     AMD_FREEBSD = "amd_freebsd"
+    AMD_ILLUMOS = "amd_illumos"
     PPC64LE = "ppc64le"
     AMD_COMPAT = "amd_compat"
     AMD_MUSL = "amd_musl"
@@ -516,6 +518,7 @@ class ArtifactNames:
     CH_ARM_DARWIN_SIGNED = "CH_ARM_DARWIN_SIGNED"
     CH_ARM_V80COMPAT = "CH_ARMV80C_DARWIN_BIN"
     CH_AMD_FREEBSD = "CH_ARM_FREEBSD_BIN"
+    CH_AMD_ILLUMOS = "CH_AMD_ILLUMOS_BIN"
     CH_PPC64LE = "CH_PPC64LE_BIN"
     CH_AMD_COMPAT = "CH_AMD_COMPAT_BIN"
     CH_AMD_MUSL = "CH_AMD_MUSL_BIN"
@@ -700,6 +703,14 @@ class ArtifactConfigs:
             ArtifactNames.CH_LOONGARCH64,
             ArtifactNames.CH_AMD_CFI,
         ]
+    )
+    clickhouse_binaries.append(
+        Artifact.Config(
+            name=ArtifactNames.CH_AMD_ILLUMOS,
+            type=Artifact.Type.S3,
+            path=f"{TEMP_DIR}/build/programs/clickhouse",
+            compress_zst=True,
+        )
     )
     clickhouse_darwin_plain_binaries = Artifact.Config(
         name="...",

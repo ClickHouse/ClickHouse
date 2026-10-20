@@ -1,0 +1,12 @@
+json, a cached	38816	0	0
+json, b cached	38816	0	0
+v, UInt64 cached	38816	0	0	0	0
+v, String cached	38816	0	0	0	0
+d, UInt64 cached	38816	0	0	0	0
+d, String cached	38816	0	0	0	0
+t, a cached	38816	0	0
+t, whole cached	38816	0	0
+jlc, p cached	38816	0	0
+jlc, whole cached	38816	0	0
+t, a cached, no prefixes cache	38816	0	0
+t, whole cached, no prefixes cache	38816	0	0

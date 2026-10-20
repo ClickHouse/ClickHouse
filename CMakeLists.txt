@@ -280,6 +280,31 @@ endif ()
 # Optionally split binaries and debug symbols.
 option(DISABLE_ALL_DEBUG_SYMBOLS "Disable debug symbols, independently of which build type is used" OFF)
 option(SPLIT_DEBUG_SYMBOLS "Split binaries and debug symbols" OFF)
+set(SYMBOL_SECTIONS "symtab" CACHE STRING "Symbol table format retained in packaged binaries")
+set_property(CACHE SYMBOL_SECTIONS PROPERTY STRINGS symtab gnu_debugdata)
+
+if (NOT SYMBOL_SECTIONS STREQUAL "symtab" AND NOT SYMBOL_SECTIONS STREQUAL "gnu_debugdata")
+    message(FATAL_ERROR "Unsupported SYMBOL_SECTIONS value '${SYMBOL_SECTIONS}'. Expected 'symtab' or 'gnu_debugdata'.")
+endif()
+
+if (SYMBOL_SECTIONS STREQUAL "gnu_debugdata")
+    # `.gnu_debugdata` is an ELF section, and `SymbolIndex` reads it only on ELF targets.
+    if (NOT (OS_LINUX OR OS_FREEBSD))
+        message(FATAL_ERROR "SYMBOL_SECTIONS=gnu_debugdata is supported only for ELF targets (Linux, FreeBSD)")
+    endif()
+
+    if (NOT SPLIT_DEBUG_SYMBOLS)
+        message(FATAL_ERROR "SYMBOL_SECTIONS=gnu_debugdata requires SPLIT_DEBUG_SYMBOLS=ON")
+    endif()
+
+    ch_find_program(XZ_PATH NAMES "xz")
+    if (XZ_PATH)
+        message(STATUS "Using xz: ${XZ_PATH}")
+    else()
+        message(FATAL_ERROR "Cannot find xz required by SYMBOL_SECTIONS=gnu_debugdata")
+    endif()
+endif()
+
 if (SPLIT_DEBUG_SYMBOLS)
     message(STATUS "Will split binaries and debug symbols")
     set(SPLIT_DEBUG_SYMBOLS_DIR "stripped" CACHE STRING "A separate directory for stripped information")
@@ -356,6 +381,7 @@ set (CMAKE_C_STANDARD_REQUIRED ON)
 
 # Align functions and loops to reduce performance sensitivity to code layout changes,
 # providing more stable benchmarks.
+# -falign-loops applies only to non-LTO builds; ThinLTO builds pass the loop alignment to the linker below.
 set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=64 -falign-loops=32")
 
 # Put each function and data item into its own section so that the linker can
@@ -400,9 +426,9 @@ endif()
 
 # Probe every page of a large stack allocation (big frames, `alloca`, VLAs) so that it cannot jump over
 # the guard page into another mapping. Only functions with frames larger than a page pay for it.
-# Clang ignores it (and `-Werror` turns the warning into an error) on Darwin, WebAssembly and LoongArch.
+# Clang ignores it (and `-Werror` turns the warning into an error) on Darwin, SunOS, WebAssembly and LoongArch.
 # Note: it's not enabled on RISC-V64 due to bugs in LLVM.
-if (NOT OS_DARWIN AND (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_PPC64LE OR ARCH_S390X))
+if (NOT OS_DARWIN AND NOT OS_SUNOS AND (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_PPC64LE OR ARCH_S390X))
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-clash-protection")
 endif ()
 
@@ -542,6 +568,8 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
 
     if(LINKER_NAME MATCHES "lld")
         set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--lto-whole-program-visibility")
+        # ThinLTO generates code in the linker, which does not see -falign-loops.
+        set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,-mllvm,-align-loops=32")
     endif()
 
     if (ENABLE_CFI)
@@ -622,16 +650,19 @@ include(cmake/dbms_glob_sources.cmake)
 # For some sophisticated platforms we have different issues with fPIC:
 # For example riscv toolchain itself compiled without fPIC
 #
+# The code is compiled with -fPIE, not -fPIC: it is linked into an executable, where the symbol
+# interposition that -fPIC pays for (GOT loads, TLS descriptors) never happens.
+#
 # This has to be configured before the first targets are created, in particular before
 # cmake/linux/default_libs.cmake adds the C++ runtime libraries from contrib: CMake copies the flags
 # into each subdirectory when add_subdirectory is called, so targets created earlier would silently
-# compile without -fPIC. That only breaks with compilers that do not default to PIE
+# compile without -fPIE. That only breaks with compilers that do not default to PIE
 # (clang with CLANG_DEFAULT_PIE_ON_LINUX=OFF, as configured by some distributions), because then the
 # non-relocatable objects of those libraries cannot be linked into the PIE executable.
 if (ARCH_AMD64 OR ARCH_AARCH64)
     set(ENABLE_POSITION_INDEPENDENT_BINARY 1)
 
-    # -fPIC only makes the code relocatable; whether the executable itself is position independent is
+    # -fPIE only makes the code relocatable; whether the executable itself is position independent is
     # the compiler driver's default unless the linker is asked explicitly, so ask it.
     # musl links with -static-pie instead (see cmake/linux/default_libs.cmake).
     # The FreeBSD and Darwin sysroots carry no PIC startup objects (Scrt1.o).
@@ -642,8 +673,8 @@ endif()
 
 if (ENABLE_POSITION_INDEPENDENT_BINARY)
     set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIE")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIE")
 endif()
 
 add_library(global-group INTERFACE)
@@ -658,6 +689,7 @@ elseif (OS_SUNOS)
 elseif (OS_WASM)
     include(cmake/wasm/default_libs.cmake)
 endif ()
+
 link_libraries(global-group)
 target_link_libraries(global-group INTERFACE $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>)
 
@@ -699,13 +731,18 @@ endif ()
 # Resolving everything at startup costs nothing here because we link dynamically only against libc
 # and we forbid dlopen (see programs/main.cpp).
 # Not on Darwin: ld64 does not accept '-z' options.
+# The native SunOS linker supports '-z now' but not '-z relro'; LLD supports both.
 if (NOT OS_DARWIN)
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,relro,-z,now")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,now")
+    if (NOT LINKER_IS_SOLARIS)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,relro")
+    endif ()
 endif ()
 
 # Keep read-only data out of executable pages, so its bytes cannot serve as ROP gadgets.
 # Not on Darwin (no '-z' options in ld64) and not on WebAssembly (no ELF segments).
-if (NOT OS_DARWIN AND NOT OS_WASM)
+# The native SunOS linker does not support '-z separate-code'.
+if (NOT OS_DARWIN AND NOT OS_WASM AND NOT LINKER_IS_SOLARIS)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,separate-code")
 endif ()
 

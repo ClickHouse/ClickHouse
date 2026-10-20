@@ -558,6 +558,7 @@ set_property(SOURCE
     Processors/Transforms/Window/SlidingBlocks.cpp  # window functions
     Processors/Transforms/Window/SlidingIndexes.cpp  # window functions
     Processors/Transforms/Window/Partition.cpp  # window functions
+    Processors/Transforms/Window/Peers.cpp  # window functions
     Processors/Transforms/Window/Frame.cpp  # window functions
     Processors/Transforms/Window/WindowTransformParams.cpp  # window functions
     WindowFunctions/WindowFunctionRank.cpp                   # window functions
@@ -644,6 +645,11 @@ target_link_libraries (clickhouse_compression
 )
 if (TARGET ch_contrib::fastpfor)
     target_link_libraries (clickhouse_compression PRIVATE ch_contrib::fastpfor)
+endif()
+
+if (TARGET ch_rust::pco)
+    target_include_directories(clickhouse_compression PRIVATE $<TARGET_PROPERTY:ch_rust::pco,INTERFACE_INCLUDE_DIRECTORIES>)
+    target_link_libraries(clickhouse_compression PUBLIC ch_rust::pco)
 endif()
 
 target_link_libraries(clickhouse_common_io

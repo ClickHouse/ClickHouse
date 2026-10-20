@@ -102,7 +102,7 @@ public:
         String model(arguments[model_arg_index].column->getDataAt(0));
 
         std::shared_ptr<IAIProvider> provider = createAIProvider(
-            params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
+            getContext(), params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
         if (!provider->supportsEmbeddings())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "AI provider '{}' does not support embeddings", params.collection.provider);
