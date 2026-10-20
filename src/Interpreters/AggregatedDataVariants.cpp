@@ -133,6 +133,22 @@ bool AggregatedDataVariants::topKHeapInactive() const
     }
 }
 
+TopKAggregationHeapBase * AggregatedDataVariants::topKHeap() const
+{
+    switch (type)
+    {
+        case Type::EMPTY:
+        case Type::without_key:
+            return nullptr;
+
+    #define M(NAME, IS_TWO_LEVEL) \
+        case Type::NAME: \
+            return &(NAME)->top_k_heap;
+        APPLY_FOR_AGGREGATED_VARIANTS(M)
+    #undef M
+    }
+}
+
 void AggregatedDataVariants::resetAfterStateOwnershipTransfer()
 {
     chassert(!aggregator);

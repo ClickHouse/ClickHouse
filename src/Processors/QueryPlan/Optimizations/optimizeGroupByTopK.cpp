@@ -102,6 +102,7 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     size_t num_key_columns,
     const std::vector<int> & directions,
     const std::vector<int> & nulls_directions,
+    const std::vector<std::shared_ptr<Collator>> & collators,
     const Optimization::ExtraSettings & settings,
     QueryPlan::Nodes & nodes)
 {
@@ -223,7 +224,7 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
         return nullptr;
     }
 
-    SortColumnDescription key_sort_description(key_name, direction, nulls_direction);
+    SortColumnDescription key_sort_description(key_name, direction, nulls_direction, collators.empty() ? nullptr : collators.front());
     auto threshold_tracker = createTopKThresholdTracker(key_sort_description, *key_column.type);
 
     /// `where_clause = true` keeps `MergeTreeDataSelectExecutor` from narrowing the read up front to the granules
@@ -297,6 +298,9 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     {
         hash.update(directions[i]);
         hash.update(nulls_directions[i]);
+        const String locale = i < collators.size() && collators[i] ? collators[i]->getLocale() : String{};
+        hash.update(locale.size());
+        hash.update(locale);
     }
     info.condition_hash = hash.get64();
 
@@ -350,6 +354,7 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
                 params.top_k->key_columns,
                 params.top_k->directions,
                 params.top_k->nulls_directions,
+                params.top_k->collators,
                 settings,
                 nodes);
             if (threshold_tracker)
@@ -433,6 +438,7 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
 
     std::vector<int> directions;
     std::vector<int> nulls_directions;
+    std::vector<std::shared_ptr<Collator>> collators;
     size_t num_key_columns = 0;
 
     if (sorting_step)
@@ -445,6 +451,7 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
 
         directions.reserve(num_key_columns);
         nulls_directions.reserve(num_key_columns);
+        collators.reserve(num_key_columns);
 
         for (size_t i = 0; i < num_key_columns; ++i)
         {
@@ -454,11 +461,12 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
             if (expression_step && !isSortKeyPassThrough(expression_step->getExpression(), params.keys[i]))
                 return 0;
 
-            if (sort_description[i].collator)
+            if (!canTopKRankSortKey(sort_description[i], *aggregating_step->getInputHeaders().front()->getByName(params.keys[i]).type))
                 return 0;
 
             directions.push_back(sort_description[i].direction);
             nulls_directions.push_back(sort_description[i].nulls_direction);
+            collators.push_back(sort_description[i].collator);
         }
     }
     else
@@ -498,6 +506,7 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
         .k = limit,
         .directions = std::move(directions),
         .nulls_directions = std::move(nulls_directions),
+        .collators = std::move(collators),
         .key_columns = num_key_columns,
         .observation_rows = synthetic_sort ? 0 : settings.top_k_optimization_observation_rows,
         .shared_boundary = settings.top_k_optimization_shared_boundary,
@@ -511,6 +520,7 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
         num_key_columns,
         top_k_params.directions,
         top_k_params.nulls_directions,
+        top_k_params.collators,
         settings,
         nodes);
 

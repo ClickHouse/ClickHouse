@@ -67,6 +67,7 @@ struct TopKAggregationHeapBase
     bool is_composite = false;              /// `heap_column` is a `ColumnTuple`
     bool is_prefix_mode = false;            /// ranks only a key prefix, which identifies many groups: skip-only, the caller must not erase
     bool frozen = false;                    /// abandoned at runtime; aggregation proceeds as if the optimization were off
+    bool start_allowed = false;             /// a heap with a `COLLATE` key starts only after `Aggregator::executeOnBlock` allows it
     std::vector<AggregateDataPtr> free_states;  /// state slots of pruned groups, reused by later inserts (arena memory is never returned)
 
     TopKAggregationHeapBase() = default;
@@ -169,6 +170,7 @@ protected:
     /// Ranking configuration.
     std::vector<int> directions;            /// per ranked column: +1/-1 for ASC/DESC
     std::vector<int> nulls_directions;      /// per ranked column: NULLs/NaNs placement for `compareAt`/`CompareHelper`
+    std::vector<std::shared_ptr<Collator>> collators;  /// per ranked column, null without `COLLATE`
     TypeIndex typed_key_type = TypeIndex::Nothing;  /// single numeric key type for the inlined fast paths; `Nothing` means the virtual `compareAt` path
 
     std::vector<size_t> low_cardinality_columns;    /// positions of `ColumnLowCardinality` heap columns, for dictionary compaction after a trim
@@ -204,6 +206,7 @@ protected:
         size_t query_k,
         const std::vector<int> & dirs,
         const std::vector<int> & null_dirs,
+        const std::vector<std::shared_ptr<Collator>> & cols,
         UInt64 observation_rows);
 
     void freezeBase();
@@ -362,13 +365,19 @@ private:
 
     void setK(size_t query_k);
 
-    void init(const IColumn & source_column, size_t query_k, int direction, int nulls_direction);
+    void init(
+        const IColumn & source_column,
+        size_t query_k,
+        int direction,
+        int nulls_direction,
+        const std::vector<std::shared_ptr<Collator>> & cols);
 
     void init(
         const ColumnRawPtrs & source_columns,
         size_t query_k,
         const std::vector<int> & dirs,
-        const std::vector<int> & null_dirs);
+        const std::vector<int> & null_dirs,
+        const std::vector<std::shared_ptr<Collator>> & cols);
 
     void findLowCardinalityColumns();
 
@@ -409,6 +418,8 @@ private:
 
     int compareColumns(const IColumn & lhs, size_t lhs_row, const IColumn & rhs, size_t rhs_row, size_t column_index) const
     {
+        if (const auto & collator = collators[column_index])
+            return lhs.compareAtWithCollation(lhs_row, rhs_row, rhs, nulls_directions[column_index], *collator);
         return lhs.compareAt(lhs_row, rhs_row, rhs, nulls_directions[column_index]);
     }
 };
@@ -436,6 +447,7 @@ struct TopKAggregationHeap : public TopKAggregationHeapBase
         size_t query_k,
         const std::vector<int> & dirs,
         const std::vector<int> & null_dirs,
+        const std::vector<std::shared_ptr<Collator>> & cols,
         UInt64 observation_rows,
         SharedTopKBoundary * shared,
         TopKThresholdTrackerPtr tracker)
@@ -446,7 +458,7 @@ struct TopKAggregationHeap : public TopKAggregationHeapBase
         shared_boundary = shared;
 
         const size_t reserve_hint
-            = initBase(key_columns, heap_key_count, total_group_by_keys, query_k, dirs, null_dirs, observation_rows);
+            = initBase(key_columns, heap_key_count, total_group_by_keys, query_k, dirs, null_dirs, cols, observation_rows);
         threshold_tracker = std::move(tracker);
 
         hash_table_keys.clear();

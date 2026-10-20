@@ -1,0 +1,271 @@
+-- Tags: no-fasttest
+-- no-fasttest: `COLLATE` needs ICU.
+-- Random settings limits: max_bytes_before_external_group_by=(0, 0); max_bytes_ratio_before_external_group_by=(0, 0)
+
+-- The `GROUP BY` top-K heap with a `COLLATE` on a matched key: it must rank groups in the collation order of the
+-- final sort, on every path (single and composite keys, NULLs, threads, spilling, remote partial aggregation over
+-- both the query text and a serialized plan, the dynamic filter and its query condition cache entries).
+-- Every query runs with the optimization off and then on, so the reference holds identical pairs.
+-- A collated heap starts only once a stream's table holds 32768 keys and its last block inserted almost only new
+-- keys, so the tables begin with 33792 distinct starter keys m0, m1, ..., which a single stream reads first.
+-- Under 'en' they sort after a... and before Z..., so they are outside every tested result.
+
+SET max_rows_to_group_by = 0;
+SET query_plan_max_limit_for_top_k_optimization = 1000;
+SET optimize_trivial_group_by_limit_query = 0;
+SET optimize_aggregation_in_order = 0;
+SET exact_rows_before_limit = 0;
+SET serialize_query_plan = 0;
+SET enable_parallel_replicas = 0;
+SET group_by_top_k_optimization_observation_rows = 0;
+SET collect_hash_table_stats_during_aggregation = 0;
+SET use_query_condition_cache = 0;
+SET use_top_k_dynamic_filtering_for_variable_length_types = 0;
+
+DROP TABLE IF EXISTS t_05407;
+DROP TABLE IF EXISTS t_05407_spill;
+DROP TABLE IF EXISTS t_05407_qcc;
+
+-- Under 'en': a0 < á0 < a1 < á1 < a10 < ... < m... < Z...; in bytes: Z... < a... < m... < á...
+CREATE TABLE t_05407 (s String, ns Nullable(String), lcs LowCardinality(String), b UInt8)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 128;
+INSERT INTO t_05407 SELECT s, if(number >= 33792 AND (number - 33792) % 101 = 0, NULL, s), s, number % 2
+FROM (SELECT number, if(number < 33792, concat('m', toString(number)),
+    concat(['Z', 'a', 'á'][(number - 33792) % 3 + 1], toString((number - 33792) % 997))) AS s FROM numbers(63792))
+SETTINGS max_insert_threads = 1;
+SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_05407' AND active;
+
+SELECT 'single key';
+SELECT s, count() FROM t_05407 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 128, enable_group_by_top_k_optimization = 0;
+SELECT s, count() FROM t_05407 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 128, enable_group_by_top_k_optimization = 1;
+SELECT s, count() FROM t_05407 GROUP BY s ORDER BY s DESC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 128, enable_group_by_top_k_optimization = 0;
+SELECT s, count() FROM t_05407 GROUP BY s ORDER BY s DESC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 128, enable_group_by_top_k_optimization = 1;
+SELECT countIf(explain LIKE '%Top-K%collations=[en]%') FROM (EXPLAIN actions = 1
+    SELECT s, count() FROM t_05407 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5);
+
+SELECT 'nullable key';
+SELECT ns, count() FROM t_05407 GROUP BY ns ORDER BY ns ASC NULLS FIRST COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 128, enable_group_by_top_k_optimization = 0;
+SELECT ns, count() FROM t_05407 GROUP BY ns ORDER BY ns ASC NULLS FIRST COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 128, enable_group_by_top_k_optimization = 1;
+SELECT ns, count() FROM t_05407 GROUP BY ns ORDER BY ns DESC NULLS LAST COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 128, enable_group_by_top_k_optimization = 0;
+SELECT ns, count() FROM t_05407 GROUP BY ns ORDER BY ns DESC NULLS LAST COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 128, enable_group_by_top_k_optimization = 1;
+
+SELECT 'low cardinality key';
+SELECT lcs, count() FROM t_05407 GROUP BY lcs ORDER BY lcs ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 128, enable_group_by_top_k_optimization = 0;
+SELECT lcs, count() FROM t_05407 GROUP BY lcs ORDER BY lcs ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 128, enable_group_by_top_k_optimization = 1;
+
+SELECT 'composite keys';
+SELECT s, b, count() FROM t_05407 GROUP BY s, b ORDER BY s DESC COLLATE 'en', b ASC LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 128, enable_group_by_top_k_optimization = 0;
+SELECT s, b, count() FROM t_05407 GROUP BY s, b ORDER BY s DESC COLLATE 'en', b ASC LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 128, enable_group_by_top_k_optimization = 1;
+SELECT b, s, count() FROM t_05407 GROUP BY b, s ORDER BY b ASC, s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 128, enable_group_by_top_k_optimization = 0;
+SELECT b, s, count() FROM t_05407 GROUP BY b, s ORDER BY b ASC, s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 128, enable_group_by_top_k_optimization = 1;
+
+-- ORDER BY shorter than GROUP BY: the heap ranks `s` only and skips rows without evicting groups.
+-- LIMIT 4 takes both `b` of the two best `s`, so the selected set has no ties.
+SELECT 'key prefix';
+SELECT * FROM (SELECT s, b, count() FROM t_05407 GROUP BY s, b ORDER BY s ASC COLLATE 'en' LIMIT 4) ORDER BY s, b
+SETTINGS max_threads = 1, max_block_size = 128, enable_group_by_top_k_optimization = 0;
+SELECT * FROM (SELECT s, b, count() FROM t_05407 GROUP BY s, b ORDER BY s ASC COLLATE 'en' LIMIT 4) ORDER BY s, b
+SETTINGS max_threads = 1, max_block_size = 128, enable_group_by_top_k_optimization = 1;
+SELECT countIf(explain LIKE '%Top-K%collations=[en]%') FROM (EXPLAIN actions = 1
+    SELECT s, b, count() FROM t_05407 GROUP BY s, b ORDER BY s ASC COLLATE 'en' LIMIT 4);
+
+-- Precomposed 'é' (C3A9) and 'e' + U+0301 (65CC81) are two groups that are equal under 'en'. The heap starts right
+-- after the 32800 starters; its first cycle fills it with f5, f6, a, b and then admits c and both forms of é, so the
+-- first trim has the two forms tied at the boundary: both must survive. The trailing count decides which form the
+-- LIMIT keeps, so either eviction shows.
+SELECT 'ties under collation';
+SELECT hex(s), c FROM (SELECT s, count() AS c FROM (WITH (number - 32800) % 100 AS r SELECT if(number < 32800,
+    concat('m', toString(number)), multiIf(r = 0, 'f5', r = 1, 'f6', r = 2, 'a', r = 3, 'b', r = 4, 'c',
+    r = 5, char(0xC3, 0xA9), r = 6 AND intDiv(number - 32800, 100) % 3 != 2, concat('e', char(0xCC, 0x81)),
+    concat('g', toString(r)))) AS s FROM numbers(132800))
+    GROUP BY s ORDER BY s ASC COLLATE 'en', c ASC LIMIT 4)
+SETTINGS max_threads = 1, max_block_size = 100, enable_group_by_top_k_optimization = 0;
+SELECT hex(s), c FROM (SELECT s, count() AS c FROM (WITH (number - 32800) % 100 AS r SELECT if(number < 32800,
+    concat('m', toString(number)), multiIf(r = 0, 'f5', r = 1, 'f6', r = 2, 'a', r = 3, 'b', r = 4, 'c',
+    r = 5, char(0xC3, 0xA9), r = 6 AND intDiv(number - 32800, 100) % 3 != 2, concat('e', char(0xCC, 0x81)),
+    concat('g', toString(r)))) AS s FROM numbers(132800))
+    GROUP BY s ORDER BY s ASC COLLATE 'en', c ASC LIMIT 4)
+SETTINGS max_threads = 1, max_block_size = 100, enable_group_by_top_k_optimization = 1, log_comment = '05407_ties_asc';
+SELECT hex(s), c FROM (SELECT s, count() AS c FROM (WITH (number - 32800) % 100 AS r SELECT if(number < 32800,
+    concat('m', toString(number)), multiIf(r = 0, 'f5', r = 1, 'f6', r = 2, 'a', r = 3, 'b', r = 4, 'c',
+    r = 5, char(0xC3, 0xA9), r = 6 AND intDiv(number - 32800, 100) % 3 != 2, concat('e', char(0xCC, 0x81)),
+    concat('g', toString(r)))) AS s FROM numbers(132800))
+    GROUP BY s ORDER BY s ASC COLLATE 'en', c DESC LIMIT 4)
+SETTINGS max_threads = 1, max_block_size = 100, enable_group_by_top_k_optimization = 0;
+SELECT hex(s), c FROM (SELECT s, count() AS c FROM (WITH (number - 32800) % 100 AS r SELECT if(number < 32800,
+    concat('m', toString(number)), multiIf(r = 0, 'f5', r = 1, 'f6', r = 2, 'a', r = 3, 'b', r = 4, 'c',
+    r = 5, char(0xC3, 0xA9), r = 6 AND intDiv(number - 32800, 100) % 3 != 2, concat('e', char(0xCC, 0x81)),
+    concat('g', toString(r)))) AS s FROM numbers(132800))
+    GROUP BY s ORDER BY s ASC COLLATE 'en', c DESC LIMIT 4)
+SETTINGS max_threads = 1, max_block_size = 100, enable_group_by_top_k_optimization = 1, log_comment = '05407_ties_desc';
+
+-- Result only: the streams split the starters, so whether a stream's heap starts depends on how the read is split.
+SELECT 'threads';
+SELECT s, count() FROM t_05407 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 4, max_block_size = 128, enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 0;
+SELECT s, count() FROM t_05407 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 4, max_block_size = 128, enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 1;
+
+-- After the starters every row is a new key that ranks better than all before it, so the started heap admits each
+-- one and the arena grows with their 2000-byte payloads until the table crosses the two-level byte threshold and
+-- spills. The flush recreates the table, whose heap waits again; the result comes from the rows after the payloads.
+SELECT 'external aggregation';
+CREATE TABLE t_05407_spill (s String) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 128;
+INSERT INTO t_05407_spill SELECT multiIf(number < 33792, concat('m', toString(number)),
+    number < 41984, concat('n', leftPad(toString(number), 6, '0'), repeat('x', 2000)),
+    concat(['Z', 'a', 'á'][(number - 41984) % 3 + 1], toString((number - 41984) % 997)))
+FROM numbers(71984) SETTINGS max_insert_threads = 1;
+SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_05407_spill' AND active;
+SELECT s, count() FROM t_05407_spill GROUP BY s ORDER BY s DESC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 128, group_by_two_level_threshold = 0, group_by_two_level_threshold_bytes = 8000000,
+    max_bytes_ratio_before_external_group_by = 0, max_bytes_before_external_group_by = 1, enable_group_by_top_k_optimization = 0;
+SELECT s, count() FROM t_05407_spill GROUP BY s ORDER BY s DESC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 128, group_by_two_level_threshold = 0, group_by_two_level_threshold_bytes = 8000000,
+    max_bytes_ratio_before_external_group_by = 0, max_bytes_before_external_group_by = 1, enable_group_by_top_k_optimization = 1,
+    log_comment = '05407_spill';
+
+-- Both shards run as secondary queries with one stream each; the counts double.
+SELECT 'remote, query text';
+SELECT s, count() FROM remote('127.0.0.1,localhost', currentDatabase(), t_05407) GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 0, max_threads = 1, max_block_size = 128,
+    enable_group_by_top_k_optimization = 0;
+SELECT s, count() FROM remote('127.0.0.1,localhost', currentDatabase(), t_05407) GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 0, max_threads = 1, max_block_size = 128,
+    enable_group_by_top_k_optimization = 1, log_comment = '05407_remote_text';
+
+SELECT 'remote, serialized plan';
+SELECT s, count() FROM remote('127.0.0.1,localhost', currentDatabase(), t_05407) GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 1, max_threads = 1, max_block_size = 128,
+    enable_group_by_top_k_optimization = 0;
+SELECT s, count() FROM remote('127.0.0.1,localhost', currentDatabase(), t_05407) GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 1, max_threads = 1, max_block_size = 128,
+    enable_group_by_top_k_optimization = 1, log_comment = '05407_remote_plan';
+SELECT ns, count() FROM remote('127.0.0.1,localhost', currentDatabase(), t_05407) GROUP BY ns ORDER BY ns DESC NULLS FIRST COLLATE 'en' LIMIT 5
+SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 1, max_threads = 1, max_block_size = 128,
+    enable_group_by_top_k_optimization = 0;
+SELECT ns, count() FROM remote('127.0.0.1,localhost', currentDatabase(), t_05407) GROUP BY ns ORDER BY ns DESC NULLS FIRST COLLATE 'en' LIMIT 5
+SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 1, max_threads = 1, max_block_size = 128,
+    enable_group_by_top_k_optimization = 1, log_comment = '05407_remote_plan_nullable';
+
+-- The heap publishes a collated boundary, so the `__topKFilter` of the read must compare under the same collation.
+SELECT 'dynamic filter';
+SELECT s, count() FROM t_05407 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS use_top_k_dynamic_filtering_for_variable_length_types = 1, enable_group_by_top_k_dynamic_filtering = 1,
+    max_threads = 1, max_block_size = 128, enable_group_by_top_k_optimization = 0;
+SELECT s, count() FROM t_05407 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS use_top_k_dynamic_filtering_for_variable_length_types = 1, enable_group_by_top_k_dynamic_filtering = 1,
+    max_threads = 1, max_block_size = 128, enable_group_by_top_k_optimization = 1, log_comment = '05407_dynamic_filter';
+SELECT countIf(explain LIKE '%\_\_topKFilter%') > 0 FROM (EXPLAIN actions = 1
+    SELECT s, count() FROM t_05407 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+    SETTINGS use_top_k_dynamic_filtering_for_variable_length_types = 1, enable_group_by_top_k_dynamic_filtering = 1);
+
+-- Under 'en' the boundary 'a' empties the granules of 'B'; in byte order 'B' is the answer, so the second query must
+-- not reuse the query condition cache entries of the first.
+SELECT 'query condition cache';
+CREATE TABLE t_05407_qcc (id UInt64, s String) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 64;
+INSERT INTO t_05407_qcc SELECT number, multiIf(number < 33792, concat('m', toString(number)), number < 33920, 'a', 'B')
+FROM numbers(34816) SETTINGS max_insert_threads = 1;
+SELECT s, count() FROM t_05407_qcc WHERE id != 100000 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 1
+SETTINGS use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 1, enable_group_by_top_k_dynamic_filtering = 1,
+    use_top_k_dynamic_filtering_for_variable_length_types = 1, max_threads = 1, max_block_size = 64,
+    enable_group_by_top_k_optimization = 1, log_comment = '05407_qcc';
+SELECT s, count() FROM t_05407_qcc WHERE id != 100000 GROUP BY s ORDER BY s ASC LIMIT 1
+SETTINGS use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 1, enable_group_by_top_k_dynamic_filtering = 1,
+    use_top_k_dynamic_filtering_for_variable_length_types = 1, max_threads = 1, max_block_size = 64,
+    enable_group_by_top_k_optimization = 1;
+
+-- A `COLLATE` on a key that cannot be collated is left to the sort, which rejects it.
+SELECT 'not collatable';
+SELECT countIf(explain LIKE '%Top-K%') FROM (EXPLAIN actions = 1
+    SELECT b, count() FROM t_05407 GROUP BY b ORDER BY b ASC COLLATE 'en' LIMIT 1);
+SELECT b, count() FROM t_05407 GROUP BY b ORDER BY b ASC COLLATE 'en' LIMIT 1; -- { serverError BAD_COLLATION }
+
+SELECT 'start condition';
+-- 2991 keys: the table never reaches the start size.
+SELECT s, count() FROM (SELECT concat(['Z', 'a', 'á'][number % 3 + 1], toString(number % 997)) AS s FROM numbers(30000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 128, enable_group_by_top_k_optimization = 0;
+SELECT s, count() FROM (SELECT concat(['Z', 'a', 'á'][number % 3 + 1], toString(number % 997)) AS s FROM numbers(30000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 128, enable_group_by_top_k_optimization = 1, log_comment = '05407_wait_small';
+-- Without `COLLATE` the heap starts at once.
+SELECT s, count() FROM (SELECT concat(['Z', 'a', 'á'][number % 3 + 1], toString(number % 997)) AS s FROM numbers(30000))
+GROUP BY s ORDER BY s ASC LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 128, enable_group_by_top_k_optimization = 0;
+SELECT s, count() FROM (SELECT concat(['Z', 'a', 'á'][number % 3 + 1], toString(number % 997)) AS s FROM numbers(30000))
+GROUP BY s ORDER BY s ASC LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 128, enable_group_by_top_k_optimization = 1, log_comment = '05407_plain_at_once';
+-- Every key comes twice: each block inserts new keys for half of its rows, however large the table gets.
+SELECT s, count() FROM (SELECT concat('k', toString(intDiv(number, 2))) AS s FROM numbers(131072))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 128, enable_group_by_top_k_optimization = 0;
+SELECT s, count() FROM (SELECT concat('k', toString(intDiv(number, 2))) AS s FROM numbers(131072))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 128, enable_group_by_top_k_optimization = 1, log_comment = '05407_wait_repeats';
+-- The repeated keys of the case above with a0..a3 among them, then unique u... keys that start the heap on a later
+-- check, then rows of a1, á0, a4: the result mixes keys aggregated before the start with keys inserted after it.
+SELECT s, count() FROM (SELECT multiIf(number < 131072 AND number % 1000 = 7, ['a0', 'a1', 'a2', 'a3'][intDiv(number, 1000) % 4 + 1],
+    number < 131072, concat('k', toString(intDiv(number, 2))), number < 163840, concat('u', toString(number)),
+    ['a1', 'á0', 'a4', 'zz'][number % 4 + 1]) AS s FROM numbers(165840))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 128, enable_group_by_top_k_optimization = 0;
+SELECT s, count() FROM (SELECT multiIf(number < 131072 AND number % 1000 = 7, ['a0', 'a1', 'a2', 'a3'][intDiv(number, 1000) % 4 + 1],
+    number < 131072, concat('k', toString(intDiv(number, 2))), number < 163840, concat('u', toString(number)),
+    ['a1', 'á0', 'a4', 'zz'][number % 4 + 1]) AS s FROM numbers(165840))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 128, enable_group_by_top_k_optimization = 1, log_comment = '05407_late_start';
+-- The key preparation of the serialized method changes for the `LowCardinality` key when the heap starts.
+SELECT lcs, s, count() FROM t_05407 GROUP BY lcs, s ORDER BY lcs ASC COLLATE 'en', s ASC LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 128, enable_group_by_top_k_optimization = 0;
+SELECT lcs, s, count() FROM t_05407 GROUP BY lcs, s ORDER BY lcs ASC COLLATE 'en', s ASC LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 128, enable_group_by_top_k_optimization = 1, log_comment = '05407_late_lc';
+-- A heap that has not started by the adaptive freeze gives up, and the table freezes.
+SELECT s, count() FROM (SELECT concat('k', toString(number % 5000)) AS s FROM numbers_mt(200000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 2, max_block_size = 128, enable_adaptive_aggregator = 1, adaptive_aggregator_freeze_threshold = 1000,
+    group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000, enable_group_by_top_k_optimization = 0;
+SELECT s, count() FROM (SELECT concat('k', toString(number % 5000)) AS s FROM numbers_mt(200000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 2, max_block_size = 128, enable_adaptive_aggregator = 1, adaptive_aggregator_freeze_threshold = 1000,
+    group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000, enable_group_by_top_k_optimization = 1,
+    log_comment = '05407_gave_up';
+
+SYSTEM FLUSH LOGS query_log;
+
+-- Whether the heap pruned (on the shards for the remote queries), the aggregation spilled, and the table froze.
+SELECT 'engaged';
+SELECT
+    i.log_comment,
+    sum(q.ProfileEvents['AggregationTopKRowsSkipped'] + q.ProfileEvents['AggregationTopKKeysEvicted']) > 0 AS pruned,
+    i.log_comment != '05407_spill' OR sum(q.ProfileEvents['ExternalAggregationWritePart']) > 0 AS spilled,
+    i.log_comment != '05407_gave_up' OR sum(q.ProfileEvents['AdaptiveAggregationLocalFreezes']) > 0 AS froze
+FROM system.query_log AS q
+INNER JOIN
+(
+    SELECT query_id, log_comment FROM system.query_log
+    WHERE current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish' AND event_date >= yesterday()
+        AND log_comment IN ('05407_dynamic_filter', '05407_gave_up', '05407_late_lc', '05407_late_start', '05407_plain_at_once',
+            '05407_qcc', '05407_remote_plan', '05407_remote_plan_nullable', '05407_remote_text', '05407_spill', '05407_ties_asc',
+            '05407_ties_desc', '05407_wait_repeats', '05407_wait_small')
+) AS i ON q.initial_query_id = i.query_id
+WHERE q.type = 'QueryFinish' AND q.event_date >= yesterday() AND (q.is_initial_query = NOT startsWith(i.log_comment, '05407_remote'))
+GROUP BY i.log_comment
+ORDER BY i.log_comment;
+
+DROP TABLE t_05407;
+DROP TABLE t_05407_spill;
+DROP TABLE t_05407_qcc;

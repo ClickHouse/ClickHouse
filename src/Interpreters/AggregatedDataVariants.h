@@ -537,6 +537,8 @@ struct AggregatedDataVariants : private boost::noncopyable
     /// that block (see `TopKAggregationHeapBase::willBeInactive`). Conservative: when the shared-boundary
     /// exchange may still keep the heap running, the heap is reported as active.
     bool topKHeapInactive() const;
+    /// The active method's top-K heap, `nullptr` without a keyed method.
+    TopKAggregationHeapBase * topKHeap() const;
 
     /** Select the aggregation method based on the number and types of keys. */
     static Type chooseMethod(const Block & header, const Names & keys, Sizes & out_key_sizes);
