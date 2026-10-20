@@ -6,6 +6,7 @@ package(default_visibility = ["//visibility:public"])
 poco_cc_library(
     name = "_poco_redis",
     srcs = glob(["src/*.cpp"]),
+    hdrs = glob(["include/**/*.h"]),
     copts = [
         "-Wno-deprecated-dynamic-exception-spec",
         "-Wno-shadow",
@@ -15,6 +16,7 @@ poco_cc_library(
         "-Wno-implicit-int-conversion",
     ],
     implementation_deps = ["//bazel:clickhouse_config_headers"],
+    includes = ["include"],
     link_runtime = True,
     local_defines = [
         "POCO_ENABLE_CPP11",
@@ -29,15 +31,8 @@ poco_cc_library(
         "@platforms//cpu:aarch64": [],
     }) + [
         "//base:common",
-        ":poco_redis_headers",
+        "//base/poco/Net:poco_net_headers",
     ],
-)
-
-cc_library(
-    name = "poco_redis_headers",
-    hdrs = glob(["include/**/*.h"]),
-    includes = ["include"],
-    deps = ["//base/poco/Net:poco_net_headers"],
 )
 
 cc_library(

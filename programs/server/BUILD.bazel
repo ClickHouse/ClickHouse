@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -36,7 +35,7 @@ ch_cc_library(
     srcs = [
         "MetricsTransmitter.cpp",
         "//bazel:gen/embedded/programs/server/Server.cpp",
-    ],
+    ] + glob(["**/*.h"]),
     additional_compiler_inputs = ["//bazel:gen/embedded/programs/server/embedded.xml"],
     clickhouse_code = True,
     implementation_deps = [
@@ -137,7 +136,6 @@ ch_cc_library(
         "../../" + "bazel/gen",
     ],
     deps = [
-        ":headers",
         "@llvm-project//third-party/siphash:siphash",
         "//contrib/bech32:_bech32",
         "@clickhouse_cld2//:_cld2",
@@ -163,9 +161,4 @@ ch_cc_library(
         "//contrib/libmetrohash:headers",
         "//contrib/murmurhash:headers",
     ],
-)
-
-cc_library(
-    name = "headers",
-    hdrs = glob(["**/*.h"]),
 )

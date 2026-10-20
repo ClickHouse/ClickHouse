@@ -20,7 +20,10 @@ poco_cc_library(
         "-Wno-zero-as-null-pointer-constant",
         "-Wno-implicit-int-conversion",
     ],
-    implementation_deps = ["//bazel:clickhouse_config_headers"],
+    implementation_deps = [
+        "//bazel:clickhouse_config_headers",
+        "//base/poco/Net:poco_net_headers",
+    ],
     local_defines = [
         "POCO_ENABLE_CPP11",
         "POCO_OS_FAMILY_UNIX",

@@ -1024,6 +1024,10 @@ ch_cc_library(
         "-std=c++23",
         "-g1",
     ],
+    implementation_deps = [
+        "@clickhouse_crc32c//:_crc32c",
+        "@clickhouse_zlib_ng//:_zlib",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
         ".",

@@ -66,6 +66,28 @@ Keep API keys out of version control. Existing BuildBuddy credentials in
 Dependency ownership, generation, and action-audit details are in
 [`bazel/README.md`](bazel/README.md).
 
+## Check C++ dependencies
+
+`depend_on_what_you_use` is a development-only Bazel module. The `dwyu`
+configuration checks for missing direct dependencies, unused dependencies,
+and public `deps` used only in private sources. Run it on the library targets
+you are changing, for example:
+
+```sh
+bazel build --config=cmake_match --config=dwyu \
+  //base/readpassphrase:readpassphrase @clickhouse_libuv//:_uv
+bazel build --config=cmake_match_aarch64 --config=dwyu \
+  //base/readpassphrase:readpassphrase @clickhouse_libuv//:_uv
+```
+
+The aspect checks the requested C++ libraries and keeps going after findings,
+which fail the command. Read the reported include sites before changing
+`deps`: public headers need public dependencies; includes used only by source
+files belong in `implementation_deps`. Libraries needed for linking can be
+required even if no headers are included. The custom `//:clickhouse` final
+link is not a C++ library; request its underlying libraries individually.
+Rebuild and compare `//:clickhouse` on both CPUs after changing the graph.
+
 ## Binary comparison
 
 The current Bazel cleanup checks rebuild the selected compiler and `//:clickhouse`.
@@ -103,6 +125,16 @@ CMake hash recorded below.
 | `ba14ec929` | Use source globs for Arrow, Parquet, Avro, cppkafka and other external libraries, preserving CMake archive order | [ede33140](https://app.buildbuddy.io/invocation/ede33140-b8f8-418c-8b1c-1264cd36beda) | [ff1d6800](https://app.buildbuddy.io/invocation/ff1d6800-9f0e-44db-9206-524a9c05e768) |
 | `7030218f2` (verification snapshot) | Replace raw include options with header dependencies across ClickHouse and external libraries; use protobuf 36.1 and the upstream Delta Cargo.lock | [990aaa99](https://app.buildbuddy.io/invocation/990aaa99-3fcd-4b07-97ab-ec7f82fbc252) | [09ba3815](https://app.buildbuddy.io/invocation/09ba3815-1d12-4485-a088-d5f9734a6a90) |
 | `af5de0992` (verification snapshot) | Use native C++ proto rules for all 65 Google Cloud protos and typed LLVM runtime includes, retaining protobuf archive order | [e1b2cf7a](https://app.buildbuddy.io/invocation/e1b2cf7a-8453-4e39-8f11-b03f7cf95366) | [3047e868](https://app.buildbuddy.io/invocation/3047e868-4a34-42a6-97ce-8931c754ddf7) |
+| `9b13f2efd` (verification snapshot) | Add development-only DWYU checks; remove 10 redundant header wrappers; make allocator, Access/Common, Poco and external dependencies private or direct at their owners | [8dfb9f12](https://app.buildbuddy.io/invocation/8dfb9f12-d2fc-499c-987a-2ba548367ee0) | [78d74d65](https://app.buildbuddy.io/invocation/78d74d65-3465-4f77-9ff9-674397a5b3c5) |
+
+The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
+`ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`
+(x86-64, `cmp` 0) and
+`a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03`
+(native ARM64). The original Bazel ELF hashes also remained
+`0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372`
+and `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744`,
+respectively.
 
 For these checks, `llvm-strip --strip-all --remove-section=.note.gnu.build-id`
 produced SHA-256 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`

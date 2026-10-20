@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -7,7 +6,7 @@ ch_cc_library(
     name = "clickhouse-keeper-client-lib",
     srcs = [
         "KeeperClient.cpp",
-    ],
+    ] + glob(["**/*.h"]),
     clickhouse_code = True,
     implementation_deps = [
         "//bazel:clickhouse_config_headers",
@@ -105,13 +104,7 @@ ch_cc_library(
         "../../" + "bazel/gen",
     ],
     deps = [
-        ":headers",
         "@llvm-project//third-party/siphash:siphash",
         "//src:dbms",
     ],
-)
-
-cc_library(
-    name = "headers",
-    hdrs = glob(["**/*.h"]),
 )

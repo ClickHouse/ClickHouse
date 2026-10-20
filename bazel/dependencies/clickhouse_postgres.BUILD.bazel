@@ -1,26 +1,10 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "COPYRIGHT",
 ])
-
-cc_library(
-    name = "postgres_headers",
-    hdrs = glob([
-        "src/include/**/*.h",
-        "src/interfaces/libpq/**/*.h",
-    ]),
-    includes = [
-        "src/include",
-        "src/interfaces/libpq",
-    ],
-    deps = [
-        "@clickhouse_openssl//:ssl",
-    ],
-)
 
 ch_cc_library(
     name = "_libpq",
@@ -80,7 +64,22 @@ ch_cc_library(
     ] + glob([
         "src/common/**/*.h",
         "src/port/**/*.h",
-    ]),
+    ]) + glob(
+        [
+            "src/include/**/*.h",
+            "src/interfaces/libpq/**/*.h",
+        ],
+        exclude = [
+            "src/include/postgres_ext.h",
+            "src/interfaces/libpq/libpq-events.h",
+            "src/interfaces/libpq/libpq-fe.h",
+        ],
+    ),
+    hdrs = [
+        "src/include/postgres_ext.h",
+        "src/interfaces/libpq/libpq-events.h",
+        "src/interfaces/libpq/libpq-fe.h",
+    ],
     copts = [
         "-w",
         "-std=gnu11",
@@ -88,9 +87,16 @@ ch_cc_library(
     implementation_deps = [
         "@clickhouse_openssl//:crypto",
         "@clickhouse_openssl//:ssl",
-        "@clickhouse_llvm_project//:libcxxabi_headers",
+        "@clickhouse_openssl//:openssl_native_headers",
+        "@clickhouse//contrib/openssl-cmake:openssl_cmake_headers",
+        "@clickhouse//contrib/postgres-cmake:headers",
+    ],
+    includes = [
+        "src/include",
+        "src/interfaces/libpq",
     ],
     language = "C",
+    libcxx_headers = False,
     local_defines = [
         "FRONTEND",
         "OPENSSL_NO_ENGINE",
@@ -99,9 +105,5 @@ ch_cc_library(
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
-    deps = [
-        ":postgres_headers",
-        "@clickhouse//contrib/postgres-cmake:headers",
     ],
 )

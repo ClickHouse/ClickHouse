@@ -225,7 +225,10 @@ poco_cc_library(
         "-Wno-zero-as-null-pointer-constant",
         "-Wno-implicit-int-conversion",
     ],
-    implementation_deps = ["//bazel:clickhouse_config_headers"],
+    implementation_deps = [
+        "//bazel:clickhouse_config_headers",
+        "@clickhouse_double_conversion//:_double-conversion",
+    ],
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -293,6 +296,7 @@ poco_cc_library(
     deps = [
         "@lz4//:lz4_frame",
         "//base/poco/JSON:_poco_json",
+        ":poco_foundation_headers",
     ],
 )
 
@@ -336,6 +340,7 @@ cc_library(
     name = "poco_foundation_headers",
     hdrs = glob(["include/**/*.h"]),
     includes = ["include"],
+    deps = ["@clickhouse_zlib_ng//:_zlib"],
 )
 
 cc_library(

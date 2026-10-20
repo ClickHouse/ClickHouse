@@ -3,6 +3,10 @@ common --check_direct_dependencies=error
 common --incompatible_strict_action_env
 common --compilation_mode=opt
 common --features=system_include_paths
+
+common:dwyu --aspects=//bazel/rules:dwyu.bzl%dwyu
+common:dwyu --output_groups=dwyu
+common:dwyu --keep_going
 # Common CMake flags for ClickHouse's native libraries. Per-target copts
 # retain exceptions such as -ffp-contract=fast on the array functions.
 common --copt=-O3

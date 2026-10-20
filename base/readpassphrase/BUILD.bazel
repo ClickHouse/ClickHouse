@@ -1,12 +1,12 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 load("@clickhouse//bazel/rules:repository_paths.bzl", "CLICKHOUSE_WARNINGS")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
 ch_cc_library(
     name = "readpassphrase",
     srcs = ["readpassphrase.c"],
+    hdrs = glob(["**/*.h"]),
     copts = [
         "-fxray-instrument",
         "-fxray-modes=none",
@@ -18,25 +18,18 @@ ch_cc_library(
         "-Wno-reserved-id-macro",
         "-Wno-disabled-macro-expansion",
     ],
+    implementation_deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    includes = [
+        ".",
+    ],
     language = "C",
+    libcxx_headers = False,
     link_runtime = True,
-    llvm_headers = True,
+    llvm_headers = False,
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
-    deps = [
-        ":headers",
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-    ],
-)
-
-cc_library(
-    name = "headers",
-    hdrs = glob(["**/*.h"]),
-    includes = [
-        ".",
     ],
 )

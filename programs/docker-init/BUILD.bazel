@@ -6,8 +6,9 @@ ch_cc_library(
     name = "clickhouse-docker-init-lib",
     srcs = ["docker-init.cpp"],
     clickhouse_code = True,
-    implementation_deps = ["//bazel:clickhouse_config_headers"],
+    implementation_deps = ["//base:common"],
     link_runtime = True,
+    llvm_headers = False,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -71,8 +72,5 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = ["."],
-    deps = [
-        "//base:common",
-        "//src:headers",
-    ],
+    source_headers = False,
 )

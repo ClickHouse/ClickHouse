@@ -41,7 +41,7 @@ _POCO_NET_SSL_DEPS = [
     "//base/poco/Redis:headers",
     "//base/poco/Util:headers",
     "//base/poco/XML:headers",
-    "//base/readpassphrase:headers",
+    "//base/readpassphrase:readpassphrase",
     "//base/widechar_width:headers",
     "//contrib/cityhash102:headers",
     "//contrib/driftsort:headers",

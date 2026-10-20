@@ -7,73 +7,11 @@ ch_cc_library(
     name = "clickhouse_common_access",
     srcs = glob(["*.cpp"]),
     clickhouse_code = True,
-    implementation_deps = ["//bazel:clickhouse_config_headers"],
-    link_runtime = True,
-    local_defines = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            "ARM_ACLE",
-            "ARM_ASM_HWCAP",
-            "ARM_AUXV_HAS_CRC32",
-            "ARM_AUXV_HAS_NEON",
-            "ARM_FEATURES",
-            "ARM_NEON",
-            "ARM_NEON_HASLD4",
-        ],
-    }) + [
-        "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
-        "BOOST_ASIO_STANDALONE=1",
-        "BOOST_TIMER_ENABLE_DEPRECATED=1",
-        "ENABLE_DISTRIBUTED_CACHE=0",
-        "ENABLE_MULTITARGET_CODE=1",
-        "FIU_ENABLE",
-    ] + select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            "HAVE_ARM_ACLE_H",
-        ],
-    }) + [
-        "HAVE_ATTRIBUTE_ALIGNED",
-        "HAVE_BUILTIN_CTZ",
-        "HAVE_BUILTIN_CTZLL",
-        "HAVE_CONFIG_H",
-        "HAVE_POSIX_MEMALIGN",
-    ] + select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            "HAVE_SYS_AUXV_H",
-        ],
-    }) + [
-        "HAVE_VISIBILITY_HIDDEN",
-        "HAVE_VISIBILITY_INTERNAL",
-        "JEMALLOC_NO_RENAME",
-        "PICOJSON_USE_LOCALE=0",
-        "POCO_ENABLE_CPP11",
-        "POCO_OS_FAMILY_UNIX",
-        "STD_EXCEPTION_HAS_STACK_TRACE=1",
-        "UNALIGNED_OK",
-        "WITH_COVERAGE=0",
-        "WITH_COVERAGE_DEPTH=0",
-        "WITH_GZFILEOP",
-        "X86_64",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "X86_AVX2",
-            "X86_FEATURES",
-            "X86_PCLMULQDQ_CRC",
-            "X86_SSE2",
-            "X86_SSE42",
-            "X86_SSSE3",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }) + [
-        "ZLIB_COMPAT",
-        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-        "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
-    deps = [
-        "@clickhouse_boost//:boost_headers",
+    implementation_deps = [
+        ":headers",
+        "//src/Common:headers",
+        "//base:base_headers",
+        "//base/poco/Foundation:poco_foundation_headers",
         "@clickhouse_fmtlib//:_fmt",
         "@clickhouse_aws//:_aws",
         "@clickhouse_azure//:_azure_sdk",
@@ -190,9 +128,72 @@ ch_cc_library(
         "@clickhouse_cctz//:tzdata",
         "@clickhouse_google_protobuf//:utf8_validity",
         "//base/widechar_width:widechar_width",
-        "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
-        "//:headers",
         "//src:headers",
+    ],
+    link_runtime = True,
+    llvm_headers = False,
+    local_defines = select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "ARM_ACLE",
+            "ARM_ASM_HWCAP",
+            "ARM_AUXV_HAS_CRC32",
+            "ARM_AUXV_HAS_NEON",
+            "ARM_FEATURES",
+            "ARM_NEON",
+            "ARM_NEON_HASLD4",
+        ],
+    }) + [
+        "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
+        "BOOST_ASIO_STANDALONE=1",
+        "BOOST_TIMER_ENABLE_DEPRECATED=1",
+        "ENABLE_DISTRIBUTED_CACHE=0",
+        "ENABLE_MULTITARGET_CODE=1",
+        "FIU_ENABLE",
+    ] + select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "HAVE_ARM_ACLE_H",
+        ],
+    }) + [
+        "HAVE_ATTRIBUTE_ALIGNED",
+        "HAVE_BUILTIN_CTZ",
+        "HAVE_BUILTIN_CTZLL",
+        "HAVE_CONFIG_H",
+        "HAVE_POSIX_MEMALIGN",
+    ] + select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "HAVE_SYS_AUXV_H",
+        ],
+    }) + [
+        "HAVE_VISIBILITY_HIDDEN",
+        "HAVE_VISIBILITY_INTERNAL",
+        "JEMALLOC_NO_RENAME",
+        "PICOJSON_USE_LOCALE=0",
+        "POCO_ENABLE_CPP11",
+        "POCO_OS_FAMILY_UNIX",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "UNALIGNED_OK",
+        "WITH_COVERAGE=0",
+        "WITH_COVERAGE_DEPTH=0",
+        "WITH_GZFILEOP",
+        "X86_64",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "X86_AVX2",
+            "X86_FEATURES",
+            "X86_PCLMULQDQ_CRC",
+            "X86_SSE2",
+            "X86_SSE42",
+            "X86_SSSE3",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }) + [
+        "ZLIB_COMPAT",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
 )
 

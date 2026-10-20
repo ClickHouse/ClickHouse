@@ -20,7 +20,12 @@ ch_cc_library(
         "-w",
         "-std=c++23",
     ],
-    implementation_deps = (["@clickhouse_boost//:boost_asio_headers"]) + ["@clickhouse//src:headers", "@clickhouse//base:base_headers", "@clickhouse_libfiu//:_libfiu", "@clickhouse_libssh//:_ssh", "@clickhouse_libarchive//:_libarchive"],
+    implementation_deps = [
+        "@clickhouse_boost//:boost_asio_headers",
+        "@clickhouse_libfiu//:_libfiu",
+        "@clickhouse_libssh//:_ssh",
+        "@clickhouse_libarchive//:_libarchive",
+    ],
     includes = [
         "include",
     ],
@@ -94,5 +99,11 @@ ch_cc_library(
     deps = [
         "@clickhouse_boost//:_boost_coroutine",
         "@clickhouse//base:common",
+        "@clickhouse//src/Common:headers",
+        "@clickhouse//src:headers",
+        "@clickhouse//base:base_headers",
+        "@clickhouse//base:headers",
+        "@clickhouse//base/poco/Foundation:poco_foundation_headers",
+        "@clickhouse_boost//:boost_headers",
     ],
 )
