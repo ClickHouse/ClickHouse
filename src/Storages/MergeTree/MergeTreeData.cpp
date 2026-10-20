@@ -1215,6 +1215,26 @@ static bool indexExpressionMayBeProbed(const IndexDescription & index)
     return true;
 }
 
+/// The validator of an index also looks at the columns the index covers, so a definition the server
+/// accepted when it was declared can still be refused later when an `ALTER` changes those columns.
+/// This helper only reports the failure; the caller decides whether it is inherited from the old metadata.
+static std::exception_ptr tryValidateIndex(
+    const IndexDescription & index,
+    bool attach,
+    const MergeTreeSettings & settings)
+{
+    try
+    {
+        MergeTreeIndexFactory::instance().validate(index, attach, settings);
+    }
+    catch (...)
+    {
+        return std::current_exception();
+    }
+
+    return {};
+}
+
 static std::exception_ptr tryEvaluateIndexExpression(const IndexDescription & index)
 {
     if (!indexExpressionMayBeProbed(index))
@@ -1405,9 +1425,31 @@ void MergeTreeData::checkProperties(
                         checkSuspiciousIndices(index_expression_ptr);
                 }
 
+                const IndexDescription * old_index = nullptr;
+                /// The create path and the projection recursion pass the same metadata object as both
+                /// arguments, so an index found there is the one being declared and nothing can be inherited.
+                /// Definitions are not compared: `RENAME COLUMN` rewrites an index's AST without redeclaring it.
+                if (&old_metadata != &new_metadata)
+                    for (const auto & candidate : old_metadata.secondary_indices)
+                        if (candidate.name == index.name)
+                            old_index = &candidate;
+
                 if (!attach && !allow_minmax_index_for_json)
                     checkMinMaxIndexForJSON(index);
-                MergeTreeIndexFactory::instance().validate(index, attach, *getSettings());
+
+                /// An index already in the old metadata was validated when it was declared, so a failure
+                /// that the inherited definition shares predates this statement and must not refuse it:
+                /// an unrelated `ALTER` has to keep a table with a legacy index usable, so that the index
+                /// can be dropped. The new definition is still validated first, because validation also
+                /// depends on the current columns: a `MODIFY COLUMN` that turns the indexed column into a
+                /// constant is refused even though the index itself is unchanged.
+                if (auto failure = tryValidateIndex(index, attach, *getSettings()))
+                {
+                    const bool inherited = old_index && tryValidateIndex(*old_index, attach, *getSettings());
+
+                    if (!inherited)
+                        std::rethrow_exception(failure);
+                }
 
                 /// An index the server generates from a setting is not the user's declaration, so it
                 /// must not be the reason a statement is refused; `addImplicitIndicesForColumn` drops
@@ -1416,15 +1458,6 @@ void MergeTreeData::checkProperties(
                 {
                     if (auto failure = tryEvaluateIndexExpression(index))
                     {
-                        const IndexDescription * old_index = nullptr;
-                        /// The create path and the projection recursion pass the same metadata object as both
-                        /// arguments, so an index found there is the one being declared and nothing can be inherited.
-                        /// Definitions are not compared: `RENAME COLUMN` rewrites an index's AST without redeclaring it.
-                        if (&old_metadata != &new_metadata)
-                            for (const auto & candidate : old_metadata.secondary_indices)
-                                if (candidate.name == index.name)
-                                    old_index = &candidate;
-
                         const bool inherited = old_index && tryEvaluateIndexExpression(*old_index);
 
                         if (!inherited)
