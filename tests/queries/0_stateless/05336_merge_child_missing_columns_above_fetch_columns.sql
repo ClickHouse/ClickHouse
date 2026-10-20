@@ -75,6 +75,12 @@ SELECT 'short', a, b, a = 0 OR id > 4 FROM merge(currentDatabase(), '^t_(dist_a|
 SELECT 'short', a, b, id * (a IN (0, 7)) FROM merge(currentDatabase(), '^t_(a|dist_b)$') ORDER BY ALL;
 SELECT 'short', a, b, id * (a IN (0, 7)) FROM merge(currentDatabase(), '^t_(dist_a|b)$') ORDER BY ALL;
 
+-- Expressions that guard against the default of a missing column.
+SELECT 'guard', if(a = 0, 1, intDiv(id, a)) FROM merge(currentDatabase(), '^t_(a|dist_b)$') ORDER BY ALL;
+SELECT 'guard', if(a = 0, 1, intDiv(id, a)) FROM merge(currentDatabase(), '^t_(dist_a|b)$') ORDER BY ALL;
+SELECT 'guard', sum(if(a = 0, 1, intDiv(id, a))) FROM merge(currentDatabase(), '^t_(a|dist_b)$');
+SELECT 'guard', sum(if(a = 0, 1, intDiv(id, a))) FROM merge(currentDatabase(), '^t_(dist_a|b)$');
+
 -- Grouping and `LIMIT BY` keys over missing columns.
 SELECT 'group', a + 1 AS y, count() FROM merge(currentDatabase(), '^t_(a|dist_b)$') GROUP BY y ORDER BY y;
 SELECT 'group', a + 1 AS y, count() FROM merge(currentDatabase(), '^t_(dist_a|b)$') GROUP BY y ORDER BY y;

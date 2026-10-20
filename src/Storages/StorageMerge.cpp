@@ -1499,8 +1499,9 @@ private:
     TableExpressionNodePtr replacement_table_expression;
 };
 
-/// Outside of filters the default is wrapped into `identity`, which is neither foldable nor injective, so the child's
-/// own analysis keeps every expression over it and names it as this query does.
+/// Outside of filters the default is wrapped into `identity(materialize(...))`: not foldable, not injective and not a
+/// constant, so the child's own analysis keeps every expression over it, names it as this query does, and evaluates it
+/// as it would evaluate a column it has.
 void replaceMissingColumnsWithDefaults(
     QueryTreeNodePtr & node,
     const QueryTreeNodePtr & table_expression,
@@ -1515,10 +1516,13 @@ void replaceMissingColumnsWithDefaults(
             node = it->second->clone();
             if (wrap)
             {
-                auto identity_node = std::make_shared<FunctionNode>("identity");
-                identity_node->getArguments().getNodes().push_back(std::move(node));
-                identity_node->resolveAsFunction(FunctionFactory::instance().get("identity", context));
-                node = std::move(identity_node);
+                for (const auto * function_name : {"materialize", "identity"})
+                {
+                    auto function_node = std::make_shared<FunctionNode>(function_name);
+                    function_node->getArguments().getNodes().push_back(std::move(node));
+                    function_node->resolveAsFunction(FunctionFactory::instance().get(function_name, context));
+                    node = std::move(function_node);
+                }
             }
             return;
         }

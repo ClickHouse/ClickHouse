@@ -89,6 +89,14 @@ short	5	5	0
 short	0	0	10
 short	0	0	11
 short	5	5	0
+guard	0
+guard	1
+guard	1
+guard	0
+guard	1
+guard	1
+guard	2
+guard	2
 group	1	2
 group	6	1
 group	1	2
