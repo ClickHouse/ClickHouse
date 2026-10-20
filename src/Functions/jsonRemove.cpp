@@ -550,7 +550,7 @@ public:
     void appendResult(std::string_view json, ColumnString::Chars & output)
     {
         /// RapidJSON treats '\0' as end-of-stream and would silently ignore a suffix.
-        if (json.find('\0') != std::string_view::npos)
+        if (json.contains('\0'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid JSON string in function JSONRemove: embedded NULL byte");
 
         stream.reset(json);
