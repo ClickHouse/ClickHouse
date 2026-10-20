@@ -4,7 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-while :; do
+while clickhouse_test_time_left; do
     $CLICKHOUSE_CLIENT -q "select sleepEachRow(0.1) from numbers(100) settings max_block_size=1 format Null" &
     pid=$!
     sleep 1.5
