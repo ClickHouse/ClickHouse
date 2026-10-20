@@ -42,9 +42,15 @@ def test_parallel_quorum_actually_parallel(started_cluster):
 
     p = Pool(10)
 
+    # The total sleep for the long insert (rows * seconds-per-row) must be larger
+    # than the time taken by the parallel inserts and assertions below. Otherwise
+    # the long insert can finish before the COUNT() == 2 assertions run, causing
+    # COUNT() to return 7 instead of 2. Sanitizer builds (`MSan`, `TSan`,
+    # `ASan + UBSan`) can slow client/server interaction by 10-20x, so use a
+    # generous total sleep duration (5 rows * 3s = 15s).
     def long_insert(node):
         node.query(
-            "INSERT INTO r SELECT number, toString(number) FROM numbers(5) where sleepEachRow(1) == 0",
+            "INSERT INTO r SELECT number, toString(number) FROM numbers(5) where sleepEachRow(3) == 0",
             settings=settings,
         )
 
