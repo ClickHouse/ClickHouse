@@ -259,18 +259,6 @@ bool hasNestedQueryOrUnion(const IQueryTreeNode & node)
     return false;
 }
 
-bool isFunctionAliasInScope(const String & name, const IdentifierResolveScope & scope)
-{
-    for (const auto * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
-    {
-        if (current_scope->aliases.alias_name_to_lambda_node.contains(name)
-            || current_scope->global_with_aliases.alias_name_to_lambda_node.contains(name))
-            return true;
-    }
-
-    return false;
-}
-
 bool isSafeCountScalarSubqueryForEarlyShortCircuit(
     const QueryNode & query,
     const IdentifierResolveScope & scope);
@@ -286,7 +274,7 @@ bool hasUnsafeFunctionForEarlyShortCircuit(
 
     if (const auto * function = node->as<FunctionNode>())
     {
-        if (isFunctionAliasInScope(function->getFunctionName(), scope))
+        if (scope.hasFunctionAlias(function->getFunctionName()))
             return true;
 
         /// throwIf is eligible for runtime lazy execution itself, but when it is inside a
@@ -2399,7 +2387,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 bool any_placeholder_resolves = false;
                 for (const auto & placeholder_name : placeholder_names)
                 {
-                    if (isFunctionAliasInScope(placeholder_name, scope)
+                    if (scope.hasFunctionAlias(placeholder_name)
                         || tryResolveIdentifier({Identifier{placeholder_name}, IdentifierLookupContext::EXPRESSION}, scope, {}).isResolved())
                     {
                         any_placeholder_resolves = true;

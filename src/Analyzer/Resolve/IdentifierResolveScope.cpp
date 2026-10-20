@@ -132,6 +132,18 @@ void IdentifierResolveScope::popExpressionNode()
     expressions_in_resolve_process_stack.pop();
 }
 
+bool IdentifierResolveScope::hasFunctionAlias(const std::string & name) const
+{
+    for (const auto * current_scope = this; current_scope; current_scope = current_scope->parent_scope)
+    {
+        if (current_scope->aliases.alias_name_to_lambda_node.contains(name)
+            || current_scope->global_with_aliases.alias_name_to_lambda_node.contains(name))
+            return true;
+    }
+
+    return false;
+}
+
 namespace
 {
 

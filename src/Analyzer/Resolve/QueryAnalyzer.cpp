@@ -3677,12 +3677,31 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 namespace
 {
 
+/** Whether the expression consists only of constants and ordinary functions, as `1 = 1`.
+  * Such an expression does not depend on the GROUP BY keys and can be resolved before them.
+  */
+bool isSelfContainedConstantExpression(const QueryTreeNodePtr & node, const IdentifierResolveScope & scope)
+{
+    if (node->getNodeType() == QueryTreeNodeType::CONSTANT)
+        return true;
+
+    const auto * function_node = node->as<FunctionNode>();
+    if (!function_node || function_node->isWindowFunction() || scope.hasFunctionAlias(function_node->getFunctionName()))
+        return false;
+
+    auto is_self_contained = [&](const QueryTreeNodePtr & child) { return isSelfContainedConstantExpression(child, scope); };
+    return std::ranges::all_of(function_node->getParameters().getNodes(), is_self_contained)
+        && std::ranges::all_of(function_node->getArguments().getNodes(), is_self_contained);
+}
+
 /** The order in which `resolveFunction` resolves the arguments of `if` or `multiIf` with constant conditions,
   * and whether each argument is in an unreachable branch (and may fail to resolve without an error).
-  * Only the conditions written as literals are recognized here, because the arguments are not resolved yet.
+  * The arguments are not resolved yet, so the value of a condition is obtained by `try_extract_constant_condition`.
   * Returns nothing if the conditions are not constant: then the arguments are resolved from left to right.
   */
-std::optional<std::pair<std::vector<size_t>, std::vector<bool>>> getConstantConditionalResolutionOrder(const FunctionNode & function_node)
+std::optional<std::pair<std::vector<size_t>, std::vector<bool>>> getConstantConditionalResolutionOrder(
+    const FunctionNode & function_node,
+    const std::function<std::optional<bool>(const QueryTreeNodePtr &)> & try_extract_constant_condition)
 {
     const auto & arguments = function_node.getArguments().getNodes();
     const size_t arguments_size = arguments.size();
@@ -3696,7 +3715,7 @@ std::optional<std::pair<std::vector<size_t>, std::vector<bool>>> getConstantCond
         if (arguments_size != 3)
             return {};
 
-        auto constant_condition = tryExtractConstantFromConditionNode(arguments[0]);
+        auto constant_condition = try_extract_constant_condition(arguments[0]);
         if (!constant_condition)
             return {};
 
@@ -3717,7 +3736,7 @@ std::optional<std::pair<std::vector<size_t>, std::vector<bool>>> getConstantCond
 
     for (size_t pair = 0; pair < pairs_count; ++pair)
     {
-        auto constant_condition = tryExtractConstantFromConditionNode(arguments[2 * pair]);
+        auto constant_condition = try_extract_constant_condition(arguments[2 * pair]);
         if (!constant_condition)
             return {};
 
@@ -3793,7 +3812,11 @@ bool QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & 
       * expanding it, see `resolveFunction`. Such an argument is left untouched here, otherwise `count(*)`
       * would turn into `count(a, b)`. A qualified matcher stays a real argument and is expanded as usual.
       */
-    const bool drops_unqualified_matchers = functionDropsUnqualifiedMatcherArgument(function_node->getFunctionName());
+    /// As in `resolveFunction`: a lambda bound to the function name by an alias disables the special handling
+    /// of the builtin functions, and its arguments are resolved from left to right.
+    const bool is_lambda_call = !function_node->isWindowFunction() && scope.hasFunctionAlias(function_node->getFunctionName());
+
+    const bool drops_unqualified_matchers = !is_lambda_call && functionDropsUnqualifiedMatcherArgument(function_node->getFunctionName());
 
     /** `resolveFunction` accepts an invalid expression in a statically unreachable branch of `if` and `multiIf`:
       * it tries to resolve the branch, and if that throws, it replaces the function with its live branch.
@@ -3805,7 +3828,7 @@ bool QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & 
     std::iota(arguments_order.begin(), arguments_order.end(), 0);
     std::vector<bool> arguments_may_be_unreachable(arguments.size(), false);
 
-    if (function_node->getFunctionName() == "if" || function_node->getFunctionName() == "multiIf")
+    if (!is_lambda_call && (function_node->getFunctionName() == "if" || function_node->getFunctionName() == "multiIf"))
     {
         /// The conditions are not known here in general, so any argument other than the first one may be unreachable.
         for (size_t i = 1; i < arguments.size(); ++i)
@@ -3815,8 +3838,23 @@ bool QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & 
           * then the unreachable branches, and the selected branch last. The arguments are visited in the
           * same order, so that a `REPLACE` transformer in an unreachable branch rewrites the selected one,
           * as without `group_by_use_nulls`.
+          * A condition that is not a literal, as `1 = 1`, is folded by `resolveFunction` as well. If it consists only of constants,
+          * it is resolved in a copy to obtain its value.
           */
-        if (auto order = getConstantConditionalResolutionOrder(*function_node))
+        auto try_extract_constant_condition = [&](const QueryTreeNodePtr & condition) -> std::optional<bool>
+        {
+            if (auto constant_condition = tryExtractConstantFromConditionNode(condition))
+                return constant_condition;
+
+            if (!isSelfContainedConstantExpression(condition, scope))
+                return {};
+
+            auto condition_copy = condition->clone();
+            resolveExpressionNode(condition_copy, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+            return tryExtractConstantFromConditionNode(condition_copy);
+        };
+
+        if (auto order = getConstantConditionalResolutionOrder(*function_node, try_extract_constant_condition))
         {
             arguments_order = std::move(order->first);
             arguments_may_be_unreachable = std::move(order->second);
@@ -3867,6 +3905,9 @@ bool QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & 
             /// nor the guard of the preceding nodes half-rewritten.
             auto saved_projection_nodes_before_matcher = projection_nodes_before_matcher;
             const bool saved_expanded = expanded;
+            /// The failed resolution may leave its expressions on the stack, and an aggregate function among them
+            /// would keep the following GROUP BY keys from being converted to Nullable.
+            const size_t saved_expressions_stack_size = scope.expressions_in_resolve_process_stack.size();
             auto list_node_copy = list_node->clone();
 
             try
@@ -3875,6 +3916,9 @@ bool QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & 
             }
             catch (const Exception &)
             {
+                while (scope.expressions_in_resolve_process_stack.size() > saved_expressions_stack_size)
+                    scope.popExpressionNode();
+
                 projection_nodes_before_matcher = std::move(saved_projection_nodes_before_matcher);
                 expanded = saved_expanded;
                 expanded_nodes.clear();
