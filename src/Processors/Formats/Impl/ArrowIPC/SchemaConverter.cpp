@@ -1196,8 +1196,7 @@ DataTypePtr fieldToCHType(
             /// `Nullable(Nothing)` (the library reader wraps its `Nothing` column the same way because the
             /// field's null count is non-zero); the all-null `Nullable` then casts to the requested target
             /// as NULLs (or column DEFAULTs with `null_as_default`). Return directly — it is already
-            /// nullable. Schema inference keeps the flag off and, matching the library reader, treats it as
-            /// an unsupported type (`UNKNOWN_TYPE`, so `*_skip_columns_*_in_schema_inference` can drop it).
+            /// nullable. Schema inference infers the same type.
             if (allow_null_type)
                 return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
             throw Exception(
