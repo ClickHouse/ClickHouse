@@ -40,7 +40,7 @@ class Foundation_API DateTime
 ///
 /// Conversion calculations are based on algorithms
 /// collected and described by Peter Baum at
-/// http://vsg.cape.com/~pbaum/date/date0.htm
+/// https://web.archive.org/web/20070927220405/http://www.vsg.cape.com/~pbaum/date/date0.htm
 ///
 /// Internally, this class stores a date/time in two
 /// forms (UTC and broken down) for performance reasons. Only use
@@ -250,14 +250,14 @@ protected:
     static double
     toJulianDay(int year, int month, int day, int hour = 0, int minute = 0, int second = 0, int millisecond = 0, int microsecond = 0);
     /// Computes the Julian day for a gregorian calendar date and time.
-    /// See <http://vsg.cape.com/~pbaum/date/jdimp.htm>, section 2.3.1 for the algorithm.
+    /// See <https://web.archive.org/web/20070812010029/http://www.vsg.cape.com/~pbaum/date/jdimp.htm>, section 2.3.1 for the algorithm.
 
     static Timestamp::UtcTimeVal toUtcTime(double julianDay);
     /// Computes the UTC time for a Julian day.
 
     void computeGregorian(double julianDay);
     /// Computes the Gregorian date for the given Julian day.
-    /// See <http://vsg.cape.com/~pbaum/date/injdimp.htm>, section 3.3.1 for the algorithm.
+    /// See <https://web.archive.org/web/20070812150005/http://www.vsg.cape.com/~pbaum/date/injdimp.htm>, section 3.3.1 for the algorithm.
 
     void computeDaytime();
     /// Extracts the daytime (hours, minutes, seconds, etc.) from the stored utcTime.

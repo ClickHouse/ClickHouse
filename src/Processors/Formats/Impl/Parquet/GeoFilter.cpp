@@ -120,8 +120,8 @@ std::vector<SpatialFilter> extractSpatialFilters(
 }
 
 bool rowGroupFailsSpatialFilters(
-    const parq::RowGroup & rg_meta,
-    const std::vector<Reader::PrimitiveColumnInfo> & primitive_columns,
+    const Reader & reader,
+    size_t row_group_idx,
     const std::vector<SpatialFilter> & filters)
 {
     /// All filters here come from a conjunctive-only extraction (only AND branches).
@@ -131,7 +131,7 @@ bool rowGroupFailsSpatialFilters(
     {
         /// Find the geometry primitive column by name.
         const Reader::PrimitiveColumnInfo * geo_col = nullptr;
-        for (const auto & pc : primitive_columns)
+        for (const auto & pc : reader.primitive_columns)
         {
             if (pc.name == filter.geometry_column_name)
             {
@@ -144,9 +144,9 @@ bool rowGroupFailsSpatialFilters(
 
         /// Only check geospatial_statistics.bbox baked into the geometry column's ColumnMetaData.
         /// covering.bbox is handled via the standard KeyCondition hyperrectangle path.
-        if (geo_col->column_idx >= rg_meta.columns.size())
+        if (geo_col->column_idx >= reader.numColumnChunks(row_group_idx))
             continue;
-        const auto & col_meta = rg_meta.columns[geo_col->column_idx].meta_data;
+        const auto & col_meta = reader.getColumnChunk(row_group_idx, geo_col->column_idx).meta_data;
         if (!col_meta.__isset.geospatial_statistics || !col_meta.geospatial_statistics.__isset.bbox)
             continue;
 
