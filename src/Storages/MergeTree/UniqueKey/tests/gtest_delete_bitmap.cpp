@@ -139,7 +139,7 @@ TEST(DeleteBitmapTest, RangeCardinalityAcrossContainers)
     EXPECT_EQ(bm.rangeCardinality(2 * span, 3 * span), 0u);
     EXPECT_EQ(bm.rangeCardinality(0, 4 * span), rows.size());
 
-    std::mt19937_64 rng(42);
+    std::mt19937_64 rng(42); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
     std::uniform_int_distribution<UInt64> pick(0, 4 * span);
     for (size_t i = 0; i < 10000; ++i)
     {
