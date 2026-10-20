@@ -122,6 +122,11 @@ public:
         /// (`REFRESH ... APPEND INCREMENTAL`). Null when the view is not incremental or nothing has been processed yet.
         CursorTreeNodePtr cursor;
 
+        /// State of views that this view DEPENDS ON, as of the start of the last attempt if it failed.
+        /// Empty after a successful refresh. After the retries ran out, a dependency refresh newer than
+        /// the one stored here was not tried yet, so `determineNextRefreshTime` does not delay it.
+        AllDependenciesInfo last_attempt_dependencies;
+
         /// Znode version. Not serialized.
         int32_t version = -1;
 
@@ -354,10 +359,6 @@ private:
         /// and count 20 seconds from that. This is where we store it.
         std::unordered_map<String, std::chrono::sys_time<std::chrono::nanoseconds>> seen_dep_refresh_times;
 
-        /// Start of the latest refresh attempt on this replica, at full precision. A dependency refresh that
-        /// finished before it was already tried by that attempt (see `determineNextRefreshTime`).
-        std::chrono::system_clock::time_point last_attempt_start_time {};
-
         /// Used in tests. If not INT64_MIN, we pretend that this is the current time, instead of calling system_clock::now().
         std::atomic<Int64> fake_clock {INT64_MIN};
     };
@@ -441,9 +442,10 @@ private:
     bool collectDependencyStates(AllDependenciesInfo & out, std::unique_lock<std::mutex> & lock);
     bool collectDependencyStatesUnlocked(AllDependenciesInfo & out, const std::vector<StorageID> & deps);
     void syncDependenciesForRefresh(const std::vector<StorageID> & deps, const ContextPtr & context);
-    /// Whether this view is on a DEPENDS ON cycle: one of `deps` depends on it, directly or transitively.
+    /// Whether this view may be on a DEPENDS ON cycle: one of `deps` depends on it, directly or transitively,
+    /// or this cannot be ruled out because a view on the way has no refresh task (e.g. it is not attached yet).
     /// Locks the other views' tasks, so must be called without holding `mutex`.
-    bool dependsOnItselfUnlocked(const std::vector<StorageID> & deps) const;
+    bool mayDependOnItselfUnlocked(const std::vector<StorageID> & deps) const;
 
     /// Looks at time and dependencies and decides when to do next refresh.
     /// Returns:
