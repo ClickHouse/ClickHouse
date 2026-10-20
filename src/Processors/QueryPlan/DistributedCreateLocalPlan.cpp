@@ -55,6 +55,8 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     /// view-inner queries on this node (which were never resolved by the initiator) are
     /// still processed correctly. See https://github.com/ClickHouse/ClickHouse/issues/62289.
     new_context->setPositionalArgumentsAlreadyResolved(true);
+    /// The context flag is ignored when this read is itself inside a view body.
+    select_query_options.positional_arguments_already_resolved = true;
     auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, new_context, select_query_options);
     query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
 

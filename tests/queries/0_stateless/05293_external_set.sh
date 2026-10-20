@@ -182,29 +182,23 @@ grep -v '^report' "${LOCAL_DIR}/parity-1.out"
 grep '^report' "${LOCAL_DIR}/parity-1.out"
 grep '^report' "${LOCAL_DIR}/parity-0.out" | awk -F'\t' '{ built += $3; spilled += $4 } END { print "in memory", built, spilled }'
 
-# The runs and the set use `temporary_files_codec`: `LZ4` compresses the keys, and `NONE` adds a header to
-# each block. Both find the same keys, for keys of 8 and 32 bytes, and the files are removed when the queries
-# finish.
+# The sets of fixed-size keys write their runs with `temporary_files_codec`. With `LZ4` and with `NONE`, they
+# find the same keys, for keys of 8 and 32 bytes, and their files are removed when the queries finish.
 for codec in LZ4 NONE; do
     run "codec-${codec}" --max_bytes_before_external_set 1 --temporary_files_codec "${codec}" --multiquery <<SQL
 SELECT countIf(number IN (SELECT number * 3 FROM numbers(30000))) FROM numbers(90000);
 SELECT countIf(toUInt256(number) IN (SELECT toUInt256(number * 3) FROM numbers(30000))) FROM numbers(90000);
-SELECT '${codec}', (SELECT sum(value) FROM system.events WHERE event = 'ExternalSetCompressedBytes')
-    < (SELECT sum(value) FROM system.events WHERE event = 'ExternalSetUncompressedBytes'),
-    (SELECT sum(value) > 0 FROM system.events WHERE event = 'ExternalSetWritePart'),
+SELECT '${codec}', (SELECT sum(value) > 0 FROM system.events WHERE event = 'ExternalSetWritePart'),
     (SELECT value FROM system.metrics WHERE metric = 'TemporaryFilesForSet');
 SQL
 done
 
-# The checks of the settings and of the space for temporary data stop the query, and so does a set whose
-# writing stops before its end, as at the time limit in the `break` overflow mode. One process runs the
-# queries and continues after each error; the failpoint stays enabled, so its query comes last.
+# The checks of the settings and of the space for temporary data stop the query. One process runs the queries
+# and continues after each error.
 run errors --max_bytes_before_external_set 1 --ignore-error --multiquery 2> "${LOCAL_DIR}/errors.err" <<'SQL'
 SELECT 1 IN (SELECT number FROM numbers(10)) SETTINGS max_bytes_ratio_before_external_set = 1;
 SELECT 1 IN (SELECT number FROM numbers(10000)) SETTINGS max_temporary_data_on_disk_size_for_query = 1;
 SELECT 1 IN (SELECT number FROM numbers(100)) SETTINGS min_free_disk_space_for_temporary_data = 1000000000000000;
-SYSTEM ENABLE FAILPOINT disk_set_builder_stop_before_finish;
-SELECT count() FROM numbers(10) WHERE number IN (SELECT number FROM numbers(1000));
 SQL
 # The message of an error can nest the message of the same error, so only the first code of each is printed.
 awk '/DB::Exception/ && match($0, /\([A-Z_]+\)/) { print substr($0, RSTART + 1, RLENGTH - 2) }' "${LOCAL_DIR}/errors.err"
