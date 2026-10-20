@@ -30,7 +30,7 @@ ClickHouse cluster.
 | `perf_test_perf_changes_v1` | Per-test summary of performance changes. |
 | `perf_partial_queries_v1` | Backward-incompatible queries that ran only on the new server. |
 | `perf_skipped_tests_v1` | Tests skipped during the run and why. |
-| `perf_run_errors_v1` | Errors captured from `run-errors.tsv`. |
+| `perf_run_errors_v1` | Errors captured from `run-errors.tsv`. Rows with `test = '(warning)'` are warnings about the run, such as a reference build older than the master revision tested with the PR. |
 | `perf_metric_changes_v1` | Changes in `system.asynchronous_metric_log` medians. |
 | `perf_flamegraph_stacks_v1` | Collapsed flamegraph stacks per query/side/trace type. |
 

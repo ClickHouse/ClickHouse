@@ -69,6 +69,7 @@ option (ENABLE_PARQUET "Enable parquet" ${ENABLE_PARQUET_DEFAULT})
 add_contrib (flatbuffers-cmake flatbuffers) # builds `flatc`, which generates the Arrow IPC bindings
 add_contrib (compiler-rt-cmake llvm-project)
 add_contrib (libllvmlibc-cmake llvm-project)
+add_contrib (optimized-routines-cmake optimized-routines)
 add_contrib (llvm-project-cmake llvm-project)
 
 enable_dummy_launchers_if_needed()
@@ -112,6 +113,7 @@ add_contrib (minizip-ng-cmake minizip-ng)
 add_contrib (snappy-cmake snappy)
 add_contrib (thrift-cmake thrift)
 add_contrib (StringZilla-cmake StringZilla)
+add_contrib (heks-cmake heks)
 # parquet/arrow/orc
 add_contrib (xsimd-cmake xsimd) # required by arrow's SIMD codepaths
 add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion, xsimd, flatbuffers
@@ -264,7 +266,6 @@ add_contrib (antlr4-cpp-runtime-cmake antlr4-cpp-runtime)
 
 add_contrib(simdcomp-cmake simdcomp)
 
-add_contrib (numactl-cmake numactl)
 
 # Google Cloud Cpp
 if(ENABLE_LIBRARIES AND (OS_LINUX OR OS_DARWIN OR OS_FREEBSD) AND (ARCH_AMD64 OR (ARCH_AARCH64 AND NOT NO_ARMV81_OR_HIGHER)))
@@ -291,6 +292,8 @@ add_contrib (jwt-cpp-cmake jwt-cpp)
 
 add_contrib (sha3iuf-cmake SHA3IUF)
 
+add_contrib (xgboost-cmake xgboost dmlc-core)
+
 add_contrib (ai-sdk-cpp-cmake ai-sdk-cpp)
 
 add_contrib (bech32)
@@ -299,6 +302,8 @@ add_contrib (libcotp-cmake libcotp)
 
 add_contrib (sql-console-cmake sql-console)
 add_contrib (clickstack-cmake clickstack)
+
+add_contrib (ipcrypt2-cmake ipcrypt2)
 
 add_contrib (librseq-cmake librseq)
 add_contrib (silk-cmake silk)

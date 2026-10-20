@@ -1,9 +1,11 @@
 #include <Processors/QueryPlan/FilterStep.h>
+#include <boost/functional/hash.hpp>
 
 #include <limits>
 #include <optional>
 #include <ranges>
 #include <stack>
+#include <unordered_map>
 #include <unordered_set>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -20,13 +22,22 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <fmt/ranges.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
+    extern const SettingsBool short_circuit_function_evaluation_reorder_arguments;
+}
 
 namespace ErrorCodes
 {
@@ -102,47 +113,17 @@ FilterStep::UnneededColumnsPlan FilterStep::analyzeUnneededColumns(
     if (!plan.remove_filter_column && std::ranges::binary_search(unneeded_dag_indices, filter_col_pre_erase_pos))
         plan.remove_filter_column = true;
 
-    /// The filter column is dropped, so its `materialize` wrapper is no longer observable, and
-    /// `applyToOutputs` folds it away. That changes what survives the pruning, so the rest of
-    /// this looks at the DAG as it is going to be. This includes filters that were already marked for
-    /// removal by `ReadFromMergeTree`. The fold only looks through `materialize` and aliases, so without a
-    /// `materialize` in the predicate there is nothing to fold.
-    std::optional<ActionsDAG> folded_dag;
-    if (plan.remove_filter_column)
-    {
-        const auto predicate_nodes = findReachableNodes({old_outputs[filter_col_pre_erase_pos]});
-        const bool has_materialize = std::ranges::any_of(predicate_nodes, [](const auto * node)
-        {
-            return node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "materialize";
-        });
-
-        if (has_materialize)
-        {
-            folded_dag = dag.clone();
-            folded_dag->foldFilterPredicateThroughMaterialize(filter_col_pre_erase_pos);
-            /// The fold only ever replaces the filter output by a constant. The predicate has a `materialize`
-            /// below it, so it was not a constant before.
-            chassert(old_outputs[filter_col_pre_erase_pos]->type != ActionsDAG::ActionType::COLUMN);
-            plan.fold_filter_predicate = folded_dag->getOutputs()[filter_col_pre_erase_pos]->type == ActionsDAG::ActionType::COLUMN;
-            if (!plan.fold_filter_predicate)
-                folded_dag.reset();
-        }
-    }
-    const auto & analyzed_dag = folded_dag ? *folded_dag : dag;
-    const auto & analyzed_outputs = analyzed_dag.getOutputs();
-
     /// The filter column is needed to filter, whether or not anyone reads it.
     std::erase(unneeded_dag_indices, filter_col_pre_erase_pos);
     plan.unneeded_dag_positions = std::move(unneeded_dag_indices);
 
-    plan.filter_output_position = filter_col_pre_erase_pos;
     plan.changes_output_header = !plan.unneeded_dag_positions.empty() || remove_filter_column != plan.remove_filter_column;
 
     /// What removeUnusedActions would keep once the outputs are pruned. It folds constants before it
     /// collects the nodes to keep, and folding clears the children of a folded node, so stop at such a
     /// node to see the same set. ARRAY_JOIN is always a root there.
-    auto roots = plan.neededDAGOutputs(analyzed_outputs);
-    for (const auto & node : analyzed_dag.getNodes())
+    auto roots = plan.neededDAGOutputs(old_outputs);
+    for (const auto & node : dag.getNodes())
         if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
             roots.push_back(&node);
 
@@ -150,8 +131,7 @@ FilterStep::UnneededColumnsPlan FilterStep::analyzeUnneededColumns(
     const auto surviving_nodes = findReachableNodes(roots, is_folded_constant);
 
     /// One entry per column of the input header: the input reading it, or nothing when it passes by.
-    /// A clone keeps the inputs in their order, so the folded DAG reads the same header positions.
-    const auto header_columns = mapHeaderColumnsToInputs(analyzed_dag.getInputs(), input_header);
+    const auto header_columns = mapHeaderColumnsToInputs(dag.getInputs(), input_header);
     plan.input_columns.resize(header_columns.size());
 
     /// The pass-through columns follow the DAG outputs in the pre-erase header, in their order, so one walk over
@@ -169,7 +149,7 @@ FilterStep::UnneededColumnsPlan FilterStep::analyzeUnneededColumns(
         {
             /// Every input reads a header position of its own, so the column it reads is needed exactly when
             /// the input survives.
-            const auto * input = analyzed_dag.getInputs()[header_columns.read_by[position]];
+            const auto * input = dag.getInputs()[header_columns.read_by[position]];
             plan.input_columns[position] = surviving_nodes.contains(input) ? InputColumnUsage::ReadNeeded : InputColumnUsage::ReadDropped;
             continue;
         }
@@ -236,15 +216,12 @@ FilterDAGOutputPruningResult FilterStep::UnneededColumnsPlan::toResult(bool remo
 {
     FilterDAGOutputPruningResult result;
     result.unneeded_input_positions = unneededInputPositions();
-    result.changed = changes_output_header || fold_filter_predicate || removed_any_action || !result.unneeded_input_positions.empty();
+    result.changed = changes_output_header || removed_any_action || !result.unneeded_input_positions.empty();
     return result;
 }
 
 void FilterStep::UnneededColumnsPlan::applyToOutputs(ActionsDAG & dag, bool & remove_filter_column_) const
 {
-    if (fold_filter_predicate)
-        dag.foldFilterPredicateThroughMaterialize(filter_output_position);
-
     dag.getOutputs() = neededDAGOutputs(dag.getOutputs());
     remove_filter_column_ = remove_filter_column;
 }
@@ -261,6 +238,51 @@ FilterDAGOutputPruningResult FilterStep::pruneDAGOutputsByPosition(
     plan.applyToOutputs(dag, remove_filter_column);
     const bool removed_any_action = dag.removeUnusedActions();
     return plan.toResult(removed_any_action);
+}
+
+std::vector<size_t> FilterStep::getUnneededInputPositions(
+    const ActionsDAG & dag,
+    const String & filter_column_name,
+    bool remove_filter_column,
+    const Block & input_header,
+    const std::vector<size_t> & unneeded_output_positions)
+{
+    return analyzeUnneededColumns(dag, filter_column_name, remove_filter_column, input_header, unneeded_output_positions)
+        .unneededInputPositions();
+}
+
+std::vector<std::optional<size_t>> FilterStep::mapOutputsToInputs(
+    const ActionsDAG & dag, const String & filter_column_name, bool remove_filter_column, const Block & input_header)
+{
+    const auto & inputs = dag.getInputs();
+    const auto header_columns = mapHeaderColumnsToInputs(inputs, input_header);
+
+    std::unordered_map<const ActionsDAG::Node *, size_t> header_position_of_input;
+    for (size_t position = 0; position < header_columns.size(); ++position)
+        if (!header_columns.passesThrough(position))
+            header_position_of_input.emplace(inputs[header_columns.read_by[position]], position);
+
+    /// The output header is the outputs of the DAG, without the first filter column if it is removed, then the columns
+    /// the filter passes through, in their order.
+    std::vector<std::optional<size_t>> result;
+    bool filter_column_erased = !remove_filter_column;
+    for (const auto * output : dag.getOutputs())
+    {
+        if (!filter_column_erased && output->result_name == filter_column_name)
+        {
+            filter_column_erased = true;
+            continue;
+        }
+
+        const auto it = header_position_of_input.find(output);
+        result.push_back(it == header_position_of_input.end() ? std::nullopt : std::optional<size_t>(it->second));
+    }
+
+    for (size_t position = 0; position < header_columns.size(); ++position)
+        if (header_columns.passesThrough(position))
+            result.push_back(position);
+
+    return result;
 }
 
 static bool isTrivialSubtree(const ActionsDAG::Node * node)
@@ -291,8 +313,98 @@ static ActionsAndName splitSingleAndFilter(ActionsDAG & dag, const ActionsDAG::N
     return ActionsAndName{std::move(split_result.first), std::move(name)};
 }
 
+/// Can the atom be evaluated before the atoms that precede it in the AND chain? It is evaluated on more rows then,
+/// so it must be cheap (no functions that are worth to execute lazily) and all its functions must be unable to throw,
+/// be stateless, have no observable side effects and be deterministic in the scope of the query. See setting `short_circuit_function_evaluation_reorder_arguments`.
+static bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node)
+{
+    std::stack<const ActionsDAG::Node *> nodes;
+    nodes.push(node);
+    while (!nodes.empty())
+    {
+        node = nodes.top();
+        nodes.pop();
+
+        if (node->type == ActionsDAG::ActionType::ARRAY_JOIN || node->type == ActionsDAG::ActionType::PLACEHOLDER)
+            return false;
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION && !node->column)
+        {
+            DataTypesWithConstInfo arguments;
+            arguments.reserve(node->children.size());
+            for (const auto * child : node->children)
+                arguments.push_back({child->result_type, child->column != nullptr});
+
+            const auto & function = *node->function_base;
+            if (function.isStateful()
+                || function.hasObservableSideEffects()
+                || !function.isDeterministicInScopeOfQuery()
+                || function.isSuitableForShortCircuitArgumentsExecution(arguments)
+                || function.canThrow(arguments))
+                return false;
+        }
+
+        for (const auto * child : node->children)
+            nodes.push(child);
+    }
+    return true;
+}
+
+/// Is the atom heavy, that is, does it contain functions that are worth to execute lazily (like `JSONExtractString`)?
+/// Only heavy atoms are worth to evaluate on fewer rows, so a cheap atom is moved only in front of heavy ones.
+static bool isHeavyAndChainAtom(const ActionsDAG::Node * node)
+{
+    std::stack<const ActionsDAG::Node *> nodes;
+    nodes.push(node);
+    while (!nodes.empty())
+    {
+        node = nodes.top();
+        nodes.pop();
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION && !node->column)
+        {
+            DataTypesWithConstInfo arguments;
+            arguments.reserve(node->children.size());
+            for (const auto * child : node->children)
+                arguments.push_back({child->result_type, child->column != nullptr});
+
+            if (node->function_base->isSuitableForShortCircuitArgumentsExecution(arguments))
+                return true;
+        }
+
+        for (const auto * child : node->children)
+            nodes.push(child);
+    }
+    return false;
+}
+
+/// Does the atom contain stateful functions, functions with observable side effects (like `sleep`),
+/// or functions that are not deterministic in the scope of the query (like `rand` or `rowNumberInBlock`)?
+/// Such an atom must not be evaluated on fewer rows than in the original order, so no atom can be moved in front of it.
+static bool hasOrderSensitiveFunctions(const ActionsDAG::Node * node)
+{
+    std::stack<const ActionsDAG::Node *> nodes;
+    nodes.push(node);
+    while (!nodes.empty())
+    {
+        node = nodes.top();
+        nodes.pop();
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION
+            && (node->function_base->isStateful()
+                || node->function_base->hasObservableSideEffects()
+                || !node->function_base->isDeterministicInScopeOfQuery()))
+            return true;
+
+        for (const auto * child : node->children)
+            nodes.push(child);
+    }
+    return false;
+}
+
 /// Try to split the left most AND atom to a separate DAG.
-static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, const std::string & filter_name)
+/// With `reorder`, the left most atom that can be moved to the front of the chain is preferred.
+static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, const std::string & filter_name, bool reorder)
 {
     const auto * filter = &dag.findInOutputs(filter_name);
     while (filter->type == ActionsDAG::ActionType::ALIAS)
@@ -301,7 +413,8 @@ static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, c
     if (filter->type != ActionsDAG::ActionType::FUNCTION || filter->function_base->getName() != "and")
         return {};
 
-    const ActionsDAG::Node * condition_to_split = nullptr;
+    /// Non-trivial atoms from left to right.
+    std::vector<const ActionsDAG::Node *> atoms;
     std::stack<const ActionsDAG::Node *> nodes;
     nodes.push(filter);
     while (!nodes.empty())
@@ -318,25 +431,38 @@ static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, c
             continue;
         }
 
-        if (isTrivialSubtree(node))
-            continue;
-
-        /// Do not split subtree if it's the last non-trivial one.
-        /// So, split the first found condition only when there is a another one found.
-        if (condition_to_split)
-            return splitSingleAndFilter(dag, condition_to_split);
-
-        condition_to_split = node;
+        if (!isTrivialSubtree(node))
+            atoms.push_back(node);
     }
 
-    return {};
+    /// Do not split subtree if it's the last non-trivial one.
+    if (atoms.size() < 2)
+        return {};
+
+    /// A heavy atom is evaluated only on the rows that passed the atoms split before it. If a cheap atom follows it,
+    /// split the cheap one first. The atoms that are not moved keep their relative order.
+    /// A cheap atom is never moved in front of another cheap atom: it does not save anything, while the written order
+    /// may put the more selective condition first, as in `notEmpty(s) AND s < 'x'`.
+    /// This is decided once per pipeline, not per block, so the profile event `ShortCircuitArgumentsReordered` is not incremented here.
+    if (reorder)
+    {
+        for (const auto * atom : atoms)
+        {
+            if (canBeMovedToTheFrontOfAndChain(atom))
+                return splitSingleAndFilter(dag, atom);
+            if (!isHeavyAndChainAtom(atom) || hasOrderSensitiveFunctions(atom))
+                break;
+        }
+    }
+
+    return splitSingleAndFilter(dag, atoms.front());
 }
 
-static std::vector<ActionsAndName> splitAndChainIntoMultipleFilters(ActionsDAG & dag, const std::string & filter_name)
+static std::vector<ActionsAndName> splitAndChainIntoMultipleFilters(ActionsDAG & dag, const std::string & filter_name, bool reorder)
 {
     std::vector<ActionsAndName> res;
 
-    while (auto condition = trySplitSingleAndFilter(dag, filter_name))
+    while (auto condition = trySplitSingleAndFilter(dag, filter_name, reorder))
         res.push_back(std::move(*condition));
 
     return res;
@@ -359,12 +485,13 @@ FilterStep::FilterStep(
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
 {
-    /// The filter column is dropped from the output, so only the predicate's value is observable and it
-    /// is safe to fold a `materialize`-wrapped constant away (#78166). Doing it here covers every way a
-    /// dropped-filter step comes to be - in particular the fresh steps `tryPushDownFilter` creates, which
-    /// neither `tryMergeExpressions` nor `pruneDAGOutputsByPosition` ever sees.
-    if (remove_filter_column)
-        actions_dag.foldFilterPredicateThroughMaterialize(filter_column_name);
+    /// Fold a `materialize`-wrapped constant predicate away (#78166), such as the one `tryMergeExpressions` drags
+    /// in from the branches of a `UNION`. Only the value of the predicate decides which rows pass, so the filter
+    /// reads a constant; a kept filter column stays an output as it was, and removing unused columns drops it once
+    /// nobody reads it. Doing it here covers every way a filter step comes to be, in particular the fresh steps
+    /// `tryPushDownFilter` creates. The output header does not change: a kept column stays, and the constant is
+    /// removed.
+    actions_dag.foldFilterPredicateThroughMaterialize(filter_column_name, remove_filter_column, *input_header_);
 
     actions_dag.removeAliasesForFilter(filter_column_name);
     /// Removing aliases may result in unneeded ALIAS node in DAG.
@@ -379,8 +506,14 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
 
     /// Splitting AND filter condition to steps under the setting, which is enabled with merge_filters optimization.
     /// This is needed to support short-circuit properly.
+    /// The atoms are reordered only with short-circuit evaluation, like the arguments of `and`.
     if (settings.enable_multiple_filters_transforms_for_and_chain && !actions_dag.hasStatefulFunctions())
-        and_atoms = splitAndChainIntoMultipleFilters(actions_dag, filter_column_name);
+    {
+        const auto & actions_settings = settings.getActionsSettings();
+        bool reorder = actions_settings.short_circuit_function_evaluation != ShortCircuitFunctionEvaluation::DISABLE
+            && actions_settings.short_circuit_function_evaluation_reorder_arguments;
+        and_atoms = splitAndChainIntoMultipleFilters(actions_dag, filter_column_name, reorder);
+    }
 
     /// All streams of the pipe have the same header, so compute the transformed header once
     /// instead of in every FilterTransform instance: the computation is linear in the size
@@ -430,6 +563,21 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     }
 }
 
+/// Whether the AND chain atoms are reordered (`short_circuit_function_evaluation_reorder_arguments` with short-circuit evaluation enabled), to show the AND chain split as it is executed.
+/// The pipeline is not built for `EXPLAIN`, so the setting is taken from the query context. Without a query context
+/// (the plan is described outside of a query), the default value of the setting is used.
+static bool reorderAndChainForDescription()
+{
+    auto reorder = [](const Settings & query_settings)
+    {
+        return query_settings[Setting::short_circuit_function_evaluation] != ShortCircuitFunctionEvaluation::DISABLE
+            && query_settings[Setting::short_circuit_function_evaluation_reorder_arguments];
+    };
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+        return reorder(query_context->getSettingsRef());
+    return reorder(Settings());
+}
+
 void FilterStep::describeActions(FormatSettings & settings) const
 {
     const String & prefix = settings.detail_prefix;
@@ -438,7 +586,7 @@ void FilterStep::describeActions(FormatSettings & settings) const
 
     std::vector<ActionsAndName> and_atoms;
     if (!settings.pretty && !actions_dag.hasStatefulFunctions())
-        and_atoms = splitAndChainIntoMultipleFilters(cloned_dag, filter_column_name);
+        and_atoms = splitAndChainIntoMultipleFilters(cloned_dag, filter_column_name, reorderAndChainForDescription());
 
     for (auto & and_atom : and_atoms)
     {
@@ -480,7 +628,7 @@ void FilterStep::describeActions(JSONBuilder::JSONMap & map) const
 
     std::vector<ActionsAndName> and_atoms;
     if (!actions_dag.hasStatefulFunctions())
-        and_atoms = splitAndChainIntoMultipleFilters(cloned_dag, filter_column_name);
+        and_atoms = splitAndChainIntoMultipleFilters(cloned_dag, filter_column_name, reorderAndChainForDescription());
 
     for (auto & and_atom : and_atoms)
     {
@@ -509,6 +657,17 @@ void FilterStep::setConditionForQueryConditionCache(UInt64 condition_hash_, cons
     condition = {condition_hash_, condition_};
 }
 
+void FilterStep::saltConditionForQueryConditionCache(UInt64 salt)
+{
+    if (!condition)
+        return;
+
+    /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on every platform, same as in `updateQueryConditionCache`.
+    size_t condition_hash = condition->first;
+    boost::hash_combine(condition_hash, salt);
+    condition->first = condition_hash;
+}
+
 bool FilterStep::canUseType(const DataTypePtr & filter_type)
 {
     return FilterTransform::canUseType(filter_type);
@@ -522,9 +681,16 @@ void FilterStep::serialize(Serialization & ctx) const
         flags |= 1;
     writeIntBinary(flags, ctx.out);
 
-    writeStringBinary(filter_column_name, ctx.out);
+    /// A cache key must not depend on the name this plan build composed for the filter column
+    /// (`greater(__table1.x, 5_UInt8)` here, `greater(__table2.x, 5_UInt8)` in the plan enclosing a
+    /// shipped fragment). What the predicate computes says the same thing build-independently, and
+    /// unlike an output index it does not move when the two builds order their outputs differently.
+    if (ctx.for_cache_key)
+        writeIntBinary(actions_dag.getOutputIdentity(filter_column_name, ctx.input_header), ctx.out);
+    else
+        writeStringBinary(filter_column_name, ctx.out);
 
-    actions_dag.serialize(ctx.out, ctx.registry);
+    actions_dag.serialize(ctx.out, ctx.registry, ctx.input_header);
 }
 
 QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)
@@ -580,7 +746,7 @@ FilterStep::removeUnusedColumns(const std::vector<size_t> & unneeded_output_posi
     result.dropped_output_positions = plan.dropped_output_positions;
 
     const bool dag_changed = alignInputsWithPrunedChild(actions_dag, plan.input_columns, *input_header, pruned);
-    result.step_changed = plan.changes_output_header || plan.fold_filter_predicate || dag_changed
+    result.step_changed = plan.changes_output_header || dag_changed
         || !blocksHaveEqualStructure(*input_header, *pruned.header);
 
     if (result.step_changed)
