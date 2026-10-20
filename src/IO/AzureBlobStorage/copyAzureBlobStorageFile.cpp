@@ -513,6 +513,9 @@ void copyAzureBlobStorageFile(
                             || size > MAX_UPLOAD_FROM_URI_SIZE)
                             throw;
 
+                        /// Kept to be raised again if the retry fails, see below.
+                        const auto copy_blob_exception = std::current_exception();
+
                         LOG_TRACE(
                             log,
                             "Copy blob async {} -> {} was refused with 401, the answer to a source in another storage "
@@ -531,7 +534,22 @@ void copyAzureBlobStorageFile(
                         if (dest_client->IsClientForDisk())
                             ProfileEvents::increment(ProfileEvents::DiskAzureUploadFromUri);
 
-                        block_blob_client_dest.UploadFromUri(source_uri, upload_options);
+                        try
+                        {
+                            block_blob_client_dest.UploadFromUri(source_uri, upload_options);
+                        }
+                        catch (...)
+                        {
+                            /// The retry must leave the copy no worse off than not retrying it. The 401 of `Copy Blob`
+                            /// is answered below by reading and writing the object through the server, while the status
+                            /// of a failed `Put Blob From URL` - 500 `CannotVerifyCopySource`, for one - would fail the
+                            /// copy there instead. So report the failure of the retry and raise the 401 that the copy
+                            /// was refused with.
+                            tryLogCurrentException(
+                                log,
+                                fmt::format("Put Blob From URL of {} to {} failed as well", src_blob, dest_blob));
+                            std::rethrow_exception(copy_blob_exception);
+                        }
                     }
                 }
             }
