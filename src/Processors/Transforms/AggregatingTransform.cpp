@@ -44,6 +44,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
     extern const int LOGICAL_ERROR;
+    extern const int ABORTED;
 }
 
 ManyAggregatedData::~ManyAggregatedData()
@@ -1363,6 +1364,12 @@ void AggregatingTransform::initGenerate()
         many_data.reset();
         return;
     }
+
+    /// A drain that failed in another producer may have left keys with null states in the shared
+    /// table, and the executor may not have cancelled this transform yet. Nothing below may merge
+    /// or write that table.
+    if (adaptive_context && adaptive_context->session->shared_table_broken.load(std::memory_order_acquire))
+        throw Exception(ErrorCodes::ABORTED, "Adaptive aggregation cannot finish: a drain into its shared table failed");
 
     adaptive_engaged = adaptive_context && adaptive_context->session->initialized.load(std::memory_order_acquire);
 
