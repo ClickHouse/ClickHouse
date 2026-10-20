@@ -1452,13 +1452,16 @@ try
 catch (DB::Exception & e)
 {
     bool need_print_stack_trace = getClientConfiguration().getBool("stacktrace", false);
-    std::cerr << getExceptionMessageForLogging(e, need_print_stack_trace, true) << std::endl;
+    /// A non-interactive run rethrows the query exception from processError, so this is where it
+    /// is reported. After a Ctrl+C `stderr` may be a terminal that stopped draining, so the report
+    /// goes through the same bounded path as in processError instead of a blocking write.
+    printErrorReport(getExceptionMessageForLogging(e, need_print_stack_trace, true) + "\n");
     auto code = DB::getCurrentExceptionCode();
     return static_cast<UInt8>(code) ? code : 1;
 }
 catch (...)
 {
-    std::cerr << DB::getCurrentExceptionMessage(true) << '\n';
+    printErrorReport(DB::getCurrentExceptionMessage(true) + "\n");
     auto code = DB::getCurrentExceptionCode();
     return static_cast<UInt8>(code) ? code : 1;
 }
