@@ -3,7 +3,7 @@
 #include <base/types.h>
 #include <Columns/IColumn_fwd.h>
 #include <DataTypes/IDataType.h>
-#include <Common/AllocatorWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <libdivide-config.h>
 #include <libdivide.h>
@@ -40,10 +40,7 @@ class BloomFilter
 
 public:
     using UnderType = UInt64;
-    /// The filter can be large (up to `MAX_BLOOM_FILTER_SIZE`) and is allocated eagerly, so it uses an allocator
-    /// that respects the memory limits: exceeding them throws `MEMORY_LIMIT_EXCEEDED` instead of the allocation
-    /// silently succeeding (implicit `operator new` allocations are not refused by the memory tracker by default).
-    using Container = std::vector<UnderType, AllocatorWithMemoryTracking<UnderType>>;
+    using Container = VectorWithMemoryTracking<UnderType>;
 
     explicit BloomFilter(const BloomFilterParameters & params);
     /// size -- size of filter in bytes.
