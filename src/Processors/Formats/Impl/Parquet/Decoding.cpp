@@ -530,6 +530,8 @@ struct PlainStringDecoder : public PageDecoder
     bool bulk_scan_enabled = false;
     bool bulk_scan_probed = false;
     std::vector<size_t> bulk_scan_matches;
+    /// Fewer values (e.g. a row range left by another PREWHERE step) are checked one by one, as without the bulk scan.
+    static constexpr size_t MIN_VALUES_TO_BULK_SCAN = 128;
 
     PlainStringDecoder(std::span<const char> data_, std::shared_ptr<StringConverter> converter_, const StringValueFilter * value_filter_)
         : PageDecoder(data_), converter(std::move(converter_)), value_filter(value_filter_)
@@ -566,7 +568,7 @@ struct PlainStringDecoder : public PageDecoder
         while (i < num_values && bulk_scan_enabled && string_filter.isEnabled())
         {
             /// The first batch of a page is small, to find out cheaply whether the scan pays off.
-            const size_t max_batch = bulk_scan_probed ? StringValueFilter::MAX_VALUES_BETWEEN_STATS_UPDATES : 128;
+            const size_t max_batch = bulk_scan_probed ? StringValueFilter::MAX_VALUES_BETWEEN_STATS_UPDATES : MIN_VALUES_TO_BULK_SCAN;
             const size_t batch = std::min(num_values - i, max_batch);
             offsets.resize(batch);
             const char * batch_begin = data;
@@ -662,7 +664,7 @@ struct PlainStringDecoder : public PageDecoder
             size_t bytes_skipped = 0;
 
             size_t i = 0;
-            if (active_value_filter && !filter && bulk_scan_enabled)
+            if (active_value_filter && !filter && bulk_scan_enabled && num_values >= MIN_VALUES_TO_BULK_SCAN)
             {
                 i = decodeWithBulkScan(num_values, col_str, *active_value_filter);
                 if (!active_value_filter->isEnabled())
