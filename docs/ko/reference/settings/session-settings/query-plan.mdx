@@ -204,6 +204,14 @@ JOIN 이후의 필터가 일치하지 않는 행 또는 일치하는 행에 대�
 * &#39;false&#39;: 테이블을 스왑하지 않습니다(오른쪽 테이블이 빌드 테이블입니다).
 * &#39;true&#39;: 항상 테이블을 스왑합니다(왼쪽 테이블이 빌드 테이블입니다).
 
+## query_plan_lazy_materialization_for_join {#query_plan_lazy_materialization_for_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "조인이 포함된 `LIMIT n` 쿼리에 지연 구체화(lazy materialization)를 사용하는 새로운 설정입니다."}]}]} />
+
+`ORDER BY` 유무와 관계없이 조인이 포함된 `LIMIT n` 쿼리에 지연 구체화(lazy materialization)를 사용합니다. `MergeTree` 테이블의 컬럼과, `query_plan_optimize_lazy_materialization_for_object_storage`가 활성화된 경우에는 객체 스토리지 테이블의 컬럼도, 조인이 생성하는 모든 행(rows)이 아니라 `LIMIT`을 통과한 `n`개의 행에 대해서만 읽습니다. 이 결정은 `LIMIT` 아래의 하위 트리 전체에 대해 하나로 머지된 `ActionsDAG`를 기준으로 이루어집니다. 따라서 필터(filter)에 필요하면서 결과(result)에도 다시 필요한 값은 그 사이의 모든 조인을 거쳐 전달되는 컬럼이 되는 대신, `LIMIT` 위에서 적은 비용으로 한 번 더 계산됩니다. `query_plan_optimize_lazy_materialization`이 활성화된 경우에만 적용됩니다.
+
 ## query_plan_lift_up_array_join {#query_plan_lift_up_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

@@ -204,6 +204,20 @@ EXPLAIN PLAN で、元のクエリで指定された別名ではなく、内部�
 * &#39;false&#39;: テーブルを入れ替えません (右テーブルがビルドテーブルになります) 。
 * &#39;true&#39;: 常にテーブルを入れ替えます (左テーブルがビルドテーブルになります) 。
 
+## query_plan_lazy_materialization_for_join {#query_plan_lazy_materialization_for_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "結合を含む `LIMIT n` クエリで遅延マテリアライゼーションを使用するための新しい設定。"}]}]} />
+
+`ORDER BY` の有無にかかわらず、結合を含む `LIMIT n` クエリで遅延マテリアライゼーションを使用します。これにより、
+`MergeTree` テーブルのカラム (および
+`query_plan_optimize_lazy_materialization_for_object_storage` が有効な場合はオブジェクトストレージテーブルのカラム) は、結合によって生成されるすべての行ではなく、
+`LIMIT` を通過した `n` 行に対してのみ読み取られます。この判断は、`LIMIT` より下の部分木全体を 1 つにマージした
+`ActionsDAG` に基づいて行われます。そのため、フィルタで必要とされ、結果でも再び必要となる値は、
+間にあるすべての結合を経由して受け渡されるカラムになるのではなく、`LIMIT` より上で 2 回計算されます (その計算コストはわずかです) 。
+`query_plan_optimize_lazy_materialization` が有効な場合にのみ適用されます。
+
 ## query_plan_lift_up_array_join {#query_plan_lift_up_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

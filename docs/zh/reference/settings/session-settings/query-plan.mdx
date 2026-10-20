@@ -204,6 +204,19 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 * &#39;false&#39;：从不交换表 (右表为 build 表) 。
 * &#39;true&#39;：始终交换表 (左表为 build 表) 。
 
+## query_plan_lazy_materialization_for_join {#query_plan_lazy_materialization_for_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "新增设置：对包含连接的 `LIMIT n` 查询使用延迟物化。"}]}]} />
+
+对包含连接的 `LIMIT n` 查询 (无论是否带有 `ORDER BY`) 使用延迟物化：
+`MergeTree` 表的列，以及在启用
+`query_plan_optimize_lazy_materialization_for_object_storage` 时对象存储表的列，只会针对经过 `LIMIT` 后保留下来的 `n` 行进行读取，
+而不是针对连接产生的每一行都进行读取。该决策基于 `LIMIT` 下方整个子树对应的单个已合并
+`ActionsDAG` 做出。因此，对于过滤器需要、结果中也需要的值，会在 `LIMIT` 上方以较低开销再计算一次，
+而不是作为一列在中间的每个连接中逐层传递。仅当启用 `query_plan_optimize_lazy_materialization` 时，此设置才会生效。
+
 ## query_plan_lift_up_array_join {#query_plan_lift_up_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

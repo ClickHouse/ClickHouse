@@ -38,6 +38,7 @@
     "es/reference/settings/server-settings/settings/encryption-header",
     "es/reference/settings/server-settings/settings/format",
     "es/reference/settings/server-settings/settings/global-profiler",
+    "es/reference/settings/server-settings/settings/gpu",
     "es/reference/settings/server-settings/settings/graphite",
     "es/reference/settings/server-settings/settings/http",
     "es/reference/settings/server-settings/settings/http-connections",

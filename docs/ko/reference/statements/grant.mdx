@@ -233,7 +233,7 @@ ClickHouse의 권한 계층 구조는 아래와 같습니다.
     * `DROP VIEW`
     * `DROP WORKLOAD`
   * [`INSERT`](#insert)
-  * [`내부 검사`](#introspection)
+  * [`INTROSPECTION`](#introspection)
     * `addressToLine`
     * `addressToLineWithInlines`
     * `addressToSymbol`
@@ -261,6 +261,7 @@ ClickHouse의 권한 계층 구조는 아래와 같습니다.
     * `AZURE`
     * `BIGQUERY`
     * `DISK`
+    * `ELASTICSEARCH`
     * `FILE`
     * `HDFS`
     * `HIVE`
@@ -340,7 +341,7 @@ ClickHouse의 권한 계층 구조는 아래와 같습니다.
     * `SYSTEM UNLOAD PRIMARY KEY`
     * `SYSTEM VIRTUAL PARTS UPDATE`
     * `SYSTEM WAIT LOADING PARTS`
-  * [`테이블 엔진`](#table-engine)
+  * [`TABLE ENGINE`](#table-engine)
   * [`TRUNCATE`](#truncate)
   * `UNDROP TABLE`
 * [`NONE`](#none)
@@ -648,6 +649,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 * `AZURE`
 * `BIGQUERY`
 * `DISK`
+* `ELASTICSEARCH`
 * `FILE`
 * `HDFS`
 * `HIVE`

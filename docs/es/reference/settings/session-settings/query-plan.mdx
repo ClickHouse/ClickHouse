@@ -204,6 +204,20 @@ Determina qué lado del join debe ser la tabla de construcción (también llamad
 * &#39;false&#39;: Nunca intercambies las tablas (la tabla derecha es la tabla de construcción).
 * &#39;true&#39;: Intercambia siempre las tablas (la tabla izquierda es la tabla de construcción).
 
+## query_plan_lazy_materialization_for_join {#query_plan_lazy_materialization_for_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nueva configuración para usar materialización diferida en consultas `LIMIT n` sobre joins."}]}]} />
+
+Usa materialización diferida en consultas `LIMIT n` sobre joins, con o sin `ORDER BY`: las columnas de las
+tablas `MergeTree`, así como las de las tablas de almacenamiento de objetos si
+`query_plan_optimize_lazy_materialization_for_object_storage` está habilitado, se leen solo para las `n` filas que
+quedan tras el `LIMIT`, en lugar de para todas las filas que generan los joins. La decisión se toma sobre un único
+`ActionsDAG` fusionado para todo el subárbol situado por debajo del `LIMIT`, de modo que un valor que necesita un filtro y que también necesita el resultado
+se calcula dos veces, con un coste bajo, por encima del `LIMIT`, en lugar de convertirse en una columna que se arrastra a través de todos los joins
+intermedios. Solo tiene efecto si `query_plan_optimize_lazy_materialization` está habilitado.
+
 ## query_plan_lift_up_array_join {#query_plan_lift_up_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

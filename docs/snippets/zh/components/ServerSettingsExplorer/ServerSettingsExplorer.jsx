@@ -331,9 +331,10 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "enable_*",
-      count: 5,
+      count: 6,
       settings: [
         { name: "enable_azure_sdk_logging", path: "/enable#enable_azure_sdk_logging", default: "0" },
+        { name: "enable_gpu", path: "/enable#enable_gpu", default: "0" },
         { name: "enable_read_through_distributed_cache", path: "/enable#enable_read_through_distributed_cache", default: "0" },
         { name: "enable_silk_runtime", path: "/enable#enable_silk_runtime", default: "0" },
         { name: "enable_webterminal", path: "/enable#enable_webterminal", default: "1" },
@@ -366,6 +367,15 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       settings: [
         { name: "global_profiler_cpu_time_period_ns", path: "/global-profiler#global_profiler_cpu_time_period_ns", default: "10000000000" },
         { name: "global_profiler_real_time_period_ns", path: "/global-profiler#global_profiler_real_time_period_ns", default: "10000000000" }
+      ],
+      children: []
+    },
+    {
+      label: "gpu_*",
+      count: 2,
+      settings: [
+        { name: "gpu_memory_pool_release_threshold", path: "/gpu#gpu_memory_pool_release_threshold", default: "18446744073709551615" },
+        { name: "gpu_pinned_memory_pool_release_threshold", path: "/gpu#gpu_pinned_memory_pool_release_threshold", default: "1073741824" }
       ],
       children: []
     },

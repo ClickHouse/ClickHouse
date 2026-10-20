@@ -1,7 +1,7 @@
 const SessionSettingsExplorer = ({ href: baseRoute }) => {
   // El renderizador de producción de Mintlify evalúa el componente exportado sin
   // conservar los bindings del ámbito del módulo. El estado diferido mantiene los datos generados en
-  // ese ámbito de evaluación y solo los construye una vez por montaje.
+  // ese ámbito de evaluación y los construye una sola vez por montaje.
   const [entries] = useState(() => [
     {
       label: "additional_*",
@@ -2397,7 +2397,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "query_plan_*",
-      count: 55,
+      count: 56,
       settings: [
         { name: "query_plan_aggregation_bucket_top_k", path: "/query-plan#query_plan_aggregation_bucket_top_k", default: "1" },
         { name: "query_plan_aggregation_having_prefilter", path: "/query-plan#query_plan_aggregation_having_prefilter", default: "1" },
@@ -2415,6 +2415,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "query_plan_fuse_filter_into_array_join", path: "/query-plan#query_plan_fuse_filter_into_array_join", default: "1" },
         { name: "query_plan_join_shard_by_pk_ranges", path: "/query-plan#query_plan_join_shard_by_pk_ranges", default: "1" },
         { name: "query_plan_join_swap_table", path: "/query-plan#query_plan_join_swap_table", default: "auto" },
+        { name: "query_plan_lazy_materialization_for_join", path: "/query-plan#query_plan_lazy_materialization_for_join", default: "1" },
         { name: "query_plan_lift_up_array_join", path: "/query-plan#query_plan_lift_up_array_join", default: "1" },
         { name: "query_plan_lift_up_union", path: "/query-plan#query_plan_lift_up_union", default: "1" },
         { name: "query_plan_lower_array_join_function", path: "/query-plan#query_plan_lower_array_join_function", default: "1" },
@@ -3539,7 +3540,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         {filteredEntries.length > 0 ? (
           filteredEntries.map((entry, index) => renderGroup(entry, [], index === filteredEntries.length - 1))
         ) : (
-          <div className="py-2 text-gray-500 dark:text-gray-400">No hay ajustes coincidentes</div>
+          <div className="py-2 text-gray-500 dark:text-gray-400">No se encontraron ajustes</div>
         )}
       </div>
     </div>

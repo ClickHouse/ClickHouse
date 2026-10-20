@@ -204,6 +204,20 @@ Détermine de quel côté de la jointure doit se trouver la table de build (éga
 * &#39;false&#39; : ne jamais permuter les tables (la table de droite est la table de build).
 * &#39;true&#39; : toujours permuter les tables (la table de gauche est la table de build).
 
+## query_plan_lazy_materialization_for_join {#query_plan_lazy_materialization_for_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nouveau paramètre permettant d’utiliser la matérialisation paresseuse pour les requêtes `LIMIT n` portant sur des jointures."}]}]} />
+
+Utilise la matérialisation paresseuse pour les requêtes `LIMIT n` portant sur des jointures, avec ou sans `ORDER BY` : les colonnes des
+tables `MergeTree`, ainsi que celles des tables de stockage d’objet si
+`query_plan_optimize_lazy_materialization_for_object_storage` est activé, ne sont lues que pour les `n` lignes retenues
+par le `LIMIT`, et non pour toutes les lignes produites par les jointures. La décision est prise sur un unique
+`ActionsDAG` fusionné couvrant l’ensemble du sous-arbre situé sous le `LIMIT`. Ainsi, une valeur requise à la fois par un filter et par l’ensemble de résultats
+est calculée deux fois, à moindre coût, au-dessus du `LIMIT`, au lieu de devenir une colonne propagée à travers chacune des jointures
+intermédiaires. Ne s’applique que si `query_plan_optimize_lazy_materialization` est activé.
+
 ## query_plan_lift_up_array_join {#query_plan_lift_up_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

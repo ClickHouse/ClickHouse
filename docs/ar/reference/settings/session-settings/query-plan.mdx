@@ -204,6 +204,20 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * &#39;false&#39;: لا تبدّل الجداول أبدًا (الجدول الأيمن هو جدول البناء).
 * &#39;true&#39;: بدّل الجداول دائمًا (الجدول الأيسر هو جدول البناء).
 
+## query_plan_lazy_materialization_for_join {#query_plan_lazy_materialization_for_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "إعداد جديد لاستخدام التجسيد الكسول في استعلامات `LIMIT n` التي تتضمن عمليات ربط."}]}]} />
+
+يستخدم التجسيد الكسول في استعلامات `LIMIT n` التي تتضمن عمليات ربط، سواء مع `ORDER BY` أو بدونها: إذ لا تُقرأ أعمدة جداول
+`MergeTree`، وكذلك أعمدة جداول التخزين الكائني إذا كان
+`query_plan_optimize_lazy_materialization_for_object_storage` مفعّلًا، إلا لعدد `n` من الصفوف التي
+تتبقى بعد تطبيق `LIMIT`، بدلًا من قراءتها لكل صف تنتجه عمليات الربط. ويُتخذ هذا القرار بناءً على `ActionsDAG` مدمج واحد
+يشمل الجزء الفرعي بأكمله الواقع أسفل `LIMIT`، وبذلك فإن القيمة التي يحتاجها عامل تصفية ثم تحتاجها النتيجة
+مجددًا تُحسب مرتين بتكلفة زهيدة أعلى `LIMIT`، بدلًا من أن تتحول إلى عمود يُمرَّر عبر كل عمليات الربط
+الواقعة بينهما. لا يسري هذا الإعداد إلا إذا كان `query_plan_optimize_lazy_materialization` مفعّلًا.
+
 ## query_plan_lift_up_array_join {#query_plan_lift_up_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

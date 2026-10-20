@@ -38,6 +38,7 @@
     "ko/reference/settings/server-settings/settings/encryption-header",
     "ko/reference/settings/server-settings/settings/format",
     "ko/reference/settings/server-settings/settings/global-profiler",
+    "ko/reference/settings/server-settings/settings/gpu",
     "ko/reference/settings/server-settings/settings/graphite",
     "ko/reference/settings/server-settings/settings/http",
     "ko/reference/settings/server-settings/settings/http-connections",

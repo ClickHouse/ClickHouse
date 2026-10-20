@@ -1,7 +1,7 @@
 const SessionSettingsExplorer = ({ href: baseRoute }) => {
-  // Mintlify의 프로덕션 렌더러는 모듈 범위 바인딩을 유지하지 않고
-  // 내보낸 컴포넌트를 평가합니다. 지연 상태(lazy state)는 생성된 데이터를
-  // 해당 평가 범위에 유지하면서 마운트당 한 번만 구성합니다.
+  // Mintlify의 프로덕션 렌더러는 모듈 스코프 바인딩을 유지하지 않은 채
+  // 내보낸 컴포넌트를 평가합니다. 지연 초기화 상태(lazy state)를 사용하면 생성된 데이터를
+  // 해당 평가 스코프 안에 유지하면서도 마운트당 한 번만 생성합니다.
   const [entries] = useState(() => [
     {
       label: "additional_*",
@@ -2397,7 +2397,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "query_plan_*",
-      count: 55,
+      count: 56,
       settings: [
         { name: "query_plan_aggregation_bucket_top_k", path: "/query-plan#query_plan_aggregation_bucket_top_k", default: "1" },
         { name: "query_plan_aggregation_having_prefilter", path: "/query-plan#query_plan_aggregation_having_prefilter", default: "1" },
@@ -2415,6 +2415,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "query_plan_fuse_filter_into_array_join", path: "/query-plan#query_plan_fuse_filter_into_array_join", default: "1" },
         { name: "query_plan_join_shard_by_pk_ranges", path: "/query-plan#query_plan_join_shard_by_pk_ranges", default: "1" },
         { name: "query_plan_join_swap_table", path: "/query-plan#query_plan_join_swap_table", default: "auto" },
+        { name: "query_plan_lazy_materialization_for_join", path: "/query-plan#query_plan_lazy_materialization_for_join", default: "1" },
         { name: "query_plan_lift_up_array_join", path: "/query-plan#query_plan_lift_up_array_join", default: "1" },
         { name: "query_plan_lift_up_union", path: "/query-plan#query_plan_lift_up_union", default: "1" },
         { name: "query_plan_lower_array_join_function", path: "/query-plan#query_plan_lower_array_join_function", default: "1" },
@@ -3424,7 +3425,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
     const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
-    const countLabel = `${entry.count}개 설정`
+    const countLabel = `설정 ${entry.count}개`
 
     return (
       <div key={key} className="min-w-max">
@@ -3508,14 +3509,14 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
           type="search"
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.target.value)}
-          placeholder="설정 검색 (예: parallel replicas 또는 %materialized%)"
+          placeholder="설정 검색(예: parallel replicas 또는 %materialized%)"
           className="w-full rounded-lg border border-gray-500 bg-gray-50 py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-600 focus:border-gray-600 focus:outline-0 focus-visible:outline-0 dark:border-white/30 dark:bg-white/5 dark:text-white dark:placeholder:text-gray-400 dark:focus:border-[#fdff75]"
         />
       </div>
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            일치하는 설정 {matchingCount}개 {matchingCount === 1 ? "" : ""}
+            일치하는 설정 {matchingCount}개
           </span>
         </div>
       )}

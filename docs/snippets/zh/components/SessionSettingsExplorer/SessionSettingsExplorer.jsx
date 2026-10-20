@@ -1,7 +1,7 @@
 const SessionSettingsExplorer = ({ href: baseRoute }) => {
-  // Mintlify's production renderer evaluates the exported component without
-  // preserving module-scope bindings. Lazy state keeps the generated data in
-  // that evaluation scope while constructing it only once per mount.
+  // Mintlify 的生产渲染器在求值导出组件时不会保留模块作用域绑定。
+  // 惰性状态可将生成的数据保留在该求值作用域内，
+  // 同时确保每次挂载仅构造一次。
   const [entries] = useState(() => [
     {
       label: "additional_*",
@@ -2397,7 +2397,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "query_plan_*",
-      count: 55,
+      count: 56,
       settings: [
         { name: "query_plan_aggregation_bucket_top_k", path: "/query-plan#query_plan_aggregation_bucket_top_k", default: "1" },
         { name: "query_plan_aggregation_having_prefilter", path: "/query-plan#query_plan_aggregation_having_prefilter", default: "1" },
@@ -2415,6 +2415,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "query_plan_fuse_filter_into_array_join", path: "/query-plan#query_plan_fuse_filter_into_array_join", default: "1" },
         { name: "query_plan_join_shard_by_pk_ranges", path: "/query-plan#query_plan_join_shard_by_pk_ranges", default: "1" },
         { name: "query_plan_join_swap_table", path: "/query-plan#query_plan_join_swap_table", default: "auto" },
+        { name: "query_plan_lazy_materialization_for_join", path: "/query-plan#query_plan_lazy_materialization_for_join", default: "1" },
         { name: "query_plan_lift_up_array_join", path: "/query-plan#query_plan_lift_up_array_join", default: "1" },
         { name: "query_plan_lift_up_union", path: "/query-plan#query_plan_lift_up_union", default: "1" },
         { name: "query_plan_lower_array_join_function", path: "/query-plan#query_plan_lower_array_join_function", default: "1" },
@@ -3515,7 +3516,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            {matchingCount} 个匹配的{matchingCount === 1 ? "设置项" : "设置项"}
+            {matchingCount === 1 ? "" : ""}找到 {matchingCount} 个匹配的设置
           </span>
         </div>
       )}
@@ -3539,7 +3540,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         {filteredEntries.length > 0 ? (
           filteredEntries.map((entry, index) => renderGroup(entry, [], index === filteredEntries.length - 1))
         ) : (
-          <div className="py-2 text-gray-500 dark:text-gray-400">无匹配的设置</div>
+          <div className="py-2 text-gray-500 dark:text-gray-400">未找到匹配的设置</div>
         )}
       </div>
     </div>

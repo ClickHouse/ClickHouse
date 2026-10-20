@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="database_replicated_allow_explicit_uuid">
-  ## database_replicated_allow_explicit_uuid
-</div>
+## database_replicated_allow_explicit_uuid {#database_replicated_allow_explicit_uuid}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -23,9 +21,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 0 - Запретить явное указание UUID для таблиц в базах данных Replicated. 1 - Разрешить. 2 - Разрешить, но игнорировать указанный UUID и вместо него генерировать случайный UUID.
 
-<div id="database_replicated_allow_heavy_create">
-  ## database_replicated_allow_heavy_create
-</div>
+## database_replicated_allow_heavy_create {#database_replicated_allow_heavy_create}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -33,19 +29,29 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Разрешает выполнение длительных DDL-запросов (CREATE AS SELECT и POPULATE) для движка базы данных Replicated. Обратите внимание, что это может надолго заблокировать очередь DDL.
 
-<div id="database_replicated_allow_only_replicated_engine">
-  ## database_replicated_allow_only_replicated_engine
-</div>
+## database_replicated_allow_only_replicated_engine {#database_replicated_allow_only_replicated_engine}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Разрешает создавать в базе данных с движком Replicated только таблицы с движком Replicated
+Разрешает создавать таблицу в базе данных с движком `Replicated`, только если таблица либо реплицирует собственные
+данные, хранящиеся на диске, либо вообще не хранит собственных данных на диске.
 
-Значение по умолчанию в Cloud: `1`.
+Это ограничение распространяется только на собственные данные таблицы на диске, включая данные на удалённых дисках. Оно не гарантирует
+сохранность данных в памяти или данных, управляемых внешними системами.
 
-<div id="database_replicated_allow_replicated_engine_arguments">
-  ## database_replicated_allow_replicated_engine_arguments
-</div>
+Например, разрешены `ReplicatedMergeTree`, движки, хранящие данные в памяти, такие как `Memory` и `Buffer`, metadata-only движки,
+такие как `Merge` и `Alias`, а также движки внешних хранилищ и озер данных, такие как `S3` и `AzureBlobStorage`.
+Non-replicated движки, хранящие данные таблицы на диске, такие как `MergeTree`, `Log`, `File` и `Set`,
+отклоняются — в том числе если их политика хранения, доступная для записи, использует удалённые диски. Таблицы `Set` и `Join`, созданные с
+`SETTINGS persistent = 0`, хранят данные только в памяти, поэтому разрешены.
+
+Таблицы `Distributed`, `Remote` и `RemoteSecure` разрешены. Их необязательная локальная фоновая очередь `INSERT` —
+это временный буфер отправки, а не данные самой таблицы. Она не реплицируется; чтобы обойтись без этой очереди, задайте
+`distributed_foreground_insert = 1`.
+
+Значение по умолчанию в облаке: `1`.
+
+## database_replicated_allow_replicated_engine_arguments {#database_replicated_allow_replicated_engine_arguments}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -53,25 +59,19 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 0 - Не разрешать явное указание пути ZooKeeper и имени реплики для таблиц семейства *MergeTree в базах данных Replicated. 1 - Разрешить. 2 - Разрешить, но игнорировать указанный путь и вместо него использовать путь по умолчанию. 3 - Разрешить и не записывать предупреждение в журнал.
 
-<div id="database_replicated_always_detach_permanently">
-  ## database_replicated_always_detach_permanently
-</div>
+## database_replicated_always_detach_permanently {#database_replicated_always_detach_permanently}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Выполнять DETACH TABLE как DETACH TABLE PERMANENTLY, если используется движок базы данных Replicated
 
-<div id="database_replicated_enforce_synchronous_settings">
-  ## database_replicated_enforce_synchronous_settings
-</div>
+## database_replicated_enforce_synchronous_settings {#database_replicated_enforce_synchronous_settings}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Включает синхронное ожидание для некоторых запросов (см. также database&#95;atomic&#95;wait&#95;for&#95;drop&#95;and&#95;detach&#95;synchronously, mutations&#95;sync, alter&#95;sync). Не рекомендуется включать эти настройки.
 
-<div id="database_replicated_initial_query_timeout_sec">
-  ## database_replicated_initial_query_timeout_sec
-</div>
+## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
 
 <SettingsInfoBlock type="UInt64" default_value="300" />
 

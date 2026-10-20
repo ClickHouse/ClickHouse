@@ -204,6 +204,20 @@ Define qual lado do join deve ser a tabela de build (também chamada de inner, a
 * &#39;false&#39;: Nunca troca as tabelas (a tabela da direita é a tabela de build).
 * &#39;true&#39;: Sempre troca as tabelas (a tabela da esquerda é a tabela de build).
 
+## query_plan_lazy_materialization_for_join {#query_plan_lazy_materialization_for_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nova configuração para usar materialização preguiçosa em consultas `LIMIT n` sobre junções."}]}]} />
+
+Usa materialização preguiçosa em consultas `LIMIT n` sobre junções, com ou sem `ORDER BY`: as colunas das
+tabelas `MergeTree`, assim como as das tabelas de armazenamento de objetos, caso
+`query_plan_optimize_lazy_materialization_for_object_storage` esteja habilitada, são lidas apenas para as `n` linhas que
+restam após o `LIMIT`, e não para todas as linhas produzidas pelas junções. A decisão é tomada com base em um único
+`ActionsDAG` mesclado para toda a subárvore abaixo do `LIMIT`. Assim, um valor exigido tanto por um filtro quanto pelo resultado
+é calculado duas vezes, a baixo custo, acima do `LIMIT`, em vez de se tornar uma coluna propagada por todas as junções
+intermediárias. Só tem efeito se `query_plan_optimize_lazy_materialization` estiver habilitada.
+
 ## query_plan_lift_up_array_join {#query_plan_lift_up_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

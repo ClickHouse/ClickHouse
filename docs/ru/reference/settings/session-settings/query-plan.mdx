@@ -204,6 +204,20 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * &#39;false&#39;: никогда не менять таблицы местами (build-таблицей является правая таблица).
 * &#39;true&#39;: всегда менять таблицы местами (build-таблицей является левая таблица).
 
+## query_plan_lazy_materialization_for_join {#query_plan_lazy_materialization_for_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Новая настройка для использования ленивой материализации в запросах `LIMIT n` с соединениями."}]}]} />
+
+Использовать ленивую материализацию для запросов `LIMIT n` с соединениями — как с `ORDER BY`, так и без него: столбцы
+таблиц `MergeTree`, а также таблиц объектного хранилища (если
+включена настройка `query_plan_optimize_lazy_materialization_for_object_storage`) считываются только для `n` строк,
+прошедших через `LIMIT`, а не для всех строк, которые порождают соединения. Решение принимается на основе единого слитого
+`ActionsDAG` для всего поддерева ниже `LIMIT`, поэтому значение, которое нужно и фильтру, и результату,
+вычисляется дважды (это недорого) выше `LIMIT`, а не превращается в столбец, который передаётся через каждое промежуточное
+соединение. Действует, только если включена настройка `query_plan_optimize_lazy_materialization`.
+
 ## query_plan_lift_up_array_join {#query_plan_lift_up_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
