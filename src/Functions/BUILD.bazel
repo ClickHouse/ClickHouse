@@ -1167,7 +1167,6 @@ ch_cc_library(
         "@clickhouse_wordnet_blast//:_wnb",
         "@clickhouse_lemmagen_c//:_lemmagen",
         "@clickhouse_simsimd//:_simsimd",
-        "//bazel:arrow_flatbuffer_headers",
         "@clickhouse_icu//:_icui18n",
     ] + ["@clickhouse_libpqxx//:_libpqxx"],
     local_defines = _CLICKHOUSE_FUNCTIONS_OBJ_LOCAL_DEFINES,

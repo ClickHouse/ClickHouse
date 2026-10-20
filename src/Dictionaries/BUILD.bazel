@@ -351,7 +351,6 @@ ch_cc_library(
         "@clickhouse_ulid_c//:_ulid",
         "@clickhouse_simsimd//:_simsimd",
         "@clickhouse_sha3iuf//:_sha3iuf",
-        "//bazel:arrow_flatbuffer_headers",
         "@clickhouse_cassandra//:_cassandra",
         "@clickhouse_yaml_cpp//:_yaml_cpp",
         "@clickhouse_vectorscan//:_vectorscan__compile_0",
@@ -458,7 +457,6 @@ ch_cc_library(
         "@clickhouse_ulid_c//:_ulid",
         "@clickhouse_simsimd//:_simsimd",
         "@clickhouse_sha3iuf//:_sha3iuf",
-        "//bazel:arrow_flatbuffer_headers",
     ] + ["@clickhouse_libpqxx//:_libpqxx"],
     local_defines = _CLICKHOUSE_DICTIONARIES_LOCAL_DEFINES,
     local_includes = [
@@ -526,7 +524,6 @@ ch_cc_library(
         "@clickhouse_ulid_c//:_ulid",
         "@clickhouse_simsimd//:_simsimd",
         "@clickhouse_sha3iuf//:_sha3iuf",
-        "//bazel:arrow_flatbuffer_headers",
         "@clickhouse_cassandra//:_cassandra",
         "@clickhouse_yaml_cpp//:_yaml_cpp",
         "@clickhouse_vectorscan//:_vectorscan__compile_0",

@@ -330,7 +330,6 @@ ch_cc_library(
         "@clickhouse_ulid_c//:_ulid",
         "@clickhouse_simsimd//:_simsimd",
         "@clickhouse_sha3iuf//:_sha3iuf",
-        "//bazel:arrow_flatbuffer_headers",
     ] + [
         "@clickhouse_arrow//:arrow_headers",
         "@clickhouse_libpqxx//:_libpqxx",
@@ -394,7 +393,6 @@ ch_cc_library(
         "@clickhouse_ulid_c//:_ulid",
         "@clickhouse_simsimd//:_simsimd",
         "@clickhouse_sha3iuf//:_sha3iuf",
-        "//bazel:arrow_flatbuffer_headers",
         "@clickhouse_vectorscan//:_vectorscan__compile_0",
         "@clickhouse_arrow//:arrow_headers",
         "@clickhouse_libpqxx//:_libpqxx",

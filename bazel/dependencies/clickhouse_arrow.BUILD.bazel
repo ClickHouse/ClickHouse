@@ -839,7 +839,6 @@ cc_library(
     # Match contrib/arrow-cmake/CMakeLists.txt: generated IPC, CMake, then source.
     includes = ["cpp/src"] + ["config/contrib/arrow-cmake/cpp/src"],
     deps = [
-        "@clickhouse//bazel:arrow_flatbuffer_headers",
         "@clickhouse//contrib/arrow-cmake:arrow_cmake_headers",
         ":_arrow__compile_0",
         ":_arrow_flight",

@@ -390,7 +390,6 @@ ch_cc_library(
         "@clickhouse_lemmagen_c//:_lemmagen",
         "@clickhouse_ulid_c//:_ulid",
         "@clickhouse_sha3iuf//:_sha3iuf",
-        "//bazel:arrow_flatbuffer_headers",
     ] + ["@clickhouse_libpqxx//:_libpqxx"],
     local_defines = _CLICKHOUSE_FUNCTIONS_ARRAY_LOCAL_DEFINES,
     local_includes = [
@@ -453,7 +452,6 @@ ch_cc_library(
         "@clickhouse_ulid_c//:_ulid",
         "@clickhouse_simsimd//:_simsimd",
         "@clickhouse_sha3iuf//:_sha3iuf",
-        "//bazel:arrow_flatbuffer_headers",
         "@clickhouse_stringzilla//:_stringzilla",
         "@clickhouse_vectorscan//:_vectorscan__compile_0",
     ] + [
@@ -526,7 +524,6 @@ ch_cc_library(
         "@clickhouse_ulid_c//:_ulid",
         "@clickhouse_simsimd//:_simsimd",
         "@clickhouse_sha3iuf//:_sha3iuf",
-        "//bazel:arrow_flatbuffer_headers",
         "@clickhouse_stringzilla//:_stringzilla",
         "@clickhouse_vectorscan//:_vectorscan__compile_0",
         "@clickhouse_arrow//:arrow_headers",
@@ -591,7 +588,6 @@ ch_cc_library(
         "@clickhouse_ulid_c//:_ulid",
         "@clickhouse_simsimd//:_simsimd",
         "@clickhouse_sha3iuf//:_sha3iuf",
-        "//bazel:arrow_flatbuffer_headers",
         "@clickhouse_stringzilla//:_stringzilla",
         "@clickhouse_vectorscan//:_vectorscan__compile_0",
         "@clickhouse_arrow//:arrow_headers",

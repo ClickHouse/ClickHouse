@@ -800,7 +800,6 @@ ch_cc_library(
     implementation_deps = [
         "@clickhouse_google_benchmark//:google_benchmark",
         "//bazel:clickhouse_config_headers",
-        "//bazel:arrow_flatbuffer_headers",
     ] + ["@clickhouse_arrow//:arrow_headers"],
     link_runtime = True,
     local_defines = [
@@ -2975,7 +2974,6 @@ ch_cc_library(
             "@clickhouse_icu//:_icuuc",
             "@clickhouse_mecab//:_mecab",
             "@clickhouse_capnproto//:_kj",
-            "//bazel:arrow_flatbuffer_headers",
             "@clickhouse_thrift//:_thrift",
             "@clickhouse_avro//:_avrocpp",
             "@clickhouse_openldap//:_lber",
@@ -4008,7 +4006,6 @@ cc_test(
         "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
     ] + [
         "//bazel:clickhouse_config_headers",
-        "//bazel:arrow_flatbuffer_headers",
     ] + [
         "@clickhouse_arrow//:arrow_headers",
         "@clickhouse_heks//:heks",
