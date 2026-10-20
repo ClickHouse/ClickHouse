@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1255061",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1256081",
       "email": "support@clickhouse.com"
     }
   },
@@ -29710,7 +29710,7 @@
             "example": 4
           },
           "clickhouse_parallel_distributed_insert_select": {
-            "description": "Parallel distributed insert select. Parallel distributed insert select setting",
+            "description": "Parallel distributed insert select. Only applies when object_storage_use_cluster_function is enabled. When disabled, this setting is ignored and the effective value is 0.",
             "type": [
               "integer",
               "null"
@@ -30008,7 +30008,7 @@
             "example": 4
           },
           "clickhouse_parallel_distributed_insert_select": {
-            "description": "Parallel distributed insert select. Parallel distributed insert select setting",
+            "description": "Parallel distributed insert select. Only applies when object_storage_use_cluster_function is enabled. When disabled, this setting is ignored and the effective value is 0.",
             "type": "integer",
             "minimum": 0,
             "maximum": 2,
@@ -30352,6 +30352,10 @@
           "iamRoleSessionName": {
             "description": "AWS  Role session name",
             "type": "string"
+          },
+          "iamRoleExternalId": {
+            "description": "External ID the IAM role trust policy requires when the data plane assumes the role",
+            "type": "string"
           }
         }
       },
@@ -30432,6 +30436,10 @@
           "iamRoleSessionName": {
             "description": "AWS IAM Role",
             "type": "string"
+          },
+          "iamRoleExternalId": {
+            "description": "External ID the IAM role trust policy requires when the data plane assumes the role",
+            "type": "string"
           }
         }
       },
@@ -30501,6 +30509,10 @@
           },
           "iamRoleSessionName": {
             "description": "AWS Role session name",
+            "type": "string"
+          },
+          "iamRoleExternalId": {
+            "description": "External ID the IAM role trust policy requires when the data plane assumes the role",
             "type": "string"
           }
         }
@@ -30579,6 +30591,13 @@
           },
           "iamRoleSessionName": {
             "description": "AWS IAM Role session name",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "iamRoleExternalId": {
+            "description": "External ID the IAM role trust policy requires when the data plane assumes the role. Set to `null` to clear it.",
             "type": [
               "string",
               "null"
