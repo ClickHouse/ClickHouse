@@ -44,6 +44,7 @@ const char * auto_config_build[]
     "OPENSSL_VERSION", "@OPENSSL_VERSION@",
     "USE_VECTORSCAN", "@USE_VECTORSCAN@",
     "USE_SIMDJSON", "@USE_SIMDJSON@",
+    "USE_GPU", "@USE_GPU@",
     "USE_GRPC", "@USE_GRPC@",
     "USE_LDAP", "@USE_LDAP@",
     "TZDATA_VERSION", "@TZDATA_VERSION@",
