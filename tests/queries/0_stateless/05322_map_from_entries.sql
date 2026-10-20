@@ -103,6 +103,13 @@ SELECT
 FORMAT TabSeparatedRaw;
 
 SELECT mapFromEntries(CAST([('a', 1), NULL], 'Array(Nullable(Tuple(String, UInt8)))')); -- { serverError BAD_ARGUMENTS }
+
+-- Reject NULL tuple entries even for key types that cannot become Nullable.
+SELECT mapFromEntries(CAST([([1], 1), NULL], 'Array(Nullable(Tuple(Array(UInt8), UInt8)))')); -- { serverError BAD_ARGUMENTS }
+SELECT mapFromEntries(CAST([((1, 2), 3), NULL], 'Array(Nullable(Tuple(Tuple(UInt8, UInt8), UInt8)))'))
+    SETTINGS allow_nullable_tuple_in_extracted_subcolumns = 0; -- { serverError BAD_ARGUMENTS }
+SELECT mapFromEntries(CAST([((1, 2), 3), NULL], 'Array(Nullable(Tuple(Tuple(UInt8, UInt8), UInt8)))'))
+    SETTINGS allow_nullable_tuple_in_extracted_subcolumns = 1; -- { serverError BAD_ARGUMENTS }
 SELECT mapFromEntries(CAST([('a', 1), (NULL, 2)], 'Array(Nullable(Tuple(Nullable(String), UInt8)))')); -- { serverError BAD_ARGUMENTS }
 
 -- A nullable tuple may also contain a nullable value.
@@ -130,8 +137,8 @@ SELECT
     toTypeName(mapFromEntries(entries)) = 'Map(String, LowCardinality(Nullable(String)))'
 FORMAT TabSeparatedRaw;
 
--- Array keys/values cannot be Nullable. Outer NULL tuples become default arrays.
-WITH CAST([([number], [number + 1]), NULL], 'Array(Nullable(Tuple(Array(UInt64), Array(UInt64))))') AS entries
+-- Array keys/values cannot be Nullable, but valid nullable tuple entries remain supported.
+WITH CAST([([number], [number + 1])], 'Array(Nullable(Tuple(Array(UInt64), Array(UInt64))))') AS entries
 SELECT
     number,
     mapEntries(mapFromEntries(entries)) =

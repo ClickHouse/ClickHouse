@@ -276,30 +276,16 @@ public:
     }
 };
 
-/// Extract a component of Nullable(Tuple(K, V)) using tupleElement's NULL rules.
-/// Scalar, LowCardinality and null-aware components absorb the outer null map.
-/// Components that cannot represent NULL (e.g. Array or Map) use their defaults.
+/// Extract a component of Nullable(Tuple(K, V)) using tupleElement's type rules.
+/// NULL tuple entries are rejected before this helper; non-nullable composite
+/// components can therefore reuse their existing columns without default filling.
 ColumnPtr extractNullableMapEntryElement(
     const ColumnPtr & column, const DataTypePtr & type, const ColumnNullable & nullable_tuple)
 {
     if (canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(type) || canContainNull(*type))
         return NullableSubcolumnCreator(nullable_tuple.getNullMapColumnPtr()).create(column);
 
-    const auto & null_map = nullable_tuple.getNullMapData();
-    if (memoryIsZero(null_map.data(), 0, null_map.size()))
-        return column;
-
-    auto result = type->createColumn();
-    result->reserve(column->size());
-    const auto default_value = type->getDefault();
-    for (size_t i = 0; i < column->size(); ++i)
-    {
-        if (null_map[i])
-            result->insert(default_value);
-        else
-            result->insertFrom(*column, i);
-    }
-    return result;
+    return column;
 }
 
 /// mapFromEntries(entries) creates a map from an array of key-value tuples.
@@ -380,6 +366,13 @@ public:
             return ColumnMap::create(entries->getDataPtr(), entries->getDataPtr(), offsets);
 
         const auto * nullable_tuple = checkAndGetColumn<ColumnNullable>(entries->getDataPtr().get());
+        if (nullable_tuple)
+        {
+            const auto & null_map = nullable_tuple->getNullMapData();
+            if (!memoryIsZero(null_map.data(), 0, null_map.size()))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of function {} must not contain NULL map entries", getName());
+        }
+
         const auto & tuple_data = nullable_tuple ? nullable_tuple->getNestedColumnPtr() : entries->getDataPtr();
         const auto * tuple_column = checkAndGetColumn<ColumnTuple>(tuple_data.get());
         if (!tuple_column || tuple_column->tupleSize() != 2)
