@@ -701,8 +701,8 @@ void DatabaseReplicated::fillClusterAuthInfo(String collection_name)
     auto collection = NamedCollectionFactory::instance().get(collection_name);
 
     cluster_auth_info.cluster_username = collection->getOrDefault<String>("cluster_username", "");
-    cluster_auth_info.cluster_password = collection->getOrDefault<String>("cluster_password", "");
-    cluster_auth_info.cluster_secret = collection->getOrDefault<String>("cluster_secret", "");
+    cluster_auth_info.cluster_password = collection->getOrDefault<SecretString>("cluster_password");
+    cluster_auth_info.cluster_secret = collection->getOrDefault<SecretString>("cluster_secret");
     cluster_auth_info.cluster_secure_connection = collection->getOrDefault<bool>("cluster_secure_connection", false);
 }
 
