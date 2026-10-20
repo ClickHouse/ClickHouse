@@ -61,6 +61,25 @@ struct ProfileTracesRegistry
     std::mutex mutex;
     std::unordered_map<UInt64, std::weak_ptr<InternalProfileTracesQueue>> subscriptions;
     std::atomic<UInt64> next_id{1};
+    /// Queued samples are allocated while memory tracking is blocked (the collector and the delivery
+    /// paths run under `ProfileTracesBlocker`), so they are charged neither to a query nor to
+    /// `total_memory_tracker`. Bound their sum over all subscriptions, not only per subscription, so
+    /// that many concurrent profiled queries cannot accumulate unbounded untracked memory.
+    std::atomic<size_t> buffered_bytes{0};
+    static constexpr size_t max_buffered_bytes = 256 * 1024 * 1024;
+
+    bool tryReserve(size_t bytes)
+    {
+        size_t current = buffered_bytes.load(std::memory_order_relaxed);
+        do
+        {
+            if (bytes > max_buffered_bytes - current)
+                return false;
+        } while (!buffered_bytes.compare_exchange_weak(current, current + bytes, std::memory_order_relaxed));
+        return true;
+    }
+
+    void release(size_t bytes) { buffered_bytes.fetch_sub(bytes, std::memory_order_relaxed); }
 
     InternalProfileTracesQueuePtr find(UInt64 id)
     {
@@ -100,6 +119,7 @@ InternalProfileTracesQueue::~InternalProfileTracesQueue()
     std::lock_guard lock(registry->mutex);
     registry->subscriptions.erase(id);
     samples.clear();
+    registry->release(buffered_bytes);
 }
 
 size_t InternalProfileTracesQueue::Sample::byteSize() const
@@ -114,6 +134,7 @@ size_t InternalProfileTracesQueue::Sample::byteSize() const
 void InternalProfileTracesQueue::push(Sample sample)
 {
     /// A slow client must not block the shared collector or retain an unbounded amount of memory.
+    /// Besides the per-subscription bounds, the bytes of all subscriptions share a global bound.
     static constexpr size_t max_samples = 8192;
     static constexpr size_t max_bytes = 16 * 1024 * 1024;
     size_t bytes = sample.byteSize();
@@ -122,12 +143,14 @@ void InternalProfileTracesQueue::push(Sample sample)
         return;
     bool overflow = samples.size() >= max_samples || bytes > max_bytes - buffered_bytes;
     fiu_do_on(FailPoints::profile_traces_queue_overflow, { overflow = true; });
+    overflow = overflow || !registry->tryReserve(bytes);
     if (overflow)
     {
         if (pending_dropped < std::numeric_limits<Int64>::max())
             ++pending_dropped;
         return;
     }
+    /// The bytes are already reserved in the registry by `tryReserve`.
     buffered_bytes += bytes;
     samples.emplace_back(std::move(sample));
 }
@@ -192,7 +215,7 @@ void InternalProfileTracesQueue::finish()
             pending_dropped += std::min<Int64>(samples.size(), std::numeric_limits<Int64>::max() - pending_dropped);
             pending_incomplete = true;
             samples.clear();
-            buffered_bytes = 0;
+            registry->release(std::exchange(buffered_bytes, 0));
         }
     }
 
@@ -206,7 +229,7 @@ void InternalProfileTracesQueue::cancel()
     std::lock_guard lock(mutex);
     finished = true;
     samples.clear();
-    buffered_bytes = 0;
+    registry->release(std::exchange(buffered_bytes, 0));
     pending_dropped = 0;
     pending_incomplete = false;
 }
@@ -235,12 +258,15 @@ Block InternalProfileTracesQueue::getBlock()
         const size_t metadata_rows = (pending_dropped != 0) + pending_incomplete;
         size_t rows = std::min(samples.size(), size_t{1024} - metadata_rows);
         batch.reserve(rows + metadata_rows);
+        size_t released_bytes = 0;
         while (batch.size() < rows)
         {
-            buffered_bytes -= samples.front().byteSize();
+            released_bytes += samples.front().byteSize();
             batch.emplace_back(std::move(samples.front()));
             samples.pop_front();
         }
+        buffered_bytes -= released_bytes;
+        registry->release(released_bytes);
         if (pending_dropped)
         {
             Sample status;
