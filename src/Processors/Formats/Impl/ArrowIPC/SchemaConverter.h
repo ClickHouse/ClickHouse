@@ -54,6 +54,8 @@ enum class TypeKind : UInt8
     Struct,
     Map,
     Union,
+    /// Values stored once per run: children `run_ends` (Int16/Int32/Int64, the exclusive end of each run) and `values`.
+    RunEndEncoded,
     /// An Arrow type the native reader does not support. Parsed as a placeholder (rather than failing
     /// during schema parsing) so schema inference can drop it with
     /// `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference`; decoding or requesting
@@ -97,17 +99,6 @@ struct ArrowType
 
     /// The Arrow type name for a `TypeKind::Unsupported` placeholder (used in the error message).
     std::string unsupported_type_name;
-
-    /// Physical buffer layout of a `TypeKind::Unsupported` field, when it is known. The reader cannot
-    /// decode these types, but knowing the layout lets `advanceField` advance the node/buffer cursors past an
-    /// unrequested column of such a type (subset-of-columns support), instead of failing a `SELECT` of the
-    /// other columns. `Unknown` means the layout is not known and the column cannot be skipped.
-    enum class SkipLayout : UInt8
-    {
-        Unknown,        /// cannot be skipped
-        RunEndEncoded,  /// no buffers (not even validity), then two children (run_ends, values)
-    };
-    SkipLayout skip_layout = SkipLayout::Unknown;
 };
 
 struct DictionaryEncoding
@@ -180,6 +171,11 @@ void buildFooter(
     const FormatSettings & settings,
     const ArrowFileBlocks & dictionary_blocks,
     const ArrowFileBlocks & record_blocks);
+
+/// Whether the values of a field can be null, i.e. whether its natural ClickHouse type is `Nullable` when following the
+/// metadata. A `RunEndEncoded` field has no validity bitmap, so its own nullability flag says nothing: its nulls are the
+/// nulls of its values.
+bool isNullableField(const ArrowField & field);
 
 /// Maps a parsed Arrow field to the ClickHouse data type used for schema inference / the natural
 /// decode type. `make_nullable` forces a Nullable wrapper (used for schema_inference_make_columns_nullable).

@@ -2,6 +2,7 @@
 
 #include <Core/Joins.h>
 #include <Core/SettingsEnums.h>
+#include <Common/Logger_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <Interpreters/FutureSetSettings.h>
@@ -24,6 +25,26 @@ using BuiltSetsByHashPtr = std::shared_ptr<BuiltSetsByHash>;
 class QueryPlan;
 
 struct DistributedPlanLocalObject;
+
+/// What the builder of the plan with parallel replicas for automatic parallel replicas produced. When
+/// it built nothing, `skip_reason` says which kind of reason stopped it, so that the optimization can
+/// count it; the builder logs the specific reason itself.
+struct PlanWithParallelReplicas
+{
+    enum class SkipReason : uint8_t
+    {
+        None,
+        /// The settings rule parallel replicas out.
+        Settings,
+        /// The query cannot be read with parallel replicas.
+        QueryShape,
+    };
+
+    std::unique_ptr<QueryPlan> plan;
+    SkipReason skip_reason = SkipReason::None;
+};
+
+using QueryPlanWithParallelReplicasBuilder = std::function<PlanWithParallelReplicas(const BuiltSetsByHashPtr &, const LoggerPtr &)>;
 
 struct QueryPlanOptimizationSettings
 {
@@ -78,6 +99,8 @@ struct QueryPlanOptimizationSettings
     bool aggregate_partitions_independently;
     bool limit_by_partitions_independently;
     bool distinct_partitions_independently;
+    bool parallel_distinct;
+    bool force_distinct_partitions_independently;
     bool window_partitions_independently;
     bool force_window_partitions_independently;
     bool creating_set_partitions_independently;
@@ -85,6 +108,7 @@ struct QueryPlanOptimizationSettings
     bool try_use_vector_search;
     bool convert_join_to_in;
     bool merge_filter_into_join_condition;
+    bool replace_always_true_filter;
     bool merge_expression_into_join;
     bool use_join_disjunctions_push_down;
     bool convert_any_join_to_semi_or_anti_join;
@@ -198,6 +222,7 @@ struct QueryPlanOptimizationSettings
     bool optimize_lazy_materialization = false;
     bool optimize_lazy_materialization_for_object_storage = false;
     bool optimize_lazy_materialization_for_file = false;
+    bool lazy_materialization_for_join = false;
     size_t max_limit_for_lazy_materialization = 0;
 
     /// If lazy FINAL optimization for ReplacingMergeTree is enabled
@@ -284,8 +309,8 @@ struct QueryPlanOptimizationSettings
     mutable UInt64 join_reorder_next_cluster_id = 0;
 
     /// Takes the sets the single-node plan already filled, so the probe plan can adopt them instead
-    /// of re-running the same subqueries.
-    std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> query_plan_with_parallel_replicas_builder;
+    /// of re-running the same subqueries, and the logger to say why it could not build a plan on.
+    QueryPlanWithParallelReplicasBuilder query_plan_with_parallel_replicas_builder;
 
     bool enable_parallel_replicas = false;
 };
