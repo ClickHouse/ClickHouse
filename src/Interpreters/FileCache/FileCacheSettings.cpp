@@ -38,13 +38,13 @@ namespace ErrorCodes
     DECLARE(UInt64, max_elements, FILECACHE_DEFAULT_MAX_ELEMENTS, "Maximum number of cache elements, e.g. file segments (limits number of files on filesystem)", 0) \
     DECLARE(UInt64, max_file_segment_size, FILECACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE, "Maximum size of a single file segment", 0) \
     DECLARE(UInt64, boundary_alignment, FILECACHE_DEFAULT_FILE_SEGMENT_ALIGNMENT, "File segment alignment", 0) \
-    DECLARE(UInt64, reserve_granularity, FILECACHE_DEFAULT_RESERVE_GRANULARITY, "When reserving space for a file segment download, reserve at least this many bytes ahead of the downloaded size (capped at the file segment size). Coarser granularity reduces the rate of cache state lock acquisitions on the reservation hot path, at the cost of holding some reserved-but-not-yet-downloaded space (reclaimed on file segment completion). Value 0 disables reserve-ahead: space is reserved exactly as requested.", 0) \
+    DECLARE(UInt64, reserve_granularity, FILECACHE_DEFAULT_MAX_RESERVE_GRANULARITY, "Maximum size to reserve ahead of the downloaded size of a file segment, to take the cache lock less often. Starts from 0 for each reader/writer and grows with its repeated reservations up to this value. 0 disables reserve-ahead.", 0) \
     DECLARE(Bool, cache_on_write_operations, false, "Enables write-through cache (cache on INSERT and MERGE)", 0) \
     DECLARE(FileCachePolicy, cache_policy, FILECACHE_DEFAULT_CACHE_POLICY, "Cache eviction policy", 0) \
     DECLARE(Double, slru_size_ratio, FILECACHE_DEFAULT_SLRU_RATIO, "SLRU cache policy size ratio of protected to probationary elements", 0) \
     DECLARE(UInt64, background_download_threads, FILECACHE_DEFAULT_BACKGROUND_DOWNLOAD_THREADS, "Number of background download threads. Value 0 disables background download", 0) \
-    DECLARE(UInt64, background_download_queue_size_limit, FILECACHE_DEFAULT_BACKGROUND_DOWNLOAD_QUEUE_SIZE_LIMIT, "Size of background download queue. Value 0 disables background download", 0) \
-    DECLARE(UInt64, background_download_max_file_segment_size, FILECACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE_WITH_BACKGROUND_DOWLOAD, "Maximum size which can be downloaded in background download", 0) \
+    DECLARE(UInt64, background_download_queue_size_limit, FILECACHE_DEFAULT_BACKGROUND_DOWNLOAD_QUEUE_SIZE_LIMIT, "Maximum number of file segments in the background download queue. Value 0 means no limit. Background download is disabled when background_download_threads is 0", 0) \
+    DECLARE(UInt64, background_download_max_file_segment_size, FILECACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE_WITH_BACKGROUND_DOWLOAD, "Alignment-rounded prefetch threshold for an already-started segment, not a cap on total segment size. Below this size, background download fills up to the value rounded up to boundary_alignment. Once downloaded_size reaches it, background download continues up to downloaded_size rounded up to boundary_alignment", 0) \
     DECLARE(NonZeroUInt64, load_metadata_threads, FILECACHE_DEFAULT_LOAD_METADATA_THREADS, "Maximum number of threads used to load cache metadata at server startup", 0) \
     DECLARE(Bool, load_metadata_asynchronously, false, "Enables asynchronous loading of metadata on server startup", 0) \
     DECLARE(Double, keep_free_space_size_ratio, FILECACHE_DEFAULT_FREE_SPACE_SIZE_RATIO, "A ratio of free space which cache would try to uphold in the background", 0) \
@@ -70,9 +70,11 @@ namespace ErrorCodes
     DECLARE(Double, check_cache_probability, 0.001, "Works only for debug or sanitizer build. Checks cache correctness by going through all cache and checking state of each cache element", 0) \
     DECLARE(UInt64, idle_client_ttl_sec, 7 * 24 * 60 * 60, "If non-zero and the cache policy tracks per-client usage, all cache entries that belong to a client (user_id) which has not been accessed for this many seconds are fully removed from the cache. Each access by the client refreshes the timer. Default is 1 week. Used by the distributed cache server.", 0) \
     DECLARE(UInt64, idle_client_check_interval_sec, 0, "How often the idle client eviction task runs, in seconds. Only meaningful when `idle_client_ttl_sec` is non-zero. 0 means an automatic value (`max(1, idle_client_ttl_sec / 10)`).", 0) \
+    DECLARE(NonZeroUInt64, client_weight_persist_interval_sec, 300, "How often the per-client weights are written to disk, in seconds, so that a client which has not reconnected yet keeps its weight across a restart. The first write happens one interval after startup, and a clean shutdown writes them out as well. Only meaningful when the cache policy tracks per-client usage.", 0) \
     DECLARE(NonZeroUInt64, idle_client_eviction_threads, 4, "Maximum number of threads used to purge idle clients' cache. Only meaningful when `idle_client_ttl_sec` is non-zero.", 0) \
     DECLARE(Bool, expose_prometheus_eviction_metrics, false, "Expose Prometheus metrics for filesystem cache eviction activity (`filesystem_cache_evictions_total` etc.). Off by default. Can be toggled at runtime via `SYSTEM RELOAD CONFIG`.", 0) \
     DECLARE(Bool, expose_prometheus_eviction_metrics_per_user, false, "Additionally expose per-user-id eviction metrics. Requires `expose_prometheus_eviction_metrics`. Cardinality grows with distinct evicting users.", 0) \
+    DECLARE(Bool, use_real_disk_size, false, "Account cached file reservations of this cache in filesystem block-aligned units (an approximation of the physical on-disk size, not the exact allocated size) instead of reserved bytes. This affects `current_size` of this cache. The process-wide `FilesystemCacheSize` metric and the eviction-size profile events sum over all caches, so they uniformly reflect the reservation footprint only when all caches use the same mode. Restart is required to change this setting.", 0) \
     DECLARE(NonZeroUInt64, drop_cache_threads, FILECACHE_DEFAULT_DROP_CACHE_THREADS, "Maximum number of threads used to remove cache keys in parallel on `SYSTEM DROP FILESYSTEM CACHE`. Value 1 means the removal is performed by the query thread alone", 0) \
 
 DECLARE_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS, FILE_CACHE_SETTINGS_SUPPORTED_TYPES)
@@ -140,7 +142,14 @@ ColumnsDescription FileCacheSettings::getColumnsDescription()
 
     result.add(
         ColumnDescription(
-            "current_size", std::make_shared<DataTypeUInt64>(), "Current cache size"));
+            "current_size",
+            std::make_shared<DataTypeUInt64>(),
+            "Current cache size: the space currently charged to or held by the cache priority queue. "
+            "It consists of the reserved sizes of the cache file segments plus the space temporarily held "
+            "while a reservation or an eviction is in progress, so it can momentarily exceed the sum over "
+            "the file segments in `system.filesystem_cache`. "
+            "If `use_real_disk_size` is enabled for this cache, the reservations are accounted in filesystem "
+            "block-aligned units instead, so the value approximates the space the cache occupies on disk"));
     result.add(
         ColumnDescription(
             "current_elements_num", std::make_shared<DataTypeUInt64>(), "Current cache elements (file segments) number"));
@@ -183,6 +192,13 @@ void FileCacheSettings::loadFromConfig(
             continue;
         impl->set(key, config.getString(config_prefix + "." + key));
     }
+
+    /// Every setting of the cache is an element this section supports, even if it is absent now:
+    /// some of them are changed later by a configuration reload (see `FileCacheFactory::updateSettingsFromConfig`),
+    /// which does not go through the disk. Look them up, so that a configuration tracking the read keys
+    /// (`ConfigurationWithUsageTracking`, used for a definition of a disk) knows about them as well.
+    for (const auto & setting : impl->all())
+        config.has(config_prefix + "." + setting.getName());
 
     if ((*this)[FileCacheSetting::path].changed)
     {

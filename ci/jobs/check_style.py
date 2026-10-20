@@ -3,6 +3,7 @@ import json
 import math
 import multiprocessing
 import os
+import pathlib
 import re
 import shlex
 from concurrent.futures import ProcessPoolExecutor
@@ -17,6 +18,7 @@ from ci.jobs.scripts.settings_history import (
     violation_message as settings_violation_message,
     violations as settings_history_violations,
 )
+from ci.jobs.scripts.check_style.check_broken_links import check_pr as check_pr_links
 from ci.jobs.scripts.check_style.clickhouse_spelling import (
     CLICKHOUSE_ANY_SPELLING,
     CLICKHOUSE_CORRECT_SPELLINGS,
@@ -355,6 +357,12 @@ CLICKHOUSE_DISKS_WRITE_RE = re.compile(
 # tests instead. The only acceptable additions are false positives - tests that only touch
 # their own scratch files - and they must say so in a comment.
 SERVER_DATA_MANIPULATION_EXCLUSIONS = {
+    # False positive: truncates one part metadata file (`checksums.txt`) to zero bytes, which is
+    # the exact state the fix has to survive, and does not copy or move anything - so the blob
+    # reference-counting hazard this check guards against cannot arise. The test is already tagged
+    # no-object-storage and no-shared-merge-tree, pins `part_storage_type = 'Full'`, asserts the
+    # path is absolute, and detaches the table around the edit.
+    "03599_empty_checksums_txt_not_fatal.sh",
     # False positive: writes only an mktemp scratch file under CLICKHOUSE_TMP.
     "04326_disks_app_read_checksums.sh",
 }
@@ -1121,6 +1129,125 @@ def check_catch_all(files) -> str:
     return "\n".join(violations)
 
 
+# Storage classes whose tables can be deferred behind `StorageTableProxy`, which means a pointer
+# taken from `DatabaseCatalog` may be the proxy rather than the engine.
+DEFERRABLE_STORAGE_CLASSES = (
+    "MergeTreeData",
+    "StorageMergeTree",
+    "StorageReplicatedMergeTree",
+    "StorageSharedMergeTree",
+    "StorageSetOrJoinBase",
+    "StorageSet",
+    "StorageJoin",
+    "StorageSharedSet",
+    "StorageSharedJoin",
+    "StorageEmbeddedRocksDB",
+    "IKeyValueEntity",
+    "IStorageURLBase",
+    "IBackgroundOperation",
+    "StorageWithCommonVirtualColumns",
+    "StorageLog",
+    "StorageStripeLog",
+    "StorageURL",
+    "StorageObjectStorage",
+    "StorageKeeperMap",
+    "StorageMySQL",
+    "StoragePostgreSQL",
+    "StorageMongoDB",
+    "StorageRedis",
+    "StorageSQLite",
+    "StorageXDBC",
+    "StorageHive",
+    "StorageArrowFlight",
+    "StorageYTsaurus",
+    "StorageBigQuery",
+    "StorageKafka",
+    "StorageKafka2",
+    "StorageFileLog",
+    "StorageRabbitMQ",
+    "StorageNATS",
+    "StorageObjectStorageQueue",
+    "IStreamingStorage",
+)
+
+# Casts on an operand that cannot be a catalog pointer, so no proxy can be in the way.
+_NOT_A_CATALOG_POINTER = re.compile(
+    r"^(?:\*?this\b"
+    r"|shared_from_this\(\)"
+    r"|&?\w*(?:snapshot|storage_snapshot)->storage\b"
+    r"|&?\w*reading->getMergeTreeData\(\)"
+    r")"
+)
+
+
+def _without_comments(text):
+    """Blanks out comments, keeping the line layout so offsets and line numbers still match."""
+    return re.sub(
+        r"//[^\n]*|/\*.*?\*/", lambda m: re.sub(r"[^\n]", " ", m.group(0)), text, flags=re.S
+    )
+
+
+def _cast_operand(text, open_paren):
+    """The argument of a cast whose '(' is at `open_paren`, or None when unbalanced."""
+    depth = 0
+    for i in range(open_paren, min(open_paren + 2000, len(text))):
+        depth += (text[i] == "(") - (text[i] == ")")
+        if not depth:
+            return " ".join(text[open_paren + 1 : i].split())
+    return None
+
+
+def check_storage_casts(files) -> str:
+    """Require `castStorage` for casts to an engine that supports deferred loading.
+
+    Such a table lives behind `StorageTableProxy` until its first access and the catalog keeps
+    handing out that proxy afterwards, so a direct cast fails for the whole life of the table.
+    """
+    types = "|".join(DEFERRABLE_STORAGE_CLASSES)
+    cast_head = re.compile(
+        r"\b(?P<cast>dynamic_cast|typeid_cast|dynamic_pointer_cast|static_pointer_cast)\s*<\s*"
+        r"(?:const\s+)?(?:" + types + r")\s*[*&]?\s*>\s*\("
+    )
+    # `IStorage::as<T>()` is a `typeid_cast` on the receiver, so the operand is what precedes it.
+    as_cast = re.compile(
+        r"(?P<operand>[\w.\[\]()]+)(?:->|\.)as\s*<\s*(?:const\s+)?(?:" + types + r")\s*>\s*\(\s*\)"
+    )
+    resolvers = ("castStorage", "resolveStorageProxy", "resolveStorageProxyLoading")
+
+    violations = []
+    for path in files:
+        # The helpers and the proxy itself have to reach the nested storage directly.
+        if not path.endswith((".cpp", ".h")) or path.endswith(
+            ("StorageProxy.h", "StorageTableProxy.h", "StorageTableFunction.h")
+        ):
+            continue
+        try:
+            lines = pathlib.Path(path).read_text(errors="replace").splitlines()
+        except OSError:
+            continue
+
+        text = _without_comments("\n".join(lines))
+        casts = [(m, m.group("cast"), _cast_operand(text, m.end() - 1)) for m in cast_head.finditer(text)]
+        casts += [(m, "as", m.group("operand")) for m in as_cast.finditer(text)]
+
+        for match, cast, operand in casts:
+            if not operand or _NOT_A_CATALOG_POINTER.match(operand) or any(r in operand for r in resolvers):
+                continue
+            line = text.count("\n", 0, match.start()) + 1
+            # The marker goes on the cast or, when the line is long, the one above it.
+            if any("NOLINT(storage-cast)" in lines[i] for i in (line - 1, line - 2) if i >= 0):
+                continue
+            violations.append(
+                f"{path}:{line}: {cast} to a deferrable storage engine on `{operand[:60]}`. Such a table "
+                "is reached through StorageTableProxy, so this cast fails for the whole life of the table "
+                "and whatever it guards is silently skipped. Use castStorage<T>(ptr, "
+                "DeferredTable::Load) when the query names this table, or DeferredTable::Skip "
+                "when this walks every table and must not load one. If the pointer cannot come from "
+                "DatabaseCatalog, say why in a `/// NOLINT(storage-cast)` comment."
+            )
+    return "\n".join(violations)
+
+
 def check_file_names(files):
     files_set = set()
     for file in files:
@@ -1375,6 +1502,15 @@ def check_settings_changes_history():
     return settings_violation_message(found, version) if found else ""
 
 
+def check_broken_links_in_diff():
+    """The links added by the PR must be reachable. Not run outside of PRs: the merge queue and
+    master would only get flaky on unrelated sites going down, as every link was checked in its PR."""
+    info = Info()
+    if info.pr_number <= 0:
+        return ""
+    return check_pr_links(info.repo_name, info.pr_number)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Style Check Job")
     parser.add_argument("--test", help="Sub check name", default="")
@@ -1522,6 +1658,15 @@ if __name__ == "__main__":
                 files=cpp_files,
             )
         )
+    testname = "storage_casts"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            run_check_concurrent(
+                check_name=testname,
+                check_function=check_storage_casts,
+                files=cpp_files,
+            )
+        )
     testname = "compose_images_from_dockerhub"
     if testpattern.lower() in testname.lower():
         results.append(
@@ -1545,6 +1690,14 @@ if __name__ == "__main__":
             Result.from_commands_run(
                 name=testname,
                 command=check_settings_changes_history,
+            )
+        )
+    testname = "broken_links"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            Result.from_commands_run(
+                name=testname,
+                command=check_broken_links_in_diff,
             )
         )
     testname = "cpp"
