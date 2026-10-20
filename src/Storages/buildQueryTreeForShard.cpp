@@ -16,6 +16,7 @@
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerCorrelatedSubqueries.h>
 
+#include <functional>
 #include <limits>
 #include <optional>
 #include <string>
@@ -1280,12 +1281,15 @@ void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr c
 namespace
 {
 
-String actionNameAfterAliasInlining(const QueryTreeNodePtr & node, const PlannerContext & planner_context)
+using RewriteForShard = std::function<QueryTreeNodePtr(const QueryTreeNodePtr &)>;
+
+String actionNameAfterAliasInlining(
+    const QueryTreeNodePtr & node, const PlannerContext & planner_context, const RewriteForShard & rewrite_for_shard)
 {
     /// The action name computed afterwards then matches the name the shard's ActionsDAG assigns
     /// (the shard works on the inlined query tree). Action names come from the column identifier or the
     /// expression rather than the SQL alias, so inlining without aliasing is what this needs.
-    auto node_clone = node->clone();
+    auto node_clone = rewrite_for_shard ? rewrite_for_shard(node) : node->clone();
     inlineAliasColumnsInExpression(node_clone);
 
     /// `buildQueryTreeForShard` performs one more naming-relevant rewrite after inlining ALIAS columns:
@@ -1308,9 +1312,13 @@ String actionNameAfterAliasInlining(const QueryTreeNodePtr & node, const Planner
 class CollectAliasNameTranslationVisitor : public InDepthQueryTreeVisitor<CollectAliasNameTranslationVisitor>
 {
 public:
-    CollectAliasNameTranslationVisitor(const PlannerContext & planner_context_, std::unordered_map<String, String> & translation_)
+    CollectAliasNameTranslationVisitor(
+        const PlannerContext & planner_context_,
+        std::unordered_map<String, String> & translation_,
+        const RewriteForShard & rewrite_for_shard_)
         : planner_context(planner_context_)
         , translation(translation_)
+        , rewrite_for_shard(rewrite_for_shard_)
     {
     }
 
@@ -1324,7 +1332,7 @@ public:
         if (translation.contains(identifier_name))
             return;
 
-        translation.emplace(std::move(identifier_name), actionNameAfterAliasInlining(node, planner_context));
+        translation.emplace(std::move(identifier_name), actionNameAfterAliasInlining(node, planner_context, rewrite_for_shard));
     }
 
     static bool needChildVisit(const QueryTreeNodePtr & /*parent*/, const QueryTreeNodePtr & child)
@@ -1340,6 +1348,7 @@ public:
 private:
     const PlannerContext & planner_context;
     std::unordered_map<String, String> & translation;
+    const RewriteForShard & rewrite_for_shard;
 };
 
 /// Collect, for every `ALIAS` column in the query tree, the inlined clone of its defining expression, keyed by the
@@ -1479,7 +1488,8 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
     const PlannerContextPtr & planner_context,
     const Block & shard_header,
     const Block & expected_header,
-    std::unordered_map<String, String> * duplicate_to_representative)
+    std::unordered_map<String, String> * duplicate_to_representative,
+    const RewriteForShard & rewrite_for_shard)
 {
     if (duplicate_to_representative)
         duplicate_to_representative->clear();
@@ -1496,7 +1506,7 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
     std::unordered_set<String> genuine_qualifier_tails;
     {
         QueryTreeNodePtr query_tree_for_visit = query_tree;
-        CollectAliasNameTranslationVisitor visitor(*planner_context, identifier_to_inlined_name);
+        CollectAliasNameTranslationVisitor visitor(*planner_context, identifier_to_inlined_name, rewrite_for_shard);
         visitor.visit(query_tree_for_visit);
 
         CollectInlinedAliasExpressionsVisitor alias_visitor(*planner_context, identifier_to_alias_expression);
