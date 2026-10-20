@@ -10,9 +10,9 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
@@ -21,12 +21,12 @@
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Chunk.h>
+#include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/BufferedShardByHashTransform.h>
 #include <Common/Arena.h>
@@ -68,6 +68,44 @@ ColumnPtr makeDistinctKeyColumn(size_t num_rows)
     for (size_t i = 0; i < num_rows; ++i)
         column->insertValue(i);
     return column;
+}
+
+struct AggregateStatesColumn
+{
+    DataTypePtr type;
+    ColumnPtr column;
+    Int64 arena_bytes;
+};
+
+/// A `groupArray(UInt64)` state column of `num_rows` states, each holding `values_per_state` elements in the
+/// column's own arena, so the arena dominates: the column itself holds only one 8-byte state pointer per row.
+/// `ColumnAggregateFunction::scatter` hands every shard a view reaching that arena, so it stays shared after the
+/// split - unlike a `ColumnConst` payload, which the shuffle materializes per shard chunk.
+AggregateStatesColumn makeGroupArrayStatesColumn(size_t num_rows, size_t values_per_state = 64)
+{
+    tryRegisterAggregateFunctions();
+
+    AggregateFunctionProperties properties;
+    auto aggregate_function = AggregateFunctionFactory::instance().get(
+        "groupArray", NullsAction::EMPTY, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{}, properties);
+
+    auto states = ColumnAggregateFunction::create(aggregate_function);
+    auto argument = ColumnUInt64::create();
+    for (size_t i = 0; i < values_per_state; ++i)
+        argument->insertValue(i);
+    const IColumn * argument_columns[1] = {argument.get()};
+
+    Arena & arena = states->createOrGetArena();
+    for (size_t row = 0; row < num_rows; ++row)
+    {
+        states->insertDefault();
+        for (size_t i = 0; i < values_per_state; ++i)
+            aggregate_function->add(states->getData()[row], argument_columns, i, &arena);
+    }
+
+    const Int64 arena_bytes = static_cast<Int64>(arena.allocatedBytes());
+    auto type = std::make_shared<DataTypeAggregateFunction>(aggregate_function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{});
+    return {std::move(type), std::move(states), arena_bytes};
 }
 
 /// A plain UInt64 value column with distinct entries (no shared buffers), used as a shuffle payload.
@@ -918,88 +956,109 @@ TEST(BufferedShardByHashTransform, ExternallyAttachedForeignArenaIsChargedOncePe
     EXPECT_LT(buffered, 2 * external_bytes);
 }
 
-/// The same invariant for a shared `ColumnConst` payload: `ColumnConst::scatter` wraps the same backing `data`
-/// column for every shard chunk while each wrapper's `allocatedBytes()` reports the full payload, so the budget
-/// must charge a shared const payload exactly once per block - charging it per shard would inflate the counter
-/// up to `num_shards` times and trip `aggregation_in_order_shuffle_max_buffered_bytes` spuriously on queries
-/// with a wide constant column (e.g. a large constant aggregate argument).
-TEST(BufferedShardByHashTransform, ConstColumnPayloadChargedOncePerBlock)
+/// The shard merges retain their inputs only after `IMergingAlgorithm::removeConstAndSparse` replaced every
+/// `ColumnConst` and `ColumnSparse` with a full column (`MergingSortedAlgorithm::initialize` and `consume`), so
+/// the budget must charge the materialized footprint, not the compact one: a constant 4 KiB string over 8000 rows
+/// is ~4 KiB as a `ColumnConst` but ~32 MiB once materialized, and a mostly-default `ColumnSparse` likewise grows
+/// to one value per row. This applies the same normalization to the shard chunks a merge pulls and retains, and
+/// checks that the charge covers everything retained - charging the compact columns would leave the expansion
+/// invisible to `aggregation_in_order_shuffle_max_buffered_bytes`.
+TEST(BufferedShardByHashTransform, ChargeCoversConstAndSparseColumnsMaterializedByMerges)
 {
     const size_t num_rows = 8000;
     const size_t num_shards = 8;
-    const size_t value_len = 1 << 20;  /// A 1 MiB constant string payload - dominates the block's bytes.
-
-    ColumnPtr key = makeDistinctKeyColumn(num_rows);
+    const size_t value_len = 4096;
 
     auto payload = ColumnString::create();
     const std::string big_value(value_len, 'x');
     payload->insertData(big_value.data(), big_value.size());
     ColumnPtr constant = ColumnConst::create(std::move(payload), num_rows);
-    const Int64 payload_bytes
-        = static_cast<Int64>(assert_cast<const ColumnConst &>(*constant).getDataColumn().allocatedBytes());
-    ASSERT_GT(payload_bytes, static_cast<Int64>(value_len));
+
+    /// A sparse `UInt64` column with a handful of non-default values (the values column starts with the default).
+    auto sparse_values = ColumnUInt64::create();
+    sparse_values->insertDefault();
+    auto sparse_offsets = ColumnUInt64::create();
+    for (size_t i = 0; i < num_rows; i += 1000)
+    {
+        sparse_values->insertValue(i + 1);
+        sparse_offsets->insertValue(i);
+    }
+    ColumnPtr sparse = ColumnSparse::create(std::move(sparse_values), std::move(sparse_offsets), num_rows);
 
     Block header_block{
         ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
         ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "c"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "s"),
     };
     auto header = std::make_shared<const Block>(std::move(header_block));
 
-    Columns columns{key, constant};
-    const Int64 buffered = bufferedBytesAfterSplit(header, std::move(columns), num_shards, ColumnNumbers{0});
+    /// A cap far above anything buffered here: what is under test is what the counter holds, not enforcement.
+    auto budget = std::make_shared<BufferedShardByHashBudget>();
+    auto scatter = makeConnectedScatter(header, num_shards, ColumnNumbers{0}, /*max_buffered_bytes=*/ 1ULL << 40, budget);
+    scatter.source->push(Chunk(Columns{makeDistinctKeyColumn(num_rows), constant, sparse}, num_rows));
+    ASSERT_FALSE(drive(scatter));
 
-    /// Charged once: at least one payload, and below two payloads (charging per shard would reach
-    /// ~`num_shards` payloads).
-    EXPECT_GE(buffered, payload_bytes);
-    EXPECT_LT(buffered, 2 * payload_bytes);
+    /// Pull every parked shard chunk and retain it the way a sorted merge does.
+    IMergingAlgorithm::Inputs retained;
+    Int64 retained_bytes = 0;
+    for (auto & sink : scatter.sinks)
+    {
+        if (!sink->hasData())
+            continue;
+        IMergingAlgorithm::Input input;
+        input.set(sink->pull());
+        IMergingAlgorithm::removeConstAndSparse(input);
+        retained_bytes += static_cast<Int64>(input.chunk.allocatedBytes());
+        retained.push_back(std::move(input));
+    }
+    ASSERT_EQ(retained.size(), num_shards);
+
+    /// The materialized constant alone is `num_rows` copies of the payload...
+    ASSERT_GE(retained_bytes, static_cast<Int64>(num_rows * value_len));
+    /// ...and all of it was charged while the merges retain it.
+    EXPECT_GE(budget->total_buffered_bytes.load(), retained_bytes);
+
+    retained.clear();
+    EXPECT_EQ(budget->total_buffered_bytes.load(), 0);
 }
 
-/// The admission charge must not double-count a buffer the source chunk references more than once. One
-/// `ColumnConst` literal projected into two columns of the block (`SELECT big AS a, big AS b`, a constant
-/// argument fed to two aggregate functions) puts the same column object into the chunk twice, and the chunk's
-/// raw `allocatedBytes()` sums both references; charging that raw sum on admission arms the budget rejection for
-/// bytes the chunk does not actually hold, so the query throws TOO_MANY_ROWS_OR_BYTES even though the exact
-/// resident bytes (the post-split accounting de-duplicates the shared payload) fit under the budget. With a
-/// budget between the payload counted once and counted twice, the aliased chunk must be admitted, split, and
-/// charged for a single payload.
+/// The admission charge must not double-count a buffer the source chunk references more than once. One column
+/// projected into two columns of the block (`SELECT s AS a, s AS b`, the same argument fed to two aggregate
+/// functions) puts the same column object into the chunk twice, and the chunk's raw `allocatedBytes()` sums both
+/// references; charging that raw sum on admission arms the budget rejection for bytes the chunk does not actually
+/// hold, so the query throws TOO_MANY_ROWS_OR_BYTES even though the exact resident bytes fit under the budget.
+/// The payload here is a column of aggregate states, whose arena stays shared after the split (every shard view
+/// of both references reaches it), so with a budget between the arena counted once and counted twice, the
+/// aliased chunk must be admitted, split, and charged for a single arena.
 TEST(BufferedShardByHashTransform, AliasedColumnsChargedOncePerChunkOnAdmission)
 {
-    const size_t num_rows = 8000;
+    const size_t num_rows = 2000;
     const size_t num_shards = 8;
-    const size_t value_len = 1 << 20;  /// A 1 MiB constant string payload - dominates the chunk's bytes.
 
-    ColumnPtr key = makeDistinctKeyColumn(num_rows);
-
-    auto payload = ColumnString::create();
-    const std::string big_value(value_len, 'x');
-    payload->insertData(big_value.data(), big_value.size());
-    ColumnPtr constant = ColumnConst::create(std::move(payload), num_rows);
-    const Int64 payload_bytes
-        = static_cast<Int64>(assert_cast<const ColumnConst &>(*constant).getDataColumn().allocatedBytes());
-    ASSERT_GT(payload_bytes, static_cast<Int64>(value_len));
+    auto [states_type, states, arena_bytes] = makeGroupArrayStatesColumn(num_rows);
 
     Block header_block{
         ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
-        ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "a"),
-        ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "b"),
+        ColumnWithTypeAndName(states_type, "a"),
+        ColumnWithTypeAndName(states_type, "b"),
     };
     auto header = std::make_shared<const Block>(std::move(header_block));
 
-    /// The same `ColumnConst` object referenced twice: a raw pre-split sum counts its payload twice.
-    Columns columns{key, constant, constant};
+    /// The same column object referenced twice: a raw pre-split sum counts its arena twice.
+    Columns columns{makeDistinctKeyColumn(num_rows), states, states};
     /// The chunk's raw double-counted size (what a naive admission charge would use)...
     const Int64 raw_chunk_bytes = static_cast<Int64>(Chunk(columns, num_rows).allocatedBytes());
-    ASSERT_GE(raw_chunk_bytes, 2 * payload_bytes);
+    ASSERT_GE(raw_chunk_bytes, 2 * arena_bytes);
 
-    /// ...and a budget below it, with a half-payload margin over the single-counted size: an admission charge
-    /// that counts the aliased payload once fits comfortably, one that counts it per reference throws.
-    const auto budget = static_cast<size_t>(raw_chunk_bytes - payload_bytes / 2);
+    /// ...and a budget below it, with a half-arena margin over the single-counted size: an admission charge that
+    /// counts the aliased arena once fits comfortably, one that counts it per reference throws.
+    const auto budget = static_cast<size_t>(raw_chunk_bytes - arena_bytes / 2);
     const auto outcome = splitOneChunkUnderBudget(header, std::move(columns), num_shards, ColumnNumbers{0}, budget);
 
     EXPECT_FALSE(outcome.work_threw_budget_error);
-    /// The block parked in the ports is charged for one payload, not one per reference or per shard.
-    EXPECT_GE(outcome.buffered_bytes, payload_bytes);
-    EXPECT_LT(outcome.buffered_bytes, 2 * payload_bytes);
+    /// The block parked in the ports is charged for one arena, not one per reference or per shard.
+    EXPECT_GE(outcome.buffered_bytes, arena_bytes);
+    EXPECT_LT(outcome.buffered_bytes, 2 * arena_bytes);
 }
 
 /// A chunk pushed to an output port stays resident in the port state (still consuming memory) until the
@@ -1061,46 +1120,33 @@ TEST(BufferedShardByHashTransform, PulledThenClosedOutputStaysChargedUntilDroppe
 }
 
 /// The buffer budget must de-duplicate a physical buffer shared, by pointer, across more than one *buffered
-/// block*, not only within one block. `ColumnConst::cloneResized` - used both by `scatter` and by the query
-/// engine when it hands out an already-evaluated constant to a later block - keeps the same backing `data`
-/// object, so two SEPARATE blocks pulled one after another can reference the identical payload column.
-/// Charging each block's registration independently (a fresh de-duplication set per pull, forgotten once the
-/// pull is over) would bill the payload once per block that references it; the shared counter must instead
-/// charge it exactly once for as long as either block still holds it.
+/// block*, not only within one block. Two separate blocks pulled one after another can reach the identical arena
+/// of aggregate states (here, through the very same states column), and every shard view of either block keeps
+/// it alive. Charging each block's registration independently (a fresh de-duplication set per pull, forgotten
+/// once the pull is over) would bill the arena once per block that references it; the shared counter must
+/// instead charge it exactly once for as long as either block still holds it.
 TEST(BufferedShardByHashTransform, SharedPayloadAcrossBufferedBlocksChargedOnce)
 {
     const size_t num_shards = 8;
-    const size_t first_rows = 4000;
-    const size_t second_rows = 4000;
-    const size_t value_len = 1 << 20;  /// A 1 MiB constant string payload - dominates both blocks' bytes.
+    const size_t num_rows = 2000;
 
-    auto payload = ColumnString::create();
-    const std::string big_value(value_len, 'x');
-    payload->insertData(big_value.data(), big_value.size());
-    const ColumnPtr shared_data = std::move(payload);
-    const Int64 payload_bytes = static_cast<Int64>(shared_data->allocatedBytes());
-    ASSERT_GT(payload_bytes, static_cast<Int64>(value_len));
-
-    /// Two SEPARATE `ColumnConst` wrappers - mirroring what `cloneResized` produces - both referencing the
-    /// identical backing `data` object by pointer.
-    ColumnPtr first_constant = ColumnConst::create(shared_data, first_rows);
-    ColumnPtr second_constant = ColumnConst::create(shared_data, second_rows);
+    auto [states_type, states, arena_bytes] = makeGroupArrayStatesColumn(num_rows);
 
     Block header_block{
         ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
-        ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "c"),
+        ColumnWithTypeAndName(states_type, "s"),
     };
     auto header = std::make_shared<const Block>(std::move(header_block));
 
-    Columns first_columns{makeDistinctKeyColumn(first_rows), first_constant};
-    Columns second_columns{makeDistinctKeyColumn(second_rows), second_constant};
+    Columns first_columns{makeDistinctKeyColumn(num_rows), states};
+    Columns second_columns{makeDistinctKeyColumn(num_rows), states};
     const Int64 buffered
         = twoBlocksResidentBytes(header, std::move(first_columns), std::move(second_columns), num_shards, ColumnNumbers{0});
 
-    /// Charged once across BOTH blocks: at least one payload (not dropped), and below two payloads (the
-    /// regression this guards: charging it once per block that references it would double it).
-    EXPECT_GE(buffered, payload_bytes);
-    EXPECT_LT(buffered, 2 * payload_bytes);
+    /// Charged once across BOTH blocks: at least one arena (not dropped), and below two arenas (the regression
+    /// this guards: charging it once per block that references it would double it).
+    EXPECT_GE(buffered, arena_bytes);
+    EXPECT_LT(buffered, 2 * arena_bytes);
 }
 
 /// The budget must not fail a query for bytes that are no longer resident. A scatter releases the charge of a
@@ -1220,97 +1266,71 @@ TEST(BufferedShardByHashTransform, PartiallyConsumedBlockReleasesTheConsumedChun
 
 /// The buffer budget must de-duplicate a physical buffer shared, by pointer, across SIBLING SCATTERS of the
 /// stage, not only within one scatter. A shuffle stage runs one `BufferedShardByHashTransform` per input
-/// stream, all sharing one `BufferedShardByHashBudget`; a constant aggregate argument is evaluated once and its
-/// backing `data` column handed to every stream (`ColumnConst::cloneResized` keeps the same pointer), so two
-/// scatters can buffer the identical payload at the same time. A per-scatter de-duplication table would bill
-/// the payload once per scatter that holds it; the shared table in the budget must charge it exactly once for
-/// as long as any scatter still holds it.
+/// stream, all sharing one `BufferedShardByHashBudget`, and two streams can buffer chunks reaching the identical
+/// arena of aggregate states at the same time. A per-scatter de-duplication table would bill the arena once per
+/// scatter that holds it; the shared table in the budget must charge it exactly once for as long as any scatter
+/// still holds it.
 TEST(BufferedShardByHashTransform, SharedPayloadAcrossSiblingScattersChargedOnce)
 {
     const size_t num_shards = 8;
-    const size_t first_rows = 4000;
-    const size_t second_rows = 4000;
-    const size_t value_len = 1 << 20;  /// A 1 MiB constant string payload - dominates both scatters' bytes.
+    const size_t num_rows = 2000;
 
-    auto payload = ColumnString::create();
-    const std::string big_value(value_len, 'x');
-    payload->insertData(big_value.data(), big_value.size());
-    const ColumnPtr shared_data = std::move(payload);
-    const Int64 payload_bytes = static_cast<Int64>(shared_data->allocatedBytes());
-    ASSERT_GT(payload_bytes, static_cast<Int64>(value_len));
-
-    /// Two `ColumnConst` wrappers - as `cloneResized` produces - both referencing the identical backing `data`.
-    ColumnPtr first_constant = ColumnConst::create(shared_data, first_rows);
-    ColumnPtr second_constant = ColumnConst::create(shared_data, second_rows);
+    auto [states_type, states, arena_bytes] = makeGroupArrayStatesColumn(num_rows);
 
     Block header_block{
         ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
-        ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "c"),
+        ColumnWithTypeAndName(states_type, "s"),
     };
     auto header = std::make_shared<const Block>(std::move(header_block));
 
-    Columns first_columns{makeDistinctKeyColumn(first_rows), first_constant};
-    Columns second_columns{makeDistinctKeyColumn(second_rows), second_constant};
+    Columns first_columns{makeDistinctKeyColumn(num_rows), states};
+    Columns second_columns{makeDistinctKeyColumn(num_rows), states};
     const Int64 buffered = twoScattersSharingBudgetResidentBytes(
         header, std::move(first_columns), std::move(second_columns), num_shards, ColumnNumbers{0});
 
-    /// Charged once across BOTH scatters: at least one payload (not dropped), and below two payloads (the
-    /// regression this guards: a per-scatter table would charge it once per scatter that holds it).
-    EXPECT_GE(buffered, payload_bytes);
-    EXPECT_LT(buffered, 2 * payload_bytes);
-}
-
-namespace
-{
-
-/// A one-row `Array(String)` holding `value_len` bytes of string data - a composite payload whose bytes live in
-/// the nested string column, not in the array node itself.
-ColumnPtr makeBigArrayOfStringColumn(size_t value_len)
-{
-    auto strings = ColumnString::create();
-    const std::string big_value(value_len, 'x');
-    strings->insertData(big_value.data(), big_value.size());
-
-    auto offsets = ColumnArray::ColumnOffsets::create();
-    offsets->insertValue(strings->size());
-
-    return ColumnArray::create(std::move(strings), std::move(offsets));
-}
-
+    /// Charged once across BOTH scatters: at least one arena (not dropped), and below two arenas (the regression
+    /// this guards: a per-scatter table would charge it once per scatter that holds it).
+    EXPECT_GE(buffered, arena_bytes);
+    EXPECT_LT(buffered, 2 * arena_bytes);
 }
 
 /// A shared payload must stay charged with its WHOLE subtree for as long as any buffered chunk holds it, so the
 /// de-duplication walk has to descend through a column it has already registered, adding this chunk's reference
 /// to each descendant, instead of stopping at the shared node.
 ///
-/// `ColumnConst::scatter` hands every shard chunk a fresh wrapper around the identical backing `data` object, and
-/// for a composite payload the bytes are in that object's children (`ColumnArray` exposes its offsets and nested
-/// data through `forEachSubcolumn`), not in the node the shards share. If only the shared node's refcount is
-/// bumped on the second and later visits, its children end up referenced by the FIRST shard chunk alone: as soon
-/// as that one chunk is consumed, their bytes are released and their table entries erased - although every other
-/// shard chunk still keeps the very same buffers alive through the shared payload. The counter then reports far
-/// less than is resident, and `aggregation_in_order_shuffle_max_buffered_bytes` admits read-ahead well past the
-/// cap on a query with a composite constant argument (`ColumnConst(Array(String))`,
-/// `ColumnConst(Tuple(LowCardinality(String)))`, ...).
+/// `ColumnLowCardinality::scatter` hands every shard chunk the identical dictionary, and the dictionary's bytes
+/// are in its children (`ColumnUnique` exposes the column holding the distinct values through
+/// `forEachSubcolumn`), not in the node the shards share. If only the shared node's refcount is bumped on the
+/// second and later visits, its children end up referenced by the FIRST shard chunk alone: as soon as that one
+/// chunk is consumed, their bytes are released and their table entries erased - although every other shard chunk
+/// still keeps the very same buffers alive through the shared dictionary. The counter then reports far less than
+/// is resident, and `aggregation_in_order_shuffle_max_buffered_bytes` admits read-ahead well past the cap.
 ///
 /// This buffers one such block, has the downstream consume half of the parked shard chunks, and makes a sibling
-/// scatter register a small block, which reclaims the consumed chunks' charges. The payload is held by the shard
-/// chunks still parked, so it must still be charged in full afterwards.
-TEST(BufferedShardByHashTransform, CompositeConstPayloadStaysChargedWhileAnyShardChunkHoldsIt)
+/// scatter register a small block, which reclaims the consumed chunks' charges. The dictionary is held by the
+/// shard chunks still parked, so it must still be charged in full afterwards.
+TEST(BufferedShardByHashTransform, SharedDictionaryStaysChargedWhileAnyShardChunkHoldsIt)
 {
     const size_t num_shards = 8;
     const size_t num_rows = 8000;
     const size_t sibling_rows = 250; /// Small enough that what it adds cannot mask a lost payload.
-    const size_t value_len = 1 << 20;  /// A 1 MiB payload - dominates everything else buffered here.
+    const size_t num_distinct = 256;
+    const size_t value_len = 4096; /// A ~1 MiB dictionary - dominates everything else buffered here.
 
-    ColumnPtr payload = makeBigArrayOfStringColumn(value_len);
-    const Int64 payload_bytes = static_cast<Int64>(payload->allocatedBytes());
-    ASSERT_GT(payload_bytes, static_cast<Int64>(value_len));
+    ColumnPtr low_cardinality = makeBigDictLowCardinalityColumn(num_rows, num_distinct, value_len);
 
-    auto array_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+    /// `scatter` clones the whole dictionary once and shares it across every shard chunk, so this is the exact
+    /// dictionary size the transform charges.
+    IColumn::Selector selector(num_rows);
+    for (size_t i = 0; i < num_rows; ++i)
+        selector[i] = i % num_shards;
+    const Int64 payload_bytes = static_cast<Int64>(
+        assert_cast<const ColumnLowCardinality &>(*low_cardinality->scatter(num_shards, selector)[0]).getDictionary().allocatedBytes());
+    ASSERT_GT(payload_bytes, static_cast<Int64>(num_distinct * value_len));
+
     Block header_block{
         ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
-        ColumnWithTypeAndName(array_type, "c"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "c"),
     };
     auto header = std::make_shared<const Block>(std::move(header_block));
 
@@ -1326,15 +1346,14 @@ TEST(BufferedShardByHashTransform, CompositeConstPayloadStaysChargedWhileAnyShar
     auto scatter = makeConnectedScatter(header, num_shards, ColumnNumbers{0}, max_buffered_bytes, budget);
     auto sibling = makeConnectedScatter(sibling_header, num_shards, ColumnNumbers{0}, max_buffered_bytes, budget);
 
-    ColumnPtr constant = ColumnConst::create(payload, num_rows);
-    scatter.source->push(Chunk(Columns{makeDistinctKeyColumn(num_rows), constant}, num_rows));
+    scatter.source->push(Chunk(Columns{makeDistinctKeyColumn(num_rows), low_cardinality}, num_rows));
     drive(scatter);
 
     const Int64 bytes_while_all_parked = budget->total_buffered_bytes.load();
     ASSERT_GE(bytes_while_all_parked, payload_bytes);
 
     /// The downstream merges consume half of the parked shard chunks, which drops half of the references to the
-    /// shared payload - but not all of them.
+    /// shared dictionary - but not all of them.
     size_t pulled = 0;
     for (auto & sink : scatter.sinks)
     {
@@ -1353,7 +1372,7 @@ TEST(BufferedShardByHashTransform, CompositeConstPayloadStaysChargedWhileAnyShar
         Chunk(Columns{makeDistinctKeyColumn(sibling_rows), makeUInt64ValueColumn(sibling_rows)}, sibling_rows));
     ASSERT_FALSE(drive(sibling));
 
-    /// The payload is still held by the shard chunks parked in the other half of the ports, so all of it must
+    /// The dictionary is still held by the shard chunks parked in the other half of the ports, so all of it must
     /// still be charged. Dropping the shared node's children with the first chunk released would leave the
     /// counter with little more than the sibling's small block.
     EXPECT_GE(budget->total_buffered_bytes.load(), payload_bytes);
@@ -1476,21 +1495,17 @@ TEST(BufferedShardByHashTransform, ShardCopiesForFinishedOutputsAreFreed)
 {
     const size_t num_rows = 4000;
     const size_t num_shards = 4;
-    const size_t value_len = 1 << 20;  /// A 1 MiB constant payload - the bytes a leaked shard copy would hold.
 
     ColumnPtr key = makeDistinctKeyColumn(num_rows);
 
-    auto payload = ColumnString::create();
-    const std::string big_value(value_len, 'x');
-    payload->insertData(big_value.data(), big_value.size());
-    ColumnPtr constant = ColumnConst::create(std::move(payload), num_rows);
-    /// `ColumnConst::scatter` hands every per-shard copy a reference to the same payload, so the payload's use
-    /// count says exactly how many of those copies are still alive.
-    ColumnPtr shared_payload = assert_cast<const ColumnConst &>(*constant).getDataColumnPtr();
+    /// `ColumnAggregateFunction::scatter` hands every per-shard copy a view that keeps the source column alive,
+    /// so the source's use count says exactly how many of those copies are still alive.
+    auto [states_type, states, arena_bytes] = makeGroupArrayStatesColumn(num_rows);
+    ASSERT_GT(arena_bytes, 0);
 
     Block header_block{
         ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
-        ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "c"),
+        ColumnWithTypeAndName(states_type, "s"),
     };
     auto header = std::make_shared<const Block>(std::move(header_block));
 
@@ -1510,15 +1525,15 @@ TEST(BufferedShardByHashTransform, ShardCopiesForFinishedOutputsAreFreed)
         sinks.push_back(std::move(sink));
     }
 
-    source_output.push(Chunk(Columns{key, constant}, num_rows));
+    /// This test's own reference: the local `ColumnPtr` (the pushed chunk is consumed by the split).
+    const auto payload_uses_before = states->use_count();
+
+    source_output.push(Chunk(Columns{key, states}, num_rows));
 
     /// Only the first shard keeps a live consumer; the others are closed, as a `LimitTransform` closes them.
     sinks.front()->setNeeded();
     for (size_t shard = 1; shard < num_shards; ++shard)
         sinks[shard]->close();
-
-    /// This test's own references: the local `ColumnPtr` and the `ColumnConst` holding the payload.
-    const auto payload_uses_before = shared_payload->use_count();
 
     for (int step = 0; step < 8; ++step)
     {
@@ -1529,5 +1544,5 @@ TEST(BufferedShardByHashTransform, ShardCopiesForFinishedOutputsAreFreed)
 
     /// Exactly one copy survives the split: the chunk parked in the one port that still has a consumer. The
     /// copies built for the three closed outputs are gone (keeping them would read `num_shards` copies).
-    EXPECT_EQ(shared_payload->use_count(), payload_uses_before + 1);
+    EXPECT_EQ(states->use_count(), payload_uses_before + 1);
 }

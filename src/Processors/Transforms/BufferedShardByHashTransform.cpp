@@ -1,5 +1,6 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/IColumn.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/BufferedShardByHashTransform.h>
@@ -254,9 +255,9 @@ void BufferedShardByHashTransform::chargeColumnAndDescendants(
     /// refcount and stopping would leave its descendants referenced by just the *first* charge that reached
     /// them, so releasing that charge would drop them to zero - forgetting their bytes, and their table entries,
     /// while a later charge still keeps the very same buffers alive through this shared node. That is exactly
-    /// how a composite shared payload behaves: `ColumnConst::scatter` hands every shard the same `data` object,
-    /// and for a `ColumnConst(Array(String))` the bulk of the bytes lives in that payload's children, not in the
-    /// node the shards share. Bytes are still billed only on the first visit, so re-walking costs nothing but
+    /// how a composite shared payload behaves: `ColumnLowCardinality::scatter` hands every shard the same
+    /// dictionary, and the bulk of its bytes lives in the dictionary's children, not in the node the shards
+    /// share. Bytes are still billed only on the first visit, so re-walking costs nothing but
     /// the traversal.
     ///
     /// `allocatedBytes()` already recursively sums every reachable subobject, so a new node starts from it and
@@ -831,19 +832,30 @@ void BufferedShardByHashTransform::generateOutputChunks()
             return;
         }
 
+        /// The shard merges downstream normalize every input they retain (`IMergingAlgorithm::removeConstAndSparse`
+        /// in `MergingSortedAlgorithm::initialize` and `consume`), replacing a `ColumnConst` or `ColumnSparse`
+        /// with a full column. Do it here instead, per shard chunk, so the charge registered below describes the
+        /// columns the merges will actually hold: a constant 4 KiB string over 8000 rows is ~4 KiB as a
+        /// `ColumnConst` but ~32 MiB once a merge materializes it, and measuring the compact form would let that
+        /// expansion escape `max_buffered_bytes` entirely. The merges then find nothing left to convert, so this
+        /// moves the work rather than adding to it, and it is done whether or not there is a budget to enforce.
         auto split = column->scatter(num_shards, selector);
         for (size_t s = 0; s < num_shards; ++s)
-            shard_columns[s].push_back(std::move(split[s]));
+        {
+            ColumnPtr shard_column = std::move(split[s]);
+            shard_columns[s].push_back(recursiveRemoveSparse(shard_column->convertToFullColumnIfConst()));
+        }
     }
 
     /// Charge the exact bytes resident after the split. `scatter` copies each column into independent per-shard
     /// buffers, so the post-split total can exceed the pre-split block (e.g. `ColumnString` does not reserve
     /// `chars`, so each shard regrows its own `chars` buffer by doubling); the pre-split provisional estimate
-    /// would under-count that. `chargeColumnAndDescendants` charges every distinct buffer exactly once for as
-    /// long as anything buffered still references it - a buffer `scatter` shares across the shards of this
-    /// block (a `LowCardinality` dictionary, a `ColumnConst` payload), one shared with another still-live block
-    /// (e.g. the same dictionary read again from the same part), and one shared with a sibling scatter (the same
-    /// stage-wide `budget` de-duplicates all three). Registering these post-split objects before releasing the
+    /// would under-count that, and so would it a `ColumnConst` or `ColumnSparse` materialized above.
+    /// `chargeColumnAndDescendants` charges every distinct buffer exactly once for as long as anything buffered
+    /// still references it - a buffer `scatter` shares across the shards of this block (a `LowCardinality`
+    /// dictionary, the arena of a `ColumnAggregateFunction`), one shared with another still-live block (e.g. the
+    /// same arena reached from both), and one shared with a sibling scatter (the same stage-wide `budget`
+    /// de-duplicates all three). Registering these post-split objects before releasing the
     /// pre-split charge below (rather than reconciling by a byte delta) means such a buffer's refcount never
     /// drops to zero in between the two.
     ///
@@ -934,8 +946,8 @@ void BufferedShardByHashTransform::generateOutputChunks()
             cols.clear();
 
         /// Release the provisional pre-split charge now that the exact post-split objects are registered above -
-        /// any buffer this block shares with the pre-split chunk (unchanged by the split, e.g. a `LowCardinality`
-        /// dictionary or a `ColumnConst` payload) was just re-registered, so its refcount is already at least 2
+        /// any buffer this block shares with the pre-split chunk (unchanged by the split, e.g. the arena of a
+        /// `ColumnAggregateFunction`) was just re-registered, so its refcount is already at least 2
         /// and releasing the pre-split reference here only drops it back to what this block itself holds.
         ///
         /// The whole reconciliation is published as ONE atomic update of the net difference: the admission

@@ -943,7 +943,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             /// runs of a single key park everything on one shard while another lane starves), so all scatters
             /// share a byte budget; exceeding it fails the query instead of buffering without limit. The shared
             /// `budget` also carries the stage-wide de-duplication table, so a physical buffer several scatters
-            /// hold at once (e.g. a constant aggregate argument every stream buffers) is charged only once.
+            /// hold at once (e.g. the arena of aggregate states several streams reach) is charged only once.
             auto budget = std::make_shared<BufferedShardByHashBudget>();
             const size_t max_buffered_bytes = settings.aggregation_in_order_shuffle_max_buffered_bytes;
             pipeline.transform([&](OutputPortRawPtrs ports)

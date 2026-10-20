@@ -113,13 +113,14 @@ public:
     ///
     /// The cap is enforced at input-block granularity, on measured sizes only: admission is checked against
     /// each pulled block's measured size and re-checked after the block is split (`scatter` can grow buffers
-    /// beyond the pre-split size). Rejection is never taken on an estimate, so the check runs only after a
+    /// beyond the pre-split size, and a `ColumnConst` or `ColumnSparse` is materialized per shard chunk, as the
+    /// downstream merges would materialize it anyway). Rejection is never taken on an estimate, so the check runs only after a
     /// chunk has been read; each scatter (they run concurrently, each under its own node mutex) can therefore
     /// admit one chunk that it has already pulled before the shared counter reveals the cap is crossed, so the
     /// bytes read ahead can transiently exceed the cap by up to one block's post-split footprint per concurrent
     /// scatter before the exception is raised. Every measurement charges every distinct physical buffer exactly
-    /// once, however many references hold it live - within one block (a `ColumnConst` payload projected into
-    /// several columns, a shared `LowCardinality` dictionary), across every block currently buffered, and across
+    /// once, however many references hold it live - within one block (a column projected into several columns,
+    /// a shared `LowCardinality` dictionary), across every block currently buffered, and across
     /// the sibling scatters of the stage (the same payload/dictionary object referenced, by pointer, by more
     /// than one scatter - see `BufferedShardByHashBudget::shared_object_refcounts`). A chunk's footprint cannot
     /// be known before reading it, so any earlier enforcement would reject chunks whose actual bytes fit. The
@@ -146,8 +147,8 @@ private:
     /// that charge is reversed exactly when this chunk - and no other - stops being buffered. Accounting is per
     /// buffered chunk, not per input block: `scatter` shares one physical buffer across all shard chunks of a
     /// block (the canonical cases are a `LowCardinality` dictionary - `ColumnLowCardinality::scatter` keeps a
-    /// single dictionary shared across the shards, at any nesting depth - and a `ColumnConst` payload, wrapped
-    /// unchanged for every shard), but such a buffer is charged once for the whole stage anyway, by refcounting
+    /// single dictionary shared across the shards, at any nesting depth - and the arena holding the states of a
+    /// `ColumnAggregateFunction`, which every shard view reaches), but such a buffer is charged once for the whole stage anyway, by refcounting
     /// it in `BufferedShardByHashBudget::shared_object_refcounts`: every shard chunk that reaches it registers a
     /// reference, and it stays billed until the last of them releases it. Holding the charge of a whole input
     /// block together until its last shard chunk drained would bill the same bytes for exactly as long, but it
@@ -299,7 +300,7 @@ private:
     /// Reused across input chunks to skip per-chunk reallocation.
     PaddedPODArray<UInt32> hash_buffer;
     IColumn::Selector selector;
-    std::vector<MutableColumns> shard_columns;
+    std::vector<Columns> shard_columns;
 };
 
 }
