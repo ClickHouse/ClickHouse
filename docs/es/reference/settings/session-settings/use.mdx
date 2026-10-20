@@ -61,6 +61,8 @@ Actualmente, la caché solo se aplica a las partes anchas (wide): los datos de l
 
 Cada entrada contiene un rango contiguo de gránulos de un mismo segmento: un gránulo solo entra en la caché una vez que se ha leído de la primera a la última fila, las lecturas se sirven desde la caché gránulo a gránulo y los rangos escritos por distintas lecturas se fusionan, de modo que las lecturas que dividen una parte en distintos rangos de marcas comparten las mismas entradas.
 
+La caché también se aplica a los archivos `Parquet` leídos desde el sistema de archivos local (la función de tabla `file` y el motor de tabla `File`), desde sistemas de almacenamiento de objetos (`s3`, `azureBlobStorage` y sus motores de tabla) y por tablas de data lake. En este caso, cada entrada contiene una columna completa de un grupo de filas, y su clave se compone de la ruta del archivo, su versión (el ETag de un objeto, o la hora de modificación, el inode y el tamaño de un archivo local), la columna del archivo y el tipo con el que se lee. Una columna de un grupo de filas solo se escribe en la caché cuando se leen todas las filas del grupo, antes de aplicarles cualquier filtro: con `PREWHERE`, esto ocurre con las columnas del filtro, mientras que las demás columnas solo se leen para las filas que lo cumplen. Un archivo local solo se almacena en caché cuando lleva unos segundos sin modificarse, de modo que su versión identifique su contenido.
+
 ## use_concurrency_control {#use_concurrency_control}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

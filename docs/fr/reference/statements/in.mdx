@@ -172,8 +172,8 @@ Deux paramètres déterminent à quel moment le déversement sur le disque comme
 * `max_bytes_before_external_set` définit un seuil, en octets, appliqué à la mémoire totale de la requête. Sa valeur par défaut est `0`
   (désactivé).
 * `max_bytes_ratio_before_external_set` définit une fraction de la mémoire disponible dans les limites du serveur ou de l’utilisateur,
-  mesurée au début de l’exécution. Sa valeur par défaut est `0` (désactivé) et il est sans effet lorsque
-  aucune de ces limites ne s’applique.
+  mesurée au début de l’exécution. Sa valeur par défaut est `0.5`, soit la moitié de la mémoire disponible, et
+  ce paramètre est sans effet lorsqu’aucune de ces limites ne s’applique.
 
 Lorsque les deux seuils s’appliquent, c’est le plus petit qui est retenu. Un set n’est écrit sur le disque que lorsqu’il occupe au moins
 16 Mio, ou la valeur du seuil si celle-ci est inférieure. Par exemple, cette requête écrit le set sur le disque dès que celui-ci
@@ -187,24 +187,35 @@ SETTINGS max_bytes_before_external_set = 16777216;
 ```
 
 Un set est généralement construit avant que le reste de la requête n’occupe beaucoup de mémoire. Un set resté en mémoire pendant
-sa construction peut néanmoins être écrit sur le disque par la suite, pendant que la requête l’utilise : dès que la mémoire de la requête dépasse le
-seuil, le set est écrit sur le disque et la majeure partie de sa mémoire est libérée pour le reste de la requête, par
-exemple pour une agrégation qui continue de croître après la construction du set.
+sa construction peut néanmoins être écrit sur le disque par la suite, pendant que la requête l’utilise : dès que la mémoire de la requête, ajoutée à
+la mémoire que le set conserve lorsqu’il est sur le disque, comme son filtre de Bloom, dépasse le seuil, le set est
+écrit sur le disque et la majeure partie de sa mémoire est libérée pour le reste de la requête, par exemple pour une agrégation qui
+continue de croître après la construction du set.
 
 `max_memory_usage` n’a aucune incidence sur le ratio. Pour configurer le déversement sur le disque par rapport à une limite de mémoire de requête,
 définissez un seuil absolu inférieur à cette limite. Ces seuils ne plafonnent pas l’utilisation de la mémoire. Prévoyez une marge pour
 le reste du traitement des requêtes et pour le déversement lui-même.
 
+Un set sur le disque conserve en mémoire un filtre de Bloom de ses clés, afin que les recherches de clés absentes du set
+puissent se dispenser de lire le disque. `max_bytes_for_external_set_bloom_filter` limite la mémoire du filtre,
+fixée par défaut à 128 Mio.
+
+Un set sur le disque conserve également en cache, en mémoire, les blocs lus par ses recherches, afin que les recherches ultérieures de clés situées dans
+les mêmes blocs ne relisent pas le disque. `max_bytes_for_external_set_cache` limite la mémoire du
+cache, fixée par défaut à 128 Mio.
+
 Un set écrit sur le disque pendant sa construction ne peut être exploité ni par la clé primaire ni par les index de saut de données. Avec
 `GLOBAL IN`, la table temporaire qui transmet le résultat de la sous-requête aux serveurs distants reste en
 mémoire, tandis que les sets que les serveurs distants construisent à partir de celle-ci peuvent être écrits sur le disque.
 
-Lorsqu’un set est écrit sur le disque pendant sa construction, l’intégralité de la sous-requête est lue avant la vérification des limites de taille
-du set : `max_rows_in_set` compte ses clés distinctes, et `max_bytes_in_set` ne compte que sa
-partie en mémoire. Avec `set_overflow_mode = 'break'`, le set conserve, dans la limite autorisée, les clés qui arrivent en premier dans l’ordre
-où il les stocke sur le disque, et non les clés des premières lignes de la sous-requête.
-Pour une clé `UInt64`, il s’agit des plus petites valeurs. Pour une clé `String`, elles forment un sous-ensemble arbitraire,
-puisque le set ne stocke sur le disque que le SipHash 128 bits de chaque chaîne.
+Lorsqu’un set est écrit sur le disque pendant sa construction, l’intégralité de la sous-requête est lue avant la vérification des limites de taille du
+set : `max_rows_in_set` compte ses clés distinctes, et `max_bytes_in_set` compte chaque clé selon
+sa largeur dans le set, de 1 à 32 octets, par exemple 8 octets pour un `UInt64` et 16 octets pour un `String`, mais
+pas la mémoire utilisée par les recherches, comme le filtre de Bloom et le cache. Avec
+`set_overflow_mode = 'break'`, le set conserve, dans la limite autorisée, les clés qui arrivent en premier dans l’ordre où il les stocke
+sur le disque, et non les clés des premières lignes de la sous-requête. Pour des clés constituées de nombres,
+de dates ou de valeurs `FixedString` courtes, seules ou dans un tuple, il s’agit des plus petites clés. Les autres clés, comme
+`String`, forment un sous-ensemble arbitraire.
 
 <div id="distributed-subqueries">
   ## Sous-requêtes distribuées {#distributed-subqueries}

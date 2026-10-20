@@ -146,6 +146,14 @@ Desactivada de forma predeterminada: la reescritura que distribuye una ordenaci�
 ya esté ordenada, y una ordenación que sí depende de ello puede recibir filas a través de un intercambio que no preserva
 el orden. Por ahora, solo son seguras las formas en las que no queda ningún intercambio entre la lectura y la ordenación.
 
+## distributed_plan_worker_cluster {#distributed_plan_worker_cluster}
+
+<PrivatePreviewBadge />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": ""},{"label": "Nueva configuración para seleccionar el cluster de stateless worker en el que se ejecuta el plan distribuido."}]}]} />
+
+Nombre del cluster de stateless-worker en el que se ejecutará el plan distribuido de esta consulta. Si se deja vacío (valor predeterminado), se usa el cluster predeterminado preconfigurado; los demás clústeres se configuran en `stateless_worker_client.clusters`.
+
 ## distributed_plan_workers_num {#distributed_plan_workers_num}
 
 <PrivatePreviewBadge />

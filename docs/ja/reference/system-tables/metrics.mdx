@@ -722,6 +722,14 @@ distributed exchange server の handshake 用スレッドプールでタスク�
 
 distributed exchange server のハンドシェイク用スレッドプールで、キューに入っている、または実行中のジョブ数。
 
+### ExternalSetCacheBytes {#externalsetcachebytes}
+
+外部メモリ上にある `IN` 集合のキャッシュに保持されているブロックの合計サイズ (バイト単位)
+
+### ExternalSetCacheCells {#externalsetcachecells}
+
+外部メモリ上にある `IN` 集合のキャッシュに保持されているブロックの総数
+
 ### FiberStackBytes {#fiberstackbytes}
 
 現在割り当てられているファイバースタックの合計サイズ。
@@ -1985,6 +1993,14 @@ StartupSystemTables のスレッドプール内でキューに入っている、
 ### StatelessWorkerThreadsScheduled {#statelessworkerthreadsscheduled}
 
 ステートレス ワーカースレッドプールでキュー待ちまたは実行中のジョブ数。
+
+### StatisticsCacheBytes {#statisticscachebytes}
+
+統計キャッシュの合計サイズ (バイト単位) 。MergeTree テーブルのパーツのカラム統計を保持し、パーツとカラムの組み合わせごとに 1 つのエントリを持ちます。
+
+### StatisticsCacheCells {#statisticscachecells}
+
+統計キャッシュ内のエントリの総数 (データパーツとカラムの組み合わせごとに1エントリ)
 
 ### StorageBufferBytes {#storagebufferbytes}
 

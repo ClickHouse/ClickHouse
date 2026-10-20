@@ -266,6 +266,10 @@ Arena 메모리에 할당된 바이트 수입니다(GROUP BY 및 유사한 작�
 
 Context에서 내부 복제된 데이터베이스 DDL 실행(활성 ZooKeeperMetadataTransaction)이 진행 중이어서 서버 측 AST 퍼저가 퍼징을 건너뛴 횟수입니다.
 
+### ASTFuzzerSkippedSecondaryQuery {#astfuzzerskippedsecondaryquery}
+
+다른 노드에서 전송된 보조 쿼리라는 이유로 서버 측 AST 퍼저가 퍼징을 건너뛴 횟수입니다.
+
 ### AsynchronousReaderIgnoredBytes {#asynchronousreaderignoredbytes}
 
 비동기 읽기 중에 무시된 바이트 수
@@ -1399,7 +1403,7 @@ write syscall을 대기하는 데 소요된 총 시간입니다. 여기에는 �
 
 ### DistinctTransformsSwitchedToPassThrough {#distincttransformsswitchedtopassthrough}
 
-쿼리 메모리가 external `DISTINCT` 임계값을 초과했거나 예상되는 해싱 할당량이 남은 임계값 예산을 초과할 것으로 판단되어(`max_bytes_before_external_distinct` 참조), 해시 테이블을 해제하고 모든 행을 그대로 통과시키기 시작한 사전 `DISTINCT` 변환의 개수입니다. 이 경우 중복 제거는 디스크로 spill하는 최종 `DISTINCT` 단계에서 처리됩니다.
+쿼리 메모리가 뒤따르는 연산자의 디스크 유출 임계값(spill threshold)을 초과했거나 예상되는 해싱 할당량이 남은 임계값 예산을 초과할 것으로 판단되어, 해시 테이블을 해제하고 모든 행을 그대로 통과시키기 시작한 예비 `DISTINCT` 변환의 개수입니다. `DISTINCT` 앞에서는 임계값이 `max_bytes_before_external_distinct`이며, 이 경우 중복 제거는 디스크로 spill하는 최종 `DISTINCT` 단계에서 처리됩니다. `IN`의 집합(set) 앞에서는 해당 집합의 디스크 유출 임계값(`max_bytes_before_external_set` 참조)이 적용되며, 중복 제거는 집합에서 처리됩니다.
 
 ### DistrCacheBackgroundWrites {#distrcachebackgroundwrites}
 
@@ -2073,9 +2077,21 @@ File/S3/URL/HDFS처럼 파일을 사용하는 테이블 엔진에서 읽은 파�
 
 외부 처리(정렬/집계/조인) 중 기록된 데이터의 양(비압축 상태, Compression 적용 전)
 
+### ExternalSetBloomFilterSkippedKeys {#externalsetbloomfilterskippedkeys}
+
+외부 메모리에 저장된 `IN` 집합(set)의 블룸 필터(Bloom filter)가 조회 시 제외한 키의 수입니다.
+
+### ExternalSetCacheHits {#externalsetcachehits}
+
+외부 메모리에 있는 `IN` 집합(set)을 조회할 때 임시 파일에서 읽지 않고 집합의 캐시에서 가져온 블록(blocks)의 수입니다.
+
 ### ExternalSetCompressedBytes {#externalsetcompressedbytes}
 
 외부 메모리에 `IN` 집합(set)용으로 기록된 압축된 바이트 수입니다.
+
+### ExternalSetLookupKeys {#externalsetlookupkeys}
+
+외부 메모리에 있는 `IN` 집합(set)에서 조회 시 검색한 키의 수입니다.
 
 ### ExternalSetMerge {#externalsetmerge}
 
@@ -2084,6 +2100,14 @@ File/S3/URL/HDFS처럼 파일을 사용하는 테이블 엔진에서 읽은 파�
 ### ExternalSetReadBlocks {#externalsetreadblocks}
 
 키 조회를 위해 외부 메모리에 있는 `IN` 집합(set)의 임시 파일에서 읽은 블록(blocks) 수입니다.
+
+### ExternalSetTailKeptKeys {#externalsettailkeptkeys}
+
+외부 메모리에 있는 `IN` 집합(set)의 최종 머지를 위해 메모리에 유지되는 키 개수입니다.
+
+### ExternalSetTailSpilledKeys {#externalsettailspilledkeys}
+
+외부 메모리에서 `IN` 집합(set)의 최종 머지가 디스크 유출 임계값(spill threshold)을 넘지 않도록, 최종 머지 전에 메모리에서 임시 파일로 기록된 키의 개수입니다.
 
 ### ExternalSetUncompressedBytes {#externalsetuncompressedbytes}
 
@@ -2212,14 +2236,6 @@ DOWNLOADING 상태에서의 대기
 ### FileSegmentWaitTimeouts {#filesegmentwaittimeouts}
 
 DOWNLOADING 상태의 파일 세그먼트(file segment)를 대기하다가 타임아웃이 발생한 횟수입니다(`filesystem_cache_wait_for_concurrent_download_timeout_milliseconds` 참조)
-
-### FileSegmentWaitWithoutData {#filesegmentwaitwithoutdata}
-
-DOWNLOADING 상태의 파일 세그먼트에 대한 대기가, 다운로더가 기다리던 오프셋까지 다운로드하기 전에 세그먼트를 해제하여 종료된 횟수입니다.
-
-### FileSegmentWaitWithoutDataMicroseconds {#filesegmentwaitwithoutdatamicroseconds}
-
-`FileSegmentWaitWithoutData`에서 집계된 대기에 소요된 시간입니다
 
 ### FileSegmentWriteMicroseconds {#filesegmentwritemicroseconds}
 
@@ -2376,10 +2392,6 @@ moving 상태이어서 eviction이 건너뛴 파일 세그먼트 수
 ### FilesystemCachePriorityWriteLockMicroseconds {#filesystemcacheprioritywritelockmicroseconds}
 
 우선순위 큐에 쓰기 위해 파일 시스템 캐시를 잠그는 시간
-
-### FilesystemCachePromotedFileSegments {#filesystemcachepromotedfilesegments}
-
-SLRU 캐시 정책에서 시험(probationary) 큐에서 보호 큐로 승격(이동)된 파일 세그먼트 수입니다.
 
 ### FilesystemCacheReserveAheadRetries {#filesystemcachereserveaheadretries}
 
@@ -3395,7 +3407,7 @@ Keeper가 배치 단위로 처리한 쓰기 요청의 총 개수
 
 ### LoadedStatistics {#loadedstatistics}
 
-컬럼 통계(Column Statistics)가 로드된 데이터 파트(data part) 수
+선택도(Selectivity) 추정기에서 사용하기 위해 통계 캐시 또는 파트 자체로부터 컬럼 통계(Column Statistics)를 수집한 데이터 파트(data part) 수
 
 ### LoadedStatisticsMicroseconds {#loadedstatisticsmicroseconds}
 
@@ -5499,7 +5511,7 @@ ReplicatedMergeTree 테이블에 INSERT된 블록에서 자체 중복 제거된 
 
 ### SetsSpilledToDisk {#setsspilledtodisk}
 
-서브쿼리로부터 생성되는 동안 디스크로 유출된 `IN` 집합(set)의 수입니다.
+서브쿼리로부터 생성되는 동안 또는 쿼리에서 사용되는 동안 디스크로 유출된 `IN` 집합(Set)의 수입니다.
 
 ### SettingsProfileCacheRecalculationMicroseconds {#settingsprofilecacherecalculationmicroseconds}
 
@@ -6077,6 +6089,14 @@ worker를 확보하기 위해 상태 비저장 워커 디스커버리 서비스�
 
 worker 임대를 갱신하기 위해 상태 비저장 워커 디스커버리 서비스로 전송된 update&#95;lease 요청 수입니다.
 
+### StatisticsCacheHits {#statisticscachehits}
+
+데이터 파트(data part)의 컬럼 통계를 통계 캐시에서 찾은 횟수입니다.
+
+### StatisticsCacheMisses {#statisticscachemisses}
+
+데이터 파트(data part)의 컬럼 통계를 통계 캐시에서 찾지 못해 파트에서 직접 로드해야 했던 횟수입니다.
+
 ### StorageBufferErrorOnFlush {#storagebuffererroronflush}
 
 &#39;Buffer&#39; 테이블(table)의 버퍼가 대상 테이블에 쓰는 과정에서 오류가 발생해 플러시에 실패한 횟수입니다.
@@ -6244,6 +6264,10 @@ OS kernel 모드에서 CPU 명령어를 실행하는 처리(쿼리 및 기타 �
 ### TextIndexDiscardPatternScan {#textindexdiscardpatternscan}
 
 텍스트 인덱스에서 패턴 기반 딕셔너리 스캔이 읽어야 하는 포스팅 리스트 수가 임계값을 초과해 폐기된 횟수입니다.
+
+### TextIndexFilledFromFoldedPostings {#textindexfilledfromfoldedpostings}
+
+텍스트 인덱스 가상 컬럼이 각 그래뉼(granule)별로 생성된 포스팅 리스트가 아니라, 인덱스 분석(Index Analysis) 과정에서 접힌 포스팅 리스트로부터 직접 읽기 작업의 모든 행(rows)에 대해 채워진 횟수입니다.
 
 ### TextIndexGenericExclusionSearchAlgorithm {#textindexgenericexclusionsearchalgorithm}
 
@@ -6517,9 +6541,17 @@ Poco TLS 구현을 사용하는 서버 프로토콜(네이티브 TCP, HTTPS, MyS
 
 비압축 캐시에서 제거된 바이트 수입니다.
 
+### UniqueKeyBitmapGranulesSkipped {#uniquekeybitmapgranulesskipped}
+
+UNIQUE KEY 테이블에서 인덱스 분석 단계에 삭제 비트맵을 통해 건너뛴, 모든 행이 삭제된 그래뉼의 수입니다.
+
 ### UniqueKeyBitmapLoadMicroseconds {#uniquekeybitmaploadmicroseconds}
 
 DeleteBitmapCache에서 캐시 미스가 발생했을 때 UNIQUE KEY 삭제 비트맵 사이드카 파일을 읽고 역직렬화하는 데 소요된 시간입니다.
+
+### UniqueKeyBitmapRowsSkipped {#uniquekeybitmaprowsskipped}
+
+PREWHERE 이전에 UNIQUE KEY 삭제 비트맵을 통해 행 수준(row-level)에서 필터링된 행(rows)의 수입니다.
 
 ### UniqueKeyConflictIgnoredRows {#uniquekeyconflictignoredrows}
 

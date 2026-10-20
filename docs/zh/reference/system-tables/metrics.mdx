@@ -722,6 +722,14 @@ ZooKeeper 中持有的临时节点数。
 
 分布式 exchange 服务器握手线程池中正在排队或处于活动状态的作业数量。
 
+### ExternalSetCacheBytes {#externalsetcachebytes}
+
+外部内存中 `IN` 集合缓存所保存的块的总大小 (以字节为单位)
+
+### ExternalSetCacheCells {#externalsetcachecells}
+
+外部内存中 `IN` 集合缓存所保存的块总数
+
 ### FiberStackBytes {#fiberstackbytes}
 
 当前已分配的纤程栈总大小。
@@ -1985,6 +1993,14 @@ StartupSystemTables 线程池中处于排队中或正在运行状态的作业数
 ### StatelessWorkerThreadsScheduled {#statelessworkerthreadsscheduled}
 
 无状态工作线程池中已排队或正在执行的作业数。
+
+### StatisticsCacheBytes {#statisticscachebytes}
+
+统计信息缓存的总大小 (字节) 。用于存放 MergeTree 表各数据分区片段的列统计信息，每个数据分区片段的每一列对应一个条目。
+
+### StatisticsCacheCells {#statisticscachecells}
+
+统计信息缓存中的条目总数 (每个数据分区片段的每一列对应一个条目)
 
 ### StorageBufferBytes {#storagebufferbytes}
 

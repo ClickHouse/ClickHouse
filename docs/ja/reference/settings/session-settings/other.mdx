@@ -469,22 +469,6 @@ true の場合、DESCRIBE クエリの結果にはカラム名と型のみが含
 * 0 — 空のファイルが要求されたフォーマットと互換性がない場合、`SELECT` は例外をスローします。
 * 1 — 空のファイルに対して、`SELECT` は空の結果を返します。
 
-## exact_division_for_integers {#exact_division_for_integers}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "`\/` および `divide` で正確な整数除算を有効にする新しい設定。"}]}]} />
-
-両方のオペランドが整数型 (`Int128`、`UInt128`、`Int256`、`UInt256` を含む) の場合、`/` および `divide` が整数を返すようにします。
-商はゼロ方向に切り詰められます。結果の幅は第 1 オペランドと同じになり、いずれかのオペランドが符号付きであれば結果も符号付きになります。
-ゼロ除算の場合、または商が結果の型の範囲を超える場合は例外をスローします。`Nullable` オペランドの場合は `NULL` が伝播されます。
-
-デフォルトでは、整数同士の除算は `Float64` を返します。この設定は、`Decimal` オペランドや floating-point オペランドを含む除算、
-および明示的な関数 `intDiv`、`divideDecimal`、`divideOrNull` には影響しません。
-
-この設定の値は、新たに送信された SQL の式がテーブルのメタデータ、ビュー、SQL関数、またはミューテーションに保存される前に、その式に記録されます。
-既存の定義および `ATTACH` クエリは、この設定に関係なく、元の除算のセマンティクスを維持します。
-
 ## exact_rows_before_limit {#exact_rows_before_limit}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -1782,6 +1766,22 @@ TCPHandler でクエリを受信した後のスリープ時間
 
 * `0` - 残りの文字列は、結果配列の最後の要素に含まれません。
 * `1` - 残りの文字列は、結果配列の最後の要素に含まれます。これは、Spark の [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) 関数および Python の [`string.split()`](https://docs.python.org/3/library/stdtypes.html#str.split) メソッドと同じ動作です。
+
+## sql_compatible_division_for_integers {#sql_compatible_division_for_integers}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "整数除算の設定に SQL 互換の名前を使用します。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "`\/` および `divide` で正確な整数除算を有効にする新しい設定。"}]}]} />
+
+両方のオペランドが整数型 (`Int128`、`UInt128`、`Int256`、`UInt256` を含む) の場合、`/` および `divide` が整数を返すようにします。
+商はゼロ方向に切り詰められます。結果の幅は第 1 オペランドと同じになり、いずれかのオペランドが符号付きであれば結果も符号付きになります。
+ゼロ除算の場合、または商が結果の型の範囲を超える場合は例外をスローします。`Nullable` オペランドの場合は `NULL` が伝播されます。
+
+デフォルトでは、整数同士の除算は `Float64` を返します。この設定は、`Decimal` オペランドや floating-point オペランドを含む除算、
+および明示的な関数 `intDiv`、`divideDecimal`、`divideOrNull` には影響しません。
+
+この設定の値は、新たに送信された SQL の式がテーブルのメタデータ、ビュー、SQL関数、またはミューテーションに保存される前に、その式に記録されます。
+既存の定義および `ATTACH` クエリは、この設定に関係なく、元の除算のセマンティクスを維持します。
 
 ## statistics_max_set_size_for_exact_selectivity_estimation {#statistics_max_set_size_for_exact_selectivity_estimation}
 

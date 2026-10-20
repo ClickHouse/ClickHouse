@@ -369,7 +369,7 @@ extractAllGroupsHorizontal(s, regexp)
 **参数**
 
 * `s` — 要从中提取内容的输入字符串。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring)
-* `regexp` — 用于匹配的正则表达式。[`const String`](/zh/reference/data-types/string) 或 [`const FixedString`](/zh/reference/data-types/fixedstring)
+* `regexp` — 用于匹配的正则表达式。必须包含 1 到 127 个捕获组。[`const String`](/zh/reference/data-types/string) 或 [`const FixedString`](/zh/reference/data-types/fixedstring)
 
 **返回值**
 
@@ -377,7 +377,7 @@ extractAllGroupsHorizontal(s, regexp)
 
 **示例**
 
-**用法示例**
+**使用示例**
 
 ```sql title=Query
 WITH '< Server: nginx
@@ -394,11 +394,11 @@ SELECT extractAllGroupsHorizontal(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 ## extractGroups {#extractGroups}
 
-Introduced in: v20.5.0
+引入版本： v20.5.0
 
 从正则表达式匹配到的第一个子串中提取捕获组。要从所有匹配结果中提取捕获组，请使用 [`extractAllGroupsHorizontal`](#extractAllGroupsHorizontal) 或 [`extractAllGroupsVertical`](/zh/reference/functions/regular-functions/splitting-merging-functions#extractAllGroupsVertical)。
 
-**Syntax**
+**语法**
 
 ```sql
 extractGroups(s, regexp)
@@ -407,7 +407,7 @@ extractGroups(s, regexp)
 **参数**
 
 * `s` — 要从中提取内容的输入字符串。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring)
-* `regexp` — 正则表达式。必须至少包含一个捕获组。常量。[`const String`](/zh/reference/data-types/string) 或 [`const FixedString`](/zh/reference/data-types/fixedstring)
+* `regexp` — 正则表达式。必须包含 1 到 127 个捕获组。常量。[`const String`](/zh/reference/data-types/string) 或 [`const FixedString`](/zh/reference/data-types/fixedstring)
 
 **返回值**
 

@@ -195,9 +195,9 @@ Utiliza el tipo String de BSON en lugar de Binary para las columnas String.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "3"},{"label": "Permite cambiar el nivel de compresión en la salida de la consulta"}]}]} />
 
-Nivel de compresión predeterminado si la salida de la consulta está comprimida. La configuración se aplica cuando la consulta `SELECT` incluye `INTO OUTFILE` o al escribir en las funciones de tabla `file`, `url`, `hdfs`, `s3` o `azureBlobStorage`.
+Nivel de compresión predeterminado si la salida de la consulta está comprimida. La configuración se aplica cuando la consulta `SELECT` incluye `INTO OUTFILE` o al escribir en las funciones de tabla `file`, `url`, `hdfs`, `s3` o `azureBlobStorage`. También se aplica a la respuesta comprimida de una solicitud HTTP que use un método distinto de `gzip` y `deflate`, para los cuales se utiliza [http&#95;zlib&#95;compression&#95;level](/es/reference/settings/session-settings/http#http_zlib_compression_level).
 
-Posibles valores: de `1` a `22`
+Valores posibles: de `1` a `22`
 
 ## output_format_compression_zstd_window_log {#output_format_compression_zstd_window_log}
 

@@ -1115,6 +1115,17 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       children: []
     },
     {
+      label: "statistics_cache_*",
+      count: 4,
+      settings: [
+        { name: "statistics_cache_policy", path: "/statistics-cache#statistics_cache_policy", default: "SLRU" },
+        { name: "statistics_cache_prewarm_ratio", path: "/statistics-cache#statistics_cache_prewarm_ratio", default: "0.95" },
+        { name: "statistics_cache_size", path: "/statistics-cache#statistics_cache_size", default: "1073741824" },
+        { name: "statistics_cache_size_ratio", path: "/statistics-cache#statistics_cache_size_ratio", default: "0.5" }
+      ],
+      children: []
+    },
+    {
       label: "storage_*",
       count: 3,
       settings: [

@@ -146,6 +146,14 @@ Desativada por padrão: a reescrita que distribui uma ordenação parte do princ
 já estar ordenada; porém, uma ordenação que dependa disso pode receber linhas por meio de um exchange que não preserva
 a ordem. Hoje, apenas as formas em que nenhum exchange permanece entre a leitura e a ordenação são seguras.
 
+## distributed_plan_worker_cluster {#distributed_plan_worker_cluster}
+
+<PrivatePreviewBadge />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": ""},{"label": "Nova configuração para selecionar o cluster de stateless-workers usado na execução do plano distribuído."}]}]} />
+
+Nome do cluster stateless-worker em que o plano distribuído desta consulta será executado. O valor padrão vazio seleciona o cluster padrão pré-configurado; os demais clusters são configurados em `stateless_worker_client.clusters`.
+
 ## distributed_plan_workers_num {#distributed_plan_workers_num}
 
 <PrivatePreviewBadge />

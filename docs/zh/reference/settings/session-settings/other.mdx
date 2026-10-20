@@ -459,22 +459,6 @@ SETTINGS convert_query_to_cnf = true;
 * 0 — 如果空文件与所请求的格式不兼容，`SELECT` 会抛出异常。
 * 1 — 对于空文件，`SELECT` 返回空结果。
 
-## exact_division_for_integers {#exact_division_for_integers}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新增设置，用于为 `\/` 和 `divide` 启用精确整数除法。"}]}]} />
-
-当两个操作数均为整数类型 (包括 `Int128`、`UInt128`、`Int256` 和 `UInt256`) 时，`/` 和 `divide` 将返回整数。
-商向零截断。结果的位宽与第一个操作数相同；只要任一操作数为有符号类型，结果即为有符号类型。
-除数为零或商超出结果类型的范围时，会抛出异常。`Nullable` 操作数会传播 `NULL`。
-
-默认情况下，两个整数相除返回 `Float64`。此设置不影响涉及 `Decimal` 或浮点操作数的除法，
-也不影响显式函数 `intDiv`、`divideDecimal` 和 `divideOrNull`。
-
-对于新提交的 SQL，该设置的取值会在表达式存储到表元数据、视图、SQL 函数或变更之前被记录下来。
-现有定义和 `ATTACH` 查询将保留其原有的除法语义，不受此设置影响。
-
 ## exact_rows_before_limit {#exact_rows_before_limit}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -1775,6 +1759,22 @@ TCPHandler 收到查询后休眠的时长
 
 * `0` - 剩余字符串不会包含在结果数组的最后一个元素中。
 * `1` - 剩余字符串会包含在结果数组的最后一个元素中。这是 Spark 的 [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) 函数和 Python 的 [`string.split()`](https://docs.python.org/3/library/stdtypes.html#str.split) 方法的行为。
+
+## sql_compatible_division_for_integers {#sql_compatible_division_for_integers}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "整数除法设置改用与 SQL 兼容的名称。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "新增设置，用于为 `\/` 和 `divide` 启用精确整数除法。"}]}]} />
+
+当两个操作数均为整数类型 (包括 `Int128`、`UInt128`、`Int256` 和 `UInt256`) 时，`/` 和 `divide` 将返回整数。
+商向零截断。结果的位宽与第一个操作数相同；只要任一操作数为有符号类型，结果即为有符号类型。
+除数为零或商超出结果类型的范围时，会抛出异常。`Nullable` 操作数会传播 `NULL`。
+
+默认情况下，两个整数相除返回 `Float64`。此设置不影响涉及 `Decimal` 或浮点操作数的除法，
+也不影响显式函数 `intDiv`、`divideDecimal` 和 `divideOrNull`。
+
+对于新提交的 SQL，该设置的取值会在表达式存储到表元数据、视图、SQL 函数或变更之前被记录下来。
+现有定义和 `ATTACH` 查询将保留其原有的除法语义，不受此设置影响。
 
 ## statistics_max_set_size_for_exact_selectivity_estimation {#statistics_max_set_size_for_exact_selectivity_estimation}
 

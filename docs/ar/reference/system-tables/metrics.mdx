@@ -722,6 +722,14 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 عدد المهام الموضوعة في قائمة الانتظار أو النشطة في تجمّع مؤشرات ترابط المصافحة في خادم exchange الموزّع.
 
+### ExternalSetCacheBytes {#externalsetcachebytes}
+
+إجمالي حجم الكتل، بالبايتات، المحفوظة في ذاكرات التخزين المؤقت لمجموعات `IN` في الذاكرة الخارجية
+
+### ExternalSetCacheCells {#externalsetcachecells}
+
+إجمالي عدد الكتل المحفوظة في ذاكرات التخزين المؤقت لمجموعات `IN` في الذاكرة الخارجية
+
 ### FiberStackBytes {#fiberstackbytes}
 
 إجمالي حجم مكدسات الألياف (fiber stacks) المخصصة حاليًا.
@@ -1985,6 +1993,14 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 ### StatelessWorkerThreadsScheduled {#statelessworkerthreadsscheduled}
 
 عدد المهام قيد الانتظار أو النشطة في مجمّع خيوط العامل عديم الحالة.
+
+### StatisticsCacheBytes {#statisticscachebytes}
+
+الحجم الإجمالي لذاكرة التخزين المؤقت للإحصاءات بالبايتات. تحتوي على إحصاءات الأعمدة لأجزاء البيانات في جداول MergeTree، بواقع إدخال واحد لكل جزء بيانات وعمود.
+
+### StatisticsCacheCells {#statisticscachecells}
+
+إجمالي عدد الإدخالات (إدخال واحد لكل جزء بيانات وعمود) في ذاكرة التخزين المؤقت للإحصاءات
 
 ### StorageBufferBytes {#storagebufferbytes}
 

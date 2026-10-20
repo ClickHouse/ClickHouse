@@ -112,6 +112,7 @@
     "ko/reference/settings/server-settings/settings/skip",
     "ko/reference/settings/server-settings/settings/snapshot-cleaner",
     "ko/reference/settings/server-settings/settings/startup",
+    "ko/reference/settings/server-settings/settings/statistics-cache",
     "ko/reference/settings/server-settings/settings/storage",
     "ko/reference/settings/server-settings/settings/storage-connections",
     "ko/reference/settings/server-settings/settings/tables-loader",

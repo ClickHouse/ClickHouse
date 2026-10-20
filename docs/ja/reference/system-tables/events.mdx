@@ -266,6 +266,10 @@ applyPatchesMergeOnKey のソートキーのマージループ内で費やされ
 
 コンテキスト上で内部的な Replicated データベースの DDL 実行 (生存中の ZooKeeperMetadataTransaction) が進行中だったため、サーバー側 AST fuzzer が fuzzing をスキップした回数。
 
+### ASTFuzzerSkippedSecondaryQuery {#astfuzzerskippedsecondaryquery}
+
+クエリが他のノードから送信されたセカンダリクエリであったために、サーバー側ASTファザーが fuzzing をスキップした回数。
+
 ### AsynchronousReaderIgnoredBytes {#asynchronousreaderignoredbytes}
 
 非同期読み取り時に無視されたバイト数
@@ -1399,7 +1403,7 @@ write syscall の待機に費やされた合計時間です。これには page 
 
 ### DistinctTransformsSwitchedToPassThrough {#distincttransformsswitchedtopassthrough}
 
-クエリのメモリ使用量が外部 `DISTINCT` のしきい値を超えたため、あるいは見込まれるハッシュ用の割り当てがしきい値の残り予算を超過すると予測されたため (`max_bytes_before_external_distinct` を参照) 、事前段階の `DISTINCT` 変換がハッシュテーブルを解放し、すべての行をそのまま通過させるようになった回数です。この場合、重複の解消はディスクへ書き出す (spill する) 最終段の `DISTINCT` が行います。
+クエリのメモリ使用量が後続のオペレーターのスピルしきい値を超えたため、あるいは見込まれるハッシュ用の割り当てがしきい値の残り予算を超過すると予測されたため、事前段階の `DISTINCT` トランスフォームがハッシュテーブルを解放し、すべての行をそのまま通過させるようになった回数です。`DISTINCT` の前段にある場合、しきい値は `max_bytes_before_external_distinct` であり、重複の解消はディスクへ書き出す (spill する) 最終段の `DISTINCT` が代わりに行います。`IN` の集合の前段にある場合、しきい値は集合のスピルしきい値 (`max_bytes_before_external_set` を参照) であり、重複の解消は集合が行います。
 
 ### DistrCacheBackgroundWrites {#distrcachebackgroundwrites}
 
@@ -2073,9 +2077,21 @@ encryption header cache 内に encryption header のバイト列が見つから�
 
 外部処理 (ソート/集約/結合) によって書き込まれたデータ量 (非圧縮、圧縮前)
 
+### ExternalSetBloomFilterSkippedKeys {#externalsetbloomfilterskippedkeys}
+
+外部メモリ上にある `IN` 集合のブルームフィルタによって、ルックアップ時に除外されたキーの数。
+
+### ExternalSetCacheHits {#externalsetcachehits}
+
+外部メモリ上の `IN` 集合に対するルックアップで、一時ファイルから読み込まずに集合のキャッシュから取得したブロックの数。
+
 ### ExternalSetCompressedBytes {#externalsetcompressedbytes}
 
 外部メモリに書き込まれた `IN` 集合の圧縮バイト数。
+
+### ExternalSetLookupKeys {#externalsetlookupkeys}
+
+外部メモリ上の `IN` 集合に対するルックアップで検索されたキーの数。
 
 ### ExternalSetMerge {#externalsetmerge}
 
@@ -2084,6 +2100,14 @@ encryption header cache 内に encryption header のバイト列が見つから�
 ### ExternalSetReadBlocks {#externalsetreadblocks}
 
 キーを検索するために、外部メモリ上の `IN` 集合の一時ファイルから読み取られたブロック数。
+
+### ExternalSetTailKeptKeys {#externalsettailkeptkeys}
+
+外部メモリを使用する `IN` 集合の最終マージ用に、メモリ内に保持されたキーの数。
+
+### ExternalSetTailSpilledKeys {#externalsettailspilledkeys}
+
+外部メモリ上の `IN` 集合の最終マージがスピル threshold 内に収まるよう、最終マージの前にメモリ内から一時ファイルへ書き込まれたキーの数。
 
 ### ExternalSetUncompressedBytes {#externalsetuncompressedbytes}
 
@@ -2212,14 +2236,6 @@ DOWNLOADING 状態で待機
 ### FileSegmentWaitTimeouts {#filesegmentwaittimeouts}
 
 DOWNLOADING 状態の ファイルセグメント の待機がタイムアウトした回数 (`filesystem_cache_wait_for_concurrent_download_timeout_milliseconds` を参照)
-
-### FileSegmentWaitWithoutData {#filesegmentwaitwithoutdata}
-
-DOWNLOADING 状態のファイルセグメントの待機が、待機中のオフセットのダウンロード前にダウンローダーがセグメントを解放したことにより終了した回数
-
-### FileSegmentWaitWithoutDataMicroseconds {#filesegmentwaitwithoutdatamicroseconds}
-
-`FileSegmentWaitWithoutData` でカウントされる待機に要した時間
 
 ### FileSegmentWriteMicroseconds {#filesegmentwritemicroseconds}
 
@@ -2376,10 +2392,6 @@ cacheキーのロック時間
 ### FilesystemCachePriorityWriteLockMicroseconds {#filesystemcacheprioritywritelockmicroseconds}
 
 優先度キューへの書き込みのためにファイルシステムキャッシュがロックされていた時間
-
-### FilesystemCachePromotedFileSegments {#filesystemcachepromotedfilesegments}
-
-SLRU キャッシュポリシーにおいて、試用キューから保護キューへ昇格 (移動) されたファイルセグメントの数。
 
 ### FilesystemCacheReserveAheadRetries {#filesystemcachereserveaheadretries}
 
@@ -3395,7 +3407,7 @@ Keeper がバッチ処理した書き込みリクエストの総数
 
 ### LoadedStatistics {#loadedstatistics}
 
-カラム STATISTICS が読み込まれたパーツの数
+選択度推定器向けに、統計キャッシュまたはパーツ自体からカラム STATISTICS が収集されたパーツの数
 
 ### LoadedStatisticsMicroseconds {#loadedstatisticsmicroseconds}
 
@@ -5499,7 +5511,7 @@ ReplicatedMergeTree テーブルに INSERT されたブロック内で、自己�
 
 ### SetsSpilledToDisk {#setsspilledtodisk}
 
-サブクエリからの構築中にディスクにスピルされた `IN` 集合の数。
+サブクエリからの構築中、またはクエリでの使用中にディスクにスピルされた `IN` 集合の数。
 
 ### SettingsProfileCacheRecalculationMicroseconds {#settingsprofilecacherecalculationmicroseconds}
 
@@ -6077,6 +6089,14 @@ stateless worker discovery サービスへの update&#95;lease リクエスト�
 
 worker の lease を更新するために stateless worker discovery サービスへ送信された update&#95;lease リクエストの数。
 
+### StatisticsCacheHits {#statisticscachehits}
+
+データパーツのカラムの統計情報が統計キャッシュ内で見つかった回数。
+
+### StatisticsCacheMisses {#statisticscachemisses}
+
+データパーツのカラムの統計情報が統計キャッシュ内に見つからず、パーツから読み込む必要があった回数。
+
 ### StorageBufferErrorOnFlush {#storagebuffererroronflush}
 
 &#39;Buffer&#39; テーブル内のバッファが、宛先テーブルへの書き込みエラーによりフラッシュできなかった回数。
@@ -6244,6 +6264,10 @@ table functionの呼び出し回数。
 ### TextIndexDiscardPatternScan {#textindexdiscardpatternscan}
 
 テキスト索引において、パターンベースのDictionaryスキャンが、読み込むポスティングリスト数が閾値を超えたために破棄された回数。
+
+### TextIndexFilledFromFoldedPostings {#textindexfilledfromfoldedpostings}
+
+テキスト索引の仮想カラムが、グラニュールごとに構築されたポスティングリストではなく、索引解析中に折り畳まれたポスティングリストから直接、1回の読み取りの全行分まとめて補完された回数。
 
 ### TextIndexGenericExclusionSearchAlgorithm {#textindexgenericexclusionsearchalgorithm}
 
@@ -6517,9 +6541,17 @@ Poco の TLS 実装を使用するサーバープロトコル (ネイティブ T
 
 非圧縮 cache から追い出されたデータのバイト数。
 
+### UniqueKeyBitmapGranulesSkipped {#uniquekeybitmapgranulesskipped}
+
+UNIQUE KEY テーブルにおいて、索引解析時に削除ビットマップによってスキップされた、すべての行が削除済みのグラニュールの数。
+
 ### UniqueKeyBitmapLoadMicroseconds {#uniquekeybitmaploadmicroseconds}
 
 DeleteBitmapCache でキャッシュミスが発生した際に、UNIQUE KEY の delete-bitmap サイドカーファイルを読み込んでデシリアライズするのに費やされた時間。
+
+### UniqueKeyBitmapRowsSkipped {#uniquekeybitmaprowsskipped}
+
+PREWHERE の前段階で、UNIQUE KEY の削除ビットマップにより row-level で除外された行数。
 
 ### UniqueKeyConflictIgnoredRows {#uniquekeyconflictignoredrows}
 

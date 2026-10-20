@@ -143,6 +143,14 @@ Shuffle 戦略が正しい結果を生成できない場合、たとえば `GROU
 
 デフォルトでは無効です。ソートを分散させる rewrite は、対象のソートが「入力が既に順序付けられていること」に依存しないことを前提としていますが、実際に依存するソートに対しては、順序を保持しない exchange を経由して行が供給される可能性があります。現時点で安全なのは、読み取りとソートの間に exchange が残らない shape のみです。
 
+## distributed_plan_worker_cluster {#distributed_plan_worker_cluster}
+
+<PrivatePreviewBadge />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": ""},{"label": "分散実行計画の実行に使用するステートレスワーカークラスターを選択するための新しい設定。"}]}]} />
+
+このクエリの分散実行計画を実行するステートレスワーカークラスターの名前です。デフォルト値 (空文字列) の場合は、設定済みのデフォルトクラスターが選択されます。その他のクラスターは `stateless_worker_client.clusters` で設定します。
+
 ## distributed_plan_workers_num {#distributed_plan_workers_num}
 
 <PrivatePreviewBadge />

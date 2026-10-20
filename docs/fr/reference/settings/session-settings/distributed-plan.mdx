@@ -146,6 +146,14 @@ Désactivé par défaut : le rewrite qui distribue un tri suppose que le tri qu&
 soit déjà ordonnée ; or un tri qui en dépend peut se voir alimenté en rows via un exchange qui ne préserve pas
 l&#39;ordre. À ce jour, seules les formes où aucun exchange ne subsiste entre la lecture et le tri sont sûres.
 
+## distributed_plan_worker_cluster {#distributed_plan_worker_cluster}
+
+<PrivatePreviewBadge />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": ""},{"label": "Nouveau paramètre permettant de sélectionner le cluster de workers sans état utilisé pour l'exécution du plan distribué."}]}]} />
+
+Nom du cluster stateless-worker sur lequel exécuter le plan distribué de cette requête. Par défaut, la valeur vide sélectionne le cluster par défaut préconfiguré ; les autres clusters se configurent dans `stateless_worker_client.clusters`.
+
 ## distributed_plan_workers_num {#distributed_plan_workers_num}
 
 <PrivatePreviewBadge />

@@ -253,7 +253,7 @@ Introduit dans : v1.1.0
 
 Calcule le quotient de deux valeurs `a` et `b`. L’opérateur `/` est équivalent à cette fonction.
 Pour des arguments de type integer et à virgule flottante, le type de résultat est [Float64](/fr/reference/data-types/float) par défaut.
-Avec `exact_division_for_integers = 1`, deux arguments de type integer produisent en revanche un quotient de type integer tronqué vers zéro.
+Avec `sql_compatible_division_for_integers = 1`, deux arguments de type integer produisent en revanche un quotient de type integer tronqué vers zéro.
 Le résultat a la largeur du premier argument et est signé si l’un des arguments est signé.
 Dans ce mode, une division par zéro ou un quotient hors de la plage du type de résultat lève une exception.
 
@@ -366,9 +366,9 @@ Calcule le quotient de `x` par `y`. Lorsque les deux arguments sont des integers
 Le résultat a la largeur de `x` et est signé si l&#39;un des arguments est signé. Les types integer jusqu&#39;à 256 bits sont pris en charge, y compris les combinaisons d&#39;arguments signés et non signés.
 Une division par zéro ou un quotient hors de la plage du type de résultat lève `ILLEGAL_DIVISION`. Les arguments nullables propagent `NULL`.
 
-Pour les arguments à virgule flottante ou `Decimal`, la fonction suit les mêmes règles que `divide` avec `exact_division_for_integers = 0`.
+Pour les arguments à virgule flottante ou `Decimal`, la fonction suit les mêmes règles que `divide` avec `sql_compatible_division_for_integers = 0`.
 
-Le comportement de la fonction ne dépend pas de `exact_division_for_integers`.
+Le comportement de la fonction ne dépend pas de `sql_compatible_division_for_integers`.
 Lorsque ce paramètre est activé, les expressions `/` et `divide` nouvellement soumises sont réécrites en `divideExact`.
 Ce nom explicite est conservé dans les expressions stockées, telles que les métadonnées de table et les vues, de sorte qu&#39;une modification ultérieure du paramètre n&#39;altère pas leur sémantique de division.
 Les expressions `/` et `divide` déjà stockées conservent leur comportement historique.
@@ -423,8 +423,8 @@ SELECT divideExact(5.0, 2) AS quotient, toTypeName(quotient)
 
 Introduit dans : v25.5.0
 
-Identique à `divide` avec `exact_division_for_integers = 0`, mais renvoie `NULL` en cas de division par zéro.
-Le paramètre `exact_division_for_integers` n&#39;a aucun effet sur cette fonction.
+Identique à `divide` avec `sql_compatible_division_for_integers = 0`, mais renvoie `NULL` en cas de division par zéro.
+Le paramètre `sql_compatible_division_for_integers` n&#39;a aucun effet sur cette fonction.
 
 **Syntaxe**
 

@@ -482,22 +482,6 @@ Valores posibles:
 * 0 — `SELECT` genera una excepción si el archivo vacío no es compatible con el formato solicitado.
 * 1 — `SELECT` devuelve un resultado vacío cuando el archivo está vacío.
 
-## exact_division_for_integers {#exact_division_for_integers}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nueva configuración para habilitar la división entera exacta en `\/` y `divide`."}]}]} />
-
-Hace que `/` y `divide` devuelvan un entero cuando ambos operandos son de tipos enteros, incluidos `Int128`, `UInt128`, `Int256` y `UInt256`.
-El cociente se trunca hacia cero. El resultado tiene el ancho del primer operando y es con signo si cualquiera de los operandos lo es.
-Tanto la división por cero como un cociente fuera del rango del tipo de resultado lanzan una excepción. Los operandos `Nullable` propagan `NULL`.
-
-De forma predeterminada, la división de dos enteros devuelve `Float64`. Este parámetro de configuración no afecta a las divisiones con operandos `Decimal` o de coma flotante,
-ni a las funciones explícitas `intDiv`, `divideDecimal` y `divideOrNull`.
-
-La elección queda registrada en el SQL recién enviado antes de que las expresiones se almacenen en la metadata de tablas, vistas, funciones SQL o mutaciones.
-Las definiciones existentes y las consultas `ATTACH` conservan su semántica de división original, con independencia de este parámetro de configuración.
-
 ## exact_rows_before_limit {#exact_rows_before_limit}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -1804,6 +1788,22 @@ Valores posibles:
 
 * `0` - La cadena restante no se incluirá en el último elemento del array de resultados.
 * `1` - La cadena restante se incluirá en el último elemento del array de resultados. Este es el comportamiento de la función [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) de Spark y del método [&#39;string.split()&#39;](https://docs.python.org/3/library/stdtypes.html#str.split) de Python.
+
+## sql_compatible_division_for_integers {#sql_compatible_division_for_integers}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Se usa el nombre compatible con SQL para el parámetro de configuración de división entera."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "Nueva configuración para habilitar la división entera exacta en `\/` y `divide`."}]}]} />
+
+Hace que `/` y `divide` devuelvan un entero cuando ambos operandos son de tipos enteros, incluidos `Int128`, `UInt128`, `Int256` y `UInt256`.
+El cociente se trunca hacia cero. El resultado tiene el ancho del primer operando y es con signo si cualquiera de los operandos lo es.
+Tanto la división por cero como un cociente fuera del rango del tipo de resultado lanzan una excepción. Los operandos `Nullable` propagan `NULL`.
+
+De forma predeterminada, la división de dos enteros devuelve `Float64`. Este parámetro de configuración no afecta a las divisiones con operandos `Decimal` o de coma flotante,
+ni a las funciones explícitas `intDiv`, `divideDecimal` y `divideOrNull`.
+
+La elección queda registrada en el SQL recién enviado antes de que las expresiones se almacenen en la metadata de tablas, vistas, funciones SQL o mutaciones.
+Las definiciones existentes y las consultas `ATTACH` conservan su semántica de división original, con independencia de este parámetro de configuración.
 
 ## statistics_max_set_size_for_exact_selectivity_estimation {#statistics_max_set_size_for_exact_selectivity_estimation}
 

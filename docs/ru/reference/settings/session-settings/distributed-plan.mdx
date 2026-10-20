@@ -143,6 +143,14 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 
 По умолчанию отключено: преобразование, распределяющее сортировку, предполагает, что оборачиваемая им сортировка не зависит от того, что её входные данные уже упорядочены. Однако сортировка, которая от этого зависит, может получать строки через EXCHANGE, не сохраняющий порядок. В настоящее время безопасны только структуры, в которых между чтением и сортировкой нет EXCHANGE.
 
+## distributed_plan_worker_cluster {#distributed_plan_worker_cluster}
+
+<PrivatePreviewBadge />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": ""},{"label": "Новая настройка для выбора кластера воркеров без сохранения состояния, на котором выполняется распределённый план выполнения."}]}]} />
+
+Имя кластера stateless-worker, на котором выполняется распределённый план выполнения данного запроса. Если значение пустое (по умолчанию), используется предварительно настроенный кластер по умолчанию; другие кластеры задаются в `stateless_worker_client.clusters`.
+
 ## distributed_plan_workers_num {#distributed_plan_workers_num}
 
 <PrivatePreviewBadge />

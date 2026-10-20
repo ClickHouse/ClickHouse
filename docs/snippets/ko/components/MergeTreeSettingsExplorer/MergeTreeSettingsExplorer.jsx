@@ -655,10 +655,11 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "prewarm_*",
-      count: 2,
+      count: 3,
       settings: [
         { name: "prewarm_mark_cache", path: "/prewarm#prewarm_mark_cache", default: "0" },
-        { name: "prewarm_primary_key_cache", path: "/prewarm#prewarm_primary_key_cache", default: "0" }
+        { name: "prewarm_primary_key_cache", path: "/prewarm#prewarm_primary_key_cache", default: "0" },
+        { name: "prewarm_statistics_cache", path: "/prewarm#prewarm_statistics_cache", default: "0" }
       ],
       children: []
     },

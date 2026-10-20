@@ -470,22 +470,6 @@ true로 설정하면 DESCRIBE 쿼리 결과에 컬럼명과 타입만 포함됩�
 * 0 — 빈 파일이 요청된 포맷과 호환되지 않으면 `SELECT`에서 예외가 발생합니다.
 * 1 — 빈 파일이면 `SELECT`가 빈 결과를 반환합니다.
 
-## exact_division_for_integers {#exact_division_for_integers}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "`\/` 및 `divide`에서 정확한 정수 나눗셈을 활성화하는 새로운 설정입니다."}]}]} />
-
-두 피연산자가 모두 정수 타입(`Int128`, `UInt128`, `Int256`, `UInt256` 포함)이면 `/` 및 `divide`가 정수를 반환하도록 합니다.
-몫은 0 방향으로 잘립니다. 결과의 너비는 첫 번째 피연산자와 같으며, 피연산자 중 하나라도 부호 있는 타입이면 결과도 부호 있는 타입이 됩니다.
-0으로 나누거나 몫이 결과 타입의 범위를 벗어나면 예외를 발생시킵니다. `Nullable` 피연산자는 `NULL`을 전파합니다.
-
-기본적으로 두 정수를 나누면 `Float64`가 반환됩니다. 이 설정은 `Decimal` 또는 floating-point 피연산자가 포함된 나눗셈이나,
-명시적 함수인 `intDiv`, `divideDecimal`, `divideOrNull`에는 영향을 주지 않습니다.
-
-새로 제출된 SQL의 표현식이 테이블 메타데이터, 뷰(view), SQL 함수 또는 뮤테이션에 저장될 때, 이 설정값이 저장 전에 함께 기록됩니다.
-기존 정의와 `ATTACH` 쿼리는 이 설정과 관계없이 원래의 나눗셈 의미 체계를 그대로 유지합니다.
-
 ## exact_rows_before_limit {#exact_rows_before_limit}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -1791,6 +1775,22 @@ TCPHandler에서 쿼리를 수신한 후 대기하는 시간입니다.
 
 * `0` - 남은 문자열은 결과 배열의 마지막 요소에 포함되지 않습니다.
 * `1` - 남은 문자열이 결과 배열의 마지막 요소에 포함됩니다. 이는 Spark의 [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) 함수와 Python의 [&#39;string.split()&#39;](https://docs.python.org/3/library/stdtypes.html#str.split) 메서드의 동작과 같습니다.
+
+## sql_compatible_division_for_integers {#sql_compatible_division_for_integers}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "정수 나눗셈 설정에 SQL 호환 이름을 사용합니다."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "`\/` 및 `divide`에서 정확한 정수 나눗셈을 활성화하는 새로운 설정입니다."}]}]} />
+
+두 피연산자가 모두 정수 타입(`Int128`, `UInt128`, `Int256`, `UInt256` 포함)이면 `/` 및 `divide`가 정수를 반환하도록 합니다.
+몫은 0 방향으로 잘립니다. 결과의 너비는 첫 번째 피연산자와 같으며, 피연산자 중 하나라도 부호 있는 타입이면 결과도 부호 있는 타입이 됩니다.
+0으로 나누거나 몫이 결과 타입의 범위를 벗어나면 예외를 발생시킵니다. `Nullable` 피연산자는 `NULL`을 전파합니다.
+
+기본적으로 두 정수를 나누면 `Float64`가 반환됩니다. 이 설정은 `Decimal` 또는 floating-point 피연산자가 포함된 나눗셈이나,
+명시적 함수인 `intDiv`, `divideDecimal`, `divideOrNull`에는 영향을 주지 않습니다.
+
+새로 제출된 SQL의 표현식이 테이블 메타데이터, 뷰(view), SQL 함수 또는 뮤테이션에 저장될 때, 이 설정값이 저장 전에 함께 기록됩니다.
+기존 정의와 `ATTACH` 쿼리는 이 설정과 관계없이 원래의 나눗셈 의미 체계를 그대로 유지합니다.
 
 ## statistics_max_set_size_for_exact_selectivity_estimation {#statistics_max_set_size_for_exact_selectivity_estimation}
 

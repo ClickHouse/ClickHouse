@@ -722,6 +722,14 @@ ZooKeeper에 유지되고 있는 임시 노드의 수입니다.
 
 분산 exchange 서버의 핸드셰이크 스레드 풀에서 큐에 대기 중이거나 현재 실행 중인 작업 수입니다.
 
+### ExternalSetCacheBytes {#externalsetcachebytes}
+
+외부 메모리에 있는 `IN` 집합(set)의 캐시에 보관된 블록(blocks)의 총 크기(바이트 단위)
+
+### ExternalSetCacheCells {#externalsetcachecells}
+
+외부 메모리에 있는 `IN` 집합(set) 캐시에 보관된 블록의 총 개수
+
 ### FiberStackBytes {#fiberstackbytes}
 
 현재 할당된 파이버 스택의 총 크기입니다.
@@ -1985,6 +1993,14 @@ stateless worker 스레드 풀 내 스레드 수입니다.
 ### StatelessWorkerThreadsScheduled {#statelessworkerthreadsscheduled}
 
 stateless worker 스레드 풀의 큐에서 대기 중이거나 실행 중인 작업 수입니다.
+
+### StatisticsCacheBytes {#statisticscachebytes}
+
+통계 캐시의 전체 크기(바이트)입니다. MergeTree 테이블(MergeTree tables)의 데이터 파트(data part)별 컬럼 통계(Column Statistics)를 보관하며, 파트와 컬럼 조합마다 엔트리가 하나씩 저장됩니다.
+
+### StatisticsCacheCells {#statisticscachecells}
+
+통계 캐시에 있는 엔트리의 총 개수(데이터 파트(data part)와 컬럼 조합마다 1개)
 
 ### StorageBufferBytes {#storagebufferbytes}
 

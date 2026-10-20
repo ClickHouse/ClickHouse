@@ -369,7 +369,7 @@ extractAllGroupsHorizontal(s, regexp)
 **引数**
 
 * `s` — 抽出元の入力文字列。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring)
-* `regexp` — マッチに使用する正規表現。[`const String`](/ja/reference/data-types/string) または [`const FixedString`](/ja/reference/data-types/fixedstring)
+* `regexp` — マッチに使用する正規表現。1～127 個のキャプチャグループを含む必要があります。[`const String`](/ja/reference/data-types/string) または [`const FixedString`](/ja/reference/data-types/fixedstring)
 
 **戻り値**
 
@@ -396,7 +396,7 @@ SELECT extractAllGroupsHorizontal(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 導入バージョン: v20.5.0
 
-正規表現に一致した最初の部分文字列からキャプチャリンググループを抽出します。すべての一致からグループを抽出するには、[`extractAllGroupsHorizontal`](#extractAllGroupsHorizontal) または [`extractAllGroupsVertical`](/ja/reference/functions/regular-functions/splitting-merging-functions#extractAllGroupsVertical) を使用します。
+正規表現に一致した最初の部分文字列からキャプチャグループを抽出します。すべての一致からグループを抽出するには、[`extractAllGroupsHorizontal`](#extractAllGroupsHorizontal) または [`extractAllGroupsVertical`](/ja/reference/functions/regular-functions/splitting-merging-functions#extractAllGroupsVertical) を使用します。
 
 **構文**
 
@@ -407,7 +407,7 @@ extractGroups(s, regexp)
 **引数**
 
 * `s` — 抽出元の入力文字列。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring)
-* `regexp` — 正規表現。少なくとも 1 つのキャプチャグループを含む必要があります。定数。[`const String`](/ja/reference/data-types/string) または [`const FixedString`](/ja/reference/data-types/fixedstring)
+* `regexp` — 正規表現。1 個以上 127 個以下のキャプチャグループを含む必要があります。定数。[`const String`](/ja/reference/data-types/string) または [`const FixedString`](/ja/reference/data-types/fixedstring)
 
 **戻り値**
 

@@ -368,7 +368,7 @@ extractAllGroupsHorizontal(s, regexp)
 **Argumentos**
 
 * `s` — String de entrada da qual extrair os dados. [`String`](/pt-BR/reference/data-types/string) ou [`FixedString`](/pt-BR/reference/data-types/fixedstring)
-* `regexp` — Expressão regular usada para fazer a correspondência. [`const String`](/pt-BR/reference/data-types/string) ou [`const FixedString`](/pt-BR/reference/data-types/fixedstring)
+* `regexp` — Expressão regular usada para fazer a correspondência. Deve conter entre 1 e 127 grupos de captura. [`const String`](/pt-BR/reference/data-types/string) ou [`const FixedString`](/pt-BR/reference/data-types/fixedstring)
 
 **Valor retornado**
 
@@ -406,7 +406,7 @@ extractGroups(s, regexp)
 **Argumentos**
 
 * `s` — String de entrada da qual extrair. [`String`](/pt-BR/reference/data-types/string) ou [`FixedString`](/pt-BR/reference/data-types/fixedstring)
-* `regexp` — Expressão regular. Deve conter pelo menos um grupo de captura. Constante. [`const String`](/pt-BR/reference/data-types/string) ou [`const FixedString`](/pt-BR/reference/data-types/fixedstring)
+* `regexp` — Expressão regular. Deve conter entre 1 e 127 grupos de captura. Constante. [`const String`](/pt-BR/reference/data-types/string) ou [`const FixedString`](/pt-BR/reference/data-types/fixedstring)
 
 **Valor retornado**
 

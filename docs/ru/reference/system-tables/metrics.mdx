@@ -723,6 +723,14 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Количество задач в очереди или активных задач в пуле потоков рукопожатия сервера распределённого обмена.
 
+### ExternalSetCacheBytes {#externalsetcachebytes}
+
+Общий размер (в байтах) блоков, хранящихся в кэшах множеств `IN` во внешней памяти
+
+### ExternalSetCacheCells {#externalsetcachecells}
+
+Общее количество блоков, хранящихся в кэшах множеств `IN` во внешней памяти
+
 ### FiberStackBytes {#fiberstackbytes}
 
 Суммарный размер выделенных на данный момент стеков файберов.
@@ -1986,6 +1994,14 @@ materialized view Number с периодическим обновлением (R
 ### StatelessWorkerThreadsScheduled {#statelessworkerthreadsscheduled}
 
 Количество задач в очереди или выполняющихся задач в пуле потоков воркеров без сохранения состояния.
+
+### StatisticsCacheBytes {#statisticscachebytes}
+
+Общий размер кэша статистики в байтах. Хранит статистику столбцов для частей данных таблиц семейства MergeTree — по одной записи на каждую пару «часть — столбец».
+
+### StatisticsCacheCells {#statisticscachecells}
+
+Общее количество записей в кэше статистики (по одной на каждую пару «часть данных — столбец»)
 
 ### StorageBufferBytes {#storagebufferbytes}
 

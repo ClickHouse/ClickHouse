@@ -146,6 +146,14 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 مدخلاتها مرتبة مسبقًا، وقد تُغذّى عملية فرز تعتمد على ذلك بصفوف تمر عبر تبادل لا يحافظ على الترتيب. لا تكون
 آمنة حاليًا إلا البنى التي لا يبقى فيها أي تبادل بين القراءة والفرز.
 
+## distributed_plan_worker_cluster {#distributed_plan_worker_cluster}
+
+<PrivatePreviewBadge />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": ""},{"label": "إعداد جديد لاختيار عنقود stateless worker الذي تُشغَّل عليه خطة التنفيذ الموزعة."}]}]} />
+
+اسم عنقود stateless-worker الذي ستُنفَّذ عليه خطة التنفيذ الموزعة لهذا الاستعلام. عند ترك القيمة الافتراضية فارغةً، يُختار العنقود الافتراضي المُهيّأ مسبقًا؛ أما العناقيد الأخرى فتُهيّأ ضمن `stateless_worker_client.clusters`.
+
 ## distributed_plan_workers_num {#distributed_plan_workers_num}
 
 <PrivatePreviewBadge />

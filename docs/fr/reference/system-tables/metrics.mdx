@@ -723,6 +723,14 @@ Nombre de threads du pool de threads de handshake du serveur d’échange distri
 
 Nombre de jobs en attente ou actifs dans le pool de threads de handshake du serveur d’échange distribué.
 
+### ExternalSetCacheBytes {#externalsetcachebytes}
+
+Taille totale, en octets, des blocs conservés dans les caches des sets `IN` en mémoire externe
+
+### ExternalSetCacheCells {#externalsetcachecells}
+
+Nombre total de blocs conservés dans les caches des sets `IN` en mémoire externe
+
 ### FiberStackBytes {#fiberstackbytes}
 
 Taille cumulée des piles de fibres actuellement allouées.
@@ -1986,6 +1994,14 @@ Nombre de threads du pool de workers sans état en train d’exécuter une tâch
 ### StatelessWorkerThreadsScheduled {#statelessworkerthreadsscheduled}
 
 Nombre de jobs en file d’attente ou en cours d’exécution dans le pool de threads de workers sans état.
+
+### StatisticsCacheBytes {#statisticscachebytes}
+
+Taille totale du cache des statistiques, en octets. Contient les statistiques de colonne des parts des tables MergeTree, à raison d&#39;une entrée par part et par colonne.
+
+### StatisticsCacheCells {#statisticscachecells}
+
+Nombre total d&#39;entrées (une par part et par colonne) dans le cache des statistiques
 
 ### StorageBufferBytes {#storagebufferbytes}
 

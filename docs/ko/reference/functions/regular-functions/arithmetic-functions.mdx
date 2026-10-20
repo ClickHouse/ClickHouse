@@ -252,7 +252,7 @@ SELECT byteSwap(123294967295)
 
 두 값 `a`와 `b`의 몫을 계산합니다. `/` 연산자는 이 함수와 동등합니다.
 정수 및 floating-point 인수의 결과 타입은 기본적으로 [Float64](/ko/reference/data-types/float)입니다.
-`exact_division_for_integers = 1`로 설정하면 두 정수 인수에 대해 0 방향으로 잘린 정수 몫을 반환합니다.
+`sql_compatible_division_for_integers = 1`로 설정하면 두 정수 인수에 대해 0 방향으로 잘린 정수 몫을 반환합니다.
 결과는 첫 번째 인수와 같은 너비를 가지며, 두 인수 중 하나라도 부호 있는 타입이면 결과도 부호 있는 타입이 됩니다.
 이 모드에서 0으로 나누거나 몫이 결과 타입의 범위를 벗어나면 예외를 발생시킵니다.
 
@@ -365,9 +365,9 @@ SELECT toDecimal64(-12, 1) as a, toDecimal32(2.1, 1) as b, divideDecimal(a, b, 1
 결과는 `x`와 같은 너비를 가지며, 두 인수 중 하나라도 부호 있는 타입이면 결과도 부호 있는 타입이 됩니다. 최대 256비트까지의 정수 타입을 지원하며, 부호 있는 인수와 부호 없는 인수를 섞어서 사용할 수도 있습니다.
 0으로 나누거나 몫이 결과 타입의 범위를 벗어나면 `ILLEGAL_DIVISION` 예외를 발생시킵니다. 널 허용 인수가 주어지면 `NULL`이 그대로 전파됩니다.
 
-floating-point 또는 `Decimal` 인수에 대해서는 `exact_division_for_integers = 0`일 때의 `divide`와 동일한 규칙을 따릅니다.
+floating-point 또는 `Decimal` 인수에 대해서는 `sql_compatible_division_for_integers = 0`일 때의 `divide`와 동일한 규칙을 따릅니다.
 
-이 함수의 동작은 `exact_division_for_integers` 설정과 무관합니다.
+이 함수의 동작은 `sql_compatible_division_for_integers` 설정과 무관합니다.
 이 설정이 활성화되어 있으면 새로 제출되는 `/` 및 `divide` 표현식은 `divideExact`로 재작성됩니다.
 이렇게 명시된 이름은 테이블 메타데이터나 뷰(view) 등 저장된 표현식에 그대로 남으므로, 나중에 설정을 변경하더라도 나눗셈 의미 체계는 바뀌지 않습니다.
 이미 저장되어 있는 `/` 및 `divide` 표현식은 기존 동작을 그대로 유지합니다.
@@ -422,8 +422,8 @@ SELECT divideExact(5.0, 2) AS quotient, toTypeName(quotient)
 
 도입 버전: v25.5.0
 
-`exact_division_for_integers = 0`인 `divide`와 동일하지만 0으로 나누면 `NULL`을 반환합니다.
-`exact_division_for_integers` 설정은 이 함수에 영향을 주지 않습니다.
+`sql_compatible_division_for_integers = 0`인 `divide`와 동일하지만 0으로 나누면 `NULL`을 반환합니다.
+`sql_compatible_division_for_integers` 설정은 이 함수에 영향을 주지 않습니다.
 
 **구문**
 

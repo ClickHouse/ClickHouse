@@ -99,6 +99,11 @@ Vide le cache de marques.
 Efface le cache de l’index primaire, qui stocke en mémoire les clés primaires des tables [`MergeTree`](/fr/reference/engines/table-engines/mergetree-family/mergetree).
 Sa taille est configurée à l’aide du paramètre de niveau serveur [`primary_index_cache_size`](/fr/reference/settings/server-settings/settings/primary-index#primary_index_cache_size).
 
+## SYSTEM CLEAR|DROP STATISTICS CACHE {#drop-statistics-cache}
+
+Vide le cache des statistiques, qui conserve en mémoire les statistiques de colonne des parts des tables [`MergeTree`](/fr/reference/engines/table-engines/mergetree-family/mergetree), à raison d&#39;une entrée par part et par colonne.
+Sa taille se configure via le paramètre au niveau du serveur `statistics_cache_size`.
+
 ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
 
 Vide le cache des métadonnées Iceberg.

@@ -61,6 +61,8 @@ Atualmente, o cache se aplica apenas a partes no formato wide: os dados em parte
 
 Uma entrada contém um intervalo contíguo de grânulos de um único segmento: um grânulo só entra no cache depois de ter sido lido da primeira à última linha; as leituras são atendidas pelo cache grânulo por grânulo; e os intervalos gravados por leituras diferentes são mesclados. Assim, leituras que dividem uma parte em diferentes intervalos de marcas compartilham as entradas.
 
+O cache também se aplica a arquivos `Parquet` lidos do sistema de arquivos local (a função de tabela `file` e o motor de tabela `File`), de sistemas de armazenamento de objetos (`s3`, `azureBlobStorage` e seus motores de tabela) e por tabelas de data lake. Nesse caso, uma entrada contém uma coluna inteira de um grupo de linhas, indexada pelo caminho do arquivo, por sua versão (o ETag de um objeto ou o horário de modificação, o inode e o tamanho de um arquivo local), pela coluna do arquivo e pelo tipo com o qual ela é lida. Uma coluna de um grupo de linhas só é gravada no cache quando todas as linhas do grupo são lidas, antes que qualquer filtro seja aplicado a elas: com `PREWHERE`, isso ocorre para as colunas do filtro, enquanto as demais colunas são lidas apenas para as linhas que passam pelo filtro. Um arquivo local só é armazenado em cache depois de ficar alguns segundos sem ser modificado, para que sua versão identifique seu conteúdo.
+
 ## use_concurrency_control {#use_concurrency_control}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

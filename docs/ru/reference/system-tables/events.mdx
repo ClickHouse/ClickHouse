@@ -267,6 +267,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Сколько раз AST-фаззер на стороне сервера пропускал фаззинг из-за того, что в контексте уже выполнялся внутренний DDL-запрос реплицируемой базы данных (активная ZooKeeperMetadataTransaction).
 
+### ASTFuzzerSkippedSecondaryQuery {#astfuzzerskippedsecondaryquery}
+
+Количество случаев, когда AST-фаззер на стороне сервера не выполнял фаззинг, поскольку запрос был вторичным, то есть отправленным другим узлом.
+
 ### AsynchronousReaderIgnoredBytes {#asynchronousreaderignoredbytes}
 
 Количество байтов, проигнорированных при асинхронном чтении
@@ -1400,7 +1404,7 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 ### DistinctTransformsSwitchedToPassThrough {#distincttransformsswitchedtopassthrough}
 
-Сколько предварительных преобразований `DISTINCT` освободили свою hash table и начали пропускать через себя каждую строку из-за того, что память запроса превысила порог внешнего `DISTINCT` либо прогнозируемые выделения памяти под хеширование превысили бы остаток бюджета порога (см. `max_bytes_before_external_distinct`): дубликаты в этом случае устраняет финальный `DISTINCT`, который выполняет сброс данных на диск.
+Сколько предварительных преобразований `DISTINCT` освободили свою hash table и начали пропускать через себя каждую строку из-за того, что память запроса превысила порог сброса на диск следующего за ними оператора либо прогнозируемые выделения памяти под хеширование превысили бы остаток бюджета порога. Перед `DISTINCT` порогом служит `max_bytes_before_external_distinct`, и дубликаты в этом случае устраняет финальный `DISTINCT`, который выполняет сброс данных на диск. Перед множеством `IN` порогом служит порог сброса на диск самого множества (см. `max_bytes_before_external_set`), и дубликаты устраняет множество.
 
 ### DistrCacheBackgroundWrites {#distrcachebackgroundwrites}
 
@@ -2074,9 +2078,21 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Объём данных в несжатом виде (до сжатия), записанных при внешней обработке (сортировке/агрегации/JOIN)
 
+### ExternalSetBloomFilterSkippedKeys {#externalsetbloomfilterskippedkeys}
+
+Количество ключей, отсеянных при поиске фильтрами Блума для множеств `IN`, хранящихся во внешней памяти.
+
+### ExternalSetCacheHits {#externalsetcachehits}
+
+Количество блоков, которые при поиске в множествах `IN`, размещённых во внешней памяти, были взяты из кэша множества, а не прочитаны из временного файла.
+
 ### ExternalSetCompressedBytes {#externalsetcompressedbytes}
 
 Количество байтов сжатых данных, записанных во внешнюю память для множеств `IN`.
+
+### ExternalSetLookupKeys {#externalsetlookupkeys}
+
+Количество ключей, по которым выполнялся поиск в множествах `IN`, размещённых во внешней памяти.
 
 ### ExternalSetMerge {#externalsetmerge}
 
@@ -2085,6 +2101,14 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### ExternalSetReadBlocks {#externalsetreadblocks}
 
 Количество блоков, прочитанных из временных файлов множеств `IN` во внешней памяти при поиске ключей.
+
+### ExternalSetTailKeptKeys {#externalsettailkeptkeys}
+
+Количество ключей, хранящихся в оперативной памяти для финального слияния множества `IN` во внешней памяти.
+
+### ExternalSetTailSpilledKeys {#externalsettailspilledkeys}
+
+Количество находящихся в памяти ключей, записанных во временный файл перед финальным слиянием множества `IN` во внешней памяти, чтобы слияние не превышало порог сброса на диск.
 
 ### ExternalSetUncompressedBytes {#externalsetuncompressedbytes}
 
@@ -2213,14 +2237,6 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### FileSegmentWaitTimeouts {#filesegmentwaittimeouts}
 
 Сколько раз ожидание сегмента файла в состоянии DOWNLOADING завершилось по тайм-ауту (см. `filesystem_cache_wait_for_concurrent_download_timeout_milliseconds`)
-
-### FileSegmentWaitWithoutData {#filesegmentwaitwithoutdata}
-
-Количество случаев, когда ожидание сегмента файла в состоянии DOWNLOADING завершилось из-за того, что загрузчик освободил сегмент, не успев загрузить данные до ожидаемого смещения
-
-### FileSegmentWaitWithoutDataMicroseconds {#filesegmentwaitwithoutdatamicroseconds}
-
-Время, затраченное на ожидания, учитываемые счётчиком `FileSegmentWaitWithoutData`
 
 ### FileSegmentWriteMicroseconds {#filesegmentwritemicroseconds}
 
@@ -2377,10 +2393,6 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### FilesystemCachePriorityWriteLockMicroseconds {#filesystemcacheprioritywritelockmicroseconds}
 
 Время блокировки файлового кэша при записи в очередь с приоритетом
-
-### FilesystemCachePromotedFileSegments {#filesystemcachepromotedfilesegments}
-
-Количество сегментов файла, повышенных (перемещённых) из пробационной очереди в защищённую в политике кэширования SLRU.
 
 ### FilesystemCacheReserveAheadRetries {#filesystemcachereserveaheadretries}
 
@@ -3396,7 +3408,7 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 ### LoadedStatistics {#loadedstatistics}
 
-Количество частей данных, для которых была загружена статистика столбцов
+Количество частей данных, статистика столбцов которых была получена для оценщика селективности — из кэша статистики либо из самой части данных
 
 ### LoadedStatisticsMicroseconds {#loadedstatisticsmicroseconds}
 
@@ -5500,7 +5512,7 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 ### SetsSpilledToDisk {#setsspilledtodisk}
 
-Количество множеств `IN`, для которых при построении из подзапроса был выполнен сброс данных на диск.
+Количество множеств `IN`, для которых при построении из подзапроса или во время их использования запросом был выполнен сброс данных на диск.
 
 ### SettingsProfileCacheRecalculationMicroseconds {#settingsprofilecacherecalculationmicroseconds}
 
@@ -6078,6 +6090,14 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Количество запросов update&#95;lease, отправленных в сервис обнаружения воркеров без сохранения состояния для продления их lease.
 
+### StatisticsCacheHits {#statisticscachehits}
+
+Количество случаев, когда статистика столбца части данных была найдена в кэше статистики.
+
+### StatisticsCacheMisses {#statisticscachemisses}
+
+Количество случаев, когда статистика столбца части данных не была найдена в кэше статистики и её пришлось загружать из части данных.
+
 ### StorageBufferErrorOnFlush {#storagebuffererroronflush}
 
 Количество случаев, когда буфер в таблице `Buffer` не смог выполнить сброс из-за ошибки записи в целевую таблицу.
@@ -6245,6 +6265,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### TextIndexDiscardPatternScan {#textindexdiscardpatternscan}
 
 Количество случаев, когда сканирование словаря по шаблону регулярного выражения в текстовом индексе было отменено, поскольку число списков вхождений, которые требовалось прочитать, превысило порог.
+
+### TextIndexFilledFromFoldedPostings {#textindexfilledfromfoldedpostings}
+
+Количество случаев, когда виртуальный столбец текстового индекса заполнялся для всех строк операции чтения непосредственно из списков вхождений, свёрнутых при анализе индексов, а не из списков вхождений, построенных для каждой гранулы.
 
 ### TextIndexGenericExclusionSearchAlgorithm {#textindexgenericexclusionsearchalgorithm}
 
@@ -6518,9 +6542,17 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Количество байтов, вытесненных из несжатого кэша.
 
+### UniqueKeyBitmapGranulesSkipped {#uniquekeybitmapgranulesskipped}
+
+Количество гранул, полностью состоящих из удалённых строк, которые были пропущены на этапе анализа индекса в таблицах с UNIQUE KEY благодаря битмапу удалений.
+
 ### UniqueKeyBitmapLoadMicroseconds {#uniquekeybitmaploadmicroseconds}
 
 Время, затраченное на чтение и десериализацию вспомогательных файлов delete-bitmap для UNIQUE KEY при промахе кэша DeleteBitmapCache.
+
+### UniqueKeyBitmapRowsSkipped {#uniquekeybitmaprowsskipped}
+
+Количество строк, отфильтрованных битмапом удалений UNIQUE KEY на уровне строк до применения PREWHERE.
 
 ### UniqueKeyConflictIgnoredRows {#uniquekeyconflictignoredrows}
 

@@ -61,6 +61,8 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 每个缓存条目保存某个条带内的一段连续粒度：只有当某个粒度从第一行到最后一行都被完整读取后，它才会进入缓存；从缓存读取时按粒度逐个提供数据；不同读取操作写入的范围会被合并，因此即使各次读取将同一个分片划分为不同的标记范围，也能共享这些缓存条目。
 
+该缓存同样适用于从本地文件系统 (`file` 表函数和 `File` 表引擎) 、对象存储 (`s3`、`azureBlobStorage` 及其对应的表引擎) 读取的 `Parquet` 文件，以及由数据湖表读取的 `Parquet` 文件。此时，每个缓存条目保存一个行组中的一整列，并以文件路径、文件版本 (对象的 ETag，或本地文件的修改时间、inode 和大小) 、文件中的列以及读取时所用的类型为键。只有当某个行组的所有行都已读取、且尚未对其应用任何过滤器时，该行组中的列才会写入缓存：使用 `PREWHERE` 时，过滤条件涉及的列满足这一条件，而其他列只会针对通过过滤的行进行读取。本地文件只有在数秒内未被修改后才会被缓存，以确保其版本能够唯一标识其内容。
+
 ## use_concurrency_control {#use_concurrency_control}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

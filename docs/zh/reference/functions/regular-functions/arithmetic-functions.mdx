@@ -252,7 +252,7 @@ SELECT byteSwap(123294967295)
 
 计算两个值 `a` 和 `b` 的商。`/` 运算符与该函数等价。
 对于整数和浮点参数，结果类型默认为 [Float64](/zh/reference/data-types/float)。
-当 `exact_division_for_integers = 1` 时，两个整数参数相除将得到向零截断的整数商。
+当 `sql_compatible_division_for_integers = 1` 时，两个整数参数相除将得到向零截断的整数商。
 结果的宽度与第一个参数相同；只要任一参数为有符号类型，结果即为有符号类型。
 在此模式下，若除以零或商超出结果类型的范围，则会抛出异常。
 
@@ -365,9 +365,9 @@ SELECT toDecimal64(-12, 1) as a, toDecimal32(2.1, 1) as b, divideDecimal(a, b, 1
 结果的位宽与 `x` 相同；只要任一参数为有符号类型，结果即为有符号。支持最高 256 位的整数类型，也支持有符号与无符号参数混用。
 除数为零或商超出结果类型的范围时，会抛出 `ILLEGAL_DIVISION`。Nullable 参数会传播 `NULL`。
 
-对于浮点或 `Decimal` 参数，该函数遵循的规则与 `exact_division_for_integers = 0` 时的 `divide` 相同。
+对于浮点或 `Decimal` 参数，该函数遵循的规则与 `sql_compatible_division_for_integers = 0` 时的 `divide` 相同。
 
-该函数的行为不受 `exact_division_for_integers` 影响。
+该函数的行为不受 `sql_compatible_division_for_integers` 影响。
 启用该设置后，新提交的 `/` 和 `divide` 表达式会被重写为 `divideExact`。
 这一显式名称会保留在已存储的表达式中 (例如表元数据和视图) ，因此之后即使更改该设置，也不会改变它们的除法语义。
 现有已存储的 `/` 和 `divide` 表达式仍保留其原有行为。
@@ -422,8 +422,8 @@ SELECT divideExact(5.0, 2) AS quotient, toTypeName(quotient)
 
 引入版本：v25.5.0
 
-与 `exact_division_for_integers = 0` 时的 `divide` 相同，但在除数为零时返回 `NULL`。
-`exact_division_for_integers` 设置不影响此函数。
+与 `sql_compatible_division_for_integers = 0` 时的 `divide` 相同，但在除数为零时返回 `NULL`。
+`sql_compatible_division_for_integers` 设置不影响此函数。
 
 **语法**
 

@@ -99,6 +99,11 @@ SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
 يمسح ذاكرة التخزين المؤقت للفهرس الأساسي، التي تحتفظ بالمفاتيح الأساسية لجداول [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree) في الذاكرة.
 يُضبط حجمها باستخدام الإعداد [`primary_index_cache_size`](/ar/reference/settings/server-settings/settings/primary-index#primary_index_cache_size) على مستوى الخادم.
 
+## SYSTEM CLEAR|DROP STATISTICS CACHE {#drop-statistics-cache}
+
+يمسح ذاكرة التخزين المؤقت للإحصاءات، وهي التي تحتفظ في الذاكرة بإحصاءات الأعمدة لأجزاء البيانات في جداول [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree)، بواقع إدخال واحد لكل جزء بيانات وعمود.
+ويُهيَّأ حجمها عبر الإعداد على مستوى الخادم `statistics_cache_size`.
+
 ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
 
 يمسح ذاكرة التخزين المؤقت للبيانات الوصفية الخاصة بـ Iceberg.

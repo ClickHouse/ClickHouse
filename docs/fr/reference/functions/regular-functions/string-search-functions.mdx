@@ -356,7 +356,7 @@ SELECT extractAll('test@example.com, user@domain.org', '([a-zA-Z0-9]+)@')
 
 ## extractAllGroupsHorizontal {#extractAllGroupsHorizontal}
 
-Introduit dans : v20.5.0
+Introduit dans : v20.5.0
 
 Met en correspondance tous les groupes d’une chaîne à l’aide de l’expression régulière fournie et renvoie un tableau de tableaux, chaque tableau contenant toutes les captures d’un même groupe de capture, classées par numéro de groupe.
 
@@ -369,7 +369,7 @@ extractAllGroupsHorizontal(s, regexp)
 **Arguments**
 
 * `s` — Chaîne d&#39;entrée à partir de laquelle extraire. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring)
-* `regexp` — Expression régulière à faire correspondre. [`const String`](/fr/reference/data-types/string) ou [`const FixedString`](/fr/reference/data-types/fixedstring)
+* `regexp` — Expression régulière à faire correspondre. Doit contenir entre 1 et 127 groupes de capture. [`const String`](/fr/reference/data-types/string) ou [`const FixedString`](/fr/reference/data-types/fixedstring)
 
 **Valeur renvoyée**
 
@@ -394,7 +394,7 @@ SELECT extractAllGroupsHorizontal(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 ## extractGroups {#extractGroups}
 
-Introduit dans : v20.5.0
+Introduit dans : v20.5.0
 
 Extrait les groupes de capture de la première sous-chaîne correspondant à une expression régulière. Pour extraire les groupes de toutes les correspondances, utilisez [`extractAllGroupsHorizontal`](#extractAllGroupsHorizontal) ou [`extractAllGroupsVertical`](/fr/reference/functions/regular-functions/splitting-merging-functions#extractAllGroupsVertical).
 
@@ -407,7 +407,7 @@ extractGroups(s, regexp)
 **Arguments**
 
 * `s` — Chaîne d’entrée dans laquelle extraire. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring)
-* `regexp` — Expression régulière. Doit contenir au moins un groupe de capture. Constante. [`const String`](/fr/reference/data-types/string) ou [`const FixedString`](/fr/reference/data-types/fixedstring)
+* `regexp` — Expression régulière. Doit contenir entre 1 et 127 groupes de capture. Constante. [`const String`](/fr/reference/data-types/string) ou [`const FixedString`](/fr/reference/data-types/fixedstring)
 
 **Valeur renvoyée**
 

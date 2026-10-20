@@ -12,9 +12,7 @@ doc_type: 'reference'
 
 Números de punto fijo con signo que mantienen la precisión durante las operaciones de suma, resta y multiplicación. En la división, los dígitos menos significativos se descartan (no se redondean).
 
-<div id="parameters">
-  ## Parámetros
-</div>
+## Parámetros {#parameters}
 
 * P - precisión. Rango válido: [ 1 : 76 ]. Determina cuántos dígitos decimales puede tener el número (incluida la parte fraccionaria). De forma predeterminada, la precisión es 10.
 * S - escala. Rango válido: [ 0 : P ]. Determina cuántos dígitos decimales puede tener la parte fraccionaria.
@@ -28,9 +26,7 @@ Según el valor del parámetro P, Decimal(P, S) es sinónimo de:
 * P de [ 19 : 38 ] - Decimal128(S)
 * P de [ 39 : 76 ] - Decimal256(S)
 
-<div id="decimal-value-ranges">
-  ## Rangos de valores de Decimal
-</div>
+## Rangos de valores de Decimal {#decimal-value-ranges}
 
 * Decimal(P, S) - (-1 * 10^(P - S), 1 * 10^(P - S))
 * Decimal32(S) - (-1 * 10^(9 - S), 1 * 10^(9 - S))
@@ -40,17 +36,13 @@ Según el valor del parámetro P, Decimal(P, S) es sinónimo de:
 
 Por ejemplo, Decimal32(4) puede contener números entre -99999.9999 y 99999.9999 con un paso de 0.0001.
 
-<div id="internal-representation">
-  ## Representación interna
-</div>
+## Representación interna {#internal-representation}
 
 Internamente, los datos se representan como enteros normales con signo y con el ancho de bits correspondiente. Los rangos de valores reales que pueden almacenarse en memoria son algo mayores que los especificados anteriormente, y solo se comprueban al convertir a partir de una cadena.
 
 Como las CPU modernas no admiten de forma nativa enteros de 128 y 256 bits, las operaciones con Decimal128 y Decimal256 se emulan. Por lo tanto, Decimal128 y Decimal256 son significativamente más lentos que Decimal32/Decimal64.
 
-<div id="operations-and-result-type">
-  ## Operaciones y tipo de resultado
-</div>
+## Operaciones y tipo de resultado {#operations-and-result-type}
 
 Las operaciones binarias sobre Decimal dan como resultado un tipo de resultado más amplio, independientemente del orden de los argumentos.
 
@@ -71,9 +63,7 @@ Las operaciones entre Decimal y Float32/Float64 no están definidas. Si las nece
 
 Algunas funciones sobre Decimal devuelven el resultado como Float64 (por ejemplo, var o stddev). Los cálculos intermedios pueden seguir realizándose en Decimal, lo que puede dar lugar a resultados distintos entre entradas Float64 y Decimal con los mismos valores.
 
-<div id="overflow-checks">
-  ## Comprobaciones de desbordamiento
-</div>
+## Comprobaciones de desbordamiento {#overflow-checks}
 
 Durante los cálculos con Decimal, pueden producirse desbordamientos de enteros. Los dígitos sobrantes de la parte fraccionaria se descartan (no se redondean). Los dígitos sobrantes de la parte entera provocarán una excepción.
 
@@ -120,14 +110,14 @@ SELECT toDecimal32(4.2, 8) AS x, 6 * x
 └────────────┴──────────────────────────────────┘
 ```
 
-Las comprobaciones de desbordamiento se realizan no solo en las operaciones aritméticas, sino también al comparar valores:
+Con `decimal_check_overflow` habilitado (el valor predeterminado), la comparación de valores con escalas diferentes es exacta, incluso cuando un valor no cabe en el tipo a la escala común:
 
 ```sql
 SELECT toDecimal32(1, 8) < 100
 ```
 
 ```text
-DB::Exception: Can't compare.
+1
 ```
 
 **Véase también**

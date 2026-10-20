@@ -358,9 +358,9 @@ SELECT extractAll('test@example.com, user@domain.org', '([a-zA-Z0-9]+)@')
 
 أُضيفت في: v20.5.0
 
-تطابق جميع مجموعات السلسلة النصية باستخدام التعبير النمطي الموفَّر، وتُرجع مصفوفة من المصفوفات، بحيث تحتوي كل مصفوفة على جميع القيم الملتقطة من المجموعة الملتقِطة نفسها، مرتبة حسب رقم المجموعة.
+تطابق جميع مجموعات السلسلة النصية باستخدام التعبير النمطي الموفَّر، وتُرجع مصفوفة من المصفوفات، بحيث تحتوي كل مصفوفة على جميع القيم الملتقطة من المجموعة الملتقِطة نفسها، مرتبة حسب رقم المجموعة.
 
-**البنية**
+**الصيغة**
 
 ```sql
 extractAllGroupsHorizontal(s, regexp)
@@ -369,7 +369,7 @@ extractAllGroupsHorizontal(s, regexp)
 **الوسيطات**
 
 * `s` — `سلسلة الإدخال` المطلوب الاستخراج منها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring)
-* `regexp` — `تعبير نمطي` لإجراء المطابقة. [`const String`](/ar/reference/data-types/string) أو [`const FixedString`](/ar/reference/data-types/fixedstring)
+* `regexp` — `تعبير نمطي` لإجراء المطابقة. يجب أن يحتوي على ما بين 1 و127 مجموعة ملتقطة. [`const String`](/ar/reference/data-types/string) أو [`const FixedString`](/ar/reference/data-types/fixedstring)
 
 **القيمة المعادة**
 
@@ -396,7 +396,7 @@ SELECT extractAllGroupsHorizontal(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 أُضيفت في: v20.5.0
 
-يستخرج مجموعات الالتقاط من أول سلسلة فرعية يطابقها تعبير نمطي. ولاستخراج المجموعات من جميع المطابقات، استخدم [`extractAllGroupsHorizontal`](#extractAllGroupsHorizontal) أو [`extractAllGroupsVertical`](/ar/reference/functions/regular-functions/splitting-merging-functions#extractAllGroupsVertical).
+يستخرج المجموعات الملتقطة من أول سلسلة فرعية يطابقها تعبير نمطي. ولاستخراج المجموعات من جميع المطابقات، استخدم [`extractAllGroupsHorizontal`](#extractAllGroupsHorizontal) أو [`extractAllGroupsVertical`](/ar/reference/functions/regular-functions/splitting-merging-functions#extractAllGroupsVertical).
 
 **الصيغة**
 
@@ -404,10 +404,10 @@ SELECT extractAllGroupsHorizontal(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 extractGroups(s, regexp)
 ```
 
-**المعاملات**
+**الوسيطات**
 
 * `s` — سلسلة الإدخال المطلوب الاستخراج منها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring)
-* `regexp` — تعبير نمطي. يجب أن يحتوي على مجموعة ملتقطة واحدة على الأقل. ثابت. [`const String`](/ar/reference/data-types/string) أو [`const FixedString`](/ar/reference/data-types/fixedstring)
+* `regexp` — تعبير نمطي. يجب أن يحتوي على ما بين 1 و127 مجموعة ملتقطة. ثابت. [`const String`](/ar/reference/data-types/string) أو [`const FixedString`](/ar/reference/data-types/fixedstring)
 
 **القيمة المُعادة**
 

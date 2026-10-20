@@ -266,6 +266,10 @@ DNS 解析结果中发现的 HTTP 连接新地址总数
 
 服务器端 AST fuzzer 因 Context 上有内部 Replicated 数据库 DDL 执行正在进行中 (存在 live 的 ZooKeeperMetadataTransaction) 而跳过 fuzzing 的次数。
 
+### ASTFuzzerSkippedSecondaryQuery {#astfuzzerskippedsecondaryquery}
+
+服务器端 AST fuzzer 因查询为其他节点发送的次级查询而跳过模糊测试的次数。
+
 ### AsynchronousReaderIgnoredBytes {#asynchronousreaderignoredbytes}
 
 异步读取过程中被忽略的字节数
@@ -1399,7 +1403,7 @@ DiskS3 存储上的 POST、DELETE、PUT 和 PATCH 请求中 429 和 503 错误�
 
 ### DistinctTransformsSwitchedToPassThrough {#distincttransformsswitchedtopassthrough}
 
-有多少个预处理 `DISTINCT` 转换因查询内存超出外部 `DISTINCT` 阈值，或预计的哈希分配会超出剩余的阈值预算 (参见 `max_bytes_before_external_distinct`) ，而释放了自身的哈希表并开始将每一行直接透传：此时改由会落盘的最终 `DISTINCT` 来去除重复数据。
+有多少个预备 `DISTINCT` 转换因查询内存超出其后续操作符的落盘阈值，或预计的哈希分配会超出剩余的阈值预算，而释放了自身的哈希表并开始将每一行直接透传。在 `DISTINCT` 之前，该阈值为 `max_bytes_before_external_distinct`，此时改由会落盘的最终 `DISTINCT` 来去除重复数据。在 `IN` 的集合之前，该阈值为集合的落盘阈值 (参见 `max_bytes_before_external_set`) ，此时由集合来去除重复数据。
 
 ### DistrCacheBackgroundWrites {#distrcachebackgroundwrites}
 
@@ -2073,9 +2077,21 @@ JOIN 使用外部内存时将临时 File 写入磁盘的次数。
 
 外部处理 (排序/聚合/连接) 写入的未压缩数据量 (压缩前)
 
+### ExternalSetBloomFilterSkippedKeys {#externalsetbloomfilterskippedkeys}
+
+在查找过程中，被外部内存中 `IN` 集合的布隆过滤器排除的键数量。
+
+### ExternalSetCacheHits {#externalsetcachehits}
+
+在外部内存中对 `IN` 集合执行查找时，直接从集合缓存中获取 (而非从临时 File读取) 的块数量。
+
 ### ExternalSetCompressedBytes {#externalsetcompressedbytes}
 
 为 `IN` 集合写入外部内存的压缩后字节数。
+
+### ExternalSetLookupKeys {#externalsetlookupkeys}
+
+在外部内存中的 `IN` 集合内执行查找时搜索的键数量。
 
 ### ExternalSetMerge {#externalsetmerge}
 
@@ -2084,6 +2100,14 @@ JOIN 使用外部内存时将临时 File 写入磁盘的次数。
 ### ExternalSetReadBlocks {#externalsetreadblocks}
 
 为查找键，从外部内存中 `IN` 集合的临时 File读取的块数。
+
+### ExternalSetTailKeptKeys {#externalsettailkeptkeys}
+
+使用外部内存对 `IN` 集合执行最终合并时，保留在内存中的键数量。
+
+### ExternalSetTailSpilledKeys {#externalsettailspilledkeys}
+
+在外部内存中对 `IN` 集合进行最终合并之前，从内存写入临时 File的键数量，以确保合并操作不超出落盘阈值。
 
 ### ExternalSetUncompressedBytes {#externalsetuncompressedbytes}
 
@@ -2212,14 +2236,6 @@ File 段优先级提升时间
 ### FileSegmentWaitTimeouts {#filesegmentwaittimeouts}
 
 等待处于 DOWNLOADING 状态的 File 段时发生超时的次数 (参见 `filesystem_cache_wait_for_concurrent_download_timeout_milliseconds`)
-
-### FileSegmentWaitWithoutData {#filesegmentwaitwithoutdata}
-
-等待处于 DOWNLOADING 状态的 File 段时，因下载器尚未下载到所等待的偏移量就释放了该段，导致等待结束的次数
-
-### FileSegmentWaitWithoutDataMicroseconds {#filesegmentwaitwithoutdatamicroseconds}
-
-`FileSegmentWaitWithoutData` 所统计的等待耗费的时间
 
 ### FileSegmentWriteMicroseconds {#filesegmentwritemicroseconds}
 
@@ -2376,10 +2392,6 @@ FileCache::assertCacheCorrectness 耗费的时间
 ### FilesystemCachePriorityWriteLockMicroseconds {#filesystemcacheprioritywritelockmicroseconds}
 
 写入优先队列时锁定文件系统缓存的时间
-
-### FilesystemCachePromotedFileSegments {#filesystemcachepromotedfilesegments}
-
-在 SLRU 缓存策略中，从 probationary 队列提升 (移动) 至受保护队列的 File 段数量。
 
 ### FilesystemCacheReserveAheadRetries {#filesystemcachereserveaheadretries}
 
@@ -3395,7 +3407,7 @@ MergeTree 表在初始化过程中加载数据分区片段所耗费的微秒数�
 
 ### LoadedStatistics {#loadedstatistics}
 
-已加载列统计信息的数据分区片段数量
+已为选择性估算器收集列统计信息的数据分区片段数量，这些统计信息来自统计信息缓存或数据分区片段本身
 
 ### LoadedStatisticsMicroseconds {#loadedstatisticsmicroseconds}
 
@@ -5499,7 +5511,7 @@ SELECT 查询的总耗时。
 
 ### SetsSpilledToDisk {#setsspilledtodisk}
 
-基于子查询构建 `IN` 集合期间溢写到磁盘的集合数量。
+基于子查询构建 `IN` 集合期间或查询使用这些集合期间溢写到磁盘的集合数量。
 
 ### SettingsProfileCacheRecalculationMicroseconds {#settingsprofilecacherecalculationmicroseconds}
 
@@ -6077,6 +6089,14 @@ MergeTree 表中共享数据分区片段锁的获取次数
 
 发送到 无状态工作线程 discovery 服务以续约 worker lease 的 update&#95;lease 请求数。
 
+### StatisticsCacheHits {#statisticscachehits}
+
+在统计信息缓存中命中数据分区片段某列统计信息的次数。
+
+### StatisticsCacheMisses {#statisticscachemisses}
+
+在统计信息缓存中未找到数据分区片段某列的统计信息、因而必须从该数据分区片段加载的次数。
+
 ### StorageBufferErrorOnFlush {#storagebuffererroronflush}
 
 `Buffer` 表中的缓冲区因写入目标表时出错而无法刷新的次数。
@@ -6244,6 +6264,10 @@ MergeTree 表中共享数据分区片段锁的获取次数
 ### TextIndexDiscardPatternScan {#textindexdiscardpatternscan}
 
 文本索引中，基于模式的字典扫描因待读取的倒排列表数量超过阈值而被放弃的次数。
+
+### TextIndexFilledFromFoldedPostings {#textindexfilledfromfoldedpostings}
+
+文本索引虚拟列针对一次读取的所有行，直接使用索引分析期间折叠的倒排列表进行填充 (而非使用为每个粒度单独构建的倒排列表) 的次数。
 
 ### TextIndexGenericExclusionSearchAlgorithm {#textindexgenericexclusionsearchalgorithm}
 
@@ -6517,9 +6541,17 @@ ThreadPoolReader 内部未从 页缓存 读取、而是转交给线程池处理�
 
 从未压缩缓存中淘汰的字节数。
 
+### UniqueKeyBitmapGranulesSkipped {#uniquekeybitmapgranulesskipped}
+
+在索引分析阶段，借助删除 bitmap 为 UNIQUE KEY 表跳过的、所有行均已删除的粒度数量。
+
 ### UniqueKeyBitmapLoadMicroseconds {#uniquekeybitmaploadmicroseconds}
 
 DeleteBitmapCache 未命中时，读取并反序列化 UNIQUE KEY delete-bitmap 辅助文件所耗费的时间。
+
+### UniqueKeyBitmapRowsSkipped {#uniquekeybitmaprowsskipped}
+
+在 PREWHERE 之前，由 UNIQUE KEY 删除 bitmap 在行级过滤掉的行数。
 
 ### UniqueKeyConflictIgnoredRows {#uniquekeyconflictignoredrows}
 

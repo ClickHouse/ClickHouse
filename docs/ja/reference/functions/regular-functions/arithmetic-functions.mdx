@@ -252,7 +252,7 @@ SELECT byteSwap(123294967295)
 
 2 つの値 `a` と `b` の商を計算します。`/` 演算子はこの関数と同等です。
 整数および floating-point の引数の場合、結果の型はデフォルトで [Float64](/ja/reference/data-types/float) です。
-`exact_division_for_integers = 1` の場合、2 つの整数引数に対しては、ゼロ方向に切り詰められた整数の商が返されます。
+`sql_compatible_division_for_integers = 1` の場合、2 つの整数引数に対しては、ゼロ方向に切り詰められた整数の商が返されます。
 結果の幅は第 1 引数と同じになり、いずれかの引数が符号付きであれば結果も符号付きになります。
 このモードでは、ゼロ除算の場合や、商が結果の型の範囲を超える場合に例外をスローします。
 
@@ -365,9 +365,9 @@ SELECT toDecimal64(-12, 1) as a, toDecimal32(2.1, 1) as b, divideDecimal(a, b, 1
 結果の幅は `x` と同じで、いずれかの引数が符号付きであれば結果も符号付きになります。256 ビットまでの整数型をサポートしており、符号付きと符号なしの引数を混在させることもできます。
 ゼロ除算の場合、または商が結果の型の範囲外となる場合は、`ILLEGAL_DIVISION` 例外をスローします。Nullable な引数を渡すと `NULL` が伝播します。
 
-floating-point または `Decimal` の引数の場合、この関数は `exact_division_for_integers = 0` を指定した `divide` と同じ規則に従います。
+floating-point または `Decimal` の引数の場合、この関数は `sql_compatible_division_for_integers = 0` を指定した `divide` と同じ規則に従います。
 
-この関数の動作は `exact_division_for_integers` の値に依存しません。
+この関数の動作は `sql_compatible_division_for_integers` の値に依存しません。
 この設定が有効な場合、新たに送信された `/` および `divide` の式は `divideExact` に書き換えられます。
 この明示的な関数名は、テーブルのメタデータやビューなどの保存済みの式にそのまま保持されるため、後から設定を変更しても、それらの除算のセマンティクスは変わりません。
 すでに保存されている `/` および `divide` の式は、従来の動作を維持します。
@@ -422,8 +422,8 @@ SELECT divideExact(5.0, 2) AS quotient, toTypeName(quotient)
 
 導入バージョン: v25.5.0
 
-`exact_division_for_integers = 0` を指定した `divide` と同様ですが、0 で除算した場合は `NULL` を返します。
-`exact_division_for_integers` 設定はこの関数には影響しません。
+`sql_compatible_division_for_integers = 0` を指定した `divide` と同様ですが、0 で除算した場合は `NULL` を返します。
+`sql_compatible_division_for_integers` 設定はこの関数には影響しません。
 
 **構文**
 

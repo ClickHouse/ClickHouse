@@ -99,6 +99,11 @@ Limpa o cache de marks.
 Limpa o cache de índice primário, que mantém em memória as chaves primárias das tabelas [`MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree).
 Seu tamanho é configurado pela configuração no nível do servidor [`primary_index_cache_size`](/pt-BR/reference/settings/server-settings/settings/primary-index#primary_index_cache_size).
 
+## SYSTEM CLEAR|DROP STATISTICS CACHE {#drop-statistics-cache}
+
+Limpa o cache de estatísticas, que mantém em memória as estatísticas de coluna das partes de dados de tabelas [`MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree), com uma entrada para cada combinação de parte de dados e coluna.
+Seu tamanho é definido pela configuração no nível do servidor `statistics_cache_size`.
+
 ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
 
 Limpa o cache de metadados do Iceberg.

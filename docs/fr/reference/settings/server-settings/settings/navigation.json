@@ -112,6 +112,7 @@
     "fr/reference/settings/server-settings/settings/skip",
     "fr/reference/settings/server-settings/settings/snapshot-cleaner",
     "fr/reference/settings/server-settings/settings/startup",
+    "fr/reference/settings/server-settings/settings/statistics-cache",
     "fr/reference/settings/server-settings/settings/storage",
     "fr/reference/settings/server-settings/settings/storage-connections",
     "fr/reference/settings/server-settings/settings/tables-loader",

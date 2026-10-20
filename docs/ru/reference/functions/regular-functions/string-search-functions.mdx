@@ -358,7 +358,7 @@ SELECT extractAll('test@example.com, user@domain.org', '([a-zA-Z0-9]+)@')
 
 Добавленный в: v20.5.0
 
-Сопоставляет все группы в строке с помощью указанного регулярного выражения и возвращает массив массивов, где каждый массив содержит все совпадения одной и той же группы захвата, упорядоченные по номеру группы.
+Сопоставляет все группы в строке с помощью указанного регулярного выражения и возвращает массив массивов, где каждый массив содержит все совпадения одной и той же захватывающей группы, упорядоченные по номеру группы.
 
 **Синтаксис**
 
@@ -369,11 +369,11 @@ extractAllGroupsHorizontal(s, regexp)
 **Аргументы**
 
 * `s` — Входная строка, из которой выполняется извлечение. [`String`](/ru/reference/data-types/string) или [`FixedString`](/ru/reference/data-types/fixedstring)
-* `regexp` — Регулярное выражение для поиска совпадений. [`const String`](/ru/reference/data-types/string) или [`const FixedString`](/ru/reference/data-types/fixedstring)
+* `regexp` — Регулярное выражение для поиска совпадений. Должно содержать от 1 до 127 захватывающих групп. [`const String`](/ru/reference/data-types/string) или [`const FixedString`](/ru/reference/data-types/fixedstring)
 
 **Возвращаемое значение**
 
-Возвращает массив массивов, где каждый внутренний массив содержит все подстроки, захваченные одной группой захвата во всех совпадениях. Первый внутренний массив содержит все захваченные подстроки из группы 1, второй — из группы 2 и т. д. Если совпадения не найдены, возвращается пустой массив. [`Array(Array(String))`](/ru/reference/data-types/array)
+Возвращает массив массивов, где каждый внутренний массив содержит все подстроки, захваченные одной захватывающей группой во всех совпадениях. Первый внутренний массив содержит все захваченные подстроки из группы 1, второй — из группы 2 и т. д. Если совпадения не найдены, возвращается пустой массив. [`Array(Array(String))`](/ru/reference/data-types/array)
 
 **Примеры**
 
@@ -396,7 +396,7 @@ SELECT extractAllGroupsHorizontal(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 Добавленный в: v20.5.0
 
-Извлекает группы захвата из первой подстроки, соответствующей регулярному выражению. Чтобы извлечь группы из всех совпадений, используйте [`extractAllGroupsHorizontal`](#extractAllGroupsHorizontal) или [`extractAllGroupsVertical`](/ru/reference/functions/regular-functions/splitting-merging-functions#extractAllGroupsVertical).
+Извлекает захватывающие группы из первой подстроки, соответствующей регулярному выражению. Чтобы извлечь группы из всех совпадений, используйте [`extractAllGroupsHorizontal`](#extractAllGroupsHorizontal) или [`extractAllGroupsVertical`](/ru/reference/functions/regular-functions/splitting-merging-functions#extractAllGroupsVertical).
 
 **Синтаксис**
 
@@ -407,11 +407,11 @@ extractGroups(s, regexp)
 **Аргументы**
 
 * `s` — Входная строка, из которой выполняется извлечение. [`String`](/ru/reference/data-types/string) или [`FixedString`](/ru/reference/data-types/fixedstring)
-* `regexp` — Регулярное выражение. Должно содержать как минимум одну группу захвата. Константа. [`const String`](/ru/reference/data-types/string) или [`const FixedString`](/ru/reference/data-types/fixedstring)
+* `regexp` — Регулярное выражение. Должно содержать от 1 до 127 захватывающих групп. Константа. [`const String`](/ru/reference/data-types/string) или [`const FixedString`](/ru/reference/data-types/fixedstring)
 
 **Возвращаемое значение**
 
-Если регулярное выражение найдено, возвращается массив, содержащий группы захвата (`1`–`N`, где `N` — число групп захвата в `regexp`) из первого совпадения. Если совпадений нет, возвращается пустой массив. [`Array(String)`](/ru/reference/data-types/array)
+Если регулярное выражение найдено, возвращается массив, содержащий захватывающие группы (`1`–`N`, где `N` — число захватывающих групп в `regexp`) из первого совпадения. Если совпадений нет, возвращается пустой массив. [`Array(String)`](/ru/reference/data-types/array)
 
 **Примеры**
 

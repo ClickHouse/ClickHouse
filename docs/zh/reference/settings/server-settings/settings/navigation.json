@@ -112,6 +112,7 @@
     "zh/reference/settings/server-settings/settings/skip",
     "zh/reference/settings/server-settings/settings/snapshot-cleaner",
     "zh/reference/settings/server-settings/settings/startup",
+    "zh/reference/settings/server-settings/settings/statistics-cache",
     "zh/reference/settings/server-settings/settings/storage",
     "zh/reference/settings/server-settings/settings/storage-connections",
     "zh/reference/settings/server-settings/settings/tables-loader",

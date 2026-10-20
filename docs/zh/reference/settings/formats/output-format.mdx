@@ -195,9 +195,9 @@ Arrow 输出格式的压缩方法。支持的编解码器：lz4&#95;frame、zstd
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "3"},{"label": "允许在查询输出中调整压缩级别"}]}]} />
 
-查询输出被压缩时使用的默认压缩级别。该设置会在 `SELECT` 查询使用 `INTO OUTFILE` 时，或将数据写入表函数 `file`、`url`、`hdfs`、`s3` 或 `azureBlobStorage` 时生效。
+查询输出被压缩时使用的默认压缩级别。该设置会在 `SELECT` 查询使用 `INTO OUTFILE` 时，或将数据写入表函数 `file`、`url`、`hdfs`、`s3` 或 `azureBlobStorage` 时生效。如果 HTTP 请求的响应采用 `gzip` 和 `deflate` 以外的方法压缩，也会应用该设置；`gzip` 和 `deflate` 则使用 [http&#95;zlib&#95;compression&#95;level](/zh/reference/settings/session-settings/http#http_zlib_compression_level)。
 
-可能的取值：从 `1` 到 `22`
+可选值：从 `1` 到 `22`
 
 ## output_format_compression_zstd_window_log {#output_format_compression_zstd_window_log}
 

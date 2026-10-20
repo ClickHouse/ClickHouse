@@ -91,6 +91,54 @@ Valeurs possibles :
 
 Dans le cas d’un ORDER BY avec LIMIT, lorsque l’utilisation de la mémoire dépasse le seuil spécifié, effectuez des étapes supplémentaires de fusion de blocs avant la fusion finale afin de ne conserver que les LIMIT premières lignes.
 
+## max_bytes_for_external_set_bloom_filter {#max_bytes_for_external_set_bloom_filter}
+
+<SettingsInfoBlock type="UInt64" default_value="134217728" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "Nouveau paramètre permettant de limiter la mémoire du filtre de Bloom qu’un set de `IN` sur disque conserve afin d’éviter de lire le disque pour les valeurs absentes du set."}]}]} />
+
+Budget mémoire, en octets, alloué au filtre de Bloom que chaque set de `IN` écrit sur disque conserve en mémoire. Le
+filtre permet aux lookups de valeurs absentes du set d’éviter la lecture du disque. Il n’accélère pas les lookups
+de valeurs présentes dans le set.
+
+Un set consomme pour son filtre environ 1 octet par clé, ou le budget si celui-ci est inférieur, les clés d’un
+set étant ses valeurs distinctes, ou ses tuples distincts pour un `IN` portant sur plusieurs colonnes :
+
+* Si le budget atteint au moins 1 octet par clé, le set dispose du filtre complet, et environ 97 % des lookups de
+  valeurs absentes du set évitent le disque. Par exemple, un set de 1 million de clés occupe environ 1 Mio.
+* Si le budget est inférieur, le set dispose d’un filtre plus faible qui tient dans le budget, et moins de lookups de
+  valeurs absentes du set évitent le disque. Par exemple, avec un quart d’octet par clé, environ 60 % de
+  ces lookups évitent le disque, contre 97 %.
+* Si le budget est inférieur à environ 1/7 d’octet par clé, le set ne dispose d’aucun filtre, car un tel filtre
+  permettrait à trop peu de lookups d’éviter le disque pour justifier le coût de sa construction.
+
+Avec le budget par défaut de 128 Mio, les sets comptant jusqu’à environ 130 millions de clés disposent du filtre complet, et ceux de
+plus d’environ 950 millions de clés n’en ont aucun. Augmentez le budget pour les sets plus volumineux lorsque la plupart des
+valeurs recherchées sont absentes du set. Réduisez-le lorsque la mémoire est limitée, ou lorsque la plupart des valeurs recherchées sont présentes dans le
+set, auquel cas le filtre n’apporte rien. `0` désactive le filtre.
+
+Le filtre est comptabilisé dans l’utilisation de la mémoire de la requête, par exemple `max_memory_usage`, mais pas dans
+`max_bytes_in_set`. Le budget s’applique à chaque set, et non à la requête.
+
+Voir [IN en mémoire externe](/fr/reference/statements/in#in-in-external-memory).
+
+## max_bytes_for_external_set_cache {#max_bytes_for_external_set_cache}
+
+<SettingsInfoBlock type="UInt64" default_value="134217728" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "Nouveau paramètre permettant de limiter la mémoire du cache de blocs conservé par un set de `IN` sur disque, afin que ses lookups ne relisent pas les mêmes blocs depuis le disque."}]}]} />
+
+Budget mémoire, en octets, alloué au cache de blocs que chaque set de `IN` écrit sur disque conserve en mémoire. Un
+lookup qui a besoin d’un bloc déjà lu par un lookup précédent le récupère dans le cache au lieu de le relire
+depuis le disque. Le cache est utile lorsque les lookups sollicitent de façon répétée les mêmes blocs, par exemple des lookups portant sur quelques
+valeurs fréquentes ou de nombreux lookups dans un set qui tient dans le cache. Il apporte peu lorsque les lookups se répartissent
+uniformément sur un set beaucoup plus volumineux que le cache. `0` désactive le cache.
+
+Le budget s’applique à chaque set. Le cache est comptabilisé dans l’utilisation de la mémoire de la requête, par exemple
+`max_memory_usage`, mais pas dans `max_bytes_in_set`.
+
+Voir [IN en mémoire externe](/fr/reference/statements/in#in-in-external-memory).
+
 ## max_bytes_for_lazy_final {#max_bytes_for_lazy_final}
 
 <SettingsInfoBlock type="UInt64" default_value="256000000" />
@@ -185,9 +233,9 @@ A un effet pour tous les `join_algorithm` basés sur le hachage, y compris `grac
 
 ## max_bytes_ratio_before_external_set {#max_bytes_ratio_before_external_set}
 
-<SettingsInfoBlock type="Double" default_value="0" />
+<SettingsInfoBlock type="Double" default_value="0.5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nouveau paramètre permettant de déverser sur le disque le set d’un `IN` avec sous-requête lorsque l’utilisation de la mémoire dépasse le ratio spécifié de la mémoire disponible. Si 0, seul `max_bytes_before_external_set` s’applique."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.5"},{"label": "Le déversement sur le disque du set d’un `IN` avec sous-requête est désormais activé par défaut, à partir de la moitié de la mémoire disponible du serveur ou de l’utilisateur."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "Nouveau paramètre permettant de déverser sur le disque le set d’un `IN` avec sous-requête lorsque l’utilisation de la mémoire dépasse le ratio spécifié de la mémoire disponible. Si 0, seul `max_bytes_before_external_set` s’applique."}]}]} />
 
 Fraction de la mémoire disponible du serveur ou de l’utilisateur servant à calculer, au début de l’exécution, le seuil à partir duquel le set d’un `IN`
 avec sous-requête est déversé sur le disque. Par exemple, `0.5` correspond à la moitié de la mémoire disponible.

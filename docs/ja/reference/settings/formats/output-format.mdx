@@ -195,7 +195,7 @@ String 型のカラムでは、Binary ではなく BSON String 型を使用し�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "3"},{"label": "クエリ出力の圧縮レベルを変更できるようになりました"}]}]} />
 
-クエリ出力が圧縮される場合のデフォルトの圧縮レベルです。この設定は、`SELECT` クエリで `INTO OUTFILE` を使用する場合、またはテーブル関数 `file`、`url`、`hdfs`、`s3`、`azureBlobStorage` に書き込む場合に適用されます。
+クエリ出力が圧縮される場合のデフォルトの圧縮レベルです。この設定は、`SELECT` クエリで `INTO OUTFILE` を使用する場合、またはテーブル関数 `file`、`url`、`hdfs`、`s3`、`azureBlobStorage` に書き込む場合に適用されます。また、`gzip` および `deflate` 以外の方式で圧縮された HTTPリクエストへの応答にも適用されます (`gzip` と `deflate` の場合は [http&#95;zlib&#95;compression&#95;level](/ja/reference/settings/session-settings/http#http_zlib_compression_level) が使用されます) 。
 
 設定可能な値: `1` ～ `22`
 

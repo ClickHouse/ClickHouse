@@ -726,7 +726,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "distributed_plan_*",
-      count: 14,
+      count: 15,
       settings: [
         { name: "distributed_plan_default_reader_bucket_count", path: "/distributed-plan#distributed_plan_default_reader_bucket_count", default: "8" },
         { name: "distributed_plan_default_shuffle_join_bucket_count", path: "/distributed-plan#distributed_plan_default_shuffle_join_bucket_count", default: "8" },
@@ -740,6 +740,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "distributed_plan_optimize_exchanges", path: "/distributed-plan#distributed_plan_optimize_exchanges", default: "1" },
         { name: "distributed_plan_prefer_replicas_over_workers", path: "/distributed-plan#distributed_plan_prefer_replicas_over_workers", default: "0" },
         { name: "distributed_plan_read_in_order", path: "/distributed-plan#distributed_plan_read_in_order", default: "0" },
+        { name: "distributed_plan_worker_cluster", path: "/distributed-plan#distributed_plan_worker_cluster", default: '""' },
         { name: "distributed_plan_workers_num", path: "/distributed-plan#distributed_plan_workers_num", default: "0" },
         { name: "distributed_plan_workers_provisioning_timeout_ms", path: "/distributed-plan#distributed_plan_workers_provisioning_timeout_ms", default: "10000" }
       ],
@@ -1540,7 +1541,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "max_bytes_*",
-      count: 19,
+      count: 21,
       settings: [
         { name: "max_bytes_before_external_distinct", path: "/max-bytes#max_bytes_before_external_distinct", default: "0" },
         { name: "max_bytes_before_external_group_by", path: "/max-bytes#max_bytes_before_external_group_by", default: "0" },
@@ -1548,6 +1549,8 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "max_bytes_before_external_set", path: "/max-bytes#max_bytes_before_external_set", default: "0" },
         { name: "max_bytes_before_external_sort", path: "/max-bytes#max_bytes_before_external_sort", default: "0" },
         { name: "max_bytes_before_remerge_sort", path: "/max-bytes#max_bytes_before_remerge_sort", default: "1000000000" },
+        { name: "max_bytes_for_external_set_bloom_filter", path: "/max-bytes#max_bytes_for_external_set_bloom_filter", default: "134217728" },
+        { name: "max_bytes_for_external_set_cache", path: "/max-bytes#max_bytes_for_external_set_cache", default: "134217728" },
         { name: "max_bytes_for_lazy_final", path: "/max-bytes#max_bytes_for_lazy_final", default: "256000000" },
         { name: "max_bytes_in_distinct", path: "/max-bytes#max_bytes_in_distinct", default: "0" },
         { name: "max_bytes_in_join", path: "/max-bytes#max_bytes_in_join", default: "0" },
@@ -1555,7 +1558,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "max_bytes_ratio_before_external_distinct", path: "/max-bytes#max_bytes_ratio_before_external_distinct", default: "0.5" },
         { name: "max_bytes_ratio_before_external_group_by", path: "/max-bytes#max_bytes_ratio_before_external_group_by", default: "0.5" },
         { name: "max_bytes_ratio_before_external_join", path: "/max-bytes#max_bytes_ratio_before_external_join", default: "0.5" },
-        { name: "max_bytes_ratio_before_external_set", path: "/max-bytes#max_bytes_ratio_before_external_set", default: "0" },
+        { name: "max_bytes_ratio_before_external_set", path: "/max-bytes#max_bytes_ratio_before_external_set", default: "0.5" },
         { name: "max_bytes_ratio_before_external_sort", path: "/max-bytes#max_bytes_ratio_before_external_sort", default: "0.5" },
         { name: "max_bytes_to_read", path: "/max-bytes#max_bytes_to_read", default: "0" },
         { name: "max_bytes_to_read_leaf", path: "/max-bytes#max_bytes_to_read_leaf", default: "0" },
@@ -3016,10 +3019,9 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "use_statistics_*",
-      count: 4,
+      count: 3,
       settings: [
         { name: "use_statistics", path: "/use-statistics#use_statistics", default: "1" },
-        { name: "use_statistics_cache", path: "/use-statistics#use_statistics_cache", default: "1" },
         { name: "use_statistics_for_min_max_aggregation", path: "/use-statistics#use_statistics_for_min_max_aggregation", default: "1" },
         { name: "use_statistics_for_part_pruning", path: "/use-statistics#use_statistics_for_part_pruning", default: "1" }
       ],
@@ -3157,7 +3159,6 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "dynamic_throw_on_type_mismatch", path: "/other#dynamic_throw_on_type_mismatch", default: "1" },
         { name: "enforce_strict_identifier_format", path: "/other#enforce_strict_identifier_format", default: "0" },
         { name: "engine_url_skip_empty_files", path: "/other#engine_url_skip_empty_files", default: "0" },
-        { name: "exact_division_for_integers", path: "/other#exact_division_for_integers", default: "0" },
         { name: "exact_rows_before_limit", path: "/other#exact_rows_before_limit", default: "0" },
         { name: "except_default_mode", path: "/other#except_default_mode", default: "ALL" },
         { name: "exclude_materialize_skip_indexes_on_insert", path: "/other#exclude_materialize_skip_indexes_on_insert", default: '""' },
@@ -3257,6 +3258,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "sort", path: "/other#sort", default: '""' },
         { name: "sort_overflow_mode", path: "/other#sort_overflow_mode", default: "throw" },
         { name: "splitby_max_substrings_includes_remaining_string", path: "/other#splitby_max_substrings_includes_remaining_string", default: "0" },
+        { name: "sql_compatible_division_for_integers", path: "/other#sql_compatible_division_for_integers", default: "0" },
         { name: "statistics_max_set_size_for_exact_selectivity_estimation", path: "/other#statistics_max_set_size_for_exact_selectivity_estimation", default: "10000" },
         { name: "stop_refreshable_materialized_views_on_startup", path: "/other#stop_refreshable_materialized_views_on_startup", default: "0" },
         { name: "tcp_keep_alive_timeout", path: "/other#tcp_keep_alive_timeout", default: "290" },
@@ -3506,7 +3508,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
           type="search"
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.target.value)}
-          placeholder="Pesquisar configurações, por exemplo: réplicas paralelas ou %materialized%"
+          placeholder="Pesquisar configurações, ex.: réplicas paralelas ou %materialized%"
           className="w-full rounded-lg border border-gray-500 bg-gray-50 py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-600 focus:border-gray-600 focus:outline-0 focus-visible:outline-0 dark:border-white/30 dark:bg-white/5 dark:text-white dark:placeholder:text-gray-400 dark:focus:border-[#fdff75]"
         />
       </div>

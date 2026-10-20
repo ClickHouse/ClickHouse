@@ -369,7 +369,7 @@ extractAllGroupsHorizontal(s, regexp)
 **인수**
 
 * `s` — 추출 대상 입력 문자열입니다. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring)
-* `regexp` — 매칭에 사용할 정규식입니다. [`const String`](/ko/reference/data-types/string) 또는 [`const FixedString`](/ko/reference/data-types/fixedstring)
+* `regexp` — 매칭에 사용할 정규식입니다. 1개 이상 127개 이하의 캡처 그룹을 포함해야 합니다. [`const String`](/ko/reference/data-types/string) 또는 [`const FixedString`](/ko/reference/data-types/fixedstring)
 
 **반환 값**
 
@@ -407,7 +407,7 @@ extractGroups(s, regexp)
 **인수**
 
 * `s` — 추출할 대상 입력 문자열입니다. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring)
-* `regexp` — 정규식입니다. 캡처 그룹을 하나 이상 포함해야 합니다. 상수여야 합니다. [`const String`](/ko/reference/data-types/string) 또는 [`const FixedString`](/ko/reference/data-types/fixedstring)
+* `regexp` — 정규식입니다. 캡처 그룹을 1개 이상 127개 이하로 포함해야 합니다. 상수여야 합니다. [`const String`](/ko/reference/data-types/string) 또는 [`const FixedString`](/ko/reference/data-types/fixedstring)
 
 **반환 값**
 

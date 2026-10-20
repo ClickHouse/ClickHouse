@@ -267,6 +267,10 @@ Número de veces que el AST fuzzer del lado del servidor omitió el fuzzing porq
 
 Número de veces que el AST fuzzer del lado del servidor omitió el fuzzing porque había en curso, en el contexto, una ejecución interna de DDL de base de datos replicada (una ZooKeeperMetadataTransaction activa).
 
+### ASTFuzzerSkippedSecondaryQuery {#astfuzzerskippedsecondaryquery}
+
+Número de veces que el fuzzer de AST del lado del servidor omitió el fuzzing porque se trataba de una consulta secundaria enviada por otro nodo.
+
 ### AsynchronousReaderIgnoredBytes {#asynchronousreaderignoredbytes}
 
 Número de bytes ignorados durante la lectura asíncrona
@@ -1400,7 +1404,7 @@ Número de transformadas de deduplicación que descartaron su hash table y dejar
 
 ### DistinctTransformsSwitchedToPassThrough {#distincttransformsswitchedtopassthrough}
 
-Cuántas transformaciones preliminares de `DISTINCT` liberaron su hash table y comenzaron a dejar pasar todas las filas porque la memoria de la consulta superó el threshold de `DISTINCT` external, o porque las asignaciones de hash previstas superarían el presupuesto restante del threshold (véase `max_bytes_before_external_distinct`): en ese caso, el `DISTINCT` final, que hace spill a disco, es el que resuelve los duplicados.
+Cuántas transformadas preliminares de `DISTINCT` liberaron su hash table y comenzaron a dejar pasar todas las filas porque la memoria de la consulta superó el umbral de volcado a disco del operador que las sigue, o porque las asignaciones de hash previstas superarían el presupuesto restante del umbral. Antes de un `DISTINCT`, el umbral es `max_bytes_before_external_distinct`, y en ese caso el `DISTINCT` final, que hace spill a disco, es el que resuelve los duplicados. Antes de un conjunto de `IN`, es el umbral de volcado a disco del conjunto (véase `max_bytes_before_external_set`), y es el conjunto el que los resuelve.
 
 ### DistrCacheBackgroundWrites {#distrcachebackgroundwrites}
 
@@ -2074,9 +2078,21 @@ Número de archivos utilizados por el procesamiento externo (ordenación/agregac
 
 Volumen de datos (sin comprimir, antes de la compresión) escrito por el procesamiento externo (ordenación/agregación/join)
 
+### ExternalSetBloomFilterSkippedKeys {#externalsetbloomfilterskippedkeys}
+
+Número de claves descartadas durante las búsquedas por los filtros de Bloom de los conjuntos `IN` en memoria externa.
+
+### ExternalSetCacheHits {#externalsetcachehits}
+
+Número de bloques que las búsquedas en conjuntos `IN` almacenados en memoria externa obtuvieron de la caché del conjunto en lugar de leerlos del archivo temporal.
+
 ### ExternalSetCompressedBytes {#externalsetcompressedbytes}
 
 Número de bytes comprimidos escritos para los conjuntos de `IN` en memoria externa.
+
+### ExternalSetLookupKeys {#externalsetlookupkeys}
+
+Número de claves que las búsquedas consultaron en conjuntos `IN` en memoria externa.
 
 ### ExternalSetMerge {#externalsetmerge}
 
@@ -2085,6 +2101,14 @@ Número de veces que se fusionaron archivos temporales para un conjunto `IN` en 
 ### ExternalSetReadBlocks {#externalsetreadblocks}
 
 Número de bloques leídos de los archivos temporales de los conjuntos `IN` en memoria externa para buscar claves.
+
+### ExternalSetTailKeptKeys {#externalsettailkeptkeys}
+
+Número de claves que se mantienen en memoria para la fusión final de un conjunto `IN` en memoria externa.
+
+### ExternalSetTailSpilledKeys {#externalsettailspilledkeys}
+
+Número de claves en memoria escritas en un archivo temporal antes de la fusión final de un conjunto `IN` en memoria externa, para que la fusión no supere el umbral de volcado a disco.
 
 ### ExternalSetUncompressedBytes {#externalsetuncompressedbytes}
 
@@ -2213,14 +2237,6 @@ Espera en estado DOWNLOADING
 ### FileSegmentWaitTimeouts {#filesegmentwaittimeouts}
 
 Número de veces que la espera de un segmento de archivo en estado DOWNLOADING agotó su tiempo límite (véase `filesystem_cache_wait_for_concurrent_download_timeout_milliseconds`)
-
-### FileSegmentWaitWithoutData {#filesegmentwaitwithoutdata}
-
-Número de veces que la espera de un segmento de archivo en estado DOWNLOADING terminó porque el descargador liberó el segmento antes de descargar el offset esperado
-
-### FileSegmentWaitWithoutDataMicroseconds {#filesegmentwaitwithoutdatamicroseconds}
-
-Tiempo invertido en las esperas contabilizadas por `FileSegmentWaitWithoutData`
 
 ### FileSegmentWriteMicroseconds {#filesegmentwritemicroseconds}
 
@@ -2377,10 +2393,6 @@ Tiempo de bloqueo de lectura de la caché del sistema de archivos en la cola de 
 ### FilesystemCachePriorityWriteLockMicroseconds {#filesystemcacheprioritywritelockmicroseconds}
 
 Tiempo de bloqueo de la caché del sistema de archivos al escribir en la cola de prioridad
-
-### FilesystemCachePromotedFileSegments {#filesystemcachepromotedfilesegments}
-
-Número de segmentos de archivo promovidos (movidos) de la cola de prueba a la cola protegida en la política de caché SLRU.
 
 ### FilesystemCacheReserveAheadRetries {#filesystemcachereserveaheadretries}
 
@@ -3396,7 +3408,7 @@ Número de filas de la clave primaria que se han cargado.
 
 ### LoadedStatistics {#loadedstatistics}
 
-Número de partes de datos cuyas estadísticas de columna se cargaron
+Número de partes de datos cuyas estadísticas de columna se recopilaron para el estimador de selectividad, ya sea de la caché de estadísticas o de la propia parte
 
 ### LoadedStatisticsMicroseconds {#loadedstatisticsmicroseconds}
 
@@ -5500,7 +5512,7 @@ Número de Sets `IN`/`JOIN` construidos al ejecutar su subconsulta. No se contab
 
 ### SetsSpilledToDisk {#setsspilledtodisk}
 
-Número de conjuntos `IN` que se volcaron a disco durante su construcción a partir de su subconsulta.
+Número de conjuntos `IN` que se volcaron a disco durante su construcción a partir de su subconsulta o mientras la consulta los utilizaba.
 
 ### SettingsProfileCacheRecalculationMicroseconds {#settingsprofilecacherecalculationmicroseconds}
 
@@ -6078,6 +6090,14 @@ Tiempo total empleado en las solicitudes update&#95;lease al servicio de discove
 
 Número de solicitudes update&#95;lease enviadas al servicio de discovery de stateless workers para renovar los leases de los workers.
 
+### StatisticsCacheHits {#statisticscachehits}
+
+Número de veces que se han encontrado en la caché de estadísticas las estadísticas de una columna de una parte de datos.
+
+### StatisticsCacheMisses {#statisticscachemisses}
+
+Número de veces que las estadísticas de una columna de una parte de datos no se encontraron en la caché de estadísticas, por lo que hubo que cargarlas desde la parte.
+
 ### StorageBufferErrorOnFlush {#storagebuffererroronflush}
 
 Número de veces que un búfer de la tabla &#39;Buffer&#39; no ha podido vaciarse debido a un error al escribir en la tabla de destino.
@@ -6245,6 +6265,10 @@ Número de gránulos de índice en los que se añadió como pista una lectura di
 ### TextIndexDiscardPatternScan {#textindexdiscardpatternscan}
 
 Número de veces que se descartó un escaneo de diccionario basado en patrones en un índice de texto porque el número de listas de postings que debían leerse superó el umbral.
+
+### TextIndexFilledFromFoldedPostings {#textindexfilledfromfoldedpostings}
+
+Número de veces que una columna virtual de un índice de texto se rellenó para todas las filas de una lectura directamente a partir de las listas de postings plegadas durante el análisis de índices, en lugar de hacerlo a partir de listas de postings generadas para cada gránulo.
 
 ### TextIndexGenericExclusionSearchAlgorithm {#textindexgenericexclusionsearchalgorithm}
 
@@ -6518,9 +6542,17 @@ Número de veces que no se encontró un bloque de datos en la caché sin comprim
 
 Número de bytes desalojados de la caché sin comprimir.
 
+### UniqueKeyBitmapGranulesSkipped {#uniquekeybitmapgranulesskipped}
+
+Número de gránulos completamente eliminados que se omiten durante el análisis de índices en tablas con UNIQUE KEY gracias al mapa de bits de eliminación.
+
 ### UniqueKeyBitmapLoadMicroseconds {#uniquekeybitmaploadmicroseconds}
 
 Tiempo dedicado a leer y deserializar archivos sidecar de bitmap de eliminación de UNIQUE KEY cuando se produce un fallo de caché en DeleteBitmapCache.
+
+### UniqueKeyBitmapRowsSkipped {#uniquekeybitmaprowsskipped}
+
+Número de filas descartadas por el mapa de bits de eliminación de UNIQUE KEY a nivel de fila (row-level), antes de PREWHERE.
 
 ### UniqueKeyConflictIgnoredRows {#uniquekeyconflictignoredrows}
 

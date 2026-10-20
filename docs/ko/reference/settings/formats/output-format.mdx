@@ -195,7 +195,7 @@ String 컬럼에는 Binary 대신 BSON String 유형을 사용합니다.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "3"},{"label": "쿼리 출력의 압축 수준을 변경할 수 있도록 허용"}]}]} />
 
-쿼리 출력이 압축될 때 사용되는 기본 압축 수준입니다. 이 설정은 `SELECT` 쿼리에 `INTO OUTFILE`이 있거나 테이블 함수 `file`, `url`, `hdfs`, `s3`, `azureBlobStorage`에 쓸 때 적용됩니다.
+쿼리 출력이 압축될 때 사용되는 기본 압축 수준입니다. 이 설정은 `SELECT` 쿼리에 `INTO OUTFILE`이 있거나 테이블 함수 `file`, `url`, `hdfs`, `s3`, `azureBlobStorage`에 쓸 때 적용됩니다. 또한 HTTP 요청에 대한 응답을 `gzip`, `deflate` 이외의 방식으로 압축할 때도 적용됩니다. `gzip`과 `deflate`에는 [http&#95;zlib&#95;compression&#95;level](/ko/reference/settings/session-settings/http#http_zlib_compression_level)이 사용됩니다.
 
 가능한 값: `1`부터 `22`까지
 

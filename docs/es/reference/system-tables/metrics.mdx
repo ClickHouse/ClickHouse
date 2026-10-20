@@ -723,6 +723,14 @@ Número de hilos del pool de handshake del servidor de intercambio distribuido q
 
 Número de trabajos en cola o activos en el pool de hilos de handshake del servidor de intercambio distribuido.
 
+### ExternalSetCacheBytes {#externalsetcachebytes}
+
+Tamaño total, en bytes, de los bloques almacenados en las cachés de los conjuntos `IN` en memoria externa
+
+### ExternalSetCacheCells {#externalsetcachecells}
+
+Número total de bloques almacenados en las cachés de los conjuntos `IN` en memoria externa
+
 ### FiberStackBytes {#fiberstackbytes}
 
 Tamaño total de las pilas de fibras asignadas actualmente.
@@ -1986,6 +1994,14 @@ Número de hilos del pool de hilos de workers sin estado que están ejecutando u
 ### StatelessWorkerThreadsScheduled {#statelessworkerthreadsscheduled}
 
 Número de trabajos en cola o activos en el pool de hilos de trabajo sin estado.
+
+### StatisticsCacheBytes {#statisticscachebytes}
+
+Tamaño total, en bytes, de la caché de estadísticas. Almacena las estadísticas de columna de las partes de datos de las tablas MergeTree, con una entrada por cada combinación de parte y columna.
+
+### StatisticsCacheCells {#statisticscachecells}
+
+Número total de entradas (una por cada parte de datos y columna) en la caché de estadísticas
 
 ### StorageBufferBytes {#storagebufferbytes}
 

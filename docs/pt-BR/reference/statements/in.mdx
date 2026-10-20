@@ -174,8 +174,8 @@ Duas configurações controlam quando o spill começa:
 * `max_bytes_before_external_set` define um limiar, em bytes, para a memória total da consulta. O valor padrão é `0`
   (desabilitado).
 * `max_bytes_ratio_before_external_set` define uma fração da memória disponível dentro dos limites do servidor ou do usuário,
-  medida no início da execução. O valor padrão é `0` (desabilitado), e a configuração não tem efeito quando
-  nenhum desses limites se aplica.
+  medida no início da execução. O valor padrão é `0.5`, metade da memória disponível, e a configuração
+  não tem efeito quando nenhum desses limites se aplica.
 
 Quando os dois limiares se aplicam, o menor é utilizado. Um conjunto só é gravado em disco quando ocupa pelo menos
 16 MiB, ou o valor do limiar, se este for menor. Por exemplo, esta consulta grava o conjunto em disco assim que ele
@@ -189,24 +189,35 @@ SETTINGS max_bytes_before_external_set = 16777216;
 ```
 
 Um conjunto normalmente é construído antes que o restante da consulta consuma muita memória. Um conjunto que permanece em memória enquanto
-é construído ainda pode ser gravado em disco depois, enquanto a consulta o utiliza: assim que a memória da consulta ultrapassa o
-limiar, o conjunto é gravado em disco, e a maior parte de sua memória é liberada para o restante da consulta, como
-uma agregação que cresce depois que o conjunto é construído.
+é construído ainda pode ser gravado em disco depois, enquanto a consulta o utiliza: assim que a memória da consulta, somada à
+memória que o conjunto mantém quando está em disco, como seu filtro de Bloom, ultrapassa o limiar, o conjunto é
+gravado em disco, e a maior parte de sua memória é liberada para o restante da consulta, como uma agregação que
+cresce depois que o conjunto é construído.
 
 `max_memory_usage` não afeta a razão. Para configurar o spill em relação a um limite de memória da consulta,
 defina um limiar absoluto abaixo desse limite. Esses limiares não impõem um teto ao uso de memória. Reserve espaço para
 o restante do processamento de consultas e para o próprio spill.
 
+Um conjunto em disco mantém em memória um filtro de Bloom de suas chaves, para que as consultas de chaves que não estão no conjunto
+possam evitar a leitura do disco. `max_bytes_for_external_set_bloom_filter` limita a memória do filtro,
+128 MiB por padrão.
+
+Um conjunto em disco também mantém em cache, na memória, os blocos lidos por suas consultas, para que consultas posteriores de chaves nos
+mesmos blocos não precisem ler o disco novamente. `max_bytes_for_external_set_cache` limita a memória do
+cache, 128 MiB por padrão.
+
 Um conjunto gravado em disco durante sua construção não pode ser usado pela chave primária nem por data skipping indexes. Com
 `GLOBAL IN`, a tabela temporária que envia o resultado da subconsulta aos servidores remotos permanece em
 memória, enquanto os conjuntos que os servidores remotos constroem a partir dela podem ser gravados em disco.
 
-Quando um conjunto é gravado em disco durante sua construção, a subconsulta inteira é lida antes que os limites de tamanho
-do conjunto sejam verificados: `max_rows_in_set` conta suas chaves distintas, e `max_bytes_in_set` conta apenas a
-parte dele que está em memória. Com `set_overflow_mode = 'break'`, o conjunto mantém, até os limites, as chaves que vêm primeiro na ordem
-em que ele as armazena em disco, e não as chaves das primeiras linhas da subconsulta.
-Para uma chave `UInt64`, essas chaves são os menores valores. Para uma chave `String`, elas formam um subconjunto arbitrário,
-já que o conjunto armazena em disco apenas o SipHash de 128 bits de cada string.
+Quando um conjunto é gravado em disco durante sua construção, a subconsulta inteira é lida antes que os limites de tamanho do
+conjunto sejam verificados: `max_rows_in_set` conta suas chaves distintas, e `max_bytes_in_set` conta cada chave pela
+largura que ela ocupa no conjunto, de 1 a 32 bytes, como 8 bytes para um `UInt64` e 16 bytes para uma `String`, mas
+não a memória usada pelas consultas, como o filtro de Bloom e o cache. Com
+`set_overflow_mode = 'break'`, o conjunto mantém, até os limites, as chaves que vêm primeiro na ordem em que ele
+as armazena em disco, e não as chaves das primeiras linhas da subconsulta. Para chaves numéricas,
+de datas e de valores `FixedString` curtos, isoladas ou em uma tupla, essas são as menores chaves. Outras chaves, como
+`String`, formam um subconjunto arbitrário.
 
 ## Subconsultas Distribuídas {#distributed-subqueries}
 

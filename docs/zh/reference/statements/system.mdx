@@ -99,6 +99,11 @@ SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
 清除主索引缓存。该缓存会在内存中保存 [`MergeTree`](/zh/reference/engines/table-engines/mergetree-family/mergetree) 表的主键。
 其大小由服务器级设置 [`primary_index_cache_size`](/zh/reference/settings/server-settings/settings/primary-index#primary_index_cache_size) 控制。
 
+## SYSTEM CLEAR|DROP STATISTICS CACHE {#drop-statistics-cache}
+
+清空统计信息缓存。该缓存在内存中保存 [`MergeTree`](/zh/reference/engines/table-engines/mergetree-family/mergetree) 表各数据分区片段的列统计信息，每个数据分区片段的每一列对应一个条目。
+缓存大小由服务端级设置 `statistics_cache_size` 配置。
+
 ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
 
 清空 Iceberg 元数据缓存。

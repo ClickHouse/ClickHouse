@@ -267,6 +267,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 عدد المرات التي تخطّى فيها مُولِّد AST على جانب الخادم عملية التشويش بسبب وجود تنفيذ داخلي جارٍ لأمر DDL خاص بقاعدة بيانات متماثلة (ZooKeeperMetadataTransaction نشطة) ضمن الـ context.
 
+### ASTFuzzerSkippedSecondaryQuery {#astfuzzerskippedsecondaryquery}
+
+عدد المرات التي تخطّت فيها أداة اختبار عشوائي لشجرة البنية المجردة (AST) من جانب الخادم عملية التشويش، لكون الاستعلام استعلامًا ثانويًا مُرسَلًا من عقدة أخرى.
+
 ### AsynchronousReaderIgnoredBytes {#asynchronousreaderignoredbytes}
 
 عدد البايتات التي جرى تجاهلها أثناء القراءة غير المتزامنة
@@ -1400,7 +1404,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 ### DistinctTransformsSwitchedToPassThrough {#distincttransformsswitchedtopassthrough}
 
-عدد تحويلات `DISTINCT` الأولية التي حرّرت جدول تجزئة الخاص بها وبدأت بتمرير كل row كما هو، إما لأن ذاكرة الاستعلام تجاوزت threshold الخاص بـ `DISTINCT` الخارجي، أو لأن allocations الـ hashing المتوقعة كانت ستتجاوز ما تبقى من ميزانية الـ threshold (انظر `max_bytes_before_external_distinct`): إذ يتولى الـ `DISTINCT` النهائي، الذي يكتب إلى القرص، حلّ التكرارات بدلًا منها.
+عدد تحويلات `DISTINCT` الأولية التي حرّرت جدول تجزئة الخاص بها وبدأت بتمرير كل row كما هو، إما لأن ذاكرة الاستعلام تجاوزت عتبة الكتابة الخاصة بالمشغّل الذي يليها، أو لأن allocations الـ hashing المتوقعة كانت ستتجاوز ما تبقى من ميزانية العتبة. فقبل `DISTINCT`، تكون العتبة هي `max_bytes_before_external_distinct`، ويتولى الـ `DISTINCT` النهائي، الذي يكتب إلى القرص، حلّ التكرارات بدلًا منها. أما قبل مجموعة `IN`، فتكون العتبة هي عتبة الكتابة الخاصة بالمجموعة (انظر `max_bytes_before_external_set`)، وتتولى المجموعة حلّ التكرارات.
 
 ### DistrCacheBackgroundWrites {#distrcachebackgroundwrites}
 
@@ -2074,9 +2078,21 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 كمية البيانات (غير المضغوطة، قبل تطبيق الضغط) التي تكتبها المعالجة الخارجية (الفرز/التجميع/الربط)
 
+### ExternalSetBloomFilterSkippedKeys {#externalsetbloomfilterskippedkeys}
+
+عدد المفاتيح التي استبعدتها مرشّحات بلوم الخاصة بمجموعات `IN` المخزّنة في الذاكرة الخارجية أثناء عمليات البحث.
+
+### ExternalSetCacheHits {#externalsetcachehits}
+
+عدد الكتل التي جلبتها عمليات البحث في مجموعات `IN` المخزّنة في الذاكرة الخارجية من ذاكرة التخزين المؤقت الخاصة بالمجموعة، بدلاً من قراءتها من الملف المؤقت.
+
 ### ExternalSetCompressedBytes {#externalsetcompressedbytes}
 
 عدد البايتات المضغوطة المكتوبة لمجموعات `IN` في الذاكرة الخارجية.
+
+### ExternalSetLookupKeys {#externalsetlookupkeys}
+
+عدد المفاتيح التي جرى البحث عنها في مجموعات `IN` المخزنة في الذاكرة الخارجية.
 
 ### ExternalSetMerge {#externalsetmerge}
 
@@ -2085,6 +2101,14 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### ExternalSetReadBlocks {#externalsetreadblocks}
 
 عدد الكتل المقروءة من الملفات المؤقتة لمجموعات `IN` المخزّنة في الذاكرة الخارجية، وذلك للبحث عن المفاتيح.
+
+### ExternalSetTailKeptKeys {#externalsettailkeptkeys}
+
+عدد المفاتيح التي يُحتفظ بها في الذاكرة لعملية الدمج النهائية لمجموعة `IN` في الذاكرة الخارجية.
+
+### ExternalSetTailSpilledKeys {#externalsettailspilledkeys}
+
+عدد المفاتيح الموجودة في الذاكرة التي كُتبت إلى ملف مؤقت قبل الدمج النهائي لمجموعة `IN` في الذاكرة الخارجية، حتى لا يتجاوز الدمج عتبة الكتابة.
 
 ### ExternalSetUncompressedBytes {#externalsetuncompressedbytes}
 
@@ -2213,14 +2237,6 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### FileSegmentWaitTimeouts {#filesegmentwaittimeouts}
 
 عدد المرات التي انتهت فيها مهلة انتظار مقطع الملف في حالة DOWNLOADING (راجع `filesystem_cache_wait_for_concurrent_download_timeout_milliseconds`)
-
-### FileSegmentWaitWithoutData {#filesegmentwaitwithoutdata}
-
-عدد المرات التي انتهى فيها انتظار file segment في الحالة DOWNLOADING بسبب تحرير أداة التنزيل للمقطع قبل أن تنزّل الإزاحة المنتظَرة
-
-### FileSegmentWaitWithoutDataMicroseconds {#filesegmentwaitwithoutdatamicroseconds}
-
-الوقت المستغرق في حالات الانتظار التي يحصيها العدّاد `FileSegmentWaitWithoutData`
 
 ### FileSegmentWriteMicroseconds {#filesegmentwritemicroseconds}
 
@@ -2377,10 +2393,6 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### FilesystemCachePriorityWriteLockMicroseconds {#filesystemcacheprioritywritelockmicroseconds}
 
 مدة قفل ذاكرة التخزين المؤقت لنظام الملفات عند الكتابة إلى قائمة انتظار الأولوية
-
-### FilesystemCachePromotedFileSegments {#filesystemcachepromotedfilesegments}
-
-عدد مقاطع الملفات التي تمت ترقيتها (نقلها) من قائمة الانتظار التجريبية إلى قائمة الانتظار المحمية ضمن سياسة التخزين المؤقت SLRU.
 
 ### FilesystemCacheReserveAheadRetries {#filesystemcachereserveaheadretries}
 
@@ -3396,7 +3408,7 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 ### LoadedStatistics {#loadedstatistics}
 
-عدد أجزاء البيانات التي حُمِّلت إحصاءات أعمدتها
+عدد أجزاء البيانات التي جُمعت إحصاءات أعمدتها لاستخدامها في مُقدِّر الانتقائية، سواء من ذاكرة التخزين المؤقت للإحصاءات أو من جزء البيانات نفسه
 
 ### LoadedStatisticsMicroseconds {#loadedstatisticsmicroseconds}
 
@@ -5500,7 +5512,7 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 ### SetsSpilledToDisk {#setsspilledtodisk}
 
-عدد مجموعات `IN` التي رُحِّلت إلى القرص أثناء بنائها من الاستعلام الفرعي الخاص بها.
+عدد مجموعات `IN` التي رُحِّلت إلى القرص أثناء بنائها من الاستعلام الفرعي الخاص بها أو أثناء استخدام الاستعلام لها.
 
 ### SettingsProfileCacheRecalculationMicroseconds {#settingsprofilecacherecalculationmicroseconds}
 
@@ -6078,6 +6090,14 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 عدد طلبات update&#95;lease المُرسَلة إلى خدمة اكتشاف العمال عديمي الحالة (stateless worker discovery service) لتجديد مدة استئجار العمال.
 
+### StatisticsCacheHits {#statisticscachehits}
+
+عدد المرات التي عُثر فيها على إحصاءات عمود في جزء بيانات داخل ذاكرة التخزين المؤقت للإحصاءات.
+
+### StatisticsCacheMisses {#statisticscachemisses}
+
+عدد المرات التي لم يُعثر فيها على إحصاءات عمود في جزء بيانات ضمن ذاكرة التخزين المؤقت للإحصاءات، مما استلزم تحميلها من الجزء.
+
 ### StorageBufferErrorOnFlush {#storagebuffererroronflush}
 
 عدد المرات التي تعذّر فيها على مخزن مؤقت في جدول &#39;Buffer&#39; إجراء التفريغ بسبب خطأ أثناء الكتابة إلى جدول الوجهة.
@@ -6245,6 +6265,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### TextIndexDiscardPatternScan {#textindexdiscardpatternscan}
 
 عدد المرات التي استُبعد فيها فحص القاموس المستند إلى النمط في فهرس نصي لأن عدد قوائم الإسناد المطلوب قراءتها تجاوز العتبة.
+
+### TextIndexFilledFromFoldedPostings {#textindexfilledfromfoldedpostings}
+
+عدد المرات التي مُلئ فيها العمود الافتراضي للفهرس النصي لجميع صفوف عملية القراءة مباشرةً من قوائم الترحيلات التي طُويت أثناء تحليل الفهرس، بدلًا من قوائم الترحيلات المُنشأة لكل حبيبة.
 
 ### TextIndexGenericExclusionSearchAlgorithm {#textindexgenericexclusionsearchalgorithm}
 
@@ -6518,9 +6542,17 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 عدد البايتات التي طُردت من الذاكرة المؤقتة غير المضغوطة.
 
+### UniqueKeyBitmapGranulesSkipped {#uniquekeybitmapgranulesskipped}
+
+عدد حبيبات البيانات الميتة كليًا التي يتم تخطيها أثناء تحليل الفهرس في جداول UNIQUE KEY بالاستناد إلى خريطة بتات الحذف.
+
 ### UniqueKeyBitmapLoadMicroseconds {#uniquekeybitmaploadmicroseconds}
 
 الوقت المستغرق في قراءة الملفات الجانبية لـ delete-bitmap الخاصة بـ UNIQUE KEY وفك تسلسلها عند حدوث إخفاق في DeleteBitmapCache.
+
+### UniqueKeyBitmapRowsSkipped {#uniquekeybitmaprowsskipped}
+
+عدد الصفوف التي استبعدتها خريطة بتات الحذف الخاصة بـ UNIQUE KEY على مستوى الصف، قبل مرحلة PREWHERE.
 
 ### UniqueKeyConflictIgnoredRows {#uniquekeyconflictignoredrows}
 

@@ -92,6 +92,54 @@ Valores posibles:
 
 En caso de usar ORDER BY con LIMIT, cuando el uso de memoria supere el umbral especificado, realiza pasos adicionales de combinación de bloques antes de la fusión final para conservar solo las primeras filas del LIMIT.
 
+## max_bytes_for_external_set_bloom_filter {#max_bytes_for_external_set_bloom_filter}
+
+<SettingsInfoBlock type="UInt64" default_value="134217728" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "Nueva configuración para limitar la memoria del filtro de Bloom que mantiene un conjunto de `IN` en disco para evitar leer el disco cuando se buscan valores que no están en el conjunto."}]}]} />
+
+Presupuesto de memoria, en bytes, para el filtro de Bloom que cada conjunto de `IN` escrito en disco mantiene en memoria. El
+filtro permite que las búsquedas de valores que no están en el conjunto no tengan que leer el disco. No acelera las búsquedas
+de valores que sí están en el conjunto.
+
+El filtro de un conjunto ocupa aproximadamente 1 byte por clave, o el presupuesto si este es menor. Las claves de un
+conjunto son sus valores distintos o, en el caso de `IN` con varias columnas, sus tuplas distintas:
+
+* Si el presupuesto es de al menos 1 byte por clave, el conjunto obtiene el filtro completo y aproximadamente el 97 % de las búsquedas de
+  valores que no están en el conjunto evitan el disco. Por ejemplo, un conjunto de 1 millón de claves ocupa aproximadamente 1 MiB.
+* Si el presupuesto es menor, el conjunto obtiene un filtro más débil que cabe en el presupuesto, y son menos las búsquedas de
+  valores ausentes del conjunto que evitan el disco. Por ejemplo, con un cuarto de byte por clave, aproximadamente el 60 % de
+  dichas búsquedas evitan el disco, en lugar del 97 %.
+* Si el presupuesto es inferior a aproximadamente 1/7 de byte por clave, el conjunto no obtiene ningún filtro, ya que este
+  permitiría evitar el disco en tan pocas búsquedas que no compensaría el coste de construirlo.
+
+Con el presupuesto predeterminado de 128 MiB, los conjuntos de hasta unos 130 millones de claves obtienen el filtro completo, y los de
+más de unos 950 millones de claves no obtienen ninguno. Aumente el presupuesto para conjuntos más grandes cuando la mayoría de los valores
+buscados no estén en el conjunto. Redúzcalo cuando haya poca memoria disponible o cuando la mayoría de los valores buscados estén en el
+conjunto, ya que en ese caso el filtro no aporta nada. `0` deshabilita el filtro.
+
+El filtro se contabiliza en el uso de memoria de la consulta, como `max_memory_usage`, pero no en
+`max_bytes_in_set`. El presupuesto se aplica a cada conjunto, no a la consulta.
+
+Consulte [IN en memoria externa](/es/reference/statements/in#in-in-external-memory).
+
+## max_bytes_for_external_set_cache {#max_bytes_for_external_set_cache}
+
+<SettingsInfoBlock type="UInt64" default_value="134217728" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "Nueva configuración para limitar la memoria de la caché de bloques que mantiene un conjunto de `IN` en disco, de modo que sus búsquedas no vuelvan a leer los mismos bloques desde el disco."}]}]} />
+
+Presupuesto de memoria, en bytes, para la caché de bloques que cada conjunto de `IN` escrito en disco mantiene en memoria. Cuando una
+búsqueda necesita un bloque que ya leyó una búsqueda anterior, lo obtiene de la caché en lugar de volver a leerlo
+desde el disco. La caché resulta útil cuando las búsquedas necesitan repetidamente los mismos bloques, como ocurre con las búsquedas de unos pocos
+valores frecuentes o con muchas búsquedas en un conjunto que cabe en la caché. Aporta poco cuando las búsquedas se reparten
+de forma uniforme por un conjunto mucho mayor que la caché. `0` deshabilita la caché.
+
+El presupuesto se aplica a cada conjunto por separado. La caché computa en el uso de memoria de la consulta, por ejemplo en
+`max_memory_usage`, pero no en `max_bytes_in_set`.
+
+Consulte [IN en memoria externa](/es/reference/statements/in#in-in-external-memory).
+
 ## max_bytes_for_lazy_final {#max_bytes_for_lazy_final}
 
 <SettingsInfoBlock type="UInt64" default_value="256000000" />
@@ -198,9 +246,9 @@ Tiene efecto en todos los `join_algorithm` basados en hash, incluido `grace_hash
 
 ## max_bytes_ratio_before_external_set {#max_bytes_ratio_before_external_set}
 
-<SettingsInfoBlock type="Double" default_value="0" />
+<SettingsInfoBlock type="Double" default_value="0.5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nueva configuración que permite el volcado a disco del conjunto de `IN` con una subconsulta cuando el uso de memoria supera la proporción indicada de la memoria disponible. Si es 0, solo se aplica `max_bytes_before_external_set`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.5"},{"label": "Se habilitó de forma predeterminada el volcado a disco del conjunto de `IN` con una subconsulta, a partir de la mitad de la memoria disponible del servidor o del usuario."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "Nueva configuración que permite el volcado a disco del conjunto de `IN` con una subconsulta cuando el uso de memoria supera la proporción indicada de la memoria disponible. Si es 0, solo se aplica `max_bytes_before_external_set`."}]}]} />
 
 Fracción de la memoria disponible del servidor o del usuario que se utiliza para calcular, al inicio de la ejecución, el umbral a partir del cual se vuelca a disco el conjunto de `IN`
 con una subconsulta. Por ejemplo, `0.5` utiliza la mitad de la memoria disponible.

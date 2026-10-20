@@ -145,6 +145,14 @@ Shuffle 전략이 올바른 결과를 생성할 수 없는 경우, 예를 들어
 기본값은 비활성화입니다. 정렬을 분산하는 재작성은 자신이 감싸는 정렬이 입력이 이미
 정렬되어 있다는 사실에 의존하지 않는다고 가정합니다. 그러나 이러한 의존성이 있는 정렬에는 순서를 보존하지 않는 exchange를 통해 행이 전달될 수 있습니다. 현재는 읽기와 정렬 사이에 exchange가 없는 형태만 안전합니다.
 
+## distributed_plan_worker_cluster {#distributed_plan_worker_cluster}
+
+<PrivatePreviewBadge />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": ""},{"label": "분산 실행 계획(distributed plan)을 실행할 상태 비저장 워커 클러스터를 선택하는 새로운 설정입니다."}]}]} />
+
+이 쿼리의 분산 실행 계획(distributed plan)을 실행할 상태 비저장 워커 클러스터의 이름입니다. 기본값인 빈 값을 사용하면 미리 구성된 기본 클러스터가 선택됩니다. 다른 클러스터는 `stateless_worker_client.clusters`에서 구성합니다.
+
 ## distributed_plan_workers_num {#distributed_plan_workers_num}
 
 <PrivatePreviewBadge />

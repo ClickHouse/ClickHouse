@@ -99,6 +99,11 @@ mark cache をクリアします。
 メモリ内に [`MergeTree`](/ja/reference/engines/table-engines/mergetree-family/mergetree) テーブルの主キーを保持しているプライマリインデックスキャッシュをクリアします。
 そのサイズは、サーバーレベルの設定 [`primary_index_cache_size`](/ja/reference/settings/server-settings/settings/primary-index#primary_index_cache_size) で設定します。
 
+## SYSTEM CLEAR|DROP STATISTICS CACHE {#drop-statistics-cache}
+
+統計キャッシュをクリアします。統計キャッシュは、[`MergeTree`](/ja/reference/engines/table-engines/mergetree-family/mergetree) テーブルのデータパーツのカラム統計をメモリ上に保持するもので、データパーツとカラムの組み合わせごとに 1 つのエントリを持ちます。
+キャッシュサイズは、サーバーレベルの設定 `statistics_cache_size` で設定します。
+
 ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
 
 Iceberg のメタデータキャッシュをクリアします。

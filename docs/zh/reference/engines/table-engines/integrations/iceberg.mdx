@@ -109,7 +109,7 @@ CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table
 
 上述数据类型映射适用于读取操作。ClickHouse 创建或演进 Iceberg schema 并写入数据时，存在以下限制：
 
-* ClickHouse 无法创建包含 `Bool`、`FixedString`、`Int8`、`UInt8`、`Int16` 或 `UInt16` 的 Iceberg schema，也无法将列添加为或修改为上述类型之一。操作会因不支持的类型异常而失败。但这并不妨碍向现有 Iceberg 列中插入 `Bool` 值。
+* ClickHouse 无法创建包含 `Bool`、`FixedString`、`Int8`、`UInt8`、`Int16`、`UInt16`、`Time` 或 `Time64` 的 Iceberg schema，也无法将列添加为或修改为上述类型之一。操作会因不支持的类型异常而失败。但这并不妨碍向现有 Iceberg 列中插入 `Bool` 值。
 * ClickHouse 同样无法创建包含 `UInt64` 的 Iceberg schema：Iceberg 中最宽的整数类型是有符号 64 位的 `long`，无法表示所有 `UInt64` 值。请改用 `Int64` 或 `Decimal(20, 0)`。创建包含 `UInt64` 列 (包括 `Array(UInt64)` 这类嵌套列) 的表时，即使该路径下已存在 Iceberg 表，操作也会抛出异常并失败。出于同样的原因，`UInt32` 列会被扩宽为 Iceberg `long`，因此读回时为 `Int64`。
 * 当 ClickHouse 创建或演进 Iceberg schema 时，会将所有 `DateTime` 和 `DateTime64` 列映射为 Iceberg `timestamp`，后者具有微秒精度且不带时区。ClickHouse 无法生成 `timestamptz`、`timestamp_ns` 或 `timestamptz_ns` schema 类型，因此 Iceberg schema 无法表示更高精度和时区语义。
 * ClickHouse 无法向使用 `decimal`、`fixed`、`timestamp_ns` 或 `timestamptz_ns` 列作为直接分区字段的 Iceberg 表写入数据。操作会因不支持的类型异常而失败。

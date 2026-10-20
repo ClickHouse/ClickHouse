@@ -253,7 +253,7 @@ Introduzido em: v1.1.0
 
 Calcula o quociente entre dois valores, `a` e `b`. O operador `/` é equivalente a esta função.
 Para argumentos inteiros e de ponto flutuante, o tipo do resultado é [Float64](/pt-BR/reference/data-types/float) por padrão.
-Com `exact_division_for_integers = 1`, dois argumentos inteiros passam a produzir um quociente inteiro truncado em direção a zero.
+Com `sql_compatible_division_for_integers = 1`, dois argumentos inteiros passam a produzir um quociente inteiro truncado em direção a zero.
 O resultado tem a largura do primeiro argumento e é com sinal se algum dos argumentos tiver sinal.
 Nesse modo, a divisão por zero ou um quociente fora do intervalo do tipo do resultado lança uma exceção.
 
@@ -366,9 +366,9 @@ Calcula o quociente entre `x` e `y`. Quando ambos os argumentos são inteiros, o
 O resultado tem a largura de `x` e é com sinal se algum dos argumentos for com sinal. Tipos inteiros de até 256 bits são compatíveis, incluindo combinações de argumentos com e sem sinal.
 Divisão por zero ou um quociente fora do intervalo do tipo de resultado lança `ILLEGAL_DIVISION`. Argumentos Nullable propagam `NULL`.
 
-Para argumentos de ponto flutuante ou `Decimal`, a função segue as mesmas regras de `divide` com `exact_division_for_integers = 0`.
+Para argumentos de ponto flutuante ou `Decimal`, a função segue as mesmas regras de `divide` com `sql_compatible_division_for_integers = 0`.
 
-O comportamento da função não depende de `exact_division_for_integers`.
+O comportamento da função não depende de `sql_compatible_division_for_integers`.
 Quando essa configuração está habilitada, novas expressões `/` e `divide` enviadas são reescritas como `divideExact`.
 Esse nome explícito é preservado em expressões armazenadas, como metadados de tabela e visões, de modo que alterar a configuração posteriormente não muda a semântica de divisão dessas expressões.
 Expressões `/` e `divide` já armazenadas mantêm seu comportamento original.
@@ -423,8 +423,8 @@ SELECT divideExact(5.0, 2) AS quotient, toTypeName(quotient)
 
 Introduzido em: v25.5.0
 
-O mesmo que `divide` com `exact_division_for_integers = 0`, mas retorna `NULL` ao dividir por zero.
-A configuração `exact_division_for_integers` não afeta esta função.
+O mesmo que `divide` com `sql_compatible_division_for_integers = 0`, mas retorna `NULL` ao dividir por zero.
+A configuração `sql_compatible_division_for_integers` não afeta esta função.
 
 **Sintaxe**
 

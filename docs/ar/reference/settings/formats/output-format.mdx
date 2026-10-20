@@ -195,7 +195,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "3"},{"label": "السماح بتغيير مستوى الضغط في مخرجات الاستعلام"}]}]} />
 
-مستوى الضغط الافتراضي إذا كانت مخرجات الاستعلام مضغوطة. يُطبَّق هذا الإعداد عندما يتضمن استعلام `SELECT` ‎`INTO OUTFILE` أو عند الكتابة إلى دوال الجدول `file` و`url` و`hdfs` و`s3` و`azureBlobStorage`.
+مستوى الضغط الافتراضي إذا كانت مخرجات الاستعلام مضغوطة. يُطبَّق هذا الإعداد عندما يتضمن استعلام `SELECT` ‎`INTO OUTFILE` أو عند الكتابة إلى دوال الجدول `file` و`url` و`hdfs` و`s3` و`azureBlobStorage`. ويُطبَّق أيضًا على الاستجابة المضغوطة لطلب HTTP يستخدم طريقة ضغط غير `gzip` و`deflate`، أما هاتان الطريقتان فيُستخدم لهما الإعداد [http&#95;zlib&#95;compression&#95;level](/ar/reference/settings/session-settings/http#http_zlib_compression_level).
 
 القيم الممكنة: من `1` إلى `22`
 
