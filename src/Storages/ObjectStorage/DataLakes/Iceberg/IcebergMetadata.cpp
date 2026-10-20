@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <base/sleep.h>
 #include <fmt/ranges.h>
+#include <array>
 #include "config.h"
 
 #if USE_AVRO
@@ -833,8 +834,28 @@ void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Iceberg storage does not support combining MODIFY SETTING or RESET SETTING with other ALTER commands");
 
-        static constexpr std::array<std::string_view, 3> modifiable_settings
-            = {"iceberg_use_version_hint", "iceberg_recent_metadata_file_by_last_updated_ms_field", "iceberg_metadata_async_prefetch_period_ms"};
+        /// The settings which are stored only in the table definition, not in the Iceberg metadata, and which can change
+        /// for an existing table: the lookup of the metadata file, and the settings of the background compaction and of
+        /// the cleanup after it.
+        static constexpr auto modifiable_settings = std::to_array<std::string_view>({
+            "iceberg_use_version_hint",
+            "iceberg_recent_metadata_file_by_last_updated_ms_field",
+            "iceberg_metadata_async_prefetch_period_ms",
+            "allow_experimental_iceberg_compaction",
+            "allow_experimental_cleanup_old_data_files_compaction",
+            "iceberg_compaction_lock_lease_seconds",
+            "iceberg_compaction_delay_bias",
+            "iceberg_compaction_data_cleanup",
+            "iceberg_read_with_snapshot_lease",
+            "iceberg_snapshot_lease_seconds",
+            "iceberg_outdated_snapshot_lifetime_seconds",
+            "iceberg_compaction_commit_batch_size",
+            "iceberg_compaction_max_rows_in_data_file",
+            "iceberg_compaction_max_bytes_in_data_file",
+            "iceberg_max_number_datafiles_to_compact",
+            "iceberg_data_file_size_lower_threshold_compaction",
+            "iceberg_data_file_size_upper_threshold_compaction",
+        });
 
         auto check_setting = [](std::string_view setting_name)
         {
@@ -852,6 +873,10 @@ void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
                 check_setting(change.name);
             for (const auto & setting_name : command.settings_resets)
                 check_setting(setting_name);
+
+            /// Validates the values before anything is changed.
+            DataLakeStorageSettings new_settings;
+            new_settings.loadFromSettingsChanges(command.settings_changes);
         }
         return;
     }

@@ -244,6 +244,9 @@ public:
     }
 
 protected:
+    /// `ALTER TABLE ... MODIFY SETTING` and `RESET SETTING` of a data lake table.
+    void alterSettings(const StorageInMemoryMetadata & new_metadata, ContextPtr context);
+
     /// Get path sample for hive partitioning implementation.
     String getPathSample(ContextPtr context);
 

@@ -1231,12 +1231,11 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
 
     if (params.isSettingsAlter())
     {
-        auto new_settings = std::make_shared<DataLakeStorageSettings>();
-        new_settings->loadFromQuery(new_metadata.settings_changes->as<ASTSetQuery &>());
-        configuration->setDataLakeSettings(object_storage, context, std::move(new_settings));
+        alterSettings(new_metadata, context);
+        return;
     }
-    else
-        configuration->alter(object_storage, params, context, getStorageID(), catalog);
+
+    configuration->alter(object_storage, params, context, getStorageID(), catalog);
 
     if (catalog)
         return;
@@ -1246,6 +1245,55 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
         ->alterTable(context, storage_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
 }
+void StorageObjectStorage::alterSettings(const StorageInMemoryMetadata & new_metadata, ContextPtr context)
+{
+    auto new_settings = std::make_shared<DataLakeStorageSettings>();
+    new_settings->loadFromQuery(new_metadata.settings_changes->as<ASTSetQuery &>());
+
+    /// The metadata object of the table is created again with the new settings. It takes the global context rather
+    /// than the context of the query, so that the settings of the session which runs the `ALTER` do not stick to it.
+    const auto global_context = Context::getGlobalContextInstance();
+
+    /// The background jobs of the table (the compaction of an Iceberg table) belong to its metadata object and take
+    /// the settings from it, so they are stopped before it is replaced and started again if the table has them with
+    /// the new settings. This is how switching `allow_experimental_iceberg_compaction` stops or starts the compaction.
+    if (configuration->isBackgroundExecutable())
+    {
+        configuration->finishAllBackgroundJobs();
+        background_operations_assignee.finish();
+    }
+    auto start_background_jobs = [&]
+    {
+        if (configuration->isBackgroundExecutable())
+            background_operations_assignee.start();
+    };
+
+    try
+    {
+        auto previous_settings = configuration->getDataLakeSettings();
+        configuration->setDataLakeSettings(object_storage, global_context, std::move(new_settings));
+        try
+        {
+            DatabaseCatalog::instance()
+                .getDatabase(storage_id.database_name)
+                ->alterTable(context, storage_id, new_metadata, /*validate_new_create_query=*/true);
+        }
+        catch (...)
+        {
+            /// The definition of the table is not changed, so the table keeps the previous settings.
+            configuration->setDataLakeSettings(object_storage, global_context, std::move(previous_settings));
+            throw;
+        }
+        setInMemoryMetadata(new_metadata);
+    }
+    catch (...)
+    {
+        start_background_jobs();
+        throw;
+    }
+    start_background_jobs();
+}
+
 Pipe StorageObjectStorage::alterPartition(
     const StorageMetadataPtr & /*metadata_snapshot*/, const PartitionCommands & commands, ContextPtr context)
 {

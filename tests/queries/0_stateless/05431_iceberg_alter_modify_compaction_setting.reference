@@ -1,0 +1,14 @@
+SETTINGS iceberg_format_version = 2, allow_experimental_iceberg_compaction = 0, iceberg_compaction_delay_bias = 100
+SETTINGS iceberg_format_version = 2, allow_experimental_iceberg_compaction = 0, iceberg_compaction_delay_bias = 600, iceberg_data_file_size_lower_threshold_compaction = 1000
+1
+2
+SETTINGS iceberg_format_version = 2, allow_experimental_iceberg_compaction = 1, iceberg_compaction_delay_bias = 600, iceberg_data_file_size_lower_threshold_compaction = 1000
+SETTINGS iceberg_format_version = 2, allow_experimental_iceberg_compaction = 0, iceberg_data_file_size_lower_threshold_compaction = 1000
+1
+2
+3
+SETTINGS iceberg_format_version = 2, allow_experimental_iceberg_compaction = 0, iceberg_data_file_size_lower_threshold_compaction = 1000
+SETTINGS iceberg_format_version = 2, allow_experimental_iceberg_compaction = 0, iceberg_data_file_size_lower_threshold_compaction = 1000
+1
+2
+3
