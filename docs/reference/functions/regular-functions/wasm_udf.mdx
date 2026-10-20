@@ -559,7 +559,7 @@ The sizes above use the number of rows stored in the column: `1` for a constant 
 
 - `null_offset` is `0`;
 - `offsets_offset` points to one index per row into the dictionary;
-- `data_offset` points to a `uint32` dictionary row count, a `uint8` index width (1, 2, 4 or 8 bytes), 3 padding bytes and a column descriptor for the dictionary. Dictionary row `0` is the default value of `T`.
+- `data_offset` points to a `uint32` dictionary row count, a `uint8` index width (1, 2, 4 or 8 bytes), 3 padding bytes and a column descriptor for the dictionary. Dictionary row `0` is the default value of `T`. The other dictionary rows are exactly the values that this frame's rows reference, so the guest never sees a value from a row it was not given, such as a row removed by a row policy.
 
 #### Types and `NULL` {#columnar-v1-types-and-null}
 

@@ -146,6 +146,37 @@ void validateColumnarWireSupportedType(const DataTypePtr & type, bool is_nested)
         "COLUMNAR_V1: type is not supported: {}", type->getName());
 }
 
+ColumnPtr compactLowCardinalityDictionaries(const ColumnPtr & col)
+{
+    if (const auto * const_col = typeid_cast<const ColumnConst *>(col.get()))
+    {
+        ColumnPtr data = compactLowCardinalityDictionaries(const_col->getDataColumnPtr());
+        if (data == const_col->getDataColumnPtr())
+            return col;
+        return ColumnConst::create(std::move(data), const_col->size());
+    }
+    if (const auto * lc_col = typeid_cast<const ColumnLowCardinality *>(col.get()))
+        return lc_col->cutAndCompact(0, lc_col->size());
+    if (const auto * var_col = typeid_cast<const ColumnVariant *>(col.get()))
+    {
+        Columns variants;
+        variants.reserve(var_col->getNumVariants());
+        bool changed = false;
+        for (size_t local = 0; local < var_col->getNumVariants(); ++local)
+        {
+            const ColumnPtr & variant = var_col->getVariantPtrByLocalDiscriminator(local);
+            variants.push_back(compactLowCardinalityDictionaries(variant));
+            changed |= variants.back() != variant;
+        }
+        if (!changed)
+            return col;
+        return ColumnVariant::create(
+            var_col->getLocalDiscriminatorsPtr(), var_col->getOffsetsPtr(), variants,
+            var_col->getLocalToGlobalDiscriminatorsMapping());
+    }
+    return col;
+}
+
 /// COL_COMPLEX data, recursive:
 ///   Array(T):    uint64 offsets[n + 1], then T's data for all elements
 ///   Tuple(T...): each element's data in turn

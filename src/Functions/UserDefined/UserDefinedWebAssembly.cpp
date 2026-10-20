@@ -601,9 +601,9 @@ private:
             DataTypePtr target_type = (removeLowCardinality(cols[ci].type)->isNullable() && !declared_arg_type->isNullable())
                 ? makeNullable(declared_arg_type)
                 : declared_arg_type;
-            casted_columns[ci] = cols[ci].type->equals(*target_type)
+            casted_columns[ci] = compactLowCardinalityDictionaries(cols[ci].type->equals(*target_type)
                 ? cols[ci].column
-                : castColumn(cols[ci], target_type);
+                : castColumn(cols[ci], target_type));
             const IColumn * col = casted_columns[ci].get();
             bool is_const = false;
 

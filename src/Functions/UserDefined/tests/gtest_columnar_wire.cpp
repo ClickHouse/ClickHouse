@@ -946,6 +946,71 @@ TEST(ColumnarWire, LowCardinalityStringEncodeDecodeRoundTrip)
     EXPECT_EQ(decoded_lc->getDataAt(3), "c");
 }
 
+// ── LowCardinality dictionaries are compacted before they reach the guest ────
+//
+// `filter` keeps the whole dictionary, so the filtered column below still holds
+// "secret" although no row references it. The guest must see only "" (default)
+// and "public", at top level and as a `Variant` alternative.
+
+namespace
+{
+
+ColumnPtr makeFilteredLowCardinality()
+{
+    auto lowcard_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    auto lc_col = lowcard_type->createColumn();
+    auto full = ColumnString::create();
+    full->insertData("public", 6);
+    full->insertData("secret", 6);
+    typeid_cast<ColumnLowCardinality &>(*lc_col).insertRangeFromFullColumn(*full, 0, full->size());
+
+    IColumn::Filter keep_first{1, 0};
+    return lc_col->filter(keep_first, 1);
+}
+
+uint32_t dictionaryRows(const ColumnLowCardinality & lc_col)
+{
+    return static_cast<uint32_t>(lc_col.getDictionary().getNestedColumn()->size());
+}
+
+}
+
+TEST(ColumnarWire, LowCardinalityDictionaryCompactedToReferencedRows)
+{
+    ColumnPtr filtered = makeFilteredLowCardinality();
+    ASSERT_EQ(dictionaryRows(assert_cast<const ColumnLowCardinality &>(*filtered)), 3u);
+
+    ColumnPtr compacted = compactLowCardinalityDictionaries(filtered);
+    auto buf = encodeCHColumn(compacted.get(), 1);
+    ColDescriptor desc = readDesc(buf);
+    ASSERT_EQ(desc.type, COL_LOWCARD);
+    uint32_t dict_row_count = 0;
+    std::memcpy(&dict_row_count, buf.data() + desc.data_offset, 4);
+    EXPECT_EQ(dict_row_count, 2u);
+
+    auto decoded = readColumnarOutput(
+        {buf.data(), buf.size()}, std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), 1);
+    EXPECT_EQ(decoded->getDataAt(0), "public");
+
+    ColumnPtr const_compacted = compactLowCardinalityDictionaries(ColumnConst::create(filtered, 5));
+    const auto & const_data = assert_cast<const ColumnConst &>(*const_compacted).getDataColumn();
+    EXPECT_EQ(const_compacted->size(), 5u);
+    EXPECT_EQ(dictionaryRows(assert_cast<const ColumnLowCardinality &>(const_data)), 2u);
+}
+
+TEST(ColumnarWire, VariantLowCardinalityAlternativeDictionaryCompacted)
+{
+    auto discriminators = ColumnVariant::ColumnDiscriminators::create();
+    discriminators->insertValue(0);
+    ColumnPtr variant = ColumnVariant::create(ColumnPtr(std::move(discriminators)), Columns{makeFilteredLowCardinality()});
+
+    ColumnPtr compacted = compactLowCardinalityDictionaries(variant);
+    ASSERT_NE(compacted.get(), variant.get());
+    const auto & alternative = assert_cast<const ColumnVariant &>(*compacted).getVariantByLocalDiscriminator(0);
+    EXPECT_EQ(dictionaryRows(assert_cast<const ColumnLowCardinality &>(alternative)), 2u);
+    EXPECT_EQ(compacted->getDataAt(0), "public");
+}
+
 // ── Bounds check: wrapped offset must not bypass the check via integer overflow ──
 //
 // A malformed frame can set an offset field close to UINT64_MAX. The naive check
