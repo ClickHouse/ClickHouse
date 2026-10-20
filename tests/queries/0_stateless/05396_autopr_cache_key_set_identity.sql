@@ -24,23 +24,14 @@ SELECT sum(v IN (1, 2, 3)) FROM t_set_key SETTINGS log_comment = '05396_set_a_ag
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
 
-SYSTEM FLUSH LOGS query_log, text_log;
+SYSTEM FLUSH LOGS query_log;
 
 -- Each set finds no statistics on its first run, and the first one finds its own on the next.
-WITH no_stats AS
-(
-    SELECT DISTINCT query_id
-    FROM system.text_log
-    WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (logger_name = 'optimizeTree')
-      AND (message LIKE 'No stats found for hash %')
-)
-SELECT log_comment, query_id IN (SELECT query_id FROM no_stats) AS no_statistics
+SELECT log_comment, ProfileEvents['AutoParallelReplicasNoStatistics'] > 0 AS no_statistics
 FROM system.query_log
-WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES')
-  AND (current_database = currentDatabase()) AND startsWith(log_comment, '05396_set_')
-  AND (type = 'QueryFinish')
+WHERE (event_date >= yesterday()) AND (current_database = currentDatabase())
+  AND startsWith(log_comment, '05396_set_') AND (type = 'QueryFinish')
 ORDER BY event_time_microseconds
-SETTINGS max_rows_to_read = 0 -- system.text_log can be really big
 FORMAT TSVWithNames;
 
 DROP TABLE t_set_key;
