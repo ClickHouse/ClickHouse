@@ -201,41 +201,52 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
             std::lock_guard lock(reader_mutex);
             reader.emplace();
             reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
-            reader->reader.file_metadata = getFileMetadata(reader->reader.prefetcher);
+            auto cache_key = getMetadataCacheKey();
+            ParquetMetadataCache::MappedPtr cache_cell;
+            bool cache_hit = false;
+            if (cache_key)
+            {
+                std::tie(cache_cell, cache_hit) = metadata_cache->getOrSetMetadata(
+                    *cache_key, [&] { return readFileFooter(reader->reader.prefetcher); });
+                reader->reader.setFileFooter(cache_cell->footer, cache_cell->column_chunks);
+                if (cache_hit && object_with_metadata->metadata->isEtagUsableAsCacheKey())
+                {
+                    metadata_cache_cell = cache_cell;
+                    metadata_cache_key = *cache_key;
+                }
+            }
+            else
+            {
+                reader->reader.setFileFooter(readFileFooter(reader->reader.prefetcher));
+            }
             reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
             reader->reader.collect_key_condition_column_ranges
                 = metadata_cache_cell && format_filter_info && format_filter_info->keep_filter_column_statistics;
             reader->init(parser_shared_resources, buckets_to_read ? std::optional(buckets_to_read->row_group_ids) : std::nullopt);
+            /// Not after the miss that inserted the cell: replacing it would move it to SLRU's protected queue.
+            if (cache_hit)
+                metadata_cache->addColumnChunks(*cache_key, cache_cell, reader->reader.getColumnChunks());
         }
     }
 }
 
-parquet::format::FileMetaData ParquetV3BlockInputFormat::getFileMetadata(Parquet::Prefetcher & prefetcher)
+std::optional<ParquetMetadataCacheKey> ParquetV3BlockInputFormat::getMetadataCacheKey() const
 {
     if (metadata_cache && object_with_metadata.has_value() && object_with_metadata->metadata.has_value())
-    {
-        String file_name = object_with_metadata->getPath();
-        String etag = object_with_metadata->metadata->etag;
-        ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
-        bool loaded = false;
-        auto cell = metadata_cache->getOrSetMetadataCell(
-            cache_key,
-            [&]()
-            {
-                loaded = true;
-                return Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size);
-            });
-        if (!loaded && object_with_metadata->metadata->isEtagUsableAsCacheKey())
-        {
-            metadata_cache_cell = cell;
-            metadata_cache_key = std::move(cache_key);
-        }
-        return cell->metadata;
-    }
-    else
-    {
-        return Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size);
-    }
+        return ParquetMetadataCache::createKey(object_with_metadata->getPath(), object_with_metadata->metadata->etag);
+    return std::nullopt;
+}
+
+std::shared_ptr<const Parquet::FileFooter> ParquetV3BlockInputFormat::readFileFooter(Parquet::Prefetcher & prefetcher) const
+{
+    return Parquet::Reader::readFileFooter(prefetcher, read_options.format.parquet.footer_read_size);
+}
+
+std::shared_ptr<const Parquet::FileFooter> ParquetV3BlockInputFormat::getFileFooter(Parquet::Prefetcher & prefetcher) const
+{
+    if (auto cache_key = getMetadataCacheKey())
+        return metadata_cache->getOrSetMetadata(*cache_key, [&] { return readFileFooter(prefetcher); }).first->footer;
+    return readFileFooter(prefetcher);
 }
 
 void ParquetV3BlockInputFormat::cacheFilterColumnStatistics()
@@ -334,7 +345,7 @@ std::optional<size_t> ParquetCachedStatisticsFilter::canSkipFile(
         if (key_condition->checkInHyperrectangle(hyperrectangle, key_types).can_be_true)
             return std::nullopt;
     }
-    return cell->metadata.row_groups.size();
+    return cell->footer->metadata.row_groups.size();
 }
 
 void ParquetCachedStatisticsFilter::countSkippedFile(size_t num_row_groups)
@@ -354,10 +365,10 @@ Chunk ParquetV3BlockInputFormat::read()
         /// Don't init Reader and ReadManager if we only need file metadata.
         Parquet::Prefetcher temp_prefetcher;
         temp_prefetcher.init(in, read_options, parser_shared_resources);
-        parquet::format::FileMetaData file_metadata = getFileMetadata(temp_prefetcher);
+        auto footer = getFileFooter(temp_prefetcher);
 
 
-        auto chunk = getChunkForCount(size_t(file_metadata.num_rows));
+        auto chunk = getChunkForCount(size_t(footer->metadata.num_rows));
         chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(0));
 
         reported_count = true;
@@ -402,7 +413,7 @@ std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat:
         if (produced_rows)
             matched.push_back(row_group.row_group_idx);
     }
-    return std::make_pair(std::move(matched), reader->reader.file_metadata.row_groups.size());
+    return std::make_pair(std::move(matched), reader->reader.file_metadata().row_groups.size());
 }
 
 std::vector<std::pair<size_t, Field>> ParquetV3BlockInputFormat::getTopKBestValuesOfBuckets() const
@@ -480,7 +491,7 @@ void NativeParquetSchemaReader::initializeIfNeeded()
         return;
     Parquet::Prefetcher prefetcher;
     prefetcher.init(&in, read_options, /*parser_shared_resources_=*/ nullptr);
-    file_metadata = Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size);
+    file_metadata = Parquet::Reader::readFileFooter(prefetcher, read_options.format.parquet.footer_read_size)->metadata;
     initialized = true;
 }
 
@@ -558,9 +569,9 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
     Parquet::ReadOptions read_options = convertReadOptions(format_settings_);
     Parquet::Prefetcher prefetcher;
     prefetcher.init(&buf, read_options, /*parser_shared_resources_=*/ nullptr);
-    auto metadata = Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size);
+    auto footer = Parquet::Reader::readFileFooter(prefetcher, read_options.format.parquet.footer_read_size);
     std::vector<size_t> bucket_sizes;
-    for (const auto & row_group : metadata.row_groups)
+    for (const auto & row_group : footer->metadata.row_groups)
         bucket_sizes.push_back(size_t(row_group.total_byte_size));
 
     std::vector<std::vector<size_t>> buckets;
