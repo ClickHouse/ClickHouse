@@ -40,7 +40,7 @@ namespace ErrorCodes
 /// the name early and corrupt the document, so reject it.
 static String toValidUTF8String(const String & name)
 {
-    if (name.find('\0') != String::npos)
+    if (name.contains('\0'))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot write the name {} in BSON: it contains a zero byte", quoteString(name));
 
     WriteBufferFromOwnString buf;
