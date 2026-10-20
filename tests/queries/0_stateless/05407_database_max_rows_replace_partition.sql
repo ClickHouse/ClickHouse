@@ -1,3 +1,6 @@
+-- Tags: zookeeper, no-shared-merge-tree
+-- no-shared-merge-tree: the table engine is replaced.
+
 -- `REPLACE PARTITION FROM` must be charged against the database `max_rows` limit for the net change:
 -- the incoming rows minus the rows of the replaced destination partition. A replacement that does
 -- not fit must be rejected before anything is published. The source tables live in the current
