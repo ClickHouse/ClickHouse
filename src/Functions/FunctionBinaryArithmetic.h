@@ -3185,6 +3185,31 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             return moduloLeadsToFPE(a, b);
     }
 
+    template <typename CommonDataType, typename ResultDataType>
+    ColumnPtr executeNumericViaCommonType(const ColumnsWithTypeAndName & arguments, const NullMap * right_nullmap, NullMap * result_nullmap) const
+    {
+        const auto common_type = std::make_shared<CommonDataType>();
+        ColumnsWithTypeAndName converted_arguments
+        {
+            {castColumn(arguments[0], common_type), common_type, arguments[0].name},
+            {castColumn(arguments[1], common_type), common_type, arguments[1].name},
+        };
+
+        ColumnPtr res = executeNumeric(converted_arguments, *common_type, *common_type, right_nullmap, result_nullmap);
+        if (!res)
+            return nullptr;
+
+        /// The result type of the same-type kernel can be wider than the declared result
+        /// type (e.g. `modulo(UInt256, UInt8)` is `UInt8` while `modulo(UInt256, UInt256)`
+        /// is `UInt256`). Narrowing is exact: the fused kernel casts its result to the
+        /// declared type in the same way.
+        using CommonResultDataType = typename BinaryOperationTraits<Op, CommonDataType, CommonDataType>::ResultDataType;
+        if constexpr (!std::is_same_v<CommonResultDataType, ResultDataType>)
+            res = castColumn({res, std::make_shared<CommonResultDataType>(), ""}, std::make_shared<ResultDataType>());
+
+        return res;
+    }
+
     template <typename A, typename B>
     ColumnPtr executeNumeric(const ColumnsWithTypeAndName & arguments, const A & left, const B & right, const NullMap * right_nullmap, NullMap * result_nullmap = nullptr) const
     {
@@ -3346,33 +3371,9 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 /// arguments to a common type chosen so that the same-type kernel performs exactly
                 /// the same arithmetic as the fused kernel for the original pair would, and execute
                 /// the same-type kernel.
-                auto execute_via_common_type = [&]<typename CommonDataType>() -> ColumnPtr
-                {
-                    const auto common_type = std::make_shared<CommonDataType>();
-                    ColumnsWithTypeAndName converted_arguments
-                    {
-                        {castColumn(arguments[0], common_type), common_type, arguments[0].name},
-                        {castColumn(arguments[1], common_type), common_type, arguments[1].name},
-                    };
-
-                    ColumnPtr res = executeNumeric(converted_arguments, *common_type, *common_type, right_nullmap, result_nullmap);
-                    if (!res)
-                        return nullptr;
-
-                    /// The result type of the same-type kernel can be wider than the declared result
-                    /// type (e.g. `modulo(UInt256, UInt8)` is `UInt8` while `modulo(UInt256, UInt256)`
-                    /// is `UInt256`). Narrowing is exact: the fused kernel casts its result to the
-                    /// declared type in the same way.
-                    using CommonResultDataType = typename BinaryOperationTraits<Op, CommonDataType, CommonDataType>::ResultDataType;
-                    if constexpr (!std::is_same_v<CommonResultDataType, ResultDataType>)
-                        res = castColumn({res, std::make_shared<CommonResultDataType>(), ""}, std::make_shared<ResultDataType>());
-
-                    return res;
-                };
-
                 if constexpr (op_computes_in_result_type)
                 {
-                    return execute_via_common_type.template operator()<ResultDataType>();
+                    return executeNumericViaCommonType<ResultDataType, ResultDataType>(arguments, right_nullmap, result_nullmap);
                 }
                 else if constexpr (op_is_prunable_int_div)
                 {
@@ -3381,12 +3382,12 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     /// type otherwise.
                     using WiderType = std::conditional_t<(sizeof(T0) >= sizeof(T1)), T0, T1>;
                     using CommonType = std::conditional_t<is_signed_v<T0> || is_signed_v<T1>, make_signed_t<WiderType>, WiderType>;
-                    return execute_via_common_type.template operator()<DataTypeNumber<CommonType>>();
+                    return executeNumericViaCommonType<DataTypeNumber<CommonType>, ResultDataType>(arguments, right_nullmap, result_nullmap);
                 }
                 else if constexpr (op_is_prunable_positive_modulo)
                 {
                     /// See `op_is_prunable_positive_modulo`: the divisor is strictly narrower.
-                    return execute_via_common_type.template operator()<DataTypeNumber<T0>>();
+                    return executeNumericViaCommonType<DataTypeNumber<T0>, ResultDataType>(arguments, right_nullmap, result_nullmap);
                 }
                 else if constexpr (IsOperation<Op>::modulo_legacy)
                 {
@@ -3398,13 +3399,13 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     /// (non-legacy) rule below: legacy must keep the historical, sometimes
                     /// unsigned-computed behaviour byte for byte.
                     using CommonType = std::conditional_t<(sizeof(T0) > sizeof(T1)), T0, T1>;
-                    return execute_via_common_type.template operator()<DataTypeNumber<CommonType>>();
+                    return executeNumericViaCommonType<DataTypeNumber<CommonType>, ResultDataType>(arguments, right_nullmap, result_nullmap);
                 }
                 else if constexpr (is_unsigned_v<T0> && is_unsigned_v<T1>)
                 {
                     /// For two unsigned operands `ModuloImpl` takes the plain remainder in the wider type.
                     using CommonType = std::conditional_t<(sizeof(T0) > sizeof(T1)), T0, T1>;
-                    return execute_via_common_type.template operator()<DataTypeNumber<CommonType>>();
+                    return executeNumericViaCommonType<DataTypeNumber<CommonType>, ResultDataType>(arguments, right_nullmap, result_nullmap);
                 }
                 else
                 {
@@ -3424,7 +3425,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     using SafeSignedT1 = typename NumberTraits::Construct<true, false,
                         is_signed_v<T1> ? sizeof(T1) : next_integer_size(sizeof(T1))>::Type;
                     using CommonType = std::conditional_t<(sizeof(SafeSignedT0) >= sizeof(SafeSignedT1)), SafeSignedT0, SafeSignedT1>;
-                    return execute_via_common_type.template operator()<DataTypeNumber<CommonType>>();
+                    return executeNumericViaCommonType<DataTypeNumber<CommonType>, ResultDataType>(arguments, right_nullmap, result_nullmap);
                 }
             }
             else // can't avoid else and another indentation level, otherwise the compiler would try to instantiate
