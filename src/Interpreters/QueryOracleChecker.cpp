@@ -18,7 +18,6 @@
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTWithAlias.h>
-#include <Parsers/ASTWithElement.h>
 #include <Common/FieldVisitorToString.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
@@ -35,6 +34,8 @@
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Core/Joins.h>
 #include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Functions/FunctionFactory.h>
@@ -68,6 +69,9 @@ extern const SettingsBool ast_fuzzer_oracle;
 extern const SettingsBool enable_global_with_statement;
 extern const SettingsJoinStrictness join_default_strictness;
 extern const SettingsUInt64 max_expanded_ast_elements;
+extern const SettingsUInt64 max_parser_backtracks;
+extern const SettingsUInt64 max_parser_depth;
+extern const SettingsUInt64 max_query_size;
 }
 
 namespace ErrorCodes
@@ -1171,6 +1175,7 @@ bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr
 
 /// Appends each `MergeTree` table a read of `ast` reaches, followed by its active part names. Parts
 /// are immutable and a part name is never reused in a table, so an unchanged list means unchanged data.
+/// `APPLY` members are not walked: the `WITH` expansion does not reach them, so a name there may be a CTE.
 void collectReadParts(const ASTPtr & ast, const ContextPtr & context, Strings & parts, size_t depth = 0)
 {
     if (!ast || depth > MAX_DEFINITION_SCREEN_DEPTH)
@@ -1204,23 +1209,21 @@ void collectReadParts(const ASTPtr & ast, const ContextPtr & context, Strings & 
             collectReadParts(identifier->createTable(), context, parts, depth);
     }
 
-    forEachChild(ast, [&](const ASTPtr & child) { collectReadParts(child, context, parts, depth); });
+    for (const auto & child : ast->children)
+        collectReadParts(child, context, parts, depth);
 }
 
-void removeWithElements(const ASTPtr & ast)
+void removeWithClauses(const ASTPtr & ast)
 {
-    if (auto * select = ast->as<ASTSelectQuery>(); select && select->with())
-    {
-        auto & elements = select->with()->children;
-        elements.erase(
-            std::remove_if(elements.begin(), elements.end(), [](const ASTPtr & element) { return element->as<ASTWithElement>() != nullptr; }),
-            elements.end());
-    }
-    forEachChild(ast, [](const ASTPtr & child) { removeWithElements(child); });
+    if (auto * select = ast->as<ASTSelectQuery>())
+        select->setExpression(ASTSelectQuery::Expression::WITH, {});
+    for (const auto & child : ast->children)
+        removeWithClauses(child);
 }
 
 /// A copy of `ast` in which each table identifier names a table: every reference to a common table expression
 /// (and every `IN` operand naming a `WITH` alias) is replaced by its definition, as the query's own `WITH` processing does.
+/// The `WITH` clauses are then dropped, so a table read only through a `WITH` alias is not recorded.
 ASTPtr expandWithElements(const ASTPtr & ast, const ContextPtr & context)
 {
     ASTPtr expanded = ast->clone();
@@ -1229,7 +1232,7 @@ ASTPtr expandWithElements(const ASTPtr & ast, const ContextPtr & context)
         ApplyWithGlobalVisitor::visit(expanded, settings[Setting::max_expanded_ast_elements]);
     ExpandedASTBudget budget(settings[Setting::max_expanded_ast_elements], *expanded);
     ApplyWithSubqueryVisitor::visit(expanded, context, budget);
-    removeWithElements(expanded);
+    removeWithClauses(expanded);
     return expanded;
 }
 
@@ -1566,6 +1569,7 @@ QueryOracleChecker::executeAndCollectSortedRows(const String & query, const Cont
 {
     auto oracle_context = makeOracleContext(context);
     oracle_context->setDefaultFormat("TabSeparated");
+    recordReadParts(query, oracle_context);
     auto thread_group_switcher = switchToThreadGroupOf(oracle_context);
 
     /// Use the ReadBuffer/WriteBuffer executeQuery API — this is crash-safe because
@@ -1602,6 +1606,7 @@ QueryOracleChecker::executeAndCollectSortedRows(const String & query, const Cont
 Field QueryOracleChecker::executeScalar(const String & query, const ContextMutablePtr & context)
 {
     auto oracle_context = makeOracleContext(context);
+    recordReadParts(query, oracle_context);
     auto thread_group_switcher = switchToThreadGroupOf(oracle_context);
 
     auto result = executeQuery(query, oracle_context, QueryFlags{.internal = true});
@@ -1649,6 +1654,7 @@ QueryOracleChecker::executeWithSettings(
     oracle_context->setDefaultFormat("TabSeparated");
     for (const auto & [name, value] : settings)
         oracle_context->setSetting(name, value);
+    recordReadParts(query, oracle_context);
     auto thread_group_switcher = switchToThreadGroupOf(oracle_context);
 
     ReadBufferFromString istr(query);
@@ -1671,6 +1677,33 @@ QueryOracleChecker::executeWithSettings(
     auto rows = splitIntoRows(output);
     std::sort(rows.begin(), rows.end());
     return rows;
+}
+
+
+void QueryOracleChecker::recordReadParts(const String & query, const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    ParserQuery parser(query.data() + query.size());
+    const ASTPtr ast = parseQuery(
+        parser, query, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+
+    ASTPtr read_ast = expandWithElements(ast, context);
+    Strings parts;
+    collectReadParts(read_ast, context, parts);
+    read_parts.emplace_back(std::move(read_ast), std::move(parts));
+}
+
+
+bool QueryOracleChecker::readPartsChanged(const ContextPtr & context) const
+{
+    for (const auto & [read_ast, parts_before] : read_parts)
+    {
+        Strings parts;
+        collectReadParts(read_ast, context, parts);
+        if (parts != parts_before)
+            return true;
+    }
+    return false;
 }
 
 
@@ -2904,8 +2937,6 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
 
     bool any_check_performed = false;
 
-    const ASTPtr read_ast = expandWithElements(query_ast, context);
-
     /// Run one oracle under a uniform guard: its own mismatch
     /// (`AST_FUZZER_ORACLE_MISMATCH`) propagates and is annotated with the
     /// reproduction settings by the outer handler below, and a disconnected
@@ -2915,10 +2946,9 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     /// remaining oracles still run. `name` reproduces the per-oracle log wording.
     auto run_oracle = [&](std::string_view name, auto && check_fn)
     {
-        Strings parts_before;
+        read_parts.clear();
         try
         {
-            collectReadParts(read_ast, context, parts_before);
             if (check_fn())
                 any_check_performed = true;
         }
@@ -2927,9 +2957,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
             if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
             {
                 /// A merge, insert or mutation between the reads means they compared different data.
-                Strings parts_after;
-                collectReadParts(read_ast, context, parts_after);
-                if (parts_after != parts_before)
+                if (readPartsChanged(context))
                 {
                     LOG_TRACE(logger, "{} oracle mismatch skipped: the parts of a table it reads changed", name);
                     return;
