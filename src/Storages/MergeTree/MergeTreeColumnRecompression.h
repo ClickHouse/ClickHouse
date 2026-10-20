@@ -30,8 +30,11 @@ NameSet getColumnDataStreamFileNames(
 /// (the source codec is self-describing via the block header) and compress it again with the new
 /// codec. Compressed blocks are re-emitted one-to-one, which keeps the decompressed content and the
 /// granule boundaries byte-identical; only the compressed offsets change, so the corresponding
-/// marks file is rewritten with remapped offsets while the decompressed offsets and per-granule row
-/// counts are preserved.
+/// marks file is rewritten with remapped offsets while the per-granule row counts are preserved.
+/// The exception is a block that ends in the middle of a value of a fixed-size type (older writers
+/// did not round the compressed block size to whole values): a codec for a specific type only
+/// accepts whole values, so the bytes of the split value are moved to the next block, and the
+/// decompressed offsets of the marks are remapped too.
 ///
 /// The recompressed `.bin` and marks files are written into `new_data_part`'s storage and their
 /// checksums are added to `checksums` (replacing any pre-existing entries). All other files of the

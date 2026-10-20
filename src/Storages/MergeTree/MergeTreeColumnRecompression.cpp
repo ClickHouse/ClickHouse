@@ -26,6 +26,7 @@
 #include <city.h>
 #include <Poco/String.h>
 
+#include <algorithm>
 #include <functional>
 #include <unordered_map>
 #include <unordered_set>
@@ -53,10 +54,22 @@ namespace MergeTreeSetting
 namespace
 {
 
-/// Maps an offset of the start of a compressed block in the source `.bin` file to the offset of
-/// the same block in the recompressed `.bin` file. Also contains the mapping of the total file
-/// size (for marks that point at the end of the file).
-using OffsetMap = std::unordered_map<UInt64, UInt64>;
+/// Relates the positions in the source `.bin` file to the positions in the recompressed one, so the
+/// marks can be remapped. A position in the decompressed stream does not depend on the block
+/// boundaries, so a mark is translated through it.
+struct BlockPositions
+{
+    /// Offset of the start of every compressed block in the source file (and of the end of the
+    /// file, for marks that point there) -> position of that block start in the decompressed stream.
+    std::unordered_map<UInt64, UInt64> source_block_starts;
+    /// (position in the decompressed stream, offset in the recompressed file) of the start of every
+    /// block of the recompressed file, in ascending order.
+    std::vector<std::pair<UInt64, UInt64>> new_block_starts;
+    /// Size of the decompressed stream.
+    UInt64 decompressed_size = 0;
+    /// Size of the recompressed file.
+    UInt64 new_file_size = 0;
+};
 
 /// Exposes the protected raw-block API of `CompressedReadBufferBase` so we can read and decompress
 /// one compressed block at a time. Codec detection is self-describing (via the block header).
@@ -109,29 +122,46 @@ void writeCompressedBlock(WriteBuffer & out, const ICompressionCodec & codec, co
 }
 
 /// Reads every compressed block of `bin_name` from `source_storage`, recompresses it with
-/// `new_codec` and writes it to `bin_name` in `new_storage`. Blocks are re-emitted one-to-one, so
-/// the decompressed content and block boundaries are preserved. Fills `offset_map` with the
-/// source-offset -> new-offset mapping of every block start (plus the end-of-file offset) and
-/// returns the checksum of the written file. `check_cancelled` is invoked before every block.
+/// `new_codec` and writes it to `bin_name` in `new_storage`. The decompressed content is preserved.
+/// Blocks are re-emitted one-to-one as long as they hold whole values of `value_size` bytes. Older
+/// writers did not round the compressed block size to whole values, so a value could be split
+/// between two blocks, while a codec for a specific type (`ALP`, `Gorilla`, `Delta`, ...) only
+/// accepts blocks of whole values. The bytes of such a split value are carried over to the next
+/// block. Fills `positions` and returns the checksum of the written file. `check_cancelled` is
+/// invoked before every block.
 MergeTreeDataPartChecksum recompressBinFile(
     const IDataPartStorage & source_storage,
     IDataPartStorage & new_storage,
     const String & bin_name,
     const ICompressionCodec & new_codec,
+    size_t value_size,
     const MergeTreeDataPartChecksum & source_checksum,
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
     bool need_sync,
     const std::function<void()> & check_cancelled,
-    OffsetMap & offset_map)
+    BlockPositions & positions)
 {
     RawCompressedBlockReader reader(source_storage.readFile(bin_name, read_settings, std::nullopt));
     auto out = new_storage.writeFile(bin_name, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
     HashingWriteBuffer bin_hashing(*out);
 
     PODArray<char> decompressed;
+    /// The bytes of a value split between two source blocks, together with the rest of the block
+    /// that starts with them.
+    PODArray<char> pending;
     PODArray<char> scratch;
     UInt64 source_offset = 0;
+    UInt64 source_position = 0;
+    UInt64 new_position = 0;
+
+    auto emit_block = [&](const char * data, size_t size)
+    {
+        positions.new_block_starts.emplace_back(new_position, bin_hashing.count());
+        new_position += size;
+        writeCompressedBlock(bin_hashing, new_codec, data, static_cast<UInt32>(size), scratch);
+        ProfileEvents::increment(ProfileEvents::MutationRecompressedBlocks);
+    };
 
     while (true)
     {
@@ -141,15 +171,37 @@ MergeTreeDataPartChecksum recompressBinFile(
         if (consumed == 0)
             break;
 
-        offset_map[source_offset] = bin_hashing.count();
+        positions.source_block_starts[source_offset] = source_position;
         source_offset += consumed;
-        writeCompressedBlock(bin_hashing, new_codec, decompressed.data(), static_cast<UInt32>(decompressed.size()), scratch);
-        ProfileEvents::increment(ProfileEvents::MutationRecompressedBlocks);
+        source_position += decompressed.size();
+
+        if (pending.empty() && decompressed.size() % value_size == 0)
+        {
+            emit_block(decompressed.data(), decompressed.size());
+            continue;
+        }
+
+        pending.insert(decompressed.begin(), decompressed.end());
+        const size_t whole_values_size = pending.size() - pending.size() % value_size;
+        if (whole_values_size == 0)
+            continue;
+
+        emit_block(pending.data(), whole_values_size);
+        const size_t remaining_size = pending.size() - whole_values_size;
+        memmove(pending.data(), pending.data() + whole_values_size, remaining_size);
+        pending.resize(remaining_size);
     }
+
+    /// The stream of a fixed-size type always holds whole values, so this can only be the tail of a
+    /// damaged stream; the codec decides whether it can compress it.
+    if (!pending.empty())
+        emit_block(pending.data(), pending.size());
 
     bin_hashing.finalize();
     /// A mark of the last granule may point at the end of the file.
-    offset_map[source_offset] = bin_hashing.count();
+    positions.source_block_starts[source_offset] = source_position;
+    positions.decompressed_size = source_position;
+    positions.new_file_size = bin_hashing.count();
     out->finalize();
     if (need_sync)
         out->sync();
@@ -165,9 +217,10 @@ MergeTreeDataPartChecksum recompressBinFile(
     return checksum;
 }
 
-/// Rewrites the marks file `mrk_name`: every mark's `offset_in_compressed_file` is remapped through
-/// `offset_map`; the `offset_in_decompressed_block` and per-granule row count are copied verbatim
-/// (block boundaries are preserved by `recompressBinFile`). Returns the checksum of the written file.
+/// Rewrites the marks file `mrk_name`: every mark's `offset_in_compressed_file` and
+/// `offset_in_decompressed_block` are remapped through `positions` (they only change when
+/// `recompressBinFile` moved a block boundary); the per-granule row count is copied verbatim.
+/// Returns the checksum of the written file.
 MergeTreeDataPartChecksum rewriteMarksFile(
     const IDataPartStorage & source_storage,
     IDataPartStorage & new_storage,
@@ -176,7 +229,7 @@ MergeTreeDataPartChecksum rewriteMarksFile(
     bool compressed_marks,
     const CompressionCodecPtr & marks_codec,
     size_t marks_compress_block_size,
-    const OffsetMap & offset_map,
+    const BlockPositions & positions,
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
     bool need_sync)
@@ -203,26 +256,52 @@ MergeTreeDataPartChecksum rewriteMarksFile(
             mrk_name, old_marks.size(), mark_size);
 
     const size_t num_marks = old_marks.size() / mark_size;
-    const size_t tail_size = mark_size - sizeof(UInt64);
+    /// The rest of the mark after the compressed and the decompressed offsets: the row count of
+    /// the granule, for adaptive granularity.
+    if (mark_size < sizeof(UInt64) * 2)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected mark size {} of {}", mark_size, mrk_name);
+    const size_t tail_size = mark_size - sizeof(UInt64) * 2;
 
-    /// Build the new (uncompressed) marks with remapped compressed offsets.
+    /// Build the new (uncompressed) marks with remapped offsets.
     WriteBufferFromOwnString new_marks_buf;
     ReadBufferFromMemory marks_in(old_marks.data(), old_marks.size());
-    char tail[sizeof(UInt64) * 2];
+    char tail[sizeof(UInt64)];
     for (size_t i = 0; i < num_marks; ++i)
     {
-        UInt64 source_offset = 0;
-        readBinaryLittleEndian(source_offset, marks_in);
+        UInt64 source_offset_in_compressed_file = 0;
+        UInt64 source_offset_in_decompressed_block = 0;
+        readBinaryLittleEndian(source_offset_in_compressed_file, marks_in);
+        readBinaryLittleEndian(source_offset_in_decompressed_block, marks_in);
         marks_in.readStrict(tail, tail_size);
 
-        auto it = offset_map.find(source_offset);
-        if (it == offset_map.end())
+        auto it = positions.source_block_starts.find(source_offset_in_compressed_file);
+        if (it == positions.source_block_starts.end())
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Mark #{} in {} points at compressed offset {} which is not a block boundary",
-                i, mrk_name, source_offset);
+                i, mrk_name, source_offset_in_compressed_file);
 
-        writeBinaryLittleEndian(it->second, new_marks_buf);
+        const UInt64 position = it->second + source_offset_in_decompressed_block;
+        UInt64 offset_in_compressed_file = positions.new_file_size;
+        UInt64 offset_in_decompressed_block = 0;
+        if (position < positions.decompressed_size)
+        {
+            /// The last new block starting at or before the position.
+            auto block = std::ranges::upper_bound(
+                positions.new_block_starts, position, std::less{}, [](const auto & block_start) { return block_start.first; });
+            chassert(block != positions.new_block_starts.begin());
+            --block;
+            offset_in_compressed_file = block->second;
+            offset_in_decompressed_block = position - block->first;
+        }
+        else if (position > positions.decompressed_size)
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Mark #{} in {} points at position {} past the end of the decompressed data of size {}",
+                i, mrk_name, position, positions.decompressed_size);
+
+        writeBinaryLittleEndian(offset_in_compressed_file, new_marks_buf);
+        writeBinaryLittleEndian(offset_in_decompressed_block, new_marks_buf);
         new_marks_buf.write(tail, tail_size);
     }
     new_marks_buf.finalize();
@@ -381,18 +460,23 @@ void recompressColumnStreams(
         else
             new_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, /*only_generic=*/ true);
 
+        /// Keep whole values in every block, as the wide-part writer does (`roundCompressBlockSizeToWholeValues`).
+        size_t value_size = 1;
+        if (subtype && subtype->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+            value_size = subtype->getSizeOfValueInMemory();
+
         const auto & source_bin_checksum = checksums.files.at(bin_name);
 
-        OffsetMap offset_map;
+        BlockPositions positions;
         checksums.files[bin_name] = recompressBinFile(
-            source_storage, new_storage, bin_name, *new_codec, source_bin_checksum, read_settings, write_settings,
-            need_sync, check_cancelled, offset_map);
+            source_storage, new_storage, bin_name, *new_codec, value_size, source_bin_checksum, read_settings, write_settings,
+            need_sync, check_cancelled, positions);
 
         const String mrk_name = stream_name + marks_extension;
         check_cancelled();
         checksums.files[mrk_name] = rewriteMarksFile(
             source_storage, new_storage, mrk_name, mark_size, compressed_marks, marks_codec, marks_compress_block_size,
-            offset_map, read_settings, write_settings, need_sync);
+            positions, read_settings, write_settings, need_sync);
     });
 }
 
