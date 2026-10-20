@@ -568,11 +568,7 @@ private:
             if constexpr (check_rank)
             {
                 if (unlikely(rank > max_rank))
-                    throw DB::Exception(
-                        DB::ErrorCodes::INCORRECT_DATA,
-                        "Corrupted HyperLogLog state: rank {} is above the maximum rank {}",
-                        static_cast<UInt32>(rank),
-                        max_rank);
+                    throwRankAboveMax(rank);
             }
 
             if (cur_rank == 0)

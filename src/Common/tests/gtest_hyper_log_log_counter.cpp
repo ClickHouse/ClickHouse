@@ -204,10 +204,10 @@ void appendLittleEndian(std::string & bytes, UInt64 value, size_t length)
         bytes.push_back(static_cast<char>(value >> (8 * i)));
 }
 
-/// Serialized state: registers, the count of registers of every rank in [0, max_rank] (plus `max_rank_extra` for max_rank),
-/// the number of zero registers.
+/// Serialized state: registers, the count of registers of every rank in [0, max_rank], the number of zero registers.
+/// Registers above max_rank are counted as max_rank, and `moved` registers of rank 0 too, so that the counts add up as `read` checks.
 template <UInt8 K, typename HashValueType>
-std::string makeState(const std::vector<UInt8> & registers, UInt32 max_rank_extra = 0)
+std::string makeState(const std::vector<UInt8> & registers, UInt32 moved = 0)
 {
     static constexpr size_t width = details::RankWidth<HashValueType>::get();
     static constexpr int max_rank = sizeof(HashValueType) * 8 - K + 1;
@@ -224,9 +224,9 @@ std::string makeState(const std::vector<UInt8> & registers, UInt32 max_rank_extr
 
     std::vector<UInt32> rank_count(max_rank + 1);
     for (UInt8 rank : registers)
-        if (rank <= max_rank)
-            ++rank_count[rank];
-    rank_count[max_rank] += max_rank_extra;
+        ++rank_count[std::min<int>(rank, max_rank)];
+    rank_count[0] -= moved;
+    rank_count[max_rank] += moved;
     for (UInt32 count : rank_count)
         appendLittleEndian(bytes, count, sizeof(UInt32));
     appendLittleEndian(bytes, rank_count[0], sizeof(typename details::MinCounterType<(1ULL << K)>::Type));
