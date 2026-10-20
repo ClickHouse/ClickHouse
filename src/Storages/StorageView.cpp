@@ -1,6 +1,7 @@
 #include <Access/DefinerDependencies.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/Serializations/SerializationMap.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
@@ -331,24 +332,51 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
     return DatabaseCatalog::instance().tryGetTable(storage_id, context);
 }
 
-const ASTIdentifier * getDirectViewProjection(
+/// True if `node` contains an identifier that refers to `alias`, ignoring the subtree `excluded`.
+bool referencesAlias(const ASTPtr & node, const IAST * excluded, const String & alias)
+{
+    if (node.get() == excluded)
+        return false;
+
+    if (const auto * identifier = node->as<ASTIdentifier>())
+    {
+        const auto & name = identifier->name();
+        if (name == alias || name.starts_with(alias + "."))
+            return true;
+    }
+
+    for (const auto & child : node->children)
+        if (referencesAlias(child, excluded, alias))
+            return true;
+
+    return false;
+}
+
+struct DirectViewProjection
+{
+    const ASTIdentifier * identifier = nullptr;
+    StorageSnapshotPtr underlying_snapshot;
+};
+
+std::optional<DirectViewProjection> getDirectViewProjection(
     const ASTPtr & inner_query, const StorageSnapshotPtr & storage_snapshot, const String & view_column_name, ContextPtr context)
 {
     const auto * select_with_union = inner_query->as<ASTSelectWithUnionQuery>();
     if (!select_with_union || select_with_union->list_of_selects->children.size() != 1)
-        return nullptr;
+        return {};
 
-    const auto * select = select_with_union->list_of_selects->children.front()->as<ASTSelectQuery>();
+    const auto & select_ast = select_with_union->list_of_selects->children.front();
+    const auto * select = select_ast->as<ASTSelectQuery>();
     if (!select || !select->select())
-        return nullptr;
+        return {};
 
     auto underlying_storage = tryGetTrivialViewUnderlyingStorage(inner_query, context);
     if (!underlying_storage || !underlying_storage->supportsOptimizationToSubcolumns())
-        return nullptr;
+        return {};
 
     auto view_column = storage_snapshot->tryGetColumn(GetColumnsOptions::Ordinary, view_column_name);
     if (!view_column)
-        return nullptr;
+        return {};
 
     auto metadata_handle = underlying_storage->getInMemoryMetadataPtr(context, false);
     auto underlying_snapshot = underlying_storage->getStorageSnapshot(metadata_handle, context);
@@ -361,16 +389,46 @@ const ASTIdentifier * getDirectViewProjection(
 
         const auto * identifier = expression->as<ASTIdentifier>();
         if (!identifier || result)
-            return nullptr;
+            return {};
 
         auto source_column = underlying_snapshot->tryGetColumn(GetColumnsOptions::Ordinary, identifier->getColumnName());
         if (!source_column || !source_column->type->equals(*view_column->type))
-            return nullptr;
+            return {};
+
+        /// The rewrite replaces the projection, and its alias with it, so other expressions
+        /// of the view body must not refer to that alias, e.g. `SELECT m AS a, a['b'] AS x FROM t`.
+        const auto & alias = identifier->tryGetAlias();
+        if (!alias.empty() && alias != identifier->name() && referencesAlias(select_ast, identifier, alias))
+            return {};
 
         result = identifier;
     }
 
-    return result;
+    if (!result)
+        return {};
+
+    return DirectViewProjection{result, std::move(underlying_snapshot)};
+}
+
+/// True if `<source column>.<subcolumn_name>` in the underlying table is the key subcolumn of the Map
+/// projected by the view, and not, e.g., a physical column which the view body does not project.
+bool sourceHasMapKeySubcolumn(
+    const DirectViewProjection & projection, const String & subcolumn_name, const DataTypePtr & subcolumn_type)
+{
+    const auto & source_column_name = projection.identifier->getColumnName();
+    auto full_name = source_column_name + "." + subcolumn_name;
+    const auto & snapshot = *projection.underlying_snapshot;
+
+    if (snapshot.tryGetColumn(GetColumnsOptions::All, full_name))
+        return false;
+
+    auto resolved = snapshot.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), full_name);
+    if (!resolved || !resolved->isSubcolumn() || resolved->getNameInStorage() != source_column_name
+        || !resolved->type->equals(*subcolumn_type))
+        return false;
+
+    auto info = resolved->getTypeInStorage()->tryGetSubcolumnInfo(resolved->getSubcolumnName());
+    return info && SerializationMap::isKeyValueSubcolumn(info->substreams_path);
 }
 
 bool rewriteViewProjectionToSubcolumn(
@@ -842,7 +900,7 @@ void StorageView::readImpl(
     auto view_context = getViewContext(context, storage_snapshot, this);
     if (!sealed)
     {
-        std::unordered_map<String, String> requested_subcolumns;
+        std::unordered_map<String, NameAndTypePair> requested_subcolumns;
         std::unordered_set<String> ambiguous_columns;
         for (const auto & column_name : column_names)
         {
@@ -854,17 +912,19 @@ void StorageView::readImpl(
             if (std::find(column_names.begin(), column_names.end(), base_column_name) != column_names.end())
                 continue;
 
-            if (!requested_subcolumns.emplace(base_column_name, column->getSubcolumnName()).second)
+            if (!requested_subcolumns.emplace(base_column_name, NameAndTypePair{column->getSubcolumnName(), column->type}).second)
                 ambiguous_columns.insert(base_column_name);
         }
 
         for (const auto & base_column_name : ambiguous_columns)
             requested_subcolumns.erase(base_column_name);
 
-        for (const auto & [base_column_name, subcolumn_name] : requested_subcolumns)
+        for (const auto & [base_column_name, subcolumn] : requested_subcolumns)
         {
-            if (!supportsOptimizationToSubcolumnsForColumn(storage_snapshot, base_column_name, context))
+            if (!supportsOptimizationToSubcolumnsForColumn(storage_snapshot, base_column_name, context, subcolumn))
                 continue;
+
+            const auto & subcolumn_name = subcolumn.name;
 
             auto rewritten_query = current_inner_query->clone();
             auto * select_with_union = rewritten_query->as<ASTSelectWithUnionQuery>();
@@ -1095,7 +1155,10 @@ ContextPtr StorageView::getViewSubqueryContext(ContextPtr context, const Storage
 }
 
 bool StorageView::supportsOptimizationToSubcolumnsForColumn(
-    const StorageSnapshotPtr & storage_snapshot, const String & column_name, const ContextPtr & context) const
+    const StorageSnapshotPtr & storage_snapshot,
+    const String & column_name,
+    const ContextPtr & context,
+    const std::optional<NameAndTypePair> & map_key_subcolumn) const
 {
     if (isSealed(*storage_snapshot->metadata, context))
         return false;
@@ -1104,11 +1167,15 @@ bool StorageView::supportsOptimizationToSubcolumnsForColumn(
     if (!view_column || !typeid_cast<const DataTypeMap *>(view_column->type.get()))
         return false;
 
-    return getDirectViewProjection(
+    auto projection = getDirectViewProjection(
         storage_snapshot->metadata->getSelectQuery().inner_query,
         storage_snapshot,
         column_name,
         getViewSubqueryContext(context, storage_snapshot));
+    if (!projection)
+        return false;
+
+    return !map_key_subcolumn || sourceHasMapKeySubcolumn(*projection, map_key_subcolumn->name, map_key_subcolumn->type);
 }
 
 }

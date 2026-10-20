@@ -31,6 +31,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
 
+#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -1866,6 +1867,33 @@ public:
     }
 };
 
+/// Same condition as `can_wrap_result_columns_with_nullable` of the first pass: a `Map` cannot
+/// become `Nullable`, but its key subcolumn can, so `join_use_nulls` or `group_by_use_nulls`
+/// would turn the default of a missing key into `NULL`.
+class CanWrapColumnsWithNullableVisitor : public InDepthQueryTreeVisitorWithContext<CanWrapColumnsWithNullableVisitor>
+{
+public:
+    using Base = InDepthQueryTreeVisitorWithContext<CanWrapColumnsWithNullableVisitor>;
+    using Base::Base;
+
+    void enterImpl(const QueryTreeNodePtr & node)
+    {
+        if (node->as<JoinNode>() || node->as<CrossJoinNode>())
+        {
+            result |= getSettings()[Setting::join_use_nulls];
+            return;
+        }
+
+        if (const auto * query_node = node->as<QueryNode>())
+        {
+            if (query_node->isGroupByWithCube() || query_node->isGroupByWithRollup() || query_node->isGroupByWithGroupingSets())
+                result |= getSettings()[Setting::group_by_use_nulls];
+        }
+    }
+
+    bool result = false;
+};
+
 /// Push a `Map` key subcolumn through a simple projection subquery. The full Map
 /// projection remains available, so this is safe when the outer query also uses it.
 class MapSubquerySubcolumnVisitor : public InDepthQueryTreeVisitorWithContext<MapSubquerySubcolumnVisitor>
@@ -1874,14 +1902,79 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<MapSubquerySubcolumnVisitor>;
     using Base::Base;
 
+    bool needChildVisit(const QueryTreeNodePtr & parent, const QueryTreeNodePtr & child)
+    {
+        if (const auto * query_node = parent->as<QueryNode>(); query_node && !scopes.empty())
+        {
+            bool is_where = query_node->hasWhere() && child.get() == query_node->getWhere().get();
+            bool is_prewhere = query_node->hasPrewhere() && child.get() == query_node->getPrewhere().get();
+            scopes.back().in_where_prewhere = is_where || is_prewhere;
+        }
+        return true;
+    }
+
+    void leaveImpl(const QueryTreeNodePtr & node)
+    {
+        if (!getSettings()[Setting::optimize_functions_to_subcolumns])
+            return;
+
+        if (node->as<QueryNode>())
+        {
+            scopes.pop_back();
+            correlated_columns.leave();
+        }
+        else if (node->as<UnionNode>())
+        {
+            correlated_columns.leave();
+        }
+        else if (const auto * function_node = node->as<FunctionNode>(); function_node && function_node->isAggregateFunction())
+        {
+            if (!scopes.empty())
+                --scopes.back().aggregate_function_depth;
+        }
+    }
+
     void enterImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings()[Setting::optimize_functions_to_subcolumns])
             return;
 
-        auto * function_node = node->as<FunctionNode>();
-        if (!function_node || function_node->getFunctionName() != "arrayElement")
+        if (const auto * query_node = node->as<QueryNode>())
+        {
+            scopes.push_back({.is_aggregating = isAggregating(*query_node)});
+            correlated_columns.enter(query_node->getCorrelatedColumns());
             return;
+        }
+
+        if (const auto * union_node = node->as<UnionNode>())
+        {
+            correlated_columns.enter(union_node->getCorrelatedColumns());
+            return;
+        }
+
+        auto * function_node = node->as<FunctionNode>();
+        if (!function_node)
+            return;
+
+        if (function_node->isAggregateFunction())
+        {
+            if (!scopes.empty())
+                ++scopes.back().aggregate_function_depth;
+            return;
+        }
+
+        if (function_node->getFunctionName() != "arrayElement")
+            return;
+
+        /// After aggregation only the keys and the aggregate results are left, so a subcolumn
+        /// introduced into `HAVING`, `ORDER BY` or the projection of an aggregating query
+        /// would not be found in the block, e.g. `SELECT m['k'] FROM (SELECT m FROM t) GROUP BY m`.
+        if (!scopes.empty())
+        {
+            const auto & scope = scopes.back();
+            if (scope.is_aggregating && scope.aggregate_function_depth == 0 && !scope.in_where_prewhere)
+                return;
+        }
 
         auto & arguments = function_node->getArguments().getNodes();
         if (arguments.size() != 2)
@@ -1892,6 +1985,12 @@ public:
             return;
 
         auto query_source = outer_column->getColumnSource();
+
+        /// A correlated subquery lists the full Map among its correlated columns, and decorrelation
+        /// would look for the subcolumn in a join that carries only the full Map, as in the other visitors.
+        if (correlated_columns.contains(makeColumnInSource(query_source, outer_column->getColumnName())))
+            return;
+
         auto * query_node = query_source->as<QueryNode>();
         if (!query_node || !query_node->isSubquery() || query_node->isCTE() || query_node->isRecursiveWith()
             || query_node->hasSettingsChanges() || query_node->hasWith() || query_node->isDistinct()
@@ -1988,7 +2087,27 @@ public:
     }
 
 private:
+    struct Scope
+    {
+        bool is_aggregating = false;
+        bool in_where_prewhere = false;
+        size_t aggregate_function_depth = 0;
+    };
+
+    std::vector<Scope> scopes;
+    CorrelatedColumnsStack correlated_columns;
     SubcolumnSupportCache subcolumn_support_cache;
+
+    static bool isAggregating(const QueryNode & query_node)
+    {
+        if (query_node.hasGroupBy() || query_node.isGroupByAll() || query_node.hasHaving())
+            return true;
+
+        if (hasAggregateFunctionNodes(query_node.getProjectionNode()))
+            return true;
+
+        return query_node.hasOrderBy() && hasAggregateFunctionNodes(query_node.getOrderByNode());
+    }
 
     static bool isIndexColumn(const String & column_name, const StorageInMemoryMetadata & metadata)
     {
@@ -2071,8 +2190,13 @@ public:
 
 void FunctionToSubcolumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    MapSubquerySubcolumnVisitor subquery_visitor(context);
-    subquery_visitor.visit(query_tree_node);
+    CanWrapColumnsWithNullableVisitor nullable_visitor(context);
+    nullable_visitor.visit(query_tree_node);
+    if (!nullable_visitor.result)
+    {
+        MapSubquerySubcolumnVisitor subquery_visitor(context);
+        subquery_visitor.visit(query_tree_node);
+    }
 
     FunctionToSubcolumnsVisitorFirstPass first_visitor(context);
     first_visitor.visit(query_tree_node);
