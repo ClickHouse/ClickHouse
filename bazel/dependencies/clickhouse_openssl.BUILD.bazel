@@ -612,13 +612,14 @@ ch_cc_library(
             "@clickhouse//contrib/openssl-cmake:asm/crypto/sm4/asm/sm4-armv8.S",
             "@clickhouse//contrib/openssl-cmake:asm/crypto/sm4/asm/vpsm4-armv8.S",
             "@clickhouse//contrib/openssl-cmake:asm/crypto/sm4/asm/vpsm4_ex-armv8.S",
+            "crypto/arm_arch.h",
         ],
-    }) + ["crypto/arm_arch.h"],
+    }),
     copts = [
         "-Wno-unused-command-line-argument",
     ],
     language = "ASM",
-    llvm_headers = True,
+    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",

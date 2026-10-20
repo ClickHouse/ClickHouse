@@ -180,6 +180,7 @@ CMake hash recorded below.
 | `e4984d411` (verification snapshot) | gRPC: direct Abseil public dependencies and omit source headers for unbuilt TLS and telemetry implementations | [63213d8f](https://app.buildbuddy.io/invocation/63213d8f-a3f2-4444-be21-75919fb7a48d) | [8ef864af](https://app.buildbuddy.io/invocation/8ef864af-1e23-4f31-9e34-9b876c353453) |
 | `0964b777b` (verification snapshot) | LLVM: use implementation dependencies in 14 compiled libraries; DWYU expands compiler Make variables to inspect CCTZ embedded inputs | [7a810b1f](https://app.buildbuddy.io/invocation/7a810b1f-f74a-49f3-9cb6-3101775b488e) | [57baa8b8](https://app.buildbuddy.io/invocation/57baa8b8-d98c-400f-ad92-cf14a539b7b5) |
 | `95dd32354` (verification snapshot) | gRPC unsecure: compiled Abseil owners for its public and private includes; c-ares implementation dependency | [7c7ac607](https://app.buildbuddy.io/invocation/7c7ac607-6df0-424d-bc80-7574d02383e1) | [bd0d4ccc](https://app.buildbuddy.io/invocation/bd0d4ccc-e41d-43df-9bd0-bcfebcf7b452) |
+| `31ca0af80` (verification snapshot) | glibc/OpenSSL assembly: actual native assembly dependency checks and ARM-only OpenSSL header | [2fcde940](https://app.buildbuddy.io/invocation/2fcde940-2f99-4e6c-b79e-d77f171c58a9) | [97d13d35](https://app.buildbuddy.io/invocation/97d13d35-2517-4090-b8fe-e51e9e363364) |
 
 The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`

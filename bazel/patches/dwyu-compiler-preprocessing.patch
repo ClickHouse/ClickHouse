@@ -3,7 +3,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +++ b/dwyu/cc/aspect/dwyu.bzl
 @@ -1,6 +1,7 @@
 -load("@rules_cc//cc:action_names.bzl", "CPP_COMPILE_ACTION_NAME")
-+load("@rules_cc//cc:action_names.bzl", "CPP_COMPILE_ACTION_NAME", "C_COMPILE_ACTION_NAME", "PREPROCESS_ASSEMBLE_ACTION_NAME")
++load("@rules_cc//cc:action_names.bzl", "ASSEMBLE_ACTION_NAME", "CPP_COMPILE_ACTION_NAME", "C_COMPILE_ACTION_NAME", "PREPROCESS_ASSEMBLE_ACTION_NAME")
  load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain")
  load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 +load("@rules_cc//cc/common:cc_helper.bzl", "cc_helper")
@@ -31,7 +31,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      return includes, quote_includes, external_includes, system_includes
  
  def _process_target(ctx, target, config, output_path, is_target_under_inspection):
-@@ -386,12 +392,220 @@
+@@ -386,12 +392,274 @@
          return []
      return [OutputGroupInfo(dwyu = depset(transitive = _gather_transitive_reports(ctx)))]
  
@@ -81,6 +81,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +    extensions = cc_helper.extensions
 +    compile_files = []
 +    link_inputs = []
++    raw_assembly = []
 +    for file in files:
 +        if file in private_headers:
 +            continue
@@ -90,14 +91,31 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +        if extension in extensions.C_SOURCE + extensions.CC_SOURCE + extensions.ASSEMBLER_WITH_C_PREPROCESSOR:
 +            compile_files.append(file)
 +        elif extension in extensions.ASSEMBLER:
-+            fail("{}: DWYU compiler mode cannot inspect plain assembly srcs {}; assembler .include/.incbin are not C/C++ preprocessing directives".format(target.label, file.path))
++            raw_assembly.append(file)
++            compile_files.append(file)
 +        elif file.basename.endswith(tuple(extensions.DISALLOWED_HDRS_FILES)) or cc_helper.is_valid_shared_library_artifact(file):
 +            link_inputs.append(file)
 +        else:
 +            fail("{}: DWYU compiler mode has no rules_cc compile category for srcs {}".format(target.label, file.path))
-+    return compile_files, link_inputs
++    return compile_files, link_inputs, raw_assembly
 +
-+def _compiler_header_manifest(ctx, target, link_inputs):
++def _as_list(value):
++    return value.to_list() if type(value) == "depset" else value
++
++def _compiler_header_manifest(ctx, target, link_inputs, raw_assembly):
++    # Header evidence cannot establish whether a raw assembler call needs a library.
++    # Include linker inputs from transitive deps: a header target can forward a library.
++    link_candidates = []
++    if raw_assembly:
++        for dep in getattr(ctx.rule.attr, "deps", []) + getattr(ctx.rule.attr, "implementation_deps", []):
++            if CcInfo not in dep:
++                continue
++            for item in dep[CcInfo].linking_context.linker_inputs.to_list():
++                if (_as_list(item.libraries) or _as_list(item.user_link_flags) or
++                    _as_list(item.additional_inputs) or _as_list(getattr(item, "linkstamps", []))):
++                    link_candidates.append(str(dep.label))
++                    break
++
 +    cc = target[CcInfo].compilation_context
 +    hdrs = getattr(ctx.rule.files, "hdrs", [])
 +    explicit_textual = getattr(ctx.rule.files, "textual_hdrs", [])
@@ -120,6 +138,8 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +        "private": private,
 +        "required": {file.path: True for file in textual_files + list(cc.direct_private_headers)}.keys(),
 +        "unchecked_link_inputs": [file.path for file in link_inputs],
++        "raw_assembly": [file.path for file in raw_assembly],
++        "raw_link_candidates": link_candidates,
 +    }))
 +    return manifest
 +
@@ -163,7 +183,12 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +        # textual_hdrs or private headers. rules_cc gives .S neither conlyopts
 +        # nor cxxopts; use its preprocess-assemble toolchain action and language.
 +        is_assembly = attr_prefix == "priv" and "." + file.extension in cc_helper.extensions.ASSEMBLER_WITH_C_PREPROCESSOR
-+        if is_assembly:
++        is_raw_assembly = attr_prefix == "priv" and "." + file.extension in cc_helper.extensions.ASSEMBLER
++        if is_raw_assembly:
++            language = "assembler"
++            action_name = ASSEMBLE_ACTION_NAME
++            options = ctx.fragments.cpp.copts + rule_options["copts"]
++        elif is_assembly:
 +            language = "assembler-with-cpp"
 +            action_name = PREPROCESS_ASSEMBLE_ACTION_NAME
 +            options = ctx.fragments.cpp.copts + rule_options["copts"]
@@ -175,9 +200,12 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +                options = options + ctx.fragments.cpp.conlyopts + rule_options["copts"] + rule_options["conlyopts"]
 +            else:
 +                options = options + ctx.fragments.cpp.cxxopts + rule_options["copts"] + rule_options["cxxopts"]
-+        compiler_output = ctx.actions.declare_file("{}.dwyu_pp_{}_{}.i".format(target.label.name, attr_prefix, _hash(file.short_path)))
-+        public_output = ctx.actions.declare_file("{}.dwyu_psf_{}_{}_public.json".format(target.label.name, attr_prefix, _hash(file.short_path)))
-+        private_output = ctx.actions.declare_file("{}.dwyu_psf_{}_{}_private.json".format(target.label.name, attr_prefix, _hash(file.short_path)))
++        compiler_output = ctx.actions.declare_file("{}.dwyu_pp_{}_{}.{}".format(
++            target.label.name,
++            attr_prefix,
++            _hash(file.short_path),
++            "o" if is_raw_assembly else "i",
++        ))
 +        variables = cc_common.create_compile_variables(
 +            feature_configuration = feature_configuration,
 +            cc_toolchain = cc_toolchain,
@@ -194,6 +222,32 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +            action_name = action_name,
 +            variables = variables,
 +        )
++
++        if is_raw_assembly:
++            # Do not supply any workspace or target dependency files. A successful
++            # actual ASSEMBLE with these inputs proves this .s needs none of them.
++            # Fail on a toolchain that would smuggle workspace files into the proof.
++            for tool in cc_toolchain.all_files.to_list():
++                if not tool.short_path.startswith("../"):
++                    fail("{}: DWYU restricted assembly cannot use toolchain workspace input {}".format(target.label, tool.path))
++            args = ctx.actions.args()
++            args.add_all(command)
++            ctx.actions.run(
++                executable = cc_common.get_tool_for_action(feature_configuration = feature_configuration, action_name = action_name),
++                inputs = depset(direct = [file], transitive = [cc_toolchain.all_files]),
++                tools = cc_toolchain.all_files,
++                outputs = [compiler_output],
++                arguments = [args],
++                mnemonic = "DwyuRestrictedAssemble",
++            )
++
++            # The analysis action depends on every actual assemble output;
++            # never treat an absent or failed assemble as an empty include list.
++            private_results.append(compiler_output)
++            continue
++
++        public_output = ctx.actions.declare_file("{}.dwyu_psf_{}_{}_public.json".format(target.label.name, attr_prefix, _hash(file.short_path)))
++        private_output = ctx.actions.declare_file("{}.dwyu_psf_{}_{}_private.json".format(target.label.name, attr_prefix, _hash(file.short_path)))
 +
 +        # Placing -x before the input matters for .h, .inc and generated files.
 +        # Replace -c with -E; Clang rejects both under -Werror. -dI emits active includes.
@@ -254,7 +308,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
      # Work around the bug described in https://github.com/bazelbuild/bazel/issues/19663
      # Implementation_deps are not added to CcInfo.compilation_context
-@@ -440,7 +654,7 @@
+@@ -440,7 +708,7 @@
  
          preprocessor_results.append(pp_output)
  
@@ -263,7 +317,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
  def dwyu_cc_aspect_impl(target, ctx):
      """
-@@ -510,8 +724,16 @@
+@@ -510,8 +778,17 @@
      #
  
      config = _make_dwyu_config(ctx)
@@ -271,18 +325,19 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 -    defines = [] if config.preprocessing_mode == "fast" else _parse_compiler_command(ctx, target[CcInfo].compilation_context, cc_toolchain, feature_configuration)
 +    header_manifest = None
 +    link_inputs = []
++    raw_assembly = []
 +    if config.preprocessing_mode == "compiler":
 +        # Textual and private headers get caller context; .S actual srcs still
 +        # compile even if also textual. Precompiled link inputs have no cpp roots.
 +        public_files = [file for file in getattr(ctx.rule.files, "hdrs", []) if not _is_rules_cc_textual_header(file)]
-+        private_files, link_inputs = _compiler_srcs(target, private_files)
-+        header_manifest = _compiler_header_manifest(ctx, target, link_inputs)
++        private_files, link_inputs, raw_assembly = _compiler_srcs(target, private_files)
++        header_manifest = _compiler_header_manifest(ctx, target, link_inputs, raw_assembly)
 +
 +    defines = [] if config.preprocessing_mode in ["fast", "compiler"] else _parse_compiler_command(ctx, target[CcInfo].compilation_context, cc_toolchain, feature_configuration)
      processed_target = _process_target(
          ctx,
          target = struct(label = target.label, cc_info = target[CcInfo]),
-@@ -529,26 +751,34 @@
+@@ -529,26 +806,35 @@
  
      report_file = ctx.actions.declare_file("{}_dwyu_report.json".format(target.label.name))
  
@@ -313,7 +368,8 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +        header_manifest = header_manifest,
 +    )
 +    preprocessed_public_files = public_from_headers + public_from_srcs
-+    preprocessed_private_files = private_from_headers + private_from_srcs
++    assembly_outputs = [file for file in private_from_srcs if file.extension == "o"]
++    preprocessed_private_files = private_from_headers + [file for file in private_from_srcs if file.extension != "o"]
  
      args = make_param_file_args(ctx)
 +    if header_manifest != None:
@@ -321,7 +377,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      args.add("--output", report_file)
      args.add("--target_under_inspection", str(target.label))
      args.add_all("--preprocessed_public_files", preprocessed_public_files, omit_if_empty = False)
-@@ -560,17 +790,20 @@
+@@ -560,17 +846,20 @@
          args.add("--ignored_includes_config", ctx.files._ignored_includes[0])
      args.add_all("--extra_ignored_includes", config.extra_ignored_includes, omit_if_empty = True)
      args.add_all("--ignored_unused_deps", config.ignored_unused_deps, omit_if_empty = True)
@@ -341,7 +397,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
      analysis_inputs = depset(
 -        direct = [processed_target] + public_files + private_files + processed_deps + processed_impl_deps + ctx.files._ignored_includes + preprocessed_public_files + preprocessed_private_files,
-+        direct = [processed_target] + public_files + private_files + processed_deps + processed_impl_deps + ctx.files._ignored_includes + preprocessed_public_files + preprocessed_private_files + ([header_manifest] if header_manifest != None else []),
++        direct = [processed_target] + public_files + private_files + processed_deps + processed_impl_deps + ctx.files._ignored_includes + preprocessed_public_files + preprocessed_private_files + assembly_outputs + ([header_manifest] if header_manifest != None else []),
          transitive = [target[CcInfo].compilation_context.headers],
      )
      ctx.actions.run(
@@ -719,13 +775,14 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/p
      // Preprocessor results for all public source files of the target under inspection
      parser.addOptionList("--preprocessed_public_files", options.preprocessed_public_files);
      // Preprocessor results for all private source files of the target under inspection
-@@ -92,8 +95,26 @@
+@@ -92,10 +95,32 @@
      const auto ignored_includes = getIgnoredIncludes(options.ignored_includes_config, options.extra_ignored_includes);
      auto system_under_inspection =
          getSystemUnderInspection(options.target_under_inspection_info, options.deps, options.implementation_deps);
 -    auto public_includes = getIncludeStatements(options.preprocessed_public_files, ignored_includes);
 -    auto private_includes = getIncludeStatements(options.preprocessed_private_files, ignored_includes);
 +    std::vector<std::string> unchecked_link_inputs;
++    std::vector<std::string> raw_link_candidates;
 +    std::unordered_set<std::string> observed;
 +    auto public_includes = getIncludeStatements(options.preprocessed_public_files, ignored_includes, &observed);
 +    auto private_includes = getIncludeStatements(options.preprocessed_private_files, ignored_includes, &observed);
@@ -734,6 +791,9 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/p
 +        if (!headers_input.is_open()) abortWithError("Cannot read DWYU header manifest ", options.owned_headers);
 +        const auto headers = nlohmann::json::parse(headers_input);
 +        unchecked_link_inputs = headers.at("unchecked_link_inputs").get<std::vector<std::string>>();
++        raw_link_candidates = headers.at("raw_link_candidates").get<std::vector<std::string>>();
++        for (const auto& file : headers.at("raw_assembly").get<std::vector<std::string>>())
++            observed.insert(file);
 +        std::vector<std::string> missing;
 +        for (const auto& file : headers.at("required").get<std::vector<std::string>>())
 +            if (observed.find(file) == observed.end()) missing.push_back(file);
@@ -746,10 +806,17 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/p
 +            headers.at("private").get<std::unordered_map<std::string, std::string>>());
 +    }
  
-     const auto result =
+-    const auto result =
++    auto result =
          evaluateIncludes(public_includes, private_includes, system_under_inspection, options.report_missing_direct_deps,
-@@ -105,7 +126,9 @@
+                          options.report_unused_deps, options.ignored_unused_deps, options.optimize_implementation_deps);
  
+@@ -103,9 +128,13 @@
+         std::cout << result.toString(options.output) << "\n";
+     }
+ 
++    result.markUnverifiedLinkDeps(raw_link_candidates);
++
      std::ofstream output{options.output};
      if (output.is_open()) {
 -        output << result.toJson(options.optimize_implementation_deps);
@@ -967,3 +1034,63 @@ new file mode 100644
 +} // namespace dwyu
 +
 +#endif
+diff --git a/dwyu/cc/aspect/private/analyze_includes/result.h b/dwyu/cc/aspect/private/analyze_includes/result.h
+--- a/dwyu/cc/aspect/private/analyze_includes/result.h
++++ b/dwyu/cc/aspect/private/analyze_includes/result.h
+@@ -16,6 +16,7 @@
+     explicit Result(std::string target);
+ 
+     bool isOk() const;
++    void markUnverifiedLinkDeps(const std::vector<std::string>& candidates);
+ 
+     std::string toString(const std::string& report_path) const;
+     nlohmann::json toJson(bool use_implementation_deps) const;
+@@ -33,6 +34,7 @@
+     std::vector<IncludeStatement> private_includes_without_direct_dep_;
+     std::set<std::string> unused_deps_;
+     std::set<std::string> unused_impl_deps_;
++    std::set<std::string> unverified_link_deps_;
+     std::set<std::string> public_dep_which_should_be_private_;
+ };
+ 
+diff --git a/dwyu/cc/aspect/private/analyze_includes/result.cpp b/dwyu/cc/aspect/private/analyze_includes/result.cpp
+--- a/dwyu/cc/aspect/private/analyze_includes/result.cpp
++++ b/dwyu/cc/aspect/private/analyze_includes/result.cpp
+@@ -39,7 +39,16 @@
+ 
+ bool Result::isOk() const {
+     return public_includes_without_direct_dep_.empty() && private_includes_without_direct_dep_.empty() &&
+-           unused_deps_.empty() && unused_impl_deps_.empty() && public_dep_which_should_be_private_.empty();
++           unused_deps_.empty() && unused_impl_deps_.empty() && public_dep_which_should_be_private_.empty() &&
++           unverified_link_deps_.empty();
++}
++
++void Result::markUnverifiedLinkDeps(const std::vector<std::string>& candidates) {
++    for (const auto& dep : candidates) {
++        const auto pub = unused_deps_.erase(dep);
++        const auto priv = unused_impl_deps_.erase(dep);
++        if (pub || priv) unverified_link_deps_.insert(dep);
++    }
+ }
+ 
+ void Result::setPublicIncludesWithoutDirectDep(std::vector<IncludeStatement> includes) {
+@@ -105,6 +114,11 @@
+         }
+     }
+ 
++    if (!unverified_link_deps_.empty()) {
++        content += "\nRaw assembly has no included headers from these dependencies, but they have linker inputs. Validate linking before removing them:\n";
++        for (const auto& dep : unverified_link_deps_) content += "  " + dep + "\n";
++    }
++
+     content += "\n";
+     content += "DWYU Report: " + report_path + "\n";
+ 
+@@ -118,6 +132,7 @@
+     data["private_includes_without_dep"] = makeMissingIncludesMap(private_includes_without_direct_dep_);
+     data["unused_deps"] = unused_deps_;
+     data["unused_implementation_deps"] = unused_impl_deps_;
++    if (!unverified_link_deps_.empty()) data["unverified_link_deps"] = unverified_link_deps_;
+     data["deps_which_should_be_private"] = public_dep_which_should_be_private_;
+     // The fixing script has to know if it should add missing private dependencies to 'deps' or 'implementation_deps'.
+     // Only cc_library targets with the 'optimize_implementation_deps' flag set to true should add missing private

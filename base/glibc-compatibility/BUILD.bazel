@@ -92,14 +92,10 @@ ch_cc_library(
         "@platforms//cpu:x86_64": [
             "musl/x86_64/syscall.s",
             "musl/x86_64/longjmp.s",
-            "musl/x86_64/atomic_arch.h",
-            "musl/x86_64/syscall_arch.h",
         ],
         "@platforms//cpu:aarch64": [
             "musl/aarch64/syscall.s",
             "musl/aarch64/longjmp.s",
-            "musl/aarch64/atomic_arch.h",
-            "musl/aarch64/syscall_arch.h",
         ],
     }),
     copts = [
