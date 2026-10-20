@@ -48,12 +48,10 @@ ch_cc_library(
         "src/stream_compress.c",
         "src/fdr/fdr.c",
         "src/hwlm/hwlm.c",
-    ] + glob(["src/nfa/*.c"]) + glob(["src/rose/*.c"]) + [
-        "src/som/som_runtime.c",
-        "src/som/som_stream.c",
-        "src/util/multibit.c",
-        "src/util/state_compress.c",
-    ] + select({
+    ] + glob(["src/nfa/*.c"]) + glob(["src/rose/*.c"]) + glob([
+        "src/som/*.c",
+        "src/util/*.c",
+    ]) + select({
         "@platforms//cpu:x86_64": [
             "src/util/arch/x86/cpuid_flags.c",
             "src/util/arch/x86/masked_move.c",

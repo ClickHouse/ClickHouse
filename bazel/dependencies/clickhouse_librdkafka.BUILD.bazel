@@ -142,7 +142,7 @@ ch_cc_library(
         "src/rdkafka_metadata.c",
         "src/rdkafka_metadata_cache.c",
         "src/rdkafka_mock.c",
-    ] + glob(["src/rdkafka_mock_*.c"]) + [
+    ] + glob(["src/rdkafka_mock_*.c"]) + ([
         "src/rdkafka_msg.c",
         "src/rdkafka_msgset_reader.c",
         "src/rdkafka_msgset_writer.c",
@@ -162,12 +162,7 @@ ch_cc_library(
         "src/rdkafka_telemetry.c",
         "src/rdkafka_telemetry_decode.c",
         "src/rdkafka_telemetry_encode.c",
-        "src/nanopb/pb_encode.c",
-        "src/nanopb/pb_decode.c",
-        "src/nanopb/pb_common.c",
-        "src/opentelemetry/metrics.pb.c",
-        "src/opentelemetry/common.pb.c",
-        "src/opentelemetry/resource.pb.c",
+    ] + glob(["src/nanopb/*.c"]) + glob(["src/opentelemetry/*.c"]) + [
         "src/rdkafka_timer.c",
         "src/rdkafka_topic.c",
         "src/rdkafka_transport.c",
@@ -183,7 +178,7 @@ ch_cc_library(
         "src/rdregex.c",
         "src/rdstring.c",
         "src/rdunittest.c",
-    ] + glob(["src/rdunittest_*.c"]) + [
+    ]) + glob(["src/rdunittest_*.c"]) + [
         "src/rdvarint.c",
         "src/rdxxhash.c",
         "src/snappy.c",

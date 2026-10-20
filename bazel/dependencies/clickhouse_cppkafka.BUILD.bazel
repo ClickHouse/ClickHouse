@@ -9,27 +9,7 @@ exports_files([
 
 ch_cc_library(
     name = "_cppkafka",
-    srcs = [
-        "src/buffer.cpp",
-        "src/configuration_option.cpp",
-        "src/configuration.cpp",
-        "src/consumer.cpp",
-        "src/error.cpp",
-        "src/event.cpp",
-        "src/exceptions.cpp",
-        "src/group_information.cpp",
-        "src/kafka_handle_base.cpp",
-        "src/message_internal.cpp",
-        "src/message_timestamp.cpp",
-        "src/message.cpp",
-        "src/metadata.cpp",
-        "src/producer.cpp",
-        "src/queue.cpp",
-        "src/topic_configuration.cpp",
-        "src/topic_partition_list.cpp",
-        "src/topic_partition.cpp",
-        "src/topic.cpp",
-    ],
+    srcs = glob(["src/*.cpp"]),
     hdrs = glob(["include/**/*.h"]),
     additional_compiler_inputs = ["src/error.cpp"],
     copts = [

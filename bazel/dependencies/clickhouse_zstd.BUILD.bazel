@@ -21,7 +21,7 @@ ch_cc_library(
         "lib/compress/hist.c",
         "lib/compress/huf_compress.c",
         "lib/compress/zstd_compress.c",
-    ] + glob(["lib/compress/zstd_compress_*.c"]) + [
+    ] + glob(["lib/compress/zstd_compress_*.c"]) + ([
         "lib/compress/zstd_double_fast.c",
         "lib/compress/zstd_fast.c",
         "lib/compress/zstd_lazy.c",
@@ -29,11 +29,7 @@ ch_cc_library(
         "lib/compress/zstdmt_compress.c",
         "lib/compress/zstd_opt.c",
         "lib/compress/zstd_preSplit.c",
-        "lib/decompress/huf_decompress.c",
-        "lib/decompress/zstd_ddict.c",
-        "lib/decompress/zstd_decompress_block.c",
-        "lib/decompress/zstd_decompress.c",
-    ] + glob(["lib/dictBuilder/*.c"]) + glob(["lib/legacy/*.c"]),
+    ] + glob(["lib/decompress/*.c"])) + glob(["lib/dictBuilder/*.c"]) + glob(["lib/legacy/*.c"]),
     hdrs = glob(["lib/**/*.h"]),
     copts = [
         "-w",

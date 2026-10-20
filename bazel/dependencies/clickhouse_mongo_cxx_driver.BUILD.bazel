@@ -179,21 +179,15 @@ _GENERATED_LOCAL_DEFINES_0 = [
 
 ch_cc_library(
     name = "_bsoncxx",
-    srcs = [
-        "src/bsoncxx/lib/bsoncxx/private/itoa.cpp",
-        "src/bsoncxx/lib/bsoncxx/private/version.cpp",
-        "src/bsoncxx/lib/bsoncxx/v1/array/value.cpp",
-        "src/bsoncxx/lib/bsoncxx/v1/array/view.cpp",
-    ] + glob(["src/bsoncxx/lib/bsoncxx/v1/config/*.cpp"]) + [
-        "src/bsoncxx/lib/bsoncxx/v1/decimal128.cpp",
-        "src/bsoncxx/lib/bsoncxx/v1/detail/postlude.cpp",
-        "src/bsoncxx/lib/bsoncxx/v1/detail/prelude.cpp",
-        "src/bsoncxx/lib/bsoncxx/v1/document/value.cpp",
-        "src/bsoncxx/lib/bsoncxx/v1/document/view.cpp",
-        "src/bsoncxx/lib/bsoncxx/v1/element/view.cpp",
-        "src/bsoncxx/lib/bsoncxx/v1/exception.cpp",
-        "src/bsoncxx/lib/bsoncxx/v1/oid.cpp",
-    ] + glob(["src/bsoncxx/lib/bsoncxx/v1/types/*.cpp"]) + glob(["src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/array/*.cpp"]) + [
+    srcs = glob([
+        "src/bsoncxx/lib/bsoncxx/private/*.cpp",
+        "src/bsoncxx/lib/bsoncxx/v1/array/*.cpp",
+    ]) + glob(["src/bsoncxx/lib/bsoncxx/v1/config/*.cpp"]) + glob([
+        "src/bsoncxx/lib/bsoncxx/v1/*.cpp",
+        "src/bsoncxx/lib/bsoncxx/v1/detail/*.cpp",
+        "src/bsoncxx/lib/bsoncxx/v1/document/*.cpp",
+        "src/bsoncxx/lib/bsoncxx/v1/element/*.cpp",
+    ]) + glob(["src/bsoncxx/lib/bsoncxx/v1/types/*.cpp"]) + glob(["src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/array/*.cpp"]) + [
         "src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/builder/core.cpp",
     ] + glob(["src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/config/*.cpp"]) + [
         "src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/decimal128.cpp",

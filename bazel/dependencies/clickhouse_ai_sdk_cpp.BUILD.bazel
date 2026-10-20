@@ -14,13 +14,7 @@ _AI_SDK_CPP_LOCAL_INCLUDES = [
 
 ch_cc_library(
     name = "_ai-sdk-cpp-anthropic",
-    srcs = [
-        "src/providers/anthropic/anthropic_client.cpp",
-        "src/providers/anthropic/anthropic_request_builder.cpp",
-        "src/providers/anthropic/anthropic_response_parser.cpp",
-        "src/providers/anthropic/anthropic_stream.cpp",
-        "src/providers/anthropic/anthropic_factory.cpp",
-    ] + glob(["src/**/*.h"]),
+    srcs = glob(["src/providers/anthropic/*.cpp"]) + glob(["src/**/*.h"]),
     copts = [
         "-std=c++20",
         "-w",
@@ -82,13 +76,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "_ai-sdk-cpp-openai",
-    srcs = [
-        "src/providers/openai/openai_client.cpp",
-        "src/providers/openai/openai_request_builder.cpp",
-        "src/providers/openai/openai_response_parser.cpp",
-        "src/providers/openai/openai_stream.cpp",
-        "src/providers/openai/openai_factory.cpp",
-    ] + glob(["src/**/*.h"]),
+    srcs = glob(["src/providers/openai/*.cpp"]) + glob(["src/**/*.h"]),
     copts = [
         "-std=c++20",
         "-w",

@@ -83,12 +83,10 @@ ch_cc_library(
         "src/aws-cpp-sdk-core/source/http/standard/StandardHttpRequest.cpp",
         "src/aws-cpp-sdk-core/source/http/standard/StandardHttpResponse.cpp",
         "src/aws-cpp-sdk-core/source/internal/AWSHttpResourceClient.cpp",
-    ] + glob(["src/aws-cpp-sdk-core/source/monitoring/*.cpp"]) + [
-        "src/aws-cpp-sdk-core/source/net/Net.cpp",
-        "src/aws-cpp-sdk-core/source/net/SimpleUDP.cpp",
-        "src/aws-cpp-sdk-core/source/net/linux-shared/Net.cpp",
-        "src/aws-cpp-sdk-core/source/net/linux-shared/SimpleUDP.cpp",
-    ] + glob(["src/aws-cpp-sdk-core/source/platform/linux-shared/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/smithy/client/**/*.cpp"]) + [
+    ] + glob(["src/aws-cpp-sdk-core/source/monitoring/*.cpp"]) + glob([
+        "src/aws-cpp-sdk-core/source/net/*.cpp",
+        "src/aws-cpp-sdk-core/source/net/linux-shared/*.cpp",
+    ]) + glob(["src/aws-cpp-sdk-core/source/platform/linux-shared/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/smithy/client/**/*.cpp"]) + [
         "src/aws-cpp-sdk-core/source/smithy/identity/AuthSchemeOption.cpp",
         "src/aws-cpp-sdk-core/source/smithy/tracing/TracingUtils.cpp",
     ] + glob(["src/aws-cpp-sdk-core/source/utils/**/*.cpp"]) + glob(["generated/src/aws-cpp-sdk-s3/source/**/*.cpp"]) + glob(["generated/src/aws-cpp-sdk-glue/source/**/*.cpp"]) + [

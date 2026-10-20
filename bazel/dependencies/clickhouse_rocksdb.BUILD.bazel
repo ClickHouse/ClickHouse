@@ -38,38 +38,20 @@ ch_cc_library(
         "db/blob/blob_file_meta.cc",
         "db/blob/blob_file_reader.cc",
         "db/blob/blob_garbage_meter.cc",
-    ] + glob(["db/blob/blob_log_*.cc"]) + [
+    ] + glob(["db/blob/blob_log_*.cc"]) + ([
         "db/blob/blob_source.cc",
         "db/blob/prefetch_buffer_collection.cc",
         "db/builder.cc",
         "db/c.cc",
         "db/coalescing_iterator.cc",
         "db/column_family.cc",
-        "db/compaction/compaction.cc",
-        "db/compaction/compaction_iterator.cc",
-        "db/compaction/compaction_picker.cc",
-        "db/compaction/compaction_job.cc",
-        "db/compaction/compaction_picker_fifo.cc",
-        "db/compaction/compaction_picker_level.cc",
-        "db/compaction/compaction_picker_universal.cc",
-        "db/compaction/compaction_service_job.cc",
-        "db/compaction/compaction_state.cc",
-        "db/compaction/compaction_outputs.cc",
-        "db/compaction/sst_partitioner.cc",
-        "db/compaction/subcompaction_state.cc",
+    ] + glob(
+        ["db/compaction/*.cc"],
+        exclude = ["**/*_test.*"],
+    ) + [
         "db/convenience.cc",
         "db/db_filesnapshot.cc",
-        "db/db_impl/compacted_db_impl.cc",
-        "db/db_impl/db_impl.cc",
-        "db/db_impl/db_impl_write.cc",
-        "db/db_impl/db_impl_compaction_flush.cc",
-        "db/db_impl/db_impl_files.cc",
-        "db/db_impl/db_impl_follower.cc",
-        "db/db_impl/db_impl_open.cc",
-        "db/db_impl/db_impl_debug.cc",
-        "db/db_impl/db_impl_experimental.cc",
-        "db/db_impl/db_impl_readonly.cc",
-        "db/db_impl/db_impl_secondary.cc",
+    ] + glob(["db/db_impl/*.cc"]) + [
         "db/db_info_dumper.cc",
         "db/db_iter.cc",
         "db/dbformat.cc",
@@ -109,10 +91,10 @@ ch_cc_library(
         "db/version_set.cc",
         "db/wal_edit.cc",
         "db/wal_manager.cc",
-        "db/wide/wide_column_serialization.cc",
-        "db/wide/read_path_blob_resolver.cc",
-        "db/wide/wide_columns.cc",
-        "db/wide/wide_columns_helper.cc",
+    ] + glob(
+        ["db/wide/*.cc"],
+        exclude = ["**/*_test.*"],
+    ) + [
         "db/write_batch.cc",
         "db/write_batch_base.cc",
         "db/write_controller.cc",
@@ -128,7 +110,7 @@ ch_cc_library(
         "env/fs_remap.cc",
         "env/mock_env.cc",
         "env/unique_id_gen.cc",
-    ] + glob(
+    ]) + glob(
         ["file/*.cc"],
         exclude = ["**/*_test.cc"],
     ) + [
@@ -198,7 +180,7 @@ ch_cc_library(
         "table/merging_iterator.cc",
         "table/meta_blocks.cc",
         "table/persistent_cache_helper.cc",
-    ] + glob(["table/plain/*.cc"]) + [
+    ] + glob(["table/plain/*.cc"]) + ([
         "table/sst_file_dumper.cc",
         "table/sst_file_reader.cc",
         "table/sst_file_writer.cc",
@@ -209,12 +191,10 @@ ch_cc_library(
         "test_util/sync_point.cc",
         "test_util/sync_point_impl.cc",
         "test_util/transaction_test_util.cc",
-        "trace_replay/block_cache_tracer.cc",
-        "trace_replay/io_tracer.cc",
-        "trace_replay/trace_record_handler.cc",
-        "trace_replay/trace_record_result.cc",
-        "trace_replay/trace_record.cc",
-        "trace_replay/trace_replay.cc",
+    ] + glob(
+        ["trace_replay/*.cc"],
+        exclude = ["**/*_test.*"],
+    ) + [
         "util/async_file_reader.cc",
         "util/coro_stats_util.cc",
         "util/io_dispatcher_imp.cc",
@@ -259,12 +239,12 @@ ch_cc_library(
         "utilities/env_timed.cc",
         "utilities/leveldb_options/leveldb_options.cc",
         "utilities/merge_operators.cc",
-    ] + glob(
+    ]) + glob(
         ["utilities/merge_operators/**/*.cc"],
         exclude = ["**/*_test.cc"],
     ) + [
         "utilities/object_registry.cc",
-    ] + glob(["utilities/persistent_cache/block_*.cc"]) + [
+    ] + glob(["utilities/persistent_cache/block_*.cc"]) + ([
         "utilities/persistent_cache/persistent_cache_tier.cc",
         "utilities/persistent_cache/volatile_tier_impl.cc",
         "utilities/simulator_cache/cache_simulator.cc",
@@ -278,24 +258,16 @@ ch_cc_library(
         "utilities/transactions/lock/point/point_lock_manager.cc",
         "utilities/transactions/lock/range/range_tree/range_tree_lock_manager.cc",
         "utilities/transactions/lock/range/range_tree/range_tree_lock_tracker.cc",
-        "utilities/transactions/optimistic_transaction_db_impl.cc",
-        "utilities/transactions/optimistic_transaction.cc",
-        "utilities/transactions/pessimistic_transaction.cc",
-        "utilities/transactions/pessimistic_transaction_db.cc",
-        "utilities/transactions/snapshot_checker.cc",
-        "utilities/transactions/transaction_base.cc",
-        "utilities/transactions/transaction_db_mutex_impl.cc",
-        "utilities/transactions/transaction_util.cc",
-        "utilities/transactions/write_prepared_txn.cc",
-        "utilities/transactions/write_prepared_txn_db.cc",
-        "utilities/transactions/write_unprepared_txn.cc",
-        "utilities/transactions/write_unprepared_txn_db.cc",
+    ] + glob(
+        ["utilities/transactions/*.cc"],
+        exclude = ["**/*_test.*"],
+    ) + [
         "utilities/types_util.cc",
         "utilities/ttl/db_ttl_impl.cc",
         "utilities/wal_filter.cc",
         "utilities/write_batch_with_index/write_batch_with_index.cc",
         "utilities/write_batch_with_index/write_batch_with_index_internal.cc",
-    ] + glob(["utilities/transactions/lock/range/range_tree/lib/locktree/*.cc"]) + [
+    ]) + glob(["utilities/transactions/lock/range/range_tree/lib/locktree/*.cc"]) + [
         "utilities/transactions/lock/range/range_tree/lib/standalone_port.cc",
         "utilities/transactions/lock/range/range_tree/lib/util/dbt.cc",
         "utilities/transactions/lock/range/range_tree/lib/util/memarena.cc",

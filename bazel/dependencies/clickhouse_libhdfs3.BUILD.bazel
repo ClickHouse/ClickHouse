@@ -164,10 +164,7 @@ _HDFS3_TEXTUAL_HDRS = [
 
 ch_cc_library(
     name = "_hdfs3__compile_0",
-    srcs = ([
-        "src/network/TcpSocket.cpp",
-        "src/network/DomainSocket.cpp",
-        "src/network/BufferedSocketReader.cpp",
+    srcs = ((glob(["src/network/*.cpp"]) + [
         "src/client/ReadShortCircuitInfo.cpp",
         "src/client/Pipeline.cpp",
         "src/client/Hdfs.cpp",
@@ -204,10 +201,10 @@ ch_cc_library(
         "src/client/NativeRSRawEncoder.cpp",
         "src/client/Preconditions.cpp",
         "src/client/RSUtil.cpp",
-    ] + glob(["src/client/RawErasure*.cpp"]) + [
+    ]) + glob(["src/client/RawErasure*.cpp"]) + [
         "src/client/StatefulStripeReader.cpp",
         "src/client/PositionStripeReader.cpp",
-    ] + glob(["src/client/Stripe*.cpp"]) + [
+    ] + glob(["src/client/Stripe*.cpp"]) + ([
         "src/client/SystemECPolicies.cpp",
         "src/client/dump.cpp",
         "src/client/erasure_coder.cpp",
@@ -220,11 +217,7 @@ ch_cc_library(
         "src/rpc/RpcConfig.cpp",
         "src/rpc/RpcServerInfo.cpp",
         "src/rpc/SaslClient.cpp",
-        "src/server/Datanode.cpp",
-        "src/server/LocatedBlocks.cpp",
-        "src/server/NamenodeProxy.cpp",
-        "src/server/NamenodeImpl.cpp",
-        "src/server/NamenodeInfo.cpp",
+    ] + glob(["src/server/*.cpp"]) + [
         "src/common/WritableUtils.cpp",
         "src/common/ExceptionInternal.cpp",
         "src/common/SessionConfig.cpp",
@@ -248,7 +241,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/libhdfs3-cmake/IpcConnectionContext.pb.cc",
         "@clickhouse//bazel:gen/contrib/libhdfs3-cmake/RpcHeader.pb.cc",
         "@clickhouse//bazel:gen/contrib/libhdfs3-cmake/datatransfer.pb.cc",
-    ]) + glob(["src/**/*.h"]),
+    ])) + glob(["src/**/*.h"]),
     hdrs = [
         "@clickhouse//contrib/libhdfs3-cmake:absl_log_undef.h",
         "@clickhouse//bazel:gen/contrib/krb5-cmake/include/krb5/krb5.h",

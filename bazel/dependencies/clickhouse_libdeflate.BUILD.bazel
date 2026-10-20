@@ -11,19 +11,11 @@ exports_files([
 
 ch_cc_library(
     name = "_libdeflate",
-    srcs = [
-        "lib/utils.c",
-        "lib/arm/cpu_features.c",
-        "lib/x86/cpu_features.c",
-        "lib/deflate_compress.c",
-        "lib/deflate_decompress.c",
-        "lib/adler32.c",
-        "lib/zlib_compress.c",
-        "lib/zlib_decompress.c",
-        "lib/crc32.c",
-        "lib/gzip_compress.c",
-        "lib/gzip_decompress.c",
-    ],
+    srcs = glob([
+        "lib/*.c",
+        "lib/arm/*.c",
+        "lib/x86/*.c",
+    ]),
     hdrs = glob(["**/*.h"]),
     copts = [
         "-w",

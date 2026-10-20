@@ -12,19 +12,7 @@ exports_files([
 ch_cc_library(
     name = "_cpuid",
     srcs = select({
-        "@platforms//cpu:x86_64": [
-            "libcpuid/asm-bits.c",
-            "libcpuid/cpuid_main.c",
-            "libcpuid/libcpuid_util.c",
-            "libcpuid/msrdriver.c",
-            "libcpuid/rdcpuid.c",
-            "libcpuid/rdmsr.c",
-            "libcpuid/rdtsc.c",
-            "libcpuid/recog_amd.c",
-            "libcpuid/recog_arm.c",
-            "libcpuid/recog_intel.c",
-            "libcpuid/recog_centaur.c",
-        ],
+        "@platforms//cpu:x86_64": glob(["libcpuid/*.c"]),
         "@platforms//cpu:aarch64": [],
     }),
     hdrs = select({

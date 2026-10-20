@@ -23,14 +23,7 @@ ch_cc_library(
         "gl/base64.c",
         "gl/memxor.c",
         "gl/sha1.c",
-    ] + glob(["openid20/*.c"]) + glob(["anonymous/*.c"]) + glob(["saml20/*.c"]) + [
-        "scram/parser.c",
-        "scram/printer.c",
-        "scram/tokens.c",
-        "scram/client.c",
-        "scram/mechinfo.c",
-        "scram/server.c",
-        "scram/validate.c",
+    ] + glob(["openid20/*.c"]) + glob(["anonymous/*.c"]) + glob(["saml20/*.c"]) + (glob(["scram/*.c"]) + [
         "src/free.c",
         "src/supportp.c",
         "src/init.c",
@@ -53,13 +46,7 @@ ch_cc_library(
         "src/register.c",
         "src/base64.c",
         "src/md5pwd.c",
-    ] + glob(["external/*.c"]) + glob(["securid/*.c"]) + glob(["plain/*.c"]) + [
-        "cram-md5/client.c",
-        "cram-md5/challenge.c",
-        "cram-md5/mechinfo.c",
-        "cram-md5/server.c",
-        "cram-md5/digest.c",
-    ] + glob(["digest-md5/*.c"]) + glob(["login/*.c"]) + glob(["gssapi/*.c"]),
+    ]) + glob(["external/*.c"]) + glob(["securid/*.c"]) + glob(["plain/*.c"]) + glob(["cram-md5/*.c"]) + glob(["digest-md5/*.c"]) + glob(["login/*.c"]) + glob(["gssapi/*.c"]),
     hdrs = glob(["**/*.h"]),
     copts = [
         "-w",

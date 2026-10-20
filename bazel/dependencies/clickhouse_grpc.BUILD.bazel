@@ -185,7 +185,7 @@ _GRPC_LOCAL_INCLUDES = [
 
 ch_cc_library(
     name = "grpc__compile_0",
-    srcs = glob(["src/core/call/call_*.cc"]) + [
+    srcs = glob(["src/core/call/call_*.cc"]) + ([
         "src/core/call/client_call.cc",
         "src/core/call/interception_chain.cc",
         "src/core/call/message.cc",
@@ -197,12 +197,7 @@ ch_cc_library(
         "src/core/call/security_context.cc",
         "src/core/call/server_call.cc",
         "src/core/call/status_util.cc",
-        "src/core/channelz/channel_trace.cc",
-        "src/core/channelz/property_list.cc",
-        "src/core/channelz/channelz.cc",
-        "src/core/channelz/channelz_registry.cc",
-        "src/core/channelz/text_encode.cc",
-    ] + glob(["src/core/channelz/v2tov1/*.cc"]) + [
+    ] + glob(["src/core/channelz/*.cc"])) + glob(["src/core/channelz/v2tov1/*.cc"]) + [
         "src/core/client_channel/backup_poller.cc",
         "src/core/client_channel/buffered_call.cc",
     ] + glob(["src/core/client_channel/client_*.cc"]) + [
@@ -1074,7 +1069,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "grpc_unsecure__compile_0",
-    srcs = glob(["src/core/call/call_*.cc"]) + [
+    srcs = glob(["src/core/call/call_*.cc"]) + ([
         "src/core/call/client_call.cc",
         "src/core/call/interception_chain.cc",
         "src/core/call/message.cc",
@@ -1086,14 +1081,10 @@ ch_cc_library(
         "src/core/call/security_context.cc",
         "src/core/call/server_call.cc",
         "src/core/call/status_util.cc",
-        "src/core/channelz/channel_trace.cc",
-        "src/core/channelz/property_list.cc",
-        "src/core/channelz/channelz.cc",
-        "src/core/channelz/channelz_registry.cc",
-        "src/core/channelz/text_encode.cc",
+    ] + glob(["src/core/channelz/*.cc"]) + [
         "src/core/client_channel/backup_poller.cc",
         "src/core/client_channel/buffered_call.cc",
-    ] + glob(["src/core/client_channel/client_*.cc"]) + [
+    ]) + glob(["src/core/client_channel/client_*.cc"]) + [
         "src/core/client_channel/direct_channel.cc",
         "src/core/client_channel/dynamic_filters.cc",
         "src/core/client_channel/global_subchannel_pool.cc",

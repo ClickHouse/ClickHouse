@@ -8,24 +8,7 @@ exports_files([
 
 ch_cc_library(
     name = "_stringzilla",
-    srcs = [
-        "c/stringzilla/runtime.c",
-        "c/stringzilla/compare.c",
-        "c/stringzilla/memory.c",
-        "c/stringzilla/hash.c",
-        "c/stringzilla/find.c",
-        "c/stringzilla/sort.c",
-        "c/stringzilla/intersect.c",
-        "c/stringzilla/utf8_norm.c",
-        "c/stringzilla/utf8_runes.c",
-        "c/stringzilla/utf8_tokens.c",
-        "c/stringzilla/utf8_wordbreaks.c",
-        "c/stringzilla/utf8_graphemes.c",
-        "c/stringzilla/utf8_sentences.c",
-        "c/stringzilla/utf8_linebreaks.c",
-        "c/stringzilla/utf8_uncased_fold.c",
-        "c/stringzilla/utf8_uncased.c",
-    ] + glob(["c/stringzilla/**/*.h"]),
+    srcs = glob(["c/stringzilla/*.c"]) + glob(["c/stringzilla/**/*.h"]),
     hdrs = glob([
         "include/**/*.h",
         "include/**/*.hpp",

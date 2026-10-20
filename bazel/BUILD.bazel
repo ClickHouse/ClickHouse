@@ -55,6 +55,15 @@ copy_file(
 )
 
 cc_library(
+    name = "clickhouse_config_headers",
+    hdrs = [
+        ":configure_clickhouse_config",
+        ":configure_clickhouse_tools",
+    ],
+    includes = ["gen/includes/configs"],
+)
+
+cc_library(
     name = "krb5_generated_headers",
     hdrs = ["gen/contrib/krb5-cmake/include/krb5/krb5.h"],
     includes = ["gen/contrib/krb5-cmake/include"],
@@ -71,6 +80,21 @@ cc_library(
         "gen/contrib/flatbuffers/generated/feather_generated.h",
     ],
     includes = ["gen/contrib/flatbuffers"],
+)
+
+cc_library(
+    name = "arrow_flight_generated_headers",
+    hdrs = [
+        "gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.h",
+        "gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.h",
+        "gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.grpc.pb.h",
+        "gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.h",
+    ],
+    includes = ["gen/contrib/arrow-cmake/cpp/src"],
+    textual_hdrs = [
+        "gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.cc",
+        "gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
+    ],
 )
 
 platform(

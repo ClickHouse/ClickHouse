@@ -238,7 +238,7 @@ ch_cc_library(
     ] + glob(
         ["src/google/protobuf/json/internal/*.cc"],
         exclude = ["**/*_test.cc"],
-    ) + [
+    ) + ([
         "src/google/protobuf/json/json.cc",
         "src/google/protobuf/json_enumvalue_options.pb.cc",
         "src/google/protobuf/map_field.cc",
@@ -254,14 +254,15 @@ ch_cc_library(
         "src/google/protobuf/symbol_checker.cc",
         "src/google/protobuf/text_format.cc",
         "src/google/protobuf/unknown_field_set.cc",
-        "src/google/protobuf/util/delimited_message_util.cc",
-        "src/google/protobuf/util/field_comparator.cc",
-        "src/google/protobuf/util/field_mask_util.cc",
-        "src/google/protobuf/util/message_differencer.cc",
-        "src/google/protobuf/util/time_util.cc",
-        "src/google/protobuf/util/type_resolver_util.cc",
+    ] + glob(
+        ["src/google/protobuf/util/*.cc"],
+        exclude = [
+            "**/*_test.*",
+            "**/*_unittest.*",
+        ],
+    ) + [
         "src/google/protobuf/wire_format.cc",
-    ],
+    ]),
     copts = [
         "-w",
         "-std=c++17",
