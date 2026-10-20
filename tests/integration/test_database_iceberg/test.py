@@ -1764,6 +1764,31 @@ def test_drop_table_purge(started_cluster):
         node.wait_for_log_line(rf"tables/{table_name}\?purgeRequested={str(purge).lower()}")
 
 
+def test_drop_table_purge_query_setting(started_cluster):
+    # node1 has `iceberg_delete_data_on_drop` disabled in its profile.
+    node = started_cluster.instances["node1"]
+
+    for purge in (False, True):
+        test_ref = f"test_drop_table_purge_query_setting_{uuid.uuid4()}"
+        table_name = f"{test_ref}_table"
+        root_namespace = f"{test_ref}_namespace"
+
+        create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+        create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x Int)")
+        node.query(
+            f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES (1)",
+            settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+        )
+        files = list_s3_objects(started_cluster.minio_client, "warehouse-rest", f"{table_name}/")
+        assert files
+
+        node.query(
+            f"DROP TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`",
+            settings={"iceberg_delete_data_on_drop": int(purge)},
+        )
+        assert list_s3_objects(started_cluster.minio_client, "warehouse-rest", f"{table_name}/") == ([] if purge else files)
+
+
 def test_create_table_order_by(started_cluster):
     # `ORDER BY` must reach the catalog as the table's write order.
     node = started_cluster.instances["node1"]

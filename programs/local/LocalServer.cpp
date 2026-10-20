@@ -154,6 +154,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 columns_cache_size;
     extern const ServerSettingsDouble columns_cache_size_ratio;
     extern const ServerSettingsDouble columns_cache_size_to_ram_ratio;
+    extern const ServerSettingsBool enable_gpu;
     extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
     extern const ServerSettingsBool jemalloc_enable_background_threads;
     extern const ServerSettingsBool jemalloc_enable_global_profiler;
@@ -233,6 +234,9 @@ namespace ServerSetting
     extern const ServerSettingsString primary_index_cache_policy;
     extern const ServerSettingsUInt64 primary_index_cache_size;
     extern const ServerSettingsDouble primary_index_cache_size_ratio;
+    extern const ServerSettingsString statistics_cache_policy;
+    extern const ServerSettingsUInt64 statistics_cache_size;
+    extern const ServerSettingsDouble statistics_cache_size_ratio;
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_size;
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_free_size;
     extern const ServerSettingsUInt64 prefixes_deserialization_thread_pool_thread_pool_queue_size;
@@ -278,6 +282,7 @@ namespace ErrorCodes
     extern const int FILE_ALREADY_EXISTS;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int NETWORK_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
 }
 
@@ -1665,6 +1670,15 @@ void LocalServer::processConfig()
     }
     global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size, uncompressed_cache_size_ratio);
 
+    if (server_settings[ServerSetting::enable_gpu])
+    {
+#if USE_GPU
+        global_context->setGPU(server_settings);
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server setting `enable_gpu` is set, but the server is built without GPU support");
+#endif
+    }
+
     String mark_cache_policy = server_settings[ServerSetting::mark_cache_policy];
     size_t mark_cache_size = server_settings[ServerSetting::mark_cache_size];
     double mark_cache_size_ratio = server_settings[ServerSetting::mark_cache_size_ratio];
@@ -1741,6 +1755,16 @@ void LocalServer::processConfig()
         LOG_INFO(log, "Lowered primary index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(primary_index_cache_size));
     }
     global_context->setPrimaryIndexCache(primary_index_cache_policy, primary_index_cache_size, primary_index_cache_size_ratio);
+
+    String statistics_cache_policy = server_settings[ServerSetting::statistics_cache_policy];
+    size_t statistics_cache_size = server_settings[ServerSetting::statistics_cache_size];
+    double statistics_cache_size_ratio = server_settings[ServerSetting::statistics_cache_size_ratio];
+    if (statistics_cache_size > max_cache_size)
+    {
+        statistics_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered statistics cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(statistics_cache_size));
+    }
+    global_context->setStatisticsCache(statistics_cache_policy, statistics_cache_size, statistics_cache_size_ratio);
 
     String vector_similarity_index_cache_policy = server_settings[ServerSetting::vector_similarity_index_cache_policy];
     size_t vector_similarity_index_cache_size = server_settings[ServerSetting::vector_similarity_index_cache_size];
