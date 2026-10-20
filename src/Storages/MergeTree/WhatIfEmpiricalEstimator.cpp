@@ -63,11 +63,16 @@ MarkRanges skipIndexWindowsOverlapping(const MarkRanges & baseline, size_t granu
     return windows;
 }
 
+size_t windowsInRange(const MarkRange & range, size_t granularity)
+{
+    return (range.end - range.begin + granularity - 1) / granularity;
+}
+
 size_t countWindows(const MarkRanges & windows, size_t granularity)
 {
     size_t count = 0;
     for (const auto & range : windows)
-        count += (range.end - range.begin + granularity - 1) / granularity;
+        count += windowsInRange(range, granularity);
     return count;
 }
 
@@ -78,19 +83,23 @@ MarkRanges windowsToScan(const MarkRanges & windows, size_t granularity, size_t 
     if (step <= 1)
         return windows;
 
-    std::vector<MarkRange> each;
-    for (const auto & range : windows)
-        for (size_t begin = range.begin; begin < range.end; begin += granularity)
-            each.emplace_back(begin, std::min(begin + granularity, range.end));
-
     MarkRanges ranges;
-    for (size_t index : sampleUnits(each.size(), step, part_name))
+    auto range = windows.begin();
+    /// the windows in the ranges before `range`
+    size_t windows_before = 0;
+    for (size_t index : sampleUnits(countWindows(windows, granularity), step, part_name))
     {
-        const auto & window = each[index];
-        if (!ranges.empty() && ranges.back().end == window.begin)
-            ranges.back().end = window.end;
+        while (index >= windows_before + windowsInRange(*range, granularity))
+        {
+            windows_before += windowsInRange(*range, granularity);
+            ++range;
+        }
+        const size_t begin = range->begin + (index - windows_before) * granularity;
+        const size_t end = std::min(begin + granularity, range->end);
+        if (!ranges.empty() && ranges.back().end == begin)
+            ranges.back().end = end;
         else
-            ranges.push_back(window);
+            ranges.emplace_back(begin, end);
     }
     return ranges;
 }
