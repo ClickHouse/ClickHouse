@@ -56,6 +56,14 @@ SELECT 'const', id, now() + a > '2000-01-01 00:00:00', today() + a > '2000-01-01
 SELECT 'folded', a, b, a + 1, b + 2 FROM merge(currentDatabase(), '^t_(a|dist_b)$') ORDER BY ALL;
 SELECT 'folded', a, b, a + 1, b + 2 FROM merge(currentDatabase(), '^t_(dist_a|b)$') ORDER BY ALL;
 
+-- Expressions over missing columns that the child returns partly folded.
+SELECT 'partial', id, a + 1 AS y, id * (a + 1) AS z FROM merge(currentDatabase(), '^t_(a|dist_b)$') ORDER BY id;
+SELECT 'partial', id, a + 1 AS y, id * (a + 1) AS z FROM merge(currentDatabase(), '^t_(dist_a|b)$') ORDER BY id;
+SELECT 'partial', a + 1 AS y, id * (a + 1) AS z FROM merge(currentDatabase(), '^t_(a|dist_b)$') ORDER BY z;
+SELECT 'partial', a + 1 AS y, id * (a + 1) AS z FROM merge(currentDatabase(), '^t_(dist_a|b)$') ORDER BY z;
+SELECT 'partial', id, a IN (0, 7), id * (a IN (0, 7)) FROM merge(currentDatabase(), '^t_(a|dist_b)$') ORDER BY id;
+SELECT 'partial', id, a IN (0, 7), id * (a IN (0, 7)) FROM merge(currentDatabase(), '^t_(dist_a|b)$') ORDER BY id;
+
 -- A `Merge` table with a single `Distributed` child is read at `Complete`.
 CREATE TABLE t_m1 (id UInt64, a UInt8, b UInt8) ENGINE = Merge(currentDatabase(), '^t_dist_b$');
 SELECT 'complete', min(a), min(b), count() FROM t_m1;
@@ -68,3 +76,8 @@ CREATE TABLE t_buf_c AS t_c ENGINE = Buffer(currentDatabase(), t_dist_c, 1, 1000
 INSERT INTO t_buf_c VALUES (21);
 SELECT 'buffer', min(a), min(b), count() FROM merge(currentDatabase(), '^t_(dist_a|buf_c)$');
 SELECT 'buffer fuse', sum(id + a), avg(id + b) FROM merge(currentDatabase(), '^t_(dist_a|buf_c)$') SETTINGS optimize_syntax_fuse_functions = 1;
+
+-- A view child analyzes its own query with every pass.
+CREATE VIEW t_v_b AS SELECT id, _shard_num AS shard FROM t_dist_b;
+SELECT 'view', id, a, shard FROM merge(currentDatabase(), '^t_(dist_a|v_b)$') ORDER BY id;
+SELECT 'view', id, a, shard FROM merge(currentDatabase(), '^t_(dist_a|v_b)$') ORDER BY id SETTINGS analyzer_inline_views = 1;

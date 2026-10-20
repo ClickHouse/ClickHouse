@@ -661,8 +661,6 @@ protected:
     /// Set by local shard plans, whose query is printed from a resolved query tree. Inherited by context copies and
     /// ignored in view bodies; `withUnresolvedPositionalArguments` resets it for other queries.
     bool positional_arguments_already_resolved = false;
-    /// The initiator of the read already optimized the query tree, so only the passes that keep the header run.
-    bool query_tree_already_optimized = false;
     /// Which join statistics EXPLAIN ANALYZE needs. It is a context field rather than a setting on
     /// purpose: only Interpreter may turn it on, but it must reach every join of the
     /// query, including joins in nested plans, which EXPLAIN also prints.
@@ -2022,9 +2020,6 @@ public:
     void setPositionalArgumentsAlreadyResolved(bool value) { positional_arguments_already_resolved = value; }
     /// For a query that is not printed from the resolved query tree: `context`, or its copy with the flag reset.
     static ContextPtr withUnresolvedPositionalArguments(const ContextPtr & context);
-
-    bool isQueryTreeAlreadyOptimized() const { return query_tree_already_optimized; }
-    void setQueryTreeAlreadyOptimized(bool value) { query_tree_already_optimized = value; }
 
     JoinAnalyzeMode getJoinAnalyzeMode() const { return join_analyze_mode; }
     void setJoinAnalyzeMode(JoinAnalyzeMode value) { join_analyze_mode = value; }

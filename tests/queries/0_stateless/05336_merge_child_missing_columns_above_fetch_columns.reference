@@ -51,6 +51,30 @@ folded	5	5	6	7
 folded	0	0	1	2
 folded	0	0	1	2
 folded	5	5	6	7
+partial	1	6	6
+partial	10	1	10
+partial	11	1	11
+partial	1	6	6
+partial	10	1	10
+partial	11	1	11
+partial	6	6
+partial	1	10
+partial	1	11
+partial	6	6
+partial	1	10
+partial	1	11
+partial	1	0	0
+partial	10	1	10
+partial	11	1	11
+partial	1	0	0
+partial	10	1	10
+partial	11	1	11
 complete	0	0	2
 buffer	0	0	3
 buffer fuse	47	15.666666666666666
+view	1	5	0
+view	10	0	1
+view	11	0	1
+view	1	5	0
+view	10	0	1
+view	11	0	1

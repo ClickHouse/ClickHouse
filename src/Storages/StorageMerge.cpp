@@ -1334,8 +1334,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 modified_query_info
                     = getModifiedQueryInfo(modified_context, table, nested_storage_snapshot, real_column_names, column_names_as_aliases, is_smallest_column_requested, aliases, missing_column_defaults);
 
-                if (!missing_column_defaults.empty())
-                    modified_context->setQueryTreeAlreadyOptimized(true);
+                modified_query_info.query_tree_already_optimized = !missing_column_defaults.empty();
 
                 if (can_cache)
                 {
@@ -2067,6 +2066,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
         auto child_select_query_options = SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved();
         child_select_query_options.is_local_plan_for_distributed_query = true;
+        child_select_query_options.query_tree_already_optimized = modified_query_info.query_tree_already_optimized;
 
         /// Converting query to AST because types might be different in the source table.
         /// Need to resolve types again.
