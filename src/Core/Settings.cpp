@@ -3804,6 +3804,19 @@ start using external aggregation.
 )", 0, \
         {"25.1", 0.0, 0.5, "Enable automatic spilling to disk by default."}, \
         {"24.12", 0., 0., "New setting."}) \
+    DECLARE(UInt64, min_bytes_before_external_group_by, 0, R"(
+The minimum size in bytes of the aggregation state of one thread before external `GROUP BY` writes it to disk.
+
+When the memory of the query is over `max_bytes_before_external_group_by` or `max_bytes_ratio_before_external_group_by` because of other operators, for example a hash join that holds a large table, each thread would otherwise write every block it aggregates to disk as a separate small file. Reading many small files back costs more memory than the writes saved. With this setting a thread keeps aggregating until its own state reaches the given size, and only then writes it out as one file.
+
+The memory used above the threshold is bounded by this value multiplied by the number of threads.
+
+Possible values:
+
+- A positive integer, the size in bytes.
+- `0` — no minimum, the state is written as soon as the threshold is reached.
+)", 0, \
+        {"26.11", 0, 0, "New setting: the minimum size of the aggregation state of one thread before external `GROUP BY` writes it to disk, so that a query that is already over the threshold does not write every block as a separate file."}) \
     \
     DECLARE(UInt64, max_rows_to_sort, 0, R"(
 The maximum number of rows before sorting. This allows you to limit memory consumption when sorting.
@@ -7020,7 +7033,7 @@ Possible values:
 If non-zero, skip fetching iceberg metadata from remote catalog if there is a cached metadata snapshot, more recent than the given staleness window. Zero means to always fetch the latest metadata version from the remote catalog. Setting this a non-zero trades staleness to a lower latency of read operations.
 )", 0, \
         {"26.3", 0, 0, "New setting allowing using cached metadata version at READ operations to prevent fetching from remote catalog"}) \
-    DECLARE_WITH_ALIAS(NonZeroUInt64, iceberg_manifest_decode_concurrency, 4, R"(
+    DECLARE_WITH_ALIAS(NonZeroUInt64, iceberg_manifest_decode_concurrency, 16, R"(
 Maximum number of Iceberg manifest files decoded concurrently while reading a table.
 
 Delete manifests are all decoded before any data file is read; data manifests are decoded while the list of data files for the query is produced, and new ones are decoded only as the query consumes already decoded entries. Decoding several manifests at a time overlaps the object storage round-trips and the per-entry pruning work.
@@ -7029,6 +7042,7 @@ Higher values raise peak memory when the Iceberg metadata files cache is disable
 
 Must be greater than zero; `1` decodes the manifests one at a time.
 )", 0, iceberg_delete_manifest_decode_concurrency, \
+        {"26.11", 4, 16, "Raise the default number of Iceberg manifest files decoded concurrently from 4 to 16 to overlap more object storage round-trips on tables with many manifests."}, \
         {"26.9", 2, 4, "New setting bounding how many Iceberg manifest files are decoded concurrently, for delete and data manifests alike. It replaces `iceberg_delete_manifest_decode_concurrency` (kept as an alias). `2` approximates the pre-26.9 data path, which decoded one manifest at a time with the next one's fetch already in flight; under `compatibility` at or below 26.8 the delete decode therefore also runs at 2 rather than its released default of 4, preserving the older data-path memory envelope at the cost of some delete-decode overlap."}, \
         {"26.8", 2, 4, "New setting bounding how many Iceberg delete manifest files are decoded concurrently before the first row is read. Before 26.8 one manifest was decoded at a time with the next one's fetch already in flight, so `2` is the closest equivalent of the previous behavior, which put the sum of their object storage round-trips on the critical path before the first row. At the time the setting was named `iceberg_delete_manifest_decode_concurrency`, which is now an alias of it."}) \
     DECLARE(NonZeroUInt64, iceberg_file_entries_queue_size, 100, R"(
