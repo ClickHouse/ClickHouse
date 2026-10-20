@@ -146,6 +146,14 @@ Off by default: the rewrite that distributes a sort assumes the sort it wraps do
 already being ordered, and a sort that does can be fed rows through an exchange that does not preserve
 order. Only shapes where no exchange survives between the read and the sort are safe today.
 
+## distributed_plan_worker_cluster {#distributed_plan_worker_cluster}
+
+<PrivatePreviewBadge/>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": ""},{"label": "New setting to select the stateless worker cluster for distributed plan execution."}]}]}/>
+
+Name of the stateless-worker cluster to execute this query's distributed plan on. The empty default selects the pre-configured default cluster; other clusters are configured under `stateless_worker_client.clusters`.
+
 ## distributed_plan_workers_num {#distributed_plan_workers_num}
 
 <PrivatePreviewBadge/>
