@@ -1334,7 +1334,8 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 modified_query_info
                     = getModifiedQueryInfo(modified_context, table, nested_storage_snapshot, real_column_names, column_names_as_aliases, is_smallest_column_requested, aliases, missing_column_defaults);
 
-                modified_query_info.query_tree_already_optimized = !missing_column_defaults.empty();
+                if (!missing_column_defaults.empty())
+                    modified_query_info.query_tree_already_optimized = true;
 
                 if (can_cache)
                 {

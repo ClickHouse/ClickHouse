@@ -102,6 +102,11 @@ INSERT INTO t_buf_c VALUES (21);
 SELECT 'buffer', min(a), min(b), count() FROM merge(currentDatabase(), '^t_(dist_a|buf_c)$');
 SELECT 'buffer fuse', sum(id + a), avg(id + b) FROM merge(currentDatabase(), '^t_(dist_a|buf_c)$') SETTINGS optimize_syntax_fuse_functions = 1;
 
+-- A nested `Merge` child.
+CREATE TABLE t_nested (id UInt64) ENGINE = Merge(currentDatabase(), '^t_(dist_b|c)$');
+SELECT 'nested', sum(id + a), avg(id + b) FROM merge(currentDatabase(), '^t_(dist_a|nested)$') SETTINGS optimize_syntax_fuse_functions = 1;
+SELECT 'nested', sum(id + a), avg(id + b) FROM merge(currentDatabase(), '^t_(a|nested)$') SETTINGS optimize_syntax_fuse_functions = 1;
+
 -- A view child analyzes its own query with every pass.
 CREATE VIEW t_v_b AS SELECT id, _shard_num AS shard FROM t_dist_b;
 SELECT 'view', id, a, shard FROM merge(currentDatabase(), '^t_(dist_a|v_b)$') ORDER BY id;

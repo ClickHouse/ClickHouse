@@ -112,6 +112,8 @@ limit by	1	6
 complete	0	0	2
 buffer	0	0	3
 buffer fuse	47	15.666666666666666
+nested	47	11.75
+nested	47	11.75
 view	1	5	0
 view	10	0	1
 view	11	0	1
