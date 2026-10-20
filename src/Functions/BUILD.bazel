@@ -1357,7 +1357,6 @@ ch_cc_library(
         "ztest.cpp",
     ] + glob(["AI/*.cpp"]) + glob(["Kusto/*.cpp"]),
     hdrs = _GENERATED_HDRS_0,
-    additional_compiler_inputs = [] + [],
     clickhouse_code = True,
     copts = [
         "-g1",
@@ -1448,7 +1447,6 @@ ch_cc_library(
         "@platforms//cpu:aarch64": ["pointInPolygon.cpp"],
     }),
     hdrs = _GENERATED_HDRS_0,
-    additional_compiler_inputs = [] + [],
     clickhouse_code = True,
     copts = ["-g1"] + select({
         "@platforms//cpu:x86_64": [
@@ -1769,7 +1767,6 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    additional_compiler_inputs = [] + [],
     arches = ["x86_64"],
     clickhouse_code = True,
     copts = select({

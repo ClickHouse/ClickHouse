@@ -323,7 +323,7 @@ class Graph:
             assets = self.timezone_sources()
             prefix = 'bazel/gen/' + self.arch + '/embedded/'
             self.embed_copies.update(assets)
-            additional_inputs.extend(source_label(prefix + asset) for asset in assets)
+            additional_inputs.append('//bazel:cctz_timezone_data')
             flags.append('--embed-dir=$(GENDIR)/' + prefix.rstrip('/'))
             return source
         path = ROOT / source
