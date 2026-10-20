@@ -5,6 +5,8 @@
 -- uniform queries stage nearly every row. Every cell compares the same query with the feature
 -- off and on.
 
+-- Random settings limits: index_granularity=(100, None); index_granularity_bytes=(100000, None)
+
 SET enable_adaptive_aggregator = 1;
 SET adaptive_aggregator_freeze_threshold = 128;
 SET max_threads = 4;
