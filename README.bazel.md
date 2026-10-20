@@ -183,6 +183,7 @@ CMake hash recorded below.
 | `31ca0af80` (verification snapshot) | glibc/OpenSSL assembly: actual native assembly dependency checks and ARM-only OpenSSL header | [2fcde940](https://app.buildbuddy.io/invocation/2fcde940-2f99-4e6c-b79e-d77f171c58a9) | [97d13d35](https://app.buildbuddy.io/invocation/97d13d35-2517-4090-b8fe-e51e9e363364) |
 | `025dd9050` (verification snapshot) | Generated headers from their Rust/gRPC owners; Google Cloud public/private headers and protobuf dependencies | [5222418a](https://app.buildbuddy.io/invocation/5222418a-fcd0-43d4-9097-18317049969b) | [3eaeb1fc](https://app.buildbuddy.io/invocation/3eaeb1fc-bb3b-40bf-90c0-b7a0e4788adb) |
 | `bca4a5ef2` (verification snapshot) | Remove C-only libraries' unused libc++ headers; private Common implementation dependencies and System fragment | [4f9e9b21](https://app.buildbuddy.io/invocation/4f9e9b21-2cd7-4c6a-ad27-b2fca52fd713) | [a856ced1](https://app.buildbuddy.io/invocation/a856ced1-259b-476a-b3c0-75d1643edc25) |
+| `d15ee9fae` (verification snapshot) | Arrow HDFS/zstd and Parquet version/RapidJSON/xsimd header ownership | [b1dba745](https://app.buildbuddy.io/invocation/b1dba745-7289-49f0-b108-0cacb8cae2ac) | [ced8a66f](https://app.buildbuddy.io/invocation/ced8a66f-04e0-40b1-b37f-1e0af117fa70) |
 
 The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`

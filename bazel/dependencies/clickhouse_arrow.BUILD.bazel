@@ -335,6 +335,7 @@ ch_cc_library(
     }) + [
         "cpp/src/arrow/integration/c_data_integration_internal.h",
         "cpp/src/arrow/integration/json_integration.h",
+        "cpp/src/arrow/io/hdfs_internal.h",
         "cpp/src/arrow/testing/extension_type.h",
         "cpp/src/arrow/testing/visibility.h",
     ],
@@ -372,6 +373,7 @@ ch_cc_library(
             "cpp/src/arrow/filesystem/gcsfs_internal.h",
             "cpp/src/arrow/filesystem/s3_internal.h",
             "cpp/src/arrow/io/mman.h",
+            "cpp/src/arrow/io/hdfs_internal.h",
         ],
     ),
     copts = [
@@ -389,6 +391,7 @@ ch_cc_library(
         "@clickhouse_snappy//:_snappy",
         "@clickhouse_zlib_ng//:_zlib",
         "@clickhouse_zstd//:_zstd",
+        "@clickhouse_zstd//:_zstd__compile_0",
     ],
     includes = ["cpp/src"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -582,9 +585,12 @@ ch_cc_library(
         "-g1",
     ],
     implementation_deps = [
-        "@clickhouse_xsimd//:xsimd",
         "@clickhouse_openssl//:crypto",
-    ],
+        "@clickhouse_rapidjson//:rapidjson",
+    ] + select({
+        "@platforms//cpu:x86_64": ["@clickhouse_xsimd//:xsimd"],
+        "@platforms//cpu:aarch64": [],
+    }),
     includes = ["cpp/src"],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     textual_hdrs = [
@@ -596,7 +602,7 @@ ch_cc_library(
         ":_arrow__compile_0",
         "@clickhouse_boost//:_boost_regex",
         "@clickhouse_thrift//:_thrift",
-        "@clickhouse_rapidjson//:rapidjson",
+        "@clickhouse//contrib/arrow-cmake:arrow_cmake_headers",
     ],
 )
 
