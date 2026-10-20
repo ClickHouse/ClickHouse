@@ -172,7 +172,6 @@ ch_cc_library(
         "libs/iostreams/test/zlib-1.2.11/contrib/vstudio/vc9/zlibvc.def",
         "libs/iostreams/test/zlib-1.2.11/old/os2/zlib.def",
         "libs/iostreams/test/zlib-1.2.11/win32/zlib.def",
-        "libs/iostreams/src/file_descriptor.cpp",
     ],
     copts = [
         "-w",
@@ -234,7 +233,6 @@ ch_cc_library(
     name = "_boost_program_options",
     srcs = glob(["libs/program_options/src/*.cpp"]),
     hdrs = glob(["libs/program_options/**/*.hpp"]),
-    additional_compiler_inputs = ["libs/program_options/src/config_file.cpp"],
     copts = [
         "-w",
         "-std=c++23",
@@ -253,10 +251,6 @@ ch_cc_library(
         "libs/regex/src/wide_posix_api.cpp",
     ],
     hdrs = glob(["libs/regex/**/*.hpp"]),
-    additional_compiler_inputs = [
-        "libs/regex/src/posix_api.cpp",
-        "libs/regex/src/wide_posix_api.cpp",
-    ],
     copts =
         _BOOST_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,

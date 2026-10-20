@@ -243,17 +243,10 @@ ch_cc_library(
         ":config/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
         "libmariadb/mariadb_async.c",
         "libmariadb/ma_context.c",
-    ] + glob(
-        [
-            "libmariadb/secure/**/*.h",
-            "plugins/auth/**/*.h",
-            "win-iconv/**/*.h",
-        ],
-        exclude = [
-            "libmariadb/secure/ma_schannel.h",
-            "libmariadb/secure/schannel_certs.h",
-        ],
-    ),
+    ] + glob([
+        "plugins/auth/**/*.h",
+        "win-iconv/*.h",
+    ]),
     hdrs = [
         ":config/contrib/mariadb-connector-c-cmake/include-private/config.h",
         ":config/contrib/mariadb-connector-c-cmake/include-private/ma_config.h",

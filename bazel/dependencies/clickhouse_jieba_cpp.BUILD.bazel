@@ -16,20 +16,10 @@ ch_cc_library(
         "src/jieba_hmm_seg.cpp",
     ],
     hdrs = glob(["include/**/*.h"]),
-    additional_compiler_inputs = glob(
-        [
-            "data/**",
-            "include/**",
-            "src/**",
-        ],
-        exclude = [
-            "include/**/*.h",
-            "src/jieba.cpp",
-            "src/jieba_dict.cpp",
-            "src/jieba_hmm_seg.cpp",
-            "src/jieba_mp_seg.cpp",
-        ],
-    ),
+    additional_compiler_inputs = glob([
+        "data/*.dat",
+        "data/*.zst",
+    ]),
     copts = [
         "-w",
         "-std=c++23",

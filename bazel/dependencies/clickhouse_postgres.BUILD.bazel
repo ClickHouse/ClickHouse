@@ -83,9 +83,6 @@ ch_cc_library(
         "src/port/**/*.h",
     ]),
     hdrs = [
-        "@clickhouse//contrib/postgres-cmake:pg_config.h",
-        "@clickhouse//contrib/postgres-cmake:pg_config_os.h",
-        "@clickhouse//contrib/postgres-cmake:pg_config_paths.h",
     ],
     copts = [
         "-w",
@@ -109,5 +106,5 @@ ch_cc_library(
     local_includes = [
         repository_local_include("contrib/postgres-cmake", "contrib/postgres"),
     ],
-    deps = [":postgres_headers"],
+    deps = [":postgres_headers"] + ["@clickhouse//contrib/postgres-cmake:headers"],
 )

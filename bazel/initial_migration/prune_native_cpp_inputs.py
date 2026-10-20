@@ -190,8 +190,164 @@ def rewrite_field(build, node, remove, chain=()):
         return result
     return deepcopy(node)
 
+
+def same_expression(node, text):
+    return node is not None and ast_key(node) == ast_key(ast.parse(text, mode='eval').body)
+
+
+def native_source_copies(root, files):
+    """Map tracked C/C++ inputs only when _embedded_sources copies each byte."""
+    tree = ast.parse((root / 'bazel/rules/codegen_actions.bzl').read_text())
+    bodies = [stmt for stmt in tree.body if isinstance(stmt, ast.FunctionDef)
+              and stmt.name == '_embedded_sources_impl']
+    if len(bodies) != 1:
+        return {}
+    loops = [node for node in bodies[0].body if isinstance(node, ast.For)]
+    if (len(loops) != 1 or len(loops[0].body) != 1 or loops[0].orelse
+            or not same_expression(loops[0].iter, 'zip(ctx.files.srcs, ctx.outputs.outs)')
+            or ast_key(loops[0].target) != ast_key(ast.parse(
+                'for source, output in []:\n    pass').body[0].target)):
+        return {}
+    stmt = loops[0].body[0]
+    if (not isinstance(stmt, ast.Expr) or not isinstance(stmt.value, ast.Call)
+            or not same_expression(stmt.value.func, 'ctx.actions.run_shell')):
+        return {}
+    options = attrs(stmt.value)
+    exact = {
+        'command': repr('cp "$1" "$2"'),
+        'inputs': '[source]',
+        'outputs': '[output]',
+        'arguments': '[source.path, output.path]',
+    }
+    if any(not same_expression(options.get(name), value) for name, value in exact.items()):
+        return {}
+    copies = {}
+    tree = ast.parse((root / 'bazel/rules/codegen_rules.bzl').read_text())
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Dict):
+            continue
+        fields = {key.value: value for key, value in zip(node.keys, node.values)
+                  if isinstance(key, ast.Constant)}
+        if literal(fields.get('kind')) != 'embedded_sources':
+            continue
+        try:
+            sources = ast.literal_eval(fields['srcs'])
+            outputs = ast.literal_eval(fields['outs'])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if len(sources) != len(outputs):
+            raise ValueError('embedded_sources input/output counts differ')
+        for src, out in zip(sources, outputs):
+            source, output = main_label('bazel', src), main_label('bazel', out)
+            if source not in files or PurePosixPath(source).suffix not in CODE:
+                continue
+            if output is None or output in files or output in copies:
+                raise ValueError('Source copy overlaps existing file: ' + str(output))
+            copies[output] = source
+    return copies
+
+
+def input_free_substitution(expr):
+    """A literal or json.encode result cannot add an include to the template."""
+    if isinstance(expr, ast.Constant) and isinstance(expr.value, str):
+        return includes(expr.value.encode(), 'build_options substitution') == []
+    return isinstance(expr, ast.Call) and same_expression(expr.func, 'json.encode')
+
+
+def native_build_options_templates(root, files):
+    """Read both build_options templates only when substitutions add no inputs."""
+    source = ast.parse((root / 'bazel/rules/build_options.bzl').read_text())
+    functions = {stmt.name: stmt for stmt in source.body if isinstance(stmt, ast.FunctionDef)}
+    implementation = functions.get('_build_options_impl')
+    substitutions = functions.get('_bazel_substitutions')
+    if implementation is None or substitutions is None:
+        return {}
+    actions = [n for n in ast.walk(implementation) if isinstance(n, ast.Call)
+               and same_expression(n.func, 'ctx.actions.expand_template')]
+    if len(actions) != 1:
+        return {}
+    options = attrs(actions[0])
+    expected = {
+        'template': 'ctx.file.template',
+        'output': 'ctx.outputs.out',
+        'substitutions': 'ctx.attr.cmake_substitutions if ctx.attr.cmake_metadata else _bazel_substitutions(ctx)',
+    }
+    if any(not same_expression(options.get(key), value) for key, value in expected.items()):
+        return {}
+    initial = [stmt.value for stmt in substitutions.body if isinstance(stmt, ast.Assign)
+               and any(isinstance(t, ast.Name) and t.id == 'substitutions' for t in stmt.targets)]
+    if (len(initial) != 1 or not isinstance(initial[0], ast.Dict)
+            or not all(input_free_substitution(value) for value in initial[0].values)):
+        return {}
+    for stmt in ast.walk(substitutions):
+        if isinstance(stmt, ast.Call) and isinstance(stmt.func, ast.Attribute):
+            # Unknown dictionary mutation cannot establish an input-free file.
+            if same_expression(stmt.func.value, 'substitutions'):
+                return {}
+        if not isinstance(stmt, (ast.Assign, ast.AugAssign, ast.AnnAssign)):
+            continue
+        targets = stmt.targets if isinstance(stmt, ast.Assign) else [stmt.target]
+        for target in targets:
+            if isinstance(target, ast.Subscript) and same_expression(target.value, 'substitutions'):
+                if not isinstance(stmt, ast.Assign) or not input_free_substitution(stmt.value):
+                    return {}
+    build = Build(root, root / 'bazel/BUILD.bazel', files, {'bazel'})
+    rules = [rule for _, rule in build.source.rules() if named(rule) == 'build_options']
+    if len(rules) != 1:
+        return {}
+    options = attrs(rules[0])
+    for field, variable, inner in (
+            ('template', 'BUILD_OPTIONS', 'template'),
+            ('cmake_substitutions', 'CMAKE_METADATA', 'build_options')):
+        expression = 'select({' + ', '.join(
+            repr('@platforms//cpu:' + cpu) + ': ' + variable + '[' + repr(cpu) + '][' + repr(inner) + ']'
+            for cpu in CPUS[:2]) + '})'
+        if not same_expression(options.get(field), expression):
+            return {}
+    output = main_label('bazel', literal(options.get('out')))
+    if output is None or output in files:
+        return {}
+    metadata = ast.parse((root / 'bazel/initial_migration/cmake_metadata.bzl').read_text())
+    recorded = [s.value for s in metadata.body if isinstance(s, ast.Assign) and any(
+        isinstance(t, ast.Name) and t.id == 'CMAKE_METADATA' for t in s.targets)]
+    data = ast.parse((root / 'bazel/rules/build_options_data.bzl').read_text())
+    settings = [s.value for s in data.body if isinstance(s, ast.Assign) and any(
+        isinstance(t, ast.Name) and t.id == 'BUILD_OPTIONS' for t in s.targets)]
+    if len(recorded) != 1 or len(settings) != 1 or not isinstance(settings[0], ast.Dict):
+        return {}
+    try:
+        cmake = ast.literal_eval(recorded[0])
+        templates = {}
+        for key, fields in zip(settings[0].keys, settings[0].values):
+            if not isinstance(fields, ast.Dict):
+                return {}
+            cpu = ast.literal_eval(key)
+            fields = {ast.literal_eval(k): v for k, v in zip(fields.keys, fields.values)}
+            template = 'bazel/' + ast.literal_eval(fields['template'])
+            if (template not in files or includes((root / template).read_bytes(), template) != []
+                    or not all(isinstance(value, str)
+                               and includes(value.encode(), 'CMake build_options substitution') == []
+                               for value in cmake[cpu]['build_options'].values())):
+                return {}
+            templates[cpu] = template
+    except (KeyError, TypeError, ValueError):
+        return {}
+    return {output: templates} if set(templates) == set(CPUS[:2]) else {}
+
+
+def generated_sources_allowed(root):
+    """Do not reason about generated TUs if fixed flags can force header inputs."""
+    forced = re.compile(
+        r'(^|[\s"=\x27])(?:-include|-imacros|-ivfsoverlay|-fmodule-file|-fmodule-map-file)')
+    return not any(forced.search(line)
+                   for path in ('.bazelrc', 'bazel/rules/ch_cc_library.bzl', 'bazel/rules/repository_paths.bzl')
+                   for line in (root / path).read_text().splitlines())
+
+
 def run(root, output=None, write=False):
     files, missing = inspect_root(root)
+    copies = native_source_copies(root, files) if generated_sources_allowed(root) else {}
+    templates = native_build_options_templates(root, files) if generated_sources_allowed(root) else {}
     paths = sorted(p for p in root.rglob('BUILD.bazel')
                    if native_directory(p.parent.relative_to(root).as_posix()))
     packages = {p.parent.relative_to(root).as_posix() for p in root.rglob('BUILD.bazel')}
@@ -204,7 +360,7 @@ def run(root, output=None, write=False):
     examples = defaultdict(list)
     stats = {'counts': counts, 'reasons': Counter(), 'witnesses': {}, 'access_common': [],
              'missing': missing, 'opaque_sources': Counter(), 'examples': examples,
-             'changed_paths': []}
+             'changed_paths': [], 'native_source_copies': copies, 'build_options_templates': templates}
     for path in paths:
         if not path.exists():
             continue
@@ -253,6 +409,13 @@ def run(root, output=None, write=False):
                     continue
                 for value in raw_srcs:
                     code_file = main_label(build.package, value)
+                    code_file = copies.get(code_file, code_file)
+                    if code_file in templates:
+                        if cpu not in templates[code_file]:
+                            # Both verified selects in //bazel:build_options
+                            # reject this CPU, so the dependent compile cannot run.
+                            continue
+                        code_file = templates[code_file][cpu]
                     if PurePosixPath(value).suffix in CODE:
                         if code_file not in files or code_file not in scanned:
                             hold_all.append('generated_or_foreign_source')

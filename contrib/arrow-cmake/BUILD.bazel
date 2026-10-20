@@ -2,24 +2,15 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "cpp/src/arrow/util/config.h",
-    "cpp/src/arrow/util/config_internal.h",
-    "cpp/src/orc/c++/include/orc/orc-config.hh",
-])
-
 cc_library(
     name = "arrow_cmake_headers",
-    hdrs = [
-        "cpp/src/arrow/util/config.h",
-        "cpp/src/arrow/util/config_internal.h",
-        "cpp/src/orc/c++/include/orc/orc-config.hh",
-        "cpp/src/parquet/parquet_version.h",
-        "cpp/src/thrift/stdcxx.h",
-    ],
+    hdrs = glob([
+        "cpp/src/**/*.h",
+        "cpp/src/**/*.hh",
+    ]),
     includes = [
-        "../../" + "contrib/arrow-cmake/cpp/src",
-        "../../" + "contrib/arrow-cmake/cpp/src/orc/c++/include",
+        "cpp/src",
+        "cpp/src/orc/c++/include",
     ],
 )
 

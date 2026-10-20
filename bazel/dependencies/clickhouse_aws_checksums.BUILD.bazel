@@ -47,10 +47,6 @@ ch_cc_library(
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": ["source/arm/crc32c_arm.c"],
     }),
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [],
-    }),
     arches = [
         "aarch64",
     ],

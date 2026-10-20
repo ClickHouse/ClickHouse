@@ -2,17 +2,6 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "linux_aarch64/include/lber_types.h",
-    "linux_aarch64/include/ldap_config.h",
-    "linux_aarch64/include/ldap_features.h",
-    "linux_aarch64/include/portable.h",
-    "linux_x86_64/include/lber_types.h",
-    "linux_x86_64/include/ldap_config.h",
-    "linux_x86_64/include/ldap_features.h",
-    "linux_x86_64/include/portable.h",
-])
-
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),

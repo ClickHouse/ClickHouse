@@ -199,7 +199,7 @@ ch_cc_library(
             "table/merging_iterator.cc",
             "table/meta_blocks.cc",
             "table/persistent_cache_helper.cc",
-        ]) + glob(["table/plain/*.cc"]) + (([
+        ]) + glob(["table/plain/*.cc"]) + ([
             "table/sst_file_dumper.cc",
             "table/sst_file_reader.cc",
             "table/sst_file_writer.cc",
@@ -265,7 +265,7 @@ ch_cc_library(
             exclude = ["**/*_test.cc"],
         ) + [
             "utilities/object_registry.cc",
-        ]) + glob(["utilities/persistent_cache/block_*.cc"]) + [
+        ] + glob(["utilities/persistent_cache/block_*.cc"]) + [
             "utilities/persistent_cache/persistent_cache_tier.cc",
             "utilities/persistent_cache/volatile_tier_impl.cc",
             "utilities/simulator_cache/cache_simulator.cc",
@@ -618,7 +618,7 @@ ch_cc_library(
             "table/merging_iterator.cc",
             "table/meta_blocks.cc",
             "table/persistent_cache_helper.cc",
-        ]) + glob(["table/plain/*.cc"]) + (([
+        ]) + glob(["table/plain/*.cc"]) + ([
             "table/sst_file_dumper.cc",
             "table/sst_file_reader.cc",
             "table/sst_file_writer.cc",
@@ -684,7 +684,7 @@ ch_cc_library(
             exclude = ["**/*_test.cc"],
         ) + [
             "utilities/object_registry.cc",
-        ]) + glob(["utilities/persistent_cache/block_*.cc"]) + [
+        ] + glob(["utilities/persistent_cache/block_*.cc"]) + [
             "utilities/persistent_cache/persistent_cache_tier.cc",
             "utilities/persistent_cache/volatile_tier_impl.cc",
             "utilities/simulator_cache/cache_simulator.cc",

@@ -16,16 +16,8 @@ ch_cc_library(
         "include/**/*.hpp",
     ]),
     additional_compiler_inputs = glob(
-        [
-            "include/**",
-            "src/**",
-        ],
-        exclude = [
-            "include/**/*.h",
-            "include/**/*.hpp",
-            "src/**/*.h",
-            "src/simdjson.cpp",
-        ],
+        ["src/**/*.cpp"],
+        exclude = ["src/simdjson.cpp"],
     ),
     copts = [
         "-w",

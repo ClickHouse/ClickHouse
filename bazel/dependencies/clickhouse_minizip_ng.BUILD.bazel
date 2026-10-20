@@ -30,19 +30,10 @@ ch_cc_library(
         "compat/unzip.c",
         "compat/ioapi.c",
     ],
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse//contrib/minizip-ng-cmake:mz_config.h",
-        ] + glob(["**/*.h"]),
-        "@platforms//cpu:aarch64": [
-            "@clickhouse//contrib/minizip-ng-cmake:mz_config.h",
-        ] + glob(["**/*.h"]),
-    }),
+    hdrs = glob(["**/*.h"]),
     copts = [
         "-w",
         "-std=gnu11",
-        "-I",
-        "contrib/minizip-ng-cmake",
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
@@ -108,5 +99,6 @@ ch_cc_library(
         "@clickhouse_zlib_ng//:_zlib",
         "@clickhouse_zstd//:_zstd",
         "@clickhouse_openssl//:ssl",
+        "@clickhouse//contrib/minizip-ng-cmake:headers",
     ],
 )

@@ -17,16 +17,6 @@ ch_cc_library(
         "ThriftHiveMetastore.cpp",
     ],
     hdrs = glob(["**/*.h"]),
-    additional_compiler_inputs = glob(
-        ["**"],
-        exclude = [
-            "**/*.h",
-            "**/BUILD.bazel",
-            "ThriftHiveMetastore.cpp",
-            "hive_metastore_constants.cpp",
-            "hive_metastore_types.cpp",
-        ],
-    ),
     copts = [
         "-w",
         "-std=c++23",

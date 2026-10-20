@@ -16,7 +16,7 @@ ch_cc_library(
         "src/utils/whash_openssl.c",
         "src/utils/whmac_openssl.c",
         "src/utils/yaotp_uri.c",
-    ] + glob(["src/**/*.h"]),
+    ],
     hdrs = glob(["src/**/*.h"]),
     copts = [
         "-w",

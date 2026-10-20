@@ -6,27 +6,17 @@ package(default_visibility = ["//visibility:public"])
 ch_cc_library(
     name = "clickhouse__compile_0",
     srcs = ["main.cpp"],
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [
-            "//bazel:gen/base/base/GitHash.generated.cpp",
-            "//bazel:gen/includes/configs/config_version.cpp",
-            "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/gzread.c",
-        ],
-        "@platforms//cpu:aarch64": [
-            "//bazel:gen/base/base/GitHash.generated.cpp",
-            "//bazel:gen/includes/configs/config_version.cpp",
-            "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/gzread.c",
-        ],
-    }),
+    additional_compiler_inputs = [
+        "//bazel:gen/base/base/GitHash.generated.cpp",
+        "//bazel:gen/includes/configs/config_version.cpp",
+        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/gzread.c",
+    ],
     clickhouse_code = True,
     copts = [
         "-I",
         "$(GENDIR)/bazel/gen/includes/configs",
         "-I",
-    ] + select({
-        "@platforms//cpu:x86_64": ["$(GENDIR)/bazel/gen/src"],
-        "@platforms//cpu:aarch64": ["$(GENDIR)/bazel/gen/src"],
-    }) + [
+        "$(GENDIR)/bazel/gen/src",
         "-I",
         repository_path("contrib/libfiu") + "/libfiu",
         "-I",

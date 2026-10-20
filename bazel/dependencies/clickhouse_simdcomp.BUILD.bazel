@@ -16,10 +16,6 @@ ch_cc_library(
         "@platforms//cpu:x86_64": glob(["include/**/*.h"]),
         "@platforms//cpu:aarch64": [],
     }),
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [],
-    }),
     arches = [
         "x86_64",
     ],

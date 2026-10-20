@@ -6,17 +6,13 @@ exports_files([
     "config.h.in",
     "rdhttp_poco.c",
     "rdhttp_poco_transport.cpp",
-    "rdhttp_poco_transport.h",
     "rdkafka_conf_sensitive.c",
 ])
 
 cc_library(
     name = "librdkafka_cmake_headers",
-    hdrs = [
-        "include/chrdkafka_conf_sensitive.h",
-        "include/librdkafka/rdkafka.h",
-    ],
-    includes = ["../../" + "contrib/librdkafka-cmake/include"],
+    hdrs = glob(["include/**/*.h"]),
+    includes = ["include"],
     deps = ["@clickhouse_librdkafka//:librdkafka_native_headers"],
 )
 
@@ -25,5 +21,5 @@ cc_library(
     hdrs = glob(["**/*.h"]),
     includes = [
         "include",
-    ],
+    ] + ["."],
 )

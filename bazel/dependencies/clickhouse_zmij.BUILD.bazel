@@ -15,7 +15,6 @@ ch_cc_library(
         "zmij.cc",
     ],
     hdrs = glob(["**/*.h"]),
-    additional_compiler_inputs = ["zmij.cc"],
     copts = [
         "-w",
         "-std=c++23",

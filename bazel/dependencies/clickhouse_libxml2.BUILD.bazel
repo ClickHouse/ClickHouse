@@ -46,22 +46,13 @@ ch_cc_library(
         "xmlsave.c",
         "debugXML.c",
     ],
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse//contrib/libxml2-cmake:linux_x86_64/include/config.h",
-            "@clickhouse//contrib/libxml2-cmake:linux_x86_64/include/libxml/xmlversion.h",
-        ] + glob([
-            "**/*.h",
-            "**/*.inc",
-        ]),
-        "@platforms//cpu:aarch64": [
-            "@clickhouse//contrib/libxml2-cmake:linux_x86_64/include/config.h",
-            "@clickhouse//contrib/libxml2-cmake:linux_x86_64/include/libxml/xmlversion.h",
-        ] + glob([
-            "**/*.h",
-            "**/*.inc",
-        ]),
-    }),
+    hdrs = [
+        "@clickhouse//contrib/libxml2-cmake:linux_x86_64/include/config.h",
+        "@clickhouse//contrib/libxml2-cmake:linux_x86_64/include/libxml/xmlversion.h",
+    ] + glob([
+        "**/*.h",
+        "**/*.inc",
+    ]),
     copts = [
         "-w",
         "-std=gnu11",

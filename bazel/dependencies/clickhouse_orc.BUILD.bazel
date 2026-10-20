@@ -117,7 +117,6 @@ ch_cc_library(
     hdrs = [
         "@clickhouse//bazel:gen/contrib/arrow-cmake/orc_proto.pb.h",
         ":config/contrib/orc/c++/include/Adaptor.hh",
-        "@clickhouse//contrib/arrow-cmake:cpp/src/orc/c++/include/orc/orc-config.hh",
     ] + glob(["c++/include/orc/**/*.hh"]),
     additional_compiler_inputs = [
         "c++/src/Reader.cc",
@@ -208,5 +207,5 @@ ch_cc_library(
         "@clickhouse//contrib/lz4-cmake:_lz4",
         "@clickhouse_snappy//:_snappy",
         "@clickhouse_zstd//:_zstd",
-    ],
+    ] + ["@clickhouse//contrib/arrow-cmake:headers"],
 )

@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_local_include")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -23,28 +22,11 @@ ch_cc_library(
         "libraries/liblber/stdio.c",
         "@clickhouse//bazel:gen/contrib/openldap-cmake/lber-version.c",
     ],
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse//contrib/openldap-cmake:linux_x86_64/include/lber_types.h",
-            "@clickhouse//contrib/openldap-cmake:linux_x86_64/include/ldap_config.h",
-            "@clickhouse//contrib/openldap-cmake:linux_x86_64/include/ldap_features.h",
-            "@clickhouse//contrib/openldap-cmake:linux_x86_64/include/portable.h",
-        ] + glob([
-            "include/**/*.h",
-            "libraries/liblber/**/*.h",
-            "libraries/liblunicode/ucdata/**/*.h",
-        ]),
-        "@platforms//cpu:aarch64": [
-            "@clickhouse//contrib/openldap-cmake:linux_aarch64/include/lber_types.h",
-            "@clickhouse//contrib/openldap-cmake:linux_aarch64/include/ldap_config.h",
-            "@clickhouse//contrib/openldap-cmake:linux_aarch64/include/ldap_features.h",
-            "@clickhouse//contrib/openldap-cmake:linux_aarch64/include/portable.h",
-        ] + glob([
-            "include/**/*.h",
-            "libraries/liblber/**/*.h",
-            "libraries/liblunicode/ucdata/**/*.h",
-        ]),
-    }),
+    hdrs = glob([
+        "include/**/*.h",
+        "libraries/liblber/**/*.h",
+        "libraries/liblunicode/ucdata/**/*.h",
+    ]),
     additional_compiler_inputs = ["libraries/liblber/debug.c"],
     copts = [
         "-w",
@@ -63,16 +45,15 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = select({
-        "@platforms//cpu:x86_64": [
-            repository_local_include("contrib/openldap-cmake/linux_x86_64/include", "contrib/openldap"),
-        ],
-        "@platforms//cpu:aarch64": [
-            repository_local_include("contrib/openldap-cmake/linux_aarch64/include", "contrib/openldap"),
-        ],
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [],
     }) + [
         "libraries/liblber",
     ],
-    deps = ["@clickhouse_openssl//:ssl"],
+    deps = [
+        "@clickhouse_openssl//:ssl",
+        "@clickhouse//contrib/openldap-cmake:headers",
+    ],
 )
 
 ch_cc_library(
@@ -174,12 +155,8 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = select({
-        "@platforms//cpu:x86_64": [
-            repository_local_include("contrib/openldap-cmake/linux_x86_64/include", "contrib/openldap"),
-        ],
-        "@platforms//cpu:aarch64": [
-            repository_local_include("contrib/openldap-cmake/linux_aarch64/include", "contrib/openldap"),
-        ],
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [],
     }) + [
         "libraries/libldap",
     ],

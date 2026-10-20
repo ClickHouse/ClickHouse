@@ -29,7 +29,6 @@ ch_cc_library(
         "mecab/src/utils.cpp",
         "mecab/src/viterbi.cpp",
         "mecab/src/writer.cpp",
-        "@clickhouse//contrib/MeCab-cmake:config.h",
     ],
     hdrs = glob(["mecab/src/**/*.h"]),
     copts = [
@@ -39,6 +38,7 @@ ch_cc_library(
         "-I",
         "contrib/MeCab-cmake",
     ],
+    implementation_deps = ["@clickhouse//contrib/MeCab-cmake:headers"],
     includes = [
         "mecab/src",
     ],

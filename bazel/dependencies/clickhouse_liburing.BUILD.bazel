@@ -38,17 +38,10 @@ ch_cc_library(
         "src/setup.c",
         "src/syscall.c",
         "src/version.c",
-    ] + glob(
-        ["src/**/*.h"],
-        exclude = [
-            "src/include/liburing.h",
-            "src/include/liburing/barrier.h",
-            "src/include/liburing/io_uring.h",
-            "src/include/liburing/io_uring/bpf_filter.h",
-            "src/include/liburing/io_uring/query.h",
-            "src/include/liburing/sanitize.h",
-        ],
-    ),
+    ] + glob([
+        "src/*.h",
+        "src/arch/**/*.h",
+    ]),
     hdrs = [
         ":config/contrib/liburing/src/include-compat/liburing/compat.h",
         ":config/contrib/liburing/src/include/liburing/io_uring_version.h",

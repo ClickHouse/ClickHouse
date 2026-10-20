@@ -3,11 +3,7 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "COPYING",
-    "include/city.h",
-    "include/citycrc.h",
-])
+exports_files(["COPYING"])
 
 ch_cc_library(
     name = "_cityhash",
@@ -32,8 +28,8 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = [
-        "../../" + "contrib/cityhash102/include",
-        "../../" + "contrib/cityhash102/src",
+        "include",
+        "src",
     ],
     deps = [
         "@clickhouse_llvm_project//:clang_rt_builtins",

@@ -6,11 +6,9 @@ package(default_visibility = ["//visibility:public"])
 
 ch_cc_library(
     name = "glibc-rseq",
-    srcs = [
-        "rseq.c",
-        "rseq.h",
-    ],
+    srcs = ["rseq.c"],
     hdrs = [
+        "rseq.h",
         "//bazel:gen/includes/configs/config.h",
         "//bazel:gen/includes/configs/config_tools.h",
         "//bazel:gen/includes/configs/config_version.cpp",

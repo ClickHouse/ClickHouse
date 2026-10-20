@@ -105,22 +105,20 @@ ch_cc_library(
         "libarchive/filter_fork_posix.c",
         "libarchive/filter_fork_windows.c",
         "libarchive/xxhash.c",
-        "@clickhouse//contrib/libarchive-cmake:config.h",
-        "@clickhouse//contrib/libarchive-cmake:illumos/config.h",
     ],
     hdrs = select({
         "@platforms//cpu:x86_64": glob(["libarchive/**/*.h"]),
         "@platforms//cpu:aarch64": glob(["libarchive/**/*.h"]),
     }),
-    additional_compiler_inputs = ["libarchive/xxhash.c"],
     copts = [
         "-w",
         "-std=gnu11",
         "-Wno-reserved-macro-identifier",
-        "-I",
-        "contrib/libarchive-cmake",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    implementation_deps = [
+        "@clickhouse_llvm_project//:libcxxabi_headers",
+        "@clickhouse//contrib/libarchive-cmake:headers",
+    ],
     language = "C",
     local_defines = select({
         "@platforms//cpu:x86_64": [],

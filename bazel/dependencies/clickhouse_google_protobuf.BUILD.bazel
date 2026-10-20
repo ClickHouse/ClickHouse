@@ -180,7 +180,7 @@ _GOOGLE_PROTOBUF_LOCAL_INCLUDES = [
 
 ch_cc_library(
     name = "_libprotobuf",
-    srcs = ([
+    srcs = [
         "src/google/protobuf/any_lite.cc",
         "src/google/protobuf/arena.cc",
         "src/google/protobuf/arena_align.cc",
@@ -263,7 +263,7 @@ ch_cc_library(
         "src/google/protobuf/util/time_util.cc",
         "src/google/protobuf/util/type_resolver_util.cc",
         "src/google/protobuf/wire_format.cc",
-    ]),
+    ],
     copts = [
         "-w",
         "-std=c++17",
@@ -348,7 +348,7 @@ ch_cc_library(
         "src/google/protobuf/compiler/cpp/extension.cc",
         "src/google/protobuf/compiler/cpp/field.cc",
         "src/google/protobuf/compiler/cpp/field_chunk.cc",
-    ] + glob(["src/google/protobuf/compiler/cpp/field_generators/*.cc"]) + ([
+    ] + glob(["src/google/protobuf/compiler/cpp/field_generators/*.cc"]) + [
         "src/google/protobuf/compiler/cpp/field_layout.cc",
         "src/google/protobuf/compiler/cpp/file.cc",
         "src/google/protobuf/compiler/cpp/generator.cc",
@@ -378,7 +378,7 @@ ch_cc_library(
         "src/google/protobuf/compiler/java/doc_comment.cc",
         "src/google/protobuf/compiler/java/field_common.cc",
         "src/google/protobuf/compiler/java/file.cc",
-    ]) + glob(["src/google/protobuf/compiler/java/full/*.cc"]) + [
+    ] + glob(["src/google/protobuf/compiler/java/full/*.cc"]) + [
         "src/google/protobuf/compiler/java/generator.cc",
         "src/google/protobuf/compiler/java/helpers.cc",
         "src/google/protobuf/compiler/java/internal_helpers.cc",
@@ -628,7 +628,7 @@ ch_cc_library(
         "upb/message/compare.c",
         "upb/message/compat.c",
         "upb/message/copy.c",
-    ] + glob(["upb/message/internal/*.c"]) + ([
+    ] + glob(["upb/message/internal/*.c"]) + [
         "upb/message/map.c",
         "upb/message/map_sorter.c",
         "upb/message/merge.c",
@@ -662,7 +662,7 @@ ch_cc_library(
         "upb/wire/decode.c",
         "upb/wire/encode.c",
         "upb/wire/eps_copy_input_stream.c",
-    ]) + glob(["upb/wire/internal/*.c"]) + [
+    ] + glob(["upb/wire/internal/*.c"]) + [
         "upb/wire/reader.c",
     ],
     hdrs = [

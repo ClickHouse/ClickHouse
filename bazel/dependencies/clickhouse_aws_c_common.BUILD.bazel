@@ -100,10 +100,6 @@ ch_cc_library(
         "@platforms//cpu:x86_64": ["source/arch/intel/encoding_avx2.c"] + glob(["source/external/libcbor/**/*.h"]),
         "@platforms//cpu:aarch64": [],
     }),
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [],
-    }),
     arches = [
         "x86_64",
     ],

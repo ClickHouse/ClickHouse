@@ -195,7 +195,6 @@ ch_cc_library(
         "src/rdkafka_sasl_cyrus.c",
         "src/rdkafka_sasl_scram.c",
         "src/rdkafka_sasl_oauthbearer.c",
-        "@clickhouse//contrib/librdkafka-cmake:rdhttp_poco_transport.h",
     ],
     hdrs = [
         "@clickhouse_cyrus_sasl//:config/contrib/cyrus-sasl-cmake/prop.h",
@@ -211,11 +210,12 @@ ch_cc_library(
         "-std=gnu11",
         "-fno-sanitize=undefined",
         "-I",
-        "contrib/librdkafka-cmake",
-        "-I",
         "$(GENDIR)/" + repository_path("contrib/cyrus-sasl") + "/config/contrib/cyrus-sasl-cmake",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    implementation_deps = [
+        "@clickhouse_llvm_project//:libcxxabi_headers",
+        "@clickhouse//contrib/librdkafka-cmake:headers",
+    ],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _RDKAFKA_LOCAL_INCLUDES,
@@ -230,10 +230,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "_rdkafka__compile_1",
-    srcs = [
-        "@clickhouse//contrib/librdkafka-cmake:rdhttp_poco_transport.cpp",
-        "@clickhouse//contrib/librdkafka-cmake:rdhttp_poco_transport.h",
-    ],
+    srcs = ["@clickhouse//contrib/librdkafka-cmake:rdhttp_poco_transport.cpp"],
     hdrs = [
         "@clickhouse_cyrus_sasl//:config/contrib/cyrus-sasl-cmake/prop.h",
         "@clickhouse_cyrus_sasl//:config/contrib/cyrus-sasl-cmake/sasl/sasl.h",
@@ -248,10 +245,9 @@ ch_cc_library(
         "-std=c++23",
         "-fno-sanitize=undefined",
         "-I",
-        "contrib/librdkafka-cmake",
-        "-I",
         "$(GENDIR)/" + repository_path("contrib/cyrus-sasl") + "/config/contrib/cyrus-sasl-cmake",
     ],
+    implementation_deps = ["@clickhouse//contrib/librdkafka-cmake:headers"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _RDKAFKA_LOCAL_INCLUDES,
     deps = [

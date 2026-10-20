@@ -10,11 +10,6 @@ exports_files([
 
 _GENERATED_HEADER_INPUTS_0 = [
     "@clickhouse//base:base/time.h",
-    "@clickhouse//contrib/cityhash102:include/city.h",
-    "@clickhouse//contrib/cityhash102:include/citycrc.h",
-    "@clickhouse//contrib/driftsort:driftsort.h",
-    "@clickhouse//contrib/ipnsort:ipnsort.h",
-    "@clickhouse//contrib/pdqsort:pdqsort.h",
 ]
 
 _GENERATED_LOCAL_DEFINES_0 = select({
@@ -97,42 +92,7 @@ ch_cc_library(
         "src/roaring_array.c",
         "src/roaring_priority_queue.c",
         "src/art/art.c",
-    ] + glob(["src/containers/*.c"]) + glob(
-        [
-            "include/roaring/**/*.h",
-            "src/**/*.h",
-        ],
-        exclude = [
-            "include/roaring/array_util.h",
-            "include/roaring/art/art.h",
-            "include/roaring/bitset/bitset.h",
-            "include/roaring/bitset_util.h",
-            "include/roaring/containers/array.h",
-            "include/roaring/containers/bitset.h",
-            "include/roaring/containers/container_defs.h",
-            "include/roaring/containers/containers.h",
-            "include/roaring/containers/convert.h",
-            "include/roaring/containers/mixed_andnot.h",
-            "include/roaring/containers/mixed_equal.h",
-            "include/roaring/containers/mixed_intersection.h",
-            "include/roaring/containers/mixed_negation.h",
-            "include/roaring/containers/mixed_subset.h",
-            "include/roaring/containers/mixed_union.h",
-            "include/roaring/containers/mixed_xor.h",
-            "include/roaring/containers/perfparameters.h",
-            "include/roaring/containers/run.h",
-            "include/roaring/isadetection.h",
-            "include/roaring/memory.h",
-            "include/roaring/misc/configreport.h",
-            "include/roaring/portability.h",
-            "include/roaring/roaring.h",
-            "include/roaring/roaring64.h",
-            "include/roaring/roaring_array.h",
-            "include/roaring/roaring_types.h",
-            "include/roaring/roaring_version.h",
-            "include/roaring/utilasm.h",
-        ],
-    ),
+    ] + glob(["src/containers/*.c"]) + glob(["src/*.h"]),
     hdrs = [
         "@clickhouse//bazel:gen/base/base/GitHash.generated.cpp",
         "@clickhouse_liburing//:config/contrib/liburing/src/include-compat/liburing/compat.h",
@@ -194,6 +154,11 @@ ch_cc_library(
         "@clickhouse_abseil_cpp//:abseil_cpp_headers",
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse_libssh//:_ssh",
+    ] + [
+        "@clickhouse//contrib/cityhash102:headers",
+        "@clickhouse//contrib/driftsort:headers",
+        "@clickhouse//contrib/ipnsort:headers",
+        "@clickhouse//contrib/pdqsort:headers",
     ],
 )
 
@@ -201,44 +166,8 @@ ch_cc_library(
     name = "_roaring__compile_1",
     srcs = [
         "src/roaring.c",
-    ] + glob(
-        [
-            "include/roaring/**/*.h",
-            "src/**/*.h",
-        ],
-        exclude = [
-            "include/roaring/array_util.h",
-            "include/roaring/art/art.h",
-            "include/roaring/bitset/bitset.h",
-            "include/roaring/bitset_util.h",
-            "include/roaring/containers/array.h",
-            "include/roaring/containers/bitset.h",
-            "include/roaring/containers/container_defs.h",
-            "include/roaring/containers/containers.h",
-            "include/roaring/containers/convert.h",
-            "include/roaring/containers/mixed_andnot.h",
-            "include/roaring/containers/mixed_equal.h",
-            "include/roaring/containers/mixed_intersection.h",
-            "include/roaring/containers/mixed_negation.h",
-            "include/roaring/containers/mixed_subset.h",
-            "include/roaring/containers/mixed_union.h",
-            "include/roaring/containers/mixed_xor.h",
-            "include/roaring/containers/perfparameters.h",
-            "include/roaring/containers/run.h",
-            "include/roaring/isadetection.h",
-            "include/roaring/memory.h",
-            "include/roaring/misc/configreport.h",
-            "include/roaring/portability.h",
-            "include/roaring/roaring.h",
-            "include/roaring/roaring64.h",
-            "include/roaring/roaring_array.h",
-            "include/roaring/roaring_types.h",
-            "include/roaring/roaring_version.h",
-            "include/roaring/utilasm.h",
-        ],
-    ),
+    ] + glob(["src/*.h"]),
     hdrs = [
-        "@clickhouse//contrib/croaring-cmake:page_aligned_functions.h",
         "@clickhouse//bazel:gen/base/base/GitHash.generated.cpp",
         "@clickhouse_liburing//:config/contrib/liburing/src/include-compat/liburing/compat.h",
         "@clickhouse_liburing//:config/contrib/liburing/src/include/liburing/io_uring_version.h",
@@ -297,6 +226,12 @@ ch_cc_library(
         "@clickhouse_abseil_cpp//:abseil_cpp_headers",
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse_libssh//:_ssh",
+    ] + [
+        "@clickhouse//contrib/cityhash102:headers",
+        "@clickhouse//contrib/croaring-cmake:headers",
+        "@clickhouse//contrib/driftsort:headers",
+        "@clickhouse//contrib/ipnsort:headers",
+        "@clickhouse//contrib/pdqsort:headers",
     ],
 )
 

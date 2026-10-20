@@ -392,8 +392,6 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/flatbuffers/generated/Tensor_generated.h",
         "@clickhouse//bazel:gen/contrib/flatbuffers/generated/feather_generated.h",
         "@clickhouse_bzip2//:config/contrib/bzip2/bz_version.h",
-        "@clickhouse//contrib/arrow-cmake:cpp/src/arrow/util/config.h",
-        "@clickhouse//contrib/arrow-cmake:cpp/src/arrow/util/config_internal.h",
     ],
     additional_compiler_inputs = [
         "cpp/src/arrow/compute/kernels/aggregate_basic.inc.cc",
@@ -420,6 +418,7 @@ ch_cc_library(
         "@clickhouse_xsimd//:xsimd",
         "@clickhouse_orc//:_orc",
         ":arrow_source_headers",
+        "@clickhouse//contrib/arrow-cmake:arrow_cmake_headers",
     ],
 )
 
