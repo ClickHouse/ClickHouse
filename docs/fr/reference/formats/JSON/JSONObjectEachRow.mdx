@@ -15,19 +15,13 @@ doc_type: 'reference'
 | ------ | ------ | ----- |
 | ✔      | ✔      |       |
 
-<div id="description">
-  ## Description
-</div>
+## Description {#description}
 
 Dans ce format, toutes les données sont représentées dans un unique objet JSON, chaque ligne correspondant à un champ distinct de cet objet, à l&#39;instar du format [`JSONEachRow`](/fr/reference/formats/JSON/JSONEachRow).
 
-<div id="example-usage">
-  ## Exemple d’utilisation
-</div>
+## Exemple d’utilisation {#example-usage}
 
-<div id="basic-example">
-  ### Exemple simple
-</div>
+### Exemple simple {#basic-example}
 
 Soit le JSON suivant :
 
@@ -42,9 +36,7 @@ Soit le JSON suivant :
 Pour utiliser un nom d&#39;objet comme valeur de colonne, vous pouvez utiliser le paramètre spécial [`format_json_object_each_row_column_for_object_name`](/fr/reference/settings/formats/format#format_json_object_each_row_column_for_object_name).
 La valeur de ce paramètre correspond au nom d&#39;une colonne, utilisée comme clé JSON pour une ligne dans l&#39;objet résultant.
 
-<div id="output">
-  #### Sortie
-</div>
+#### Sortie {#output}
 
 Supposons que nous ayons la table `test` avec deux colonnes :
 
@@ -70,9 +62,7 @@ SELECT * FROM test SETTINGS format_json_object_each_row_column_for_object_name='
 }
 ```
 
-<div id="input">
-  #### Entrée
-</div>
+#### Entrée {#input}
 
 Supposons que nous ayons enregistré le résultat de l’exemple précédent dans un fichier nommé `data.json` :
 
@@ -101,9 +91,7 @@ DESCRIBE file('data.json', JSONObjectEachRow) SETTING format_json_object_each_ro
 └─────────────┴─────────────────┘
 ```
 
-<div id="json-inserting-data">
-  ### Insertion de données
-</div>
+### Insertion de données {#json-inserting-data}
 
 ```sql title="Query"
 INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021466249494", "Duration":146,"Sign":-1} {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
@@ -116,9 +104,7 @@ ClickHouse autorise :
 
 ClickHouse ignore les espaces entre les éléments ainsi que les virgules après les objets. Vous pouvez transmettre tous les objets sur une seule ligne. Il n’est pas nécessaire de les séparer par des sauts de ligne.
 
-<div id="omitted-values-processing">
-  #### Traitement des valeurs omises
-</div>
+#### Traitement des valeurs omises {#omitted-values-processing}
 
 ClickHouse remplace les valeurs omises par les valeurs par défaut des [types de données](/fr/reference/data-types/index) correspondants.
 
@@ -141,9 +127,7 @@ CREATE TABLE IF NOT EXISTS example_table
   Lors de l&#39;insertion de données avec `input_format_defaults_for_omitted_fields = 1`, ClickHouse consomme plus de ressources de calcul qu&#39;avec une insertion utilisant `input_format_defaults_for_omitted_fields = 0`.
 </Note>
 
-<div id="json-selecting-data">
-  ### Sélection de données
-</div>
+### Sélection de données {#json-selecting-data}
 
 Prenons la table `UserActivity` comme exemple :
 
@@ -167,9 +151,7 @@ Contrairement au format [JSON](/fr/reference/formats/JSON/JSON), les séquences 
   N’importe quelle séquence d’octets peut être renvoyée dans les chaînes. Utilisez le format [`JSONEachRow`](/fr/reference/formats/JSON/JSONEachRow) si vous êtes certain que les données de la table peuvent être formatées en JSON sans perte d’information.
 </Info>
 
-<div id="jsoneachrow-nested">
-  ### Utilisation des structures Nested
-</div>
+### Utilisation des structures Nested {#jsoneachrow-nested}
 
 Si vous avez une table avec des colonnes du type de données [`Nested`](/fr/reference/data-types/nested-data-structures/index), vous pouvez insérer des données JSON ayant la même structure. Activez cette fonctionnalité avec le paramètre [input&#95;format&#95;import&#95;nested&#95;json](/fr/reference/settings/formats/input-format#input_format_import_nested_json).
 
@@ -228,9 +210,7 @@ SELECT * FROM json_each_row_nested
 └───────────────┴────────┘
 ```
 
-<div id="format-settings">
-  ## Paramètres de format
-</div>
+## Paramètres de format {#format-settings}
 
 | Paramètre                                                                                                                                                                   | Description                                                                                                                                                                                            | Par défaut | Remarques                                                                                                                                                                                             |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -249,7 +229,7 @@ SELECT * FROM json_each_row_nested
 | [`input_format_json_compact_allow_variable_number_of_columns`](/fr/reference/settings/formats/input-format#input_format_json_compact_allow_variable_number_of_columns)         | autoriser un nombre variable de colonnes dans le format JSONCompact/JSONCompactEachRow, ignorer les colonnes supplémentaires et utiliser les valeurs par défaut pour les colonnes manquantes.          | `false`    |                                                                                                                                                                                                       |
 | [`input_format_json_throw_on_bad_escape_sequence`](/fr/reference/settings/formats/input-format#input_format_json_throw_on_bad_escape_sequence)                                 | lever une exception si la chaîne JSON contient une séquence d’échappement invalide. Si cette option est désactivée, les séquences d’échappement invalides resteront telles quelles dans les données.   | `true`     |                                                                                                                                                                                                       |
 | [`input_format_json_empty_as_default`](/fr/reference/settings/formats/input-format#input_format_json_empty_as_default)                                                         | traite les champs vides dans l’entrée JSON comme des valeurs par défaut.                                                                                                                               | `false`.   | Pour les expressions par défaut complexes, il faut également activer [`input_format_defaults_for_omitted_fields`](/fr/reference/settings/formats/input-format#input_format_defaults_for_omitted_fields). |
-| [`output_format_json_quote_64bit_integers`](/fr/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)                                              | contrôle la mise entre guillemets des entiers 64 bits dans le format de sortie JSON.                                                                                                                   | `true`     |                                                                                                                                                                                                       |
+| [`output_format_json_quote_64bit_integers`](/fr/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)                                              | contrôle la mise entre guillemets des entiers 64 bits ou plus dans le format de sortie JSON.                                                                                                           | `false`    |                                                                                                                                                                                                       |
 | [`output_format_json_quote_64bit_floats`](/fr/reference/settings/formats/output-format#output_format_json_quote_64bit_floats)                                                  | contrôle la mise entre guillemets des Float 64 bits dans le format de sortie JSON.                                                                                                                     | `false`    |                                                                                                                                                                                                       |
 | [`output_format_json_quote_denormals`](/fr/reference/settings/formats/output-format#output_format_json_quote_denormals)                                                        | active les sorties &#39;+nan&#39;, &#39;-nan&#39;, &#39;+inf&#39;, &#39;-inf&#39; au format de sortie JSON.                                                                                            | `false`    |                                                                                                                                                                                                       |
 | [`output_format_json_quote_decimals`](/fr/reference/settings/formats/output-format#output_format_json_quote_decimals)                                                          | contrôle la mise entre guillemets des valeurs décimales dans le format de sortie JSON.                                                                                                                 | `false`    |                                                                                                                                                                                                       |
