@@ -203,7 +203,7 @@ static bool poco_file_cert(const std::string & file)
 /* The probe paths are based on:
 	* https://www.happyassassin.net/posts/2015/01/12/a-note-about-ssltls-trusted-certificate-stores-and-platforms/
 	* Golang's crypto probing paths:
-	*   https://golang.org/search?q=certFiles   and certDirectories
+	*   https://github.com/golang/go/blob/master/src/crypto/x509/root_linux.go (certFiles) and root_unix.go (certDirectories)
 	*/
 static const char * const poco_default_ca_probe_paths[] = {
 	"/etc/pki/tls/certs/ca-bundle.crt",
