@@ -1,0 +1,16 @@
+-- without ORDER BY
+2	l2	r2a
+2	l2	r2b
+2	l2	r2c
+4	l4	r4a
+4	l4	r4b
+7	l7	r7
+2
+-- with ORDER BY
+2	l2	r2a
+2	l2	r2b
+2	l2	r2c
+4	l4	r4a
+4	l4	r4b
+7	l7	r7
+1

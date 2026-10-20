@@ -333,10 +333,6 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
 
 /** There are no limits on the maximum size of the result for the view.
   *  Since the result of the view is not the result of the entire query.
-  *
-  * The context is also marked as a view inner context so that the query analyzer
-  * resolves positional arguments inside the view even on remote/secondary nodes
-  * (views are expanded on remote nodes, unlike the outer query).
   */
 ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view)
 {
