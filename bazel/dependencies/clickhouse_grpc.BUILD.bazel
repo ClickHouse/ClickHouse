@@ -639,7 +639,10 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    implementation_deps = [
+        "@clickhouse_re2//:_re2",
+        "@clickhouse_llvm_project//:libcxxabi_headers",
+    ],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
@@ -656,7 +659,6 @@ ch_cc_library(
         "@clickhouse_abseil_cpp//:abseil_cpp_headers",
         "@clickhouse_c_ares//:_c-ares",
         "@clickhouse_openssl//:ssl",
-        "@clickhouse_re2//:_re2",
     ],
 )
 
@@ -1367,7 +1369,10 @@ ch_cc_library(
         "**/*.inc",
     ]),
     copts = _GRPC_COPTS,
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    implementation_deps = [
+        "@clickhouse_c_ares//:_c-ares",
+        "@clickhouse_llvm_project//:libcxxabi_headers",
+    ],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
@@ -1382,7 +1387,6 @@ ch_cc_library(
     ] + _GRPC_LOCAL_INCLUDES,
     deps = [
         "@clickhouse_abseil_cpp//:abseil_cpp_headers",
-        "@clickhouse_c_ares//:_c-ares",
     ],
 )
 

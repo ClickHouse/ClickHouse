@@ -16,6 +16,7 @@ ch_cc_library(
         "-g1",
     ],
     implementation_deps = [
+        ":aws_c_http_headers",
         "@clickhouse_llvm_project//:libcxxabi_headers",
         "@clickhouse_aws_c_cal//:aws_c_cal_headers",
     ],
@@ -37,7 +38,6 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = [":aws_c_http_headers"],
 )
 
 cc_library(

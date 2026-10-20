@@ -402,6 +402,7 @@ ch_cc_library(
         repository_path("contrib/zstd") + "/lib",
     ],
     implementation_deps = [
+        "@clickhouse//contrib/arrow-cmake:arrow_cmake_headers",
         "@clickhouse_brotli//:_brotli",
         "@clickhouse_bzip2//:_bzip2",
         "@clickhouse_libhdfs3//:_hdfs3",
@@ -414,7 +415,6 @@ ch_cc_library(
         "@clickhouse_xsimd//:xsimd",
         "@clickhouse_orc//:_orc",
         ":arrow_source_headers",
-        "@clickhouse//contrib/arrow-cmake:arrow_cmake_headers",
     ],
 )
 
@@ -452,7 +452,10 @@ ch_cc_library(
         "-I",
         repository_path("contrib/zstd") + "/lib",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    implementation_deps = [
+        ":arrow_source_headers",
+        "@clickhouse_llvm_project//:libcxxabi_headers",
+    ],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _ARROW_LOCAL_INCLUDES,
@@ -461,7 +464,6 @@ ch_cc_library(
         "@clickhouse_flatbuffers//:_flatbuffers",
         "@clickhouse_xsimd//:xsimd",
         "@clickhouse_orc//:_orc",
-        ":arrow_source_headers",
     ],
 )
 

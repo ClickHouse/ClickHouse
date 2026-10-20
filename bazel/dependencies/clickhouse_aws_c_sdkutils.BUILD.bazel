@@ -15,7 +15,10 @@ ch_cc_library(
         "-std=gnu11",
         "-g1",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    implementation_deps = [
+        ":aws_c_sdkutils_headers",
+        "@clickhouse_llvm_project//:libcxxabi_headers",
+    ],
     language = "C",
     llvm_headers = True,
     local_defines = [
@@ -35,7 +38,6 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = [":aws_c_sdkutils_headers"],
 )
 
 cc_library(

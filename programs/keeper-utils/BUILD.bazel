@@ -145,35 +145,17 @@ ch_cc_library(
         "../../" + (repository_path("contrib/h3") + "/config/contrib/h3/src/h3lib/include"),
         "../../" + (repository_path("contrib/llvm-project") + "/llvm/include"),
     ],
-    deps = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [],
-    }) + select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [],
-    }) + [
+    deps = [
         "@llvm-project//third-party/siphash:siphash",
         "//contrib/bech32:_bech32",
         "@clickhouse_cld2//:_cld2",
-    ] + select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [],
-    }) + [
         "//contrib/libfarmhash:_farmhash",
         "@clickhouse_fastops//:_fastops",
         "@clickhouse_h3//:_h3",
         "@clickhouse_idna//:_idna",
         "@clickhouse_ipcrypt2//:_ipcrypt2",
-    ] + select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [],
-    }) + [
         "//contrib/libmetrohash:_metrohash",
         "//contrib/murmurhash:_murmurhash",
-    ] + select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [],
-    }) + [
         "//src/Dictionaries:clickhouse_dictionaries",
         "//src/Functions/GatherUtils:clickhouse_functions_gatherutils",
         "//src/Functions/JSONPath:clickhouse_functions_jsonpath",
