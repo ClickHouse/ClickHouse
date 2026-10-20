@@ -1,3 +1,4 @@
+#include <Access/Common/AccessFlags.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -60,7 +61,11 @@ class FunctionAiEmbed final : public IFunction
 public:
     static constexpr auto name = "aiEmbed";
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionAiEmbed>(context); }
+    static FunctionPtr create(ContextPtr context)
+    {
+        context->checkAccess(AccessType::aiEmbed);
+        return std::make_shared<FunctionAiEmbed>(context);
+    }
 
     explicit FunctionAiEmbed(ContextPtr context_) : context(context_) {}
 

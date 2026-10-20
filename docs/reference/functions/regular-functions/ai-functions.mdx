@@ -110,6 +110,19 @@ Individual functions accept additional, function-specific parameters (such as `m
 SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are terse.')) FROM articles;
 ```
 
+### Access control {#access-control}
+
+Calling an AI function requires two privileges:
+
+- the function's privilege: either the per-function privilege (e.g. `aiGenerate`) or the `AI FUNCTIONS` group, see [`GRANT`](/reference/statements/grant#ai-functions);
+- the `NAMED COLLECTION` privilege on the selected credentials.
+
+```sql
+GRANT AI FUNCTIONS ON *.* TO ai_user_role;
+GRANT aiGenerate, aiClassify ON *.* TO ai_analyst_role;
+GRANT NAMED COLLECTION ON ai_text_credentials TO ai_user_role, ai_analyst_role;
+```
+
 ### Query-level settings {#query-level-settings}
 
 All AI-related settings are listed in [Settings](/reference/settings/session-settings) under the `ai_function_` prefix.

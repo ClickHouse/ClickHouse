@@ -1,3 +1,4 @@
+#include <Access/Common/AccessFlags.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -85,7 +86,11 @@ class FunctionAiSimilarity final : public IFunction
 public:
     static constexpr auto name = "aiSimilarity";
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionAiSimilarity>(context); }
+    static FunctionPtr create(ContextPtr context)
+    {
+        context->checkAccess(AccessType::aiSimilarity);
+        return std::make_shared<FunctionAiSimilarity>(context);
+    }
 
     explicit FunctionAiSimilarity(ContextPtr context_) : context(context_) {}
 

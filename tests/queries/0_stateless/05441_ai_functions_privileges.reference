@@ -1,0 +1,28 @@
+--- no grant
+aiGenerate: ACCESS_DENIED
+aiClassify: ACCESS_DENIED
+aiEmbed: ACCESS_DENIED
+v_definer: OK
+v_invoker: ACCESS_DENIED
+udf: ACCESS_DENIED
+--- GRANT aiGenerate
+aiGenerate: OK
+aiClassify: ACCESS_DENIED
+aiEmbed: ACCESS_DENIED
+v_definer: OK
+v_invoker: OK
+udf: OK
+--- GRANT AI FUNCTIONS
+aiGenerate: OK
+aiClassify: OK
+aiEmbed: OK
+v_definer: OK
+v_invoker: OK
+udf: OK
+--- REVOKE aiClassify
+aiGenerate: OK
+aiClassify: ACCESS_DENIED
+aiEmbed: OK
+v_definer: OK
+v_invoker: OK
+udf: OK

@@ -150,7 +150,7 @@ ENUM_ACCESS_OBJECT(Source, APPLY_FOR_SOURCE)
 
 
 /// Represents an access type which can be granted on databases, tables, columns, etc.
-enum class AccessType : uint8_t
+enum class AccessType : uint16_t
 {
 /// Macro M should be defined as M(name, aliases, node_type, parent_group_name)
 /// where name is identifier with underscores (instead of spaces);
@@ -423,6 +423,16 @@ enum class AccessType : uint8_t
     M(addressToSymbol, "", GLOBAL, INTROSPECTION) /* allows to execute function addressToSymbol() */\
     M(demangle, "", GLOBAL, INTROSPECTION) /* allows to execute function demangle() */\
     M(INTROSPECTION, "INTROSPECTION FUNCTIONS", GROUP, ALL) /* allows to execute functions addressToLine(), addressToSymbol(), demangle()*/\
+    \
+    M(aiClassify, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiClassify() */\
+    M(aiEmbed, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiEmbed() */\
+    M(aiExtract, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiExtract() */\
+    M(aiFilter, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiFilter() */\
+    M(aiGenerate, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiGenerate() */\
+    M(aiRedact, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiRedact() */\
+    M(aiSimilarity, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiSimilarity() */\
+    M(aiTranslate, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiTranslate() */\
+    M(AI_FUNCTIONS, "", GROUP, ALL) /* allows to execute all AI functions */\
     \
     M(READ, "SOURCE READ", SOURCE, ALL) \
     M(WRITE, "SOURCE WRITE", SOURCE, ALL) \
