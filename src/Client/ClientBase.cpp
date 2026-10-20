@@ -355,6 +355,15 @@ namespace DB
 
 class ClientEmbedded;
 
+/// The settings that the server turns into a part of a `SELECT` after parsing it: `select` replaces
+/// its projection, `filter` and `order` / `sort` add clauses evaluated over its result, and
+/// `implicit_table_at_top_level` supplies the table of a query that names none. A session can hold
+/// them unseen by the client (a settings profile with `apply_settings_from_server = 0`, a
+/// `SET profile`), and then every query the client sends evaluates them - so they are reset for the
+/// queries the client runs on its own (internal queries, the read-only tool of the AI agent). None
+/// of them restricts what a query may read, so resetting them does not loosen anything.
+static constexpr std::array query_construction_settings{"select", "filter", "order", "sort", "implicit_table_at_top_level"};
+
 ProgressOption toProgressOption(std::string progress)
 {
     boost::to_upper(progress);
@@ -4700,21 +4709,21 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
                 "The read-only tool cannot enforce its execution-time and memory limits because `readonly = 1` "
                 "does not allow changing settings. Use the run_query tool for this query");
 
-        /// The settings that the server turns into a part of the query after the validation above:
-        /// a `SETTINGS` clause of the query cannot change them, but the session can have them
-        /// already (`SET select = 'file(''secret.txt'')'`), and then every query of the session is
-        /// wrapped in the expression or reads the table they hold. They are not reset for the query
-        /// instead: `additional_table_filters` and `additional_result_filter` can be what restricts
+        /// The filters that the server adds to the query after the validation above: a `SETTINGS`
+        /// clause of the query cannot change them, but the session can have them already, and then
+        /// every query of the session evaluates the expressions they hold. Unlike the other settings
+        /// of this kind (`query_construction_settings`, which the sandbox below resets), they are
+        /// not reset: `additional_table_filters` and `additional_result_filter` can be what restricts
         /// the rows the user sees, so the tool refuses rather than loosening them. The value the
         /// client changed itself travels with the query and is the effective one; otherwise a
         /// settings profile can set it unseen (`apply_settings_from_server = 0`, a `SET profile`),
-        /// and then the server is asked, as for the limits below.
+        /// and then the server is asked, as for the limits below. The question is an internal query,
+        /// which resets `query_construction_settings`, so asking does not evaluate those.
         {
             const Settings & session_settings = client_context->getSettingsRef();
             const bool local_values_are_effective = !connection
                 || (session_settings[Setting::apply_settings_from_server] && !settings_may_be_changed_by_profile);
-            for (const auto * name : {"select", "filter", "order", "sort", "additional_table_filters", "additional_result_filter",
-                                      "implicit_table_at_top_level"})
+            for (const auto * name : {"additional_table_filters", "additional_result_filter"})
             {
                 bool is_set = false;
                 if (local_values_are_effective || session_settings.isChanged(name))
@@ -4839,6 +4848,13 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         client_context->setSetting("format_template_resultset", String{});
         client_context->setSetting("format_template_row", String{});
         client_context->setSetting("format_avro_schema_registry_url", String{});
+
+        /// The settings the server turns into a part of a `SELECT` after the validation above would
+        /// add expressions and tables to the query that the validation has not seen. A `SETTINGS`
+        /// clause of the query cannot set them (the validation refuses it), and the values the
+        /// session holds - visible to the client or not - are reset here.
+        for (const auto * name : query_construction_settings)
+            client_context->setSetting(name, String{});
 
         /// `SHOW CREATE TABLE` of an external-engine table renders its connection configuration,
         /// including credentials, when the user enabled `format_display_secrets_in_show_and_select`
@@ -5837,8 +5853,8 @@ Block ClientBase::fetchInternalQueryResult(
     /// ClickHouse SQL ignores it as an unchanged value at any `readonly` level, and one that does
     /// not accepts it unless it is read-only - where these queries cannot run anyway.
     ///
-    /// The question about the dialect itself carries no settings at all: `system.settings` reports
-    /// the settings of the query that reads it, so the pin would be all it measures - see
+    /// The question about the dialect itself carries no pin: `system.settings` reports the settings
+    /// of the query that reads it, so the pin would be all it measures - see
     /// `serverEffectiveSettingValue`.
     const std::optional<UInt64> session_readonly = sessionReadonlyIfKnown();
     const bool asking_session_readonly = !session_readonly.has_value();
@@ -5860,7 +5876,7 @@ Block ClientBase::fetchInternalQueryResult(
     }
     else if (asking_session_dialect)
     {
-        /// Nothing is sent, see above.
+        /// No pin is sent, see above.
     }
     else if (!session_is_readonly)
     {
@@ -5958,6 +5974,18 @@ Block ClientBase::fetchInternalQueryResult(
         settings_to_send->set("show_data_lake_catalogs_in_system_tables", false);
     }
 #endif
+
+    /// A session can hold settings that the server evaluates as a part of every `SELECT` (see
+    /// `query_construction_settings`), and an internal query must neither run them nor have its
+    /// result reshaped by them. They are reset for every internal query, the questions about the
+    /// session included: the reset is a no-op where they are not set, which is accepted at any
+    /// `readonly` level (where nothing else is sent), and a session that has them and cannot change
+    /// them fails the query instead of running them. This comes last: the checks above take a query
+    /// that sends no settings for one that cannot change any.
+    if (!settings_to_send)
+        settings_to_send.emplace();
+    for (const auto * name : query_construction_settings)
+        settings_to_send->set(name, String{});
 
     /// This is a complete query exchange on the shared connection, so it follows the same
     /// resynchronization discipline as the regular queries: recover from a previous failed
