@@ -395,15 +395,13 @@ void optimizeTreeSecondPass(
             /// may have lost the eligibility in the fragment (its coordinated input is no longer read in
             /// order): the selection then falls through to a hash-family algorithm, which must get its
             /// filter back. The flag is set only by the pass itself, so the filters were enabled.
+            /// The joins stay logical until after `applyParallelReplicas` below: it needs the final
+            /// (reordered, runtime-filtered) join shape and clones a fragment, which only `JoinStepLogical`
+            /// supports, and lazy materialization for joins reads the join expressions from it.
             const auto * join_logical = typeid_cast<const JoinStepLogical *>(frame_node.step.get());
             if (add_join_runtime_filters
                 || (has_query_context && join_logical && join_logical->isRuntimeFilterSuppressedForSortedMerge()))
                 join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
-            /// Keep joins logical for `applyParallelReplicas` below: it needs the final (reordered,
-            /// runtime-filtered) join shape and clones a fragment, which only `JoinStepLogical` supports.
-            /// Joins left in the outer plan are converted right after the fragment is created.
-            if (!optimization_settings.enable_parallel_replicas)
-                convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
         });
 
     /// A new filter node has to be pushed down. Runtime filters are re-merged unconditionally as
@@ -474,24 +472,6 @@ void optimizeTreeSecondPass(
         }
     }
 
-    /// Run after runtime filter push-down so that chains of joins are detected correctly. The pass only
-    /// recognizes physical JoinStep, so with parallel replicas - where the conversion is deferred until
-    /// after `applyParallelReplicas` - it runs there instead, see below.
-    const auto optimize_join_lazy_indexing = [&]
-    {
-        if (optimization_settings.min_columns_for_join_lazy_indexing == 0)
-            return;
-
-        traverseQueryPlan(stack, root,
-            [&](auto & frame_node)
-            {
-                optimizeJoinLazyIndexing(frame_node, nodes, optimization_settings);
-            });
-    };
-
-    if (!optimization_settings.enable_parallel_replicas)
-        optimize_join_lazy_indexing();
-
     /// Do PREWHERE optimization after all possible filters including JOIN runtime filters were pushed down
     if (optimization_settings.optimize_prewhere)
     {
@@ -514,6 +494,42 @@ void optimizeTreeSecondPass(
     const bool cascades_active = make_distributed_plan && optimization_settings.enable_cascades_optimizer;
 
     applyParallelReplicas(query_plan, nodes, optimization_settings);
+
+    /// Lazy materialization for plans with joins works on the join expressions, so it runs while the joins
+    /// are still logical. That is after PREWHERE optimization, which needs a filter right above the read,
+    /// and before reading in order, which would turn the full sorting it starts from into a partial one.
+    /// Not for a plan whose parts run elsewhere, since the lazy read has to run where the main one does. That is asked of
+    /// the setting rather than of this pass, as the other lazy materialization does: a plan that has its exchanges
+    /// already, optimized again, is still distributed, and its lazy steps could not be sent to the workers.
+    bool lazy_materialization_applied = false;
+    if (optimization_settings.optimize_lazy_materialization && optimization_settings.lazy_materialization_for_join
+        && !optimization_settings.enable_parallel_replicas && !optimization_settings.make_distributed_plan)
+    {
+        chassert(stack.empty());
+        stack.push_back({.node = &root});
+        while (!stack.empty())
+        {
+            auto & frame = stack.back();
+
+            if (frame.next_child == 0
+                && optimizeLazyMaterialization3(*frame.node, query_plan, nodes, optimization_settings))
+            {
+                lazy_materialization_applied = true;
+                stack.pop_back();
+                continue;
+            }
+
+            if (frame.next_child < frame.node->children.size())
+            {
+                auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+                ++frame.next_child;
+                stack.push_back(next_frame);
+                continue;
+            }
+
+            stack.pop_back();
+        }
+    }
 
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
@@ -538,37 +554,55 @@ void optimizeTreeSecondPass(
 
     /// Distributed joins now live inside fragments and are converted by each fragment's own
     /// re-optimization. Convert the joins left in the outer plan (non-distributed kinds, or all of them
-    /// when nothing was distributed), which the traversal above skipped.
-    if (optimization_settings.enable_parallel_replicas)
+    /// when nothing was distributed).
+    traverseQueryPlan(stack, root,
+        [&](auto &) {},
+        [&](auto & frame_node)
+        {
+            /// `applyParallelReplicas` may have replaced a join input with a distributed read; the
+            /// join-key-order eligibility memoized before it (by `tryAddJoinRuntimeFilter`) is stale
+            /// then, so recompute it on the final plan - a sorted-merge algorithm must fall through
+            /// to the next one of `join_algorithm` when its input is no longer readable in order.
+            if (auto * join_logical = typeid_cast<JoinStepLogical *>(frame_node.step.get()))
+            {
+                join_logical->resetInputsCanBeReadInJoinKeyOrder();
+                /// If the filter pass skipped this join because an eligible sorted-merge algorithm
+                /// won the selection, re-run it on the final plan: when the rewrite broke the
+                /// eligibility, the selection falls through to a hash-family algorithm, which must
+                /// get its runtime filter back. The re-added filter stays adjacent to the join (the
+                /// push-down passes have already run), which costs only the deeper placement and the
+                /// index analysis, not correctness.
+                if (optimization_settings.enable_join_runtime_filters
+                    && join_logical->isRuntimeFilterSuppressedForSortedMerge())
+                    tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
+            }
+            convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
+        });
+
+    /// The runtime filters were pushed down while the joins were logical, so merge what the conversion
+    /// added around the joins, as that push-down did when the joins were converted before it. With the
+    /// same `extra_settings`: a default-constructed one truncates the description of a merged step.
+    if (join_runtime_filters_were_added)
     {
         traverseQueryPlan(stack, root,
-            [&](auto &) {},
             [&](auto & frame_node)
             {
-                /// `applyParallelReplicas` may have replaced a join input with a distributed read; the
-                /// join-key-order eligibility memoized before it (by `tryAddJoinRuntimeFilter`) is stale
-                /// then, so recompute it on the final plan - a sorted-merge algorithm must fall through
-                /// to the next one of `join_algorithm` when its input is no longer readable in order.
-                if (auto * join_logical = typeid_cast<JoinStepLogical *>(frame_node.step.get()))
+                while (tryMergeExpressions(&frame_node, nodes, extra_settings) + tryMergeFilters(&frame_node, nodes, extra_settings))
                 {
-                    join_logical->resetInputsCanBeReadInJoinKeyOrder();
-                    /// If the filter pass skipped this join because an eligible sorted-merge algorithm
-                    /// won the selection, re-run it on the final plan: when the rewrite broke the
-                    /// eligibility, the selection falls through to a hash-family algorithm, which must
-                    /// get its runtime filter back. The re-added filter stays adjacent to the join (the
-                    /// push-down passes have already run), which costs only the deeper placement and the
-                    /// index analysis, not correctness.
-                    if (optimization_settings.enable_join_runtime_filters
-                        && join_logical->isRuntimeFilterSuppressedForSortedMerge())
-                        tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
                 }
-                convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
             });
+    }
 
-        /// The joins are physical only now, so this is the first point where lazy column indexing can be
-        /// applied to the joins left in the outer plan. Joins inside a shipped fragment get it from the
-        /// fragment's own re-optimization on the replica.
-        optimize_join_lazy_indexing();
+    /// The pass only recognizes physical `JoinStep`, so this is the first point where lazy column indexing
+    /// can be applied. Joins inside a shipped fragment get it from the fragment's own re-optimization on
+    /// the replica.
+    if (optimization_settings.min_columns_for_join_lazy_indexing != 0)
+    {
+        traverseQueryPlan(stack, root,
+            [&](auto & frame_node)
+            {
+                optimizeJoinLazyIndexing(frame_node, nodes, optimization_settings);
+            });
     }
 
     /// Run Cascades optimizer after all push down and join order optimizations.
@@ -859,7 +893,6 @@ void optimizeTreeSecondPass(
 
     /// projection optimizations can introduce additional reading step
     /// so, applying lazy materialization after it, since it's dependent on reading step
-    bool lazy_materialization_applied = false;
     if ((optimization_settings.optimize_lazy_materialization || optimization_settings.optimize_lazy_final) && !optimization_settings.make_distributed_plan)
     {
         chassert(stack.empty());
@@ -877,7 +910,8 @@ void optimizeTreeSecondPass(
 
             if (frame.next_child == 0 && optimization_settings.optimize_lazy_materialization)
             {
-                if (optimizeLazyMaterialization2(*frame.node, query_plan, nodes, optimization_settings, optimization_settings.max_limit_for_lazy_materialization))
+                if (optimizeLazyMaterialization2(
+                        *frame.node, query_plan, nodes, optimization_settings, optimization_settings.max_limit_for_lazy_materialization))
                 {
                     lazy_materialization_applied = true;
 
