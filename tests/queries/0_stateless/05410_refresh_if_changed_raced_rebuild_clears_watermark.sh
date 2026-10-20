@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database, no-ordinary-database
+# Tags: no-parallel, no-fasttest, no-replicated-database, no-ordinary-database
 # no-parallel: `refresh_mv_pause_before_exchange` is server-global and would park other refreshes.
+# no-fasttest: a test enabling a fail point runs alone, and such tests are kept out of the fast test.
 # Refreshable MVs with non-replicated inner tables are refused on a Replicated database.
 
 # A refresh that raced with an `ALTER ... MODIFY QUERY` still publishes the target it built from the
