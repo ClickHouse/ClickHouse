@@ -433,9 +433,10 @@ void StorageObjectStorageSource::writePendingTopKQueryConditionCacheEntries()
 }
 
 ObjectIteratorListingAllForTopKQueryConditionCache::ObjectIteratorListingAllForTopKQueryConditionCache(
-    ObjectIterator iterator_, std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> key_)
+    ObjectIterator iterator_, std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> key_, std::shared_ptr<QueryStatus> query_status_)
     : iterator(std::move(iterator_))
     , key(std::move(key_))
+    , query_status(std::move(query_status_))
 {
 }
 
@@ -470,6 +471,12 @@ void ObjectIteratorListingAllForTopKQueryConditionCache::listObjects(size_t proc
     /// One object more than the limit is listed to tell exactly `MAX_OBJECTS` objects from more.
     while (objects.size() <= MAX_OBJECTS)
     {
+        /// Listing an object may take a request (e.g. a `HEAD` for each explicit key), so a cancelled
+        /// query must not go on listing until all objects are collected. When the time limit is
+        /// exceeded with `timeout_overflow_mode = 'break'`, the rest comes from `iterator` without a key.
+        if (query_status && !query_status->checkTimeLimit())
+            return;
+
         auto object = iterator->next(processor);
         if (!object || object->getPath().empty())
         {

@@ -195,7 +195,8 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     auto file_iterator = iterator_wrapper;
     if (top_k_query_condition_cache_key && !top_k_query_condition_cache_key->condition_hash)
-        file_iterator = std::make_shared<ObjectIteratorListingAllForTopKQueryConditionCache>(file_iterator, top_k_query_condition_cache_key);
+        file_iterator = std::make_shared<ObjectIteratorListingAllForTopKQueryConditionCache>(
+            file_iterator, top_k_query_condition_cache_key, context->getProcessListElement());
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -314,6 +315,29 @@ std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageSt
     /// on settings) does not matter: it only removes files without rows passing the filter, which do not
     /// make the threshold either.
     if (query_info.row_level_filter)
+        return {};
+
+    /// A column with a `DEFAULT` / `MATERIALIZED` expression is computed above the format by
+    /// `AddingDefaultsTransform` when a file lacks it, and the hash of the filter sees it only as an
+    /// input, not the expression (which may be `queryID()`, `now()`, or depend on other columns). So
+    /// the same files and filter could let other rows through from query to query. The sort column
+    /// itself never has one (see `supportsTopKDynamicFilter`).
+    auto has_default = [&](const String & name)
+    {
+        if (info.columns_description.hasDefault(name))
+            return true;
+        /// A subcolumn (`t.a`) is read from its column.
+        for (size_t pos = name.find('.'); pos != String::npos; pos = name.find('.', pos + 1))
+            if (info.columns_description.hasDefault(name.substr(0, pos)))
+                return true;
+        return false;
+    };
+    auto filter_reads_column_with_default = [&](const ActionsDAG & dag)
+    {
+        return std::ranges::any_of(dag.getInputs(), [&](const auto * input) { return has_default(input->result_name); });
+    };
+    if ((filter_actions_dag && filter_reads_column_with_default(*filter_actions_dag))
+        || (query_info.prewhere_info && filter_reads_column_with_default(query_info.prewhere_info->prewhere_actions)))
         return {};
 
     auto key = std::make_shared<ObjectStorageTopKQueryConditionCacheKey>();

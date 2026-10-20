@@ -96,11 +96,23 @@ echo "--- a predicate on the modification time of the objects"
 run time_1 "SELECT k FROM t_05340 WHERE _time > toDateTime('2000-01-01 00:00:00', 'UTC') ORDER BY k DESC LIMIT 8"
 run time_2 "SELECT k FROM t_05340 WHERE _time > toDateTime('2000-01-01 00:00:00', 'UTC') ORDER BY k DESC LIMIT 8"
 
+echo "--- a predicate on a column with a read-time default"
+# The objects lack `d`, so its value comes from the default expression, which the hash of the predicate
+# does not cover: the first query lets all rows through, the second one only those with `k < 1000`.
+# So the key is not made: the rerun finds no entries (it only looks up those of the predicate alone).
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05340_default"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_05340_default (k Int64, s String, d String DEFAULT queryID()) ENGINE = S3(s3_conn, filename = '${S3_DIR}/*.parquet', format = Parquet)"
+DEFAULT_QUERY="SELECT k FROM t_05340_default WHERE d = '${CLICKHOUSE_TEST_UNIQUE_NAME}_default_1' OR k < 1000 ORDER BY k DESC LIMIT 3"
+DEFAULT_SETTINGS=", input_format_defaults_for_omitted_fields = 1, optimize_move_to_prewhere = 0"
+run default_1 "$DEFAULT_QUERY" "$DEFAULT_SETTINGS"
+run default_2 "$DEFAULT_QUERY" "$DEFAULT_SETTINGS"
+
 echo "--- use_query_condition_cache_for_top_k = 0"
 run gate_1 "SELECT k FROM t_05340 ORDER BY k DESC LIMIT 6" ", use_query_condition_cache_for_top_k = 0"
 run gate_2 "SELECT k FROM t_05340 ORDER BY k DESC LIMIT 6" ", use_query_condition_cache_for_top_k = 0"
 
 echo "--- query condition cache lookups"
-events nowhere_1 nowhere_2 nowhere_limit nowhere_plain nowhere_asc where_1 where_2 rewritten_nowhere_1 rewritten_where_1 rewritten_nowhere_2 unpinned_1 unpinned_2 tags_1 tags_2 time_1 time_2 gate_1 gate_2
+events nowhere_1 nowhere_2 nowhere_limit nowhere_plain nowhere_asc where_1 where_2 rewritten_nowhere_1 rewritten_where_1 rewritten_nowhere_2 unpinned_1 unpinned_2 tags_1 tags_2 time_1 time_2 default_1 default_2 gate_1 gate_2
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340_default"

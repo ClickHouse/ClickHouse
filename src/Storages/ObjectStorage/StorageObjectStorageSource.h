@@ -22,6 +22,7 @@ class SchemaCache;
 
 struct LazyObjectStorageFileRegistry;
 using LazyObjectStorageFileRegistryPtr = std::shared_ptr<LazyObjectStorageFileRegistry>;
+class QueryStatus;
 
 /// The query condition cache key of a TopN (`ORDER BY ... LIMIT n`) read. Which row groups of a file
 /// the TopN filter lets through depends on the running threshold, which is established from the rows
@@ -54,7 +55,11 @@ using ObjectStorageTopKQueryConditionCacheKeyPtr = std::shared_ptr<const ObjectS
 class ObjectIteratorListingAllForTopKQueryConditionCache : public IObjectIterator
 {
 public:
-    ObjectIteratorListingAllForTopKQueryConditionCache(ObjectIterator iterator_, std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> key_);
+    /// `query_status_` (if any) is checked between the objects listed ahead, as each of them may take a request.
+    ObjectIteratorListingAllForTopKQueryConditionCache(
+        ObjectIterator iterator_,
+        std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> key_,
+        std::shared_ptr<QueryStatus> query_status_);
 
     ObjectInfoPtr next(size_t processor) override;
     size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
@@ -74,6 +79,7 @@ private:
 
     const ObjectIterator iterator;
     const std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> key;
+    const std::shared_ptr<QueryStatus> query_status;
 
     std::once_flag listed;
     std::exception_ptr listing_exception;

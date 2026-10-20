@@ -74,6 +74,13 @@
 100994
 100993
 100992
+--- a predicate on a column with a read-time default
+100999
+100998
+100997
+999
+999
+999
 --- use_query_condition_cache_for_top_k = 0
 100999
 100998
@@ -104,5 +111,7 @@ tags_1	0	0
 tags_2	0	0
 time_1	0	0
 time_2	0	0
+default_1	1	0
+default_2	1	0
 gate_1	0	0
 gate_2	0	0
