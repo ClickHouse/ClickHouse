@@ -506,6 +506,7 @@ AzureBlobStorage::ConnectionParams getAzureDiskConnectionParams(
         .client_options = {},
         .forbid_implicit_credentials = true,
         .anonymous_fallback_for_server_credentials = anonymous_fallback,
+        .follows_session_restriction = false,
     };
 }
 
@@ -568,7 +569,12 @@ void validateResolvedAzureDiskCredentials(
         if (auto it = disks.find(wrapped_disk); !wrapped_disk.empty() && it != disks.end())
         {
             if (const auto params = getCustomDiskServerIdentity(it->second))
-                params->checkSessionMayUseServerIdentity(/*restrict_server_credentials=*/ true);
+            {
+                auto restricted = *params;
+                restricted.forbid_implicit_credentials = true;
+                restricted.anonymous_fallback_for_server_credentials = false;
+                restricted.checkOrDropServerManagedCredentials();
+            }
         }
     }
 

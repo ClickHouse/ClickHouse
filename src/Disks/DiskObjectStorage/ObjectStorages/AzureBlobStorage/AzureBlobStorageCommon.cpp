@@ -270,7 +270,7 @@ bool ConnectionParams::checkOrDropServerManagedCredentials() const
 
 void ConnectionParams::checkSessionMayUseServerIdentity(bool restrict_server_credentials) const
 {
-    if (restrict_server_credentials && !forbid_implicit_credentials && usesServerManagedCredentials())
+    if (restrict_server_credentials && follows_session_restriction && !forbid_implicit_credentials && usesServerManagedCredentials())
         throwServerCredentialsRestricted();
 }
 

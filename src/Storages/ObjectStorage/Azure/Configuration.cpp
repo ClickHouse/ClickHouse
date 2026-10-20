@@ -178,6 +178,7 @@ AzureBlobStorage::ConnectionParams getAzureConnectionParams(
 
     /// Captured here because the client is built later, sometimes from the global context.
     connection_params.forbid_implicit_credentials = local_context->shouldRestrictUserQueryS3Credentials();
+    connection_params.follows_session_restriction = true;
 
     return connection_params;
 }

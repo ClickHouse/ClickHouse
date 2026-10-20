@@ -270,6 +270,7 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
             /// A custom disk loaded from existing metadata gets no credentials instead of failing the table load.
             .anonymous_fallback_for_server_credentials = remote_host_filter_check == RemoteHostFilterCheck::Warn
                 && context->getGlobalContext()->getServerSettings()[ServerSetting::load_table_anonymously_if_credentials_restricted],
+            .follows_session_restriction = false,
         };
 
         const bool drop_credentials = params.checkOrDropServerManagedCredentials();
