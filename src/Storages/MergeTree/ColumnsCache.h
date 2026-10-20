@@ -336,6 +336,10 @@ public:
     /// index, before it clears the next one. A write can record stripes there.
     std::function<void(size_t)> on_shard_cleared_for_test;
 
+    /// Test seam: `removeTable` and `removePart` call this after they have erased the stripes from the
+    /// index, before they remove the entries from the shards. A write can record stripes there.
+    std::function<void()> on_removal_staged_for_test;
+
 private:
     using Base = CacheBase<ColumnsCacheKey, ColumnsCacheEntry, ColumnsCacheKeyHash, ColumnsCacheWeightFunction>;
 

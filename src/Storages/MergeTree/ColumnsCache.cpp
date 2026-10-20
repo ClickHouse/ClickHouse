@@ -458,8 +458,23 @@ void ColumnsCache::forgetStripe(const PartIdentifier & part, const UInt128 & col
 
 void ColumnsCache::removeFromShards(const std::vector<Key> & keys)
 {
+    if (on_removal_staged_for_test)
+        on_removal_staged_for_test();
+
+    /// The stripes of these keys are already erased from the index, but a writer that started after
+    /// the invalidation may have written one of the keys again and recorded its stripe. The cache
+    /// policies remove an entry without the eviction callback, so the stripe is forgotten together
+    /// with the entry, under the mutex of the shard and then `index_mutex` - the order
+    /// `onEntryRemoval` uses: otherwise the index would keep it with no entry in any shard.
     for (const auto & key : keys)
-        shardOf(key).remove(key);
+    {
+        shardOf(key).removeIfMatches(key, [&](const MappedPtr & resident)
+        {
+            std::lock_guard lock(index_mutex);
+            forgetStripe(PartIdentifier{resident->table_uuid, resident->part_name}, key.column_identity, key.stripe);
+            return true;
+        });
+    }
 }
 
 void ColumnsCache::removeStaleEntries(const std::vector<Key> & keys, const std::vector<MappedPtr> & entries)

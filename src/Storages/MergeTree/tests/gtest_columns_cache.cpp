@@ -786,3 +786,25 @@ TEST(ColumnsCache, WriteDuringClearAllLeavesNoIndexBehind)
     EXPECT_TRUE(cache.containsPart(kept.table_uuid, kept.part));
     EXPECT_FALSE(cache.containsPart(dropped.table_uuid, dropped.part));
 }
+
+TEST(ColumnsCache, WriteDuringRemoveTableLeavesNoIndexBehind)
+{
+    auto cache = makeCache();
+    TestColumn c(UUIDHelpers::generateV4(), "part_1", "col");
+    EXPECT_GT(cache.setMany({makeEntry(c, 0, 0, 4)}, cache.getInvalidationGeneration(c.table_uuid)), 0u);
+
+    /// A reader that started after the invalidation extends the stripe between the erasing of the index
+    /// and the removal from the shards: the removal takes its entry, and must take its stripe too.
+    cache.on_removal_staged_for_test = [&]
+    {
+        EXPECT_GT(cache.setMany({makeEntry(c, 0, 4, 8)}, cache.getInvalidationGeneration(c.table_uuid)), 0u);
+        EXPECT_TRUE(cache.containsPart(c.table_uuid, c.part));
+    };
+    cache.removeTable(c.table_uuid);
+    cache.on_removal_staged_for_test = nullptr;
+
+    cache.setConfiguredMaxSizeInBytes(0);
+    EXPECT_EQ(cache.count(), 0u);
+    EXPECT_EQ(cache.sizeInBytes(), 0u);
+    EXPECT_FALSE(cache.containsPart(c.table_uuid, c.part));
+}
