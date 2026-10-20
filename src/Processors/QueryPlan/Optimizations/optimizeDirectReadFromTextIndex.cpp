@@ -898,6 +898,7 @@ private:
         /// Rewrite the haystack into the postprocessed tokens the index stores, so the row-level
         /// function still matches when the index isn't read directly (direct read off, or unmaterialized
         /// parts). getOriginalActionsDAG yields an Array(String) of postprocessed tokens.
+        const ActionsDAG::Node * tokenized_value = nullptr;
         if (apply_postprocessor)
         {
             /// Name the postprocessor's haystack input after the haystack node's actual result_name so
@@ -908,8 +909,9 @@ private:
             actions_dag.mergeNodes(
                 postprocessor->getOriginalActionsDAG(haystack_name, new_children[0]->result_type, tokenizer->getDescription(), preprocessor_source_ast),
                 &merged_outputs);
-            chassert(merged_outputs.size() == 1);
-            new_children[0] = merged_outputs.front();
+            chassert(merged_outputs.size() == 2);
+            new_children[0] = merged_outputs[0];
+            tokenized_value = merged_outputs[1];
 
             /// new_children[0] is now an Array(String) of FINAL postprocessed tokens. hasAnyTokens /
             /// hasAllTokens would otherwise re-tokenize each array element with the tokenizer argument,
@@ -995,11 +997,17 @@ private:
         auto needles_column = needles_type->createColumnConst(0, needles_field);
         new_children[1] = &actions_dag.addColumn(std::move(needles_column), needles_type, applyVisitor(FieldVisitorToString(), needles_field));
 
-        replacement.rewritten_haystack = new_children[0];
+        /// The postprocessed tokens are never NULL, unlike the value they are built from.
+        replacement.rewritten_haystack = tokenized_value ? tokenized_value : new_children[0];
 
         /// Recreate a function object because we have modified the arguments.
         FunctionOverloadResolverPtr new_function_base = FunctionFactory::instance().get(function_name, context);
         const ActionsDAG::Node * new_function_node = &actions_dag.addFunction(new_function_base, new_children, "");
+
+        if (tokenized_value
+            && isNullableOrLowCardinalityNullable(function_node.result_type)
+            && isNullableOrLowCardinalityNullable(tokenized_value->result_type))
+            new_function_node = &addNullsOfArgument(*new_function_node, *tokenized_value, /*is_exact_search=*/ false, context);
 
         if (!new_function_node->result_type->equals(*function_node.result_type))
             new_function_node = &actions_dag.addCast(*new_function_node, function_node.result_type, "", context);
