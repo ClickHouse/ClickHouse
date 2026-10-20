@@ -570,51 +570,39 @@ struct PlainStringDecoder : public PageDecoder
             auto & col_str = assert_cast<ColumnString &>(col);
             if (!value_filter || !value_filter->isEnabled())
             {
-                const char * ptr = data;
-                size_t num_pass = 0;
-                size_t total_bytes = 0;
+                auto & chars = col_str.getChars();
+                auto & col_offsets = col_str.getOffsets();
+                size_t pos = chars.size();
+                size_t row = col_offsets.size();
+                chars.resize(chars.capacity());
+                col_offsets.resize(row + num_values);
+                char * out = reinterpret_cast<char *>(chars.data());
                 for (size_t i = 0; i < num_values; ++i)
                 {
                     UInt32 x = 0;
-                    memcpy(&x, ptr, 4); /// omitting range check because input is padded
+                    memcpy(&x, data, 4); /// omitting range check because input is padded
                     size_t len = 4 + size_t(x);
-                    if (len > size_t(end - ptr))
+                    if (len > size_t(end - data))
+                    {
+                        chars.resize(pos);
+                        col_offsets.resize(row);
                         throw Exception(ErrorCodes::INCORRECT_DATA, "Encoded string is out of bounds");
-                    bool pass = !filter || filter[filter_offset + i];
-                    num_pass += pass;
-                    total_bytes += pass ? size_t(x) : 0;
-                    ptr += len;
-                }
-
-                if (num_pass == num_values)
-                {
-                    appendStringsFromPaddedSource(col_str, num_values, total_bytes, [&](size_t)
+                    }
+                    if (!filter || filter[filter_offset + i])
                     {
-                        UInt32 x = 0;
-                        memcpy(&x, data, 4);
-                        std::string_view s(data + 4, x);
-                        data += 4 + size_t(x);
-                        return s;
-                    });
-                    chassert(data == ptr);
-                }
-                else
-                {
-                    size_t i = 0;
-                    appendStringsFromPaddedSource(col_str, num_pass, total_bytes, [&](size_t)
-                    {
-                        while (true)
+                        if (unlikely(pos + x > chars.size()))
                         {
-                            UInt32 x = 0;
-                            memcpy(&x, data, 4);
-                            const char * value = data + 4;
-                            data += 4 + size_t(x);
-                            if (filter[filter_offset + i++])
-                                return std::string_view(value, x);
+                            chars.resize(std::max(pos + x, chars.size() * 2));
+                            out = reinterpret_cast<char *>(chars.data());
                         }
-                    });
-                    data = ptr;
+                        memcpySmallAllowReadWriteOverflow15(out + pos, data + 4, x);
+                        pos += x;
+                        col_offsets[row++] = pos;
+                    }
+                    data += len;
                 }
+                chars.resize(pos);
+                col_offsets.resize(row);
                 return;
             }
 
