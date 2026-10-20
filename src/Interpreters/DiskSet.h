@@ -21,8 +21,15 @@ public:
 
     virtual size_t getTotalRowCount() const = 0;
 
-    /// Returns the memory that the set keeps in memory. Its keys are on disk.
+    /// Returns the bytes of the keys of the set at their full width, which its size limits apply to. The
+    /// memory that lookups use, such as Bloom filters, does not count.
     virtual size_t getTotalByteCount() const = 0;
 };
+
+/// Returns about the memory that a `DiskSet` of `keys` keys of type `Key`, an unsigned integer of 8 to 256
+/// bits, keeps besides its cache: its directory and its Bloom filters, which take at most
+/// `max_bytes_for_bloom_filter` bytes (see `DiskSetImpl::estimateMemory`).
+template <typename Key>
+size_t estimateDiskSetMemory(size_t keys, size_t max_bytes_for_bloom_filter);
 
 }
