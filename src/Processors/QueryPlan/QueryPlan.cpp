@@ -307,6 +307,12 @@ static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map,
     map.add("Node Type", step.getName());
     map.add("Node Id", step.getUniqID());
 
+    if (options.step_hashes)
+    {
+        if (auto it = options.step_hashes->find(&step); it != options.step_hashes->end())
+            map.add("Node Hash", fmt::format("{}", it->second));
+    }
+
     if (options.description)
     {
         const auto & description = step.getStepDescription();
@@ -444,6 +450,12 @@ static void explainStep(
         description = description.substr(0, max_description_length);
     if (options.description && !description.empty())
         settings.out <<" (" << description << ')';
+
+    if (options.step_hashes)
+    {
+        if (auto it = options.step_hashes->find(&step); it != options.step_hashes->end())
+            settings.out << fmt::format(" hash={}", it->second);
+    }
 
     if (options.estimates)
     {
@@ -654,7 +666,7 @@ void QueryPlan::explainPlan(
     PrettyNamesPerPlan local_pretty_names;
     if (options.pretty && !precomputed_pretty_names)
     {
-        local_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this, options.show_secrets);
+        local_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this);
         precomputed_pretty_names = &local_pretty_names;
     }
 
@@ -674,7 +686,6 @@ void QueryPlan::explainPlan(
         .compact = options.compact,
         .pretty = options.pretty,
         .inside_explain_analyze = steps_to_stats != nullptr,
-        .show_secrets = options.show_secrets,
         .pretty_names = plan_pretty_names ? plan_pretty_names->pretty_names : empty_pretty_names.pretty_names,
         .runtime_filter_names = plan_pretty_names ? plan_pretty_names->runtime_filter_names : empty_pretty_names.runtime_filter_names
     };
@@ -977,17 +988,24 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
     }
 
     {
+        auto & main_stage = distributed_plan.stages["main"];
+
+        /// The main stage produces the final result, so the exchange takes its id. It is not cut from
+        /// a logical exchange step, so `exchange_step_name` stays empty.
         ExchangeDescription final_result_exchange
         {
             .name = "final_result",
+            .id = main_stage.id,
             .kind = optimization_settings.distributed_plan_force_exchange_kind == "Persisted" ? ExchangeDescription::Kind::Persisted : ExchangeDescription::Kind::Streaming,
             .source_bucket_count = 1,
-            .destination_bucket_count = 1
+            .destination_bucket_count = 1,
+            .exchange_step_name = {},
+            .keys = {},
+            .sort_description = {},
         };
         auto result_stream_id = ExchangeStreamId(final_result_exchange.name, 0, 0);
 
         /// Add a step that writes the result of the main stage to the file
-        auto & main_stage = distributed_plan.stages["main"];
         if (!main_stage.query_plan_fragment.isCompleted())
         {
             main_stage.query_plan_fragment.addStep(std::make_unique<GatherSendStep>(result_header, final_result_exchange.name));
@@ -1069,7 +1087,8 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
             settings.exchange_lookup = exchange_lookup;
             VectorWithMemoryTracking<ExchangeStreamId> stream_ids;
             stream_ids.push_back(result_stream_id);
-            auto builder = receiveExchangeStreams(result_header, exchange_name, stream_ids, settings, /*spread_over_max_threads=*/ false);
+            auto builder = receiveExchangeStreams(
+                result_header, exchange_name, stream_ids, settings, /*spread_over_max_threads=*/ false, /*advisory=*/ false);
             /// An in-memory exchange source emits zero-row chunks as scheduling ticks while
             /// waiting for data; drop them so they do not reach the client as empty `Data` packets.
             builder.addSimpleTransform([](const SharedHeader & header) { return makeSkipZeroRowChunksTransform(header); });

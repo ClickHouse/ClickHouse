@@ -1,4 +1,5 @@
 #include <Storages/StorageURL.h>
+#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageFile.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -40,6 +41,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
 #include <Interpreters/ProcessList.h>
 
@@ -52,6 +54,9 @@
 #include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
+#include <Common/maskSensitiveQueryParameters.h>
+#include <Common/maskURIPassword.h>
+#include <Common/quoteString.h>
 
 #include <base/EnumReflection.h>
 
@@ -290,7 +295,7 @@ IStorageURLBase::IStorageURLBase(
 
 namespace
 {
-    HTTPHeaderEntries getHeaders(const HTTPHeaderEntries & headers_)
+    HTTPHeaderEntries getHeaders(const HTTPHeaderEntries & headers_, const ContextPtr & context)
     {
         HTTPHeaderEntries headers(headers_.begin(), headers_.end());
 
@@ -298,12 +303,12 @@ namespace
         const auto & current_trace_context = OpenTelemetry::CurrentContext();
         if (current_trace_context.isTraceEnabled())
         {
-            headers.emplace_back("traceparent", current_trace_context.composeTraceparentHeader());
-
+            /// The user headers are checked in the `StorageURL` constructor; `tracestate` comes from the client as is.
+            HTTPHeaderEntries trace_headers{{"traceparent", current_trace_context.composeTraceparentHeader()}};
             if (!current_trace_context.tracestate.empty())
-            {
-                headers.emplace_back("tracestate", current_trace_context.tracestate);
-            }
+                trace_headers.emplace_back("tracestate", current_trace_context.tracestate);
+            context->getHTTPHeaderFilter().checkHeaders(trace_headers);
+            headers.insert(headers.end(), trace_headers.begin(), trace_headers.end());
         }
 
         return headers;
@@ -493,7 +498,7 @@ private:
                 /// A local read builds its sets in `applyFilters`, before plan optimization moves their
                 /// subquery plans away, so tests need this to reach the deferred path deterministically.
                 fiu_do_on(FailPoints::url_glob_defer_path_filter, { filter_deferred = true; });
-                filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+                filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(filter_context));
             }
 
             if (!filter_deferred)
@@ -566,7 +571,7 @@ StorageURLSource::StorageURLSource(
     const ReadFromFormatInfo & info,
     std::shared_ptr<IteratorWrapper> uri_iterator_,
     const std::string & http_method,
-    std::function<void(std::ostream &)> callback,
+    std::function<void(WriteBuffer &)> callback,
     const String & format_,
     const std::optional<FormatSettings> & format_settings_,
     String name_,
@@ -594,7 +599,7 @@ StorageURLSource::StorageURLSource(
     , format_settings(format_settings_)
     , parser_shared_resources(std::move(parser_shared_resources_))
     , format_filter_info(std::move(format_filter_info_))
-    , headers(getHeaders(headers_))
+    , headers(getHeaders(headers_, context_))
     , need_only_count(need_only_count_)
     , storage_id(std::move(storage_id_))
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
@@ -1021,7 +1026,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
     ContextPtr context_,
     const URIParams & params,
     const String & http_method,
-    std::function<void(std::ostream &)> callback,
+    std::function<void(WriteBuffer &)> callback,
     const ConnectionTimeouts & timeouts,
     Poco::Net::HTTPBasicCredentials & credentials,
     const HTTPHeaderEntries & headers,
@@ -1388,7 +1393,7 @@ std::vector<std::pair<std::string, std::string>> IStorageURLBase::getReadURIPara
     return {};
 }
 
-std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(
+std::function<void(WriteBuffer &)> IStorageURLBase::getReadPOSTDataCallback(
     const Names & /*column_names*/,
     const ColumnsDescription & /* columns_description */,
     const SelectQueryInfo & /*query_info*/,
@@ -1518,7 +1523,14 @@ namespace
             format = format_name;
         }
 
-        String getLastFilePath() const override { return current_url_option; }
+        String getLastFilePath() const override
+        {
+            /// `current_url_option` is kept raw for requests and schema cache keys, but the diagnostic
+            /// path can reach the client, server log and `system.query_log`, so mask credentials here.
+            String masked = current_url_option;
+            maskURICredentials(masked);
+            return masked;
+        }
 
         bool supportsLastReadBufferRecreation() const override { return true; }
 
@@ -1778,6 +1790,11 @@ public:
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
     bool canUpdatePrewhereInfoMultipleTimes() const override { return false; }
 
+    /// TopN dynamic filtering: only the Parquet reader consumes `FormatFilterInfo::top_k_filter`,
+    /// and only for a sort column it physically reads from the file.
+    bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
+    void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> info_) override { top_k_filter = std::move(info_); }
+
     ReadFromURL(
         const Names & column_names_,
         const SelectQueryInfo & query_info_,
@@ -1789,7 +1806,7 @@ public:
         ReadFromFormatInfo info_,
         const bool need_only_count_,
         std::vector<std::pair<std::string, std::string>> read_uri_params_,
-        std::function<void(std::ostream &)> read_post_data_callback_,
+        std::function<void(WriteBuffer &)> read_post_data_callback_,
         size_t max_block_size_,
         size_t num_streams_)
         : SourceStepWithFilter(std::make_shared<const Block>(std::move(sample_block)), column_names_, query_info_, storage_snapshot_, context_)
@@ -1812,7 +1829,7 @@ private:
     ReadFromFormatInfo info;
     const bool need_only_count;
     std::vector<std::pair<std::string, std::string>> read_uri_params;
-    std::function<void(std::ostream &)> read_post_data_callback;
+    std::function<void(WriteBuffer &)> read_post_data_callback;
 
     size_t max_block_size;
     size_t num_streams;
@@ -1821,9 +1838,34 @@ private:
     std::shared_ptr<StorageURLSource::IteratorWrapper> iterator_wrapper;
     bool is_url_with_globs = false;
     bool is_empty_glob = false;
+    std::shared_ptr<const FormatTopKFilterInfo> top_k_filter;
 
     void createIterator(const ActionsDAG::Node * predicate);
 };
+
+bool ReadFromURL::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const
+{
+    if (!boost::iequals(storage->format_name, "Parquet"))
+        return false;
+
+    /// With a structure of only Hive partition columns the format reads them from the file, while the
+    /// query takes their values from the path, so the reader would compare other values than the
+    /// ones the threshold is made from.
+    if (info.formatReadsHivePartitionColumns())
+        return false;
+
+    /// The output header is broader than what the format reads: Hive partition columns (from the
+    /// path) and virtual columns (`_path`, `_file`, ...) are added after the format has produced its
+    /// chunk, so the reader could never compare them against the threshold.
+    const auto * format_column = info.format_header.findByName(sort_column.name);
+    if (!format_column || !format_column->type->equals(*sort_column.type))
+        return false;
+
+    /// A column with a `DEFAULT` / `MATERIALIZED` / `ALIAS` expression is recomputed above the format
+    /// by `AddingDefaultsTransform` for the values the reader reported as missing, so the threshold
+    /// would come from other values than the ones the reader compares against it.
+    return !info.columns_description.hasDefault(sort_column.name);
+}
 
 void ReadFromURL::applyFilters(ActionDAGNodes added_filter_nodes)
 {
@@ -1982,7 +2024,8 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, num_streams);
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
-        info.formatReadsHivePartitionColumns() ? nullptr : filter_actions_dag, context, nullptr, query_info.row_level_filter, query_info.prewhere_info);
+        info.getFormatFilter(filter_actions_dag), context, nullptr, query_info.row_level_filter, query_info.prewhere_info);
+    format_filter_info->top_k_filter = top_k_filter;
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -2451,6 +2494,34 @@ static bool urlHasUserInfo(const String & url)
     return authority_end == String::npos || at_pos < authority_end;
 }
 
+bool StorageURL::isAbsoluteURL(const String & url)
+{
+    /// A scheme is [A-Za-z][A-Za-z0-9+.-]*: per RFC 3986.
+    /// We check that the colon appears before any '/', '?', or '#' to avoid false positives
+    /// from embedded URLs in query parameters (e.g. "data.csv?next=https://other/a").
+    /// The scheme must be followed by "//": a name whose first path segment contains a colon
+    /// (e.g. `report:2026.csv`) technically parses as a URI with the scheme `report`, but every
+    /// scheme supported here uses the `scheme://` form, so such a name is not a usable absolute
+    /// URL. Per RFC 3986 it would have to be written as `./report:2026.csv` to be a relative
+    /// reference; instead of demanding that, it is resolved against the base as a relative path.
+    if (url.empty() || !std::isalpha(static_cast<unsigned char>(url[0])))
+        return false;
+
+    auto colon_pos = url.find(':');
+    auto first_special = url.find_first_of("/?#");
+    if (colon_pos == String::npos || (first_special != String::npos && colon_pos > first_special))
+        return false;
+
+    /// Verify all characters before the colon are valid scheme characters.
+    for (size_t i = 1; i < colon_pos; ++i)
+    {
+        char c = url[i];
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '+' && c != '-' && c != '.')
+            return false;
+    }
+    return url.compare(colon_pos + 1, 2, "//") == 0;
+}
+
 String StorageURL::resolveURLBase(const String & url, const String & base, const String & base_setting_name)
 {
     if (base.empty())
@@ -2464,35 +2535,8 @@ String StorageURL::resolveURLBase(const String & url, const String & base, const
     }
 
     /// If the URL already contains a scheme at the beginning, return as-is.
-    /// A scheme is [A-Za-z][A-Za-z0-9+.-]*: per RFC 3986.
-    /// We check that the colon appears before any '/', '?', or '#' to avoid false positives
-    /// from embedded URLs in query parameters (e.g. "data.csv?next=https://other/a").
-    /// The scheme must be followed by "//": a name whose first path segment contains a colon
-    /// (e.g. `report:2026.csv`) technically parses as a URI with the scheme `report`, but every
-    /// scheme supported here uses the `scheme://` form, so such a name is not a usable absolute
-    /// URL. Per RFC 3986 it would have to be written as `./report:2026.csv` to be a relative
-    /// reference; instead of demanding that, it is resolved against the base as a relative path.
-    if (!url.empty() && std::isalpha(static_cast<unsigned char>(url[0])))
-    {
-        auto colon_pos = url.find(':');
-        auto first_special = url.find_first_of("/?#");
-        if (colon_pos != String::npos && (first_special == String::npos || colon_pos < first_special))
-        {
-            /// Verify all characters before the colon are valid scheme characters.
-            bool valid_scheme = true;
-            for (size_t i = 1; i < colon_pos; ++i)
-            {
-                char c = url[i];
-                if (!std::isalnum(static_cast<unsigned char>(c)) && c != '+' && c != '-' && c != '.')
-                {
-                    valid_scheme = false;
-                    break;
-                }
-            }
-            if (valid_scheme && url.compare(colon_pos + 1, 2, "//") == 0)
-                return url;
-        }
-    }
+    if (isAbsoluteURL(url))
+        return url;
 
     auto scheme_end = base.find("://");
     /// Not echoed back: the value can carry a credential, and password masking anchors on the `://` it lacks.
@@ -3180,6 +3224,93 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
         configuration.url, std::move(resolved_format), is_replayed_definition);
 }
 
+/// Masks the credentials a url carries: its userinfo password, the presigned S3/GCS parameters and every query
+/// parameter named like a credential (`access_token`, Azure SAS `sig`, ...). Returns whether anything was masked.
+static bool maskURLCredentials(String & url)
+{
+    bool changed = maskURIPassword(&url, URI_AUTHORITY_TERMINATORS);
+    changed |= maskPresignedURLParameters(url);
+    String masked = maskSensitiveQueryParametersInURI(url);
+    if (masked != url)
+    {
+        url = std::move(masked);
+        changed = true;
+    }
+    return changed;
+}
+
+SecretArgumentsSpec urlSecretArguments(size_t url_offset)
+{
+    return {.custom = [url_offset](FunctionSecretArgumentsFinder & finder)
+    {
+        /// `headers(...)` can appear at any position in every url form (function, cluster function, engine,
+        /// and the named-collection variant); mask its values regardless of the url offset or a leading
+        /// collection/cluster argument. `extra_credentials(...)` is not read here, but it is formatted for
+        /// logging before validation rejects it.
+        maskHeadersAndExtraCredentials(finder);
+
+        if (finder.isNamedCollectionName(url_offset))
+        {
+            /// url(named_collection, url = 'https://user:password@host/...', headers(...), ...): mask the
+            /// credentials of a `url` override. The parser evaluates constant-expression keys and
+            /// values, so fail closed on anything we cannot read as a plain literal (a nested `headers(...)`
+            /// map or other expression could carry a secret): an unevaluable key can name `url`, and any
+            /// non-literal value of a visible override can hide a nested secret. The headers are handled
+            /// above; a `key = value` override is the only other shape here.
+            for (size_t i = url_offset + 1; i < finder.function->arguments->size(); ++i)
+            {
+                const auto equals_func = finder.function->arguments->at(i)->getFunction();
+                if (!equals_func || equals_func->name() != "equals" || !equals_func->hasArguments()
+                    || equals_func->arguments->size() != 2)
+                {
+                    /// After the collection name every argument must be an override or `headers(...)`; a positional
+                    /// one is invalid but logged before validation rejects it, and can be a url with a password.
+                    if (!equals_func || equals_func->name() != "headers")
+                        finder.markSecretArgument(i);
+                    continue;
+                }
+
+                String key;
+                if (!equals_func->arguments->at(0)->tryGetString(&key, /* allow_identifier= */ true))
+                {
+                    finder.markSecretArgument(i, /* argument_is_named= */ true);
+                }
+                else if (key == "url")
+                {
+                    String url;
+                    if (equals_func->arguments->at(1)->tryGetString(&url, /* allow_identifier= */ false))
+                    {
+                        if (maskURLCredentials(url))
+                            finder.result.replaced_arguments[i] = "url = " + quoteString(url);
+                    }
+                    else
+                        finder.markSecretArgument(i, /* argument_is_named= */ true);
+                }
+                else if (!equals_func->arguments->at(1)->tryGetString(nullptr, /* allow_identifier= */ true)
+                         && !equals_func->arguments->at(1)->tryGetLiteralText(nullptr))
+                {
+                    finder.markSecretArgument(i, /* argument_is_named= */ true);
+                }
+            }
+            return;
+        }
+
+        String uri;
+        if (finder.tryGetStringFromArgument(url_offset, &uri, /* allow_identifier= */ false))
+        {
+            /// A readable url literal: mask only its credentials, keeping the host and path visible.
+            if (maskURLCredentials(uri))
+                finder.result.replaced_arguments[url_offset] = quoteString(uri);
+        }
+        else
+        {
+            /// A url built from a constant expression can embed credentials in its pieces, which we cannot
+            /// evaluate here; hide it whole rather than leak (fail closed).
+            finder.markSecretArgument(url_offset);
+        }
+    }};
+}
+
 void registerStorageURL(StorageFactory & factory);
 void registerStorageURL(StorageFactory & factory)
 {
@@ -3281,6 +3412,7 @@ void registerStorageURL(StorageFactory & factory)
                 /* is_table_function */ false,
                 /* lazy_init */ false);
         },
+        urlSecretArguments(0),
         {
             .supports_settings = true,
             .supports_schema_inference = true,

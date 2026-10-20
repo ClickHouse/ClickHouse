@@ -1,3 +1,4 @@
+#include <DataTypes/DataTypeDynamic.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 
 #include <Common/checkStackSize.h>
@@ -20,8 +21,10 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
+#include <Processors/Formats/Impl/Parquet/FileLogicalType.h>
 
 #include <array>
+#include <unordered_set>
 #include <fmt/ranges.h>
 
 namespace DB::ErrorCodes
@@ -205,6 +208,84 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(
     return it->second;
 }
 
+static bool isPrimitiveNode(const parq::SchemaElement & elem)
+{
+    /// `parquet.thrift` says "[num_children] is not set when the element is a primitive type".
+    /// If it's set but has value 0, logically it should be an empty tuple/struct.
+    /// But in practice some writers are sloppy about it and set this field to 0 (rather than unset)
+    /// for primitive columns. E.g.
+    /// tests/queries/0_stateless/data_hive/partitioning/non_existing_column=Elizabeth/sample.parquet
+    return !elem.__isset.num_children || (elem.num_children == 0 && elem.__isset.type);
+}
+
+/// Checks that the children of a group annotated with the `FILE` logical type are the fields
+/// defined by the specification, with the specified physical and logical types and `OPTIONAL`
+/// repetition. Apart from this, the group is read as an ordinary `Tuple`.
+///
+/// The values are not validated: a row whose fields do not form a valid reference (e.g. `offset`
+/// without `uri`, or no fields set at all) is returned as is, with each field as stored. The
+/// specification allows a reader to return a null reference for such rows, and returning the
+/// stored fields is not less informative than that (a reference with all fields null is the null
+/// reference), while avoiding a pass over the values.
+static void validateFileLogicalTypeGroup(const parq::FileMetaData & file_metadata, size_t group_schema_idx, const String & name_for_logging)
+{
+    const parq::SchemaElement & group = file_metadata.schema.at(group_schema_idx);
+    const size_t first_child_idx = group_schema_idx + 1;
+    if (group.num_children < 0 || size_t(group.num_children) > file_metadata.schema.size() - first_child_idx)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet schema element {} declares {} children, but only {} schema elements remain in the file", name_for_logging, group.num_children, file_metadata.schema.size() - first_child_idx);
+
+    std::unordered_set<std::string_view> seen_names;
+    for (size_t i = 0; i < size_t(group.num_children); ++i)
+    {
+        /// Every child must be a primitive node (checked below), so the children are consecutive.
+        const parq::SchemaElement & field = file_metadata.schema[first_child_idx + i];
+        const std::optional<FileLogicalTypeFieldKind> kind = getFileLogicalTypeFieldKind(field.name);
+        if (!kind.has_value())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Parquet column {} has `FILE` logical type, but contains unrecognized field `{}`. Valid fields are: {}",
+                name_for_logging, field.name, file_logical_type_field_names);
+        if (!seen_names.insert(field.name).second)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Parquet column {} has `FILE` logical type, but contains field `{}` more than once", name_for_logging, field.name);
+        if (!isPrimitiveNode(field))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Parquet column {} has `FILE` logical type, but its field `{}` is a group", name_for_logging, field.name);
+        if (field.repetition_type != parq::FieldRepetitionType::OPTIONAL)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Parquet column {} has `FILE` logical type, but its field `{}` is not OPTIONAL", name_for_logging, field.name);
+
+        const parq::LogicalType & logical = field.logicalType;
+        const bool has_annotation = field.__isset.logicalType || field.__isset.converted_type;
+        bool valid_type = false;
+        std::string_view expected_type;
+        switch (*kind)
+        {
+            case FileLogicalTypeFieldKind::String:
+                expected_type = "BYTE_ARRAY annotated with STRING";
+                valid_type = field.type == parq::Type::BYTE_ARRAY
+                    && (field.__isset.logicalType ? logical.__isset.STRING
+                                                  : field.__isset.converted_type && field.converted_type == parq::ConvertedType::UTF8);
+                break;
+            case FileLogicalTypeFieldKind::Int64:
+                /// An `INTEGER(64, true)` annotation means the same as no annotation.
+                expected_type = "INT64";
+                valid_type = field.type == parq::Type::INT64
+                    && (!has_annotation
+                        || (field.__isset.logicalType && logical.__isset.INTEGER && logical.INTEGER.bitWidth == 64 && logical.INTEGER.isSigned)
+                        || (!field.__isset.logicalType && field.converted_type == parq::ConvertedType::INT_64));
+                break;
+            case FileLogicalTypeFieldKind::Binary:
+                expected_type = "BYTE_ARRAY without annotation";
+                valid_type = field.type == parq::Type::BYTE_ARRAY && !has_annotation;
+                break;
+        }
+        if (!field.__isset.type || !valid_type)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Parquet column {} has `FILE` logical type, but its field `{}` has unexpected type (expected {}): {}",
+                name_for_logging, field.name, expected_type, thriftToString(field));
+    }
+}
+
 void SchemaConverter::processSubtree(TraversalNode & node)
 {
     /// Reject deeply nested schemas before recursing. The def-level guard below (def == UINT8_MAX)
@@ -310,10 +391,22 @@ void SchemaConverter::processSubtree(TraversalNode & node)
 
     /// https://github.com/apache/parquet-format/blob/master/LogicalTypes.md
 
+    /// A `FILE` group is validated regardless of whether it is requested (even partially, like
+    /// `file.uri`), because a schema that violates the specification makes the file invalid.
+    /// After that it is read as a `Tuple`, which is what processSubtreeTuple below produces for it.
+    if (node.element->logicalType.__isset.FILE)
+    {
+        if (isPrimitiveNode(*node.element))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Parquet column {} has `FILE` logical type, but it is a primitive column rather than a group", node.getNameForLogging());
+        validateFileLogicalTypeGroup(file_metadata, schema_idx - 1, node.getNameForLogging());
+    }
+
     if (!processSubtreePrimitive(node) &&
         !processSubtreeMap(node) &&
         !processSubtreeArrayOuter(node) &&
-        !processSubtreeArrayInner(node))
+        !processSubtreeArrayInner(node) &&
+        !processSubtreeDynamic(node))
     {
         processSubtreeTuple(node);
     }
@@ -362,16 +455,6 @@ void SchemaConverter::processSubtree(TraversalNode & node)
         output.output_type = outer_type_hint;
         output.needs_cast = !output.output_type->equals(*output.input_type);
     }
-}
-
-static bool isPrimitiveNode(const parq::SchemaElement & elem)
-{
-    /// `parquet.thrift` says "[num_children] is not set when the element is a primitive type".
-    /// If it's set but has value 0, logically it should be an empty tuple/struct.
-    /// But in practice some writers are sloppy about it and set this field to 0 (rather than unset)
-    /// for primitive columns. E.g.
-    /// tests/queries/0_stateless/data_hive/partitioning/non_existing_column=Elizabeth/sample.parquet
-    return !elem.__isset.num_children || (elem.num_children == 0 && elem.__isset.type);
 }
 
 bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
@@ -423,12 +506,19 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
     auto geo_it = geo_columns.find(node.getParquetName());
     auto geo_metadata = geo_it == geo_columns.end() ? std::nullopt : std::optional(geo_it->second);
 
+    /// Iceberg stores only `time` as Parquet TIME, so a column of a file without field ids needs no lookup.
+    bool time_as_stored_integer = false;
+    if (column_mapper && primitive_type_hint && WhichDataType(primitive_type_hint).isInt64())
+        time_as_stored_integer = node.element->__isset.field_id
+            ? column_mapper->isIcebergTimeFieldId(node.element->field_id)
+            : column_mapper->hasIcebergTimeFieldIds();
+
     DataTypePtr inferred_type;
     DataTypePtr decoded_type;
     PageDecoderInfo decoder;
     try
     {
-        processPrimitiveColumn(*node.element, primitive_type_hint, decoder, decoded_type, inferred_type, geo_metadata);
+        processPrimitiveColumn(*node.element, primitive_type_hint, time_as_stored_integer, decoder, decoded_type, inferred_type, geo_metadata);
     }
     catch (Exception & e)
     {
@@ -605,7 +695,9 @@ bool SchemaConverter::processSubtreeArrayOuter(TraversalNode & node)
     if (child.repetition_type != parq::FieldRepetitionType::REPEATED)
         return false;
 
-    bool has_inner_group = child.num_children == 1;
+    /// A repeated group annotated with `FILE` is the element itself (a two-level list), even if it has
+    /// only one field: the middle level of a three-level list has no annotation.
+    bool has_inner_group = child.num_children == 1 && !child.logicalType.__isset.FILE;
 
     TraversalNode subnode = node.prepareToRecurse(has_inner_group ? SchemaContext::ListTuple : SchemaContext::ListElement, node.type_hint);
     processSubtree(subnode);
@@ -682,6 +774,149 @@ static bool tupleSubtreeIsAllRequired(const std::vector<parq::SchemaElement> & s
         if (elem.__isset.num_children && elem.num_children > 0)
             stack.push_back(size_t(elem.num_children));
     }
+    return true;
+}
+
+static std::optional<size_t> subtreeEnd(const std::vector<parq::SchemaElement> & schema, size_t idx)
+{
+    size_t remaining = 1;
+    while (remaining > 0)
+    {
+        if (idx >= schema.size() || remaining > schema.size())
+            return std::nullopt;
+        const parq::SchemaElement & element = schema[idx];
+        remaining -= 1;
+        if (!isPrimitiveNode(element))
+        {
+            if (element.num_children < 0 || size_t(element.num_children) > schema.size())
+                return std::nullopt;
+            remaining += size_t(element.num_children);
+        }
+        idx += 1;
+    }
+    return idx;
+}
+
+bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
+{
+    if (node.element->num_children != 2 && node.element->num_children != 3)
+        return false;
+    const size_t num_children = size_t(node.element->num_children);
+    if (num_children > file_metadata.schema.size() - schema_idx)
+        return false;
+
+    const bool group_annotated_variant = node.element->logicalType.__isset.VARIANT;
+
+    enum ChildRole : size_t { Metadata = 0, Value = 1, TypedValue = 2, NumRoles = 3 };
+
+    std::array<std::optional<size_t>, NumRoles> schema_idx_of_role;
+    std::vector<size_t> role_of_child(num_children);
+    size_t child_schema_idx = schema_idx;
+    for (size_t i = 0; i < num_children; ++i)
+    {
+        const parq::SchemaElement & child = file_metadata.schema[child_schema_idx];
+        size_t role = 0;
+        if (child.name == "metadata")
+            role = Metadata;
+        else if (child.name == "value")
+            role = Value;
+        else if (child.name == "typed_value")
+            role = TypedValue;
+        else
+            return false;
+
+        if (schema_idx_of_role[role].has_value())
+            return false;
+        schema_idx_of_role[role] = child_schema_idx;
+        role_of_child[i] = role;
+
+        std::optional<size_t> end = subtreeEnd(file_metadata.schema, child_schema_idx);
+        if (!end.has_value())
+            return false;
+        child_schema_idx = *end;
+    }
+
+    if (!schema_idx_of_role[Metadata].has_value())
+        return false;
+    if (!schema_idx_of_role[Value].has_value() && !schema_idx_of_role[TypedValue].has_value())
+        return false;
+
+    /// `metadata` and `value` hold variant-encoded blobs: unannotated BYTE_ARRAY, not an array.
+    auto is_variant_blob_leaf = [&](size_t idx)
+    {
+        const parq::SchemaElement & element = file_metadata.schema[idx];
+        return isPrimitiveNode(element)
+            && element.type == parq::Type::BYTE_ARRAY
+            && element.repetition_type != parq::FieldRepetitionType::REPEATED
+            && (group_annotated_variant || (!element.logicalType.__isset.STRING && !element.__isset.converted_type));
+    };
+
+    if (!is_variant_blob_leaf(*schema_idx_of_role[Metadata]))
+        return false;
+    if (schema_idx_of_role[Value].has_value() && !is_variant_blob_leaf(*schema_idx_of_role[Value]))
+        return false;
+
+    const DataTypePtr type_hint = node.type_hint ? removeNullable(node.type_hint) : nullptr;
+    const bool read_as_json = type_hint && isObject(type_hint);
+    if (type_hint && !read_as_json && !isDynamic(type_hint))
+        return false;
+
+    /// Spark 4.0 writes variant columns without the `VARIANT` logical type, so they can only be
+    /// recognized by structure. Before this was supported, such groups were read as `Tuple`, hence
+    /// the setting. An explicit `Dynamic`/`JSON` request is not ambiguous and bypasses it.
+    if (!group_annotated_variant && !node.type_hint && !options.format.parquet.detect_variant_by_structure)
+        return false;
+
+    std::optional<String> unsupported;
+    if (group_annotated_variant && node.element->logicalType.VARIANT.__isset.specification_version
+        && node.element->logicalType.VARIANT.specification_version != 1)
+        unsupported = fmt::format(
+            "a variant with specification version {}, but only version 1 is supported",
+            Int16(node.element->logicalType.VARIANT.specification_version));
+    else if (schema_idx_of_role[TypedValue].has_value())
+        unsupported = "a shredded variant (it has a `typed_value` field), which is not supported yet";
+
+    size_t primitive_start = primitive_columns.size();
+    size_t output_start = output_columns.size();
+
+    /// Recurse even when the column is unsupported or not requested, to advance the traversal
+    /// past the group's children.
+    std::array<std::optional<size_t>, NumRoles> output_idx_of_role;
+    for (size_t i = 0; i < num_children; ++i)
+    {
+        TraversalNode subnode = node.prepareToRecurse(SchemaContext::None, nullptr);
+        subnode.requested = node.requested && !unsupported.has_value();
+        processSubtree(subnode);
+        output_idx_of_role[role_of_child[i]] = subnode.output_idx;
+    }
+
+    if (!node.requested)
+        return true;
+
+    if (unsupported.has_value())
+    {
+        /// Like for unsupported primitive types, schema inference can skip the column. When reading,
+        /// a requested column must not silently come out empty.
+        if (!sample_block && options.format.parquet.skip_columns_with_unsupported_types_in_schema_inference)
+            return true;
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Parquet column {} is {}", node.getNameForLogging(), *unsupported);
+    }
+
+    if (!output_idx_of_role[Metadata].has_value() || !output_idx_of_role[Value].has_value())
+    {
+        primitive_columns.resize(primitive_start);
+        output_columns.resize(output_start);
+        return true;
+    }
+
+    node.output_idx = output_columns.size();
+    OutputColumnInfo & output = output_columns.emplace_back();
+    output.name = node.name;
+    output.primitive_start = primitive_start;
+    output.primitive_end = primitive_columns.size();
+    output.input_type = read_as_json ? node.type_hint : std::make_shared<DataTypeDynamic>();
+    output.output_type = output.input_type;
+    output.nested_columns = {output_idx_of_role[Metadata].value(), output_idx_of_role[Value].value()};
     return true;
 }
 
@@ -931,8 +1166,46 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     output.nullable_group = nullable_group;
 }
 
+namespace
+{
+
+struct RequestedIntegerSpace
+{
+    size_t bits;
+    bool is_signed;
+    /// Converting into `Date`/`Date32`/`DateTime`/`Enum*`/`IPv4`/`Time` clamps or rescales instead of wrapping modulo 2^bits.
+    bool is_native_integer;
+    /// The integer -> date CAST reads a value fitting in 16 bits as a day number, and a wider one as a Unix timestamp.
+    /// The one to `Time` keeps a 16-bit value and clamps a wider one at 999:59:59.
+    bool source_must_fit_in_16_bits;
+};
+
+std::optional<RequestedIntegerSpace> getRequestedIntegerSpace(const IDataType & type)
+{
+    WhichDataType which(type);
+    if (which.isNativeInteger())
+        return RequestedIntegerSpace{type.getSizeOfValueInMemory() * 8, which.isNativeInt(), true, false};
+    if (which.isIPv4() || which.isDateTime())
+        return RequestedIntegerSpace{32, false, false, false};
+    if (which.isEnum8())
+        return RequestedIntegerSpace{8, true, false, false};
+    if (which.isEnum16())
+        return RequestedIntegerSpace{16, true, false, false};
+    if (which.isDate())
+        return RequestedIntegerSpace{16, false, false, true};
+    if (which.isDate32() || which.isTime())
+        return RequestedIntegerSpace{32, true, false, true};
+    /// The integer CAST to an `Interval*` is a plain conversion to its `Int64`.
+    if (which.isInterval())
+        return RequestedIntegerSpace{64, true, true, false};
+    /// No constant of any other type reaches `tryHashInt`'s `Int64`/`UInt64`/`IPv4` `Field` cases.
+    return {};
+}
+
+}
+
 void SchemaConverter::processPrimitiveColumn(
-    const parq::SchemaElement & element, DataTypePtr type_hint,
+    const parq::SchemaElement & element, DataTypePtr type_hint, bool time_as_stored_integer,
     PageDecoderInfo & out_decoder, DataTypePtr & out_decoded_type,
     DataTypePtr & out_inferred_type, std::optional<GeoColumnMetadata> geo_metadata) const
 {
@@ -1000,7 +1273,7 @@ void SchemaConverter::processPrimitiveColumn(
         if (which.isNativeInteger() || which_is_enum)
         {
             converter.field_signed = which.isNativeInt() || which_is_enum;
-            converter.field_bool = isBool(type_hint ? type_hint : out_inferred_type);
+            converter.output_bool = isBool(type_hint ? type_hint : out_inferred_type);
             if (!stats_order_preserved(converter))
                 return false;
         }
@@ -1039,6 +1312,24 @@ void SchemaConverter::processPrimitiveColumn(
                 return false;
         }
         return true;
+    };
+
+    /// For a 64-bit physical type the decoded width is the physical width, not the declared one.
+    auto allow_int_hash_filters = [&](size_t decoded_bits, bool decoded_signed, size_t physical_bits) -> bool
+    {
+        chassert(out_inferred_type);
+        /// A `Bool` may read any nonzero stored value as `true`, which hashes as 1.
+        if (isBool(type_hint ? type_hint : out_inferred_type))
+            return false;
+        const auto requested = getRequestedIntegerSpace(type_hint ? *type_hint : *out_inferred_type);
+        if (!requested)
+            return false;
+        if (requested->source_must_fit_in_16_bits && decoded_bits > 16)
+            return false;
+        const bool value_preserving = requested->bits >= decoded_bits
+            && (requested->is_signed == decoded_signed || (!decoded_signed && requested->bits > decoded_bits));
+        const bool reinterpretation = requested->is_native_integer && requested->bits >= physical_bits;
+        return value_preserving || reinterpretation;
     };
 
     /// Decides whether min/max stats can be used when convertField produces a DecimalField with
@@ -1106,6 +1397,16 @@ void SchemaConverter::processPrimitiveColumn(
         return get_output_type_index() == TypeIndex::String;
     };
 
+    auto set_plain_int64_decoder = [&](bool allow_datetime_and_ipv4)
+    {
+        out_inferred_type = std::make_shared<DataTypeInt64>();
+        auto converter = std::make_shared<IntConverter>();
+        converter->input_size = 8;
+        out_decoder.allow_stats = dispatch_int_stats_converter(allow_datetime_and_ipv4, *converter);
+        out_decoder.allow_hash_filters = allow_int_hash_filters(64, true, 64);
+        out_decoder.fixed_size_converter = std::move(converter);
+    };
+
     /// Escape hatch for reading raw plain-encoded values and bypassing data type stuff.
     /// If type FixedString is requested, and the parquet physical type is a fixed-size type of
     /// matching size, use a trivial FixedSizeConverter.
@@ -1134,6 +1435,8 @@ void SchemaConverter::processPrimitiveColumn(
             auto converter = std::make_shared<FixedStringConverter>();
             converter->input_size = size;
             out_decoder.allow_stats = type == parq::Type::FIXED_LEN_BYTE_ARRAY && !element.__isset.converted_type && !element.__isset.logicalType;
+            /// Hashing, unlike min/max, is unaffected by the annotations: both sides hash the raw bytes.
+            out_decoder.allow_hash_filters = type == parq::Type::FIXED_LEN_BYTE_ARRAY;
             out_decoder.fixed_size_converter = std::move(converter);
             return;
         }
@@ -1239,6 +1542,7 @@ void SchemaConverter::processPrimitiveColumn(
             converter->output_size = 2;
 
         out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ true, *converter);
+        out_decoder.allow_hash_filters = allow_int_hash_filters(physical_bits == 64 ? 64 : bits, is_signed, physical_bits);
         out_decoder.fixed_size_converter = std::move(converter);
 
         return;
@@ -1264,6 +1568,12 @@ void SchemaConverter::processPrimitiveColumn(
             scale = 9;
         else
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected timestamp units: {}", thriftToString(element));
+
+        if (time_as_stored_integer && is_time_of_day && scale == 6 && type == parq::Type::INT64)
+        {
+            set_plain_int64_decoder(/*allow_datetime_and_ipv4=*/ false);
+            return;
+        }
 
         if (type != parq::Type::INT64 && type != parq::Type::INT32)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for timestamp logical type: {}", thriftToString(element));
@@ -1606,16 +1916,13 @@ void SchemaConverter::processPrimitiveColumn(
             auto converter = std::make_shared<IntConverter>();
             converter->input_size = 4;
             out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ true, *converter);
+            out_decoder.allow_hash_filters = allow_int_hash_filters(32, true, 32);
             out_decoder.fixed_size_converter = std::move(converter);
             return;
         }
         case parq::Type::INT64:
         {
-            out_inferred_type = std::make_shared<DataTypeInt64>();
-            auto converter = std::make_shared<IntConverter>();
-            converter->input_size = 8;
-            out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);
-            out_decoder.fixed_size_converter = std::move(converter);
+            set_plain_int64_decoder(/*allow_datetime_and_ipv4=*/ true);
             return;
         }
         case parq::Type::INT96:
@@ -1655,6 +1962,8 @@ void SchemaConverter::processPrimitiveColumn(
                 out_decoded_type = std::move(out_inferred_type);
                 out_inferred_type = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
             }
+            /// The json block above reassigns the inferred type, so this must be read after it.
+            out_decoder.allow_hash_filters = is_output_type_string();
             return;
         }
         case parq::Type::FIXED_LEN_BYTE_ARRAY:
@@ -1701,6 +2010,9 @@ void SchemaConverter::processPrimitiveColumn(
 
             /// Stats are only allowed for FixedString if the output is actually a string.
             out_decoder.allow_stats = WhichDataType(get_output_type_index()).isString();
+            /// An `IPv6` holds the same 16 bytes as the `FixedString(16)` the array decodes to.
+            out_decoder.allow_hash_filters = WhichDataType(get_output_type_index()).isIPv6()
+                && size_t(element.type_length) == sizeof(IPv6);
             return;
         }
     }
