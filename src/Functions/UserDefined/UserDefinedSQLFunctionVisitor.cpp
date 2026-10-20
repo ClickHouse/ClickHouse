@@ -42,6 +42,12 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_)
 {
     chassert(ast);
 
+    /// A `CODEC(...)`/`STATISTICS(...)` subtree holds codec and statistics names, not expressions, and a
+    /// parameterless one is a function without an argument list for the expansion to read.
+    if (const auto * function = ast->as<ASTFunction>();
+        function && (function->getKind() == ASTFunction::Kind::CODEC || function->getKind() == ASTFunction::Kind::STATISTICS))
+        return;
+
     for (auto & child : ast->children)
     {
         if (!child)
