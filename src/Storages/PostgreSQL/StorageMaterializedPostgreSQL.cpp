@@ -7,6 +7,7 @@
 #include <Common/FailPoint.h>
 
 #include <Common/Macros.h>
+#include <Common/quoteString.h>
 #include <Common/parseAddress.h>
 #include <Common/assert_cast.h>
 
@@ -31,6 +32,7 @@
 #include <Parsers/ExpressionListParsers.h>
 
 #include <Databases/LoadingStrictnessLevel.h>
+#include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
 
 #include <Interpreters/applyTableOverride.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -330,9 +332,30 @@ void StorageMaterializedPostgreSQL::shutdown(bool is_drop)
 
     if (replication_handler)
         replication_handler->shutdown();
+
+    /// On the DROP path of the single-table engine, `dropInnerTableIfAny` drops the nested table, and that drop
+    /// shuts it down itself. Do not shut it down here already: a refused drop resumes replication into the
+    /// surviving nested table (see `dropInnerTableIfAny`), and a shut-down `MergeTree` never merges or cleans up
+    /// again, so the parts the resumed consumer inserts would accumulate until inserts fail with too many parts.
+    if (is_drop && !is_materialized_postgresql_database)
+        return;
+
     auto nested = tryGetNested();
     if (nested)
         nested->shutdown();
+}
+
+
+void StorageMaterializedPostgreSQL::checkTableCanBeRenamed(const StorageID & new_name) const
+{
+    /// `DatabaseAtomic::renameTable` moves only this wrapper: its `<uuid>_nested` table stays in the old database.
+    /// The next startup would look for the nested table in the new database and, with a coordination identity that
+    /// expands `{database}`, register a separate replica tree for the same PostgreSQL slot and publication.
+    if (is_standalone_coordinated && new_name.database_name != getStorageID().database_name)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Moving the coordinated MaterializedPostgreSQL table {} to another database ({}) is not supported: "
+            "its nested table and coordination identity stay bound to the original database",
+            getStorageID().getNameForLogs(), backQuoteIfNeed(new_name.database_name));
 }
 
 
@@ -387,6 +410,19 @@ void StorageMaterializedPostgreSQL::checkTableCanBeDetachedPermanently() const
         throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
             "Cannot remove table from replication: the database has not finished starting replication yet. "
             "Retry once synchronization has started");
+
+    /// Refuse the detach of the last replicated table here, before `InterpreterDropQuery` shuts the nested table
+    /// down: the database-level refusal in `detachTablePermanently` comes after the shutdown, which permanently
+    /// stops the merges of the nested table that stays mounted.
+    if (is_materialized_postgresql_database)
+    {
+        const auto table_id = getStorageID();
+        if (auto database = DatabaseCatalog::instance().tryGetDatabase(table_id.database_name))
+        {
+            if (const auto * materialized_database = dynamic_cast<const DatabaseMaterializedPostgreSQL *>(database.get()))
+                materialized_database->checkTableCanBeDetachedPermanently(table_id.table_name);
+        }
+    }
 
     /// `DETACH TABLE ... PERMANENTLY` is the supported per-table removal operation for a plain
     /// MaterializedPostgreSQL database. It must pass this pre-shutdown check and is handled by
@@ -915,6 +951,13 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
     else
     {
         ordinary_columns_and_types = metadata_snapshot->getColumns().getOrdinary();
+        /// A previous call of this function replaced the metadata of this wrapper with one where `_sign` and `_version`
+        /// are ordinary columns (see below). They are added back as materialized columns, so drop them here: otherwise
+        /// a retried creation (or a recreation before `set`) would declare them twice.
+        ordinary_columns_and_types.remove_if([](const NameAndTypePair & column)
+        {
+            return column.name == "_sign" || column.name == "_version";
+        });
         columns_declare_list->set(columns_declare_list->columns, getColumnsExpressionList(ordinary_columns_and_types));
 
         auto primary_key_ast = metadata_snapshot->getPrimaryKeyAST();

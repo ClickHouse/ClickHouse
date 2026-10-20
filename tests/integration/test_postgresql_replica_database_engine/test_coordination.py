@@ -1685,6 +1685,47 @@ def test_refused_drop_after_handler_shutdown_recovers_single_table_engine(starte
     assert not publication_exists()
 
 
+def test_single_table_engine_cannot_move_to_another_database(started_cluster):
+    # `RENAME TABLE` and `EXCHANGE TABLES` across databases move only the wrapper of a coordinated single-table
+    # engine: its `<uuid>_nested` table stays in the original database, and with `{database}` in the keeper path
+    # the next startup would register a separate replica tree for the same slot. Both are refused.
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(10)"
+    )
+
+    instance.query("DROP DATABASE IF EXISTS other_database SYNC")
+    instance.query("CREATE DATABASE other_database ENGINE = Atomic")
+    instance.query(
+        f"CREATE TABLE test_single_table (key Int64, value Int64) "
+        f"ENGINE = MaterializedPostgreSQL("
+        f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'test_table', 'postgres', '{pg_pass}') "
+        f"PRIMARY KEY key "
+        f"SETTINGS materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree', "
+        f"materialized_postgresql_keeper_path = '/clickhouse/mat_pg/{{shard}}/{{database}}/single_table', "
+        f"materialized_postgresql_replica_name = '{{replica}}'",
+        settings={"allow_experimental_materialized_postgresql_table": 1},
+    )
+    instance.query("CREATE TABLE other_database.other_table (x UInt64) ENGINE = MergeTree ORDER BY x")
+
+    try:
+        error = instance.query_and_get_error(
+            "RENAME TABLE test_single_table TO other_database.test_single_table"
+        )
+        assert "to another database" in error
+
+        error = instance.query_and_get_error(
+            "EXCHANGE TABLES test_single_table AND other_database.other_table"
+        )
+        assert "to another database" in error
+
+        assert "test_single_table" in instance.query("SHOW TABLES").split()
+        assert "test_single_table" not in instance.query("SHOW TABLES FROM other_database").split()
+    finally:
+        instance.query("DROP TABLE IF EXISTS test_single_table SYNC")
+        instance.query("DROP DATABASE IF EXISTS other_database SYNC")
+
+
 def test_refused_drop_when_nested_table_drop_fails_recovers_database(started_cluster):
     # The coordinated teardown stops the replication handler before the generic DROP DATABASE path removes
     # this replica's local nested tables. If that later nested-table drop itself throws (e.g. Keeper

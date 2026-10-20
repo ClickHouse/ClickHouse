@@ -76,6 +76,10 @@ public:
 
     void detachTablePermanently(ContextPtr context, const String & table_name) override;
 
+    /// Refuses `DETACH TABLE ... PERMANENTLY` of the last replicated table (see `detachTablePermanently`). Called by
+    /// `StorageMaterializedPostgreSQL::checkTableCanBeDetachedPermanently`, before the table is shut down.
+    void checkTableCanBeDetachedPermanently(const String & table_name) const;
+
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
 
     void dropTable(ContextPtr local_context, const String & name, bool sync) override;
@@ -236,6 +240,12 @@ private:
     /// Set by `applyPartialDropRecoveryMode` (and from the persisted marker on construction), cleared once
     /// `startSynchronization` publishes a consistent set of wrappers.
     bool partial_drop_recovery_in_progress TSA_GUARDED_BY(tables_mutex) = false;
+
+    /// Serializes the whole `ATTACH TABLE` / `DETACH TABLE ... PERMANENTLY` transactions of this database. Their
+    /// rollbacks restore the persisted `materialized_postgresql_tables_list` captured at the start, which would
+    /// otherwise overwrite a concurrent change of the membership of another table. Taken before `handler_mutex`
+    /// and `tables_mutex`.
+    std::mutex table_membership_mutex;
 
     mutable std::mutex handler_mutex;
     /// Whether `startSynchronization` completed successfully (guarded by `handler_mutex`). Makes the startup

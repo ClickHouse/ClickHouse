@@ -169,6 +169,12 @@ public:
     /// Add storage pointer to let handler know which tables it needs to keep in sync.
     void addStorage(const std::string & table_name, StorageMaterializedPostgreSQL * storage);
 
+    /// Database engine only: make the initial snapshot fail as a whole if any table fails to load, instead of
+    /// starting the consumer for the tables that did load. Set for the create-style startup that repairs a
+    /// partially applied `DROP DATABASE`: it clears the surviving tables, and the repair must not be considered
+    /// complete (and its durable marker removed) while some table is left empty or partially reloaded.
+    void requireCompleteInitialSnapshot() { require_complete_initial_snapshot = true; }
+
     /// Fetch list of tables which are going to be replicated. Used for database engine.
     std::set<String> fetchRequiredTables();
 
@@ -463,6 +469,8 @@ private:
     const bool use_extended_date_and_time_types;
 
     const bool user_managed_slot;
+    /// See `requireCompleteInitialSnapshot`.
+    bool require_complete_initial_snapshot = false;
     const String user_provided_snapshot;
     /// Not const: adoptLegacyReplicationIdentityIfNeeded() switches these to the legacy names once, on
     /// attach of a deployment created before the generated names became schema-aware. They are never
@@ -485,6 +493,12 @@ private:
     /// consumer task, which every destroying path deactivates first.
     ConsumerPtr consumer;
     std::mutex consumer_ptr_mutex;
+    /// Serializes `setSetting`, which deactivates the consumer task and re-arms it for the live consumer, with the
+    /// paths that destroy the consumer (leader loss, shutdown) or create it and arm its task (`startSynchronization`).
+    /// Otherwise `setSetting` could re-arm the task with a stale consumer after a demotion has destroyed it,
+    /// so the task would run without a consumer, or concurrently with the assignment of its replacement. Taken
+    /// before `consumer_ptr_mutex`. Never taken by the consumer task itself, which these paths deactivate.
+    std::mutex consumer_lifecycle_mutex;
 
     BackgroundSchedulePoolTaskHolder startup_task;
     BackgroundSchedulePoolTaskHolder consumer_task;
@@ -544,6 +558,8 @@ private:
     /// the next `tryCreate`. PostgreSQL's own single-active-session rule on the slot is the ultimate
     /// backstop that prevents two consumers from advancing the slot at once during a handover.
     zkutil::EphemeralNodeHolderPtr leader_node;
+    /// `czxid` of `leader_node`: identifies the election term that created it.
+    Int64 leader_node_czxid = 0;
     zkutil::ZooKeeperPtr coordination_zookeeper;
     /// Mirror of "this handler currently holds the leader node", read by `consumerFunc` (which runs on a
     /// different task) to decide whether it may consume. Only written by `coordination_task`.

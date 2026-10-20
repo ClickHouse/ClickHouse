@@ -105,9 +105,10 @@ namespace
 /// the session expires - so the pending release is handed over here, to a task that outlives the handler and
 /// keeps retrying against the same shared session.
 ///
-/// An entry is resolved when the node is gone, when it no longer belongs to the recorded replica name and
-/// Keeper session (a peer has won a fresh election in the meantime, or Keeper removed the node together with
-/// the session that owned it), or when the owner- and version-checked removal succeeds.
+/// An entry is resolved when the node is gone, when it no longer belongs to the recorded replica name, Keeper
+/// session and election term (a peer has won a fresh election in the meantime, Keeper removed the node together
+/// with the session that owned it, or this very replica has been re-attached under the same name and session and
+/// has won a new election), or when the owner- and version-checked removal succeeds.
 class LeakedLeaderNodeReleaser
 {
 public:
@@ -119,10 +120,10 @@ public:
         return *releaser;
     }
 
-    void add(const ContextPtr & context, const String & leader_path, const String & replica_name, Int64 session_id)
+    void add(const ContextPtr & context, const String & leader_path, const String & replica_name, Int64 session_id, Int64 czxid)
     {
         std::lock_guard lock(mutex);
-        pending.push_back({leader_path, replica_name, session_id});
+        pending.push_back({leader_path, replica_name, session_id, czxid});
 
         if (!task)
         {
@@ -141,6 +142,9 @@ private:
         String path;
         String replica_name;
         Int64 session_id;
+        /// Identifies the election term: the replica name and the session are reused when the table is detached
+        /// and attached again, and the version of a recreated node starts from zero again.
+        Int64 czxid;
     };
 
     static constexpr UInt64 retry_ms = 5000;
@@ -217,7 +221,7 @@ private:
         /// Exactly the conditions of `PostgreSQLReplicationHandler::removeLeakedOwnLeaderNode`: only a node
         /// that still carries this replica's name and belongs to the recorded session may be removed - any
         /// other node is held by a peer that legitimately owns the leadership now.
-        if (leader_name != entry.replica_name || stat.ephemeralOwner != entry.session_id)
+        if (leader_name != entry.replica_name || stat.ephemeralOwner != entry.session_id || stat.czxid != entry.czxid)
             return true;
 
         const auto code = zookeeper->tryRemove(entry.path, stat.version);
@@ -1102,16 +1106,20 @@ void PostgreSQLReplicationHandler::shutdown()
         coordination_task->deactivate();
     }
 
-    LOG_TRACE(log, "Deactivating consumer task");
-    consumer_task->deactivate();
-
-    LOG_TRACE(log, "Deactivating cleanup task");
-    cleanup_task->deactivate();
-
-    LOG_TRACE(log, "Resetting consumer");
     {
-        std::lock_guard lock(consumer_ptr_mutex);
-        consumer.reset(); /// Clear shared pointers to inner storages.
+        std::lock_guard lifecycle_lock(consumer_lifecycle_mutex);
+
+        LOG_TRACE(log, "Deactivating consumer task");
+        consumer_task->deactivate();
+
+        LOG_TRACE(log, "Deactivating cleanup task");
+        cleanup_task->deactivate();
+
+        LOG_TRACE(log, "Resetting consumer");
+        {
+            std::lock_guard lock(consumer_ptr_mutex);
+            consumer.reset(); /// Clear shared pointers to inner storages.
+        }
     }
 
     /// Release the ephemeral leader node so a peer can take over promptly (rather than waiting for the
@@ -1136,6 +1144,7 @@ void PostgreSQLReplicationHandler::releaseLeadershipAtShutdown()
     /// The session the ephemeral node belongs to. Recorded before anything can fail, so that a release that
     /// has to be finished in the background can tell the node apart from one a peer creates later.
     const Int64 leadership_session_id = coordination_zookeeper->getClientID();
+    const Int64 leadership_czxid = leader_node_czxid;
 
     try
     {
@@ -1200,7 +1209,7 @@ void PostgreSQLReplicationHandler::releaseLeadershipAtShutdown()
         "background until it is resolved", leader_path);
 
     LeakedLeaderNodeReleaser::instance().add(
-        getContext(), leader_path, coordination_replica_name, leadership_session_id);
+        getContext(), leader_path, coordination_replica_name, leadership_session_id, leadership_czxid);
 }
 
 
@@ -1411,7 +1420,11 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                 /// abort lets `coordinationFunc` (which drives the retry, with `throw_on_error` false)
                 /// release the leadership, so a healthy peer can redo the full snapshot before any WAL is
                 /// advanced past unapplied rows.
-                if (coordination_enabled || (throw_on_error && !is_materialized_postgresql_database))
+                ///
+                /// The repair of a partially applied `DROP DATABASE` must not tolerate a per-table failure either
+                /// (see `requireCompleteInitialSnapshot`): the failed table has just been cleared, and after the
+                /// repair is recorded as complete a restart would resume from the slot without its historical rows.
+                if (coordination_enabled || require_complete_initial_snapshot || (throw_on_error && !is_materialized_postgresql_database))
                     throw;
             }
         }
@@ -1626,6 +1639,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     /// Consumer and replication handler are always executed one after another (not concurrently) and share the same connection.
     /// (Apart from the case, when shutdownFinal is called).
     /// Handler uses it only for loadFromSnapshot and shutdown methods.
+    std::lock_guard lifecycle_lock(consumer_lifecycle_mutex);
     {
         std::lock_guard lock(consumer_ptr_mutex);
         consumer = std::make_shared<MaterializedPostgreSQLConsumer>(
@@ -2163,9 +2177,10 @@ void PostgreSQLReplicationHandler::coordinationFunc()
         if (coordination_zookeeper && coordination_zookeeper->expired())
         {
             LOG_WARNING(log, "Keeper session expired, releasing replication leadership");
-            is_active_worker.store(false);
-            consumer_task->deactivate(); /// blocks until the in-flight consume() iteration finishes
             {
+                std::lock_guard lifecycle_lock(consumer_lifecycle_mutex);
+                is_active_worker.store(false);
+                consumer_task->deactivate(); /// blocks until the in-flight consume() iteration finishes
                 std::lock_guard lock(consumer_ptr_mutex);
                 consumer.reset();
             }
@@ -2178,9 +2193,10 @@ void PostgreSQLReplicationHandler::coordinationFunc()
         /// iteration) starts over from the slot's last confirmed LSN.
         if (consumer_broken.load())
         {
-            is_active_worker.store(false);
-            consumer_task->deactivate(); /// blocks until the in-flight consume() iteration finishes
             {
+                std::lock_guard lifecycle_lock(consumer_lifecycle_mutex);
+                is_active_worker.store(false);
+                consumer_task->deactivate(); /// blocks until the in-flight consume() iteration finishes
                 std::lock_guard lock(consumer_ptr_mutex);
                 consumer.reset();
             }
@@ -2216,6 +2232,11 @@ void PostgreSQLReplicationHandler::coordinationFunc()
             {
                 /// Keep the session that the ephemeral node references alive for as long as the node.
                 coordination_zookeeper = zookeeper;
+                /// Remember which node this election created, so that a release of it that has to be finished in
+                /// the background never removes the node of a later election (see `LeakedLeaderNodeReleaser`).
+                Coordination::Stat leader_stat;
+                zookeeper->get(leader_path, &leader_stat);
+                leader_node_czxid = leader_stat.czxid;
                 is_active_worker.store(true);
                 LOG_INFO(log, "Acquired replication leadership as '{}' at {}", coordination_replica_name, leader_path);
                 startSynchronization(/* throw_on_error */ false);
@@ -3677,6 +3698,7 @@ void PostgreSQLReplicationHandler::setSetting(const SettingChange & setting)
     /// Deactivating the consumer task first serializes with an in-flight consume() iteration; the task is
     /// re-armed only when a consumer exists (on a standby it belongs to the active worker and must stay
     /// dormant until the coordination task re-arms it on election).
+    std::lock_guard lifecycle_lock(consumer_lifecycle_mutex);
     consumer_task->deactivate();
     ConsumerPtr current_consumer;
     {

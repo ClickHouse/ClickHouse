@@ -97,6 +97,9 @@ public:
     /// A coordinated single-table engine whose coordination identity expands `{database}` cannot move to another
     /// database (see `PostgreSQLReplicationHandler::coordinationIdentityDependsOnDatabaseName`).
     void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override;
+    /// A coordinated single-table engine cannot be moved to another database with `RENAME TABLE` or `EXCHANGE TABLES`:
+    /// its nested table would stay in the original database.
+    void checkTableCanBeRenamed(const StorageID & new_name) const override;
 
     /// Same reasoning for DROP TABLE (and TRUNCATE) of an individual table: dropping the local nested
     /// `ReplicatedReplacingMergeTree` on one replica does not update the shared publication or the

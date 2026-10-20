@@ -253,6 +253,10 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
         std::lock_guard tables_lock(tables_mutex);
         recovering_from_partial_drop = partial_drop_recovery_in_progress;
     }
+    /// Keep the repair pending (and the marker on disk) until every table has been reloaded: a failure propagates,
+    /// and `tryStartSynchronization` retries the create-style startup.
+    if (recovering_from_partial_drop)
+        replication_handler->requireCompleteInitialSnapshot();
 
     for (const auto & table_name : tables_to_replicate)
     {
@@ -516,6 +520,32 @@ StoragePtr DatabaseMaterializedPostgreSQL::tryGetTable(const String & name, Cont
 /// `except` is not empty in case it is detach and it will contain only one table name - name of detached table.
 /// In case we have a user defined setting `materialized_postgresql_tables_list`, then list of tables is always taken there.
 /// Otherwise we traverse materialized storages to find out the list.
+namespace
+{
+
+[[noreturn]] void throwCannotDetachLastTable(const String & table_name)
+{
+    /// The empty tables list that the detach would persist does not mean "replicate no tables" - an empty
+    /// `materialized_postgresql_tables_list` makes the table set be re-derived from the current PostgreSQL schema
+    /// on the next startup (or whenever the publication has to be recreated), so the detach would not stick:
+    /// every current source table would be re-imported, or the startup would fail if the source schema is empty.
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "Cannot detach table `{}`: it is the last replicated table, and an empty "
+        "materialized_postgresql_tables_list means the whole PostgreSQL database is replicated, "
+        "so the detach would not survive a restart. Drop the database instead", table_name);
+}
+
+}
+
+
+void DatabaseMaterializedPostgreSQL::checkTableCanBeDetachedPermanently(const String & table_name) const
+{
+    std::lock_guard tables_lock(tables_mutex);
+    if (materialized_tables.contains(table_name) && getFormattedTablesList(table_name).empty())
+        throwCannotDetachLastTable(table_name);
+}
+
+
 String DatabaseMaterializedPostgreSQL::getFormattedTablesList(const String & except) const
 {
     String tables_list;
@@ -665,6 +695,8 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
     /// If there is no query context then we need to attach internal storage from atomic database.
     if (CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext())
     {
+        std::lock_guard membership_lock(table_membership_mutex);
+
         /// Refuse before mutating anything (the tables-list setting is altered below and would not be
         /// rolled back): see PostgreSQLReplicationHandler::addTableToReplication for the reasoning.
         /// Checked on the settings (not on the handler, which is only created by the background startup task).
@@ -841,6 +873,8 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
     /// If there is no query context then we need to detach internal storage from atomic database.
     if (CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext())
     {
+        std::lock_guard membership_lock(table_membership_mutex);
+
         /// Refuse before mutating anything (the tables-list setting is altered below and would not be
         /// rolled back): see PostgreSQLReplicationHandler::removeTableFromReplication for the reasoning.
         /// Checked on the settings (not on the handler, which is only created by the background startup task).
@@ -877,16 +911,9 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
             tables_to_replicate = getFormattedTablesList(table_name);
         }
 
-        /// Refuse to detach the last replicated table: the empty tables list it would persist does not mean
-        /// "replicate no tables" - an empty `materialized_postgresql_tables_list` makes the table set be
-        /// re-derived from the current PostgreSQL schema on the next startup (or whenever the publication has
-        /// to be recreated), so the detach would not stick: every current source table would be re-imported,
-        /// or the startup would fail if the source schema is empty.
+        /// Normally refused already by `checkTableCanBeDetachedPermanently`, before the table was shut down.
         if (tables_to_replicate.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Cannot detach table `{}`: it is the last replicated table, and an empty "
-                "materialized_postgresql_tables_list means the whole PostgreSQL database is replicated, "
-                "so the detach would not survive a restart. Drop the database instead", table_name);
+            throwCannotDetachLastTable(table_name);
 
         auto * materialized_storage = table_to_delete->as<StorageMaterializedPostgreSQL>();
         if (!materialized_storage->getNested())
@@ -900,15 +927,19 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
         /// (the wrapper was gone) nor `ATTACH`-ing the table back (the leaked nested table collides with
         /// the one the attach creates) could recover.
         const auto original_tables_list = (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list].value;
+        auto restore_tables_list = [&]
+        {
+            auto rollback_context = Context::createCopy(getContext()->getGlobalContext());
+            rollback_context->setInternalQuery(true);
+            auto rollback_query = createAlterSettingsQuery(
+                SettingChange("materialized_postgresql_tables_list", original_tables_list));
+            InterpreterAlterQuery(rollback_query, rollback_context).execute();
+        };
         auto rollback_tables_list = [&]
         {
             try
             {
-                auto rollback_context = Context::createCopy(getContext()->getGlobalContext());
-                rollback_context->setInternalQuery(true);
-                auto rollback_query = createAlterSettingsQuery(
-                    SettingChange("materialized_postgresql_tables_list", original_tables_list));
-                InterpreterAlterQuery(rollback_query, rollback_context).execute();
+                restore_tables_list();
             }
             catch (...)
             {
@@ -986,6 +1017,13 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
             bool table_readded = false;
             try
             {
+                /// Restore the persisted tables list durably before the re-add below truncates the surviving table:
+                /// a restart in the middle of the reload builds the replacement snapshot (and the publication) from
+                /// that list, and without this table in it the truncated nested table would be left out of
+                /// replication for good. Done before taking `handler_mutex`: the ALTER reaches
+                /// `applySettingsChanges`, which takes it.
+                restore_tables_list();
+
                 std::lock_guard lock(handler_mutex);
                 if (!replication_handler)
                     throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
