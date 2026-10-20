@@ -1326,7 +1326,7 @@ String InsertDependenciesBuilder::getVisibleQuorumWriteTargetKey(const StoragePt
         return getVisibleQuorumWriteTargetKey(proxy->getNested());
 
     /// `ReplicatedMergeTreeSink::checkQuorumPrecondition` uses `<zookeeper_path>/quorum/status`.
-    if (const auto * replicated = dynamic_cast<const StorageReplicatedMergeTree *>(storage.get()))
+    if (auto replicated = castStorage<StorageReplicatedMergeTree>(storage, DeferredTable::Load))
         return fmt::format("keeper:{}:{}", replicated->getZooKeeperName(), replicated->getZooKeeperPath());
 
     return "table:" + storage->getStorageID().getFullNameNotQuoted();
