@@ -430,7 +430,6 @@ ch_cc_library(
         "//base/widechar_width",
         "@clickhouse_xxhash//:xxHash",
         "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
-        "//:headers",
     ],
 )
 

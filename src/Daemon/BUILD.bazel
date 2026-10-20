@@ -91,7 +91,6 @@ ch_cc_library(
         "@clickhouse_fmtlib//:_fmt",
         "//src/Loggers:loggers",
         "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
-        "//:headers",
     ],
 )
 

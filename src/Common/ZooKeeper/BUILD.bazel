@@ -284,7 +284,6 @@ ch_cc_library(
         "@clickhouse_google_protobuf//:utf8_validity",
         "//base/widechar_width",
         "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
-        "//:headers",
     ],
 )
 
@@ -578,7 +577,6 @@ ch_cc_library(
         "@clickhouse_google_protobuf//:utf8_validity",
         "//base/widechar_width",
         "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
-        "//:headers",
     ] + [":headers"],
 )
 
@@ -792,7 +790,6 @@ ch_cc_library(
         "@clickhouse_google_protobuf//:utf8_validity",
         "//base/widechar_width",
         "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
-        "//:headers",
     ],
 )
 

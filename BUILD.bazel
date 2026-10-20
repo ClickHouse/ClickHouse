@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:cmake_link.bzl", "cmake_link")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -21,16 +20,4 @@ cmake_link(
 alias(
     name = "unit_tests_dbms",
     actual = "//src:unit_tests_dbms",
-)
-
-cc_library(
-    name = "headers",
-    hdrs = glob(["**/*.h"]),
-    textual_hdrs = glob([
-        "**/*.inc",
-        "**/*.def",
-    ]),
-    deps = [
-        "//base:headers",
-    ],
 )

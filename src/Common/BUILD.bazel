@@ -603,7 +603,7 @@ ch_cc_library(
         "@platforms//cpu:x86_64": ["@clickhouse_libcpuid//:_cpuid"],
         "@platforms//cpu:aarch64": [],
     }) + [
-        "//base:headers",
+        "//base:pcg_random",
         "//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_0",
         "//contrib/cityhash102:_cityhash",
         "@clickhouse_aws//:_aws",

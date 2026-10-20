@@ -303,7 +303,6 @@ ch_cc_library(
         "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
         "@clickhouse_sz3//:sz3",
         "//contrib/sz3-cmake:headers",
-        "//:headers",
         "//src:headers",
         "//src/Common",
         "//base/poco/Util:_poco_util",

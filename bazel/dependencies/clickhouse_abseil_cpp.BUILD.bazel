@@ -274,8 +274,10 @@ ch_cc_library(
         "absl/crc/internal/crc_memcpy_fallback.cc",
         "absl/crc/internal/crc_memcpy_x86_arm_combined.cc",
         "absl/crc/internal/crc_non_temporal_memcpy.cc",
-    ] + [
-        "absl/crc/internal/non_temporal_arm_intrinsics.h",
+    ] + select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": ["absl/crc/internal/non_temporal_arm_intrinsics.h"],
+    }) + [
         "absl/crc/internal/non_temporal_memcpy.h",
     ],
     hdrs = [

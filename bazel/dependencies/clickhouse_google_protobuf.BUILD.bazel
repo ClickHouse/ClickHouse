@@ -639,9 +639,6 @@ ch_cc_library(
         "upb_generator/minitable/names_internal.cc",
         "upb_generator/plugin.cc",
     ] + [
-        "rust/cpp_kernel/rust_alloc_for_cpp_api.h",
-        "rust/cpp_kernel/serialized_data.h",
-        "rust/cpp_kernel/strings.h",
         "src/google/protobuf/compiler/cpp/enum.h",
         "src/google/protobuf/compiler/cpp/extension.h",
         "src/google/protobuf/compiler/cpp/field.h",

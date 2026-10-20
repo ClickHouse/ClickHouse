@@ -11,6 +11,12 @@ _PRIVATE_COMMON_HEADERS = [
     "base/mremap.h",
 ]
 
+_COMMON_HEADERS = [
+    "base/argsToConfig.h",
+    "base/JSON.h",
+    "base/chrono_io.h",
+]
+
 ch_cc_library(
     name = "common",
     srcs = [
@@ -42,8 +48,10 @@ ch_cc_library(
         "//bazel:gen/base/base/GitHash.generated.cpp",
         "base/wide_integer_to_string.cpp",
     ] + _PRIVATE_COMMON_HEADERS,
+    hdrs = _COMMON_HEADERS,
     clickhouse_code = True,
     implementation_deps = ["@llvm-project//compiler-rt:headers"],
+    includes = ["."],
     local_defines = [
         "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
         "BOOST_ASIO_STANDALONE=1",
@@ -58,6 +66,7 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     deps = [
+        "@clickhouse_cctz//:_cctz",
         "//base/poco/Foundation:_poco_foundation",
         "//base/poco/Net:_poco_net",
         "//base/poco/Util:_poco_util",
@@ -88,7 +97,7 @@ cc_library(
         [
             "base/**/*.h",
         ],
-        exclude = _PRIVATE_COMMON_HEADERS,
+        exclude = _PRIVATE_COMMON_HEADERS + _COMMON_HEADERS + ["base/crc32c_s390x.h"],
     ),
     includes = ["."],
     deps = [
@@ -100,13 +109,12 @@ cc_library(
         "//contrib/driftsort:headers",
         "//contrib/ipnsort:headers",
         "//contrib/pdqsort:headers",
+        ":pcg_random",
     ],
 )
 
 cc_library(
-    name = "headers",
-    hdrs = glob(["pcg-random/**/*.hpp"]),
-    includes = [
-        "pcg-random",
-    ],
+    name = "pcg_random",
+    hdrs = glob(["pcg-random/*.hpp"]),
+    includes = [".", "pcg-random"],
 )

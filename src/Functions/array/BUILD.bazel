@@ -245,7 +245,6 @@ _GENERATED_DEPS_0 = select({
     "//contrib/postgres-cmake:headers",
     "//contrib/sz3-cmake:headers",
     "//contrib/vectorscan-cmake:headers",
-    "//:headers",
     "//base:base_headers",
     "//src:headers",
     "//src/Access/Common:headers",
