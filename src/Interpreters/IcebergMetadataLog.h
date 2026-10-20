@@ -60,6 +60,9 @@ void insertRowToLogTable(
 class IcebergMetadataLog : public SystemLog<IcebergMetadataLogElement>
 {
     using SystemLog<IcebergMetadataLogElement>::SystemLog;
+
+public:
+    static consteval size_t getDefaultFlushIntervalMilliseconds() { return 2000; }
 };
 
 }

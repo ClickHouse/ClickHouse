@@ -25,9 +25,10 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/System/StorageSystemIcebergHistory.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
-#include <Storages/System/extractTableNameFilter.h>
+#include <Storages/System/extractTablesFilter.h>
 #include <Storages/VirtualColumnUtils.h>
 
 #if USE_AVRO
@@ -110,7 +111,7 @@ void StorageSystemIcebergHistory::fillData(
                 // Table was dropped while acquiring the lock, skipping table
                 return;
 
-            auto * object_storage = dynamic_cast<StorageObjectStorage *>(storage.get());
+            auto * object_storage = castStorage<StorageObjectStorage>(storage, DeferredTable::Skip).get();
 
             if (!object_storage || !object_storage->isIcebergStorage())
                 return;
@@ -153,9 +154,14 @@ void StorageSystemIcebergHistory::fillData(
     auto filter_databases = [&]()
     {
         const auto & catalog = DatabaseCatalog::instance();
+        /// The block filter below only sees `database`, so it cannot use a condition that names the
+        /// database together with the table, such as `(database, table) IN ((db, t))`; the extraction
+        /// reads that shape too, and shortlists the databases first.
+        const auto database_name_filter = extractNameFilter(predicate, "database", context_copy);
         MutableColumnPtr database_column = ColumnString::create();
         for (const auto & [name, db] : catalog.getDatabases({.with_datalake_catalogs = true, .with_remote_databases = false}))
-            database_column->insert(name);
+            if (!database_name_filter || database_name_filter(name))
+                database_column->insert(name);
 
         Block databases_block{
             {std::move(database_column), std::make_shared<DataTypeString>(), "database"},
@@ -169,7 +175,7 @@ void StorageSystemIcebergHistory::fillData(
         auto filtered_databases_block = filter_databases();
         const auto & filtered_databases = assert_cast<const ColumnString &>(*filtered_databases_block.getByName("database").column);
 
-        const TablesFilter tables_filter = extractTableNameFilter(predicate, "table");
+        const TablesFilter tables_filter = extractTablesFilter(predicate, "table", context_copy);
 
         MutableColumnPtr database_column = ColumnString::create();
         MutableColumnPtr table_column = ColumnString::create();

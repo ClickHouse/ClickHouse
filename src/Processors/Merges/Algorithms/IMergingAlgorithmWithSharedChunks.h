@@ -1,4 +1,5 @@
 #pragma once
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/Algorithms/RowFilterInfo.h>
 #include <Processors/Merges/Algorithms/RowRef.h>
@@ -40,9 +41,9 @@ protected:
     };
 
     /// Sources currently being merged.
-    using Sources = std::vector<Source>;
+    using Sources = VectorWithMemoryTracking<Source>;
     Sources sources;
-    std::vector<size_t> sources_origin_merge_tree_part_level;
+    VectorWithMemoryTracking<size_t> sources_origin_merge_tree_part_level;
 
     /// The batch queue identifies how many consecutive rows can be taken from the front
     /// cursor in one go (see `SortingQueueImpl::updateBatchSize`), so consuming rows one by
