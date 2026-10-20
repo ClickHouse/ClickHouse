@@ -1022,8 +1022,7 @@ void SerializationString::serializeBinaryBulkWithSizeStream(
     const auto & offsets = column_string.getOffsets();
 
     /// On disk (position independent) the stream carries per-row sizes so a granule reads on its own.
-    /// Over the network it carries the offsets of the written rows counted from the first of them
-    /// (like Array offsets) for exact reader preallocation.
+    /// Over the network it carries cumulative offsets counted from the first written row, for exact reader preallocation.
     if (settings.position_independent_encoding)
         serializeStringSizes(column, *size_stream, offset, limit);
     else
