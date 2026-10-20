@@ -1,0 +1,7 @@
+top k, entries cached: 0
+plain WHERE entries reused by top k: 1
+plain PREWHERE entries reused by top k: 1
+plain explicit PREWHERE entries reused by top k: 1
+plain explicit multi-conjunct PREWHERE entries reused by top k: 1
+explicit PREWHERE top k, same result as without the cache: 1
+disabled, entries cached: 0

@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## lightweight_delete_mode
+## lightweight_delete_mode {#lightweight_delete_mode}
 
 <SettingsInfoBlock type="LightweightDeleteMode" default_value="alter_update" />
 
@@ -21,13 +21,20 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 Mode de la requête interne de mise à jour exécutée dans le cadre d&#39;une suppression légère.
 
-Valeurs possibles :
+Valeurs possibles :
 
 * `alter_update` - exécute la requête `ALTER UPDATE`, qui crée une mutation lourde.
 * `lightweight_update` - exécute une mise à jour légère si possible, sinon exécute `ALTER UPDATE`.
 * `lightweight_update_force` - exécute une mise à jour légère si possible, sinon lève une exception.
 
-## lightweight_deletes_sync
+Pour `DELETE FROM ... ON CLUSTER`, chaque hôte d&#39;exécution détermine le mode à partir de ses propres paramètres : des hôtes
+dont les profils définissent des valeurs par défaut différentes peuvent donc exécuter la suppression dans des modes différents. Un shard répliqué
+s&#39;exécute sur une seule réplique : ce sont alors les paramètres de cette réplique qui s&#39;appliquent. Définir ce paramètre dans
+la session de la requête initiatrice prend le pas sur ce comportement, car l&#39;entrée DDL distribuée transmet
+les modifications de session à partir de `distributed_ddl_entry_format_version` 2, condition que remplit la valeur par défaut.
+Un hôte qui impose une contrainte sur ce paramètre ramène la valeur dans les limites autorisées.
+
+## lightweight_deletes_sync {#lightweight_deletes_sync}
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 

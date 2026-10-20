@@ -71,6 +71,7 @@ public:
     bool isVersioned() const override;
     size_t getDefaultVersion() const override;
     size_t getVersionFromRevision(size_t revision) const override;
+    DataTypePtr getStateType() const override;
     bool requiresExplicitStateVersionForWrite() const override;
 
     size_t sizeOfData() const override { return total_state_size; }
@@ -158,7 +159,6 @@ public:
     bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override;
     DataTypePtr getNormalizedStateType() const override;
 
-    bool shouldPrintParametersWithTypes() const override;
     bool isOnlyWindowFunction() const override;
 
     AggregateFunctionStateVariant getStateVariant() const override;

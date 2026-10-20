@@ -126,11 +126,9 @@ public:
     {
         WriteBufferFromVector<BLOB> wbuf(blob);
         CompressedWriteBuffer compressed_buffer(wbuf, codec);
-        const bool include_version = client_revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING;
-        setVersionToAggregateFunctions(
-            wrapped_column.type,
-            /* if_empty= */ client_revision == 0,
-            include_version ? std::optional<size_t>(client_revision) : std::nullopt);
+        /// The type announced on the wire gets the state version of a versioned aggregate function derived from the negotiated revision,
+        /// and the reader parses the payload according to the announced type, so derive it the same way as `NativeWriter::write` does.
+        NativeWriter::setAggregateFunctionStateVersions(wrapped_column.type, client_revision);
         auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(client_revision, wrapped_column);
         NativeWriter::writeData(
             *serialization, column_to_write, compressed_buffer, format_settings, 0, column_to_write->size(), client_revision);
@@ -171,6 +169,7 @@ public:
     void get(size_t, Field &) const override { throwInapplicable(); }
     void getValueNameImpl(WriteBufferFromOwnString &, size_t, const Options &) const override { throwInapplicable(); }
     std::string_view getDataAt(size_t) const override { throwInapplicable(); }
+    bool supportsGetDataAt() const override { return false; }
     bool isDefaultAt(size_t) const override { throwInapplicable(); }
     bool hasOnlyTypeDefaults() const override { throwInapplicable(); }
     void insert(const Field &) override { throwInapplicable(); }

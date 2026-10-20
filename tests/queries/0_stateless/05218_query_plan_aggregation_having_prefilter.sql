@@ -377,9 +377,12 @@ SELECT '--- a throwing conjunct evaluated before the bound stops being reached -
 -- 3 of 100 runs of the `s3 storage, meta in keeper` flaky check raised
 -- `FUNCTION_THROW_IF_VALUE_IS_NON_ZERO` here while every other cell in this file matched. What is
 -- deterministic is the plan, so that half is pinned as the annotation on the exact shape instead.
+-- The arms expecting the exception disable `short_circuit_function_evaluation_reorder_arguments`,
+-- which otherwise splits the cheap `count() > 3` in front of the throwing conjunct and so elides the
+-- exception as well.
 SELECT count() FROM (
     SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING throwIf(cnt = 3, 'boom') = 0 AND count() > 3
-) SETTINGS query_plan_aggregation_having_prefilter = 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+) SETTINGS query_plan_aggregation_having_prefilter = 0, short_circuit_function_evaluation_reorder_arguments = 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 SELECT 'throwing conjunct before the bound', count() FROM (EXPLAIN actions = 1
     SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING throwIf(cnt = 3, 'boom') = 0 AND count() > 3
 ) WHERE explain LIKE '%HAVING pre-filter: count() > 3%';
@@ -394,7 +397,7 @@ SELECT count() FROM (
 -- error is already elided without this setting, so only the first pair of arms diverges.
 SELECT count() FROM (
     SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING intDiv(1, cnt - 3) > 0 AND count() > 3
-) SETTINGS query_plan_aggregation_having_prefilter = 0; -- { serverError ILLEGAL_DIVISION }
+) SETTINGS query_plan_aggregation_having_prefilter = 0, short_circuit_function_evaluation_reorder_arguments = 0; -- { serverError ILLEGAL_DIVISION }
 SELECT 'dividing conjunct before the bound', count() FROM (EXPLAIN actions = 1
     SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING intDiv(1, cnt - 3) > 0 AND count() > 3
 ) WHERE explain LIKE '%HAVING pre-filter: count() > 3%';

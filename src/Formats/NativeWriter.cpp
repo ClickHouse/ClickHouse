@@ -121,6 +121,19 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
     return {column.type->getDefaultSerialization(), nullptr, recursiveRemoveSparse(column.column->convertToFullColumnIfReplicated())};
 }
 
+void NativeWriter::setAggregateFunctionStateVersions(DataTypePtr & type, UInt64 client_revision)
+{
+    const bool include_version = client_revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING;
+    /// Older peers cannot parse the explicit AggregateFunction(0, ...) syntax, even though
+    /// their state payload must still be rewritten to version 0 before transmission.
+    const bool print_explicit_zero_in_name = client_revision == 0 || include_version;
+    setVersionToAggregateFunctions(
+        type,
+        /* if_empty= */ client_revision == 0,
+        include_version ? std::optional<size_t>(client_revision) : std::nullopt,
+        print_explicit_zero_in_name);
+}
+
 size_t NativeWriter::write(const Block & block)
 {
     size_t written_before = ostr.count();
@@ -191,16 +204,7 @@ size_t NativeWriter::write(const Block & block)
         /// nothing from a revision and trusts the type name in the stream, so a version pinned on a
         /// stored column (`pinCurrentStateVersionToAggregateFunctions`) has to survive, or the state
         /// would silently degrade to version 0 on every round trip through local persistence.
-        bool include_version = client_revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING;
-        /// Peers older than aggregate-function versioning still need the payload rewritten to v0,
-        /// but they cannot parse AggregateFunction(0, ...). Keep the temporary type pinned to v0 for
-        /// serialization while preserving the legacy unversioned spelling on that negotiated wire.
-        const bool print_explicit_zero_in_name = client_revision == 0 || include_version;
-        setVersionToAggregateFunctions(
-            column.type,
-            /* if_empty= */ client_revision == 0,
-            include_version ? std::optional<size_t>(client_revision) : std::nullopt,
-            print_explicit_zero_in_name);
+        setAggregateFunctionStateVersions(column.type, client_revision);
 
         /// Type
         if (format_settings && format_settings->native.encode_types_in_binary_format)

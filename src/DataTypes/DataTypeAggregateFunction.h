@@ -23,8 +23,7 @@ private:
     DataTypes argument_types;
     Array parameters;
     std::optional<size_t> version;
-    /// Protocol downgrades can pin state version 0 for serialization while keeping the legacy
-    /// unversioned type spelling for peers that predate AggregateFunction version syntax.
+    /// Old peers need the legacy unversioned name while the payload is written at v0.
     bool print_explicit_zero_in_name;
 
     String getNameImpl(bool with_version) const;
@@ -62,13 +61,14 @@ public:
 
     Field getDefault() const override;
 
-    /// Compares name, parameters, and argument types.
+    /// Compares name, state version, parameters, and argument types.
     /// When ignore_variant is false (default), also compares the state variant (Aggregation vs Window).
     static bool strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type, bool ignore_variant = false);
 
     /// Spells a parameter list as a state type name does: `(p1, p2)`, empty when there are none.
-    /// `function` decides whether the values need `::Type` suffixes to reparse as the same Fields.
-    static String formatParameters(const IAggregateFunction & function, const Array & parameters);
+    /// A value gets a `::Type` suffix where its type has one and a bare literal would reparse as a
+    /// different Field; inside an array or tuple the suffix lands on the elements.
+    static String formatParameters(const Array & parameters);
 
     /// True if `state_type_name` denotes a state with the same binary representation as (function, version).
     /// The names can differ: the aggregate function factory strips LowCardinality from the argument types,
@@ -107,13 +107,8 @@ public:
 
 /// Pins the state version of every versioned aggregate function nested in `type` to the one that
 /// corresponds to `revision`, or to 0 if no revision is given. With `if_empty`, a version that is
-/// already pinned explicitly is kept. A legacy unversioned state which requires an explicit version
-/// before new writes is also left unpinned while it still resolves to the function's default version,
-/// so metadata loaders can distinguish it from an explicit version 0 declaration. The nested types are
-/// replaced rather than modified in place, because a type object is typically shared - notably with
-/// the table metadata a block was read from. `print_explicit_zero_in_name` is false only for negotiated
-/// peers that predate aggregate-function version syntax: their payload is still pinned to v0, but the
-/// announced type keeps the legacy unversioned spelling.
+/// already pinned explicitly is kept. The nested types are replaced rather than modified in place,
+/// because a type object is typically shared - notably with the table metadata a block was read from.
 void setVersionToAggregateFunctions(
     DataTypePtr & type,
     bool if_empty,
@@ -126,11 +121,20 @@ void setVersionToAggregateFunctions(
 /// the persisted type name, so the column keeps its layout when a newer server changes the default.
 void pinCurrentStateVersionToAggregateFunctions(DataTypePtr & type);
 
-/// True when an unversioned aggregate state nested in `type` cannot safely accept new writes
-/// until its current state version is pinned explicitly.
+/// Detect an unversioned aggregate state that cannot safely accept fresh legacy v0 writes.
 bool hasLegacyUnversionedAggregateStateRequiringMigration(const DataTypePtr & type);
 
 /// Checks type of any nested type is DataTypeAggregateFunction.
 bool hasAggregateFunctionType(const DataTypePtr & type);
+
+/// Whether all `AggregateFunction` types nested in `lhs` and `rhs` have the same state versions.
+/// `IDataType::equals` ignores the state version, so two equal types may still disagree here.
+bool haveSameAggregateStateVersions(const IDataType & lhs, const IDataType & rhs);
+
+/// Rebuilds `column` as a column of `type`, which must be equal to the column's own type except
+/// for the state versions of the nested `AggregateFunction` types. The states in memory do not depend
+/// on the version, but a column keeps the version it was created with and uses it when its states pass
+/// through an arena (e.g. in `groupArray`). The states are shared, not copied.
+ColumnPtr relabelAggregateStateVersions(const ColumnPtr & column, const DataTypePtr & type);
 
 }
