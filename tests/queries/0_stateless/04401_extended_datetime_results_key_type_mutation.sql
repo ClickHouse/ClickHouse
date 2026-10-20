@@ -2,7 +2,7 @@
 -- that change the RESULT TYPE of a key expression (enable_extended_results_for_datetime_functions,
 -- cast_keep_nullable, geo_distance_returns_float64_on_float64_arguments,
 -- function_json_value_return_type_allow_nullable, function_date_trunc_return_type_behavior,
--- allow_lossy_numeric_supertype, use_variant_as_common_type). Previously,
+-- allow_lossy_numeric_supertype, use_variant_as_common_type, array_count_legacy_uint32_result). Previously,
 -- running a mutation (or any metadata-changing ALTER) with such a setting at a non-default value
 -- recomputed the key/index type to a different type, diverging from the column the storage actually
 -- produces and aborting with e.g. 'Bad cast from ColumnVector<UInt32> to ColumnDecimal<DateTime64>'.
@@ -221,8 +221,8 @@ SELECT arraySort(groupArray(v)) FROM tcv SETTINGS max_parallel_replicas = 2, all
 DROP TABLE tcv;
 
 -- The same class of bug is reachable through every session setting that changes the RESULT TYPE of a
--- key expression, not only enable_extended_results_for_datetime_functions / cast_keep_nullable. Five
--- more such settings are neutralized in createKeyExpressionContext; each is exercised below with the
+-- key expression, not only enable_extended_results_for_datetime_functions / cast_keep_nullable. The
+-- other such settings are neutralized in createKeyExpressionContext; each is exercised below with the
 -- metadata-poisoning recipe (create canonical, metadata-only ALTER with the setting flipped, then a
 -- write with the default): before the fix the recomputed key type diverged from the produced column
 -- and aborted the write with a Bad cast.
@@ -273,6 +273,17 @@ INSERT INTO tlg VALUES (1);
 SELECT count() FROM tlg;
 
 DROP TABLE tlg;
+
+-- array_count_legacy_uint32_result (default 0): arrayCount returns UInt64 by default, UInt32 when on.
+-- 'Bad cast from ColumnVector<unsigned long> to ColumnVector<unsigned int>'.
+DROP TABLE IF EXISTS tac;
+SET array_count_legacy_uint32_result = 0;
+CREATE TABLE tac (arr Array(UInt8)) ENGINE = MergeTree() ORDER BY arrayCount(arr);
+ALTER TABLE tac MODIFY COMMENT 'touch' SETTINGS array_count_legacy_uint32_result = 1;
+INSERT INTO tac VALUES ([1, 0, 1]);
+SELECT count() FROM tac;
+
+DROP TABLE tac;
 
 
 -- allow_lossy_numeric_supertype (default 0) and use_variant_as_common_type are the two knobs that decide
