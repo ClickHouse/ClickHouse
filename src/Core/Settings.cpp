@@ -7056,7 +7056,7 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", EXPERIMENTAL, \
-        {"26.10", false, false, "New experimental setting to enable query plan cache for `SELECT` queries"}) \
+        {"26.11", false, false, "New experimental setting to enable query plan cache for `SELECT` queries"}) \
     DECLARE(Seconds, iceberg_compaction_delay_bias, 60 * 60 * 3, R"(
 Minimum time of delay between 2 background compaction operations.
 )", 0, \
