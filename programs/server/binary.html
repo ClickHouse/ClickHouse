@@ -76,7 +76,11 @@
         /// verbatim with every request). So the default connection preserves it instead of clearing `search`
         /// wholesale - otherwise a direct load, or a `clickhouse-credentials` handover that carries no `url`,
         /// would talk to the proxy's default backend instead of the selected one.
-        const PAGE_URL_PARAMETERS = ['host', 'user', 'password', 'x', 'y', 'zoom', 'px', 'py'];
+        /// `query` is listed too although this page does not read it: the HTTP interface executes it (the first `query`
+        /// of the URL wins, and a POST body is appended to it), so it is never routing information, and
+        /// inheriting it would let a link such as `?query=DROP TABLE t` replace or prefix the automatic SQL
+        /// this page sends to its default endpoint.
+        const PAGE_URL_PARAMETERS = ['query', 'host', 'user', 'password', 'x', 'y', 'zoom', 'px', 'py'];
 
         function defaultServerAddress() {
             if (location.protocol == 'file:') return 'http://localhost:8123/';

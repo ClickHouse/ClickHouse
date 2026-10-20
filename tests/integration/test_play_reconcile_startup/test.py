@@ -97,6 +97,7 @@ def test_play_reconcile_startup(started_cluster, nodejs_container):
         "dirty-startup-merge-entry-reowned",
         "shape-not-stamped-before-run",
         "proxied-endpoint",
+        "query-not-routing",
         "cross-origin-terminal",
         "trusted-host-terminal",
         "path-routed-handover",

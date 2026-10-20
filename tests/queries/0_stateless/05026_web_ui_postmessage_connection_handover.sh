@@ -86,6 +86,12 @@ do
     routing_query=$(echo "$content" | grep -qF "PAGE_URL_PARAMETERS" \
         && ! echo "$content" | sed -n '/function defaultServerAddress()/,/^ *}$/p' | grep -qF "url.search = '';" \
         && echo preserved || echo dropped)
+    # The HTTP `query` parameter is the one exception: the HTTP interface executes it (the first `query`
+    # of the URL wins, and a POST body is appended to it), so carrying it from the page URL into that
+    # default endpoint would let a link such as `?query=DROP TABLE t` replace or prefix the SQL the page
+    # sends on its own at startup.
+    sql_query=$(echo "$content" | sed -n "/const PAGE_URL_PARAMETERS = \[/,/\];/p" | grep -qF "'query'" \
+        && echo stripped || echo inherited)
     # A handover without `url` keeps the server already configured, and that server may come from a link
     # to the page (`/play?url=...`, `/binary?host=...`, a `/dashboard#...` state). A trusted host that
     # frames such a link and sends the credentials alone would send them to a server it never named, so
@@ -93,7 +99,7 @@ do
     implicit_url=$(echo "$content" | grep -qF "if (event.data.url === undefined && !acceptsHandoverWithoutURL()) return;" \
         && echo "$content" | grep -qF "sameServerAddress(current, defaultServerAddress())" \
         && echo gated || echo open)
-    echo "${page} announces=${announces} accepts=${accepts} origins=${origins} endpoint_query=${endpoint_query} default_endpoint=${default_endpoint} routing_query=${routing_query} credentials=${credentials} implicit_url=${implicit_url}"
+    echo "${page} announces=${announces} accepts=${accepts} origins=${origins} endpoint_query=${endpoint_query} default_endpoint=${default_endpoint} routing_query=${routing_query} sql_query=${sql_query} credentials=${credentials} implicit_url=${implicit_url}"
 done
 
 content=$(fetch_page webterminal)

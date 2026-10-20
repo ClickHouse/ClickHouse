@@ -1697,6 +1697,26 @@ async function main() {
             non_http === null, non_http);
     }
 
+    /// Contract: the HTTP `query` parameter is never routing information. The HTTP interface executes
+    /// it - the first `query` of the URL wins, and a POST body is appended to it - so carrying it from
+    /// the page URL into the default endpoint would let a link such as `/play?query=DROP TABLE t`
+    /// replace or prefix every query the page sends, including the startup connectivity probe.
+    /// Legitimate routing parameters next to it must still survive.
+    {
+        const r = await runScenario(js, {
+            href: 'https://proxy.example/clickhouse/play?cluster=a&query=DROP%20TABLE%20t',
+            historyState: null,
+            seedTabs: [],
+            seedMeta: null,
+        });
+        const configured = vm.runInContext('url_elem.value', r.sandbox);
+        check('query-not-routing', 'the default connection drops the page URL query but keeps the routing parameter',
+            configured === 'https://proxy.example/clickhouse/?cluster=a', configured);
+        const default_address = vm.runInContext('defaultServerAddress()', r.sandbox);
+        check('query-not-routing', 'defaultServerAddress carries no query parameter',
+            default_address === 'https://proxy.example/clickhouse/?cluster=a', default_address);
+    }
+
     /// Contract: the inline Web Terminal panel is offered only when the embedded terminal will accept
     /// the credentials `/play` posts to it. `webterminal.html` takes `webterminal-credentials` only
     /// from a parent at its own origin or on its exact allowlist, and applies that rule to the origin of

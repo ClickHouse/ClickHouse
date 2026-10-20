@@ -8719,8 +8719,12 @@ function isHTTPEndpoint(url)
 /// this page writes (`writeHistoryEntry`) - otherwise a direct load, or a `clickhouse-credentials`
 /// handover that carries no `url`, would talk to the proxy's default backend instead of the selected
 /// one, and the first history write would silently drop the selection from the address bar.
+/// `query` is listed too although this page does not read it: the HTTP interface executes it (the first `query`
+/// of the URL wins, and a POST body is appended to it), so it is never routing information, and
+/// inheriting it would let a link such as `?query=DROP TABLE t` replace or prefix the automatic SQL
+/// this page sends to its default endpoint.
 const PAGE_URL_PARAMETERS = [
-    'url', 'user', 'password', 'run', 'database', 'theme', 'tab', 'docs_relay',
+    'query', 'url', 'user', 'password', 'run', 'database', 'theme', 'tab', 'docs_relay',
     'color_modes', 'pinned_columns', 'sort_columns', 'filters', 'page', 'page_size',
 ];
 function isPageParameter(name)

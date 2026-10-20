@@ -570,7 +570,11 @@
         /// would talk to the proxy's default backend instead of the selected one. The embedded flamegraph
         /// keeps its view state in the query string too (`x` / `y` for the zoom, written back with
         /// `history.replaceState`, and the legacy `s` for the search term), so those are page parameters.
-        const PAGE_URL_PARAMETERS = ['user', 'password', 'x', 'y', 's'];
+        /// `query` is listed too although this page does not read it: the HTTP interface executes it (the first `query`
+        /// of the URL wins, and a POST body is appended to it), so it is never routing information, and
+        /// inheriting it would let a link such as `?query=DROP TABLE t` replace or prefix the automatic SQL
+        /// this page sends to its default endpoint.
+        const PAGE_URL_PARAMETERS = ['query', 'user', 'password', 'x', 'y', 's'];
 
         function defaultServerAddress() {
             if (location.protocol == 'file:') return 'http://localhost:8123/';
