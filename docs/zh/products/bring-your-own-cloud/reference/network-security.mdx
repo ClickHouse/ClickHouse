@@ -13,12 +13,12 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 ClickHouse Cloud 控制平面会维护多种类型的连接，以运行和支持您的 BYOC 部署：
 
-| 目的                            | 连接类型                                                                                      | 说明                                                                                                                                                                                                                                                                                                                                         |
-| ----------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **日常运维 — Kubernetes API 服务器** | 默认使用公网端点，各云平台的访问控制方式不同；也可选择通过 Tailscale 或云提供商自身的私有路径实现私网访问，在 GCP 上还可使用经 IAM 授权的基于 DNS 的端点 | 管理服务通过 Kubernetes (EKS/GKE/AKS) API 服务器的公网端点与其通信。限制该访问的方式因云平台而异 — AWS 上为 IP 允许列表，GCP 和 Azure 上为云 IAM；请参阅 [Kubernetes API 服务器暴露](#kubernetes-api-server-exposure)。初始部署完成后，您也可以选择切换到私网访问 — 在任意云平台上均可通过 Tailscale 实现，也可通过云提供商自身的私有路径实现：AWS VPC Lattice 或 Azure Private Link。在 GCP 上，禁用公网 IP 端点后，管理服务将改用经 IAM 授权的基于 DNS 的端点，该端点仍位于您的 VPC 网络之外。 |
-| **日常运维 — 云提供商 API**           | ClickHouse VPC → 云提供商                                                                     | 管理服务从 ClickHouse Cloud 自有环境调用您的云提供商 API (例如 AWS 上的 EKS 和 EC2、GCP 上的 GKE、Azure 上的 AKS)。这不涉及您的 VPC/VNet 或 Tailscale。                                                                                                                                                                                                                         |
-| **故障排查 — ClickHouse 服务**      | Tailscale                                                                                 | ClickHouse 工程师通过 Tailscale 访问 ClickHouse 服务 (例如系统表) 进行诊断。                                                                                                                                                                                                                                                                                  |
-| **故障排查 — Kubernetes API 服务器** | Tailscale                                                                                 | ClickHouse 工程师通过 Tailscale 访问 Kubernetes API 服务器以进行集群诊断。                                                                                                                                                                                                                                                                                   |
+| 目的                            | 连接类型                                                                          | 说明                                                                                                                                                                                                                                                                                                                                        |
+| ----------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **日常运维 — Kubernetes API 服务器** | 默认使用公网端点，各云平台的访问控制方式不同；也可选择通过云服务提供商自身的私有路径实现私网访问，在 GCP 上还可使用经 IAM 授权的基于 DNS 的端点 | 管理服务通过 Kubernetes (EKS/GKE/AKS) API 服务器的公网端点与其通信。限制该访问的方式因云平台而异 — AWS 上为 IP 允许列表，GCP 和 Azure 上为云 IAM；请参阅 [Kubernetes API 服务器暴露](#kubernetes-api-server-exposure)。初始部署完成后，您也可以选择通过云服务提供商自身的私有路径切换到私网访问：AWS VPC Lattice 或 Azure Private Link (通过 Tailscale 私网访问 EKS 的方式已弃用)。在 GCP 上，禁用公网 IP 端点后，管理服务将改用经 IAM 授权的基于 DNS 的端点，该端点仍位于您的 VPC 网络之外。 |
+| **日常运维 — 云服务提供商 API**           | ClickHouse VPC → 云服务提供商                                                         | 管理服务从 ClickHouse Cloud 自有环境调用您的云服务提供商 API (例如 AWS 上的 EKS 和 EC2、GCP 上的 GKE、Azure 上的 AKS)。这不涉及您的 VPC/VNet 或 Tailscale。                                                                                                                                                                                                                        |
+| **故障排查 — ClickHouse 服务**      | Tailscale                                                                     | ClickHouse 工程师通过 Tailscale 访问 ClickHouse 服务 (例如系统表) 进行诊断。                                                                                                                                                                                                                                                                                 |
+| **故障排查 — Kubernetes API 服务器** | Tailscale                                                                     | ClickHouse 工程师通过 Tailscale 访问 Kubernetes API 服务器以进行集群诊断。                                                                                                                                                                                                                                                                                  |
 
 ## 云提供商 API 与 Kubernetes API {#cloud-api-vs-kubernetes-api}
 
@@ -122,7 +122,7 @@ Tailscale 建立连接的过程如下：
 **可选的专用终结点配置**：
 
 * 您可以让管理访问不再经由 Kubernetes API 服务器的公网端点
-* 在这种情况下，管理服务将通过 Tailscale 访问 API 服务器 (类似于人工进行的故障排查访问) ，或者通过云服务提供商自身的私有路径访问 — 在 AWS 上为 VPC Lattice，在 Azure 上为 Private Link。在 GCP 上，管理服务则改用经 IAM 授权的基于 DNS 的端点，该端点位于您的 VPC 网络之外 (参见 [Kubernetes API 私有连接](/zh/products/bring-your-own-cloud/configuration/configurations#k8s-api-private-connection))
+* 在这种情况下，管理服务将通过云服务提供商自身的私有路径访问 API 服务器 — 在 AWS 上为 VPC Lattice，在 Azure 上为 Private Link。基于 Tailscale 的 EKS API 服务器私网访问方式已弃用，建议改用 VPC Lattice。在 GCP 上，管理服务则改用经 IAM 授权的基于 DNS 的端点，该端点位于您的 VPC 网络之外 (参见 [Kubernetes API 私有连接](/zh/products/bring-your-own-cloud/configuration/configurations#k8s-api-private-connection))
 * 默认情况下，会保留公网端点作为紧急调查和支持需求的备用机制；在验证私网访问后，可与 ClickHouse 协调将其完全禁用
 
 <div id="tailscale-traffic-flow">
@@ -203,12 +203,12 @@ Tailscale 建立连接的过程如下：
 
 ClickHouse 管理服务 如何访问 Kubernetes API 服务器，以及该访问受到哪些限制，因云平台而异：
 
-* **AWS (EKS)**：公网端点 通过 集群 的公网访问 CIDR 列表限制为仅允许 ClickHouse 的 egress CIDR 范围。也可以通过 Tailscale 或 VPC Lattice 切换为仅私网访问 —— 参见 [Kubernetes API 私有连接](/zh/products/bring-your-own-cloud/configuration/configurations#k8s-api-private-connection)。
+* **AWS (EKS)**：公网端点 通过 集群 的公网访问 CIDR 列表限制为仅允许 ClickHouse 的 出站 CIDR 范围。也可以通过 VPC Lattice 切换为仅私网访问 (用于私有 EKS 访问的 Tailscale 已弃用) —— 参见 [Kubernetes API 私有连接](/zh/products/bring-your-own-cloud/configuration/configurations#k8s-api-private-connection)。
 * **GCP (GKE)**：节点始终为私有。默认情况下，管理服务使用控制平面的公网 IP 端点；该端点可从任意源地址访问，由云 IAM 而非 IP 允许列表进行授权。基于 DNS 的端点 (`*.gke.goog`) 同样始终处于启用状态，其授权依据是被模拟的服务账号上的 `container.clusters.connect` IAM 权限。这两个端点都不在你的 VPC 网络内，但都是通往你的集群控制平面的访问路径，因此应将其作为入站访问进行审查。完成初始设置后，可以将集群切换为私有模式，从而禁用公网 IP 端点：此后管理服务改用基于 DNS 的端点，而部署工具、监控以及工程师的故障排查则通过 Tailscale 访问控制平面的内部 IP 端点 —— 参见 [GCP 私有 control-plane 端点](/zh/products/bring-your-own-cloud/configuration/configurations#k8s-api-private-connection-gcp)。
-* **Azure (AKS)**：API server 通过其公网 FQDN 访问，并由 Microsoft Entra ID 与 Azure RBAC 共同授权。API server 的授权 IP 地址范围默认不启用；如果你的 policy 有此要求，请联系 ClickHouse。也可以将该 集群 创建为通过 Azure Private Link 访问的私有 集群，并禁用其公网 FQDN —— 参见 [Kubernetes API 私有连接](/zh/products/bring-your-own-cloud/configuration/configurations#k8s-api-private-connection)。
+* **Azure (AKS)**：API 服务器 通过其公网 FQDN 访问，并由 Microsoft Entra ID 与 Azure RBAC 共同授权。API 服务器 的授权 IP 地址范围默认不启用；如果你的 policy 有此要求，请联系 ClickHouse。也可以将该 集群 创建为通过 Azure Private Link 访问的私有 集群，并禁用其公网 FQDN —— 参见 [Kubernetes API 私有连接](/zh/products/bring-your-own-cloud/configuration/configurations#k8s-api-private-connection)。
 
 <Note>
-  只有 Kubernetes API 和故障排查流量可以迁移到私有路径。发往你的云提供商 API 的 management 调用源自 ClickHouse Cloud 的网络，无法经由该路径路由 —— 参见 [Cloud provider APIs vs the Kubernetes API](#cloud-api-vs-kubernetes-api)，其中也涵盖了你自己 集群 内部的 控制器 发起的 provider API calls。
+  只有 Kubernetes API 和故障排查流量可以迁移到私有路径。发往你的云服务提供商 API 的 management 调用源自 ClickHouse Cloud 的网络，无法经由该路径路由 —— 参见 [云服务提供商 APIs vs the Kubernetes API](#cloud-api-vs-kubernetes-api)，其中也涵盖了你自己 集群 内部的 控制器 发起的 provider API calls。
 </Note>
 
 ### 故障排查访问 {#troubleshooting-access}

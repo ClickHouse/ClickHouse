@@ -7,42 +7,42 @@
       "versionId": "9b3345383ff3389c6681dbde6573112bd992f08e5b332453425e342f66849919",
       "translations": {
         "es": {
-          "updatedAt": "2026-10-20T13:59:22.520Z",
+          "updatedAt": "2026-10-20T15:01:31.455Z",
           "fileName": "docs.json",
           "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         },
         "ja": {
-          "updatedAt": "2026-10-20T13:59:22.628Z",
+          "updatedAt": "2026-10-20T15:01:31.642Z",
           "fileName": "docs.json",
           "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         },
         "ko": {
-          "updatedAt": "2026-10-20T13:59:22.729Z",
+          "updatedAt": "2026-10-20T15:01:31.868Z",
           "fileName": "docs.json",
           "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         },
         "pt-BR": {
-          "updatedAt": "2026-10-20T13:59:22.833Z",
+          "updatedAt": "2026-10-20T15:01:32.048Z",
           "fileName": "docs.json",
           "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         },
         "ru": {
-          "updatedAt": "2026-10-20T13:59:22.942Z",
+          "updatedAt": "2026-10-20T15:01:32.234Z",
           "fileName": "docs.json",
           "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         },
         "zh": {
-          "updatedAt": "2026-10-20T13:59:23.046Z",
+          "updatedAt": "2026-10-20T15:01:32.442Z",
           "fileName": "docs.json",
           "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         },
         "ar": {
-          "updatedAt": "2026-10-20T13:59:23.146Z",
+          "updatedAt": "2026-10-20T15:01:32.617Z",
           "fileName": "docs.json",
           "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         },
         "fr": {
-          "updatedAt": "2026-10-20T13:59:23.270Z",
+          "updatedAt": "2026-10-20T15:01:32.818Z",
           "fileName": "docs.json",
           "postProcessHash": "112e862e04dcdf991bb0306aab72b39e4928fe4bcc6d0b05054911182b5f86af"
         }
@@ -42231,47 +42231,47 @@
     },
     {
       "fileId": "5ee43eac66a36472c7899556ac5593bc97e760cb2bdce69de511e755a0d62f29",
-      "versionId": "208f79fed26ac9b23b40412df41ea2e25b2ef21edc753e587d6fdc8962e1a3e3",
+      "versionId": "36fba3445c8554e35c6ecad45c9faa627d95fb1dab1964c44b318d9aa2a8d8e1",
       "translations": {
-        "es": {
-          "updatedAt": "2026-10-16T03:19:02.555Z",
-          "fileName": "es/products/bring-your-own-cloud/configuration/configurations.mdx",
-          "postProcessHash": "418d242592e41a5366aee9cc148b93aeacbf6a822e45fdb899ec3fae2b5fabfc"
-        },
-        "ja": {
-          "updatedAt": "2026-10-16T03:19:02.555Z",
-          "fileName": "ja/products/bring-your-own-cloud/configuration/configurations.mdx",
-          "postProcessHash": "8ccfe412a7b99f1b615c16e88360a60a3704e7df1e17fe5c26da7ee5ec7ea32f"
-        },
-        "ko": {
-          "updatedAt": "2026-10-16T03:19:02.555Z",
-          "fileName": "ko/products/bring-your-own-cloud/configuration/configurations.mdx",
-          "postProcessHash": "1310e6656c0443645eceb5e5b3fe2885d39425d1bc35c5687f3efd731c951f8d"
-        },
         "pt-BR": {
-          "updatedAt": "2026-10-16T03:19:02.556Z",
+          "updatedAt": "2026-10-20T15:01:36.412Z",
           "fileName": "pt-BR/products/bring-your-own-cloud/configuration/configurations.mdx",
-          "postProcessHash": "33032e3920a7c08cc55ec7b533fbd079d639a781abe0408702d2988bb40f9fad"
+          "postProcessHash": "a226ca0e706a9f2b7402aed3cac9c7f86e1f56a71e6d28f7bb9b86c18f47bf11"
         },
-        "ru": {
-          "updatedAt": "2026-10-16T03:19:02.556Z",
-          "fileName": "ru/products/bring-your-own-cloud/configuration/configurations.mdx",
-          "postProcessHash": "b098ce259d52ec70f68fe61b8c2ebeec3c2e9b13d178a186c63fccb545b07756"
-        },
-        "zh": {
-          "updatedAt": "2026-10-16T03:19:02.557Z",
-          "fileName": "zh/products/bring-your-own-cloud/configuration/configurations.mdx",
-          "postProcessHash": "c120e25a9f7318716129d88a9d35f400bfddf19b454ec538ebabacbf03115ce3"
-        },
-        "ar": {
-          "updatedAt": "2026-10-16T03:19:02.557Z",
-          "fileName": "ar/products/bring-your-own-cloud/configuration/configurations.mdx",
-          "postProcessHash": "21858782021cd958f318d8e17c5410d21ebb196dd14568e2fc0df4f12936ae62"
+        "es": {
+          "updatedAt": "2026-10-20T15:01:36.413Z",
+          "fileName": "es/products/bring-your-own-cloud/configuration/configurations.mdx",
+          "postProcessHash": "0e751d912fd1dbcf24196858189b24699c2ea59185e35a7941187077e598e440"
         },
         "fr": {
-          "updatedAt": "2026-10-16T03:19:02.557Z",
+          "updatedAt": "2026-10-20T15:01:36.414Z",
           "fileName": "fr/products/bring-your-own-cloud/configuration/configurations.mdx",
-          "postProcessHash": "5e1af6332e6295c644a896bdc5026df69e9ede8c8f465e96352692b7ed4b1c4f"
+          "postProcessHash": "cbaee29efa513a704260a2fa039e9c1584dfa27d696b88b427cd952313bd335b"
+        },
+        "ko": {
+          "updatedAt": "2026-10-20T15:01:36.414Z",
+          "fileName": "ko/products/bring-your-own-cloud/configuration/configurations.mdx",
+          "postProcessHash": "0a27d894dff87a2351dbb8a5b02284f3242e4e8fa3a551ba3494367dd6022f68"
+        },
+        "zh": {
+          "updatedAt": "2026-10-20T15:01:36.415Z",
+          "fileName": "zh/products/bring-your-own-cloud/configuration/configurations.mdx",
+          "postProcessHash": "a0feb3acd6a7e4ed668294abd48879f3a607e1a18af7b7d10f857ce47f935078"
+        },
+        "ar": {
+          "updatedAt": "2026-10-20T15:01:36.415Z",
+          "fileName": "ar/products/bring-your-own-cloud/configuration/configurations.mdx",
+          "postProcessHash": "56aabbd96a9eb9c9ec99ac1bd04cd345caed5895e7e6190dce32701d9dbea902"
+        },
+        "ja": {
+          "updatedAt": "2026-10-20T15:01:36.416Z",
+          "fileName": "ja/products/bring-your-own-cloud/configuration/configurations.mdx",
+          "postProcessHash": "6adcdc95f9415ac6f41706e486df7104762b24175a79c6d887df6d84df2ad131"
+        },
+        "ru": {
+          "updatedAt": "2026-10-20T15:01:36.417Z",
+          "fileName": "ru/products/bring-your-own-cloud/configuration/configurations.mdx",
+          "postProcessHash": "5b7301a4b9b750cfa74b70c1aef742ce38ba367bc65d7ef60ac033a441131035"
         }
       },
       "fileName": "products/bring-your-own-cloud/configuration/configurations.mdx"
@@ -43136,94 +43136,94 @@
     },
     {
       "fileId": "f29c0362e0561c91613b9a5dc93f764f6a0e4a7022daea669498791fdf4ef59f",
-      "versionId": "ddb6504c5c97226eeb67aefc63b16d9a1a48e928c321a1b6cbc4fbd0ae097f02",
+      "versionId": "fc52a92553307982e65adcc73797e284dc8f93e033ebe9a6aadaaf09b50ab3e4",
       "translations": {
-        "es": {
-          "updatedAt": "2026-10-16T03:19:02.581Z",
-          "fileName": "es/products/bring-your-own-cloud/reference/faq.mdx",
-          "postProcessHash": "ed6f067db699ef7ff21ff5024717794c10fdf7cbee50801792405bad338a1db1"
-        },
-        "ja": {
-          "updatedAt": "2026-10-16T03:19:02.581Z",
-          "fileName": "ja/products/bring-your-own-cloud/reference/faq.mdx",
-          "postProcessHash": "582de0d68dda9f1efc0c5d1168177867de0a482a0a9aa2d9ff53167ab041e93c"
-        },
-        "ko": {
-          "updatedAt": "2026-10-16T03:19:02.581Z",
-          "fileName": "ko/products/bring-your-own-cloud/reference/faq.mdx",
-          "postProcessHash": "1617411eb4759b80469301d8f44dd6d8341b6cb58ecc8b126ec859dac19a3796"
-        },
         "pt-BR": {
-          "updatedAt": "2026-10-16T03:19:02.582Z",
+          "updatedAt": "2026-10-20T15:01:36.417Z",
           "fileName": "pt-BR/products/bring-your-own-cloud/reference/faq.mdx",
-          "postProcessHash": "0b6e3fe6b91443bb55c9bd2b1330218df8b03a13ffd54255c8685c7ea25ddc3d"
+          "postProcessHash": "10e7a0a9de810b291c7d2645a3fcd6c3bd22b62a7bc536df45b0a09f774c9e19"
         },
-        "ru": {
-          "updatedAt": "2026-10-16T03:19:02.582Z",
-          "fileName": "ru/products/bring-your-own-cloud/reference/faq.mdx",
-          "postProcessHash": "104f3499a1aced3770d10fa041ed9359994795451dc1d06527eae05b308364ce"
+        "es": {
+          "updatedAt": "2026-10-20T15:01:36.418Z",
+          "fileName": "es/products/bring-your-own-cloud/reference/faq.mdx",
+          "postProcessHash": "83337e8f3f9d2e0791568fff157084bab1e748dcc93436a20955fd58d5ba3952"
         },
         "zh": {
-          "updatedAt": "2026-10-16T03:19:02.583Z",
+          "updatedAt": "2026-10-20T15:01:36.420Z",
           "fileName": "zh/products/bring-your-own-cloud/reference/faq.mdx",
-          "postProcessHash": "2e5b66660f229ecf4db41c98f0347c5fde8826f4f08389209cf52c7bf1b83f40"
+          "postProcessHash": "34b6c9a9dbb9a5b640bd341c3736d10b6cc8f8c3504dca1e2ff54d079e7f857b"
         },
-        "ar": {
-          "updatedAt": "2026-10-16T03:19:02.583Z",
-          "fileName": "ar/products/bring-your-own-cloud/reference/faq.mdx",
-          "postProcessHash": "48ea910b6991683fff974a863ecba7ad54836a4b22a75f9454b7ea77b8ba0011"
+        "ru": {
+          "updatedAt": "2026-10-20T15:01:36.421Z",
+          "fileName": "ru/products/bring-your-own-cloud/reference/faq.mdx",
+          "postProcessHash": "8b7741524f3cdf90937dcb25d97ec87434c17d66f76783a28d6a6dbaf61a1803"
         },
         "fr": {
-          "updatedAt": "2026-10-16T03:19:02.584Z",
+          "updatedAt": "2026-10-20T15:01:36.424Z",
           "fileName": "fr/products/bring-your-own-cloud/reference/faq.mdx",
-          "postProcessHash": "d5ec8052a6ed2b79ab83eccb56ac7b45c8bc007dbd7aebd8bd313d7b5f0538f4"
+          "postProcessHash": "265d292aa6080298eaae0ca641a410bf5eb34ac1bc11272c35e50c8ebe88296b"
+        },
+        "ko": {
+          "updatedAt": "2026-10-20T15:01:36.425Z",
+          "fileName": "ko/products/bring-your-own-cloud/reference/faq.mdx",
+          "postProcessHash": "d225f8779da1c8f56f1fadab0258f35c70c104e1071a188399239be097051593"
+        },
+        "ja": {
+          "updatedAt": "2026-10-20T15:01:36.426Z",
+          "fileName": "ja/products/bring-your-own-cloud/reference/faq.mdx",
+          "postProcessHash": "7c33ebfcefa1b99d03bd7d1d902aa38c3e24961595817725103c1b066da2d09a"
+        },
+        "ar": {
+          "updatedAt": "2026-10-20T15:01:36.427Z",
+          "fileName": "ar/products/bring-your-own-cloud/reference/faq.mdx",
+          "postProcessHash": "ebdafa8378856f3b0931c727296846e2a6325b5a4e0d53d965b15a0645b39e7d"
         }
       },
       "fileName": "products/bring-your-own-cloud/reference/faq.mdx"
     },
     {
       "fileId": "28794740579b9474b7b85c89b3e12b8d205cd3e555335a5d89ed40109516ac94",
-      "versionId": "51c081437f1a6f6e3b33e3335c6ad3bfac7a2f523d46ecd9688e74fab0d453d0",
+      "versionId": "99be602c671c69cce6e72484daf0c53ad878478c444ae8c165c9216cab45ef3f",
       "translations": {
-        "es": {
-          "updatedAt": "2026-10-16T03:19:02.584Z",
-          "fileName": "es/products/bring-your-own-cloud/reference/network-security.mdx",
-          "postProcessHash": "77c65d16461d60f3d9fad0f0ccd1854dfd85beeec9a72ebfef4d1104839ab3f1"
-        },
-        "ja": {
-          "updatedAt": "2026-10-16T03:19:02.585Z",
-          "fileName": "ja/products/bring-your-own-cloud/reference/network-security.mdx",
-          "postProcessHash": "065b1ef306decdf7f6b05ee1c8ff79e671782aed943550c0d3b173b2114137ec"
-        },
-        "ko": {
-          "updatedAt": "2026-10-16T03:19:02.585Z",
-          "fileName": "ko/products/bring-your-own-cloud/reference/network-security.mdx",
-          "postProcessHash": "79f0e93046f3c9bd5eaf399b0593c0f4a0c0e0e1f8d36e755c2cb58cedf205b5"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-10-16T03:19:02.585Z",
-          "fileName": "pt-BR/products/bring-your-own-cloud/reference/network-security.mdx",
-          "postProcessHash": "afc0f8fc9ff3041243c72279daf85d8d73ba197e2a0a122b7cd9866092f15aad"
-        },
-        "ru": {
-          "updatedAt": "2026-10-16T03:19:02.586Z",
-          "fileName": "ru/products/bring-your-own-cloud/reference/network-security.mdx",
-          "postProcessHash": "527946930d7b963899ab141794a28c462a233fa08777fe7bc7ba9652194e81b9"
-        },
-        "zh": {
-          "updatedAt": "2026-10-16T03:19:02.587Z",
-          "fileName": "zh/products/bring-your-own-cloud/reference/network-security.mdx",
-          "postProcessHash": "9082e278871f657d6eaab6c08437e69878f0bfddde86d4f83a28d01b552d2372"
-        },
         "ar": {
-          "updatedAt": "2026-10-16T03:19:02.587Z",
+          "updatedAt": "2026-10-20T15:01:36.419Z",
           "fileName": "ar/products/bring-your-own-cloud/reference/network-security.mdx",
-          "postProcessHash": "81f6d4abc6645bc28c11afc15e0b94372f8367dd091c5115676e6bdbad7e1a31"
+          "postProcessHash": "f303b1791e59d5794aeb79c4046cd5fcbcf020917ef157a7c782d441983013cd"
         },
         "fr": {
-          "updatedAt": "2026-10-16T03:19:02.588Z",
+          "updatedAt": "2026-10-20T15:01:36.419Z",
           "fileName": "fr/products/bring-your-own-cloud/reference/network-security.mdx",
-          "postProcessHash": "3ceecef19fc2853efb4683be69b1c8ce0fbbead484a11ae7f033db3e7efe1c5f"
+          "postProcessHash": "683803049c857b2ffd279e6c7fe738ba204cd0d05ecc0a22e86e0557484c736d"
+        },
+        "ko": {
+          "updatedAt": "2026-10-20T15:01:36.420Z",
+          "fileName": "ko/products/bring-your-own-cloud/reference/network-security.mdx",
+          "postProcessHash": "2554dce1bdc622f27b7d3da9c9f333b8684589dd51f25d5e4912fce54ad20524"
+        },
+        "ja": {
+          "updatedAt": "2026-10-20T15:01:36.422Z",
+          "fileName": "ja/products/bring-your-own-cloud/reference/network-security.mdx",
+          "postProcessHash": "511b65fd42183f5b98aa502698f397593bd3c8a988f202e5f997de0077d224ef"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-10-20T15:01:36.422Z",
+          "fileName": "pt-BR/products/bring-your-own-cloud/reference/network-security.mdx",
+          "postProcessHash": "be865acf686a5bed80ece192187eb1b5de349e0be0c4fb348e6fb1a76ed7e161"
+        },
+        "es": {
+          "updatedAt": "2026-10-20T15:01:36.423Z",
+          "fileName": "es/products/bring-your-own-cloud/reference/network-security.mdx",
+          "postProcessHash": "e22d9e72a78e2812966bd42975685f38e7c7fd455adcbbd1f31889adf9c8d2ce"
+        },
+        "zh": {
+          "updatedAt": "2026-10-20T15:01:36.424Z",
+          "fileName": "zh/products/bring-your-own-cloud/reference/network-security.mdx",
+          "postProcessHash": "4c2dc5baa355a8d2bb208919bc324702fc75da09ce0e699d27c469322d3c16af"
+        },
+        "ru": {
+          "updatedAt": "2026-10-20T15:01:36.425Z",
+          "fileName": "ru/products/bring-your-own-cloud/reference/network-security.mdx",
+          "postProcessHash": "6a6f37e56843eb70eb157174824d4d5adfab49080a008ef3b3bb4298e1d65529"
         }
       },
       "fileName": "products/bring-your-own-cloud/reference/network-security.mdx"

@@ -60,26 +60,26 @@ doc_type: 'reference'
 
 Доступные варианты закрытого подключения зависят от вашего облачного провайдера:
 
-### Tailscale (по умолчанию) {#k8s-api-private-connection-tailscale}
+### AWS VPC Lattice {#k8s-api-private-connection-vpc-lattice}
+
+Для развертываний в AWS к API-серверу Kubernetes можно получить частный доступ через [AWS VPC Lattice](https://aws.amazon.com/vpc/lattice/) без использования каких-либо сторонних компонентов:
+
+* ClickHouse Cloud автоматически создает VPC Lattice Resource Gateway и Resource Configuration, указывающую на конечную точку API-сервера EKS внутри вашего BYOC VPC, и предоставляет доступ к этой Resource Configuration управляющему аккаунту ClickHouse Cloud через AWS Resource Access Manager (RAM).
+* Трафик между сервисами управления ClickHouse и вашим API-сервером Kubernetes полностью остается в частной сети AWS.
+* Ресурс RAM Share создается из вашего аккаунта и ограничивается одним кластером BYOC; его удаление немедленно отзывает путь частного доступа.
+* Поскольку доступ не зависит от агента, запущенного внутри вашего кластера Kubernetes, ClickHouse Support сохраняет доступ для устранения неполадок, даже если внутрикластерные компоненты недоступны.
+
+### Tailscale {#k8s-api-private-connection-tailscale}
+
+<Warning>
+  Использование Tailscale в качестве приватного подключения к серверу API EKS устарело. В AWS вместо этого используйте [AWS VPC Lattice](#k8s-api-private-connection-vpc-lattice). Если ваше развертывание в AWS сейчас использует Tailscale для закрытого доступа к API Kubernetes, обратитесь в ClickHouse Support, чтобы перейти на VPC Lattice.
+</Warning>
 
 Когда включена закрытая конечная точка API, сервисы управления ClickHouse подключаются к API-серверу Kubernetes через ту же сеть Tailscale с нулевым доверием, которая используется для доступа для устранения неполадок. В GCP через Tailscale работают инструменты развертывания, мониторинг и устранение неполадок, а сервисы управления используют конечную точку на основе DNS — см. раздел [Частная конечная точка control-plane в GCP](#k8s-api-private-connection-gcp). Подробнее о том, как работает это подключение, см. в разделе [Частная сеть Tailscale](/ru/products/bring-your-own-cloud/reference/network-security#tailscale-private-network).
 
 <Note>
   Если для закрытого подключения вы используете только Tailscale, есть риск, что ClickHouse Support потеряет доступ к вашей среде, если агент Tailscale станет недоступен. Это может замедлить устранение неполадок или увеличить время ответа службы поддержки.
 </Note>
-
-### AWS VPC Lattice {#k8s-api-private-connection-vpc-lattice}
-
-<Info>
-  Подключение через VPC Lattice сейчас доступно в рамках закрытой предварительной версии. Обратитесь в ClickHouse Support, чтобы включить его для вашего развертывания.
-</Info>
-
-Для развертываний в AWS к API-серверу Kubernetes также можно получить закрытый доступ через [AWS VPC Lattice](https://aws.amazon.com/vpc/lattice/) без использования каких-либо сторонних компонентов:
-
-* ClickHouse Cloud автоматически создает VPC Lattice Resource Gateway и Resource Configuration, указывающую на конечную точку API-сервера EKS внутри вашего BYOC VPC, и предоставляет доступ к этой Resource Configuration управляющему аккаунту ClickHouse Cloud через AWS Resource Access Manager (RAM).
-* Трафик между сервисами управления ClickHouse и вашим API-сервером Kubernetes полностью остается в частной сети AWS.
-* Ресурс RAM Share создается из вашего аккаунта и ограничивается одним кластером BYOC; его удаление немедленно отзывает путь закрытого доступа.
-* Поскольку доступ не зависит от агента, запущенного внутри вашего кластера Kubernetes, ClickHouse Support сохраняет доступ для устранения неполадок, даже если внутрикластерные компоненты недоступны.
 
 ### Частная конечная точка control-plane в GCP {#k8s-api-private-connection-gcp}
 

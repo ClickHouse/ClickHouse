@@ -60,26 +60,26 @@ BYOC 部署使用 **Network Load Balancers (NLBs)** 来管理流量并将其路�
 
 可用的私有连接选项因云提供商而异：
 
-### Tailscale (默认) {#k8s-api-private-connection-tailscale}
+### AWS VPC Lattice {#k8s-api-private-connection-vpc-lattice}
 
-启用私网 API 端点后，ClickHouse 管理服务会通过与故障排查访问相同的 Tailscale 零信任网络连接到 Kubernetes API server。在 GCP 上，Tailscale 负责承载部署工具、监控和故障排查相关的流量，而管理服务则使用基于 DNS 的端点——请参阅 [GCP 私有 control-plane 端点](#k8s-api-private-connection-gcp)。有关此连接如何工作的详细信息，请参阅 [Tailscale 私有网络](/zh/products/bring-your-own-cloud/reference/network-security#tailscale-private-network)。
+对于 AWS 部署，可以通过 [AWS VPC Lattice](https://aws.amazon.com/vpc/lattice/) 以私网方式访问 Kubernetes API 服务器，且无需任何第三方组件：
+
+* ClickHouse Cloud 会自动预配一个 VPC Lattice Resource Gateway 和一个 Resource Configuration，目标指向您 BYOC VPC 内的 EKS API 服务器端点，并通过 AWS Resource Access Manager (RAM) 将该 Resource Configuration 共享给 ClickHouse Cloud 管理账户。
+* ClickHouse 管理服务与您的 Kubernetes API 服务器之间的流量始终完全保留在 AWS 私有网络中。
+* RAM 共享由您的账户创建，并且仅限于单个 BYOC 集群；删除后会立即撤销该私网访问路径。
+* 由于访问不依赖在您的 Kubernetes 集群内运行的 agent，即使集群内组件不可用，ClickHouse 支持团队仍可保留访问权限以进行故障排查。
+
+### Tailscale {#k8s-api-private-connection-tailscale}
+
+<Warning>
+  使用 Tailscale 作为 EKS API 服务器的私有连接已弃用。在 AWS 上，请改用 [AWS VPC Lattice](#k8s-api-private-connection-vpc-lattice)。如果你的 AWS 部署目前通过 Tailscale 私有访问 Kubernetes API，请联系 ClickHouse 支持团队迁移到 VPC Lattice。
+</Warning>
+
+启用私网 API 端点后，ClickHouse 管理服务会通过与故障排查访问相同的 Tailscale 零信任网络连接到 Kubernetes API 服务器。在 GCP 上，Tailscale 负责承载部署工具、监控和故障排查相关的流量，而管理服务则使用基于 DNS 的端点——请参阅 [GCP 私有 control-plane 端点](#k8s-api-private-connection-gcp)。有关此连接如何工作的详细信息，请参阅 [Tailscale 私有网络](/zh/products/bring-your-own-cloud/reference/network-security#tailscale-private-network)。
 
 <Note>
   如果你完全依赖 Tailscale 提供私有连接，一旦 Tailscale agent 不可用，ClickHouse 支持团队可能会失去对你的环境的访问权限。这可能会导致故障排查或支持响应时间延长。
 </Note>
-
-### AWS VPC Lattice {#k8s-api-private-connection-vpc-lattice}
-
-<Info>
-  VPC Lattice 连接功能目前处于私有预览阶段。请联系 ClickHouse 支持团队为您的部署启用此功能。
-</Info>
-
-对于 AWS 部署，也可以通过 [AWS VPC Lattice](https://aws.amazon.com/vpc/lattice/) 以私网方式访问 Kubernetes API server，且无需任何第三方组件：
-
-* ClickHouse Cloud 会自动预配一个 VPC Lattice Resource Gateway 和一个 Resource Configuration，目标指向您 BYOC VPC 内的 EKS API server 端点，并通过 AWS Resource Access Manager (RAM) 将该 Resource Configuration 共享给 ClickHouse Cloud 管理账户。
-* ClickHouse 管理服务与您的 Kubernetes API server 之间的流量始终完全保留在 AWS 私有网络中。
-* RAM 共享由您的账户创建，并且仅限于单个 BYOC 集群；删除后会立即撤销该私网访问路径。
-* 由于访问不依赖在您的 Kubernetes 集群内运行的 agent，即使集群内组件不可用，ClickHouse 支持团队仍可保留访问权限以进行故障排查。
 
 ### GCP 私有 control-plane 端点 {#k8s-api-private-connection-gcp}
 

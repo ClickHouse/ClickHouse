@@ -109,7 +109,7 @@ doc_type: '参考'
 </Accordion>
 
 <Accordion title="ClickHouse 控制平面如何访问我们账户中的 Kubernetes API？是否必须使用 Tailscale？">
-  默认情况下，Kubernetes API 端点为公网端点，而限制其访问的方式因云而异：在 AWS 上使用仅包含 ClickHouse NAT IP 地址的 IP 允许列表——使用此默认设置时，请勿移除 ClickHouse 允许列表条目，因为控制平面需要这些条目来管理集群——而在 GCP 和 Azure 上则使用云 IAM 而非 IP 允许列表 (请参阅 [Kubernetes API 服务器暴露](/zh/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure)) 。也可在与 ClickHouse 团队协调后，将端点切换为仅私网访问：通过 Tailscale (仅出站，也用于故障排查访问) ，或者在 AWS 上通过 VPC Lattice (私有预览) 。在 GCP 上，禁用公网 IP 端点后，管理访问将转至经 IAM 授权、基于 DNS 的端点，该端点仍位于您的 VPC 网络之外；部署工具、监控和故障排查则使用 Tailscale——请参阅[配置](/zh/products/bring-your-own-cloud/configuration/configurations)。请注意，这仅适用于 Kubernetes API：云提供商 API 调用 (例如 AWS 上的 EKS 和 EC2) 通过跨账户角色承担从 ClickHouse Cloud 网络发起，绝不能经由 Tailscale 路由——请参阅[云提供商 API 与 Kubernetes API](/zh/products/bring-your-own-cloud/reference/network-security#cloud-api-vs-kubernetes-api)。
+  默认情况下，Kubernetes API 端点为公网端点，而限制其访问的方式因云而异：在 AWS 上使用仅包含 ClickHouse NAT IP 地址的 IP 允许列表——使用此默认设置时，请勿移除 ClickHouse 允许列表条目，因为控制平面需要这些条目来管理集群——而在 GCP 和 Azure 上则使用云 IAM 而非 IP 允许列表 (请参阅 [Kubernetes API 服务器暴露](/zh/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure)) 。也可在与 ClickHouse 团队协调后，将端点切换为仅私网访问：在 AWS 上通过 VPC Lattice (用于私有 EKS 访问的 Tailscale 方式已弃用) ，在 Azure 上通过 Private Link。在 GCP 上，禁用公网 IP 端点后，管理访问将转至经 IAM 授权、基于 DNS 的端点，该端点仍位于您的 VPC 网络之外；部署工具、监控和故障排查则使用 Tailscale——请参阅[配置](/zh/products/bring-your-own-cloud/configuration/configurations)。请注意，这仅适用于 Kubernetes API：云提供商 API 调用 (例如 AWS 上的 EKS 和 EC2) 通过跨账户角色承担从 ClickHouse Cloud 网络发起，绝不能经由 Tailscale 路由——请参阅[云提供商 API 与 Kubernetes API](/zh/products/bring-your-own-cloud/reference/network-security#cloud-api-vs-kubernetes-api)。
 </Accordion>
 
 <Accordion title="BYOC 网络与对象存储之间如何通信？">
@@ -121,7 +121,7 @@ doc_type: '参考'
 </Accordion>
 
 <Accordion title="客户端和集群通信使用哪些端口？">
-  客户端连接终止于负载均衡器的 TLS 端口：**8443** (HTTPS 接口) 和 **9440** (通过 TLS 的原生协议) ；端口 443 也会路由至 HTTPS 接口。MySQL 接口 (端口 3306) 目前未在 BYOC 中暴露，已列入路线图 (请参阅[概述](/zh/products/cloud/guides/infrastructure/deployment-options/byoc/overview)) 。
+  客户端连接终止于负载均衡器的 TLS 端口：**8443** (HTTPS 接口) 和 **9440** (通过 TLS 的原生协议) ；端口 443 也会路由至 HTTPS 接口。MySQL 接口 (端口 3306) 目前未在 BYOC 中暴露，已列入路线图 (请参阅[概览](/zh/products/cloud/guides/infrastructure/deployment-options/byoc/overview)) 。
 
   在网络内部，集群内部通信使用端口 9000 上的原生协议、端口 8123 上的 HTTP，以及用于复制和分布式查询的端口 9009 上的服务器间通信。这些内部端口和 ClickHouse Keeper 端口绝不会暴露在任何负载均衡器上。
 </Accordion>
