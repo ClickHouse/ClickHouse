@@ -3,6 +3,7 @@
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -209,10 +210,26 @@ public:
             auto src_supertype = tryGetLeastSupertype(src_array_types);
             auto dst_supertype = tryGetLeastSupertype(dst_array_types);
             auto expr_type = removeNullable(args.front().type);
+
+            /// Also skip `FixedString` mixed with another type. It is compared with that type zero-padded, but the
+            /// conversion to their common type keeps the padding (unless `cast_fixed_string_to_string_strip_trailing_zeros`),
+            /// so the WHEN keys would not match like with `equals`, and the THEN values would bypass the setting.
+            auto mixes_fixed_string = [](const DataTypes & types)
+            {
+                auto unwrap = [](const DataTypePtr & type) { return removeNullable(removeLowCardinality(type)); };
+                bool has_fixed_string = std::ranges::any_of(types, [&](const DataTypePtr & type) { return isFixedString(unwrap(type)); });
+                bool all_same = std::ranges::all_of(types, [&](const DataTypePtr & type) { return unwrap(type)->equals(*unwrap(types.front())); });
+                return has_fixed_string && !all_same;
+            };
+            DataTypes expr_and_src_array_types = src_array_types;
+            expr_and_src_array_types.push_back(args.front().type);
+
             bool can_use_transform = src_supertype && dst_supertype
                 && !isNullableOrLowCardinalityNullable(src_supertype)
                 && !isDynamic(expr_type)
-                && !isVariant(expr_type);
+                && !isVariant(expr_type)
+                && !mixes_fixed_string(expr_and_src_array_types)
+                && !mixes_fixed_string(dst_array_types);
 
             if (can_use_transform)
             {
