@@ -72,8 +72,6 @@ std::string_view getTextValue(sqlite3_stmt * statement, int idx)
     return {data ? data : "", static_cast<size_t>(len)};
 }
 
-/// Reads a cell of an integer column. A REAL or TEXT cell is read only when it holds a 64-bit integer exactly:
-/// `sqlite3_column_int64` would truncate, clamp or zero it.
 Int64 readIntegerCell(const String & column_name, const IDataType & column_type, sqlite3_stmt * statement, int idx)
 {
     const int storage_class = sqlite3_column_type(statement, idx);
@@ -641,14 +639,12 @@ void SQLiteStatementReader::insertValue(IColumn & column, const ColumnReadInfo &
 void SQLiteStatementReader::insertIntegerTextValue(IColumn & column, const ColumnReadInfo & info, sqlite3_stmt * statement, int idx) const
 {
     const int storage_class = sqlite3_column_type(statement, idx);
-    /// A read without a type contract (`requires_exact_storage_class`) reads every cell through the text path.
     if (storage_class == SQLITE_INTEGER || storage_class == SQLITE_TEXT || info.requires_exact_storage_class)
     {
         insertTextValue(column, info, statement, idx);
         return;
     }
 
-    /// A REAL cell is read only when it holds a 64-bit integer exactly, a BLOB never, like in a native integer column.
     const String text = toString(readIntegerCell(info.name, *info.data_type, statement, idx));
     ReadBufferFromString buffer(text);
     info.serialization->deserializeWholeText(column, buffer, format_settings);

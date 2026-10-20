@@ -406,8 +406,8 @@ inline bool isStrictTable(sqlite3 * db, const String & table_name)
 /// both sides (`isPushdownSafeType` above). Second, the *remote* column must actually compare the way
 /// ClickHouse does for every cell it can hold. Declared affinity and collation alone cannot prove that:
 /// SQLite is dynamically typed per cell, so an arbitrary pre-existing INTEGER-declared column can still hold
-/// the TEXT cell `'abc'`, which fails the local read of an `Int64` column while the pushed-down `x = 0`
-/// compares against the TEXT storage class on the SQLite side and silently drops the row. The gate therefore
+/// the TEXT cell `'abc'`, which fails the local read of an `Int64` column while the pushed-down
+/// `x = 0` compares against the TEXT storage class on the SQLite side and drops the row. The gate therefore
 /// requires the table to be STRICT (`isStrictTable` above), which pins the storage class of every cell to
 /// the declared column type, and then requires the exact representation-preserving pairing of the declared
 /// type with the ClickHouse one (`isPushdownSafeType` above explains why only exact pairs qualify - a
