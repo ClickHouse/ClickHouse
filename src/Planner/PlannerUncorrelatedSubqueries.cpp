@@ -42,6 +42,7 @@
 
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 
 #include <Storages/StorageProxy.h>
 
@@ -408,10 +409,13 @@ void buildQueryPlanForUncorrelatedInSubquery(
     const auto in_left_argument_name = in_node.children.at(0)->result_name;
 
     auto [key_actions, key_column_names] = buildJoinKeyActions(std::move(in_subquery.actions), in_node, in_subquery.subquery, *query_plan.getCurrentHeader(), query_context);
-    auto key_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(key_actions));
-    appendSetsFromActionsDAG(key_step->getExpression(), useful_sets);
-    key_step->setStepDescription("Compute the left arguments of IN");
-    query_plan.addStep(std::move(key_step));
+    if (!isPassthroughActions(key_actions))
+    {
+        auto key_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(key_actions));
+        appendSetsFromActionsDAG(key_step->getExpression(), useful_sets);
+        key_step->setStepDescription("Compute the left arguments of IN");
+        query_plan.addStep(std::move(key_step));
+    }
 
     auto subquery_options = select_query_options.subquery();
     subquery_options.forceMaterializeCTE();
