@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <string>
 #include <string_view>
+#include <span>
 #include <cstring>
 #include <cstddef>
 #include <cstdint>
@@ -288,6 +289,30 @@ inline bool equalsCaseInsensitive(std::string_view a, std::string_view b)
         && std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) { return equalsCaseInsensitive(x, y); });
 }
 
+/// Equality for secret-derived byte sequences such as passwords and one-time codes. Unlike `memcmp`
+/// and `operator==`, the runtime does not depend on the position of the first mismatch, so timing does
+/// not reveal how many leading bytes were right. The lengths are treated as public, as in OpenSSL's
+/// `CRYPTO_memcmp`. The `volatile` reads keep the compiler from turning the loop into an early-exit compare.
+inline bool constantTimeEquals(std::span<const uint8_t> lhs, std::span<const uint8_t> rhs)
+{
+    if (lhs.size() != rhs.size())
+        return false;
+
+    const volatile uint8_t * a = lhs.data();
+    const volatile uint8_t * b = rhs.data();
+    uint8_t diff = 0;
+    for (size_t i = 0; i < lhs.size(); ++i)
+        diff |= a[i] ^ b[i];
+    return diff == 0;
+}
+
+inline bool constantTimeEquals(std::string_view lhs, std::string_view rhs)
+{
+    return constantTimeEquals(
+        std::span(reinterpret_cast<const uint8_t *>(lhs.data()), lhs.size()),
+        std::span(reinterpret_cast<const uint8_t *>(rhs.data()), rhs.size()));
+}
+
 /// ASCII-only case conversion. Keywords, identifiers and function names are ASCII, and applying
 /// the locale to them would be wrong, so these deliberately leave every other byte alone.
 
@@ -406,6 +431,9 @@ inline void trim(std::string & str, char c = ' ')
 
 /// If all characters in the string are ASCII, return true
 bool isAllASCII(const UInt8 * data, size_t size);
+
+/// Position of the first byte >= 0x80, or `size` if there is none.
+size_t findFirstNonASCII(const UInt8 * data, size_t size);
 
 constexpr bool containsGlobs(const std::string & str)
 {

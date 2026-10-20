@@ -3,6 +3,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
+#include <DataTypes/IDataType.h>
 
 namespace DB
 {
@@ -32,6 +33,8 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
+    bool isNullPropagating(const DataTypePtr & result_type) const override { return isNullableOrLowCardinalityNullable(result_type); }
+
     bool useDefaultImplementationForNothing() const override { return false; }
 
     bool useDefaultImplementationForConstants() const override { return false; }
@@ -49,10 +52,7 @@ public:
         return 1;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        return arguments[0];
-    }
+    String getSignatureString() const override { return "(T) -> T"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
