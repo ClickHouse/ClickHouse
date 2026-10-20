@@ -16,7 +16,7 @@ This page covers day-2 operation of the connector on both install targets. For i
 
 ### Kubernetes {#upgrades-kubernetes}
 
-`connector upgrade` is in the CLI from v0.47.0 on and carries its own Helm client, so no `helm` binary is needed:
+`connector upgrade` needs a CLI from v0.50.0 on and carries its own Helm client, so no `helm` binary is needed:
 
 ```bash
 clicklink clctl context add <name> --kube-context <kubectl context> --use
