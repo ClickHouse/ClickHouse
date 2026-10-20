@@ -1,5 +1,5 @@
 -- Tags: no-parallel-replicas, no-object-storage, no-darwin
--- no-darwin: min_bytes_to_use_direct_io relies on O_DIRECT, which is not supported on macOS.
+-- no-darwin: the test asserts on ProfileEvents['OSReadBytes'], which is populated via Linux taskstats only.
 
 set min_bytes_to_use_direct_io = 0;
 

@@ -13,33 +13,27 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы на основе [исходного файла](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="http_allow_database_as_path">
-  ## http_allow_database_as_path
-</div>
+## http_allow_database_as_path {#http_allow_database_as_path}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Новая настройка для распознавания имени базы данных в пути URL HTTP-запросов."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Новая настройка для распознавания имени базы данных в пути URL HTTP-запросов."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Включена по умолчанию: HTTP-интерфейс интерпретирует компонент `\/database\/` в пути URL как текущую базу данных."}]}]} />
 
 Если включено, HTTP-интерфейс распознаёт компонент `/database/` в пути URL и использует его в качестве текущей базы данных.
 
-Это настройка для отдельного пользователя, определяющая, будет ли интерпретироваться маршрутизируемый запрос с путём в URL. Сама маршрутизация глобально регулируется настройкой конфигурации уровня сервера `http_allow_path_requests` (по умолчанию отключена). Её необходимо включить, чтобы HTTP-интерфейс вообще направлял запрос с путём в URL (например, `/my_db/my_table.csv`) обработчику запросов: решение о маршрутизации принимается до аутентификации запроса, поэтому оно не может зависеть от настройки для отдельного пользователя. Если `http_allow_path_requests` отключена, неизвестные пути возвращают обычный ответ `404`. После маршрутизации эта настройка повторно проверяется с учётом действующих настроек аутентифицированного пользователя, поэтому её можно выборочно включать для отдельных пользователей, ролей или профилей.
+Это настройка для отдельного пользователя, определяющая, будет ли интерпретироваться маршрутизируемый запрос с путём в URL. Сама маршрутизация глобально регулируется настройкой конфигурации уровня сервера `http_allow_path_requests` (по умолчанию включена). Её необходимо включить, чтобы HTTP-интерфейс вообще направлял запрос с путём в URL (например, `/my_db/my_table.csv`) обработчику запросов: решение о маршрутизации принимается до аутентификации запроса, поэтому оно не может зависеть от настройки для отдельного пользователя. Если `http_allow_path_requests` отключена, неизвестные пути возвращают обычный ответ `404`. После маршрутизации эта настройка повторно проверяется с учётом действующих настроек аутентифицированного пользователя, поэтому её можно выборочно отключать для отдельных пользователей, ролей или профилей.
 
-<div id="http_allow_filters_as_path">
-  ## http_allow_filters_as_path
-</div>
+## http_allow_filters_as_path {#http_allow_filters_as_path}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Новая настройка для распознавания в пути URL HTTP-запросов фильтров `name=value` в стиле партиционирования Hive."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Новая настройка для распознавания в пути URL HTTP-запросов фильтров `name=value` в стиле партиционирования Hive."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Включена по умолчанию: HTTP-интерфейс интерпретирует компоненты пути `\/name=value\/` как фильтры, объединённые через `AND`."}]}]} />
 
 Если включено, HTTP-интерфейс распознаёт компоненты `/name=value/` в пути (в стиле партиционирования Hive) и преобразует их в фильтры, объединённые с помощью AND. Также распознаются операторы `>`, `<`, `>=`, `<=`, `!=`, `<>`.
 
 Как и [`http_allow_database_as_path`](/ru/reference/settings/session-settings/http#http_allow_database_as_path), это настройка для отдельного пользователя; маршрутизация запросов с путём в URL глобально регулируется настройкой конфигурации уровня сервера `http_allow_path_requests` (маршрутизация выполняется до аутентификации).
 
-<div id="http_allow_filters_as_unrecognized_url_parameters">
-  ## http_allow_filters_as_unrecognized_url_parameters
-</div>
+## http_allow_filters_as_unrecognized_url_parameters {#http_allow_filters_as_unrecognized_url_parameters}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -50,21 +44,19 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * Обычный `name=value` преобразуется в проверку на равенство `` `name` = 'value' `` (идентификатор заключается в обратные кавычки, а значение — в одинарные кавычки как строковый литерал).
 * Оператор сравнения (`!=`, `>`, `<`, `>=`, `<=`, `<>`) превращает его в сравнение: он может быть разделён между именем и значением параметра (`?a!=2`, `?a>=2`) или записан непосредственно, если в URL нет `=` для разделения (`?a<>2`, `?f(x)>3`); в этом случае восстановленное `name[=value]` разбирается как полное SQL-выражение.
 
-<div id="http_allow_table_as_file">
-  ## http_allow_table_as_file
-</div>
+В отличие от других настроек `http_allow_*`, эта настройка по умолчанию отключена. Она действует для каждого запроса HTTP-интерфейса, включая конечную точку `/?query=...`, поэтому после её включения любой нераспознанный URL-параметр, который добавляет клиент (идентификатор запроса, подпись, параметр для обхода кэша), становится фильтром запроса. Опечатка в имени настройки в этом случае приводит уже не к ошибке `UNKNOWN_SETTING`, а к ошибке `UNKNOWN_IDENTIFIER` (а если имя совпадёт с именем столбца, результат будет незаметно отфильтрован). Кроме того, значение параметра попадает в текст запроса и не маскируется там, в отличие от `Request URI` в журнале.
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+## http_allow_table_as_file {#http_allow_table_as_file}
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Новая настройка для распознавания имени таблицы в пути URL HTTP-запросов с необязательными расширениями формата\/сжатия."}]}]} />
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Новая настройка для распознавания имени таблицы в пути URL HTTP-запросов с необязательными расширениями формата\/сжатия."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Включена по умолчанию: HTTP-интерфейс интерпретирует последний компонент пути URL как `table[.format[.compression]]` и возвращает в ответ результат `SELECT * FROM table`."}]}]} />
 
 Если включено, HTTP-интерфейс распознаёт последний компонент пути URL как имя таблицы в форме `table`, `table.format` или `table.format.compression`. Путь интерпретируется как `SELECT * FROM table`.
 
 Как и [`http_allow_database_as_path`](/ru/reference/settings/session-settings/http#http_allow_database_as_path), это настройка для отдельного пользователя; маршрутизация запросов с путём в URL глобально контролируется настройкой конфигурации уровня сервера `http_allow_path_requests` (маршрутизация выполняется до аутентификации).
 
-<div id="http_connection_timeout">
-  ## http_connection_timeout
-</div>
+## http_connection_timeout {#http_connection_timeout}
 
 <SettingsInfoBlock type="Секунды" default_value="1" />
 
@@ -75,17 +67,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * Любое положительное целое число.
 * 0 — отключено (бесконечный тайм-аут).
 
-<div id="http_make_head_request">
-  ## http_make_head_request
-</div>
+## http_make_head_request {#http_make_head_request}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Настройка `http_make_head_request` позволяет выполнять запрос `HEAD` при чтении данных по HTTP, чтобы получить сведения о файле, например его размер. Поскольку она включена по умолчанию, если сервер не поддерживает запросы `HEAD`, эту настройку может быть целесообразно отключить.
 
-<div id="http_native_compression_disable_checksumming_on_decompress">
-  ## http_native_compression_disable_checksumming_on_decompress
-</div>
+## http_native_compression_disable_checksumming_on_decompress {#http_native_compression_disable_checksumming_on_decompress}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -98,9 +86,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 — Отключено.
 * 1 — Включено.
 
-<div id="http_receive_timeout">
-  ## http_receive_timeout
-</div>
+## http_receive_timeout {#http_receive_timeout}
 
 <SettingsInfoBlock type="Секунды" default_value="30" />
 
@@ -112,9 +98,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 * Любое положительное целое число (в секундах). `0` **не** является бесконечным тайм-аутом и может привести к сбоям при установке соединения (для тайм-аутов POSIX-сокетов требуется положительный интервал).
 
-<div id="http_send_timeout">
-  ## http_send_timeout
-</div>
+## http_send_timeout {#http_send_timeout}
 
 <SettingsInfoBlock type="секунда" default_value="30" />
 
@@ -130,25 +114,19 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
   Применяется только к профилю default. Для применения изменений требуется перезагрузка сервера.
 </Note>
 
-<div id="http_skip_not_found_url_for_globs">
-  ## http_skip_not_found_url_for_globs
-</div>
+## http_skip_not_found_url_for_globs {#http_skip_not_found_url_for_globs}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Пропускать URL-адреса, заданные глоб-шаблонами, при ошибке HTTP&#95;NOT&#95;FOUND
 
-<div id="http_wait_end_of_query">
-  ## http_wait_end_of_query
-</div>
+## http_wait_end_of_query {#http_wait_end_of_query}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Включает буферизацию HTTP-ответа на стороне сервера.
 
-<div id="http_write_exception_in_output_format">
-  ## http_write_exception_in_output_format
-</div>
+## http_write_exception_in_output_format {#http_write_exception_in_output_format}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -156,9 +134,23 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Записывает исключение в формат вывода, чтобы вывод оставался корректным. Работает с форматами JSON и XML.
 
-<div id="http_zlib_compression_level">
-  ## http_zlib_compression_level
-</div>
+## http_x_clickhouse_format_overrides_output_format {#http_x_clickhouse_format_overrides_output_format}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Определяет, является ли HTTP-заголовок `X-ClickHouse-Format` псевдонимом для `output_format` (и переопределяет предложение `FORMAT` запроса), как начиная с 26.8, или для `default_format`, как до 26.8. Эта запись задним числом документирует изменение из 26.8, чтобы при `compatibility` с версиями до 26.8 восстанавливалось прежнее поведение заголовка."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Настройка добавлена в 26.10 для управления изменением поведения HTTP-заголовка `X-ClickHouse-Format`, появившимся в 26.8. Значимое семантическое изменение зарегистрировано в блоке 26.8, поэтому `compatibility = '26.7'` откатывает его, а `compatibility = '26.8'` и `'26.9'` сохраняют поведение этих релизов; эта запись нужна для того, чтобы проверка обновления принимала новое имя."}]}]} />
+
+Определяет, какой настройке соответствует HTTP-заголовок `X-ClickHouse-Format`.
+
+Если настройка включена (по умолчанию), заголовок является псевдонимом настройки `output_format`: он явно переопределяет формат ответа и имеет приоритет как над предложением `FORMAT` в запросе, так и над расширением файла в пути URL.
+
+Если настройка отключена, заголовок является псевдонимом настройки `default_format`, как было до версии 26.8: он лишь задаёт формат, который используется, если в запросе нет предложения `FORMAT` и не применяется никакое другое переопределение формата.
+
+В обоих случаях заголовок переопределяет одноимённый параметр URL (`output_format` или `default_format` соответственно) и никак не влияет на разбор тела запроса `INSERT`.
+
+Это настройка совместимости для HTTP-интерфейса: заголовок обрабатывается до разбора запроса, поэтому настройку необходимо передавать через параметр URL или профиль пользователя, а не через предложение `SETTINGS` внутри запроса. Как и сами `output_format` и `default_format`, её можно изменить даже в режиме только для чтения (`readonly = 1`), поэтому пользователь с правом только на чтение может передать её как параметр URL.
+
+## http_zlib_compression_level {#http_zlib_compression_level}
 
 <SettingsInfoBlock type="Int64" default_value="3" />
 

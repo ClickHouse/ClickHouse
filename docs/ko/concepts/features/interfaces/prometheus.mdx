@@ -164,7 +164,7 @@ curl --user default:<password> --get \
   --data-urlencode "query=sum by(job)(http_requests_total{code=\"200\"})/2"
 ```
 
-표현식은 파싱된 쿼리에서 직렬화되어 반환되며, 이때 공백은 정규화되고 주석은 제거되며 불필요한 괄호는 삭제되고 duration은 초 단위 숫자로 변환됩니다: `sum by (job) (http_requests_total{code="200"}) / 2`. 이 엔드포인트는 표현식을 평가하지 않으므로 `database` 및 `table` 매개변수가 필요하지 않습니다.
+표현식은 파싱된 쿼리에서 직렬화되어 반환되며, 이때 공백은 정규화되고 주석은 제거되며 불필요한 괄호는 삭제되고 duration은 파서가 허용하는 단위로 표시됩니다: `sum by (job) (http_requests_total{code="200"}) / 2`. duration은 초 단위 숫자로 변환되지 않고 단위를 유지하므로 `rate(x[5m])`은 `rate(x[5m])`으로 반환됩니다. 단일 단위의 정수로 표현할 수 없는 경우에는 필요한 단위를 조합하여 표시하므로 `rate(x[90s])`는 `rate(x[1m30s])`로 반환됩니다. 이 엔드포인트는 표현식을 평가하지 않으므로 `database` 및 `table` 매개변수가 필요하지 않습니다.
 
 HTTP API, `promql` 방언 및 테이블 함수에서 지원하는 함수와 집계 연산자 목록은 [지원되는 PromQL 기능](/ko/reference/functions/table-functions/prometheusQueryRange#supported-promql-features)을 참조하십시오.
 

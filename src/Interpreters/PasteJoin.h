@@ -34,7 +34,7 @@ public:
     /// The left and right blocks are concatenated side by side by row position.
     bool preservesLeftBlockOrder() const override { return true; }
 
-    bool addBlockToJoin(const Block & /* block */, bool /* check_limits */) override
+    bool addBlockToJoin(const Block & /* block */, size_t /* num_rows */, JoinBuildContext /* context */) override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PasteJoin::addBlockToJoin should not be called");
     }

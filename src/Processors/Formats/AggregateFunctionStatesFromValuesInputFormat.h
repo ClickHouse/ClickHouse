@@ -44,6 +44,9 @@ public:
     void needOnlyCount() override { underlying->needOnlyCount(); }
     void setQueryParameters(const NameToNameMap & parameters) override { underlying->setQueryParameters(parameters); }
     std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const override { return underlying->getMatchedBuckets(); }
+    std::vector<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const override { return underlying->getTopKBestValuesOfBuckets(); }
+    bool isTopKFilterApplied() const override { return underlying->isTopKFilterApplied(); }
+    bool isMinMaxFromStatisticsApplied() const override { return underlying->isMinMaxFromStatisticsApplied(); }
     std::optional<std::vector<bool>> getMatchedRowBlocks() const override { return underlying->getMatchedRowBlocks(); }
     void setRowBlocksToRead(std::shared_ptr<const std::vector<bool>> row_blocks) override { underlying->setRowBlocksToRead(std::move(row_blocks)); }
 

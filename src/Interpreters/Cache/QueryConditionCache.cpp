@@ -71,6 +71,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsUInt64 function_base58_max_input_size;
     extern const SettingsBool validate_polygons;
     extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
+    extern const SettingsBool short_circuit_function_evaluation_reorder_arguments;
     extern const SettingsBool short_circuit_function_evaluation_for_nulls;
     extern const SettingsDouble short_circuit_function_evaluation_for_nulls_threshold;
     extern const SettingsTimezone session_timezone;
@@ -210,6 +211,9 @@ UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
     /// `NULL`; without them, it is evaluated on the values stored behind the `NULL`s and may throw on them. The
     /// DAG and the result type are identical in both modes.
     hash.update(static_cast<UInt64>(settings[Setting::short_circuit_function_evaluation].value));
+    /// Evaluating a cheap argument of `and` / `or` before a heavy one changes nothing but the rows the heavy one is
+    /// evaluated on, so like the setting above it decides whether the heavy one throws on the rows it would skip.
+    hash.update(settings[Setting::short_circuit_function_evaluation_reorder_arguments].value);
     hash.update(settings[Setting::short_circuit_function_evaluation_for_nulls].value);
     hash.update(settings[Setting::short_circuit_function_evaluation_for_nulls_threshold].value);
     /// `session_timezone` is not read by any function when it is built: `DateLUT::instance()` looks it up in the
@@ -383,7 +387,8 @@ String makeRowBlocksPartName(const String & file_part_name)
 
 }
 
-QueryConditionCache::FileMatchingMarks QueryConditionCache::readFile(const UUID & table_id, const String & file_part_name, UInt64 condition_hash)
+QueryConditionCache::FileMatchingMarks QueryConditionCache::readFile(
+    const UUID & table_id, const String & file_part_name, UInt64 condition_hash, bool increment_profile_events)
 {
     FileMatchingMarks result;
     if (table_id == UUIDHelpers::Nil)
@@ -392,10 +397,9 @@ QueryConditionCache::FileMatchingMarks QueryConditionCache::readFile(const UUID 
     result.buckets = read(table_id, file_part_name, condition_hash, /*increment_profile_events=*/ false);
     result.row_blocks = read(table_id, makeRowBlocksPartName(file_part_name), condition_hash, /*increment_profile_events=*/ false);
 
-    if (result.buckets || result.row_blocks)
-        ProfileEvents::increment(ProfileEvents::QueryConditionCacheHits);
-    else
-        ProfileEvents::increment(ProfileEvents::QueryConditionCacheMisses);
+    if (increment_profile_events)
+        ProfileEvents::increment(
+            result.buckets || result.row_blocks ? ProfileEvents::QueryConditionCacheHits : ProfileEvents::QueryConditionCacheMisses);
     return result;
 }
 

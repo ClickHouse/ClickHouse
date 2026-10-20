@@ -53,10 +53,14 @@ SELECT length(h3Line(stringToH3(start), stringToH3(end))) FROM h3_indexes ORDER 
 
 SELECT h3Line(0xffffffffffffff, 0xffffffffffffff); -- { serverError INCORRECT_DATA }
 
--- A line whose endpoints are valid but which crosses pentagon distortion: the length of the line can
--- be computed while the line itself cannot, so the query must fail rather than return a partially
--- written array.
-SELECT h3Line(toUInt64(585609238802333695), toUInt64(585624631965122559)); -- { serverError INCORRECT_DATA }
-SELECT h3Line(materialize(toUInt64(585609238802333695)), materialize(toUInt64(585624631965122559))); -- { serverError INCORRECT_DATA }
+-- A line whose endpoints are valid and which crosses pentagon distortion. Since `h3` v4.5.0
+-- `gridPathCells` retries the interpolation anchored at the other endpoint, so such a line is
+-- produced instead of failing.
+SELECT h3Line(toUInt64(585609238802333695), toUInt64(585624631965122559));
+SELECT h3Line(materialize(toUInt64(585609238802333695)), materialize(toUInt64(585624631965122559)));
+
+-- Both endpoints are valid cells, but they are at different resolutions, so the length of the line
+-- cannot be computed and the query must fail rather than return a partially written array.
+SELECT h3Line(toUInt64(585609238802333695), h3ToParent(toUInt64(585624631965122559), 1)); -- { serverError INCORRECT_DATA }
 
 DROP TABLE h3_indexes;

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
+# Tag no-replicated-database: a DDL entry is executed with the `dialect` of the session, so `clickhouse_json` fails to parse the SQL text, https://github.com/ClickHouse/ClickHouse/issues/123323
 # `EXPLAIN AST optimize = 1` is the one route that still reaches the pre-analyzer select interpreter:
 # `InterpreterFactory` turns the analyzer off for `ParsedAST`, and the legacy visitors dereference
 # `ASTFunction::arguments` with no arity check in front of them. Without the boundary screen the server

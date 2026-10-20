@@ -64,6 +64,12 @@ public:
     void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_) override;
 
     std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const override;
+    std::vector<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const override;
+    bool isTopKFilterApplied() const override;
+    bool isMinMaxFromStatisticsApplied() const override { return min_max_from_statistics; }
+
+    /// Use the columns cache, see `Parquet::ColumnsCacheOptions`. Must be called before the first read.
+    void setColumnsCacheOptions(std::shared_ptr<const Parquet::ColumnsCacheOptions> options) { read_options.columns_cache = std::move(options); }
 
     std::optional<std::vector<bool>> getMatchedRowBlocks() const override;
 
@@ -89,6 +95,9 @@ private:
     std::optional<Parquet::ReadManager> reader;
     bool reported_count = false; // if need_only_count
 
+    /// The rows were replaced by min / max from column chunk statistics; no row groups were read.
+    bool min_max_from_statistics = false;
+
     BlockMissingValues previous_block_missing_values;
     size_t previous_approx_bytes_read_for_chunk = 0;
 
@@ -96,7 +105,11 @@ private:
     std::shared_ptr<ParquetFileBucketInfo> buckets_to_read;
     std::shared_ptr<const std::vector<bool>> row_blocks_to_read;
 
-    parquet::format::FileMetaData getFileMetadata(Parquet::Prefetcher & prefetcher) const;
+    /// nullopt if the metadata cache is not used.
+    std::optional<ParquetMetadataCacheKey> getMetadataCacheKey() const;
+    std::shared_ptr<const Parquet::FileFooter> readFileFooter(Parquet::Prefetcher & prefetcher) const;
+    /// For count(), which needs no column chunks.
+    std::shared_ptr<const Parquet::FileFooter> getFileFooter(Parquet::Prefetcher & prefetcher) const;
 };
 
 class NativeParquetSchemaReader final : public ISchemaReader
