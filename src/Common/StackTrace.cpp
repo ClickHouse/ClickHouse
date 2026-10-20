@@ -38,6 +38,10 @@
 #include <link.h>
 #endif
 
+#if defined(OS_WINDOWS)
+#include <Poco/UnWindows.h>
+#endif
+
 #if defined(OS_DARWIN)
 /// This header contains functions like `backtrace` and `backtrace_symbols`
 /// Which will be used for stack unwinding on Mac.
@@ -633,10 +637,25 @@ void StackTrace::forEachFrame(
 #else
     UNUSED(fatal);
 
+#if defined(OS_WINDOWS)
+    /// The runtime address of a frame must not be published, because it defeats ASLR. A frame inside
+    /// the executable gets its offset in the image as `physical_addr`, as the ELF branch above does;
+    /// a frame elsewhere (a DLL, JIT code) gets none.
+    const auto * image_base = reinterpret_cast<const char *>(GetModuleHandleW(nullptr));
+    const auto * dos_header = reinterpret_cast<const IMAGE_DOS_HEADER *>(image_base);
+    const auto * nt_headers = reinterpret_cast<const IMAGE_NT_HEADERS *>(image_base + dos_header->e_lfanew);
+    const size_t image_size = nt_headers->OptionalHeader.SizeOfImage;
+#endif
+
     for (size_t i = offset; i < size; ++i)
     {
         StackTrace::Frame current_frame;
         current_frame.virtual_addr = frame_pointers[i];
+#if defined(OS_WINDOWS)
+        const auto * address = static_cast<const char *>(frame_pointers[i]);
+        if (address >= image_base && address < image_base + image_size)
+            current_frame.physical_addr = reinterpret_cast<void *>(static_cast<uintptr_t>(address - image_base));
+#endif
         callback(current_frame);
     }
 #endif
@@ -950,6 +969,16 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         }
 
         callback(out.str());
+    };
+#elif defined(OS_WINDOWS)
+    auto callback_wrapper = [&](const StackTrace::Frame & frame)
+    {
+        /// Only the offset of a frame inside the executable is shown, never its runtime address:
+        /// see `forEachFrame`.
+        if (frame.physical_addr && shouldShowAddress(frame.physical_addr))
+            callback(fmt::format("{}. ? @ {}", frame_index++, frame.physical_addr));
+        else if (frame.virtual_addr)
+            callback(fmt::format("{}. ?", frame_index++));
     };
 #else
     auto callback_wrapper = [&](const StackTrace::Frame & frame)
