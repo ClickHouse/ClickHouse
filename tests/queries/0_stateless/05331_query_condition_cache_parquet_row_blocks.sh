@@ -41,6 +41,24 @@ function check_second_run()
             AND startsWith(query_id, '${CLICKHOUSE_TEST_UNIQUE_NAME}_${tag}_')"
 }
 
+# A TopN read skips the rows beyond its threshold, so its row blocks must not be stored: a plain read
+# after it would skip matching rows. The last line checks that the threshold did skip row groups.
+function run_top_k()
+{
+    local table=$1 tag=$2
+    ${CLICKHOUSE_CLIENT} --query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_${tag}" --query "
+        SELECT k FROM $table WHERE k % 100000 < 50 ORDER BY k LIMIT 3
+        SETTINGS $SETTINGS, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 0,
+            max_threads = 1, max_parsing_threads = 1"
+    ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(v) FROM $table WHERE k % 100000 < 50 SETTINGS $SETTINGS"
+    ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(v) FROM $table WHERE k % 100000 < 50 SETTINGS use_query_condition_cache = 0"
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+    ${CLICKHOUSE_CLIENT} --query "
+        SELECT ProfileEvents['ParquetTopKSkippedRowGroups'] > 0
+        FROM system.query_log
+        WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_id = '${CLICKHOUSE_TEST_UNIQUE_NAME}_${tag}'"
+}
+
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t (k UInt64, v UInt64)
     ENGINE = File(Parquet, '${CLICKHOUSE_DATABASE}/05331_query_condition_cache.parquet')
@@ -60,6 +78,9 @@ ${CLICKHOUSE_CLIENT} --query "
 touch -d '2020-01-02 00:00:00' "$DATA_FILE"
 run t "k % 100000 < 100" rewrite
 
+echo "File, TopN read first"
+run_top_k t file_top_k
+
 echo "S3"
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ts (k UInt64, v UInt64)
@@ -68,6 +89,9 @@ ${CLICKHOUSE_CLIENT} --query "
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO ts SELECT number, number * 2 FROM numbers(1000001) SETTINGS s3_truncate_on_insert = 1"
 run ts "k % 100000 < 100" s3
 check_second_run s3
+
+echo "S3, TopN read first"
+run_top_k ts s3_top_k
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ts"
