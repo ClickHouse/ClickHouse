@@ -146,7 +146,7 @@ for f in truncated_ip.pcap truncated_raw_ip.pcap; do
 done
 
 echo "--- length invariants hold across all fixtures ---"
-for f in packets.pcap packets.pcapng truncated.pcap truncated_headers.pcap truncated_ip.pcap truncated_raw_ip.pcap raw_ip.pcap ipv4.pcap ipv6.pcap null.pcap sll.pcap sll2.pcap dot3.pcap options.pcap; do
+for f in packets.pcap packets.pcapng truncated.pcap truncated_headers.pcap truncated_ip.pcap truncated_raw_ip.pcap raw_ip.pcap ipv4.pcap ipv6.pcap null.pcap sll.pcap truncated_null.pcap truncated_sll.pcap ppi.pcap sll2.pcap dot3.pcap options.pcap; do
     $CLICKHOUSE_LOCAL -q "
     SELECT
         '$f',
@@ -224,6 +224,14 @@ echo "--- BSD loopback and Linux cooked capture link types are dissected ---"
 for f in null.pcap sll.pcap; do
     $CLICKHOUSE_LOCAL -q "
     SELECT '$f', number, link_type, protocols, eth_src, eth_type, ip_version, src_addr, dst_addr, ip_protocol, src_port, dst_port, payload_length
+    FROM file('$DATA_DIR/$f', PCAP)
+    ORDER BY number FORMAT TSV"
+done
+
+echo "--- BSD loopback, Linux cooked capture and PPI frames cut inside the IP header keep their outer headers ---"
+for f in truncated_null.pcap truncated_sll.pcap ppi.pcap; do
+    $CLICKHOUSE_LOCAL -q "
+    SELECT '$f', number, capture_length, original_length, link_type, protocols, eth_src, eth_type, ip_version, ip_protocol, length(raw)
     FROM file('$DATA_DIR/$f', PCAP)
     ORDER BY number FORMAT TSV"
 done

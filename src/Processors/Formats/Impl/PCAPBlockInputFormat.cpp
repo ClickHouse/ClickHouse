@@ -35,6 +35,9 @@
 #include <tins/tcp.h>
 #include <tins/udp.h>
 #include <tins/dot1q.h>
+#include <tins/loopback.h>
+#include <tins/sll.h>
+#include <tins/ppi.h>
 #include <tins/utils/pdu_utils.h>
 #include <tins/detail/pdu_helpers.h>
 
@@ -350,6 +353,25 @@ Tins::PDU * dissectFrameLayers(int dlt, const uint8_t * data, UInt32 caplen)
     return Tins::Internals::pdu_from_dlt_flag(dlt, data, caplen, /*rawpdu_on_no_match=*/ true);
 }
 
+/// Appends to `last` the 802.1Q tags that follow a link-layer header ending at `offset` and were
+/// captured completely, when `ether_type`, the type field of that header, names a tag. Returns the
+/// offset after the last appended tag; `last` is left pointing to it.
+UInt32 appendCompleteVlanTags(Tins::PDU *& last, const uint8_t * data, UInt32 offset, UInt32 caplen, UInt16 ether_type)
+{
+    static constexpr UInt32 vlan_tag_size = 4;
+    while ((ether_type == Tins::Constants::Ethernet::VLAN || ether_type == Tins::Constants::Ethernet::QINQ
+            || ether_type == Tins::Constants::Ethernet::OLD_QINQ)
+        && offset + vlan_tag_size <= caplen)
+    {
+        auto * tag = new Tins::Dot1Q(data + offset, vlan_tag_size);
+        last->inner_pdu(tag);
+        last = tag;
+        offset += vlan_tag_size;
+        ether_type = tag->payload_type();
+    }
+    return offset;
+}
+
 /// Rebuilds the PDU chain of an Ethernet frame from its outer headers that were captured
 /// completely - the Ethernet II header and its 802.1Q tags, or the IEEE 802.3 header and its
 /// `SNAP` header - and keeps the rest of the frame as a raw PDU. Used when the snapshot length cut
@@ -384,18 +406,7 @@ Tins::PDU * dissectCompleteEthernetHeaders(const uint8_t * data, UInt32 caplen)
         root = std::make_unique<Tins::EthernetII>(data, ethernet_header_size);
         last = root.get();
 
-        static constexpr UInt32 vlan_tag_size = 4;
-        UInt16 ether_type = type_or_length;
-        while ((ether_type == Tins::Constants::Ethernet::VLAN || ether_type == Tins::Constants::Ethernet::QINQ
-                || ether_type == Tins::Constants::Ethernet::OLD_QINQ)
-            && offset + vlan_tag_size <= caplen)
-        {
-            auto * tag = new Tins::Dot1Q(data + offset, vlan_tag_size);
-            last->inner_pdu(tag);
-            last = tag;
-            offset += vlan_tag_size;
-            ether_type = tag->payload_type();
-        }
+        offset = appendCompleteVlanTags(last, data, offset, caplen, type_or_length);
     }
 
     if (offset < end)
@@ -403,12 +414,72 @@ Tins::PDU * dissectCompleteEthernetHeaders(const uint8_t * data, UInt32 caplen)
     return root.release();
 }
 
+Tins::PDU * dissectFrame(int dlt, const uint8_t * data, UInt32 caplen);
+
+/// Rebuilds the PDU chain of a frame that `libtins` rejected with `malformed_packet` from its outer
+/// headers that were captured completely, and keeps the rest of the frame as a raw PDU: the
+/// Ethernet headers (see `dissectCompleteEthernetHeaders`), the Linux cooked capture header and
+/// its 802.1Q tags, the BSD loopback header, or the PPI header followed by the frame it carries,
+/// which is dissected according to the link type named in the PPI header. A frame cut inside its
+/// outermost header, a raw IP frame and a frame of another link type are kept raw as a whole.
+/// `libtins` offers no way to build a radiotap header without the 802.11 frame it carries, so a
+/// radiotap frame whose 802.11 header was cut is kept raw as well.
+Tins::PDU * dissectCompleteOuterHeaders(int dlt, const uint8_t * data, UInt32 caplen)
+{
+    if (dlt == DLT_EN10MB && caplen >= ethernet_header_size)
+        return dissectCompleteEthernetHeaders(data, caplen);
+
+    static constexpr UInt32 sll_header_size = 16;
+    if (dlt == DLT_LINUX_SLL && caplen >= sll_header_size)
+    {
+        auto sll = std::make_unique<Tins::SLL>(data, sll_header_size);
+        Tins::PDU * last = sll.get();
+        const UInt32 offset = appendCompleteVlanTags(last, data, sll_header_size, caplen, sll->protocol());
+        if (offset < caplen)
+            last->inner_pdu(new Tins::RawPDU(data + offset, caplen - offset));
+        return sll.release();
+    }
+
+    /// The address family is in the byte order of the capturing host, and `Tins::Loopback` keeps it
+    /// as it was read. Its constructor from bytes always dissects the carried packet, so the header
+    /// is filled in here.
+    static constexpr UInt32 loopback_header_size = 4;
+    if (dlt == DLT_NULL && caplen >= loopback_header_size)
+    {
+        auto loopback = std::make_unique<Tins::Loopback>();
+        UInt32 family = 0;
+        memcpy(&family, data, loopback_header_size);
+        loopback->family(family);
+        if (caplen > loopback_header_size)
+            loopback->inner_pdu(new Tins::RawPDU(data + loopback_header_size, caplen - loopback_header_size));
+        return loopback.release();
+    }
+
+    /// The PPI header starts with a version, flags and its own length, little-endian, which
+    /// includes the fields that follow the fixed part.
+    static constexpr UInt32 ppi_fixed_header_size = 8;
+    if (dlt == DLT_PPI && caplen >= ppi_fixed_header_size)
+    {
+        const UInt32 ppi_length = static_cast<UInt32>(data[2] | (data[3] << 8));
+        if (ppi_length >= ppi_fixed_header_size && ppi_length <= caplen)
+        {
+            auto ppi = std::make_unique<Tins::PPI>(data, ppi_length);
+            if (ppi_length < caplen)
+                ppi->inner_pdu(dissectFrame(static_cast<int>(ppi->dlt()), data + ppi_length, caplen - ppi_length));
+            return ppi.release();
+        }
+    }
+
+    return new Tins::RawPDU(data, caplen);
+}
+
 /// Dissects a captured frame like `dissectFrameLayers`, but also when the snapshot length of the
 /// capture cut it before the end of a header that `libtins` requires to be complete, such as the
 /// `IPv4` or `IPv6` header or a VLAN tag (`IP` itself handles a cut transport header). `libtins`
-/// reports such a frame with `malformed_packet`; it is a valid record of the capture, so an
-/// Ethernet frame is dissected up to its last complete header and the rest is kept raw. A raw IP
-/// frame whose IP header was cut is kept raw as a whole; `outerLayerType` still names its layer.
+/// reports such a frame with `malformed_packet`; it is a valid record of the capture, so the frame
+/// is dissected up to its last complete outer header and the rest is kept raw (see
+/// `dissectCompleteOuterHeaders`). A raw IP frame whose IP header was cut is kept raw as a whole;
+/// `outerLayerType` still names its layer.
 Tins::PDU * dissectFrame(int dlt, const uint8_t * data, UInt32 caplen)
 {
     try
@@ -417,9 +488,7 @@ Tins::PDU * dissectFrame(int dlt, const uint8_t * data, UInt32 caplen)
     }
     catch (const Tins::malformed_packet &)
     {
-        if (dlt != DLT_EN10MB || caplen < ethernet_header_size)
-            return new Tins::RawPDU(data, caplen);
-        return dissectCompleteEthernetHeaders(data, caplen);
+        return dissectCompleteOuterHeaders(dlt, data, caplen);
     }
 }
 

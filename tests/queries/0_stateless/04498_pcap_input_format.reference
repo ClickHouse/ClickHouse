@@ -115,6 +115,9 @@ ipv4.pcap	0	0	0
 ipv6.pcap	0	0	0
 null.pcap	0	0	0
 sll.pcap	0	0	0
+truncated_null.pcap	0	0	0
+truncated_sll.pcap	0	0	0
+ppi.pcap	0	0	0
 sll2.pcap	0	0	0
 dot3.pcap	0	0	0
 options.pcap	0	0	0
@@ -161,6 +164,11 @@ ipv6.pcap	1	IPv6	['IPv6','TCP','RAW']	\N		6	2001:db8::1	2001:db8::2	TCP	12345	80
 --- BSD loopback and Linux cooked capture link types are dissected ---
 null.pcap	1	LOOPBACK	['LOOPBACK','IP','TCP','RAW']	\N		4	::ffff:192.0.2.1	::ffff:192.0.2.2	TCP	12345	80	22
 sll.pcap	1	SLL	['SLL','IP','UDP']	\N		4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	68	67	0
+--- BSD loopback, Linux cooked capture and PPI frames cut inside the IP header keep their outer headers ---
+truncated_null.pcap	1	14	66	LOOPBACK	['LOOPBACK','RAW']	\N		\N		14
+truncated_sll.pcap	1	26	44	SLL	['SLL','RAW']	\N		\N		26
+ppi.pcap	1	84	84	PPI	['PPI','ETHERNET_II','IP','TCP','RAW']	\N		4	TCP	84
+ppi.pcap	2	26	84	PPI	['PPI','ETHERNET_II','RAW']	\N		\N		26
 --- a link type that is not dissected yields rows with the capture metadata only ---
 1	RAW	['RAW']	48	48	\N		\N
 --- IEEE 802.3 frames: LLC, and IP behind SNAP ---

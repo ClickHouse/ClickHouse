@@ -214,6 +214,16 @@ write_pcap(out_dir / "null.pcap", [(loopback, len(loopback))], linktype=0)
 sll = struct.pack(">HHH", 0, 1, 6) + bytes.fromhex("0011223344550000") + struct.pack(">H", 0x0800) + ipv4(17, udp)
 write_pcap(out_dir / "sll.pcap", [(sll, len(sll))], linktype=113)
 
+# The same packets cut by the snapshot length inside the IPv4 header, and an
+# Ethernet frame behind a PPI header (`LINKTYPE_PPI`, 192: version, flags, header
+# length and the link type of the carried frame, little-endian) in full and cut
+# inside the IPv4 header. The outer headers that were captured completely are
+# kept and the rest is raw, as for Ethernet frames.
+write_pcap(out_dir / "truncated_null.pcap", [(loopback[:4 + 10], len(loopback))], snaplen=14, linktype=0)
+write_pcap(out_dir / "truncated_sll.pcap", [(sll[:16 + 10], len(sll))], snaplen=26, linktype=113)
+ppi = struct.pack("<BBHI", 0, 0, 8, 1) + packets[0]
+write_pcap(out_dir / "ppi.pcap", [(ppi, len(ppi)), (ppi[:8 + 18], len(ppi))], linktype=192)
+
 # A link type that is not dissected (`LINKTYPE_LINUX_SLL2`, 276): the packet
 # still produces a row with the capture metadata and `raw`, but no layer columns.
 sll2 = bytes.fromhex("0800000000000001000106") + bytes(9) + ipv4(17, udp)
