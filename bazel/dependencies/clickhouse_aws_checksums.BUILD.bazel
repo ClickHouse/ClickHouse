@@ -12,15 +12,20 @@ ch_cc_library(
         "@platforms//cpu:x86_64": ["source/intel/asm/crc32c_sse42_asm.c"],
         "@platforms//cpu:aarch64": ["source/arm/crc64_arm.c"],
     }) + ["source/external/xxhash.h"] + glob(["include/**/private/**/*.h"]),
-    hdrs = glob(["include/**/*.h"], exclude = ["include/**/private/**/*.h"]),
+    hdrs = glob(
+        ["include/**/*.h"],
+        exclude = ["include/**/private/**/*.h"],
+    ),
     copts = [
         "-w",
         "-std=gnu11",
         "-g1",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    implementation_deps = [],
+    includes = ["include"],
     language = "C",
-    llvm_headers = True,
+    libcxx_headers = False,
+    llvm_headers = False,
     local_defines = [
         "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
         "AWS_ENABLE_EPOLL",
@@ -38,7 +43,6 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    includes = ["include"],
     deps = ["@clickhouse_aws_c_common//:aws_c_common"],
 )
 

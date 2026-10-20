@@ -37,8 +37,11 @@ ch_cc_library(
     ] + glob(["source/crypto/*.cpp"]) + [
         "source/endpoints/BddEngine.cpp",
         "source/endpoints/RuleEngine.cpp",
-    ] + glob(["source/http/*.cpp"]) + glob(["source/io/*.cpp"]) + glob(["include/**/private/**/*.h"]),
-    hdrs = glob(["include/**/*.h"], exclude = ["include/**/private/**/*.h"]) + ["config/contrib/aws-cmake/include/aws/crt/Config.h"],
+    ] + glob(["source/http/*.cpp"]) + glob(["source/io/*.cpp"]) + glob(["include/aws/crt/io/private/*.h"]),
+    hdrs = glob(
+        ["include/**/*.h"],
+        exclude = ["include/**/private/**/*.h"],
+    ) + ["config/contrib/aws-cmake/include/aws/crt/Config.h"],
     copts = [
         "-w",
         "-std=c++23",
@@ -48,6 +51,11 @@ ch_cc_library(
         "@clickhouse_aws_c_event_stream//:aws_c_event_stream",
         "@clickhouse_aws_c_s3//:aws_c_s3",
         "@clickhouse_aws_checksums//:aws_checksums",
+        "@clickhouse_aws_c_sdkutils//:aws_c_sdkutils",
+    ],
+    includes = [
+        "include",
+        "config/contrib/aws-cmake/include",
     ],
     local_defines = [
         "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
@@ -66,13 +74,13 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    includes = [
-        "include",
-        "config/contrib/aws-cmake/include",
-    ],
     deps = [
         "@clickhouse_aws_c_auth//:aws_c_auth",
         "@clickhouse_aws_c_cal//:aws_c_cal",
         "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
+    ] + [
+        "@clickhouse_aws_c_common//:aws_c_common",
+        "@clickhouse_aws_c_http//:aws_c_http",
+        "@clickhouse_aws_c_io//:aws_c_io",
     ],
 )

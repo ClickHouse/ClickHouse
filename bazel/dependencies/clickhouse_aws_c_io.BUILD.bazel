@@ -33,18 +33,26 @@ ch_cc_library(
         "source/tls_channel_handler_shared.c",
         "source/tracing.c",
         "source/linux/epoll_event_loop.c",
-    ] + glob(["source/posix/*.c"]) + glob(["source/**/*.h"]) + glob(["include/**/private/**/*.h"]),
-    hdrs = glob(["include/**/*.h"], exclude = ["include/**/private/**/*.h"]),
+    ] + glob(["source/posix/*.c"]) + [
+        "source/pkcs11_private.h",
+        "source/pkcs11/v2.40/pkcs11.h",
+    ] + glob(
+        ["include/aws/io/private/*.h"],
+        exclude = [
+            "include/aws/io/private/pki_utils.h",
+            "include/aws/io/private/tls_channel_handler_private.h",
+        ],
+    ),
+    hdrs = glob(["include/aws/io/*.h"]),
     copts = [
         "-w",
         "-std=gnu11",
         "-g1",
     ],
-    implementation_deps = [
-        "@clickhouse_llvm_project//:libcxxabi_headers",
-        "@clickhouse_aws_c_cal//:aws_c_cal",
-    ],
+    implementation_deps = ["@clickhouse_aws_c_cal//:aws_c_cal"],
+    includes = ["include"],
     language = "C",
+    libcxx_headers = False,
     local_defines = [
         "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
         "AWS_ENABLE_EPOLL",
@@ -62,26 +70,30 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = [
-        "@clickhouse_aws_c_common//:aws_c_common",
-        "@clickhouse_openssl//:ssl",
-    ],
-    includes = ["include"],
+    deps = ["@clickhouse_aws_c_common//:aws_c_common"],
 )
 
 ch_cc_library(
     name = "aws_c_io__compile_3",
-    srcs = ["source/tls_channel_handler.c"] + glob(["source/**/*.h"]) + glob(["include/**/private/**/*.h"]),
+    srcs = [
+        "source/tls_channel_handler.c",
+        "source/pkcs11_private.h",
+        "source/pkcs11/v2.40/pkcs11.h",
+        "include/aws/io/private/pem_utils.h",
+        "include/aws/io/private/tls_channel_handler_private.h",
+        "include/aws/io/private/tls_channel_handler_shared.h",
+    ],
     copts = [
         "-w",
         "-std=gnu11",
         "-g1",
     ],
     implementation_deps = [
-        "@clickhouse_llvm_project//:libcxxabi_headers",
         ":aws_c_io",
+        "@clickhouse_aws_c_common//:aws_c_common",
     ],
     language = "C",
+    libcxx_headers = False,
     local_defines = [
         "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
         "AWS_ENABLE_EPOLL",

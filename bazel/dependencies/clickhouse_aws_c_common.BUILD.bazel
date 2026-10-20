@@ -93,24 +93,26 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": ["source/arch/arm/auxv/cpuid.c"],
     }) + glob(["source/external/**/*.h"]) + glob([
-        "include/**/private/**/*.h",
-        "include/**/private/**/*.inl",
-    ])),
+        "include/aws/common/private/*.h",
+        "include/aws/common/private/*.inl",
+    ]) + ["include/aws/common/posix/common.inl"]),
     hdrs = glob([
-        "include/**/*.h",
-        "include/**/*.inl",
-    ], exclude = [
-        "include/**/private/**/*.h",
-        "include/**/private/**/*.inl",
+        "include/aws/common/*.h",
+        "include/aws/common/external/*.h",
     ]) + ["config/contrib/aws-cmake/include/aws/common/config.h"],
     copts = [
         "-w",
         "-std=gnu11",
         "-g1",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    implementation_deps = [],
+    includes = [
+        "include",
+        "config/contrib/aws-cmake/include",
+    ],
     language = "C",
-    llvm_headers = True,
+    libcxx_headers = False,
+    llvm_headers = False,
     local_defines = [
         "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
         "AWS_ENABLE_EPOLL",
@@ -128,23 +130,28 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    includes = [
-        "include",
-        "config/contrib/aws-cmake/include",
-    ],
     local_includes = [
         "source/external/libcbor/cbor",
         "source/external/libcbor",
     ],
+    textual_hdrs = glob(
+        ["include/aws/common/*.inl"],
+        exclude = [
+            "include/aws/common/atomics_gnu_old.inl",
+            "include/aws/common/atomics_msvc.inl",
+            "include/aws/common/math.cbmc.inl",
+            "include/aws/common/math.fallback.inl",
+            "include/aws/common/math.gcc_arm64_asm.inl",
+            "include/aws/common/math.gcc_x64_asm.inl",
+            "include/aws/common/math.msvc_x64.inl",
+        ],
+    ),
 )
 
 ch_cc_library(
     name = "aws_c_common__compile_2",
     srcs = select({
-        "@platforms//cpu:x86_64": ["source/arch/intel/encoding_avx2.c"] + glob(["source/external/libcbor/**/*.h"]) + glob([
-            "include/**/private/**/*.h",
-            "include/**/private/**/*.inl",
-        ]),
+        "@platforms//cpu:x86_64": ["source/arch/intel/encoding_avx2.c"] + [] + [],
         "@platforms//cpu:aarch64": [],
     }),
     arches = [
@@ -161,14 +168,12 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     implementation_deps = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_llvm_project//:libcxxabi_headers",
-            ":aws_c_common",
-        ],
+        "@platforms//cpu:x86_64": [":aws_c_common"],
         "@platforms//cpu:aarch64": [],
     }),
     language = "C",
-    llvm_headers = True,
+    libcxx_headers = False,
+    llvm_headers = False,
     local_defines = select({
         "@platforms//cpu:x86_64": [
             "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",

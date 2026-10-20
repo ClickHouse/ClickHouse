@@ -9,15 +9,20 @@ exports_files([
 ch_cc_library(
     name = "aws_c_compression",
     srcs = glob(["source/*.c"]) + glob(["include/**/private/**/*.h"]),
-    hdrs = glob(["include/**/*.h"], exclude = ["include/**/private/**/*.h"]),
+    hdrs = glob(
+        ["include/**/*.h"],
+        exclude = ["include/**/private/**/*.h"],
+    ),
     copts = [
         "-w",
         "-std=gnu11",
         "-g1",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    implementation_deps = [],
+    includes = ["include"],
     language = "C",
-    llvm_headers = True,
+    libcxx_headers = False,
+    llvm_headers = False,
     local_defines = [
         "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
         "AWS_ENABLE_EPOLL",
@@ -36,5 +41,4 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     deps = ["@clickhouse_aws_c_common//:aws_c_common"],
-    includes = ["include"],
 )

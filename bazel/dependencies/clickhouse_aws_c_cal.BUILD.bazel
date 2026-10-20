@@ -17,15 +17,20 @@ ch_cc_library(
         "source/hkdf.c",
         "source/hmac.c",
         "source/rsa.c",
-    ] + glob(["source/shared/*.c"]) + ["source/symmetric_cipher.c"] + glob(["source/unix/*.c"]) + ["source/darwin/common_cryptor_spi.h"] + glob(["include/**/private/**/*.h"]),
-    hdrs = glob(["include/**/*.h"], exclude = ["include/**/private/**/*.h"]),
+    ] + glob(["source/shared/*.c"]) + ["source/symmetric_cipher.c"] + glob(["source/unix/*.c"]) + [] + glob(["include/**/private/**/*.h"]),
+    hdrs = glob(
+        ["include/**/*.h"],
+        exclude = ["include/**/private/**/*.h"],
+    ),
     copts = [
         "-w",
         "-std=gnu11",
         "-g1",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    implementation_deps = ["@clickhouse_openssl//:crypto"],
+    includes = ["include"],
     language = "C",
+    libcxx_headers = False,
     local_defines = [
         "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
         "AWS_ENABLE_EPOLL",
@@ -43,9 +48,5 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    includes = ["include"],
-    deps = [
-        "@clickhouse_aws_c_common//:aws_c_common",
-        "@clickhouse_openssl//:crypto",
-    ],
+    deps = ["@clickhouse_aws_c_common//:aws_c_common"],
 )

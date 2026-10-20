@@ -8,20 +8,27 @@ exports_files([
 
 ch_cc_library(
     name = "aws_c_event_stream",
-    srcs = glob(["source/*.c"]) + glob(["include/**/private/**/*.h"]),
-    hdrs = glob(["include/**/*.h"], exclude = ["include/**/private/**/*.h"]),
+    srcs = glob(["source/*.c"]) + glob(
+        ["include/aws/event-stream/private/*.h"],
+        exclude = ["include/aws/event-stream/private/event_stream_rpc_test_helper.h"],
+    ),
+    hdrs = glob(
+        ["include/**/*.h"],
+        exclude = ["include/**/private/**/*.h"],
+    ),
     copts = [
         "-w",
         "-std=gnu11",
         "-g1",
     ],
     implementation_deps = [
-        "@clickhouse_llvm_project//:libcxxabi_headers",
         "@clickhouse_aws_c_io//:aws_c_io",
         "@clickhouse_aws_checksums//:aws_checksums",
     ],
+    includes = ["include"],
     language = "C",
-    llvm_headers = True,
+    libcxx_headers = False,
+    llvm_headers = False,
     local_defines = [
         "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
         "AWS_ENABLE_EPOLL",
@@ -39,6 +46,5 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    includes = ["include"],
     deps = ["@clickhouse_aws_c_common//:aws_c_common"],
 )
