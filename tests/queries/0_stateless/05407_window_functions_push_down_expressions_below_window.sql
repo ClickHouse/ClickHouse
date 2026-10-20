@@ -217,6 +217,34 @@ SELECT if(explain LIKE '%Window (%', 'Window', 'cityHash64') FROM
 WHERE explain LIKE '%Window (%' OR explain LIKE '%FUNCTION cityHash64%';
 DROP TABLE t_window_push_down_sparse;
 
+SELECT 'a sparse subcolumn';
+DROP TABLE IF EXISTS t_window_push_down_sparse_tuple;
+CREATE TABLE t_window_push_down_sparse_tuple (t Tuple(s String)) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.9;
+INSERT INTO t_window_push_down_sparse_tuple SELECT tuple(if(number % 1000 = 0, toString(number), '')) FROM numbers(10000);
+SELECT if(explain LIKE '%Window (%', 'Window', 'cityHash64') FROM
+(
+    EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT cityHash64(t.s), count() OVER () FROM t_window_push_down_sparse_tuple
+)
+WHERE explain LIKE '%Window (%' OR explain LIKE '%FUNCTION cityHash64%';
+DROP TABLE t_window_push_down_sparse_tuple;
+
+SELECT 'a sparse column with a pending rename';
+DROP TABLE IF EXISTS t_window_push_down_sparse_rename;
+CREATE TABLE t_window_push_down_sparse_rename (s String) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.9;
+INSERT INTO t_window_push_down_sparse_rename SELECT if(number % 1000 = 0, toString(number), '') FROM numbers(10000);
+SYSTEM STOP MERGES t_window_push_down_sparse_rename;
+ALTER TABLE t_window_push_down_sparse_rename RENAME COLUMN s TO t SETTINGS alter_sync = 0;
+SELECT if(explain LIKE '%Window (%', 'Window', 'cityHash64') FROM
+(
+    EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT cityHash64(t), count() OVER () FROM t_window_push_down_sparse_rename
+)
+WHERE explain LIKE '%Window (%' OR explain LIKE '%FUNCTION cityHash64%';
+DROP TABLE t_window_push_down_sparse_rename;
+
 SELECT 'a column changed by a mutation on the fly';
 DROP TABLE IF EXISTS t_window_push_down_mutation;
 CREATE TABLE t_window_push_down_mutation (s String, t String) ENGINE = MergeTree ORDER BY tuple();

@@ -413,10 +413,19 @@ bool mayBeSparse(const QueryPlan::Node & node, const String & column_name, size_
 
     if (const auto * read = typeid_cast<const ReadFromMergeTree *>(step))
     {
+        /// Subcolumns and virtual columns have no serialization info of their own,
+        /// and a pending rename makes the parts store the column under another name.
+        if (!read->getStorageMetadata()->getColumns().hasPhysical(column_name))
+            return true;
+
+        if (const auto & mutations_snapshot = read->getMutationsSnapshot(); mutations_snapshot && mutations_snapshot->hasMetadataMutations())
+            return true;
+
         for (const auto & part : read->getParts())
         {
             const auto & serialization_infos = part.data_part->getSerializationInfos();
-            if (auto it = serialization_infos.find(column_name); it != serialization_infos.end() && it->second->hasCustomSerialization())
+            auto it = serialization_infos.find(column_name);
+            if (it == serialization_infos.end() || it->second->hasCustomSerialization())
                 return true;
         }
         return false;

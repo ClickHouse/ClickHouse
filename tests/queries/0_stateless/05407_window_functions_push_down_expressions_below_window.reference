@@ -70,6 +70,12 @@ cityHash64
 Window
 cityHash64
 Window
+a sparse subcolumn
+cityHash64
+Window
+a sparse column with a pending rename
+cityHash64
+Window
 a column changed by a mutation on the fly
 cityHash64
 Window
