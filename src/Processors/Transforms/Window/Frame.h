@@ -20,7 +20,7 @@ public:
     explicit Frame(const WindowTransformParams & params_);
 
     void enterPartition(RowNumber partition_start);
-    void advance(const SlidingBlocks & blocks, const RowPoint & current, const PartitionBounds & partition);
+    void advance(const SlidingBlocks & blocks, const RowPoint & current, const Partition & partition);
 
     const FrameBounds & bounds() const;
 

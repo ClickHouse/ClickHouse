@@ -98,15 +98,11 @@ struct ModuloByConstantImpl
         if (static_cast<A>(b) == 0) [[unlikely]]
             throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
 
-        /// The minimum signed divisor cannot be negated, so use the generic modulo implementation.
+        /// Division by min negative value.
         if constexpr (std::is_signed_v<B>)
         {
             if (b == std::numeric_limits<B>::lowest()) [[unlikely]]
-            {
-                for (size_t i = 0; i < size; ++i)
-                    dst[i] = Op::template apply<ResultType>(src[i], b);
-                return;
-            }
+                throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by the most negative number");
         }
 
         /// Modulo of division by negative number is the same as the positive number.

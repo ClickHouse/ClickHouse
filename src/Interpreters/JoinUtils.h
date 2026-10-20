@@ -118,9 +118,9 @@ DataTypePtr tryGetCommonSubtypeForJoinKeys(
   */
 DataTypePtr removeNullableInsideTuple(const DataTypePtr & type);
 
-/// Whether a JOIN key of this type can match a pair for which `equals` is not true: a NaN, a NULL nested
-/// in a Tuple, or a NULL Variant or Dynamic.
-bool keyMatchesValuesEqualsRejects(const DataTypePtr & type);
+/// Whether a JOIN key of this type can match a NULL as an ordinary value: a NULL nested in a Tuple,
+/// or a NULL Variant or Dynamic. `equals` returns NULL for such a pair.
+bool keyMatchesNullAsValue(const DataTypePtr & type);
 
 bool canBecomeNullable(const DataTypePtr & type);
 DataTypePtr convertTypeToNullable(const DataTypePtr & type);

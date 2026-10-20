@@ -58,8 +58,7 @@ ResolvedSettingsProfileElements resolveSettingsProfileElements(
     const UUID & user_id,
     const boost::container::flat_set<UUID> & enabled_roles,
     const SettingsProfileElements & settings_from_enabled_roles,
-    const SettingsProfileElements & settings_from_user,
-    const std::function<bool(const UUID & profile_id)> & skip_profile = {});
+    const SettingsProfileElements & settings_from_user);
 
 /// The access entities a statement is about to write, by id. A null entity means a removal.
 using PendingAccessEntities = UnorderedMapWithMemoryTracking<UUID, AccessEntityPtr>;

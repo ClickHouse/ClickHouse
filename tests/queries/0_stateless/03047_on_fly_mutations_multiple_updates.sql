@@ -29,15 +29,11 @@ SELECT s1, s2 FROM t_lightweight_mut_5 ORDER BY id;
 
 SYSTEM FLUSH LOGS query_log;
 
--- With parallel replicas the local replica may read nothing; rows of remote replicas have current_database = 'default'.
-SELECT anyIf(query, is_initial_query), sum(ProfileEvents['FileOpen']) FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND initial_query_id IN
-(
-    SELECT query_id FROM system.query_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
-        AND query ILIKE 'SELECT%FROM t_lightweight_mut_5%' AND type = 'QueryFinish' AND is_initial_query
-)
-GROUP BY initial_query_id
-ORDER BY min(event_time_microseconds);
+SELECT query, ProfileEvents['FileOpen'] FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
+    current_database = currentDatabase()
+    AND query ILIKE 'SELECT%FROM t_lightweight_mut_5%'
+    AND type = 'QueryFinish'
+ORDER BY event_time_microseconds;
 
 DROP TABLE t_lightweight_mut_5;

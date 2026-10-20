@@ -70,16 +70,18 @@ def execute_query_in_prometheus_receiver(query, timestamp, expect_error=False):
 
 
 # Executes a query in both prometheus services - results should be the same.
-# `eps` allows tiny float differences and `ordered=False` allows any order of the series of an instant vector:
-# the "reader" service gets series in the order they come from ClickHouse via the RemoteRead protocol,
-# which can differ from the TSDB order the "receiver" service uses. So the "receiver" result is returned.
-def execute_query_in_prometheus(query, timestamp, eps=0):
-    r1 = execute_query_in_prometheus_reader(query, timestamp)
-    r2 = execute_query_in_prometheus_receiver(query, timestamp)
+# `eps` allows tiny float differences: the "reader" service aggregates series in the order
+# they come from ClickHouse via the RemoteRead protocol, which can differ from the TSDB order
+# the "receiver" service uses.
+def execute_query_in_prometheus(query, timestamp, expect_error=False, eps=0):
+    r1 = execute_query_in_prometheus_reader(query, timestamp, expect_error=expect_error)
+    r2 = execute_query_in_prometheus_receiver(
+        query, timestamp, expect_error=expect_error
+    )
     assert http_api_response_close_to(
-        r1, r2, eps=eps, ordered=False
+        r1, r2, eps=eps
     ), f"reader result: {r1}, receiver result: {r2}"
-    return r2
+    return r1
 
 
 # Executes a prometheus query in ClickHouse via HTTP API

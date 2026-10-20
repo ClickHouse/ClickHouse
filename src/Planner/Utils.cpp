@@ -727,11 +727,10 @@ QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
             matcher->formatForErrorMessage(),
             filter_expression->formatForErrorMessage());
 
-    auto filter_context = Context::withUnresolvedPositionalArguments(query_context);
-    auto filter_query_tree = buildQueryTree(filter_expression, filter_context);
+    auto filter_query_tree = buildQueryTree(filter_expression, query_context);
 
     QueryAnalysisPass query_analysis_pass(table_expression);
-    query_analysis_pass.run(filter_query_tree, filter_context);
+    query_analysis_pass.run(filter_query_tree, query_context);
 
     if (check_access_rights)
         checkAccessRightsForFilter(filter_query_tree, table_expression, query_context);

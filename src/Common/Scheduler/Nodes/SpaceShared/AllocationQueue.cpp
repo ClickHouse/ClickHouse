@@ -283,9 +283,6 @@ void AllocationQueue::purgeQueue()
     pending_reclaimable_delta = 0;
     pending_spilled_settled_bytes = 0;
     is_not_usable = true;
-
-    // Older hierarchy versions can retain this retired queue after its workload is destroyed.
-    workload = nullptr;
 }
 
 void AllocationQueue::propagateUpdate(ISpaceSharedNode &, Update &&)

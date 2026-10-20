@@ -1,6 +1,3 @@
 huge declared size: ERROR: Can't correctly handle Startup message
 unterminated parameter: ERROR: Can't correctly handle Startup message
 well-formed message: authentication request
-UTF-8 alias: authentication request
-UNICODE alias: authentication request
-unsupported client encoding: Only UTF8 client_encoding is supported.

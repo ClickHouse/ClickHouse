@@ -63,6 +63,7 @@ bool hasNestedNullable(const DataTypePtr & type)
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
 class FunctionTopKFilter final : public IFunction
@@ -102,9 +103,16 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(Any) -> UInt8";
+        if (arguments.size() != 1)
+            throw Exception(
+                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
+                "Number of arguments for function {} can't be {}, should be 1",
+                getName(),
+                arguments.size());
+
+        return std::make_shared<DataTypeUInt8>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeUInt8>(); }

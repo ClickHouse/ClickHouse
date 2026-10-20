@@ -1,6 +1,4 @@
--- Tags: long, no-msan
--- no-msan: with `meta in keeper` and `s3 storage` writing the files of 256 buckets takes over the 600 s timeout
--- under MSan. It checks where the paths are written, which other builds cover as well.
+-- Tags: long
 -- long: 256 shared-data buckets are 256 substreams in every wide part, and where the metadata of
 -- the database lives in Keeper each of their files is a transaction - the test then takes minutes
 -- there, over the 180 s the flaky check allows an untagged test.

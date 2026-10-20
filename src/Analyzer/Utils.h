@@ -23,9 +23,6 @@ using ColumnNodePtr = std::shared_ptr<ColumnNode>;
 class TableNode;
 using TableNodePtr = std::shared_ptr<TableNode>;
 
-class JoinNode;
-struct Settings;
-
 struct IdentifierResolveScope;
 
 struct NameAndTypePair;
@@ -133,9 +130,6 @@ TableExpressionNodePtr extractLeftTableExpression(const TableExpressionNodePtr &
   * 5. t1
   */
 TableExpressionNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_node);
-
-/// Returns true if the join is GLOBAL, explicitly or through `distributed_product_mode` / `prefer_global_in_and_join`
-bool isGlobalJoin(const JoinNode & join_node, const Settings & settings);
 
 /** Assert that there are no function nodes with specified function name in node children.
   * Do not visit subqueries.

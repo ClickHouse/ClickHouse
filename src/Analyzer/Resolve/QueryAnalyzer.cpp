@@ -405,10 +405,9 @@ void hideLambdaArgumentsShadowingAliasExpression(
 
 }
 
-QueryAnalyzer::QueryAnalyzer(bool only_analyze_, bool positional_arguments_already_resolved_)
+QueryAnalyzer::QueryAnalyzer(bool only_analyze_)
     : identifier_resolver(node_to_projection_name)
     , only_analyze(only_analyze_)
-    , positional_arguments_already_resolved(positional_arguments_already_resolved_)
 {}
 
 QueryAnalyzer::~QueryAnalyzer() = default;
@@ -918,9 +917,6 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
     const auto & settings = scope.context->getSettingsRef();
     if (!settings[Setting::enable_positional_arguments])
         return;
-    /// Also inside a view body: the query itself was printed from a resolved query tree.
-    if (positional_arguments_already_resolved)
-        return;
     const bool is_view_inner = scope.context->isViewInnerQuery();
     if (!is_view_inner)
     {
@@ -929,6 +925,12 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
         /// exempt because views are expanded on the local node and were never resolved by the
         /// initiator.
         if (scope.context->isPositionalArgumentsAlreadyResolved())
+            return;
+        /// Skip only on remote shard execution (SECONDARY_QUERY): the initiator already
+        /// resolved positional arguments. Do not skip for contexts that never set the kind
+        /// (NO_QUERY), e.g. a Replicated database DDL worker running CREATE ... AS SELECT,
+        /// which must resolve positional arguments itself.
+        if (scope.context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
             return;
     }
 
@@ -5828,7 +5830,6 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             scope_to_check = scope_to_check->parent_scope ? scope_to_check->parent_scope->getNearestQueryScope() : nullptr;
         }
     }
-    execution_context = Context::withUnresolvedPositionalArguments(execution_context);
     auto table_function_storage = scope_context->getQueryContext()->executeTableFunction(table_function_ast, table_function_ptr, execution_context);
     table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context, std::move(skip_analysis_arguments_indexes));
 }
@@ -6839,10 +6840,9 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
         }
 
         /// Resolve the row policy filter expression against result_node's columns.
-        auto filter_context = Context::withUnresolvedPositionalArguments(scope.context);
-        auto filter_node = buildQueryTree(row_policy_filter->expression->clone(), filter_context);
+        auto filter_node = buildQueryTree(row_policy_filter->expression->clone(), scope.context);
         QueryAnalyzer filter_analyzer(this->only_analyze);
-        filter_analyzer.resolve(filter_node, result_node, filter_context);
+        filter_analyzer.resolve(filter_node, result_node, scope.context);
 
         /// Build wrapper: SELECT <cols> FROM (result_node) WHERE <resolved_filter>
         auto result_columns = result_node->as<QueryNode>()
@@ -7696,6 +7696,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         }
     }
 
+    expandLimitByAll(query_node_typed);
+
     if (query_node_typed.hasLimitByLimit())
     {
         resolveExpressionNode(query_node_typed.getLimitByLimit(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -7709,13 +7711,11 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
 
     if (query_node_typed.hasLimitBy())
+    {
         replaceNodesWithPositionalArguments(query_node_typed.getLimitByNode(), query_node_typed.getProjection().getNodes(), scope);
 
-    /// After the positional arguments: the projection expressions `ALL` expands to are not positions.
-    expandLimitByAll(query_node_typed);
-
-    if (query_node_typed.hasLimitBy())
         resolveExpressionNodeList(query_node_typed.getLimitByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+    }
 
     if (query_node_typed.hasLimit())
     {

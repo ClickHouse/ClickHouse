@@ -313,7 +313,7 @@ void KafkaConsumer2::commit(const TopicPartitionOffset & topic_partition_offset)
     {
         try
         {
-            // See https://github.com/confluentinc/librdkafka/issues/1470
+            // See https://github.com/edenhill/librdkafka/issues/1470
             // broker may reject commit if during offsets.commit.timeout.ms (5000 by default), there were not enough
             // replicas available for the __consumer_offsets topic. also some other temporary issues like client-server
             // connectivity problems are possible

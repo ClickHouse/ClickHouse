@@ -1,8 +1,0 @@
--- the inner table of the correlated subquery is estimated at its full size, with and without statistics
-1
-1
--- next to another condition, the estimate is the one of that condition alone
-1
--- full size for reflexive types, the estimate of an unknown condition for Float64 (NaN), Nullable (NULL) and Tuple
-reflexive	1
-1	1	1	1	1

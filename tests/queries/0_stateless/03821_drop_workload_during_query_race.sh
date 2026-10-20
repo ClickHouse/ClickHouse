@@ -32,16 +32,13 @@ CALL_TIMEOUT=30
 function thread_query()
 {
     local TIMELIMIT=$((SECONDS+TIMEOUT))
-    local out
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
         # Run a short query that uses CPU scheduling
         # Use smaller numbers so queries finish quickly
-        # A dropped workload fails the query with an expected error; its report spans several lines, so drop it whole
-        out=$(timeout "$CALL_TIMEOUT" $CLICKHOUSE_CLIENT --format Null -q "SELECT sum(number) FROM numbers(100000) SETTINGS workload = '$WORKLOAD_NAME'" 2>&1)
-        if [ -n "$out" ] && ! grep -q -e "RESOURCE_ACCESS_DENIED" -e "INVALID_SCHEDULER_NODE" -e "There is no resource" <<< "$out"; then
-            echo "$out"
-        fi
+        # Ignore expected errors when workload is dropped during query
+        timeout "$CALL_TIMEOUT" $CLICKHOUSE_CLIENT --format Null -q "SELECT sum(number) FROM numbers(100000) SETTINGS workload = '$WORKLOAD_NAME'" 2>&1 \
+            | { grep -v -e "RESOURCE_ACCESS_DENIED" -e "INVALID_SCHEDULER_NODE" -e "There is no resource" -e "^$" || true; }
     done
 }
 

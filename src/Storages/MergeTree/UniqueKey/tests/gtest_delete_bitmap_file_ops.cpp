@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapFileOps.h>
 #include <Storages/MergeTree/UniqueKey/tests/gtest_part_storage_fixture.h>
 
+#include <filesystem>
 #include <fstream>
 #include <memory>
 #include <string>
@@ -11,7 +12,9 @@
 
 using namespace DB;
 
-/// `DeleteBitmapFileOps` over a `DiskLocal`-backed part: `carryBitmap`, `tryReadBitmap`, `enumerateFiles`.
+/// UNIQUE KEY gtests for `DeleteBitmapFileOps` — atomic write, read,
+/// version discovery, and `delete_bitmap_{N}.rbm` enumeration over a
+/// `DiskLocal`-backed `IDataPartStorage`.
 
 /// ---------- enumerateFiles ----------
 
@@ -28,8 +31,8 @@ TEST(DeleteBitmapFileOpsTest, EnumerateFilesIgnoresUnrelatedFiles)
     {
         std::ofstream f1(fx.partFile("columns.txt").string());
         f1 << "x";
-        std::ofstream f2(fx.partFile("delete_bitmap_5_for_all_1_1_0.rbm.bak").string());
-        f2 << "y"; /// a suffix after `.rbm` is not a bitmap
+        std::ofstream f2(fx.partFile("delete_bitmap_5_for_all_1_1_0.rbm.tmp").string());
+        f2 << "y"; /// `.tmp` sibling — not a finalized version
     }
 
     DeleteBitmap bm;
@@ -42,7 +45,28 @@ TEST(DeleteBitmapFileOpsTest, EnumerateFilesIgnoresUnrelatedFiles)
     EXPECT_EQ(entries[0].fileName(), "delete_bitmap_3_for_all_1_1_0.rbm");
 }
 
-/// ---------- tolerant reads ----------
+/// ---------- write / read ----------
+
+TEST(DeleteBitmapFileOpsTest, WriteAndReadRoundtrip)
+{
+    PartStorageFixture fx{"file_ops"};
+
+    DeleteBitmap in;
+    in.add(3);
+    in.add(7);
+    in.add(12345);
+    writeCarried(*fx.storage, /*version=*/5, "all_1_1_0", in);
+
+    EXPECT_TRUE(std::filesystem::exists(fx.partFile("delete_bitmap_5_for_all_1_1_0.rbm")));
+    EXPECT_FALSE(std::filesystem::exists(fx.partFile("delete_bitmap_5_for_all_1_1_0.rbm.tmp")));
+
+    auto loaded = DeleteBitmapFileOps::tryReadBitmap(*fx.storage, {5, "all_1_1_0"});
+    ASSERT_NE(loaded, nullptr);
+    EXPECT_EQ(loaded->cardinality(), 3u);
+    EXPECT_TRUE(loaded->contains(3));
+    EXPECT_TRUE(loaded->contains(7));
+    EXPECT_TRUE(loaded->contains(12345));
+}
 
 TEST(DeleteBitmapFileOpsTest, ReadMissingVersionReportsAbsence)
 {
@@ -51,6 +75,59 @@ TEST(DeleteBitmapFileOpsTest, ReadMissingVersionReportsAbsence)
     PartStorageFixture fx{"file_ops"};
     EXPECT_EQ(DeleteBitmapFileOps::tryReadBitmap(*fx.storage, {99, "all_1_1_0"}), nullptr);
 }
+
+
+TEST(DeleteBitmapFileOpsTest, WriteClearsStaleTmpLeftover)
+{
+    /// Simulate a crash-left-over `.tmp` from a previous run. A fresh
+    /// `carryBitmap` must not fail because of it — the
+    /// implementation `removeFileIfExists` the tmp before opening.
+    PartStorageFixture fx{"file_ops"};
+
+    /// Plant a stale `.tmp` (fixture already created the part directory).
+    {
+        std::ofstream stale(fx.partFile("delete_bitmap_4_for_all_1_1_0.rbm.tmp").string());
+        stale << "garbage";
+    }
+    ASSERT_TRUE(std::filesystem::exists(fx.partFile("delete_bitmap_4_for_all_1_1_0.rbm.tmp")));
+
+    DeleteBitmap bm;
+    bm.add(11);
+    writeCarried(*fx.storage, 4, "all_1_1_0", bm);
+
+    EXPECT_TRUE(std::filesystem::exists(fx.partFile("delete_bitmap_4_for_all_1_1_0.rbm")));
+    EXPECT_FALSE(std::filesystem::exists(fx.partFile("delete_bitmap_4_for_all_1_1_0.rbm.tmp")));
+
+    auto loaded = DeleteBitmapFileOps::tryReadBitmap(*fx.storage, {4, "all_1_1_0"});
+    ASSERT_NE(loaded, nullptr);
+    EXPECT_TRUE(loaded->contains(11));
+}
+
+TEST(DeleteBitmapFileOpsTest, OverwriteSameVersionIsIdempotent)
+{
+    /// `replaceFile` semantics: calling `carryBitmap` twice for the
+    /// same version overwrites the previous file. Idempotent retry on flaky
+    /// I/O lands the final bitmap.
+    PartStorageFixture fx{"file_ops"};
+
+    DeleteBitmap first;
+    first.add(1);
+    writeCarried(*fx.storage, 2, "all_1_1_0", first);
+
+    DeleteBitmap second;
+    second.add(1);
+    second.add(2);
+    writeCarried(*fx.storage, 2, "all_1_1_0", second);
+
+    auto loaded = DeleteBitmapFileOps::tryReadBitmap(*fx.storage, {2, "all_1_1_0"});
+    ASSERT_NE(loaded, nullptr);
+    EXPECT_EQ(loaded->cardinality(), 2u);
+    EXPECT_TRUE(loaded->contains(1));
+    EXPECT_TRUE(loaded->contains(2));
+}
+
+/// ---------- tolerant reads ----------
+
 
 /// ---------- the carried name ----------
 

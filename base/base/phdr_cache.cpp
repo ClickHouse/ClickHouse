@@ -35,8 +35,8 @@ namespace
 {
 
 // This is adapted from
-// https://github.com/scylladb/seastar/blob/master/include/seastar/core/exception_hacks.hh
-// https://github.com/scylladb/seastar/blob/master/src/core/exception_hacks.cc
+// https://github.com/scylladb/seastar/blob/master/core/exception_hacks.hh
+// https://github.com/scylladb/seastar/blob/master/core/exception_hacks.cc
 
 using DLIterateFunction = int (*) (int (*callback) (dl_phdr_info * info, size_t size, void * data), void * data);
 

@@ -28,7 +28,6 @@ class RunnerLabels:
     ARM_MEDIUM_CPU = ["self-hosted", "arm-medium-cpu"]
     AMD_MEDIUM_MEM = ["self-hosted", "amd-medium-mem"]
     ARM_MEDIUM_MEM = ["self-hosted", "arm-medium-mem"]
-    ARM_MEDIUM_STORAGE = ["self-hosted", "arm-medium-storage"]
     AMD_SMALL = ["self-hosted", "amd-small"]
     ARM_SMALL = ["self-hosted", "arm-small"]
     AMD_SMALL_MEM = ["self-hosted", "amd-small-mem"]

@@ -40,12 +40,10 @@ INSERT INTO tab SELECT
 FROM numbers(100000)
 SETTINGS max_insert_threads = 1, max_insert_block_size = 1000000, min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 0;
 
--- `enable_parallel_replicas = 0`: with parallel replicas another replica may do the read,
--- and its `ProfileEvents` never reach this query's `query_log` row.
-SELECT count(), sum(id) FROM tab PREWHERE flag = 1 AND hasToken(s, 'third') SETTINGS enable_parallel_replicas = 0, log_comment = 'read_order_flag_first';
-SELECT count(), sum(id) FROM tab PREWHERE hasToken(s, 'third') AND flag = 1 SETTINGS enable_parallel_replicas = 0, log_comment = 'read_order_index_first';
-SELECT count(), sum(id) FROM tab PREWHERE flag = 1 WHERE hasToken(s, 'third') SETTINGS optimize_move_to_prewhere = 0, enable_parallel_replicas = 0, log_comment = 'read_order_index_in_where';
-SELECT id FROM tab WHERE hasToken(s, 'third') ORDER BY ts DESC LIMIT 3 SETTINGS use_top_k_dynamic_filtering = 1, max_block_size = 1024, enable_parallel_replicas = 0, log_comment = 'read_order_top_k';
+SELECT count(), sum(id) FROM tab PREWHERE flag = 1 AND hasToken(s, 'third') SETTINGS log_comment = 'read_order_flag_first';
+SELECT count(), sum(id) FROM tab PREWHERE hasToken(s, 'third') AND flag = 1 SETTINGS log_comment = 'read_order_index_first';
+SELECT count(), sum(id) FROM tab PREWHERE flag = 1 WHERE hasToken(s, 'third') SETTINGS optimize_move_to_prewhere = 0, log_comment = 'read_order_index_in_where';
+SELECT id FROM tab WHERE hasToken(s, 'third') ORDER BY ts DESC LIMIT 3 SETTINGS use_top_k_dynamic_filtering = 1, max_block_size = 1024, log_comment = 'read_order_top_k';
 
 SYSTEM FLUSH LOGS query_log;
 

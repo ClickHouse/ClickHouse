@@ -326,6 +326,14 @@ ExpressionTransform
                                           ExpressionTransform × 2
                                             (ReadFromMergeTree)
                                             MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
+                                        (Expression)
+                                        ExpressionTransform × 2
+                                          (BuildRuntimeFilter)
+                                          BuildRuntimeFilterTransform × 2
+                                            (Expression)
+                                            ExpressionTransform × 2
+                                              (ReadFromMergeTree)
+                                              MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
 -- With `full_sorting_merge`, the join emits its result in join-key order, so the final `ORDER BY k, v`
 -- above it only finishes the sort by `v` within each `k` (a `FinishSorting`): there is no full sort to
 -- push the `LIMIT BY` into, and neither the input sorts used by the join algorithm are touched.

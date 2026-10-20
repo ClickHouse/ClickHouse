@@ -37,7 +37,6 @@ static struct InitFiu
     ONCE(nats_fail_resubscribe_within_query) \
     REGULAR(replicated_queue_unfail_entries) \
     REGULAR(executing_graph_add_node_fail) \
-    REGULAR(executing_graph_build_fail) \
     PAUSEABLE_ONCE(polling_queue_before_try_poll) \
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
@@ -234,6 +233,7 @@ static struct InitFiu
     REGULAR(refresh_mv_incremental_fail_after_append) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
     ONCE(space_saving_copy_arena_throw) \
+    ONCE(adaptive_aggregation_drain_create_states_throw) \
     REGULAR(keepermap_fail_drop_data) \
     PAUSEABLE_ONCE(keepermap_create_pause_before_drop_lock_version) \
     REGULAR(keeper_fault_on_watch_request) \
@@ -321,7 +321,6 @@ static struct InitFiu
     PAUSEABLE_ONCE(restore_pause_on_start) \
     PAUSEABLE_ONCE(restore_pause_before_data_restore_tasks) \
     PAUSEABLE_ONCE(backups_pause_before_publishing_progress) \
-    REGULAR(backups_hold_registration_until_ddl_worker_stops) \
     PAUSEABLE_ONCE(restore_pause_before_publishing_final_progress) \
     PAUSEABLE(sc_state_application_pause) \
     PAUSEABLE(sc_state_application_pause_after_fetch) \
@@ -406,7 +405,6 @@ static struct InitFiu
     PAUSEABLE_ONCE(attach_from_path_pause_before_relocation) \
     PAUSEABLE_ONCE(rocksdb_rename_pause_before_rollback) \
     PAUSEABLE(database_catalog_drop_finally_before_id_erase) \
-    PAUSEABLE(database_catalog_drop_finally_after_notify) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
     ONCE(mt_skip_scheduling_merge_once) \
     ONCE(mt_drop_selected_ttl_merge_once) \
@@ -420,7 +418,6 @@ static struct InitFiu
     PAUSEABLE_ONCE(smt_check_part_pause_in_check_data) \
     REGULAR(transaction_force_unknown_state_after_commit) \
     REGULAR(transaction_hold_unknown_state) \
-    PAUSEABLE_ONCE(unique_key_insert_pause_before_commit) \
     ONCE(attach_to_group_failure) \
     ONCE(thread_group_switcher_post_attach_failure) \
     REGULAR(tx_log_abort_cleanup_multi) \

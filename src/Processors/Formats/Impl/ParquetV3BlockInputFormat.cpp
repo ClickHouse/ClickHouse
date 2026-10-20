@@ -7,9 +7,7 @@
 #if USE_PARQUET
 
 #include <Common/logger_useful.h>
-#include <Common/SipHash.h>
 #include <Common/ThreadPool.h>
-#include <Core/Settings.h>
 #include <Common/setThreadName.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatFilterInfo.h>
@@ -19,7 +17,6 @@
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
-#include <Storages/MergeTree/ColumnsCache.h>
 
 namespace ProfileEvents
 {
@@ -34,16 +31,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace Setting
-{
-    extern const SettingsBool use_parquet_metadata_cache;
-    extern const SettingsBool use_columns_cache;
-    extern const SettingsBool enable_reads_from_columns_cache;
-    extern const SettingsBool enable_writes_to_columns_cache;
-    extern const SettingsUInt64 columns_cache_max_bytes_to_write_to_cache;
-    extern const SettingsUInt64 columns_cache_max_estimated_bytes_to_write_to_cache;
-}
-
 static Parquet::ReadOptions convertReadOptions(const FormatSettings & format_settings)
 {
     Parquet::ReadOptions options;
@@ -53,86 +40,6 @@ static Parquet::ReadOptions convertReadOptions(const FormatSettings & format_set
     options.schema_inference_force_not_nullable = format_settings.schema_inference_make_columns_nullable == 0;
 
     options.dictionary_filter_limit_bytes = format_settings.parquet.dictionary_filter_push_down;
-
-    return options;
-}
-
-/// The source whose `READ` grant is required to see the cached entries of a file in `system.columns_cache`.
-static std::optional<AccessTypeObjects::Source> getColumnsCacheSource(ObjectStorageType storage_type)
-{
-    switch (storage_type)
-    {
-        case ObjectStorageType::S3: return AccessTypeObjects::Source::S3;
-        case ObjectStorageType::Azure: return AccessTypeObjects::Source::AZURE;
-        case ObjectStorageType::HDFS: return AccessTypeObjects::Source::HDFS;
-        case ObjectStorageType::Web: return AccessTypeObjects::Source::URL;
-        case ObjectStorageType::Local: return AccessTypeObjects::Source::FILE;
-        case ObjectStorageType::None:
-        case ObjectStorageType::Max:
-            return std::nullopt;
-    }
-}
-
-/// The columns cache options for reading a file, or nullptr if the read does not use the cache.
-/// The cache is used only for a file whose content is identified by a strong version token:
-/// an ETag of an object in an object storage, or the version token of a local file once it has
-/// settled (see `StorageFile`), the same as for the userspace page cache. The file must also be
-/// identified among all storages, see `RelativePathWithMetadata::path_for_content_cache`.
-static std::shared_ptr<const Parquet::ColumnsCacheOptions> getColumnsCacheOptions(
-    const ContextPtr & context, const FormatSettings & format_settings, const std::optional<RelativePathWithMetadata> & object_with_metadata)
-{
-    const auto & settings = context->getSettingsRef();
-    if (!settings[Setting::use_columns_cache])
-        return nullptr;
-
-    const bool enable_reads = settings[Setting::enable_reads_from_columns_cache];
-    const bool enable_writes = settings[Setting::enable_writes_to_columns_cache];
-    if (!enable_reads && !enable_writes)
-        return nullptr;
-
-    if (!object_with_metadata || !object_with_metadata->metadata || !object_with_metadata->metadata->isEtagUsableAsCacheKey())
-        return nullptr;
-
-    if (!object_with_metadata->path_for_content_cache)
-        return nullptr;
-    const auto source = getColumnsCacheSource(object_with_metadata->storage_type_for_content_cache);
-    if (!source)
-        return nullptr;
-
-    /// A zero-sized cache accepts nothing, so it is not even looked up.
-    ColumnsCachePtr cache = context->getColumnsCache();
-    if (!cache || cache->maxSizeInBytes() == 0)
-        return nullptr;
-
-    auto options = std::make_shared<Parquet::ColumnsCacheOptions>();
-    options->cache = std::move(cache);
-    options->file_path = object_with_metadata->getPath();
-    options->table_uuid = object_with_metadata->table_uuid_for_content_cache;
-    options->source = *source;
-    options->enable_reads = enable_reads;
-    options->enable_writes = enable_writes;
-    options->max_bytes_to_write = settings[Setting::columns_cache_max_bytes_to_write_to_cache];
-    options->max_estimated_bytes_to_write = settings[Setting::columns_cache_max_estimated_bytes_to_write_to_cache];
-    options->write_budget = context->getColumnsCacheWriteBudget();
-    if (!options->write_budget)
-        options->write_budget = std::make_shared<ColumnsCacheWriteBudget>();
-
-    const ObjectMetadata & metadata = *object_with_metadata->metadata;
-    SipHash hash;
-    hash.update(*object_with_metadata->path_for_content_cache);
-    hash.update(metadata.etag);
-    hash.update(metadata.size_bytes);
-    /// The format settings that change the values decoded from the file without changing their
-    /// types. The types are part of the identity of every column, see `Reader::initColumnsCache`.
-    hash.update(format_settings.null_as_default);
-    hash.update(format_settings.parquet.allow_geoparquet_parser);
-    hash.update(format_settings.parquet.enable_json_parsing);
-    hash.update(format_settings.parquet.local_time_as_utc);
-    hash.update(format_settings.parquet.detect_variant_by_structure);
-    hash.update(format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp);
-    hash.update(format_settings.precise_float_parsing);
-    hash.update(static_cast<UInt64>(format_settings.date_time_overflow_behavior));
-    options->file_identity = hash.get64();
 
     return options;
 }
@@ -492,10 +399,8 @@ void registerInputFormatParquet(FormatFactory & factory)
             /// initialise the cache (e.g. the client side of `INSERT ... FROM INFILE`).
             /// In such contexts we just don't memoise the footer — the format itself works
             /// correctly with a null cache.
-            ParquetMetadataCachePtr metadata_cache;
-            if (context->getSettingsRef()[Setting::use_parquet_metadata_cache])
-                metadata_cache = context->tryGetParquetMetadataCache();
-            auto format = std::make_shared<ParquetV3BlockInputFormat>(
+            ParquetMetadataCachePtr metadata_cache = context->tryGetParquetMetadataCache();
+            return std::make_shared<ParquetV3BlockInputFormat>(
                 buf,
                 std::make_shared<const Block>(sample),
                 settings,
@@ -505,8 +410,6 @@ void registerInputFormatParquet(FormatFactory & factory)
                 metadata_cache,
                 object_with_metadata
             );
-            format->setColumnsCacheOptions(getColumnsCacheOptions(context, settings, object_with_metadata));
-            return format;
         });
     factory.registerRandomAccessInputFormat(
         "Parquet",
