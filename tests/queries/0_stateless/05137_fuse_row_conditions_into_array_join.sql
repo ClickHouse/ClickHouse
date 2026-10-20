@@ -40,7 +40,7 @@ SELECT count() FROM (SELECT arrayJoin(arr) AS a, arrayJoin(arrayReverse(arr)) AS
 
 -- no element read: not fused
 SELECT count() FROM (EXPLAIN actions = 1 SELECT count() FROM t_aj_row ARRAY JOIN arr AS x WHERE n = 1 SETTINGS query_plan_filter_push_down = 0) WHERE explain ILIKE '%Element filter column%';
--- LEFT: not fused
+-- LEFT: fused too
 SELECT count() FROM (EXPLAIN actions = 1 SELECT count() FROM t_aj_row LEFT ARRAY JOIN arr AS x WHERE x = key) WHERE explain ILIKE '%Element filter column%';
 SELECT count() FROM t_aj_row LEFT ARRAY JOIN arr AS x WHERE x = key;
 
