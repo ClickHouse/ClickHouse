@@ -91,11 +91,11 @@ FROM
 (
     SELECT arrayStringConcat(groupArray(explain), '\n') AS report
     FROM (EXPLAIN WHATIF index_scan_budget_rows = 3030 SELECT x FROM t_tail WHERE x >= 10000)
-),
+) AS estimated,
 (
     SELECT toUInt64(extract(arrayStringConcat(groupArray(explain), '\n'), '(?s).*Granules: (\\d+)/')) AS real
     FROM (EXPLAIN indexes = 1 SELECT x FROM t_tail_real WHERE x >= 10000 SETTINGS use_skip_indexes_on_data_read = 0)
-);
+) AS materialized;
 
 DROP TABLE t_tail;
 DROP TABLE t_tail_real;

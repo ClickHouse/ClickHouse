@@ -36,3 +36,5 @@ With idx_d (minmax, hypothetical):
 marks: 60
 empirical_status: unsupported
 empirical_reason: The estimate would read 12000 rows, over max_rows_to_read = 6000 (a sample keeps at least ~30 index windows and one per part)
+-- the window of a shorter last run stands for fewer windows, so the estimate holds the real granules
+33 / 303	['3','3','41']	3	1
