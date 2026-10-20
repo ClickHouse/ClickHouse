@@ -101,6 +101,9 @@ SELECT '--- DateTime: Joda named timezone at boundary ---';
 SELECT toUnixTimestamp(parseDateTimeInJodaSyntax('2106-02-07 15:28:15 Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss z', 'UTC'));
 SELECT parseDateTimeInJodaSyntaxOrNull('2106-02-07 15:28:16 Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss z', 'UTC');
 SELECT parseDateTimeInJodaSyntaxOrNull('1970-01-01 00:00:00 Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss z', 'UTC');
+SELECT toUnixTimestamp(parseDateTimeInJodaSyntax('2106-02-07 03:28:15 PM Asia/Tokyo', 'yyyy-MM-dd hh:mm:ss a z', 'UTC'));
+SELECT parseDateTimeInJodaSyntaxOrNull('2106-02-07 03:28:16 PM Asia/Tokyo', 'yyyy-MM-dd hh:mm:ss a z', 'UTC');
+SELECT toUnixTimestamp(parseDateTimeInJodaSyntax('1970-01-01 09:00:00 AM Asia/Tokyo', 'yyyy-MM-dd hh:mm:ss a z', 'UTC'));
 
 SELECT '--- DateTime: Joda inline offset at boundary ---';
 SELECT toUnixTimestamp(parseDateTimeInJodaSyntax('2106-02-07 08:28:15+0200', 'yyyy-MM-dd HH:mm:ssZ', 'UTC'));

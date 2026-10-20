@@ -573,8 +573,9 @@ namespace
         [[nodiscard]]
         Int64OrError buildDateTime(const DateLUTImpl & time_zone, FormatSettings::DateTimeOverflowBehavior overflow_behavior)
         {
-            if (is_hour_of_half_day && !is_am)
-                hour += 12;
+            /// This method also runs while resolving named Joda timezones.
+            /// Do not apply the PM offset to the stored hour twice.
+            const Int32 hour_of_day = hour + (is_hour_of_half_day && !is_am ? 12 : 0);
 
             // Convert the parsed date/time into a timestamp.
             Int32 days_since_epoch = 0;
@@ -585,7 +586,7 @@ namespace
             else
                 ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch, daysSinceEpochFromDate(year, month, day))
 
-            Int64 seconds_since_epoch = days_since_epoch * 86400UZ + hour * 3600UZ + minute * 60UZ + second;
+            Int64 seconds_since_epoch = days_since_epoch * 86400UZ + hour_of_day * 3600UZ + minute * 60UZ + second;
 
             /// Time zone is not specified, use local time zone
             if (!has_time_zone_offset)
