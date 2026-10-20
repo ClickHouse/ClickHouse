@@ -1006,6 +1006,16 @@ void StorageObjectStorage::truncate(
     object_storage->removeObjectsIfExist(objects);
 }
 
+void StorageObjectStorage::checkTableCanBeDropped(ContextPtr query_context) const
+{
+    /// Dropping a data lake may delete its data with the client it holds: in the query, or later in the background with
+    /// the global settings.
+    if (configuration->isDataLakeConfiguration()
+        && (query_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop]
+            || query_context->getGlobalContext()->getSettingsRef()[Setting::iceberg_delete_data_on_drop]))
+        checkSessionMayUseServerIdentity(*object_storage, query_context);
+}
+
 void StorageObjectStorage::drop()
 {
     dropTable(configuration, catalog, storage_id);
