@@ -81,6 +81,19 @@ ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${DB_LONG} ENGINE = Filesystem('/${LONG
 echo "--- server: the same path spelled through a symlink to user_files is still inside it (1 = BAD_ARGUMENTS) ---"
 ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${DB_LONG} ENGINE = Filesystem('/proc/self/root${CLICKHOUSE_USER_FILES}/${LONG_NAME}')" 2>&1 \
     | grep -m1 -c -E "Code: 36\..*Cannot access path.*BAD_ARGUMENTS"
+# A symlink outside user_files whose target stat cannot follow is judged by that target, not by where the link is.
+ln -s "${CLICKHOUSE_USER_FILES}/${LONG_NAME}" "${WORKING_FOLDER}/link_inside"
+ln -s "/${LONG_NAME}" "${WORKING_FOLDER}/link_outside"
+echo "--- server: a symlink from outside user_files to such a path inside it is inside it (1 = BAD_ARGUMENTS) ---"
+${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${DB_LONG} ENGINE = Filesystem('${WORKING_FOLDER}/link_inside')" 2>&1 \
+    | grep -m1 -c -E "Code: 36\..*Cannot access path.*BAD_ARGUMENTS"
+echo "--- server: a symlink to such a path outside user_files is still refused (1 = BAD_ARGUMENTS) ---"
+${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${DB_LONG} ENGINE = Filesystem('${WORKING_FOLDER}/link_outside')" 2>&1 \
+    | grep -m1 -c -E "Code: 36\..*Path must be inside user-files path.*BAD_ARGUMENTS"
+ln -s "${WORKING_FOLDER}/link_loop" "${WORKING_FOLDER}/link_loop"
+echo "--- server: a symlink loop outside user_files is refused, not followed forever (1 = BAD_ARGUMENTS) ---"
+${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${DB_LONG} ENGINE = Filesystem('${WORKING_FOLDER}/link_loop')" 2>&1 \
+    | grep -m1 -c -E "Code: 36\..*Path must be inside user-files path.*BAD_ARGUMENTS"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${DB_LONG}"
 
 rm -rf "${WORKING_FOLDER}"
