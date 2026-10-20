@@ -915,6 +915,8 @@ def main():
     from initial_migration.configured_native_snapshots import Migration as NativeSnapshots
     for path, content in NativeSnapshots(ROOT).prepare(native_builds).items():
         path.write_text(content)
+    from initial_migration.configured_native_codegen import Migration as NativeCodegen
+    NativeCodegen(ROOT).run(write=True)
     prune_published(ROOT, repository_files, write=True, consumers={'@clickhouse'} | {
         '@clickhouse_' + name for name in
         ('nuraft', 'grpc', 'librdkafka', 'croaring', 'arrow', 'google_cloud_cpp')

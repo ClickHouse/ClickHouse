@@ -6,25 +6,16 @@ exports_files(["clickhouse_grpc.proto"])
 
 ch_cc_library(
     name = "clickhouse_grpc_protos",
-    srcs = select({
-        "@platforms//cpu:x86_64": [
-            "//bazel:gen/x86_64/src/Server/grpc_protos/clickhouse_grpc.pb.cc",
-            "//bazel:gen/x86_64/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc",
-        ],
-        "@platforms//cpu:aarch64": [
-            "//bazel:gen/aarch64/src/Server/grpc_protos/clickhouse_grpc.pb.cc",
-            "//bazel:gen/aarch64/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc",
-        ],
-    }),
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            "//bazel:gen/x86_64/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.h",
-            "//bazel:gen/x86_64/src/Server/grpc_protos/clickhouse_grpc.pb.h",
-        ],
-        "@platforms//cpu:aarch64": [
-            "//bazel:gen/aarch64/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.h",
-            "//bazel:gen/aarch64/src/Server/grpc_protos/clickhouse_grpc.pb.h",
-        ],
+    srcs = [
+        "//bazel:gen/src/Server/grpc_protos/clickhouse_grpc.pb.cc",
+        "//bazel:gen/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc",
+    ],
+    hdrs = [
+        "//bazel:gen/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.h",
+        "//bazel:gen/src/Server/grpc_protos/clickhouse_grpc.pb.h",
+    ] + select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [],
     }),
     clickhouse_code = True,
     copts = [
@@ -81,22 +72,14 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    local_includes = select({
-        "@platforms//cpu:x86_64": ["../../../" + "bazel/gen/x86_64/src/Server/grpc_protos"],
-        "@platforms//cpu:aarch64": ["../../../" + "bazel/gen/aarch64/src/Server/grpc_protos"],
-    }) + [
+    local_includes = [
+        "../../../" + "bazel/gen/src/Server/grpc_protos",
         "../../../" + "contrib/c-ares-cmake/linux",
     ],
-    textual_hdrs = select({
-        "@platforms//cpu:x86_64": [
-            "//bazel:gen/x86_64/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc",
-            "//bazel:gen/x86_64/src/Server/grpc_protos/clickhouse_grpc.pb.cc",
-        ],
-        "@platforms//cpu:aarch64": [
-            "//bazel:gen/aarch64/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc",
-            "//bazel:gen/aarch64/src/Server/grpc_protos/clickhouse_grpc.pb.cc",
-        ],
-    }),
+    textual_hdrs = [
+        "//bazel:gen/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc",
+        "//bazel:gen/src/Server/grpc_protos/clickhouse_grpc.pb.cc",
+    ],
     deps = [
         "@clickhouse_c_ares//:_c-ares",
         "@clickhouse_google_protobuf//:_libprotobuf",

@@ -14,8 +14,8 @@ ch_cc_library(
         "$(GENDIR)/bazel/gen/includes/configs",
         "-I",
     ] + select({
-        "@platforms//cpu:x86_64": ["$(GENDIR)/bazel/gen/x86_64/src"],
-        "@platforms//cpu:aarch64": ["$(GENDIR)/bazel/gen/aarch64/src"],
+        "@platforms//cpu:x86_64": ["$(GENDIR)/bazel/gen/src"],
+        "@platforms//cpu:aarch64": ["$(GENDIR)/bazel/gen/src"],
     }) + [
         "-I",
         repository_path("contrib/libfiu") + "/libfiu",
@@ -150,14 +150,7 @@ ch_cc_library(
         "../../../" + (repository_path("contrib/mariadb-connector-c") + "/libmariadb"),
         "../../../" + (repository_path("contrib/Jieba-CPP") + "/include"),
         "../../../" + (repository_path("contrib/ai-sdk-cpp") + "/include"),
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "../../../" + "bazel/gen/x86_64/src/Server/grpc_protos",
-        ],
-        "@platforms//cpu:aarch64": [
-            "../../../" + "bazel/gen/aarch64/src/Server/grpc_protos",
-        ],
-    }) + [
+        "../../../" + "bazel/gen/src/Server/grpc_protos",
         "../../../" + (repository_path("contrib/s2geometry") + "/src"),
         "../../../" + "contrib/s2geometry-cmake",
         "../../../" + (repository_path("contrib/AMQP-CPP") + "/include"),

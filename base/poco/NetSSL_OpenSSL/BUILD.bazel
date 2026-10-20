@@ -227,14 +227,11 @@ ch_cc_library(
 
 ch_cc_library(
     name = "_poco_net_ssl__compile_1",
-    srcs = select({
-        "@platforms//cpu:x86_64": ["//bazel:gen/x86_64/embedded/base/poco/NetSSL_OpenSSL/src/EmbeddedCertificates.cpp"],
-        "@platforms//cpu:aarch64": ["//bazel:gen/aarch64/embedded/base/poco/NetSSL_OpenSSL/src/EmbeddedCertificates.cpp"],
-    }),
+    srcs = ["//bazel:gen/embedded/base/poco/NetSSL_OpenSSL/src/EmbeddedCertificates.cpp"],
     hdrs = _GENERATED_HDRS_0,
     additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": ["//bazel:gen/x86_64/embedded/contrib/grpc/etc/roots.pem"],
-        "@platforms//cpu:aarch64": ["//bazel:gen/aarch64/embedded/contrib/grpc/etc/roots.pem"],
+        "@platforms//cpu:x86_64": ["//bazel:gen/embedded/contrib/grpc/etc/roots.pem"],
+        "@platforms//cpu:aarch64": ["//bazel:gen/embedded/contrib/grpc/etc/roots.pem"],
     }) + [
         "//base/poco/Foundation:src/DirectoryIterator_UNIX.cpp",
         "//base/poco/Foundation:src/Environment_UNIX.cpp",

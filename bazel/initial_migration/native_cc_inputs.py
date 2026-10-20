@@ -124,13 +124,33 @@ class Sources:
         tree = ast.parse((self.root / 'bazel/rules/build_options_data.bzl').read_text())
         data = next(stmt.value for stmt in tree.body if isinstance(stmt, ast.Assign) and
                     any(isinstance(t, ast.Name) and t.id == 'BUILD_OPTIONS' for t in stmt.targets))
+        build = ast.parse((self.root / 'bazel/BUILD.bazel').read_text())
+        configured = [
+            {kw.arg: kw.value for kw in stmt.value.keywords}
+            for stmt in build.body
+            if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)
+            and getattr(stmt.value.func, 'id', '') == 'build_options'
+        ]
+        directives = defaultdict(list)
         for node in data.values:
             attrs = {k.value: v for k, v in zip(node.keys, node.values)}
-            template, out = (ast.literal_eval(attrs[key]) for key in ('template', 'out'))
+            template = ast.literal_eval(attrs['template'])
+            # Original CMake capture is still CPU-specific. After
+            # configured_native_codegen the rule owns the single output.
+            if 'out' in attrs:
+                out = ast.literal_eval(attrs['out'])
+            elif len(configured) == 1:
+                out = ast.literal_eval(configured[0]['out'])
+            else:
+                raise ValueError('Expected one configured build_options output')
             # build_options.bzl only substitutes quoted flag/version strings
             # and stringification defines. Includes come from the template.
-            self.directives['@clickhouse//bazel:' + out] = includes(
-                (self.root / 'bazel' / template).read_bytes(), template)
+            directives[out].append(includes((self.root / 'bazel' / template).read_bytes(), template))
+        for out, templates in directives.items():
+            # Never claim a CPU-independent include body if either CPU's
+            # template cannot be scanned or its directives actually differ.
+            if templates[0] is not None and all(value == templates[0] for value in templates):
+                self.directives['@clickhouse//bazel:' + out] = templates[0]
 
         for path in (self.root / 'bazel/config').rglob('*'):
             if path.is_file() and path.name.endswith(TUS):

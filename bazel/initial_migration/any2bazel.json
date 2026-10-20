@@ -907,6 +907,14 @@
       {
         "from": "bazel-out/k8-opt/bin/bazel/gen/includes",
         "to": "@build/includes"
+      },
+      {
+        "from": "bazel-out/k8-opt/bin/bazel/gen/src",
+        "to": "@build/src"
+      },
+      {
+        "from": "bazel-out/k8-opt/bin/bazel/gen/embedded",
+        "to": "@build/embedded"
       }
     ],
     "source_map": [
@@ -1531,128 +1539,68 @@
         "to": "@build/contrib/prometheus-protobufs-cmake/prompb/types.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/embedded/base/poco/NetSSL_OpenSSL/src/EmbeddedCertificates.cpp",
+        "from": "bazel-out/k8-opt/bin/bazel/gen/embedded/base/poco/NetSSL_OpenSSL/src/EmbeddedCertificates.cpp",
         "to": "base/poco/NetSSL_OpenSSL/src/EmbeddedCertificates.cpp"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/embedded/programs/install/Install.cpp",
+        "from": "bazel-out/k8-opt/bin/bazel/gen/embedded/programs/install/Install.cpp",
         "to": "programs/install/Install.cpp"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/embedded/programs/keeper/Keeper.cpp",
+        "from": "bazel-out/k8-opt/bin/bazel/gen/embedded/programs/keeper/Keeper.cpp",
         "to": "programs/keeper/Keeper.cpp"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/embedded/programs/server/Server.cpp",
+        "from": "bazel-out/k8-opt/bin/bazel/gen/embedded/programs/server/Server.cpp",
         "to": "programs/server/Server.cpp"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/embedded/src/Common/FrequencyHolder.cpp",
+        "from": "bazel-out/k8-opt/bin/bazel/gen/embedded/src/Common/FrequencyHolder.cpp",
         "to": "src/Common/FrequencyHolder.cpp"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/embedded/src/Server/IndexRequestHandler.cpp",
+        "from": "bazel-out/k8-opt/bin/bazel/gen/embedded/src/Server/IndexRequestHandler.cpp",
         "to": "src/Server/IndexRequestHandler.cpp"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/embedded/src/Server/KeeperDashboardRequestHandler.cpp",
+        "from": "bazel-out/k8-opt/bin/bazel/gen/embedded/src/Server/KeeperDashboardRequestHandler.cpp",
         "to": "src/Server/KeeperDashboardRequestHandler.cpp"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/embedded/src/Server/KeeperJemallocHandler.cpp",
+        "from": "bazel-out/k8-opt/bin/bazel/gen/embedded/src/Server/KeeperJemallocHandler.cpp",
         "to": "src/Server/KeeperJemallocHandler.cpp"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/embedded/src/Server/WebTerminalRequestHandler.cpp",
+        "from": "bazel-out/k8-opt/bin/bazel/gen/embedded/src/Server/WebTerminalRequestHandler.cpp",
         "to": "src/Server/WebTerminalRequestHandler.cpp"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/embedded/src/Server/WebUIRequestHandler.cpp",
+        "from": "bazel-out/k8-opt/bin/bazel/gen/embedded/src/Server/WebUIRequestHandler.cpp",
         "to": "src/Server/WebUIRequestHandler.cpp"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/embedded/src/Storages/System/attachInformationSchemaTables.cpp",
+        "from": "bazel-out/k8-opt/bin/bazel/gen/embedded/src/Storages/System/attachInformationSchemaTables.cpp",
         "to": "src/Storages/System/attachInformationSchemaTables.cpp"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc",
-        "to": "@build/aarch64/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc",
+        "to": "@build/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/src/Server/grpc_protos/clickhouse_grpc.pb.cc",
-        "to": "@build/aarch64/src/Server/grpc_protos/clickhouse_grpc.pb.cc"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/src/Server/grpc_protos/clickhouse_grpc.pb.cc",
+        "to": "@build/src/Server/grpc_protos/clickhouse_grpc.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/src/Storages/System/StorageSystemBuildOptions.generated.cpp",
-        "to": "@build/aarch64/src/Storages/System/StorageSystemBuildOptions.generated.cpp"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/src/Storages/System/StorageSystemBuildOptions.generated.cpp",
+        "to": "@build/src/Storages/System/StorageSystemBuildOptions.generated.cpp"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/aarch64/src/Storages/System/StorageSystemLicenses.generated.cpp",
-        "to": "@build/aarch64/src/Storages/System/StorageSystemLicenses.generated.cpp"
+        "from": "bazel-out/k8-opt/bin/bazel/gen/src/Storages/System/StorageSystemLicenses.generated.cpp",
+        "to": "@build/src/Storages/System/StorageSystemLicenses.generated.cpp"
       },
       {
         "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/contrib/libhdfs3-cmake/crc_iscsi_v_pcl.o",
         "to": "@build/x86_64/contrib/libhdfs3-cmake/crc_iscsi_v_pcl.o"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/embedded/base/poco/NetSSL_OpenSSL/src/EmbeddedCertificates.cpp",
-        "to": "base/poco/NetSSL_OpenSSL/src/EmbeddedCertificates.cpp"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/embedded/programs/install/Install.cpp",
-        "to": "programs/install/Install.cpp"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/embedded/programs/keeper/Keeper.cpp",
-        "to": "programs/keeper/Keeper.cpp"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/embedded/programs/server/Server.cpp",
-        "to": "programs/server/Server.cpp"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/embedded/src/Common/FrequencyHolder.cpp",
-        "to": "src/Common/FrequencyHolder.cpp"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/embedded/src/Server/IndexRequestHandler.cpp",
-        "to": "src/Server/IndexRequestHandler.cpp"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/embedded/src/Server/KeeperDashboardRequestHandler.cpp",
-        "to": "src/Server/KeeperDashboardRequestHandler.cpp"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/embedded/src/Server/KeeperJemallocHandler.cpp",
-        "to": "src/Server/KeeperJemallocHandler.cpp"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/embedded/src/Server/WebTerminalRequestHandler.cpp",
-        "to": "src/Server/WebTerminalRequestHandler.cpp"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/embedded/src/Server/WebUIRequestHandler.cpp",
-        "to": "src/Server/WebUIRequestHandler.cpp"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/embedded/src/Storages/System/attachInformationSchemaTables.cpp",
-        "to": "src/Storages/System/attachInformationSchemaTables.cpp"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc",
-        "to": "@build/x86_64/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/src/Server/grpc_protos/clickhouse_grpc.pb.cc",
-        "to": "@build/x86_64/src/Server/grpc_protos/clickhouse_grpc.pb.cc"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/src/Storages/System/StorageSystemBuildOptions.generated.cpp",
-        "to": "@build/x86_64/src/Storages/System/StorageSystemBuildOptions.generated.cpp"
-      },
-      {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/x86_64/src/Storages/System/StorageSystemLicenses.generated.cpp",
-        "to": "@build/x86_64/src/Storages/System/StorageSystemLicenses.generated.cpp"
       },
       {
         "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_cctz/config/contrib/cctz-cmake/TimeZones.generated.cpp",
@@ -2324,19 +2272,19 @@
       },
       {
         "from": "build_bazel_reference_aarch64/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc",
-        "to": "@build/aarch64/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc"
+        "to": "@build/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/src/Server/grpc_protos/clickhouse_grpc.pb.cc",
-        "to": "@build/aarch64/src/Server/grpc_protos/clickhouse_grpc.pb.cc"
+        "to": "@build/src/Server/grpc_protos/clickhouse_grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_aarch64/src/Storages/System/StorageSystemBuildOptions.generated.cpp",
-        "to": "@build/aarch64/src/Storages/System/StorageSystemBuildOptions.generated.cpp"
+        "to": "@build/src/Storages/System/StorageSystemBuildOptions.generated.cpp"
       },
       {
         "from": "build_bazel_reference_aarch64/src/Storages/System/StorageSystemLicenses.generated.cpp",
-        "to": "@build/aarch64/src/Storages/System/StorageSystemLicenses.generated.cpp"
+        "to": "@build/src/Storages/System/StorageSystemLicenses.generated.cpp"
       },
       {
         "from": "build_bazel_reference_x86_64/base/base/GitHash.generated.cpp",
@@ -2988,19 +2936,19 @@
       },
       {
         "from": "build_bazel_reference_x86_64/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc",
-        "to": "@build/x86_64/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc"
+        "to": "@build/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/src/Server/grpc_protos/clickhouse_grpc.pb.cc",
-        "to": "@build/x86_64/src/Server/grpc_protos/clickhouse_grpc.pb.cc"
+        "to": "@build/src/Server/grpc_protos/clickhouse_grpc.pb.cc"
       },
       {
         "from": "build_bazel_reference_x86_64/src/Storages/System/StorageSystemBuildOptions.generated.cpp",
-        "to": "@build/x86_64/src/Storages/System/StorageSystemBuildOptions.generated.cpp"
+        "to": "@build/src/Storages/System/StorageSystemBuildOptions.generated.cpp"
       },
       {
         "from": "build_bazel_reference_x86_64/src/Storages/System/StorageSystemLicenses.generated.cpp",
-        "to": "@build/x86_64/src/Storages/System/StorageSystemLicenses.generated.cpp"
+        "to": "@build/src/Storages/System/StorageSystemLicenses.generated.cpp"
       },
       {
         "from": "external/+contrib+clickhouse_abseil_cpp/absl/base/internal/cpu_detect.cc",

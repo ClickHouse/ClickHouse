@@ -22,15 +22,12 @@ NAMESPACES = {'ClickStack': 'clickstack', 'SQLConsole': 'sql-console'}
 GROUP_BUILD = """
 filegroup(
     name = "web_ui_resources",
-    srcs = select({
-        "@platforms//cpu:x86_64": [
-            ":generate_x86_64_ClickStack",
-            ":generate_x86_64_SQLConsole",
-        ],
-        "@platforms//cpu:aarch64": [
-            ":generate_aarch64_ClickStack",
-            ":generate_aarch64_SQLConsole",
-        ],
+    srcs = [
+        ":generate_native_ClickStack",
+        ":generate_native_SQLConsole",
+    ] + select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [],
     }),
 )
 """
@@ -261,7 +258,7 @@ def generator_outputs(root, Source):
     for cpu in CPUS:
         outputs = set()
         for ns in NAMESPACES:
-            gen = table['generate_' + cpu + '_' + ns]
+            gen = table['generate_native_' + ns]
             attrs = {k.value: v for k, v in zip(gen.keys, gen.values, strict=True)}
             labels = {'//bazel:' + path for path in ast.literal_eval(attrs['outs'])}
             if not labels or not all(resource_file(label) for label in labels):

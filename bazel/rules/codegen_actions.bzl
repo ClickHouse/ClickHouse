@@ -1,13 +1,5 @@
 """Declared license rendering and copies of source files read by Clang #embed."""
 
-def codegen_for_arch(attrs, arch):
-    """Use the requested generated-file directory for one shared CMake command."""
-    prefix = "gen/" + arch + "/"
-    return {
-        key: [item.replace("gen/{arch}/", prefix) for item in value] if key in ("srcs", "outs", "tools") else value.replace("gen/{arch}/", prefix)
-        for key, value in attrs.items()
-    }
-
 def _licenses_impl(ctx):
     if len(ctx.files.srcs) != len(ctx.attr.source_paths):
         fail("Each source_paths entry must have exactly one input file in srcs")
@@ -77,16 +69,12 @@ def declare_codegen(name, attrs):
     """Instantiate one recorded generator with the metadata belonging to it."""
     kind = attrs.get("kind", "genrule")
     if kind == "licenses":
-        metadata = attrs.get("cmake_metadata")
         _licenses(
             name = name,
             srcs = attrs["srcs"],
             out = attrs["outs"][0],
             source_paths = attrs["source_paths"],
-            cmake_metadata = select({
-                attrs["cmake_condition"]: metadata,
-                "//conditions:default": None,
-            }) if metadata else None,
+            cmake_metadata = attrs.get("cmake_metadata"),
         )
     elif kind == "embedded_sources":
         _embedded_sources(
@@ -95,16 +83,12 @@ def declare_codegen(name, attrs):
             outs = attrs["outs"],
         )
     elif kind == "genrule":
-        cmake_cmd = attrs.get("cmake_cmd")
         native.genrule(
             name = name,
             srcs = attrs["srcs"],
             outs = attrs["outs"],
             tools = attrs["tools"],
-            cmd = attrs["cmd"] + (select({
-                attrs["cmake_condition"]: cmake_cmd,
-                "//conditions:default": "",
-            }) if cmake_cmd else ""),
+            cmd = attrs["cmd"],
         )
     else:
         fail("Unknown codegen kind for %s: %s" % (name, kind))

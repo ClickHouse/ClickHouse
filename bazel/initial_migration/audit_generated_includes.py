@@ -126,7 +126,7 @@ class GeneratedIncludes(Graph):
         constants = {statement.targets[0].id: statement.value for statement in module.body
                      if isinstance(statement, ast.Assign) and len(statement.targets) == 1
                      and isinstance(statement.targets[0], ast.Name)}
-        shared = dictionary(constants['_SHARED_CODEGEN'])
+        shared = dictionary(constants.get('_SHARED_CODEGEN'))
         for name, data in dictionary(constants['CODEGEN_RULES']).items():
             cpu = None
             if (isinstance(data, ast.Call) and getattr(data.func, 'id', '') == 'codegen_for_arch'

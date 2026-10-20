@@ -3,6 +3,7 @@
 
 import argparse
 import ast
+import copy
 import difflib
 import gzip
 import json
@@ -16,6 +17,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from initial_migration.build_file import starlark
 from initial_migration.codegen import render_license
 from initial_migration.cmake_metadata import read_metadata, write_metadata
+from initial_migration.compact_build import Source
+from initial_migration.configured_external_outputs import ChooseCpu
 from initial_migration.generate_build import ARCHES, BUILD_OPTIONS_OUTPUT, LICENSES_OUTPUT, ROOT, cmake_build_options
 from initial_migration.repository_inputs import source_label
 
@@ -52,7 +55,7 @@ def _license_inputs(source):
     ))
 
 
-def _license_fields(record, license_inputs):
+def _license_fields(record, license_inputs, arch):
     fields = _literal_fields(record)
     common = {
         'source_paths': ('list(_LICENSE_INPUTS)', list(license_inputs)),
@@ -60,6 +63,9 @@ def _license_fields(record, license_inputs):
     }
     result = {}
     for key, field in fields.items():
+        if key not in common:
+            continue
+        field = ChooseCpu(arch).visit(copy.deepcopy(field))
         if key in common and ast.dump(field) == ast.dump(ast.parse(common[key][0], mode='eval').body):
             result[key] = common[key][1]
         else:
@@ -118,9 +124,9 @@ def _resource_mtimes(build, arch, records):
         raise ValueError('Expected resource gzip records for ClickStack and SQLConsole')
     mtimes = {}
     for namespace, (directory, compressed) in RESOURCE_DIRS.items():
-        fields = _literal_fields(records['generate_' + arch + '_' + namespace])
+        fields = _literal_fields(records['generate_native_' + namespace])
         outs = ast.literal_eval(fields['outs'])
-        prefix = 'gen/' + arch + '/' + directory + '/' + compressed + '/'
+        prefix = 'gen/' + directory + '/' + compressed + '/'
         paths = [out.removeprefix(prefix) for out in outs[1:]]
         if any(not out.startswith(prefix) for out in outs[1:]):
             raise ValueError('Unexpected recorded gzip outputs for ' + namespace)
@@ -157,18 +163,19 @@ def _llvm_reference(root, build, arch):
             continue
         fields = {keyword.arg: keyword.value for keyword in call.keywords}
         out = ast.literal_eval(fields['out'])
-        prefix = 'gen/' + arch + '/llvm/include/llvm/Config/'
+        prefix = 'gen/llvm/include/llvm/Config/'
         if not out.startswith(prefix):
             continue
         if call.func.id == 'expand_template':
             template = ast.literal_eval(fields['template'])
-            if not template.startswith('@clickhouse//:'):
+            if not template.startswith('@clickhouse//') or ':' not in template:
                 raise ValueError('Unexpected LLVM template ' + template)
-            content = (root / template.removeprefix('@clickhouse//:')).read_text()
-            for key, value in ast.literal_eval(fields['substitutions']).items():
+            package, name = template.removeprefix('@clickhouse//').split(':', 1)
+            content = (root / package / name).read_text()
+            for key, value in ast.literal_eval(ChooseCpu(arch).visit(fields['substitutions'])).items():
                 content = content.replace(key, value)
         else:
-            content = '\n'.join(ast.literal_eval(fields['content']))
+            content = '\n'.join(ast.literal_eval(ChooseCpu(arch).visit(fields['content'])))
         planned[LLVM_CONFIG + out.removeprefix(prefix)] = content.encode()
     if len(planned) != 9:
         raise ValueError(f'Expected 9 LLVM Config outputs, found {len(planned)}')
@@ -194,16 +201,15 @@ def _full_reference(root, build, arch, metadata, check):
         raise ValueError('LLVM generated Config headers differ from CMake: '
                          + ', '.join(sorted(differences)))
 
-    licenses = 'generate_' + arch + '_licenses'
+    licenses = 'generate_native_licenses'
     license_inputs = _license_inputs(codegen)
-    before = _license_fields(records[licenses], license_inputs)
+    before = _license_fields(records[licenses], license_inputs, arch)
     inputs = dict(zip(before['source_paths'], before['srcs'], strict=True))
     for replacement in substitutions.values():
         if replacement is not None:
             source = replacement[1].lstrip('/')
             if source not in inputs:
                 inputs[source] = source_label(source)
-    attrs = dict(before)
     license_name = 'license_substitutions_' + arch + '.json'
     shared_license_name = 'license_substitutions_x86_64.json'
     shared_license_file = root / 'bazel/initial_migration' / shared_license_name
@@ -211,31 +217,26 @@ def _full_reference(root, build, arch, metadata, check):
     if reuse_licenses:
         license_name = shared_license_name
     license_file = root / 'bazel/initial_migration' / license_name
-    attrs.update({
-        'cmake_metadata': '//bazel/initial_migration:' + license_name,
-        'cmake_condition': '//bazel:use_cmake_metadata_' + arch,
+    attrs = {
         'source_paths': sorted(inputs),
         'srcs': [inputs[source] for source in sorted(inputs)],
-    })
-    updates = [(records[licenses].lineno - 1, records[licenses].end_lineno,
-                '  ' + starlark(licenses) + ': ' + render_license(attrs, license_inputs) + ',\n')]
-    for namespace, mtime in mtimes.items():
-        record = records['generate_' + arch + '_' + namespace]
-        fields = _literal_fields(record)
-        # Preserve the generated dynamic repository_path() command; only these
-        # literal metadata fields are produced by the fresh CMake reference.
-        if 'cmake_condition' in fields:
-            for name in ('cmake_condition', 'cmake_cmd'):
-                node = fields[name]
-                updates.append((node.lineno - 1, node.end_lineno, ''))
-        updates.append((record.end_lineno - 1, record.end_lineno - 1,
-                        '    "cmake_condition": "//bazel:use_cmake_metadata_' + arch + '",\n'
-                        '    "cmake_cmd": " --cmake-gzip-mtime=' + str(mtime) + '",\n'))
-    lines = codegen.splitlines(keepends=True)
-    for start, end, replacement in sorted(updates, reverse=True):
-        lines[start:end] = [replacement]
-    expected_codegen = ''.join(lines)
-    ast.parse(expected_codegen)
+    }
+    source = Source(codegen)
+    updates = []
+    if attrs != before:
+        # Only refreshing one CMake reference. Preserve the other CPU's exact
+        # inputs if this reference adds a license file.
+        rendered = _literal_fields(ast.parse(render_license(attrs, license_inputs), mode='eval').body)
+        fields = _literal_fields(records[licenses])
+        for key in ('srcs', 'source_paths'):
+            if attrs[key] == before[key]:
+                continue
+            branches = []
+            for cpu in ARCHES:
+                node = (rendered[key] if cpu == arch else ChooseCpu(cpu).visit(copy.deepcopy(fields[key])))
+                branches.append(starlark('@platforms//cpu:' + cpu) + ': (' + ast.unparse(node) + '),')
+            updates.append((*source.span(fields[key]), 'select({' + ''.join(branches) + '})'))
+    expected_codegen = source.rewrite(updates)
     expected_substitutions = json.dumps(substitutions, indent=2) + '\n'
     if check:
         if json.loads(license_file.read_text()) != substitutions:
@@ -243,7 +244,7 @@ def _full_reference(root, build, arch, metadata, check):
         recorded_license_name = metadata[arch].get('license_substitutions', 'license_substitutions_' + arch + '.json')
         if recorded_license_name != license_name:
             raise ValueError('Saved license metadata filename does not match the full reference')
-        if metadata[arch]['resource_gzip_mtimes'] != mtimes or codegen != expected_codegen:
+        if metadata[arch]['resource_gzip_mtimes'] != mtimes or attrs != before:
             raise ValueError('Saved codegen metadata does not match the full reference')
     else:
         metadata[arch]['resource_gzip_mtimes'] = mtimes

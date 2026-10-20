@@ -77,6 +77,7 @@ def _generated_prefix_maps(arch):
         "-ffile-prefix-map=$(GENDIR)/bazel/gen/" + arch + "/=" + build,
         "-ffile-prefix-map=$(GENDIR)/bazel/gen/base/=" + build + "base/",
         "-ffile-prefix-map=$(GENDIR)/bazel/gen/includes/=" + build + "includes/",
+        "-ffile-prefix-map=$(GENDIR)/bazel/gen/src/=" + build + "src/",
         "-ffile-prefix-map=$(GENDIR)/bazel/gen/contrib/=" + build + "contrib/",
     ] + [
         "-ffile-prefix-map=$(GENDIR)/" + label.workspace_root + "/config/=" + build
@@ -100,10 +101,7 @@ _GENERATED_PREFIX_MAPS = {
     for arch in ["x86_64", "aarch64"]
 }
 
-_EMBEDDED_PREFIX_MAPS = {
-    arch: ["-ffile-prefix-map=$(GENDIR)/bazel/gen/" + arch + "/embedded/="]
-    for arch in _GENERATED_PREFIX_MAPS
-}
+_EMBEDDED_PREFIX_MAPS = ["-ffile-prefix-map=$(GENDIR)/bazel/gen/embedded/="]
 
 def cmake_prefix_maps(arches):
     """Use original CMake source names, and saved build names in metadata mode."""
@@ -118,5 +116,5 @@ def cmake_prefix_maps(arches):
 
         # #embed copies retain source-tree names even inside bazel/gen. Keep
         # this more specific map after the general generated-directory map.
-        embedded_settings[cpu] = _EMBEDDED_PREFIX_MAPS[arch]
+        embedded_settings[cpu] = _EMBEDDED_PREFIX_MAPS
     return select(source_settings) + select(generated_settings) + select(embedded_settings)

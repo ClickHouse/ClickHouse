@@ -190,27 +190,38 @@ native_stripped_hash(
     ]
 ]
 
-[
-    build_options(
-        name = "build_options_" + arch,
-        out = attrs["out"],
-        c_flags = attrs["c_flags"],
-        cmake_metadata = select({
-            ":use_cmake_metadata": True,
-            "//conditions:default": False,
-        }),
-        cmake_substitutions = CMAKE_METADATA[arch]["build_options"],
-        cxx_flags = attrs["cxx_flags"],
-        features = [
-            "-static_link_cpp_runtimes",
-            "-fortify_source",
-        ],
-        link_flags = attrs["link_flags"],
-        target_compatible_with = ["@platforms//cpu:" + arch],
-        template = attrs["template"],
-    )
-    for arch, attrs in BUILD_OPTIONS.items()
-]
+build_options(
+    name = "build_options",
+    out = "gen/src/Storages/System/StorageSystemBuildOptions.generated.cpp",
+    c_flags = select({
+        "@platforms//cpu:x86_64": BUILD_OPTIONS["x86_64"]["c_flags"],
+        "@platforms//cpu:aarch64": BUILD_OPTIONS["aarch64"]["c_flags"],
+    }),
+    cmake_metadata = select({
+        ":use_cmake_metadata": True,
+        "//conditions:default": False,
+    }),
+    cmake_substitutions = select({
+        "@platforms//cpu:x86_64": CMAKE_METADATA["x86_64"]["build_options"],
+        "@platforms//cpu:aarch64": CMAKE_METADATA["aarch64"]["build_options"],
+    }),
+    cxx_flags = select({
+        "@platforms//cpu:x86_64": BUILD_OPTIONS["x86_64"]["cxx_flags"],
+        "@platforms//cpu:aarch64": BUILD_OPTIONS["aarch64"]["cxx_flags"],
+    }),
+    features = [
+        "-static_link_cpp_runtimes",
+        "-fortify_source",
+    ],
+    link_flags = select({
+        "@platforms//cpu:x86_64": BUILD_OPTIONS["x86_64"]["link_flags"],
+        "@platforms//cpu:aarch64": BUILD_OPTIONS["aarch64"]["link_flags"],
+    }),
+    template = select({
+        "@platforms//cpu:x86_64": BUILD_OPTIONS["x86_64"]["template"],
+        "@platforms//cpu:aarch64": BUILD_OPTIONS["aarch64"]["template"],
+    }),
+)
 
 [
     alias(
@@ -240,10 +251,10 @@ native_stripped_hash(
 [
     filegroup(
         name = "generated_" + arch,
-        srcs = [":build_options_" + arch] + [
+        srcs = [":build_options"] + [
             ":" + name
             for name in CODEGEN_RULES
-            if name.startswith("generate_" + arch + "_") or name.startswith("generate_contrib_") or name.startswith("generate_googleapis_") or name == "extract_googleapis"
+            if name.startswith("generate_" + arch + "_") or name.startswith("generate_contrib_") or name.startswith("generate_native_") or name.startswith("generate_googleapis_") or name == "extract_googleapis"
         ],
     )
     for arch in [
@@ -254,14 +265,11 @@ native_stripped_hash(
 
 filegroup(
     name = "web_ui_resources",
-    srcs = select({
-        "@platforms//cpu:x86_64": [
-            ":generate_x86_64_ClickStack",
-            ":generate_x86_64_SQLConsole",
-        ],
-        "@platforms//cpu:aarch64": [
-            ":generate_aarch64_ClickStack",
-            ":generate_aarch64_SQLConsole",
-        ],
+    srcs = [
+        ":generate_native_ClickStack",
+        ":generate_native_SQLConsole",
+    ] + select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [],
     }),
 )
