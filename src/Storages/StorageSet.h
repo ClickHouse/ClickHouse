@@ -82,10 +82,18 @@ public:
     /// Access the insides.
     SetPtr getSet() const;
 
+    /// `IN` consumes the prebuilt set as a whole, so require `SELECT` on every column before checking
+    /// its row policy. The engine has no read path that could apply a non-trivial policy.
+    void checkNoRowPolicy(const ContextPtr & context) const;
+
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
+
+    /// `read` is not supported, but the number of rows is known exactly, so a bare `count` can still
+    /// be answered from `totalRows` instead of failing. `StorageJoin` does the same.
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
 private:
     /// Allows to concurrently truncate the set and work (read/fill) the existing set.

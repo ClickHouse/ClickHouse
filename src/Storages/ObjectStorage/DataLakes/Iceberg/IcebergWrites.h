@@ -65,6 +65,8 @@ struct DataFileEntryLineage
     std::optional<Int64> file_sequence_number;
 };
 
+Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata);
+
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
@@ -135,7 +137,9 @@ void generateManifestList(
     const std::vector<ManifestListEntryCounts> & entry_counts = {},
     const std::unordered_set<String> & carry_forward_manifest_paths = {},
     const std::vector<Int64> & entry_partition_spec_ids = {},
-    const std::vector<std::vector<std::pair<Field, DataTypePtr>>> & entry_partition_summaries = {});
+    const std::vector<std::vector<std::pair<Field, DataTypePtr>>> & entry_partition_summaries = {},
+    const std::vector<Int64> & entry_row_counts = {},
+    const std::vector<Int64> & entry_file_counts = {});
 
 class IcebergStorageSink final : public SinkToStorage
 {
@@ -179,12 +183,25 @@ private:
     void finalizeBuffers();
     void releaseBuffers();
     void cancelBuffers();
+    /// Best-effort removal of the files kept across commit retries.
+    void removeDataFilesAndManifests();
     bool initializeMetadata();
 
     FileNamesGenerator filename_generator;
     std::optional<ChunkPartitioner> partitioner;
     Poco::JSON::Object::Ptr partititon_spec;
     Int64 partition_spec_id;
+
+    /// Generated once per insert so the manifests stay valid across commit retries.
+    Int64 snapshot_id = 0;
+
+    /// Manifests are written once and reused on commit retries.
+    Strings manifest_entries_in_storage;
+    std::vector<Iceberg::IcebergPathFromMetadata> manifest_entries;
+    std::vector<Int64> manifest_entry_sizes;
+    std::vector<Int64> manifest_entry_row_counts;
+    std::vector<Int64> manifest_entry_file_counts;
+    std::vector<std::vector<std::pair<Field, DataTypePtr>>> entry_partition_summaries;
 
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID table_id;

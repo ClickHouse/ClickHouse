@@ -6,6 +6,7 @@ body:
     attributes:
       value: |
         > **I have tried the following solutions**: https://clickhouse.com/docs/en/faq/troubleshooting/#troubleshooting-installation-errors
+        > Ask the [ClickHouse Wizard](https://wizard.clickhouse.com/) about related installation issues and fixes before filing.
   - type: textarea
     attributes:
       label: Company or project name

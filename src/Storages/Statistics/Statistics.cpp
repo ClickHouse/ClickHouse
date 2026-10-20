@@ -1,6 +1,9 @@
 #include <Storages/Statistics/Statistics.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Core/Field.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -50,6 +53,28 @@ bool StatisticsUtils::isSame(const IAggregateFunction & a, const IAggregateFunct
         if (!a_types[i]->equals(*b_types[i]))
             return false;
     return true;
+}
+
+void StatisticsUtils::updateMin(Field & accumulator, const Field & value)
+{
+    if (value.isNull())
+        return;
+
+    if (accumulator.isNull() || isNaNField(accumulator))
+        accumulator = value;
+    else if (!isNaNField(value) && value < accumulator)
+        accumulator = value;
+}
+
+void StatisticsUtils::updateMax(Field & accumulator, const Field & value)
+{
+    if (value.isNull())
+        return;
+
+    if (accumulator.isNull() || isNaNField(accumulator))
+        accumulator = value;
+    else if (!isNaNField(value) && accumulator < value)
+        accumulator = value;
 }
 
 std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value, const DataTypePtr & data_type)
@@ -173,6 +198,13 @@ static const IStatistics * findUniqStats(const ColumnStatistics::StatsMap & m)
 IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
     : stat(stat_)
 {
+}
+
+size_t IStatistics::fieldAllocatedBytes(const Field & field)
+{
+    if (field.getType() == Field::Types::String)
+        return field.safeGet<String>().capacity();
+    return 0;
 }
 
 ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_)
@@ -640,6 +672,19 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
     return result;
 }
 
+size_t ColumnStatistics::allocatedBytes() const
+{
+    /// A node of `std::map` holds the value and three pointers and a color.
+    static constexpr size_t map_node_overhead = 4 * sizeof(void *);
+
+    size_t res = sizeof(*this);
+    for (const auto & [type, desc] : stats_desc.types_to_desc)
+        res += sizeof(ColumnStatisticsDescription::StatisticsTypeDescMap::value_type) + map_node_overhead + desc.allocatedBytes();
+    for (const auto & [type, single_stats] : stats)
+        res += sizeof(StatsMap::value_type) + map_node_overhead + single_stats->allocatedBytes() + single_stats->descriptionAllocatedBytes();
+    return res;
+}
+
 String ColumnStatistics::getNameForLogs() const
 {
     String ret;
@@ -956,6 +1001,11 @@ void addImplicitStatistics(ColumnsDescription & columns, const String & statisti
                 { column_desc.statistics.merge(stats_desc, column.name, column.type, /*if_not_exists=*/true); });
         }
     }
+}
+
+bool canStatisticsTrackMinMax(const DataTypePtr & data_type)
+{
+    return removeLowCardinalityAndNullable(removeNullable(data_type))->isValueRepresentedByNumber();
 }
 
 }

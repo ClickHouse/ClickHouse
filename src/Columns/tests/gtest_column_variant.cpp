@@ -13,6 +13,12 @@ TEST(ColumnVariant, CreateFromEmptyColumns)
     columns.push_back(ColumnString::create());
     auto column = ColumnVariant::create(std::move(columns));
     ASSERT_TRUE(column->empty() && column->getLocalDiscriminators().empty() && column->getOffsets().empty());
+    ASSERT_TRUE(column->hasOnlyTypeDefaults());
+
+    column->insertManyDefaults(2);
+    ASSERT_TRUE(column->hasOnlyTypeDefaults());
+    column->insert(Field{42u});
+    ASSERT_FALSE(column->hasOnlyTypeDefaults());
 }
 
 TEST(ColumnVariant, CreateFromEmptyColumnsWithLocalOrder)

@@ -44,6 +44,18 @@ PackedFilesWriter::writeFile(const String & file_name)
     return std::make_unique<FakeWriteBufferFromFile>(file_name, it->second);
 }
 
+std::unique_ptr<WriteBufferFromFileBase>
+PackedFilesWriter::rewriteFile(const String & file_name, const WriteSettings & settings)
+{
+    if (!write_settings && settings != WriteSettings{})
+        write_settings = settings;
+
+    /// A buffer of the replaced file may still be alive, but it owns its data and does not affect the new file.
+    auto & data = written_files[file_name];
+    data = std::make_shared<Data>();
+    return std::make_unique<FakeWriteBufferFromFile>(file_name, data);
+}
+
 void PackedFilesWriter::moveFile(const String & from_name, const String & to_name)
 {
     metadata_changes.emplace_back(MetadataChange::MOVE, from_name, to_name);

@@ -1,0 +1,44 @@
+a correlated scalar subquery in HAVING WITH TOTALS
+0	7
+1	7
+
+0	14
+the same HAVING without the correlated subquery, for comparison
+0	7
+1	7
+
+0	14
+the correlated column is not in the SELECT list
+7
+7
+
+14
+a correlated EXISTS in HAVING WITH TOTALS
+1	7
+
+0	7
+with totals_mode = after_having_exclusive
+0	7
+1	7
+
+0	14
+with totals_mode = after_having_inclusive
+0	7
+1	7
+
+0	14
+with totals_mode = before_having
+0	7
+1	7
+
+0	20
+the same, without the correlated subquery
+0	7
+1	7
+
+0	20
+an outer WHERE prunes the correlated column as well
+3
+3
+
+6

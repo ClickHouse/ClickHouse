@@ -1,0 +1,27 @@
+exact / rewrite off	1
+exact / rewrite on, hyperscan on	1
+exact / rewrite on, hyperscan off	1
+suffix / rewrite off	2
+suffix / rewrite on, hyperscan on	2
+suffix / rewrite on, hyperscan off	2
+underscore / rewrite off	2
+underscore / rewrite on, hyperscan on	2
+underscore / rewrite on, hyperscan off	2
+inner percent / rewrite off	2
+inner percent / rewrite on, hyperscan on	2
+inner percent / rewrite on, hyperscan off	2
+ilike / rewrite off	1
+ilike / rewrite on, hyperscan on	1
+ilike / rewrite on, hyperscan off	1
+empty pattern / rewrite off	1
+empty pattern / rewrite on, hyperscan on	1
+empty pattern / rewrite on, hyperscan off	1
+mixed group / rewrite off	1
+mixed group / rewrite on, hyperscan on	1
+mixed group / rewrite on, hyperscan off	1
+escaped dollar / rewrite off	2
+escaped dollar / rewrite on, hyperscan on	2
+escaped dollar / rewrite on, hyperscan off	2
+prefix / rewrite off	3
+prefix / rewrite on, hyperscan on	3
+prefix / rewrite on, hyperscan off	3

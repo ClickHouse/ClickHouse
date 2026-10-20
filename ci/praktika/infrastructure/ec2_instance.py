@@ -383,7 +383,20 @@ class EC2Instance:
                 }
             ]
 
-            resp = ec2.run_instances(**req)
+            from botocore.exceptions import ClientError
+
+            try:
+                resp = ec2.run_instances(**req)
+            except ClientError as e:
+                error_code = e.response.get("Error", {}).get("Code", "")
+                if error_code == "InsufficientHostCapacity":
+                    raise Exception(
+                        f"EC2Instance '{self.name}': insufficient Dedicated Host capacity "
+                        f"(instance_type={self.instance_type}) to launch the instance. "
+                        f"Allocate a new Dedicated Host with a matching configuration "
+                        f"(or target a host resource group that can auto-allocate hosts) and retry."
+                    ) from e
+                raise
             instances = resp.get("Instances", []) or []
 
             if not instances:

@@ -17,9 +17,7 @@ ClickHouse можно собрать на macOS x86&#95;64 (Intel) и arm64 (App
 
 В качестве компилятора поддерживается только Clang из Homebrew.
 
-<div id="install-prerequisites">
-  ## Установите необходимые компоненты
-</div>
+## Установите необходимые компоненты {#install-prerequisites}
 
 Сначала ознакомьтесь с [общей документацией по предварительным требованиям](/ru/resources/develop-contribute/introduction/developer-instruction).
 
@@ -33,13 +31,21 @@ brew install ccache cmake ninja libtool gettext llvm lld binutils grep findutils
 ```
 
 <Note>
+  Как и `llvm`, пакет `rustup` из Homebrew является keg-only, поэтому его каталог `bin` не добавляется в `PATH` автоматически. Экспортируйте его так же, как `PATH` для `llvm` в разделе [Сборка ClickHouse](#build-clickhouse):
+
+  ```bash
+  export PATH=$(brew --prefix rustup)/bin:$PATH
+  ```
+
+  Кроме того, ClickHouse фиксирует версию набора инструментов Rust, который используется contrib-модулем `corrosion`. Установите и выберите эту версию, следуя инструкциям из раздела [Установите компилятор Rust](/ru/development/build#install-the-rust-compiler-optional) руководства по сборке для Linux. Иначе `cmake` завершится ошибкой на contrib-модуле `corrosion` с сообщением `Cannot find nightly-<date> Rust toolchain`.
+</Note>
+
+<Note>
   Apple по умолчанию использует регистронезависимую файловую систему. Хотя это обычно не влияет на компиляцию (особенно при сборке с нуля), это может вызывать проблемы при файловых операциях, таких как `git mv`.
   Для серьёзной разработки на macOS убедитесь, что исходный код хранится на дисковом томе с чувствительностью к регистру, см., например, [эти инструкции](https://brianboyko.medium.com/a-case-sensitive-src-folder-for-mac-programmers-176cc82a3830).
 </Note>
 
-<div id="build-clickhouse">
-  ## Сборка ClickHouse
-</div>
+## Сборка ClickHouse {#build-clickhouse}
 
 Для сборки необходимо использовать компилятор Clang из Homebrew:
 
@@ -49,17 +55,19 @@ mkdir build
 export PATH=$(brew --prefix llvm)/bin:$PATH
 cmake -S . -B build
 cmake --build build
-# Итоговый бинарный файл будет создан по пути: build/programs/clickhouse
+# The resulting binary will be created at: build/programs/clickhouse
 ```
+
+<Note>
+  Команда `brew install llvm` без указания версии всегда устанавливает последний релиз LLVM из Homebrew, который может оказаться новее версии Clang, закреплённой для сборок CI и Linux (см. [Установка компилятора Clang](/ru/development/build#install-the-clang-compiler)). Более новый Clang может включать диагностики `-Weverything`, которые в сборке ещё не подавлены, и сборка завершится ошибкой из-за `-Werror`. В этом случае не отключайте предупреждения, а установите закреплённую мажорную версию, например через версионируемую формулу (`brew install llvm@<version>`), если она ещё доступна в Homebrew.
+</Note>
 
 <Note>
   Если при компоновке возникает ошибка `ld: archive member '/' not a mach-o file in ...`, возможно,
   потребуется использовать llvm-ar, задав флаг `-DCMAKE_AR=/opt/homebrew/opt/llvm/bin/llvm-ar`.
 </Note>
 
-<div id="caveats">
-  ## Важные замечания
-</div>
+## Важные замечания {#caveats}
 
 Если вы планируете запускать `clickhouse-server`, обязательно увеличьте значение системной переменной `maxfiles`.
 

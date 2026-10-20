@@ -1,76 +1,112 @@
 #include <Processors/Streaming/CalculateWatermarksTransform.h>
-#include <Processors/Streaming/Markers.h>
 #include <Processors/Port.h>
 
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 
-#include <Interpreters/ActionsDAG.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ExpressionActionsSettings.h>
+#include <Common/Exception.h>
+#include <Common/assert_cast.h>
 
 #include <Core/Block.h>
-#include <Core/Field.h>
+#include <Core/ColumnWithTypeAndName.h>
 
-#include <base/defines.h>
+#include <DataTypes/IDataType.h>
+
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActionsSettings.h>
+
+#include <algorithm>
+#include <utility>
 
 namespace DB
 {
 
-static ColumnPtr calculateWatermarkColumn(const ExpressionActionsPtr & actions, Block data)
+namespace ErrorCodes
 {
-    actions->execute(data, data.rows());
-    return data.getByPosition(0).column->convertToFullColumnIfConst();
+    extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+template <typename ColumnType>
+ColumnPtr calculateWatermarkColumnTyped(const IColumn & column, const Field & previous_watermark)
+{
+    using ValueType = typename ColumnType::ValueType;
+
+    const auto & data = assert_cast<const ColumnType &>(column).getData();
+    auto result_column = column.cloneEmpty();
+    auto & result = assert_cast<ColumnType &>(*result_column).getData();
+    result.resize(data.size());
+
+    ValueType running = data[0];
+    if (!previous_watermark.isNull())
+    {
+        if constexpr (is_decimal<ValueType>)
+            running = previous_watermark.safeGet<DecimalField<ValueType>>().getValue();
+        else
+            running = static_cast<ValueType>(previous_watermark.safeGet<NearestFieldType<ValueType>>());
+    }
+
+    for (size_t i = 0; i < data.size(); ++i)
+    {
+        running = std::max(running, data[i]);
+        result[i] = running;
+    }
+
+    return result_column;
+}
+
+ColumnPtr calculateWatermarkColumn(const IDataType & type, const IColumn & column, const Field & previous_watermark)
+{
+    switch (type.getTypeId())
+    {
+        case TypeIndex::Date:
+            return calculateWatermarkColumnTyped<ColumnUInt16>(column, previous_watermark);
+        case TypeIndex::Date32:
+            return calculateWatermarkColumnTyped<ColumnInt32>(column, previous_watermark);
+        case TypeIndex::DateTime:
+            return calculateWatermarkColumnTyped<ColumnUInt32>(column, previous_watermark);
+        case TypeIndex::DateTime64:
+            return calculateWatermarkColumnTyped<ColumnDecimal<DateTime64>>(column, previous_watermark);
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected watermark type {}", type.getName());
+    }
+}
+
 }
 
 CalculateWatermarksTransform::CalculateWatermarksTransform(
     SharedHeader input_header_,
     SharedHeader output_header_,
-    std::string event_time_column_,
     ActionsDAG watermark_expression_,
+    Field initial_watermark_,
     ContextPtr context_)
-    : IInflatingTransform(std::move(input_header_), std::move(output_header_))
-    , event_time_column(std::move(event_time_column_))
+    : ISimpleTransform(input_header_, output_header_, /*skip_empty_chunks=*/false)
+    , result_name(watermark_expression_.getOutputs().front()->result_name)
     , watermark_expression(std::make_shared<ExpressionActions>(std::move(watermark_expression_), ExpressionActionsSettings(context_)))
+    , watermark(std::move(initial_watermark_))
 {
 }
 
-void CalculateWatermarksTransform::consume(Chunk chunk)
+void CalculateWatermarksTransform::transform(Chunk & chunk)
 {
-    const auto & input_header = getInputPort().getHeader();
-    const size_t num_rows = chunk.getNumRows();
-
-    auto block = input_header.cloneWithColumns(chunk.getColumns());
-    const auto event_time_col = block.getByName(event_time_column).column->convertToFullColumnIfConst();
-    const auto watermark_col = calculateWatermarkColumn(watermark_expression, std::move(block));
-
-    auto columns = chunk.detachColumns();
-    columns.emplace_back(event_time_col);
-    columns.emplace_back(watermark_col);
-    chunk.setColumns(std::move(columns), num_rows);
-    pending_chunks.push(std::move(chunk));
-
+    size_t num_rows = chunk.getNumRows();
     if (num_rows == 0)
+    {
+        chunk.addColumn(getOutputPort().getHeader().getByName(WatermarkColumn::name).column->cloneEmpty());
         return;
+    }
 
-    Field min_value;
-    Field max_value;
-    watermark_col->getExtremes(min_value, max_value, 0, num_rows);
+    auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
+    watermark_expression->execute(block, num_rows);
 
-    pending_chunks.push(WatermarkMarker::create(getOutputPort().getHeader(), std::move(max_value)));
-}
+    const auto & result = block.getByName(result_name);
+    auto watermark_column = calculateWatermarkColumn(*result.type, *result.column->convertToFullColumnIfConst()->convertToFullColumnIfSparse(), watermark);
+    watermark_column->get(num_rows - 1, watermark);
 
-bool CalculateWatermarksTransform::canGenerate()
-{
-    return !pending_chunks.empty();
-}
-
-Chunk CalculateWatermarksTransform::generate()
-{
-    chassert(!pending_chunks.empty());
-    auto chunk = std::move(pending_chunks.front());
-    pending_chunks.pop();
-    return chunk;
+    chunk.addColumn(std::move(watermark_column));
 }
 
 }
