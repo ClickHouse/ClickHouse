@@ -524,8 +524,17 @@ bool hasAzureServerCredentialsMarker(const Poco::Util::AbstractConfiguration & c
 }
 
 void validateResolvedAzureDiskCredentials(
-    Poco::Util::AbstractConfiguration & config, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
+    [[maybe_unused]] Poco::Util::AbstractConfiguration & config,
+    [[maybe_unused]] ContextPtr context,
+    [[maybe_unused]] bool is_loading_from_existing_metadata,
+    [[maybe_unused]] bool for_system_database)
 {
+#if USE_AZURE_BLOB_STORAGE
+    /// Only an Azure disk: the other disk types reject keys they do not know, e.g. a `cache` disk.
+    const auto prefixes = getAzureDiskPrefixes(config);
+    if (prefixes.empty())
+        return;
+
     /// The marker is written only by the server, for a disk created with the opt-in, and honored only on reload. A
     /// `system` table disk is server-internal infrastructure, exempt like an S3 one.
     const bool server_credentials_allowed = (is_loading_from_existing_metadata && hasAzureServerCredentialsMarker(config))
@@ -535,13 +544,12 @@ void validateResolvedAzureDiskCredentials(
     /// Written over the resolved configuration, so the object storage factory can trust it.
     config.setBool(AZURE_SERVER_CREDENTIALS_MARKER, server_credentials_allowed);
 
-#if USE_AZURE_BLOB_STORAGE
     if (server_credentials_allowed || !context->shouldRestrictUserQueryS3Credentials())
         return;
 
     const bool anonymous_fallback = is_loading_from_existing_metadata
         && context->getGlobalContext()->getServerSettings()[ServerSetting::load_table_anonymously_if_credentials_restricted];
-    for (const auto & prefix : getAzureDiskPrefixes(config))
+    for (const auto & prefix : prefixes)
         getAzureDiskConnectionParams(config, prefix, anonymous_fallback).checkOrDropServerManagedCredentials();
 #endif
 }
