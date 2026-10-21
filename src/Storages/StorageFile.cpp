@@ -2851,8 +2851,17 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
         key->file_version_tokens.emplace(path, std::move(token));
     }
 
+    /// The filter can depend on `_table`, which is not covered by the `table_id`: tables without a UUID share
+    /// the synthetic `table_id` of their files, and a table with a UUID keeps it on `RENAME`. So the key
+    /// covers the name the reader materializes as `_table`.
+    const String table_name = storage->getStorageID().getTableName();
+    SipHash table_name_hash;
+    table_name_hash.update(table_name.size());
+    table_name_hash.update(table_name);
+
     boost::hash_combine(condition_hash, top_k_filter->plan_hash);
     boost::hash_combine(condition_hash, files_hash.get64());
+    boost::hash_combine(condition_hash, table_name_hash.get64());
     key->condition_hash = condition_hash;
     return key;
 }
