@@ -1808,6 +1808,21 @@ bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, c
 /// query: the kill switch has to reach the context of every nested `QueryNode`/`UnionNode` as well.
 /// The materialized CTE subquery is a child of its `TableNode` and the correlated subquery is a child of
 /// the expression that uses it, so a full traversal of the query tree covers all the carriers.
+/// One query reads with replicas using one implementation. The two split the work at different points,
+/// so a plan mixing them does not combine them: the subtree planned for the other one ends up reading
+/// without parallel replicas at all. A subquery carries its own context, so its `SETTINGS` clause can
+/// name the other implementation - give it the one this query is being planned with.
+void setParallelReplicasImplementationForSubqueries(const QueryTreeNodePtr & node, bool plan_based)
+{
+    traverseQueryTree(node, Everything{}, [plan_based](const QueryTreeNodePtr & current_node)
+    {
+        if (auto * query_node = current_node->as<QueryNode>())
+            query_node->getMutableContext()->setSetting("parallel_replicas_plan_based", Field{plan_based});
+        else if (auto * union_node = current_node->as<UnionNode>())
+            union_node->getMutableContext()->setSetting("parallel_replicas_plan_based", Field{plan_based});
+    });
+}
+
 void disableParallelReplicasForSubqueries(const QueryTreeNodePtr & node)
 {
     traverseQueryTree(node, Everything{}, [](const QueryTreeNodePtr & current_node)
@@ -3114,6 +3129,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
             {
                 disableParallelReplicasForSubqueries(table_expression);
             }
+
+            setParallelReplicasImplementationForSubqueries(
+                table_expression, settings[Setting::parallel_replicas_plan_based]);
 
             Planner subquery_planner(table_expression, subquery_options, subquery_planner_context);
             /// Propagate storage limits to subquery

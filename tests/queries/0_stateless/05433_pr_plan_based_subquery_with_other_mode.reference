@@ -1,2 +1,9 @@
+-- query-based
+1	1	1
+1	1	1
+-- plan-based
+1	1	1
+1	1	1
+-- results
 200000
-1
+200000
