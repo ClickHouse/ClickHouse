@@ -16,6 +16,7 @@
 #include <IO/SeekableReadBuffer.h>
 #include <base/sleep.h>
 
+#include <algorithm>
 #include <limits>
 
 
@@ -174,6 +175,9 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
     if (!initialized)
         initialize(/* attempt */ 0);
 
+    /// Without a right bound, the data ends at the size of the blob that the last response advertised.
+    auto end_of_data = [this] { return read_until_position.value_or(blob_size_from_response); };
+
     if (use_external_buffer)
     {
         data_ptr = internal_buffer.begin();
@@ -208,7 +212,7 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
             /// by the caller, and every layer above this buffer takes it as the length of the data,
             /// so a response that ends before it must not be reported as the end of the file - an
             /// endpoint or a proxy that caps its responses would silently truncate the file there.
-            if (bytes_read == 0 && read_until_position && static_cast<size_t>(offset) < *read_until_position)
+            if (bytes_read == 0 && static_cast<size_t>(offset) < end_of_data())
                 premature_end_of_response = true;
             else
                 break;
@@ -248,12 +252,12 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
             /// Reopen the download at the offset the read has reached, and if the endpoint keeps
             /// ending its responses before the bound, fail instead of returning truncated data.
             LOG_DEBUG(log, "Premature end of the response at offset {} while reading until position {} for file {} at attempt {}/{}",
-                offset, *read_until_position, path, i + 1, max_single_read_retries);
+                offset, end_of_data(), path, i + 1, max_single_read_retries);
 
             if (i + 1 == max_single_read_retries)
                 throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE,
                     "Premature end of the response from Azure Blob Storage at offset {} while reading until position {} of file {}",
-                    offset, *read_until_position, path);
+                    offset, end_of_data(), path);
 
             /// An endpoint that caps its responses ends every one of them before the bound, so a
             /// read of more than the cap is a correct read assembled from several responses: the
@@ -380,6 +384,7 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
             checkReturnedGeneration(download_response.Value.Details);
 
             setMetadataFromResponse(download_response.Value.Details, download_response.Value.BlobSize);
+            blob_size_from_response = static_cast<size_t>(std::max<int64_t>(download_response.Value.BlobSize, 0));
             data_stream = std::move(download_response.Value.BodyStream);
 
             if (blob_storage_log)
