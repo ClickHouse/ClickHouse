@@ -7,42 +7,42 @@
       "versionId": "9b3345383ff3389c6681dbde6573112bd992f08e5b332453425e342f66849919",
       "translations": {
         "es": {
-          "updatedAt": "2026-10-21T18:46:43.489Z",
+          "updatedAt": "2026-10-21T20:44:14.198Z",
           "fileName": "docs.json",
           "postProcessHash": "385c193ac34b2cbbf50376d08d07ddccc3af63db2664f8607a6ea0a088d8a997"
         },
         "ja": {
-          "updatedAt": "2026-10-21T18:46:43.707Z",
+          "updatedAt": "2026-10-21T20:44:14.388Z",
           "fileName": "docs.json",
           "postProcessHash": "385c193ac34b2cbbf50376d08d07ddccc3af63db2664f8607a6ea0a088d8a997"
         },
         "ko": {
-          "updatedAt": "2026-10-21T18:46:43.923Z",
+          "updatedAt": "2026-10-21T20:44:14.575Z",
           "fileName": "docs.json",
           "postProcessHash": "385c193ac34b2cbbf50376d08d07ddccc3af63db2664f8607a6ea0a088d8a997"
         },
         "pt-BR": {
-          "updatedAt": "2026-10-21T18:46:44.132Z",
+          "updatedAt": "2026-10-21T20:44:14.758Z",
           "fileName": "docs.json",
           "postProcessHash": "385c193ac34b2cbbf50376d08d07ddccc3af63db2664f8607a6ea0a088d8a997"
         },
         "ru": {
-          "updatedAt": "2026-10-21T18:46:44.340Z",
+          "updatedAt": "2026-10-21T20:44:14.952Z",
           "fileName": "docs.json",
           "postProcessHash": "385c193ac34b2cbbf50376d08d07ddccc3af63db2664f8607a6ea0a088d8a997"
         },
         "zh": {
-          "updatedAt": "2026-10-21T18:46:44.559Z",
+          "updatedAt": "2026-10-21T20:44:15.140Z",
           "fileName": "docs.json",
           "postProcessHash": "385c193ac34b2cbbf50376d08d07ddccc3af63db2664f8607a6ea0a088d8a997"
         },
         "ar": {
-          "updatedAt": "2026-10-21T18:46:44.767Z",
+          "updatedAt": "2026-10-21T20:44:15.322Z",
           "fileName": "docs.json",
           "postProcessHash": "385c193ac34b2cbbf50376d08d07ddccc3af63db2664f8607a6ea0a088d8a997"
         },
         "fr": {
-          "updatedAt": "2026-10-21T18:46:44.973Z",
+          "updatedAt": "2026-10-21T20:44:15.511Z",
           "fileName": "docs.json",
           "postProcessHash": "385c193ac34b2cbbf50376d08d07ddccc3af63db2664f8607a6ea0a088d8a997"
         }
@@ -131144,99 +131144,97 @@
     },
     {
       "fileId": "fffd131b4b8f8af9c055621139376a167b4d1e33cfd278dd866219c2fa950837",
-      "versionId": "2b4c6ed8aeefab5df84105ae21c16abcb95bd2f94b2afa735c5229944cc16e4e",
+      "versionId": "75df68adbf7380b40546430d9e0774d7e31f53097dce84d93ecae1f66aff5a66",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-14T10:41:08.427Z",
+          "updatedAt": "2026-10-21T20:44:18.838Z",
           "fileName": "es/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster.mdx",
-          "postProcessHash": "5d80b9a9eef58c1405926e3d6f1521cbf611d6ac0fb78fc767917d3b09b0448c"
+          "postProcessHash": "fa1d052ce784889cde6d8233cff60bf49f676162249d349181b5393cdcc45ee9"
         },
         "ja": {
-          "updatedAt": "2026-08-14T10:41:08.427Z",
+          "updatedAt": "2026-10-21T20:44:18.839Z",
           "fileName": "ja/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster.mdx",
-          "postProcessHash": "16fb1ac35b1502c789ede5b87dab0a62dd3b4664888cae2fbacbb2616f0fb0a5"
+          "postProcessHash": "6526410020b85ed720b385e6ce491fe06ea093e3c5acc2299d4b9ed2a0a64b32"
         },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:08.427Z",
+          "updatedAt": "2026-10-21T20:44:18.840Z",
           "fileName": "ko/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster.mdx",
-          "postProcessHash": "0c433ffb697bf765e20b7db2d33b3e450b2c5da39ca78d1e2f981cbe40eebd05"
+          "postProcessHash": "a5ecabd5da0e5ec13a6faac6a9579fa6da4e3f2f07546a5de2d6df31844986b6"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.427Z",
+          "updatedAt": "2026-10-21T20:44:18.840Z",
           "fileName": "pt-BR/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster.mdx",
-          "postProcessHash": "d6e2ec070ccac04394fcebb07c2a7714f0b364790819bf50f7fa7a1eef769615"
+          "postProcessHash": "66b4188d41563c3ca4cf9aa0628a676d21dc237f0a3dba5c3f75bd3ebfde7b5c"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:08.427Z",
+          "updatedAt": "2026-10-21T20:44:18.841Z",
           "fileName": "ru/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster.mdx",
-          "postProcessHash": "26e61153d72a386977568b1e78ad6bbc5b8eb6dbda3b9fba310c40c69cd5b5dc"
+          "postProcessHash": "2b3833e6ef66fe739a0862de781b2948362d4a7897b14b9b8ef5c9f583f800c9"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:08.428Z",
+          "updatedAt": "2026-10-21T20:44:18.841Z",
           "fileName": "zh/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster.mdx",
-          "postProcessHash": "aa4854e68121520655791d937374969ccbfdf76b375e6b3249591df4b47874d9"
+          "postProcessHash": "d97e882111f4ead40ba6358649f8386e82566de772090994170dd9cf98b37aca"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:08.428Z",
+          "updatedAt": "2026-10-21T20:44:18.842Z",
           "fileName": "ar/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster.mdx",
-          "postProcessHash": "e4fbaf55d3ef260e10b26aa53bb4c718284c90c72c55ab4e851443b8a09dfb4c"
+          "postProcessHash": "ef3f21e45385810c00f0e1f5b4c6ac5777c09ade96e1d8b1955122f905d45c93"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.428Z",
+          "updatedAt": "2026-10-21T20:44:18.842Z",
           "fileName": "fr/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster.mdx",
-          "postProcessHash": "dbd0e2dfd386308b8bc639caf2ae896cf8851d2a039e4056731da3331e3b22b4"
+          "postProcessHash": "ae70c566753ada552a3186988dc5c5ff540333d35055b4f861aba0d82269d74d"
         }
       },
-      "fileName": "resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster.mdx",
-      "staged": false
+      "fileName": "resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster.mdx"
     },
     {
       "fileId": "a538924ce77eb68f9aacdf7ec784d49304958aeac2b32cc50cc52fc41194286d",
-      "versionId": "a38f606553ec99ec7faa532f2315785a50dcf6ebbd340b07095b94165504c1f2",
+      "versionId": "a95384f783efb572fe56290c82a56fe384b0d29bb950740bd537e5f09a9fcb45",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-14T10:41:08.430Z",
+          "updatedAt": "2026-10-21T20:44:18.844Z",
           "fileName": "es/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes.mdx",
-          "postProcessHash": "066c38a1eff6a052d3b01c1a93a3f0dbbef701d2608604f63a7706242b9ef460"
+          "postProcessHash": "36ffe89522486e3833f5ea2c7a8ed3237ea39286b2195f2123f7050234986d3c"
         },
         "ja": {
-          "updatedAt": "2026-08-14T10:41:08.430Z",
+          "updatedAt": "2026-10-21T20:44:18.844Z",
           "fileName": "ja/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes.mdx",
-          "postProcessHash": "fbcc69f3afd4cf57f1c9b1b9c72abbb4aeacc49cba5d24c3e7be23f61674360a"
+          "postProcessHash": "ac61feae9daccfd9bdee19c5df05d1b0e92e8364d77c05f0c4d8731d28efb298"
         },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:08.430Z",
+          "updatedAt": "2026-10-21T20:44:18.845Z",
           "fileName": "ko/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes.mdx",
-          "postProcessHash": "f2b1ddb03bb61d88bd3f8321ad8558fd307334a8b76e83e1479dd27d1483a56a"
+          "postProcessHash": "06ddda60972c3c9a3365158fff35ecc5503e2d7f33355ea24f79f73c20eec0e6"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.430Z",
+          "updatedAt": "2026-10-21T20:44:18.845Z",
           "fileName": "pt-BR/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes.mdx",
-          "postProcessHash": "2c19ff0f8f549f208b5b237c2d888f923b9d5180ace8d05dad0a5078aa5a6d61"
+          "postProcessHash": "a0f61be0e9dbaeb61e9ff5c6a9c3a02d1379a15284182f87e0f15e46834f4562"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:08.430Z",
+          "updatedAt": "2026-10-21T20:44:18.846Z",
           "fileName": "ru/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes.mdx",
-          "postProcessHash": "9e0aa11b8b8267c6ed3ddffee7e94e146050cd2aa6b8b6f4c27c0150250357a1"
+          "postProcessHash": "77a72624b27b650acf3987143b813d051b18bf65d87a8b69f781f6563da0a0f1"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:08.430Z",
+          "updatedAt": "2026-10-21T20:44:18.846Z",
           "fileName": "zh/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes.mdx",
-          "postProcessHash": "5da1da3ed550cacb341fecc6bd2cf8d199b7cab39dca5111dd096564e7c2c81f"
+          "postProcessHash": "773bb15f320f9471afc8f48162bca5d4e6abcf327d41c28bb56867ff61cf18d9"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:08.430Z",
+          "updatedAt": "2026-10-21T20:44:18.846Z",
           "fileName": "ar/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes.mdx",
-          "postProcessHash": "aad1eb2604f589556cb2c703754d7c2021c5b7f3a4f12a69784b832db66fbb9e"
+          "postProcessHash": "6cfb2088203972eda73f0b48f03a2ccb62c70ca43d471f9efab4dce80de57b0b"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.430Z",
+          "updatedAt": "2026-10-21T20:44:18.847Z",
           "fileName": "fr/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes.mdx",
-          "postProcessHash": "348a735c3ae560ae39caea560269c9c8e615cc8a639c6921c16e67b30d0ac948"
+          "postProcessHash": "65daf6b71853374256e8b3d08b36a918cbcfb19bbafea135e1cbe2164b8f4849"
         }
       },
-      "fileName": "resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes.mdx",
-      "staged": false
+      "fileName": "resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes.mdx"
     },
     {
       "fileId": "8fc678fd4ac847128c4bc0a3374c2da36df74531a71026b24bc2f565d4a43bf7",
@@ -133097,47 +133095,47 @@
     },
     {
       "fileId": "be65d164b57999adeef6bd2d813d6f90e231a8bba4a7f7751208755b14f5e700",
-      "versionId": "40bf9c26b08511d1efa12b3d43c2f52254523e61ea0b33ad00c2f6e6992d73ee",
+      "versionId": "5391c0476754a9c3e3d301baf1d0a39eb9a979f9ca31e026f594f63d81bf3773",
       "translations": {
         "es": {
-          "updatedAt": "2026-10-09T08:37:53.154Z",
+          "updatedAt": "2026-10-21T20:44:16.574Z",
           "fileName": "es/integrations/clickpipes/networking/aws-privatelink.mdx",
-          "postProcessHash": "94caefeb4c3e8e447e64af5f916ad297588310fcce1252cd8dc26be2de1d9f65"
+          "postProcessHash": "7b63476c04660bd05b737565c64825842f36841a683c1c45628e52369119672c"
         },
         "ja": {
-          "updatedAt": "2026-10-09T08:37:53.155Z",
+          "updatedAt": "2026-10-21T20:44:16.574Z",
           "fileName": "ja/integrations/clickpipes/networking/aws-privatelink.mdx",
-          "postProcessHash": "8720c7e240bc9cd8f0db8710044245d0fd16685d6e5a4d5351e81f412a7bbb54"
+          "postProcessHash": "1e9e2b6ad2a5567b81e72602964b4effd4abdc63c43a8dc33d46bfb2cff56686"
         },
         "ko": {
-          "updatedAt": "2026-10-09T08:37:53.155Z",
+          "updatedAt": "2026-10-21T20:44:16.575Z",
           "fileName": "ko/integrations/clickpipes/networking/aws-privatelink.mdx",
-          "postProcessHash": "a4d02682cabcc6ef307508d66f9f9f1d57b858c0979d0a124de1b11eff002bd3"
+          "postProcessHash": "15212def35c12b5ccadec0326bc6c0e05ee5140dbf48311e45d8a904de91af9f"
         },
         "pt-BR": {
-          "updatedAt": "2026-10-09T08:37:53.156Z",
+          "updatedAt": "2026-10-21T20:44:16.575Z",
           "fileName": "pt-BR/integrations/clickpipes/networking/aws-privatelink.mdx",
-          "postProcessHash": "245c753d5d29f9b5ceeef56a9046902cf2056f5c040db29bb9063e060ebde04d"
+          "postProcessHash": "8a183ee20fb923209752963aaa609fdd4ee43a7483c45e11d2d170085a5a1ea7"
         },
         "ru": {
-          "updatedAt": "2026-10-09T08:37:53.157Z",
+          "updatedAt": "2026-10-21T20:44:16.576Z",
           "fileName": "ru/integrations/clickpipes/networking/aws-privatelink.mdx",
-          "postProcessHash": "67f8ebb95668b4c0b78fa37288c4d3db3530aeeaf7393f101e7004708b9f281f"
+          "postProcessHash": "eb252f764f565e5f7f7820274723ee999900571021e54c7daea7a5da790540b8"
         },
         "zh": {
-          "updatedAt": "2026-10-09T08:37:53.157Z",
+          "updatedAt": "2026-10-21T20:44:16.576Z",
           "fileName": "zh/integrations/clickpipes/networking/aws-privatelink.mdx",
-          "postProcessHash": "b9356faa4675503517b6729007c3f08704d7211d2793ff5fb63618c73c7177d0"
+          "postProcessHash": "55b0e0538625d5de88c973b6753a7a6dedc65ba3f950e9a8cfb6fcaf6b80b546"
         },
         "ar": {
-          "updatedAt": "2026-10-09T08:37:53.158Z",
+          "updatedAt": "2026-10-21T20:44:16.577Z",
           "fileName": "ar/integrations/clickpipes/networking/aws-privatelink.mdx",
-          "postProcessHash": "7d69213114d1226097f688054862bebecab95b7c6120e108fac4da59aaba26b3"
+          "postProcessHash": "4c8f7a6d098f2eade403f475ee220e5c1da4ef4ea20ae1fcd372faad55c0fd21"
         },
         "fr": {
-          "updatedAt": "2026-10-09T08:37:53.159Z",
+          "updatedAt": "2026-10-21T20:44:16.577Z",
           "fileName": "fr/integrations/clickpipes/networking/aws-privatelink.mdx",
-          "postProcessHash": "2e0eb46a17b2211d3ab24fec9d88e8356974a363477af96f956d018ecf45e457"
+          "postProcessHash": "0073e91eaf59174b7b5883dfb81cf5c0ccafcf07cf2c183d7c5d28947331557d"
         }
       },
       "fileName": "integrations/clickpipes/networking/aws-privatelink.mdx"

@@ -12,7 +12,6 @@ integration:
 ---
 
 import { Image } from "/snippets/ar/components/Image.jsx";
-import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 يمكنك استخدام [AWS PrivateLink](https://aws.amazon.com/privatelink/) لإنشاء اتصال آمن بين ClickPipes ومصدر بيانات مستضاف على AWS. ينشئ ClickPipes **نقطة نهاية خاصة عكسية (RPE)** في شبكة VPC الخاصة به، ويوجّهها إلى خدمة نقطة نهاية خاصة منشورة لمصدر بياناتك، بحيث لا تتعرض حركة المرور للإنترنت العام مطلقًا.
 
@@ -213,12 +212,6 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 ## DNS خاص مخصص {#custom-private-dns}
 
-<PrivatePreviewBadge />
-
-<Info>
-  ميزة DNS الخاص المخصص في **معاينة خاصة**. تواصل مع [فريق دعم ClickHouse](https://clickhouse.com/support/program) لتمكينها لخدمتك.
-</Info>
-
 يوفر AWS PrivateLink [DNS خاصًا مُدارًا](https://docs.aws.amazon.com/vpc/latest/privatelink/manage-dns-names.html)
 لخدمات نقاط نهاية VPC ذات نطاق تم التحقق منه. تتطلب بعض الخدمات من كل مستهلك إدارة تحليل أسماء DNS ضمن VPC الخاص به؛ فعلى سبيل المثال، يتطلب Confluent Cloud من المستهلكين تحليل أسماء مضيفي الوسطاء إلى نقطة نهاية PrivateLink.
 
@@ -230,13 +223,8 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 PrivateLink لديك توفر بالفعل أسماء DNS خاصة، فلست بحاجة إلى أسماء مخصصة.
 
 تُدعم أسماء DNS الخاصة المخصصة لنوعي نقاط النهاية: [خدمة نقطة نهاية VPC](#vpc-endpoint-service)
-و[مورد VPC](#vpc-resource). يوفر MSK متعدد VPC DNS خاصًا مُدارًا
+و[مورد VPC](#vpc-resource). يوفر MSK multi-VPC DNS خاصًا مُدارًا
 بشكل افتراضي، ولا يدعم الأسماء المخصصة.
-
-<Note>
-  تدعم ClickHouse Cloud console حاليًا اسم DNS خاص مخصص واحدًا لكل نقطة نهاية خاصة عكسية.
-  إذا كنت بحاجة إلى إدارة عدة أسماء DNS خاصة مخصصة على نقطة النهاية نفسها، فاستخدم OpenAPI أو Terraform.
-</Note>
 
 تنطبق القواعد التالية على أسماء DNS الخاصة المخصصة:
 
@@ -252,8 +240,8 @@ PrivateLink لديك توفر بالفعل أسماء DNS خاصة، فلست ب
 لتهيئة أسماء DNS الخاصة المخصصة:
 
 * في ClickHouse Cloud console، املأ حقل `Custom private DNS name` عند
-  [إنشاء نقطة نهاية خاصة عكسية](#creating-clickpipe). يظهر الحقل بمجرد
-  تمكين الميزة لخدمتك.
+  [إنشاء نقطة نهاية خاصة عكسية](#creating-clickpipe). استخدم `Add DNS name` لإرفاق
+  عدة أسماء بنقطة النهاية نفسها.
 * باستخدام [OpenAPI](https://clickhouse.com/docs/cloud/manage/api/swagger)، عيّن
   `customPrivateDnsMappings` عند إنشاء نقطة نهاية خاصة عكسية، أو حدّث نقطة نهاية
   موجودة عبر طلب `PATCH`. تستبدل التحديثات قائمة التعيينات بالكامل؛ وتؤدي القائمة الفارغة
@@ -296,14 +284,14 @@ PrivateLink لديك توفر بالفعل أسماء DNS خاصة، فلست ب
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp" alt="اختيار نقطة النهاية الخاصة العكسية" size="lg" border />
 
 * بالنسبة إلى مورد VPC، أدخل ARN لمشاركة التكوين ومعرّف التكوين.
-  * بالنسبة إلى MSK متعدد VPC، أدخل ARN للعنقود وطريقة المصادقة المستخدمة مع نقطة النهاية المنشأة.
-  * بالنسبة إلى خدمة نقطة نهاية VPC، أدخل اسم الخدمة.
-  * اختياريًا، أدخل اسم [DNS خاص مخصص](#custom-private-dns).
+* بالنسبة إلى MSK multi-VPC، أدخل ARN للعنقود وطريقة المصادقة المستخدمة مع نقطة النهاية المنشأة.
+* بالنسبة إلى خدمة نقطة نهاية VPC، أدخل اسم الخدمة.
+* اختياريًا، أدخل اسم [DNS خاص مخصص](#custom-private-dns).
 
 7. انقر على `Create` وانتظر حتى تصبح نقطة النهاية الخاصة العكسية جاهزة.
 
    إذا كنت تنشئ نقطة نهاية جديدة، فسيستغرق إعدادها بعض الوقت.
-   ستُحدَّث الصفحة تلقائيًا بمجرد أن تصبح نقطة النهاية جاهزة.
+   ستُحدَّث الصفحة تلقائيًا بمجرد أن تصبح نقطة النهاية جاهزة.
    قد تتطلب خدمة نقطة نهاية VPC قبول طلب الاتصال من وحدة تحكم AWS الخاصة بك.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp" alt="اختيار نقطة النهاية الخاصة العكسية" size="lg" border />
