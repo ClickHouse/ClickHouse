@@ -84,7 +84,6 @@ ch_cc_library(
         "include/ldap_pvt.h",
         "include/ldap_pvt_uc.h",
     ],
-    additional_compiler_inputs = ["libraries/liblber/debug.c"],
     copts = [
         "-w",
         "-std=gnu11",
@@ -199,13 +198,6 @@ ch_cc_library(
         "include/ldap_utf8.h",
         "include/ldif.h",
         "include/slapi-plugin.h",
-    ],
-    additional_compiler_inputs = [
-        "libraries/liblber/debug.c",
-        "libraries/libldap/dnssrv.c",
-        "libraries/libldap/error.c",
-        "libraries/libldap/schema.c",
-        "libraries/libldap/string.c",
     ],
     copts = [
         "-w",

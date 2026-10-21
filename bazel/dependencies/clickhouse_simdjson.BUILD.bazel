@@ -15,10 +15,19 @@ ch_cc_library(
         "include/**/*.h",
         "include/**/*.hpp",
     ]),
-    additional_compiler_inputs = glob(
-        ["src/**/*.cpp"],
-        exclude = ["src/simdjson.cpp"],
-    ),
+    additional_compiler_inputs = [
+        "src/fallback.cpp",
+        "src/from_chars.cpp",
+        "src/implementation.cpp",
+        "src/to_chars.cpp",
+    ] + glob(["src/internal/*.cpp"]) + select({
+        "@platforms//cpu:x86_64": [
+            "src/haswell.cpp",
+            "src/icelake.cpp",
+            "src/westmere.cpp",
+        ],
+        "@platforms//cpu:aarch64": ["src/arm64.cpp"],
+    }),
     copts = [
         "-w",
         "-std=c++23",
