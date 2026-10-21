@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -98,6 +97,7 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
+    source_headers = False,
     deps = [
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_aws//:_aws",
@@ -112,13 +112,4 @@ ch_cc_library(
         "//base/poco/Util:_poco_util",
         "//src/Common:Common",
     ],
-)
-
-cc_library(
-    name = "headers",
-    hdrs = glob(["**/*.h"]),
-    includes = [
-        ".",
-    ],
-    deps = ["//base/poco/Util:_poco_util"],
 )

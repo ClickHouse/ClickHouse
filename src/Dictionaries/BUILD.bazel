@@ -245,7 +245,7 @@ ch_cc_library(
         "//base/poco/JSON:_poco_json",
         "//base/poco/Net:_poco_net",
         "//base/poco/Redis:_poco_redis",
-        "//src/Common/mysqlxx:headers",
+        "//src/Common/mysqlxx",
         "//src/Functions:headers",
     ],
     local_defines = _CLICKHOUSE_DICTIONARIES_LOCAL_DEFINES,

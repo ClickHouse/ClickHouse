@@ -1257,7 +1257,7 @@ ch_cc_library(
             "//src/AggregateFunctions:headers",
             "//src/Common",
             "//src/Common/ZooKeeper:headers",
-            "//src/Common/mysqlxx:headers",
+            "//src/Common/mysqlxx",
             "//src/Compression:clickhouse_compression",
             "//src/Daemon:headers",
             "//src/Dictionaries:headers",
