@@ -78,7 +78,7 @@ public:
 
         /// Build a callback that writes the body into the HTTP request output stream.
         /// Returns nullptr only when no body was specified (see `empty`).
-        std::function<void(std::ostream &)> makeCallback(const ContextPtr & context) const;
+        std::function<void(WriteBuffer &)> makeCallback(const ContextPtr & context) const;
     };
 
     static ColumnsDescription getTableStructureFromData(
@@ -104,7 +104,7 @@ public:
     static std::optional<time_t> tryGetLastModificationTime(
         const String & url,
         const HTTPHeaderEntries & headers,
-        const std::function<void(std::ostream &)> & write_body_callback,
+        const std::function<void(WriteBuffer &)> & write_body_callback,
         const Poco::Net::HTTPBasicCredentials & credentials,
         const ContextPtr & context);
 

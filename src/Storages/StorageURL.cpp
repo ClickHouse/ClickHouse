@@ -1,5 +1,6 @@
 #include <Storages/StorageURL.h>
 #include <Storages/ObjectStorage/S3/S3SecretArguments.h>
+#include <Common/HiddenSecret.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageFile.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -30,7 +31,6 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/WriteBufferFromHTTP.h>
 #include <IO/NullWriteBuffer.h>
-#include <IO/WriteBufferFromOStream.h>
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -241,16 +241,16 @@ namespace
     };
 }
 
-std::function<void(std::ostream &)> IStorageURLBase::Body::makeCallback(const ContextPtr & context) const
+std::function<void(WriteBuffer &)> IStorageURLBase::Body::makeCallback(const ContextPtr & context) const
 {
     if (empty())
         return nullptr;
 
     if (!query)
     {
-        return [s = *literal](std::ostream & os)
+        return [s = *literal](WriteBuffer & out)
         {
-            os.write(s.data(), s.size());
+            out.write(s.data(), s.size());
         };
     }
 
@@ -273,20 +273,19 @@ std::function<void(std::ostream &)> IStorageURLBase::Body::makeCallback(const Co
         auto preflight_format = context->getOutputFormat(body_format, null_buf, materializeBlock(prepared_pipeline->getHeader()));
     }
 
-    return [body_query = query, body_format, context, prepared_pipeline](std::ostream & os)
+    return [body_query = query, body_format, context, prepared_pipeline](WriteBuffer & out)
     {
         auto prepared = prepared_pipeline->take();
         QueryPipelineBuilder builder = prepared.has_value() ? std::move(*prepared) : buildBodyQueryPipeline(body_query, context);
 
-        WriteBufferFromOStream out_buf(os);
-        auto out_format = context->getOutputFormat(body_format, out_buf, materializeBlock(builder.getHeader()));
+        /// The caller finalizes `out` after the callback returns.
+        auto out_format = context->getOutputFormat(body_format, out, materializeBlock(builder.getHeader()));
         out_format->setAutoFlush();
 
         auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         pipeline.complete(std::move(out_format));
         CompletedPipelineExecutor executor(pipeline);
         executor.execute();
-        out_buf.finalize();
     };
 }
 
@@ -1830,7 +1829,7 @@ namespace
         std::optional<String> format;
         const CompressionMethod & compression_method;
         const HTTPHeaderEntries & headers;
-        std::function<void(std::ostream &)> body_callback;
+        std::function<void(WriteBuffer &)> body_callback;
         std::string http_method;
         Poco::Net::HTTPBasicCredentials credentials;
         const std::optional<FormatSettings> & format_settings;
@@ -2356,7 +2355,7 @@ SchemaCache & IStorageURLBase::getSchemaCache(const ContextPtr & context)
 std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
     const String & url,
     const HTTPHeaderEntries & headers,
-    const std::function<void(std::ostream &)> & write_body_callback,
+    const std::function<void(WriteBuffer &)> & write_body_callback,
     const Poco::Net::HTTPBasicCredentials & credentials,
     const ContextPtr & context)
 {
@@ -3523,6 +3522,14 @@ SecretArgumentsSpec urlSecretArguments(size_t url_offset)
         /// logging before validation rejects it.
         maskHeadersAndExtraCredentials(finder);
 
+        /// `body(...)` can carry a token or other credentials in the request payload, and its subquery form can embed
+        /// literals or nested table functions with secrets, so hide the whole argument, keeping only the function name.
+        for (size_t i = 0, size = finder.function->arguments->size(); i < size; ++i)
+        {
+            if (const auto body_func = finder.function->arguments->at(i)->getFunction(); body_func && body_func->name() == "body")
+                finder.result.replaced_arguments[i] = fmt::format("body({})", HIDDEN_SECRET_LITERAL);
+        }
+
         if (finder.isNamedCollectionName(url_offset))
         {
             /// url(named_collection, url = 'https://user:password@host/...', headers(...), ...): mask the
@@ -3538,8 +3545,9 @@ SecretArgumentsSpec urlSecretArguments(size_t url_offset)
                     || equals_func->arguments->size() != 2)
                 {
                     /// After the collection name every argument must be an override or `headers(...)`; a positional
-                    /// one is invalid but logged before validation rejects it, and can be a url with a password.
-                    if (!equals_func || equals_func->name() != "headers")
+                    /// one is invalid but logged before validation rejects it, and can be a url with a password. `body(...)` is
+                    /// hidden above.
+                    if (!equals_func || (equals_func->name() != "headers" && equals_func->name() != "body"))
                         finder.markSecretArgument(i);
                     continue;
                 }
