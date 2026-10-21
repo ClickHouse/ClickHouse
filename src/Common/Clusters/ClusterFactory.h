@@ -47,7 +47,7 @@ public:
     bool hasCluster(const String & name) const;
 
     /// Per-entry upsert for dynamic sources (primarily `ClusterDiscovery`). Refuses if an existing entry for
-    /// `cluster_name` is owned by `RemoteServersConfig` and `source` isn't — i.e. config always wins on name collision.
+    /// `cluster_name` is owned by a higher-priority source: `RemoteServersConfig` > `SQLCatalog` > `Discovery`.
     void setCluster(const String & cluster_name, ClusterPtr cluster, ClusterDefinitionSource source);
 
     /// Per-entry erase for dynamic sources. No-op if the currently-materialized entry belongs to a different source

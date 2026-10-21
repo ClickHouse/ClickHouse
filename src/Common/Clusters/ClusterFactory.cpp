@@ -4,6 +4,8 @@
 #include <Interpreters/Context.h>
 #include <Poco/Util/XMLConfiguration.h>
 
+#include <magic_enum.hpp>
+
 #include <memory>
 #include <mutex>
 #include <unordered_set>
@@ -124,6 +126,15 @@ void ClusterFactory::publishClustersSnapshotLocked(
     ConfigurationPtr new_config,
     size_t new_version) const
 {
+    /// `Clusters` copies keep the macro snapshot of their source, so refresh it on every publication:
+    /// otherwise a changed `<macros>` (or macros initialized after the first publication) would never be
+    /// picked up by cluster name expansion in `getCluster`.
+    if (new_clusters)
+    {
+        if (auto global_context = Context::getGlobalContextInstance())
+            new_clusters->setMacros(global_context->getMacros());
+    }
+
     auto snap = std::make_unique<ClustersSnapshot>();
     snap->clusters = std::move(new_clusters);
     snap->clusters_config = new_config;
@@ -155,16 +166,19 @@ void ClusterFactory::setCluster(const String & cluster_name, ClusterPtr cluster,
     std::lock_guard writer_lock(clusters_writer_mutex);
     auto current = clusters_state.get();
 
-    if (source != ClusterDefinitionSource::RemoteServersConfig && current && current->clusters)
+    /// Source precedence on name collision, independent of publication order:
+    /// `<remote_servers>` config, then SQL catalog, then cluster discovery (a lower enum value wins).
+    if (current && current->clusters)
     {
         if (auto existing = current->clusters->getCluster(cluster_name);
-            existing && existing->getDefinitionSource() == ClusterDefinitionSource::RemoteServersConfig)
+            existing && existing->getDefinitionSource() < source)
         {
             LOG_DEBUG(
                 log,
-                "Refusing to upsert cluster `{}` from source `{}`: already defined in `<remote_servers>` config",
+                "Refusing to upsert cluster `{}` from source `{}`: already defined by higher-priority source `{}`",
                 cluster_name,
-                static_cast<int>(source));
+                magic_enum::enum_name(source),
+                magic_enum::enum_name(existing->getDefinitionSource()));
             return;
         }
     }
@@ -312,7 +326,12 @@ void ClusterFactory::applyClustersConfig(
 
     if (current && current->clusters && current->clusters_config
         && isSameConfiguration(*config, *current->clusters_config, config_name))
+    {
+        /// `<remote_servers>` is unchanged, but `<macros>` may have changed: republish to refresh them.
+        publishClustersSnapshotLocked(
+            std::make_shared<Clusters>(*current->clusters), current->clusters_config, current->clusters_version);
         return;
+    }
 
     std::shared_ptr<Clusters> builder;
     if (current && current->clusters)

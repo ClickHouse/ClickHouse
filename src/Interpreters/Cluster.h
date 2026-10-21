@@ -517,6 +517,8 @@ public:
         const Settings & settings,
         const String & config_prefix,
         const Poco::Util::AbstractConfiguration * old_config = nullptr);
+    /// Replace the macro snapshot used by `getCluster` to expand cluster names (e.g. `cluster('{target}', ...)`).
+    void setMacros(MultiVersion<Macros>::Version macros) { macros_ = std::move(macros); }
 
 private:
     /// Set of cluster names registered via ClusterDiscovery. Kept across `mergeConfigClusters` so the config

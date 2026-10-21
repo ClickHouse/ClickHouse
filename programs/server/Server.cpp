@@ -1845,12 +1845,9 @@ try
 
     ServerUUID::load(path / "uuid", log);
 
-    /// Must run before components that may open a ZooKeeper session during startup
-    /// (for example `clusters_catalog_storage`), because `Context::getZooKeeper`
-    /// initializes the session with `ServerUUID::get`. SQL catalog clusters (`CREATE CLUSTER` /
-    /// `CREATE SHARD`) live under the configured `<clusters_catalog_storage.path>` on Keeper.
+    /// The SQL cluster catalog itself (`ClusterMetadataManager`) is initialized later, after the embedded
+    /// Keeper listeners are started and macros are loaded: it opens a Keeper session synchronously.
     ClusterFactory::instance().initialize();
-    ClusterMetadataManager::instance().initialize();
 
     PlacementInfo::PlacementInfo::instance().initialize(config());
 
@@ -2805,8 +2802,9 @@ try
             updateLevels(config(), logger());
             /// File-only, so `remote_servers` ignores the command line: `Cluster` takes the server's own `tcp_port` from this configuration
             /// to find its local replicas, and with `-- --tcp_port` the replicas on the file's port would become remote.
-            global_context->setClustersConfig(loaded_config, has_zookeeper);
+            /// Macros first: publishing the clusters registry picks up the current macros for cluster name expansion.
             global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
+            global_context->setClustersConfig(loaded_config, has_zookeeper);
             global_context->setExternalAuthenticatorsConfig(config());
 
             global_context->setDashboardsConfig(config());
@@ -3669,6 +3667,12 @@ try
         /// attach available in system.text_log
         buildLoggers(config(), logger());
         initializeAzureSDKLogger(server_settings, logger().getLevel());
+        /// SQL cluster catalog (`CREATE CLUSTER` / `CREATE SHARD` / `CREATE ENDPOINT`) lives in Keeper under
+        /// `<cluster_metadata>`. It synchronously opens a Keeper session (which needs `ServerUUID`), so it must run
+        /// after the embedded Keeper (if any) is listening, and before tables are loaded so that `Distributed`
+        /// tables can resolve SQL-defined clusters.
+        ClusterMetadataManager::instance().initialize();
+
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         bool has_keeper_server = false;
 #if USE_NURAFT
