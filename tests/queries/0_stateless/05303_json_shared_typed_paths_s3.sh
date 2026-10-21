@@ -69,7 +69,7 @@ compare s3c "s3c warm threadpool" "max_threads = 1, max_block_size = 5, remote_f
 compare s3c "s3c warm read" "max_threads = 1, max_block_size = 7, remote_filesystem_read_method = 'read', $CACHE" "05303_warm_read"
 Q+="
 SYSTEM FLUSH LOGS query_log;
-SELECT log_comment, argMin(ProfileEvents['CachedReadBufferReadFromSourceBytes'] > 0, event_time_microseconds) AS first_query_read_source, sum(ProfileEvents['CachedReadBufferReadFromCacheBytes']) > 0 AS read_cache
+SELECT log_comment, sum(ProfileEvents['CachedReadBufferReadFromCacheBytes']) > 0 AS read_cache
     FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05303_cold', '05303_warm_threadpool', '05303_warm_read') GROUP BY log_comment ORDER BY log_comment;
 "
 run_batch

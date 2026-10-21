@@ -253,8 +253,7 @@ TEST(DataTypeObject, SubcolumnLookup)
         {"@`obj`.x", "UInt16"},
         {"@`missing`", "Dynamic(max_types=5)"},
         {DataTypeObject::SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION, "Array(String)"},
-        /// A hint without a path in front of it is a dynamic path like any other name.
-        {":`Int64`", "Dynamic(max_types=5)"},
+        {":`Int64`", ""},
     };
 
     for (const auto & [subcolumn, expected_name] : subcolumns)

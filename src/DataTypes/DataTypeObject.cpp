@@ -61,6 +61,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_COLUMN;
     extern const int CANNOT_COMPILE_REGEXP;
 }
 
@@ -456,12 +457,12 @@ struct PathAndSubcolumn
 
 PathAndSubcolumn splitPathAndDynamicTypeSubcolumn(std::string_view subcolumn_name, const String & nested_json_type_name)
 {
-    /// Try to find dynamic type subcolumn in a form .:`Type`.
-    auto pos = subcolumn_name.find(".:`");
+    /// Try to find dynamic type subcolumn in a form .:`Type`; at the start of the name the hint has no path before it.
+    size_t pos = subcolumn_name.starts_with(":`") ? 0 : subcolumn_name.find(".:`");
     if (pos == std::string_view::npos)
         return {String(subcolumn_name), {}, {}};
 
-    ReadBufferFromMemory buf(subcolumn_name.substr(pos + 2));
+    ReadBufferFromMemory buf(subcolumn_name.substr(pos == 0 ? 1 : pos + 2));
     String type_hint;
     /// Try to read back quoted type name.
     if (!tryReadBackQuotedString(type_hint, buf))
@@ -694,6 +695,15 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::getDynamicSubcolumnInf
 
     /// Split requested subcolumn to the JSON path, type hint, and remaining subcolumn.
     auto split = splitPathAndDynamicTypeSubcolumn(subcolumn_name, getTypeOfNestedObjects()->getName());
+
+    /// A type hint qualifies the path before it; a name that is only a hint denotes nothing.
+    if (split.path.empty() && !split.type_hint.empty())
+    {
+        if (throw_if_null)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} doesn't have subcolumn {}", getName(), subcolumn_name);
+        return nullptr;
+    }
+
     String path = split.path;
     String path_subcolumn;
     auto typed_it = typed_paths.find(path);
