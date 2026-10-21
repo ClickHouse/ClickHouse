@@ -93,7 +93,6 @@ def ch_cc_library(
             for arch in arches
         } | {"//conditions:default": []}) + kwargs.get("implementation_deps", [])
     native_options = {"//conditions:default": []}
-    sysroot_files = {"//conditions:default": []}
     for arch in arches:
         cpu = str(Label("@platforms//cpu:" + arch))
         gcc_root = repository_path("contrib/sysroot") + "/linux-" + arch
@@ -105,11 +104,10 @@ def ch_cc_library(
             # GCC's sysroot must not supply a second C++ standard library.
             options.append("-nostdinc++")
         native_options[cpu] = options
-        sysroot_files[cpu] = [Label("@clickhouse_sysroot//:linux_compile_files")]
     cc_library(
         name = name,
         hdrs = hdrs,
-        additional_compiler_inputs = additional_compiler_inputs + select(sysroot_files),
+        additional_compiler_inputs = additional_compiler_inputs,
         copts = cpu_flags + code_flags + copts +
                 (cmake_prefix_maps(arches) if map_source_files else []) + select(native_options),
         features = ["-fortify_source", "-default_compile_flags", "-llvm_system_c_headers"] + features,

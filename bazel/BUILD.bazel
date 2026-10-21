@@ -1595,6 +1595,11 @@ cc_library(
     ],
     includes = ["gen/contrib/arrow-cmake/cpp/src"],
     visibility = ["@clickhouse_arrow//:__pkg__"],
+    deps = [
+        "@clickhouse_google_protobuf//:_libprotobuf",
+        "@clickhouse_grpc//:grpc++",
+        "@clickhouse_grpc//:grpc_codegen_headers",
+    ],
 )
 
 platform(

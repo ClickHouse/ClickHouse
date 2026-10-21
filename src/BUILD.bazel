@@ -654,6 +654,7 @@ _PRIVATE_DBMS_0_HEADERS = glob(
     "Storages/Kafka/KafkaSource.h",
     "Storages/Kafka/parseSyslogLevel.h",
     "Storages/MergeTree/Backup.h",
+    "Storages/MergeTree/BitpackingBlockCodec.h",
     "Storages/MergeTree/Compaction/CompactionStatistics.h",
     "Storages/MergeTree/Compaction/ConstructFuturePart.h",
     "Storages/MergeTree/Compaction/MergePredicates/MergeTreeMergePredicate.h",
@@ -3406,13 +3407,13 @@ cc_test(
         "//src/Common:tests/gtest_global_register.h",
         "//src/Common:tests/gtest_helper_functions.h",
         "//src/Common:tests/gtest_silk_scheduler.h",
+        "Storages/MergeTree/BitpackingBlockCodec.h",
         "Coordination/tests/gtest_coordination_common.h",
     ] + [
         "//src/Parsers:tests/gtest_common.h",
         "//src/Parsers:tests/play_fallback_tokenizer.h",
     ],
     additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
         "Access/AccessRights.cpp",
         "//src/Common:Base58.cpp",
         "//src/Common:Hex.cpp",
@@ -3715,7 +3716,11 @@ cc_test(
         "../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
         "../" + "bazel/gen",
     ],
-    deps = ["//bazel/rust:delta_kernel_ffi_headers", "@clickhouse_abseil_cpp//:absl_log_globals"] + [
+    deps = [
+        "//src/Common",
+        "//bazel/rust:delta_kernel_ffi_headers",
+        "@clickhouse_abseil_cpp//:absl_log_globals",
+    ] + [
         "@clickhouse_llvm_project//:clang_rt_builtins",
         "@clickhouse_llvm_project//:clang_rt_xray",
         "@clickhouse_llvm_project//:libllvmlibc",
