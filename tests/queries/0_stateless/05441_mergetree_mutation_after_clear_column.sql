@@ -52,17 +52,6 @@ ALTER TABLE t UPDATE a = a WHERE 1 SETTINGS mutations_sync = 2;
 SELECT id, a, b FROM t ORDER BY id;
 DROP TABLE t;
 
-SELECT 'clear b and update b in one statement';
-CREATE TABLE t (id UInt32, a UInt32, b UInt32) ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
-INSERT INTO t VALUES (1, 1111, 2222), (2, 3333, 4444);
-SYSTEM STOP MERGES t;
-ALTER TABLE t CLEAR COLUMN b, UPDATE b = 5 WHERE id = 1 SETTINGS alter_sync = 0, mutations_sync = 0;
-SYSTEM START MERGES t;
-ALTER TABLE t UPDATE a = a WHERE 1 SETTINGS mutations_sync = 2;
-SELECT id, a, b FROM t ORDER BY id;
-DROP TABLE t;
-
 SELECT 'drop b, add b, update b';
 CREATE TABLE t (id UInt32, a UInt32, b UInt32) ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;

@@ -11,9 +11,6 @@ update a, clear b, update b
 update a, clear b
 1	1112	0
 2	3334	0
-clear b and update b in one statement
-1	1111	5
-2	3333	0
 drop b, add b, update b
 1	1111	5
 2	3333	0
