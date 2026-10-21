@@ -9,6 +9,13 @@ struct StorageParsedArguments
 {
     String format = "auto";
     String compression_method = "auto";
+    /// Set by the parsing paths when the user explicitly supplied a `compression_method`
+    /// argument or a named-collection `compression` key. Propagated to
+    /// `StorageObjectStorageConfiguration::compression_method_user_provided`.
+    bool compression_method_user_provided = false;
+    /// The key-value `compression` argument. Unlike the named-collection key, it is not an alias of
+    /// `compression_method` and never selects a codec; only the data lake check reads it.
+    String ignored_compression_argument;
     String structure = "auto";
     PartitionStrategyFactory::StrategyType partition_strategy_type = PartitionStrategyFactory::StrategyType::NONE;
     /// Whether `partition_strategy_type` came from an explicit argument or named-collection value.
