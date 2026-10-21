@@ -245,8 +245,8 @@ private:
     /// column or subcolumn. @requested_as_nested tells that the column is a subcolumn of a `Nested` column.
     std::optional<NameAndTypePair> tryGetColumnInPart(const String & name_in_storage, const String & subcolumn_name, bool requested_as_nested) const;
 
-    /// Whether the partition key or the sorting key of the table reads the column or subcolumn.
-    bool isReadByKey(const String & column_name) const;
+    /// Whether the partition key, the sorting key or a TTL expression of the table reads the column or subcolumn.
+    bool isReadByKeyOrTTL(const String & column_name) const;
 
     /// The serialization of @column_in_part the part holds (composed for a subcolumn), or null when the part holds
     /// none for it or when it is not safe to share with the other readers.
@@ -267,6 +267,9 @@ private:
 };
 
 using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
+
+/// The columns and subcolumns that the TTL expressions of the table (including their `WHERE` parts and column TTLs) read.
+Names getColumnsRequiredForTTL(const StorageInMemoryMetadata & metadata);
 
 MergeTreeReaderPtr createMergeTreeReader(
     const MergeTreeDataPartInfoForReaderPtr & read_info,

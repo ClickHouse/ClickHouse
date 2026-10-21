@@ -536,12 +536,34 @@ std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(con
     return {name_in_storage, subcolumn_name};
 }
 
-bool IMergeTreeReader::isReadByKey(const String & column_name) const
+Names getColumnsRequiredForTTL(const StorageInMemoryMetadata & metadata)
+{
+    Names result;
+    auto add = [&](const TTLDescription & ttl)
+    {
+        for (const auto & column : ttl.expression_columns)
+            result.push_back(column.name);
+        for (const auto & column : ttl.where_expression_columns)
+            result.push_back(column.name);
+    };
+
+    if (metadata.hasRowsTTL())
+        add(metadata.getRowsTTL());
+    for (const auto * ttls : {&metadata.getRowsWhereTTLs(), &metadata.getMoveTTLs(), &metadata.getRecompressionTTLs(), &metadata.getGroupByTTLs()})
+        for (const auto & ttl : *ttls)
+            add(ttl);
+    for (const auto & [_, ttl] : metadata.getColumnTTLs())
+        add(ttl);
+    return result;
+}
+
+bool IMergeTreeReader::isReadByKeyOrTTL(const String & column_name) const
 {
     auto is_required = [&](const Names & required_columns) { return std::ranges::find(required_columns, column_name) != required_columns.end(); };
 
     const auto & metadata = *storage_snapshot->metadata;
-    return is_required(metadata.getColumnsRequiredForPartitionKey()) || is_required(metadata.getColumnsRequiredForSortingKey());
+    return is_required(metadata.getColumnsRequiredForPartitionKey()) || is_required(metadata.getColumnsRequiredForSortingKey())
+        || (metadata.hasAnyTTL() && is_required(getColumnsRequiredForTTL(metadata)));
 }
 
 std::optional<NameAndTypePair> IMergeTreeReader::tryGetColumnInPart(
@@ -584,12 +606,13 @@ std::optional<NameAndTypePair> IMergeTreeReader::tryGetColumnInPart(
     }
 
     /// Before `ALTER TABLE ... ADD COLUMN` refused such a column, it could be added under the name of a subcolumn that the
-    /// partition key or the sorting key reads. A part that misses such a column was written before it was added, and holds
-    /// a partition, an index and a physical order computed from that subcolumn. For these parts the name keeps the meaning
-    /// it had then, as it always did, so that pruning and in-order reads agree with the values read. A part that records
-    /// the column as missing (`skip_empty_columns_on_insert`) was written after, from the column's default, which it reads.
+    /// partition key, the sorting key or a TTL expression reads. A part that misses such a column was written before it was
+    /// added, and holds a partition, an index, a physical order and TTL infos computed from that subcolumn. For these parts
+    /// the name keeps the meaning it had then, as it always did, so that pruning, in-order reads and TTL agree with the
+    /// values read. A part that records the column as missing (`skip_empty_columns_on_insert`) was written after, from the
+    /// column's default, which it reads.
     if (is_missing
-        && (data_part_info_for_read->isProjectionPart() || !isReadByKey(name_in_part)
+        && (data_part_info_for_read->isProjectionPart() || !isReadByKeyOrTTL(name_in_part)
             || data_part_info_for_read->getSerializationInfos().getMissingColumnInfo(name_in_storage)))
         return {};
 

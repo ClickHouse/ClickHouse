@@ -1617,6 +1617,18 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
                     }
                 }
 
+                /// A source column named like a subcolumn of another column that the parent part misses (`a.size0` added
+                /// next to an `Array` column `a`): the projection part may be computed from that subcolumn, while the
+                /// parent part now reads the column's default (see `projectionPartHasRequiredColumns`).
+                for (const auto & name : projection.required_columns)
+                {
+                    if (!part->tryGetColumnForTable(name, parent_table_columns) && part->tryGetColumn(name))
+                    {
+                        projection_part_misses_column = true;
+                        break;
+                    }
+                }
+
                 projection_parts.push_back(it->second);
             }
             else if (part->hasUnloadedProjection(projection.name))

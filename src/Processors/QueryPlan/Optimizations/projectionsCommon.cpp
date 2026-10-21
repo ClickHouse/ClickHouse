@@ -362,6 +362,15 @@ static bool projectionPartHasRequiredColumns(
         /// (4) Legitimate late-added table column, missing from both parts; the default fill matches.
     }
 
+    /// A source column of the projection named like a subcolumn of another column (`a.size0` added next to an `Array`
+    /// column `a`) that the parent part misses: the projection part may hold states, keys or values computed from that
+    /// subcolumn, while the parent part now reads the column's default. Read the parent part instead.
+    for (const auto & name : projection.required_columns)
+    {
+        if (!parent_part.tryGetColumnForTable(name, parent_table_columns) && parent_part.tryGetColumn(name))
+            return false;
+    }
+
     return true;
 }
 
