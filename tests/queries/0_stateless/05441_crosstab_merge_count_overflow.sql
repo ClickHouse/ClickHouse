@@ -1,5 +1,5 @@
--- Merging states of contingency, cramersV, cramersVBiasCorrected and theilsU must throw when the total
--- number of rows does not fit into UInt64, instead of wrapping the counts into an inconsistent state.
+-- Merging states of `contingency`, `cramersV`, `cramersVBiasCorrected` and `theilsU` must throw when the total
+-- number of rows does not fit into `UInt64`, instead of wrapping the counts into an inconsistent state.
 
 -- 100 rows scaled by 2^57 still fit, and the result does not change.
 SELECT cramersVMerge(st) = cramersVMerge(multiply(st, 144115188075855872)) FROM (SELECT cramersVState(toUInt8(number % 10), toUInt8(number % 6)) AS st FROM numbers(100));

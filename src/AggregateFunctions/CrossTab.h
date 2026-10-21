@@ -966,7 +966,7 @@ private:
     template <typename Src>
     void mergeChecked(Data & dst, const Src & src) const
     {
-        UInt64 merged_count;
+        UInt64 merged_count = 0;
         if (common::addOverflow(dst.count, src.count, merged_count))
             throw Exception(
                 ErrorCodes::ARGUMENT_OUT_OF_BOUND,
