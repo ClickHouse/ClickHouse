@@ -229,6 +229,17 @@ if (OS_DARWIN)
     # Remove unreachable functions/data (Darwin equivalent of --gc-sections).
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-dead_strip")
 
+    # Emit chained fixups (`LC_DYLD_CHAINED_FIXUPS`) instead of classic dyld rebase/bind opcodes.
+    # The clickhouse binary has about 1.4 million fixups; with opcodes dyld applies all of them
+    # at launch, touching every data page, while chained fixups are applied lazily as pages are
+    # first touched, which makes startup faster.
+    # Chained fixups need macOS 11, which is already the minimum for arm64, so this is not
+    # enabled for x86_64, where the deployment target is 10.15.
+    # Both lld and the cctools `ld` used for cross-compilation in CI understand the flag.
+    if (ARCH_AARCH64)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-fixup_chains")
+    endif ()
+
     # The `-all_load` flag forces loading of all symbols from all libraries,
     # and leads to multiply-defined symbols. This flag allows force loading
     # from a _specific_ library, which is what we need.
