@@ -22,6 +22,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMemory.h>
+#include <Storages/StorageProxy.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -105,6 +106,7 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char database_catalog_drop_finally_before_id_erase[];
+    extern const char database_catalog_drop_finally_after_notify[];
 }
 
 class DatabaseNameHints : public IHints<>
@@ -622,8 +624,12 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 
 bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
 {
-    static const char * information_schema_views[] = {"schemata", "tables", "views", "columns"};
-    static const char * information_schema_views_uppercase[] = {"SCHEMATA", "TABLES", "VIEWS", "COLUMNS"};
+    static const char * information_schema_views[] = {
+        "schemata", "tables", "views", "columns", "key_column_usage", "referential_constraints", "statistics",
+        "engines", "character_sets", "collations", "user_privileges", "schema_privileges", "table_privileges", "column_privileges"};
+    static const char * information_schema_views_uppercase[] = {
+        "SCHEMATA", "TABLES", "VIEWS", "COLUMNS", "KEY_COLUMN_USAGE", "REFERENTIAL_CONSTRAINTS", "STATISTICS",
+        "ENGINES", "CHARACTER_SETS", "COLLATIONS", "USER_PRIVILEGES", "SCHEMA_PRIVILEGES", "TABLE_PRIVILEGES", "COLUMN_PRIVILEGES"};
 
     auto check_database_and_table_name = [&](const String & database_name, const String & table_name)
     {
@@ -632,15 +638,14 @@ bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
             auto storage = getSystemDatabase()->tryGetTable(table_name, getContext());
             return storage && storage->isSystemStorage();
         }
-        if (database_name == INFORMATION_SCHEMA)
+        /// Each view is attached under both its lowercase and its UPPERCASE name in both databases
+        /// (see attachInformationSchema), so both spellings are predefined in both databases.
+        if (database_name == INFORMATION_SCHEMA || database_name == INFORMATION_SCHEMA_UPPERCASE)
         {
             return std::find(std::begin(information_schema_views), std::end(information_schema_views), table_name)
-                != std::end(information_schema_views);
-        }
-        if (database_name == INFORMATION_SCHEMA_UPPERCASE)
-        {
-            return std::find(std::begin(information_schema_views_uppercase), std::end(information_schema_views_uppercase), table_name)
-                != std::end(information_schema_views_uppercase);
+                    != std::end(information_schema_views)
+                || std::find(std::begin(information_schema_views_uppercase), std::end(information_schema_views_uppercase), table_name)
+                    != std::end(information_schema_views_uppercase);
         }
         return false;
     };
@@ -841,6 +846,12 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 void DatabaseCatalog::updateDatabaseName(const String & old_name, const String & new_name, const Strings & tables_in_database)
 {
     std::lock_guard lock{databases_mutex};
+
+    /// Re-check under the same lock as the rewrite: a concurrent `CREATE TABLE` in another database may
+    /// have added an edge to a table under the new name since the preflight check of the caller.
+    /// Nothing is modified yet, so the exception leaves the catalog intact.
+    checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(old_name, new_name, tables_in_database);
+
     chassert(!databases.contains(new_name));
     auto it = databases.find(old_name);
     chassert(it != databases.end());
@@ -1791,6 +1802,9 @@ void DatabaseCatalog::dropTablesParallel(TablesMarkedAsDropped tables_to_drop)
                 /// tables_marked_dropped_ids until the guarded erase below: window for a same-UUID re-drop.
                 FailPointInjection::pauseFailPoint(FailPoints::database_catalog_drop_finally_before_id_erase);
 
+                /// The dropped storage is destroyed before the waiters of `DROP ... SYNC` see the drop finished.
+                table_iterator->table.reset();
+
                 TableMarkedAsDropped table_to_delete_without_lock;
                 {
                     std::lock_guard lock(tables_marked_dropped_mutex);
@@ -1808,6 +1822,8 @@ void DatabaseCatalog::dropTablesParallel(TablesMarkedAsDropped tables_to_drop)
 
                     wait_table_finally_dropped.notify_all();
                 }
+
+                FailPointInjection::pauseFailPoint(FailPoints::database_catalog_drop_finally_after_notify);
             }
             catch (...)
             {
@@ -1887,7 +1903,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     for (const auto & [disk_name, disk] : getContext()->getDisksMap())
     {
         String data_path = getStoreDirPath(table.table_id.uuid);
-        auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table.table);
+        auto table_merge_tree = castStorage<MergeTreeData>(table.table, DeferredTable::Skip);
         if (!is_disk_eligible_for_search(disk, table_merge_tree) || !disk->existsDirectory(data_path))
             continue;
 
@@ -2206,6 +2222,50 @@ void DatabaseCatalog::checkTablesCanBeExchangedWithNoCyclicDependencies(const St
         }
 
         restore_dependencies();
+    };
+
+    check(referential_dependencies);
+    check(loading_dependencies);
+}
+
+/// `RENAME DATABASE` re-keys every table of the database under the new name (see `updateDatabaseName`),
+/// which can merge a renamed table into a node that other tables already reference by the future name -
+/// the simplest case being a table `db.t = Alias(<new name>, t)` accepted at `CREATE` because the target
+/// database did not exist yet, and thus becoming a self-reference. Such a cycle in the server-wide
+/// dependency graph then makes every later DDL statement that adds a dependency edge fail with
+/// `INFINITE_LOOP`, anywhere on the server, and the database stops being listable after a restart.
+/// The check applies the rename to a copy of the graph and refuses the rename if it becomes cyclic, the
+/// same way `RENAME TABLE` and `EXCHANGE TABLES` do for a single table. The caller passes the exact set
+/// of tables it is about to re-key and holds the locks that keep that set stable until `updateDatabaseName`.
+/// This is a preflight check that lets the rename fail before anything is modified; `updateDatabaseName`
+/// repeats it in the same critical section as the rewrite, because DDL in other databases can add edges
+/// to the dependency graph in between.
+void DatabaseCatalog::checkDatabaseCanBeRenamedWithNoCyclicDependencies(
+    const String & old_database_name, const String & new_database_name, const Strings & tables_in_database)
+{
+    std::lock_guard lock{databases_mutex};
+    checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(old_database_name, new_database_name, tables_in_database);
+}
+
+void DatabaseCatalog::checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(
+    const String & old_database_name, const String & new_database_name, const Strings & tables_in_database) const
+{
+    auto check = [&](const TablesDependencyGraph & dependencies)
+    {
+        TablesDependencyGraph after_rename = dependencies;
+        for (const auto & table_name : tables_in_database)
+        {
+            auto old_dependencies = after_rename.removeDependencies(StorageID{old_database_name, table_name}, /* remove_isolated_tables= */ true);
+            after_rename.addDependencies(StorageID{new_database_name, table_name}, old_dependencies);
+        }
+
+        if (after_rename.hasCyclicDependencies())
+            throw Exception(
+                ErrorCodes::INFINITE_LOOP,
+                "Cannot rename database {} to {}, because it will lead to cyclic dependencies: {}",
+                backQuoteIfNeed(old_database_name),
+                backQuoteIfNeed(new_database_name),
+                after_rename.describeCyclicDependencies());
     };
 
     check(referential_dependencies);

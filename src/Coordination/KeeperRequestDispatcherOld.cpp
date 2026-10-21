@@ -9,7 +9,7 @@
 #include <Poco/Path.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/OpenTelemetryTracingContext.h>
 #include <Common/HistogramMetrics.h>
@@ -358,7 +358,7 @@ void KeeperRequestDispatcherOld::requestThread()
                 ProfileEvents::increment(ProfileEvents::KeeperRequestRejectedDueToSoftMemoryLimitCount, 1);
                 LOG_WARNING(
                     log,
-                    "Processing requests refused because of max_memory_usage_soft_limit {}, the total allocated memory is {}, RSS is {}, request type "
+                    "Processing requests refused because of max_memory_usage_soft_limit {}, the total tracked memory is {}, RSS is {}, request type "
                     "is {}",
                     ReadableSize(mem_soft_limit),
                     ReadableSize(total_memory_tracker.get()),

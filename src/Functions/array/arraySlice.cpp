@@ -329,7 +329,8 @@ private:
         if (bounds.start == 0 && bounds.length == dimension)
             return arguments[0].column;
 
-        ColumnPtr column = arguments[0].column;
+        /// The bit-plane streams are read directly and QBit has no replicated source, so a replicated argument is materialized.
+        ColumnPtr column = arguments[0].column->convertToFullColumnIfReplicated();
 
         bool is_const = false;
         if (const auto * const_column = checkAndGetColumn<ColumnConst>(column.get()))
@@ -485,6 +486,7 @@ The first argument may also be a [QBit](/sql-reference/data-types/qbit): the res
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArraySlice>(documentation);
+    factory.registerAlias("slice", "arraySlice", FunctionFactory::Case::Insensitive);
 }
 
 

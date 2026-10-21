@@ -603,8 +603,21 @@ struct ByteEditDistanceImpl
 
     static ResultType process(const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
     {
+        /// The distance to an empty string is the length of the other string: its size in bytes,
+        /// or its number of code points for the UTF8 variant (validated as in the general case).
         if (haystack_size == 0 || needle_size == 0)
-            return haystack_size + needle_size;
+        {
+            if constexpr (is_utf8)
+            {
+                size_t length = 0;
+                parseUTF8String(haystack_size ? haystack : needle, haystack_size + needle_size, [&](UInt32) { ++length; });
+                return length;
+            }
+            else
+            {
+                return haystack_size + needle_size;
+            }
+        }
 
         /// Safety threshold against DoS, since we use two arrays to calculate the distance.
         if (haystack_size > max_string_size || needle_size > max_string_size)
@@ -997,19 +1010,16 @@ struct ByteJaroSimilarityImpl
     static ResultType process(
         const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
     {
+        /// Shortcuts:
+
+        if (haystack_size == 0 || needle_size == 0)
+            return 0.0;
+
         /// Safety threshold against DoS
         if (haystack_size > max_string_size || needle_size > max_string_size)
             throw Exception(
                 ErrorCodes::TOO_LARGE_STRING_SIZE,
                 "The string size is too big for function jaroSimilarity, should be at most {}", max_string_size);
-
-        /// Shortcuts:
-
-        if (haystack_size == 0)
-            return static_cast<ResultType>(needle_size);
-
-        if (needle_size == 0)
-            return static_cast<ResultType>(haystack_size);
 
         if (haystack_size == needle_size && memcmp(haystack, needle, haystack_size) == 0)
             return 1.0;
@@ -1054,6 +1064,9 @@ struct ByteJaroWinklerSimilarityImpl
         static constexpr int max_prefix_length = 4;
         static constexpr double scaling_factor =  0.1;
         static constexpr double boost_threshold = 0.7;
+
+        if (haystack_size == 0 || needle_size == 0)
+            return 0.0;
 
         /// Safety threshold against DoS
         if (haystack_size > max_string_size || needle_size > max_string_size)
@@ -1270,6 +1283,7 @@ Like [`stringJaccardIndex`](#stringJaccardIndex) but for UTF8-encoded strings.
 
     FunctionDocumentation::Description description_jaro = R"(
 Calculates the [Jaro similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Winkler_distance#Jaro_similarity) between two byte strings.
+Returns `0` if either string is empty.
 )";
     FunctionDocumentation::Syntax syntax_jaro = "jaroSimilarity(s1, s2)";
     FunctionDocumentation::Arguments arguments_jaro = {
@@ -1293,6 +1307,7 @@ Calculates the [Jaro similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Wink
 
     FunctionDocumentation::Description description_jaro_winkler = R"(
 Calculates the [Jaro-Winkler similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Winkler_distance) between two byte strings.
+Returns `0` if either string is empty.
 )";
     FunctionDocumentation::Syntax syntax_jaro_winkler = "jaroWinklerSimilarity(s1, s2)";
     FunctionDocumentation::Arguments arguments_jaro_winkler = {
@@ -1322,6 +1337,7 @@ Calculates the [Jaro-Winkler similarity](https://en.wikipedia.org/wiki/Jaro%E2%8
 
     factory.registerFunction<FunctionEditDistanceUTF8>(documentation_edit_utf8);
     factory.registerAlias("levenshteinDistanceUTF8", NameEditDistanceUTF8::name);
+    factory.registerAlias("levenshtein_distance", NameEditDistanceUTF8::name, FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<FunctionDamerauLevenshteinDistance>(documentation_damerau);
 

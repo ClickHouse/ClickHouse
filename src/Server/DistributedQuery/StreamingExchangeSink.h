@@ -25,10 +25,16 @@ class StreamingExchangeSink final : public ISink
 public:
     /// The input chunks are packets made by `StreamingExchangeSerializingTransform`, one per chunk,
     /// and are sent as they are. The sink adds the end-of-stream packet when the input ends.
-    StreamingExchangeSink(SharedHeader header_, FutureConnectionPtr future_connection_, String stream_name_)
+    ///
+    /// `advisory`: the receiver may do without the data (a runtime filter). A disconnect, reset or
+    /// unexpected bytes from the receiver end the delivery without an error. The sink also takes its
+    /// input before the receiver connects, so the transforms before it can finish; the sink itself
+    /// still waits for the receiver.
+    StreamingExchangeSink(SharedHeader header_, FutureConnectionPtr future_connection_, String stream_name_, bool advisory_)
         : ISink(std::move(header_))
         , future_connection(std::move(future_connection_))
         , stream_name(std::move(stream_name_))
+        , advisory(advisory_)
     {
         wait_events_epoll.add(port_update_wakeup.fd());
     }
@@ -45,7 +51,14 @@ private:
     void work() override;
 
     /// Drain any inbound NoMoreDataNeeded packet or peer half-close. Safe to call at any time.
+    /// On an advisory sink a misbehaving or vanished peer stops the delivery instead of throwing.
     void tryReceiveControlPacket();
+
+    /// The strict body of `tryReceiveControlPacket`: throws when the peer misbehaves or disconnects.
+    void receiveControlPacket();
+
+    /// Stop delivering to this destination without an error: log, count, drop pending output.
+    void abandonDelivery(const String & reason);
 
     /// Non-blocking read into `buffer[position .. buffer_size]`, advancing `position`.
     /// Returns true on progress (including EAGAIN), false on peer half-close. Throws on hard errors.
@@ -92,6 +105,7 @@ private:
     FutureConnectionPtr future_connection;
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     const String stream_name;
+    const bool advisory;
 
     /// Buffers in send order. The front buffer is being written to the socket, `send_position`
     /// bytes of it are sent.
@@ -125,7 +139,7 @@ private:
 
     /// Combines the socket and the port-update wakeup into one fd that the executor polls
     /// while the sink waits in `Async`.
-    Epoll wait_events_epoll;
+    Epoll wait_events_epoll{EpollNesting::Leaf};
     /// Written by `onUpdatePorts` (possibly from another thread) to wake the waiting sink
     /// when its input port is updated; drained in `work`.
     WakeupFd port_update_wakeup;

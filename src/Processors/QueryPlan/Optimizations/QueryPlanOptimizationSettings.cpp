@@ -6,8 +6,13 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <Interpreters/Cluster.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 
+#include <Common/SipHash.h>
+
+#include <algorithm>
+#include <string_view>
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
 
@@ -18,14 +23,18 @@ namespace Setting
     extern const SettingsBool allow_aggregate_partitions_independently;
     extern const SettingsBool allow_limit_by_partitions_independently;
     extern const SettingsBool allow_distinct_partitions_independently;
+    extern const SettingsBool allow_parallel_distinct;
+    extern const SettingsBool force_distinct_partitions_independently;
     extern const SettingsBool allow_window_partitions_independently;
     extern const SettingsBool force_window_partitions_independently;
     extern const SettingsBool allow_creating_set_partitions_independently;
     extern const SettingsBool collect_hash_table_stats_during_joins;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
+    extern const SettingsBool optimize_uniq_exact_radix_partitioning;
     extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool distributed_plan_force_shuffle_aggregation;
+    extern const SettingsBool distributed_plan_partial_aggregation_before_shuffle;
     extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool distributed_plan_optimize_exchanges;
     extern const SettingsBool cascades_aggregation_pushdown;
@@ -37,7 +46,9 @@ namespace Setting
     extern const SettingsBool make_distributed_plan;
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool enable_group_by_top_k_optimization;
+    extern const SettingsBool enable_group_by_top_k_dynamic_filtering;
     extern const SettingsUInt64 group_by_top_k_optimization_observation_rows;
+    extern const SettingsBool group_by_top_k_optimization_shared_boundary;
     extern const SettingsBool distributed_plan_fallback_to_local_execution;
     extern const SettingsBool distributed_plan_execute_locally;
     extern const SettingsBool optimize_aggregation_in_order;
@@ -50,10 +61,11 @@ namespace Setting
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool query_plan_aggregation_bucket_top_k;
-    extern const SettingsBool query_plan_aggregation_in_order;
+    extern const SettingsBool query_plan_aggregation_having_prefilter;
     extern const SettingsBool query_plan_convert_any_join_to_semi_or_anti_join;
     extern const SettingsBool query_plan_convert_join_to_in;
     extern const SettingsBool query_plan_convert_outer_join_to_inner_join;
+    extern const SettingsBool query_plan_convert_outer_join_to_inner_join_transitively;
     extern const SettingsBool query_plan_short_circuit_constant_false_join;
     extern const SettingsBool query_plan_direct_read_from_text_index;
     extern const SettingsBool query_plan_optimize_count_from_text_index;
@@ -61,31 +73,36 @@ namespace Setting
     extern const SettingsBool query_plan_enable_optimizations;
     extern const SettingsBool query_plan_execute_functions_after_sorting;
     extern const SettingsBool query_plan_filter_push_down;
+    extern const SettingsBool query_plan_filter_push_down_below_limit_by;
     extern const SettingsBool query_plan_propagate_predicate_across_join;
     extern const SettingsBool query_plan_fuse_filter_into_array_join;
     extern const SettingsBool query_plan_lower_array_join_function;
+    extern const SettingsBool legacy_array_join_function_nondeterministic_evaluation;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
     extern const SettingsBool query_plan_join_shard_by_pk_ranges;
+    extern const SettingsBool enable_join_seal_gated_reading;
     extern const SettingsBool query_plan_lift_up_array_join;
     extern const SettingsBool query_plan_lift_up_union;
     extern const SettingsBool query_plan_merge_expressions;
     extern const SettingsBool query_plan_merge_expression_into_join;
     extern const SettingsBool query_plan_merge_filter_into_join_condition;
+    extern const SettingsBool query_plan_replace_always_true_filter;
     extern const SettingsBool query_plan_merge_filters;
     extern const SettingsBool query_plan_optimize_lazy_final;
     extern const SettingsBool query_plan_optimize_lazy_materialization;
     extern const SettingsBool query_plan_optimize_lazy_materialization_for_object_storage;
     extern const SettingsBool query_plan_optimize_lazy_materialization_for_file;
-    extern const SettingsBool query_plan_optimize_prewhere;
+    extern const SettingsBool optimize_move_to_prewhere;
+    extern const SettingsBool query_plan_lazy_materialization_for_join;
     extern const SettingsBool query_plan_push_down_volume_reducing_functions;
     extern const SettingsBool optimize_prewhere_after_pushdown;
     extern const SettingsBool query_plan_push_down_limit;
     extern const SettingsBool query_plan_push_limit_by_into_sort;
     extern const SettingsBool query_plan_top_k_through_join;
-    extern const SettingsBool query_plan_read_in_order_through_join;
+    extern const SettingsBool optimize_min_max_from_files;
+    extern const SettingsBoolForce query_plan_read_in_order_through_join;
     extern const SettingsBool optimize_aggregation_in_order_limit;
-    extern const SettingsBool query_plan_read_in_order;
     extern const SettingsBool query_plan_remove_redundant_distinct;
     extern const SettingsBool query_plan_remove_redundant_sorting;
     extern const SettingsBool query_plan_remove_unused_columns;
@@ -96,6 +113,8 @@ namespace Setting
     extern const SettingsBool use_primary_key;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
+    extern const SettingsBool use_query_condition_cache_for_time_conditions;
+    extern const SettingsFloat query_condition_cache_time_condition_grid_factor;
     extern const SettingsBool use_skip_indexes_for_top_k;
     extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsBool use_skip_indexes;
@@ -119,6 +138,8 @@ namespace Setting
     extern const SettingsString force_optimize_projection_name;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_min_bytes_per_replica;
+    extern const SettingsFloat automatic_parallel_replicas_max_duplicated_read_ratio;
+    extern const SettingsBool automatic_parallel_replicas_remember_boundary;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
     extern const SettingsString cluster_for_parallel_replicas;
@@ -127,6 +148,7 @@ namespace Setting
     extern const SettingsUInt64 distributed_plan_max_rows_to_broadcast;
     extern const SettingsBool distributed_plan_read_in_order;
     extern const SettingsBool distributed_plan_prefer_replicas_over_workers;
+    extern const SettingsBool distributed_plan_join_runtime_filters;
     extern const SettingsUInt64 join_runtime_bloom_filter_bytes;
     extern const SettingsUInt64 join_runtime_bloom_filter_hash_functions;
     extern const SettingsUInt64 join_runtime_filter_blocks_to_skip_before_reenabling;
@@ -149,9 +171,7 @@ namespace Setting
     extern const SettingsUInt64 query_plan_optimize_join_order_randomize;
     extern const SettingsUInt64 query_plan_max_set_size_for_projection_match;
     extern const SettingsBool enable_join_transitive_predicates;
-    extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
-    extern const SettingsBool parallel_replicas_filter_pushdown;
     extern const SettingsBool parallel_replicas_plan_based;
 }
 
@@ -165,6 +185,54 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int INVALID_SETTING_VALUE;
     extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace
+{
+
+/// The settings that the build of the replicas plan reads and that can move where the replicas' half of the
+/// plan ends, while leaving the single-replica plan as it is - so that plan's root hash, under which automatic
+/// parallel replicas remembers the boundary, cannot see them.
+///
+/// A setting counts when its name contains one of the fragments below. The match is deliberately loose: it takes
+/// whole families (parallel replicas, plan optimizations, pushdowns, reordering), so a setting added to one is
+/// covered without anyone remembering this place. Precision does not matter here - a setting that does not move
+/// the boundary only costs a missed cache entry, i.e. one build of the replicas plan, as without the cache.
+/// Registration rule for anything outside these families: add it when the build of the replicas plan reads it (in
+/// `findParallelReplicasQuery`, `buildQueryTreeForShard` or `ClusterProxy::executeQueryWithParallelReplicas`) and
+/// it can change which subquery is shipped or how it is rewritten.
+///
+/// A setting counts only when its value differs from the declared default, so sessions left at the defaults
+/// share one hash; `changes` returns the settings in declaration order, so the order they were set in does not
+/// matter.
+UInt64 parallelReplicasBoundarySettingsHash(const Settings & settings)
+{
+    static constexpr std::string_view name_fragments[] = {
+        "parallel_replicas",
+        "query_plan",
+        "optimiz",
+        "push",
+        "reorder",
+        "prefer_global_in_and_join",
+        "distributed_product_mode",
+        "enable_add_distinct_to_in_subqueries",
+    };
+
+    SipHash hash;
+    for (const auto & change : settings.changes())
+    {
+        const std::string_view name = change.name;
+        if (std::ranges::none_of(name_fragments, [&](std::string_view fragment) { return name.contains(fragment); }))
+            continue;
+        const auto value = Settings::valueToStringUtil(name, change.value);
+        if (value == settings.getDefaultValueString(name))
+            continue;
+        hash.update(name);
+        hash.update(value);
+    }
+    return hash.get64();
+}
+
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
@@ -188,16 +256,20 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     merge_filters = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filters];
     push_limit_by_into_sort = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_limit_by_into_sort];
     filter_push_down = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_filter_push_down];
+    /// The filter push-down pass also runs with `filter_push_down` off, once a JOIN runtime filter has been added.
+    filter_push_down_below_limit_by = from[Setting::query_plan_filter_push_down_below_limit_by];
     /// Without `use_primary_key` the copy would just be a full scan filter
     propagate_predicate_across_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_propagate_predicate_across_join]
         && from[Setting::use_primary_key];
     fuse_filter_into_array_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_fuse_filter_into_array_join];
     lower_array_join_function = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_lower_array_join_function];
+    legacy_array_join_function_nondeterministic_evaluation = from[Setting::legacy_array_join_function_nondeterministic_evaluation];
     enable_lazy_columns_replication = from[Setting::enable_lazy_columns_replication];
     short_circuit_function_evaluation_disabled = from[Setting::short_circuit_function_evaluation] == ShortCircuitFunctionEvaluation::DISABLE;
     push_down_volume_reducing_functions
         = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_down_volume_reducing_functions];
     convert_outer_join_to_inner_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_outer_join_to_inner_join];
+    convert_outer_join_to_inner_join_transitively = convert_outer_join_to_inner_join && from[Setting::query_plan_convert_outer_join_to_inner_join_transitively];
     short_circuit_constant_false_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_short_circuit_constant_false_join];
     execute_functions_after_sorting = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_execute_functions_after_sorting];
     reuse_storage_ordering_for_window_functions = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_reuse_storage_ordering_for_window_functions];
@@ -207,13 +279,19 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     try_use_vector_search = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_try_use_vector_search];
     convert_join_to_in = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_join_to_in];
     merge_filter_into_join_condition = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filter_into_join_condition];
+    replace_always_true_filter = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_replace_always_true_filter];
     merge_expression_into_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_expression_into_join];
     convert_any_join_to_semi_or_anti_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_any_join_to_semi_or_anti_join];
     try_use_top_k_optimization = from[Setting::use_skip_indexes_for_top_k] || from[Setting::use_top_k_dynamic_filtering];
     enable_group_by_top_k_optimization
         = from[Setting::query_plan_enable_optimizations] && from[Setting::enable_group_by_top_k_optimization];
+    aggregation_having_prefilter
+        = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_aggregation_having_prefilter];
     top_k_optimization_observation_rows = from[Setting::group_by_top_k_optimization_observation_rows];
+    top_k_optimization_shared_boundary = from[Setting::group_by_top_k_optimization_shared_boundary];
+    enable_group_by_top_k_dynamic_filtering = from[Setting::enable_group_by_top_k_dynamic_filtering];
     top_k_through_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_top_k_through_join];
+    min_max_from_files = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_min_max_from_files];
 
     query_plan_optimize_join_order_limit = from[Setting::query_plan_optimize_join_order_limit];
     if (query_plan_optimize_join_order_limit > 64)
@@ -224,7 +302,14 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     query_plan_optimize_join_order_randomize = from[Setting::query_plan_optimize_join_order_randomize];
     if (query_plan_optimize_join_order_randomize == 1)
     {
-        query_plan_optimize_join_order_randomize = randomSeed();
+        /// This constructor runs once per plan construction and one query builds several plans, one per replica
+        /// among them, so the seed has to come from a value that is stable across them. 0 and 1 are sentinels.
+        if (initial_query_id_.empty())
+            query_plan_optimize_join_order_randomize = randomSeed(); /// Internal or background plan: no query to follow.
+        else
+            query_plan_optimize_join_order_randomize = sipHash64(initial_query_id_);
+        if (query_plan_optimize_join_order_randomize <= 1)
+            query_plan_optimize_join_order_randomize = 2;
     }
     if (query_plan_optimize_join_order_randomize)
     {
@@ -238,22 +323,26 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     use_join_disjunctions_push_down = from[Setting::query_plan_enable_optimizations] && from[Setting::use_join_disjunctions_push_down];
     remove_unused_columns = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_remove_unused_columns];
 
-    optimize_prewhere = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_optimize_prewhere];
+    optimize_prewhere = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_move_to_prewhere];
     optimize_prewhere_after_pushdown = optimize_prewhere && from[Setting::optimize_prewhere_after_pushdown];
-    read_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_read_in_order] && from[Setting::query_plan_read_in_order];
+    read_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_read_in_order];
     distinct_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_distinct_in_order];
     limit_by_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_limit_by_in_order];
     limit_by_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_limit_by_partitions_independently];
     distinct_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_distinct_partitions_independently];
+    parallel_distinct = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_parallel_distinct];
+    force_distinct_partitions_independently = from[Setting::force_distinct_partitions_independently];
     window_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_window_partitions_independently];
     force_window_partitions_independently = from[Setting::force_window_partitions_independently];
     creating_set_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_creating_set_partitions_independently];
     optimize_sorting_by_input_stream_properties = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_sorting_by_input_stream_properties];
-    aggregation_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order] && from[Setting::query_plan_aggregation_in_order];
+    aggregation_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order];
     optimize_aggregation_in_order_limit = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order_limit];
     optimize_projection = from[Setting::optimize_use_projections];
     use_query_condition_cache = from[Setting::use_query_condition_cache];
     use_query_condition_cache_for_top_k = from[Setting::use_query_condition_cache_for_top_k];
+    use_query_condition_cache_for_time_conditions = from[Setting::use_query_condition_cache_for_time_conditions];
+    query_condition_cache_time_condition_grid_factor = static_cast<double>(from[Setting::query_condition_cache_time_condition_grid_factor]);
     direct_read_from_text_index = from[Setting::query_plan_direct_read_from_text_index] && from[Setting::use_skip_indexes];
     /// The count optimization recovers the search query from the index read tasks that only the direct-read rewrite builds.
     /// TODO(ahmadov): extract the predicate-to-search-query analysis into a shared helper, so the count optimization works without direct read.
@@ -261,7 +350,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         && from[Setting::query_plan_optimize_count_from_text_index]
         && from[Setting::optimize_trivial_count_query];
     enable_full_text_index = from[Setting::enable_full_text_index];
-    read_in_order_through_join = from[Setting::query_plan_read_in_order_through_join];
+    const auto & through_join = from[Setting::query_plan_read_in_order_through_join];
+    read_in_order_through_join = through_join.is_keyword ? 2 : through_join.base.value;
     /// In-memory buffer for correlated subqueries uses a non-serializable ChunkBuffer,
     /// incompatible with distributed execution. When make_distributed_plan is enabled,
     /// always use the materialization path (materializeQueryPlanReferences) instead.
@@ -310,8 +400,10 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     distributed_plan_max_rows_to_broadcast = from[Setting::distributed_plan_max_rows_to_broadcast];
     distributed_plan_read_in_order = from[Setting::distributed_plan_read_in_order];
     distributed_plan_force_shuffle_aggregation = from[Setting::distributed_plan_force_shuffle_aggregation];
+    distributed_plan_partial_aggregation_before_shuffle = from[Setting::distributed_plan_partial_aggregation_before_shuffle];
     distributed_aggregation_memory_efficient = from[Setting::distributed_aggregation_memory_efficient];
     distributed_plan_prefer_replicas_over_workers = from[Setting::distributed_plan_prefer_replicas_over_workers];
+    distributed_plan_join_runtime_filters = from[Setting::distributed_plan_join_runtime_filters];
     exact_rows_before_limit = from[Setting::exact_rows_before_limit];
 
     enable_cascades_optimizer = from[Setting::enable_cascades_optimizer];
@@ -320,6 +412,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization];
     optimize_lazy_materialization_for_object_storage = from[Setting::query_plan_optimize_lazy_materialization_for_object_storage];
     optimize_lazy_materialization_for_file = from[Setting::query_plan_optimize_lazy_materialization_for_file];
+    lazy_materialization_for_join = from[Setting::query_plan_lazy_materialization_for_join];
     max_limit_for_lazy_materialization = from[Setting::query_plan_max_limit_for_lazy_materialization];
 
     optimize_lazy_final = from[Setting::query_plan_optimize_lazy_final];
@@ -332,10 +425,11 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     vector_search_filter_strategy = from[Setting::vector_search_filter_strategy].value;
 
     query_plan_join_shard_by_pk_ranges = from[Setting::query_plan_join_shard_by_pk_ranges].value;
+    join_seal_gated_reading = from[Setting::enable_join_seal_gated_reading].value;
 
     network_transfer_limits = SizeLimits(from[Setting::max_rows_to_transfer], from[Setting::max_bytes_to_transfer], from[Setting::transfer_overflow_mode]);
     max_block_size = from[Setting::max_block_size];
-    use_index_for_in_with_subqueries_max_values = from[Setting::use_index_for_in_with_subqueries_max_values];
+    set_settings = FutureSetSettings(from);
     use_skip_indexes_for_top_k = from[Setting::use_skip_indexes_for_top_k];
     use_top_k_dynamic_filtering = from[Setting::use_top_k_dynamic_filtering];
     use_top_k_dynamic_filtering_for_variable_length_types = from[Setting::use_top_k_dynamic_filtering_for_variable_length_types];
@@ -351,6 +445,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     max_size_to_preallocate_for_joins = from[Setting::max_size_to_preallocate_for_joins];
     collect_hash_table_stats_during_joins = from[Setting::collect_hash_table_stats_during_joins];
     collect_hash_table_stats_during_aggregation = from[Setting::collect_hash_table_stats_during_aggregation];
+    optimize_uniq_exact_radix_partitioning = from[Setting::optimize_uniq_exact_radix_partitioning];
     initial_query_id = initial_query_id_;
     lock_acquire_timeout = std::chrono::milliseconds(from[Setting::lock_acquire_timeout].totalMilliseconds());
     actions_settings = std::move(actions_settings_);
@@ -377,13 +472,14 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     max_threads = from[Setting::max_threads];
 
-    automatic_parallel_replicas_mode = from[Setting::automatic_parallel_replicas_mode];
+    automatic_parallel_replicas_mode = Context::getAutomaticParallelReplicasMode(from);
     automatic_parallel_replicas_min_bytes_per_replica = from[Setting::automatic_parallel_replicas_min_bytes_per_replica];
+    automatic_parallel_replicas_max_duplicated_read_ratio = from[Setting::automatic_parallel_replicas_max_duplicated_read_ratio];
+    automatic_parallel_replicas_remember_boundary = from[Setting::automatic_parallel_replicas_remember_boundary];
+    parallel_replicas_boundary_settings_hash = parallelReplicasBoundarySettingsHash(from);
 
     // It doesn't have to be equal to this setting, it just appears to be a better value than hardcoded 2Mi
     min_bytes_per_task_for_reading = from[Setting::merge_tree_min_bytes_per_task_for_remote_reading];
-
-    parallel_replicas_filter_pushdown = from[Setting::parallel_replicas_filter_pushdown];
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
@@ -397,6 +493,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
             && from->getSettingsRef()[Setting::parallel_replicas_local_plan]
             && from->getSettingsRef()[Setting::parallel_replicas_support_projection])
 {
+    skip_forced_projection_check = from->skipsForcedProjectionCheck();
+    distributed_plan_local_object = from->getDistributedPlanLocalObject();
     max_parallel_replicas = from->getSettingsRef()[Setting::max_parallel_replicas];
     if (auto cluster_name = from->getSettingsRef()[Setting::cluster_for_parallel_replicas].value; !cluster_name.empty())
     {
@@ -420,7 +518,11 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
     }
 #endif
 
-    enable_parallel_replicas
-        = from->canUseParallelReplicasOnInitiator() && from->getSettingsRef()[Setting::parallel_replicas_plan_based];
+    /// A foreign shard scope is declined later, in `ClusterProxy::canUseParallelReplicasOnInitiator`,
+    /// so it has to be declined here as well: otherwise the optimizations that only run for a local read
+    /// are skipped for a read that ends up being local anyway. The check is last because it resolves a cluster.
+    enable_parallel_replicas = from->canUseParallelReplicasOnInitiator()
+        && from->getSettingsRef()[Setting::parallel_replicas_plan_based]
+        && !ClusterProxy::hasForeignShardScope(from);
 }
 }

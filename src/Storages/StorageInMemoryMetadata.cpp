@@ -43,6 +43,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_QUERY;
+    extern const int UNKNOWN_TABLE;
+    extern const int UNKNOWN_DATABASE;
+    extern const int UNKNOWN_FUNCTION;
 }
 
 StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata & other)
@@ -362,7 +365,7 @@ bool StorageInMemoryMetadata::hasProjections() const
     return !projections.empty();
 }
 
-TTLTableDescription StorageInMemoryMetadata::getTableTTLs() const
+const TTLTableDescription & StorageInMemoryMetadata::getTableTTLs() const
 {
     return table_ttl;
 }
@@ -378,7 +381,7 @@ bool StorageInMemoryMetadata::hasOnlyRowsTTL() const
     return hasRowsTTL() && !has_any_other_ttl;
 }
 
-TTLColumnsDescription StorageInMemoryMetadata::getColumnTTLs() const
+const TTLColumnsDescription & StorageInMemoryMetadata::getColumnTTLs() const
 {
     return column_ttls_by_name;
 }
@@ -388,7 +391,7 @@ bool StorageInMemoryMetadata::hasAnyColumnTTL() const
     return !column_ttls_by_name.empty();
 }
 
-TTLDescription StorageInMemoryMetadata::getRowsTTL() const
+const TTLDescription & StorageInMemoryMetadata::getRowsTTL() const
 {
     return table_ttl.rows_ttl;
 }
@@ -398,7 +401,7 @@ bool StorageInMemoryMetadata::hasRowsTTL() const
     return table_ttl.rows_ttl.expression_ast != nullptr;
 }
 
-TTLDescriptions StorageInMemoryMetadata::getRowsWhereTTLs() const
+const TTLDescriptions & StorageInMemoryMetadata::getRowsWhereTTLs() const
 {
     return table_ttl.rows_where_ttl;
 }
@@ -408,7 +411,7 @@ bool StorageInMemoryMetadata::hasAnyRowsWhereTTL() const
     return !table_ttl.rows_where_ttl.empty();
 }
 
-TTLDescriptions StorageInMemoryMetadata::getMoveTTLs() const
+const TTLDescriptions & StorageInMemoryMetadata::getMoveTTLs() const
 {
     return table_ttl.move_ttl;
 }
@@ -418,7 +421,7 @@ bool StorageInMemoryMetadata::hasAnyMoveTTL() const
     return !table_ttl.move_ttl.empty();
 }
 
-TTLDescriptions StorageInMemoryMetadata::getRecompressionTTLs() const
+const TTLDescriptions & StorageInMemoryMetadata::getRecompressionTTLs() const
 {
     return table_ttl.recompression_ttl;
 }
@@ -428,7 +431,7 @@ bool StorageInMemoryMetadata::hasAnyRecompressionTTL() const
     return !table_ttl.recompression_ttl.empty();
 }
 
-TTLDescriptions StorageInMemoryMetadata::getGroupByTTLs() const
+const TTLDescriptions & StorageInMemoryMetadata::getGroupByTTLs() const
 {
     return table_ttl.group_by_ttl;
 }
@@ -708,6 +711,22 @@ Names StorageInMemoryMetadata::getPrimaryKeyColumns() const
     return {};
 }
 
+NameSet StorageInMemoryMetadata::getStorageColumnsRequiredForKeys() const
+{
+    NameSet result;
+    for (const auto & required : {getColumnsRequiredForPartitionKey(), getColumnsRequiredForSortingKey(), getColumnsRequiredForPrimaryKey()})
+    {
+        for (const auto & name : required)
+        {
+            if (auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
+                result.insert(column->getNameInStorage());
+            else
+                result.insert(name);
+        }
+    }
+    return result;
+}
+
 const KeyDescription & StorageInMemoryMetadata::getUniqueKey() const
 {
     return unique_key;
@@ -733,6 +752,14 @@ ASTPtr StorageInMemoryMetadata::getSettingsChanges() const
     if (settings_changes)
         return settings_changes->clone();
     return nullptr;
+}
+
+bool StorageInMemoryMetadata::hasSettingChange(const String & setting_name) const
+{
+    if (!settings_changes)
+        return false;
+
+    return settings_changes->as<const ASTSetQuery &>().changes.tryGet(setting_name) != nullptr;
 }
 
 Field StorageInMemoryMetadata::getSettingChange(const String & setting_name) const
@@ -979,6 +1006,10 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
     if ((isNumber(column.type) && add_minmax_index_for_numeric_columns) || (isString(column.type) && add_minmax_index_for_string_columns)
         || (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(column.type) && add_minmax_index_for_temporal_columns))
     {
+        /// An index of an attached definition may already hold the implicit index name.
+        if (secondary_indices.has(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column.name))
+            return;
+
         bool minmax_index_exists = false;
 
         for (const auto & index : secondary_indices)
@@ -992,22 +1023,21 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
 
         if (!minmax_index_exists)
         {
-            auto index = createImplicitMinMaxIndexDescription(column.name, columns, escape_index_filenames, context);
-            bool valid_index = true;
             try
             {
+                /// An index that cannot be built, e.g. over an ALIAS whose dictionary, `Join` table or function is gone, is not generated.
+                auto index = createImplicitMinMaxIndexDescription(column.name, columns, escape_index_filenames, context);
                 static const MergeTreeSettings default_settings;
                 MergeTreeIndexFactory::instance().validate(index, false, default_settings);
+                secondary_indices.push_back(std::move(index));
             }
             catch (const Exception & e)
             {
-                if (e.code() == ErrorCodes::BAD_ARGUMENTS || e.code() == ErrorCodes::INCORRECT_QUERY)
-                    valid_index = false;
-                else
+                if (e.code() != ErrorCodes::BAD_ARGUMENTS && e.code() != ErrorCodes::INCORRECT_QUERY
+                    && e.code() != ErrorCodes::UNKNOWN_TABLE && e.code() != ErrorCodes::UNKNOWN_DATABASE
+                    && e.code() != ErrorCodes::UNKNOWN_FUNCTION)
                     throw;
             }
-            if (valid_index)
-                secondary_indices.push_back(std::move(index));
         }
 
     }
@@ -1033,6 +1063,9 @@ void StorageInMemoryMetadata::addImplicitIndicesForVirtualColumns(ContextPtr con
     auto add_for = [&](const String & column_name, bool enabled)
     {
         if (!enabled)
+            return;
+
+        if (secondary_indices.has(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name))
             return;
 
         for (const auto & index : secondary_indices)
