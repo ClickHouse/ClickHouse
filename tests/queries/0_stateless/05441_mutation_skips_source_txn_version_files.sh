@@ -21,7 +21,7 @@ trap '
 ' EXIT
 
 tx 1 "BEGIN TRANSACTION"
-tx 1 "INSERT INTO t VALUES (1, 1), (2, 2), (3, 3)"
+tx 1 "INSERT INTO t SETTINGS async_insert = 0 VALUES (1, 1), (2, 2), (3, 3)"
 
 # COMMIT stamps the part's creation CSN and stops with txn_version.txt.tmp written but not renamed yet.
 $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT version_metadata_store_pause_before_rename"
