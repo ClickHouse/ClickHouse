@@ -997,8 +997,8 @@ static Block makeBlockWithMinMaxFromStatistics(
 
     auto & parts_with_ranges = remaining_select_result.parts_with_ranges;
 
-    /// The estimates of the parts whose statistics may answer the query, loaded in parallel;
-    /// `std::nullopt` for a part that is read instead.
+    /// The estimates of the parts whose statistics may answer the query, loaded in parallel and released once
+    /// consumed; `std::nullopt` for a part that is read instead.
     std::vector<std::optional<Estimates>> parts_estimates(parts_with_ranges.size());
     auto load_part_estimates = [&](size_t part_index)
     {
@@ -1029,12 +1029,6 @@ static Block makeBlockWithMinMaxFromStatistics(
                 "Failed to load statistics for part {}, reading it instead", part->name), LogsLevel::debug);
         }
     };
-
-    /// `count` alone reads nothing, so there is nothing to parallelize then.
-    MergeTreeData::loadStatisticsOfPartsInParallel(
-        parts_with_ranges.size(),
-        required_columns.empty() ? 1 : static_cast<size_t>(context->getSettingsRef()[Setting::max_threads]),
-        load_part_estimates);
 
     auto part_covered_by_statistics = [&](const RangesInDataPart & part_with_ranges, const Estimates & estimates)
     {
@@ -1095,12 +1089,20 @@ static Block makeBlockWithMinMaxFromStatistics(
     };
 
     RangesInDataParts parts_to_read;
-    for (size_t part_index = 0; part_index < parts_with_ranges.size(); ++part_index)
+    auto consume_part_estimates = [&](size_t part_index)
     {
         auto & part_with_ranges = parts_with_ranges[part_index];
-        if (!parts_estimates[part_index] || !part_covered_by_statistics(part_with_ranges, *parts_estimates[part_index]))
+        const auto estimates = std::move(parts_estimates[part_index]);
+        if (!estimates || !part_covered_by_statistics(part_with_ranges, *estimates))
             parts_to_read.push_back(std::move(part_with_ranges));
-    }
+    };
+
+    /// `count` alone reads nothing, so there is nothing to parallelize then.
+    MergeTreeData::loadStatisticsOfPartsInParallel(
+        parts_with_ranges.size(),
+        required_columns.empty() ? 1 : static_cast<size_t>(context->getSettingsRef()[Setting::max_threads]),
+        load_part_estimates,
+        consume_part_estimates);
     parts_with_ranges = std::move(parts_to_read);
 
     if (covered_parts == 0)

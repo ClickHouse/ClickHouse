@@ -867,31 +867,33 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     const NameSet required_columns = statistics_pruner.getRequiredColumns();
 
     std::vector<Estimates> parts_estimates(parts.size());
-    MergeTreeData::loadStatisticsOfPartsInParallel(parts.size(), settings[Setting::max_threads], [&](size_t part_index)
-    {
-        parts_estimates[part_index] = parts[part_index].data_part->getEstimates(required_columns);
-    });
-
-    for (size_t part_index = 0; part_index < parts.size(); ++part_index)
-    {
-        const auto & part = parts[part_index];
-        const auto & estimates = parts_estimates[part_index];
-        try
+    MergeTreeData::loadStatisticsOfPartsInParallel(
+        parts.size(),
+        settings[Setting::max_threads],
+        [&](size_t part_index)
         {
-            if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
+            parts_estimates[part_index] = parts[part_index].data_part->getEstimates(required_columns);
+        },
+        [&](size_t part_index)
+        {
+            const auto & part = parts[part_index];
+            const Estimates estimates = std::move(parts_estimates[part_index]);
+            try
             {
-                LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
-                continue;
+                if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
+                {
+                    LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
+                    return;
+                }
             }
-        }
-        catch (const Exception &)
-        {
-            tryLogCurrentException(log, fmt::format(
-                "Failed to apply statistics pruning for part {}, skipping statistics pruning for this part",
-                part.data_part->name), LogsLevel::debug);
-        }
-        res_parts.push_back(part);
-    }
+            catch (const Exception &)
+            {
+                tryLogCurrentException(log, fmt::format(
+                    "Failed to apply statistics pruning for part {}, skipping statistics pruning for this part",
+                    part.data_part->name), LogsLevel::debug);
+            }
+            res_parts.push_back(part);
+        });
 
     if (res_parts.size() < total_parts_before)
     {

@@ -596,11 +596,18 @@ public:
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const RangesInDataParts & parts, const Names & required_columns, ContextPtr local_context) const override;
 
     /// Calls `load_part(part_index)` for every part index in `[0, num_parts)`, using up to `max_threads`
-    /// threads. It is used to load the statistics (or the estimates) of many parts at once: each part does
-    /// several small reads, so on a cold disk loading them one after another adds up the latencies.
-    /// `load_part` must be safe to call concurrently for different parts. If it throws for some parts,
-    /// the exception of the first of them in the order of parts is rethrown.
-    static void loadStatisticsOfPartsInParallel(size_t num_parts, size_t max_threads, const std::function<void(size_t)> & load_part);
+    /// threads, and `consume_part(part_index)` for every part index in their order in the calling thread.
+    /// It is used to load the statistics (or the estimates) of many parts at once: each part does several
+    /// small reads, so on a cold disk loading them one after another adds up the latencies. The parts are
+    /// loaded in bounded batches, and a batch is consumed before the next one is loaded, so `consume_part`
+    /// should release what `load_part` has loaded for the part. `load_part` must be safe to call concurrently
+    /// for different parts. If it throws for some parts, the exception of the first of them in the order of
+    /// parts is rethrown, and the parts from its batch onwards are not consumed.
+    static void loadStatisticsOfPartsInParallel(
+        size_t num_parts,
+        size_t max_threads,
+        const std::function<void(size_t)> & load_part,
+        const std::function<void(size_t)> & consume_part);
 
     bool supportsFinal() const override;
 
