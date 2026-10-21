@@ -5,6 +5,7 @@
 #include <IO/PackedFilesWriter.h>
 #include <IO/copyData.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
 #include <Common/escapeForFileName.h>
 
 #include <algorithm>
@@ -13,6 +14,11 @@
 namespace CurrentMetrics
 {
     extern const Metric PackedPartsBufferedBytes;
+}
+
+namespace ProfileEvents
+{
+    extern const Event ExternalPackedPartWriterWritePart;
 }
 
 namespace DB
@@ -39,7 +45,7 @@ PackedFilesWriter::~PackedFilesWriter()
 void PackedFilesWriter::setSpillSettings(SpillSettings spill_settings_)
 {
     if (spill_settings_.max_bytes_in_memory && !spill_settings_.create_temporary_file)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Spilling of packed files is enabled, but temporary files cannot be created");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Spilling of packed files is enabled, but the temporary file cannot be created");
 
     spill_settings = std::move(spill_settings_);
     spillIfNeeded();
@@ -289,14 +295,18 @@ void PackedFilesWriter::finalize(WriteBuffer & out, const FinalizePlan & plan) c
             writeIntBinary(offset.uncompressed_size, out);
     }
 
+    /// The data cannot be moved out of memory anymore: the temporary file is read only after all writes to it.
+    if (temporary_file)
+        temporary_file->finishWriting();
+
     for (const auto & name : plan.ordered_file_names)
     {
         const auto & data = written_files.at(name);
         UInt64 written_size = 0;
 
-        for (const auto & range : data->ranges_in_temporary_files)
+        for (const auto & range : data->ranges_in_temporary_file)
         {
-            auto in = temporary_files.at(range.temporary_file_index)->readRange(range.position);
+            auto in = temporary_file->readRange(range.position);
             copyData(*in, out, range.size);
             written_size += range.size;
         }
@@ -334,7 +344,7 @@ void PackedFilesWriter::spillIfNeeded()
 
     /// The last chunks of the files being written can take more than the limit (e.g. a wide part with many columns).
     /// Then the limit cannot be reached, so wait until there is at least half of it to move out of memory at once:
-    /// otherwise every new chunk would be moved to a new temporary file.
+    /// otherwise every new chunk would be moved separately, as a new range of the temporary file.
     if (state->bytes_in_memory - state->non_spillable_bytes_in_memory < spill_settings.max_bytes_in_memory / 2)
         return;
 
@@ -372,8 +382,11 @@ void PackedFilesWriter::spill()
     /// Move the largest files first to get fewer ranges to read back.
     std::sort(candidates.begin(), candidates.end(), [](const auto & lhs, const auto & rhs) { return lhs.bytes > rhs.bytes; });
 
-    auto & temporary_file = temporary_files.emplace_back(spill_settings.create_temporary_file());
-    const size_t temporary_file_index = temporary_files.size() - 1;
+    /// All moves append to the same temporary file, which is read back only by @finalize.
+    if (!temporary_file)
+        temporary_file = spill_settings.create_temporary_file();
+
+    ProfileEvents::increment(ProfileEvents::ExternalPackedPartWriterWritePart);
 
     for (const auto & candidate : candidates)
     {
@@ -381,7 +394,7 @@ void PackedFilesWriter::spill()
             break;
 
         Data & data = *candidate.data;
-        RangeInTemporaryFile range{.temporary_file_index = temporary_file_index, .position = temporary_file->startRange(), .size = 0};
+        RangeInTemporaryFile range{.position = temporary_file->startRange(), .size = 0};
 
         for (size_t i = 0; i < candidate.num_chunks; ++i)
         {
@@ -391,11 +404,9 @@ void PackedFilesWriter::spill()
         }
 
         if (range.size)
-            data.ranges_in_temporary_files.push_back(range);
+            data.ranges_in_temporary_file.push_back(range);
         data.removeChunks(candidate.num_chunks);
     }
-
-    temporary_file->finishWriting();
 }
 
 PackedFilesWriter::Data::Data(std::shared_ptr<SharedState> state_)

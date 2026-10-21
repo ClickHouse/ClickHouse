@@ -17,7 +17,7 @@ namespace DB
 class ReadBuffer;
 
 /// Temporary file for the data that PackedFilesWriter moves out of memory.
-/// It is written once by ranges, and then each range is read back separately.
+/// All ranges of data are written first, and then each range is read back separately.
 /// The implementation is on top of the temporary data of the server (see `TemporaryDataBuffer`),
 /// which is not available at the level of IO.
 class IPackedFilesTemporaryFile
@@ -28,6 +28,7 @@ public:
     /// Starts a new range of data and returns the position to read it from.
     virtual size_t startRange() = 0;
     virtual void write(const char * data, size_t size) = 0;
+    /// Must be called after all ranges are written and before reading them. Can be called several times.
     virtual void finishWriting() = 0;
 
     /// Returns a buffer reading the data from the beginning of the range at `position` returned by `startRange`.
@@ -43,7 +44,7 @@ using PackedFilesTemporaryFilePtr = std::unique_ptr<IPackedFilesTemporaryFile>;
   * By default all data is stored in RAM before finalization.
   * With @setSpillSettings the memory is bounded: once the buffered data
   * exceeds the limit, the data of the largest files is moved
-  * to temporary files and read back by @finalize.
+  * to a temporary file and read back by @finalize.
   * @finalize streams the archive into the provided buffer, so it does not need
   * a second copy of the whole archive in memory.
   * Each file is written continuously to avoid fragmentation
@@ -71,14 +72,14 @@ public:
 
     struct SpillSettings
     {
-        /// Creates a temporary file for the data moved out of memory.
+        /// Creates the temporary file for the data moved out of memory, on the first move.
         std::function<PackedFilesTemporaryFilePtr()> create_temporary_file;
         /// Maximum amount of memory taken by the buffered data of the files. 0 means unlimited.
         size_t max_bytes_in_memory = 0;
     };
 
     /// Bounds the memory taken by the buffered data of the files: once it exceeds
-    /// `max_bytes_in_memory`, the data of the largest files is moved to temporary files.
+    /// `max_bytes_in_memory`, the data of the largest files is moved to a temporary file.
     void setSpillSettings(SpillSettings spill_settings_);
 
     /// Creates memory buffer for the data of file
@@ -189,11 +190,9 @@ private:
         PackedFilesWriter * writer = nullptr;
     };
 
-    /// A range of the data of a file that was moved to a temporary file.
+    /// A range of the data of a file that was moved to the temporary file.
     struct RangeInTemporaryFile
     {
-        /// Index of the temporary file in @temporary_files.
-        size_t temporary_file_index = 0;
         /// Position returned by IPackedFilesTemporaryFile::startRange.
         size_t position = 0;
         size_t size = 0;
@@ -215,8 +214,8 @@ private:
 
         std::shared_ptr<SharedState> state;
 
-        /// The data of the file is its ranges in temporary files followed by its chunks, in order.
-        VectorWithMemoryTracking<RangeInTemporaryFile> ranges_in_temporary_files;
+        /// The data of the file is its ranges in the temporary file followed by its chunks, in order.
+        VectorWithMemoryTracking<RangeInTemporaryFile> ranges_in_temporary_file;
         /// All chunks except the last one are filled entirely.
         VectorWithMemoryTracking<Memory<>> chunks;
         size_t next_chunk_size = INITIAL_CHUNK_SIZE;
@@ -263,8 +262,8 @@ private:
 
     std::shared_ptr<SharedState> state;
     SpillSettings spill_settings;
-    /// Temporary files with the data moved out of memory, one per each call of @spill.
-    VectorWithMemoryTracking<PackedFilesTemporaryFilePtr> temporary_files;
+    /// Temporary file with the data moved out of memory by all calls of @spill. Created on the first one.
+    PackedFilesTemporaryFilePtr temporary_file;
 
     /// Map from the name of file to its content.
     MapWithMemoryTracking<String, std::shared_ptr<Data>> written_files;

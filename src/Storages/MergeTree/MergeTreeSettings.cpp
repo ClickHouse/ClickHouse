@@ -270,6 +270,8 @@ bytes) with some gap to avoid filesystem errors.
     `max_temporary_data_on_disk_size_for_query` and `max_temporary_data_on_disk_size_for_user`.
     The last block (up to 64 KiB) of each file that is still being written cannot be moved, so a part
     with many files written at once, such as a wide part with many columns, can take more memory.
+    The data of a part is moved to one temporary file, whose write buffers (about 2 MiB with the default
+    `temporary_files_buffer_size`) stay in memory until the part is finalized.
     The limit applies separately to the part and to each of its projections. 0 means unlimited.
     )", 0, \
         {"26.11", 0, 0, "New setting. Bounds the memory taken by the buffered data of a packed part being written by moving it to temporary data. 0 keeps all the data in memory, as before."}) \

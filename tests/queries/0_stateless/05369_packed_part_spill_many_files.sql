@@ -1,6 +1,6 @@
 -- The last chunk of each file that is still being written cannot be moved out of memory. In a wide packed part
 -- with many files these chunks take more than max_bytes_to_buffer_for_packed_part, so the limit cannot be reached.
--- Each move must still free a large amount of memory, instead of moving every new chunk into a new temporary file.
+-- Each move must still free a large amount of memory, instead of moving every new chunk separately.
 
 DROP TABLE IF EXISTS t_packed_spill_many_files;
 

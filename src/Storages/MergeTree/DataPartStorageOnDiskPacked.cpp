@@ -21,7 +21,6 @@
 
 namespace ProfileEvents
 {
-    extern const Event ExternalPackedPartWriterWritePart;
     extern const Event ExternalPackedPartWriterCompressedBytes;
     extern const Event ExternalPackedPartWriterUncompressedBytes;
 }
@@ -634,12 +633,12 @@ void DataPartStorageOnDiskPacked::setTemporaryDataForTransaction(const Temporary
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data storage for packed part {} is not provided", getRelativePath());
 
     /// The files of a part are mostly compressed already, so they are not compressed again.
+    /// The writer moves the data to one temporary file and counts the moves in `ExternalPackedPartWriterWritePart`.
     auto scope = tmp_data->childScope(
         {
             .current_metric = CurrentMetrics::TemporaryFilesForPackedParts,
             .bytes_compressed = ProfileEvents::ExternalPackedPartWriterCompressedBytes,
             .bytes_uncompressed = ProfileEvents::ExternalPackedPartWriterUncompressedBytes,
-            .num_files = ProfileEvents::ExternalPackedPartWriterWritePart,
             .spilled_to_disk_operator = "packed_part_writer",
         },
         /*buffer_size_=*/ 0,
@@ -889,7 +888,7 @@ void DataPartStorageOnDiskPacked::finalizeWriter()
     /// away, so a throwing preparation would leave a truncated archive behind.
     auto plan = writer->prepareFinalize(preferred_file_order, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
 
-    /// The writer keeps the part in memory (or in temporary files), so stream the archive directly into the
+    /// The writer keeps the part in memory (or in a temporary file), so stream the archive directly into the
     /// destination file: serializing it into a string first would hold a second copy of the part.
     auto buf = transaction->writeFile(
         archive_path, DBMS_DEFAULT_BUFFER_SIZE,
@@ -905,7 +904,7 @@ void DataPartStorageOnDiskPacked::finalizeWriter()
         transaction->replaceFile(archive_path, getRelativeDataPath());
 
     reader.emplace(plan.index);
-    /// Removes the temporary files of the writer.
+    /// Removes the temporary file of the writer.
     writer.reset();
     temporary_data_for_transaction.reset();
 }
