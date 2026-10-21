@@ -8,6 +8,8 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
+import avro.datafile
+import avro.io
 import pyarrow as pa
 import pyarrow.parquet as pq
 from pyiceberg.catalog import load_catalog
@@ -81,7 +83,8 @@ def data_file_paths(table):
 
 
 def drop_column_from_data_file(started_cluster, s3_uri, column):
-    """Rewrite the data file at `s3_uri` in place, without `column`."""
+    """Rewrite the data file at `s3_uri` in place, without `column`, and record its new size in the
+    manifests: readers take `file_size_in_bytes` as the length of the file."""
     assert s3_uri.startswith("s3://"), s3_uri
     bucket, key = s3_uri[len("s3://") :].split("/", 1)
 
@@ -104,6 +107,56 @@ def drop_column_from_data_file(started_cluster, s3_uri, column):
     started_cluster.minio_client.put_object(
         bucket, key, io.BytesIO(payload), len(payload)
     )
+    set_file_size_in_manifests(started_cluster, bucket, key, len(payload))
+
+
+def set_file_size_in_manifests(started_cluster, bucket, key, size):
+    """Set `file_size_in_bytes` of the data file `key` in the manifests of its table, which are in
+    the `metadata` directory next to the `data` directory of the file."""
+    table_location = key.rsplit("/data/", 1)[0]
+    patched = 0
+    for object in started_cluster.minio_client.list_objects(
+        bucket, f"{table_location}/metadata/", recursive=True
+    ):
+        if not object.object_name.endswith(".avro"):
+            continue
+
+        content = read_minio_object(started_cluster, bucket, object.object_name)
+        reader = avro.datafile.DataFileReader(io.BytesIO(content), avro.io.DatumReader())
+        schema = reader.datum_reader.writers_schema
+        metadata = dict(reader.meta)
+        records = list(reader)
+        reader.close()
+
+        # Manifest lists have no `data_file`.
+        data_files = [
+            record["data_file"]
+            for record in records
+            if isinstance(record.get("data_file"), dict)
+            and record["data_file"]["file_path"].endswith(key)
+        ]
+        if not data_files:
+            continue
+        for data_file in data_files:
+            data_file["file_size_in_bytes"] = size
+
+        buffer = io.BytesIO()
+        writer = avro.datafile.DataFileWriter(buffer, avro.io.DatumWriter(), schema)
+        for name, value in metadata.items():
+            if not name.startswith("avro."):
+                writer.set_meta(name, value)
+        for record in records:
+            writer.append(record)
+        writer.flush()
+        payload = buffer.getvalue()
+        writer.close()
+
+        started_cluster.minio_client.put_object(
+            bucket, object.object_name, io.BytesIO(payload), len(payload)
+        )
+        patched += len(data_files)
+
+    assert patched > 0, f"no manifest records {key}"
 
 
 def table_object_names(started_cluster, table_name, suffix):
