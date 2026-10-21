@@ -134,11 +134,9 @@ struct ObjectMetadata
     /// True if this metadata was obtained from a real object-storage request (HEAD/listing).
     /// False for the skip_object_metadata placeholder and for metadata made by `fromTableRecords`.
     bool is_fetched = true;
-    /// Made without a request from the records of a table whose files are never overwritten.
-    /// When `is_size_known`, the size is exact.
+    /// Made without a request from the records of a table whose files are never overwritten; a known size is exact.
     bool is_from_table_records = false;
-    /// Identifies the content for the content caches when there is no usable `etag`. Set only when
-    /// the cached entries may be shared by every reader that has it (see `getContentCacheToken`).
+    /// Content identity for the caches when `etag` is unusable; set only if every reader may share the cached bytes.
     String immutable_content_id{};
     Poco::Timestamp last_modified;
     /// Whether `last_modified` carries a real modification time. Some object storages (e.g. a web server
@@ -164,7 +162,6 @@ struct ObjectMetadata
     /// same-second, same-size rewrite could serve stale data.
     bool isEtagUsableAsCacheKey() const { return !etag.empty() && etag_is_strong; }
 
-    /// The version token of the content for the content caches, or nullopt if they must not be used.
     std::optional<String> getContentCacheToken() const
     {
         if (isEtagUsableAsCacheKey())
@@ -174,7 +171,6 @@ struct ObjectMetadata
         return std::nullopt;
     }
 
-    /// The metadata of a never overwritten object, made without a request; the size is unknown if not given.
     static ObjectMetadata fromTableRecords(std::optional<UInt64> size, String immutable_content_id = {});
 };
 

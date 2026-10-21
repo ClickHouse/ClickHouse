@@ -1222,8 +1222,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             auto metadata_object = object_info->relative_path_with_metadata;
             metadata_object.relative_path = path;
 
-            /// The table and its database fix the credentials of the read and its grants authorize every reader,
-            /// so the cached content of its never overwritten files may be shared within the table.
             /// Parquet and ORC locate their footer from the size, so a wrong size fails the read instead of dropping rows.
             const auto size_from_table = object_info->getFileSizeHint();
             const auto file_format = object_info->getFileFormat().value_or(configuration->format);
@@ -2041,8 +2039,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// `system.distributed_cache_log.filename`). Use the object path so the DC log
     /// shows a useful name rather than an empty string.
     /// The size is used by the object storage as the right bound of the read, so it must come from a
-    /// real listing or HEAD, or from the records of the table: the skip_object_metadata placeholder is
-    /// default-constructed, and its `size_bytes == 0` would otherwise read every non-empty object as empty.
+    /// real listing or HEAD, or from table records: the skip_object_metadata placeholder is default-constructed, and its
+    /// `size_bytes == 0` would otherwise read every non-empty object as empty.
     const auto stored_object_size = is_size_known && (object_info.metadata->is_fetched || object_info.metadata->is_from_table_records)
         ? object_size
         : StoredObject::UnknownSize;

@@ -28,7 +28,6 @@ ObjectMetadata ObjectMetadata::fromTableRecords(std::optional<UInt64> size, Stri
     metadata.is_size_known = size.has_value();
     metadata.is_fetched = false;
     metadata.is_from_table_records = true;
-    /// The default `last_modified` is the current time, not the time of the object.
     metadata.is_last_modified_known = false;
     metadata.immutable_content_id = std::move(immutable_content_id);
     return metadata;

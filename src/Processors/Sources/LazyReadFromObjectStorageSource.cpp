@@ -76,7 +76,6 @@ private:
         if (etag_validated_on_read && !captured->etag.empty())
             return;
 
-        /// The reread reads the same never overwritten object, bounded by the size its table records.
         if (captured->is_from_table_records)
             return;
 
