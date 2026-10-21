@@ -1,0 +1,305 @@
+---
+slug: /cloud/managed-postgres/guides/django
+sidebarTitle: 'Django'
+title: 'Utiliser Django avec ClickHouse Managed Postgres'
+description: "Connectez une application Django à ClickHouse Managed Postgres via PgBouncer avec psycopg 3 et une connexion TLS vérifiée, exécutez les migrations et exposez une petite API JSON"
+keywords: ['managed postgres', 'django', 'python', 'psycopg', 'psycopg 3', 'orm', 'migrations', 'pgbouncer', 'conn_max_age', 'server-side cursors']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-django-beta" />
+
+[Django](https://www.djangoproject.com/) est un framework web Python doté d&#39;un ORM et d&#39;un système de migrations intégrés, qui communique avec PostgreSQL via le driver [psycopg 3](https://www.psycopg.org/psycopg3/). Dans ce guide, vous allez connecter un nouveau projet Django à ClickHouse Managed Postgres via PgBouncer, créer une table `todos` à l&#39;aide d&#39;une migration, puis traiter des requêtes de création, de lecture, de mise à jour et de suppression à partir d&#39;une petite vue JSON. Toutes les connexions utilisent TLS avec une vérification complète des certificats.
+
+## Prérequis {#prerequisites}
+
+* Python 3.12 ou version ultérieure, requis par Django 6. Ce guide a été testé avec Python 3.13, Django 6.1.1 et psycopg 3.3.6.
+* Un compte ClickHouse Cloud
+* [`psql`](https://www.postgresql.org/download/), pour créer la base de données. Vous pouvez également exécuter le statement `CREATE DATABASE` dans la [console SQL](/fr/integrations/connectors/sql-clients/sql-console).
+
+## Créer un service ClickHouse Managed Postgres {#create-service}
+
+Dans la console ClickHouse Cloud, cliquez sur **New service** et sélectionnez **Postgres**. L&#39;instance est prête en quelques minutes. Pour une présentation pas à pas, consultez le [guide de démarrage rapide](/fr/products/managed-postgres/quickstart).
+
+## Obtenir vos informations de connexion {#connection-details}
+
+Cliquez sur **Connect** dans la barre latérale gauche de votre service. La fenêtre modale affiche votre nom d&#39;utilisateur, votre mot de passe, le serveur et le port, ainsi qu&#39;un sélecteur **Directly** / **via PgBouncer**.
+
+Dans ce guide, Django se connecte via le [PgBouncer](/fr/products/managed-postgres/connection#pgbouncer) intégré, sur le port `6432`. En production, une application Django exécute généralement plusieurs processus worker répartis sur plusieurs machines, et chacun ouvre ses propres connexions. PgBouncer fonctionne en mode pool de connexions par transaction, ce qui permet à tous ces processus de partager un nombre réduit de connexions Postgres. Le pool de connexions par transaction impose de configurer quelques paramètres dans Django ; ce guide les inclut et les explique dans la section [Paramètres PgBouncer pour Django](#pgbouncer).
+
+Sélectionnez **via PgBouncer** pour afficher les informations de connexion au pool. Le port passe à `6432` et la chaîne de connexion inclut `sslmode=verify-full`.
+
+Dans la fenêtre modale, cliquez sur **Download CA certificate**. Vous pouvez également le télécharger depuis **Settings → CA Certificate**. Ce certificat étant propre à votre instance, le driver peut s&#39;en servir pour vérifier qu&#39;il communique bien avec votre serveur.
+
+## Configurer le projet {#project-setup}
+
+Créez un répertoire de projet doté d&#39;un environnement virtuel, installez Django et psycopg 3, puis créez un projet Django contenant une application `todos` :
+
+```bash
+mkdir django-managed-postgres && cd django-managed-postgres
+python3 -m venv .venv
+source .venv/bin/activate
+pip install django "psycopg[binary]"
+django-admin startproject mysite .
+python manage.py startapp todos
+```
+
+`psycopg[binary]` inclut une version récente de `libpq` : vous n&#39;avez donc pas besoin d&#39;installer PostgreSQL en local.
+
+<Tip>
+  **Vous ajoutez PostgreSQL à une application existante ?**
+
+  Ignorez les commandes ci-dessus. Dans l&#39;environnement virtuel de votre projet, exécutez `pip install "psycopg[binary]"`, puis passez directement à la section [Configurer la connexion](#configure-connection), qui remplace le paramètre SQLite `DATABASES`. Pour copier vos données SQLite :
+
+  * Avant de modifier `DATABASES`, exécutez `python manage.py dumpdata --natural-foreign --natural-primary -e contenttypes -e auth.permission -o data.json`.
+  * Une fois `python manage.py migrate` exécuté, lancez `python manage.py loaddata data.json`.
+</Tip>
+
+## Configurer la connexion {#configure-connection}
+
+Déplacez le certificat de CA que vous avez téléchargé dans le répertoire du projet, à côté de `manage.py`, puis renommez-le en `ca-certificate.pem`.
+
+Créez une base de données pour l&#39;application. Remplacez `<PASSWORD>` et l&#39;hôte par les valeurs indiquées dans la fenêtre modale **Connect** :
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_django;"
+```
+
+```text
+CREATE DATABASE
+```
+
+Définissez l&#39;hôte et le mot de passe comme variables d&#39;environnement afin de ne pas les inclure dans votre code :
+
+```bash
+export DB_HOST="your-instance.pg.clickhouse.cloud"
+export DB_PASSWORD='<PASSWORD>'
+```
+
+Ouvrez `mysite/settings.py`, ajoutez `import os` sous `from pathlib import Path`, puis remplacez le paramètre `DATABASES` par :
+
+```python title="mysite/settings.py"
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "HOST": os.environ["DB_HOST"],
+        "PORT": "6432",
+        "NAME": "guide_django",
+        "USER": "postgres",
+        "PASSWORD": os.environ["DB_PASSWORD"],
+        # Reuse connections across requests instead of opening one per request
+        "CONN_MAX_AGE": 600,
+        "CONN_HEALTH_CHECKS": True,
+        # Server-side cursors don't work with PgBouncer transaction pooling
+        "DISABLE_SERVER_SIDE_CURSORS": True,
+        "OPTIONS": {
+            "sslmode": "verify-full",
+            "sslrootcert": BASE_DIR / "ca-certificate.pem",
+        },
+    }
+}
+```
+
+Django transmet les clés de `OPTIONS` à psycopg, qui les relaie à son tour à `libpq`. Lorsque `sslmode` est défini sur `verify-full`, `libpq` vérifie que le certificat du serveur est signé par l’autorité de certification (CA) de votre service et qu’il correspond au nom d’hôte. `BASE_DIR` rend le chemin du certificat absolu : le paramètre fonctionne donc quel que soit le répertoire depuis lequel vous démarrez Django.
+
+<Note>
+  Si `sslrootcert` pointe vers la mauvaise CA, la connexion échoue avec l’erreur `SSL error: certificate verify failed`. Sans `sslrootcert`, elle échoue avec `root certificate file ".../.postgresql/root.crt" does not exist`, car `libpq` se rabat alors sur l’emplacement par défaut de sa CA. Si vous vous connectez par adresse IP plutôt que par nom d’hôte, elle échoue avec `server certificate for "..." does not match host name`.
+</Note>
+
+<Tip>
+  Si votre application lit une `DATABASE_URL` avec [`dj-database-url`](https://github.com/jazzband/dj-database-url), celui-ci transmet à `OPTIONS` les valeurs `sslmode` et `sslrootcert` issues de la chaîne de requête de l’URL. Appelez `dj_database_url.config(conn_max_age=600, conn_health_checks=True, disable_server_side_cursors=True)` pour obtenir les mêmes paramètres. Un chemin `sslrootcert` relatif dans l’URL est résolu par rapport au répertoire depuis lequel vous démarrez Django.
+</Tip>
+
+## Créer un modèle et exécuter les migrations {#migrations}
+
+Ajoutez l&#39;application `todos` à `INSTALLED_APPS` dans `mysite/settings.py` :
+
+```python title="mysite/settings.py"
+INSTALLED_APPS = [
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    'todos',
+]
+```
+
+Définissez un modèle `Todo` dans `todos/models.py` :
+
+```python title="todos/models.py"
+from django.db import models
+
+
+class Todo(models.Model):
+    title = models.CharField(max_length=200)
+    done = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+```
+
+Créez une migration pour le modèle, puis appliquez toutes les migrations :
+
+```bash
+python manage.py makemigrations todos
+python manage.py migrate
+```
+
+```text
+Migrations for 'todos':
+  todos/migrations/0001_initial.py
+    + Create model Todo
+Operations to perform:
+  Apply all migrations: admin, auth, contenttypes, sessions, todos
+Running migrations:
+  Applying contenttypes.0001_initial... OK
+  Applying auth.0001_initial... OK
+  Applying admin.0001_initial... OK
+  Applying admin.0002_logentry_remove_auto_add... OK
+  Applying admin.0003_logentry_add_action_flag_choices... OK
+  Applying contenttypes.0002_remove_content_type_name... OK
+  Applying auth.0002_alter_permission_name_max_length... OK
+  Applying auth.0003_alter_user_email_max_length... OK
+  Applying auth.0004_alter_user_username_opts... OK
+  Applying auth.0005_alter_user_last_login_null... OK
+  Applying auth.0006_require_contenttypes_0002... OK
+  Applying auth.0007_alter_validators_add_error_messages... OK
+  Applying auth.0008_alter_user_username_max_length... OK
+  Applying auth.0009_alter_user_last_name_max_length... OK
+  Applying auth.0010_alter_group_name_max_length... OK
+  Applying auth.0011_update_proxy_permissions... OK
+  Applying auth.0012_alter_user_first_name_max_length... OK
+  Applying sessions.0001_initial... OK
+  Applying todos.0001_initial... OK
+```
+
+Outre `todos_todo`, `migrate` crée les tables des applications intégrées de Django, telles que `auth_user` et `django_session`, et enregistre les migrations appliquées dans `django_migrations`. Pour une application existante, ne créez pas le modèle `todos` et exécutez uniquement `python manage.py migrate`, qui crée toutes les tables de votre application dans la nouvelle base de données.
+
+`migrate` ne prend pas de verrou consultatif au niveau de la session ; il fonctionne donc via PgBouncer. En revanche, il n&#39;empêche pas les exécutions simultanées : lancez donc les migrations depuis un seul endroit, par exemple une étape de déploiement unique.
+
+## Ajouter un endpoint JSON {#query}
+
+Remplacez `todos/views.py` par deux vues qui permettent de créer, lister, mettre à jour et supprimer des tâches à l&#39;aide de l&#39;ORM Django :
+
+```python title="todos/views.py"
+import json
+
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
+from django.views.decorators.csrf import csrf_exempt
+
+from .models import Todo
+
+FIELDS = ["id", "title", "done", "created_at"]
+
+
+def as_dict(todo):
+    return {field: getattr(todo, field) for field in FIELDS}
+
+
+# This example API skips CSRF checks; add authentication before you deploy it
+@csrf_exempt
+def todo_list(request):
+    if request.method == "POST":
+        # Create
+        todo = Todo.objects.create(title=json.loads(request.body)["title"])
+        return JsonResponse(as_dict(todo), status=201)
+    # Read
+    return JsonResponse(list(Todo.objects.order_by("id").values(*FIELDS)), safe=False)
+
+
+@csrf_exempt
+def todo_detail(request, pk):
+    todo = get_object_or_404(Todo, pk=pk)
+    if request.method == "PATCH":
+        # Update: toggle the done flag
+        todo.done = not todo.done
+        todo.save(update_fields=["done"])
+    elif request.method == "DELETE":
+        # Delete
+        data = as_dict(todo)
+        todo.delete()
+        return JsonResponse(data)
+    return JsonResponse(as_dict(todo))
+```
+
+Remplacez le contenu de `mysite/urls.py` pour router `/todos` et `/todos/<id>` vers les vues :
+
+```python title="mysite/urls.py"
+from django.contrib import admin
+from django.urls import path
+
+from todos import views
+
+urlpatterns = [
+    path("admin/", admin.site.urls),
+    path("todos", views.todo_list),
+    path("todos/<int:pk>", views.todo_detail),
+]
+```
+
+## Exécuter et vérifier {#verify}
+
+Démarrez le serveur de développement :
+
+```bash
+python manage.py runserver 3111
+```
+
+```text
+Performing system checks...
+
+System check identified no issues (0 silenced).
+October 01, 2026 - 14:39:10
+Django version 6.1.1, using settings 'mysite.settings'
+Starting WSGI development server at http://127.0.0.1:3111/
+Quit the server with CONTROL-C.
+```
+
+Dans un second terminal, créez deux tâches, marquez la première comme terminée, puis supprimez la seconde :
+
+```bash
+curl -X POST http://localhost:3111/todos -d '{"title": "Try Django"}'
+curl -X POST http://localhost:3111/todos -d '{"title": "Write a migration"}'
+curl -X PATCH http://localhost:3111/todos/1
+curl -X DELETE http://localhost:3111/todos/2
+```
+
+La requête `PATCH` renvoie la ligne mise à jour :
+
+```json
+{"id": 1, "title": "Try Django", "done": true, "created_at": "2026-10-01T14:38:51.036Z"}
+```
+
+Ouvrez `http://localhost:3111/todos` dans votre navigateur pour afficher la liste des tâches restantes. La réponse se présente comme suit :
+
+```json
+[{"id": 1, "title": "Try Django", "done": true, "created_at": "2026-10-01T14:38:51.036Z"}]
+```
+
+Pour afficher les données dans la console, ouvrez **console SQL** dans la barre latérale gauche de votre service, développez `guide_django` puis `public`, et cliquez sur la table `todos_todo`. La table contient la ligne restante :
+
+| id | title      | done | created&#95;at                |
+| -- | ---------- | ---- | ----------------------------- |
+| 1  | Try Django | true | 2026-10-01 14:38:51.036352+00 |
+
+## Paramètres PgBouncer pour Django {#pgbouncer}
+
+PgBouncer fonctionne en mode pool de connexions par transaction : chaque transaction, ou chaque statement hors transaction, peut s&#39;exécuter sur une connexion Postgres différente. Voici les conséquences sur les paramètres ci-dessus et sur d&#39;autres fonctionnalités de Django :
+
+* **`DISABLE_SERVER_SIDE_CURSORS`** : `QuerySet.iterator` lit les lignes par fragments au moyen d&#39;un curseur côté serveur. Hors transaction, Django déclare le curseur `WITH HOLD` et récupère chaque fragment séparément ; via PgBouncer, une récupération peut donc atterrir sur une connexion Postgres qui ne possède pas le curseur et échouer avec `cursor "_django_curs_..." does not exist`. Cela ne se produit que lorsque d&#39;autres clients utilisent le pool en même temps, si bien que le problème passe souvent inaperçu en développement. Lorsque ce paramètre est activé, `.iterator()` utilise un curseur classique et psycopg charge l&#39;intégralité du résultat en mémoire. Pour lire une très grande table en streaming, exécutez ce code via la connexion directe sur le port `5432`, avec ce paramètre désactivé.
+* **`CONN_MAX_AGE`** : par défaut (`0`), Django ouvre une nouvelle connexion pour chaque requête. L&#39;ouverture d&#39;une connexion TLS nécessite plusieurs allers-retours réseau, via PgBouncer comme en direct ; réutiliser les connexions accélère donc nettement les requêtes. Lors d&#39;un test depuis un ordinateur portable avec quatre workers Gunicorn, définir `CONN_MAX_AGE` sur `600` a fait passer le temps de requête médian d&#39;environ 670 ms à 95 ms. Via PgBouncer, une connexion Django ouverte ne monopolise pas de connexion Postgres entre les transactions ; les connexions persistantes n&#39;épuisent donc pas `max_connections`. Avec `CONN_HEALTH_CHECKS`, Django vérifie une connexion réutilisée au début de chaque requête et se reconnecte si elle a été fermée.
+* **Pool de connexions** : le pool intégré de Django (`"pool": True` dans `OPTIONS`, qui nécessite `pip install "psycopg[binary,pool]"`) offre un gain similaire et fonctionne également via PgBouncer. Il exige que `CONN_MAX_AGE` soit défini sur `0` et maintient au moins quatre connexions ouvertes par processus. Avec PgBouncer, `CONN_MAX_AGE` suffit pour la plupart des applications ; envisagez le pool pour les serveurs multithreads ou ASGI.
+* **Requêtes préparées** : aucun paramètre n&#39;est nécessaire. Par défaut, Django définit le `prepare_threshold` de psycopg sur `None` et lie les paramètres de requête côté client ; il ne crée donc pas de requêtes préparées côté serveur. Si vous activez `"server_side_binding": True` et définissez `"prepare_threshold"` dans `OPTIONS`, les requêtes préparées fonctionnent aussi via PgBouncer, car `psycopg[binary]` embarque `libpq` 18 et libère les statements à l&#39;aide d&#39;un message `Close` au niveau du protocole. Avec un psycopg compilé avec `libpq` 16 ou antérieur, la libération d&#39;un statement au sein d&#39;une transaction échoue avec `prepared statement "_pg3_0" does not exist`. Pour vérifier votre version, exécutez `python -c "import psycopg; print(psycopg.pq.version())"`. Il vous faut `170000` ou une version ultérieure.
+* **État de session** : un statement `SET`, tel que `SET search_path`, ne s&#39;applique qu&#39;à la connexion Postgres qui l&#39;a exécuté ; les requêtes suivantes risquent donc de ne pas le voir, alors que d&#39;autres clients peuvent en hériter. PgBouncer rejette le paramètre Django `"options": "-c search_path=..."` avec `unsupported startup parameter in options: search_path`. Définissez plutôt des valeurs par défaut au niveau de la base de données, par exemple avec `ALTER DATABASE guide_django SET search_path = myschema, public;`. N&#39;utilisez pas l&#39;option `assume_role`, qui exécute `SET ROLE`. La gestion native de `TIME_ZONE` par Django et l&#39;option `isolation_level` fonctionnent via PgBouncer.
+
+Pour vous connecter plutôt en direct, définissez `PORT` sur `5432` et supprimez `DISABLE_SERVER_SIDE_CURSORS`. Chaque worker Django conserve alors sa propre connexion Postgres ; veillez donc à ce que le nombre total de workers reste inférieur à `max_connections`.
+
+## Étapes suivantes {#next-steps}
+
+* [Connexion](/fr/products/managed-postgres/connection) : chaînes de connexion, PgBouncer et TLS
+* [Paramètres](/fr/products/managed-postgres/settings) : paramètres de Postgres et de PgBouncer, comme `max_connections`
+* [Répliques en lecture](/fr/products/managed-postgres/read-replicas) : redirigez les lectures vers une réplique grâce à la prise en charge des [bases de données multiples](https://docs.djangoproject.com/en/stable/topics/db/multi-db/) de Django
+* [Sécurité](/fr/products/managed-postgres/security) : listes d&#39;accès IP et réseau privé

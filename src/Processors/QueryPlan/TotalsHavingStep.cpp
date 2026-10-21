@@ -185,12 +185,12 @@ void TotalsHavingStep::serialize(Serialization & ctx) const
 
     writeIntBinary(flags, ctx.out);
 
-    serializeAggregateDescriptions(aggregates, ctx.out);
+    serializeAggregateDescriptions(aggregates, ctx.out, ctx.for_cache_key, ctx.input_header);
 
     if (actions_dag)
     {
-        writeStringBinary(filter_column_name, ctx.out);
-        actions_dag->serialize(ctx.out, ctx.registry);
+        ctx.writeColumnName(filter_column_name);
+        actions_dag->serialize(ctx.out, ctx.registry, ctx.input_header);
     }
 }
 

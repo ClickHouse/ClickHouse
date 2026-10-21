@@ -29,6 +29,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_bytes_before_external_group_by;
     extern const SettingsDouble max_bytes_ratio_before_external_group_by;
+    extern const SettingsUInt64 min_bytes_before_external_group_by;
     extern const SettingsUInt64 max_rows_to_group_by;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
@@ -101,8 +102,16 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         const auto & context = storage_.getContext();
 
         /// The sorting key may be calculated from subcolumns, which are not separate columns of the header.
+        /// A merge calculates the sorting key before the TTL, so its header may already have a column named after
+        /// a subcolumn, e.g. `n.a` for `ORDER BY n.a`. It holds the value calculated before `SET`, so the subcolumn
+        /// is extracted from the stored column instead.
         auto sorting_key_dag = sorting_key.expression->getActionsDAG().clone();
-        auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(header, sorting_key_dag.getRequiredColumnsNames(), context);
+        const auto & storage_columns = metadata_snapshot_->getColumns();
+        Block header_of_stored_columns;
+        for (const auto & column : header)
+            if (storage_columns.hasPhysical(column.name))
+                header_of_stored_columns.insert(column);
+        auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(header_of_stored_columns, sorting_key_dag.getRequiredColumnsNames(), context);
         if (!extracting_subcolumns_dag.getNodes().empty())
             sorting_key_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(sorting_key_dag));
 
@@ -142,6 +151,7 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         /*group_by_two_level_threshold_bytes*/ 0,
         Aggregator::Params::getMaxBytesBeforeExternalGroupBy(
             settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
+        settings[Setting::min_bytes_before_external_group_by],
         settings[Setting::empty_result_for_aggregation_by_empty_set],
         storage_.getContext()->getTempDataOnDisk(),
         settings[Setting::max_threads],
@@ -160,7 +170,8 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         settings[Setting::enable_packed_string_keys_in_aggregation],
         /* enable_adaptive_aggregator */ false,
         /* adaptive_aggregator_freeze_threshold */ 0,
-        /* adaptive_aggregator_freeze_threshold_bytes */ 0);
+        /* adaptive_aggregator_freeze_threshold_bytes */ 0,
+        /* use_aggregation_memory_tracker */ true);
 
     aggregator = std::make_unique<Aggregator>(header, params);
 

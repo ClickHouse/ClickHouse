@@ -475,6 +475,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
         {
             auto contextPtr = getContext();
             std::shared_ptr<const AzureBlobStorage::ContainerClient> src_client = azure_storage->getAzureBlobStorageClient();
+            const String src_container = azure_storage->getAzureBlobStorageConnectionParams()->getContainer();
             auto connection_params = getAzureConnectionParams(
                 move_connection_string,
                 move_container,
@@ -505,7 +506,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                         copyAzureBlobStorageFile(
                             src_client,
                             dst_client,
-                            connection_params.getContainer(),
+                            src_container,
                             /* src_blob */ object_from.remote_path,
                             blob_size,
                             move_container,
@@ -513,7 +514,8 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                             request_settings,
                             read_settings,
                             std::optional<ObjectAttributes>(),
-                            scheduler
+                            scheduler,
+                            BlobStorageLogWriter::create(object_storage->getDiskName())
                         );
                         LOG_INFO(log, "Removing object {}", object_from.remote_path);
                         object_storage->removeObjectIfExists(object_from);

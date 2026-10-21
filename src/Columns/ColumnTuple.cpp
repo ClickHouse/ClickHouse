@@ -21,7 +21,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE;
     extern const int LOGICAL_ERROR;
@@ -54,7 +53,7 @@ ColumnTuple::ColumnTuple(MutableColumns && mutable_columns)
     for (auto & column : mutable_columns)
     {
         if (isColumnConst(*column))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnTuple cannot have ColumnConst as its element");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnTuple cannot have ColumnConst as its element");
 
         columns.push_back(std::move(column));
     }
@@ -70,7 +69,7 @@ ColumnTuple::Ptr ColumnTuple::create(const Columns & columns)
 
     for (const auto & column : columns)
         if (isColumnConst(*column))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnTuple cannot have ColumnConst as its element");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnTuple cannot have ColumnConst as its element");
 
     auto column_tuple = ColumnTuple::create(columns[0]->size());
     column_tuple->columns.assign(columns.begin(), columns.end());
@@ -85,7 +84,7 @@ ColumnTuple::Ptr ColumnTuple::create(const TupleColumns & columns)
 
     for (const auto & column : columns)
         if (isColumnConst(*column))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnTuple cannot have ColumnConst as its element");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnTuple cannot have ColumnConst as its element");
 
     auto column_tuple = ColumnTuple::create(columns[0]->size());
     column_tuple->columns = columns;
@@ -1049,6 +1048,7 @@ ColumnPtr ColumnTuple::compress(bool force_compression) const
         byte_size += compressed_column->byteSize();
         compressed.emplace_back(std::move(compressed_column));
     }
+    Columns parts = compressed;
 
     return ColumnCompressed::create(size(), byte_size,
         [my_compressed = std::move(compressed)]() mutable
@@ -1058,7 +1058,8 @@ ColumnPtr ColumnTuple::compress(bool force_compression) const
             for (const auto & column : my_compressed)
                 decompressed.push_back(column->decompress());
             return ColumnTuple::create(decompressed);
-        });
+        },
+        std::move(parts));
 }
 
 void ColumnTuple::finalize()
