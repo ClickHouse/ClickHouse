@@ -412,16 +412,16 @@ Configuración:
 
 Se introdujo un nuevo tipo de disco `s3_plain_rewritable` en `24.4`.
 Al igual que el tipo de disco `s3_plain`, no requiere almacenamiento adicional para
-los archivos de metadatos. En su lugar, los metadatos se almacenan en S3.
+los archivos de metadata. En su lugar, la metadata se almacena en S3.
 A diferencia del tipo de disco `s3_plain`, `s3_plain_rewritable` permite ejecutar merges
 y admite operaciones `INSERT`.
 No se admite la replicación de tablas.
 Las [mutaciones](/es/reference/statements/alter/index#mutations) y las operaciones `ALTER`
-solo se admiten si el disco está configurado con `enable_hard_links`, véase más abajo.
+se admiten salvo que los enlaces físicos se hayan deshabilitado con `enable_hard_links`; véase más abajo.
 
 Un caso de uso de este tipo de disco es en tablas `MergeTree` no replicadas. Aunque
 el tipo de disco `s3` es adecuado para tablas `MergeTree` no replicadas, puede optar
-por el tipo de disco `s3_plain_rewritable` si no necesita metadatos locales
+por el tipo de disco `s3_plain_rewritable` si no necesita metadata local
 para la tabla. Esto puede resultar útil, por ejemplo, para las tablas del sistema.
 
 Configuración:
@@ -447,29 +447,30 @@ es igual a
 ```
 
 A partir de la versión `24.5`, es posible configurar cualquier disco de almacenamiento de objetos
-(`s3`, `azure`, `local`) con el tipo de metadatos `plain_rewritable`.
+(`s3`, `azure`, `local`) con el tipo de metadata `plain_rewritable`.
 
 #### Enlaces físicos en discos plain rewritable {#plain-rewritable-hard-links}
 
 Las operaciones `ALTER` y las mutaciones de una tabla `MergeTree` comparten mediante enlaces físicos los archivos que no han cambiado
 entre una parte y su sucesora mutada, en lugar de copiarlos.
-La configuración `enable_hard_links` (`0` de forma predeterminada) permite que un disco con
-metadata `plain_rewritable` cree enlaces físicos reales, lo que habilita las siguientes
-operaciones:
+La configuración `enable_hard_links` (`1` de forma predeterminada) permite que un disco con
+metadata `plain_rewritable` cree enlaces físicos reales, lo que habilita estas
+operaciones. Establézcala en `0` para que los servidores anteriores a `26.10` puedan seguir leyendo el disco;
+en ese caso, los enlaces físicos se emulan mediante copias, y no se admiten las operaciones `ALTER` que modifican
+datos ni las mutaciones:
 
 ```xml
 <s3_plain_rewritable>
     <type>s3_plain_rewritable</type>
     <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
     <use_environment_credentials>1</use_environment_credentials>
-    <enable_hard_links>1</enable_hard_links>
+    <enable_hard_links>0</enable_hard_links>
 </s3_plain_rewritable>
 ```
 
 Un enlace físico hace que la metadata de un directorio enumere sus archivos de forma explícita, junto
 con las claves de los objetos que los almacenan, de modo que un archivo puede hacer referencia a un objeto
-almacenado bajo el prefijo de otro directorio. Tenga en cuenta lo siguiente antes
-de habilitarlo:
+almacenado bajo el prefijo de otro directorio. Tenga en cuenta lo siguiente:
 
 * Un servidor que no admite el ajuste `enable_hard_links` no puede leer un
   directorio en este formato: interpreta toda la metadata del directorio como su

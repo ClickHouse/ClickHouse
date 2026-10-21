@@ -12,19 +12,19 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
 
 تتناول هذه الصفحة تغييرات التهيئة التي يُرجّح إجراؤها بعد تثبيت الموصل. يرد كل مفتاح، مع قيمته الافتراضية ومعناه، في [مرجع التهيئة](/ar/products/bring-your-own-cloud/connector/reference/configuration)؛ وترد خيارات سطر الأوامر في [مرجع CLI](/ar/products/bring-your-own-cloud/connector/reference/cli). أما إنشاء الخدمات وتوسيع نطاقها وحذفها فمشروح في [الخدمات المُدارة](/ar/products/bring-your-own-cloud/connector/managed-services).
 
-## واجهات التهيئة {#configuration-surfaces}
+## مواضع وآليات التهيئة {#configuration-surfaces}
 
-للموصل واجهة تهيئة واحدة لكل هدف تثبيت.
+للموصل موضع وآلية تهيئة واحدة لكل هدف تثبيت.
 
 <Tabs>
   <Tab title="Kubernetes" id="surfaces-kubernetes">
-    يُنشئ `clicklink clctl init` تراكب قيم باسم `clicklink-values.yaml` في دليل العمل، وينشر مخطط `clicklink-connector` باستخدامه. ويُعد هذا التراكب سجلًا دائمًا لعملية النشر: فعند إعادة تشغيل `init`، يُحتفَظ به ما لم تمرر `--force`، لذا تبقى تعديلاتك محفوظة عبر عمليات إعادة التشغيل والاستعادة.
+    يُنشئ `clicklink clctl init` Overlay قيم باسم `clicklink-values.yaml` في دليل العمل، وينشر مخطط `clicklink-connector` باستخدامه. ويُعد هذا الـOverlay سجلًا دائمًا لعملية النشر: فعند إعادة تشغيل `init`، يُحتفَظ به ما لم تمرر `--force`، لذا تبقى تعديلاتك محفوظة عبر عمليات إعادة التشغيل والاستعادة.
 
     <Note>
-      تستخدم أوامر التشغيل اللاحقة للنشر في هذه الصفحة وفي [العمليات](/ar/products/bring-your-own-cloud/connector/operations) واجهة سطر الأوامر `helm`. وحده `init` يتضمن عميل Helm مدمجًا.
+      تتطلب كتل `helm upgrade` في هذه الصفحة تثبيت واجهة سطر الأوامر `helm` على محطة عملك؛ فالأمران `init` و`connector upgrade` وحدهما يتضمنان نسخة مدمجة منها.
     </Note>
 
-    حرّر التراكب، ثم طبّقه:
+    حرّر الـOverlay، ثم طبّقه:
 
     ```bash
     CONNECTOR_NAMESPACE='clicklink'   # مساحة أسماء الموصل التي اخترتها عند init

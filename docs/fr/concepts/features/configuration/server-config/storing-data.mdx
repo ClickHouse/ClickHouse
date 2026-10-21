@@ -419,7 +419,7 @@ Contrairement au type de disque `s3_plain`, `s3_plain_rewritable` permet d’ex�
 et prend en charge les opérations `INSERT`.
 La réplication des tables n’est pas prise en charge.
 Les [mutations](/fr/reference/statements/alter/index#mutations) et les opérations `ALTER`
-ne sont prises en charge que si le disque est configuré avec `enable_hard_links`, voir ci-dessous.
+sont prises en charge, sauf si les liens physiques sont désactivés avec `enable_hard_links`, voir ci-dessous.
 
 Un cas d’usage de ce type de disque concerne les tables `MergeTree` non répliquées. Bien que
 le type de disque `s3` convienne aux tables `MergeTree` non répliquées, vous pouvez opter pour
@@ -455,37 +455,38 @@ est égal à
 
 Les opérations `ALTER` et les mutations d&#39;une table `MergeTree` partagent, au moyen de liens physiques, les fichiers inchangés
 entre une part et la part mutée qui lui succède, au lieu de les
-copier. Le paramètre `enable_hard_links` (`0` par défaut) permet à un disque utilisant des
-métadonnées `plain_rewritable` de créer de véritables liens physiques, ce qui rend possibles les
-opérations suivantes :
+copier. Le paramètre `enable_hard_links` (`1` par défaut) permet à un disque utilisant des
+métadonnées `plain_rewritable` de créer de véritables liens physiques, ce qui rend possibles ces
+opérations. Définissez-le sur `0` pour que le disque reste lisible par les Serveurs antérieurs à la version `26.10` ;
+les liens physiques sont alors émulés par des copies, et les opérations `ALTER` qui modifient
+des données ainsi que les mutations ne sont pas prises en charge :
 
 ```xml
 <s3_plain_rewritable>
     <type>s3_plain_rewritable</type>
     <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
     <use_environment_credentials>1</use_environment_credentials>
-    <enable_hard_links>1</enable_hard_links>
+    <enable_hard_links>0</enable_hard_links>
 </s3_plain_rewritable>
 ```
 
 Un lien physique fait en sorte que les métadonnées d&#39;un répertoire listent explicitement ses fichiers, ainsi
 que les clés des objets qui les stockent, de sorte qu&#39;un fichier puisse faire référence à un objet
-stocké sous le préfixe d&#39;un autre répertoire. Tenez compte des points suivants avant
-de l&#39;activer :
+stocké sous le préfixe d&#39;un autre répertoire. Tenez compte des points suivants :
 
-* Un serveur qui ne prend pas en charge le paramètre `enable_hard_links` ne peut pas lire un
+* Un Serveur qui ne prend pas en charge le paramètre `enable_hard_links` ne peut pas lire un
   répertoire sous cette forme : il interprète l&#39;intégralité des métadonnées du répertoire comme son
   path logique. Un disque contenant de tels répertoires n&#39;est donc plus lisible après
   un downgrade vers une telle version, et ne peut pas être partagé avec celle-ci. Les répertoires qui
   n&#39;ont jamais eu de liens physiques conservent l&#39;ancienne disposition : un disque reste donc lisible par
-  les serveurs plus anciens jusqu&#39;à la première opération qui crée un lien physique, à savoir une mutation,
+  les Serveurs plus anciens jusqu&#39;à la première opération qui crée un lien physique, à savoir une mutation,
   un `ALTER`, un `FREEZE` ou une sauvegarde. Désactiver ensuite le paramètre ne
   reconvertit pas les répertoires existants.
 * Le paramètre n&#39;est lu qu&#39;à la création du disque : toute modification prend effet après
-  un redémarrage du serveur, et `SYSTEM RELOAD CONFIG` ne l&#39;applique pas.
+  un redémarrage du Serveur, et `SYSTEM RELOAD CONFIG` ne l&#39;applique pas.
 * Un objet dont le dernier lien est supprimé est effacé en deux étapes : les métadonnées du
   répertoire sont d&#39;abord réécrites, puis l&#39;objet est supprimé. Si le
-  serveur est arrêté brutalement entre les deux, l&#39;objet reste dans le bucket sans être
+  Serveur est arrêté brutalement entre les deux, l&#39;objet reste dans le bucket sans être
   référencé par quoi que ce soit et doit alors être supprimé manuellement.
 
 ### Utilisation d’Azure Blob Storage {#azure-blob-storage}

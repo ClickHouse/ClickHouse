@@ -12,16 +12,16 @@ import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge
 
 이 페이지에서는 커넥터 설치 후 가장 자주 변경하는 구성 항목을 다룹니다. 각 키의 기본값과 의미는 [구성 참고](/ko/products/bring-your-own-cloud/connector/reference/configuration)에, 명령 플래그는 [CLI 참고](/ko/products/bring-your-own-cloud/connector/reference/cli)에 정리되어 있습니다. 서비스 생성, 스케일링, 삭제는 [관리형 서비스](/ko/products/bring-your-own-cloud/connector/managed-services)에서 다룹니다.
 
-## 구성 방식 {#configuration-surfaces}
+## 설정 지점 {#configuration-surfaces}
 
-커넥터는 설치 대상마다 하나의 구성 방식을 제공합니다.
+커넥터는 설치 대상마다 하나의 설정 지점을 제공합니다.
 
 <Tabs>
   <Tab title="Kubernetes" id="surfaces-kubernetes">
     `clicklink clctl init`는 작업 디렉터리에 `clicklink-values.yaml`이라는 values 오버레이를 준비하고 이를 사용해 `clicklink-connector` 차트를 배포합니다. 이 오버레이는 배포 구성을 영구적으로 기록합니다. `--force`를 전달하지 않는 한 `init`를 다시 실행해도 유지되므로, 편집 내용은 재실행이나 복구 후에도 보존됩니다.
 
     <Note>
-      이 페이지와 [운영](/ko/products/bring-your-own-cloud/connector/operations)의 Day-2 명령어는 `helm` CLI를 사용합니다. 기본 제공 Helm 클라이언트는 `init`에만 포함되어 있습니다.
+      이 페이지의 `helm upgrade` 명령 블록을 실행하려면 워크스테이션에 `helm` CLI가 필요합니다. Helm 클라이언트가 내장된 명령은 `init`와 `connector upgrade`뿐입니다.
     </Note>
 
     오버레이를 편집한 후 적용하십시오.

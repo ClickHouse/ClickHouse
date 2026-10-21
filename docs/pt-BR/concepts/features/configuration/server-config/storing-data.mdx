@@ -417,7 +417,7 @@ Ao contrário do tipo de disco `s3_plain`, o `s3_plain_rewritable` permite execu
 e oferece suporte a operações `INSERT`.
 A replicação de tabelas não é suportada.
 [Mutações](/pt-BR/reference/statements/alter/index#mutations) e operações `ALTER`
-são suportadas apenas se o disco for configurado com `enable_hard_links`, veja abaixo.
+são suportadas, a menos que os hard links sejam desabilitados com `enable_hard_links`, veja abaixo.
 
 Um caso de uso desse tipo de disco é em tabelas `MergeTree` não replicadas. Embora
 o tipo de disco `s3` seja adequado para tabelas `MergeTree` não replicadas, você pode optar
@@ -453,23 +453,24 @@ A partir da versão `24.5`, é possível configurar qualquer disco de armazename
 
 Operações `ALTER` e mutações de uma tabela `MergeTree` compartilham, por meio de hard links, os arquivos inalterados
 entre uma parte e a parte sucessora resultante da mutação, em vez de copiá-los.
-A configuração `enable_hard_links` (`0` por padrão) permite que um disco com metadados
-`plain_rewritable` crie hard links reais, o que viabiliza as seguintes
-operações:
+A configuração `enable_hard_links` (`1` por padrão) permite que um disco com metadados
+`plain_rewritable` crie hard links reais, o que viabiliza essas
+operações. Defina-a como `0` para manter o disco legível por servidores anteriores à versão `26.10`;
+nesse caso, os hard links são emulados por cópias, e as operações `ALTER` que modificam
+dados, bem como as mutações, não são suportadas:
 
 ```xml
 <s3_plain_rewritable>
     <type>s3_plain_rewritable</type>
     <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
     <use_environment_credentials>1</use_environment_credentials>
-    <enable_hard_links>1</enable_hard_links>
+    <enable_hard_links>0</enable_hard_links>
 </s3_plain_rewritable>
 ```
 
 Um hard link faz com que os metadados de um diretório listem explicitamente seus arquivos, junto
 com as chaves dos objetos que os armazenam, de modo que um arquivo possa referenciar um objeto
-armazenado sob o prefixo de outro diretório. Considere os pontos a seguir antes
-de habilitá-lo:
+armazenado sob o prefixo de outro diretório. Considere os pontos a seguir:
 
 * Um servidor que não tem a configuração `enable_hard_links` não consegue ler um
   diretório nesse formato — ele interpreta todos os metadados do diretório como seu

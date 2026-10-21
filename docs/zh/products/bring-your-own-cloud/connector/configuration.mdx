@@ -18,13 +18,13 @@ import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge
 
 <Tabs>
   <Tab title="Kubernetes" id="surfaces-kubernetes">
-    `clicklink clctl init` 会在工作目录中创建名为 `clicklink-values.yaml` 的配置值覆盖文件，并使用该文件部署 `clicklink-connector` 图表。该覆盖文件是部署配置的持久记录：除非传入 `--force`，否则重新运行 `init` 时会保留该文件，因此你的修改可在重新运行和恢复过程中保留。
+    `clicklink clctl init` 会在工作目录中创建名为 `clicklink-values.yaml` 的配置值 Overlay，并使用该文件部署 `clicklink-connector` 图表。该 Overlay 是部署配置的持久记录：除非传入 `--force`，否则重新运行 `init` 时会保留该文件，因此你的修改可在重新运行和恢复过程中保留。
 
     <Note>
-      本页及[操作](/zh/products/bring-your-own-cloud/connector/operations)中的 Day-2 命令使用 `helm` 命令行客户端。只有 `init` 内置 Helm 客户端。
+      本页中的 `helm upgrade` 命令块需要在你的工作站上安装 `helm` 命令行客户端；只有 `init` 和 `connector upgrade` 内置了 Helm 客户端。
     </Note>
 
-    编辑覆盖文件，然后应用：
+    编辑 Overlay，然后应用：
 
     ```bash
     CONNECTOR_NAMESPACE='clicklink'   # 你在 init 时选择的连接器命名空间

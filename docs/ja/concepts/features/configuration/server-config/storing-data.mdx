@@ -414,7 +414,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 `s3_plain` ディスクタイプと同様に、メタデータファイル用の追加ストレージは必要ありません。代わりに、メタデータは S3 に保存されます。
 `s3_plain` ディスクタイプとは異なり、`s3_plain_rewritable` ではマージを実行でき、`INSERT` 操作もサポートされます。
 テーブルのレプリケーションはサポートされていません。
-[Mutations](/ja/reference/statements/alter/index#mutations) と `ALTER` 操作は、ディスクが `enable_hard_links` で設定されている場合にのみサポートされます。詳細は以下を参照してください。
+[ミューテーション](/ja/reference/statements/alter/index#mutations) と `ALTER` 操作は、`enable_hard_links` でハードリンクが無効化されていない限りサポートされます。詳細は以下を参照してください。
 
 このディスクタイプのユースケースの 1 つは、非レプリケートの `MergeTree` テーブルです。`s3` ディスクタイプも非レプリケートの `MergeTree` テーブルに適していますが、テーブルのローカルメタデータが不要な場合は、`s3_plain_rewritable` ディスクタイプを選択できます。たとえば、システムテーブルで有用です。
 
@@ -446,22 +446,23 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 #### plain rewritable ディスクでのハードリンク {#plain-rewritable-hard-links}
 
 `MergeTree` テーブルに対する `ALTER` 操作およびミューテーションでは、パーツとミューテーション後の新しいパーツとの間で、変更されていないファイルをコピーせず
-ハードリンクで共有します。`enable_hard_links` 設定 (デフォルトは `0`) を使用すると、
+ハードリンクで共有します。`enable_hard_links` 設定 (デフォルトは `1`) を使用すると、
 `plain_rewritable` メタデータを使用するディスクで実際のハードリンクを作成できるようになり、
-次の操作が利用可能になります:
+これらの操作が利用可能になります。`26.10` より古いサーバーからもディスクを読み取れるようにするには、この設定を `0` にしてください。
+その場合、ハードリンクはコピーによってエミュレートされ、データを変更する `ALTER` 操作およびミューテーションはサポートされません:
 
 ```xml
 <s3_plain_rewritable>
     <type>s3_plain_rewritable</type>
     <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
     <use_environment_credentials>1</use_environment_credentials>
-    <enable_hard_links>1</enable_hard_links>
+    <enable_hard_links>0</enable_hard_links>
 </s3_plain_rewritable>
 ```
 
 ハードリンクを使用すると、ディレクトリのメタデータにそのファイルと、それらを格納するオブジェクトのキーが明示的に列挙されるため、
 あるファイルから別のディレクトリのプレフィックス配下に格納されたオブジェクトを参照できるようになります。
-有効化する前に、次の点に注意してください。
+次の点に注意してください。
 
 * `enable_hard_links` 設定を持たないサーバーは、この形式のディレクトリを読み取れません。
   このようなサーバーは、ディレクトリのメタデータ全体をその論理パスとして読み取ってしまいます。そのため、このようなディレクトリを含むディスクは、
