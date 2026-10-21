@@ -884,7 +884,8 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
         if (!need_render_progress && select_into_file && !select_into_file_and_stdout)
             error_stream << "\r";
         std::unique_lock lock(tty_mutex);
-        progress_table.writeTable(*tty_buf, lock, progress_table_toggle_on.load(), progress_table_toggle_enabled, false);
+        if (progress_table.writeTable(*tty_buf, lock, progress_table_toggle_on.load(), progress_table_toggle_enabled, false))
+            query_result_preview_display.markOverpainted();
     }
 }
 
@@ -909,24 +910,28 @@ void ClientBase::onPreviewData(Block & block)
     /// filtered every row out), and a frame that does not fit the current terminal geometry cannot
     /// be shown at all. Both replace the previous preview, which has to leave the screen: keeping it
     /// would resurrect rows that are no longer the current intermediate result.
-    if (block.rows() != 0 && query_result_preview_display.setPreview(block, client_context))
-    {
-        if (hidden_by_progress_table)
-            return;
+    const bool has_new_preview = block.rows() != 0 && query_result_preview_display.setPreview(block, client_context);
 
-        std::unique_lock lock(tty_mutex);
-        query_result_preview_display.writePreview(*tty_buf, lock);
-        return;
-    }
-
-    /// While the progress table owns this band it repaints it on every update, so erasing the
-    /// screen here would wipe the table out instead of the (already overpainted) preview - forget
-    /// the preview without touching the terminal.
-    if (!hidden_by_progress_table)
+    /// Toggling the progress table on does not repaint the terminal by itself, so the previous
+    /// preview stays on the screen until the table is painted over it (which `markOverpainted`
+    /// records). Erase it here if that has not happened yet; once the table owns the band this is
+    /// a no-op, so the table is not wiped out.
+    if (!has_new_preview || hidden_by_progress_table)
     {
         std::unique_lock lock(tty_mutex);
         query_result_preview_display.clearPreviewOutput(*tty_buf, lock);
     }
+
+    if (has_new_preview)
+    {
+        if (!hidden_by_progress_table)
+        {
+            std::unique_lock lock(tty_mutex);
+            query_result_preview_display.writePreview(*tty_buf, lock);
+        }
+        return;
+    }
+
     query_result_preview_display.resetPreview();
 }
 
@@ -2341,7 +2346,8 @@ void ClientBase::onProfileEvents(Block & block)
         {
             bool toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle", true);
             std::unique_lock lock(tty_mutex);
-            progress_table.writeTable(*tty_buf, lock, progress_table_toggle_on.load(), toggle_enabled, false);
+            if (progress_table.writeTable(*tty_buf, lock, progress_table_toggle_on.load(), toggle_enabled, false))
+                query_result_preview_display.markOverpainted();
         }
         /// The query result preview shares the terminal band below the progress bar with the
         /// progress table and its toggle hint; repaint it on top unless the table is toggled on.

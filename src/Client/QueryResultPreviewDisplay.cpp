@@ -111,6 +111,12 @@ void QueryResultPreviewDisplay::clearPreviewOutput(WriteBufferFromFileDescriptor
     painted_lines = 0;
 }
 
+void QueryResultPreviewDisplay::markOverpainted()
+{
+    std::lock_guard lock(mutex);
+    painted_lines = 0;
+}
+
 void QueryResultPreviewDisplay::resetPreview()
 {
     std::lock_guard lock(mutex);

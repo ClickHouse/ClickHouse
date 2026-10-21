@@ -40,6 +40,10 @@ public:
     /// Erases the preview from the screen (a no-op when nothing is painted).
     void clearPreviewOutput(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> &);
 
+    /// Records that another painter of the same band of the terminal (the progress table) has
+    /// overpainted the preview, so it is no longer on the screen and must not be erased again.
+    void markOverpainted();
+
     /// Forgets the preview at the start of the next query.
     void resetPreview();
 
