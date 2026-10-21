@@ -40,6 +40,7 @@ See [SQL-managed clusters](/concepts/features/configuration/server-config/sql-cl
 - `database_replica_name` ([String](/reference/data-types/string)) — The name of the `Replicated` database replica (for clusters that belong to a `Replicated` database).
 - `source` ([String](/reference/data-types/string)) — The cluster source: `CONFIG`, `SQL`, `DISCOVERY` (cluster discovery), `REPLICATED_DATABASE` (`Replicated` database), or empty for ephemeral clusters (e.g. `remote`).
 - `create_query` ([String](/reference/data-types/string)) — The `CREATE CLUSTER` query for SQL-managed clusters. Empty for clusters defined in the configuration file.
+- `replica_group` ([String](/reference/data-types/string)) — The replica group of the node (for clusters that belong to a `Replicated` database), published by the database replica from the `replica_group_name` server configuration.
 - `is_shared_catalog_cluster` ([UInt8](/reference/data-types/int-uint)) — Bool indicating if the cluster belongs to shared catalog.
 - `is_active` ([Nullable(UInt8)](/reference/data-types/nullable)) — The status of the Replicated database replica (for clusters that belong to a Replicated database): 1 means 'replica is online', 0 means 'replica is offline', NULL means 'unknown'.
 - `unsynced_after_recovery` ([Nullable(UInt8)](/reference/data-types/nullable)) — Indicates if a Replicated database replica has replication lag more than max_replication_lag_to_enqueue after creating or recovering the replica.
@@ -75,6 +76,7 @@ slowdowns_count:         0
 estimated_recovery_time: 0
 database_shard_name:
 database_replica_name:
+replica_group:
 is_active:               NULL
 
 Row 2:
@@ -95,6 +97,7 @@ slowdowns_count:         0
 estimated_recovery_time: 0
 database_shard_name:
 database_replica_name:
+replica_group:
 is_active:               NULL
 ```
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/TypeList.h>
 #include <base/memcmpSmall.h>
 #include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
@@ -213,6 +214,29 @@ ColumnPtr executeDecimal(const ColumnWithTypeAndName & col_left, const ColumnWit
   */
 
 
+#if USE_MULTITARGET_CODE
+/// Compares `size` 16-byte values ordered by their bytes (`IPv6`, `FixedString(16)`); `Op` is over `int`.
+template <typename Op, bool b_is_constant>
+X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE void compareBigEndian16_x86_64_v4(
+    const UInt8 * __restrict a, const UInt8 * __restrict b, UInt8 * __restrict c, size_t size)
+{
+    for (size_t i = 0; i < size; ++i)
+    {
+        if constexpr (b_is_constant)
+            c[i] = Op::apply(compareBigEndian16Halves(a + i * 16, b), 0);
+        else
+            c[i] = Op::apply(compareBigEndian16Halves(a + i * 16, b + i * 16), 0);
+    }
+}
+
+template <typename Op> struct OrderedComparisonOverInt { using Type = void; };
+template <typename A, typename B> struct OrderedComparisonOverInt<LessOp<A, B>> { using Type = LessOp<int, int>; };
+template <typename A, typename B> struct OrderedComparisonOverInt<GreaterOp<A, B>> { using Type = GreaterOp<int, int>; };
+template <typename A, typename B> struct OrderedComparisonOverInt<LessOrEqualsOp<A, B>> { using Type = LessOrEqualsOp<int, int>; };
+template <typename A, typename B> struct OrderedComparisonOverInt<GreaterOrEqualsOp<A, B>> { using Type = GreaterOrEqualsOp<int, int>; };
+#endif
+
+
 template <typename A, typename B, typename Op>
 struct NumComparisonImpl
 {
@@ -243,12 +267,21 @@ struct NumComparisonImpl
         }
     }))
 
+#if USE_MULTITARGET_CODE
+    using OrderedOpOverInt = typename OrderedComparisonOverInt<Op>::Type;
+    static constexpr bool is_ordered_ipv6 = std::is_same_v<A, IPv6> && std::is_same_v<B, IPv6> && !std::is_void_v<OrderedOpOverInt>;
+#endif
+
     static void NO_INLINE vectorVector(const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
 #if USE_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
-            vectorVectorImpl_x86_64_v4(a, b, c);
+            if constexpr (is_ordered_ipv6)
+                compareBigEndian16_x86_64_v4<OrderedOpOverInt, false>(
+                    reinterpret_cast<const UInt8 *>(a.data()), reinterpret_cast<const UInt8 *>(b.data()), c.data(), a.size());
+            else
+                vectorVectorImpl_x86_64_v4(a, b, c);
             return;
         }
 #endif
@@ -274,12 +307,24 @@ struct NumComparisonImpl
         }
     }))
 
+#if USE_MULTITARGET_CODE
+    /// Takes `b` by value, so that only the AVX-512 path needs it in memory.
+    static void X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE vectorConstantOrderedIPv6_x86_64_v4(const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
+    {
+        compareBigEndian16_x86_64_v4<OrderedOpOverInt, true>(
+            reinterpret_cast<const UInt8 *>(a.data()), reinterpret_cast<const UInt8 *>(&b), c.data(), a.size());
+    }
+#endif
+
     static void NO_INLINE vectorConstant(const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
 #if USE_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
-            vectorConstantImpl_x86_64_v4(a, b, c);
+            if constexpr (is_ordered_ipv6)
+                vectorConstantOrderedIPv6_x86_64_v4(a, b, c);
+            else
+                vectorConstantImpl_x86_64_v4(a, b, c);
             return;
         }
 #endif
@@ -393,6 +438,14 @@ struct StringComparisonImpl
         const ColumnString::Chars & b_data,
         PaddedPODArray<UInt8> & c)
     {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            compareBigEndian16_x86_64_v4<Op, false>(a_data.data(), b_data.data(), c.data(), a_data.size() / 16);
+            return;
+        }
+#endif
+
         size_t size = a_data.size();
 
         for (size_t i = 0, j = 0; i < size; i += 16, ++j)
@@ -404,6 +457,14 @@ struct StringComparisonImpl
         const ColumnString::Chars & b_data,
         PaddedPODArray<UInt8> & c)
     {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            compareBigEndian16_x86_64_v4<Op, true>(a_data.data(), b_data.data(), c.data(), a_data.size() / 16);
+            return;
+        }
+#endif
+
         size_t size = a_data.size();
 
         for (size_t i = 0, j = 0; i < size; i += 16, ++j)
@@ -887,10 +948,17 @@ struct ComparisonParams
     bool validate_enum_literals_in_operators = false;
     bool use_variant_default_implementation = true;
     FormatSettings format_settings;
+    /// The hash of the session settings `format_settings` was derived from (see `getFormatSettingsHash`).
+    UInt64 format_settings_hash = 0;
 
     explicit ComparisonParams(const ContextPtr & context);
 
     ComparisonParams() = default;
+
+    /// Everything here decides what a comparison produces for the same arguments (how a string literal
+    /// is read as a `DateTime`, whether an enum literal or a decimal overflow throws), so a hash that
+    /// keys an expression has to see it all. See `IFunctionBase::updateHash`.
+    void updateHash(SipHash & hash) const;
 };
 
 template <template <typename, typename> class Op, typename Name, bool is_null_safe_cmp_mode = false>
@@ -999,6 +1067,8 @@ private:
         return nullptr;
     }
 
+    using ComparisonNumberTypes = TypeList<UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256, BFloat16, Float32, Float64>;
+
     template <typename T>
     ColumnPtr executeNumSameType(const IColumn * col_left_untyped, const IColumn * col_right_untyped) const
     {
@@ -1015,42 +1085,24 @@ private:
         ColumnPtr res = nullptr;
         if (const ColumnVector<T0> * col_left = checkAndGetColumn<ColumnVector<T0>>(col_left_untyped))
         {
-            if (   (res = executeNumRightType<T0, UInt8>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, UInt16>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, UInt32>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, UInt64>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, UInt128>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, UInt256>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, Int8>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, Int16>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, Int32>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, Int64>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, Int128>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, Int256>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, BFloat16>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, Float32>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, Float64>(col_left, col_right_untyped)))
+            TypeListUtils::forEach(ComparisonNumberTypes{}, [&]<typename T1>(TypeList<T1>)
+            {
+                if (!res)
+                    res = executeNumRightType<T0, T1>(col_left, col_right_untyped);
+            });
+            if (res)
                 return res;
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}", col_right_untyped->getName(), getName());
         }
         if (auto col_left_const = checkAndGetColumnConst<ColumnVector<T0>>(col_left_untyped))
         {
-            if ((res = executeNumConstRightType<T0, UInt8>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, UInt16>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, UInt32>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, UInt64>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, UInt128>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, UInt256>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, Int8>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, Int16>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, Int32>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, Int64>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, Int128>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, Int256>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, BFloat16>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, Float32>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, Float64>(col_left_const, col_right_untyped)))
+            TypeListUtils::forEach(ComparisonNumberTypes{}, [&]<typename T1>(TypeList<T1>)
+            {
+                if (!res)
+                    res = executeNumConstRightType<T0, T1>(col_left_const, col_right_untyped);
+            });
+            if (res)
                 return res;
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}", col_right_untyped->getName(), getName());
@@ -1204,7 +1256,7 @@ private:
 
         auto is_string_not_in_enum = [this, &string_value]<typename T>(const EnumValues<T> * enum_values) -> bool
         {
-            if constexpr (!IsOperation<Op>::equals && IsOperation<Op>::not_equals)
+            if constexpr (!IsOperation<Op>::equals && !IsOperation<Op>::not_equals)
                 return false;
             if (params.validate_enum_literals_in_operators)
                 return false;
@@ -1266,25 +1318,6 @@ private:
         if (result_type->onlyNull())
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        /// When any tuple element has Nothing or Nullable(Nothing) type, element-wise
-        /// comparisons would produce ColumnNothing which doesn't match the declared
-        /// Nullable(UInt8) return type. Return all-NULL column of the correct type.
-        /// Skip this for null-safe comparison mode because NULL <=> NULL should return 1,
-        /// and the element-wise null-safe comparison handles Nothing types correctly.
-        if constexpr (!is_null_safe_cmp_mode)
-        {
-            const auto & left_elems = typeid_cast<const DataTypeTuple &>(*c0.type).getElements();
-            const auto & right_elems = typeid_cast<const DataTypeTuple &>(*c1.type).getElements();
-            for (size_t i = 0; i < tuple_size; ++i)
-            {
-                if (left_elems[i]->onlyNull() || isNothing(left_elems[i])
-                    || right_elems[i]->onlyNull() || isNothing(right_elems[i]))
-                {
-                    return result_type->createColumnConstWithDefaultValue(input_rows_count);
-                }
-            }
-        }
-
         ColumnsWithTypeAndName x(tuple_size);
         ColumnsWithTypeAndName y(tuple_size);
 
@@ -1311,6 +1344,18 @@ private:
 
             x[i].column = x_columns[i];
             y[i].column = y_columns[i];
+
+            /// An element of type `Nothing` or `Nullable(Nothing)` is an untyped NULL. A non-null-safe comparison with NULL
+            /// is NULL whatever the other value, so compare a typed NULL pair and let the other elements decide the result.
+            if constexpr (!is_null_safe_cmp_mode)
+            {
+                if (x[i].type->onlyNull() || isNothing(x[i].type) || y[i].type->onlyNull() || isNothing(y[i].type))
+                {
+                    auto null_type = makeNullable(std::make_shared<DataTypeUInt8>());
+                    x[i] = {null_type->createColumnConstWithDefaultValue(input_rows_count), null_type, ""};
+                    y[i] = x[i];
+                }
+            }
         }
 
         return executeTupleImpl(x, y, tuple_size, input_rows_count);
@@ -1761,6 +1806,8 @@ public:
         return name;
     }
 
+    void updateHash(SipHash & hash) const override { params.updateHash(hash); }
+
     size_t getNumberOfArguments() const override { return 2; }
 
     ComparisonOrderDomain getComparisonOrderDomain(const DataTypes & arguments) const override
@@ -1779,14 +1826,39 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// Documentation-only — comparison is defined for numbers (cross-type via
+    /// least-supertype), strings, dates, UUIDs, IPv4/IPv6, equivalent enums,
+    /// and same-arity tuples (element-wise). Result is `UInt8` for the
+    /// null-safe variants (`isDistinctFrom` / `isNotDistinctFrom`) and for
+    /// non-Nullable inputs; otherwise `Nullable(UInt8)` propagates from any
+    /// Nullable element. The DSL doesn't capture this matrix concisely, so
+    /// the legacy `getReturnTypeImpl(DataTypes)` remains authoritative;
+    /// the string is surfaced via `system.functions`.
+    String getSignatureString() const override
+    {
+        return "(Any, Any) -> UInt8";
+    }
+
+    /// Bypass the DSL — the (Any, Any) -> UInt8 signature is documentation-only
+    /// and does not capture Nullable propagation for tuples. Delegate to the
+    /// legacy `DataTypes` overload, which performs full validation and wraps
+    /// the result in `Nullable(UInt8)` when any tuple element is nullable.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes types;
+        types.reserve(arguments.size());
+        for (const auto & arg : arguments)
+            types.push_back(arg.type);
+        return getReturnTypeImpl(types);
+    }
+
     /// A comparison is cheap, so it is not worth executing it lazily, but it is not free of
     /// exceptions either: comparing a date to a string parses that string. These two properties
     /// have to be answered separately.
-    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments) const override
     {
         return arguments.size() != 2 || comparisonCanThrow(arguments[0].type, arguments[1].type);
     }
-
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -2012,21 +2084,12 @@ public:
         if (left_is_num && right_is_num && !date_and_time_datetime
             && (!left_is_interval || !right_is_interval || types_equal))
         {
-            if (!((res = executeNumLeftType<UInt8>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<UInt16>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<UInt32>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<UInt64>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<UInt128>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<UInt256>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<Int8>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<Int16>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<Int32>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<Int64>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<Int128>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<Int256>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<BFloat16>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<Float32>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<Float64>(col_left_untyped, col_right_untyped))))
+            TypeListUtils::forEach(ComparisonNumberTypes{}, [&]<typename T0>(TypeList<T0>)
+            {
+                if (!res)
+                    res = executeNumLeftType<T0>(col_left_untyped, col_right_untyped);
+            });
+            if (!res)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of the first argument of function {}",
                     col_left_untyped->getName(), getName());
 
@@ -2036,20 +2099,24 @@ public:
         {
             return executeTuple(result_type, col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
         }
-        if (left_is_string && right_is_string && (res = executeString(col_left_untyped, col_right_untyped)))
+        if (left_is_string && right_is_string)
         {
-            return res;
+            res = executeString(col_left_untyped, col_right_untyped);
+            if (res)
+                return res;
         }
-        if ((res = executeWithConstString(result_type, col_left_untyped, col_right_untyped, left_type, right_type, input_rows_count)))
-        {
+        res = executeWithConstString(result_type, col_left_untyped, col_right_untyped, left_type, right_type, input_rows_count);
+        if (res)
             return res;
-        }
-        if (types_equal && (which_left.isUUID() || which_left.isIPv4() || which_left.isIPv6())
-            && ((res = executeNumSameType<UUID>(col_left_untyped, col_right_untyped))
-                || (res = executeNumSameType<IPv4>(col_left_untyped, col_right_untyped))
-                || (res = executeNumSameType<IPv6>(col_left_untyped, col_right_untyped))))
+        if (types_equal && (which_left.isUUID() || which_left.isIPv4() || which_left.isIPv6()))
         {
-            return res;
+            res = executeNumSameType<UUID>(col_left_untyped, col_right_untyped);
+            if (!res)
+                res = executeNumSameType<IPv4>(col_left_untyped, col_right_untyped);
+            if (!res)
+                res = executeNumSameType<IPv6>(col_left_untyped, col_right_untyped);
+            if (res)
+                return res;
         }
         if ((((left_is_ipv6 && right_is_fixed_string) || (right_is_ipv6 && left_is_fixed_string))
              && fixed_string_size == IPV6_BINARY_LENGTH)
@@ -2102,11 +2169,15 @@ public:
             DataTypePtr common_type = getLeastSupertype(DataTypes{left_type, right_type});
             ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, common_type);
             ColumnPtr c1_converted = castColumn(col_with_type_and_name_right, common_type);
-            if (!((res = executeNumLeftType<UInt32>(c0_converted.get(), c1_converted.get()))
-                  || (res = executeNumLeftType<UInt64>(c0_converted.get(), c1_converted.get()))
-                  || (res = executeNumLeftType<Int32>(c0_converted.get(), c1_converted.get()))
-                  || (res = executeDecimal<Op, Name>(
-                          {c0_converted, common_type, "left"}, {c1_converted, common_type, "right"}, params.check_decimal_overflow))))
+            res = executeNumLeftType<UInt32>(c0_converted.get(), c1_converted.get());
+            if (!res)
+                res = executeNumLeftType<UInt64>(c0_converted.get(), c1_converted.get());
+            if (!res)
+                res = executeNumLeftType<Int32>(c0_converted.get(), c1_converted.get());
+            if (!res)
+                res = executeDecimal<Op, Name>(
+                    {c0_converted, common_type, "left"}, {c1_converted, common_type, "right"}, params.check_decimal_overflow);
+            if (!res)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Date related common types can only be UInt32/UInt64/Int32/Decimal");
             return res;
         }

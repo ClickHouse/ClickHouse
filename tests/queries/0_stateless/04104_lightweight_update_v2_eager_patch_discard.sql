@@ -55,6 +55,12 @@ SET max_threads = 1;
 -- itself already does for debug builds.
 SET allow_prefetched_read_pool_for_remote_filesystem = 0;
 
+-- The columns cache is randomized too (`use_columns_cache`); when writes to it are enabled,
+-- the reader copies the read columns (`cut`) for cache insertion, and the copies are charged
+-- to the same query, which can tip the tight budget below over the edge (observed 61.10 MiB
+-- against 61.04 MiB on an `amd_msan` run). It has nothing to do with what this test asserts.
+SET use_columns_cache = 0;
+
 DELETE FROM t_v2_eager_discard WHERE (a % 2) = 0;
 
 -- Tight budget. Enough patch metadata and one working block per patch fit comfortably;

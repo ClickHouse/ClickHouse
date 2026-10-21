@@ -497,7 +497,7 @@ CancellationCode StorageAlias::killPartMoveToShard(const UUID & task_uuid)
 
 void StorageAlias::updateExternalDynamicMetadataIfExists(ContextPtr local_context)
 {
-    getTargetTable()->updateExternalDynamicMetadataIfExists(local_context);
+    resolveStorageProxyLoading(getTargetTable())->updateExternalDynamicMetadataIfExists(local_context);
 }
 
 std::optional<QueryPipeline> StorageAlias::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)
@@ -672,6 +672,7 @@ void registerStorageAlias(StorageFactory & factory)
             target_database,
             target_table);
     },
+    SecretArgumentsSpec{},
     {
         .supports_schema_inference = true
     },

@@ -311,7 +311,19 @@ public:
         return nullptr;
     }
 
-    virtual bool optimize(ObjectStoragePtr /*object_storage*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
+    virtual ASTs completeEngineArgsFromCatalog(const StorageID & /*table_id*/, ContextPtr /*context*/)
+    {
+        return {};
+    }
+
+    virtual std::string getMetadataLocationURI() const;
+
+    virtual bool optimize(
+        ObjectStoragePtr /*object_storage*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        ContextPtr /*context*/,
+        const std::optional<FormatSettings> & /*format_settings*/,
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support optimize", getTypeName());
     }
@@ -381,6 +393,10 @@ public:
     /// S3 client build can downgrade restricted server-managed credentials to anonymous instead of aborting
     /// startup (see `getClient` and the `s3_load_table_anonymously_if_credentials_restricted` server setting).
     bool is_loading_from_existing_metadata = false;
+
+    /// Set by the storage when the table definition is replayed from stored metadata (see `isReplayedTableDefinition`):
+    /// the inferred `format` or `structure` stored over a `NOT OVERRIDABLE` `'auto'` of the named collection is then accepted.
+    bool is_replayed_definition = false;
 
     /// False when the storage is instantiated from anything other than a user-issued `CREATE`
     /// (ATTACH, server startup, RESTORE, replicated-DDL replay). `initPartitionStrategy` must not

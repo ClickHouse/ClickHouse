@@ -47,6 +47,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
@@ -54,10 +55,6 @@
 
 #include <ranges>
 #include <vector>
-
-#if CLICKHOUSE_CLOUD
-#include <Interpreters/SharedDatabaseCatalog.h>
-#endif
 
 namespace DB
 {
@@ -158,11 +155,15 @@ void refreshSettingsDerivedMetadata(
         return;
 
     MergeTreeSettings effective_settings = *settings_defaults;
+    SettingsChanges builtin_changes;
     for (const auto & change : metadata.settings_changes->as<ASTSetQuery &>().changes)
     {
         if (MergeTreeSettings::hasBuiltin(change.name))
-            effective_settings.applyChange(change, context, /*is_loading_from_existing_metadata=*/true);
+            builtin_changes.push_back(change);
     }
+    /// Only the implicit-index settings below are read here, and this runs before the statement is
+    /// known to be allowed, so the `disk` setting is left unresolved rather than creating the disk.
+    effective_settings.applyChangesLeavingDiskUnresolved(builtin_changes);
 
     metadata.add_minmax_index_for_numeric_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_numeric_columns];
     metadata.add_minmax_index_for_string_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_string_columns];
@@ -340,6 +341,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         {
             command.default_kind = toColumnDefaultKind(ast_col_decl.default_specifier);
             command.default_expression = ast_col_decl.getDefaultExpression();
+            command.ephemeral_default = ast_col_decl.ephemeral_default;
         }
 
         if (ast_col_decl.getComment())
@@ -943,6 +945,7 @@ void AlterCommand::apply(
                 {
                     column.default_desc.kind = default_kind;
                     column.default_desc.expression = default_expression;
+                    column.default_desc.ephemeral_default = ephemeral_default;
                 }
             }
         });
@@ -1235,8 +1238,9 @@ void AlterCommand::apply(
                 "Use DROP PROJECTION and ADD PROJECTION to change the query",
                 projection_name);
 
-        /// Intentionally not a mutation because the new settings apply lazily
-        /// to parts written by future inserts and merges; `MATERIALIZE PROJECTION` forces a rebuild.
+        /// Intentionally not a mutation: the new settings apply lazily, to projection parts written
+        /// by future inserts and merges. `MATERIALIZE PROJECTION` does not rebuild a projection that
+        /// a part already has, so existing data picks up the new settings only when its parts are merged.
         metadata.projections.replace(std::move(new_projection));
     }
     else if (type == DROP_PROJECTION)
@@ -1262,17 +1266,16 @@ void AlterCommand::apply(
     {
         metadata.select = SelectQueryDescription::getSelectQueryFromASTForMatView(select, metadata.refresh != nullptr, context);
 
-#if CLICKHOUSE_CLOUD
-        /// For Shared Catalog on secondary replicas very likely we don't have the settings used to run the SELECT on the initiator.
-        /// Because of that we can fail, or the resulting columns can be different from the original ones.
-        /// So we return early and set the columns ourselves, if they differ.
-        if (context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(context))
-            return;
-#endif
-
         SharedHeader as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(select->clone(), context);
 
-        metadata.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());
+        /// A comment, unlike the other column attributes, stays valid for any type the new query gives the column.
+        ColumnsDescription new_columns;
+        for (const auto & column : as_select_sample->getNamesAndTypesList())
+        {
+            const auto * previous_column = metadata.columns.tryGet(column.name);
+            new_columns.add(ColumnDescription(column.name, column.type, previous_column ? previous_column->comment : String{}));
+        }
+        metadata.columns = std::move(new_columns);
     }
     else if (type == MODIFY_REFRESH)
     {
@@ -1356,6 +1359,9 @@ void AlterCommand::apply(
 
         if (metadata.isPartitionKeyDefined())
             rename_visitor.visit(metadata.partition_key.definition_ast);
+
+        if (metadata.secondary_indices.has(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + rename_to))
+            metadata.dropImplicitIndicesForColumn(column_name);
 
         for (auto & index : metadata.secondary_indices)
         {
@@ -2109,13 +2115,38 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
 }
 
 
+/// The advice appended to a "cannot remove <kind>" error, chosen per kind because `REMOVE` does not
+/// accept every one of them. Deliberately a `switch` with no `default`, so that a new
+/// `ColumnDefaultKind` is a compile error here rather than a sentence naming a syntax that does not
+/// exist: that is how `defaultKindToGetKind` in `ColumnsDescription.cpp` was kept correct when
+/// `Ephemeral` was added, while this message was not.
+static String removePropertyHint(ColumnDefaultKind kind, const String & column_name)
+{
+    switch (kind)
+    {
+        case ColumnDefaultKind::Default:
+        case ColumnDefaultKind::Materialized:
+        case ColumnDefaultKind::Alias:
+            /// `ParserAlterQuery` accepts exactly these three of the four kinds after `REMOVE`.
+            return "Use REMOVE " + toString(kind) + " to delete it";
+        case ColumnDefaultKind::Ephemeral:
+            /// There is no `REMOVE EPHEMERAL`, and nothing for it to strip: an `EPHEMERAL` column is
+            /// neither stored nor readable, it exists only as an input to other columns' default
+            /// expressions at `INSERT` time. Name the two operations that do exist instead.
+            return "EPHEMERAL is not removable as a property: use DROP COLUMN " + backQuote(column_name)
+                + " to delete the column, or MODIFY COLUMN to replace it with a DEFAULT, MATERIALIZED or ALIAS expression";
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid ColumnDefaultKind");
+}
+
+
 void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 {
     const auto metadata = table->getInMemoryMetadataPtr(context, false);
     const auto virtuals = metadata->virtuals;
 
     bool share_nested = true;
-    if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+    if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
         share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
     auto all_columns = metadata->columns;
@@ -2249,22 +2280,25 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot remove DEFAULT from column {}, because column default type is {}. Use REMOVE {} to delete it",
-                            backQuote(column_name), toString(column_default->kind), toString(column_default->kind));
+                        "Cannot remove DEFAULT from column {}, because column default type is {}. {}",
+                        backQuote(column_name), toString(column_default->kind),
+                        removePropertyHint(column_default->kind, column_name));
                 }
                 if (command.to_remove == AlterCommand::RemoveProperty::MATERIALIZED && column_default->kind != ColumnDefaultKind::Materialized)
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot remove MATERIALIZED from column {}, because column default type is {}. Use REMOVE {} to delete it",
-                        backQuote(column_name), toString(column_default->kind), toString(column_default->kind));
+                        "Cannot remove MATERIALIZED from column {}, because column default type is {}. {}",
+                        backQuote(column_name), toString(column_default->kind),
+                        removePropertyHint(column_default->kind, column_name));
                 }
                 if (command.to_remove == AlterCommand::RemoveProperty::ALIAS && column_default->kind != ColumnDefaultKind::Alias)
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot remove ALIAS from column {}, because column default type is {}. Use REMOVE {} to delete it",
-                        backQuote(column_name), toString(column_default->kind), toString(column_default->kind));
+                        "Cannot remove ALIAS from column {}, because column default type is {}. {}",
+                        backQuote(column_name), toString(column_default->kind),
+                        removePropertyHint(column_default->kind, column_name));
                 }
             }
 
@@ -2404,7 +2438,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             if (all_columns.hasNested(command.column_name))
             {
                 bool skip = false;
-                if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+                if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
                     skip = !(*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
                 if (!skip)
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename whole Nested struct");
@@ -2447,7 +2481,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             /// When share_nested_offsets is disabled, dotted-name columns are independent
             /// and not part of a Nested group, so they can be freely renamed.
-            if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+            if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
             {
                 if (!(*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets])
                 {
@@ -2461,6 +2495,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 if (from_nested_table_name != to_nested_table_name)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from one nested name to another");
                 all_columns.rename(command.column_name, command.rename_to);
+                renamed_columns.emplace(command.column_name);
+                renamed_columns.emplace(command.rename_to);
             }
             else if (!from_nested && !to_nested)
             {
@@ -2497,8 +2533,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 const auto & final_column_name = column_name;
                 const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
 
+                /// The conversion holds its own copy of the default expression rather than referring to the
+                /// alias of the expression below, for the reason explained in `getDefaultExpressionInfoInto`:
+                /// referring to it made every error inside the default expression surface as a failure to
+                /// resolve a synthetic name the user has never seen.
                 default_expr_list->children.emplace_back(setAlias(
-                    addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()),
+                    addTypeConversionToAST(command.default_expression->clone(), data_type_ptr->getName()),
                     final_column_name));
 
                 default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
@@ -2519,7 +2559,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 const auto data_type_ptr = command.data_type;
 
                 default_expr_list->children.emplace_back(setAlias(
-                    addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
+                    addTypeConversionToAST(column_in_table.default_desc.expression->clone(), data_type_ptr->getName()),
+                    final_column_name));
 
                 default_expr_list->children.emplace_back(setAlias(column_in_table.default_desc.expression->clone(), tmp_column_name));
 

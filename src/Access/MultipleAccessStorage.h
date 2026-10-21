@@ -65,6 +65,9 @@ public:
     void restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup) override;
     bool containsStorage(std::string_view storage_type) const;
 
+    /// The storage an insertion without a named storage goes to.
+    StoragePtr getStorageForInsertion(const AccessEntityPtr & entity) const;
+
 protected:
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;

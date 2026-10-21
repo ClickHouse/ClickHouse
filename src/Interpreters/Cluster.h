@@ -40,6 +40,10 @@ struct DatabaseReplicaInfo
     String shard_name;
     String replica_name;
     std::optional<bool> is_local;
+    /// Replica group of the node, published by the replicated database replica
+    /// (empty when the node is a member of no group). Has a default initializer, so that
+    /// aggregate initializations that do not know about replica groups remain valid.
+    String replica_group = {};
 };
 
 /// List of replica hostnames grouped per shard. Used to construct a Cluster for the remote() function.
@@ -176,6 +180,8 @@ public:
         String host_name;
         String database_shard_name;
         String database_replica_name;
+        /// Replica group of the node (for clusters that belong to a `Replicated` database).
+        String replica_group;
         UInt16 port{0};
         /// Optional per-node ports for the distributed-plan engine: the interserver port the
         /// initiator dispatches tasks to, and the streaming-exchange listener port. Zero means
@@ -236,13 +242,13 @@ public:
 
         static std::pair<String, UInt16> fromString(const String & host_port_string);
 
-        /// Returns escaped shard{shard_index}_replica{replica_index} or escaped
-        /// user:password@resolved_host_address:resolved_host_port#default_database
-        /// depending on use_compact_format flag
-        String toFullString(bool use_compact_format) const;
+        /// Returns shard{shard_index}_replica{replica_index}
+        String toFullString() const;
 
-        /// Returns address with only shard index and replica index or full address without shard index and replica index
-        static Address fromFullString(std::string_view full_string);
+        /// Parses a queue directory name into a shard index and a replica index
+        /// (replica_index == 0 means all the replicas of the shard), nullopt if it is not a name
+        /// that is written, see toFullString()
+        static std::optional<Address> tryParseFullString(std::string_view full_string);
 
         /// Returns resolved address if it does resolve.
         std::optional<Poco::Net::SocketAddress> getResolvedAddress() const;
@@ -257,25 +263,6 @@ public:
     using Addresses = std::vector<Address>;
     using AddressesWithFailover = std::vector<Addresses>;
 
-    /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
-    ///
-    /// Contains different path for permutations of:
-    /// - prefer_localhost_replica
-    ///   Notes with prefer_localhost_replica==0 will contains local nodes.
-    /// - use_compact_format_in_distributed_parts_names
-    ///   See toFullString()
-    ///
-    /// This is cached to avoid looping by replicas in insertPathForInternalReplication().
-    struct ShardInfoInsertPathForInternalReplication
-    {
-        /// prefer_localhost_replica == 1 && use_compact_format_in_distributed_parts_names=0
-        std::string prefer_localhost_replica;
-        /// prefer_localhost_replica == 0 && use_compact_format_in_distributed_parts_names=0
-        std::string no_prefer_localhost_replica;
-        /// use_compact_format_in_distributed_parts_names=1
-        std::string compact;
-    };
-
     struct ShardInfo
     {
     public:
@@ -286,9 +273,9 @@ public:
         size_t getAllNodeCount() const { return per_replica_pools.size(); }
         bool hasInternalReplication() const { return has_internal_replication; }
         /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
-        const std::string & insertPathForInternalReplication(bool prefer_localhost_replica, bool use_compact_format) const;
+        const std::string & insertPathForInternalReplication() const;
 
-        ShardInfoInsertPathForInternalReplication insert_path_for_internal_replication;
+        std::string insert_path_for_internal_replication;
         /// Number of the shard, the indexation begins with 1
         UInt32 shard_num = 0;
         String name;
@@ -374,6 +361,9 @@ public:
     /// shards, so the name cannot serve this purpose. Empty identifies nothing and never compares equal.
     const String & getShardScopeIdentity() const { return shard_scope_identity; }
 
+    /// Every replica of the original cluster became a shard of its own, as `clusterAllReplicas` does.
+    bool replicasAsShards() const { return replicas_as_shards; }
+
 private:
     SlotToShard slot_to_shard;
 
@@ -447,6 +437,7 @@ private:
     SourceId source_id = SourceId::CONFIG;
     String create_query;
     String shard_scope_identity;
+    bool replicas_as_shards = false;
 };
 
 using ClusterPtr = std::shared_ptr<Cluster>;

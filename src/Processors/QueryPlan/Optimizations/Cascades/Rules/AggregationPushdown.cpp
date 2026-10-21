@@ -449,6 +449,10 @@ std::unique_ptr<JoinStepLogical> rebuildJoinWithNewInput(
     /// (`deriveCacheKeysForNewJoin`) would need reorderer-style subtree hashes, which do not
     /// exist over memo groups.
     new_join_step->setOptimized();
+    /// Carry the disjunction push-down guard: the step is rebuilt, but the push-down has already run on
+    /// the join it was rebuilt from, and the fragments this optimizer produces are optimized again on
+    /// the replicas, where a cleared guard lets it push the same partial predicates a second time.
+    new_join_step->setDisjunctionsOptimizationApplied(join_step.isDisjunctionsOptimizationApplied());
     new_join_step->setStepDescription(join_step);
     return new_join_step;
 }
