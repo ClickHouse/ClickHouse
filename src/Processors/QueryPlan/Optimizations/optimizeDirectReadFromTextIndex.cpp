@@ -45,6 +45,7 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/ProjectionIndex/IProjectionIndex.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <base/defines.h>
 
@@ -267,11 +268,14 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
 
 /// Adds an inject-only condition (from the index definition, null predicate) for every text index not already
 /// collected as a direct-read entry, so the rewrite covers all text indexes even without skip-index analysis.
+/// Both secondary text indexes and projection text indexes (`PROJECTION ... INDEX ... TYPE text`) are covered.
 void collectTextIndexInjectInfos(const ReadFromMergeTree * read_from_merge_tree_step, TextIndexReadInfos & text_index_infos)
 {
     auto metadata_snapshot = read_from_merge_tree_step->getStorageMetadata();
     const auto & all_indexes = metadata_snapshot->getSecondaryIndices();
-    if (all_indexes.empty())
+    const auto & all_projections = metadata_snapshot->getProjections();
+    const bool has_projection_index = std::ranges::any_of(all_projections, [](const auto & projection) { return projection.index != nullptr; });
+    if (all_indexes.empty() && !has_projection_index)
         return;
 
     const auto & data = read_from_merge_tree_step->getMergeTreeData();
@@ -294,6 +298,28 @@ void collectTextIndexInjectInfos(const ReadFromMergeTree * read_from_merge_tree_
 
         auto condition = index_helper->createIndexCondition(/*predicate=*/ nullptr, context);
         text_index_infos[index_description.name] = TextIndexReadInfo
+        {
+            .condition = std::move(condition),
+            .index_helper = std::move(index_helper),
+        };
+    }
+
+    for (const auto & projection : all_projections)
+    {
+        if (!projection.index)
+            continue;
+
+        auto index_helper = projection.index->getIndex();
+        if (!index_helper || !index_helper->isTextIndex())
+            continue;
+
+        /// Already collected as a direct-read entry (from useful_indices); keep its analyzed condition.
+        const auto & index_name = index_helper->index.name;
+        if (text_index_infos.contains(index_name))
+            continue;
+
+        auto condition = index_helper->createIndexCondition(/*predicate=*/ nullptr, context);
+        text_index_infos[index_name] = TextIndexReadInfo
         {
             .condition = std::move(condition),
             .index_helper = std::move(index_helper),
