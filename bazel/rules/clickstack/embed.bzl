@@ -17,7 +17,10 @@ def _embed_clickstack_impl(ctx):
         arguments = [args],
         mnemonic = "ClickStackResources",
     )
-    return [DefaultInfo(files = depset([header, packed]))]
+    return [
+        DefaultInfo(files = depset([header, packed])),
+        OutputGroupInfo(header = depset([header]), assets = depset([packed])),
+    ]
 
 embed_clickstack = rule(
     implementation = _embed_clickstack_impl,

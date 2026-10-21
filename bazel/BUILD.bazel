@@ -1794,9 +1794,21 @@ build_options(
 ]
 
 filegroup(
+    name = "clickstack_header",
+    srcs = [":generate_native_ClickStack"],
+    output_group = "header",
+)
+
+filegroup(
+    name = "clickstack_assets",
+    srcs = [":generate_native_ClickStack"],
+    output_group = "assets",
+)
+
+filegroup(
     name = "web_ui_resources",
     srcs = [
-        ":generate_native_ClickStack",
+        ":clickstack_assets",
     ] + [
         out
         for out in CODEGEN_RULES["generate_native_SQLConsole"]["outs"]
