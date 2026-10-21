@@ -800,6 +800,28 @@ def test_read_in_order_across_surviving_exchange(started_cluster):
         assert distributed == baseline
 
 
+def test_read_in_order_with_exchanges_not_optimized(started_cluster):
+    """Without `distributed_plan_optimize_exchanges` a scatter/gather pair with equal bucket counts is not
+    collapsed, so it stays between the read and the sorting and delivers the rows in arrival order. The
+    read must not read in order there: when it did, the sorting skipped sorting and the query returned rows
+    from the wrong part of the table, intermittently, hence the repeats."""
+    query = "SELECT id FROM big ORDER BY id ASC LIMIT 20 OFFSET 24990"
+    baseline = INITIATOR.query(f"{query} SETTINGS make_distributed_plan = 0")
+
+    # Last value wins over the 1 in DISTRIBUTED_SETTINGS.
+    exchanges_not_optimized = "distributed_plan_optimize_exchanges = 0, " + READ_IN_ORDER
+    plan = INITIATOR.query(
+        f"EXPLAIN PLAN {query} SETTINGS {DISTRIBUTED_SETTINGS}, {exchanges_not_optimized}"
+    )
+    assert "ScatterExchange" in plan, plan
+
+    for _ in range(5):
+        distributed = INITIATOR.query(
+            f"{query} SETTINGS {DISTRIBUTED_SETTINGS}, {exchanges_not_optimized}"
+        )
+        assert distributed == baseline
+
+
 def test_read_in_order_stops_early(started_cluster):
     """The optimization must actually engage in a distributed plan, not merely return correct rows:
     reading in key order lets the read stop once the limit is met, so it touches far fewer rows than
