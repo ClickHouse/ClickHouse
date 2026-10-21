@@ -102,6 +102,7 @@ namespace ProfileEvents
 extern const Event IcebergIteratorInitializationMicroseconds;
 extern const Event IcebergMetadataUpdateMicroseconds;
 extern const Event IcebergTrivialCountOptimizationApplied;
+extern const Event IcebergGetTableStateMicroseconds;
 }
 
 namespace DB
@@ -296,6 +297,7 @@ DataLakeStorageSettings IcebergMetadata::getMetadataLookupSettings() const
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(
     const ContextPtr & context, bool force_fetch_latest_metadata) const
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergGetTableStateMicroseconds);
     if (!force_fetch_latest_metadata && !explicit_metadata_file_path.get()
         && !data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
     {
@@ -315,6 +317,7 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(
     const ContextPtr & context, const std::shared_ptr<DataLake::ICatalog> & catalog, const String & table_identifier) const
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergGetTableStateMicroseconds);
     const auto [metadata_version, metadata_file_path, _] = getLatestMetadataFileAndVersionWithCatalog(
         object_storage,
         catalog,
