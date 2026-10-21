@@ -14405,7 +14405,8 @@ NameSet MergeTreeData::getColumnsReadByMutationCommand(
                 read.insert(dependency.column_name);
     }
 
-    if (command.type == MutationCommand::MATERIALIZE_TTL)
+    /// A pass that executes TTL evaluates every TTL, also the ones that do not depend on the columns it changes.
+    if (executes_ttl)
     {
         auto add_ttl = [&](const TTLDescription & ttl)
         {

@@ -12,6 +12,7 @@ DROP TABLE IF EXISTS t_clear_rmt;
 DROP TABLE IF EXISTS t_clear_b;
 DROP TABLE IF EXISTS t_clear_m;
 DROP TABLE IF EXISTS t_clear_i;
+DROP TABLE IF EXISTS t_clear_c;
 
 CREATE TABLE t_clear_mt (id UInt32, a UInt32, b UInt32, w UInt32, tp Tuple(x UInt32), n Nested(x UInt32))
 ENGINE = MergeTree ORDER BY id;
@@ -123,6 +124,15 @@ ALTER TABLE t_clear_ttl UPDATE w = w + 1 WHERE 1 SETTINGS mutations_sync = 0;
 ALTER TABLE t_clear_ttl CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
 KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_ttl' AND NOT is_done SYNC FORMAT Null;
 
+-- An UPDATE of `ts` executes every TTL, also the TTL of `z`, which reads `b` and not `ts`.
+CREATE TABLE t_clear_c (id UInt32, ts DateTime, b UInt32, c UInt32 TTL ts, z UInt32 TTL toDateTime(if(b = 0, 4102444800, 946684800)))
+ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_clear_c VALUES (1, '2100-01-01 00:00:00', 2222, 42, 99);
+SYSTEM STOP MERGES t_clear_c;
+ALTER TABLE t_clear_c UPDATE ts = ts + INTERVAL 1 SECOND WHERE 1 SETTINGS mutations_sync = 0;
+ALTER TABLE t_clear_c CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_c' AND NOT is_done SYNC FORMAT Null;
+
 CREATE TABLE t_clear_b (id UInt32, x UInt32, b UInt32) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_clear_b VALUES (1, 1, 2222), (2, 2, 4444);
 SYSTEM STOP MERGES t_clear_b;
@@ -206,3 +216,4 @@ DROP TABLE t_clear_rmt;
 DROP TABLE t_clear_b;
 DROP TABLE t_clear_m;
 DROP TABLE t_clear_i;
+DROP TABLE t_clear_c;
