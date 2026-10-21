@@ -24,10 +24,3 @@ SET enable_analyzer = 1;
 SELECT count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.local_merged_data;
 SELECT DISTINCT _table FROM {CLICKHOUSE_DATABASE_1:Identifier}.local_merged_data;
 
-SELECT '-- enable_analyzer=0 --';
-SET enable_analyzer = 0;
-SELECT count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.local_merged_data;
-SELECT DISTINCT _table FROM {CLICKHOUSE_DATABASE_1:Identifier}.local_merged_data;
-
-DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
-DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier};

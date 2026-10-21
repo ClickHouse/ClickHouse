@@ -1,0 +1,7 @@
+--- plain CREATE
+ACCESS_DENIED
+--- CREATE wrapped in PARALLEL WITH
+ACCESS_DENIED
+0
+--- RESTORE defers catalog construction
+1

@@ -12,7 +12,7 @@ function test_copy()
 {
     disk_name="$1"
 
-    clickhouse-disks -C "$config" --disk "$disk_name" --query "mkdir ${prefix}_hello; cd ${prefix}_hello; mkdir ${prefix}_world; cd ${prefix}_world; mkdir ${prefix}_Clickhouse; mkdir ${prefix}_Cloud"
+    clickhouse-disks -C "$config" --disk "$disk_name" --query "mkdir ${prefix}_hello; cd ${prefix}_hello; mkdir ${prefix}_world; cd ${prefix}_world; mkdir ${prefix}_ClickHouse; mkdir ${prefix}_Cloud"
     printf "Test file can't be navigated" | clickhouse-disks -C "$config" --disk "$disk_name" --query "cd ${prefix}_hello; write ${prefix}_test_file.txt;"
     clickhouse-disks -C "$config" --disk "$disk_name" --query "cd ${prefix}_hello; read ${prefix}_test_file.txt;"
     clickhouse-disks -C "$config" --disk "$disk_name" --query "cd ${prefix}_hello; cd ${prefix}_test_file.txt;"  2>&1 | grep -o "BAD_ARGUMENTS"

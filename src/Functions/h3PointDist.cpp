@@ -19,7 +19,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ILLEGAL_COLUMN;
 }
 
@@ -44,18 +43,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        for (size_t i = 0; i < getNumberOfArguments(); ++i)
-        {
-            const auto * arg = arguments[i].get();
-            if (!WhichDataType(arg).isFloat64())
-                throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Illegal type {} of argument {} of function {}. Must be Float64",
-                        arg->getName(), i + 1, getName());
-        }
-        return std::make_shared<DataTypeFloat64>();
+        return "(Float64, Float64, Float64, Float64) -> Float64";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -160,9 +150,9 @@ distance between pairs of GeoCoord points (latitude/longitude) in meters.
             "Calculate distance between two points in meters",
             "SELECT h3PointDistM(-10.0, 0.0, 10.0, 0.0) AS h3PointDistM",
             R"(
-┌──────h3PointDistM─┐
-│ 2223901.039504589 │
-└───────────────────┘
+┌───────h3PointDistM─┐
+│ 2223901.0395045886 │
+└────────────────────┘
             )"
         }
     };
@@ -193,9 +183,9 @@ distance between pairs of GeoCoord points (latitude/longitude) in kilometers.
             "Calculate distance between two points in kilometers",
             "SELECT h3PointDistKm(-10.0, 0.0, 10.0, 0.0) AS h3PointDistKm",
             R"(
-┌─────h3PointDistKm─┐
-│ 2223.901039504589 │
-└───────────────────┘
+┌──────h3PointDistKm─┐
+│ 2223.9010395045884 │
+└────────────────────┘
             )"
         }
     };

@@ -18,7 +18,7 @@ doc_type: 'reference'
 使用 chDB 引擎执行 SQL 查询。
 
 这是主要的查询函数，使用嵌入式
-ClickHouse 引擎执行 SQL 语句。支持多种输出格式，并且可用于内存数据库
+ClickHouse 引擎执行 SQL 语句。支持多种输出格式，并且可用于临时数据库
 或基于文件的数据库。
 
 **语法**
@@ -33,8 +33,8 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 | --------------- | --- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `sql`           | str | *required* | 要执行的 SQL 查询字符串                                                                                                                                                                                                                             |
 | `output_format` | str | `"CSV"`    | 结果的输出格式。支持的格式：<br />• `"CSV"` - 逗号分隔值<br />• `"JSON"` - JSON 格式<br />• `"Arrow"` - Apache Arrow 格式<br />• `"Parquet"` - Parquet 格式<br />• `"DataFrame"` - Pandas DataFrame<br />• `"ArrowTable"` - PyArrow Table<br />• `"Debug"` - 启用详细日志 |
-| `path`          | str | `""`       | 数据库文件路径。默认为内存数据库。<br />可以是文件路径，或使用 `":memory:"` 表示内存数据库                                                                                                                                                                                    |
-| `udf_path`      | str | `""`       | 用户自定义函数目录的路径                                                                                                                                                                                                                               |
+| `path`          | str | `""`       | 数据库文件路径。默认为临时的非持久化数据库 (等同于 `":memory:"`) 。<br />传入文件路径以持久化到磁盘                                                                                                                                                                              |
+| `udf_path`      | str | `""`       | 基于旧版子进程的 UDF 目录路径。原生 Python UDF ([`@func`](#func-decorator) / [`create_function`](#create-function)) 无需此参数                                                                                                                                 |
 
 **返回值**
 
@@ -57,14 +57,14 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 **示例**
 
 ```pycon
->>> # 基础 CSV 查询
+>>> # Basic CSV query
 >>> result = chdb.query("SELECT 1, 'hello'")
 >>> print(result)
 "1,hello"
 ```
 
 ```pycon
->>> # 输出 DataFrame 格式的查询
+>>> # Query with DataFrame output
 >>> df = chdb.query("SELECT 1 as id, 'hello' as msg", "DataFrame")
 >>> print(df)
    id    msg
@@ -72,13 +72,8 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 ```
 
 ```pycon
->>> # 使用基于文件的数据库进行查询
+>>> # Query with file-based database
 >>> result = chdb.query("CREATE TABLE test (id INT) ENGINE = Memory", path="mydb.chdb")
-```
-
-```pycon
->>> # 使用 UDF 进行查询
->>> result = chdb.query("SELECT my_udf('test')", udf_path="/path/to/udfs")
 ```
 
 ***
@@ -90,8 +85,8 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 使用 chDB 引擎执行 SQL 查询。
 
 这是主要的查询函数，使用嵌入式
-ClickHouse 引擎执行 SQL 语句。支持多种输出格式，并且可用于内存
-或文件数据库。
+ClickHouse 引擎执行 SQL 语句。支持多种输出格式，并且可用于临时
+或基于文件的数据库。
 
 **语法**
 
@@ -105,8 +100,8 @@ chdb.sql(sql, output_format='CSV', path='', udf_path='')
 | --------------- | --- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `sql`           | str | *required* | 要执行的 SQL 查询字符串                                                                                                                                                                                                                             |
 | `output_format` | str | `"CSV"`    | 结果的输出格式。支持的格式：<br />• `"CSV"` - 逗号分隔值<br />• `"JSON"` - JSON 格式<br />• `"Arrow"` - Apache Arrow 格式<br />• `"Parquet"` - Parquet 格式<br />• `"DataFrame"` - Pandas DataFrame<br />• `"ArrowTable"` - PyArrow Table<br />• `"Debug"` - 启用详细日志 |
-| `path`          | str | `""`       | 数据库文件路径。默认使用内存数据库。<br />可以是文件路径，或使用 `":memory:"` 表示内存数据库                                                                                                                                                                                   |
-| `udf_path`      | str | `""`       | 用户自定义函数目录路径                                                                                                                                                                                                                                |
+| `path`          | str | `""`       | 数据库文件路径。默认使用临时的非持久化数据库 (等同于 `":memory:"`) 。<br />传入文件路径以持久保存到磁盘                                                                                                                                                                            |
+| `udf_path`      | str | `""`       | 旧版基于子进程的 UDF 目录路径。原生 Python UDF ([`@func`](#func-decorator) / [`create_function`](#create-function)) 无需使用                                                                                                                                  |
 
 **返回值**
 
@@ -129,14 +124,14 @@ chdb.sql(sql, output_format='CSV', path='', udf_path='')
 **示例**
 
 ```pycon
->>> # 基础 CSV 查询
+>>> # Basic CSV query
 >>> result = chdb.query("SELECT 1, 'hello'")
 >>> print(result)
 "1,hello"
 ```
 
 ```pycon
->>> # 以 DataFrame 格式输出的查询
+>>> # Query with DataFrame output
 >>> df = chdb.query("SELECT 1 as id, 'hello' as msg", "DataFrame")
 >>> print(df)
    id    msg
@@ -144,13 +139,8 @@ chdb.sql(sql, output_format='CSV', path='', udf_path='')
 ```
 
 ```pycon
->>> # 使用基于文件的数据库进行查询
+>>> # Query with file-based database
 >>> result = chdb.query("CREATE TABLE test (id INT) ENGINE = Memory", path="mydb.chdb")
-```
-
-```pycon
->>> # 使用 UDF 进行查询
->>> result = chdb.query("SELECT my_udf('test')", udf_path="/path/to/udfs")
 ```
 
 ***
@@ -255,8 +245,7 @@ chdb.to_df(r)
 创建到 chDB 后台 server 的连接。
 
 此函数会建立一个到 chDB (ClickHouse) database engine 的 [Connection](#chdb-state-sqlitelike-connection)。
-每个进程只允许存在一个打开的连接。
-使用相同连接字符串的多次调用将返回同一个 connection object。
+每次调用都会返回独立的连接，并且可同时打开任意数量连接到同一数据库路径的连接。
 
 ```python
 chdb.connect(connection_string: str = ':memory:') → Connection
@@ -270,25 +259,25 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 
 **基础版格式**
 
-| 格式                        | 说明          |
-| ------------------------- | ----------- |
-| `":memory:"`              | 内存数据库 (默认)  |
-| `"test.db"`               | 相对路径数据库文件   |
-| `"file:test.db"`          | 与相对路径相同     |
-| `"/path/to/test.db"`      | 绝对路径数据库文件   |
-| `"file:/path/to/test.db"` | 与绝对路径相同     |
+| 格式                        | 说明         |
+| ------------------------- | ---------- |
+| `":memory:"`              | 临时数据库 (默认) |
+| `"test.db"`               | 相对路径数据库文件  |
+| `"file:test.db"`          | 与相对路径相同    |
+| `"/path/to/test.db"`      | 绝对路径数据库文件  |
+| `"file:/path/to/test.db"` | 与绝对路径相同    |
 
 **带查询参数**
 
 | 格式                                                 | 说明        |
 | -------------------------------------------------- | --------- |
 | `"file:test.db?param1=value1&param2=value2"`       | 带参数的相对路径  |
-| `"file::memory:?verbose&log-level=test"`           | 带参数的内存数据库 |
+| `"file::memory:?verbose&log-level=test"`           | 带参数的临时数据库 |
 | `"///path/to/test.db?param1=value1&param2=value2"` | 带参数的绝对路径  |
 
 **查询参数处理**
 
-查询参数会作为启动参数传递给 ClickHouse engine。
+查询参数会作为启动参数传递给 ClickHouse 引擎。
 特殊参数处理如下：
 
 | 特殊参数             | 转换为            | 说明     |
@@ -311,31 +300,30 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 | -------------- | -------- |
 | `RuntimeError` | 连接数据库失败时 |
 
-<Warning>
-  每个进程仅支持一个连接。
-  创建新连接会关闭任何现有连接。
-</Warning>
+<Note>
+  一个进程运行一个绑定到单一数据库路径的嵌入式引擎。可同时存在多个到同一路径的连接并并发运行查询。任何连接处于打开状态时，打开*不同的*路径将引发 `RuntimeError`；请先关闭已打开的连接。
+</Note>
 
 **示例**
 
 ```pycon
->>> # 内存数据库
+>>> # Temporary database
 >>> conn = connect()
 >>> conn = connect(":memory:")
 >>>
->>> # 基于文件的数据库
+>>> # File-based database
 >>> conn = connect("my_data.db")
 >>> conn = connect("/path/to/data.db")
 >>>
->>> # 带参数
->>> conn = connect("data.db?mode=ro")  # 只读模式
->>> conn = connect(":memory:?verbose&log-level=debug")  # 调试日志
+>>> # With parameters
+>>> conn = connect("data.db?mode=ro")  # Read-only mode
+>>> conn = connect(":memory:?verbose&log-level=debug")  # Debug logging
 >>>
->>> # 使用上下文管理器自动清理资源
+>>> # Using context manager for automatic cleanup
 >>> with connect("data.db") as conn:
 ...     result = conn.query("SELECT 1")
 ...     print(result)
->>> # 连接已自动关闭
+>>> # Connection automatically closed
 ```
 
 **另请参阅**
@@ -368,8 +356,7 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 基类：`object`
 
 Session 会保留查询状态。
-如果 path 为 None，它会创建一个临时目录，并将其用作数据库路径；
-当 session 关闭时，该临时目录会被删除。
+如果 path 为 None，会话会使用进程范围的临时 (`:memory:`) 数据库，因此所有未指定 path 的会话 都能看到彼此的表；仅当最后一个此类会话 或 connection 关闭时，其临时目录才会被删除。
 你也可以传入一个 path，在该 path 创建数据库，数据将保存在那里。
 
 你也可以使用连接字符串传入该 path 和其他参数。
@@ -382,13 +369,13 @@ class chdb.session.Session(path=None)
 
 | Connection String                                  | 描述          |
 | -------------------------------------------------- | ----------- |
-| `":memory:"`                                       | 内存数据库       |
+| `":memory:"`                                       | 临时数据库       |
 | `"test.db"`                                        | 相对路径        |
 | `"file:test.db"`                                   | 同上          |
 | `"/path/to/test.db"`                               | 绝对路径        |
 | `"file:/path/to/test.db"`                          | 同上          |
 | `"file:test.db?param1=value1&param2=value2"`       | 带查询参数的相对路径  |
-| `"file::memory:?verbose&log-level=test"`           | 带查询参数的内存数据库 |
+| `"file::memory:?verbose&log-level=test"`           | 带查询参数的临时数据库 |
 | `"///path/to/test.db?param1=value1&param2=value2"` | 带查询参数的绝对路径  |
 
 <Info>
@@ -401,15 +388,15 @@ class chdb.session.Session(path=None)
 
   一些特殊参数的处理方式：
 
-  * “mode=ro” 在 clickhouse 中会转换为 “–readonly=1” (只读模式) 
+  * “mode=ro” 在 clickhouse 中会转换为 “–readonly=1” (只读模式)
 </Info>
 
-<Warning>
+<Note>
   **重要**
 
-  * 同一时间只能有一个会话。如果要创建新会话，需要先关闭现有会话。
-  * 创建新会话会关闭现有会话。
-</Warning>
+  * 多个会话可以共存，只要它们共享相同的数据库路径。
+  * 若要使用不同的数据库路径，请先关闭已打开的会话。
+</Note>
 
 ***
 
@@ -505,7 +492,7 @@ query(sql, fmt='CSV', udf_path='')
 | ---------- | ---- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sql`      | str  | *required* | 要执行的 SQL 查询字符串                                                                                                                                                                                                                    |
 | `fmt`      | str  | `"CSV"`    | 结果的输出格式。可用格式：<br />• `"CSV"` - 逗号分隔值<br />• `"JSON"` - JSON 格式<br />• `"TabSeparated"` - 制表符分隔值<br />• `"Pretty"` - 美化表格格式<br />• `"JSONCompact"` - 紧凑 JSON 格式<br />• `"Arrow"` - Apache Arrow 格式<br />• `"Parquet"` - Parquet 格式 |
-| `udf_path` | str  | `""`       | 用户自定义函数的路径。如果未指定，则使用会话初始化时的 UDF 路径                                                                                                                                                                                                |
+| `udf_path` | str  | `""`       | 旧版基于子进程的 UDF 目录路径。原生 Python UDF ([`@func`](#func-decorator) / [`create_function`](#create-function)) 无需此项。如果未指定，则使用会话初始化时的 UDF 路径                                                                                                 |
 
 **返回值**
 
@@ -517,14 +504,14 @@ query(sql, fmt='CSV', udf_path='')
 
 **引发异常**
 
-| Exception      | Condition     |
+| 异常      | Condition     |
 | -------------- | ------------- |
 | `RuntimeError` | 如果会话已关闭或无效    |
 | `ValueError`   | 如果 SQL 查询格式有误 |
 
 <Note>
   不支持 “Debug” 格式，系统会自动将其转换为 “CSV” 并发出警告。
-  如需调试，请改用 connection string 参数。
+  如需调试，请改用连接字符串参数。
 </Note>
 
 <Warning>
@@ -538,7 +525,7 @@ query(sql, fmt='CSV', udf_path='')
 ```pycon
 >>> session = Session("test.db")
 >>>
->>> # 使用默认 CSV 格式的基础查询
+>>> # Basic query with default CSV format
 >>> result = session.query("SELECT 1 as number")
 >>> print(result)
 number
@@ -546,7 +533,7 @@ number
 ```
 
 ```pycon
->>> # 使用 JSON 格式进行查询
+>>> # Query with JSON format
 >>> result = session.query("SELECT 1 as number", fmt="JSON")
 >>> print(result)
 {"number": "1"}
@@ -664,19 +651,19 @@ sql(sql, fmt='CSV', udf_path='')
 | ---------- | ---- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sql`      | str  | *required* | 要执行的 SQL 查询字符串                                                                                                                                                                                                                     |
 | `fmt`      | str  | `"CSV"`    | 结果的输出格式。可用格式：<br />• `"CSV"` - 逗号分隔值<br />• `"JSON"` - JSON 格式<br />• `"TabSeparated"` - 制表符分隔值<br />• `"Pretty"` - 格式化表格输出<br />• `"JSONCompact"` - 紧凑 JSON 格式<br />• `"Arrow"` - Apache Arrow 格式<br />• `"Parquet"` - Parquet 格式 |
-| `udf_path` | str  | `""`       | 用户自定义函数路径。如果未指定，则使用会话初始化时的 UDF 路径                                                                                                                                                                                                  |
+| `udf_path` | str  | `""`       | 旧版基于子进程的 UDF 目录路径。原生 Python UDF ([`@func`](#func-decorator) / [`create_function`](#create-function)) 不需要此路径。如果未指定，则使用会话初始化时的 UDF 路径                                                                                                |
 
 **返回值**
 
 以指定格式返回查询结果。
 具体返回类型取决于 `fmt` 参数：
 
-* 字符串格式 (CSV、JSON 等) 返回 str
+* String 格式 (CSV、JSON 等) 返回 str
 * 二进制格式 (Arrow、Parquet) 返回 bytes
 
 **引发：**
 
-| Exception      | Condition     |
+| 异常      | Condition     |
 | -------------- | ------------- |
 | `RuntimeError` | 如果会话已关闭或无效    |
 | `ValueError`   | 如果 SQL 查询格式错误 |
@@ -698,7 +685,7 @@ sql(sql, fmt='CSV', udf_path='')
 ```pycon
 >>> session = Session("test.db")
 >>>
->>> # 使用默认 CSV 格式的基础查询
+>>> # Basic query with default CSV format
 >>> result = session.query("SELECT 1 as number")
 >>> print(result)
 number
@@ -706,7 +693,7 @@ number
 ```
 
 ```pycon
->>> # 使用 JSON 格式查询
+>>> # Query with JSON format
 >>> result = session.query("SELECT 1 as number", fmt="JSON")
 >>> print(result)
 {"number": "1"}
@@ -739,8 +726,7 @@ id,name
 创建一个到 chDB 后台服务器的 [Connection](#chdb-state-sqlitelike-connection)。
 
 此函数会建立与 chDB (ClickHouse) 数据库引擎的连接。
-每个进程只允许有一个打开的连接。对相同
-连接字符串的多次调用将返回同一个连接对象。
+每次调用都会返回独立的连接，并且可同时打开任意数量指向同一数据库路径的连接。
 
 **语法**
 
@@ -760,7 +746,7 @@ chdb.state.connect(connection_string: str = ':memory:') → Connection
 
 | Format                    | Description |
 | ------------------------- | ----------- |
-| `":memory:"`              | 内存数据库 (默认)  |
+| `":memory:"`              | 临时数据库 (默认)  |
 | `"test.db"`               | 相对路径数据库文件   |
 | `"file:test.db"`          | 与相对路径相同     |
 | `"/path/to/test.db"`      | 绝对路径数据库文件   |
@@ -771,7 +757,7 @@ chdb.state.connect(connection_string: str = ':memory:') → Connection
 | Format                                             | Description |
 | -------------------------------------------------- | ----------- |
 | `"file:test.db?param1=value1&param2=value2"`       | 带参数的相对路径    |
-| `"file::memory:?verbose&log-level=test"`           | 带参数的内存数据库   |
+| `"file::memory:?verbose&log-level=test"`           | 带参数的临时数据库   |
 | `"///path/to/test.db?param1=value1&param2=value2"` | 带参数的绝对路径    |
 
 **查询参数处理**
@@ -793,39 +779,36 @@ chdb.state.connect(connection_string: str = ':memory:') → Connection
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Connection` | 数据库连接对象，支持：<br />• 使用 `Connection.cursor()` 创建游标<br />• 使用 `Connection.query()` 直接执行查询<br />• 使用 `Connection.send_query()` 执行流式查询<br />• 支持上下文管理器协议以自动清理 |
 
-**抛出异常**
+**引发**
 
 | Exception      | Condition |
 | -------------- | --------- |
 | `RuntimeError` | 连接数据库失败时  |
 
-<Warning>
-  **警告**
-
-  每个进程仅支持一个连接。
-  创建新连接时会关闭任何现有连接。
-</Warning>
+<Note>
+  一个进程运行一个绑定到单个数据库路径的嵌入式引擎。可同时存在多个连接到同一路径的连接，并并发执行查询。当任何连接处于打开状态时，打开*不同*的路径会引发 `RuntimeError`；请先关闭已打开的连接。
+</Note>
 
 **示例**
 
 ```pycon
->>> # 内存数据库
+>>> # Temporary database
 >>> conn = connect()
 >>> conn = connect(":memory:")
 >>>
->>> # 基于文件的数据库
+>>> # File-based database
 >>> conn = connect("my_data.db")
 >>> conn = connect("/path/to/data.db")
 >>>
->>> # 带参数
->>> conn = connect("data.db?mode=ro")  # 只读模式
->>> conn = connect(":memory:?verbose&log-level=debug")  # 调试日志
+>>> # With parameters
+>>> conn = connect("data.db?mode=ro")  # Read-only mode
+>>> conn = connect(":memory:?verbose&log-level=debug")  # Debug logging
 >>>
->>> # 使用上下文管理器自动清理资源
+>>> # Using context manager for automatic cleanup
 >>> with connect("data.db") as conn:
 ...     result = conn.query("SELECT 1")
 ...     print(result)
->>> # 连接自动关闭
+>>> # Connection automatically closed
 ```
 
 **另请参见**
@@ -1811,7 +1794,7 @@ chDB DB-API 2.0 接口包括：
 * **游标**：执行查询并获取结果
 * **类型系统**：符合 DB-API 2.0 规范的类型常量和转换器
 * **错误处理**：标准的数据库异常层次结构
-* **线程安全**：1 级线程安全 (线程可共享模块，但不可共享连接) 
+* **线程安全**：1 级线程安全 (线程可共享模块，但不可共享连接)
 
 ***
 
@@ -1835,9 +1818,9 @@ chdb.dbapi.connect(*args, **kwargs)
 
 **参数**
 
-| 参数     | 类型  | 默认值    | 描述                     |
-| ------ | --- | ------ | ---------------------- |
-| `path` | str | `None` | 数据库文件路径。内存数据库时为 `None` |
+| 参数     | 类型  | 默认值    | 描述                         |
+| ------ | --- | ------ | -------------------------- |
+| `path` | str | `None` | 数据库文件路径。临时非持久化数据库时为 `None` |
 
 **抛出**
 
@@ -1914,7 +1897,7 @@ chdb.dbapi.Binary(x)
 
 符合 DB-API 2.0 规范的 chDB 数据库连接。
 
-此类提供标准的 DB-API 接口，用于连接到 chDB 数据库并与之交互。它同时支持内存数据库和基于文件的数据库。
+此类提供标准的 DB-API 接口，用于连接到 chDB 数据库并与之交互。它同时支持临时数据库和基于文件的数据库。
 
 该连接管理底层的 chDB engine，并提供用于
 执行查询、管理事务 (对 ClickHouse 而言是空操作) 以及创建游标的方法。
@@ -1925,9 +1908,9 @@ class chdb.dbapi.connections.Connection(path=None)
 
 **参数**
 
-| 参数     | 类型  | 默认值    | 描述                                                                                          |
-| ------ | --- | ------ | ------------------------------------------------------------------------------------------- |
-| `path` | str | `None` | 数据库文件路径。如果为 None，则使用内存数据库。可以是类似 &#39;database.db&#39; 的文件路径，或者使用 None 表示 &#39;:memory:&#39; |
+| 参数     | 类型  | 默认值    | 描述                                                                                                      |
+| ------ | --- | ------ | ------------------------------------------------------------------------------------------------------- |
+| `path` | str | `None` | 数据库文件路径。如果为 None (默认值) ，则使用临时的非持久化数据库 (等同于 `':memory:'`) 。传入类似 &#39;database.db&#39; 的文件路径，即可将数据持久化到磁盘。 |
 
 **变量**
 
@@ -1939,7 +1922,7 @@ class chdb.dbapi.connections.Connection(path=None)
 **示例**
 
 ```pycon
->>> # 内存数据库
+>>> # Temporary database
 >>> conn = Connection()
 >>> cursor = conn.cursor()
 >>> cursor.execute("SELECT 1")
@@ -1948,7 +1931,7 @@ class chdb.dbapi.connections.Connection(path=None)
 ```
 
 ```pycon
->>> # 基于文件的数据库
+>>> # File-based database
 >>> conn = Connection('mydata.db')
 >>> with conn.cursor() as cur:
 ...     cur.execute("CREATE TABLE users (id INT, name STRING) ENGINE = MergeTree() order by id")
@@ -1957,7 +1940,7 @@ class chdb.dbapi.connections.Connection(path=None)
 ```
 
 ```pycon
->>> # 上下文管理器用法
+>>> # Context manager usage
 >>> with Connection() as cur:
 ...     cur.execute("SELECT version()")
 ...     version = cur.fetchone()
@@ -2835,7 +2818,7 @@ DataError: Invalid date format
 包括：
 
 * 违反外键约束
-* 违反主键或唯一约束 (键重复) 
+* 违反主键或唯一约束 (键重复)
 * 违反检查约束
 * 违反 NOT NULL 约束
 * 违反参照完整性
@@ -2874,7 +2857,7 @@ IntegrityError: Cannot add or update a child row: foreign key constraint fails
 当数据库接口实现出现问题时，会引发此异常，例如：
 
 * 无效的连接参数
-* API 使用不当 (在已关闭的连接上调用方法) 
+* API 使用不当 (在已关闭的连接上调用方法)
 * 接口层协议错误
 * 模块导入或初始化失败
 
@@ -2901,8 +2884,8 @@ IntegrityError: Cannot add or update a child row: foreign key constraint fails
 
 当数据库系统遇到并非由应用程序导致的内部错误时，会引发此异常，例如：
 
-* 游标状态无效 (游标已失效) 
-* 事务状态不一致 (事务不同步) 
+* 游标状态无效 (游标已失效)
+* 事务状态不一致 (事务不同步)
 * 数据库损坏
 * 内部数据结构损坏
 * 系统级数据库错误
@@ -3020,7 +3003,7 @@ NotSupportedError: WITH clause not supported in this database version
 * 创建时表或索引已存在
 * 语句中的 SQL 语法错误
 * 预处理语句中指定的参数个数不正确
-* 无效的 SQL 操作 (例如，对不存在的对象执行 DROP) 
+* 无效的 SQL 操作 (例如，对不存在的对象执行 DROP)
 * 数据库 API 方法使用不当
 
 **引发**
@@ -3107,7 +3090,7 @@ str(bytes_or_buffer[, encoding[, errors]]) -> str
 根据给定对象创建一个新的字符串对象。如果指定了 encoding 或
 errors，则该对象必须提供一个数据缓冲区，
 该缓冲区将使用给定的编码和错误处理器进行解码。
-否则，返回 `object._\_str_\_()` (如果已定义) 
+否则，返回 `object._\_str_\_()` (如果已定义)
 或 `repr(object)` 的结果。
 
 * encoding 默认为‘utf-8’。
@@ -3153,7 +3136,7 @@ str(bytes_or_buffer[, encoding[, errors]]) -> str
 根据给定对象创建一个新的字符串对象。如果指定了 encoding 或
 errors，那么该对象必须暴露一个数据缓冲区，
 该缓冲区将使用给定的编码和错误处理程序进行解码。
-否则，返回 object.*&#95;str*&#95;() 的结果 (如果已定义) 
+否则，返回 object.*&#95;str*&#95;() 的结果 (如果已定义)
 或 repr(object)。
 encoding 默认为‘utf-8’。
 errors 默认为‘strict’。
@@ -3347,9 +3330,9 @@ errors 默认为‘strict’。
 
 ```pycon
 >>> string_types = DBAPISet([FIELD_TYPE.STRING, FIELD_TYPE.VAR_STRING])
->>> FIELD_TYPE.STRING == string_types  # 返回 True
->>> FIELD_TYPE.INT != string_types     # 返回 True
->>> FIELD_TYPE.BLOB in string_types    # 返回 False
+>>> FIELD_TYPE.STRING == string_types  # Returns True
+>>> FIELD_TYPE.INT != string_types     # Returns True
+>>> FIELD_TYPE.BLOB in string_types    # Returns False
 ```
 
 **使用示例**
@@ -3361,16 +3344,16 @@ import chdb.dbapi as dbapi
 
 print("chdb driver version: {0}".format(dbapi.get_client_info()))
 
-# 创建连接和游标
+# Create connection and cursor
 conn = dbapi.connect()
 cur = conn.cursor()
 
-# 执行查询
+# Execute query
 cur.execute('SELECT version()')
 print("description:", cur.description)
 print("data:", cur.fetchone())
 
-# 清理资源
+# Clean up
 cur.close()
 conn.close()
 ```
@@ -3383,7 +3366,7 @@ import chdb.dbapi as dbapi
 conn = dbapi.connect()
 cur = conn.cursor()
 
-# 创建表
+# Create table
 cur.execute("""
     CREATE TABLE employees (
         id UInt32,
@@ -3393,7 +3376,7 @@ cur.execute("""
     ) ENGINE = Memory
 """)
 
-# 插入数据
+# Insert data
 cur.execute("""
     INSERT INTO employees VALUES
     (1, 'Alice', 'Engineering', 75000.00),
@@ -3401,10 +3384,10 @@ cur.execute("""
     (3, 'Charlie', 'Engineering', 80000.00)
 """)
 
-# 查询数据
+# Query data
 cur.execute("SELECT * FROM employees WHERE department = 'Engineering'")
 
-# 获取结果
+# Fetch results
 print("Column names:", [desc[0] for desc in cur.description])
 for row in cur.fetchall():
     print(row)
@@ -3417,19 +3400,19 @@ conn.close()
 ```python
 import chdb.dbapi as dbapi
 
-# 内存数据库（默认）
+# Temporary database (default)
 conn1 = dbapi.connect()
 
-# 持久化数据库文件
+# Persistent database file
 conn2 = dbapi.connect("./my_database.chdb")
 
-# 带参数的连接
+# Connection with parameters
 conn3 = dbapi.connect("./my_database.chdb?log-level=debug&verbose")
 
-# 只读连接
+# Read-only connection
 conn4 = dbapi.connect("./my_database.chdb?mode=ro")
 
-# 自动清理连接
+# Automatic connection cleanup
 with dbapi.connect("test.chdb") as conn:
     cur = conn.cursor()
     cur.execute("SELECT count() FROM numbers(1000)")
@@ -3449,7 +3432,7 @@ with dbapi.connect("test.chdb") as conn:
 
 <Note>
   * chDB 的 DB-API 2.0 接口与大多数 Python 数据库工具兼容
-  * 该接口提供 Level 1 线程安全 (线程可以共享模块，但不能共享连接) 
+  * 该接口提供 Level 1 线程安全 (线程可以共享模块，但不能共享连接)
   * 连接字符串支持与 chDB 会话相同的参数
   * 支持所有标准的 DB-API 2.0 异常
 </Note>
@@ -3463,17 +3446,294 @@ with dbapi.connect("test.chdb") as conn:
 </Warning>
 
 <div id="user-defined-functions">
-  ## 用户自定义函数 (UDF)
+  ## Python 用户自定义函数 (UDF)
 </div>
 
-chDB 的用户自定义函数模块。
+chDB 支持原生 Python UDF，可在进程内运行，支持类型化参数、自动类型推断以及可配置的 NULL/异常处理。注册为 UDF 的 Python 函数可直接在 SQL 查询中调用。
 
-该模块提供了在 chDB 中创建和管理用户自定义函数 (UDF) 的功能。
-你可以通过编写自定义 Python 函数来扩展 chDB 的能力，
-并在 SQL 查询中调用这些函数。
+以下示例使用默认的 CSV 输出格式。行内注释显示逻辑结果值；原始输出会将 `NULL` 显示为 `\N`，并对字符串和日期值进行 CSV 引号转义。
+
+<div id="create-function">
+  ### `chdb.create_function`
+</div>
+
+将 Python 函数注册为 chDB SQL 函数。
+
+**语法**
+
+```python
+chdb.create_function(name, func, arg_types=None, return_type=None, *, on_null=None, on_error=None)
+```
+
+**参数**
+
+| 参数            | 类型                                 | 默认值                | 描述                                          |
+| ------------- | ---------------------------------- | ------------------ | ------------------------------------------- |
+| `name`        | str                                | *(必填)*             | 要注册的 SQL 函数名称                               |
+| `func`        | callable                           | *(必填)*             | 要注册的 Python 函数                              |
+| `arg_types`   | list of ChdbType/str/type, or None | `None`             | 参数类型列表。若为 `None`，则根据类型注解推断                  |
+| `return_type` | ChdbType/str/type, or None         | `None`             | 返回类型。若为 `None`，则根据函数的返回类型注解推断；若该注解也缺失，则注册失败 |
+| `on_null`     | str or NullHandling                | `None` (skip)      | 如何处理 NULL 输入：`"skip"` 或 `"pass"`。仅限关键字参数    |
+| `on_error`    | str or ExceptionHandling           | `None` (propagate) | 如何处理异常：`"propagate"` 或 `"ignore"`。仅限关键字参数   |
+
+每个类型参数 (`arg_types` 的元素和 `return_type`) 均可接受：
+
+* `ChdbType` 常量：`INT64`、`STRING`、`FLOAT64` 等。
+* ClickHouse 类型字符串：`"Int64"`、`"String"`、`"DateTime64(6)"`、`"DateTime('UTC')"` 等。
+* Python 类型：`int`、`float`、`str`、`bool`、`bytes`、`datetime.date`、`datetime.datetime` — 根据[自动类型映射](#udf-automatic-type-mapping)进行映射
+
+注册已注册的名称会引发错误 — UDFs 不会被静默替换。请先调用 [`drop_function`](#drop-function)，再重新注册函数。
+
+**示例**
+
+```python
+from chdb import create_function, drop_function, query
+from chdb.sqltypes import INT64, STRING
+
+create_function("strlen", len, arg_types=[STRING], return_type=INT64)
+print(query("SELECT strlen('hello')"))  # 5
+
+drop_function("strlen")
+```
+
+***
+
+<div id="drop-function">
+  ### `chdb.drop_function`
+</div>
+
+移除先前注册的 Python UDF。如果该函数尚未注册，则不会执行任何操作，因此可放心无条件调用。
+
+**语法**
+
+```python
+chdb.drop_function(name)
+```
+
+**参数**
+
+| 参数     | 类型  | 描述            |
+| ------ | --- | ------------- |
+| `name` | str | 要删除的 SQL 函数名称 |
+
+***
+
+<div id="func-decorator">
+  ### `@func` 装饰器
+</div>
+
+用于将 Python 函数注册为 chDB SQL 函数。该函数仍可像普通 Python 函数一样调用，同时可通过其 `__name__` 在 SQL 查询中使用。
+
+**语法**
+
+```python
+from chdb import func
+
+@func(arg_types=None, return_type=None, *, on_null=None, on_error=None)
+def my_function(...):
+    ...
+```
+
+**参数**
+
+与 [`create_function`](#create-function) 相同 (`name` 和 `func` 除外，它们由被装饰的函数派生) 。
+
+**示例**
+
+```python
+from chdb import func, query
+from chdb.sqltypes import INT64, STRING
+
+# Explicit types
+@func([INT64, INT64], INT64)
+def add(a, b):
+    return a + b
+
+# Types inferred from annotations
+@func()
+def multiply(a: int, b: int) -> int:
+    return a * b
+
+# Explicit return_type, arg_types inferred from annotations
+@func(return_type=STRING)
+def greet(name: str):
+    return f"Hello, {name}!"
+
+print(query("SELECT add(12, 22)"))       # 34
+print(query("SELECT multiply(3, 7)"))    # 21
+print(query("SELECT greet('world')"))    # Hello, world!
+```
+
+***
+
+<div id="udf-type-system">
+  ### 类型系统
+</div>
+
+<div id="udf-available-types">
+  #### 可用类型
+</div>
+
+从 `chdb.sqltypes` 中导入类型：
+
+```python
+from chdb.sqltypes import (
+    BOOL,
+    INT8, INT16, INT32, INT64, INT128, INT256,
+    UINT8, UINT16, UINT32, UINT64, UINT128, UINT256,
+    FLOAT32, FLOAT64,
+    STRING,
+    DATE, DATE32, DATETIME, DATETIME64,
+)
+```
+
+<div id="udf-automatic-type-mapping">
+  #### 自动类型映射
+</div>
+
+根据 Python 类型注解推断类型时，使用以下映射：
+
+| Python 类型           | ClickHouse 类型   |
+| ------------------- | --------------- |
+| `bool`              | `Bool`          |
+| `int`               | `Int64`         |
+| `float`             | `Float64`       |
+| `str`               | `String`        |
+| `bytes`             | `String`        |
+| `bytearray`         | `String`        |
+| `datetime.date`     | `Date`          |
+| `datetime.datetime` | `DateTime64(6)` |
+
+<div id="udf-type-specification-methods">
+  #### 类型指定方式
+</div>
+
+可以通过多种方式指定类型：
+
+```python
+from chdb import create_function, func
+from chdb.sqltypes import INT64
+
+# 1. ChdbType constants
+create_function("f1", lambda x: x, arg_types=[INT64], return_type=INT64)
+
+# 2. ClickHouse type strings
+create_function("f2", lambda x: x, arg_types=["Int64"], return_type="Int64")
+
+# 3. Parameterized type strings
+create_function("f3", lambda x: x, arg_types=["DateTime('UTC')"], return_type="DateTime('UTC')")
+
+# 4. Python types — passed directly or used as annotations
+create_function("f4", lambda x: x, arg_types=[int], return_type=int)
+
+@func()
+def f5(x: int) -> int:
+    return x
+```
+
+***
+
+<div id="udf-null-handling">
+  ### NULL 处理
+</div>
+
+使用 `on_null` 参数控制 NULL 值的处理方式。
+
+| 值        | 枚举                  | 行为                      |
+| -------- | ------------------- | ----------------------- |
+| `"skip"` | `NullHandling.SKIP` | 不调用函数，直接返回 NULL (默认)    |
+| `"pass"` | `NullHandling.PASS` | 将 NULL 转换为 `None` 后调用函数 |
+
+```python
+from chdb import func, query, NullHandling
+
+# Default: NULL in → NULL out, function not called
+@func(return_type="Int64")
+def add_one(x: int) -> int:
+    return x + 1
+
+print(query("SELECT add_one(NULL)"))  # NULL
+
+# Pass NULL as None
+@func(return_type="Int64", on_null="pass")
+def null_safe(x):
+    return 0 if x is None else x + 1
+
+print(query("SELECT null_safe(NULL)"))  # 0
+```
+
+***
+
+<div id="udf-exception-handling">
+  ### 异常处理
+</div>
+
+使用 `on_error` 参数控制异常处理方式。
+
+| 值             | 枚举                            | 行为                   |
+| ------------- | ----------------------------- | -------------------- |
+| `"propagate"` | `ExceptionHandling.PROPAGATE` | 将异常作为 SQL 错误抛出 (默认)  |
+| `"ignore"`    | `ExceptionHandling.IGNORE`    | 捕获异常并返回 NULL         |
+
+```python
+from chdb import func, query
+
+# Default: exception propagates
+@func(arg_types=["Int64", "Int64"], return_type="Int64")
+def divide(a, b):
+    return a // b
+
+# print(query("SELECT divide(1, 0)"))  # Error: division by zero
+
+# Ignore: exception → NULL
+@func(arg_types=["Int64", "Int64"], return_type="Int64", on_error="ignore")
+def safe_divide(a, b):
+    return a // b
+
+print(query("SELECT safe_divide(1, 0)"))   # NULL
+print(query("SELECT safe_divide(10, 2)"))  # 5
+```
+
+***
+
+<div id="udf-datetime">
+  ### 日期时间和时区支持
+</div>
+
+UDF 完全支持具有时区信息的 `Date`、`Date32`、`DateTime` 和 `DateTime64` 类型。
+
+```python
+from chdb import func, query
+from datetime import datetime, timedelta, date
+
+@func(arg_types=["DateTime('UTC')"], return_type="DateTime('UTC')")
+def add_one_hour(dt):
+    return dt + timedelta(hours=1)
+
+@func()
+def get_year(d: date) -> int:
+    return d.year
+
+print(query("SELECT add_one_hour(toDateTime('2024-01-01 12:00:00', 'UTC'))"))  # 2024-01-01 13:00:00
+print(query("SELECT get_year(toDate('2024-06-15'))"))  # 2024
+```
+
+* 输入的 ClickHouse `DateTime`/`DateTime64` 值会转换为包含时区信息的 Python `datetime` 对象
+* Python `datetime` 输出对象返回至 ClickHouse 时会保留时区信息
+* `chdb.sqltypes` 中的 `DATETIME64` 类型默认标度为 6 (微秒) ，相当于 `DateTime64(6)`
+
+***
+
+<div id="legacy-udf">
+  ### 旧版 API
+</div>
+
+<Warning>
+  **已弃用：** `@chdb_udf` 装饰器是基于子进程的旧版 UDF 机制：它会在独立的 Python 进程中运行函数，并将所有参数以字符串形式传递。该机制仍可使用，但建议使用原生 Python UDF API ([`@func`](#func-decorator) / [`create_function`](#create-function)) ——原生 UDF 在进程内运行，支持类型化参数、NULL 处理和异常控制。有关完整说明，请参阅 [Python UDF 指南](/zh/chdb/guides/python-udf)。
+</Warning>
 
 <div id="chdb-udf">
-  ### `chdb.udf.chdb_udf`
+  #### `chdb.udf.chdb_udf`
 </div>
 
 chDB Python UDF (用户自定义函数) 装饰器。
@@ -3509,13 +3769,13 @@ def sum_udf(lhs, rhs):
 @chdb_udf()
 def func_use_json(arg):
     import json
-    # ... 使用 json 模块
+    # ... use json module
 ```
 
 ***
 
 <div id="generate-udf">
-  ### `chdb.udf.generate_udf`
+  #### `chdb.udf.generate_udf`
 </div>
 
 生成 UDF 配置文件和可执行脚本。
@@ -3905,7 +4165,7 @@ str(bytes_or_buffer[, encoding[, errors]]) -> str
 根据给定对象创建一个新的字符串对象。如果指定了 encoding 或
 errors，则该对象必须提供一个数据缓冲区，
 该缓冲区将使用给定的编码和错误处理程序进行解码。
-否则，返回 object.*&#95;str*&#95;() 的结果 (如果已定义) 
+否则，返回 object.*&#95;str*&#95;() 的结果 (如果已定义)
 或 repr(object)。
 
 * encoding 默认为 ‘utf-8’。

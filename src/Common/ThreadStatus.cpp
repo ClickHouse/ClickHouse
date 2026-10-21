@@ -81,6 +81,26 @@ struct ThreadStack
     }
     ~ThreadStack()
     {
+        /// The deadly signal handlers request SA_ONSTACK, so a signal delivered after this point would
+        /// run on freed memory. The thread keeps executing thread_local destructors after this one.
+        stack_t disable{};
+        disable.ss_flags = SS_DISABLE;
+        /// Darwin rejects a zero size even when disabling.
+        disable.ss_size = getSize();
+        if (sigaltstack(&disable, nullptr) != 0)
+        {
+            const auto saved_errno = errno;
+            /// Leak rather than free a stack signals may still be delivered onto.
+            try
+            {
+                LOG_FATAL(getLogger("ThreadStatus"), "Cannot disable the alternative signal stack, leaking it, {}", errnoToString(saved_errno));
+            }
+            catch (...) // NOLINT(bugprone-empty-catch) Ok: a destructor must not throw, and logging is best-effort
+            {
+            }
+            return;
+        }
+
         if constexpr (guardPagesEnabled())
             memoryGuardRemove(data, getPageSize());
 
@@ -115,7 +135,17 @@ static thread_local bool has_alt_stack = false;
 
 
 ThreadStatus::ThreadStatus()
-    : thread_id(getThreadId())
+    : ThreadStatus(getThreadId())
+{
+}
+
+ThreadStatus::ThreadStatus(NoOSThreadTag)
+    : ThreadStatus(NO_OS_THREAD)
+{
+}
+
+ThreadStatus::ThreadStatus(UInt64 thread_id_)
+    : thread_id(thread_id_)
 {
     chassert(!current_thread);
 
@@ -142,34 +172,15 @@ ThreadStatus::ThreadStatus()
         /// Don't repeat tries even if not installed successfully.
         has_alt_stack = true;
 
-        /// We have to call 'sigaltstack' before first 'sigaction'. (It does not work other way, for unknown reason).
         stack_t altstack_description{};
         altstack_description.ss_sp = alt_stack.getData();
         altstack_description.ss_flags = 0;
         altstack_description.ss_size = ThreadStack::getSize();
 
+        /// `SA_ONSTACK` is requested once for all deadly signals in `setupCommonDeadlySignalHandlers`;
+        /// the kernel selects this stack at delivery time, so it may be installed afterwards.
         if (0 != sigaltstack(&altstack_description, nullptr))
-        {
             LOG_WARNING(log, "Cannot set alternative signal stack for thread, {}", errnoToString());
-        }
-        else
-        {
-            /// Obtain existing sigaction and modify it by adding a flag.
-            struct sigaction action{};
-            if (0 != sigaction(SIGSEGV, nullptr, &action))
-            {
-                LOG_WARNING(log, "Cannot obtain previous signal action to set alternative signal stack for thread, {}", errnoToString());
-            }
-            else if (!(action.sa_flags & SA_ONSTACK))
-            {
-                action.sa_flags |= SA_ONSTACK;
-
-                if (0 != sigaction(SIGSEGV, &action, nullptr))
-                {
-                    LOG_WARNING(log, "Cannot set action with alternative signal stack for thread, {}", errnoToString());
-                }
-            }
-        }
     }
 #endif
 }
@@ -263,9 +274,35 @@ void ThreadStatus::flushUntrackedMemory()
     memory_tracker.adjustWithUntrackedMemory(current_untracked_memory);
 }
 
+void ThreadStatus::publishUntrackedMemory()
+{
+    if (!per_cpu_memory.publish(untracked_memory.load(), per_cpu_untracked_memory))
+        flushUntrackedMemory();
+}
+
+namespace
+{
+thread_local bool query_cancellation_blocked = false;
+}
+
+ThreadStatus::QueryCancellationBlocker::QueryCancellationBlocker()
+    : previous(std::exchange(query_cancellation_blocked, true))
+{
+}
+
+ThreadStatus::QueryCancellationBlocker::~QueryCancellationBlocker()
+{
+    query_cancellation_blocked = previous;
+}
+
+bool ThreadStatus::QueryCancellationBlocker::isActive()
+{
+    return query_cancellation_blocked;
+}
+
 bool ThreadStatus::isQueryCanceled() const
 {
-    if (!thread_group)
+    if (!thread_group || query_cancellation_blocked)
         return false;
 
     if (local_data.query_is_canceled_predicate)
@@ -275,7 +312,7 @@ bool ThreadStatus::isQueryCanceled() const
 
 void ThreadStatus::throwIfQueryCanceled() const
 {
-    if (!thread_group)
+    if (!thread_group || query_cancellation_blocked)
         return;
 
     if (local_data.throw_if_query_canceled_predicate)

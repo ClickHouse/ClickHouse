@@ -1,0 +1,139 @@
+<test>
+    <!--
+        Deserialization of a whole column together with its subcolumns, or of several subcolumns that
+        share a substream. Such reads hit the substreams cache: a substream is deserialized once and
+        reused by every column/subcolumn that needs it. This stresses how the cached data is handed to
+        each reader (pointer sharing vs. range copy). Large values (1000-byte strings) make the shared
+        substream big so the cost is visible.
+
+        Each case is measured for both Wide parts (with a minmax skip index that forces reading
+        alternating granules) and Compact parts (where the substreams cache persists across granules).
+
+        Split from the type-based cases (Variant/JSON/String/Array) into a separate file because CI
+        measures at most 10 randomly-chosen queries per test file.
+    -->
+
+    <!-- ============================ Tuple(String x5) ============================ -->
+    <create_query>
+        CREATE TABLE tuple_wide
+        (
+            id UInt64, skip UInt8,
+            t Tuple(a String, b String, c String, d String, e String),
+            INDEX idx_skip skip TYPE minmax GRANULARITY 1
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0, index_granularity = 2048, index_granularity_bytes = 0,
+                 string_serialization_version = 'single_stream'
+    </create_query>
+    <fill_query>
+        INSERT INTO tuple_wide SELECT number, intDiv(number, 2048) % 2,
+            tuple(randomString(1000), randomString(1000), randomString(1000), randomString(1000), randomString(1000))
+        FROM numbers(150000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE tuple_wide FINAL</fill_query>
+
+    <create_query>
+        CREATE TABLE tuple_compact
+        (
+            id UInt64,
+            t Tuple(inner Tuple(a String, b String, c String, d String, e String))
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 1000000000000, string_serialization_version = 'single_stream'
+    </create_query>
+    <fill_query>
+        INSERT INTO tuple_compact SELECT number,
+            tuple(tuple(randomString(1000), randomString(1000), randomString(1000), randomString(1000), randomString(1000)))
+        FROM numbers(140000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE tuple_compact FINAL</fill_query>
+
+    <query>SELECT t, t.a, t.b, t.c, t.d, t.e FROM tuple_wide WHERE skip = 0 FORMAT Null SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000</query>
+    <query>SELECT t.inner, t.inner.a, t.inner.b, t.inner.c, t.inner.d, t.inner.e FROM tuple_compact FORMAT Null SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000</query>
+
+    <!-- ============================ Map(String, String) — basic serialization ============================ -->
+    <create_query>
+        CREATE TABLE map_basic_wide
+        (
+            id UInt64, skip UInt8, m Map(String, String),
+            INDEX idx_skip skip TYPE minmax GRANULARITY 1
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0, index_granularity = 2048, index_granularity_bytes = 0,
+                 map_serialization_version = 'basic'
+    </create_query>
+    <fill_query>
+        INSERT INTO map_basic_wide SELECT number, intDiv(number, 2048) % 2,
+            map('k0', randomString(1000), 'k1', randomString(1000), 'k2', randomString(1000), 'k3', randomString(1000), 'k4', randomString(1000))
+        FROM numbers(200000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE map_basic_wide FINAL</fill_query>
+
+    <create_query>
+        CREATE TABLE map_basic_compact
+        (
+            id UInt64, m Map(String, String)
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 1000000000000, map_serialization_version = 'basic'
+    </create_query>
+    <fill_query>
+        INSERT INTO map_basic_compact SELECT number,
+            map('k0', randomString(1000), 'k1', randomString(1000), 'k2', randomString(1000), 'k3', randomString(1000), 'k4', randomString(1000))
+        FROM numbers(100000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE map_basic_compact FINAL</fill_query>
+
+    <query>SELECT m['k0'], m['k1'], m['k2'], m['k3'], m['k4'] FROM map_basic_wide WHERE skip = 0 FORMAT Null SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000</query>
+    <query>SELECT m, m.keys, m.values, m['k0'], m['k1'] FROM map_basic_wide WHERE skip = 0 FORMAT Null SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000</query>
+    <query>SELECT m['k0'], m['k1'], m['k2'], m['k3'], m['k4'] FROM map_basic_compact FORMAT Null SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000</query>
+    <query>SELECT m, m.keys, m.values, m['k0'], m['k1'] FROM map_basic_compact FORMAT Null SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000</query>
+
+    <!-- ============================ Map(String, String) — bucketed serialization (2 buckets) ============================ -->
+    <create_query>
+        CREATE TABLE map_buckets_wide
+        (
+            id UInt64, skip UInt8, m Map(String, String),
+            INDEX idx_skip skip TYPE minmax GRANULARITY 1
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0, index_granularity = 2048, index_granularity_bytes = 0,
+                 map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets',
+                 map_buckets_strategy = 'constant', max_buckets_in_map = 2, map_buckets_min_avg_size = 0
+    </create_query>
+    <fill_query>
+        INSERT INTO map_buckets_wide SELECT number, intDiv(number, 2048) % 2,
+            map('k0', randomString(1000), 'k1', randomString(1000), 'k2', randomString(1000), 'k3', randomString(1000), 'k4', randomString(1000))
+        FROM numbers(200000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE map_buckets_wide FINAL</fill_query>
+
+    <create_query>
+        CREATE TABLE map_buckets_compact
+        (
+            id UInt64, m Map(String, String)
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 1000000000000,
+                 map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets',
+                 map_buckets_strategy = 'constant', max_buckets_in_map = 2, map_buckets_min_avg_size = 0
+    </create_query>
+    <fill_query>
+        INSERT INTO map_buckets_compact SELECT number,
+            map('k0', randomString(1000), 'k1', randomString(1000), 'k2', randomString(1000), 'k3', randomString(1000), 'k4', randomString(1000))
+        FROM numbers(70000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE map_buckets_compact FINAL</fill_query>
+
+    <query>SELECT m['k0'], m['k1'], m['k2'], m['k3'], m['k4'] FROM map_buckets_wide WHERE skip = 0 FORMAT Null SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000</query>
+    <query>SELECT m, m.keys, m.values, m['k0'], m['k1'] FROM map_buckets_wide WHERE skip = 0 FORMAT Null SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000</query>
+    <query>SELECT m['k0'], m['k1'], m['k2'], m['k3'], m['k4'] FROM map_buckets_compact FORMAT Null SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000</query>
+    <query>SELECT m, m.keys, m.values, m['k0'], m['k1'] FROM map_buckets_compact FORMAT Null SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000</query>
+
+    <drop_query>DROP TABLE IF EXISTS tuple_wide</drop_query>
+    <drop_query>DROP TABLE IF EXISTS tuple_compact</drop_query>
+    <drop_query>DROP TABLE IF EXISTS map_basic_wide</drop_query>
+    <drop_query>DROP TABLE IF EXISTS map_basic_compact</drop_query>
+    <drop_query>DROP TABLE IF EXISTS map_buckets_wide</drop_query>
+    <drop_query>DROP TABLE IF EXISTS map_buckets_compact</drop_query>
+</test>

@@ -1,0 +1,17 @@
+a constant that does not fit the column
+0
+0
+3
+an OR chain of equalities, which the rewrite turns into IN
+0
+0
+a mixed set keeps the members that do fit
+1
+2
+constants that do fit are unchanged
+2
+0
+1
+the values table function takes the same path
+1970-01-01 00:00:01
+1970-01-01 00:00:01

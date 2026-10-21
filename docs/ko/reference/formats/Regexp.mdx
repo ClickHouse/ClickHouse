@@ -23,13 +23,13 @@ doc_type: 'reference'
 
 **사용법**
 
-[format&#95;regexp](/ko/reference/settings/formats#format_regexp) 설정에 지정된 정규식이 가져온 데이터의 각 줄에 적용됩니다. 정규식의 서브패턴 개수는 가져온 데이터셋의 컬럼 수와 같아야 합니다.
+[format&#95;regexp](/ko/reference/settings/formats/format-regexp#format_regexp) 설정에 지정된 정규식이 가져온 데이터의 각 줄에 적용됩니다. 정규식의 서브패턴 개수는 가져온 데이터셋의 컬럼 수와 같아야 합니다.
 
 가져온 데이터의 각 줄은 개행 문자 `'\n'` 또는 DOS 스타일 개행 `"\r\n"`으로 구분되어야 합니다.
 
-일치한 각 서브패턴의 내용은 [format&#95;regexp&#95;escaping&#95;rule](/ko/reference/settings/formats#format_regexp_escaping_rule) 설정에 따라 해당 데이터 타입의 메서드로 파싱됩니다.
+일치한 각 서브패턴의 내용은 [format&#95;regexp&#95;escaping&#95;rule](/ko/reference/settings/formats/format-regexp#format_regexp_escaping_rule) 설정에 따라 해당 데이터 타입의 메서드로 파싱됩니다.
 
-정규식이 해당 줄과 일치하지 않고 [format&#95;regexp&#95;skip&#95;unmatched](/ko/reference/settings/formats#format_regexp_escaping_rule)가 1로 설정되어 있으면, 해당 줄은 별도 알림 없이 건너뜁니다. 그렇지 않으면 예외가 발생합니다.
+정규식이 해당 줄과 일치하지 않고 [format&#95;regexp&#95;skip&#95;unmatched](/ko/reference/settings/formats/format-regexp#format_regexp_skip_unmatched)가 1로 설정되어 있으면, 해당 줄은 별도 알림 없이 건너뜁니다. 그렇지 않으면 예외가 발생합니다.
 
 <div id="example-usage">
   ## 사용 예시

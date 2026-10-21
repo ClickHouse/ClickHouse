@@ -312,6 +312,10 @@ class LakeTableGenerator:
         random.shuffle(random_subset)
         return ",".join(random_subset)
 
+    def set_table_location(self, next_location: typing.Optional[str]) -> str:
+        """Spark puts LOCATION after PARTITIONED BY and before COMMENT."""
+        return f" LOCATION '{next_location}'" if next_location is not None else ""
+
     def generate_create_table_ddl(
         self,
         catalog_name: str,
@@ -322,6 +326,7 @@ class LakeTableGenerator:
         deterministic: bool,
         next_storage: TableStorage,
         next_catalog: LakeCatalogs,
+        next_location: typing.Optional[str] = None,
     ) -> tuple[str, SparkTable]:
         """
         Generate a complete CREATE TABLE DDL statement with random properties
@@ -479,7 +484,7 @@ class LakeTableGenerator:
                 flat_cols = res.flat_columns()
                 res.partition_keys = [c for c in random_subset if c in flat_cols]
 
-        # ddl += self.set_table_location(next_location) no location needed yet
+        ddl += self.set_table_location(next_location)
 
         # Optional table COMMENT (metadata only; supported by Iceberg and Delta)
         if random.randint(1, 3) == 1:

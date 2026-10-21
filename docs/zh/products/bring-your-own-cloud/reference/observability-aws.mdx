@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-BYOC 部署提供全面的可观测性功能，使您能够通过专用的 Prometheus 监控栈以及 ClickHouse 服务器直接暴露的指标端点来监控您的 ClickHouse 服务。所有可观测性数据都会保留在您的云账户中，让您能够完全掌控自己的监控基础设施。
+BYOC 部署提供全面的可观测性功能，使您能够通过专用的 Prometheus 监控栈以及 ClickHouse 服务器直接暴露的指标端点来监控您的 ClickHouse 服务。您的监控数据都会保留在您的云账户中，让您能够完全掌控自己的监控基础设施。[网络边界](/zh/products/bring-your-own-cloud/reference/network-security#outbound-connections)中列出的受限用量与健康状况遥测数据是唯一导出到 ClickHouse 的监控数据；此外，ClickHouse 的仪表盘以及在经过批准的处理流程后其工程师可通过 Tailscale 就地查询该栈，且不会在 ClickHouse 一侧留存任何数据 —— 参见 [ClickHouse 数据访问](/zh/products/bring-your-own-cloud/reference/clickhouse-data-access)。
 
 <div id="prometheus-monitoring">
   ## Prometheus 监控方法
@@ -34,7 +34,7 @@ BYOC 提供了两种使用 Prometheus 收集和可视化指标的主要方法：
 | **最适合的场景** | 全面的基础设施和服务监控                                     | 面向特定服务的监控和集成                             |
 | **集成方式**   | 在外部 Prometheus 中配置 federation 以摄取集群指标            | 将 ClickHouse 指标端点直接添加到 Prometheus 配置中    |
 
-**建议**：对于大多数使用场景，我们建议集成内置 Prometheus 栈，因为它能够提供 BYOC 部署中所有组件 (ClickHouse 服务、Kubernetes 集群和配套服务) 的全面指标，而不仅仅是 ClickHouse 服务器指标。 
+**建议**：对于大多数使用场景，我们建议集成内置 Prometheus 栈，因为它能够提供 BYOC 部署中所有组件 (ClickHouse 服务、Kubernetes 集群和配套服务) 的全面指标，而不仅仅是 ClickHouse 服务器指标。
 
 <div id="builtin-prometheus-stack">
   ## 内置 BYOC Prometheus 栈
@@ -46,25 +46,25 @@ ClickHouse BYOC 会在 Kubernetes 集群内部署一套完整的 Prometheus 监�
 * Kubernetes 集群和系统组件
 * 底层基础设施节点
 
-<div id="accessing-prometheus-stack">
-  ### 访问 Prometheus 栈
-</div>
+### 访问 Prometheus 栈 {#accessing-prometheus-stack}
 
-要连接到内置的 Prometheus 栈，请执行以下操作：
+要连接内置的 Prometheus 栈：
 
-1. **联系 ClickHouse 支持团队**，为您的 BYOC 环境启用私有负载均衡器。
-2. **向 ClickHouse 支持团队索取 Prometheus 端点 URL**。
-3. **确认与 Prometheus 端点之间的私有网络连通性**——通常通过 VPC 对等连接或其他私有网络配置实现。
+1. 在 ClickHouse Cloud 控制台中为您的 BYOC 基础设施**启用私有负载均衡器** (请参阅[负载均衡器](/zh/products/bring-your-own-cloud/configuration/configurations#load-balancers)) 。
+2. 向 ClickHouse 支持团队**获取 Prometheus 端点 URL**。
+3. **验证是否可通过私有网络连接到 Prometheus 端点**，通常可通过 VPC/VNet 对等互连或其他私有网络配置实现。
 
 端点格式因连接类型而异：
 
-| 连接方式              | 端点格式                                                                           |
-| ----------------- | ------------------------------------------------------------------------------ |
-| VPC / VPC peering | `https://prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com` |
-| PrivateLink       | `https://prometheus.vpce.<subdomain>.<region>.<cloud>.clickhouse-byoc.com`     |
+| 连接方式          | 端点格式                                                                           |
+| ------------- | ------------------------------------------------------------------------------ |
+| VPC/VNet 对等互连 | `https://prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com` |
+| 专用终结点         | `https://prometheus.<label>.<subdomain>.<region>.<cloud>.clickhouse-byoc.com`  |
+
+`<cloud>` 可以是 `aws`、`gcp` 或 `azure`。对于专用终结点，`<label>` 因云平台而异：AWS 为 `vpce`，GCP 为 `p`，Azure 为 `privatelink`。
 
 <Note>
-  Prometheus 栈 URL 只能通过私有网络连接访问，且不需要身份验证。只有能够通过 VPC 对等连接或其他私有连接方式访问您的 BYOC VPC 的网络才能访问。
+  Prometheus 栈 URL 只能通过私有网络连接访问，且无需身份验证。只有能够通过对等互连或其他私有连接方式访问您的 BYOC VPC/VNet 的网络才能访问该 URL。
 </Note>
 
 <div id="prometheus-stack-integration">
@@ -112,26 +112,24 @@ scrape_configs:
 
 ClickHouse 服务会暴露一个与 Prometheus 兼容的指标端点，你可以直接使用自己的 Prometheus 实例进行抓取。这种方式可提供 ClickHouse 特有的指标，但不包含 Kubernetes 或相关支持服务的指标。
 
-<div id="metrics-endpoint">
-  ### 访问指标端点
-</div>
+### 访问指标端点 {#metrics-endpoint}
 
 指标端点位于您的 ClickHouse 服务端点上的 `/metrics_all`：
 
 ```bash
-curl --user <username>:<password> https://<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443/metrics_all
+curl --user <username>:<password> https://<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443/metrics_all
 ```
 
 **示例响应：**
 
 ```bash
-# HELP ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes 存储在系统数据库 `s3disk` 磁盘上的字节数
+# HELP ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes The amount of bytes stored on disk `s3disk` in system database
 # TYPE ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes gauge
 ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes{hostname="c-jet-ax-16-server-43d5baj-0"} 62660929
-# HELP ClickHouse_CustomMetric_NumberOfBrokenDetachedParts 损坏的 detached parts 数量
+# HELP ClickHouse_CustomMetric_NumberOfBrokenDetachedParts The number of broken detached parts
 # TYPE ClickHouse_CustomMetric_NumberOfBrokenDetachedParts gauge
 ClickHouse_CustomMetric_NumberOfBrokenDetachedParts{hostname="c-jet-ax-16-server-43d5baj-0"} 0
-# HELP ClickHouse_CustomMetric_TotalNumberOfErrors 自上次重启以来服务器上的错误总数
+# HELP ClickHouse_CustomMetric_TotalNumberOfErrors The total number of errors on server since the last restart
 # TYPE ClickHouse_CustomMetric_TotalNumberOfErrors gauge
 ClickHouse_CustomMetric_TotalNumberOfErrors{hostname="c-jet-ax-16-server-43d5baj-0"} 9
 ```
@@ -169,9 +167,7 @@ GRANT SELECT(description, labels, metric, value) ON system.histogram_metrics TO 
 GRANT SELECT(description, metric, value) ON system.metrics TO scrapping_user;
 ```
 
-<div id="configuring-prometheus">
-  ### 配置 Prometheus
-</div>
+### 配置 Prometheus {#configuring-prometheus}
 
 将你的 Prometheus 实例配置为抓取 ClickHouse 的指标端点：
 
@@ -182,7 +178,7 @@ global:
 scrape_configs:
   - job_name: "clickhouse"
     static_configs:
-      - targets: ["<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443"]
+      - targets: ["<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443"]
     scheme: https
     metrics_path: "/metrics_all"
     basic_auth:
@@ -193,7 +189,7 @@ scrape_configs:
 
 替换：
 
-* 将 `<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443` 替换为你的实际服务端点
+* 将 `<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443` 替换为你的实际服务端点
 * 将 `<username>` 和 `<password>` 替换为用于抓取的用户凭据
 
 <div id="clickhouse-mixin">
@@ -202,9 +198,7 @@ scrape_configs:
 
 对于希望直接使用现成仪表盘的团队，ClickHouse 提供了一个 Prometheus **ClickHouse Mixin**。这是一个预先构建好的 Grafana 仪表盘，专门用于监控 ClickHouse 集群。
 
-<div id="setup-grafana-mixin">
-  ### 设置 Grafana 并导入 ClickHouse Mix-in
-</div>
+### 设置 Grafana 并导入 ClickHouse Mix-in {#setup-grafana-mixin}
 
 当你的 Prometheus 实例已集成到 ClickHouse 监控栈中后，即可按以下步骤在 Grafana 中将指标可视化：
 

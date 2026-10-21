@@ -26,16 +26,18 @@ Se a configuração estiver habilitada, permite o uso de colunas materializadas 
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Ativa ou desativa a desduplicação de blocos de `INSERT` (para tabelas Replicated*).
+Habilita ou desabilita a desduplicação de blocos de `INSERT` (para tabelas Replicated*).
+
+Essa configuração só tem efeito quando [`deduplicate_insert`](/pt-BR/reference/settings/session-settings/deduplicate-insert#deduplicate_insert) está definido como `backward_compatible_choice`.
 
 Valores possíveis:
 
-* 0 — Desativado.
-* 1 — Ativado.
+* 0 — Desabilitado.
+* 1 — Habilitado.
 
 Por padrão, os blocos inseridos em tabelas replicadas pela instrução `INSERT` são desduplicados (consulte [Replicação de dados](/pt-BR/reference/engines/table-engines/mergetree-family/replication)).
-Por padrão, em tabelas replicadas, apenas os 100 blocos mais recentes de cada partição são desduplicados (consulte [replicated&#95;deduplication&#95;window](/pt-BR/reference/settings/merge-tree-settings#replicated_deduplication_window), [replicated&#95;deduplication&#95;window&#95;seconds](/pt-BR/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)).
-Para tabelas não replicadas, consulte [non&#95;replicated&#95;deduplication&#95;window](/pt-BR/reference/settings/merge-tree-settings#non_replicated_deduplication_window).
+Por padrão, em tabelas replicadas, apenas os 100 blocos mais recentes de cada partição são desduplicados (consulte [replicated&#95;deduplication&#95;window](/pt-BR/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window), [replicated&#95;deduplication&#95;window&#95;seconds](/pt-BR/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)).
+Para tabelas não replicadas, consulte [non&#95;replicated&#95;deduplication&#95;window](/pt-BR/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window).
 
 <div id="insert_deduplication_token">
   ## insert_deduplication_token
@@ -51,8 +53,8 @@ Valores possíveis:
 
 `insert_deduplication_token` é usado para desduplicação *apenas* quando não está vazio.
 
-Para tabelas replicadas, por padrão, apenas as 100 inserções mais recentes de cada partição são desduplicadas (consulte [replicated&#95;deduplication&#95;window](/pt-BR/reference/settings/merge-tree-settings#replicated_deduplication_window), [replicated&#95;deduplication&#95;window&#95;seconds](/pt-BR/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)).
-Para tabelas não replicadas, consulte [non&#95;replicated&#95;deduplication&#95;window](/pt-BR/reference/settings/merge-tree-settings#non_replicated_deduplication_window).
+Para tabelas replicadas, por padrão, apenas as 100 inserções mais recentes de cada partição são desduplicadas (consulte [replicated&#95;deduplication&#95;window](/pt-BR/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window), [replicated&#95;deduplication&#95;window&#95;seconds](/pt-BR/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)).
+Para tabelas não replicadas, consulte [non&#95;replicated&#95;deduplication&#95;window](/pt-BR/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window).
 
 <Note>
   `insert_deduplication_token` é controlado por partição, portanto várias partições gravadas por um insert podem usar o mesmo token. Sem um token, o checksum padrão do conteúdo é calculado sobre todo o bloco inserido, portanto um insert só é desduplicado quando todos os seus dados correspondem aos de um insert anterior (uma nova tentativa), e não quando as linhas de uma única partição, por acaso, coincidem com as de um insert diferente.

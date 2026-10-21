@@ -129,7 +129,7 @@ def main():
     # https://play.clickhouse.com/play?user=play&run=1#U0VMRUNUIGNoZWNrX3N0YXJ0X3RpbWUsIGNoZWNrX25hbWUsIHRlc3RfbmFtZSwgcmVwb3J0X3VybApGUk9NIGNoZWNrcwpXSEVSRSAxCiAgICBBTkQgY2hlY2tfc3RhcnRfdGltZSA+PSBub3coKSAtIElOVEVSVkFMIDEwIERBWQogICAgQU5EIChoZWFkX3JlZiA9ICdtYXN0ZXInIEFORCBzdGFydHNXaXRoKGhlYWRfcmVwbywgJ0NsaWNrSG91c2UvJykpCiAgICBBTkQgdGVzdF9zdGF0dXMgIT0gJ1NLSVBQRUQnCiAgICBBTkQgKHRlc3Rfc3RhdHVzIExJS0UgJ0YlJyBPUiB0ZXN0X3N0YXR1cyBMSUtFICdFJScpCiAgICBBTkQgY2hlY2tfc3RhdHVzICE9ICdzdWNjZXNzJwogICAgQU5EIGNoZWNrX25hbWUgTk9UIExJS0UgJ2xpYkZ1enplciUnCiAgICBBTkQgY2hlY2tfbmFtZSAhPSAnQ2xpY2tIb3VzZSBLZWVwZXIgSmVwc2VuJwogICAgQU5EIHRlc3RfbmFtZSBMSUtFICclYXNzZXJ0SGFzVmFsaWRWZXJzaW9uTWV0YWRhdGElJwpPUkRFUiBCWSBjaGVja19zdGFydF90aW1lIERFU0M=
     allow_transactions = False
     disallowed_settings = [
-        # Disable old analyzer always
+        # Obsolete: the analyzer cannot be disabled, so a generated value is refused
         "enable_analyzer",
         # Don't always apply settings from the server
         "apply_settings_from_server",
@@ -204,7 +204,8 @@ def main():
         "max_dictionaries": random.randint(0, 10),
         "max_functions": random.randint(0, 8),
         "max_policies": random.randint(0, 8),
-        "max_hypotheticals": random.randint(0, 0),
+        "max_hypothetical_indexes": random.randint(0, 4),
+        "max_hypothetical_projections": random.randint(0, 4),
         "max_columns": random.randint(1, 8),
         "min_nested_rows": min_nested_rows,
         "max_nested_rows": random.randint(min_nested_rows, max_nested_rows),
@@ -239,6 +240,8 @@ def main():
         "enable_sync_settings": random.randint(1, 4) == 1,
         "enable_backups": random.randint(1, 4) == 1,
         "enable_renames": random.randint(1, 4) == 1,
+        # Some fail points abort or hang the server by design
+        "enable_failpoints": False,
         "allow_hardcoded_inserts": allow_hardcoded_inserts,
         "client_file_path": "/var/lib/clickhouse/user_files",
         "server_file_path": "/var/lib/clickhouse/user_files",
@@ -270,8 +273,6 @@ def main():
         "disallowed_settings": disallowed_settings,
         # MergeTree settings to set more often
         "hot_table_settings": [
-            "add_minmax_index_for_block_number_column",
-            "add_minmax_index_for_block_offset_column",
             "add_minmax_index_for_numeric_columns",
             "add_minmax_index_for_string_columns",
             "add_minmax_index_for_temporal_columns",
@@ -279,18 +280,12 @@ def main():
             "allow_commit_order_projection",
             "allow_experimental_text_index_phrase_search",
             "allow_nullable_key",
-            "allow_part_offset_column_in_projections",
             "allow_suspicious_indices",
             "allow_tuple_element_aggregation",
-            "allow_vertical_merges_from_compact_to_wide_parts",
             "auto_statistics_types",
-            "compress_marks",
-            "compress_primary_key",
             "dynamic_serialization_version",
             "enable_block_number_column",
             "enable_block_offset_column",
-            "enable_index_granularity_compression",
-            "enable_vertical_merge_algorithm",
             "index_granularity",
             "index_granularity_bytes",
             "map_buckets_strategy",
@@ -302,16 +297,13 @@ def main():
             "object_serialization_version",
             "object_shared_data_buckets_for_compact_part",
             "object_shared_data_buckets_for_wide_part",
-            "primary_key_lazy_load",
+            "optimize_row_order",
             "ratio_of_defaults_for_sparse_serialization",
             "serialization_info_version",
-            "share_nested_offsets",
+            "skip_empty_columns_on_insert",
             "string_serialization_version",
-            "use_compact_variant_discriminators_serialization",
             "use_const_adaptive_granularity",
             "vertical_merge_algorithm_min_bytes_to_activate",
-            "vertical_merge_optimize_ttl_delete",
-            "write_marks_for_substreams_in_compact_parts",
         ],
     }
     with open(buzz_config_file, "w") as outfile:

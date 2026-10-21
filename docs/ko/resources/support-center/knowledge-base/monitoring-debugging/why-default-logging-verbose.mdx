@@ -24,7 +24,7 @@ ClickHouse 개발자들은 문제가 발생했을 때 `trace`가 많은 정보�
   ## 로그 수준 변경
 </div>
 
-사용 가능한 각 로그 수준은 [여기](/ko/reference/settings/server-settings/settings#logger)에 설명되어 있습니다.
+사용 가능한 각 로그 수준은 [여기](/ko/reference/settings/server-settings/settings/other#logger)에 설명되어 있습니다.
 
 로그 수준을 변경하려면 ClickHouse 서버 설정 파일(`/etc/clickhouse-server/config.xml`)을 편집해야 합니다.
 
@@ -33,9 +33,9 @@ ClickHouse 개발자들은 문제가 발생했을 때 `trace`가 많은 정보�
 ```
 <clickhouse>
     <logger>
-        {/* 사용 가능한 레벨 [1]:
+        {/* Possible levels [1]:
 
-          - none (로깅 비활성화)
+          - none (turns off logging)
           - fatal
           - critical
           - error
@@ -44,10 +44,10 @@ ClickHouse 개발자들은 문제가 발생했을 때 `trace`가 많은 정보�
           - information
           - debug
           - trace
-          - test (프로덕션 환경에서 사용 금지)
+          - test (not for production usage)
 
             [1]: https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/Logger.h#L105-L114 */}
         <level>trace</level>
-... 설정 파일의 나머지 부분
+... Rest of the configuration file
 </clickhouse>
 ```

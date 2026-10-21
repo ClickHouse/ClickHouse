@@ -135,9 +135,9 @@ clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_defa
 
 데이터 필드에는 큰따옴표만 사용하고 작은따옴표는 값 내부에 포함될 수 있으므로, CSV 파서가 이를 혼동하지 않도록 `format_csv_allow_single_quotes`를 비활성화합니다.
 
-데이터에 [NULL](/ko/reference/settings/formats#input_format_null_as_default)이 없으므로 [input&#95;format&#95;null&#95;as&#95;default](/ko/reference/settings/formats#input_format_null_as_default)를 비활성화합니다. 그렇지 않으면 ClickHouse가 `\N` 시퀀스를 파싱하려고 시도하여 데이터 내의 `\`와 혼동할 수 있습니다.
+데이터에 [NULL](/ko/reference/settings/formats/input-format#input_format_null_as_default)이 없으므로 [input&#95;format&#95;null&#95;as&#95;default](/ko/reference/settings/formats/input-format#input_format_null_as_default)를 비활성화합니다. 그렇지 않으면 ClickHouse가 `\N` 시퀀스를 파싱하려고 시도하여 데이터 내의 `\`와 혼동할 수 있습니다.
 
-설정 [date&#95;time&#95;input&#95;format best&#95;effort](/ko/reference/settings/formats#date_time_input_format)를 사용하면 [DateTime](/ko/reference/data-types/datetime) 필드를 매우 다양한 포맷으로 파싱할 수 있습니다. 예를 들어 초가 없는 ISO-8601 형식인 &#39;2000-01-01 01:02&#39;도 인식됩니다. 이 설정이 없으면 고정된 DateTime 포맷만 허용됩니다.
+설정 [date&#95;time&#95;input&#95;format best&#95;effort](/ko/reference/settings/formats/date-time#date_time_input_format)를 사용하면 [DateTime](/ko/reference/data-types/datetime) 필드를 매우 다양한 포맷으로 파싱할 수 있습니다. 예를 들어 초가 없는 ISO-8601 형식인 &#39;2000-01-01 01:02&#39;도 인식됩니다. 이 설정이 없으면 고정된 DateTime 포맷만 허용됩니다.
 
 <div id="denormalize-data">
   ## 데이터 비정규화

@@ -1,0 +1,5 @@
+flowchart TD
+    N["column declared Nested(a T1, b T2, ...)"]
+    N --> Q{"flatten_nested?"}
+    Q -->|"= 1 (server default)"| A["N parallel Array(T_i) columns<br/>with dotted names (n.a, n.b)<br/>— no Nested wire type"]
+    Q -->|"= 0"| B["one column, type string Nested(...)<br/>laid out byte-identically to<br/>Array(Tuple(T1, ..., Tn))"]

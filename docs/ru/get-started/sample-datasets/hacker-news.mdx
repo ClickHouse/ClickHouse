@@ -450,8 +450,8 @@ CSV — почти идеальный сценарий использовани�
 Вывод типов для файла Parquet неизбежно приведёт к схеме, немного отличающейся от схемы CSV-файла.
 
 <Steps>
-  <Step title="Вставка данных" id="insert-the-data">
-    Выполните следующий запрос, чтобы снова прочитать те же данные в формате Parquet, используя функцию `url` для чтения удалённых данных:
+  <Step title="Вставьте данные" id="insert-the-data">
+    Выполните следующий запрос, чтобы прочитать те же данные в формате Parquet, снова используя функцию `url` для чтения данных из удалённого источника:
 
     ```sql
     DROP TABLE IF EXISTS hackernews;
@@ -461,26 +461,31 @@ CSV — почти идеальный сценарий использовани�
     ORDER BY id
     SETTINGS allow_nullable_key = 1 EMPTY AS
     SELECT *
-    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet')
+    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet');
 
     INSERT INTO hackernews SELECT *
-    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet')
+    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet');
     ```
 
     <Info>
-      **Ключи со значением `NULL` в Parquet**
+      **NULL-ключи в Parquet**
 
-      Из-за особенностей формата Parquet нужно учитывать, что ключи могут быть `NULL`,
-      даже если в самих данных их нет.
+      При выводе схемы столбцы получают тип `Nullable`, поэтому требуется `allow_nullable_key`, хотя в этом наборе данных нет
+      ID со значением NULL.
     </Info>
 
-    Выполните следующую команду, чтобы просмотреть автоматически выведенную схему:
+    Выполните следующую команду, чтобы просмотреть выведенную схему:
+
+    ```sql title="Query"
+    DESCRIBE TABLE hackernews;
+    ```
 
     ```response title="Response"
     ┌─name────────┬─type───────────────────┬
     │ id          │ Nullable(Int64)        │
     │ deleted     │ Nullable(UInt8)        │
     │ type        │ Nullable(String)       │
+    │ by          │ Nullable(String)       │
     │ time        │ Nullable(Int64)        │
     │ text        │ Nullable(String)       │
     │ dead        │ Nullable(UInt8)        │
@@ -495,10 +500,12 @@ CSV — почти идеальный сценарий использовани�
     └─────────────┴────────────────────────┴
     ```
 
-    Как и в случае с CSV-файлом, вы можете вручную указать схему, чтобы точнее контролировать выбранные типы, и напрямую вставить
-    данные из S3:
+    На следующих шагах используются более понятные имена столбцов, такие как `author` и `comment`, поэтому продолжайте работу с вручную заданной схемой.
+    Сначала удалите таблицу с автоматически определённой схемой, затем создайте таблицу и вставьте данные напрямую из публичного S3 бакета:
 
     ```sql
+    DROP TABLE IF EXISTS hackernews;
+
     CREATE TABLE hackernews
     (
         `id` UInt64,
@@ -523,6 +530,7 @@ CSV — почти идеальный сценарий использовани�
     INSERT INTO hackernews
     SELECT * FROM s3(
             'https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet',
+            NOSIGN,
             'Parquet',
             'id UInt64,
              deleted UInt8,
@@ -542,103 +550,121 @@ CSV — почти идеальный сценарий использовани�
     ```
   </Step>
 
-  <Step title="Добавьте пропускающий индекс, чтобы ускорить запросы" id="add-skipping-index">
+  <Step title="Добавьте текстовый индекс для ускорения поиска" id="add-skipping-index">
     Чтобы узнать, сколько комментариев содержат упоминание &quot;ClickHouse&quot;, выполните следующий запрос:
 
     ```sql title="Query"
     SELECT count(*)
     FROM hackernews
-    WHERE hasToken(lower(comment), 'ClickHouse');
+    WHERE hasAnyTokens(lower(comment), 'clickhouse');
     ```
 
     ```response title="Response" highlight={1}
-    1 row in set. Elapsed: 0.843 sec. Processed 28.74 million rows, 9.75 GB (34.08 million rows/s., 11.57 GB/s.)
     ┌─count()─┐
-    │     516 │
+    │    1145 │
     └─────────┘
+
+    1 row in set. Elapsed: 3.251 sec. Processed 28.74 million rows, 9.60 GB (8.84 million rows/s., 2.95 GB/s.)
     ```
 
-    Далее вы создадите инвертированный [индекс](/ru/reference/engines/table-engines/mergetree-family/textindexes) по столбцу &quot;comment&quot;,
-    чтобы ускорить этот запрос.
-    Обратите внимание, что комментарии в нижнем регистре будут проиндексированы, чтобы можно было находить термины независимо от регистра.
+    Затем создайте [текстовый индекс](/ru/reference/engines/table-engines/mergetree-family/textindexes) для столбца `comment`,
+    чтобы ускорить этот запрос. Текстовый индекс использует инвертированный индекс, сопоставляющий токены со строками, в которых они содержатся.
+    Токенизатор `splitByNonAlpha` разбивает текст по неалфавитно-цифровым символам. В индексе и запросах используется `lower(comment)`
+    с поисковыми запросами в нижнем регистре, поэтому сопоставление регистронезависимо. Выражение запроса должно совпадать с выражением, по которому построен индекс.
 
     Выполните следующие команды, чтобы создать индекс:
 
     ```sql
-    ALTER TABLE hackernews ADD INDEX comment_idx(lower(comment)) TYPE inverted;
-    ALTER TABLE hackernews MATERIALIZE INDEX comment_idx;
+    ALTER TABLE hackernews
+        ADD INDEX comment_idx lower(comment)
+        TYPE text(tokenizer = splitByNonAlpha);
+
+    ALTER TABLE hackernews
+        MATERIALIZE INDEX comment_idx
+        SETTINGS mutations_sync = 2;
     ```
 
-    Материализация индекса занимает некоторое время (чтобы проверить, был ли создан индекс, используйте системную таблицу `system.data_skipping_indices`).
+    Материализация создаёт индекс для уже существующих данных. Настройка `mutations_sync` ожидает завершения материализации.
+    Определение индекса можно проверить в таблице `system.data_skipping_indices`.
 
-    После создания индекса снова выполните запрос:
+    После материализации индекса выполните тот же запрос ещё раз:
 
     ```sql title="Query"
     SELECT count(*)
     FROM hackernews
-    WHERE hasToken(lower(comment), 'clickhouse');
+    WHERE hasAnyTokens(lower(comment), 'clickhouse');
     ```
 
-    Обратите внимание: теперь запрос с индексом выполняется всего за 0.248 секунды вместо прежних 0.843 секунды без него:
-
     ```response title="Response" highlight={1}
-    1 row in set. Elapsed: 0.248 sec. Processed 4.54 million rows, 1.79 GB (18.34 million rows/s., 7.24 GB/s.)
     ┌─count()─┐
     │    1145 │
     └─────────┘
+
+    1 row in set. Elapsed: 0.019 sec. Processed 4.48 million rows, 4.48 MB (232.23 million rows/s., 232.23 MB/s.)
     ```
 
-    Конструкцию [`EXPLAIN`](/ru/reference/statements/explain) можно использовать, чтобы понять, почему добавление этого индекса
-    ускорило запрос примерно в 3,4 раза.
+    Результат остаётся тем же, поскольку индекс меняет способ поиска ClickHouse подходящих строк, а не сами условия соответствия. Индексированный
+    запрос обрабатывает значительно меньше данных и выполняется намного быстрее.
+    Используйте [`EXPLAIN`](/ru/reference/statements/explain), чтобы убедиться, что ClickHouse планирует использовать индекс:
 
-    ```response text="Query"
+    ```sql title="Query"
     EXPLAIN indexes = 1
     SELECT count(*)
     FROM hackernews
-    WHERE hasToken(lower(comment), 'clickhouse')
+    WHERE hasAnyTokens(lower(comment), 'clickhouse');
     ```
 
     ```response title="Response"
-    ┌─explain─────────────────────────────────────────┐
-    │ Expression ((Projection + Before ORDER BY))     │
-    │   Aggregating                                   │
-    │     Expression (Before GROUP BY)                │
-    │       Filter (WHERE)                            │
-    │         ReadFromMergeTree (default.hackernews)  │
-    │         Indexes:                                │
-    │           PrimaryKey                            │
-    │             Condition: true                     │
-    │             Parts: 4/4                          │
-    │             Granules: 3528/3528                 │
-    │           Skip                                  │
-    │             Name: comment_idx                   │
-    │             Description: inverted GRANULARITY 1 │
-    │             Parts: 4/4                          │
-    │             Granules: 554/3528                  │
-    └─────────────────────────────────────────────────┘
+    Output: count()
+
+    Aggregating
+    │  Keys:
+    │  Aggregates: count()
+    │  Skip merging: 0
+    └──Filter
+       │  Filter column: __text_index_comment_idx_hasAnyTokens_7b9491bd22343c822f64c95a9bda20f9
+       └──ReadFromMergeTree (default.hackernews)
+             Read type: Default
+             Parts: 4 | Granules: 547
+             Output: __text_index_comment_idx_hasAnyTokens_7b9491bd22343c822f64c95a9bda20f9
+             Indexes:
+               PrimaryKey
+                 Condition: true
+                 Parts: 4/4
+                 Granules: 3527/3527
+               Skip
+                 Name: comment_idx
+                 Description: text GRANULARITY 100000000
+                 Condition: (mode: Any; tokens: ["clickhouse"])
+                 Parts: 4/4
+                 Granules: 547/3527
+               Ranges: 437
     ```
 
-    Обратите внимание, как индекс позволил пропустить значительное количество гранул,
-    что ускорило выполнение запроса.
+    Запись `comment_idx` показывает, что ClickHouse планирует использовать текстовый индекс. В этом примере план выбирает 547 из 3527
+    гранул, значительно сокращая объём обрабатываемых данных.
 
-    Теперь также можно эффективно искать по одному или сразу по всем нескольким терминам:
+    Можно также искать один или все из нескольких токенов. Эти функции сопоставляют полные токены, сформированные токенизатором индекса.
+    Используйте `hasAnyTokens`, если должен совпасть хотя бы один токен:
 
     ```sql title="Query"
     SELECT count(*)
     FROM hackernews
-    WHERE multiSearchAny(lower(comment), ['oltp', 'olap']);
+    WHERE hasAnyTokens(lower(comment), 'oltp olap');
     ```
 
     ```response title="Response"
     ┌─count()─┐
-    │    2177 │
+    │    2020 │
     └─────────┘
     ```
+
+    Используйте `hasAllTokens`, если все токены должны совпадать в любом порядке:
 
     ```sql title="Query"
     SELECT count(*)
     FROM hackernews
-    WHERE hasToken(lower(comment), 'avx') AND hasToken(lower(comment), 'sve');
+    WHERE hasAllTokens(lower(comment), 'avx sve');
     ```
 
     ```response title="Response"
