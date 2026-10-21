@@ -15,6 +15,7 @@ class TableFunctionFuzzQuery : public ITableFunction
 public:
     static constexpr auto name = "fuzzQuery";
     std::string getName() const override { return name; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 

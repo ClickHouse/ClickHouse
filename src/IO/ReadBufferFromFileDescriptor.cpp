@@ -1,3 +1,4 @@
+#include <fcntl.h>
 #include <cerrno>
 #include <ctime>
 #include <algorithm>
@@ -11,6 +12,7 @@
 #include <Common/Throttler.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
+#include <IO/preadNoWait.h>
 #include <Common/filesystemHelpers.h>
 #include <poll.h>
 #include <sys/stat.h>
@@ -24,6 +26,7 @@ namespace ProfileEvents
     extern const Event ReadBufferFromFileDescriptorRead;
     extern const Event ReadBufferFromFileDescriptorReadFailed;
     extern const Event ReadBufferFromFileDescriptorReadBytes;
+    extern const Event ReadBufferFromFileDescriptorPageCacheHitBytes;
     extern const Event DiskReadElapsedMicroseconds;
     extern const Event Seek;
 }
@@ -67,12 +70,25 @@ size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_
         Stopwatch watch(profile_callback ? clock_type : CLOCK_MONOTONIC);
 
         ssize_t res = 0;
+        bool from_os_page_cache = false;
         size_t to_read = max_bytes - bytes_read;
         {
             CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
 
             if (use_pread)
-                res = ::pread(fd, to + bytes_read, to_read, offset + bytes_read);
+            {
+                if (detect_os_page_cache_reads.load(std::memory_order_relaxed))
+                {
+                    /// Fails with `EAGAIN` without waiting for the disk if the data is not in the page cache.
+                    /// In this and any other failure, the regular `pread` below reads the data or reports the error.
+                    res = preadNoWait(fd, to + bytes_read, to_read, offset + bytes_read);
+                    from_os_page_cache = res > 0;
+                    if (res == -1 && isPreadNoWaitUnavailable(errno))
+                        detect_os_page_cache_reads.store(false, std::memory_order_relaxed);
+                }
+                if (!from_os_page_cache)
+                    res = ::pread(fd, to + bytes_read, to_read, offset + bytes_read);
+            }
             else
                 res = ::read(fd, to + bytes_read, to_read);
         }
@@ -90,7 +106,16 @@ size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_
         {
             bytes_read += res;
             if (throttler)
-                throttler->throttle(res);
+            {
+                /// See the comment in `AsynchronousReadBufferFromFileDescriptor::nextImpl`.
+                if (from_os_page_cache)
+                {
+                    ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorPageCacheHitBytes, res);
+                    throttler->throttleOSPageCacheRead(res);
+                }
+                else
+                    throttler->throttle(res);
+            }
         }
 
 
@@ -114,6 +139,23 @@ size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_
         ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
 
     return bytes_read;
+}
+
+
+void ReadBufferFromFileDescriptor::enableOSPageCacheReadsDetection(int flags)
+{
+    /// `RWF_NOWAIT` is ignored for `O_DIRECT` (see the comment in `ThreadPoolReader::submit`),
+    /// so such a read could reach the device while looking like it was served from the page cache.
+    /// The `O_DIRECT` check comes before `preadNoWaitUnavailableReason` for the same reason as there.
+    /// The detection costs an extra system call for the data that is not in the page cache,
+    /// which is why it is used only when there is a throttler that ignores such reads
+    /// (e.g. not for merges, mutations or backups that are throttled only by their own bandwidth limits).
+    bool enable = use_pread
+        && throttler
+        && throttler->ignoresOSPageCacheReads()
+        && (flags == -1 || !(flags & O_DIRECT))
+        && preadNoWaitUnavailableReason().empty();
+    detect_os_page_cache_reads.store(enable, std::memory_order_relaxed);
 }
 
 
@@ -160,14 +202,36 @@ bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds)
     poll_fd.fd = fd;
     poll_fd.events = POLLIN | POLLPRI;
 
-    const auto timeout_milliseconds = static_cast<int>(
+    auto timeout_milliseconds = static_cast<int>(
         std::min<size_t>((timeout_microseconds + 999) / 1000, static_cast<size_t>(std::numeric_limits<int>::max())));
 
+    /// Retry EINTR with the remaining time, otherwise a periodic signal (e.g. the query profiler's)
+    /// would reset the deadline on every retry and the poll could never expire. Same pattern as
+    /// Epoll::getManyReady, with microsecond accounting so a sub-millisecond signal period still makes progress.
+    Stopwatch watch;
     int result = 0;
-    do
+    for (;;)
     {
         result = ::poll(&poll_fd, 1, timeout_milliseconds);
-    } while (result < 0 && errno == EINTR);
+        if (result >= 0 || errno != EINTR)
+            break;
+
+        /// A zero timeout is a non-blocking readiness probe (used e.g. to check for a pending cancel):
+        /// there is no deadline to exhaust, so just retry the probe on EINTR. Returning early here
+        /// would let a signal hide an already-ready fd for that check. Only a positive timeout accrues
+        /// against the deadline.
+        if (timeout_microseconds == 0)
+            continue;
+
+        const UInt64 elapsed_microseconds = watch.elapsedMicroseconds();
+        if (elapsed_microseconds >= timeout_microseconds)
+        {
+            result = 0;
+            break;
+        }
+        timeout_milliseconds = static_cast<int>(std::min<size_t>(
+            (timeout_microseconds - elapsed_microseconds + 999) / 1000, static_cast<size_t>(std::numeric_limits<int>::max())));
+    }
 
     if (result < 0)
     {
@@ -260,7 +324,11 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
         if (offset_after_seek_pos > 0)
             ignore(offset_after_seek_pos);
 
-        return seek_pos;
+        /// Return the position we are actually at, not `seek_pos`. With O_DIRECT (`required_alignment > 1`)
+        /// `seek_pos` is `new_pos` rounded down to the alignment, and the difference has just been skipped
+        /// by `ignore` above, so the buffer is positioned at `new_pos`. Returning `seek_pos` would break
+        /// callers that take the returned value as the new position (see `ReadBufferFromEncryptedFile`).
+        return static_cast<off_t>(new_pos);
     }
     /// NOLINTEND(readability-else-after-return)
 }

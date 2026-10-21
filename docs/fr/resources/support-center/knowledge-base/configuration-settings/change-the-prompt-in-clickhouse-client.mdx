@@ -1,23 +1,23 @@
 ---
-title: Modifier l’invite dans clickhouse-client
-description: "Cet article explique comment remplacer l’invite :) par un préfixe suivi de :) dans votre client ClickHouse et dans la fenêtre de terminal clickhouse-local"
+title: Modifier l’invite de commande dans clickhouse-client
+description: "Cet article explique comment remplacer l’invite de commande :) par un préfixe suivi de :) dans votre client ClickHouse et dans la fenêtre de terminal clickhouse-local"
 date: 2023-11-16
 tags: ['Paramètres', 'Clients et interfaces natifs']
-keywords: ['Client ClickHouse', 'Modifier l’invite']
+keywords: ['Client ClickHouse', 'Modifier l’invite de commande']
 ---
 
 import { Image } from "/snippets/fr/components/Image.jsx";
 
-Si la façon dont `clickhouse client` et clickhouse-local affichent l’invite dans votre terminal ne vous convient pas, vous pouvez la modifier en y ajoutant un préfixe.
-Cet article explique comment modifier l’invite comme vous le souhaitez.
+Si la façon dont `clickhouse client` et clickhouse-local affichent l’invite de commande dans votre terminal ne vous convient pas, vous pouvez la modifier en y ajoutant un préfixe.
+Cet article explique comment modifier l’invite de commande comme vous le souhaitez.
 
-L’invite par défaut est le nom de votre ordinateur local suivi de `:) ` :
+L’invite de commande par défaut est le nom de votre ordinateur local suivi de `:) ` :
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/0_prompt.webp" size="md" alt="Invite par défaut du client ClickHouse" />
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/0_prompt.webp" size="md" alt="Invite de commande par défaut du client ClickHouse" />
 
-Voici les variables que vous pouvez utiliser dans une invite : `{user}`, `{host}`
+Voici les variables que vous pouvez utiliser dans une invite de commande : `{user}`, `{host}`
 
-Il existe plusieurs façons de mettre à jour l’invite, et nous allons les passer en revue une par une.
+Il existe plusieurs façons de mettre à jour l’invite de commande, et nous allons les passer en revue une par une.
 
 <div id="--prompt-flag">
   ## Option --prompt
@@ -78,18 +78,16 @@ clickhouse -C christmas.yaml
 
 <Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/4_prompt.webp" size="md" alt="Invite de commande du client ClickHouse avec un emoji de cercle jaune" />
 
-<div id="config-file---connections_credentials">
-  ## Fichier de configuration - connections_credentials
-</div>
+## Fichier de configuration - connections_credentials {#config-file---connections_credentials}
 
-Vous pouvez également définir une invite pour chaque jeu d’identifiants de connexion.
+Vous pouvez également définir une invite de commande pour chaque jeu d’identifiants de connexion.
 Cela n’a de sens que si vous utilisez clickhouse-client.
 
 ```xml
 <config>
     <connections_credentials>
         <connection>
-            <n>prod<n>
+            <n>prod</n>
             <hostname>127.0.0.1</hostname>
             <port>9000</port>
             <secure>0</secure>
@@ -97,7 +95,7 @@ Cela n’a de sens que si vous utilisez clickhouse-client.
             <prompt>\e[31m[PRODUCTION]\e[0m {user}@prod</prompt>
         </connection>
         <connection>
-            <n>dev<n>
+            <n>dev</n>
             <hostname>127.0.0.1</hostname>
             <port>9000</port>
             <secure>0</secure>
@@ -108,7 +106,7 @@ Cela n’a de sens que si vous utilisez clickhouse-client.
 </config>
 ```
 
-Nous pouvons ensuite essayer de nous connecter à l’aide de la connexion `dev` :
+Nous pouvons ensuite essayer de nous connecter à l’aide de la connexion `dev` :
 
 ```bash
 clickhouse client -C connections.xml --connection dev
@@ -116,7 +114,7 @@ clickhouse client -C connections.xml --connection dev
 
 <Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/5_prompt.webp" size="md" alt="Invite de commande du client ClickHouse avec la connexion de développement" />
 
-Ou celle de `prod` :
+Ou celle de `prod` :
 
 ```bash
 clickhouse client -C connections.xml --connection prod
@@ -124,7 +122,7 @@ clickhouse client -C connections.xml --connection prod
 
 <Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/6_prompt.webp" size="md" alt="Invite de commande du client ClickHouse avec connexion de production" />
 
-Et voici une version YAML :
+Et voici une version YAML :
 
 ```yaml
 connections_credentials:
@@ -143,18 +141,18 @@ connections_credentials:
       prompt: "\e[34m[DEVELOPMENT]\e[0m {user}@{host}"
 ```
 
-Avec la connexion `dev` :
+Avec la connexion `dev` :
 
 ```bash
 clickhouse client -C connections.yaml --connection dev
 ```
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/7_prompt.webp" size="md" alt="Invite du client ClickHouse avec une connexion de développement en YAML" />
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/7_prompt.webp" size="md" alt="Invite de commande du client ClickHouse avec une connexion de développement en YAML" />
 
-Et maintenant, `prod` :
+Et maintenant, `prod` :
 
 ```bash
 clickhouse client -C connections.yaml --connection prod
 ```
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/8_prompt.webp" size="md" alt="Invite du client ClickHouse avec une connexion de production définie en YAML" />
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/8_prompt.webp" size="md" alt="Invite de commande du client ClickHouse avec une connexion de production définie en YAML" />

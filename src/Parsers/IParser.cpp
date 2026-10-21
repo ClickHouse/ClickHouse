@@ -51,19 +51,22 @@ std::vector<HighlightedRange> expandHighlights(const std::set<HighlightedRange> 
     {
         if (range.highlight != Highlight::string
             && range.highlight != Highlight::string_like
+            && range.highlight != Highlight::string_similar_to
             && range.highlight != Highlight::string_regexp)
         {
             result.push_back(range);
             continue;
         }
 
-        /// Split string/string_like/string_regexp into character-level sub-ranges.
+        /// Split string/string_like/string_similar_to/string_regexp into character-level sub-ranges.
         /// Backslash escape characters are highlighted in all string types.
-        /// Metacharacters are highlighted in string_like (%_) and string_regexp (|()^$.[]?*+{:-).
-        /// The logic matches Client/ClientBaseHelpers.cpp highlight().
+        /// Metacharacters are highlighted in string_like (%_), string_similar_to (%_|()[]?*+{}:-)
+        /// and string_regexp (|()^$.[]?*+{:-).
         const char * metacharacters = "";
         if (range.highlight == Highlight::string_like)
             metacharacters = "%_";
+        else if (range.highlight == Highlight::string_similar_to)
+            metacharacters = "%_|()[]?*+{}:-"; /// excluding regex's ^, $, and .
         else if (range.highlight == Highlight::string_regexp)
             metacharacters = "|()^$.[]?*+{:-";
 

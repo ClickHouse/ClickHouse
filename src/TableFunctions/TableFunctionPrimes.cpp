@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertColumnToType.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/System/StorageSystemPrimes.h>
@@ -64,7 +65,9 @@ ColumnsDescription TableFunctionPrimes::getActualTableStructure(ContextPtr /*con
 
 UInt64 TableFunctionPrimes::evaluateArgument(ContextPtr context, ASTPtr & argument) const
 {
-    const auto [column, type] = evaluateConstantExpressionAsColumn(argument, context);
+    const auto constant = evaluateConstantExpressionAsColumn(argument, context);
+    const auto & column = constant.getColumn();
+    const auto & type = constant.getType();
 
     if (!isNativeNumber(type))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} expression, must be numeric type", type->getName());
@@ -246,7 +249,7 @@ WHERE prime BETWEEN 1e6 AND 1e6 + 100
 ```
 - This value-range optimization does not apply to bounded table functions (`primes(N)`, `primes(offset, count[, step])`) with `WHERE`, because those variants define a finite table by prime index and the filter must be evaluated after generating that table to preserve semantics.
 - Using a non-zero offset and/or step greater than 1 (`primes(offset, count)` / `primes(offset, count, step)`) may be slower because additional primes may need to be generated and skipped internally. If you don't need an offset or step, omit them.
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{},
         {.allow_readonly = true}
     );
 }

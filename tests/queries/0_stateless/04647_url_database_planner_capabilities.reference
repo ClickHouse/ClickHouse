@@ -1,0 +1,11 @@
+--- supportsOptimizationToSubcolumns is forwarded: the File delegate disables it, so length() is not rewritten
+subcolumn-not-rewritten
+--- PREWHERE on a plain column is allowed (the delegate supportedPrewhereColumns contains it)
+1
+--- PREWHERE on a hive partition column is rejected (the delegate supportedPrewhereColumns excludes it)
+prewhere-hive-col-rejected
+--- supportsTrivialCountOptimization is forwarded: count() takes the count from the metadata
+1000
+1000
+--- the optimized count reads much less data than the full read (documents the mechanism)
+1

@@ -23,6 +23,8 @@ public:
     int receiveBytes(void * buffer, int length, int flags) override;
     void setBlocking(bool flag) override;
     bool supportsExternalPolling() const override { return false; }
+    bool supportsNonBlocking() const override { return false; }
+
 };
 
 }

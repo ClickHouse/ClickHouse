@@ -17,7 +17,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
 }
@@ -50,19 +49,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const auto * arg = arguments[0].get();
-
-        if (!WhichDataType(arg).isUInt64())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt64",
-                arg->getName(),
-                1,
-                getName());
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
+        return "(UInt64) -> Array(UInt64)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -81,11 +70,14 @@ public:
                 getName());
         const auto & data_id = col_id->getData();
 
-        auto dst = ColumnArray::create(ColumnUInt64::create());
-        auto & dst_data = dst->getData();
-        auto & dst_offsets = dst->getOffsets();
-        dst_offsets.resize(input_rows_count);
+        auto dst_data_column = ColumnUInt64::create();
+        auto dst_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
+        auto & dst_data = *dst_data_column;
+        auto & dst_offsets = dst_offsets_column->getData();
         size_t current_offset = 0;
+
+        /// Every row appends exactly four neighbors, so the whole block's size is known here.
+        dst_data.reserve(input_rows_count * 4);
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
@@ -99,7 +91,6 @@ public:
             S2CellId neighbors[4];
             cell_id.GetEdgeNeighbors(neighbors);
 
-            dst_data.reserve(dst_data.size() + 4);
             for (auto & neighbor : neighbors)
             {
                 ++current_offset;
@@ -108,7 +99,7 @@ public:
             dst_offsets[row] = current_offset;
         }
 
-        return dst;
+        return ColumnArray::create(std::move(dst_data_column), std::move(dst_offsets_column));
     }
 
 };
@@ -125,7 +116,7 @@ Returns the S2 neighbor indices corresponding to the provided S2 cell index. Eac
         {"s2index", "The S2 cell identifier.", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of 4 neighbor S2 cell identifiers.", {"Array(UInt64)"}};
-    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT s2GetNeighbors(5765131099823669248)", "[5765131099698741248, 5765131099950653440, 5765131100074868736, 5765131100088901632]"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT s2GetNeighbors(5765131099823669248)", "[5765131099830484992,5765131099821047808,5765131099823144960,5765131099824193536]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};

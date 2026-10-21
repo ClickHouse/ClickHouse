@@ -10,13 +10,11 @@ doc_type: 'reference'
 
 import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
-import VersionHistory from "/snippets/pt-BR/components/VersionHistory/VersionHistory.jsx";
+import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/VersionHistory.jsx";
 
 Essas configurações estão disponíveis em [system.merge&#95;tree&#95;settings](/pt-BR/reference/system-tables/merge_tree_settings) e são geradas automaticamente a partir do código-fonte do ClickHouse.
 
-<div id="allow_experimental_replacing_merge_with_cleanup">
-  ## allow_experimental_replacing_merge_with_cleanup
-</div>
+## allow_experimental_replacing_merge_with_cleanup
 
 <ExperimentalBadge />
 
@@ -32,9 +30,7 @@ com as configurações `min_age_to_force_merge_seconds`,
 `min_age_to_force_merge_on_partition_only` e
 `enable_replacing_merge_with_cleanup_for_min_age_to_force_merge`.
 
-<div id="allow_experimental_reverse_key">
-  ## allow_experimental_reverse_key
-</div>
+## allow_experimental_reverse_key
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -42,9 +38,7 @@ com as configurações `min_age_to_force_merge_seconds`,
 
 Configuração obsoleta; não tem efeito.
 
-<div id="allow_experimental_text_index_phrase_search">
-  ## allow_experimental_text_index_phrase_search
-</div>
+## allow_experimental_text_index_phrase_search
 
 <ExperimentalBadge />
 

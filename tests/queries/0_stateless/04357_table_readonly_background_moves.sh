@@ -18,9 +18,9 @@ ${CLICKHOUSE_CLIENT} -m -q "
 DROP TABLE IF EXISTS t_ro_move;
 DROP TABLE IF EXISTS t_w_move;
 
--- 'TTL ... TO VOLUME' with a small delay: the part is first written to the 'local' volume and only
--- becomes eligible for a background move to the 'remote' volume a few seconds later. now() is an
--- absolute instant, so a randomized session_timezone does not shift this boundary.
+-- 'TTL ... TO VOLUME': the part is first written to the 'local' volume and is then eligible for a
+-- background move to the 'remote' volume. now() is an absolute instant, so a randomized
+-- session_timezone does not shift this boundary.
 CREATE TABLE t_ro_move (d DateTime, x UInt64) ENGINE = MergeTree ORDER BY x
 TTL d + INTERVAL 5 SECOND TO VOLUME 'remote'
 SETTINGS storage_policy = 'local_remote';
@@ -33,11 +33,16 @@ SETTINGS storage_policy = 'local_remote';
 SYSTEM STOP MOVES t_ro_move;
 SYSTEM STOP MOVES t_w_move;
 
-INSERT INTO t_ro_move VALUES (now(), 1);
-INSERT INTO t_w_move VALUES (now(), 1);
+-- The move TTL is ALREADY expired at insert. perform_ttl_move_on_insert is disabled for the
+-- 'remote' volume of the 'local_remote' policy (tests/config/config.d/storage_conf.xml), so the
+-- part must still be written to the 'local' volume; without that setting it would be reserved
+-- directly on 'remote' and born on s3_disk.
+INSERT INTO t_ro_move VALUES (now() - INTERVAL 1 MINUTE, 1);
+INSERT INTO t_w_move VALUES (now() - INTERVAL 1 MINUTE, 1);
 "
 
-# Both parts must start on the local volume (disk 'default'): the move TTL has not expired yet at insert.
+# Both parts must start on the local volume (disk 'default') even though the move TTL is already
+# expired, because perform_ttl_move_on_insert is disabled for the 'remote' volume.
 echo "initial readonly disk:"
 ${CLICKHOUSE_CLIENT} -q "SELECT disk_name FROM system.parts WHERE database = currentDatabase() AND table = 't_ro_move' AND active"
 

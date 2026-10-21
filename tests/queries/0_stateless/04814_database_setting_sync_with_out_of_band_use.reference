@@ -1,0 +1,6 @@
+-- the profile database setting applies when the connection does not choose a database
+1
+-- the user's DEFAULT DATABASE wins over the profile database setting
+1
+-- USE wins over the profile database setting for subsequent queries in the session
+1

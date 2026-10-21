@@ -1,0 +1,17 @@
+projection on whole column -> metadata-only mutations:	0
+projection read after reload:	0	0
+projection read after reload:	1	1
+projection read after reload:	2	2
+projection sorts on subcolumn, subcolumn type change -> reject:
+projection sort key wraps subcolumn, subcolumn type change -> reject:
+MATERIALIZED column on subcolumn, subcolumn type change -> reject:
+MATERIALIZED column via ALIAS over subcolumn, subcolumn type change -> reject:
+implicit index on ALIAS over subcolumn, subcolumn type change -> reject:
+aggregate projection group key on subcolumn, subcolumn type change -> reject:
+filtered projection WHERE on json, type change -> reject:
+plain column total change -> metadata-only mutations:	0
+plain column total change, read after reload:	0	0
+plain column total change, read after reload:	1	1
+plain column total change, read after reload:	2	2
+plain column total change, read after reload:	3	3
+lossy plain change -> metadata-only mutations:	0
