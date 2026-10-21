@@ -586,6 +586,17 @@ def test_host_filter_rejects_nul(start_cluster):
     )
     assert "BAD_ARGUMENTS" in error and expected in error, error
 
+    # `remote` splits `[address]:port` at the first `:`, so here the NUL is in the port it checks. The
+    # rule that admits a tail refuses the plain address, yet without the check the forged one reads
+    # from 127.0.0.1.
+    assert "UNACCEPTABLE_URL" in node1.query_and_get_error(
+        "SELECT * FROM remote('[::ffff:127.0.0.1]:9000', system.one)"
+    )
+    error = node1.query_and_get_error(
+        "SELECT * FROM remote('[::ffff:127.0.0.1\\0x.allowed.example]:9000', system.one)"
+    )
+    assert "BAD_ARGUMENTS" in error and expected in error, error
+
     # A URL host is refused too: without it, an Azure backup sends its requests to 127.0.0.1.
     error = node1.query_and_get_error(
         "BACKUP TABLE system.one TO AzureBlobStorage("

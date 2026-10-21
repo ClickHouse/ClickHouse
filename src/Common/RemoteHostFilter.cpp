@@ -55,10 +55,11 @@ bool RemoteHostFilter::checkURL(const Poco::URI & uri, bool throw_on_error) cons
 
 void RemoteHostFilter::checkHostAndPort(const std::string & host, const std::string & port) const
 {
-    checkHostHasNoNul(host, /*throw_on_error=*/ true);
+    const std::string host_and_port = host + ":" + port;
+    checkHostHasNoNul(host_and_port, /*throw_on_error=*/ true);
 
     if (!checkForDirectEntry(host) &&
-        !checkForDirectEntry(host + ":" + port))
+        !checkForDirectEntry(host_and_port))
         throw Exception(ErrorCodes::UNACCEPTABLE_URL, "URL \"{}:{}\" is not allowed in configuration file, "
                                                       "see <remote_url_allow_hosts>", host, port);
 }
