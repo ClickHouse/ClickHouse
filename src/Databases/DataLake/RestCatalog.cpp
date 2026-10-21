@@ -61,6 +61,7 @@
 namespace DB::ErrorCodes
 {
     extern const int DATALAKE_DATABASE_ERROR;
+    extern const int DATALAKE_CATALOG_COMMIT_STATE_UNKNOWN;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int FAULT_INJECTED;
@@ -2142,6 +2143,18 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
             LOG_DEBUG(log, "updateMetadata conflict for {}/{}: {}", namespace_name, table_name, ex.displayText());
             return false;
         }
+        /// The REST catalog specification defines 5xx answers to a commit as "commit state unknown":
+        /// e.g. a gateway may time out after the catalog has applied the commit.
+        if (ex.getHTTPStatus() >= Poco::Net::HTTPResponse::HTTPStatus::HTTP_INTERNAL_SERVER_ERROR)
+        {
+            LOG_ERROR(log, "updateMetadata outcome is unknown for {}/{}: {}", namespace_name, table_name, ex.displayText());
+            throw DB::Exception(
+                DB::ErrorCodes::DATALAKE_CATALOG_COMMIT_STATE_UNKNOWN,
+                "Iceberg catalog commit for table {}.{} may or may not have been applied: {}",
+                namespace_name,
+                table_name,
+                ex.displayText());
+        }
         LOG_ERROR(log, "updateMetadata failed for {}/{}: {}", namespace_name, table_name, ex.displayText());
         throw DB::Exception(
             DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
@@ -2149,6 +2162,19 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
             namespace_name,
             table_name,
             ex.displayText());
+    }
+    catch (...)
+    {
+        /// A network failure: the catalog may have received and applied the commit before the response was lost.
+        /// The request is not replayed (see `getReadSettingsForRequest`), so the outcome is unknown.
+        auto message = DB::getCurrentExceptionMessage(/* with_stacktrace */ false);
+        LOG_ERROR(log, "updateMetadata outcome is unknown for {}/{}: {}", namespace_name, table_name, message);
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_CATALOG_COMMIT_STATE_UNKNOWN,
+            "Iceberg catalog commit for table {}.{} may or may not have been applied: {}",
+            namespace_name,
+            table_name,
+            message);
     }
     return true;
 }

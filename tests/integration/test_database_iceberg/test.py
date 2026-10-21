@@ -2738,6 +2738,36 @@ def test_writes_schema_evolution_lost_commit_response(started_cluster):
     assert "already exists" not in error, error
 
 
+def test_writes_insert_lost_commit_response(started_cluster):
+    """The files of an `INSERT` are kept when the response to its commit is lost.
+
+    The catalog applies the commit, so the new snapshot references the written files.
+    Deleting them as for a failed commit would leave the table unreadable.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_writes_insert_lost_commit_response_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String)")
+    node.query(f"INSERT INTO {table_ref} VALUES ('a');", settings=write_settings)
+
+    node.query("SYSTEM ENABLE FAILPOINT rest_catalog_lose_request_response")
+    try:
+        error = node.query_and_get_error(f"INSERT INTO {table_ref} VALUES ('b');", settings=write_settings)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT rest_catalog_lose_request_response")
+
+    assert "DATALAKE_CATALOG_COMMIT_STATE_UNKNOWN" in error, error
+    assert "Injected connection failure after sending the REST catalog request" in error, error
+
+    assert node.query(f"SELECT x FROM {table_ref} ORDER BY x") == "a\nb\n"
+
+
 def test_gcs(started_cluster):
     node = started_cluster.instances["node1"]
 
