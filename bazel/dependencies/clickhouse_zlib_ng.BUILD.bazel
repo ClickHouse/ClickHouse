@@ -112,12 +112,12 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     includes = [
         ".",
         "config/contrib/zlib-ng-cmake",
     ],
     language = "C",
+    libcxx_headers = False,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
