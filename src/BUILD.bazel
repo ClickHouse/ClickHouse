@@ -767,7 +767,6 @@ _PRIVATE_DBMS_0_HEADERS = glob(
 ]
 
 _PROTO_LIBRARIES = [
-    "//contrib/prometheus-protobufs-cmake:_prometheus_protobufs",
     "//src/Server/grpc_protos:clickhouse_grpc_protos",
     "@clickhouse_arrow//:_arrow_flight",
     "@clickhouse_google_cloud_cpp//:google_cloud_cpp_api_annotations_protos",
@@ -2632,6 +2631,9 @@ ch_cc_library(
     ],
     clickhouse_code = True,
     implementation_deps = ["//src/Parsers:clickhouse_parsers"] + [
+        "@clickhouse_jemalloc//:_jemalloc",
+        "@clickhouse_llvm_project//:LLVMPasses",
+        "//contrib/prometheus-protobufs-cmake:_prometheus_protobufs",
         "//bazel/rust:delta_kernel_ffi_headers",
         "@clickhouse_avro//:_avrocpp",
         "@clickhouse_capnproto//:_capnp",
@@ -2725,9 +2727,7 @@ ch_cc_library(
         "Storages/YTsaurus/YTsaurusSettings.h",
     ],
     deps = ["//src/Common/ZooKeeper:clickhouse_common_zookeeper_base", "//src/Common:memory_tracking_api", "//src/Access/Common:headers", "@clickhouse_nuraft//:_nuraft"] + ([
-        "@clickhouse_llvm_project//:LLVMPasses",
         "@clickhouse_llvm_project//:LLVMSupport",
-        "@llvm-project//third-party/siphash",
         "@lz4//:lz4_frame",
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_flatbuffers//:_flatbuffers",
@@ -2747,7 +2747,6 @@ ch_cc_library(
         "//base/poco/XML:_poco_xml",
         "//base/widechar_width",
         "//contrib/cityhash102:_cityhash",
-        "@clickhouse_jemalloc//:_jemalloc",
         "//contrib/libdivide-cmake:headers",
         "//contrib/librdkafka-cmake:rdhttp_poco_transport",
         "@clickhouse_openssl//:crypto",
