@@ -70,7 +70,7 @@ SETTINGS query_plan_top_k_through_array_join = 1;
 
 SELECT '-- several aligned arrays: not rewritten, the step checks their sizes';
 EXPLAIN PLAN description = 0
-SELECT x FROM t_aj_explain ARRAY JOIN arr AS e, arr2 AS e2 ORDER BY x LIMIT 10
+SELECT x, e, e2 FROM t_aj_explain ARRAY JOIN arr AS e, arr2 AS e2 ORDER BY x LIMIT 10
 SETTINGS query_plan_top_k_through_array_join = 1;
 
 SELECT '-- fused element filter: not rewritten';

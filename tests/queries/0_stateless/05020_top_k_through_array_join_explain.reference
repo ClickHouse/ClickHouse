@@ -132,5 +132,36 @@ Limit
                Read type: Default
                Parts: 1 | Granules: 1
                Output: x, arr
+-- several aligned arrays: not rewritten, the step checks their sizes
+Output: x, arr, arr2
+
+Limit
+│  Limit 10
+│  Offset 0
+└──Sorting
+   │  Sort description: x ASC
+   │  Limit 10
+   └──ArrayJoin
+      │  ARRAY JOIN arr, arr2
+      └──ReadFromMergeTree
+            Read type: Default
+            Parts: 1 | Granules: 1
+            Output: x, arr, arr2
+-- fused element filter: not rewritten
+Output: x
+
+Limit
+│  Limit 10
+│  Offset 0
+└──Sorting
+   │  Sort description: x ASC
+   │  Limit 10
+   └──ArrayJoin
+      │  ARRAY JOIN arr
+      │  Element filter column: greater(__array_join_exp_1, 1_UInt8) (removed)
+      └──ReadFromMergeTree
+            Read type: Default
+            Parts: 1 | Granules: 1
+            Output: x, arr
 -- serialized moved plan
 10

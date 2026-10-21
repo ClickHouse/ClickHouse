@@ -277,6 +277,7 @@
 17	68	0	8
 17	68	0	8
 -- sizes of arrays do not match
+-- sizes do not match in a row after the limit
 -- Array(Nullable)
 0	0
 0	\N
