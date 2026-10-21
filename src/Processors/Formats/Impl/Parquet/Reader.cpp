@@ -4,6 +4,7 @@
 #include <Common/Allocator.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
+#include <Common/StringUtils.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDynamic.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -79,6 +80,23 @@ namespace ProfileEvents
 
 namespace DB::Parquet
 {
+
+/// parquet-cpp before Arrow 3.0 wrote `DataPageV2` pages compressed but set their `is_compressed` flag to false
+/// (ARROW-10353). Such files carry the application name `parquet-cpp` with a version below 2.0.0; later versions
+/// call themselves `parquet-cpp-arrow`. Arrow C++ decompresses their pages anyway (ARROW-17100), and so do we.
+static bool writesCompressedV2PagesAsUncompressed(std::string_view created_by)
+{
+    static constexpr std::string_view prefix = "parquet-cpp version ";
+    if (!created_by.starts_with(prefix))
+        return false;
+    created_by.remove_prefix(prefix.size());
+    if (created_by.empty() || !isNumericASCII(created_by.front()))
+        return false;
+    UInt64 major = 0;
+    for (size_t i = 0; i < created_by.size() && isNumericASCII(created_by[i]) && major < 2; ++i)
+        major = major * 10 + static_cast<UInt64>(created_by[i] - '0');
+    return major < 2;
+}
 
 /// Thrift deserialization can store an out-of-range value into an unscoped enum field when the
 /// input file is malformed. Loading such an enum directly is undefined behavior (caught by
@@ -3569,7 +3587,8 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
         encoded_rep_size = size_t(header.data_page_header_v2.repetition_levels_byte_length);
 
         if (header.data_page_header_v2.__isset.is_compressed &&
-            !header.data_page_header_v2.is_compressed)
+            !header.data_page_header_v2.is_compressed &&
+            !writesCompressedV2PagesAsUncompressed(file_metadata().created_by))
         {
             page.codec = parq::CompressionCodec::UNCOMPRESSED;
         }
