@@ -119,12 +119,21 @@ bool typeContainsFloat(const DataTypePtr & type)
 
 /// -0.0 compares equal to 0.0 and NaN payloads compare equal to each other, so a condition
 /// over a float sorting key column can tell apart rows of one dedup group and drop its winner
-NameSet getSortingKeyNamesSafeBeforeFinal(const KeyDescription & sorting_key)
+NameSet getSortingKeyNamesSafeBeforeFinal(const StorageSnapshotPtr & storage_snapshot)
 {
+    const auto & sorting_key = storage_snapshot->metadata->getSortingKey();
+    const auto * data = dynamic_cast<const MergeTreeData *>(&storage_snapshot->storage);
+    const bool is_graphite = data && data->merging_params.mode == MergeTreeData::MergingParams::Graphite;
+
     NameSet names;
     for (size_t i = 0; i < sorting_key.column_names.size(); ++i)
+    {
+        /// `Graphite` rolls up rows of one path with different times and rewrites the time
+        if (is_graphite && sorting_key.column_names[i] != data->merging_params.graphite_params.path_column_name)
+            continue;
         if (!typeContainsFloat(sorting_key.data_types[i]))
             names.insert(sorting_key.column_names[i]);
+    }
     return names;
 }
 
@@ -143,7 +152,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     , queried_columns{queried_columns_}
     , supported_columns{supported_columns_}
     , supported_columns_include_subcolumns{supported_columns_include_subcolumns_}
-    , sorting_key_names{getSortingKeyNamesSafeBeforeFinal(storage_snapshot->metadata->getSortingKey())}
+    , sorting_key_names{getSortingKeyNamesSafeBeforeFinal(storage_snapshot)}
     , primary_key_names_positions(fillNamesPositions(storage_snapshot->metadata->getPrimaryKey().column_names))
     , storage_metadata(storage_snapshot->metadata)
     , log{log_}
