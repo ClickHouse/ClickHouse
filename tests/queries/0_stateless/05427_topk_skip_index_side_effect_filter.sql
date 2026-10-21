@@ -38,7 +38,7 @@ SETTINGS log_comment = '05427_prewhere_side_effect';
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, read_rows < 5000
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05427\_%'
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05427_no_side_effect', '05427_where_side_effect', '05427_where_side_effect_physical', '05427_prewhere_side_effect')
 ORDER BY log_comment;
 
 DROP TABLE t_topk_skip_index_side_effect;
