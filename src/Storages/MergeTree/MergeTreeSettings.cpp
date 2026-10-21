@@ -1062,7 +1062,7 @@ locally before the replicated part of the query is committed to ClickHouse
 Keeper, so a failed mixed query could still switch the replica onto the new
 entry format. Change it in a separate `ALTER TABLE ... MODIFY SETTING` query.
 )", 0, \
-        {"26.10", false, false, "New setting. When enabled, mutation entries record the user who initiated the mutation, shown in the author column of system.mutations."}) \
+        {"26.11", false, false, "New setting. When enabled, mutation entries record the user who initiated the mutation, shown in the author column of system.mutations."}) \
     DECLARE(Milliseconds, background_task_preferred_step_execution_time_ms, 50, R"(
 Target time to execution of one step of merge or mutation. Can be exceeded if
 one step takes longer time
