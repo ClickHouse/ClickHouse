@@ -11,8 +11,3 @@ exports_files([
     "include_linux_aarch64/jemalloc/internal/jemalloc_internal_defs.h.in",
     "include_linux_x86_64/jemalloc/internal/jemalloc_internal_defs.h.in",
 ])
-
-alias(
-    name = "headers",
-    actual = "@clickhouse_jemalloc//:_jemalloc",
-)

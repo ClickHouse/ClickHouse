@@ -1243,7 +1243,7 @@ ch_cc_library(
             "//contrib/consistent-hashing:_consistent_hashing",
             "//contrib/driftsort:headers",
             "//contrib/ipnsort:headers",
-            "//contrib/jemalloc-cmake:headers",
+            "@clickhouse_jemalloc//:_jemalloc",
             "//contrib/libdivide-cmake:headers",
             "//contrib/libfarmhash:_farmhash",
             "//contrib/libmetrohash:_metrohash",

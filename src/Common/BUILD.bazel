@@ -512,7 +512,6 @@ _ALLOCATOR_IMPLEMENTATION_DEPS = [
     "//src:headers",
     "//base:common",
     "//bazel:clickhouse_config_headers",
-    "//contrib/jemalloc-cmake:headers",
     "@clickhouse_jemalloc//:_jemalloc",
 ]
 
@@ -633,7 +632,7 @@ ch_cc_library(
         "//base/poco/XML:_poco_xml",
         "//base:pcg_random",
         "//contrib/cityhash102:_cityhash",
-        "//contrib/jemalloc-cmake:headers",
+        "@clickhouse_jemalloc//:_jemalloc",
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_libfiu//:_libfiu",
         "@clickhouse_openssl//:crypto",

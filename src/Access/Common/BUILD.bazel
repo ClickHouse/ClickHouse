@@ -6,7 +6,7 @@ package(default_visibility = ["//visibility:public"])
 ch_cc_library(
     name = "clickhouse_common_access",
     srcs = glob(["*.cpp"]),
-    hdrs = glob(["*.h"]),
+    hdrs = glob(["*.h"], exclude = ["SQLSecurityDefs.h"]),
     clickhouse_code = True,
     implementation_deps = [
         "//bazel:clickhouse_config_headers",

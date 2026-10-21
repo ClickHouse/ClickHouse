@@ -399,7 +399,7 @@ ch_cc_library(
         "@clickhouse_zlib_ng//:_zlib",
         "@clickhouse_zstd//:_zstd",
     ],
-    implementation_deps = ["@clickhouse//contrib/jemalloc-cmake:headers"] + [
+    implementation_deps = [
         "@clickhouse_abseil_cpp//:absl_optional",
         "@clickhouse_abseil_cpp//:absl_strings",
         "@clickhouse_abseil_cpp//:absl_variant",

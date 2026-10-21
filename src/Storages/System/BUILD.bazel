@@ -286,7 +286,7 @@ ch_cc_library(
         "//base/poco/Net:_poco_net",
         "//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_0",
         "//base/poco/Util:_poco_util",
-        "//contrib/jemalloc-cmake:headers",
+        "@clickhouse_jemalloc//:_jemalloc",
         "//src/AggregateFunctions:headers",
         "//src/Common/ZooKeeper:headers",
         "//src/Compression:clickhouse_compression",
