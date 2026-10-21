@@ -11,8 +11,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/castColumn.h>
 #include <Common/BinStringDecodeHelper.h>
-#include <Common/BitHelpers.h>
-#include <base/types.h>
 
 namespace DB
 {
@@ -62,8 +60,6 @@ struct HexImpl
         }
     }
 
-    /// Per-value path: a tiny inline loop, because the values are short and the runtime dispatch of `hexString`
-    /// would cost more than the encoding itself. Whole columns are encoded with `hexString` at once instead.
     static void executeOneString(const UInt8 * pos, const UInt8 * end, char *& out, bool reverse_order = false)
     {
         if (!reverse_order)
@@ -101,27 +97,16 @@ struct HexImpl
         out_offsets.resize(size);
         out_vec.resize(size * hex_length);
 
-        if constexpr (std::endian::native == std::endian::little)
+        size_t pos = 0;
+        char * out = reinterpret_cast<char *>(out_vec.data());
+        for (size_t i = 0; i < size; ++i)
         {
-            /// The values are stored contiguously in the memory order that we want to print,
-            /// so the entire buffer is encoded at once instead of dispatching per row.
-            constexpr bool lower_case = false;
-            hexString<lower_case>(out_vec.data(), reinterpret_cast<const UInt8 *>(in_vec.data()), size * type_size_in_bytes);
-            for (size_t i = 0; i < size; ++i)
-                out_offsets[i] = (i + 1) * hex_length;
-        }
-        else
-        {
-            size_t pos = 0;
-            char * out = reinterpret_cast<char *>(out_vec.data());
-            for (size_t i = 0; i < size; ++i)
-            {
-                const UInt8 * in_pos = reinterpret_cast<const UInt8 *>(&in_vec[i]);
-                executeOneString(in_pos, in_pos + type_size_in_bytes, out, /* reverse_order = */ true);
+            const UInt8 * in_pos = reinterpret_cast<const UInt8 *>(&in_vec[i]);
+            bool reverse_order = (std::endian::native == std::endian::big);
+            executeOneString(in_pos, in_pos + type_size_in_bytes, out, reverse_order);
 
-                pos += hex_length;
-                out_offsets[i] = pos;
-            }
+            pos += hex_length;
+            out_offsets[i] = pos;
         }
         col_res = std::move(col_str);
     }
@@ -134,7 +119,7 @@ struct UnhexImpl
 
     static void decode(const char * pos, const char * end, char *& out)
     {
-        hexStringDecode2(pos, end, out);
+        hexStringDecode(pos, end, out, word_size);
     }
 };
 
@@ -224,7 +209,7 @@ struct UnbinImpl
 
 /// Encode number or string to string with binary or hexadecimal representation
 template <typename Impl>
-class EncodeToBinaryRepresentation final : public IFunction
+class EncodeToBinaryRepresentation : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -374,30 +359,20 @@ public:
             /// reserve `word_size` bytes for each input byte
             out_vec.resize(in_vec.size() * word_size);
 
-            if constexpr (word_size == 2)
-            {
-                /// Hex is a pure byte-to-2-byte mapping, so we can encode the entire
-                /// contiguous buffer at once instead of dispatching per row.
-                constexpr bool lower_case = false;
-                hexString<lower_case>(out_vec.data(), in_vec.data(), in_vec.size());
-                for (size_t i = 0; i < size; ++i)
-                    out_offsets[i] = in_offsets[i] * word_size;
-            }
-            else
-            {
-                char * begin = reinterpret_cast<char *>(out_vec.data());
-                char * pos = begin;
-                size_t prev_offset = 0;
+            char * begin = reinterpret_cast<char *>(out_vec.data());
+            char * pos = begin;
+            size_t prev_offset = 0;
 
-                for (size_t i = 0; i < size; ++i)
-                {
-                    size_t new_offset = in_offsets[i];
-                    Impl::executeOneString(&in_vec[prev_offset], &in_vec[new_offset], pos);
-                    out_offsets[i] = pos - begin;
-                    prev_offset = new_offset;
-                }
-            }
+            for (size_t i = 0; i < size; ++i)
+            {
+                size_t new_offset = in_offsets[i];
 
+                Impl::executeOneString(&in_vec[prev_offset], &in_vec[new_offset], pos);
+
+                out_offsets[i] = pos - begin;
+
+                prev_offset = new_offset;
+            }
             if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Column size mismatch (internal logical error)");
 
@@ -439,29 +414,21 @@ public:
             out_offsets.resize(size);
             out_vec.resize(in_vec.size() * word_size);
 
+            char * begin = reinterpret_cast<char *>(out_vec.data());
+            char * pos = begin;
+
             size_t n = col_fstr_in->getN();
-            size_t hex_length = n * word_size;
 
-            if constexpr (word_size == 2)
-            {
-                constexpr bool lower_case = false;
-                hexString<lower_case>(out_vec.data(), in_vec.data(), in_vec.size());
-                for (size_t i = 0; i < size; ++i)
-                    out_offsets[i] = (i + 1) * hex_length;
-            }
-            else
-            {
-                char * begin = reinterpret_cast<char *>(out_vec.data());
-                char * pos = begin;
-                size_t prev_offset = 0;
+            size_t prev_offset = 0;
 
-                for (size_t i = 0; i < size; ++i)
-                {
-                    size_t new_offset = prev_offset + n;
-                    Impl::executeOneString(&in_vec[prev_offset], &in_vec[new_offset], pos);
-                    out_offsets[i] = pos - begin;
-                    prev_offset = new_offset;
-                }
+            for (size_t i = 0; i < size; ++i)
+            {
+                size_t new_offset = prev_offset + n;
+
+                Impl::executeOneString(&in_vec[prev_offset], &in_vec[new_offset], pos);
+
+                out_offsets[i] = pos - begin;
+                prev_offset = new_offset;
             }
 
             if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
@@ -552,39 +519,24 @@ public:
 
         size_t size = in_vec.size();
         out_offsets.resize(size);
+        out_vec.resize(size * word_size + MAX_LENGTH);
 
-        if constexpr (word_size == 2)
+        size_t pos = 0;
+        for (size_t i = 0; i < size; ++i)
         {
-            /// Every address is printed as its 16 bytes in memory order, and the addresses are stored contiguously,
-            /// so the entire buffer is encoded at once instead of dispatching per row.
-            static_assert(sizeof(IPv6) == 16);
-            out_vec.resize(size * MAX_LENGTH);
-            constexpr bool lower_case = false;
-            hexString<lower_case>(out_vec.data(), reinterpret_cast<const UInt8 *>(ip), size * sizeof(IPv6));
-            for (size_t i = 0; i < size; ++i)
-                out_offsets[i] = (i + 1) * MAX_LENGTH;
+            /// Manual exponential growth, so as not to rely on the linear amortized work time of `resize` (no one guarantees it).
+            if (pos + MAX_LENGTH > out_vec.size())
+                out_vec.resize(out_vec.size() * word_size + MAX_LENGTH);
+
+            char * begin = reinterpret_cast<char *>(&out_vec[pos]);
+            char * end = begin;
+
+            Impl::executeOneString(reinterpret_cast<const UInt8 *>(&ip[i].toUnderType().items[0]), reinterpret_cast<const UInt8 *>(&ip[i].toUnderType().items[2]), end);
+
+            pos += end - begin;
+            out_offsets[i] = pos;
         }
-        else
-        {
-            out_vec.resize(size * word_size + MAX_LENGTH);
-
-            size_t pos = 0;
-            for (size_t i = 0; i < size; ++i)
-            {
-                /// Manual exponential growth, so as not to rely on the linear amortized work time of `resize` (no one guarantees it).
-                if (pos + MAX_LENGTH > out_vec.size())
-                    out_vec.resize(out_vec.size() * word_size + MAX_LENGTH);
-
-                char * begin = reinterpret_cast<char *>(&out_vec[pos]);
-                char * end = begin;
-
-                Impl::executeOneString(reinterpret_cast<const UInt8 *>(&ip[i].toUnderType().items[0]), reinterpret_cast<const UInt8 *>(&ip[i].toUnderType().items[2]), end);
-
-                pos += end - begin;
-                out_offsets[i] = pos;
-            }
-            out_vec.resize(pos);
-        }
+        out_vec.resize(pos);
 
         col_res = std::move(col_str);
         return true;
@@ -634,7 +586,7 @@ public:
 
 /// Decode number or string from string with binary or hexadecimal representation
 template <typename Impl>
-class DecodeFromBinaryRepresentation final : public IFunction
+class DecodeFromBinaryRepresentation : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -644,9 +596,7 @@ public:
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 1; }
-    /// Not injective: decoding is deliberately tolerant. It is case-insensitive, and an incomplete leading
-    /// group is padded, so `unhex('0a')`, `unhex('0A')` and `unhex('a')` all decode to the same byte.
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -691,30 +641,24 @@ public:
             }
             out_vec.resize(max_out_len);
 
-            if constexpr (word_size == 2)
-            {
-                DB::decodeHexStrings(reinterpret_cast<uint8_t *>(out_vec.data()), reinterpret_cast<const uint8_t *>(in_vec.data()), in_offsets.data(), out_offsets.data(), input_rows_count);
-                out_vec.resize(input_rows_count > 0 ? out_offsets.back() : 0);
-            }
-            else
-            {
-                char * begin = reinterpret_cast<char *>(out_vec.data());
-                char * pos = begin;
-                size_t prev_offset = 0;
+            char * begin = reinterpret_cast<char *>(out_vec.data());
+            char * pos = begin;
+            size_t prev_offset = 0;
 
-                for (size_t i = 0; i < input_rows_count; ++i)
-                {
-                    size_t new_offset = in_offsets[i];
-                    Impl::decode(reinterpret_cast<const char *>(&in_vec[prev_offset]), reinterpret_cast<const char *>(&in_vec[new_offset]), pos);
-                    out_offsets[i] = pos - begin;
-                    prev_offset = new_offset;
-                }
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                size_t new_offset = in_offsets[i];
 
-                chassert(
-                    static_cast<size_t>(pos - begin) <= out_vec.size(),
-                    fmt::format("too small amount of memory was preallocated: needed {}, but have only {}", pos - begin, out_vec.size()));
-                out_vec.resize(pos - begin);
+                Impl::decode(reinterpret_cast<const char *>(&in_vec[prev_offset]), reinterpret_cast<const char *>(&in_vec[new_offset]), pos);
+
+                out_offsets[i] = pos - begin;
+                prev_offset = new_offset;
             }
+
+            chassert(
+                static_cast<size_t>(pos - begin) <= out_vec.size(),
+                fmt::format("too small amount of memory was preallocated: needed {}, but have only {}", pos - begin, out_vec.size()));
+            out_vec.resize(pos - begin);
 
             return col_res;
         }
@@ -731,47 +675,25 @@ public:
             out_offsets.resize(input_rows_count);
             out_vec.resize((n + word_size - 1) / word_size * input_rows_count);
 
-            if constexpr (word_size == 2)
-            {
-                if (n % 2 == 0)
-                {
-                    size_t decoded_len = n / 2;
-                    DB::decodeHexString(reinterpret_cast<uint8_t *>(out_vec.data()), reinterpret_cast<const uint8_t *>(in_vec.data()), decoded_len * input_rows_count);
-                    for (size_t i = 0; i < input_rows_count; ++i)
-                        out_offsets[i] = (i + 1) * decoded_len;
-                    out_vec.resize(decoded_len * input_rows_count);
-                }
-                else
-                {
-                    /// Odd width: every row has an incomplete leading group, so decode row by row,
-                    /// but still with a single arch dispatch for the whole column.
-                    PaddedPODArray<UInt64> in_offsets(input_rows_count);
-                    for (size_t i = 0; i < input_rows_count; ++i)
-                        in_offsets[i] = (i + 1) * n;
-                    DB::decodeHexStrings(reinterpret_cast<uint8_t *>(out_vec.data()), reinterpret_cast<const uint8_t *>(in_vec.data()), in_offsets.data(), out_offsets.data(), input_rows_count);
-                    out_vec.resize(input_rows_count > 0 ? out_offsets.back() : 0);
-                }
-            }
-            else
-            {
-                char * begin = reinterpret_cast<char *>(out_vec.data());
-                char * pos = begin;
-                size_t prev_offset = 0;
+            char * begin = reinterpret_cast<char *>(out_vec.data());
+            char * pos = begin;
+            size_t prev_offset = 0;
 
-                for (size_t i = 0; i < input_rows_count; ++i)
-                {
-                    size_t new_offset = prev_offset + n;
-                    Impl::decode(
-                        reinterpret_cast<const char *>(&in_vec[prev_offset]), reinterpret_cast<const char *>(&in_vec[new_offset]), pos);
-                    out_offsets[i] = pos - begin;
-                    prev_offset = new_offset;
-                }
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                size_t new_offset = prev_offset + n;
 
-                chassert(
-                    static_cast<size_t>(pos - begin) <= out_vec.size(),
-                    fmt::format("too small amount of memory was preallocated: needed {}, but have only {}", pos - begin, out_vec.size()));
-                out_vec.resize(pos - begin);
+                Impl::decode(
+                    reinterpret_cast<const char *>(&in_vec[prev_offset]), reinterpret_cast<const char *>(&in_vec[new_offset]), pos);
+
+                out_offsets[i] = pos - begin;
+                prev_offset = new_offset;
             }
+
+            chassert(
+                static_cast<size_t>(pos - begin) <= out_vec.size(),
+                fmt::format("too small amount of memory was preallocated: needed {}, but have only {}", pos - begin, out_vec.size()));
+            out_vec.resize(pos - begin);
 
             return col_res;
         }
@@ -848,10 +770,10 @@ it to the byte represented by the number. The returned value is a binary string 
 
 If you want to convert the result to a number, you can use the `reverse` and `reinterpretAs<Type>` functions.
 
-<Note>
+:::note
 `clickhouse-client` interprets strings as UTF-8.
 This may cause that values returned by `hex` to be displayed surprisingly.
-</Note>
+:::
 
 Supports both uppercase and lowercase letters `A-F`.
 The number of hexadecimal digits does not have to be even.
@@ -868,7 +790,7 @@ For a numeric argument the inverse of hex(N) is not performed by unhex().
             "Basic usage",
             "SELECT unhex('303132'), UNHEX('4D7953514C')",
             R"(
-┌─unhex('303132')─┬─UNHEX('4D7953514C')─┐
+┌─unhex('303132')─┬─unhex('4D7953514C')─┐
 │ 012             │ MySQL               │
 └─────────────────┴─────────────────────┘
             )"
@@ -952,9 +874,9 @@ Interprets each pair of binary digits (in the argument) as a number and converts
 
 For a numeric argument `unbin()` does not return the inverse of `bin()`. If you want to convert the result to a number, you can use the reverse and `reinterpretAs<Type>` functions.
 
-<Note>
+:::note
 If `unbin` is invoked from within the `clickhouse-client`, binary strings are displayed using UTF-8.
-</Note>
+:::
 
 Supports binary digits `0` and `1`. The number of binary digits does not have to be multiples of eight. If the argument string contains anything other than binary digits,
 the result is undefined (no exception is thrown).
@@ -968,7 +890,7 @@ the result is undefined (no exception is thrown).
             "Basic usage",
             "SELECT UNBIN('001100000011000100110010'), UNBIN('0100110101111001010100110101000101001100')",
             R"(
-┌─UNBIN('001100000011000100110010')─┬─UNBIN('0100110101111001010100110101000101001100')─┐
+┌─unbin('001100000011000100110010')─┬─unbin('0100110101111001010100110101000101001100')─┐
 │ 012                               │ MySQL                                             │
 └───────────────────────────────────┴───────────────────────────────────────────────────┘
             )"
@@ -991,8 +913,6 @@ the result is undefined (no exception is thrown).
     factory.registerFunction<DecodeFromBinaryRepresentation<UnhexImpl>>(unhex_documentation, FunctionFactory::Case::Insensitive);
     factory.registerFunction<EncodeToBinaryRepresentation<BinImpl>>(bin_documentation, FunctionFactory::Case::Insensitive);
     factory.registerFunction<DecodeFromBinaryRepresentation<UnbinImpl>>(unbin_documentation, FunctionFactory::Case::Insensitive);
-    factory.registerAlias("to_hex", "hex", FunctionFactory::Case::Insensitive);
-    factory.registerAlias("from_hex", "unhex", FunctionFactory::Case::Insensitive);
 }
 
 }

@@ -18,7 +18,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool use_variant_as_common_type;
-    extern const SettingsBool allow_lossy_numeric_supertype;
 }
 
 namespace
@@ -27,25 +26,22 @@ namespace
 /// Implements the function coalesce which takes a set of arguments and
 /// returns the value of the leftmost non-null argument. If no such value is
 /// found, coalesce() returns NULL.
-class FunctionCoalesce final : public IFunction
+class FunctionCoalesce : public IFunction
 {
 public:
     static constexpr auto name = "coalesce";
 
     static FunctionPtr create(ContextPtr context)
     {
-        const auto & settings = context->getSettingsRef();
-        return std::make_shared<FunctionCoalesce>(
-            context, settings[Setting::use_variant_as_common_type], settings[Setting::allow_lossy_numeric_supertype]);
+        return std::make_shared<FunctionCoalesce>(context, context->getSettingsRef()[Setting::use_variant_as_common_type]);
     }
 
-    explicit FunctionCoalesce(ContextPtr context, bool use_variant_as_common_type_, bool allow_lossy_numeric_supertype_)
+    explicit FunctionCoalesce(ContextPtr context, bool use_variant_as_common_type_)
         : is_not_null(FunctionFactory::instance().get("isNotNull", context))
         , assume_not_null(FunctionFactory::instance().get("assumeNotNull", context))
         , if_function(FunctionFactory::instance().get("if", context))
         , multi_if_function(FunctionFactory::instance().get("multiIf", context))
         , use_variant_as_common_type(use_variant_as_common_type_)
-        , allow_lossy_numeric_supertype(allow_lossy_numeric_supertype_)
     {
     }
 
@@ -115,9 +111,7 @@ public:
             return new_args.front();
 
         bool has_variant = std::any_of(new_args.begin(), new_args.end(), [](const auto & t) { return isVariant(t); });
-        auto res = (use_variant_as_common_type || has_variant)
-            ? getLeastSupertypeOrVariant(new_args, allow_lossy_numeric_supertype)
-            : getLeastSupertype(new_args, allow_lossy_numeric_supertype);
+        auto res = (use_variant_as_common_type || has_variant) ? getLeastSupertypeOrVariant(new_args) : getLeastSupertype(new_args);
 
         /// if last argument is not nullable, result should be also not nullable
         if (!canContainNull(*new_args.back()) && res->isNullable())
@@ -204,7 +198,6 @@ private:
     FunctionOverloadResolverPtr if_function;
     FunctionOverloadResolverPtr multi_if_function;
     bool use_variant_as_common_type = false;
-    bool allow_lossy_numeric_supertype = false;
 };
 
 }

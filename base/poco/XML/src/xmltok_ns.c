@@ -11,8 +11,7 @@
    Copyright (c) 2002      Greg Stein <gstein@users.sourceforge.net>
    Copyright (c) 2002      Fred L. Drake, Jr. <fdrake@users.sourceforge.net>
    Copyright (c) 2002-2006 Karl Waclawek <karl@waclawek.net>
-   Copyright (c) 2017-2026 Sebastian Pipping <sebastian@pipping.org>
-   Copyright (c) 2025      Alfonso Gregory <gfunni234@gmail.com>
+   Copyright (c) 2017-2021 Sebastian Pipping <sebastian@pipping.org>
    Licensed under the MIT license:
 
    Permission is hereby granted, free of charge, to any person obtaining
@@ -33,8 +32,6 @@
    DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
    OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
    USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-   SPDX-License-Identifier: MIT
 */
 
 #ifdef XML_TOK_NS_C
@@ -64,14 +61,14 @@ static const ENCODING *const NS(encodings)[] = {
     &ns(utf8_encoding).enc /* NO_ENC */
 };
 
-static int
+static int PTRCALL
 NS(initScanProlog)(const ENCODING *enc, const char *ptr, const char *end,
                    const char **nextTokPtr) {
   return initScan(NS(encodings), (const INIT_ENCODING *)enc, XML_PROLOG_STATE,
                   ptr, end, nextTokPtr);
 }
 
-static int
+static int PTRCALL
 NS(initScanContent)(const ENCODING *enc, const char *ptr, const char *end,
                     const char **nextTokPtr) {
   return initScan(NS(encodings), (const INIT_ENCODING *)enc, XML_CONTENT_STATE,

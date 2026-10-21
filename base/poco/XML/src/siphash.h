@@ -8,8 +8,6 @@
  *
  * 1. https://www.131002.net/siphash/siphash24.c
  * 2. https://www.131002.net/siphash/
- *
- * SPDX-License-Identifier: CC0-1.0
  * --------------------------------------------------------------------------
  * HISTORY:
  *

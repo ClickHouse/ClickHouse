@@ -1,4 +1,3 @@
-#include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -11,7 +10,7 @@ namespace DB
 namespace
 {
 
-class FunctionCurrentQueryID final : public IFunction
+class FunctionCurrentQueryID : public IFunction
 {
 public:
     static constexpr auto name = "currentQueryID";

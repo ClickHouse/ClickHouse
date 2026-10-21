@@ -1,5 +1,0 @@
--- with statistics: cheap filter is placed before the expensive Map predicate
-1
--- correctness: result is the same regardless of ordering
-0
-0

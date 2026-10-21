@@ -9,15 +9,12 @@ set (CMAKE_C_COMPILER_TARGET "riscv64-linux-gnu")
 set (CMAKE_CXX_COMPILER_TARGET "riscv64-linux-gnu")
 set (CMAKE_ASM_COMPILER_TARGET "riscv64-linux-gnu")
 
-set (CMAKE_SYSROOT "${CMAKE_CURRENT_LIST_DIR}/../../contrib/sysroot/linux-riscv64")
+set (TOOLCHAIN_PATH "${CMAKE_CURRENT_LIST_DIR}/../../contrib/sysroot/linux-riscv64")
 
-# The sysroot has the Debian layout: GCC startup objects and libgcc.a live under usr/lib/gcc.
-set (TOOLCHAIN_PATH "${CMAKE_SYSROOT}/usr")
+set (CMAKE_SYSROOT "${TOOLCHAIN_PATH}")
 
-# Make sure to ignore global clang configuration files which could influence the
-# build environment using --no-default-config
-set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --gcc-toolchain=${TOOLCHAIN_PATH} --no-default-config")
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --gcc-toolchain=${TOOLCHAIN_PATH} --no-default-config")
-set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} --gcc-toolchain=${TOOLCHAIN_PATH} --no-default-config")
-set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=lld --no-default-config")
-set (CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} --no-default-config")
+set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --gcc-toolchain=${TOOLCHAIN_PATH}")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --gcc-toolchain=${TOOLCHAIN_PATH}")
+set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} --gcc-toolchain=${TOOLCHAIN_PATH}")
+
+set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=lld")

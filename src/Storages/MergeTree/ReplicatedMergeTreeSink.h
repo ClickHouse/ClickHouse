@@ -1,6 +1,5 @@
 #pragma once
 
-#include <exception>
 #include <optional>
 #include <string>
 #include <base/types.h>
@@ -23,6 +22,8 @@ namespace zkutil
 
 namespace DB
 {
+enum class InsertDeduplicationVersions : uint8_t;
+
 
 class StorageReplicatedMergeTree;
 struct BlockWithPartition;
@@ -75,7 +76,6 @@ public:
     void onStart() override;
     void consume(Chunk & chunk) override;
     void onFinish() override;
-    void setHasDependentMaterializedViews(bool has_dependent_views) override;
 
     String getName() const override { return "ReplicatedMergeTreeSink"; }
 
@@ -89,7 +89,7 @@ protected:
 
     ZooKeeperWithFaultInjectionPtr createKeeper(String name);
 
-    std::vector<DeduplicationHash> detectConflictsInCache(const std::vector<DeduplicationHash> & deduplication_hashes);
+    std::vector<DeduplicationHash> detectConflictsInAsyncBlockIDs(const std::vector<DeduplicationHash> & deduplication_hashes);
 
     /// We can delay processing for previous chunk and start writing a new one.
     std::vector<DelayedPartInPartition> delayed_parts;
@@ -141,16 +141,12 @@ protected:
     size_t max_parts_per_block;
 
     UInt64 deduplication_cache_version = 0;
-
-    /// The result of the "too many parts" check, evaluated on the query thread at sink
-    /// construction and thrown from onStart, when the sink starts executing.
-    std::exception_ptr too_many_parts_exception;
+    UInt64 deduplication_async_inserts_cache_version = 0;
 
     bool is_attach = false;
     bool allow_attach_while_readonly = false;
     bool quorum_parallel = false;
     bool deduplicate = true;
-    bool synchronously_commit_part_for_dependent_views = false;
     UInt64 num_blocks_processed = 0;
 
     LoggerPtr log;
@@ -160,6 +156,7 @@ protected:
     std::optional<ZooKeeperRetriesInfo> keeper_retries_info;
 
     bool is_async_insert = true;
+    InsertDeduplicationVersions insert_deduplication_version = InsertDeduplicationVersions::NEW_UNIFIED_HASHES;
 };
 
 }

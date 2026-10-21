@@ -23,11 +23,8 @@ std::optional<PartProperties::GeneralTTLInfo> buildGeneralTTLInfo(StorageMetadat
 
     return PartProperties::GeneralTTLInfo{
         .has_any_non_finished_ttls = part->ttl_infos.hasAnyNonFinishedTTLs(),
-        .has_any_non_finished_row_ttls = part->ttl_infos.hasAnyNonFinishedRowTTLs(),
-        .has_any_non_finished_column_ttls = part->ttl_infos.hasAnyNonFinishedColumnTTLs(),
         .part_min_ttl = part->ttl_infos.part_min_ttl,
         .part_max_ttl = part->ttl_infos.part_max_ttl,
-        .column_min_ttl = part->ttl_infos.getMinimalNonFinishedColumnTTL(),
     };
 }
 
@@ -41,19 +38,9 @@ std::optional<PartProperties::RecompressTTLInfo> buildRecompressTTLInfo(StorageM
 
     if (ttl_description)
     {
-        /// If the part's own default codec could not be recovered exactly (see
-        /// `IMergeTreeDataPart::default_codec_is_approximate`), the comparison below cannot be trusted
-        /// either way: treat the codec as unknown and always let the merge selector reconsider the
-        /// part, rather than risk a wrong guess suppressing a recompression that is still needed.
-        if (part->default_codec_is_approximate)
-            return PartProperties::RecompressTTLInfo{
-                .will_change_codec = true,
-                .next_recompress_ttl = part->ttl_infos.getMinimalMaxRecompressionTTL(),
-            };
-
         /// FIXME: Implement in other way -- not string comparison
         const std::string next_codec = astToString(ttl_description->recompression_codec);
-        const std::string current_codec = astToString(part->default_codec->getFullCodecDescription());
+        const std::string current_codec = astToString(part->default_codec->getFullCodecDesc());
 
         return PartProperties::RecompressTTLInfo{
             .will_change_codec = (next_codec != current_codec),

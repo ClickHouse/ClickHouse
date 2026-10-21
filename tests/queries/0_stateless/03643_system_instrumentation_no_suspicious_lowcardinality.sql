@@ -15,7 +15,7 @@ SELECT
     handler,
     entry_type,
     symbol,
-    arguments
+    parameters
 FROM system.instrumentation;
 
 -- Verify the view was created

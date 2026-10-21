@@ -1,78 +1,78 @@
 #pragma once
-#include <atomic>
+#include <shared_mutex>
 #include <Core/Field.h>
-#include <Core/SortDescription.h>
 #include <Common/SharedMutex.h>
 
+/// Field + mutex looks a little heavy, but profiling has not showed anything concerning.
+/// It should be possible to use std::atomic<size_t> for the threshold because we only
+/// support numeric equivalent types. But that will require type specific comparison
+/// operators (e.g for Int32, for Date / DateTime, for DecimalXX etc).
+///
+/// Field keeps the door open for using this class for ORDER BY <string> (if needed)
 namespace DB
 {
 
-class IDataType;
-
-class ITopKThresholdTracker
+struct TopKThresholdTracker
 {
-public:
-    ITopKThresholdTracker(const SortColumnDescription & sort_desc_, DataTypePtr data_type_)
-        : sort_desc(sort_desc_), data_type(std::move(data_type_)) {}
-    virtual ~ITopKThresholdTracker() = default;
+    explicit TopKThresholdTracker(int direction_) : direction(direction_) {}
 
-    virtual void testAndSet(const Field & value) = 0;
-    virtual bool isValueInsideThreshold(const Field & value) const = 0;
-    virtual Field getValue() const = 0;
-    virtual bool isSet() const = 0;
+    void testAndSet(const Field & value)
+    {
+        std::unique_lock lock(mutex);
+        if (!is_set)
+        {
+            threshold = value;
+            is_set = true;
+            return;
+        }
+        if (direction == 1) /// ASC
+        {
+            if (value < threshold)
+            {
+                threshold = value;
+            }
+        }
+        else if (direction == -1) /// DESC
+        {
+            if (value > threshold)
+            {
+                threshold = value;
+            }
+        }
+    }
 
-    int getDirection() const { return sort_desc.direction; }
-    int getNullsDirection() const { return sort_desc.nulls_direction; }
-    const std::shared_ptr<Collator> & getCollator() const { return sort_desc.collator; }
-    /// The type of the sort column the published values are taken from.
-    const DataTypePtr & getDataType() const { return data_type; }
+    bool isValueInsideThreshold(const Field & value) const
+    {
+        if (!is_set)
+            return true;
 
-protected:
-    SortColumnDescription sort_desc;
-    DataTypePtr data_type;
-};
+        std::shared_lock lock(mutex);
+        if (direction == 1 && value > threshold) /// ASC
+            return false;
+        else if (direction == -1 && value < threshold) /// DESC
+            return false;
 
-/// Lock-free tracker for types whose values are represented in a `Field` by a plain
-/// numeric type that fits into `std::atomic` (T is one of UInt64, Int64, Float64).
-template <typename T>
-class TopKThresholdTrackerNumeric : public ITopKThresholdTracker
-{
-public:
-    TopKThresholdTrackerNumeric(const SortColumnDescription & sort_desc_, DataTypePtr data_type_);
+        return true;
+    }
 
-    void testAndSet(const Field & value) override;
-    bool isValueInsideThreshold(const Field & value) const override;
+    Field getValue() const
+    {
+        std::shared_lock lock(mutex);
+        auto ret = threshold;
+        return ret;
+    }
 
-    /// Returns the sentinel if no value was published yet; callers must check `isSet` first.
-    Field getValue() const override { return threshold.load(std::memory_order_relaxed);}
-    bool isSet() const override;
+    bool isSet() const { return is_set; } /// unlocked read is fine
+
+    int getDirection() const { return direction; }
 
 private:
-    std::atomic<T> threshold;
-};
-
-class TopKThresholdTrackerGeneric : public ITopKThresholdTracker
-{
-public:
-    TopKThresholdTrackerGeneric(const SortColumnDescription & sort_desc_, DataTypePtr data_type_)
-        : ITopKThresholdTracker(sort_desc_, std::move(data_type_)) {}
-
-    void testAndSet(const Field & value) override;
-    bool isValueInsideThreshold(const Field & value) const override;
-    Field getValue() const override;
-    bool isSet() const override { return is_set; }
-
-private:
-    /// Compare two Field values respecting NULL ordering and collation
-    /// from the stored SortColumnDescription.
-    int compareFields(const Field & lhs, const Field & rhs) const;
-
     Field threshold;
     mutable SharedMutex mutex;
     std::atomic<bool> is_set{false};
+    int direction{0};
 };
 
-using TopKThresholdTrackerPtr = std::shared_ptr<ITopKThresholdTracker>;
-TopKThresholdTrackerPtr createTopKThresholdTracker(const SortColumnDescription & sort_desc, const IDataType & data_type);
+using TopKThresholdTrackerPtr = std::shared_ptr<TopKThresholdTracker>;
 
 }

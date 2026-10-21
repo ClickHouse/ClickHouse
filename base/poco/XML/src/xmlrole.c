@@ -12,7 +12,7 @@
    Copyright (c) 2002-2006 Karl Waclawek <karl@waclawek.net>
    Copyright (c) 2002-2003 Fred L. Drake, Jr. <fdrake@users.sourceforge.net>
    Copyright (c) 2005-2009 Steven Solie <steven@solie.ca>
-   Copyright (c) 2016-2026 Sebastian Pipping <sebastian@pipping.org>
+   Copyright (c) 2016-2023 Sebastian Pipping <sebastian@pipping.org>
    Copyright (c) 2017      Rhodri James <rhodri@wildebeest.org.uk>
    Copyright (c) 2019      David Loffredo <loffredo@steptools.com>
    Copyright (c) 2021      Donghee Na <donghee.na@python.org>
@@ -36,8 +36,6 @@
    DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
    OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
    USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-   SPDX-License-Identifier: MIT
 */
 
 #include "expat_config.h"
@@ -120,8 +118,9 @@ static const char KW_SYSTEM[]
 #  define setTopLevel(state) ((state)->handler = internalSubset)
 #endif /* not XML_DTD */
 
-typedef int PROLOG_HANDLER(PROLOG_STATE *state, int tok, const char *ptr,
-                           const char *end, const ENCODING *enc);
+typedef int PTRCALL PROLOG_HANDLER(PROLOG_STATE *state, int tok,
+                                   const char *ptr, const char *end,
+                                   const ENCODING *enc);
 
 static PROLOG_HANDLER prolog0, prolog1, prolog2, doctype0, doctype1, doctype2,
     doctype3, doctype4, doctype5, internalSubset, entity0, entity1, entity2,
@@ -135,9 +134,9 @@ static PROLOG_HANDLER prolog0, prolog1, prolog2, doctype0, doctype1, doctype2,
 #endif /* XML_DTD */
     declClose, error;
 
-static int common(PROLOG_STATE *state, int tok);
+static int FASTCALL common(PROLOG_STATE *state, int tok);
 
-static int
+static int PTRCALL
 prolog0(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
         const ENCODING *enc) {
   switch (tok) {
@@ -168,7 +167,7 @@ prolog0(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 prolog1(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
         const ENCODING *enc) {
   switch (tok) {
@@ -200,7 +199,7 @@ prolog1(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 prolog2(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
         const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -220,7 +219,7 @@ prolog2(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 doctype0(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
          const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -237,7 +236,7 @@ doctype0(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 doctype1(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
          const ENCODING *enc) {
   switch (tok) {
@@ -263,7 +262,7 @@ doctype1(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 doctype2(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
          const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -279,7 +278,7 @@ doctype2(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 doctype3(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
          const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -295,7 +294,7 @@ doctype3(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 doctype4(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
          const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -314,7 +313,7 @@ doctype4(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 doctype5(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
          const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -330,7 +329,7 @@ doctype5(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 internalSubset(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
                const ENCODING *enc) {
   switch (tok) {
@@ -375,7 +374,7 @@ internalSubset(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
 
 #ifdef XML_DTD
 
-static int
+static int PTRCALL
 externalSubset0(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
                 const ENCODING *enc) {
   state->handler = externalSubset1;
@@ -384,7 +383,7 @@ externalSubset0(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return externalSubset1(state, tok, ptr, end, enc);
 }
 
-static int
+static int PTRCALL
 externalSubset1(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
                 const ENCODING *enc) {
   switch (tok) {
@@ -412,7 +411,7 @@ externalSubset1(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
 
 #endif /* XML_DTD */
 
-static int
+static int PTRCALL
 entity0(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
         const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -431,7 +430,7 @@ entity0(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 entity1(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
         const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -447,7 +446,7 @@ entity1(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 entity2(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
         const ENCODING *enc) {
   switch (tok) {
@@ -471,7 +470,7 @@ entity2(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 entity3(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
         const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -487,7 +486,7 @@ entity3(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 entity4(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
         const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -503,7 +502,7 @@ entity4(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 entity5(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
         const ENCODING *enc) {
   switch (tok) {
@@ -522,7 +521,7 @@ entity5(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 entity6(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
         const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -539,7 +538,7 @@ entity6(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 entity7(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
         const ENCODING *enc) {
   switch (tok) {
@@ -563,7 +562,7 @@ entity7(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 entity8(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
         const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -579,7 +578,7 @@ entity8(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 entity9(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
         const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -595,7 +594,7 @@ entity9(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 entity10(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
          const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -611,7 +610,7 @@ entity10(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 notation0(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
           const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -627,7 +626,7 @@ notation0(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 notation1(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
           const ENCODING *enc) {
   switch (tok) {
@@ -647,7 +646,7 @@ notation1(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 notation2(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
           const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -663,7 +662,7 @@ notation2(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 notation3(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
           const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -680,7 +679,7 @@ notation3(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 notation4(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
           const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -700,7 +699,7 @@ notation4(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 attlist0(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
          const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -717,7 +716,7 @@ attlist0(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 attlist1(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
          const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -737,7 +736,7 @@ attlist1(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 attlist2(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
          const ENCODING *enc) {
   switch (tok) {
@@ -767,7 +766,7 @@ attlist2(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 attlist3(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
          const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -785,7 +784,7 @@ attlist3(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 attlist4(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
          const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -804,7 +803,7 @@ attlist4(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 attlist5(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
          const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -820,7 +819,7 @@ attlist5(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 attlist6(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
          const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -836,7 +835,7 @@ attlist6(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 attlist7(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
          const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -856,7 +855,7 @@ attlist7(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
 }
 
 /* default value */
-static int
+static int PTRCALL
 attlist8(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
          const ENCODING *enc) {
   switch (tok) {
@@ -886,7 +885,7 @@ attlist8(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 attlist9(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
          const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -902,7 +901,7 @@ attlist9(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 element0(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
          const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -919,7 +918,7 @@ element0(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 element1(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
          const ENCODING *enc) {
   switch (tok) {
@@ -945,7 +944,7 @@ element1(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 element2(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
          const ENCODING *enc) {
   switch (tok) {
@@ -979,7 +978,7 @@ element2(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 element3(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
          const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -1003,7 +1002,7 @@ element3(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 element4(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
          const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -1020,7 +1019,7 @@ element4(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 element5(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
          const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -1040,7 +1039,7 @@ element5(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 element6(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
          const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -1069,7 +1068,7 @@ element6(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 element7(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
          const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -1118,7 +1117,7 @@ element7(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
 
 #ifdef XML_DTD
 
-static int
+static int PTRCALL
 condSect0(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
           const ENCODING *enc) {
   switch (tok) {
@@ -1138,7 +1137,7 @@ condSect0(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 condSect1(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
           const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -1155,7 +1154,7 @@ condSect1(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
   return common(state, tok);
 }
 
-static int
+static int PTRCALL
 condSect2(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
           const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -1173,7 +1172,7 @@ condSect2(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
 
 #endif /* XML_DTD */
 
-static int
+static int PTRCALL
 declClose(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
           const ENCODING *enc) {
   UNUSED_P(ptr);
@@ -1209,7 +1208,7 @@ declClose(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
  *
  * LCOV_EXCL_START
  */
-static int
+static int PTRCALL
 error(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
       const ENCODING *enc) {
   UNUSED_P(state);
@@ -1221,7 +1220,7 @@ error(PROLOG_STATE *state, int tok, const char *ptr, const char *end,
 }
 /* LCOV_EXCL_STOP */
 
-static int
+static int FASTCALL
 common(PROLOG_STATE *state, int tok) {
 #ifdef XML_DTD
   if (! state->documentEntity && tok == XML_TOK_PARAM_ENTITY_REF)

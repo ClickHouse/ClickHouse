@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Common/Documentation.h>
-#include <Interpreters/SecretArgumentsSpec.h>
 #include <Common/NamePrompter.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Parsers/IAST_fwd.h>
@@ -75,11 +73,6 @@ public:
         /// See also IStorage::supportsParallelInsert()
         bool supports_parallel_insert = false;
         bool supports_schema_inference = false;
-        /// Whether `UNIQUE KEY` is accepted at CREATE time. Currently set only on
-        /// non-replicated MergeTree variants — replicated metadata does not yet
-        /// serialize `unique_key`, which would allow replicas to diverge silently.
-        bool supports_unique_key = false;
-        bool supports_sql_security = false;
         std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
@@ -90,8 +83,6 @@ public:
     {
         CreatorFn creator_fn;
         StorageFeatures features;
-        Documentation documentation;
-        SecretArgumentsSpec secret_arguments;
     };
 
     using Storages = std::unordered_map<std::string, Creator>;
@@ -108,7 +99,7 @@ public:
 
     /// Register a table engine by its name.
     /// No locking, you must register all engines before usage of get.
-    void registerStorage(const std::string & name, CreatorFn creator_fn, SecretArgumentsSpec secret_arguments, StorageFeatures features = StorageFeatures{
+    void registerStorage(const std::string & name, CreatorFn creator_fn, StorageFeatures features = StorageFeatures{
         .supports_settings = false,
         .supports_skipping_indices = false,
         .supports_projections = false,
@@ -118,26 +109,18 @@ public:
         .supports_deduplication = false,
         .supports_parallel_insert = false,
         .supports_schema_inference = false,
-        .supports_unique_key = false,
-        .supports_sql_security = false,
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
-    }, Documentation documentation = {});
+    });
 
     const Storages & getAllStorages() const
     {
         return storages;
     }
 
-    const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const String & name) const
+    std::vector<String> getAllRegisteredNames() const override
     {
-        auto it = storages.find(name);
-        return it == storages.end() ? nullptr : &it->second.secret_arguments;
-    }
-
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
-    {
-        VectorWithMemoryTracking<String> result;
+        std::vector<String> result;
         auto getter = [](const auto & pair) { return pair.first; };
         std::transform(storages.begin(), storages.end(), std::back_inserter(result), getter);
         return result;
@@ -162,12 +145,5 @@ private:
 };
 
 void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types);
-
-/// Rejects a `SETTINGS` name that is neither a setting of this engine nor a query setting. Judges only a fresh definition.
-void checkStorageSettingNames(const StorageFactory::Arguments & args);
-
-/// Whether the definition is replayed (attach, DDL replay, Keeper recovery, Shared Catalog replay)
-/// rather than written by the user now. Refusing a replayed definition would block loading or retry forever.
-bool isReplayedTableDefinition(LoadingStrictnessLevel mode, const ASTCreateQuery & query, const ContextPtr & local_context);
 
 }
