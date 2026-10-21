@@ -2244,6 +2244,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
 
+    /// Here the engine (also one inherited through `AS`) and the inner engines are final, and nothing is enqueued or created yet.
+    /// A replay of a stored definition was checked when it was created.
+    if (isFreshTableDefinition(mode, create.attach_short_syntax))
+        checkQueueMoveDestinationAccess(create);
+
     /// The definition persisted below must not depend on the session setting, because reloads and
     /// replicas re-derive the key type from the stored text. This must happen after normalization:
     /// `CREATE TABLE ... AS` materializes copied columns and key expressions only there. A replayed
@@ -3946,9 +3951,10 @@ BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
     params.access_to_check = getRequiredAccess();
     /// The hosts run the entry without the user, so the move destination of a queue table is authorized here:
     /// after the standard checks and before the entry is enqueued. `executeDDLQueryOnCluster` calls it synchronously.
-    params.additional_access_check = [this](const String & /* default_database */, bool /* throw_if_unresolved */)
+    /// It checks the query as given: the explicit engines and the inner engines of views.
+    params.additional_access_check = [this, &create](const String & /* default_database */, bool /* throw_if_unresolved */)
     {
-        checkQueueMoveDestinationAccess();
+        checkQueueMoveDestinationAccess(create);
     };
     return executeDDLQueryOnCluster(query_ptr, getContext(), params);
 }
@@ -4001,6 +4007,9 @@ BlockIO InterpreterCreateQuery::execute()
                 /// getRequiredAccess sees no engine, because this query holds none of its own
                 if (inherited.storage && inherited.storage->engine)
                     getContext()->checkAccess(AccessType::TABLE_ENGINE, inherited.storage->engine->name);
+
+                /// the worker inherits the move destination of the source too, and runs with no user
+                checkQueueMoveDestinationAccess(inherited);
             }
 
             /// This branch ships the query text as written, and `OLDEST_VERSION` also ships no settings,
@@ -4034,7 +4043,6 @@ BlockIO InterpreterCreateQuery::execute()
     }
 
     getContext()->checkAccess(getRequiredAccess());
-    checkQueueMoveDestinationAccess();
 
     ASTQueryWithOutput::resetOutputASTIfExist(create);
 
@@ -4133,16 +4141,27 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     return required_access;
 }
 
-void InterpreterCreateQuery::checkQueueMoveDestinationAccess() const
+void InterpreterCreateQuery::checkQueueMoveDestinationAccess(const ASTCreateQuery & create) const
 {
     /// Internal queries (initiated by the server itself) always have access to everything.
     if (internal)
         return;
 
-    const auto & create = query_ptr->as<const ASTCreateQuery &>();
-    if (create.storage && create.storage->engine && create.storage->settings
-        && (create.storage->engine->name == "S3Queue" || create.storage->engine->name == "AzureQueue"))
-        checkObjectStorageQueueMoveDestinationAccess(create.storage->settings->changes, getContext());
+    auto check_storage = [this](const ASTStorage & storage)
+    {
+        if (storage.engine && storage.settings && (storage.engine->name == "S3Queue" || storage.engine->name == "AzureQueue"))
+            checkObjectStorageQueueMoveDestinationAccess(storage.settings->changes, getContext());
+    };
+
+    if (create.storage)
+        check_storage(*create.storage);
+
+    /// Inner engines of materialized views and `TimeSeries` tables.
+    if (create.targets)
+    {
+        for (const ASTStorage * inner_engine : create.targets->getInnerEngines())
+            check_storage(*inner_engine);
+    }
 }
 
 void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const

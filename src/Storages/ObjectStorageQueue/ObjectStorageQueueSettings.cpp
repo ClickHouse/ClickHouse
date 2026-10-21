@@ -61,7 +61,7 @@ namespace ErrorCodes
     DECLARE(String, partition_component, "", "Name of the capture group from partition_regex to use as partition key. Required when using partitioning_mode='regex'. Example: 'hostname'", 0) \
     DECLARE(ObjectStorageQueueBucketingMode, bucketing_mode, ObjectStorageQueueBucketingMode::PATH, "Bucketing strategy for Ordered mode parallel processing: PATH (hash full file path, default), PARTITION (hash partition key, requires partitioning_mode != NONE)", 0) \
     DECLARE(UInt32, after_processing_retries, 10, "Number of retries for the after_processing action before giving up", 0) \
-    DECLARE(String, after_processing_move_uri, "", "S3 bucket URL to move processed files to. Setting it requires the `WRITE` grant on the `S3` source for this URL (as for `INSERT INTO FUNCTION s3(...)`), and `ALTER` also requires `SELECT` on the table. The URL must be allowed by `remote_url_allow_hosts`", 0) \
+    DECLARE(String, after_processing_move_uri, "", "S3 bucket URL to move processed files to. Setting it requires the `WRITE` grant on the `S3` source (not limited to a URL filter), and `ALTER` also requires `SELECT` on the table. The URL must be allowed by `remote_url_allow_hosts`", 0) \
     DECLARE(String, after_processing_move_prefix, "", "Path prefix to move processed files to", 0) \
     DECLARE(Bool, after_processing_move_preserve_path, false, "If true, preserve the full source path under after_processing_move_prefix instead of using only the file name", 0) \
     DECLARE(String, after_processing_tag_key, "", "Tag key to tag processed files in the storage", 0) \
@@ -69,7 +69,7 @@ namespace ErrorCodes
     DECLARE(String, after_processing_move_access_key_id, "", "S3 Access Key ID accompanying after_processing_move_uri", 0) \
     DECLARE(String, after_processing_move_secret_access_key, "", "S3 Secret Access Key accompanying after_processing_move_uri", 0) \
     DECLARE(String, after_processing_move_connection_string, "", "Azure connection string to move processed files to. Setting it requires the `WRITE` grant on the `AZURE` source (not limited to a URL filter), and `ALTER` also requires `SELECT` on the table. The endpoint must be allowed by `remote_url_allow_hosts`", 0) \
-    DECLARE(String, after_processing_move_container, "", "Azure container accompanying after_processing_move_connection_string", 0) \
+    DECLARE(String, after_processing_move_container, "", "Azure container accompanying after_processing_move_connection_string. Setting it requires the `WRITE` grant on the `AZURE` source (not limited to a URL filter), and `ALTER` also requires `SELECT` on the table", 0) \
     DECLARE(Bool, use_hive_partitioning, false, "DEPRECATED: Use partitioning_mode='hive' instead. Whether path contains hive partitioning and this engine should process such files with a separate processed files tracking per partition.", 0) \
 
 #define LIST_OF_OBJECT_STORAGE_QUEUE_SETTINGS(M, ALIAS) \

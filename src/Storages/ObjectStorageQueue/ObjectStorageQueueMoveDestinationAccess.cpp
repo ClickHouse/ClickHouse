@@ -10,7 +10,6 @@
 #include <IO/S3/URI.h>
 #include <Interpreters/Context.h>
 
-#include <Poco/Exception.h>
 #include <Poco/URI.h>
 
 #include <algorithm>
@@ -39,7 +38,7 @@ std::optional<MoveDestinationKind> getMoveDestinationKind(std::string_view name)
 
     if (name == "after_processing_move_uri")
         return MoveDestinationKind::S3;
-    if (name == "after_processing_move_connection_string")
+    if (name == "after_processing_move_connection_string" || name == "after_processing_move_container")
         return MoveDestinationKind::Azure;
     return std::nullopt;
 }
@@ -48,25 +47,6 @@ std::optional<MoveDestinationKind> getMoveDestinationKind(std::string_view name)
 bool isEmptyValue(const Field & value)
 {
     return value.getType() == Field::Types::String && value.safeGet<String>().empty();
-}
-
-/// Must normalize identically to `ITableFunction::getFunctionURINormalized`, or the same regex grant matches
-/// `INSERT INTO FUNCTION s3(...)` and not the move destination. An empty result requires a grant on the whole source.
-String normalizeURI(const Field & value)
-{
-    if (value.getType() != Field::Types::String)
-        return {};
-
-    try
-    {
-        Poco::URI uri(value.safeGet<String>());
-        uri.normalize();
-        return uri.toString();
-    }
-    catch (const Poco::Exception &)
-    {
-        return {};
-    }
 }
 
 }
@@ -86,18 +66,19 @@ void checkObjectStorageQueueMoveDestinationAccess(const SettingsChanges & change
         if (!kind || isEmptyValue(change.value))
             continue;
 
+        /// Unfiltered on purpose: a move has no single destination path to match a filter against.
+        /// For S3, the move writes keys built from `after_processing_move_prefix` and the source keys, and uses only
+        /// the bucket of the URI, not its key. For Azure, the `azureBlobStorage` function matches source filters against
+        /// the blob path (`StorageAzureConfiguration::getRawURI` returns `blob_path.path`).
         switch (*kind)
         {
             case MoveDestinationKind::S3:
             {
-                context->getAccess()->checkAccessWithFilter(
-                    AccessType::WRITE, AccessTypeObjects::toStringSource(AccessTypeObjects::Source::S3), normalizeURI(change.value));
+                context->getAccess()->checkAccess(AccessType::WRITE, AccessTypeObjects::toStringSource(AccessTypeObjects::Source::S3));
                 break;
             }
             case MoveDestinationKind::Azure:
             {
-                /// Unfiltered on purpose: the `azureBlobStorage` function matches source filters against the blob path
-                /// (`StorageAzureConfiguration::getRawURI` returns `blob_path.path`), and a move has no single blob path.
                 context->getAccess()->checkAccess(AccessType::WRITE, AccessTypeObjects::toStringSource(AccessTypeObjects::Source::AZURE));
                 break;
             }

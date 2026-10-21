@@ -5,6 +5,7 @@
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/Common/SQLSecurityDefs.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Access/User.h>
 #include <Backups/BackupsWorker.h>
 #include <Common/typeid_cast.h>
@@ -87,6 +88,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
@@ -482,17 +484,31 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
     return res;
 }
 
-/// Setting a move destination of an `S3Queue` or `AzureQueue` table needs `WRITE` on the source of the destination
-/// (see `checkObjectStorageQueueMoveDestinationAccess`). It is filtered by the destination URL, which an
-/// `AccessRightsElement` cannot express, so it is checked here instead of in `getRequiredAccess`.
-/// The check reads only the settings of the query, so it does not need the table to exist on this host.
-void checkMoveDestinationAccess(const ASTAlterQuery & alter, const ContextPtr & context)
+/// A move destination of an `S3Queue` or `AzureQueue` table receives whole source files, read with the credentials of the table.
+/// So setting one needs `WRITE` on the source of the destination (see `checkObjectStorageQueueMoveDestinationAccess`), and it is
+/// rejected for a user whose row policy hides rows of the table, because the move has no read path that could filter them
+/// (as `StorageSet::checkNoRowPolicy`). Both read only the query and the access entities, not the table, so this runs on the initiator.
+void checkMoveDestinationAccess(const ASTAlterQuery & alter, const String & database, const ContextPtr & context)
 {
     for (const auto & child : alter.command_list->children)
     {
         const auto & command = child->as<const ASTAlterCommand &>();
-        if (command.type == ASTAlterCommand::MODIFY_SETTING && command.settings_changes)
-            checkObjectStorageQueueMoveDestinationAccess(command.settings_changes->as<ASTSetQuery &>().changes, context);
+        if (command.type != ASTAlterCommand::MODIFY_SETTING || !command.settings_changes)
+            continue;
+
+        const auto & changes = command.settings_changes->as<ASTSetQuery &>().changes;
+        checkObjectStorageQueueMoveDestinationAccess(changes, context);
+
+        if (!hasObjectStorageQueueMoveDestination(changes))
+            continue;
+
+        auto row_policy_filter = context->getRowPolicyFilter(database, alter.getTable(), RowPolicyFilterType::SELECT_FILTER);
+        if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "Cannot set the move destination of table {}.{} because a row policy applies to it. "
+                "The move copies whole files and cannot filter the rows",
+                backQuoteIfNeed(database), backQuoteIfNeed(alter.getTable()));
     }
 }
 
@@ -596,7 +612,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             }
 
             /// The hosts run the entry without the user, so the destination is authorized here, before the entry is enqueued.
-            checkMoveDestinationAccess(captured_alter, context);
+            checkMoveDestinationAccess(captured_alter, default_database, context);
         };
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
@@ -604,7 +620,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (!skip_access_check)
     {
         getContext()->checkAccess(getRequiredAccess(table));
-        checkMoveDestinationAccess(alter, getContext());
+        checkMoveDestinationAccess(alter, getContext()->resolveDatabase(alter.getDatabase()), getContext());
     }
 
     if (!table_id)
