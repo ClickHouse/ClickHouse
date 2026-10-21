@@ -6,6 +6,7 @@
 #include <GPU/GPUMemory.h>
 #include <GPU/GPUTypeMapping.h>
 
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
@@ -38,6 +39,16 @@ GPUElementType columnTypeOrThrow(const IDataType & type)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Columns of {} are not supported on the GPU yet", type.getName());
 }
 
+GPUElementType uploadTypeOrThrow(const IDataType & type)
+{
+    if (isString(type))
+        return GPUElementType::String;
+    if (const auto element_type = keyElementTypeOf(type))
+        return *element_type;
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Columns of {} are not supported on the GPU yet", type.getName());
+}
+
 namespace
 {
 
@@ -51,6 +62,17 @@ void fillFixed(IColumn & column, GPUElementType element_type, size_t rows, std::
 {
     if (values.size() != rows * sizeOf(element_type))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{} bytes of {} values of {} bytes", values.size(), rows, sizeOf(element_type));
+
+    /// The bytes of a `FixedString` key, grouped as an integer as wide.
+    if (auto * fixed_string = typeid_cast<ColumnFixedString *>(&column))
+    {
+        if (fixed_string->getN() != sizeOf(element_type) || !fixed_string->empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot put {}-byte values from the device into a column of {}", sizeOf(element_type), column.getName());
+        auto & chars = fixed_string->getChars();
+        chars.resize(values.size());
+        memcpy(chars.data(), values.data(), values.size());
+        return;
+    }
 
     const HostColumnView to = resizeForElementType(column, rows, element_type);
     memcpy(to.data, values.data(), values.size());
@@ -101,7 +123,7 @@ const DeviceFixedColumn & fixedOrThrow(const DeviceColumnView & view)
     return view.fixed;
 }
 
-void copyDeviceToHost(std::span<const DeviceColumnView> from, std::span<IColumn * const> to, rmm::cuda_stream_view stream)
+void copyDeviceToHost(std::span<const DeviceColumnView> from, std::span<IColumn * const> to, cuda::stream_ref stream)
 {
     if (from.size() != to.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{} columns from the device into {} columns", from.size(), to.size());
@@ -138,7 +160,7 @@ void copyDeviceToHost(std::span<const DeviceColumnView> from, std::span<IColumn 
         }
     });
 
-    checkCuda(cudaStreamSynchronize(stream), "Cannot wait for columns to be copied back from the device");
+    checkCuda(cudaStreamSynchronize(stream.get()), "Cannot wait for columns to be copied back from the device");
 
     for (size_t i = 0; i < from.size(); ++i)
     {
