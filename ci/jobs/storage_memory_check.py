@@ -362,6 +362,15 @@ SETTINGS force_data_skipping_indices = 'idx_value', load_marks_asynchronously = 
                 "master_bytes": master_bytes,
                 "pr_bytes": pr_bytes,
                 "change": change,
+                **(
+                    {
+                        "compared_label": "Live after the scenario",
+                        "compared_master": compared_master,
+                        "compared_pr": compared_pr,
+                    }
+                    if master_bytes < 0
+                    else {}
+                ),
                 "status": status,
                 "master_stacks": master_stacks,
                 "pr_stacks": pr_stacks,
