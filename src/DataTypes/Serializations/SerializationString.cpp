@@ -914,16 +914,20 @@ void appendStringSizesToColumnStringOffsets(ColumnString & column_string, const 
 {
     auto & offsets = column_string.getOffsets();
 
-    offsets.reserve(offsets.size() + rows);
-
     /// The sizes come from a separate stream, so nothing bounds them by the data that follows them and
     /// their sum can overflow the offsets. A 128-bit accumulator cannot overflow, so one check of the
     /// total is enough: below it every offset is exact.
     unsigned __int128 offset = offsets.empty() ? 0 : offsets.back();
+
+    /// Resize once and write through a pointer: `push_back` checks the capacity on every row.
+    const size_t old_size = offsets.size();
+    offsets.resize(old_size + rows);
+    IColumn::Offset * out = offsets.data() + old_size;
+    const UInt64 * in = sizes + start;
     for (size_t i = 0; i < rows; ++i)
     {
-        offset += sizes[start + i];
-        offsets.push_back(static_cast<IColumn::Offset>(offset));
+        offset += in[i];
+        out[i] = static_cast<IColumn::Offset>(offset);
     }
 
     if (unlikely(offset > MAX_TOTAL_STRING_SIZE))
