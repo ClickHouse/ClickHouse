@@ -122,6 +122,8 @@ private:
     /// Released by `Fetch` destructors, which may run outside the owner's lock.
     std::atomic<size_t> leased = 0;
     std::atomic<size_t> leased_bytes = 0;
+    /// Set on destruction: the reads that have not started yet are skipped.
+    const std::shared_ptr<std::atomic<bool>> stopped = std::make_shared<std::atomic<bool>>(false);
     std::deque<FetchPtr> window;
 };
 

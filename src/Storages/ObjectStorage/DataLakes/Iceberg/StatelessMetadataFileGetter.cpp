@@ -416,6 +416,7 @@ ManifestFilesPrefetcher::ManifestFilesPrefetcher(
 
 ManifestFilesPrefetcher::~ManifestFilesPrefetcher()
 {
+    *stopped = true;
     window.clear();
 }
 
@@ -451,8 +452,12 @@ void ManifestFilesPrefetcher::fill()
             fetch->cached = std::move(cached);
         else
             fetch->pending = runner(
-                [object_storage_ = object_storage, components = persistent_table_components, context = local_context, log_ = log, path = manifest.manifest_file_path]
-                { return getManifestFile(object_storage_, components, context, log_, path); },
+                [stopped_ = stopped, object_storage_ = object_storage, components = persistent_table_components, context = local_context, log_ = log, path = manifest.manifest_file_path]
+                {
+                    if (*stopped_)
+                        return ManifestFileCacheableInfo{};
+                    return getManifestFile(object_storage_, components, context, log_, path);
+                },
                 Priority{});
 
         window.push_back(std::move(fetch));
