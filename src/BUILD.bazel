@@ -3419,12 +3419,6 @@ cc_test(
         "//src/Parsers:tests/play_fallback_tokenizer.h",
     ],
     additional_compiler_inputs = [
-        "//bazel:gen/base/base/GitHash.generated.cpp",
-        "//bazel:gen/includes/configs/config_version.cpp",
-        "@clickhouse_cctz//:config/contrib/cctz-cmake/TimeZones.generated.cpp",
-        "@clickhouse_google_cloud_cpp//:config/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-        "@clickhouse_mariadb_connector_c//:config/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
-        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/gzread.c",
         "@clickhouse_sysroot//:linux_compile_files",
         "Access/AccessRights.cpp",
         "//src/Common:Base58.cpp",
