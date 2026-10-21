@@ -68,6 +68,16 @@ EXPLAIN PLAN description = 0
 SELECT x FROM t_aj_explain ARRAY JOIN arr ORDER BY x LIMIT 1 BY x LIMIT 10
 SETTINGS query_plan_top_k_through_array_join = 1;
 
+SELECT '-- several aligned arrays: not rewritten, the step checks their sizes';
+EXPLAIN PLAN description = 0
+SELECT x FROM t_aj_explain ARRAY JOIN arr AS e, arr2 AS e2 ORDER BY x LIMIT 10
+SETTINGS query_plan_top_k_through_array_join = 1;
+
+SELECT '-- fused element filter: not rewritten';
+EXPLAIN PLAN description = 0
+SELECT x FROM t_aj_explain ARRAY JOIN arr WHERE arr > 1 ORDER BY x LIMIT 10
+SETTINGS serialize_query_plan = 0, query_plan_top_k_through_array_join = 1;
+
 SELECT '-- serialized moved plan';
 SELECT count() FROM (SELECT x FROM t_aj_explain ARRAY JOIN arr ORDER BY x LIMIT 10)
 SETTINGS serialize_query_plan = 1, query_plan_top_k_through_array_join = 1;

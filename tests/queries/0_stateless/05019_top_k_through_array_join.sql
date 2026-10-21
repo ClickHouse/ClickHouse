@@ -173,6 +173,11 @@ SELECT x, arr, arr2 FROM t_aj_mismatch ARRAY JOIN arr, arr2 ORDER BY x LIMIT 10 
 
 DROP TABLE t_aj_mismatch;
 
+-- the row with unequal sizes sorts after the kept row, the moved sort must not drop it before the check
+SELECT '-- sizes do not match in a row after the limit';
+SELECT x, a, b FROM values('x UInt64, a Array(UInt64), b Array(UInt64)', (0, [1], [1]), (1, [1], [1, 2])) ARRAY JOIN a, b ORDER BY x LIMIT 1 SETTINGS query_plan_top_k_through_array_join = 1; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
+SELECT x, a, b FROM values('x UInt64, a Array(UInt64), b Array(UInt64)', (0, [1], [1]), (1, [1], [1, 2])) LEFT ARRAY JOIN a, b ORDER BY x LIMIT 1 SETTINGS query_plan_top_k_through_array_join = 1; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
+
 -- Array(Nullable(T)): NULL elements must survive the guard, which only looks at array length.
 DROP TABLE IF EXISTS t_aj_nullable;
 

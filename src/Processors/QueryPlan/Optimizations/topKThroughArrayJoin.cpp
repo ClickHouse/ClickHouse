@@ -29,7 +29,9 @@ namespace DB::QueryPlanOptimizations
 /// guard (`ArrayJoin -> Sort -> Filter`): the sort picks the top-n among rows that survive the
 /// `ARRAY JOIN`, and each of those expands into at least one row. A fused element filter
 /// (`query_plan_fuse_filter_into_array_join`) can still drop every element of a non-empty array, so
-/// this optimization bails out when `hasElementFilter()` is set.
+/// this optimization bails out when `hasElementFilter()` is set. An aligned `ARRAY JOIN` of several
+/// columns throws `SIZES_OF_ARRAYS_DONT_MATCH` for a row whose arrays differ in size, so it bails out
+/// too: the moved sort would drop such a row before the check.
 ///
 /// Only a single `ArrayJoinStep` is handled. Walking a chain would drop the analyzer's
 /// rename-to-identifier expressions under deeper joins (`NOT_FOUND_COLUMN_IN_BLOCK`) and would
@@ -88,6 +90,10 @@ size_t tryTopKThroughArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes &
         return 0;
 
     const auto & array_join_columns = array_join_step->getColumns();
+    /// the moved sort drops rows before the step checks that aligned arrays have equal sizes
+    if (array_join_columns.size() > 1 && !array_join_step->isUnaligned())
+        return 0;
+
     const NameSet array_join_column_names(array_join_columns.begin(), array_join_columns.end());
     const auto & array_join_input_header = array_join_step->getInputHeaders().front();
 
