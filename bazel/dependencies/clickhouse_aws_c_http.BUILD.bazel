@@ -13,7 +13,6 @@ ch_cc_library(
         ["include/**/*.h"],
         exclude = ["include/**/private/**/*.h"],
     ),
-    additional_compiler_inputs = [],
     copts = [
         "-w",
         "-std=gnu11",

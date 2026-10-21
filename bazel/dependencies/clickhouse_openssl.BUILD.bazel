@@ -638,20 +638,6 @@ ch_cc_library(
         "providers/implementations/macs/blake2_mac_impl.c",
     ],
     includes = ["include"],
-    additional_compiler_inputs = [
-        "crypto/LPdir_nyi.c",
-        "crypto/LPdir_vms.c",
-        "crypto/LPdir_win.c",
-        "crypto/LPdir_win32.c",
-        "crypto/LPdir_wince.c",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "crypto/bn/bn_asm.c",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }) + [
-        "ms/applink.c",
-    ],
     copts = [
         "-w",
         "-std=gnu11",
@@ -873,7 +859,6 @@ ch_cc_library(
         "include/crypto/siphash.h",
     ],
     hdrs = _SSL_HDRS,
-    additional_compiler_inputs = ["ms/applink.c"],
     copts = [
         "-w",
         "-std=gnu11",

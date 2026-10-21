@@ -4280,7 +4280,6 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    additional_compiler_inputs = [],
     arches = [
         "x86_64",
     ],
@@ -4304,7 +4303,6 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    additional_compiler_inputs = [],
     arches = [
         "x86_64",
     ],

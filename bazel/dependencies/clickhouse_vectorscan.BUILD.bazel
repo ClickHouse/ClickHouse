@@ -186,13 +186,6 @@ ch_cc_library(
         ],
     }),
     hdrs = _VECTORSCAN_API_HEADERS,
-    additional_compiler_inputs = [
-        "src/compiler/error.cpp",
-        "src/util/supervector/arch/arm/impl.cpp",
-        "src/util/supervector/arch/ppc64el/impl.cpp",
-        "src/util/supervector/arch/x86/impl.cpp",
-        "src/rose/match.c",
-    ],
     copts = ["-w", "-std=gnu11", "-g1"],
     implementation_deps = ["@clickhouse//contrib/vectorscan-cmake:vectorscan_config_headers"],
     includes = [
@@ -615,10 +608,7 @@ ch_cc_library(
             "src/nfa/arm/*.hpp",
         ]),
     }),
-    additional_compiler_inputs = [
-        "src/rose/match.c",
-        "src/compiler/error.cpp",
-    ] + select({
+    additional_compiler_inputs = select({
         "@platforms//cpu:x86_64": ["src/util/supervector/arch/x86/impl.cpp"],
         "@platforms//cpu:aarch64": ["src/util/supervector/arch/arm/impl.cpp"],
     }),
@@ -703,13 +693,6 @@ ch_cc_library(
             "src/util/arch/arm/simd_utils.h",
         ],
     }),
-    additional_compiler_inputs = [
-        "src/compiler/error.cpp",
-        "src/rose/match.c",
-        "src/util/supervector/arch/arm/impl.cpp",
-        "src/util/supervector/arch/ppc64el/impl.cpp",
-        "src/util/supervector/arch/x86/impl.cpp",
-    ],
     copts = [
         "-w",
         "-std=c++17",

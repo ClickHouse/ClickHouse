@@ -199,7 +199,6 @@ ch_cc_library(
         "include/mariadb/*.h",
         "include/mysql/*.h",
     ]),
-    additional_compiler_inputs = ["plugins/pvio/pvio_plugin.def"],
     copts = [
         "-w",
         "-std=gnu11",
