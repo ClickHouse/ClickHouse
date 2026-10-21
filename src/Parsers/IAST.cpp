@@ -438,9 +438,7 @@ void IAST::dumpTree(WriteBuffer & ostr, size_t indent) const
 {
     checkStackSize();
     String indent_str(indent, '-');
-    ostr << indent_str << getID() << ", ";
-    writePointerHex(this, ostr);
-    writeChar('\n', ostr);
+    ostr << indent_str << getID() << '\n';
     for (const auto & child : children)
     {
         if (!child)
