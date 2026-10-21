@@ -123,9 +123,11 @@ struct TopKAggregationHeapBase
     {
         chassert(!frozen);
         chassert(hasBoundary());
+        if (has_collators) [[unlikely]]
+            return shouldSkipCollated(source_columns, source_row);
         if (is_composite)
-            return sourceAboveBoundaryComposite(source_columns, source_row);
-        return sourceAboveBoundary(*source_columns[0], source_row);
+            return sourceAboveBoundaryComposite<false>(source_columns, source_row);
+        return sourceAboveBoundary<false>(*source_columns[0], source_row);
     }
 
     /// The innermost check of the aggregation loop, hence inline.
@@ -168,6 +170,7 @@ protected:
     bool publish_pending = false;           /// a trim tightened the local boundary since the last exchange
 
     /// Ranking configuration.
+    bool has_collators = false;             /// some entry of `collators` is set
     std::vector<int> directions;            /// per ranked column: +1/-1 for ASC/DESC
     std::vector<int> nulls_directions;      /// per ranked column: NULLs/NaNs placement for `compareAt`/`CompareHelper`
     std::vector<std::shared_ptr<Collator>> collators;  /// per ranked column, null without `COLLATE`
@@ -395,19 +398,23 @@ private:
     /// than it.
     void publishBoundary();
 
+    bool shouldSkipCollated(const ColumnRawPtrs & source_columns, size_t source_row) const;
+
+    template <bool with_collation>
     bool sourceAboveBoundary(const IColumn & source_column, size_t source_row) const
     {
-        const int cmp = compareColumns(source_column, source_row, boundaryColumn(), boundaryRow(), 0);
+        const int cmp = compareColumns<with_collation>(source_column, source_row, boundaryColumn(), boundaryRow(), 0);
         return directions[0] * cmp > 0;
     }
 
+    template <bool with_collation>
     bool sourceAboveBoundaryComposite(const ColumnRawPtrs & source_columns, size_t source_row) const
     {
         const auto & tuple = assert_cast<const ColumnTuple &>(boundaryColumn());
         const size_t boundary_idx = boundaryRow();
         for (size_t i = 0; i < source_columns.size(); ++i)
         {
-            const int cmp = compareColumns(*source_columns[i], source_row, tuple.getColumn(i), boundary_idx, i);
+            const int cmp = compareColumns<with_collation>(*source_columns[i], source_row, tuple.getColumn(i), boundary_idx, i);
             if (cmp != 0)
                 return directions[i] * cmp > 0;
         }
@@ -416,10 +423,15 @@ private:
 
     int compareHeapRowsComposite(size_t a, size_t b) const;
 
+    /// `with_collation = false` is valid only without `has_collators`.
+    template <bool with_collation = true>
     int compareColumns(const IColumn & lhs, size_t lhs_row, const IColumn & rhs, size_t rhs_row, size_t column_index) const
     {
-        if (const auto & collator = collators[column_index])
-            return lhs.compareAtWithCollation(lhs_row, rhs_row, rhs, nulls_directions[column_index], *collator);
+        if constexpr (with_collation)
+        {
+            if (const auto & collator = collators[column_index])
+                return lhs.compareAtWithCollation(lhs_row, rhs_row, rhs, nulls_directions[column_index], *collator);
+        }
         return lhs.compareAt(lhs_row, rhs_row, rhs, nulls_directions[column_index]);
     }
 };

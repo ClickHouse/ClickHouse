@@ -65,6 +65,7 @@ void TopKAggregationHeapBase::init(
     directions = {direction};
     nulls_directions = {nulls_direction};
     collators = {cols.empty() ? nullptr : cols[0]};
+    has_collators = collators[0] != nullptr;
     is_composite = false;
     setK(query_k);
     heap_column = source_column.cloneEmpty();
@@ -78,7 +79,7 @@ void TopKAggregationHeapBase::init(
     findLowCardinalityColumns();
 
     const TypeIndex type = heap_column->getDataType();
-    typed_key_type = !collators[0] && dispatchNumericKeyType(type, []<typename>() {}) ? type : TypeIndex::Nothing;
+    typed_key_type = !has_collators && dispatchNumericKeyType(type, []<typename>() {}) ? type : TypeIndex::Nothing;
 }
 
 void TopKAggregationHeapBase::init(
@@ -103,6 +104,7 @@ void TopKAggregationHeapBase::init(
     collators.assign(n, nullptr);
     for (size_t i = 0; i < cols.size() && i < n; ++i)
         collators[i] = cols[i];
+    has_collators = std::ranges::any_of(collators, [](const auto & collator) { return collator != nullptr; });
 
     MutableColumns sub_columns;
     sub_columns.reserve(n);
@@ -371,6 +373,13 @@ void TopKAggregationHeapBase::findLowCardinalityColumns()
     }
     else if (typeid_cast<const ColumnLowCardinality *>(heap_column.get()))
         low_cardinality_columns.push_back(0);
+}
+
+bool TopKAggregationHeapBase::shouldSkipCollated(const ColumnRawPtrs & source_columns, size_t source_row) const
+{
+    if (is_composite)
+        return sourceAboveBoundaryComposite<true>(source_columns, source_row);
+    return sourceAboveBoundary<true>(*source_columns[0], source_row);
 }
 
 int TopKAggregationHeapBase::compareHeapRowsComposite(size_t a, size_t b) const

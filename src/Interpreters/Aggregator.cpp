@@ -2487,7 +2487,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         result.without_key = place;
     }
 
-    const size_t keys_before_block = result.sizeWithoutOverflowRow();
+    const size_t keys_before_block = top_k_waits ? result.sizeWithoutOverflowRow() : 0;
 
     /// We select one of the aggregation methods and call it.
 
