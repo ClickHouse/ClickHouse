@@ -109,6 +109,5 @@ ch_cc_library(
     ],
     deps = [
         "//programs/server:clickhouse-server-lib",
-        "//base/readpassphrase",
     ],
 )

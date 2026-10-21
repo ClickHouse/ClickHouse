@@ -118,10 +118,8 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }) + [
-        "//bazel/rust:skim_cc",
         "//bazel/rust:prql_cc",
         "//bazel/rust:polyglot_cc",
-        "//bazel/rust:pco_cc",
         "//bazel/rust:delta_kernel_ffi_cc",
         "//bazel/rust:chdig_cc",
     ],

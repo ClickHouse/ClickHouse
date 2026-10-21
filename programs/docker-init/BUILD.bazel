@@ -6,7 +6,6 @@ ch_cc_library(
     name = "clickhouse-docker-init-lib",
     srcs = ["docker-init.cpp"],
     clickhouse_code = True,
-    implementation_deps = ["//base:common"],
     link_runtime = True,
     llvm_headers = False,
     local_defines = select({
