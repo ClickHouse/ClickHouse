@@ -676,14 +676,15 @@ def run_fuzz_job(check_name: str):
             ),
         )
         parsed_name, parsed_info, files = fuzzer_log_parser.parse_failure()
-        # Nothing in the logs explains a hung server; the SIGTERM and SIGKILL records are the harness's own stop.
-        if server_hung and (
-            parsed_name == FuzzerLogParser.UNKNOWN_ERROR
-            or parsed_name == "Received signal 15 (STID: None)"
-            or (
-                parsed_name.startswith("Child process was terminated by signal 9 ")
-                and parsed_name.endswith(" (STID: None)")
+        # Without a crash stack in the log, these names on a hung server come from the harness's own SIGTERM and SIGKILL.
+        if (
+            server_hung
+            and (
+                parsed_name == FuzzerLogParser.UNKNOWN_ERROR
+                or parsed_name.startswith("Received signal 15 ")
+                or parsed_name.startswith("Child process was terminated by signal 9 ")
             )
+            and not fuzzer_log_parser.get_stack_trace()
         ):
             parsed_name = "Server liveness check failed"
             parsed_info = (
