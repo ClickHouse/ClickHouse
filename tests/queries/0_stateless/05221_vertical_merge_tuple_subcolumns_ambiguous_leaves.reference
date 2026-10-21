@@ -1,0 +1,10 @@
+=== duplicate flattened leaf path ===
+create_error_code
+36
+create_collision
+1
+
+=== leaf shadows a synthetic subcolumn ===
+2
+optimize_succeeded
+Horizontal

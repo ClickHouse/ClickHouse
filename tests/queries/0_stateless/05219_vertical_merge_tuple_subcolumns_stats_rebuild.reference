@@ -1,0 +1,8 @@
+=== lightweight delete rebuilds stats and pins flatten ===
+t	basic(auto)
+2
+1
+merge_algorithm
+Horizontal
+stats_files
+statistics.packed

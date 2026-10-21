@@ -1,0 +1,29 @@
+=== 11 top-level Tuple fields activate Vertical ===
+2
+1
+merge_algorithm
+Vertical
+
+=== 10 top-level Tuple fields stay Horizontal ===
+2
+1
+merge_algorithm
+Horizontal
+
+=== setting off does not count Tuple fields ===
+2
+1
+merge_algorithm
+Horizontal
+
+=== nested flattenable Tuple expands and activates Vertical ===
+2
+1
+merge_algorithm
+Vertical
+
+=== JSON sibling does not block flattening the other Tuple ===
+2
+1
+merge_algorithm
+Vertical
