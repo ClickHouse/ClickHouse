@@ -272,6 +272,9 @@ constexpr size_t DUPLICATES_BLOCK_BYTES = 32;
 constexpr size_t DUPLICATES_BLOCK_BYTES = 16; /// SSE2, NEON
 #endif
 
+/// The size of the cache of the recent keys (see `routeValues`): a few frequent keys fit, and it stays in L1.
+constexpr size_t RECENT_KEYS_BITS = 6;
+
 template <typename Key>
 class RadixUniqExactState final : public IRadixUniqExactState
 {
@@ -326,10 +329,18 @@ public:
         size_t last_row = 0;
         bool has_last_row = false;
 
+        /// The keys repeated within a few rows are skipped by a cache of the recent keys, as in `routeValues`, while they are
+        /// frequent. The keys are hashes, so the cache compares them as fixed-size values.
+        bool skip_recent = true;
+        size_t num_seen_recent = 0;
+        size_t num_skipped_recent = 0;
+        std::array<Key, 1 << RECENT_KEYS_BITS> recent; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled before its first read
+
         for (size_t begin = 0; begin < num_rows; begin += keys.size())
         {
             const size_t end = std::min(begin + keys.size(), num_rows);
             size_t num_keys = 0;
+            size_t num_computed = 0;
             for (size_t row = begin; row < end; ++row)
             {
                 if (null_map && null_map[row])
@@ -338,9 +349,34 @@ public:
                 if (has_last_row && same(last_row, row))
                     continue;
                 last_row = row;
-                has_last_row = true;
 
-                keys[num_keys++] = extract(row);
+                const Key key = extract(row);
+                ++num_computed;
+                if (!has_last_row)
+                {
+                    /// Every slot holds a key that is routed, so that a key is never skipped without being routed.
+                    recent.fill(key);
+                    keys[num_keys++] = key;
+                }
+                else if (skip_recent)
+                {
+                    Key & slot = recent[slotHash(key) >> (64 - RECENT_KEYS_BITS)];
+                    keys[num_keys] = key;
+                    num_keys += slot != key;
+                    slot = key;
+                }
+                else
+                {
+                    keys[num_keys++] = key;
+                }
+                has_last_row = true;
+            }
+
+            if (skip_recent)
+            {
+                num_seen_recent += num_computed;
+                num_skipped_recent += num_computed - num_keys;
+                skip_recent = num_seen_recent == 0 || num_skipped_recent * 4 > num_seen_recent;
             }
 
             insertBatch(stream, keys.data(), num_keys);
@@ -365,6 +401,15 @@ public:
         bool skip_duplicates = true;
         size_t num_seen = 0;
         size_t num_skipped = 0;
+
+        /// Without consecutive duplicates, a few frequent keys that alternate, such as `number % 3`, are still repeated
+        /// within a few rows. They are looked for in a direct-mapped cache of the recent keys, while they are frequent, so
+        /// that their copies are not routed and deduplicated later.
+        bool skip_recent = false;
+        bool tried_recent = false;
+        size_t num_seen_recent = 0;
+        size_t num_skipped_recent = 0;
+        std::array<Key, 1 << RECENT_KEYS_BITS> recent; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled before its first read
 
         for (size_t begin = 0; begin < num_rows; begin += keys.size())
         {
@@ -408,6 +453,26 @@ public:
                     }
                 }
             }
+            else if (skip_recent)
+            {
+                size_t row = begin;
+                if (num_seen_recent == 0)
+                {
+                    /// Every slot holds a key that is routed, so that a key is never skipped without being routed.
+                    keys[num_keys++] = static_cast<Key>(data(row));
+                    recent.fill(keys[0]);
+                    ++row;
+                }
+
+                for (; row < end; ++row)
+                {
+                    const Key key = static_cast<Key>(data(row));
+                    Key & slot = recent[slotHash(key) >> (64 - RECENT_KEYS_BITS)];
+                    keys[num_keys] = key;
+                    num_keys += slot != key;
+                    slot = key;
+                }
+            }
             else
             {
                 for (size_t row = begin; row < end; ++row)
@@ -419,6 +484,14 @@ public:
                 num_seen += end - begin;
                 num_skipped += end - begin - num_keys;
                 skip_duplicates = num_skipped * 4 > num_seen;
+                skip_recent = !skip_duplicates && !null_map && !tried_recent;
+                tried_recent |= skip_recent;
+            }
+            else if (skip_recent)
+            {
+                num_seen_recent += end - begin;
+                num_skipped_recent += end - begin - num_keys;
+                skip_recent = num_skipped_recent * 4 > num_seen_recent;
             }
 
             insertBatch(stream, keys.data(), num_keys);
@@ -887,7 +960,7 @@ private:
             buffer.hot = false;
             syncBuffer(stream, bucket);
             stream.num_buffered -= buffer.size;
-            deduplicateBuffer(stream, bucket);
+            deduplicateBuffer(stream, bucket, /*hot=*/ true);
             stream.num_buffered += buffer.size;
         }
         stream.hot_buckets.clear();
@@ -1197,14 +1270,19 @@ private:
     }
 
     /// Deduplicates the keys of the buffer, whose size must be up to date (see `syncBuffer`).
-    void deduplicateBuffer(Stream & stream, size_t bucket)
+    /// A hot buffer holds the copies of a few keys, so its scratch set starts at its known distinct keys and grows: one
+    /// sized for its keys would be cleared and probed out of the cache at each of its deduplications.
+    void deduplicateBuffer(Stream & stream, size_t bucket, bool hot = false)
     {
         Buffer & buffer = stream.local_buffers[bucket];
         if (buffer.size == 0)
             return;
 
         auto & set = stream.local_set;
-        set.reset(std::bit_ceil(std::min(buffer.size, std::max(buffer.num_distinct, MAX_INITIAL_SET_KEYS)) * 2));
+        if (hot)
+            set.reset(std::bit_ceil(std::max<size_t>(buffer.num_distinct * 2, INITIAL_LOCAL_SET_CAPACITY)));
+        else
+            set.reset(std::bit_ceil(std::min(buffer.size, std::max(buffer.num_distinct, MAX_INITIAL_SET_KEYS)) * 2));
 
         for (const Block * block = buffer.head; block; block = block->next)
         {
