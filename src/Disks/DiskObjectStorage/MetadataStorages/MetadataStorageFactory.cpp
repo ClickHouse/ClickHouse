@@ -221,8 +221,8 @@ static void registerPlainRewritableMetadataStorage(MetadataStorageFactory & fact
 
         const auto local_object_storage = object_storages->takePointingTo(cluster->getLocalLocation());
         std::string key_compatibility_prefix = getObjectKeyCompatiblePrefix(local_object_storage, config, config_prefix);
-        /// Hard links make the metadata of a directory unreadable by older servers, so they are opt-in.
-        bool enable_hard_links = config.getBool(config_prefix + ".enable_hard_links", false);
+        /// Hard links make the metadata of a directory unreadable by servers older than 26.10, so they can be disabled.
+        bool enable_hard_links = config.getBool(config_prefix + ".enable_hard_links", true);
 
         return std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(local_object_storage, key_compatibility_prefix, enable_hard_links);
     });
