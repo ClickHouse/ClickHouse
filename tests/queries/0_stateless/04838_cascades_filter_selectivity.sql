@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: distributed planning requires the analyzer.
-
 -- Integration of the filter selectivity estimate into the Cascades memo. The per-predicate
 -- formulas are covered by `gtest_cascades_filter_selectivity`; here `EXPLAIN estimates = 1`
 -- shows the memo row estimates. The outer probe queries turn distributed planning off
@@ -26,9 +23,10 @@ SET max_rows_to_group_by = 0;
 -- Pinned (randomized in CI): join-order jitter changes the plan shape around the asserted filters.
 SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_optimize_join_order_algorithm = 'dpsize greedy';
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 SET param__internal_cascades_cluster_node_count = 8;
 SET param__internal_join_table_stat_hints = '{"t_filter_sel": {"cardinality": 600000000, "avg_row_bytes": 12, "distinct_keys": {"k": 6000000, "v": 100}}, "t_filter_dim": {"cardinality": 3000000, "avg_row_bytes": 12, "distinct_keys": {"k": 3000000}}}';
+SET distributed_plan_fallback_to_local_execution = 0;
 
 -- `HAVING` compares an aggregate result, so the default factor 0.33 applies: the 6000000-row
 -- aggregation estimate becomes 1980000. Before, the filter kept the full input estimate.
@@ -45,7 +43,7 @@ SELECT 'join equality and <>:', countIf(explain LIKE '%Filter%(rows: ~2999999.0,
     EXPLAIN estimates = 1 SELECT count() FROM t_filter_sel AS a
     WHERE EXISTS (SELECT 1 FROM t_filter_dim AS b WHERE b.k = a.k AND b.k <> a.v)
     SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_execute_locally = 1,
-        allow_experimental_correlated_subqueries = 1
+        allow_correlated_subqueries = 1
 ) SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
 -- The `Distinct` above `INTERSECT DISTINCT` is bounded by the smallest input (3000000, the

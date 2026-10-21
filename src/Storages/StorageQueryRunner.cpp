@@ -8,6 +8,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
+#include <Formats/FormatFactory.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Cluster.h>
@@ -60,6 +61,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 distributed_connections_pool_size;
+    extern const SettingsURI format_avro_schema_registry_url;
     extern const SettingsLoadBalancing load_balancing;
     extern const SettingsString log_comment;
     extern const SettingsBool log_queries;
@@ -481,7 +483,12 @@ private:
 
     void executeLocally(const QueryRunnerJob & job, ContextMutablePtr job_context) const
     {
-        auto io = executeQuery(job.query, job_context, QueryFlags{ .internal = true }).second;
+        /// The job is nested, hence `internal` - which is also what marks these queries with
+        /// `is_internal = 1` in `system.query_log`. Its text comes from the user who inserted it,
+        /// hence `user_initiated`: without it the access checks of `CREATE` jobs would be skipped, so
+        /// a job would not be limited to the privileges of the principal it runs as.
+        auto io
+            = executeQuery(job.query, job_context, QueryFlags{ .internal = true, .user_initiated = true }).second;
         try
         {
             if (io.pipeline.initialized())
@@ -500,7 +507,7 @@ private:
                 }
                 else
                 {
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `QueryRunner` engine does not support this query: {}", job.query);
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `QueryRunner` engine does not support this query");
                 }
             }
             io.onFinish();
@@ -582,6 +589,15 @@ private:
         const auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(job_context->getSettingsRef());
         auto connection = getPool(shard_num, job.database)->get(timeouts, getContext()->getSettingsRef());
 
+        /// The remote server runs the job as an initial query and applies its binary type encoding settings to the wire,
+        /// so this connection reads what the remote writes and writes what the remote reads.
+        /// The remote checks the job's Avro schema registry URL against its own allowlist, not against this server's.
+        Settings wire_settings = job_context->getSettingsCopy();
+        wire_settings[Setting::format_avro_schema_registry_url] = "";
+        auto format_settings = getFormatSettings(job_context, wire_settings);
+        std::swap(format_settings.native.encode_types_in_binary_format, format_settings.native.decode_types_in_binary_format);
+        connection->setFormatSettings(format_settings);
+
         auto registered = RegisteredRemoteQueryExecutor::tryCreate(cluster_executors, *connection, job.query, std::make_shared<const Block>(), job_context);
         if (!registered)
             return;
@@ -632,6 +648,8 @@ private:
 
         const auto event_time = std::chrono::system_clock::now();
 
+        const String query_for_logging = formatQueryForLogging(job.query, settings);
+
         query_log->add([&](QueryLogElement & element)
         {
             element.type = type;
@@ -640,14 +658,14 @@ private:
             element.query_start_time = timeInSeconds(query_start_time);
             element.query_start_time_microseconds = timeInMicroseconds(query_start_time);
             element.query_duration_ms = duration_ms;
-            element.query = job.query;
+            element.query = query_for_logging;
             element.current_database = job.database;
             element.log_comment = settings[Setting::log_comment];
             element.client_info = job_context->getClientInfo();
             element.is_internal = true;
 
             if (settings[Setting::log_query_settings])
-                element.query_settings = settings.changedToFlatMap();
+                element.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
 
             if (type == QueryLogElementType::EXCEPTION_WHILE_PROCESSING)
             {
@@ -979,6 +997,7 @@ void registerStorageQueryRunner(StorageFactory & factory)
             settings,
             args.getContext());
     },
+    SecretArgumentsSpec{},
     {
         .supports_settings = true,
         .supports_parallel_insert = true,

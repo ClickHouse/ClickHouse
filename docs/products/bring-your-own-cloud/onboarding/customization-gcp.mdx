@@ -20,19 +20,28 @@ If you prefer to use an existing VPC to deploy ClickHouse BYOC instead of having
 2. Within the private subnet, allocate at least 1 secondary IPv4 range that will be used for GKE cluster pods. The secondary range must be at least `/21`. Smaller ranges do not provide enough pod IP addresses for the GKE cluster to finish provisioning, and infrastructure setup will fail.
 3. Enable **Private Google Access** on the subnet. This allows GKE nodes to reach Google APIs and services without requiring external IP addresses.
 
+<Note>
+To expose services over [Private Service Connect](/cloud/reference/byoc/onboarding/network-gcp#setup-psc), you also need a dedicated subnet with purpose `PRIVATE_SERVICE_CONNECT` in this VPC. You can create it now or later, before enabling private link.
+</Note>
+
 <Image img="/images/cloud/reference/byoc-gcp-subnet.webp" size="lg" alt="BYOC GCP Subnet details showing primary and secondary IPv4 ranges with Private Google Access enabled" />
 </Step>
 <Step title="Ensure network connectivity" id="ensure-network-connectivity">
 
 **Cloud NAT Gateway**
-Ensure a [Cloud NAT gateway](https://cloud.google.com/nat/docs/overview) is deployed for the VPC. ClickHouse BYOC components require outbound internet access to communicate with the Tailscale control plane. Tailscale is used to provide secure, zero-trust networking for private management operations. The Cloud NAT gateway provides this outbound connectivity for instances without external IP addresses.
+Ensure a [Cloud NAT gateway](https://cloud.google.com/nat/docs/overview) is deployed for the VPC. It provides outbound connectivity for instances without external IP addresses, and two things depend on it:
+
+- **Tailscale.** ClickHouse BYOC components register with the Tailscale control plane, which provides secure, zero-trust networking for private management operations without requiring inbound public access.
+- **Container images.** Some images the deployment runs are not mirrored into the BYOC registry, including community images, and are pulled from their upstream registries.
+
+A VPC with no outbound path will not finish provisioning; pre-flight validation checks that a Cloud NAT gateway covers the network. There is no single published endpoint list; if your network policy requires an explicit inventory, contact support to review your setup.
 
 **DNS Resolution**
 Ensure your VPC has working DNS resolution and doesn't block, interfere with, or overwrite standard DNS names. ClickHouse BYOC relies on DNS to resolve Tailscale control servers and ClickHouse service endpoints. If DNS is unavailable or misconfigured, BYOC services may fail to connect or operate properly.
 </Step>
 <Step title="Set up BYOC infrastructure" id="set-up-byoc-infrastructure">
 <Note>
-When you click **Set up Infrastructure**, ClickHouse Cloud automatically runs [pre-flight validation](/products/bring-your-own-cloud/onboarding/standard#preflight-validation) before provisioning, checking that the management service account has the required permissions and the required Google Cloud APIs are enabled. Automatic validation of a bring-your-own VPC is not yet part of GCP pre-flight, so make sure your VPC meets the [network requirements](#configure-existing-vpc) above before you begin.
+When you click **Set up Infrastructure**, ClickHouse Cloud automatically runs [pre-flight validation](/products/bring-your-own-cloud/onboarding/standard#preflight-validation) before provisioning. It checks that the management service account has the required permissions and that the required Google Cloud APIs are enabled, and it validates the VPC you bring: that the network and subnet resolve, that the subnet's primary range and pod secondary range are large enough, and that a Cloud NAT gateway covers the network. If anything is missing, setup halts with the specific issues to fix.
 </Note>
 
 In the ClickHouse Cloud console, configure the following when setting up new infrastructure:
@@ -40,8 +49,32 @@ In the ClickHouse Cloud console, configure the following when setting up new inf
 1. Under **VPC configuration**, select **Use existing VPC**.
 2. Enter your **VPC network name**.
 3. Enter the **Subnet name** you allocated for ClickHouse.
-4. Click **Set up Infrastructure** to begin provisioning.
+4. Optionally enter **Secondary range names** to pin which of the subnet's secondary ranges GKE uses for pods. Leave it empty to use all of them; every name you list must already exist on the subnet.
+5. If your VPC lives in a Shared VPC host project, enter the **Shared VPC host project ID**. Leave it empty when the VPC is in the same project as the infrastructure. See [Shared VPC from a host project](#shared-vpc-host-project) below.
+6. Click **Set up Infrastructure** to begin provisioning.
 
-<Image img="/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp" size="lg" alt="ClickHouse Cloud BYOC setup UI with Use existing VPC selected for GCP" />
+<Image img="/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp" size="lg" alt="ClickHouse Cloud BYOC setup UI with Use existing VPC selected for GCP, showing the VPC network name, subnet name, secondary range names, and Shared VPC host project ID fields" />
 </Step>
 </Steps>
+
+### Shared VPC from a host project {#shared-vpc-host-project}
+
+You can run BYOC in a service project on a network that lives in a separate [Shared VPC](https://cloud.google.com/vpc/docs/shared-vpc) host project, which lets you keep networking centralized. The VPC and its subnets are owned by the **host** project, while the BYOC infrastructure runs in an attached **service** project. The requirements above are unchanged; they simply apply to the subnet in the host project.
+
+Two prerequisites are specific to this setup:
+
+- **Enable the host project as a Shared VPC host, and attach the service project to it, before you begin.** Both steps are required and are separate: a project that is not already a Shared VPC host must be enabled as one first, and only then can the service project be attached. A Shared VPC GKE cluster requires that attachment to exist. Pre-flight validation reads your network and subnet through the host-project grants whether or not the attachment is in place, so it passes either way and provisioning then fails later at cluster creation. Both operations are organization-level and are performed by whoever administers Shared VPC in your organization; the onboarding Terraform cannot do them for you.
+- **Run the onboarding Terraform with the host project set.** Pass `shared_vpc_host_project_id`, `shared_vpc_host_subnet_region` and `shared_vpc_host_private_subnet_id` to the [onboarding module](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp). `shared_vpc_host_private_subnet_id` is the host subnet your GKE nodes run in — the one you configured above — and not the Private Service Connect subnet described below. Pointing it at the PSC subnet places the `roles/compute.networkUser` grant on the wrong subnet, and provisioning then fails at cluster creation. A single invocation writes into both projects, so the credentials running it need IAM admin on the service project and on the host project.
+
+The grants the module adds to your host project are narrow, but they are not all read-only:
+
+| Grant on the host project | Granted to | Why |
+|---|---|---|
+| `compute.networks.get`, `compute.subnetworks.get`, `compute.subnetworks.use` | ClickHouse management service account | Read your network and subnet, and let the Private Service Connect attachment use your PSC subnet |
+| `roles/compute.networkUser` on the node subnet | ClickHouse management service account, your service project's GKE service agent, and your service project's Google APIs service account | The three identities that consume the subnet |
+| `roles/container.hostServiceAgentUser` | Your service project's GKE service agent | Required for any Shared VPC GKE cluster |
+| `compute.firewalls.create`, `compute.firewalls.delete`, `compute.firewalls.get`, `compute.firewalls.list`, `compute.firewalls.update`, and `compute.networks.updatePolicy` | Your service project's GKE service agent | Under Shared VPC, GKE creates its cluster and load-balancer firewall rules in the host project rather than the service project. Without this the internal load balancer health-check rule is never created, ingress backends stay unhealthy, and private link does not work. This is Google's documented granular alternative to granting `roles/compute.securityAdmin`. |
+
+The last row is the only write access, and it is granted to your own project's GKE service agent rather than to ClickHouse. The ClickHouse management service account never writes to the host project. The module also enables the `container.googleapis.com` API on the host project, which provisions that project's own GKE service agent.
+
+Then enter the host project in the **Shared VPC host project ID** field described above. If you want private link, create a separate `PRIVATE_SERVICE_CONNECT` subnet in the host project, in the same network and region as the node subnet. It sits alongside the node subnet rather than replacing it, and it is not the subnet you pass as `shared_vpc_host_private_subnet_id`.

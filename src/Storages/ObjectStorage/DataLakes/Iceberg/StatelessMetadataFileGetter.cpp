@@ -46,9 +46,19 @@
 #include <Storages/ObjectStorage/Utils.h>
 
 
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/logger_useful.h>
+
+namespace ProfileEvents
+{
+extern const Event IcebergManifestListsRead;
+extern const Event IcebergManifestListsReadMicroseconds;
+extern const Event IcebergManifestFilesRead;
+extern const Event IcebergManifestFilesReadBytes;
+extern const Event IcebergManifestFilesReadMicroseconds;
+}
 
 namespace DB
 {
@@ -70,6 +80,60 @@ extern const SettingsIcebergMetadataLogLevel iceberg_metadata_log_level;
 
 namespace Iceberg
 {
+
+namespace
+{
+
+PartitionFieldSummaries parsePartitionFieldSummaries(const AvroForIcebergDeserializer & manifest_list_deserializer, size_t row)
+{
+    if (!manifest_list_deserializer.hasPath(c_partitions_contains_null))
+        return {};
+
+    auto get_array = [&](const char * path) -> Array
+    {
+        if (!manifest_list_deserializer.hasPath(path))
+            return {};
+        auto value = manifest_list_deserializer.getValueFromRowByName(row, path);
+        if (value.getType() != Field::Types::Array)
+            return {};
+        return value.safeGet<Array>();
+    };
+
+    const auto contains_null = get_array(c_partitions_contains_null);
+    const auto contains_nan = get_array(c_partitions_contains_nan);
+    const auto lower_bounds = get_array(c_partitions_lower_bound);
+    const auto upper_bounds = get_array(c_partitions_upper_bound);
+
+    if (contains_null.empty() || lower_bounds.size() != contains_null.size() || upper_bounds.size() != contains_null.size())
+        return {};
+
+    auto get_optional_string = [](const Array & array, size_t index) -> std::optional<String>
+    {
+        if (array[index].getType() != Field::Types::String)
+            return std::nullopt;
+        return array[index].safeGet<String>();
+    };
+
+    auto get_flag = [](const Array & array, size_t index) -> bool
+    {
+        if (index >= array.size() || array[index].getType() != Field::Types::UInt64)
+            return false;
+        return array[index].safeGet<UInt64>() != 0;
+    };
+
+    PartitionFieldSummaries summaries(contains_null.size());
+    for (size_t field_index = 0; field_index < summaries.size(); ++field_index)
+    {
+        summaries[field_index].contains_null = get_flag(contains_null, field_index);
+        summaries[field_index].contains_nan = get_flag(contains_nan, field_index);
+        summaries[field_index].lower_bound = get_optional_string(lower_bounds, field_index);
+        summaries[field_index].upper_bound = get_optional_string(upper_bounds, field_index);
+    }
+    return summaries;
+}
+
+}
+
 Iceberg::ManifestFileCacheableInfo getManifestFile(
     ObjectStoragePtr object_storage,
     const PersistentTableComponents & persistent_table_components,
@@ -84,6 +148,9 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
 
     auto create_fn = [&, use_iceberg_metadata_cache]()
     {
+        ProfileEvents::increment(ProfileEvents::IcebergManifestFilesRead);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergManifestFilesReadMicroseconds);
+
         RelativePathWithMetadata manifest_object_info(persistent_table_components.path_resolver.resolve(filename));
 
         auto read_settings = local_context->getReadSettings();
@@ -102,6 +169,7 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
             std::move(buffer), filename, getFormatSettings(local_context));
 
         const size_t manifest_file_bytes = manifest_file_deserializer->bytesRead();
+        ProfileEvents::increment(ProfileEvents::IcebergManifestFilesReadBytes, manifest_file_bytes);
         return Iceberg::ManifestFileCacheableInfo{std::move(manifest_file_deserializer), manifest_file_bytes};
     };
 
@@ -162,6 +230,9 @@ ManifestFileCacheKeys getManifestList(
 
     auto create_fn = [&, use_iceberg_metadata_cache]()
     {
+        ProfileEvents::increment(ProfileEvents::IcebergManifestListsRead);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergManifestListsReadMicroseconds);
+
         RelativePathWithMetadata object_info(persistent_table_components.path_resolver.resolve(filename));
 
         auto read_settings = local_context->getReadSettings();
@@ -241,6 +312,15 @@ ManifestFileCacheKeys getManifestList(
                     f_partition_spec_id);
             Int32 partition_spec_id = static_cast<Int32>(
                 manifest_list_deserializer.getValueFromRowByName(i, f_partition_spec_id, TypeIndex::Int32).safeGet<Int32>());
+            Int64 live_files_count = 0;
+            for (const auto * count_field : {f_added_files_count, f_existing_files_count})
+            {
+                if (!manifest_list_deserializer.hasPath(count_field))
+                    continue;
+                auto count = manifest_list_deserializer.getValueFromRowByName(i, count_field);
+                if (!count.isNull())
+                    live_files_count += std::max<Int64>(0, count.safeGet<Int64>());
+            }
 
             std::optional<UInt64> first_row_id;
             if (manifest_list_format_version > 2 && manifest_list_deserializer.hasPath(f_manifest_first_row_id))
@@ -252,7 +332,7 @@ ManifestFileCacheKeys getManifestList(
 
             manifest_file_cache_keys.emplace_back(
                 manifest_file_name, manifest_length, added_sequence_number, added_snapshot_id.safeGet<Int64>(), content_type,
-                partition_spec_id, first_row_id);
+                partition_spec_id, parsePartitionFieldSummaries(manifest_list_deserializer, i), live_files_count, first_row_id);
 
             insertRowToLogTable(
                 local_context,

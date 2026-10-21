@@ -22,6 +22,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMemory.h>
+#include <Storages/StorageProxy.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -93,7 +94,6 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool fsync_metadata;
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
     extern const SettingsBool show_remote_databases_in_system_tables;
 }
@@ -106,6 +106,7 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char database_catalog_drop_finally_before_id_erase[];
+    extern const char database_catalog_drop_finally_after_notify[];
 }
 
 class DatabaseNameHints : public IHints<>
@@ -312,6 +313,70 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
 
     /// We still hold "databases" (instead of std::move) for Buffer tables to flush data correctly.
 
+    /** Hand the buffered rows over before any database goes away.
+      *
+      * A `Buffer` table flushes into its destination when its own database shuts down, and databases
+      * shut down one at a time in name order: a destination in an earlier-sorting database is already
+      * gone by then ("Destination table ... doesn't exist. Block of data is discarded."), and a chain
+      * of `Buffer` tables moves rows at most one link per pass, so the rows left in an
+      * already-prepared `Buffer` die with it. Both are silent losses of acknowledged rows on a
+      * graceful shutdown.
+      *
+      * So drain every table of every database here, repeating while a pass still moves something -
+      * one pass per link of the longest chain. The number of tables bounds the number of passes; a
+      * `Buffer` whose destination is itself would otherwise keep the loop alive forever.
+      */
+    {
+        size_t total_tables = 0;
+        std::vector<StoragePtr> buffered_tables;
+        for (const auto & database : current_databases)
+        {
+            /// Only user databases: enumerating a predefined one can materialize a lazily created
+            /// system table during shutdown, and none of them holds a `Buffer` table anyway.
+            if (isPredefinedDatabase(database.first))
+                continue;
+
+            try
+            {
+                for (auto it = database.second->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/ true); it->isValid(); it->next())
+                {
+                    ++total_tables;
+                    buffered_tables.push_back(it->table());
+                }
+            }
+            catch (...)
+            {
+                tryLogCurrentException(
+                    log, fmt::format("Failed to list tables of database {} before shutdown", backQuoteIfNeed(database.first)));
+            }
+        }
+
+        for (size_t pass = 0; pass <= total_tables; ++pass)
+        {
+            size_t flushed = 0;
+            for (const auto & table : buffered_tables)
+            {
+                if (!table)
+                    continue;
+
+                try
+                {
+                    flushed += table->flushBufferedRowsBeforeShutdown();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(
+                        log, fmt::format("Failed to flush buffered rows of table {}", table->getStorageID().getNameForLogs()));
+                }
+            }
+
+            if (flushed == 0)
+                break;
+
+            LOG_TRACE(log, "Flushed {} buffers of tables before shutdown (pass {})", flushed, pass + 1);
+        }
+    }
+
     /// Delay shutdown of temporary and system databases. They will be shutdown last.
     /// Because some databases might use them until their shutdown is called, but calling shutdown
     /// on temporary database means clearing its set of tables, which will lead to unnecessary errors like "table not found".
@@ -420,7 +485,6 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         return {};
     }
 
-    bool analyzer = context_->getSettingsRef()[Setting::allow_experimental_analyzer];
     if (table_id.hasUUID())
     {
         /// Shortcut for tables which have persistent UUID
@@ -450,8 +514,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             }
             return {};
         }
-        /// In old analyzer resolving done in multiple places, so we ignore TABLE_UUID_MISMATCH error.
-        else if (analyzer)
+        else
         {
             const auto & table_storage_id = db_and_table.second->getStorageID();
             if (db_and_table.first->getDatabaseName() != table_id.database_name ||
@@ -561,8 +624,12 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 
 bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
 {
-    static const char * information_schema_views[] = {"schemata", "tables", "views", "columns"};
-    static const char * information_schema_views_uppercase[] = {"SCHEMATA", "TABLES", "VIEWS", "COLUMNS"};
+    static const char * information_schema_views[] = {
+        "schemata", "tables", "views", "columns", "key_column_usage", "referential_constraints", "statistics",
+        "engines", "character_sets", "collations", "user_privileges", "schema_privileges", "table_privileges", "column_privileges"};
+    static const char * information_schema_views_uppercase[] = {
+        "SCHEMATA", "TABLES", "VIEWS", "COLUMNS", "KEY_COLUMN_USAGE", "REFERENTIAL_CONSTRAINTS", "STATISTICS",
+        "ENGINES", "CHARACTER_SETS", "COLLATIONS", "USER_PRIVILEGES", "SCHEMA_PRIVILEGES", "TABLE_PRIVILEGES", "COLUMN_PRIVILEGES"};
 
     auto check_database_and_table_name = [&](const String & database_name, const String & table_name)
     {
@@ -571,15 +638,14 @@ bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
             auto storage = getSystemDatabase()->tryGetTable(table_name, getContext());
             return storage && storage->isSystemStorage();
         }
-        if (database_name == INFORMATION_SCHEMA)
+        /// Each view is attached under both its lowercase and its UPPERCASE name in both databases
+        /// (see attachInformationSchema), so both spellings are predefined in both databases.
+        if (database_name == INFORMATION_SCHEMA || database_name == INFORMATION_SCHEMA_UPPERCASE)
         {
             return std::find(std::begin(information_schema_views), std::end(information_schema_views), table_name)
-                != std::end(information_schema_views);
-        }
-        if (database_name == INFORMATION_SCHEMA_UPPERCASE)
-        {
-            return std::find(std::begin(information_schema_views_uppercase), std::end(information_schema_views_uppercase), table_name)
-                != std::end(information_schema_views_uppercase);
+                    != std::end(information_schema_views)
+                || std::find(std::begin(information_schema_views_uppercase), std::end(information_schema_views_uppercase), table_name)
+                    != std::end(information_schema_views_uppercase);
         }
         return false;
     };
@@ -780,6 +846,12 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 void DatabaseCatalog::updateDatabaseName(const String & old_name, const String & new_name, const Strings & tables_in_database)
 {
     std::lock_guard lock{databases_mutex};
+
+    /// Re-check under the same lock as the rewrite: a concurrent `CREATE TABLE` in another database may
+    /// have added an edge to a table under the new name since the preflight check of the caller.
+    /// Nothing is modified yet, so the exception leaves the catalog intact.
+    checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(old_name, new_name, tables_in_database);
+
     chassert(!databases.contains(new_name));
     auto it = databases.find(old_name);
     chassert(it != databases.end());
@@ -1194,6 +1266,77 @@ DDLGuardPtr DatabaseCatalog::getDDLGuard(const String & database, const String &
     return guard;
 }
 
+DDLGuardPtr DatabaseCatalog::tryGetDDLGuard(
+    const String & database, const String & table, const IDatabase * expected_database, std::chrono::milliseconds table_lock_timeout)
+{
+    if (database.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot obtain lock for empty database");
+
+    DDLGuardPtr guard;
+    {
+        std::unique_lock lock(ddl_guards_mutex);
+        auto db_guard_iter = TSA_SUPPRESS_WARNING_FOR_WRITE(ddl_guards).try_emplace(database).first;
+        DatabaseGuard & db_guard = db_guard_iter->second;
+        guard = std::make_unique<DDLGuard>(db_guard.table_guards, db_guard.database_ddl_mutex, std::move(lock), table, database, table_lock_timeout);
+    }
+
+    if (!guard->ownsTableLock())
+        return guard;
+
+    if (expected_database && expected_database != tryGetDatabase(database).get())
+        throw Exception(ErrorCodes::UNFINISHED, "The database {} was dropped or renamed concurrently", database);
+
+    return guard;
+}
+
+DDLGuardPtr DatabaseCatalog::tryGetDDLGuardForStorage(
+    const StoragePtr & storage,
+    const Poco::Timespan & timeout,
+    std::function<bool()> is_alive)
+{
+    /// Wait in short chunks: each chunk blocks on the guard mutex and wakes up as soon as it is
+    /// released, the chunk boundary only re-checks `is_alive` and the rename check below.
+    static constexpr auto wait_chunk = std::chrono::milliseconds(50);
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::microseconds(timeout.totalMicroseconds());
+    /// A zero or exhausted budget still gets one attempt, `try_lock_for` degrades to `try_lock`.
+    for (bool attempted = false; is_alive(); attempted = true)
+    {
+        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
+        if (attempted && remaining <= std::chrono::milliseconds::zero())
+            return nullptr;
+        const auto attempt_timeout = std::max(std::chrono::milliseconds::zero(), std::min(wait_chunk, remaining));
+
+        StorageID before = storage->getStorageID();
+        DDLGuardPtr guard = tryGetDDLGuard(before.database_name, before.table_name, /*expected_database=*/nullptr, attempt_timeout);
+        if (guard->ownsTableLock())
+        {
+            /// Re-check StorageID: a RENAME could have moved the storage while we were waiting.
+            StorageID after = storage->getStorageID();
+            if (after.database_name == before.database_name
+                && after.table_name == before.table_name
+                && after.uuid == before.uuid)
+                return guard;
+            continue;
+        }
+
+        /// An exclusive database DDL is running, waiting it out on the table mutex is pointless.
+        if (guard->databaseLockBusy())
+            return nullptr;
+    }
+    return nullptr;
+}
+
+DDLGuardPtr DatabaseCatalog::getDDLGuardForStorage(const StoragePtr & storage, const Poco::Timespan & timeout)
+{
+    auto guard = tryGetDDLGuardForStorage(storage, timeout);
+    if (!guard)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+            "Cannot acquire the DDL guard for {}, lock_acquire_timeout is {} ms",
+            storage->getStorageID().getNameForLogs(), timeout.totalMilliseconds());
+    return guard;
+}
+
 DatabaseCatalog::DatabaseGuard & DatabaseCatalog::getDatabaseGuard(const String & database)
 {
     DDLGuards::iterator db_guard_iter;
@@ -1501,7 +1644,7 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
                 dropped_table = *it;
             }
         }
-        if (it_dropped_table == tables_marked_dropped.end())
+        if (it_dropped_table == tables_marked_dropped.end() || !dynamic_cast<DatabaseOnDisk *>(database.get()))
             throw Exception(ErrorCodes::UNKNOWN_TABLE,
                 "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
                 table_id.getNameForLogs());
@@ -1659,6 +1802,9 @@ void DatabaseCatalog::dropTablesParallel(TablesMarkedAsDropped tables_to_drop)
                 /// tables_marked_dropped_ids until the guarded erase below: window for a same-UUID re-drop.
                 FailPointInjection::pauseFailPoint(FailPoints::database_catalog_drop_finally_before_id_erase);
 
+                /// The dropped storage is destroyed before the waiters of `DROP ... SYNC` see the drop finished.
+                table_iterator->table.reset();
+
                 TableMarkedAsDropped table_to_delete_without_lock;
                 {
                     std::lock_guard lock(tables_marked_dropped_mutex);
@@ -1676,6 +1822,8 @@ void DatabaseCatalog::dropTablesParallel(TablesMarkedAsDropped tables_to_drop)
 
                     wait_table_finally_dropped.notify_all();
                 }
+
+                FailPointInjection::pauseFailPoint(FailPoints::database_catalog_drop_finally_after_notify);
             }
             catch (...)
             {
@@ -1755,7 +1903,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     for (const auto & [disk_name, disk] : getContext()->getDisksMap())
     {
         String data_path = getStoreDirPath(table.table_id.uuid);
-        auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table.table);
+        auto table_merge_tree = castStorage<MergeTreeData>(table.table, DeferredTable::Skip);
         if (!is_disk_eligible_for_search(disk, table_merge_tree) || !disk->existsDirectory(data_path))
             continue;
 
@@ -2080,6 +2228,50 @@ void DatabaseCatalog::checkTablesCanBeExchangedWithNoCyclicDependencies(const St
     check(loading_dependencies);
 }
 
+/// `RENAME DATABASE` re-keys every table of the database under the new name (see `updateDatabaseName`),
+/// which can merge a renamed table into a node that other tables already reference by the future name -
+/// the simplest case being a table `db.t = Alias(<new name>, t)` accepted at `CREATE` because the target
+/// database did not exist yet, and thus becoming a self-reference. Such a cycle in the server-wide
+/// dependency graph then makes every later DDL statement that adds a dependency edge fail with
+/// `INFINITE_LOOP`, anywhere on the server, and the database stops being listable after a restart.
+/// The check applies the rename to a copy of the graph and refuses the rename if it becomes cyclic, the
+/// same way `RENAME TABLE` and `EXCHANGE TABLES` do for a single table. The caller passes the exact set
+/// of tables it is about to re-key and holds the locks that keep that set stable until `updateDatabaseName`.
+/// This is a preflight check that lets the rename fail before anything is modified; `updateDatabaseName`
+/// repeats it in the same critical section as the rewrite, because DDL in other databases can add edges
+/// to the dependency graph in between.
+void DatabaseCatalog::checkDatabaseCanBeRenamedWithNoCyclicDependencies(
+    const String & old_database_name, const String & new_database_name, const Strings & tables_in_database)
+{
+    std::lock_guard lock{databases_mutex};
+    checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(old_database_name, new_database_name, tables_in_database);
+}
+
+void DatabaseCatalog::checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(
+    const String & old_database_name, const String & new_database_name, const Strings & tables_in_database) const
+{
+    auto check = [&](const TablesDependencyGraph & dependencies)
+    {
+        TablesDependencyGraph after_rename = dependencies;
+        for (const auto & table_name : tables_in_database)
+        {
+            auto old_dependencies = after_rename.removeDependencies(StorageID{old_database_name, table_name}, /* remove_isolated_tables= */ true);
+            after_rename.addDependencies(StorageID{new_database_name, table_name}, old_dependencies);
+        }
+
+        if (after_rename.hasCyclicDependencies())
+            throw Exception(
+                ErrorCodes::INFINITE_LOOP,
+                "Cannot rename database {} to {}, because it will lead to cyclic dependencies: {}",
+                backQuoteIfNeed(old_database_name),
+                backQuoteIfNeed(new_database_name),
+                after_rename.describeCyclicDependencies());
+    };
+
+    check(referential_dependencies);
+    check(loading_dependencies);
+}
+
 void DatabaseCatalog::cleanupStoreDirectoryTask()
 {
     for (const auto & [disk_name, disk] : getContext()->getDisksMap())
@@ -2304,15 +2496,37 @@ TemporaryLockForUUIDDirectory & TemporaryLockForUUIDDirectory::operator = (Tempo
 }
 
 
-DDLGuard::DDLGuard(Map & map_, SharedMutex & db_mutex_, std::unique_lock<std::mutex> guards_lock_, const String & elem, const String & database_name)
+DDLGuard::DDLGuard(Map & map_, SharedMutex & db_mutex_, std::unique_lock<std::mutex> guards_lock_, const String & elem, const String & database_name, std::optional<std::chrono::milliseconds> try_timeout)
         : map(map_), db_mutex(db_mutex_), guards_lock(std::move(guards_lock_))
 {
-    it = map.emplace(elem, Entry{std::make_unique<std::mutex>(), 0}).first;
+    it = map.emplace(elem, Entry{std::make_unique<std::timed_mutex>(), 0}).first;
     ++it->second.counter;
     guards_lock.unlock();
-    table_lock = std::unique_lock(*it->second.mutex);
+    if (try_timeout)
+    {
+        table_lock = std::unique_lock(*it->second.mutex, std::defer_lock);
+        if (!table_lock.try_lock_for(*try_timeout))
+            return;
+    }
+    else
+    {
+        table_lock = std::unique_lock(*it->second.mutex);
+    }
     is_database_guard = elem.empty();
-    if (!is_database_guard)
+    if (is_database_guard)
+        return;
+
+    if (try_timeout)
+    {
+        /// Single attempt: try-variant callers handle contention themselves, never sleep or throw here.
+        if (!db_mutex.try_lock_shared())
+        {
+            database_lock_busy = true;
+            table_lock.unlock();
+            return;
+        }
+    }
+    else
     {
         static constexpr int MAX_TRY = 10;
         static constexpr UInt64 INTERVAL_MS = 100;
@@ -2341,6 +2555,7 @@ DDLGuard::DDLGuard(Map & map_, SharedMutex & db_mutex_, std::unique_lock<std::mu
                 MAX_TRY * INTERVAL_MS);
         }
     }
+    db_mutex_held = true;
 }
 
 void DDLGuard::releaseTableLock() noexcept
@@ -2351,7 +2566,8 @@ void DDLGuard::releaseTableLock() noexcept
     table_lock_removed = true;
     guards_lock.lock();
     UInt32 counter = --it->second.counter;
-    table_lock.unlock();
+    if (table_lock.owns_lock())
+        table_lock.unlock();
     if (counter == 0)
         map.erase(it);
     guards_lock.unlock();
@@ -2359,10 +2575,11 @@ void DDLGuard::releaseTableLock() noexcept
 
 DDLGuard::~DDLGuard()
 {
-    if (!is_database_guard)
+    if (db_mutex_held)
         db_mutex.unlock_shared();
     releaseTableLock();
 }
+
 
 std::pair<String, String> TableNameHints::getHintForTable(const String & table_name) const
 {

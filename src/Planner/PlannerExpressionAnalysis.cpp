@@ -18,6 +18,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/HashUtils.h>
+#include <Analyzer/Utils.h>
 #include <Analyzer/WindowNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/InterpolateNode.h>
@@ -43,10 +44,23 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNEXPECTED_EXPRESSION;
 }
 
 namespace
 {
+
+/// The columns a step's correlated subqueries correlate on. They are read from the step's input, by the
+/// join the subquery is planned into, so the child step has to keep them even though no expression of
+/// this step reads them.
+NameSet correlatedColumnsOfSubtrees(const CorrelatedSubtrees & correlated_subtrees)
+{
+    NameSet result;
+    for (const auto & correlated_subquery : correlated_subtrees.subqueries)
+        result.insert(
+            correlated_subquery.correlated_column_identifiers.begin(), correlated_subquery.correlated_column_identifiers.end());
+    return result;
+}
 
 /** Construct filter analysis result for filter expression node
   * Actions before filter are added into into actions chain.
@@ -72,7 +86,11 @@ std::optional<FilterAnalysisResult> analyzeFilter(
         return {};
 
     result.filter_column_name = output->result_name;
-    actions_chain.addStep(std::make_unique<ActionsChainStep>(result.filter_actions));
+    actions_chain.addStep(std::make_unique<ActionsChainStep>(
+        result.filter_actions,
+        true /*use_actions_nodes_as_output_columns*/,
+        ColumnsWithTypeAndName{},
+        correlatedColumnsOfSubtrees(result.correlated_subtrees)));
 
     return result;
 }
@@ -287,7 +305,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
         }
     }
 
-    if (aggregation_keys.empty() && aggregates_descriptions.empty())
+    if (aggregation_keys.empty() && aggregates_descriptions.empty() && grouping_sets_parameters_list.empty())
         return {};
 
     /** For non ordinary GROUP BY we add virtual __grouping_set column
@@ -386,10 +404,9 @@ std::optional<WindowAnalysisResult> analyzeWindow(
         }
     }
 
-    /// When `group_by_use_nulls = 1` with CUBE/ROLLUP/GROUPING SETS, GROUP BY keys become Nullable
-    /// in the data flowing into window functions. But the aggregate function was created during analysis
-    /// with the original (non-nullable) argument types. We need to re-create the aggregate function
-    /// with the actual (nullable) argument types so that the Null combinator is properly applied.
+    /// A window function's aggregate is created during analysis and keeps the argument types known then,
+    /// so an argument whose actual type differs when the window step runs needs the aggregate re-created
+    /// with that type.
     for (auto & window_description : window_descriptions)
     {
         for (auto & window_function : window_description.window_functions)
@@ -491,7 +508,11 @@ ProjectionAnalysisResult analyzeProjection(
         projection_column_names_with_display_aliases.push_back({projection_node_name, projection_column.name});
     }
 
-    auto projection_actions_step = std::make_unique<ActionsChainStep>(projection_actions);
+    auto projection_actions_step = std::make_unique<ActionsChainStep>(
+        projection_actions,
+        true /*use_actions_nodes_as_output_columns*/,
+        ColumnsWithTypeAndName{},
+        correlatedColumnsOfSubtrees(correlated_subtrees));
     actions_chain.addStep(std::move(projection_actions_step));
 
     ProjectionAnalysisResult result;
@@ -553,6 +574,7 @@ SortAnalysisResult analyzeSort(
     actions_chain.addStep(std::move(actions_step_before_sort));
 
     ActionsAndProjectInputsFlagPtr before_interpolate_actions;
+    NameToNameMap interpolated_column_names;
 
     /// We add only INPUT columns necessary for INTERPOLATE expression in before ORDER BY actions DAG
     if (query_node.hasInterpolate())
@@ -595,6 +617,7 @@ SortAnalysisResult analyzeSort(
             if (nodes.size() != 1)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Interpolate expression must return single column");
             const auto * node = nodes.front();
+            interpolated_column_names.emplace(interpolate_node_typed.getExpressionName(), node->result_name);
             node = &before_interpolate_actions_dag.addAlias(*node, interpolate_node_typed.getExpressionName());
 
             before_interpolate_actions_dag.getOutputs().push_back(node);
@@ -606,7 +629,8 @@ SortAnalysisResult analyzeSort(
 
     /// before_interpolate_actions is intentionally not added to the chain here;
     /// buildExpressionAnalysisResult appends it after analyzeLimitBy so the chain order matches plan execution order.
-    return SortAnalysisResult{std::move(before_sort_actions), has_with_fill, std::move(before_interpolate_actions)};
+    return SortAnalysisResult{
+        std::move(before_sort_actions), has_with_fill, std::move(before_interpolate_actions), std::move(interpolated_column_names)};
 }
 
 /** Construct limit by analysis result.
@@ -649,6 +673,40 @@ LimitByAnalysisResult analyzeLimitBy(const QueryNode & query_node,
     actions_chain.addStep(std::move(actions_step_before_limit_by));
 
     return LimitByAnalysisResult{std::move(before_limit_by_actions), std::move(limit_by_column_names)};
+}
+
+/** Construct LIMIT AFTER/UNTIL analysis result.
+  * The boundary expressions may reference columns that are not in the SELECT list. `LimitRangeStep` runs
+  * before "Project names" in the plan but is not part of the actions chain, so no chain step requires those
+  * columns and chain finalization would prune them. This adds an identity step over every current value column:
+  * all of its inputs are its outputs, so the whole stream, boundary columns included, stays alive up to the
+  * range step, which builds its conditions from the resulting header.
+  * `IN` set and lambda `Function` placeholders are not values and are not kept: a boundary expression builds its own.
+  */
+LimitRangeAnalysisResult analyzeLimitRange(const QueryNode & query_node,
+    const ColumnsWithTypeAndName & input_columns,
+    ActionsChain & actions_chain)
+{
+    for (const auto & boundary_node : {query_node.getLimitAfter(), query_node.getLimitUntil()})
+    {
+        if (boundary_node && hasFunctionNode(boundary_node, "arrayJoin"))
+            throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "`arrayJoin` is not allowed in LIMIT AFTER/UNTIL expressions");
+    }
+
+    ColumnsWithTypeAndName value_columns;
+    value_columns.reserve(input_columns.size());
+    for (const auto & column : input_columns)
+    {
+        const WhichDataType which_type(column.type);
+        if (!which_type.isSet() && !which_type.isFunction())
+            value_columns.push_back(column);
+    }
+
+    auto before_limit_range_actions = std::make_shared<ActionsAndProjectInputsFlag>();
+    before_limit_range_actions->dag = ActionsDAG(value_columns);
+    actions_chain.addStep(std::make_unique<ActionsChainStep>(before_limit_range_actions));
+
+    return LimitRangeAnalysisResult{std::move(before_limit_range_actions)};
 }
 
 }
@@ -774,10 +832,18 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
           * the filling step added later requires them in the block header.
           *
           * Example: SELECT 1 ORDER BY toDateTime(0) WITH FILL LIMIT 1 BY 1;
+          *
+          * The same holds for LIMIT WITH TIES: the limit step added after LIMIT BY compares the
+          * ORDER BY columns of the last row against its successors, so they have to reach it. A
+          * constant ORDER BY key is otherwise dropped here, because the projection above can create
+          * the constant on its own.
+          *
+          * Example: SELECT 1 FROM numbers(10) ORDER BY ALL LIMIT 1 BY number LIMIT 4 WITH TIES;
           */
         NameSet required_output_nodes_names;
         if (sort_analysis_result_optional.has_value()
             && (sort_analysis_result_optional->has_with_fill
+                || query_node.isLimitWithTies()
                 || (planner_query_processing_info.isFirstStage()
                     && planner_query_processing_info.getToStage() != QueryProcessingStage::Complete)))
         {
@@ -807,6 +873,20 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
         auto & before_interpolate_actions = sort_analysis_result_optional->before_interpolate_actions;
         auto actions_step_before_interpolate = std::make_unique<ActionsChainStep>(before_interpolate_actions);
         actions_chain.addStep(std::move(actions_step_before_interpolate));
+        current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+    }
+
+    /** LIMIT AFTER/UNTIL boundary columns may not be in the SELECT list. The LimitRangeStep runs before
+      * "Project names" in the plan, so keep its referenced columns alive past the projection by adding a
+      * dedicated step here. This must also run when producing a mergeable aggregation state on a shard:
+      * the range step itself is applied later on the initiator, but the shard must still carry the boundary
+      * columns in its output (the Projection would otherwise prune them, leaving the initiator unable to
+      * evaluate the range over a non-selected column in a distributed query).
+      */
+    std::optional<LimitRangeAnalysisResult> limit_range_analysis_result_optional;
+    if (query_node.hasLimitAfter() || query_node.hasLimitUntil())
+    {
+        limit_range_analysis_result_optional = analyzeLimitRange(query_node, current_output_columns, actions_chain);
         current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
     }
 
@@ -866,16 +946,13 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
             if (input->column && source_constants.contains(input->result_name))
                 keep_inputs.insert(input);
 
-    if (query_node.hasInterpolate())
+    if (query_node.hasInterpolate() && sort_analysis_result_optional)
     {
         auto project_names = projection_analysis_result.projection_column_names_with_display_aliases;
-        NameSet interpolate_names;
-        auto & interpolate_list_node = query_node.getInterpolate()->as<ListNode &>();
-        for (auto & interpolate_node : interpolate_list_node.getNodes())
-            interpolate_names.insert(interpolate_node->as<InterpolateNode &>().getExpressionName());
-
+        const auto & interpolated_column_names = sort_analysis_result_optional->interpolated_column_names;
+        /// A result column takes the interpolated values only if it is the column the target interpolates.
         for (auto & [name, alias] : project_names)
-            if (interpolate_names.contains(alias))
+            if (auto it = interpolated_column_names.find(alias); it != interpolated_column_names.end() && it->second == name)
                 name = alias;
 
         project_names_actions->dag.project(project_names, keep_inputs);
@@ -927,6 +1004,9 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
 
     if (limit_by_analysis_result_optional)
         expressions_analysis_result.addLimitBy(std::move(*limit_by_analysis_result_optional));
+
+    if (limit_range_analysis_result_optional)
+        expressions_analysis_result.addLimitRange(std::move(*limit_range_analysis_result_optional));
 
     return expressions_analysis_result;
 }

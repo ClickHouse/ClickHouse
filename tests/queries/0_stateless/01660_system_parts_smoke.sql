@@ -8,7 +8,9 @@ SELECT _state FROM system.parts FORMAT Null;
 
 -- Create one table and see some columns in system.parts
 DROP TABLE IF EXISTS data_01660;
-CREATE TABLE data_01660 (key Int) Engine=MergeTree() ORDER BY key;
+-- `old_parts_lifetime` is pinned because the assertions below observe Outdated parts: both the
+-- default and the values CI randomizes over can elapse within a single test's time budget.
+CREATE TABLE data_01660 (key Int) Engine=MergeTree() ORDER BY key SETTINGS old_parts_lifetime = 100500;
 SYSTEM STOP MERGES data_01660;
 
 -- Empty
@@ -30,9 +32,8 @@ SYSTEM START MERGES data_01660;
 OPTIMIZE TABLE data_01660 FINAL;
 SELECT count(), _state FROM system.parts WHERE database = currentDatabase() AND table = 'data_01660' GROUP BY _state ORDER BY _state;
 
--- TRUNCATE does not remove parts instantly
--- Empty active parts are clearing by async process
--- Inactive parts are clearing by async process also
+-- TRUNCATE covers the active parts with empty ones and clears what it can before returning.
+-- The parts OPTIMIZE outdated stay for `old_parts_lifetime`, so they are still listed here.
 SELECT '# truncate';
 TRUNCATE data_01660;
 SELECT if (count() > 0, 'HAVE PARTS', 'NO PARTS'), _state FROM system.parts WHERE database = currentDatabase() AND table = 'data_01660' GROUP BY _state ORDER BY _state;

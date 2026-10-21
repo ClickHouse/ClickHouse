@@ -1,4 +1,5 @@
 #include <base/getFQDNOrHostName.h>
+#include <Common/config_version.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/HistogramMetrics.h>
 #include <Core/Settings.h>
@@ -29,6 +30,8 @@ ColumnsDescription MetricLogElement::getColumnsDescription()
     ColumnsDescription result;
 
     result.add({"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."});
+    result.add({"clickhouse_version", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Version of the ClickHouse server that produced the row."});
+    result.add({"system_processor", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "CPU architecture of the ClickHouse server that produced the row."});
     result.add({"event_date", std::make_shared<DataTypeDate>(), "Event date."});
     result.add({"event_time", std::make_shared<DataTypeDateTime>(), "Event time."});
     result.add({"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Event time with microseconds resolution."});
@@ -66,6 +69,8 @@ void MetricLogElement::appendToBlock(MutableColumns & columns) const
     size_t column_idx = 0;
 
     columns[column_idx++]->insert(getFQDNOrHostName());
+    columns[column_idx++]->insert(VERSION_STRING);
+    columns[column_idx++]->insert(SYSTEM_PROCESSOR);
     columns[column_idx++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[column_idx++]->insert(event_time);
     columns[column_idx++]->insert(event_time_microseconds);

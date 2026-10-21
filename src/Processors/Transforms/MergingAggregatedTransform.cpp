@@ -64,14 +64,15 @@ static ActionsDAG makeReorderingActions(const Block & in_header, const GroupingS
 MergingAggregatedTransform::~MergingAggregatedTransform() = default;
 
 MergingAggregatedTransform::MergingAggregatedTransform(
-    SharedHeader header_, Aggregator::Params params, bool final, GroupingSetsParamsList grouping_sets_params)
+    SharedHeader header_, Aggregator::Params params, bool final, GroupingSetsParamsList grouping_sets_params, size_t output_streams_)
     : IAccumulatingTransform(header_, std::make_shared<const Block>(appendGroupingIfNeeded(*header_, params.getHeader(*header_, final))))
+    , output_streams(output_streams_)
 {
     if (!grouping_sets_params.empty())
     {
         if (!header_->has("__grouping_set"))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Cannot find __grouping_set column in header of MergingAggregatedTransform with grouping sets."
+                "Cannot find __grouping_set column in header of MergingAggregatedTransform with grouping sets. "
                 "Header {}", header_->dumpStructure());
 
         auto in_header = *header_;
@@ -258,16 +259,18 @@ Chunk MergingAggregatedTransform::generate()
 
             /// TODO: this operation can be made async. Add async for IAccumulatingTransform.
             params->aggregator.mergeBlocks(std::move(bucket_to_chunks), data_variants, is_cancelled);
-            auto merged_chunks = params->aggregator.convertToChunks(data_variants, params->final);
+            const size_t max_rows_per_block = Aggregator::singleLevelChunkRowsForFanOut(data_variants.sizeWithoutOverflowRow(), output_streams);
+            auto merged_chunks = params->aggregator.convertToChunks(data_variants, params->final, max_rows_per_block);
 
             if (grouping_set.creating_missing_keys_actions)
             {
                 auto res_header = params->params.getHeader(params->header, params->final);
                 for (auto & agg_chunk : merged_chunks)
                 {
+                    size_t num_rows = agg_chunk.chunk.getNumRows();
                     auto block = res_header.cloneWithColumns(agg_chunk.chunk.detachColumns());
-                    grouping_set.creating_missing_keys_actions->execute(block);
-                    agg_chunk.chunk = Chunk(block.getColumns(), block.rows());
+                    grouping_set.creating_missing_keys_actions->execute(block, num_rows);
+                    agg_chunk.chunk = Chunk(block.getColumns(), num_rows);
                 }
             }
 
