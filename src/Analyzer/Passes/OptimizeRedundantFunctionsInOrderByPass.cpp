@@ -52,11 +52,13 @@ public:
         if (query->isGroupByWithCube() || query->isGroupByWithRollup() || query->isGroupByWithGroupingSets())
             return;
 
+        /// Collation can make distinct values of a column compare equal, so a function of that
+        /// column after it in ORDER BY still breaks ties.
         auto & order_by = query->getOrderBy();
         for (auto & elem : order_by.getNodes())
         {
             auto * order_by_elem = elem->as<SortNode>();
-            if (order_by_elem->withFill())
+            if (order_by_elem->withFill() || order_by_elem->getCollator())
                 return;
         }
 
