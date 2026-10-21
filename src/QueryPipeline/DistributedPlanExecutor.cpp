@@ -2003,6 +2003,16 @@ protected:
 
         const String unique_temp_file_path = toString(unique_query_id);
 
+        std::mutex first_failure_mutex;
+        std::exception_ptr first_failure;
+
+        /// The tasks of a stage are independent, so send them concurrently. Declared after everything the
+        /// jobs use, so that on an exception its destructor waits for them first.
+        const size_t num_threads = std::min(stage.tasks.size(), max_concurrent_task_starts);
+        ThreadPool pool(
+            CurrentMetrics::TaskTrackerThreads, CurrentMetrics::TaskTrackerThreadsActive, CurrentMetrics::TaskTrackerThreadsScheduled,
+            num_threads, num_threads, stage.tasks.size());
+
         for (const auto & task : stage.tasks)
         {
             /// Reproduce the ordering a failing worker task creates: a task fails and records its
@@ -2023,39 +2033,67 @@ protected:
 
             checkCancelled();
 
-            task_description.task = task;
+            pool.scheduleOrThrow([&, thread_group = CurrentThread::getGroup()]
+            {
+                ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_QUERY_TASK);
+                try
+                {
+                    {
+                        std::lock_guard lock(first_failure_mutex);
+                        if (first_failure)
+                            return;
+                    }
+                    checkCancelled();
 
-            /// Add exchange destinations for output streams
-            task_description.exchange_stream_sources = {};
-            for (const auto & input_stream : task.input_exchange_streams)
-            {
-                String input_stream_name = input_stream.toString();
-                task_description.exchange_stream_sources.stream_hosts[input_stream_name] = task_to_host_map->getExchangeStreamSourceHosts().at(input_stream_name);
-            }
-            /// Send the task before registering it: status polling does not tolerate
-            /// UnknownTaskId, so a tracker poll racing the start would abort the query.
-            /// On send failure clean up directly in case the worker did accept the start;
-            /// cancel/forget tolerate UnknownTaskId.
-            auto task_info = buildTaskInfo(task_description);
-            LOG_DEBUG(logger, "Sending task {} to {}", task_info.task_id, task_info.endpoint_uri);
-            try
-            {
-                sendTask(task_info.endpoint_uri, task_info.task_id, task_description, unique_temp_file_path, collectors, context);
-            }
-            catch (...)
-            {
-                running_tasks.cancelAndForgetUntracked(task_info);
-                throw;
-            }
-            running_tasks.addTask(stage_name, task_info);
-            ProfileEvents::increment(ProfileEvents::DistributedPlanRemoteTasks);
+                    /// A copy per job, so at most `max_concurrent_task_starts` copies of the plan exist at once.
+                    DistributedQueryTaskDescription description = task_description;
+                    description.task = task;
+
+                    /// Add exchange destinations for output streams
+                    for (const auto & input_stream : task.input_exchange_streams)
+                    {
+                        String input_stream_name = input_stream.toString();
+                        description.exchange_stream_sources.stream_hosts[input_stream_name] = task_to_host_map->getExchangeStreamSourceHosts().at(input_stream_name);
+                    }
+                    /// Send the task before registering it: status polling does not tolerate
+                    /// UnknownTaskId, so a tracker poll racing the start would abort the query.
+                    /// On send failure clean up directly in case the worker did accept the start;
+                    /// cancel/forget tolerate UnknownTaskId.
+                    auto task_info = buildTaskInfo(description);
+                    LOG_DEBUG(logger, "Sending task {} to {}", task_info.task_id, task_info.endpoint_uri);
+                    try
+                    {
+                        sendTask(task_info.endpoint_uri, task_info.task_id, description, unique_temp_file_path, collectors, context);
+                    }
+                    catch (...)
+                    {
+                        running_tasks.cancelAndForgetUntracked(task_info);
+                        throw;
+                    }
+                    running_tasks.addTask(stage_name, task_info);
+                    ProfileEvents::increment(ProfileEvents::DistributedPlanRemoteTasks);
+                }
+                catch (...)
+                {
+                    std::lock_guard lock(first_failure_mutex);
+                    if (!first_failure)
+                        first_failure = std::current_exception();
+                }
+            });
         }
+        pool.wait();
+
+        if (first_failure)
+            std::rethrow_exception(first_failure);
+        checkCancelled();
     }
 
     bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms) override
     {
         return running_tasks.waitForStage(stage_name, timeout_ms);
     }
+
+    static constexpr size_t max_concurrent_task_starts = 16;
 
     TaskToHostMapPtr task_to_host_map;
     TaskTracker running_tasks;
