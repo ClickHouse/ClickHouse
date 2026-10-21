@@ -1,4 +1,3 @@
-load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -6,18 +5,6 @@ package(default_visibility = ["//visibility:public"])
 exports_files([
     "COPYING",
 ])
-
-copy_file(
-    name = "configure_prop_h",
-    src = ":include/prop.h",
-    out = "config/contrib/cyrus-sasl-cmake/prop.h",
-)
-
-copy_file(
-    name = "configure_sasl_sasl_h",
-    src = ":include/sasl.h",
-    out = "config/contrib/cyrus-sasl-cmake/sasl/sasl.h",
-)
 
 ch_cc_library(
     name = "_sasl2",
@@ -36,20 +23,28 @@ ch_cc_library(
         "lib/dlopen.c",
         "lib/client.c",
         "lib/checkpw.c",
-    ] + glob(["**/*.h"]),
+        "common/plugin_common.h",
+        "include/hmac-md5.h",
+        "include/md5.h",
+        "include/saslplug.h",
+        "include/saslutil.h",
+        "saslauthd/md5global.h",
+    ] + glob(["lib/*.h"]),
     hdrs = [
-        ":config/contrib/cyrus-sasl-cmake/prop.h",
-        ":config/contrib/cyrus-sasl-cmake/sasl/sasl.h",
+        "include/prop.h",
+        "include/sasl.h",
     ],
     copts = [
         "-w",
         "-std=gnu11",
     ],
     implementation_deps = [
-        "@clickhouse_llvm_project//:libcxxabi_headers",
         "@clickhouse//contrib/cyrus-sasl-cmake:cyrus_sasl_config_headers",
+        "@clickhouse_krb5//:_krb5",
     ],
+    include_prefix = "sasl",
     language = "C",
+    libcxx_headers = False,
     local_defines = [
         "'CONFIGDIR=\"\"'",
         "HAVE_CONFIG_H",
@@ -62,18 +57,11 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    includes = ["config/contrib/cyrus-sasl-cmake"],
     local_includes = [
-        "plugins",
-        ".",
         "include",
         "lib",
-        "sasldb",
         "common",
         "saslauthd",
-        "sample",
-        "utils",
-        "tests",
     ],
-    deps = ["@clickhouse_krb5//:_krb5"],
+    strip_include_prefix = "include",
 )
