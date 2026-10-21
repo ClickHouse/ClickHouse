@@ -1,5 +1,6 @@
 #include <Server/MySQLHandler.h>
 
+#include <algorithm>
 #include <optional>
 #include <Access/AccessControl.h>
 #include <Access/Authentication.h>
