@@ -31,6 +31,8 @@ namespace ProfileEvents
     extern const Event ParquetReadRowGroups;
     extern const Event ParquetPrunedRowGroups;
     extern const Event ParquetTopKSkippedRowGroups;
+    extern const Event ParquetBloomFilterPrunedRowGroups;
+    extern const Event ParquetDictionaryFilterPrunedRowGroups;
 }
 
 namespace DB::Parquet
@@ -228,11 +230,16 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
         /// still change the outcome.
         bool any_dictionary_filter = false;
         if (reader.applyBloomFilters(row_group))
+        {
             any_dictionary_filter = std::any_of(
                 row_group.columns.begin(), row_group.columns.end(),
                 [](const ColumnChunk & c) { return c.use_dictionary_filter; });
+        }
         else
+        {
+            ProfileEvents::increment(ProfileEvents::ParquetBloomFilterPrunedRowGroups);
             stage = ReadStage::Deliver; // skip the row group
+        }
 
         /// Keep the blocks alive for `applyBloomAndDictionaryFilters`, which uses them as the
         /// fallback for a column whose dictionary does not fit the pruning memory budget.
@@ -242,7 +249,10 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
     else if (stage == ReadStage::Dictionary)
     {
         if (!reader.applyBloomAndDictionaryFilters(row_group, pruningMemoryReservation(diff)))
+        {
+            ProfileEvents::increment(ProfileEvents::ParquetDictionaryFilterPrunedRowGroups);
             stage = ReadStage::Deliver; // skip the row group
+        }
         release_bloom_filters();
     }
 

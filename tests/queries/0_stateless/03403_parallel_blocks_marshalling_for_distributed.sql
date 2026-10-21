@@ -17,6 +17,11 @@ SET prefer_localhost_replica = 1, enable_analyzer = 1;
 -- https://github.com/ClickHouse/ClickHouse/issues/118274.
 SET parallel_replicas_plan_based = 0;
 
+-- These plans are the query-based ones: plan-based ships the fragment as a plan, so it carries the
+-- `BlocksMarshalling` step inside the reading step's description instead of as its children.
+-- `05238_pr_plan_based_blocks_marshalling` covers the same queries for plan-based.
+SET parallel_replicas_plan_based = 0;
+
 SELECT replaceRegexpAll(explain, 'ReadFromRemoteParallelReplicas.*', 'ReadFromRemoteParallelReplicas')
 FROM (
    EXPLAIN distributed = 1
