@@ -28,6 +28,9 @@ subcolumn_read	0	0	0	0
 subcolumn_read	1	1	0	10
 subcolumn_read	2	2	22	20
 subcolumn_read	3	100	1100	1000
+alias_subcolumn	0	0	0
+alias_subcolumn	1	100	1000
+alias_subcolumn	2	2	20
 delete	0	0	0
 delete	1	1	10
 delete	3	100	1000

@@ -2213,10 +2213,10 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
 
                 /// The part reader reads the subcolumns a default reads from the part; here they always come from the header's
                 /// parent column, which an earlier stage may have rewritten.
-                NameSet input_names;
+                std::unordered_map<String, DataTypePtr> input_types;
                 for (const auto & column : input_columns)
-                    input_names.insert(column.name);
-                auto in_header = [&](const String & name) { return input_names.contains(name); };
+                    input_types.emplace(column.name, column.type);
+                auto in_header = [&](const String & name) { return input_types.contains(name); };
                 NamesAndTypesList default_input_subcolumns;
                 NameSet default_input_subcolumn_names;
                 for (const auto & column : columns_to_compute)
@@ -2224,7 +2224,22 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                     for (const auto & name : getColumnsReadByDefault(default_columns, column.name, in_header))
                     {
                         auto subcolumn = storage_snapshot->tryGetColumn(col_options, name);
-                        if (subcolumn && subcolumn->isSubcolumn() && input_names.contains(subcolumn->getNameInStorage())
+                        /// An ALIAS column registers no subcolumns, so a subcolumn of one is found by the type of the header column.
+                        if (!subcolumn)
+                        {
+                            for (const auto & [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
+                            {
+                                auto it = input_types.find(String(column_name));
+                                if (it == input_types.end())
+                                    continue;
+                                if (auto subcolumn_type = it->second->tryGetSubcolumnType(subcolumn_name))
+                                {
+                                    subcolumn.emplace(it->first, String(subcolumn_name), it->second, subcolumn_type);
+                                    break;
+                                }
+                            }
+                        }
+                        if (subcolumn && subcolumn->isSubcolumn() && input_types.contains(subcolumn->getNameInStorage())
                             && default_input_subcolumn_names.insert(subcolumn->name).second)
                             default_input_subcolumns.push_back(*subcolumn);
                     }

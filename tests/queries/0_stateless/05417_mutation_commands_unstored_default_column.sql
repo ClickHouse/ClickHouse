@@ -74,6 +74,16 @@ ALTER TABLE t_subcolumn_read UPDATE t = tuple(100) WHERE id = 3, UPDATE y = a + 
 SELECT 'subcolumn_read', id, t.p, y, a FROM t_subcolumn_read ORDER BY id;
 DROP TABLE t_subcolumn_read;
 
+-- The DEFAULT reads a subcolumn of an ALIAS column.
+DROP TABLE IF EXISTS t_alias_subcolumn;
+CREATE TABLE t_alias_subcolumn (id Int64, x Int64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_alias_subcolumn SELECT number, number FROM numbers(3);
+ALTER TABLE t_alias_subcolumn ADD COLUMN b Tuple(p Int64) ALIAS tuple(x);
+ALTER TABLE t_alias_subcolumn ADD COLUMN a Int64 DEFAULT b.p * 10;
+ALTER TABLE t_alias_subcolumn UPDATE x = 100 WHERE id = 1, MATERIALIZE COLUMN a;
+SELECT 'alias_subcolumn', id, x, a FROM t_alias_subcolumn ORDER BY id;
+DROP TABLE t_alias_subcolumn;
+
 -- DELETE predicate and the columns DELETE writes.
 DROP TABLE IF EXISTS t_delete;
 CREATE TABLE t_delete (id Int64, x Int64) ENGINE = MergeTree ORDER BY id;
