@@ -11,6 +11,7 @@
 #include <Formats/FormatFactory.h>
 #include <Processors/Chunk.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/TypeTree.h>
 
 namespace DB
 {
@@ -93,21 +94,19 @@ NamesAndTypesList extractHivePartitionColumnsFromPath(
         else
         {
             const auto hive_format_settings = buildHiveFormatSettings(format_settings, context);
-            if (const auto type = tryInferDataTypeByEscapingRule(
-                    value, hive_format_settings, FormatSettings::EscapingRule::Raw))
+            auto type = tryInferDataTypeByEscapingRule(value, hive_format_settings, FormatSettings::EscapingRule::Raw);
+            /// An empty value, `NULL`, `[]` or `{}` alone do not determine a type, and a type with `Nothing` anywhere in it
+            /// (a `Variant` alternative included) cannot hold the other paths' values.
+            if (!type || anyInTypeTree(*type, [](const IDataType & node) { return isNothing(node); }))
+                type = std::make_shared<DataTypeString>();
+
+            if (type->canBeInsideLowCardinality() && isStringOrFixedString(type))
             {
-                if (type->canBeInsideLowCardinality() && isStringOrFixedString(type))
-                {
-                    hive_partition_columns_to_read_from_file_path.emplace_back(key, std::make_shared<DataTypeLowCardinality>(type));
-                }
-                else
-                {
-                    hive_partition_columns_to_read_from_file_path.emplace_back(key, type);
-                }
+                hive_partition_columns_to_read_from_file_path.emplace_back(key, std::make_shared<DataTypeLowCardinality>(type));
             }
             else
             {
-                hive_partition_columns_to_read_from_file_path.emplace_back(key, std::make_shared<DataTypeString>());
+                hive_partition_columns_to_read_from_file_path.emplace_back(key, type);
             }
         }
     }

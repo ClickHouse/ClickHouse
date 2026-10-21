@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
-## lightweight_delete_mode
+## lightweight_delete_mode {#lightweight_delete_mode}
 
 <SettingsInfoBlock type="LightweightDeleteMode" default_value="alter_update" />
 
@@ -23,11 +23,18 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 가능한 값:
 
-* `alter_update` - heavyweight mutation을 생성하는 `ALTER UPDATE` 쿼리를 실행합니다.
+* `alter_update` - heavyweight 뮤테이션을 생성하는 `ALTER UPDATE` 쿼리를 실행합니다.
 * `lightweight_update` - 가능하면 경량 업데이트를 실행하고, 그렇지 않으면 `ALTER UPDATE`를 실행합니다.
 * `lightweight_update_force` - 가능하면 경량 업데이트를 실행하고, 그렇지 않으면 예외를 발생시킵니다.
 
-## lightweight_deletes_sync
+`DELETE FROM ... ON CLUSTER`에서는 쿼리를 실행하는 각 호스트가 자신의 설정에 따라 모드를 결정합니다. 따라서
+프로필에 서로 다른 기본값이 설정된 호스트들은 각기 다른 모드로 삭제를 실행할 수 있습니다. 복제된
+세그먼트는 하나의 레플리카에서만 실행되므로, 이때는 해당 레플리카의 설정에 따라 모드가 결정됩니다. 최초 쿼리의
+세션에서 이 설정을 지정하면 이러한 동작을 재정의할 수 있습니다. 분산 DDL 엔트리는 `distributed_ddl_entry_format_version` 2 이상에서
+세션 변경 사항을 함께 전달하며, 기본값은 이 조건을 충족합니다.
+단, 이 설정에 제약을 둔 호스트에서는 값이 제약 범위 내로 다시 조정됩니다.
+
+## lightweight_deletes_sync {#lightweight_deletes_sync}
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 
