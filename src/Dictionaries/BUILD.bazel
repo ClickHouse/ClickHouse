@@ -22,6 +22,8 @@ _PRIVATE_DICTIONARIES_0_HEADERS = [
 ]
 
 _PRIVATE_DICTIONARIES_1_HEADERS = [
+    "CacheDictionaryStorage.h",
+    "NaiveBayesTrainer.h",
     "CassandraDictionarySource.h",
     "CassandraHelpers.h",
     "CassandraSource.h",
