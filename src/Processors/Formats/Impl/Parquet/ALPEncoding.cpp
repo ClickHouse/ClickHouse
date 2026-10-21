@@ -1,4 +1,4 @@
-#include <Processors/Formats/Impl/Parquet/AlpEncoding.h>
+#include <Processors/Formats/Impl/Parquet/ALPEncoding.h>
 
 #include <base/unaligned.h>
 #include <Common/PODArray.h>
@@ -49,10 +49,10 @@ constexpr double NEG_POW10_DOUBLE[] = {
     1e0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10, 1e-11, 1e-12, 1e-13, 1e-14, 1e-15, 1e-16, 1e-17, 1e-18};
 
 template <typename T>
-struct AlpTraits;
+struct ALPTraits;
 
 template <>
-struct AlpTraits<float>
+struct ALPTraits<float>
 {
     using Exact = UInt32;
     using Signed = Int32;
@@ -68,7 +68,7 @@ struct AlpTraits<float>
 };
 
 template <>
-struct AlpTraits<double>
+struct ALPTraits<double>
 {
     using Exact = UInt64;
     using Signed = Int64;
@@ -81,12 +81,12 @@ struct AlpTraits<double>
     static constexpr double max_encodable_exclusive = 9223372036854775808.0;
 };
 
-static_assert(std::size(POW10_FLOAT) == AlpTraits<float>::max_exponent + 1);
-static_assert(std::size(NEG_POW10_FLOAT) == AlpTraits<float>::max_exponent + 1);
-static_assert(std::size(POW10_DOUBLE) == AlpTraits<double>::max_exponent + 1);
-static_assert(std::size(NEG_POW10_DOUBLE) == AlpTraits<double>::max_exponent + 1);
+static_assert(std::size(POW10_FLOAT) == ALPTraits<float>::max_exponent + 1);
+static_assert(std::size(NEG_POW10_FLOAT) == ALPTraits<float>::max_exponent + 1);
+static_assert(std::size(POW10_DOUBLE) == ALPTraits<double>::max_exponent + 1);
+static_assert(std::size(NEG_POW10_DOUBLE) == ALPTraits<double>::max_exponent + 1);
 
-/// AlpInfo (exponent, factor, num_exceptions) + ForInfo (frame_of_reference, bit_width).
+/// `AlpInfo` (exponent, factor, num_exceptions) + `ForInfo` (frame_of_reference, bit_width).
 template <typename T>
 constexpr size_t vectorHeaderSize()
 {
@@ -99,9 +99,9 @@ constexpr size_t vectorHeaderSize()
 /// An `ALP` page with a validated page header and offset sequence. The contents of each vector
 /// are validated when it is decoded.
 template <typename T>
-struct AlpPage
+struct ALPPage
 {
-    using Traits = AlpTraits<T>;
+    using Traits = ALPTraits<T>;
     using Exact = typename Traits::Exact;
     using Signed = typename Traits::Signed;
 
@@ -113,7 +113,7 @@ struct AlpPage
     const char * body = nullptr;
     size_t body_size = 0;
 
-    explicit AlpPage(std::span<const char> data)
+    explicit ALPPage(std::span<const char> data)
     {
         if (data.size() < ALP_PAGE_HEADER_SIZE)
             throw Exception(ErrorCodes::INCORRECT_DATA, "ALP page is too short: {} bytes", data.size());
@@ -254,12 +254,12 @@ struct AlpPage
 };
 
 template <typename T>
-struct AlpDecoder : public PageDecoder
+struct ALPDecoder : public PageDecoder
 {
-    using Exact = typename AlpTraits<T>::Exact;
+    using Exact = typename ALPTraits<T>::Exact;
 
     std::shared_ptr<FixedSizeConverter> converter;
-    AlpPage<T> page;
+    ALPPage<T> page;
     /// Index of the next value to be decoded or skipped.
     size_t value_idx = 0;
 
@@ -272,7 +272,7 @@ struct AlpDecoder : public PageDecoder
     /// Values for a filter or a non-trivial converter.
     PaddedPODArray<T> temp;
 
-    AlpDecoder(std::span<const char> data_, std::shared_ptr<FixedSizeConverter> converter_)
+    ALPDecoder(std::span<const char> data_, std::shared_ptr<FixedSizeConverter> converter_)
         : PageDecoder(data_), converter(std::move(converter_)), page(data_)
     {
         if (converter->input_size != sizeof(T))
@@ -393,10 +393,10 @@ constexpr size_t MAX_CANDIDATES = 5;
 constexpr size_t MAX_CANDIDATES_WITHOUT_IMPROVEMENT = 2;
 
 template <typename T>
-class AlpPageEncoder
+class ALPPageEncoder
 {
 public:
-    using Traits = AlpTraits<T>;
+    using Traits = ALPTraits<T>;
     using Exact = typename Traits::Exact;
     using Signed = typename Traits::Signed;
 
@@ -722,9 +722,9 @@ private:
     }
 };
 
-/// Adapts `AlpPageEncoder` to the encoder interface of Arrow that the writer uses for other encodings.
+/// Adapts `ALPPageEncoder` to the encoder interface of Arrow that the writer uses for other encodings.
 template <typename DType>
-class AlpEncoder final : public parquet::TypedEncoder<DType>
+class ALPEncoder final : public parquet::TypedEncoder<DType>
 {
 public:
     using T = typename DType::c_type;
@@ -778,32 +778,32 @@ public:
 
 private:
     PODArray<T> values;
-    AlpPageEncoder<T> page_encoder;
+    ALPPageEncoder<T> page_encoder;
     PaddedPODArray<char> encoded;
     parquet::Encoding::type last_page_encoding = static_cast<parquet::Encoding::type>(parq::Encoding::ALP);
 };
 
 }
 
-std::unique_ptr<PageDecoder> makeAlpDecoder(
+std::unique_ptr<PageDecoder> makeALPDecoder(
     parq::Type::type physical_type, std::span<const char> data, std::shared_ptr<FixedSizeConverter> converter)
 {
     switch (physical_type)
     {
-        case parq::Type::FLOAT: return std::make_unique<AlpDecoder<float>>(data, std::move(converter));
-        case parq::Type::DOUBLE: return std::make_unique<AlpDecoder<double>>(data, std::move(converter));
+        case parq::Type::FLOAT: return std::make_unique<ALPDecoder<float>>(data, std::move(converter));
+        case parq::Type::DOUBLE: return std::make_unique<ALPDecoder<double>>(data, std::move(converter));
         default: throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected encoding ALP for type {}", thriftToString(physical_type));
     }
 }
 
-std::unique_ptr<parquet::TypedEncoder<parquet::FloatType>> makeAlpFloatEncoder()
+std::unique_ptr<parquet::TypedEncoder<parquet::FloatType>> makeALPFloatEncoder()
 {
-    return std::make_unique<AlpEncoder<parquet::FloatType>>();
+    return std::make_unique<ALPEncoder<parquet::FloatType>>();
 }
 
-std::unique_ptr<parquet::TypedEncoder<parquet::DoubleType>> makeAlpDoubleEncoder()
+std::unique_ptr<parquet::TypedEncoder<parquet::DoubleType>> makeALPDoubleEncoder()
 {
-    return std::make_unique<AlpEncoder<parquet::DoubleType>>();
+    return std::make_unique<ALPEncoder<parquet::DoubleType>>();
 }
 
 }

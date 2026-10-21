@@ -1,5 +1,5 @@
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
-#include <Processors/Formats/Impl/Parquet/AlpEncoding.h>
+#include <Processors/Formats/Impl/Parquet/ALPEncoding.h>
 
 #include <base/arithmeticOverflow.h>
 #include <Columns/ColumnString.h>
@@ -1477,7 +1477,7 @@ std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
             break;
         case parq::Encoding::ALP:
             if (physical_type == parq::Type::FLOAT || physical_type == parq::Type::DOUBLE)
-                return makeAlpDecoder(physical_type, data, fixed_size_converter);
+                return makeALPDecoder(physical_type, data, fixed_size_converter);
             break;
         default: throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected page encoding: {}", thriftToString(encoding));
     }

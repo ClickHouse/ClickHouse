@@ -1,6 +1,6 @@
 #include <Processors/Formats/Impl/Parquet/Write.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
-#include <Processors/Formats/Impl/Parquet/AlpEncoding.h>
+#include <Processors/Formats/Impl/Parquet/ALPEncoding.h>
 #include <arrow/util/key_value_metadata.h>
 #include <parquet/encoding.h>
 #include <parquet/schema.h>
@@ -1021,7 +1021,7 @@ void writeColumnImpl(
     /// fewer bits per value than the dictionary indexes once the values are not very repetitive,
     /// and it doesn't store the dictionary itself. The user opts into `ALP` explicitly, so it is
     /// what they get. The values that `ALP` can't encode don't make the page bigger than `PLAIN`:
-    /// such pages are written as `PLAIN` (see `makeAlpFloatEncoder`).
+    /// such pages are written as `PLAIN` (see `makeALPFloatEncoder`).
     static constexpr bool is_floating_point
         = std::is_same_v<ParquetDType, parquet::FloatType> || std::is_same_v<ParquetDType, parquet::DoubleType>;
     if constexpr (is_floating_point)
@@ -1078,12 +1078,12 @@ void writeColumnImpl(
         if constexpr (std::is_same_v<ParquetDType, parquet::FloatType>)
         {
             if (encoding == parq::Encoding::ALP && !dictionary)
-                return makeAlpFloatEncoder();
+                return makeALPFloatEncoder();
         }
         if constexpr (std::is_same_v<ParquetDType, parquet::DoubleType>)
         {
             if (encoding == parq::Encoding::ALP && !dictionary)
-                return makeAlpDoubleEncoder();
+                return makeALPDoubleEncoder();
         }
         return parquet::MakeTypedEncoder<ParquetDType>(
             // ignored if using dictionary

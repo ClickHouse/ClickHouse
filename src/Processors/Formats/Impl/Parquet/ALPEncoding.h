@@ -19,7 +19,7 @@ namespace DB::Parquet
 {
 
 /// Decodes a data page of `ALP` encoded values of physical type `FLOAT` or `DOUBLE`.
-std::unique_ptr<PageDecoder> makeAlpDecoder(
+std::unique_ptr<PageDecoder> makeALPDecoder(
     parq::Type::type physical_type, std::span<const char> data, std::shared_ptr<FixedSizeConverter> converter);
 
 /// Encoders that buffer the values of a page and encode them with `ALP` in `FlushValues`.
@@ -27,7 +27,7 @@ std::unique_ptr<PageDecoder> makeAlpDecoder(
 /// `encoding` returns the encoding of the page it has just produced, as `parquet::Encoding::type`
 /// (which has no `ALP` enumerator, so `ALP` is the value of `parq::Encoding::ALP` cast to it).
 /// `EstimatedDataEncodedSize` is the size of the values in `PLAIN`, which is thus an upper bound.
-std::unique_ptr<parquet::TypedEncoder<parquet::FloatType>> makeAlpFloatEncoder();
-std::unique_ptr<parquet::TypedEncoder<parquet::DoubleType>> makeAlpDoubleEncoder();
+std::unique_ptr<parquet::TypedEncoder<parquet::FloatType>> makeALPFloatEncoder();
+std::unique_ptr<parquet::TypedEncoder<parquet::DoubleType>> makeALPDoubleEncoder();
 
 }
