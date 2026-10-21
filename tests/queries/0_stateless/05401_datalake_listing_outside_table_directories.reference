@@ -1,0 +1,19 @@
+subdirectory	3
+subdirectory a
+subdirectory	3
+sibling	3
+sibling a
+sibling	3
+nested_copy	3
+nested_copy a
+nested_copy	3
+create	7
+old data files	1
+old data files left	0
+kept	data_backup/keep.csv
+kept	database_dump/keep.csv
+kept	metadata/nested/keep.csv
+kept	metadata_old/keep.csv
+opt	1
+paimon schema f_boolean
+paimon snapshot	10
