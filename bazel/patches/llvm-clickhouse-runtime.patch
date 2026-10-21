@@ -163,7 +163,7 @@ diff --git a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel b/3rd_party/ll
  )
  
  copy_to_directory(
-@@ -227,21 +106,42 @@
+@@ -227,21 +106,46 @@
          ":__config_site",
          ":libcxx_headers_files",
      ],
@@ -213,15 +213,19 @@ diff --git a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel b/3rd_party/ll
 +    # libc++ uses system_header in these real headers; Clang warns when a
 +    # compiler consumer preprocesses a header as the primary input.
 +    copts = ["-Wno-error=pragma-system-header-outside-header"],
++    includes = ["src"],
 +    visibility = [
 +        "//libcxx:__pkg__",
 +        "//libcxxabi:__pkg__",
 +    ],
-+    deps = [":headers"],
++    deps = select({
++        "@llvm//toolchain:linux_complete": [],
++        "//conditions:default": [":headers"],
++    }),
  )
  
  cc_library(
-@@ -263,9 +163,7 @@
+@@ -263,9 +167,7 @@
          "src/filesystem/path.cpp",
          "src/functional.cpp",
          "src/hash.cpp",
@@ -231,7 +235,7 @@ diff --git a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel b/3rd_party/ll
          "src/include/ryu/common.h",
          "src/include/ryu/d2fixed.h",
          "src/include/ryu/d2fixed_full_table.h",
-@@ -432,6 +330,7 @@
+@@ -432,6 +334,7 @@
      implementation_deps = [
          # Order matter. Search path should have C++ headers before any lib C headers.
          "@llvm-project//libcxx:headers",
@@ -239,7 +243,7 @@ diff --git a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel b/3rd_party/ll
      ] + select({
          ":windows_msvc": [],
          "//conditions:default": ["@llvm-project//libcxxabi:headers"],
-@@ -467,10 +366,13 @@
+@@ -467,10 +370,13 @@
          ],
          "//conditions:default": [],
      }),
@@ -257,7 +261,7 @@ diff --git a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel b/3rd_party/ll
      # The MSVC route exposes only the purpose-built static libc++ archive.
      # Generic routes retain the cc_library default so the shared-runtime rule
      # can preserve the pre-MSVC implementation graph.
-@@ -479,7 +381,7 @@
+@@ -479,7 +385,7 @@
          "//conditions:default": False,
      }),
      local_defines = [
@@ -266,7 +270,7 @@ diff --git a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel b/3rd_party/ll
          "_LIBCPP_BUILDING_LIBRARY",
          "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES",
          "_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER",
-@@ -506,11 +408,11 @@
+@@ -506,11 +412,11 @@
      textual_hdrs = glob([
          "src/**/*.h",
          "src/**/*.ipp",
@@ -786,15 +790,40 @@ diff --git a/3rd_party/llvm-project/x.x/libcxxabi/libcxxabi.BUILD.bazel b/3rd_pa
      copts = [
          "-std=c++23",
          "-fstrict-aliasing",
-@@ -119,6 +121,7 @@
+@@ -117,48 +119,30 @@
+         "//conditions:default": [],
+     }),
      implementation_deps = [
-         # Order matter. Search path should have C++ headers before any lib C headers.
-         "@llvm-project//libcxx:headers",
+-        # Order matter. Search path should have C++ headers before any lib C headers.
+-        "@llvm-project//libcxx:headers",
 +        "@llvm-project//libcxx:abi_support",
          # libcxxabi's cxa_exception.h includes "unwind.h" from libunwind.
          # On ARM EHABI targets, this pulls in unwind_arm_ehabi.h which declares
          # __gnu_unwind_frame used by cxa_personality.cpp.
-@@ -148,17 +151,15 @@
+         "@llvm-project//libunwind:headers",
+     ] + select({
+-        "@platforms//os:macos": [],
+-        "@platforms//os:windows": [],
+-        "@platforms//os:linux": [
+-            # TODO(cerisier): Provide only a subset of linux UAPI headers for musl.
+-            # https://github.com/hermeticbuild/hermetic-llvm/issues/146
+-            "@kernel_headers",
+-        ],
+-    }) + [
+-        # libcxx depends on a set of internal llvm-libc headers. (libc/shared)
+-        # See project hand-in-hand.
+-        # https://discourse.llvm.org/t/rfc-project-hand-in-hand-llvm-libc-libc-code-sharing/77701
+-        "@llvm-project//libc:libc_headers",
+-    ] + select({
+         "@llvm//platforms/config:musl": [
+             "@musl_libc//:musl_libc_headers",
+         ],
+-        "@llvm//platforms/config:gnu": [
+-            "@glibc//:gnu_libc_headers",
+-        ],
++        "@llvm//platforms/config:gnu": [],
+         "@platforms//os:windows": [
+             "@mingw//:mingw_headers",
          ],
          "@platforms//os:macos": [],
      }),
