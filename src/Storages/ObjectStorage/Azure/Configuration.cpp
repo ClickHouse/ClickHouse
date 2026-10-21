@@ -25,6 +25,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <base/scope_guard.h>
 
 namespace DB
 {
@@ -123,12 +124,20 @@ AzureBlobStorage::ConnectionParams getAzureConnectionParams(
         if (!client_id || !tenant_id)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Both 'client_id' and 'tenant_id' need to be provided, but '{}' is missing", client_id ? "tenant_id" : "client_id");
 
+        /// Same heuristic as AzureBlobStorage::isConnectionString: a URL starts with http.
+        if (!connection_url.empty() && !connection_url.starts_with("http") && !connection_url.starts_with("abfss"))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Azure workload identity cannot be used with a connection_string; pass storage_account_url instead");
+
         connection_params.endpoint.storage_account_url = connection_url;
         connection_params.endpoint.container_name = container_name;
         Azure::Identity::WorkloadIdentityCredentialOptions options;
         options.ClientId = *client_id;
         options.TenantId = *tenant_id;
         connection_params.auth_method = std::make_shared<Azure::Identity::WorkloadIdentityCredential>(options);
+        connection_params.workload_identity_client_id = *client_id;
+        connection_params.workload_identity_tenant_id = *tenant_id;
     }
 
     if (account_name || account_key)
@@ -371,6 +380,11 @@ void AzureStorageParsedArguments::initializeForOneLake(ASTs & args, ContextPtr c
 void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
 {
     auto extra_credentials = extractExtraCredentials(engine_args);
+    /// engine_args is the persisted engine definition; keep the credentials in it.
+    SCOPE_EXIT({
+        if (extra_credentials)
+            engine_args.push_back(extra_credentials);
+    });
 
     if (engine_args.empty() || engine_args.size() > AzureStorageParsedArguments::getMaxNumberOfArguments(with_structure))
     {
@@ -699,6 +713,9 @@ static void addStructureAndFormatToArgsIfNeededAzure(
     }
     else
     {
+        /// extra_credentials is not a constant expression; take it out while rewriting.
+        auto extra_credentials = extractExtraCredentials(args);
+
         if (args.size() < 3 || args.size() > AzureStorageParsedArguments::getMaxNumberOfArguments())
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -842,6 +859,9 @@ static void addStructureAndFormatToArgsIfNeededAzure(
             if (with_structure && checkAndGetLiteralArgument<String>(args[7], "structure") == "auto")
                 args[7] = structure_literal;
         }
+
+        if (extra_credentials)
+            args.push_back(extra_credentials);
     }
 }
 
