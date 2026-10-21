@@ -7,13 +7,17 @@
 #include <Core/Names.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/StorageID.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageProxy.h>
+#include <Storages/StorageView.h>
 
 namespace DB
 {
@@ -31,6 +35,23 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// The tables in `FROM` and `JOIN` of the query and its subqueries
+void collectTableIds(const IAST & ast, const ContextPtr & context, std::vector<StorageID> & ids)
+{
+    if (const auto * expr = ast.as<ASTTableExpression>(); expr && expr->database_and_table_name)
+    {
+        if (const auto * identifier = expr->database_and_table_name->as<ASTTableIdentifier>())
+        {
+            auto id = identifier->getTableId();
+            if (id.database_name.empty())
+                id.database_name = context->getCurrentDatabase();
+            ids.push_back(std::move(id));
+        }
+    }
+    for (const auto & child : ast.children)
+        collectTableIds(*child, context, ids);
+}
 
 /// The storages which `storage` hands the row policy filter to. Throws unless the user can see all the tables which
 /// the definition of `storage` names for the read, whether they exist or not. Otherwise the answer tells the user
@@ -81,6 +102,21 @@ std::vector<StoragePtr> getReadTargets(const IStorage & storage, const ContextPt
     {
         check(alias->isDeclaredTargetGranted(context, AccessType::SHOW_TABLES, {}));
         return {alias->tryGetTargetTable()};
+    }
+
+    /// A policy on a view filters the rows of its query, which can be the rows of a blending table as they are.
+    /// ponytail: a table function in the query of a view is not followed, it would have to create its storage
+    if (typeid_cast<const StorageView *>(&storage))
+    {
+        auto metadata = storage.getInMemoryMetadataPtr(context, false);
+        std::vector<StorageID> ids;
+        collectTableIds(*metadata->getSelectQuery().inner_query, context, ids);
+        for (const auto & id : ids)
+            check(can_see(id));
+        std::vector<StoragePtr> sources;
+        for (const auto & id : ids)
+            sources.push_back(DatabaseCatalog::instance().tryGetTable(id, context));
+        return sources;
     }
 
     auto targets = storage.getUnderlyingStorages();
