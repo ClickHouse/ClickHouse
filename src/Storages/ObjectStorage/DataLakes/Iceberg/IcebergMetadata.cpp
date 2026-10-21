@@ -77,7 +77,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/ParallelManifestDecode.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
@@ -92,7 +91,6 @@
 #include <Common/SharedLockGuard.h>
 #include <Common/logger_useful.h>
 
-#include <IO/SharedThreadPools.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 
@@ -139,7 +137,6 @@ extern const SettingsInt64 iceberg_timestamp_ms;
 extern const SettingsInt64 iceberg_snapshot_id;
 extern const SettingsBool use_iceberg_metadata_files_cache;
 extern const SettingsBool use_iceberg_partition_pruning;
-extern const SettingsNonZeroUInt64 iceberg_manifest_decode_concurrency;
 extern const SettingsBool write_full_path_in_iceberg_metadata;
 extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 extern const SettingsString iceberg_metadata_compression_method;
@@ -1437,36 +1434,21 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
     const Int32 schema_id = actual_table_state_snapshot.schema_id;
 
     UInt64 result = 0;
-    bool exact = true;
-    Iceberg::decodeManifestsInOrder(
-        actual_data_snapshot->manifest_list_entries,
-        local_context->getSettingsRef()[Setting::iceberg_manifest_decode_concurrency],
-        getIcebergManifestDecodeThreadPool().get(),
-        DB::ThreadName::ICEBERG_ITERATOR,
-        [this, &local_context, schema_id](const ManifestFileCacheKey & manifest_list_entry) -> std::optional<UInt64>
-        {
-            auto manifest_file_ptr = getManifestFileEntriesHandle(
-                object_storage, persistent_components, local_context, log, manifest_list_entry, schema_id);
+    Iceberg::ManifestFilesPrefetcher manifests(
+        object_storage, persistent_components, local_context, log, actual_data_snapshot->manifest_list_entries);
+    while (auto fetch = manifests.take())
+    {
+        auto manifest_file_ptr = getManifestFileEntriesHandle(fetch->get(), persistent_components, local_context, fetch->key(), schema_id);
 
-            if (!manifest_file_ptr.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty()
-                || !manifest_file_ptr.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty())
-                return std::nullopt;
+        if (!manifest_file_ptr.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty()
+            || !manifest_file_ptr.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty())
+            return {};
 
-            return manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
-        },
-        [&result, &exact](std::optional<UInt64> manifest_rows)
-        {
-            if (!manifest_rows.has_value())
-            {
-                exact = false;
-                return false;
-            }
-            result += *manifest_rows;
-            return true;
-        });
-
-    if (!exact)
-        return {};
+        auto manifest_rows = manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
+        if (!manifest_rows.has_value())
+            return {};
+        result += *manifest_rows;
+    }
 
     ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
     return result;
