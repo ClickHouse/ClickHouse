@@ -733,6 +733,8 @@ When this setting is not present in the server configuration, the cache is sized
 of the memory available to the server (10% by default), so that a server with more memory gets a cache large enough
 to hold the working set of heavier queries. The built-in value of this setting is used only when the amount of
 memory cannot be determined. Like the other caches, the size is capped by `cache_size_to_ram_max_ratio`.
+In `clickhouse-local` that processes its queries and exits without an interactive session, the cache is disabled
+unless this setting is given explicitly: such a run rarely reads the cached columns again before it exits.
 
 The limit applies to the memory the cache retains: an entry is charged the allocated size of its column,
 which can exceed the logical size of the rows in it, plus a small per-entry overhead. `system.columns_cache`
