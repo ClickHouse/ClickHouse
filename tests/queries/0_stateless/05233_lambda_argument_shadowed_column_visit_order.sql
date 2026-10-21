@@ -69,3 +69,17 @@ SELECT number, toUInt64(10) AS value
 FROM numbers(1)
 ORDER BY number WITH FILL FROM 0 TO 2
 INTERPOLATE (value AS (toUInt8(value) + 1 AS d) + arrayMap(value -> value + d, [1])[1]);
+
+-- A matcher inside a lambda in `PREWHERE` takes the `USING` column from the left table, like an identifier does,
+-- so the lambda reads only the table of `PREWHERE`. A column of the other table is rejected.
+DROP TABLE IF EXISTS t_05233_using_left;
+DROP TABLE IF EXISTS t_05233_using_right;
+CREATE TABLE t_05233_using_left (a UInt8, v UInt64) ENGINE = MergeTree ORDER BY a;
+CREATE TABLE t_05233_using_right (a UInt8, w UInt64) ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_05233_using_left VALUES (1, 10), (9, 90);
+INSERT INTO t_05233_using_right VALUES (1, 11), (5, 55);
+SELECT a, v, w FROM t_05233_using_left FULL JOIN t_05233_using_right USING (a) PREWHERE arrayMap(z -> tuple(* EXCEPT w), [1])[1].1 = 9 ORDER BY a SETTINGS join_use_nulls = 1;
+SELECT a, v, w FROM t_05233_using_left RIGHT JOIN t_05233_using_right USING (a) PREWHERE arrayMap(z -> tuple(* EXCEPT w), [1])[1].1 = 1 ORDER BY a SETTINGS join_use_nulls = 1;
+SELECT a, v, w FROM t_05233_using_left FULL JOIN t_05233_using_right USING (a) PREWHERE arrayMap(z -> tuple(*), [1])[1].1 = 9 ORDER BY a SETTINGS join_use_nulls = 1; -- { serverError ILLEGAL_PREWHERE }
+DROP TABLE t_05233_using_left;
+DROP TABLE t_05233_using_right;

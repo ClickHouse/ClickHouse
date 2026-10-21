@@ -2821,9 +2821,17 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                         is_column_from_parent_scope(join_using_column_nodes.at(1)))
                         continue;
 
+                    /// `PREWHERE` is evaluated by reading a single table before the join, so there the `USING` column is
+                    /// the column of the left table, as for an identifier. A matcher reaches this point in `PREWHERE` only
+                    /// from inside a lambda, because `PREWHERE` itself is resolved with `allow_resolve_from_using` disabled.
+                    auto preserved_side = semi_anti_star_checker.preservedSideOrNone();
+                    auto using_join_kind = join_node->getKind();
+                    if (scope.in_prewhere && !preserved_side)
+                        using_join_kind = JoinKind::Left;
+
                     /// `join_use_nulls` and the PREWHERE rollback map `join_columns_with_changed_types` live on the query scope.
                     QueryTreeNodePtr matched_column_node = createProjectionForUsing(
-                        join_using_column_node, join_node->getKind(), *nearest_query_scope, semi_anti_star_checker.preservedSideOrNone());
+                        join_using_column_node, using_join_kind, *nearest_query_scope, preserved_side);
                     matched_column_node->setAlias(join_using_column_name);
 
                     table_expression_column_names_to_skip.insert(join_using_column_name);
