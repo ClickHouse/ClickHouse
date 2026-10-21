@@ -190,16 +190,32 @@ ch_cc_library(
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )
 
+_ASIO_COMPILER_OPTIONS = [
+    "boost/asio/detail/pop_options.hpp",
+    "boost/asio/detail/push_options.hpp",
+]
+
+# push_options.hpp and pop_options.hpp bracket each Asio reader's compiler
+# pragmas. Their owner lets the NuRaft consumer audit check the pair together.
+cc_library(
+    name = "boost_asio_options",
+    textual_hdrs = _ASIO_COMPILER_OPTIONS,
+)
+
 cc_library(
     name = "boost_headers",
-    hdrs = glob([
-        "boost/**/*.h",
-        "boost/**/*.hpp",
-        "boost/**/*.ipp",
-    ]),
+    hdrs = glob(
+        [
+            "boost/**/*.h",
+            "boost/**/*.hpp",
+            "boost/**/*.ipp",
+        ],
+        exclude = _ASIO_COMPILER_OPTIONS,
+    ),
     features = ["external_include_paths"],
     includes = ["."],
     textual_hdrs = glob(["boost/**/*.inc"]),
+    deps = [":boost_asio_options"],
 )
 
 cc_library(
