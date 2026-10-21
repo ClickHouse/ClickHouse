@@ -3,12 +3,13 @@
 #include <Columns/IColumn_fwd.h>
 #include <base/types.h>
 
+#include <functional>
+
 namespace DB
 {
 
 class IDataPartStorage;
 struct KeyDescription;
-struct MergeTreeSettings;
 struct ReadSettings;
 
 /// Returns `primary.cidx` when the part stores its primary index compressed, `primary.idx` otherwise.
@@ -21,13 +22,13 @@ template <typename Columns>
 bool dropPrimaryIndexSuffixColumns(size_t marks_count, Columns & index_columns, Float64 ratio_to_drop_suffix_columns);
 
 /// Reads `marks_count` rows of the primary index from the part storage alone, so it works without an `IMergeTreeDataPart`.
+/// `optimize_columns` runs on the read columns before their memory is counted, so it can drop columns.
 /// The caller decides which memory tracker and arena the columns are charged to.
 Columns loadPrimaryIndexFromStorage(
     const IDataPartStorage & data_part_storage,
     const KeyDescription & primary_key,
     size_t marks_count,
-    const MergeTreeSettings & storage_settings,
     const ReadSettings & read_settings,
-    bool keep_all_columns);
+    const std::function<void(MutableColumns &)> & optimize_columns);
 
 }

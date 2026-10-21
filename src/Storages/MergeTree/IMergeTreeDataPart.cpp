@@ -1875,6 +1875,7 @@ void IMergeTreeDataPart::loadIndexGranularity()
 }
 
 
+template <typename Columns>
 void IMergeTreeDataPart::optimizeIndexColumns(size_t marks_count, Columns & index_columns) const
 {
     if (marks_count == 0)
@@ -1908,17 +1909,14 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     auto metadata_snapshot = getMetadataSnapshot();
-    /// Patch parts analyze their index manually and need every key column.
+    const size_t marks_count = index_granularity->getMarksCount();
     auto loaded_index = loadPrimaryIndexFromStorage(
         getDataPartStorage(),
         metadata_snapshot->getPrimaryKey(),
-        index_granularity->getMarksCount(),
-        *storage.getSettings(),
+        marks_count,
         getReadSettings(),
-        /*keep_all_columns=*/ info.isPatch());
-    chassert(loaded_index.empty() || index_granularity->getMarksCount() != 0 || isEmpty());
+        [&](MutableColumns & index_columns) { optimizeIndexColumns(marks_count, index_columns); });
 
-    LOG_TEST(storage.log, "Loaded primary key index for part {}, {} columns are kept in memory", name, loaded_index.size());
     return std::make_shared<Index>(std::move(loaded_index));
 }
 
