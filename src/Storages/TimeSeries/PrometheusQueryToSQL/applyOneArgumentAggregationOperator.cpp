@@ -148,10 +148,26 @@ bool isOneArgumentAggregationOperator(std::string_view operator_name)
 }
 
 
-OneArgumentAggregationTransform getOneArgumentAggregationTransform(std::string_view operator_name)
+OneArgumentAggregationTransform getOneArgumentAggregationTransform(std::string_view operator_name, const ConverterContext & context)
 {
     const auto * impl_info = getImplInfo(operator_name);
-    return impl_info ? impl_info->transform_ast : nullptr;
+    if (!impl_info)
+        return nullptr;
+
+    if (operator_name == "sum" && context.options.use_compensated_sum)
+    {
+        if (context.options.distributed_plan)
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                "Compensated PromQL SUM is not supported with make_distributed_plan or serialize_query_plan");
+        }
+
+        return [](ASTPtr && v) -> ASTPtr
+        { return makeASTFunction("sumPromQLForEach", std::move(v)); };
+    }
+
+    return impl_info->transform_ast;
 }
 
 
@@ -159,8 +175,7 @@ SQLQueryPiece applyOneArgumentAggregationOperator(
     const PrometheusQueryTree::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     const auto & operator_name = operator_node->operator_name;
-    const auto * impl_info = getImplInfo(operator_name);
-    chassert(impl_info);
+    chassert(isOneArgumentAggregationOperator(operator_name));
 
     checkArgumentTypes(operator_node, arguments, context);
 
@@ -169,6 +184,9 @@ SQLQueryPiece applyOneArgumentAggregationOperator(
     /// If the argument is empty then the result is also empty.
     if (argument.store_method == StoreMethod::EMPTY)
         return SQLQueryPiece{operator_node, operator_node->result_type, StoreMethod::EMPTY};
+
+    auto transform = getOneArgumentAggregationTransform(operator_name, context);
+    chassert(transform);
 
     argument = toVectorGrid(std::move(argument), context);
 
@@ -190,7 +208,7 @@ SQLQueryPiece applyOneArgumentAggregationOperator(
         builder.select_list.push_back(std::move(new_group));
         builder.select_list.back()->setAlias(ColumnNames::NewGroup);
 
-        builder.select_list.push_back(impl_info->transform_ast(make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+        builder.select_list.push_back(transform(make_intrusive<ASTIdentifier>(ColumnNames::Values)));
         builder.select_list.back()->setAlias(ColumnNames::Values);
 
         if (operator_node->by || operator_node->without)

@@ -25,25 +25,27 @@ INSERT INTO prometheus (metric_name, tags, samples) VALUES
 -- SELECT timeSeriesGroupToTags(foo.group) AS tags, foo.timestamp, foo.value
 -- FROM
 -- (
---     SELECT timeSeriesIdToGroup(id) AS group, timestamp, value
+--     SELECT timeSeriesIdToGroup(id) AS group, timeSeriesSliceSortedArray(samples, toDateTime64(60, 3), toDateTime64(150, 3)) AS time_series
 --     FROM samples_table
---     WHERE id IN (
+--     WHERE bucket >= toDateTime64(0, 3) AND bucket <= toDateTime64(150, 3)
+--       AND max_time >= toDateTime64(60, 3) AND min_time <= toDateTime64(150, 3)
+--       AND id IN (
 --         SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name) FROM tags_table
 --         LEFT JOIN (SELECT id, 1 AS matched FROM time_ranges_table
 --                    WHERE max_time >= toDateTime64(60, 3) AND min_time <= toDateTime64(150, 3) AND <id range of the metric 'foo'>) AS time_ranges_subquery USING (id)
 --         WHERE metric_name = 'foo' AND (time_ranges_subquery.matched = 1 OR tupleElement(id, 1) != sipHash64('foo')))
---       AND timestamp >= toDateTime64(60, 3) AND timestamp <= toDateTime64(150, 3)
 -- ) AS foo
 -- ANY INNER JOIN
 -- (
---     SELECT timeSeriesIdToGroup(id) AS group, timestamp, value
+--     SELECT timeSeriesIdToGroup(id) AS group, timeSeriesSliceSortedArray(samples, toDateTime64(60, 3), toDateTime64(150, 3)) AS time_series
 --     FROM samples_table
---     WHERE id IN (
+--     WHERE bucket >= toDateTime64(0, 3) AND bucket <= toDateTime64(150, 3)
+--       AND max_time >= toDateTime64(60, 3) AND min_time <= toDateTime64(150, 3)
+--       AND id IN (
 --         SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name) FROM tags_table
 --         LEFT JOIN (SELECT id, 1 AS matched FROM time_ranges_table
 --                    WHERE max_time >= toDateTime64(60, 3) AND min_time <= toDateTime64(150, 3) AND <id range of the metric 'bar'>) AS time_ranges_subquery USING (id)
 --         WHERE metric_name = 'bar' AND (time_ranges_subquery.matched = 1 OR tupleElement(id, 1) != sipHash64('bar')))
---       AND timestamp >= toDateTime64(60, 3) AND timestamp <= toDateTime64(150, 3)
 -- ) AS bar
 -- ON timeSeriesRemoveTag(foo.group, '__name__') = timeSeriesRemoveTag(bar.group, '__name__')
 --    AND foo.timestamp = bar.timestamp AND foo.value = bar.value

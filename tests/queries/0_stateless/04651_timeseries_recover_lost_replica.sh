@@ -24,11 +24,11 @@
 # `It's not initial query. ON CLUSTER is not allowed for Replicated database.` (Code 80) forever,
 # and waitTableFinallyDropped never returned.
 #
-# Expected (after fix):  the replica recovers, the TimeSeries table and its 5 inner tables are
+# Expected (after fix):  the replica recovers, the TimeSeries table and its inner tables are
 #                        back, the inner tables were really dropped and re-created (so they are
 #                        empty again), and no Code 80 inner-drop rejection is logged.
-# Observed (before fix): recovery never completes -- the table count stays at 5 (only the
-#                        orphaned inner tables), `ts` is gone, and DatabaseCatalog logs
+# Observed (before fix): recovery never completes -- the outer table is gone while its
+#                        orphaned inner tables remain, and DatabaseCatalog logs
 #                        `Cannot drop table <db>.ts (<uuid>). Will retry later.: Code: 80 ...`
 #                        every 5 seconds.
 
@@ -105,9 +105,46 @@ TEST_START=$(${CLICKHOUSE_CLIENT} -q "SELECT toUnixTimestamp(now())")
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${DB} SYNC"
 ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${DB} ENGINE = Replicated('${ZK_PATH}', 's1', 'r1')"
 
-${CLIENT} --allow_experimental_time_series_table=1 -q "CREATE TABLE ${DB}.ts ENGINE = TimeSeries"
+# ---------------------------------------------------------------------------------------------
+# Part 1: a `TimeSeries` table with EXTERNAL target tables. It still owns inner tables (the
+# on-by-default recent samples and time ranges tables), so `dropInnerTableIfAny`
+# adds their drops to the metadata transaction. This shape already recovered before the fix, so
+# it is the control case.
+# ---------------------------------------------------------------------------------------------
 
-# The outer TimeSeries table plus its 5 inner tables.
+${CLIENT} -q "CREATE TABLE ${DB}.ext_data (id UUID, timestamp DateTime64(3), value Float64)
+              ENGINE = ReplicatedMergeTree ORDER BY (id, timestamp)"
+${CLIENT} -q "CREATE TABLE ${DB}.ext_tags (
+                  id UUID,
+                  metric_name LowCardinality(String),
+                  tags Map(LowCardinality(String), String))
+              ENGINE = ReplicatedReplacingMergeTree PRIMARY KEY metric_name
+              ORDER BY (metric_name, id)"
+${CLIENT} -q "CREATE TABLE ${DB}.ext_metrics (metric_family String, type LowCardinality(String),
+                                             unit LowCardinality(String), help String)
+              ENGINE = ReplicatedReplacingMergeTree ORDER BY metric_family"
+${CLIENT} --allow_experimental_time_series_table=1 \
+    -q "CREATE TABLE ${DB}.ts_ext ENGINE = TimeSeries
+        DATA ${DB}.ext_data TAGS ${DB}.ext_tags METRICS ${DB}.ext_metrics SETTINGS version = 9"
+
+diverge_from_keeper ts_ext
+force_recovery
+wait_for_recovery
+
+${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${DB}.ts_ext"
+# Recovery restored the Keeper-side definition, i.e. the local divergence really was discarded.
+${CLICKHOUSE_CLIENT} -q "SELECT comment = '' FROM system.tables WHERE database = '${DB}' AND name = 'ts_ext'"
+count_inner_drop_rejections ts_ext
+
+# ---------------------------------------------------------------------------------------------
+# Part 2: a `TimeSeries` table with INNER target tables -- the shape that used to wedge recovery.
+# ---------------------------------------------------------------------------------------------
+
+${CLIENT} --allow_experimental_time_series_table=1 -q "CREATE TABLE ${DB}.ts ENGINE = TimeSeries
+    SETTINGS version = 7, recent_samples_ttl_seconds = 345600"
+
+# The outer `TimeSeries` table, its 4 inner targets (samples, recent samples, tags, metric families),
+# and the recent samples and time ranges targets of the external control: 7 tables in total.
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${DB}' AND (name = 'ts' OR name LIKE '.inner_id.%')"
 
 # Fill one inner table, so that afterwards the inner tables can be shown to be genuinely NEW rather
@@ -125,9 +162,9 @@ diverge_from_keeper ts
 force_recovery
 wait_for_recovery
 
-# Before the fix this stays at 5: only the orphaned inner tables survive, `ts` never comes back.
+# Before the fix this stays at 6: only the inner targets survive, `ts` never comes back.
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${DB}' AND (name = 'ts' OR name LIKE '.inner_id.%')"
-# `ts` specifically exists again (a count of 6 made only of inner tables would be wrong).
+# `ts` specifically exists again (a count of 7 made only of inner tables would be wrong).
 ${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${DB}.ts"
 ${CLICKHOUSE_CLIENT} -q "SELECT comment = '' FROM system.tables WHERE database = '${DB}' AND name = 'ts'"
 # The inner tables really were dropped and re-created, so they are empty again. If the eager inner

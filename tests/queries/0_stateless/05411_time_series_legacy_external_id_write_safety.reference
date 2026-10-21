@@ -1,0 +1,16 @@
+legacy samples insert: rejected
+legacy samples replay insert: rejected
+legacy samples failed inserts: no writes
+legacy samples same-type replacement: high ID preserved, no ID pin
+legacy recent insert: rejected
+legacy recent replay insert: rejected
+legacy recent failed inserts: no writes
+legacy recent same-type replacement: high ID preserved, no ID pin
+legacy time_ranges insert: rejected
+legacy time_ranges replay insert: rejected
+legacy time_ranges failed inserts: no writes
+legacy time_ranges same-type replacement: high ID preserved, no ID pin
+legacy tags insert: rejected
+legacy tags replay insert: rejected
+legacy tags failed inserts: no writes
+legacy tags same-type replacement: high ID preserved, no ID pin

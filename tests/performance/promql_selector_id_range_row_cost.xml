@@ -19,7 +19,7 @@
     -->
 
     <create_query>
-        CREATE TABLE promql_row_cost_ts ENGINE = TimeSeries
+        CREATE TABLE promql_row_cost_ts ENGINE = TimeSeries SETTINGS version = 6
         SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp)
         TAGS INNER COLUMNS (id Tuple(UInt64, UUID))
     </create_query>

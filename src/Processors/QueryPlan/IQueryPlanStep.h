@@ -87,6 +87,10 @@ public:
 
     virtual const SortDescription & getSortDescription() const;
 
+    /// Returns true when changing the input row order can change this step's result. Query-plan
+    /// optimizations must keep a sorting step which establishes that order below this step.
+    virtual bool isInputOrderDependent() const { return false; }
+
     using FormatSettings = ExplainFormatSettings;
 
     /// Get detailed description of step actions. This is shown in EXPLAIN query with options `actions = 1`.

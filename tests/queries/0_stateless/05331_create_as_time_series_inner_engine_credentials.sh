@@ -20,7 +20,7 @@ client=(${CLICKHOUSE_CLIENT} --allow_experimental_time_series_table 1)
     GRANT TABLE ENGINE ON TimeSeries, TABLE ENGINE ON MergeTree, TABLE ENGINE ON AggregatingMergeTree,
           TABLE ENGINE ON ReplacingMergeTree, TABLE ENGINE ON URL TO ${user};
 
-    CREATE TABLE ${db}.ts_src ENGINE = TimeSeries
+    CREATE TABLE ${db}.ts_src ENGINE = TimeSeries SETTINGS version = 8
         SAMPLES ENGINE = URL('http://user:password@127.0.0.1:1/', 'CSV');
 
     GRANT SHOW COLUMNS ON ${db}.ts_src TO ${user};
@@ -30,7 +30,7 @@ client=(${CLICKHOUSE_CLIENT} --allow_experimental_time_series_table 1)
 function try_copy()
 {
     echo "-- ${1}:"
-    "${client[@]}" --user "${user}" -q "CREATE TABLE ${db}.${1} AS ${db}.ts_src" 2>&1 \
+    "${client[@]}" --user "${user}" -q "CREATE TABLE ${db}.${1} AS ${db}.ts_src SETTINGS version = 8" 2>&1 \
         | grep -oE "necessary to have the grant [A-Z ]+ ON ${db}\.[a-z_]+" | head -n 1 | sed "s/${db}/db/"
     ${CLICKHOUSE_CLIENT} -q "SELECT engine FROM system.tables WHERE database = '${db}' AND name = '${1}'"
 }

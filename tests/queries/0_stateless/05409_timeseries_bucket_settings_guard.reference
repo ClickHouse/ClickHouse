@@ -1,0 +1,11 @@
+CREATE samples_bucket_step_seconds=0: rejected
+full ATTACH samples_bucket_step_seconds=0: rejected
+CREATE samples_bucket_step_seconds=4294967296: rejected
+full ATTACH samples_bucket_step_seconds=4294967296: rejected
+CREATE recent_samples_bucket_step_seconds=0: rejected
+full ATTACH recent_samples_bucket_step_seconds=0: rejected
+CREATE recent_samples_bucket_step_seconds=4294967296: rejected
+full ATTACH recent_samples_bucket_step_seconds=4294967296: rejected
+maximum bucket steps: accepted
+CREATE TTL overflow: rejected
+full ATTACH TTL overflow: rejected

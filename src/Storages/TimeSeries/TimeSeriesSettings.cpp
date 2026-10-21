@@ -11,6 +11,7 @@
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/checkTimeSeriesVersion.h>
 
+#include <limits>
 #include <unordered_set>
 
 
@@ -28,11 +29,18 @@ namespace ErrorCodes
     DECLARE(UInt64, version, TimeSeriesVersion::LATEST, "The version of the TimeSeries table: it determines the set of the target tables and their structure. The version is pinned automatically when a table is created and cannot be changed afterwards. Tables created before this setting was introduced are considered as version 0", 0) \
     DECLARE(Map, tags_to_columns, Map{}, "Map specifying which tags should be put to separate columns of the 'tags' table. Syntax: {'tag1': 'column1', 'tag2' : column2, ...}", 0) \
     DECLARE(Bool, store_time_ranges, true, "If set to true then the table stores the time range (the minimum and the maximum timestamp) of each time series in the 'time ranges' target table, and uses it to filter time series by time. Not applicable to tables of version 7 or earlier, they use the 'store_min_time_and_max_time' setting instead", 0) \
-    DECLARE(UInt64, samples_index_granularity, 32768, "Sets 'index_granularity' of the inner 'samples' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for a non-MergeTree engine", 0) \
-    DECLARE(UInt64, recent_samples_ttl_seconds, 345600, "Retention of the additional 'recent samples' target table, which every inserted sample is written to as well. An inner recent samples table always gets 'TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)' derived from this setting (overriding any TTL from the engine declaration). Queries whose time range fits in the TTL window prefer the recent samples table to the main samples table (see the query-level setting 'time_series_prefer_recent_samples_table'). The default is 4 days; set to 0 to disable the recent samples table", 0) \
-    DECLARE(ASTFunction, recent_samples_partition_by, String{}, "Partition key of the inner 'recent samples' table, for example 'toStartOfHour(timestamp)'. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, 'toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5))' is used. Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
-    DECLARE(UInt64, recent_samples_index_granularity, 8192, "Sets 'index_granularity' of the inner 'recent samples' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for a non-MergeTree engine. Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
-    DECLARE(UInt64, tags_index_granularity, 8192, "Sets 'index_granularity' of the inner 'tags' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for a non-MergeTree engine", 0) \
+    DECLARE(UInt64, samples_bucket_step_seconds, 3600, "The length in seconds of the time buckets of the 'samples' table: a row of the table contains the samples of one time series with timestamps in one bucket, and the 'bucket' column contains the start of the bucket, i.e. the timestamp rounded down to a multiple of this setting. The default is 1 hour; the effective value is pinned into the table definition at CREATE time", 0) \
+    DECLARE(String, samples_compression_codec, "ZSTD(3)", "Compatibility setting for persisted TimeSeries metadata. This build supports the existing 'ZSTD(3)' payload codec", 0) \
+    DECLARE(ASTFunction, samples_partition_by, String{}, "Partition key of the inner 'samples' table, for example 'toStartOfWeek(bucket)'. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per UTC month is used. Applies to version 11 or newer", 0) \
+    DECLARE(UInt64, samples_index_granularity, 512, "Sets 'index_granularity' of the inner 'samples' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external samples table and a non-MergeTree engine", 0) \
+    DECLARE(UInt64, samples_index_granularity_bytes, 524288, "Sets 'index_granularity_bytes' of the inner 'samples' table. When set explicitly, it overrides 'index_granularity_bytes' from the engine declaration. Ignored for an external samples table and a non-MergeTree engine", 0) \
+    DECLARE(UInt64, recent_samples_ttl_seconds, 345600, "Retention of the additional 'recent samples' target table, which every inserted sample is written to as well. An inner recent samples table gets 'TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)' through version 10, or a TTL on the UTC bucket plus 'toIntervalSecond(recent_samples_ttl_seconds + recent_samples_bucket_step_seconds)' in version 11 or newer, overriding any TTL from the engine declaration. In version 11 or newer, the sum of the retention and the bucket step must not exceed 9223372036854775807, the maximum Int64 value used by IntervalSecond. Queries whose time range fits in the TTL window prefer the recent samples table to the main samples table (see the query-level setting 'time_series_prefer_recent_samples_table'). The default is 4 days; set to 0 to disable the recent samples table", 0) \
+    DECLARE(UInt64, recent_samples_bucket_step_seconds, 900, "The length in seconds of the time buckets of the 'recent samples' table, see 'samples_bucket_step_seconds'. The default is 15 minutes; the effective value is pinned into the table definition at CREATE time. Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
+    DECLARE(String, recent_samples_compression_codec, "ZSTD(3)", "Compatibility setting for persisted TimeSeries metadata. This build supports the existing 'ZSTD(3)' payload codec. Requires 'recent_samples_ttl_seconds' to be non-zero when specified", 0) \
+    DECLARE(ASTFunction, recent_samples_partition_by, String{}, "Partition key of the inner 'recent samples' table, for example 'toStartOfHour(bucket)'. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per 5 hours is used, in UTC for version 9 or newer. Ignored for an external recent samples table. Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
+    DECLARE(UInt64, recent_samples_index_granularity, 256, "Sets 'index_granularity' of the inner 'recent samples' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
+    DECLARE(UInt64, recent_samples_index_granularity_bytes, 262144, "Sets 'index_granularity_bytes' of the inner 'recent samples' table. When set explicitly, it overrides 'index_granularity_bytes' from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
+    DECLARE(UInt64, tags_index_granularity, 8192, "Sets 'index_granularity' of the inner 'tags' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external tags table and a non-MergeTree engine", 0) \
     DECLARE(UInt64, tags_deduplication_cache_expiration_seconds, 3600, "Time after which an entry of the deduplication cache of the 'tags' table expires, counted from the moment the time series was written. So every time series is written again at least once per this period, which limits any difference between the cache and the table. The cache is local to the server and cleared by 'TRUNCATE TABLE' executed on it or by 'SYSTEM DROP TIME SERIES CACHES'. Used only when the 'tags' table doesn't store 'min_time' and 'max_time', see 'tags_deduplication_cache_size_bytes'. Set to 0 to disable the cache", 0) \
     DECLARE(UInt64, tags_deduplication_cache_size_bytes, 104857600, "Maximum size in bytes of the deduplication cache of the 'tags' table. The cache remembers the time series written recently, so their tags aren't written again with every insert. When the cache is full, the entries used only once are evicted first, then the least recently used ones (SLRU). The cache is used only when the 'tags' table doesn't store 'min_time' and 'max_time' (tables of version 7 or earlier store them unless 'store_min_time_and_max_time' is disabled), because otherwise every insert changes these columns: the default value is ignored then, and an explicit non-zero value is rejected. Set to 0 to disable the cache, see also 'tags_deduplication_cache_expiration_seconds'", 0) \
     DECLARE(UInt64, metric_families_deduplication_cache_expiration_seconds, 3600, "Time after which an entry of the deduplication cache of the 'metric families' table expires, counted from the moment the metric family was written. So every metric family is written again at least once per this period, which limits any difference between the cache and the table. The cache is local to the server and cleared by 'TRUNCATE TABLE' executed on it or by 'SYSTEM DROP TIME SERIES CACHES'. Set to 0 to disable the cache", 0) \
@@ -132,6 +140,57 @@ bool TimeSeriesSettings::isRecentSamplesTargetEnabled() const
     return (*this)[TimeSeriesSetting::recent_samples_ttl_seconds] != 0;
 }
 
+UInt64 TimeSeriesSettings::getBucketedRecentSamplesTTLSeconds() const
+{
+    const UInt64 ttl_seconds = (*this)[TimeSeriesSetting::recent_samples_ttl_seconds];
+    const UInt64 bucket_step = (*this)[TimeSeriesSetting::recent_samples_bucket_step_seconds];
+    constexpr UInt64 max_interval_seconds = std::numeric_limits<Int64>::max();
+
+    /// `toIntervalSecond` stores its argument in `Int64`, so preventing unsigned overflow alone is not enough.
+    if ((bucket_step > max_interval_seconds) || (ttl_seconds > max_interval_seconds - bucket_step))
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "The sum of `recent_samples_ttl_seconds` ({}) and `recent_samples_bucket_step_seconds` ({}) "
+            "must not exceed {} for a bucketed TimeSeries table",
+            ttl_seconds, bucket_step, max_interval_seconds);
+
+    return ttl_seconds + bucket_step;
+}
+
+void TimeSeriesSettings::checkBucketedSamplesSettings() const
+{
+    const UInt64 version = (*this)[TimeSeriesSetting::version];
+    if (version < TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES)
+    {
+        bool has_bucket_layout_setting
+            = (*this)[TimeSeriesSetting::samples_bucket_step_seconds].isChanged()
+            || (*this)[TimeSeriesSetting::samples_partition_by].value
+            || (*this)[TimeSeriesSetting::samples_index_granularity_bytes].isChanged()
+            || (*this)[TimeSeriesSetting::samples_compression_codec].isChanged()
+            || (*this)[TimeSeriesSetting::recent_samples_bucket_step_seconds].isChanged()
+            || (*this)[TimeSeriesSetting::recent_samples_index_granularity_bytes].isChanged()
+            || (*this)[TimeSeriesSetting::recent_samples_compression_codec].isChanged();
+        if (has_bucket_layout_setting)
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+                "Bucket-layout settings require `version` to be at least {}, but the table has version {}",
+                TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES, version);
+        return;
+    }
+
+    auto check_bucket_step = [](const SettingFieldUInt64 & bucket_step, std::string_view setting_name)
+    {
+        /// The step is multiplied by the scale multiplier of the timestamp type (up to 10^9) and stored in `Int64`,
+        /// the limit prevents an overflow there; UInt32::max seconds is enough for any reasonable value.
+        if (!bucket_step.value || (bucket_step.value > std::numeric_limits<UInt32>::max()))
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting `{}` must be in the range [1, {}], got {}", setting_name, std::numeric_limits<UInt32>::max(), bucket_step.value);
+    };
+    check_bucket_step((*this)[TimeSeriesSetting::samples_bucket_step_seconds], "samples_bucket_step_seconds");
+    check_bucket_step((*this)[TimeSeriesSetting::recent_samples_bucket_step_seconds], "recent_samples_bucket_step_seconds");
+
+    if (isRecentSamplesTargetEnabled())
+        getBucketedRecentSamplesTTLSeconds();
+}
+
 bool TimeSeriesSettings::isTimeRangesTargetEnabled() const
 {
     return ((*this)[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_TIME_RANGES_TARGET)
@@ -189,16 +248,39 @@ void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
         check_tags_cache_setting_is_not_enabled("tags_deduplication_cache_expiration_seconds", settings[TimeSeriesSetting::tags_deduplication_cache_expiration_seconds]);
     }
 
+    settings.checkBucketedSamplesSettings();
+
     if (!settings.isRecentSamplesTargetEnabled())
     {
         /// Settings of the recent samples table make no sense without the table itself.
+        if (settings[TimeSeriesSetting::recent_samples_bucket_step_seconds].isChanged())
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting `recent_samples_bucket_step_seconds` requires `recent_samples_ttl_seconds` to be set to a non-zero value");
+        if (settings[TimeSeriesSetting::recent_samples_compression_codec].isChanged())
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting `recent_samples_compression_codec` requires `recent_samples_ttl_seconds` to be set to a non-zero value");
         if (settings[TimeSeriesSetting::recent_samples_partition_by].value)
             throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
                 "Setting `recent_samples_partition_by` requires `recent_samples_ttl_seconds` to be set to a non-zero value");
         if (settings[TimeSeriesSetting::recent_samples_index_granularity].isChanged())
             throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
                 "Setting `recent_samples_index_granularity` requires `recent_samples_ttl_seconds` to be set to a non-zero value");
+        if (settings[TimeSeriesSetting::recent_samples_index_granularity_bytes].isChanged())
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting `recent_samples_index_granularity_bytes` requires `recent_samples_ttl_seconds` to be set to a non-zero value");
     }
+
+    auto check_payload_codec = [](const SettingFieldString & codec, std::string_view setting_name)
+    {
+        if (codec.value != "ZSTD(3)")
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting `{}` only supports `ZSTD(3)` in this build, got `{}`",
+                setting_name,
+                codec.value);
+    };
+    check_payload_codec(settings[TimeSeriesSetting::samples_compression_codec], "samples_compression_codec");
+    check_payload_codec(settings[TimeSeriesSetting::recent_samples_compression_codec], "recent_samples_compression_codec");
 
     /// The time range of a time series is stored in the "time ranges" table, tables of earlier versions store it in the "tags" table
     /// (see TimeSeriesVersion.h), so the settings of the other form must not be set.
@@ -229,7 +311,7 @@ void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
         }
     }
 
-    if (!settings[TimeSeriesSetting::store_min_time_and_max_time])
+    if (settings.hasMinTimeAndMaxTimeInTagsTable() && !settings[TimeSeriesSetting::store_min_time_and_max_time])
     {
         /// Reject only an explicit conflicting value.
         /// If the user just disables `store_min_time_and_max_time` and leaves other two

@@ -1,0 +1,28 @@
+sql_empty	0
+native_sliced_empty	0
+native_raw_empty	0
+0
+0
+0
+0
+negative_dt64_empty	0
+unsigned_domain_empty	0
+no_matching_ids	0
+nonempty_dt_rate_plan	1
+nonempty_dt_sum_plan	1
+nonempty_dt_two_rates_plan	1
+nonempty_dt_hybrid_plan	1
+nonempty_u32_rate_plan	1
+nonempty_u32_sum_plan	1
+nonempty_u32_two_rates_plan	1
+nonempty_u32_hybrid_plan	1
+nonempty_rate_plan	1
+nonempty_sum_plan	1
+nonempty_two_rates_plan	1
+nonempty_hybrid_plan	1
+nonempty_result	1	2
+sql_finite	1	2	0	0
+raw_native_plan	1
+raw_finite	1	2	0	0
+sql_minus_raw	0
+raw_minus_sql	0

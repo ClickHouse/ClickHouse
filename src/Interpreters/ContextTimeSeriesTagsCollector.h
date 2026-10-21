@@ -108,6 +108,10 @@ public:
     /// Dictionary-encoded identifiers are processed the same way as in getGroupByID.
     VectorWithMemoryTracking<TagNamesAndValuesPtr> getTagsByID(const ColumnPtr & id_column) const;
 
+    /// Returns true if two different identifiers were stored for the same full set of tags.
+    /// This is informational: duplicate identifiers remain valid for the ordinary SQL PromQL path.
+    bool hasMultipleIdentifiersForSameTags() const;
+
     /// Removes a tag from a group and returns the result group.
     /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
     Group removeTag(Group group, const String & tag_to_remove);
@@ -254,6 +258,12 @@ private:
     mutable SharedMutex mutex;
 
     VectorWithMemoryTracking<TagNamesAndValuesPtr> groups TSA_GUARDED_BY(mutex);
+
+    /// Whether at least one identifier was stored for each group. Derived groups created by tag
+    /// transformations keep zero here until an identifier is explicitly associated with them.
+    VectorWithMemoryTracking<UInt8> group_has_identifier TSA_GUARDED_BY(mutex);
+
+    bool has_multiple_identifiers_for_same_tags TSA_GUARDED_BY(mutex) = false;
 
     /// Sampling key (stable UInt64 hash of tags) for each group.
     VectorWithMemoryTracking<UInt64> sampling_keys TSA_GUARDED_BY(mutex);

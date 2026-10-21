@@ -2,7 +2,6 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
-#include <Core/Settings.h>
 
 
 namespace DB
@@ -11,13 +10,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int UNKNOWN_AGGREGATE_FUNCTION;
-}
-
-namespace Setting
-{
-    extern const SettingsBool enable_time_series_aggregate_functions;
-    extern const SettingsBool enable_time_series_table;
 }
 
 
@@ -55,13 +47,10 @@ namespace
             "Illegal type {} of 2nd argument (value) for aggregate function {}", value_type->getName(), name);
     }
 
-    AggregateFunctionPtr createAggregateFunctionTimeseriesGroupArray(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
+    AggregateFunctionPtr createAggregateFunctionTimeseriesGroupArray(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
     {
-        if (settings && (*settings)[Setting::enable_time_series_aggregate_functions] == 0 && (*settings)[Setting::enable_time_series_table] == 0)
-            throw Exception(
-                ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
-                "Aggregate function {} is in private preview and disabled by default. Enable it with setting enable_time_series_aggregate_functions",
-                name);
+        /// The function is not gated by the `enable_time_series_aggregate_functions` setting: the TimeSeries table engine
+        /// uses it in the `SimpleAggregateFunction` type of its inner tables, so the type must be parsed in any context.
 
         assertNoParameters(name, parameters);
 
@@ -109,9 +98,7 @@ The samples can be passed in one of three forms:
 
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
-<Note>
-This function is in private preview, enable it by setting `enable_time_series_aggregate_functions=true`.
-</Note>
+The result type of the single-argument form is the type of the argument, so the function can be used in the `SimpleAggregateFunction` data type, for example `SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64)))`.
     )";
     FunctionDocumentation::Syntax syntax = R"(
 timeSeriesGroupArray(timestamp, value)
@@ -128,7 +115,6 @@ timeSeriesGroupArray(samples)
     {
         "Basic usage with individual values",
         R"(
-SET enable_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values
@@ -150,7 +136,6 @@ FROM
     {
         "Passing multiple samples of timestamps and values as arrays of equal size",
         R"(
-SET enable_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values

@@ -41,6 +41,10 @@ namespace DB
 ///       The settings `id_type` and `id_generator` are not supported either: the type of the `id` column and the expression
 ///       generating identifiers are declared in the inner columns of the "tags" table. Tables of earlier versions keep
 ///       their external target tables and these settings.
+///  11 - The samples tables store buckets of samples: a row of the "samples" (and "recent samples") table keeps
+///       the samples of one series within one time bucket as a sorted array `samples` with the columns `bucket`,
+///       `min_time`, `max_time`, and the table engine is `AggregatingMergeTree`. Tables of the older versions
+///       stored one sample per row (columns `timestamp`, `value`).
 namespace TimeSeriesVersion
 {
     /// The minimum version which can be read with SELECT and whose creation can be replayed on another node.
@@ -82,6 +86,8 @@ namespace TimeSeriesVersion
     /// The first version storing the time range of a time series in the "time ranges" target table (see the version history above).
     /// The earlier versions store it in the columns `min_time` and `max_time` of the "tags" target table.
     constexpr UInt64 MIN_WITH_TIME_RANGES_TARGET = 8;
+    /// The first version storing buckets of samples in the samples tables.
+    constexpr UInt64 MIN_WITH_BUCKETED_SAMPLES = 11;
 
     /// The first version whose default recent-samples partition key names a timezone. The earlier versions
     /// generate it without one, so their tables keep the partition grid they were written on.
@@ -100,7 +106,7 @@ namespace TimeSeriesVersion
     /// Bump it each time the schema of the target tables or the semantics of the stored data changes;
     /// every version in [MIN_SUPPORTED, LATEST] must stay supported, so either make the schema generation
     /// version-aware or bump MIN_SUPPORTED too.
-    constexpr UInt64 LATEST = 10;
+    constexpr UInt64 LATEST = 11;
 
     static_assert(MIN_WITH_ID_TYPE_SETTING <= LATEST);
     static_assert(MIN_WITH_SAMPLES_OUTER_COLUMN <= LATEST);
@@ -109,6 +115,7 @@ namespace TimeSeriesVersion
     static_assert(MIN_WITH_METRIC_FAMILY_INNER_COLUMN <= LATEST);
     static_assert(MIN_WITH_DEDUPLICATION_CACHES <= LATEST);
     static_assert(MIN_WITH_TIME_RANGES_TARGET <= LATEST);
+    static_assert(MIN_WITH_BUCKETED_SAMPLES <= LATEST);
     static_assert(MIN_WITH_UTC_PARTITION_KEY <= LATEST);
     static_assert(MIN_WITHOUT_EXTERNAL_TARGETS <= LATEST);
     static_assert((MIN_WITH_ID_TYPE_SETTING <= MIN_WITHOUT_ID_SETTINGS) && (MIN_WITHOUT_ID_SETTINGS <= LATEST));

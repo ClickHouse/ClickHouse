@@ -1,5 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionSum.h>
+#include <AggregateFunctions/AggregateFunctionSumPromQL.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -82,6 +83,20 @@ AggregateFunctionPtr createAggregateFunctionSum(const std::string & name, const 
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}{}",
                         argument_types[0]->getName(), name, getNumericVariantSupertypeHint(argument_types[0]));
     return res;
+}
+
+AggregateFunctionPtr createAggregateFunctionSumPromQL(
+    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+{
+    assertNoParameters(name, parameters);
+    assertUnary(name, argument_types);
+    if (argument_types[0]->getTypeId() != TypeIndex::Float64)
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal type {} of argument for aggregate function {}; expected Float64",
+            argument_types[0]->getName(), name);
+
+    return std::make_shared<AggregateFunctionSumPromQL>(argument_types);
 }
 
 }
@@ -242,6 +257,44 @@ SELECT sum(0.1), sumKahan(0.1) FROM numbers(10);
     FunctionDocumentation documentation_kahan = {description_kahan, syntax_kahan, arguments_kahan, {}, returned_value_kahan, examples_kahan, introduced_in_kahan, category_kahan};
 
     factory.registerFunction("sumKahan", {createAggregateFunctionSum<AggregateFunctionSumKahan>, documentation_kahan});
+
+    FunctionDocumentation::Description description_promql = R"(
+Calculates an exact sum of finite `Float64` inputs, rounded once to `Float64` using round-to-nearest, ties-to-even.
+The result is independent of input order, partitioning and aggregate-state merge order. Finite intermediate overflow can be recovered by later cancellation.
+Infinity plus finite values remains infinity. Any NaN or opposing infinities produce a canonical positive quiet NaN. Exact zero returns positive zero.
+Each state uses a fixed-width integer accumulator and a checked `UInt64` input count. Exceeding that count raises an exception.
+This accuracy contract applies to the inputs of this aggregate, not to rounding performed by earlier functions in a PromQL expression.
+Only `Float64` arguments are accepted. Nullable inputs and array inputs use the normal `Nullable` and `ForEach` combinators.
+)";
+    FunctionDocumentation::Syntax syntax_promql = R"(
+sumPromQL(value)
+    )";
+    FunctionDocumentation::Arguments arguments_promql = {
+        {"value", "Input value.", {"Float64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_promql = {
+        "Returns the correctly rounded sum of the values. Empty non-nullable input returns positive zero.", {"Float64"}
+    };
+    FunctionDocumentation::Examples examples_promql = {
+    {
+        "Preserving a small value during cancellation",
+        R"(
+SELECT sumPromQL(value) AS total
+FROM (SELECT arrayJoin([1e16, 1., -1e16]) AS value);
+        )",
+        R"(
+┌─total─┐
+│     1 │
+└───────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_promql = {26, 10};
+    FunctionDocumentation documentation_promql = {
+        description_promql, syntax_promql, arguments_promql, {}, returned_value_promql,
+        examples_promql, introduced_in_promql, FunctionDocumentation::Category::AggregateFunction};
+
+    factory.registerFunction("sumPromQL", {createAggregateFunctionSumPromQL, documentation_promql});
 }
 
 }

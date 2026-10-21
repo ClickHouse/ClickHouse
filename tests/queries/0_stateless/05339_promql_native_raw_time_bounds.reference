@@ -1,0 +1,23 @@
+dt64_fraction_rate	[('instance','one'),('namespace','a')]	[(2250,4),(3250,4)]
+dt64_fraction_two_rates	[('namespace','a')]	[(2250,12),(3250,12)]
+dt64_negative_rate	[('instance','one'),('namespace','a')]	[(-2750,4),(-1750,4)]
+dt64_negative_two_rates	[('namespace','a')]	[(-2750,12),(-1750,12)]
+dt_integer_rate	[('instance','one'),('namespace','a')]	[(2000,4),(3000,4)]
+dt_integer_two_rates	[('namespace','a')]	[(2000,12),(3000,12)]
+u32_integer_rate	[('instance','one'),('namespace','a')]	[(2000,4),(3000,4)]
+u32_integer_two_rates	[('namespace','a')]	[(2000,12),(3000,12)]
+u32_upper_rate	[('instance','one'),('namespace','a')]	[(4294967295250,4),(4294967296250,3)]
+u32_upper_two_rates	[('namespace','a')]	[(4294967295250,12),(4294967296250,9)]
+sql_points	10	20	0
+sliced_points	10	20	0
+raw_points	10	20	0
+sql_minus_sliced	0
+sliced_minus_sql	0
+sql_minus_raw	0
+raw_minus_sql	0
+u32_raw_root_input	1
+u32_raw_two_rates_input	1
+dt_raw_root_input	1
+dt_raw_two_rates_input	1
+dt64_raw_root_input	1
+dt64_raw_two_rates_input	1

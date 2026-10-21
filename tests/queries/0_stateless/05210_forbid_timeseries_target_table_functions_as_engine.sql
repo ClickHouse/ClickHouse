@@ -23,6 +23,9 @@ CREATE TABLE p_cols_05210 (id Tuple(UInt64, LowCardinality(UUID)), timestamp Dat
 
 -- A target with the Memory engine is refused the same way. Both properties the proxy asserts hold for a Memory
 -- table, so nothing there would stop the in-memory rename.
+CREATE TABLE ext_samples_05210 (id UInt64, timestamp DateTime64(3), value Float64) ENGINE = Memory;
+CREATE TABLE ts_ext_05210 ENGINE = TimeSeries SETTINGS version = 5 DATA ext_samples_05210;
+CREATE TABLE p_ext_05210 AS timeSeriesData(ts_ext_05210); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE ts_memory_05210 ENGINE = TimeSeries SAMPLES INNER ENGINE = Memory;
 CREATE TABLE p_memory_05210 AS timeSeriesData(ts_memory_05210); -- { serverError BAD_ARGUMENTS }
 
@@ -32,3 +35,5 @@ SELECT count() FROM system.tables WHERE database = currentDatabase() AND engine 
 
 DROP TABLE ts_memory_05210;
 DROP TABLE ts_05210;
+DROP TABLE ts_ext_05210;
+DROP TABLE ext_samples_05210;

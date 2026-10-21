@@ -16,7 +16,9 @@ namespace DB::PrometheusQueryToSQL
 {
 
 ConverterContext::ConverterContext(std::shared_ptr<const PrometheusQueryTree> promql_tree_,
-                                   const PrometheusQueryEvaluationSettings & settings_)
+                                   const PrometheusQueryEvaluationSettings & settings_,
+                                   NativeFragmentDescriptions native_fragments_,
+                                   ConverterOptions options_)
     : promql_tree(promql_tree_)
     , time_series_storage_id(settings_.time_series_storage_id)
     , time_series_version(settings_.time_series_version)
@@ -24,6 +26,8 @@ ConverterContext::ConverterContext(std::shared_ptr<const PrometheusQueryTree> pr
     , result_timestamp_scale(settings_.time_scale)
     , result_type(getResultType(*promql_tree_, settings_))
     , node_range_getter(promql_tree_, settings_)
+    , native_fragments(std::move(native_fragments_))
+    , options(options_)
 {
     /// The result scale is the scale of the table but not less than 3, see getPromQLResultTimestampScale().
     const UInt32 min_result_timestamp_scale = getPromQLResultTimestampScale(settings_.table_timestamp_type);

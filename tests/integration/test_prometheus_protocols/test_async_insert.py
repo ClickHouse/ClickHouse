@@ -35,6 +35,7 @@ def cleanup_after_test():
         yield
     finally:
         node.query("DROP TABLE IF EXISTS prometheus SYNC")
+        node.query("DROP TABLE IF EXISTS samples_legacy SYNC")
 
 
 def get_async_insert_query_count():
@@ -105,7 +106,7 @@ def test_async_insert_acknowledged_after_flush():
         convert_metrics_metadata_to_protobuf(metrics_metadata),
     )
 
-    assert node.query("SELECT count() FROM timeSeriesData(prometheus)") == "2\n"
+    assert node.query("SELECT sum(length(samples)) FROM timeSeriesData(prometheus)") == "2\n"
     assert (
         node.query(
             "SELECT tags['job'] FROM timeSeriesTags(prometheus) "
@@ -125,11 +126,11 @@ def test_async_insert_acknowledged_after_flush():
 
 
 def test_async_insert_no_acknowledgement_on_failure():
-    # Every sample goes to its own partition of the samples table, and the request limits
-    # an insert block to one partition, so a request with two samples fails.
+    # Version 11 stores each time bucket as a row. A 1-second bucket step makes these two
+    # samples land in distinct partitions, so the request's one-partition limit rejects it.
     node.query(
-        "CREATE TABLE prometheus ENGINE=TimeSeries "
-        "SAMPLES INNER ENGINE=MergeTree PARTITION BY timestamp ORDER BY (id, timestamp)"
+        "CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS version=11, samples_bucket_step_seconds=1 "
+        "SAMPLES INNER ENGINE=AggregatingMergeTree PARTITION BY bucket ORDER BY (id, bucket)"
     )
 
     time_series = [({"__name__": "async_metric"}, {1724112000: 1.5, 1724112001: 2.5})]
@@ -143,6 +144,28 @@ def test_async_insert_no_acknowledgement_on_failure():
     assert not response.ok
     assert "TOO_MANY_PARTS" in response.text
     assert node.query("SELECT count() FROM timeSeriesSamples(prometheus)") == "0\n"
+
+
+def test_async_insert_no_acknowledgement_on_constraint_failure():
+    node.query(
+        "CREATE TABLE samples_legacy (id UUID, timestamp DateTime64(3), value Float64, "
+        "CONSTRAINT reject_positive CHECK value < 0) ENGINE=MergeTree ORDER BY (id, timestamp)"
+    )
+    node.query(
+        "CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS version=9 SAMPLES samples_legacy"
+    )
+
+    time_series = [({"__name__": "async_metric"}, {1724112000: 1.5})]
+    response = get_response_to_remote_write(
+        node.ip_address,
+        9093,
+        "/write?async_insert=1",
+        convert_time_series_to_protobuf(time_series),
+    )
+
+    assert not response.ok
+    assert "VIOLATED_CONSTRAINT" in response.text
+    assert node.query("SELECT count() FROM samples_legacy") == "0\n"
 
 
 def test_async_insert_flush_timeout_returns_503():
@@ -166,7 +189,7 @@ def test_async_insert_flush_timeout_returns_503():
 
     # The data stays in the server's asynchronous insert queue and is flushed later.
     assert_eq_with_retry(
-        node, "SELECT count() FROM timeSeriesSamples(prometheus)", "1", retry_count=60
+        node, "SELECT sum(length(samples)) FROM timeSeriesSamples(prometheus)", "1", retry_count=60
     )
 
     # A PromQL instant query at the sample's timestamp returns the flushed data.
@@ -198,7 +221,7 @@ def test_async_insert_flush_timeout_is_clamped():
     response = remote_write("clamped_pos_metric", 10000000000)
     assert response.status_code == 204
     # No retry here: the acknowledgement means the wait outlasted the flush.
-    assert node.query("SELECT count() FROM timeSeriesSamples(prometheus)") == "1\n"
+    assert node.query("SELECT sum(length(samples)) FROM timeSeriesSamples(prometheus)") == "1\n"
 
     # -1e10 seconds overflows the same conversion in the other direction. A negative timeout
     # means "already expired", so the wait returns immediately.
@@ -213,5 +236,5 @@ def test_async_insert_flush_timeout_is_clamped():
 
     # A timed-out wait keeps the data in the queue, so every sample arrives after the flush.
     assert_eq_with_retry(
-        node, "SELECT count() FROM timeSeriesSamples(prometheus)", "3", retry_count=60
+        node, "SELECT sum(length(samples)) FROM timeSeriesSamples(prometheus)", "3", retry_count=60
     )

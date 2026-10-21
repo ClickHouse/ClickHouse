@@ -996,9 +996,17 @@ Group ContextTimeSeriesTagsCollector::tryAddGroupUnlocked(TagsKey && key)
     if (inserted)
     {
         groups.push_back(std::move(tags));
+        group_has_identifier.push_back(0);
         sampling_keys.push_back(hash);
     }
     return it->second;
+}
+
+
+bool ContextTimeSeriesTagsCollector::hasMultipleIdentifiersForSameTags() const
+{
+    SharedLockGuard lock{mutex};
+    return has_multiple_identifiers_for_same_tags;
 }
 
 
@@ -1259,7 +1267,13 @@ void ContextTimeSeriesTagsCollector::storeTagsTyped(
             id_map.emplace(id_getter.get(i), it, inserted);
 
             if (inserted)
+            {
                 it->getMapped() = group;
+                if (group_has_identifier.at(group))
+                    has_multiple_identifiers_for_same_tags = true;
+                else
+                    group_has_identifier[group] = 1;
+            }
             else if (it->getMapped() != group)
                 throwIDWasAddedWithOtherTags(id_data, i, tags_vector[i], groups.at(it->getMapped()));
         }
@@ -1325,7 +1339,13 @@ void ContextTimeSeriesTagsCollector::storeTagsGeneric(
             generic_id_map.map.emplace(ArenaKeyHolder{id, generic_id_map.arena}, it, inserted);
 
             if (inserted)
+            {
                 it->getMapped() = group;
+                if (group_has_identifier.at(group))
+                    has_multiple_identifiers_for_same_tags = true;
+                else
+                    group_has_identifier[group] = 1;
+            }
             else if (it->getMapped() != group)
                 throwIDWasAddedWithOtherTags(id_data, i, tags_vector[i], groups.at(it->getMapped()));
         }

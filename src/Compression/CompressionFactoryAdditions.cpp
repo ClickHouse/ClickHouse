@@ -243,6 +243,11 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                             const auto & last_type = substream_path.back().data.type;
                             result_codec = getImpl(codec_family_name, codec_arguments, last_type.get());
 
+                            /// A selector can resolve to a chain. Its description is an expression list,
+                            /// which cannot be nested as one argument of `CODEC` in stored metadata.
+                            if (result_codec->getCodecDescription()->as<ASTExpressionList>())
+                                can_substitute_codec_arguments = false;
+
                             /// Enumeration order is the same for every codec of the chain, so the
                             /// index identifies the substream.
                             if (substream_index < codec_chains.size())
@@ -266,6 +271,8 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                 else
                 {
                     result_codec = getImpl(codec_family_name, codec_arguments, nullptr);
+                    if (result_codec->getCodecDescription()->as<ASTExpressionList>())
+                        can_substitute_codec_arguments = false;
                 }
 
                 if (settings)

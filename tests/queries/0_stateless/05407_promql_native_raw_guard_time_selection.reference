@@ -1,0 +1,11 @@
+physical_rows	1
+time_selection	1
+one_granule	1
+sql_shape	1
+raw_native_input	1
+multiple	1
+multiple_reordered	1
+single	1
+single_reordered	1
+native_minus_sql	1
+sql_minus_native	1

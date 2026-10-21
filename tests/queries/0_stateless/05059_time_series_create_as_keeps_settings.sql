@@ -38,11 +38,11 @@ DROP TABLE ts_src;
 -- sorting key and MergeTree rejects the copy with "ORDER BY cannot be empty".
 DROP TABLE IF EXISTS ts_custom_src;
 DROP TABLE IF EXISTS ts_custom_copy;
-CREATE TABLE ts_custom_src ENGINE = TimeSeries
+CREATE TABLE ts_custom_src ENGINE = TimeSeries SETTINGS version = 9
 SAMPLES ENGINE = ReplacingMergeTree(timestamp) PRIMARY KEY id ORDER BY (id, timestamp);
 
 SELECT '-- a custom SAMPLES engine with its own primary key survives the copy';
-CREATE TABLE ts_custom_copy AS ts_custom_src;
+CREATE TABLE ts_custom_copy AS ts_custom_src SETTINGS version = 9;
 SELECT extract(create_table_query, 'SAMPLES INNER ENGINE = (.*?) SETTINGS')
 FROM system.tables WHERE database = currentDatabase() AND name = 'ts_custom_copy';
 

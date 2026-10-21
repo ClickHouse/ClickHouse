@@ -1,0 +1,42 @@
+sample timestamp, fractional precision and dropped metric name
+7	1	1	1	1	1
+11	1	1	1	1	1
+offset changes selection, not the returned sample timestamp
+7	1	1
+11	1	1
+@ selects a fixed older sample
+7	1	1
+11	1	1
+general expression returns the evaluation timestamp
+7	1	1
+11	1	1
+range query retains each sample timestamp
+7	1	1
+11	1	1
+series groups remain separate
+7	1	1
+11	1	1
+sample before the stale marker
+7	1	1
+11	1	1
+a stale marker hides the series instead of reviving the preceding sample
+7	1
+11	1
+range query omits the stale steps
+7	1	1
+11	1	1
+an ordinary NaN is not a stale marker
+7	1	1
+11	1	1
+one tick inside the lookback boundary
+7	1	1
+11	1	1
+the left lookback boundary is excluded
+7	1
+11	1
+an empty selector remains empty
+7	1
+11	1
+Float32 samples do not narrow the timestamp value
+7	1	1	1
+11	1	1	1

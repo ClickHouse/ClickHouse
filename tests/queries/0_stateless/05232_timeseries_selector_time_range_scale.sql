@@ -26,20 +26,31 @@ SELECT '-- The returned columns keep the types of the table';
 DESCRIBE timeSeriesSelector(ts_dt64_1, 'up', 1000.5, 1002.5);
 
 SELECT '-- [1000.5, 1002.5] selects the samples at 1001.5 and 1002 in DateTime64(1)';
-SELECT timestamp, value FROM timeSeriesSelector(ts_dt64_1, 'up', 1000.5, 1002.5) ORDER BY timestamp;
+SELECT tupleElement(sample, 1) AS timestamp, tupleElement(sample, 2) AS value
+FROM timeSeriesSelector(ts_dt64_1, 'up', 1000.5, 1002.5)
+ARRAY JOIN time_series AS sample
+ORDER BY timestamp;
 
 SELECT '-- A scale greater than 3 in the arguments is kept';
-SELECT timestamp, value FROM timeSeriesSelector(ts_dt64_1, 'up', toDateTime64(1001.49999, 5, 'UTC'), toDateTime64(1001.50001, 5, 'UTC')) ORDER BY timestamp;
+SELECT tupleElement(sample, 1) AS timestamp, tupleElement(sample, 2) AS value
+FROM timeSeriesSelector(ts_dt64_1, 'up', toDateTime64(1001.49999, 5, 'UTC'), toDateTime64(1001.50001, 5, 'UTC'))
+ARRAY JOIN time_series AS sample
+ORDER BY timestamp;
 
 SELECT '-- Arguments with a smaller scale than the table are widened to the scale of the table';
 DESCRIBE timeSeriesSelector(ts_dt64_6, 'up', 1000.5, 1002.5);
-SELECT timestamp, value FROM timeSeriesSelector(ts_dt64_6, 'up', 1000.5, toDateTime64(1001.000001, 6, 'UTC')) ORDER BY timestamp;
+SELECT tupleElement(sample, 1) AS timestamp, tupleElement(sample, 2) AS value
+FROM timeSeriesSelector(ts_dt64_6, 'up', 1000.5, toDateTime64(1001.000001, 6, 'UTC'))
+ARRAY JOIN time_series AS sample
+ORDER BY timestamp;
 
 SELECT '-- The time range lies between two consecutive timestamps of a DateTime64(1) table';
-SELECT count() FROM timeSeriesSelector(ts_dt64_1, 'up', toDateTime64(1000.02, 3, 'UTC'), toDateTime64(1000.08, 3, 'UTC'));
+SELECT count() FROM timeSeriesSelector(ts_dt64_1, 'up', toDateTime64(1000.02, 3, 'UTC'), toDateTime64(1000.08, 3, 'UTC'))
+ARRAY JOIN time_series;
 
 SELECT '-- Arguments with a scale greater than 9 on a table with a recent samples table: the range is compared with the TTL without overflow';
-SELECT count() FROM timeSeriesSelector(ts_recent, 'up', toDecimal64(1000.5, 12), toDecimal64(1002.5, 12));
+SELECT count() FROM timeSeriesSelector(ts_recent, 'up', toDecimal64(1000.5, 12), toDecimal64(1002.5, 12))
+ARRAY JOIN time_series;
 
 DROP TABLE ts_dt64_1;
 DROP TABLE ts_dt64_6;

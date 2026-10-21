@@ -1,10 +1,14 @@
 -- The returned columns keep the types of the table
 id	Tuple(UInt64, LowCardinality(UUID))					
+time_series	Array(Tuple(DateTime(\'UTC\'), Float64))					
+id	Tuple(UInt64, LowCardinality(UUID))					
+time_series	Array(Tuple(UInt32, Float32))					
+-- Version 6 keeps the row-shaped selector result
+id	Tuple(UInt64, LowCardinality(UUID))					
 timestamp	DateTime(\'UTC\')					
 value	Float64					
-id	Tuple(UInt64, LowCardinality(UUID))					
-timestamp	UInt32					
-value	Float32					
+1970-01-01 00:16:41	2
+1970-01-01 00:16:42	3
 -- [1000.5, 1002.5] selects the samples at 1001 and 1002
 1970-01-01 00:16:41	2
 1970-01-01 00:16:42	3
