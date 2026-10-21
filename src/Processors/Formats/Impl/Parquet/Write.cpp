@@ -25,6 +25,9 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <base/unaligned.h>
 #include <bit>
+#include <cmath>
+#include <limits>
+#include <set>
 #include <DataTypes/DataTypeEnum.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeCustom.h>
@@ -349,6 +352,207 @@ struct StatisticsStringCopy
     }
 };
 
+/// For WKB values of a `GEOMETRY` column: the sort order of this logical type is undefined, so no
+/// min/max are produced. Instead, the bounding box and the set of geometry types are accumulated
+/// for `GeospatialStatistics` of the column chunk.
+/// The semantics follow `parquet::geospatial::GeoStatistics` of Arrow: ISO WKB with Z, M and ZM
+/// variants of the types is accepted, and if any value is not a valid WKB, no statistics are written.
+struct StatisticsGeometry
+{
+    static constexpr double inf = std::numeric_limits<double>::infinity();
+
+    /// X, Y, Z, M.
+    std::array<double, 4> min {inf, inf, inf, inf};
+    std::array<double, 4> max {-inf, -inf, -inf, -inf};
+    /// WKB geometry type codes of the top-level values, e.g. 1 for `POINT`, 3002 for `LINESTRING ZM`.
+    std::set<Int32> geometry_types;
+    bool is_valid = true;
+
+    void add(ByteArray x)
+    {
+        if (!is_valid)
+            return;
+        const UInt8 * pos = x.ptr;
+        const UInt8 * end = x.ptr + x.len;
+        if (!addGeometry(pos, end, /*record_type=*/ true, /*depth=*/ 0) || pos != end)
+            is_valid = false;
+    }
+
+    void merge(const StatisticsGeometry & s)
+    {
+        is_valid = is_valid && s.is_valid;
+        if (!is_valid)
+            return;
+        for (size_t i = 0; i < 4; ++i)
+        {
+            if (std::isnan(min[i]) || std::isnan(max[i]) || std::isnan(s.min[i]) || std::isnan(s.max[i]))
+            {
+                min[i] = std::numeric_limits<double>::quiet_NaN();
+                max[i] = std::numeric_limits<double>::quiet_NaN();
+            }
+            else
+            {
+                min[i] = std::min(min[i], s.min[i]);
+                max[i] = std::max(max[i], s.max[i]);
+            }
+        }
+        geometry_types.insert(s.geometry_types.begin(), s.geometry_types.end());
+    }
+
+    void clear()
+    {
+        *this = StatisticsGeometry();
+    }
+
+    parq::Statistics get(const WriteOptions &) const
+    {
+        return {};
+    }
+
+    /// Returns nullopt if a value could not be parsed as WKB, then no statistics are written.
+    std::optional<parq::GeospatialStatistics> getGeospatial() const
+    {
+        if (!is_valid)
+            return std::nullopt;
+
+        parq::GeospatialStatistics res;
+        /// An empty list means that the types are unknown, this is the case only if all values are NULL.
+        res.__set_geospatial_types(std::vector<Int32>(geometry_types.begin(), geometry_types.end()));
+
+        const bool write_x = hasBound(0);
+        const bool write_y = hasBound(1);
+        if (write_x && write_y)
+        {
+            parq::BoundingBox bbox;
+            bbox.__set_xmin(min[0]);
+            bbox.__set_xmax(max[0]);
+            bbox.__set_ymin(min[1]);
+            bbox.__set_ymax(max[1]);
+            if (hasBound(2))
+            {
+                bbox.__set_zmin(min[2]);
+                bbox.__set_zmax(max[2]);
+            }
+            if (hasBound(3))
+            {
+                bbox.__set_mmin(min[3]);
+                bbox.__set_mmax(max[3]);
+            }
+            res.__set_bbox(bbox);
+        }
+        return res;
+    }
+
+private:
+    /// The bound is neither empty (no coordinates seen) nor invalid (NaN).
+    bool hasBound(size_t i) const
+    {
+        return !std::isinf(min[i] - max[i]) && !std::isnan(min[i]) && !std::isnan(max[i]);
+    }
+
+    template <typename T>
+    static bool read(const UInt8 *& pos, const UInt8 * end, bool little_endian, T & out)
+    {
+        if (static_cast<size_t>(end - pos) < sizeof(T))
+            return false;
+        out = little_endian ? unalignedLoadEndian<std::endian::little, T>(pos) : unalignedLoadEndian<std::endian::big, T>(pos);
+        pos += sizeof(T);
+        return true;
+    }
+
+    /// `dimensions`: 0 - XY, 1 - XYZ, 2 - XYM, 3 - XYZM.
+    bool addCoordinates(const UInt8 *& pos, const UInt8 * end, bool little_endian, UInt32 dimensions, UInt32 count)
+    {
+        const size_t num_values = (dimensions == 0) ? 2 : (dimensions == 3 ? 4 : 3);
+        if (static_cast<UInt64>(end - pos) < static_cast<UInt64>(count) * num_values * sizeof(Float64))
+            return false;
+        for (UInt32 i = 0; i < count; ++i)
+        {
+            Float64 coord[4];
+            for (size_t j = 0; j < num_values; ++j)
+                read(pos, end, little_endian, coord[j]);
+            /// For XYM, the third value is M.
+            if (dimensions == 2)
+            {
+                coord[3] = coord[2];
+                updateBound(0, coord[0]);
+                updateBound(1, coord[1]);
+                updateBound(3, coord[3]);
+            }
+            else
+            {
+                for (size_t j = 0; j < num_values; ++j)
+                    updateBound(j, coord[j]);
+            }
+        }
+        return true;
+    }
+
+    void updateBound(size_t i, Float64 value)
+    {
+        /// The order of the arguments matters for NaN: a NaN coordinate does not change the bounds.
+        min[i] = std::min(min[i], value);
+        max[i] = std::max(max[i], value);
+    }
+
+    bool addGeometry(const UInt8 *& pos, const UInt8 * end, bool record_type, size_t depth)
+    {
+        if (depth > 128)
+            return false;
+
+        UInt8 endian;
+        if (!read(pos, end, true, endian))
+            return false;
+        const bool little_endian = endian == 0x01;
+
+        UInt32 wkb_type;
+        if (!read(pos, end, little_endian, wkb_type))
+            return false;
+        const UInt32 geometry_type = wkb_type % 1000;
+        const UInt32 dimensions = wkb_type / 1000;
+        if (geometry_type < 1 || geometry_type > 7 || dimensions > 3)
+            return false;
+
+        if (record_type)
+            geometry_types.insert(static_cast<Int32>(wkb_type));
+
+        switch (geometry_type)
+        {
+            case 1: /// POINT
+                return addCoordinates(pos, end, little_endian, dimensions, 1);
+            case 2: /// LINESTRING
+            {
+                UInt32 count;
+                return read(pos, end, little_endian, count) && addCoordinates(pos, end, little_endian, dimensions, count);
+            }
+            case 3: /// POLYGON
+            {
+                UInt32 num_rings;
+                if (!read(pos, end, little_endian, num_rings))
+                    return false;
+                for (UInt32 i = 0; i < num_rings; ++i)
+                {
+                    UInt32 count;
+                    if (!read(pos, end, little_endian, count) || !addCoordinates(pos, end, little_endian, dimensions, count))
+                        return false;
+                }
+                return true;
+            }
+            default: /// MULTIPOINT, MULTILINESTRING, MULTIPOLYGON, GEOMETRYCOLLECTION
+            {
+                UInt32 num_parts;
+                if (!read(pos, end, little_endian, num_parts))
+                    return false;
+                /// Only the type of the top-level geometry is recorded, e.g. `MULTIPOINT`, not `POINT`.
+                for (UInt32 i = 0; i < num_parts; ++i)
+                    if (!addGeometry(pos, end, /*record_type=*/ false, depth + 1))
+                        return false;
+                return true;
+            }
+        }
+    }
+};
+
 /// The column usually needs to be converted to one of Parquet physical types, e.g. UInt16 -> Int32
 /// or [element of ColumnString] -> std::string_view.
 /// We do this conversion in small batches rather than all at once, just before encoding the batch,
@@ -449,6 +653,14 @@ struct ConverterString
         }
         return buf.data();
     }
+};
+
+/// WKB values of a `GEOMETRY` column.
+struct ConverterGeometry : ConverterString
+{
+    using Statistics = StatisticsGeometry;
+
+    using ConverterString::ConverterString;
 };
 
 template <typename T>
@@ -2044,6 +2256,12 @@ void writeColumnImpl(
 
         if (s.max_def == 1 && s.max_rep == 0)
             s.column_chunk.meta_data.statistics.__set_null_count(static_cast<Int64>(def_offset - data_offset));
+
+        if constexpr (std::is_same_v<typename Converter::Statistics, StatisticsGeometry>)
+        {
+            if (auto geospatial_statistics = total_statistics.getGeospatial())
+                s.column_chunk.meta_data.__set_geospatial_statistics(*std::move(geospatial_statistics));
+        }
     }
 
     /// Report which encodings we've used.
@@ -2161,8 +2379,12 @@ void writeColumnChunkBody(
             break;
 
         case TypeIndex::String:
-            writeColumnImpl<ByteArrayType>(
-                s, options, out, ConverterString(s.primitive_column));
+            if (s.is_geometry)
+                writeColumnImpl<ByteArrayType>(
+                    s, options, out, ConverterGeometry(s.primitive_column));
+            else
+                writeColumnImpl<ByteArrayType>(
+                    s, options, out, ConverterString(s.primitive_column));
             break;
 
         case TypeIndex::FixedString:
@@ -2406,15 +2628,29 @@ void writeFileFooter(FileWriteState & file,
                 Poco::JSON::Array::Ptr geom_types = new Poco::JSON::Array;
                 geom_types->add(type->getCustomName()->getName());
                 geom_meta->set("geometry_types", geom_types);
-                geom_meta->set("crs", "EPSG:4326");
-
-                geo_columns_metadata.push_back({column_name, geom_meta});
+                /// With the `GEOMETRY` logical type, the column has the default CRS of the logical
+                /// type (`OGC:CRS84`). Omit `crs` here, which means the same default in GeoParquet,
+                /// so that both kinds of metadata describe the same CRS.
+                if (!options.write_geometry_logical_type)
+                    geom_meta->set("crs", "EPSG:4326");
 
                 if (type->getCustomName()->getName() == WKBPolygonTransform::name ||
                     type->getCustomName()->getName() == WKBMultiPolygonTransform::name)
                 {
                     geom_meta->set("edges", "planar");
                 }
+                geo_columns_metadata.push_back({column_name, geom_meta});
+            }
+            else if (options.write_geometry_logical_type && type->getCustomName() && type->getCustomName()->getName() == "Geometry")
+            {
+                /// An empty list of geometry types means that any type can be present. Without the
+                /// metadata, readers (including older versions of ClickHouse) that rely only on the
+                /// GeoParquet metadata would read the WKB column as a plain binary one, and readers
+                /// that use `GeospatialStatistics` of the `GEOMETRY` logical type could narrow the
+                /// type to the one that happens to be present in the data.
+                Poco::JSON::Object::Ptr geom_meta = new Poco::JSON::Object;
+                geom_meta->set("encoding", "WKB");
+                geom_meta->set("geometry_types", Poco::JSON::Array::Ptr(new Poco::JSON::Array));
                 geo_columns_metadata.push_back({column_name, geom_meta});
             }
         }
