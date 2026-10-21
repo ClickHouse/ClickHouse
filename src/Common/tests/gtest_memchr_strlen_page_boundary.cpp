@@ -264,7 +264,7 @@ TEST(MemchrStrlenPageBoundary, MemchrIgnoresNeighbourValues)
 TEST(MemchrStrlenPageBoundary, MemchrMatchesReference)
 {
     GuardedPage page;
-    std::mt19937_64 rng(42);
+    std::mt19937_64 rng(42); /// NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp) deterministic seed, so a failure is reproducible
     /// A small alphabet including the tricky values, so that matches are frequent and appear at every position.
     std::vector<unsigned char> alphabet(tricky_values, tricky_values + std::size(tricky_values));
     for (unsigned char v = 'a'; v < 'a' + 56; ++v)
