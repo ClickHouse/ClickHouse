@@ -103,6 +103,8 @@ set(SRCS
     "${HDFS3_SOURCE_DIR}/client/StripedBlockUtil.cpp"
     "${HDFS3_SOURCE_DIR}/client/StripedInputStreamImpl.cpp"
     "${HDFS3_SOURCE_DIR}/client/StripedOutputStreamImpl.cpp"
+    "${HDFS3_SOURCE_DIR}/client/SlowMetrics.cpp"
+    "${HDFS3_SOURCE_DIR}/client/SlowNodeTracker.cpp"
     "${HDFS3_SOURCE_DIR}/client/SystemECPolicies.cpp"
     "${HDFS3_SOURCE_DIR}/client/dump.cpp"
     "${HDFS3_SOURCE_DIR}/client/erasure_coder.cpp"
