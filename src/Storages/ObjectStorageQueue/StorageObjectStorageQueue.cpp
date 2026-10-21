@@ -427,7 +427,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     if (engine_args->settings)
-        storage_metadata.settings_changes = engine_args->settings->ptr();
+        storage_metadata.setSettingsChanges(engine_args->settings->ptr());
     storage_metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
 
@@ -1588,12 +1588,14 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
 
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     StorageInMemoryMetadata old_metadata(*metadata_snapshot); /// NOLINT
+    const auto old_settings_ast = old_metadata.getSettingsChanges();
     SettingsChanges * old_settings = nullptr;
-    if (old_metadata.settings_changes)
+    if (old_settings_ast)
     {
-        old_settings = &old_metadata.settings_changes->as<ASTSetQuery &>().changes;
+        old_settings = &old_settings_ast->as<ASTSetQuery &>().changes;
         for (auto & setting : *old_settings)
             setting.name = normalizeSetting(setting.name);
+        old_metadata.setSettingsChanges(old_settings_ast);
     }
 
     StorageInMemoryMetadata new_metadata(old_metadata);
@@ -1609,7 +1611,8 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
 
     const auto mode = metadata->getTableMetadata().getMode();
-    const auto & new_settings = new_metadata.settings_changes->as<ASTSetQuery &>().changes;
+    const auto new_settings_ast = new_metadata.getSettingsChanges();
+    const auto & new_settings = new_settings_ast->as<ASTSetQuery &>().changes;
 
     for (const auto & setting : new_settings)
     {
@@ -1667,19 +1670,22 @@ void StorageObjectStorageQueue::alter(
 
         auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
         StorageInMemoryMetadata old_metadata(*metadata_snapshot); /// NOLINT
+        const auto old_settings_ast = old_metadata.getSettingsChanges();
         SettingsChanges * old_settings = nullptr;
-        if (old_metadata.settings_changes)
+        if (old_settings_ast)
         {
-            old_settings = &old_metadata.settings_changes->as<ASTSetQuery &>().changes;
+            old_settings = &old_settings_ast->as<ASTSetQuery &>().changes;
             for (auto & setting : *old_settings)
                 setting.name = normalizeSetting(setting.name);
+            old_metadata.setSettingsChanges(old_settings_ast);
         }
 
         /// settings_changes will be cloned.
         StorageInMemoryMetadata new_metadata(old_metadata);
         alter_commands.apply(new_metadata, local_context);
 
-        auto & new_settings = new_metadata.settings_changes->as<ASTSetQuery &>().changes;
+        const auto new_settings_ast = new_metadata.getSettingsChanges();
+        auto & new_settings = new_settings_ast->as<ASTSetQuery &>().changes;
 
         if (old_settings)
         {
@@ -1714,6 +1720,7 @@ void StorageObjectStorageQueue::alter(
                 ObjectStorageQueueSettings default_settings;
                 for (const auto & name : reset_settings)
                     new_settings.push_back(SettingChange(name, default_settings.get(name)));
+                new_metadata.setSettingsChanges(new_settings_ast);
             }
         }
 
@@ -1797,7 +1804,7 @@ void StorageObjectStorageQueue::alter(
 
         LOG_TRACE(
             log, "New settings changes: {} (requires_detached_mv: {}, changed settings ({}): {})",
-            new_metadata.settings_changes->formatForLogging(),
+            new_settings_ast->formatForLogging(),
             requires_detached_mv, changed_settings.size(), changed_settings.namesToString());
 
         /// Alter settings which are stored in keeper.

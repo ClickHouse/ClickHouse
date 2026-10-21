@@ -17,6 +17,8 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSQLSecurity.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ParserSetQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -69,7 +71,8 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , unique_key(other.unique_key)
     , column_ttls_by_name(other.column_ttls_by_name)
     , table_ttl(other.table_ttl)
-    , settings_changes(other.settings_changes ? other.settings_changes->clone() : nullptr)
+    , settings_changes(other.settings_changes)
+    , settings_changes_names(other.settings_changes_names)
     , select(other.select)
     , refresh(other.refresh ? other.refresh->clone() : nullptr)
     , definer(other.definer)
@@ -107,10 +110,8 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     unique_key = other.unique_key;
     column_ttls_by_name = other.column_ttls_by_name;
     table_ttl = other.table_ttl;
-    if (other.settings_changes)
-        settings_changes = other.settings_changes->clone();
-    else
-        settings_changes.reset();
+    settings_changes = other.settings_changes;
+    settings_changes_names = other.settings_changes_names;
     select = other.select;
     refresh = other.refresh ? other.refresh->clone() : nullptr;
     definer = other.definer;
@@ -295,10 +296,15 @@ void StorageInMemoryMetadata::setColumnTTLs(const TTLColumnsDescription & column
 
 void StorageInMemoryMetadata::setSettingsChanges(const ASTPtr & settings_changes_)
 {
+    settings_changes_names.clear();
     if (settings_changes_)
-        settings_changes = settings_changes_;
+    {
+        settings_changes = settings_changes_->formatWithSecretsOneLine<SecretString>();
+        for (const auto & change : settings_changes_->as<const ASTSetQuery &>().changes)
+            settings_changes_names.push_back(change.name);
+    }
     else
-        settings_changes = nullptr;
+        settings_changes.reset();
 }
 
 void StorageInMemoryMetadata::setSelectQuery(const SelectQueryDescription & select_)
@@ -749,17 +755,24 @@ Names StorageInMemoryMetadata::getUniqueKeyColumns() const
 
 ASTPtr StorageInMemoryMetadata::getSettingsChanges() const
 {
-    if (settings_changes)
-        return settings_changes->clone();
-    return nullptr;
+    if (!settings_changes)
+        return nullptr;
+
+    if (settings_changes->empty())
+    {
+        auto empty_settings_changes = make_intrusive<ASTSetQuery>();
+        empty_settings_changes->is_standalone = false;
+        return empty_settings_changes;
+    }
+
+    std::string_view text = *settings_changes;
+    ParserSetQuery parser(/* parse_only_internals_ = */ true);
+    return parseQuery(parser, text.data(), text.data() + text.size(), "", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 }
 
 bool StorageInMemoryMetadata::hasSettingChange(const String & setting_name) const
 {
-    if (!settings_changes)
-        return false;
-
-    return settings_changes->as<const ASTSetQuery &>().changes.tryGet(setting_name) != nullptr;
+    return std::ranges::find(settings_changes_names, setting_name) != settings_changes_names.end();
 }
 
 Field StorageInMemoryMetadata::getSettingChange(const String & setting_name) const
@@ -767,7 +780,8 @@ Field StorageInMemoryMetadata::getSettingChange(const String & setting_name) con
     if (!settings_changes)
         return Field();
 
-    const auto & changes = settings_changes->as<const ASTSetQuery &>().changes;
+    const auto settings_changes_ast = getSettingsChanges();
+    const auto & changes = settings_changes_ast->as<const ASTSetQuery &>().changes;
     auto it = std::ranges::find_if(changes, [&setting_name](const SettingChange & change) { return change.name == setting_name; });
     return it != changes.end() ? it->value : Field();
 }

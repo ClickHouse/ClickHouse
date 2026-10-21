@@ -98,7 +98,7 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
 {
     MutableColumns & res_columns = params.res_columns;
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    auto settings_changes_ast = metadata_snapshot->settings_changes;
+    auto settings_changes_ast = metadata_snapshot->getSettingsChanges();
     if (!settings_changes_ast)
         return;
 

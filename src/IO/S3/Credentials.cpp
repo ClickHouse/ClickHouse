@@ -698,7 +698,7 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AWSInstanceProfileCredentials
         {
             auto ec2_metadata_client = std::make_shared<AWSEC2MetadataClient>(client_configuration, endpoint.c_str());
             auto config_loader = std::make_shared<AWSEC2InstanceProfileConfigLoader>(ec2_metadata_client, use_secure_pull);
-            return std::make_shared<AWSInstanceProfileCredentialsProvider>(config_loader);
+            return Aws::MakeShared<AWSInstanceProfileCredentialsProvider>("S3Credentials", config_loader);
         });
 }
 
@@ -727,7 +727,7 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleWebIdenti
     Aws::String session_name = std::move(resolved.session_name);
     Aws::String tmp_region = std::move(resolved.tmp_region);
 
-    auto empty_credentials = std::make_shared<Aws::Auth::AnonymousAWSCredentialsProvider>();
+    auto empty_credentials = Aws::MakeShared<Aws::Auth::AnonymousAWSCredentialsProvider>("S3Credentials");
     if (token_file.empty())
     {
         LOG_WARNING(logger, "Token file must be specified to use STS AssumeRole web identity creds provider.");
@@ -770,7 +770,7 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleWebIdenti
         AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::CacheKey{role_arn, token_file, cache_on_session_name ? session_name : ""},
         [&]
         {
-            return std::make_shared<AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider>(
+            return Aws::MakeShared<AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider>("S3Credentials",
                 aws_client_configuration,
                 expiration_window_seconds_,
                 std::move(role_arn),
@@ -997,7 +997,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
     /// because it's manually defined by the user
     if (!credentials.IsEmpty())
     {
-        AddProvider(std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials));
+        AddProvider(Aws::MakeShared<Aws::Auth::SimpleAWSCredentialsProvider>("S3Credentials", credentials));
         return;
     }
 
@@ -1040,7 +1040,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                     aws_client_configuration, credentials_configuration.expiration_window_seconds, credentials_configuration.kms_role_arn));
         }
 
-        AddProvider(std::make_shared<Aws::Auth::EnvironmentAWSCredentialsProvider>());
+        AddProvider(Aws::MakeShared<Aws::Auth::EnvironmentAWSCredentialsProvider>("S3Credentials"));
 
         {
             DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
@@ -1054,7 +1054,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.for_disk_s3,
                 configuration.opt_disk_name,
                 configuration.request_throttler);
-            AddProvider(std::make_shared<SSOCredentialsProvider>(
+            AddProvider(Aws::MakeShared<SSOCredentialsProvider>("S3Credentials",
                 std::move(aws_client_configuration), credentials_configuration.expiration_window_seconds));
         }
 
@@ -1073,7 +1073,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
 
         if (!relative_uri.empty())
         {
-            AddProvider(std::make_shared<Aws::Auth::TaskRoleCredentialsProvider>(relative_uri.c_str()));
+            AddProvider(Aws::MakeShared<Aws::Auth::TaskRoleCredentialsProvider>("S3Credentials", relative_uri.c_str()));
             LOG_INFO(logger, "Added ECS metadata service credentials provider with relative path: [{}] to the provider chain.",
                     relative_uri);
         }
@@ -1082,7 +1082,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
             auto token = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN);
             const auto token_path = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN_FILE);
 
-            AddProvider(std::make_shared<Aws::Auth::GeneralHTTPCredentialsProvider>(
+            AddProvider(Aws::MakeShared<Aws::Auth::GeneralHTTPCredentialsProvider>("S3Credentials",
                 relative_uri,
                 absolute_uri,
                 token,
@@ -1137,7 +1137,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
         /// disabled the chain stays empty and the request goes out unsigned (anonymous).
         /// Quite verbose provider (argues if file with credentials doesn't exist) so it's the last one
         /// in chain.
-        AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
+        AddProvider(Aws::MakeShared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>("S3Credentials"));
     }
 }
 
@@ -1306,7 +1306,7 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleCredentia
             role_arn, session_name, external_id, client->getEndpoint().GetURL(), credentials_provider->GetAWSCredentials()},
         [&]
         {
-            return std::make_shared<AwsAuthSTSAssumeRoleCredentialsProvider>(
+            return Aws::MakeShared<AwsAuthSTSAssumeRoleCredentialsProvider>("S3Credentials",
                 std::move(role_arn), std::move(session_name), std::move(external_id), expiration_window_seconds_, std::move(client));
         });
 }
@@ -1476,7 +1476,7 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
     /// cannot build the AWS provider chain here while the HTTP layer still sends a GCP OAuth token.
     if (credentials_configuration.no_sign_request || force_anonymous_fallback || boost::iequals(configuration.http_client, "gcp_oauth"))
     {
-        credentials_provider = std::make_shared<Aws::Auth::AnonymousAWSCredentialsProvider>();
+        credentials_provider = Aws::MakeShared<Aws::Auth::AnonymousAWSCredentialsProvider>("S3Credentials");
     }
     else
     {

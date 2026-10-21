@@ -76,7 +76,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString warehouse;
     extern const DatabaseDataLakeSettingsSecretString catalog_credential;
     extern const DatabaseDataLakeSettingsBool use_unity_catalog_v2;
-    extern const DatabaseDataLakeSettingsString auth_header;
+    extern const DatabaseDataLakeSettingsSecretString auth_header;
     extern const DatabaseDataLakeSettingsString auth_scope;
     extern const DatabaseDataLakeSettingsString storage_endpoint;
     extern const DatabaseDataLakeSettingsS3UriStyle storage_uri_style;
@@ -202,7 +202,7 @@ DatabaseDataLake::DatabaseDataLake(
     : IDatabase(database_name_)
     , url(url_)
     , database_settings(std::make_unique<const DatabaseDataLakeSettings>(settings_))
-    , database_engine_definition(database_engine_definition_)
+    , database_engine_definition(database_engine_definition_->formatWithSecretsOneLine<SecretString>())
     , table_engine_definition(table_engine_definition_)
     , log(getLogger("DatabaseDataLake(" + database_name_ + ")"))
     , allow_server_credentials_in_user_queries(allow_server_credentials_in_user_queries_)
@@ -282,7 +282,7 @@ void DatabaseDataLake::initialize() const
                 url,
                 settings[DatabaseDataLakeSetting::catalog_credential].value,
                 settings[DatabaseDataLakeSetting::auth_scope].value,
-                settings[DatabaseDataLakeSetting::auth_header],
+                settings[DatabaseDataLakeSetting::auth_header].value,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
                 settings[DatabaseDataLakeSetting::flat_namespaces].value,
@@ -298,7 +298,7 @@ void DatabaseDataLake::initialize() const
                 url,
                 settings[DatabaseDataLakeSetting::catalog_credential].value,
                 settings[DatabaseDataLakeSetting::auth_scope].value,
-                settings[DatabaseDataLakeSetting::auth_header],
+                settings[DatabaseDataLakeSetting::auth_header].value,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
                 settings[DatabaseDataLakeSetting::flat_namespaces].value,
@@ -315,7 +315,7 @@ void DatabaseDataLake::initialize() const
                 url,
                 settings[DatabaseDataLakeSetting::catalog_credential].value,
                 settings[DatabaseDataLakeSetting::auth_scope].value,
-                settings[DatabaseDataLakeSetting::auth_header],
+                settings[DatabaseDataLakeSetting::auth_header].value,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
                 settings[DatabaseDataLakeSetting::flat_namespaces].value,
@@ -1592,7 +1592,7 @@ ASTPtr DatabaseDataLake::getCreateDatabaseQueryImpl() const
 {
     const auto & create_query = make_intrusive<ASTCreateQuery>();
     create_query->setDatabase(database_name);
-    create_query->set(create_query->storage, database_engine_definition);
+    create_query->set(create_query->storage, parseDatabaseEngineDefinition(database_engine_definition));
     create_query->uuid = db_uuid;
     if (!comment.empty())
         create_query->set(create_query->comment, make_intrusive<ASTLiteral>(comment));
@@ -1629,7 +1629,7 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
     ASTPtr new_engine_definition;
     {
         std::lock_guard lock(mutex);
-        new_engine_definition = database_engine_definition->clone();
+        new_engine_definition = parseDatabaseEngineDefinition(database_engine_definition);
     }
     auto * storage = new_engine_definition->as<ASTStorage>();
     if (!storage)
@@ -1693,7 +1693,7 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
     database_settings.set(std::move(new_settings));
     {
         std::lock_guard lock(mutex);
-        database_engine_definition = new_engine_definition;
+        database_engine_definition = new_engine_definition->formatWithSecretsOneLine<SecretString>();
     }
     if (!local_catalog_snapshot)
     {
@@ -1810,7 +1810,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         if (database_engine_define->settings)
             database_settings.loadFromQuery(*database_engine_define, args.create_query.attach);
 
-        const auto & auth_header_str = database_settings[DatabaseDataLakeSetting::auth_header].value;
+        std::string_view auth_header_str = database_settings[DatabaseDataLakeSetting::auth_header].value;
         /// Validate `auth_header` on CREATE only (matches the `allow_experimental_database_*`
         /// gates below, which also self-skip on attach). An already-persisted database whose
         /// `auth_header` was accepted by an older version must still attach at startup, so a
@@ -1873,6 +1873,9 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             url = engine_args[0]->as<ASTLiteral>()->value.safeGet<String>();
 
         auto engine_for_tables = database_engine_define->clone();
+        /// The clone is retained for the lifetime of the database, its SETTINGS may hold credentials, and no reader needs them.
+        auto & engine_for_tables_storage = engine_for_tables->as<ASTStorage &>();
+        engine_for_tables_storage.reset(engine_for_tables_storage.settings);
         ASTFunction * engine_func = engine_for_tables->as<ASTStorage &>().engine;
         if (engine_func->arguments == nullptr)
         {

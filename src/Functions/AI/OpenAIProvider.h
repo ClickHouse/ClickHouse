@@ -31,7 +31,7 @@ namespace DB
 class OpenAIProvider : public IAIProvider
 {
 public:
-    OpenAIProvider(const String & endpoint_, const String & api_key_);
+    OpenAIProvider(const String & endpoint_, std::string_view api_key_);
 
     void call(const AIChatRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response) override;
     HTTPHeaderEntries getHeaders() const override;
@@ -42,7 +42,7 @@ public:
 
 private:
     const String endpoint;
-    const String api_key;
+    const SecretString api_key;
     const Poco::URI uri;
 };
 

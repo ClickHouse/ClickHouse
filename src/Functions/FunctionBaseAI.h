@@ -91,7 +91,7 @@ public:
         String collection_name;
         String provider;
         String endpoint;
-        String api_key;
+        SecretString api_key;
         String api_version;
     };
 

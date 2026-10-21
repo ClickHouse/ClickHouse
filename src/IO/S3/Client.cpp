@@ -14,6 +14,7 @@
 
 #include <aws/core/Aws.h>
 #include <aws/core/utils/memory/AWSMemory.h>
+#include <aws/common/allocator.h>
 #include <aws/core/client/CoreErrors.h>
 #include <aws/core/utils/cbor/CborValue.h>
 #include <aws/s3/model/HeadBucketRequest.h>
@@ -1341,6 +1342,16 @@ public:
     void FreeMemory(void * ptr) override { JemallocNoDumpArenas::deallocate(ptr); }
 };
 
+void * awsAllocatorAcquire(aws_allocator *, size_t size) noexcept
+{
+    return JemallocNoDumpArenas::allocate(size, 0, std::nothrow);
+}
+
+void awsAllocatorRelease(aws_allocator *, void * ptr) noexcept
+{
+    JemallocNoDumpArenas::deallocate(ptr);
+}
+
 NoDumpMemoryManager no_dump_memory_manager;
 
 }
@@ -1350,6 +1361,8 @@ ClientFactory::ClientFactory()
     aws_options = Aws::SDKOptions{};
 
     aws_options.memoryManagementOptions.memoryManager = &no_dump_memory_manager;
+    Aws::get_aws_allocator()->mem_acquire = awsAllocatorAcquire;
+    Aws::get_aws_allocator()->mem_release = awsAllocatorRelease;
 
     aws_options.cryptoOptions = Aws::CryptoOptions{};
     aws_options.cryptoOptions.initAndCleanupOpenSSL = false;

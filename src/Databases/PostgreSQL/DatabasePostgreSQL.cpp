@@ -109,7 +109,7 @@ DatabasePostgreSQL::DatabasePostgreSQL(
     : DatabaseWithAltersOnDiskBase(dbname_)
     , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)
-    , database_engine_define(database_engine_define_->clone())
+    , database_engine_define(database_engine_define_->formatWithSecretsOneLine<SecretString>())
     , configuration(configuration_)
     , pool(std::move(pool_))
     , cache_tables(cache_tables_)
@@ -601,7 +601,7 @@ ASTPtr DatabasePostgreSQL::getCreateDatabaseQueryImpl() const
 {
     const auto & create_query = make_intrusive<ASTCreateQuery>();
     create_query->setDatabase(database_name);
-    create_query->set(create_query->storage, database_engine_define);
+    create_query->set(create_query->storage, parseDatabaseEngineDefinition(database_engine_define));
     create_query->uuid = db_uuid;
 
     if (!comment.empty())
@@ -627,7 +627,7 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     }
 
     auto create_table_query = make_intrusive<ASTCreateQuery>();
-    auto table_storage_define = database_engine_define->clone();
+    auto table_storage_define = parseDatabaseEngineDefinition(database_engine_define);
     table_storage_define->as<ASTStorage>()->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
     create_table_query->set(create_table_query->storage, table_storage_define);
 

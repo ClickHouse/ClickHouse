@@ -7145,7 +7145,7 @@ void StorageReplicatedMergeTree::alter(
         /// Also we don't upgrade alter lock to table structure lock.
         merge_strategy_picker.refreshState();
         auto old_metadata = getInMemoryMetadataPtr(query_context, true);
-        changeSettings(future_metadata.settings_changes, table_lock_holder);
+        changeSettings(future_metadata.getSettingsChanges(), table_lock_holder);
 
         if (statistics_changed)
         {
@@ -7162,7 +7162,7 @@ void StorageReplicatedMergeTree::alter(
         catch (...)
         {
             /// Revert in-memory so system.* doesn't diverge from SHOW CREATE TABLE.
-            changeSettings(old_metadata->settings_changes, table_lock_holder);
+            changeSettings(old_metadata->getSettingsChanges(), table_lock_holder);
             if (statistics_changed)
                 setInMemoryMetadata(*old_metadata);
             throw;
@@ -7200,7 +7200,7 @@ void StorageReplicatedMergeTree::alter(
     {
         merge_strategy_picker.refreshState();
         auto old_metadata = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/true);
-        changeSettings(future_metadata.settings_changes, table_lock_holder);
+        changeSettings(future_metadata.getSettingsChanges(), table_lock_holder);
 
         /// changeSettings is the sole writer of the setting-derived escape fields and has
         /// already committed them; carry them into future_metadata so the comment commit
@@ -7224,7 +7224,7 @@ void StorageReplicatedMergeTree::alter(
         catch (...)
         {
             /// Revert in-memory so system.* doesn't diverge from SHOW CREATE TABLE.
-            changeSettings(old_metadata->settings_changes, table_lock_holder);
+            changeSettings(old_metadata->getSettingsChanges(), table_lock_holder);
             setInMemoryMetadata(*old_metadata);
             throw;
         }
@@ -7331,7 +7331,7 @@ void StorageReplicatedMergeTree::alter(
         String new_columns_str = future_metadata.columns.toString(true);
         ops.emplace_back(zkutil::makeSetRequest(fs::path(zookeeper_path) / "columns", new_columns_str, -1));
 
-        bool settings_are_changed = (ast_to_str(current_metadata->settings_changes) != ast_to_str(future_metadata.settings_changes));
+        bool settings_are_changed = (ast_to_str(current_metadata->getSettingsChanges()) != ast_to_str(future_metadata.getSettingsChanges()));
         bool comment_is_changed = (current_metadata->comment != future_metadata.comment);
 
         if (settings_are_changed || comment_is_changed)
@@ -7339,7 +7339,7 @@ void StorageReplicatedMergeTree::alter(
             StorageInMemoryMetadata metadata_copy = *current_metadata;
 
             if (settings_are_changed)
-                metadata_copy.settings_changes = future_metadata.settings_changes;
+                metadata_copy.setSettingsChanges(future_metadata.getSettingsChanges());
             if (comment_is_changed)
                 metadata_copy.setComment(future_metadata.comment);
 
@@ -7350,7 +7350,7 @@ void StorageReplicatedMergeTree::alter(
 
             /// Just change settings
             if (settings_are_changed)
-                changeSettings(metadata_copy.settings_changes, table_lock_holder);
+                changeSettings(metadata_copy.getSettingsChanges(), table_lock_holder);
 
             /// The comment is not replicated as of today, but we can implement it later.
             if (comment_is_changed)
@@ -7368,7 +7368,7 @@ void StorageReplicatedMergeTree::alter(
             {
                 /// Revert in-memory so system.* doesn't diverge from SHOW CREATE TABLE.
                 if (settings_are_changed)
-                    changeSettings(current_metadata->settings_changes, table_lock_holder);
+                    changeSettings(current_metadata->getSettingsChanges(), table_lock_holder);
                 if (comment_is_changed)
                     setInMemoryMetadata(*current_metadata);
                 throw;

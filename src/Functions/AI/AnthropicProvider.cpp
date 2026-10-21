@@ -21,7 +21,7 @@ namespace ErrorCodes
 
 static constexpr auto DEFAULT_ANTHROPIC_API_VERSION = "2023-06-01";
 
-AnthropicProvider::AnthropicProvider(const String & endpoint_, const String & api_key_, const String & api_version_)
+AnthropicProvider::AnthropicProvider(const String & endpoint_, std::string_view api_key_, const String & api_version_)
     : endpoint(endpoint_)
     , api_key(api_key_)
     , api_version(api_version_.empty() ? DEFAULT_ANTHROPIC_API_VERSION : api_version_)
