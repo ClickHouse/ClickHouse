@@ -1233,6 +1233,18 @@ void AccessControl::setFunctionsRequiringGrant(const Strings & function_names)
         /// Resolve before the lookup: `hasNameOrAlias` matches only the registered spelling, so
         /// `HEX` itself is not found, while `hex` is.
         String registered_name = function_factory.resolveNameOrAlias(name);
+        if (registered_name == "arrayJoin")
+        {
+            /// The `ARRAY JOIN` clause performs the same expansion without calling the function, so
+            /// listing `arrayJoin` would protect only one of two equivalent spellings. Reject it like
+            /// an aggregate function instead of leaving a restriction that is trivial to bypass.
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Function '{}' cannot be listed in access_control_improvements.functions_requiring_grant: "
+                "the ARRAY JOIN clause does the same without calling it",
+                name);
+        }
+
         if (function_factory.hasNameOrAlias(registered_name))
         {
             /// Store the registered name, so that `<function>isValidASCII</function>` also covers

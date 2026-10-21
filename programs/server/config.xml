@@ -923,6 +923,7 @@
              not picked up by SYSTEM RELOAD CONFIG.
              Aggregate and window functions are not covered and an aggregate name here is an error:
              the server refuses to start rather than pretend that such a function is protected.
+             The same holds for arrayJoin, because the ARRAY JOIN clause does the same without calling it.
              Table functions are not covered either. An unknown name is kept and reported with a
              warning in the log, because a user-defined function with that name may be created later.
              Empty by default for backward compatibility. GRANT ALL includes FUNCTION ON *. Example:
