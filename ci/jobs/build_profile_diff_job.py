@@ -73,6 +73,7 @@ import json
 import os
 import statistics
 import subprocess
+import time
 import traceback
 from typing import Dict, List, Optional
 
@@ -573,6 +574,8 @@ EXTEND_MAX_PAGES = 60
 # `gh` self-bounds connect and TLS handshake but not a stalled response body,
 # so every call carries its own deadline.
 GH_TIMEOUT_SECONDS = 120
+# Attempts per commit listing: GitHub fails single requests while the ones around them succeed.
+GH_ATTEMPTS = 3
 GH_STREAM_LEN = 300
 
 # Wall clock kept back from the CI logs cluster read retries so that the job can
@@ -619,6 +622,9 @@ def _list_commits_page(anchor_sha: str, page: int) -> List[dict]:
     This is NOT the first-parent chain: the listing interleaves merged PRs'
     second-parent commits. Each entry carries its parent shas so that
     `_walk_first_parent` can reconstruct the chain client-side.
+
+    A timeout, an HTTP 5xx or 429, or a failure that names no HTTP status (a
+    cut or reset response) is retried; any other 4xx fails at once.
     """
     # Hardcoded upstream namespace, like the store_data hook: the profile rows
     # in the CI logs cluster carry public-repo shas.
@@ -630,20 +636,30 @@ def _list_commits_page(anchor_sha: str, page: int) -> List[dict]:
         "--jq",
         "[.[] | {sha: .sha, date: .commit.committer.date, parents: [.parents[].sha]}]",
     ]
-    try:
-        res = subprocess.run(argv, capture_output=True, text=True, timeout=GH_TIMEOUT_SECONDS)
-    except subprocess.TimeoutExpired as e:
-        raise RuntimeError(f"gh api timed out after {GH_TIMEOUT_SECONDS} s: {endpoint}") from e
-    if res.returncode != 0:
+    error = None
+    for attempt in range(1, GH_ATTEMPTS + 1):
+        if attempt > 1:
+            print(f"WARNING: {error}, retrying in {5 * (attempt - 1)} s")
+            time.sleep(5 * (attempt - 1))
+        try:
+            res = subprocess.run(argv, capture_output=True, text=True, timeout=GH_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            error = RuntimeError(f"gh api timed out after {GH_TIMEOUT_SECONDS} s (attempt {attempt} of {GH_ATTEMPTS}): {endpoint}")
+            continue
+        if res.returncode == 0:
+            return json.loads(res.stdout)
         # Field order matters: an outer caller bounds this message before it
         # reaches a public comment, so the exit code and the endpoint - one of
         # up to EXTEND_MAX_PAGES - precede the capped API-controlled streams,
         # which are what name the HTTP status.
-        raise RuntimeError(
-            f"gh api exited {res.returncode} for {endpoint}: "
+        error = RuntimeError(
+            f"gh api exited {res.returncode} for {endpoint} (attempt {attempt} of {GH_ATTEMPTS}): "
             f"err[{_elide_stream(res.stderr)}] out[{_elide_stream(res.stdout)}]"
         )
-    return json.loads(res.stdout)
+        # gh reports an HTTP error as "gh: <message> (HTTP <status>)"; a 4xx other than 429 is not transient.
+        if "(HTTP 4" in res.stderr and "(HTTP 429)" not in res.stderr:
+            break
+    raise error
 
 
 def _walk_first_parent(anchor_sha: str, cutoff: str, max_pages: int, list_page, max_commits: int = 0):

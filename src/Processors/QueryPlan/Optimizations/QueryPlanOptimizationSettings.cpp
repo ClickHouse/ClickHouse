@@ -10,6 +10,9 @@
 #include <Interpreters/Context.h>
 
 #include <Common/SipHash.h>
+
+#include <algorithm>
+#include <string_view>
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
 
@@ -80,6 +83,7 @@ namespace Setting
     extern const SettingsBool query_plan_merge_expressions;
     extern const SettingsBool query_plan_merge_expression_into_join;
     extern const SettingsBool query_plan_merge_filter_into_join_condition;
+    extern const SettingsBool query_plan_replace_always_true_filter;
     extern const SettingsBool query_plan_merge_filters;
     extern const SettingsBool query_plan_optimize_lazy_final;
     extern const SettingsBool query_plan_optimize_lazy_materialization;
@@ -130,6 +134,7 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_min_bytes_per_replica;
     extern const SettingsFloat automatic_parallel_replicas_max_duplicated_read_ratio;
+    extern const SettingsBool automatic_parallel_replicas_remember_boundary;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
     extern const SettingsString cluster_for_parallel_replicas;
@@ -138,6 +143,7 @@ namespace Setting
     extern const SettingsUInt64 distributed_plan_max_rows_to_broadcast;
     extern const SettingsBool distributed_plan_read_in_order;
     extern const SettingsBool distributed_plan_prefer_replicas_over_workers;
+    extern const SettingsBool distributed_plan_join_runtime_filters;
     extern const SettingsUInt64 join_runtime_bloom_filter_bytes;
     extern const SettingsUInt64 join_runtime_bloom_filter_hash_functions;
     extern const SettingsUInt64 join_runtime_filter_blocks_to_skip_before_reenabling;
@@ -174,6 +180,54 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int INVALID_SETTING_VALUE;
     extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace
+{
+
+/// The settings that the build of the replicas plan reads and that can move where the replicas' half of the
+/// plan ends, while leaving the single-replica plan as it is - so that plan's root hash, under which automatic
+/// parallel replicas remembers the boundary, cannot see them.
+///
+/// A setting counts when its name contains one of the fragments below. The match is deliberately loose: it takes
+/// whole families (parallel replicas, plan optimizations, pushdowns, reordering), so a setting added to one is
+/// covered without anyone remembering this place. Precision does not matter here - a setting that does not move
+/// the boundary only costs a missed cache entry, i.e. one build of the replicas plan, as without the cache.
+/// Registration rule for anything outside these families: add it when the build of the replicas plan reads it (in
+/// `findParallelReplicasQuery`, `buildQueryTreeForShard` or `ClusterProxy::executeQueryWithParallelReplicas`) and
+/// it can change which subquery is shipped or how it is rewritten.
+///
+/// A setting counts only when its value differs from the declared default, so sessions left at the defaults
+/// share one hash; `changes` returns the settings in declaration order, so the order they were set in does not
+/// matter.
+UInt64 parallelReplicasBoundarySettingsHash(const Settings & settings)
+{
+    static constexpr std::string_view name_fragments[] = {
+        "parallel_replicas",
+        "query_plan",
+        "optimiz",
+        "push",
+        "reorder",
+        "prefer_global_in_and_join",
+        "distributed_product_mode",
+        "enable_add_distinct_to_in_subqueries",
+    };
+
+    SipHash hash;
+    for (const auto & change : settings.changes())
+    {
+        const std::string_view name = change.name;
+        if (std::ranges::none_of(name_fragments, [&](std::string_view fragment) { return name.contains(fragment); }))
+            continue;
+        const auto value = Settings::valueToStringUtil(name, change.value);
+        if (value == settings.getDefaultValueString(name))
+            continue;
+        hash.update(name);
+        hash.update(value);
+    }
+    return hash.get64();
+}
+
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
@@ -220,6 +274,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     try_use_vector_search = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_try_use_vector_search];
     convert_join_to_in = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_join_to_in];
     merge_filter_into_join_condition = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filter_into_join_condition];
+    replace_always_true_filter = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_replace_always_true_filter];
     merge_expression_into_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_expression_into_join];
     convert_any_join_to_semi_or_anti_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_any_join_to_semi_or_anti_join];
     try_use_top_k_optimization = from[Setting::use_skip_indexes_for_top_k] || from[Setting::use_top_k_dynamic_filtering];
@@ -339,6 +394,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     distributed_plan_force_shuffle_aggregation = from[Setting::distributed_plan_force_shuffle_aggregation];
     distributed_aggregation_memory_efficient = from[Setting::distributed_aggregation_memory_efficient];
     distributed_plan_prefer_replicas_over_workers = from[Setting::distributed_plan_prefer_replicas_over_workers];
+    distributed_plan_join_runtime_filters = from[Setting::distributed_plan_join_runtime_filters];
     exact_rows_before_limit = from[Setting::exact_rows_before_limit];
 
     enable_cascades_optimizer = from[Setting::enable_cascades_optimizer];
@@ -408,6 +464,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     automatic_parallel_replicas_mode = Context::getAutomaticParallelReplicasMode(from);
     automatic_parallel_replicas_min_bytes_per_replica = from[Setting::automatic_parallel_replicas_min_bytes_per_replica];
     automatic_parallel_replicas_max_duplicated_read_ratio = from[Setting::automatic_parallel_replicas_max_duplicated_read_ratio];
+    automatic_parallel_replicas_remember_boundary = from[Setting::automatic_parallel_replicas_remember_boundary];
+    parallel_replicas_boundary_settings_hash = parallelReplicasBoundarySettingsHash(from);
 
     // It doesn't have to be equal to this setting, it just appears to be a better value than hardcoded 2Mi
     min_bytes_per_task_for_reading = from[Setting::merge_tree_min_bytes_per_task_for_remote_reading];

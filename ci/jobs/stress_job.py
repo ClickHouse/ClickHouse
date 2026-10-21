@@ -7,6 +7,7 @@ from typing import List, Tuple
 
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.docker_image import DockerImage
+from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.log_parser import FuzzerLogParser
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -360,6 +361,17 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     cores_path.mkdir(parents=True, exist_ok=True)
 
     additional_envs = get_additional_envs(info, check_name)
+
+    if not upgrade_check:
+        # The stress runner selects the stateless tests of this checkout, and some of them read the
+        # test data submodules. The upgrade check runs the tests of the previous release instead.
+        Shell.check(
+            "git -c safe.directory='*' submodule update --init --depth 1 --single-branch -- "
+            + " ".join(Targeting.TEST_DATA_SUBMODULES),
+            strict=True,
+            retries=3,
+            verbose=True,
+        )
 
     run_command = get_run_command(
         packages_path,

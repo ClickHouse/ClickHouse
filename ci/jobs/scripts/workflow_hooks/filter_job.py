@@ -99,16 +99,18 @@ def _is_llvm_coverage_family_job(job_name):
 
 
 # With the `ci-llvm-coverage` label a pull request runs the LLVM coverage family and these jobs
-# only: the style check and the stateless flaky checks of the changed tests with their builds
-# (`FUNCTIONAL_TEST_FLAKY_CHECK_JOBS`; the `amd_binary` build among them is also what the
-# `excluded_from_llvm` jobs need). The coverage shards cannot serve as the flaky check: they run
-# without random settings and sanitizers and never fail the pipeline (`functional_tests.py`).
-# Made for pull requests that only add tests and need the coverage report, such as the pull
-# requests of the test-writing agents: `ci-force-all` runs about three times as many machine
-# minutes for them. `can_be_merged.py` lets a pull request that changes only stateless tests
-# merge with the label.
+# only: the style check, the AI code review, and the stateless flaky checks of the changed tests
+# with their builds (`FUNCTIONAL_TEST_FLAKY_CHECK_JOBS`; the `amd_binary` build among them is also
+# what the `excluded_from_llvm` jobs need). The coverage shards cannot serve as the flaky check:
+# they run without random settings and sanitizers and never fail the pipeline
+# (`functional_tests.py`). Made for pull requests that only add tests and need the coverage
+# report, such as the pull requests of the test-writing agents: `ci-force-all` runs about three
+# times as many machine minutes for them. `can_be_merged.py` lets a pull request that changes only
+# stateless tests merge with the label. The code review is the review of such a pull request:
+# nobody else reads a generated test, so its threads must be answered before the merge.
 LLVM_COVERAGE_ONLY_JOBS = [
     JobNames.STYLE_CHECK,
+    JobNames.CODE_REVIEW,
     *FUNCTIONAL_TEST_FLAKY_CHECK_JOBS,
 ]
 
@@ -633,7 +635,7 @@ _PIPELINE_NOTES = {
         "Label `ci-coverage` (or a change of the coverage code) runs the LLVM coverage jobs and the `LLVM Coverage` merge job."
     ),
     Labels.CI_LLVM_COVERAGE: (
-        "Label `ci-llvm-coverage` runs the LLVM coverage jobs, the `LLVM Coverage` merge job and the stateless flaky checks only."
+        "Label `ci-llvm-coverage` runs the LLVM coverage jobs, the `LLVM Coverage` merge job, the stateless flaky checks and the code review only."
     ),
 }
 
@@ -1097,14 +1099,14 @@ def should_skip_merge_queue_job(job_name):
     The merge queue runs a small, fixed set of jobs (style check, fast test, the
     `amd_binary` build, the stateless flaky check, and the docs examples). Only
     the flaky check is conditional: it reruns the PR's new/changed stateless
-    tests as a drift guard, so a PR that changes no stateless tests has nothing
-    for it to do. Filter it out here, at config time, so such a PR does not
-    schedule the runner, restore `CH_AMD_BINARY`, and enter the test container
-    only to exit `SKIPPED`. This is the merge-queue counterpart to the `flaky`
+    tests and the tests `master` changed after the PR's last CI run as a drift
+    guard, so when there are none it has nothing to do. Filter it out here, at
+    config time, so such a PR does not schedule the runner, restore
+    `CH_AMD_BINARY`, and enter the test container only to exit `SKIPPED`. This is the merge-queue counterpart to the `flaky`
     branch of `should_skip_job`, kept deliberately minimal so it cannot skip the
     build/style/fast-test/docs-examples jobs the queue always needs. The skip
     condition matches the in-job selection in `functional_tests.py` (both rely
-    on `Targeting.get_changed_tests`), so the early exit and the config-time
+    on `Targeting.get_merge_queue_tests`), so the early exit and the config-time
     skip never disagree. `get_changed_tests` resolves data fixtures (a
     `.parquet`/`.tsv` under `tests/queries/0_stateless/`, even one nested in a
     subdirectory) back to the tests that consume them, so a fixture-only PR
@@ -1122,6 +1124,6 @@ def should_skip_merge_queue_job(job_name):
 
     targeter = Targeting(info=_info_cache)
     targeter.job_type = Targeting.STATELESS_JOB_TYPE
-    if not targeter.get_changed_tests():
+    if not targeter.get_merge_queue_tests():
         return True, "Skipped, no new/changed stateless tests to rerun in the merge queue"
     return False, ""

@@ -667,6 +667,4 @@ private:
     void checkValueNonZero() const;
 };
 
-bool stringToBool(const String & str);
-
 }

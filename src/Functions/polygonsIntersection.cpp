@@ -51,10 +51,9 @@ public:
         return 2;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    String getSignatureString() const override
     {
-        /// Intersection of each with figure with each could be easily represent as MultiPolygon.
-        return DataTypeFactory::instance().get("MultiPolygon");
+        return "(Any, Any) -> MultiPolygon";
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }

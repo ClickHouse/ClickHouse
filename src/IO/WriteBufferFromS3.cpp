@@ -423,7 +423,7 @@ void WriteBufferFromS3::createMultipartUpload()
     /// The storage class of a multipart-uploaded object is determined by the CreateMultipartUpload
     /// request; it cannot be set on UploadPart or CompleteMultipartUpload. See issue #68551.
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
-        req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
+        req.SetStorageClass(S3::getStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
 
     if (auto checksum_algorithm = getUploadChecksumAlgorithm(); checksum_algorithm && S3::RequestChecksum::usesFlexibleChecksumHeader(*checksum_algorithm))
         req.setUploadChecksumAlgorithm(*checksum_algorithm);
@@ -745,7 +745,7 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     req.SetMetadata(metadataWithIdempotencyId());
     req.setIdempotencyId(idempotency_id);
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
-        req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
+        req.SetStorageClass(S3::getStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
 
     if (auto checksum_algorithm = getUploadChecksumAlgorithm(); checksum_algorithm && S3::RequestChecksum::usesFlexibleChecksumHeader(*checksum_algorithm))
         req.setUploadChecksumAlgorithm(*checksum_algorithm);

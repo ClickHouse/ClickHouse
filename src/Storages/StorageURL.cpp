@@ -295,7 +295,7 @@ IStorageURLBase::IStorageURLBase(
 
 namespace
 {
-    HTTPHeaderEntries getHeaders(const HTTPHeaderEntries & headers_)
+    HTTPHeaderEntries getHeaders(const HTTPHeaderEntries & headers_, const ContextPtr & context)
     {
         HTTPHeaderEntries headers(headers_.begin(), headers_.end());
 
@@ -303,12 +303,12 @@ namespace
         const auto & current_trace_context = OpenTelemetry::CurrentContext();
         if (current_trace_context.isTraceEnabled())
         {
-            headers.emplace_back("traceparent", current_trace_context.composeTraceparentHeader());
-
+            /// The user headers are checked in the `StorageURL` constructor; `tracestate` comes from the client as is.
+            HTTPHeaderEntries trace_headers{{"traceparent", current_trace_context.composeTraceparentHeader()}};
             if (!current_trace_context.tracestate.empty())
-            {
-                headers.emplace_back("tracestate", current_trace_context.tracestate);
-            }
+                trace_headers.emplace_back("tracestate", current_trace_context.tracestate);
+            context->getHTTPHeaderFilter().checkHeaders(trace_headers);
+            headers.insert(headers.end(), trace_headers.begin(), trace_headers.end());
         }
 
         return headers;
@@ -599,7 +599,7 @@ StorageURLSource::StorageURLSource(
     , format_settings(format_settings_)
     , parser_shared_resources(std::move(parser_shared_resources_))
     , format_filter_info(std::move(format_filter_info_))
-    , headers(getHeaders(headers_))
+    , headers(getHeaders(headers_, context_))
     , need_only_count(need_only_count_)
     , storage_id(std::move(storage_id_))
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
@@ -1523,7 +1523,14 @@ namespace
             format = format_name;
         }
 
-        String getLastFilePath() const override { return current_url_option; }
+        String getLastFilePath() const override
+        {
+            /// `current_url_option` is kept raw for requests and schema cache keys, but the diagnostic
+            /// path can reach the client, server log and `system.query_log`, so mask credentials here.
+            String masked = current_url_option;
+            maskURICredentials(masked);
+            return masked;
+        }
 
         bool supportsLastReadBufferRecreation() const override { return true; }
 
@@ -3220,7 +3227,7 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
 /// parameter named like a credential (`access_token`, Azure SAS `sig`, ...). Returns whether anything was masked.
 static bool maskURLCredentials(String & url)
 {
-    bool changed = maskURIPassword(&url);
+    bool changed = maskURIPassword(&url, URI_AUTHORITY_TERMINATORS);
     changed |= maskPresignedURLParameters(url);
     String masked = maskSensitiveQueryParametersInURI(url);
     if (masked != url)

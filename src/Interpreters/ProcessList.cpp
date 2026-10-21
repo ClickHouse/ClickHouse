@@ -553,6 +553,7 @@ QueryStatus::QueryStatus(
     , query_kind(query_kind_)
     , num_queries_increment(CurrentMetrics::Query)
     , is_internal(is_internal_)
+    , is_ddl_or_on_cluster_internal(context_->isDDLOrOnClusterInternal())
 {
     if (!is_internal)
         num_non_internal_queries_increment.emplace(CurrentMetrics::QueryNonInternal);
@@ -942,7 +943,7 @@ CancellationCode ProcessList::sendCancelToPostgreSQLQuery(Int32 process_id, UInt
 }
 
 
-void ProcessList::killAllQueries()
+void ProcessList::killAllQueries(bool except_ddl_backups_and_restores)
 {
     std::vector<QueryStatusPtr> cancelled_processes;
 
@@ -958,6 +959,11 @@ void ProcessList::killAllQueries()
         cancelled_processes.reserve(processes.size());
         for (auto & process : processes)
         {
+            if (except_ddl_backups_and_restores
+                && (process->query_kind == IAST::QueryKind::Backup || process->query_kind == IAST::QueryKind::Restore)
+                && process->is_ddl_or_on_cluster_internal)
+                continue;
+
             cancelled_processes.push_back(process);
             process->is_cancelling = true;
         }

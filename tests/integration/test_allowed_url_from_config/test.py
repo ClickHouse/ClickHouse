@@ -508,3 +508,54 @@ def test_ai_functions_host_filter(start_cluster):
     finally:
         drop_ai_collections(node4)
         drop_ai_collections(node5)
+
+
+def test_hive_catalog_host_filter(start_cluster):
+    query = (
+        "CREATE DATABASE test_hive_host_filter ENGINE = DataLakeCatalog('thrift://localhost:1') "
+        "SETTINGS catalog_type = 'hive', warehouse = 'test_warehouse'"
+    )
+    settings = {"allow_experimental_database_hms_catalog": 1}
+    try:
+        # Control first: `node4` declares no `remote_url_allow_hosts` at all, so its filter stays
+        # uninitialized and allows everything - the same statement gets past the check and fails at
+        # the network instead. Without this arm, a filter that rejected everything would also pass.
+        error = node4.query_and_get_error(query, settings=settings)
+        if "USE_HIVE" in error:
+            pytest.skip("ClickHouse was built without Hive support")
+        assert "UNACCEPTABLE_URL" not in error, error
+
+        # `node5` declares an empty `remote_url_allow_hosts`, which allows nothing.
+        error = node5.query_and_get_error(query, settings=settings)
+        assert "UNACCEPTABLE_URL" in error, error
+        # The check must run before the connect, so the refusal carries no connection error.
+        assert "Connection refused" not in error, error
+    finally:
+        node4.query("DROP DATABASE IF EXISTS test_hive_host_filter")
+        node5.query("DROP DATABASE IF EXISTS test_hive_host_filter")
+
+
+def test_hive_catalog_host_filter_rejects_nul(start_cluster):
+    def create(url):
+        return node1.query_and_get_error(
+            f"CREATE DATABASE test_hive_host_filter_nul ENGINE = DataLakeCatalog('{url}') "
+            "SETTINGS catalog_type = 'hive', warehouse = 'test_warehouse'",
+            settings={"allow_experimental_database_hms_catalog": 1},
+        )
+
+    try:
+        # Control: the suffix rule in `config_with_hosts.xml` admits this host, so it gets past the
+        # filter and fails at name resolution instead.
+        error = create("thrift://hms.allowed.example:1")
+        if "USE_HIVE" in error:
+            pytest.skip("ClickHouse was built without Hive support")
+        assert "UNACCEPTABLE_URL" not in error, error
+
+        # The same rule matches the whole string including the NUL, but `getaddrinfo` would stop at the
+        # NUL and connect to 127.0.0.1. The host must be refused before any connection attempt.
+        error = create("thrift://127.0.0.1\\0.allowed.example:1")
+        assert "BAD_ARGUMENTS" in error, error
+        assert "Unexpected character" in error, error
+        assert "Connection refused" not in error, error
+    finally:
+        node1.query("DROP DATABASE IF EXISTS test_hive_host_filter_nul")

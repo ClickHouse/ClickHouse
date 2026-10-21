@@ -1764,6 +1764,31 @@ def test_drop_table_purge(started_cluster):
         node.wait_for_log_line(rf"tables/{table_name}\?purgeRequested={str(purge).lower()}")
 
 
+def test_drop_table_purge_query_setting(started_cluster):
+    # node1 has `iceberg_delete_data_on_drop` disabled in its profile.
+    node = started_cluster.instances["node1"]
+
+    for purge in (False, True):
+        test_ref = f"test_drop_table_purge_query_setting_{uuid.uuid4()}"
+        table_name = f"{test_ref}_table"
+        root_namespace = f"{test_ref}_namespace"
+
+        create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+        create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x Int)")
+        node.query(
+            f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES (1)",
+            settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+        )
+        files = list_s3_objects(started_cluster.minio_client, "warehouse-rest", f"{table_name}/")
+        assert files
+
+        node.query(
+            f"DROP TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`",
+            settings={"iceberg_delete_data_on_drop": int(purge)},
+        )
+        assert list_s3_objects(started_cluster.minio_client, "warehouse-rest", f"{table_name}/") == ([] if purge else files)
+
+
 def test_create_table_order_by(started_cluster):
     # `ORDER BY` must reach the catalog as the table's write order.
     node = started_cluster.instances["node1"]
@@ -1904,6 +1929,52 @@ def test_cluster_insert(started_cluster):
         settings=parallel_replicas_settings,
     )
     assert table_name not in node1.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+
+
+def test_cluster_mutations(started_cluster):
+    node1 = started_cluster.instances["node1"]
+    node2 = started_cluster.instances["node2"]
+
+    test_ref = f"test_cluster_mutations_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+
+    create_clickhouse_iceberg_database(started_cluster, node1, CATALOG_NAME)
+    create_clickhouse_iceberg_database(started_cluster, node2, CATALOG_NAME)
+    create_clickhouse_iceberg_table(
+        started_cluster, node1, root_namespace, table_name, "(x String)"
+    )
+
+    parallel_replicas_settings = {
+        "parallel_replicas_for_cluster_engines": 1,
+        "enable_parallel_replicas": 2,
+        "cluster_for_parallel_replicas": "cluster_simple",
+    }
+    settings = {
+        "allow_insert_into_iceberg": 1,
+        "write_full_path_in_iceberg_metadata": 1,
+        **parallel_replicas_settings,
+    }
+
+    node1.query(
+        f"INSERT INTO {table_ref} VALUES ('a'), ('b'), ('c'), ('d')", settings=settings
+    )
+    node1.query(f"ALTER TABLE {table_ref} DELETE WHERE x = 'a'", settings=settings)
+    node1.query(f"DELETE FROM {table_ref} WHERE x = 'b'", settings=settings)
+    node1.query(
+        f"ALTER TABLE {table_ref} UPDATE x = 'z' WHERE x = 'c'", settings=settings
+    )
+
+    for replica in [node1, node2]:
+        assert replica.query(f"SELECT x FROM {table_ref} ORDER BY x") == "d\nz\n"
+        assert (
+            replica.query(
+                f"SELECT x FROM {table_ref} ORDER BY x",
+                settings=parallel_replicas_settings,
+            )
+            == "d\nz\n"
+        )
 
 
 def test_used_storages_in_query_log(started_cluster):
@@ -3205,3 +3276,33 @@ def test_drop_partition_catalog_without_snapshot(started_cluster):
         f"ALTER TABLE {qualified} DROP PARTITION 1", settings=DROP_PARTITION_SETTINGS
     )
     assert node.query(f"SELECT count() FROM {qualified}").strip() == "0"
+
+
+def test_drop_partition_catalog_parallel_replicas(started_cluster):
+    node = started_cluster.instances["node1"]
+    namespace = f"clickhouse_{uuid.uuid4()}"
+    table_name = "drop_partition_parallel_replicas"
+
+    create_drop_partition_catalog_table(load_catalog_impl(started_cluster), namespace, table_name)
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    qualified = f"{CATALOG_NAME}.`{namespace}.{table_name}`"
+
+    node.query(
+        f"INSERT INTO {qualified} VALUES (1, 'x'), (2, 'y'), (3, 'z')",
+        settings=DROP_PARTITION_SETTINGS,
+    )
+    # With parallel replicas the catalog table is served by `StorageObjectStorageCluster`.
+    node.query(
+        f"ALTER TABLE {qualified} DROP PARTITION 2",
+        settings={
+            **DROP_PARTITION_SETTINGS,
+            "parallel_replicas_for_cluster_engines": 1,
+            "enable_parallel_replicas": 2,
+            "cluster_for_parallel_replicas": "cluster_simple",
+        },
+    )
+    assert node.query(f"SELECT a FROM {qualified} ORDER BY a").strip() == "1\n3"
+
+    # Reread the metadata location from the catalog to confirm the commit is durable.
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    assert node.query(f"SELECT a FROM {qualified} ORDER BY a").strip() == "1\n3"

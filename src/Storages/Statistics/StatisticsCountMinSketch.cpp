@@ -69,6 +69,13 @@ void StatisticsCountMinSketch::build(const ColumnPtr & column)
     }
 }
 
+size_t StatisticsCountMinSketch::allocatedBytes() const
+{
+    /// The counters, one row of buckets per hash function, and the seeds of the hash functions.
+    const size_t sketch_num_hashes = sketch.get_num_hashes();
+    return sizeof(*this) + (sketch_num_hashes * sketch.get_num_buckets() + sketch_num_hashes) * sizeof(UInt64);
+}
+
 void StatisticsCountMinSketch::merge(const StatisticsPtr & other_stats)
 {
     const StatisticsCountMinSketch * other = typeid_cast<const StatisticsCountMinSketch *>(other_stats.get());

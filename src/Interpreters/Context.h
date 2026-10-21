@@ -26,6 +26,7 @@
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/IStorage_fwd.h>
 #include <Backups/BackupsInMemoryHolder.h>
+#include <Server/StatelessWorker/StatelessWorkerAllocation_fwd.h>
 
 #include <Poco/AutoPtr.h>
 
@@ -103,11 +104,15 @@ class MovesList;
 class ReplicatedFetchList;
 class RefreshSet;
 class Cluster;
+class IStatelessWorkersProvider;
+using StatelessWorkersProviderPtr = std::shared_ptr<IStatelessWorkersProvider>;
+class StatelessWorkersProviderRegistry;
 class Compiler;
 class MarkCache;
 class UniqueKeyIndexCache;
 class DeleteBitmapCache;
 class PrimaryIndexCache;
+class StatisticsCache;
 class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
@@ -418,6 +423,9 @@ protected:
 
     using InteractiveCancelCallback = std::function<bool()>;
     InteractiveCancelCallback interactive_cancel_callback; /// Callback for usage in interactive sessions with CompletedPipelineExecutor
+
+    using ClientConnectedCallback = std::function<bool()>;
+    ClientConnectedCallback client_connected_callback; /// Returns false once the client has disconnected. Not inherited by copies.
 
     std::weak_ptr<QueryStatus> process_list_elem;  /// For tracking total resource usage for query.
     bool has_process_list_elem = false;     /// It's impossible to check if weak_ptr was initialized or not
@@ -811,6 +819,11 @@ private:
     /// ContextData mutex
     mutable ContextSharedMutex mutex;
 
+    /// Held across the blocking allocation, so separate from `mutex`.
+    mutable std::mutex stateless_worker_allocation_mutex;
+    mutable StatelessWorkerAllocationPtr stateless_worker_allocation;
+    mutable StatelessWorkersProviderPtr stateless_worker_provider;
+
     Context();
     Context(const Context &);
 
@@ -1044,6 +1057,8 @@ public:
     UInt64 getCPUSlotQuantum() const;
     UInt64 getCPUSlotPreemptionTimeout() const;
     void setCPUSlotPreemption(bool cpu_slot_preemption, UInt64 cpu_slot_quantum_ns, UInt64 cpu_slot_preemption_timeout_ms);
+    bool getCPUSlotParking() const;
+    void setCPUSlotParking(bool value);
     UInt64 getConcurrentThreadsSoftLimitNum() const;
     UInt64 getConcurrentThreadsSoftLimitRatioToCores() const;
     String getConcurrentThreadsScheduler() const;
@@ -1323,6 +1338,9 @@ public:
     void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraints(SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, SettingSource source);
+    /// Clamping counterpart of `checkSettingsConstraintsForSettingsReset`: reduces `names` to the resets
+    /// allowed by the constraints and returns in `clamped_changes` the assignments replacing the clamped ones.
+    void clampSettingsConstraintsForSettingsReset(std::vector<String> & names, SettingsChanges & clamped_changes, SettingSource source);
     /// For the resets of a statement that also changes `profile`: `changes_applied_first` decides their constraints.
     void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, const SettingsChanges & changes_applied_first, SettingSource source);
     void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
@@ -1374,6 +1392,9 @@ public:
     void stopAcceptingNewBackupsAndRestores() const;
 
     void waitAllBackupsAndRestores() const;
+
+    /// Stopping the DDL worker first registers every part of an ON CLUSTER backup or restore it runs, so that the wait covers them.
+    void stopDDLWorkerAndWaitAllBackupsAndRestores() const;
 
     /// Returns false if `deadline` was reached while some operation was still running.
     bool cancelAllBackupsAndRestores(std::optional<std::chrono::steady_clock::time_point> deadline = {}) const;
@@ -1547,6 +1568,9 @@ public:
     void setInteractiveCancelCallback(InteractiveCancelCallback && callback) { interactive_cancel_callback = callback; }
     InteractiveCancelCallback getInteractiveCancelCallback() const { return interactive_cancel_callback; }
 
+    void setClientConnectedCallback(ClientConnectedCallback && callback) { client_connected_callback = callback; }
+    ClientConnectedCallback getClientConnectedCallback() const { return client_connected_callback; }
+
     /** Set in executeQuery and InterpreterSelectQuery. Then it is used in QueryPipeline,
       *  to update and monitor information about the total number of resources spent for the query.
       */
@@ -1613,6 +1637,15 @@ public:
     void shutdownKeeperDispatcherAfterConnectionsFinish(bool closed_all_connections) const;
     void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config) const;
 
+    /// The provider for the named worker cluster (empty = default), built on first use.
+    StatelessWorkersProviderPtr getStatelessWorkersProvider(const String & cluster_name) const;
+    std::shared_ptr<StatelessWorkersProviderRegistry> getStatelessWorkersProviderRegistry() const;
+    void reloadStatelessWorkersConfig(const Poco::Util::AbstractConfiguration & config) const;
+    /// The query's provider, resolved once so plan sizing and the allocation use the same workers.
+    StatelessWorkersProviderPtr getStatelessWorkersProvider() const;
+    /// The query's allocation, shared by all of its distributed plans.
+    StatelessWorkerAllocationPtr getOrCreateStatelessWorkerAllocation() const;
+
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
     void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
     /// Has ready or expired ZooKeeper
@@ -1666,6 +1699,10 @@ public:
     std::shared_ptr<PrimaryIndexCache> getPrimaryIndexCache() const;
     void clearPrimaryIndexCache() const;
 
+    void setStatisticsCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
+    void updateStatisticsCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    std::shared_ptr<StatisticsCache> getStatisticsCache() const;
+    void clearStatisticsCache() const;
     void setColumnsCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
     /// `default_size` is the size to use when `columns_cache_size` is absent from `config`, see `getDefaultColumnsCacheSize`.
     void updateColumnsCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t default_size, size_t max_cache_size);
@@ -2119,7 +2156,7 @@ public:
 
     /** There are multiple conditions that have to be met to be able to use parallel replicas */
     /// Whether parallel replicas are enabled, in any `parallel_replicas_mode`. Use it rather than reading
-    /// `enable_parallel_replicas`: in `read_tasks` mode `automatic_parallel_replicas_mode` decides instead, so they do
+    /// `enable_parallel_replicas`: in `read_tasks` mode `automatic_parallel_replicas_mode` decides instead on the initiator, so they do
     /// not count as enabled there, although the setting stays on for cluster engines.
     bool isParallelReplicasEnabled() const;
     /// `automatic_parallel_replicas_mode`, except that forcing parallel replicas (`enable_parallel_replicas = 2`) turns the
@@ -2176,7 +2213,7 @@ public:
 private:
     /// `ignore_automatic_parallel_replicas` is for cluster engines (`s3`, `url`, a table of a data lake catalog, ...):
     /// `automatic_parallel_replicas_mode` only decides for `MergeTree` reads, so they use parallel replicas whenever
-    /// they are enabled.
+    /// they are enabled. It is also set for a follower, which reads the way the initiator decided.
     bool canUseTaskBasedParallelReplicasImpl(bool ignore_automatic_parallel_replicas) const;
 
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;

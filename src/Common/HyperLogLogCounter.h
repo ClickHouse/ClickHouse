@@ -7,6 +7,7 @@
 #include <Common/transformEndianness.h>
 
 #include <IO/ReadBuffer.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 
 #include <bit>

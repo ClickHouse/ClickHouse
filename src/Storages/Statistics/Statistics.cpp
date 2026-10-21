@@ -200,6 +200,13 @@ IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
 {
 }
 
+size_t IStatistics::fieldAllocatedBytes(const Field & field)
+{
+    if (field.getType() == Field::Types::String)
+        return field.safeGet<String>().capacity();
+    return 0;
+}
+
 ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_)
     : stats_desc(stats_desc_)
 {
@@ -663,6 +670,19 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
         desc->deserialize(buf, version);
 
     return result;
+}
+
+size_t ColumnStatistics::allocatedBytes() const
+{
+    /// A node of `std::map` holds the value and three pointers and a color.
+    static constexpr size_t map_node_overhead = 4 * sizeof(void *);
+
+    size_t res = sizeof(*this);
+    for (const auto & [type, desc] : stats_desc.types_to_desc)
+        res += sizeof(ColumnStatisticsDescription::StatisticsTypeDescMap::value_type) + map_node_overhead + desc.allocatedBytes();
+    for (const auto & [type, single_stats] : stats)
+        res += sizeof(StatsMap::value_type) + map_node_overhead + single_stats->allocatedBytes() + single_stats->descriptionAllocatedBytes();
+    return res;
 }
 
 String ColumnStatistics::getNameForLogs() const

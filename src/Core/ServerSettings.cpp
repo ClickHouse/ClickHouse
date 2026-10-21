@@ -21,6 +21,7 @@
 #include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
+#include <Storages/MergeTree/StatisticsCache.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
@@ -668,6 +669,10 @@ This setting can be modified at runtime and will take effect immediately.
     DECLARE(UInt64, primary_index_cache_size, DEFAULT_PRIMARY_INDEX_CACHE_MAX_SIZE, R"(Maximum size of cache for primary index (index of MergeTree family of tables).)", 0) \
     DECLARE(Double, primary_index_cache_size_ratio, DEFAULT_PRIMARY_INDEX_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the primary index cache relative to the cache's total size.)", 0) \
     DECLARE(Double, primary_index_cache_prewarm_ratio, 0.95, R"(The ratio of total size of mark cache to fill during prewarm.)", 0) \
+    DECLARE(String, statistics_cache_policy, DEFAULT_STATISTICS_CACHE_POLICY, R"(Statistics cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.)", 0) \
+    DECLARE(UInt64, statistics_cache_size, DEFAULT_STATISTICS_CACHE_MAX_SIZE, R"(Maximum size of the cache of column statistics of data parts of MergeTree family of tables. The statistics are cached per data part and column, loaded on demand, and merged on the fly for every query.)", 0) \
+    DECLARE(Double, statistics_cache_size_ratio, DEFAULT_STATISTICS_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the statistics cache relative to the cache's total size.)", 0) \
+    DECLARE(Double, statistics_cache_prewarm_ratio, 0.95, R"(The ratio of total size of the statistics cache to fill during prewarm.)", 0) \
     DECLARE(String, iceberg_metadata_files_cache_policy, DEFAULT_ICEBERG_METADATA_CACHE_POLICY, "Iceberg metadata cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.", 0) \
     DECLARE(UInt64, iceberg_metadata_files_cache_size, DEFAULT_ICEBERG_METADATA_CACHE_MAX_SIZE, "Maximum size of iceberg metadata cache in bytes. Zero means disabled.", 0) \
     DECLARE(UInt64, iceberg_metadata_files_cache_max_entries, DEFAULT_ICEBERG_METADATA_CACHE_MAX_ENTRIES, "Maximum size of iceberg metadata files cache in entries. Zero means disabled.", 0) \
@@ -974,6 +979,11 @@ A value of `0` means no limitation.
 ```xml
 <max_named_collection_num_to_throw>400</max_named_collection_num_to_throw>
 ```
+)", 0) \
+    DECLARE(Bool, ai_function_allow_sql_named_collections, true, R"(
+Allows AI functions (such as `aiGenerate`, `aiEmbed`, `aiSimilarity`) to use named collections created with `CREATE NAMED COLLECTION`.
+When disabled, AI functions accept only named collections defined in the server configuration file, and using any other collection throws an exception.
+This applies both to the `credentials` parameter and to the `ai_function_text_default_credentials` and `ai_function_embedding_default_credentials` settings.
 )", 0) \
     DECLARE(UInt64, max_table_num_to_throw, 0lu, R"(
 If number of tables is greater than this value, server will throw an exception.
@@ -1366,6 +1376,18 @@ It defines how many CPU nanoseconds a thread is allowed to consume after acquire
 **See Also**
 - [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
 )", 0) \
+    DECLARE(Bool, cpu_slot_parking, true, R"(
+Defines whether a query thread releases (parks) its CPU slot while it is blocked on a non-CPU wait, such as some I/O operations or idling with no task available. A parked thread does not count against the CPU concurrency limit, so another thread can use the otherwise-idle CPU; the slot is re-acquired when the wait ends. Applies only when `cpu_slot_preemption` is enabled and a single CPU resource defines both MASTER THREAD and WORKER THREAD; in other configurations it has no effect. Can be changed without a server restart.
+
+**Example**
+
+```xml
+<cpu_slot_parking>true</cpu_slot_parking>
+```
+
+**See Also**
+- [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
+)", 0) \
     DECLARE(UInt64, cpu_slot_preemption_timeout_ms, 1000, R"(
 It defines how many milliseconds could a worker thread wait during preemption, i.e. while waiting for another CPU slot to be granted. After this timeout, if thread was unable to acquire a new CPU slot it will exit and the query is scaled down to a lower number of concurrently executing threads dynamically. Note that master thread never downscaled, but could be preempted indefinitely. Makes sense only when `cpu_slot_preemption` is enabled and CPU resource is defined for WORKER THREAD.
 
@@ -1502,6 +1524,9 @@ Maximum size of batch for MultiRead request to [Zoo]Keeper that support batching
     DECLARE(UInt64, distributed_cache_write_pool_size, 100, R"(The maximum number of distributed cache write requests that run on a background thread at the same time (across all queries). When the limit is reached, the write-through cache write is skipped (the data is still written to object storage), so it neither blocks waiting for a slot nor creates an unbounded number of threads. Writes of temporary data do not use background threads and are not affected by the limit.)", 0) \
     DECLARE(Bool, distributed_cache_apply_throttling_settings_from_client, true, R"(Whether cache server should apply throttling settings received from client.)", 0) \
     DECLARE(Bool, enable_read_through_distributed_cache, false, R"(Only has an effect in ClickHouse Cloud. Allow reading from distributed cache. This is a server-level switch, applied without a restart, so that background operations which do not have a query profile of their own (merges, mutations, `Buffer` table flushes) follow it as well. Individual queries can deviate from it with the `force_read_through_distributed_cache` setting.)", 0) \
+    DECLARE(NonZeroUInt64, distributed_cache_warmer_max_file_segment_size, 32_MiB, R"(Only has an effect in ClickHouse Cloud. The size of the ranges in which the cache warmer reads a fetched part into the distributed cache when the disk of the part has no local filesystem cache (with a local cache the warmer uses its `max_file_segment_size`).)", 0) \
+    DECLARE(UInt64, distributed_cache_warmer_max_bytes_in_queue, 100_GiB, R"(Only has an effect in ClickHouse Cloud. The maximum total size of the ranges the cache warmer keeps queued for a disk without a local filesystem cache; the oldest ranges are discarded beyond it (with a local cache the warmer uses its `max_size`). Zero means unlimited.)", 0) \
+    DECLARE(UInt64, distributed_cache_warmer_max_segments_in_queue, 100000, R"(Only has an effect in ClickHouse Cloud. The maximum number of ranges the cache warmer keeps queued for a disk without a local filesystem cache; the oldest ranges are discarded beyond it (with a local cache the warmer uses its `max_elements`). Zero means unlimited.)", 0) \
     DECLARE(Bool, enable_write_through_distributed_cache, false, R"(Only has an effect in ClickHouse Cloud. Allow writing to distributed cache (writing to s3 will also be done by distributed cache). This is a server-level switch, applied without a restart, so that background operations which do not have a query profile of their own (merges, mutations, `Buffer` table flushes) follow it as well. Individual queries can deviate from it with the `force_write_through_distributed_cache` setting.)", 0) \
     DECLARE(UInt32, allow_feature_tier, 0, R"(
 Controls if the user can change settings related to the different feature tiers.
@@ -3766,6 +3791,7 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"query_condition_cache_size", {std::to_string(context->getQueryConditionCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"encryption_header_cache_size", {std::to_string(context->getEncryptionHeaderCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"primary_index_cache_size", {std::to_string(context->getPrimaryIndexCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"statistics_cache_size", {std::to_string(context->getStatisticsCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"columns_cache_size", {std::to_string(context->getColumnsCache() ? context->getColumnsCache()->configuredMaxSizeInBytes() : 0), ChangeableWithoutRestart::Yes}},
             {"vector_similarity_index_cache_size", {std::to_string(context->getVectorSimilarityIndexCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"text_index_tokens_cache_size", {std::to_string(context->getTextIndexTokensCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
@@ -3783,6 +3809,7 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"cpu_slot_preemption", {std::to_string(context->getCPUSlotPreemption()), ChangeableWithoutRestart::Yes}},
             {"cpu_slot_quantum_ns", {std::to_string(context->getCPUSlotQuantum()), ChangeableWithoutRestart::Yes}},
             {"cpu_slot_preemption_timeout_ms", {std::to_string(context->getCPUSlotPreemptionTimeout()), ChangeableWithoutRestart::Yes}},
+            {"cpu_slot_parking", {std::to_string(context->getCPUSlotParking()), ChangeableWithoutRestart::Yes}},
             {"config_reload_interval_ms", {std::to_string(context->getConfigReloaderInterval()), ChangeableWithoutRestart::Yes}},
 
             {"allow_feature_tier",

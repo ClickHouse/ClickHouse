@@ -228,6 +228,11 @@ std::optional<Float64> StatisticsBasic::estimateEqual(const Field & val) const
     return static_cast<Float64>(default_count);
 }
 
+size_t StatisticsBasic::allocatedBytes() const
+{
+    return sizeof(*this) + fieldAllocatedBytes(min) + fieldAllocatedBytes(max) + fieldAllocatedBytes(column_default_field);
+}
+
 String StatisticsBasic::getNameForLogs() const
 {
     String result = "Basic: ";

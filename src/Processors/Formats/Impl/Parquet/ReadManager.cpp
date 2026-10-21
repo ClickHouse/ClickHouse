@@ -327,6 +327,9 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
                         clearColumnChunk(c, diff);
                     release_top_k_admission = true;
                 }
+                /// All subgroups are delivered (or there are none), so nothing forms columns from
+                /// the cached ones any more. Don't keep the columns alive after the cache evicts them.
+                row_group.cached_columns.clear();
                 break;
         }
 
@@ -410,6 +413,9 @@ void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgrou
                 continue;
 
             ColumnChunk & c = row_group.columns.at(i);
+            /// Formed from the columns cache instead, see `Reader::getOrFormOutputColumn`.
+            if (c.served_from_cache)
+                continue;
             if (is_offset_index)
             {
                 if (c.offset_index_prefetch && c.offset_index.page_locations.empty())
@@ -620,6 +626,8 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
             /// since we scheduled ColumnData prefetches for all of them and must release the memory.
             for (size_t i = 0; i < reader.primitive_columns.size(); ++i)
                 clearColumnChunk(row_group.columns.at(i), diff);
+
+            reader.flushColumnsCacheWrites(row_group);
 
             releaseTopKAdmission(row_group_idx, diff);
         }
@@ -836,6 +844,17 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
     }
 }
 
+MemoryUsageToken ReadManager::reserveOutputColumnMemory(size_t column_idx, const RowGroup & row_group, const RowSubgroup & row_subgroup, MemoryUsageDiff & diff)
+{
+    double bytes_per_row = reader.estimateColumnMemoryBytesPerRow(row_group.columns.at(column_idx), row_group, reader.primitive_columns.at(column_idx));
+    double estimate = bytes_per_row * static_cast<double>(row_subgroup.filter.rows_pass);
+    /// Keeps this batch's signed sum representable whatever the estimate.
+    ssize_t headroom = std::max<ssize_t>(0, std::numeric_limits<ssize_t>::max() / 2 - diff.by_stage.at(size_t(diff.cur_stage)));
+    size_t max_charge = std::min(reader.memoryEstimateLimit(), size_t(headroom));
+    size_t column_memory = estimate < static_cast<double>(max_charge) ? static_cast<size_t>(estimate) : max_charge;
+    return MemoryUsageToken(column_memory, &diff);
+}
+
 void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDiff & diff, std::vector<Task> & out_tasks)
 {
     LOG_TEST(getLogger("ParquetReadManager"), "scheduleTask: schedule task.row_group_idx={}, task.row_subgroup_idx={}, task.stage={}, task.column_idx={}, task.step_idx={}", task.row_group_idx, task.row_subgroup_idx, static_cast<Int32>(task.stage), task.column_idx, task.step_idx);
@@ -891,13 +910,7 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
                     prefetches.push_back(&column.data_pages_prefetch);
                 }
 
-                double bytes_per_row = reader.estimateColumnMemoryBytesPerRow(column, row_group, reader.primitive_columns.at(task.column_idx));
-                double estimate = bytes_per_row * static_cast<double>(row_subgroup.filter.rows_pass);
-                /// Keeps this batch's signed sum representable whatever the estimate.
-                ssize_t headroom = std::max<ssize_t>(0, std::numeric_limits<ssize_t>::max() / 2 - diff.by_stage.at(size_t(diff.cur_stage)));
-                size_t max_charge = std::min(reader.memoryEstimateLimit(), size_t(headroom));
-                size_t column_memory = estimate < static_cast<double>(max_charge) ? static_cast<size_t>(estimate) : max_charge;
-                subchunk.column_and_offsets_memory = MemoryUsageToken(column_memory, &diff);
+                subchunk.column_and_offsets_memory = reserveOutputColumnMemory(task.column_idx, row_group, row_subgroup, diff);
                 break;
             }
             case ReadStage::NotStarted:
@@ -914,6 +927,23 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
         /// If we're reusing filter.memory for a new step (multistage prewhere), free the old memory first.
         if (!row_subgroup.filter.memory)
             row_subgroup.filter.memory = MemoryUsageToken(row_subgroup.filter.rows_total, &diff);
+
+        /// The columns of this step served from the columns cache have no task, but forming them
+        /// copies their rows (see `Reader::getOrFormOutputColumn`), and the copies are kept until
+        /// the subgroup is delivered. Account for them as for the columns that are decoded.
+        if (!row_group.cached_columns.empty() && row_subgroup.filter.rows_pass > 0)
+        {
+            for (size_t i = 0; i < reader.primitive_columns.size(); ++i)
+            {
+                const ColumnChunk & column = row_group.columns.at(i);
+                if (!column.served_from_cache || reader.primitive_columns[i].first_step_to_calculate != task.step_idx)
+                    continue;
+                ColumnSubchunk & subchunk = row_subgroup.columns.at(i);
+                if (subchunk.column_and_offsets_memory)
+                    continue;
+                subchunk.column_and_offsets_memory = reserveOutputColumnMemory(i, row_group, row_subgroup, diff);
+            }
+        }
     }
 
     reader.prefetcher.startPrefetch(prefetches, &diff);
@@ -1306,7 +1336,7 @@ ReadManager::ReadResult ReadManager::read()
     chassert(row_subgroup.stage == ReadStage::Deliver);
     Columns output_columns(reader.sample_block->columns());
     for (size_t i = 0; i < output_columns.size(); ++i)
-        output_columns[i] = std::move(reader.getOrFormOutputColumn(row_subgroup, i));
+        output_columns[i] = std::move(reader.getOrFormOutputColumn(row_group, row_subgroup, i));
     Chunk chunk(std::move(output_columns), row_subgroup.filter.rows_pass);
     if (reader.top_k_best_value_column_pos)
         reader.updateTopKBestValue(row_group, *chunk.getColumns()[*reader.top_k_best_value_column_pos]);

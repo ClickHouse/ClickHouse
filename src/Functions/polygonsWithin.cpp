@@ -52,9 +52,9 @@ public:
         return 2;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    String getSignatureString() const override
     {
-        return std::make_shared<DataTypeUInt8>();
+        return "(Any, Any) -> UInt8";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

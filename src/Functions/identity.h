@@ -37,11 +37,14 @@ public:
     bool isSuitableForConstantFolding() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    String getSignatureString() const override { return "(T) -> T"; }
+
     /// `executeImpl` returns the argument column verbatim, so the result type must be exactly the
     /// argument type. The default `LowCardinality` implementation strips (nested) `LowCardinality` from
     /// the declared result type while the passthrough column keeps it, yielding a type/column mismatch
     /// that later aborts during serialization (e.g. `WITH TOTALS` const key). Keep the type identical
-    /// to the column.
+    /// to the column; this override stays authoritative on the type path, so the signature above is
+    /// documentation-only.
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     /// Same reasoning for `Variant`: the adaptor reassembles a bare `Variant` and drops a custom name
@@ -106,6 +109,14 @@ public:
     bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
+    /// Override the inherited signature: `__actionName` takes two String
+    /// arguments, not one. The base `(T) -> T` is wrong here (wrong arity),
+    /// and existing tests annotate non-String rejection as `BAD_ARGUMENTS`,
+    /// which the legacy `getReturnTypeImpl` below preserves. Returning an
+    /// empty string disables the declarative-signature framework, so the
+    /// manual override is fully authoritative.
+    String getSignatureString() const override { return ""; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         for (const auto & arg : arguments)
@@ -115,7 +126,7 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __actionName is internal nad should not be used directly");
         }
 
-        return FunctionIdentityBase::getReturnTypeImpl(arguments);
+        return arguments.front();
     }
 };
 
