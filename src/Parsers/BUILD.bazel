@@ -191,10 +191,19 @@ ch_cc_library(
         "PRQL/ParserPRQLQuery.cpp",
         "Polyglot/ParserPolyglotQuery.cpp",
     ] + glob(["Trino/*.cpp"]) + glob(["Prometheus/*.cpp"]) + glob(["LogsQL/*.cpp"]) + _PRIVATE_PARSERS_HEADERS,
-    hdrs = _PARSERS_API_HEADERS,
+    hdrs = glob(
+        ["**/*.h"],
+        exclude = _PRIVATE_PARSERS_HEADERS + [
+            "ASTCreateWasmFunctionQuery.h",
+            "ASTSQLSecurity.h",
+            "LexerStandalone.h",
+            "clickhouse_lexer.h",
+            "tests/**",
+            "**/tests/**",
+        ],
+    ),
     clickhouse_code = True,
     implementation_deps = [
-        "//bazel:clickhouse_config_headers",
         "//rust/workspace:prql_headers",
         "//rust/workspace:polyglot_headers",
     ],
@@ -264,6 +273,9 @@ ch_cc_library(
     ],
     deps = [
         ":headers",
+        "//base/poco/JSON:_poco_json",
+        "//base/poco/Foundation:_poco_foundation",
+        "//bazel:clickhouse_config_headers",
         "//src/Common",
         "//src:headers",
         "@clickhouse_boost//:boost_headers",
