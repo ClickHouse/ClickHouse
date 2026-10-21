@@ -18,13 +18,13 @@ ch_cc_library(
         "-Wno-reserved-id-macro",
         "-Wno-disabled-macro-expansion",
     ],
+    deps = ["@clickhouse_llvm_project//:unwind"],
     implementation_deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
     includes = [
         ".",
     ],
     language = "C",
     libcxx_headers = False,
-    link_runtime = True,
     llvm_headers = False,
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",

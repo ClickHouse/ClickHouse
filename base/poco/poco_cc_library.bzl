@@ -13,7 +13,7 @@ def poco_cc_library(name, copts = [], language = "CXX", **kwargs):
             "-Wframe-larger-than=65536",
         ] + CLICKHOUSE_WARNINGS + ["-std=gnu11"] + copts
         kwargs.setdefault("llvm_headers", True)
-        kwargs["link_runtime"] = True
+        kwargs["deps"] = kwargs.get("deps", []) + [Label("@clickhouse_llvm_project//:unwind")]
     else:
         kwargs["clickhouse_code"] = True
 
