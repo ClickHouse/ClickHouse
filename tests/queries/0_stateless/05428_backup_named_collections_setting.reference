@@ -1,5 +1,6 @@
 unset: an implicit selection skips the collections for a user without the rights to read them
 1
+1
 0
 unset: an implicit selection exports them for a user holding the rights
 1
