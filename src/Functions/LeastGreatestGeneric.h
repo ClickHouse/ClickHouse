@@ -37,6 +37,16 @@ enum class LeastGreatest : uint8_t
     Greatest
 };
 
+/// Whether `candidate` replaces `best` as the result: NaN loses against any number, and on ties `best` is kept.
+template <LeastGreatest kind, typename T>
+bool candidateReplacesBest(T best, T candidate)
+{
+    if constexpr (kind == LeastGreatest::Least)
+        return candidate < best || isNaN(best);
+    else
+        return candidate > best || isNaN(best);
+}
+
 
 template <LeastGreatest kind>
 class FunctionLeastGreatestGeneric final : public IFunction
@@ -179,21 +189,6 @@ private:
         return result_column;
     }
 
-    /// Replicates `compareAt` with nan_direction_hint = 1 for least / -1 for greatest:
-    /// NaN loses against any number, and on ties the earlier argument is kept.
-    template <typename T>
-    static bool takesPrecedence(T current, T incoming)
-    {
-        if constexpr (is_floating_point<T>)
-        {
-            if (isNaN(incoming))
-                return false;
-            if (isNaN(current))
-                return true;
-        }
-        return kind == LeastGreatest::Least ? incoming < current : incoming > current;
-    }
-
     /// Vectorized min/max fold for numeric (possibly Nullable) arguments of any arity.
     /// NULL loses against any value, so the result is NULL only where all arguments are NULL -
     /// same as the per-row loop above with null_direction_hint = 1 for least / -1 for greatest.
@@ -288,12 +283,12 @@ private:
                         else if (b_null[bi])
                             a[i] = x[xi];
                         else
-                            a[i] = takesPrecedence(x[xi], b[bi]) ? b[bi] : x[xi];
+                            a[i] = candidateReplacesBest<kind>(x[xi], b[bi]) ? b[bi] : x[xi];
                         a_null[i] = x_null[xi] && b_null[bi];
                     }
                     else
                     {
-                        a[i] = takesPrecedence(x[xi], b[bi]) ? b[bi] : x[xi];
+                        a[i] = candidateReplacesBest<kind>(x[xi], b[bi]) ? b[bi] : x[xi];
                     }
                 }
             };
