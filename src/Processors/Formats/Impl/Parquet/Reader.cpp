@@ -4452,8 +4452,21 @@ void Reader::addToColumnsCacheWrite(
         && column->size() == chunk_rows
         && !has_substituted_defaults;
 
+    /// The column is served from the cache only with all its chunks, see `initColumnsCache`: once a chunk cannot
+    /// be written, neither can the column, and the chunks already written only take space.
     if (!complete)
+    {
+        withdrawColumnsCacheWrite(write);
         return;
+    }
+
+    /// The budget is checked once for the column of the row group, before its first chunk: it is a soft threshold,
+    /// and the column that crosses it is written in full.
+    if (write.chunks_written == 0 && !canWriteToColumnsCache())
+    {
+        write.active = false;
+        return;
+    }
 
     /// Give back the capacity the column holds beyond its values: the decoder reserves memory by an estimate,
     /// which can be far off (for dictionary-encoded strings, it is the average length of the values of the
@@ -4469,6 +4482,9 @@ void Reader::addToColumnsCacheWrite(
 
     /// The decoded column itself becomes the entry, shared with the result of the read: no copy is made. It was
     /// allocated by this query, and its memory is handed over to the server when the cache admits it, see `setMany`.
+    /// It is written at once rather than with the other chunks of the column: kept until then, the decoded chunks
+    /// of the whole row group would be charged to the query, although the query itself needs only the block it
+    /// is processing.
     const ColumnsCacheOptions & cache_options = *options.columns_cache;
     auto entry = makeColumnsCacheEntry();
     {
@@ -4488,7 +4504,28 @@ void Reader::addToColumnsCacheWrite(
     entry->rows = chunk_rows;
     entry->key = ColumnsCacheKey{columns_cache_identities.at(idx_in_output_block), row_group.row_group_idx * COLUMNS_CACHE_MAX_CHUNKS_PER_ROW_GROUP + chunk};
     entry->column = column;
-    write.entries.push_back(std::move(entry));
+
+    const size_t bytes_admitted = cache_options.cache->setMany({entry}, columns_cache_generation);
+    if (bytes_admitted)
+        cache_options.write_budget->bytes_written.fetch_add(bytes_admitted, std::memory_order_relaxed);
+
+    ++write.chunks_written;
+    write.entries.push_back(entry);
+}
+
+void Reader::withdrawColumnsCacheWrite(RowGroup::ColumnsCacheWrite & write)
+{
+    write.active = false;
+
+    std::vector<ColumnsCache::MappedPtr> entries;
+    entries.reserve(write.entries.size());
+    for (const auto & weak_entry : write.entries)
+        if (auto entry = weak_entry.lock())
+            entries.push_back(std::move(entry));
+    write.entries.clear();
+
+    if (!entries.empty())
+        options.columns_cache->cache->removeEntries(entries);
 }
 
 void Reader::flushColumnsCacheWrites(RowGroup & row_group)
@@ -4496,31 +4533,25 @@ void Reader::flushColumnsCacheWrites(RowGroup & row_group)
     if (row_group.columns_cache_writes.empty())
         return;
 
-    /// A column of a row group is served from the cache only if all its chunks are there, see `initColumnsCache`,
-    /// so the chunks of a column are written only all together. The budget is checked once for the row group:
-    /// it is a soft threshold, and the entries of the row group that crosses it are written in full.
+    /// A column of a row group is served from the cache only if all its chunks are there, see `initColumnsCache`.
+    /// A chunk is not written when no row subgroup decoded it, e.g. when the column index skipped its rows.
     const size_t num_rows = size_t(row_group.meta->num_rows);
     const size_t num_chunks = (num_rows + COLUMNS_CACHE_CHUNK_ROWS - 1) / COLUMNS_CACHE_CHUNK_ROWS;
-    std::vector<ColumnsCache::MappedPtr> entries;
-    if (canWriteToColumnsCache())
+    for (auto & write : row_group.columns_cache_writes)
+        if (write.active && write.chunks_written != num_chunks)
+            withdrawColumnsCacheWrite(write);
+    row_group.columns_cache_writes.clear();
+}
+
+void Reader::withdrawColumnsCacheWrites()
+{
+    for (RowGroup & row_group : row_groups)
     {
         for (auto & write : row_group.columns_cache_writes)
-        {
-            if (write.entries.size() != num_chunks)
-                continue;
-            for (auto & entry : write.entries)
-                entries.push_back(std::move(entry));
-        }
+            if (write.active)
+                withdrawColumnsCacheWrite(write);
+        row_group.columns_cache_writes.clear();
     }
-    row_group.columns_cache_writes.clear();
-
-    if (entries.empty())
-        return;
-
-    const ColumnsCacheOptions & cache_options = *options.columns_cache;
-    const size_t bytes_admitted = cache_options.cache->setMany(entries, columns_cache_generation);
-    if (bytes_admitted)
-        cache_options.write_budget->bytes_written.fetch_add(bytes_admitted, std::memory_order_relaxed);
 }
 
 Reader::PrimitiveColumnInfo::~PrimitiveColumnInfo() = default;

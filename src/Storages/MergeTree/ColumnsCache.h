@@ -238,6 +238,12 @@ public:
     /// was invalidated after the read began, so the deferred write is dropped.
     size_t setMany(const std::vector<MappedPtr> & entries, UInt64 expected_table_generation);
 
+    /// Take back entries a reader has written with `setMany`, when what it wrote turns out to be of no
+    /// use, e.g. some chunks of a column of a `Parquet` row group that is served from the cache only
+    /// with all its chunks. Only the very entries are removed: an entry the cache has meanwhile
+    /// replaced or merged with another write of the same stripe is left alone.
+    void removeEntries(const std::vector<MappedPtr> & entries);
+
     /// Whether a stripe that is not in the cache should be written to it. Nothing is written
     /// while the cache is shrunk to nothing by `autoResize`: the copy would be rejected anyway.
     ///

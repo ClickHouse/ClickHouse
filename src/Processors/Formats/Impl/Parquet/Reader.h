@@ -506,14 +506,17 @@ struct Reader
         /// Both are parallel to extended_sample_block, or empty when not used.
         /// The chunks of the output columns found in the cache, all chunks of a column or none.
         std::vector<std::vector<ColumnPtr>> cached_columns;
-        /// The output columns to write to the cache, with the entries of their chunks read so far.
-        /// A chunk decoded by a row subgroup in full is written as it is, shared with the result of the
-        /// read, see `addToColumnsCacheWrite`. The entries are written when the row group is read.
+        /// The output columns to write to the cache, with the entries of their chunks written so far.
+        /// A chunk decoded by a row subgroup in full is written to the cache at once, shared with the
+        /// result of the read, see `addToColumnsCacheWrite`. A column whose chunks turn out not to be all
+        /// written is taken back out of the cache, see `withdrawColumnsCacheWrite`.
         /// A column is written by one row subgroup at a time, so the entries of a column need no lock.
         struct ColumnsCacheWrite
         {
             bool active = false;
-            std::vector<std::shared_ptr<ColumnsCacheEntry>> entries;
+            size_t chunks_written = 0;
+            /// Not owning: an entry the cache evicts is released as soon as the cache lets it go.
+            std::vector<std::weak_ptr<ColumnsCacheEntry>> entries;
         };
         std::vector<ColumnsCacheWrite> columns_cache_writes;
 
@@ -741,9 +744,12 @@ struct Reader
     MutableColumnPtr formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows);
     ColumnPtr & getOrFormOutputColumn(const RowGroup & row_group, RowSubgroup & row_subgroup, size_t idx_in_output_block);
 
-    /// Write the columns of the row group accumulated for the columns cache, once all its row
-    /// subgroups are read.
+    /// Finish the writes of the row group to the columns cache, once all its row subgroups are read:
+    /// take back out the columns that were not written in full.
     void flushColumnsCacheWrites(RowGroup & row_group);
+    /// Take back out of the columns cache the columns of the row groups that were not read to the end,
+    /// e.g. because of `LIMIT`. Called when the reading is finished or abandoned.
+    void withdrawColumnsCacheWrites();
 
     void applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group, size_t step_idx);
 
@@ -788,6 +794,7 @@ private:
     bool canWriteToColumnsCache() const;
     void addToColumnsCacheWrite(
         RowGroup & row_group, const RowSubgroup & row_subgroup, size_t idx_in_output_block, ColumnPtr & column, bool has_substituted_defaults);
+    void withdrawColumnsCacheWrite(RowGroup::ColumnsCacheWrite & write);
     void initializePrefetches();
     double estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group) const;
     void decodeDictionaryPageImpl(const parq::PageHeader & header, std::span<const char> data, ColumnChunk & column, const PrimitiveColumnInfo & column_info);

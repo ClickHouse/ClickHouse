@@ -570,6 +570,20 @@ void ColumnsCache::removeStaleEntries(const std::vector<Key> & keys, const std::
     }
 }
 
+void ColumnsCache::removeEntries(const std::vector<MappedPtr> & entries)
+{
+    /// The memory of the cache is the server's, see `setMany`.
+    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+
+    std::vector<Key> keys;
+    keys.reserve(entries.size());
+    for (const auto & entry : entries)
+        keys.push_back(entry->key);
+    removeStaleEntries(keys, entries);
+
+    parkedColumns().releaseUnused();
+}
+
 void ColumnsCache::removeTable(const UUID & table_uuid)
 {
     /// The memory of the cache is the server's, see `setMany`.

@@ -184,6 +184,17 @@ void ReadManager::shutdownTasks()
 ReadManager::~ReadManager()
 {
     shutdownTasks();
+
+    /// No task runs any more, so the row groups can be touched. A row group not read to the end has written
+    /// only some chunks of its columns to the columns cache, which are of no use without the rest.
+    try
+    {
+        reader.withdrawColumnsCacheWrites();
+    }
+    catch (...)
+    {
+        tryLogCurrentException("ParquetReadManager");
+    }
 }
 
 void ReadManager::cancel() noexcept

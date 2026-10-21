@@ -1,0 +1,11 @@
+1	524288
+--- a memory limit below the decoded row group, without the cache
+524288	33554432
+--- the same limit, with a cold cache: all chunks are written
+524288	33554432
+s	8	524288
+--- the same limit, served from the cache
+524288	33554432
+--- the chunks of a column that cannot be written in full are taken back
+393216	85899083776	25165824
+id	8	524288
