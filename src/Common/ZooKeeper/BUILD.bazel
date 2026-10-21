@@ -262,7 +262,6 @@ ch_cc_library(
         "@clickhouse_aws//:_aws",
         "@clickhouse_boost//:_boost_context",
         "@clickhouse_cctz//:tzdata",
-        "@clickhouse_krb5//:_krb5",
         "@clickhouse_llvm_project//:LLVMAsmPrinter",
         "@clickhouse_llvm_project//:LLVMRuntimeDyld",
         "@clickhouse_llvm_project//:LLVMSelectionDAG",

@@ -4,17 +4,10 @@ package(default_visibility = ["//visibility:public"])
 
 ch_cc_library(
     name = "clickhouse-keeper-bench-lib",
-    srcs = [
-        "GeneratedRunner.cpp",
-        "Generator.cpp",
-        "KeeperBench.cpp",
-        "LogRunner.cpp",
-        "NodesSetup.cpp",
-        "PathSet.cpp",
-        "RunnerCommon.cpp",
-        "Stats.cpp",
-        "StorageRunner.cpp",
-    ] + glob(["**/*.h"]),
+    srcs = glob(
+        ["*.cpp"],
+        exclude = ["keeper-bench.cpp"],
+    ) + glob(["**/*.h"]),
     clickhouse_code = True,
     implementation_deps = [
         "@clickhouse_rapidjson//:rapidjson",
