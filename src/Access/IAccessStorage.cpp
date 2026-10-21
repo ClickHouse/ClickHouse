@@ -3,6 +3,7 @@
 #include <Access/Credentials.h>
 #include <Access/User.h>
 #include <Access/AccessBackup.h>
+#include <algorithm>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackupCoordination.h>
 #include <Backups/IRestoreCoordination.h>
@@ -553,6 +554,14 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
             AuthResult auth_result { .user_id = *id, .user_name = credentials.getUserName() };
             if (!isAddressAllowed(*user, address))
                 throwAddressNotAllowed(address);
+
+            /// `MySQLHandler` chooses the `mysql_native_password` plugin from an earlier snapshot of the user, and the user
+            /// can be altered while the client is answering. Re-check on the snapshot used for the authentication: if any
+            /// method cannot be enforced by the Native41 auth response, reject it instead of letting that method silently
+            /// drop out of the checks below. See `Authentication::mysqlNative41CannotVerify`.
+            if (typeid_cast<const MySQLNative41Credentials *>(&credentials)
+                && std::ranges::any_of(user->authentication_methods, Authentication::mysqlNative41CannotVerify))
+                throw Exception(ErrorCodes::WRONG_PASSWORD, "Invalid credentials");
 
             bool skipped_not_allowed_authentication_methods = false;
 
