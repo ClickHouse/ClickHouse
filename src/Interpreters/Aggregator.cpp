@@ -1253,7 +1253,8 @@ void Aggregator::executeImpl(
         /// Before the freeze check, which must judge the heap against the latest shared boundary.
         method.top_k_heap.exchangeSharedBoundary();
 
-        if (method.top_k_heap.shouldFreeze())
+        if (method.top_k_heap.shouldFreeze()
+            || (!all_keys_are_const && method.top_k_heap.collatedSkipsRepeat(key_columns, row_begin, row_end)))
         {
             method.top_k_heap.freeze();
             ProfileEvents::increment(ProfileEvents::AggregationTopKHeapsFrozen);

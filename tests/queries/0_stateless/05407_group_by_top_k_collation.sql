@@ -250,6 +250,51 @@ SETTINGS max_threads = 2, max_block_size = 1024, enable_adaptive_aggregator = 1,
     group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000, enable_group_by_top_k_optimization = 1,
     log_comment = '05407_gave_up';
 
+-- A started heap gives up when the keys it skips repeat (2000 n... keys in cycles, or one key n) or when it skips
+-- nothing because every row is a new best key (descending l...), and keeps running while they stay new; a0..a4 every
+-- 97th row.
+SELECT 'running heap';
+SELECT s, count() FROM (SELECT multiIf(number < 33792, concat('m', toString(number)), number % 97 = 0,
+    concat('a', toString(number % 5)), concat('n', toString(number % 2000))) AS s FROM numbers(80000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 1024, group_by_top_k_optimization_observation_rows = 1,
+    enable_group_by_top_k_optimization = 0;
+SELECT s, count() FROM (SELECT multiIf(number < 33792, concat('m', toString(number)), number % 97 = 0,
+    concat('a', toString(number % 5)), concat('n', toString(number % 2000))) AS s FROM numbers(80000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 1024, group_by_top_k_optimization_observation_rows = 1,
+    enable_group_by_top_k_optimization = 1, log_comment = '05407_run_repeats';
+SELECT s, count() FROM (SELECT if(number < 33792, concat('m', toString(number)),
+    concat('l', leftPad(toString(99999 - number), 5, '0'))) AS s FROM numbers(80000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 1024, group_by_top_k_optimization_observation_rows = 1,
+    enable_group_by_top_k_optimization = 0;
+SELECT s, count() FROM (SELECT if(number < 33792, concat('m', toString(number)),
+    concat('l', leftPad(toString(99999 - number), 5, '0'))) AS s FROM numbers(80000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 1024, group_by_top_k_optimization_observation_rows = 1,
+    enable_group_by_top_k_optimization = 1, log_comment = '05407_run_new_best';
+SELECT s, count() FROM (SELECT multiIf(number < 33792, concat('m', toString(number)), number % 97 = 0,
+    concat('a', toString(number % 5)), concat('n', toString(number))) AS s FROM numbers(80000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 1024, group_by_top_k_optimization_observation_rows = 1,
+    enable_group_by_top_k_optimization = 0;
+SELECT s, count() FROM (SELECT multiIf(number < 33792, concat('m', toString(number)), number % 97 = 0,
+    concat('a', toString(number % 5)), concat('n', toString(number))) AS s FROM numbers(80000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 1024, group_by_top_k_optimization_observation_rows = 1,
+    enable_group_by_top_k_optimization = 1, log_comment = '05407_run_new_keys';
+SELECT s, count() FROM (SELECT multiIf(number < 33792, concat('m', toString(number)), number % 97 = 0,
+    concat('a', toString(number % 5)), 'n') AS s FROM numbers(80000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 1024, group_by_top_k_optimization_observation_rows = 1,
+    enable_group_by_top_k_optimization = 0;
+SELECT s, count() FROM (SELECT multiIf(number < 33792, concat('m', toString(number)), number % 97 = 0,
+    concat('a', toString(number % 5)), 'n') AS s FROM numbers(80000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 1024, group_by_top_k_optimization_observation_rows = 1,
+    enable_group_by_top_k_optimization = 1, log_comment = '05407_run_one_key';
+
 SYSTEM FLUSH LOGS query_log;
 
 -- Whether the heap pruned (on the shards for the remote queries), the aggregation spilled, and the table froze.
@@ -271,6 +316,15 @@ INNER JOIN
 WHERE q.type = 'QueryFinish' AND q.event_date >= yesterday() AND (q.is_initial_query = NOT startsWith(i.log_comment, '05407_remote'))
 GROUP BY i.log_comment
 ORDER BY i.log_comment;
+
+SELECT 'running heap engaged';
+SELECT log_comment, sum(ProfileEvents['AggregationTopKRowsSkipped'] + ProfileEvents['AggregationTopKKeysEvicted']) > 0 AS pruned,
+    sum(ProfileEvents['AggregationTopKHeapsFrozen']) AS heaps_frozen
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+    AND log_comment IN ('05407_run_new_best', '05407_run_new_keys', '05407_run_one_key', '05407_run_repeats')
+GROUP BY log_comment
+ORDER BY log_comment;
 
 DROP TABLE t_05407;
 DROP TABLE t_05407_spill;

@@ -138,6 +138,88 @@ bool TopKAggregationHeapBase::shouldFreeze() const
     return tie_overflow;
 }
 
+/// A heap with a `COLLATE` key tests every row with a locale comparison, which pays off only while the rows it skips
+/// would have inserted new keys: a skipped repeat saves just a lookup into a table that stays small. So once it has
+/// filled, the heap hashes each block's keys and estimates the share of rows it keeps out of the table as new keys:
+/// over 1 key in 2^`collated_sample_bits` by hash, whose skipped rows count when the sample lacks the key, and bounded
+/// by the rows whose hash is not in a direct-mapped table of `collated_recent_key_slots` recent hashes, which sees a
+/// few hot keys the sample misses. A window of `collated_sample_window` sampled rows (2^`collated_sample_bits` times as many rows when
+/// only the second estimate decides) with either below `collated_min_new_key_share` extends a run of repeats; the heap
+/// freezes once the run reaches `collated_repeat_rows_per_skipped_key` rows per key skipped so far, because freezing
+/// inserts those keys after all, and stops sampling at `collated_sample_max_keys` sampled keys (about 2M skipped).
+/// Measured on 20M rows, `LIMIT 10`, 'en', heap off / without this check / with it: 1 thread, 100K keys in cycles
+/// 268 / 494 / 274 ms, 1M 315 / 466 / 340 ms, 1M in descending order 328 / 740 / 324 ms, 5 keys after 100K unique ones
+/// 140 / 331 / 106 ms; 16 threads, 1M keys in cycles 106 / 40 / 48 ms (as with the heap off when the run needs no
+/// length).
+static constexpr UInt32 collated_sample_bits = 6;
+static constexpr UInt64 collated_sample_window = 256;
+static constexpr double collated_min_new_key_share = 0.5;
+static constexpr double collated_repeat_rows_per_skipped_key = 0.5;
+static constexpr size_t collated_sample_max_keys = 32768;
+static constexpr size_t collated_recent_key_slots = 4096;
+
+bool TopKAggregationHeapBase::sampleCollatedSkips(const ColumnRawPtrs & key_columns, size_t row_begin, size_t row_end)
+{
+    if (frozen || !heap_column || !profitability_window || observed_rows < 2 * next_trim_size || !hasBoundary()
+        || row_end <= row_begin)
+        return false;
+
+    const size_t rows = row_end - row_begin;
+    sample_window_rows += rows;
+    sample_hashes.resize(rows);
+    for (size_t i = 0; i < key_columns.size(); ++i)
+        key_columns[i]->computeHashInto(row_begin, row_end, sample_hashes.data(), i == 0);
+
+    if (!skipped_key_sample)
+        skipped_key_sample = std::make_unique<HashSet<UInt32>>();
+
+    /// Direct-mapped by the low bits; odd tags, so that an empty slot never matches.
+    if (recent_key_slots.empty())
+        recent_key_slots.resize(collated_recent_key_slots);
+    const size_t slot_mask = recent_key_slots.size() - 1;
+
+    const ColumnRawPtrs ranked_columns(key_columns.begin(), key_columns.begin() + directions.size());
+    for (size_t i = 0; i < rows; ++i)
+    {
+        const UInt32 hash = sample_hashes[i];
+        UInt32 & slot = recent_key_slots[hash & slot_mask];
+        sample_recent_repeats += slot == (hash | 1);
+        slot = hash | 1;
+
+        if (hash >> (32 - collated_sample_bits))
+            continue;
+        ++sample_rows;
+        if (shouldSkipCollated(ranked_columns, row_begin + i))
+            sample_new_keys += skipped_key_sample->insert(hash).second;
+    }
+
+    if (skipped_key_sample->size() >= collated_sample_max_keys)
+    {
+        skip_sample_done = true;
+        skipped_key_sample.reset();
+        sample_hashes = {};
+        recent_key_slots = {};
+        return false;
+    }
+
+    const bool recent_repeats = static_cast<double>(sample_window_rows - sample_recent_repeats)
+        < collated_min_new_key_share * static_cast<double>(sample_window_rows);
+    if (sample_rows < collated_sample_window
+        && !(recent_repeats && sample_window_rows >= (collated_sample_window << collated_sample_bits)))
+        return false;
+
+    const bool repeats = recent_repeats
+        || static_cast<double>(sample_new_keys) < collated_min_new_key_share * static_cast<double>(sample_rows);
+    repeat_rows = repeats ? repeat_rows + sample_window_rows : 0;
+    sample_rows = 0;
+    sample_new_keys = 0;
+    sample_window_rows = 0;
+    sample_recent_repeats = 0;
+    return repeats
+        && static_cast<double>(repeat_rows)
+        >= collated_repeat_rows_per_skipped_key * static_cast<double>(skipped_key_sample->size() << collated_sample_bits);
+}
+
 void TopKAggregationHeapBase::freezeBase()
 {
     frozen = true;
@@ -152,6 +234,9 @@ void TopKAggregationHeapBase::freezeBase()
     evicted_rows = {};
     trim_filter = {};
     trim_old_to_new = {};
+    skipped_key_sample.reset();
+    sample_hashes = {};
+    recent_key_slots = {};
 }
 
 const UInt8 * TopKAggregationHeapBase::fillSkipBitmap(const void * source_typed_data, size_t begin, size_t end)

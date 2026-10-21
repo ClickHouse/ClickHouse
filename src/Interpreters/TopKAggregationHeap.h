@@ -12,6 +12,7 @@
 #include <base/PackedStringRef.h>
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Common/Arena.h>
+#include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/assert_cast.h>
 #include <Core/CompareHelper.h>
@@ -93,6 +94,13 @@ struct TopKAggregationHeapBase
     bool needsTrim() const { return heap_indices.size() > next_trim_size; }
 
     bool shouldFreeze() const;
+
+    /// Called before a block with all `GROUP BY` key columns: whether a heap with a `COLLATE` key should freeze because
+    /// it stopped keeping new keys out of the hash table.
+    bool collatedSkipsRepeat(const ColumnRawPtrs & key_columns, size_t row_begin, size_t row_end)
+    {
+        return has_collators && !skip_sample_done && sampleCollatedSkips(key_columns, row_begin, row_end);
+    }
 
     /// Whether the next block certainly runs with the heap frozen. Unlike `shouldFreeze`, this
     /// accounts for the `exchangeSharedBoundary` call that precedes the freeze check, which may
@@ -193,6 +201,17 @@ protected:
     UInt64 window_start_observed_rows = 0;  /// `observed_rows` and `skipped_rows` when the freeze window last (re)started
     UInt64 window_start_skipped_rows = 0;
     bool window_restarted_for_shared = false; /// the window restarted once when the shared boundary first took effect
+
+    /// Collated heaps only: a hash sample of the keys the heap skipped, see `sampleCollatedSkips`.
+    std::unique_ptr<HashSet<UInt32>> skipped_key_sample;
+    std::vector<UInt32> sample_hashes;      /// scratch: the weak hashes of the block's keys
+    std::vector<UInt32> recent_key_slots;   /// tags of recently seen key hashes, direct-mapped
+    UInt64 sample_rows = 0;                 /// sampled rows in the current window
+    UInt64 sample_new_keys = 0;             /// of them, rows the heap skipped whose key the sample had not seen
+    UInt64 sample_window_rows = 0;          /// all rows of the current window
+    UInt64 sample_recent_repeats = 0;       /// of them, rows whose key hash was in `recent_key_slots`
+    UInt64 repeat_rows = 0;                 /// rows of the windows since the last one whose skipped rows were mostly new keys
+    bool skip_sample_done = false;          /// the sample filled up, so the heap runs to the end
 
     /// Scratch buffers; members only to avoid per-batch/per-trim allocation.
     std::vector<UInt8> skip_bitmap;         /// per-row skip decisions for the typed batch path
@@ -399,6 +418,8 @@ private:
     void publishBoundary();
 
     bool shouldSkipCollated(const ColumnRawPtrs & source_columns, size_t source_row) const;
+
+    bool sampleCollatedSkips(const ColumnRawPtrs & key_columns, size_t row_begin, size_t row_end);
 
     template <bool with_collation>
     bool sourceAboveBoundary(const IColumn & source_column, size_t source_row) const

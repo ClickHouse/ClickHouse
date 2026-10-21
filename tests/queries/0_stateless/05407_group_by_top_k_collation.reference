@@ -234,6 +234,47 @@ k1	40
 k10	40
 k100	40
 k1000	40
+running heap
+a0	95
+a1	95
+a2	95
+a3	96
+a4	95
+a0	95
+a1	95
+a2	95
+a3	96
+a4	95
+l20000	1
+l20001	1
+l20002	1
+l20003	1
+l20004	1
+l20000	1
+l20001	1
+l20002	1
+l20003	1
+l20004	1
+a0	95
+a1	95
+a2	95
+a3	96
+a4	95
+a0	95
+a1	95
+a2	95
+a3	96
+a4	95
+a0	95
+a1	95
+a2	95
+a3	96
+a4	95
+a0	95
+a1	95
+a2	95
+a3	96
+a4	95
 engaged
 05407_dynamic_filter	1	1	1
 05407_gave_up	0	1	1
@@ -250,3 +291,8 @@ engaged
 05407_ties_desc	1	1	1
 05407_wait_repeats	0	1	1
 05407_wait_small	0	1	1
+running heap engaged
+05407_run_new_best	1	1
+05407_run_new_keys	1	0
+05407_run_one_key	1	1
+05407_run_repeats	1	1
