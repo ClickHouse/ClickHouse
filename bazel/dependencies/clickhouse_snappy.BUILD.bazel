@@ -1,6 +1,5 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(
     default_visibility = ["//visibility:public"],
@@ -61,12 +60,6 @@ expand_template(
     template = ":snappy-stubs-public.h.in",
 )
 
-cc_library(
-    name = "snappy_stubs_public",
-    hdrs = [":configure_snappy_stubs_public_h"],
-    strip_include_prefix = "config/contrib/snappy-cmake",
-)
-
 ch_cc_library(
     name = "_snappy",
     srcs = [
@@ -76,12 +69,15 @@ ch_cc_library(
         "snappy.cc",
         ":configure_config_h",
     ],
-    hdrs = glob(["**/*.h"]),
+    hdrs = [":configure_snappy_stubs_public_h"] + glob(["**/*.h"]),
     copts = [
         "-w",
         "-std=c++23",
     ],
-    includes = ["."],
+    includes = [
+        ".",
+        "config/contrib/snappy-cmake",
+    ],
     local_defines = [
         "HAVE_CONFIG_H",
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -89,9 +85,7 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    local_includes = ["config/contrib/snappy-cmake"],
     deps = [
-        ":snappy_stubs_public",
         "@clickhouse_llvm_project//:clang_rt_builtins",
     ],
 )

@@ -110,6 +110,14 @@ _CRYPTO_LOCAL_INCLUDES = [
     "@platforms//cpu:aarch64": ["configured/linux_aarch64/include_private"],
 })
 
+_CRYPTO_PUBLIC_HDRS = glob(
+    [
+        "include/openssl/*.h",
+        "include/openssl/*.H",
+    ],
+    exclude = _SSL_HDRS,
+)
+
 ch_cc_library(
     name = "crypto__compile_0",
     srcs = [
@@ -509,13 +517,18 @@ ch_cc_library(
             "crypto/whrlpool/wp_block.c",
             "configured/linux_aarch64/include_private/buildinf.h",
         ],
-    }) + glob([
-        "crypto/**/*.h",
-        "include/**/*.h",
-        "include/**/*.H",
-        "providers/**/*.h",
-        "providers/**/*.inc",
-    ]) + ["ms/uplink.h"],
+    }) + glob(
+        [
+            "crypto/**/*.h",
+            "include/**/*.h",
+            "include/**/*.H",
+            "providers/**/*.h",
+            "providers/**/*.inc",
+        ],
+        exclude = _CRYPTO_PUBLIC_HDRS,
+    ) + ["ms/uplink.h"],
+    hdrs = _CRYPTO_PUBLIC_HDRS,
+    includes = ["include"],
     additional_compiler_inputs = [
         "crypto/LPdir_nyi.c",
         "crypto/LPdir_unix.c",
@@ -538,7 +551,11 @@ ch_cc_library(
         "-std=gnu11",
         "-Wno-unused-command-line-argument",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    implementation_deps = [
+        "@clickhouse_llvm_project//:libcxxabi_headers",
+        "@clickhouse_llvm_project//:clang_rt_builtins",
+        ":crypto__compile_1",
+    ],
     language = "C",
     llvm_headers = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -627,21 +644,9 @@ ch_cc_library(
     ],
 )
 
-cc_library(
+alias(
     name = "crypto",
-    hdrs = glob(
-        [
-            "include/openssl/*.h",
-            "include/openssl/*.H",
-        ],
-        exclude = _SSL_HDRS,
-    ),
-    includes = ["include"],
-    deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-        ":crypto__compile_0",
-        ":crypto__compile_1",
-    ],
+    actual = ":crypto__compile_0",
 )
 
 ch_cc_library(

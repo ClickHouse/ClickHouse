@@ -208,7 +208,11 @@ ch_cc_library(
         "@clickhouse//contrib/libhdfs3-cmake:absl_log_undef.h",
         ":config/contrib/libhdfs3-cmake/platform.h",
     ],
-    hdrs = _HDFS3_API_HDRS,
+    hdrs = _HDFS3_API_HDRS + glob(["include/**/*.h"]),
+    includes = [
+        "include",
+        "include/hdfs",
+    ],
     additional_compiler_inputs = glob([
         "src/*.in",
         "src/proto/*.proto",
@@ -231,6 +235,8 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     implementation_deps = [
+        ":_hdfs3__compile_1",
+        ":_hdfs3__compile_2",
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_libgsasl//:_gsasl",
         "@clickhouse_libxml2//:_libxml2",
@@ -356,25 +362,7 @@ cc_library(
     ],
 )
 
-cc_library(
+alias(
     name = "_hdfs3",
-    hdrs = glob(["include/**/*.h"]),
-    includes = [
-        "include",
-        "include/hdfs",
-    ],
-    deps = [
-        "@clickhouse_libgsasl//:_gsasl",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_isa_l//:_isal",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }) + [
-        "@clickhouse_google_protobuf//:_libprotobuf",
-        "@clickhouse_libxml2//:_libxml2",
-        ":_hdfs3__compile_0",
-        ":_hdfs3__compile_1",
-        ":_hdfs3__compile_2",
-    ],
+    actual = ":_hdfs3__compile_0",
 )
