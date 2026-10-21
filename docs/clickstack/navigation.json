@@ -308,7 +308,7 @@
       ]
     },
     {
-      "dropdown": "ClickStack",
+      "dropdown": "ClickStack (OSS)",
       "icon": "/images/icons/icon-clickstack.svg",
       "pages": [
         "clickstack",

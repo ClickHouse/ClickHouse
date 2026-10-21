@@ -5,7 +5,7 @@
   var DISMISSED_KEY = 'ch-cloud-sidebar-ad-dismissed';
   var MCP_LINK_PATH = '/set-up-clickhouse-documentation-mcp-server';
   var SIGNUP_HREF = 'https://clickhouse.cloud/signUp?loc=docs-card-banner';
-  var dismissedForPage = false;
+  var dismissedForPage = {};
   var AD_COPY = {
     en: {
       ariaLabel: 'ClickHouse Cloud advert',
@@ -62,7 +62,30 @@
     return window.location.pathname.replace(/^\/docs(?=\/|$)/, '');
   }
 
+  function isClickStackPage() {
+    return /^\/(?:(?:ar|es|fr|ja|ko|pt-BR|ru|zh)\/)?clickstack(?:\/|$)/.test(normalizedPath());
+  }
+
+  function adSettings() {
+    return isClickStackPage() ? {
+      id: 'observability',
+      dismissedKey: 'ch-observability-sidebar-ad-dismissed',
+      href: 'https://clickhouse.cloud/signUp?loc=docs-observability-sidebar',
+      eventPrefix: 'docs.sidebarObservabilityAdvert',
+    } : {
+      id: 'cloud', dismissedKey: DISMISSED_KEY,
+      href: SIGNUP_HREF, eventPrefix: 'docs.sidebarCloudAdvert',
+    };
+  }
+
   function getAdCopy() {
+    if (isClickStackPage()) return {
+      ariaLabel: 'Try ClickHouse Observability',
+      dismissLabel: 'Dismiss ClickHouse Observability advert permanently',
+      title: 'Try ClickHouse Observability',
+      description: 'Explore logs, metrics, traces, and session replays in one place, without managing the infrastructure.',
+      linkLabel: 'Get started free',
+    };
     var localeMatch = normalizedPath().match(/^\/(ar|es|fr|ja|ko|pt-BR)(?:\/|$)/);
     return localeMatch ? AD_COPY[localeMatch[1]] : AD_COPY.en;
   }
@@ -130,7 +153,9 @@
   }
 
   function createAdSlot(tagName) {
+    var settings = adSettings();
     var slot = document.createElement(tagName);
+    slot.dataset.adVariant = settings.id;
     slot.id = AD_SLOT_ID;
     slot.className = 'ch-cloud-sidebar-ad-slot';
 
@@ -142,9 +167,9 @@
     dismissButton.type = 'button';
     dismissButton.textContent = '\u00d7';
     dismissButton.onclick = function () {
-      dismissedForPage = true;
-      storageSet(DISMISSED_KEY, 'true');
-      track('docs.sidebarCloudAdvert.advertDismissed', SIGNUP_HREF);
+      dismissedForPage[settings.id] = true;
+      storageSet(settings.dismissedKey, 'true');
+      track(settings.eventPrefix + '.advertDismissed', settings.href);
       slot.remove();
     };
 
@@ -156,11 +181,11 @@
 
     var link = document.createElement('a');
     link.className = 'ch-cloud-sidebar-ad-link';
-    link.href = SIGNUP_HREF;
+    link.href = settings.href;
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
     link.onclick = function () {
-      track('docs.sidebarCloudAdvert.clickedThrough', SIGNUP_HREF);
+      track(settings.eventPrefix + '.clickedThrough', settings.href);
     };
 
     card.appendChild(dismissButton);
@@ -174,11 +199,16 @@
 
   function injectAd() {
     var existing = document.getElementById(AD_SLOT_ID);
-    if (!isGetStartedPage()) {
+    var settings = adSettings();
+    if (existing && existing.dataset.adVariant !== settings.id) {
+      existing.remove();
+      existing = null;
+    }
+    if (!isGetStartedPage() && !isClickStackPage()) {
       if (existing) existing.remove();
       return true;
     }
-    if (dismissedForPage || storageGet(DISMISSED_KEY) === 'true') {
+    if (dismissedForPage[settings.id] || storageGet(settings.dismissedKey) === 'true') {
       if (existing) existing.remove();
       return true;
     }

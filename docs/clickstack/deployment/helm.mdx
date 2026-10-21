@@ -18,6 +18,10 @@ This page documents the **v2.x** subchart-based Helm chart. If you are still usi
 
 The Helm chart for ClickStack can be found [here](https://github.com/ClickHouse/ClickStack-helm-charts) and is the **recommended** method for production deployments.
 
+<Tip>
+Monitor your Kubernetes workloads without operating the ClickStack backend with [ClickHouse Observability](/clickstack/observability). [Sign up for ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-clickstack-helm-inline) to get started.
+</Tip>
+
 The v2.x chart uses a **two-phase installation**. Operators and CRDs are installed first via the `clickstack-operators` chart, followed by the main `clickstack` chart which creates operator-managed custom resources for ClickHouse, MongoDB, and the OpenTelemetry Collector.
 
 By default, the Helm chart provisions all core components, including:
