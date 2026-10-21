@@ -20,8 +20,10 @@ MEMORY_LIMIT=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_setti
 # The same successive integer divisions as the server does: `limit / 16 / columns / estimate`.
 ESTIMATE=$(( MEMORY_LIMIT / 16 / 16 / 2 ))
 
-# A background merge may still be running when `OPTIMIZE` finds nothing left to take, and its `part_log`
-# entry appears only when it finishes.
+# `merge_selector_base = 1000` is far above what eight fresh parts reach, so background merges do not take the
+# parts, and `OPTIMIZE`, which selects with the base of one, merges them synchronously. A background merge
+# appears in `system.merges` only once an executor thread starts it, so the wait below could miss a merge that
+# was selected but not started yet. The wait stays for a background merge that still gets through.
 function wait_for_merges()
 {
     local table=$1
@@ -45,8 +47,10 @@ function create()
         c7 UInt64, c8 UInt64, c9 UInt64, c10 UInt64, c11 UInt64, c12 UInt64, c13 UInt64, c14 UInt64)
     ENGINE = $engine ORDER BY k TTL d
     SETTINGS merge_memory_estimate_per_source_part_column = $ESTIMATE,
-        min_parts_to_merge_at_once = 100,
+        min_parts_to_merge_at_once = 2,
         merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once = 0,
+        merge_selector_algorithm = 'Simple',
+        merge_selector_base = 1000,
         ttl_only_drop_parts = 1,
         vertical_merge_optimize_ttl_delete = 1,
         min_bytes_for_wide_part = 0,
@@ -60,8 +64,6 @@ function create()
         vertical_merge_algorithm_min_bytes_to_activate = 0;
     "
 
-    # `min_parts_to_merge_at_once = 100` keeps the regular selector from merging the parts while they are
-    # inserted and mutated.
     for i in {0..7}
     do
         $CLICKHOUSE_CLIENT --query "
@@ -78,7 +80,6 @@ function merge()
 
     $CLICKHOUSE_CLIENT --query "
     SELECT 'before', count() FROM system.parts WHERE database = currentDatabase() AND table = '$table' AND active;
-    ALTER TABLE $table MODIFY SETTING min_parts_to_merge_at_once = 2;
     OPTIMIZE TABLE $table;
     "
 

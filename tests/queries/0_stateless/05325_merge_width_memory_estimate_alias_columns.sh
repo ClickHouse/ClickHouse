@@ -28,6 +28,8 @@ ENGINE = MergeTree ORDER BY k
 SETTINGS merge_memory_estimate_per_source_part_column = $ESTIMATE,
     min_parts_to_merge_at_once = 2,
     merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once = 0,
+    merge_selector_algorithm = 'Simple',
+    merge_selector_base = 1000,
     min_bytes_for_wide_part = 0,
     min_rows_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
@@ -55,8 +57,10 @@ SYSTEM START MERGES t_merge_width_alias;
 OPTIMIZE TABLE t_merge_width_alias;
 "
 
-# A background merge may still be running when `OPTIMIZE` finds nothing left to take, and its `part_log`
-# entry appears only when it finishes.
+# `merge_selector_base = 1000` is far above what eight fresh parts reach, so background merges do not take the
+# parts, and `OPTIMIZE`, which selects with the base of one, merges them synchronously. A background merge
+# appears in `system.merges` only once an executor thread starts it, so the wait below could miss a merge that
+# was selected but not started yet. The wait stays for a background merge that still gets through.
 for _ in {1..600}
 do
     [ "$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.merges WHERE database = currentDatabase() AND table = 't_merge_width_alias'")" = 0 ] && break
