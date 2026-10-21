@@ -1448,9 +1448,17 @@ bool IcebergMetadata::supportsLazyMaterialization(StorageMetadataPtr storage_met
     return true;
 }
 
-std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
+std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context, const std::optional<DataLakeTableStateSnapshot> & state) const
 {
-    auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(local_context);
+    IcebergDataSnapshotPtr actual_data_snapshot;
+    TableStateSnapshot actual_table_state_snapshot;
+    if (state)
+    {
+        actual_table_state_snapshot = std::get<TableStateSnapshot>(*state);
+        actual_data_snapshot = getRelevantDataSnapshotFromTableStateSnapshot(actual_table_state_snapshot, local_context);
+    }
+    else
+        std::tie(actual_data_snapshot, actual_table_state_snapshot) = getRelevantState(local_context);
 
     if (!actual_data_snapshot)
     {

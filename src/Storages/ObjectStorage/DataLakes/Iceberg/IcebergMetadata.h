@@ -127,7 +127,7 @@ public:
         ContextPtr local_context) const;
 
     static bool supportsTotalRows(ContextPtr, ObjectStorageType) { return true; }
-    std::optional<size_t> totalRows(ContextPtr Local_context) const override;
+    std::optional<size_t> totalRows(ContextPtr local_context, const std::optional<DataLakeTableStateSnapshot> & state) const override;
     static bool supportsTotalBytes(ContextPtr, ObjectStorageType) { return true; }
     std::optional<size_t> totalBytes(ContextPtr Local_context) const override;
 

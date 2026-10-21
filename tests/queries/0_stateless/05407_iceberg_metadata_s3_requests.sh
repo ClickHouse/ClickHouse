@@ -19,6 +19,7 @@ run_query()
 run_query table_function_select "SELECT * FROM icebergS3(s3_conn, filename = '${TABLE_PATH}')"
 run_query table_function_count "SELECT count() FROM icebergS3(s3_conn, filename = '${TABLE_PATH}')"
 run_query table_select "SELECT * FROM ${TABLE}"
+run_query table_count "SELECT count() FROM ${TABLE}"
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 ${CLICKHOUSE_CLIENT} --query "
