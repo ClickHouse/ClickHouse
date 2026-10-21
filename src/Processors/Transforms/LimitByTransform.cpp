@@ -7,8 +7,6 @@
 #include <DataTypes/IDataType.h>
 #include <base/defines.h>
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
-#include <Common/logger_useful.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -21,16 +19,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
-}
-
-namespace FailPoints
-{
-extern const char limit_by_sorted_stream_transform_pause[];
-extern const char limit_by_transform_pause[];
-extern const char limit_by_sorted_stream_transform_after_loop_pause[];
-extern const char limit_by_transform_after_loop_pause[];
-extern const char limit_by_sorted_stream_transform_mid_loop_pause[];
-extern const char limit_by_transform_mid_loop_pause[];
 }
 
 namespace
@@ -163,19 +151,13 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
     UInt64 current_run_start_row = 0;
     size_t current_run_group_idx = 0;
 
-    FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_pause);
-
     for (UInt64 row_idx = 0; row_idx < row_count; ++row_idx)
     {
         if (isCancelled())
         {
-            LOG_TEST(getLogger("LimitByTransform"), "Cancelled during row processing");
             stopReading();
             return;
         }
-
-        if (row_idx == 5)
-            FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_mid_loop_pause);
 
         auto key_emplace_result = state.emplaceKey(hash_method.data, row_idx, *data.aggregates_pool);
         size_t row_group_idx = 0;
@@ -265,11 +247,8 @@ void LimitByTransform::transform(Chunk & chunk)
         }
     }
 
-    FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_after_loop_pause);
-
     if (isCancelled())
     {
-        LOG_TEST(getLogger("LimitByTransform"), "Cancelled after processing chunk");
         stopReading();
         return;
     }
@@ -379,20 +358,13 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
     UInt64 current_run_start_row = 0;
     SortedKeyRuns key_runs(normalized_grouping_key_columns.size());
 
-    FailPointInjection::pauseFailPoint(FailPoints::limit_by_sorted_stream_transform_pause);
-
-    size_t run_count = 0;
     while (current_run_start_row < row_count)
     {
         if (isCancelled())
         {
-            LOG_TEST(getLogger("LimitBySortedStreamTransform"), "Cancelled during row processing");
             stopReading();
             return;
         }
-
-        if (run_count == 5)
-            FailPointInjection::pauseFailPoint(FailPoints::limit_by_sorted_stream_transform_mid_loop_pause);
 
         const UInt64 run_end = getEqualRangeEndAssumeSorted(key_runs, normalized_grouping_key_columns, current_run_start_row, row_count, 1);
         processRun(current_run_start_row, run_end - current_run_start_row);
@@ -401,7 +373,6 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
         if (run_end != row_count)
             current_group_rows_seen = 0;
         current_run_start_row = run_end;
-        ++run_count;
     }
 
     /// `filterNonConstKeys` removed all grouping keys, so every row in this stream
@@ -414,11 +385,8 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
     /// keys this is a no-op (nothing to remember).
     rememberLastGroupingKey(normalized_grouping_key_columns, row_count - 1);
 
-    FailPointInjection::pauseFailPoint(FailPoints::limit_by_sorted_stream_transform_after_loop_pause);
-
     if (isCancelled())
     {
-        LOG_TEST(getLogger("LimitBySortedStreamTransform"), "Cancelled after processing runs");
         stopReading();
         return;
     }
