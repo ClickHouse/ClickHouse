@@ -27,6 +27,7 @@ import os.path
 import platform
 import random
 import re
+import select
 import shutil
 import signal
 import socket
@@ -1060,6 +1061,26 @@ def get_zookeeper_session_uptime(args):
         return int(clickhouse_execute(args, "SELECT zookeeperSessionUptime()"))
     except Exception:
         return None
+
+
+def wait_for_exit(proc: Popen, timeout: float) -> None:
+    """Like `proc.wait(timeout)`, but wakes on the exit instead of polling with up to 50 ms sleeps."""
+    if proc.returncode is not None:
+        return
+    try:
+        pidfd = os.pidfd_open(proc.pid)
+    except (AttributeError, OSError):
+        pidfd = None
+    if pidfd is None:
+        proc.wait(timeout)
+        return
+    try:
+        poller = select.poll()
+        poller.register(pidfd, select.POLLIN)
+        poller.poll(timeout * 1000)
+    finally:
+        os.close(pidfd)
+    proc.wait(0)
 
 
 def need_retry(args, stdout, stderr, total_time):
@@ -4076,7 +4097,13 @@ class TestCase:
         # NOTE:
         # - client writes to fatal_sanitizer_prefix
         # - sanitizers write to fatal_sanitizer_prefix.PID
-        self.fatal_sanitizer_prefix = f"{self.stderr_file}-fatal"
+        # They live in a directory of their own, so the globs over the prefix do not list the
+        # whole suite directory (tens of thousands of files) several times per test.
+        fatal_dir = os.path.join(os.path.dirname(self.stderr_file), ".stderr-fatal")
+        os.makedirs(fatal_dir, exist_ok=True)
+        self.fatal_sanitizer_prefix = os.path.join(
+            fatal_dir, os.path.basename(self.stderr_file) + "-fatal"
+        )
         # Ensure that we start with empty files
         for path in glob.glob(self.fatal_sanitizer_prefix + "*"):
             os.remove(path)
@@ -4201,7 +4228,7 @@ class TestCase:
         write_text_atomic(test_process_group_record(proc.pid), f"{proc.pid}\n")
 
         try:
-            proc.wait(self.get_timeout(args))
+            wait_for_exit(proc, self.get_timeout(args))
         except subprocess.TimeoutExpired:
             # Whether the test timed out will be decided later
             pass
