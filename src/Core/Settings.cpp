@@ -3895,7 +3895,6 @@ server or user memory limit, the ratio has no effect.
 `max_memory_usage` does not affect this calculation. To configure spilling relative to that limit,
 use `max_bytes_before_external_set`, leaving room for additional memory usage.
 )", 0, \
-        {"26.11", 0.5, 0.5, "The default change to 0.5 was backported to 26.10."}, \
         {"26.10", 0., 0.5, "New setting to enable spilling of the set of `IN` with a subquery to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_set` applies."}) \
     DECLARE(UInt64, max_bytes_for_external_set_bloom_filter, 128_MiB, R"(
 Memory budget, in bytes, for the Bloom filter that each set of `IN` written to disk keeps in memory. The
@@ -3923,7 +3922,6 @@ The filter counts towards the memory usage of the query, such as `max_memory_usa
 
 See [IN in external memory](/reference/statements/in#in-in-external-memory).
 )", 0, \
-        {"26.11", 128_MiB, 128_MiB, "The setting was backported to 26.10."}, \
         {"26.10", 0, 128 * 1024 * 1024, "New setting to limit the memory of the Bloom filter that a set of `IN` on disk keeps to skip reading the disk for values that are not in the set."}) \
     DECLARE(UInt64, max_bytes_for_external_set_cache, 128_MiB, R"(
 Memory budget, in bytes, for the cache of blocks that each set of `IN` written to disk keeps in memory. A
@@ -3937,7 +3935,6 @@ The budget applies per set. The cache counts towards the memory usage of the que
 
 See [IN in external memory](/reference/statements/in#in-in-external-memory).
 )", 0, \
-        {"26.11", 128_MiB, 128_MiB, "The setting was backported to 26.10."}, \
         {"26.10", 0, 128 * 1024 * 1024, "New setting to limit the memory of the cache of blocks that a set of `IN` on disk keeps, so that its lookups do not read the same blocks from the disk again."}) \
     \
     DECLARE(UInt64, max_result_rows, 0, R"(
