@@ -134,6 +134,182 @@ private:
     size_t samples = 0;
 };
 
+template <typename KeyGetter, bool is_asof_join>
+KeyGetter createJoinKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, HashJoin::RightTableData::KeyRange key_range = {})
+{
+    KeyGetter getter = [&]()
+    {
+        if constexpr (is_asof_join)
+        {
+            auto key_column_copy = key_columns;
+            auto key_size_copy = key_sizes;
+            key_column_copy.pop_back();
+            key_size_copy.pop_back();
+            return KeyGetter(key_column_copy, key_size_copy, nullptr);
+        }
+        else
+            return KeyGetter(key_columns, key_sizes, nullptr);
+    }();
+
+    if constexpr (ColumnsHashing::IsHashMethodInRange<KeyGetter>::value)
+    {
+        getter.min_key = static_cast<decltype(getter.min_key)>(key_range.min_key);
+        getter.range_size = static_cast<decltype(getter.range_size)>(key_range.size);
+    }
+
+    return getter;
+}
+
+/// Inserts the rows of one slot. The `is_inserted` it returns comes from these rows only.
+/// Free of the join kind, like `insertFromBlockImplTypeCase`.
+template <typename MapsTemplate, typename KeyGetter, typename HashMap, typename Selector>
+BuildResult insertSlotRows(
+    HashJoin & join,
+    HashJoin::RightTableData & table,
+    HashMap & map,
+    KeyGetter & key_getter_,
+    const ColumnRawPtrs & key_columns,
+    UInt32 stored_block_no,
+    const Selector & selector,
+    ConstNullMapPtr null_map,
+    const JoinCommon::JoinMask & join_mask,
+    Arena & pool)
+{
+    [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename MapsTemplate::MappedType, RowRef>;
+    constexpr bool is_set = SetJoinMaps<MapsTemplate>;
+    constexpr bool is_asof_join = std::is_same_v<MapsTemplate, HashJoin::MapsAsof>;
+
+    /// Copy the getter when that is cheap: the loop reloads a getter behind a reference after every out-of-line `RowRefList::insert`.
+    std::conditional_t<std::is_trivially_copyable_v<KeyGetter>, KeyGetter, KeyGetter &> key_getter = key_getter_;
+
+    const IColumn * asof_column [[maybe_unused]] = nullptr;
+    [[maybe_unused]] TypeIndex asof_type{};
+    [[maybe_unused]] ASOFJoinInequality asof_inequality{};
+    if constexpr (is_asof_join)
+    {
+        asof_column = key_columns.back();
+        /// Hoisted out of the loop below, see `Inserter::insertAsof`.
+        asof_type = *join.getAsofType();
+        asof_inequality = join.getAsofInequality();
+    }
+
+    const size_t rows = ScatteredBlock::Selector::size(selector);
+    /// Hoisted out of the loop below, see `Inserter::insertOne`.
+    [[maybe_unused]] const bool any_take_last_row = join.anyTakeLastRow();
+
+    BuildResult result;
+    /// Also counts the keys inserted before a throw, as the caller does for the bytes.
+    size_t new_keys = 0;
+    SCOPE_EXIT({ table.keys_to_join.fetch_add(new_keys, std::memory_order_relaxed); });
+
+    /// Software prefetch during the build phase.
+    constexpr bool can_prefetch = join_prefetch_supported<KeyGetter, HashMap>;
+
+    /// A two-level map always prefetches here: summing its buckets would race with the resizes other threads do under
+    /// their own slot locks.
+    bool use_prefetch = false;
+    if constexpr (can_prefetch)
+        use_prefetch = HashMap::NUM_BUCKETS > 1 ? join.enableSoftwarePrefetch() : shouldUseJoinPrefetch(join.enableSoftwarePrefetch(), &map);
+
+    auto prefetcher = makeJoinPrefetcher(use_prefetch, rows,
+        [&](size_t k) __attribute__((always_inline))
+        {
+            if constexpr (can_prefetch)
+                map.prefetch(key_getter.getKeyHolder(selectorIndexAt(selector, k), pool));
+        });
+
+    for (size_t i = 0; i < rows; ++i)
+    {
+        if constexpr (can_prefetch)
+            prefetcher.prefetchAt(i);
+
+        const size_t ind = selectorIndexAt(selector, i);
+
+        chassert(!null_map || ind < null_map->size());
+        if (null_map && (*null_map)[ind])
+        {
+            /// nulls are not inserted into hash table,
+            /// keep them for RIGHT and FULL joins - a set map is never used by one of those
+            if constexpr (!is_set)
+                result.is_inserted = true;
+            continue;
+        }
+
+        /// Check condition for right table from ON section
+        if (join_mask.isRowFiltered(ind))
+            continue;
+
+        if constexpr (is_asof_join)
+            Inserter<HashMap, KeyGetter>::insertAsof(
+                asof_type, asof_inequality, map, key_getter, stored_block_no, ind, pool, new_keys, *asof_column);
+        else if constexpr (is_set)
+            Inserter<HashMap, KeyGetter>::insertKeyOnly(map, key_getter, ind, pool, new_keys);
+        else if constexpr (mapped_one)
+            result.is_inserted |= Inserter<HashMap, KeyGetter>::insertOne(
+                any_take_last_row, map, key_getter, stored_block_no, ind, pool, new_keys);
+        else
+            result.all_values_unique
+                &= Inserter<HashMap, KeyGetter>::insertAll(join, map, key_getter, stored_block_no, ind, pool, new_keys);
+    }
+    return result;
+}
+
+/// Free of the join kind, so the instantiation units share one copy per maps type.
+template <typename MapsTemplate, typename KeyGetter, typename HashMap>
+BuildResult insertFromBlockImplTypeCase(
+    HashJoin & join,
+    HashJoin::RightTableData & table,
+    HashMap & map,
+    size_t map_idx,
+    std::span<const ScatteredBlock::Selector> per_slot,
+    const ColumnRawPtrs & key_columns,
+    const Sizes & key_sizes,
+    UInt32 stored_block_no,
+    ConstNullMapPtr null_map,
+    const JoinCommon::JoinMask & join_mask)
+{
+    [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename MapsTemplate::MappedType, RowRef>;
+    constexpr bool is_set = SetJoinMaps<MapsTemplate>;
+    constexpr bool is_asof_join = std::is_same_v<MapsTemplate, HashJoin::MapsAsof>;
+
+    BuildSlots & slots = table.slots;
+
+    KeyGetter key_getter = createJoinKeyGetter<KeyGetter, is_asof_join>(key_columns, key_sizes);
+
+    BuildResult result;
+    /// For ALL and ASOF join always insert values. A set map keeps no reference into the block, so unless
+    /// the block has to be kept for another algorithm the caller drops it.
+    if constexpr (is_set)
+        result.is_inserted = join.mustKeepRightBlocks();
+    else
+        result.is_inserted = !mapped_one || is_asof_join;
+    auto insert_slot = [&](size_t slot)
+    {
+        const ScatteredBlock::Selector & selector = per_slot[slot];
+        const size_t bytes_before = slots.slotBytes(map, slot);
+        /// Under the slot lock so a concurrent limit check cannot miss this slot. Also when an insert throws: the
+        /// rows before it stay in the map, and `StorageJoin` keeps serving them.
+        SCOPE_EXIT({ table.addBytes(table.bucket_bytes, slots.slotBytes(map, slot) - bytes_before); });
+
+        if (const size_t reserved = slots.reserveOnFirstInsert(map, map_idx, slot))
+            ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, reserved);
+
+        auto insert_rows = [&](const auto & rows)
+        {
+            return insertSlotRows<MapsTemplate>(
+                join, table, map, key_getter, key_columns, stored_block_no, rows, null_map, join_mask, slots.arena(slot));
+        };
+        const BuildResult slot_result
+            = selector.isContinuousRange() ? insert_rows(selector.getRange()) : insert_rows(selector.getIndexes());
+
+        result.is_inserted |= slot_result.is_inserted;
+        result.all_values_unique &= slot_result.all_values_unique;
+    };
+
+    slots.insert(per_slot, insert_slot);
+    return result;
+}
+
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
     HashJoin & join,
@@ -147,13 +323,14 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl
     ConstNullMapPtr null_map,
     const JoinCommon::JoinMask & join_mask)
 {
+    static_assert((STRICTNESS == JoinStrictness::Asof) == std::is_same_v<MapsTemplate, HashJoin::MapsAsof>);
     switch (type)
     {
 #define M(TYPE) \
     case HashJoin::Type::TYPE: \
-        return insertFromBlockImplTypeCase< \
+        return insertFromBlockImplTypeCase<MapsTemplate, \
             typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
-            join, *maps.TYPE, map_idx, per_slot, key_columns, key_sizes, stored_block_no, null_map, join_mask);
+            join, *join.data, *maps.TYPE, map_idx, per_slot, key_columns, key_sizes, stored_block_no, null_map, join_mask);
 
             APPLY_FOR_JOIN_VARIANTS(M)
 #undef M
@@ -279,178 +456,6 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
-template <typename KeyGetter, bool is_asof_join>
-KeyGetter HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, HashJoin::RightTableData::KeyRange key_range)
-{
-    KeyGetter getter = [&]()
-    {
-        if constexpr (is_asof_join)
-        {
-            auto key_column_copy = key_columns;
-            auto key_size_copy = key_sizes;
-            key_column_copy.pop_back();
-            key_size_copy.pop_back();
-            return KeyGetter(key_column_copy, key_size_copy, nullptr);
-        }
-        else
-            return KeyGetter(key_columns, key_sizes, nullptr);
-    }();
-
-    if constexpr (ColumnsHashing::IsHashMethodInRange<KeyGetter>::value)
-    {
-        getter.min_key = static_cast<decltype(getter.min_key)>(key_range.min_key);
-        getter.range_size = static_cast<decltype(getter.range_size)>(key_range.size);
-    }
-
-    return getter;
-}
-
-template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
-template <typename KeyGetter, typename HashMap>
-BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCase(
-    HashJoin & join,
-    HashMap & map,
-    size_t map_idx,
-    std::span<const ScatteredBlock::Selector> per_slot,
-    const ColumnRawPtrs & key_columns,
-    const Sizes & key_sizes,
-    UInt32 stored_block_no,
-    ConstNullMapPtr null_map,
-    const JoinCommon::JoinMask & join_mask)
-{
-    [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename MapsTemplate::MappedType, RowRef>;
-    constexpr bool is_set = SetJoinMaps<MapsTemplate>;
-    constexpr bool is_asof_join = STRICTNESS == JoinStrictness::Asof;
-
-    HashJoin::RightTableData & table = *join.data;
-    BuildSlots & slots = table.slots;
-
-    KeyGetter key_getter = createKeyGetter<KeyGetter, is_asof_join>(key_columns, key_sizes);
-
-    BuildResult result;
-    /// For ALL and ASOF join always insert values. A set map keeps no reference into the block, so unless
-    /// the block has to be kept for another algorithm the caller drops it.
-    if constexpr (is_set)
-        result.is_inserted = join.mustKeepRightBlocks();
-    else
-        result.is_inserted = !mapped_one || is_asof_join;
-    auto insert_slot = [&](size_t slot)
-    {
-        const ScatteredBlock::Selector & selector = per_slot[slot];
-        const size_t bytes_before = slots.slotBytes(map, slot);
-        /// Under the slot lock so a concurrent limit check cannot miss this slot. Also when an insert throws: the
-        /// rows before it stay in the map, and `StorageJoin` keeps serving them.
-        SCOPE_EXIT({ table.addBytes(table.bucket_bytes, slots.slotBytes(map, slot) - bytes_before); });
-
-        if (const size_t reserved = slots.reserveOnFirstInsert(map, map_idx, slot))
-            ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, reserved);
-
-        auto insert_rows = [&](const auto & rows)
-        { return insertSlotRows(join, map, key_getter, key_columns, stored_block_no, rows, null_map, join_mask, slots.arena(slot)); };
-        const BuildResult slot_result
-            = selector.isContinuousRange() ? insert_rows(selector.getRange()) : insert_rows(selector.getIndexes());
-
-        result.is_inserted |= slot_result.is_inserted;
-        result.all_values_unique &= slot_result.all_values_unique;
-    };
-
-    slots.insert(per_slot, insert_slot);
-    return result;
-}
-
-template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
-template <typename KeyGetter, typename HashMap, typename Selector>
-BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertSlotRows(
-    HashJoin & join,
-    HashMap & map,
-    KeyGetter & key_getter_,
-    const ColumnRawPtrs & key_columns,
-    UInt32 stored_block_no,
-    const Selector & selector,
-    ConstNullMapPtr null_map,
-    const JoinCommon::JoinMask & join_mask,
-    Arena & pool)
-{
-    [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename MapsTemplate::MappedType, RowRef>;
-    constexpr bool is_set = SetJoinMaps<MapsTemplate>;
-    constexpr bool is_asof_join = STRICTNESS == JoinStrictness::Asof;
-
-    /// Copy the getter when that is cheap: the loop reloads a getter behind a reference after every out-of-line `RowRefList::insert`.
-    std::conditional_t<std::is_trivially_copyable_v<KeyGetter>, KeyGetter, KeyGetter &> key_getter = key_getter_;
-
-    const IColumn * asof_column [[maybe_unused]] = nullptr;
-    [[maybe_unused]] TypeIndex asof_type{};
-    [[maybe_unused]] ASOFJoinInequality asof_inequality{};
-    if constexpr (is_asof_join)
-    {
-        asof_column = key_columns.back();
-        /// Hoisted out of the loop below, see `Inserter::insertAsof`.
-        asof_type = *join.getAsofType();
-        asof_inequality = join.getAsofInequality();
-    }
-
-    const size_t rows = ScatteredBlock::Selector::size(selector);
-    /// Hoisted out of the loop below, see `Inserter::insertOne`.
-    [[maybe_unused]] const bool any_take_last_row = join.anyTakeLastRow();
-
-    BuildResult result;
-    /// Also counts the keys inserted before a throw, as the caller does for the bytes.
-    size_t new_keys = 0;
-    SCOPE_EXIT({ join.data->keys_to_join.fetch_add(new_keys, std::memory_order_relaxed); });
-
-    /// Software prefetch during the build phase.
-    constexpr bool can_prefetch = join_prefetch_supported<KeyGetter, HashMap>;
-
-    /// A two-level map always prefetches here: summing its buckets would race with the resizes other threads do under
-    /// their own slot locks.
-    bool use_prefetch = false;
-    if constexpr (can_prefetch)
-        use_prefetch = HashMap::NUM_BUCKETS > 1 ? join.enable_prefetch : shouldUseJoinPrefetch(join.enable_prefetch, &map);
-
-    auto prefetcher = makeJoinPrefetcher(use_prefetch, rows,
-        [&](size_t k) __attribute__((always_inline))
-        {
-            if constexpr (can_prefetch)
-                map.prefetch(key_getter.getKeyHolder(selectorIndexAt(selector, k), pool));
-        });
-
-    for (size_t i = 0; i < rows; ++i)
-    {
-        if constexpr (can_prefetch)
-            prefetcher.prefetchAt(i);
-
-        const size_t ind = selectorIndexAt(selector, i);
-
-        chassert(!null_map || ind < null_map->size());
-        if (null_map && (*null_map)[ind])
-        {
-            /// nulls are not inserted into hash table,
-            /// keep them for RIGHT and FULL joins - a set map is never used by one of those
-            if constexpr (!is_set)
-                result.is_inserted = true;
-            continue;
-        }
-
-        /// Check condition for right table from ON section
-        if (join_mask.isRowFiltered(ind))
-            continue;
-
-        if constexpr (is_asof_join)
-            Inserter<HashMap, KeyGetter>::insertAsof(
-                asof_type, asof_inequality, map, key_getter, stored_block_no, ind, pool, new_keys, *asof_column);
-        else if constexpr (is_set)
-            Inserter<HashMap, KeyGetter>::insertKeyOnly(map, key_getter, ind, pool, new_keys);
-        else if constexpr (mapped_one)
-            result.is_inserted |= Inserter<HashMap, KeyGetter>::insertOne(
-                any_take_last_row, map, key_getter, stored_block_no, ind, pool, new_keys);
-        else
-            result.all_values_unique
-                &= Inserter<HashMap, KeyGetter>::insertAll(join, map, key_getter, stored_block_no, ind, pool, new_keys);
-    }
-    return result;
-}
-
-template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 template <typename AddedColumns>
 size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::switchJoinRightColumns(
     const std::vector<const MapsTemplate *> & mapv,
@@ -474,7 +479,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::switchJoinRightColumns(
             const auto & join_on_key = added_columns.join_on_keys[d]; \
             a_map_type_vector[d] = mapv[d]->TYPE.get(); \
             key_getter_vector.push_back( \
-                std::move(createKeyGetter<KeyGetter, is_asof_join>(join_on_key.key_columns, join_on_key.key_sizes, key_range))); \
+                std::move(createJoinKeyGetter<KeyGetter, is_asof_join>(join_on_key.key_columns, join_on_key.key_sizes, key_range))); \
         } \
         return joinRightColumnsSwitchNullability<KeyGetter>(std::move(key_getter_vector), a_map_type_vector, added_columns, selector, used_flags); \
     }
@@ -493,16 +498,18 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchNu
     const ScatteredBlock::Selector & selector,
     JoinStuff::JoinUsedFlags & used_flags)
 {
-    if (added_columns.need_filter)
+    constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
+    /// The join kinds that filter always set `added_columns.need_filter`.
+    if constexpr (!join_features.need_filter)
     {
-        return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, true>(
-            std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, selector, used_flags);
+        if (!added_columns.need_filter)
+        {
+            return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, false>(
+                std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, selector, used_flags);
+        }
     }
-    else
-    {
-        return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, false>(
-            std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, selector, used_flags);
-    }
+    return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, true>(
+        std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, selector, used_flags);
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
@@ -541,27 +548,37 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
         added_columns.join_on_keys,
         [](const auto & elem) { return !elem.null_map && elem.join_mask_column.getKind() == JoinCommon::JoinMask::Kind::AllTrue; });
 
+    if (mapv.size() > 1 || added_columns.join_on_keys.empty())
+    {
+        /// Several clauses have no required right keys (see the `HashJoin` constructor), and the probe never
+        /// scatters a block, so only these copies can run.
+        if constexpr (need_filter == join_features.need_filter)
+        {
+            if (selector.isContinuousRange())
+            {
+                if (fast_path)
+                    return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/true>(
+                        std::move(key_getter_vector), mapv, added_columns, used_flags, selector.getRange());
+                else
+                    return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/false>(
+                        std::move(key_getter_vector), mapv, added_columns, used_flags, selector.getRange());
+            }
+        }
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Unexpected hash join of {} clauses with need_filter = {} on a {} block",
+            mapv.size(), need_filter, selector.isContinuousRange() ? "continuous" : "scattered");
+    }
+
+    chassert(key_getter_vector.size() == 1);
     if (selector.isContinuousRange())
     {
-        if (mapv.size() > 1 || added_columns.join_on_keys.empty())
-        {
-            if (fast_path)
-                return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/true>(
-                    std::move(key_getter_vector), mapv, added_columns, used_flags, selector.getRange());
-            else
-                return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/false>(
-                    std::move(key_getter_vector), mapv, added_columns, used_flags, selector.getRange());
-        }
+        if (fast_path)
+            return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/true>(
+                key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, selector.getRange());
         else
-        {
-            chassert(key_getter_vector.size() == 1);
-            if (fast_path)
-                return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/true>(
-                    key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, selector.getRange());
-            else
-                return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/false>(
-                    key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, selector.getRange());
-        }
+            return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/false>(
+                key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, selector.getRange());
     }
     /// The probe always runs on a whole block as one continuous range; only the build scatters rows by index.
     UNREACHABLE();
