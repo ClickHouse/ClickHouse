@@ -1570,31 +1570,16 @@ SettingsChanges IcebergMetadata::getSettingsToResolveState(const DataLakeTableSt
     const String & table_path = persistent_components.table_path;
 
     /// The other server reads `table_path / relative`.
-    String relative;
-    if (table_path.empty())
-        relative = path;
-    else if (String base = table_path.ends_with('/') ? table_path : table_path + "/"; path.starts_with(base))
-        relative = path.substr(base.size());
-    if (!relative.empty() && (fs::path(table_path) / relative).string() != path)
-        relative.clear();
-
-    /// Path-addressed storages list files in a normalized spelling of the table path.
-    const auto storage_type = object_storage->getType();
-    if (relative.empty() && (storage_type == ObjectStorageType::Local || storage_type == ObjectStorageType::HDFS))
-        relative = fs::path(path)
-                       .lexically_normal()
-                       .lexically_relative((fs::path(object_storage->getCommonKeyPrefix()) / table_path).lexically_normal())
-                       .string();
-
-    const fs::path relative_path(relative);
-    if (relative.empty() || relative_path.is_absolute()
-        || std::any_of(relative_path.begin(), relative_path.end(), [](const fs::path & part) { return part == "." || part == ".."; }))
+    const String base = table_path.empty() || table_path.ends_with('/') ? table_path : table_path + "/";
+    const fs::path relative = path.starts_with(base) ? path.substr(base.size()) : String{};
+    if (relative.empty() || relative.is_absolute()
+        || std::any_of(relative.begin(), relative.end(), [](const fs::path & part) { return part == "." || part == ".."; }))
     {
         LOG_DEBUG(log, "Metadata file {} is not addressable relative to table path {}", path, table_path);
         return {};
     }
 
-    return {SettingChange{"iceberg_metadata_file_path", relative}};
+    return {SettingChange{"iceberg_metadata_file_path", relative.string()}};
 }
 
 bool IcebergMetadata::shouldReloadSchemaForConsistency(ContextPtr) const

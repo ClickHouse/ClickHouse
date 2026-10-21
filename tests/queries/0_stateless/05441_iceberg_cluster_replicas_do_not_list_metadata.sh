@@ -48,10 +48,10 @@ ${CLICKHOUSE_CLIENT} --query "
     FROM ${replica_queries} AND i.arm != 'local'
     GROUP BY i.arm ORDER BY i.arm"
 
-# The local object storage has no listing counter: check that the replicas received the metadata file.
+# The local object storage has no listing counter: check that the replicas received the initiator's current metadata file.
 ${CLICKHOUSE_CLIENT} --query "
     SELECT i.arm, countIf(q.is_initial_query = 0) > 0,
-        countIf(q.is_initial_query = 0 AND position(q.query, 'iceberg_metadata_file_path') > 0) = countIf(q.is_initial_query = 0)
+        countIf(q.is_initial_query = 0 AND position(q.query, 'iceberg_metadata_file_path = \'metadata/v3.metadata.json\'') > 0) = countIf(q.is_initial_query = 0)
     FROM ${replica_queries} AND i.arm = 'local'
     GROUP BY i.arm"
 
