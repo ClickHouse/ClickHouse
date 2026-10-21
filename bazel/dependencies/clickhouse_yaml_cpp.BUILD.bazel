@@ -38,7 +38,7 @@ ch_cc_library(
         "src/emitterstate.cpp",
         "src/nodeevents.cpp",
         "src/scantag.cpp",
-    ] + glob(["src/**/*.h"]),
+    ] + glob(["src/*.h"]),
     hdrs = glob(["include/**/*.h"]),
     copts = [
         "-w",

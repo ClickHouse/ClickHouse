@@ -56,14 +56,13 @@ ch_cc_library(
 
 ch_cc_library(
     name = "_zstd__compile_1",
-    srcs = [
-        "lib/decompress/huf_decompress_amd64.S",
-    ] + glob(["lib/**/*.h"]),
+    srcs = ["lib/decompress/huf_decompress_amd64.S"],
     copts = [
         "-D",
         "ZSTD_LEGACY_SUPPORT=1",
         "-fno-sanitize=undefined",
     ],
+    implementation_deps = [":_zstd__compile_0"],
     language = "ASM",
     llvm_headers = True,
     local_defines = _ZSTD_LOCAL_DEFINES,

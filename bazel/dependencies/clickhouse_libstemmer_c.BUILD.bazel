@@ -15,8 +15,10 @@ ch_cc_library(
     ]) + glob([
         "libstemmer/**/*.h",
         "runtime/**/*.h",
-        "src_c/**/*.h",
-    ]),
+        "src_c/stem_UTF_8_*.h",
+        "src_c/stem_ISO_8859_1_*.h",
+        "src_c/stem_KOI8_R_*.h",
+    ]) + ["src_c/stem_ISO_8859_2_hungarian.h"],
     hdrs = glob(["include/**/*.h"]),
     copts = [
         "-w",

@@ -34,6 +34,11 @@ ch_cc_library(
         "sdk/storage/azure-storage-blobs/src/**/*.hpp",
         "sdk/storage/azure-storage-common/src/**/*.hpp",
         "sdk/storage/azure-storage-files-datalake/src/**/*.hpp",
+    ], exclude = [
+        "sdk/core/azure-core/src/http/curl/**",
+        "sdk/core/azure-core/src/http/winhttp/**",
+        "sdk/core/azure-core/src/private/package_version.hpp",
+        "sdk/storage/azure-storage-common/src/private/package_version.hpp",
     ]),
     hdrs = glob([
         "sdk/core/azure-core/inc/**/*.hpp",

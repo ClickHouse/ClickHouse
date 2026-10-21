@@ -50,7 +50,7 @@ ch_cc_library(
     name = "aws_checksums__compile_2",
     srcs = select({
         "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": ["source/arm/crc32c_arm.c"] + glob(["include/**/private/**/*.h"]),
+        "@platforms//cpu:aarch64": ["source/arm/crc32c_arm.c"] + glob(["include/aws/checksums/private/crc32*.h"]),
     }),
     arches = [
         "aarch64",

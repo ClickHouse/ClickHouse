@@ -10,7 +10,11 @@ ch_cc_library(
     name = "_ipcrypt2",
     srcs = [
         "src/ipcrypt2.c",
-    ] + glob(["src/softaes/*.h"]),
+    ] + select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [],
+        "//conditions:default": glob(["src/softaes/*.h"]),
+    }),
     hdrs = glob(["src/include/**/*.h"]),
     copts = [
         "-w",

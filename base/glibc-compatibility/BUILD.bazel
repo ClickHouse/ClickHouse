@@ -64,7 +64,10 @@ ch_cc_library(
         "musl/utimensat.c",
         "musl/vasprintf.c",
         "musl/vdso.c",
-    ] + glob(["musl/**/*.h"]),
+    ] + glob(["musl/*.h"]) + select({
+        "@platforms//cpu:x86_64": glob(["musl/x86_64/*.h"]),
+        "@platforms//cpu:aarch64": glob(["musl/aarch64/*.h"]),
+    }),
     hdrs = ["spawn.h"],
     copts = [
         "-fomit-frame-pointer",

@@ -28,9 +28,14 @@ ch_cc_library(
         "src/tree/*.cc",
         "src/tree/hist/*.cc",
     ]) + glob([
-        "plugin/federated/**/*.h",
-        "plugin/sycl/**/*.h",
         "src/**/*.h",
+    ], exclude = [
+        "src/collective/in_memory_communicator.h",
+        "src/collective/nccl_stub.h",
+        "src/common/base64.h",
+        "src/common/cuda_dr_utils.h",
+        "src/common/cuda_pinned_allocator.h",
+        "src/common/cuda_stream_pool.h",
     ]),
     hdrs = glob(["include/**/*.h"]),
     additional_compiler_inputs = glob([
