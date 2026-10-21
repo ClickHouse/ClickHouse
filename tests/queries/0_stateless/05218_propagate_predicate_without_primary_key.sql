@@ -62,3 +62,71 @@ SELECT 'correctness',
 
 DROP TABLE prop_nopk_big;
 DROP TABLE prop_nopk_small;
+
+-- Any fixed-size key is cheap to compare, a variable-size one is not
+DROP TABLE IF EXISTS prop_nopk_types_big;
+DROP TABLE IF EXISTS prop_nopk_types_small;
+
+CREATE TABLE prop_nopk_types_big (u UUID, ip IPv6, fs FixedString(3), n Nullable(UInt64), s String, pad UInt64) ENGINE = MergeTree ORDER BY pad;
+CREATE TABLE prop_nopk_types_small (u UUID, ip IPv6, fs FixedString(3), n Nullable(UInt64), s String) ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO prop_nopk_types_big SELECT toUUID(concat('00000000-0000-0000-0000-', leftPad(toString(number % 1000), 12, '0'))), toIPv6(IPv4NumToString(toUInt32(number % 1000))), leftPad(toString(number % 1000), 3, '0'), number % 1000, toString(number % 1000), number FROM numbers(10000);
+INSERT INTO prop_nopk_types_small SELECT toUUID(concat('00000000-0000-0000-0000-', leftPad(toString(number), 12, '0'))), toIPv6(IPv4NumToString(toUInt32(number))), leftPad(toString(number), 3, '0'), number, toString(number) FROM numbers(1000);
+
+SELECT 'UUID',
+       countIf(explain LIKE '%ilter column:%u = %000000000042%')
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM (SELECT * FROM prop_nopk_types_small WHERE u = toUUID('00000000-0000-0000-0000-000000000042')) AS s
+    INNER JOIN prop_nopk_types_big AS b ON s.u = b.u
+);
+
+SELECT 'IPv6',
+       countIf(explain LIKE '%ilter column:%ip = %0.0.0.42%')
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM (SELECT * FROM prop_nopk_types_small WHERE ip = toIPv6('::ffff:0.0.0.42')) AS s
+    INNER JOIN prop_nopk_types_big AS b ON s.ip = b.ip
+);
+
+SELECT 'FixedString',
+       countIf(explain LIKE '%ilter column:%fs = %042%')
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM (SELECT * FROM prop_nopk_types_small WHERE fs = '042') AS s
+    INNER JOIN prop_nopk_types_big AS b ON s.fs = b.fs
+);
+
+SELECT 'Nullable',
+       countIf(explain LIKE '%ilter column:%n = 42%')
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM (SELECT * FROM prop_nopk_types_small WHERE n = 42) AS s
+    INNER JOIN prop_nopk_types_big AS b ON s.n = b.n
+);
+
+SELECT 'String',
+       countIf(explain LIKE '%ilter column:%s = %42%')
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM (SELECT * FROM prop_nopk_types_small WHERE s = '42') AS s
+    INNER JOIN prop_nopk_types_big AS b ON s.s = b.s
+);
+
+SELECT 'types correctness',
+       (SELECT count() FROM (SELECT * FROM prop_nopk_types_small WHERE u = toUUID('00000000-0000-0000-0000-000000000042')) AS s
+        INNER JOIN prop_nopk_types_big AS b ON s.u = b.u),
+       (SELECT count() FROM (SELECT * FROM prop_nopk_types_small WHERE ip = toIPv6('::ffff:0.0.0.42')) AS s
+        INNER JOIN prop_nopk_types_big AS b ON s.ip = b.ip),
+       (SELECT count() FROM (SELECT * FROM prop_nopk_types_small WHERE fs = '042') AS s
+        INNER JOIN prop_nopk_types_big AS b ON s.fs = b.fs),
+       (SELECT count() FROM (SELECT * FROM prop_nopk_types_small WHERE n = 42) AS s
+        INNER JOIN prop_nopk_types_big AS b ON s.n = b.n);
+
+DROP TABLE prop_nopk_types_big;
+DROP TABLE prop_nopk_types_small;

@@ -3,3 +3,9 @@ in set	1
 in set on a key column	2
 in set on a key column, no index analysis	1
 correctness	0
+UUID	2
+IPv6	2
+FixedString	2
+Nullable	2
+String	1
+types correctness	10	10	10	10
