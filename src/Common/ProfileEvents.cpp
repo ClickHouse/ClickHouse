@@ -902,6 +902,7 @@ The server successfully detected this situation and will download merged part fr
     M(S3Clients, "Number of created S3 clients.", ValueType::Number) \
     M(TinyS3Clients, "Number of S3 clients copies which reuse an existing auth provider from another client.", ValueType::Number) \
     \
+    M(ElasticsearchPointInTimeCloseFailures, "Number of failed attempts to close an Elasticsearch point in time.", ValueType::Number) \
     M(EngineFileLikeReadFiles, "Number of files read in table engines working with files (like File/S3/URL/HDFS).", ValueType::Number) \
     \
     M(ReadBufferFromS3Microseconds, "Time spent on reading from S3.", ValueType::Microseconds) \
