@@ -35,8 +35,6 @@ struct DarwinDirectoryWatchState
     DarwinDirectoryWatchState(const DarwinDirectoryWatchState &) = delete;
     DarwinDirectoryWatchState & operator=(const DarwinDirectoryWatchState &) = delete;
 
-    /// Register `fd` as the watch of `name`, or close it and drop the watch. Keep `watched_fds` and
-    /// `watched_names` in sync. Closing the descriptor removes it from the kqueue of the reactor.
     void watchFile(const std::string & name, int fd, UInt64 inode);
     std::map<std::string, WatchedFd>::iterator unwatchFile(std::map<std::string, WatchedFd>::iterator it);
 

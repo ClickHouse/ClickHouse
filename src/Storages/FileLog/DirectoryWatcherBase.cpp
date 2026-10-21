@@ -388,13 +388,15 @@ void DirectoryWatcherBase::syncFileWatches(std::map<std::string, UInt64> & files
         try
         {
             reactor->watchVnode(*this, fd, NOTE_WRITE | NOTE_EXTEND | NOTE_ATTRIB | NOTE_DELETE | NOTE_RENAME);
+            /// Until it is recorded, the descriptor is owned here: closing it removes it from the kqueue, which
+            /// otherwise could return the registration after the watcher is removed.
+            watch_state->watchFile(name, fd, inode);
         }
         catch (...)
         {
             closeFileDescriptor(fd);
             throw;
         }
-        watch_state->watchFile(name, fd, inode);
     }
     for (const auto & name : vanished)
         files.erase(name);

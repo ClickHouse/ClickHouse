@@ -25,8 +25,16 @@ DarwinDirectoryWatchState::~DarwinDirectoryWatchState()
 
 void DarwinDirectoryWatchState::watchFile(const std::string & name, int fd, UInt64 inode)
 {
-    watched_fds.emplace(name, WatchedFd{fd, inode});
-    watched_names.emplace(fd, name);
+    const auto it = watched_fds.emplace(name, WatchedFd{fd, inode}).first;
+    try
+    {
+        watched_names.emplace(fd, name);
+    }
+    catch (...)
+    {
+        watched_fds.erase(it);
+        throw;
+    }
 }
 
 std::map<std::string, DarwinDirectoryWatchState::WatchedFd>::iterator
