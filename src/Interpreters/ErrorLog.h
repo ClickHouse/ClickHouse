@@ -23,6 +23,8 @@ struct ErrorLogElement
     UInt64 last_error_time = 0;
     String last_error_message{};
     String last_error_query_id{};
+    /// Runtime addresses, only for symbolization: never log them or write them to a table as is,
+    /// `appendToBlock` stores them with `StackTrace::resolveAddressForStorage`.
     std::vector<UInt64> last_error_trace{};
     static std::string name() { return "ErrorLog"; }
     static ColumnsDescription getColumnsDescription();

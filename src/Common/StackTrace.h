@@ -153,6 +153,7 @@ public:
     /// becomes its file offset, which stays valid across restarts and hosts, while any other address
     /// becomes 0: an offset into a library would read as a main executable one, and the runtime
     /// address must not be published. The slot is kept, so frame positions do not change.
+    /// Raw runtime addresses must never leave the process (tables, logs, network): convert them with this function first.
     static UInt64 resolveAddressForStorage(const void * virtual_addr);
 
     void toStringEveryLine(std::function<void(std::string_view)> callback) const;
