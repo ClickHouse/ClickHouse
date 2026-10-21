@@ -346,12 +346,6 @@ template <size_t N>
 ALWAYS_INLINE void loadPlanes(UInt64 (&matrix)[N], const char * src, UInt32 num_bits)
 {
 #if defined(__AVX2__)
-    /// Not `memset` followed by `memcpy` of a variable size: the overlapping, unaligned tail stores of `memcpy`
-    /// cannot be forwarded to the narrower loads of the transpose that immediately reads the matrix back,
-    /// so every block waits for them to retire, and how long depends on where the stack happens to place
-    /// the matrix. One select per plane compiles to masked loads and aligned full-width stores instead.
-    /// Without masked loads (e.g. on AArch64) it would be a scalar loop over all `N` planes, slower than the copy.
-    /// A full matrix (e.g. random values) needs no masks: a copy of a constant size is aligned stores only.
     if (num_bits == N)
     {
         memcpy(matrix, src, sizeof(matrix));
