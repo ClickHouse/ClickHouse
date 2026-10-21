@@ -6,12 +6,12 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Functions/extractKeyValuePairs.h>
+#include <Functions/keyvaluepair/impl/KeyValuePairExtractorBuilder.h>
+#include <Functions/keyvaluepair/impl/DuplicateKeyFoundException.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Chunk.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/TypeTree.h>
 
 namespace DB
 {
@@ -31,14 +31,15 @@ namespace ErrorCodes
 namespace HivePartitioningUtils
 {
 
-static const KeyValuePairExtractor & getExtractor()
+static auto makeExtractor()
 {
-    static const KeyValuePairExtractor extractor({.key_value_delimiter = '=', .pair_delimiters = "/"});
-    return extractor;
+    return KeyValuePairExtractorBuilder().withItemDelimiters({'/'}).withKeyValueDelimiter('=').buildWithReferenceMap();
 }
 
 HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & path)
 {
+    static auto extractor = makeExtractor();
+
     HivePartitioningKeysAndValues key_values;
 
     // cutting the filename to prevent malformed filenames that contain key-value-pairs from being extracted
@@ -53,12 +54,14 @@ HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & 
 
     std::string_view path_without_filename(path.data(), last_slash_pos);
 
-    getExtractor().forEachPair(path_without_filename, [&](std::string_view key, std::string_view value)
+    try
     {
-        auto [it, inserted] = key_values.try_emplace(key, value);
-        if (!inserted && it->second != value)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Path '{}' to file with enabled hive-style partitioning contains duplicated partition key {} with different values, only unique keys are allowed", path, key);
-    });
+        extractor.extract(path_without_filename, key_values);
+    }
+    catch (const extractKV::DuplicateKeyFoundException & ex)
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Path '{}' to file with enabled hive-style partitioning contains duplicated partition key {} with different values, only unique keys are allowed", path, ex.key);
+    }
 
     return key_values;
 }
@@ -94,19 +97,21 @@ NamesAndTypesList extractHivePartitionColumnsFromPath(
         else
         {
             const auto hive_format_settings = buildHiveFormatSettings(format_settings, context);
-            auto type = tryInferDataTypeByEscapingRule(value, hive_format_settings, FormatSettings::EscapingRule::Raw);
-            /// An empty value, `NULL`, `[]` or `{}` alone do not determine a type, and a type with `Nothing` anywhere in it
-            /// (a `Variant` alternative included) cannot hold the other paths' values.
-            if (!type || anyInTypeTree(*type, [](const IDataType & node) { return isNothing(node); }))
-                type = std::make_shared<DataTypeString>();
-
-            if (type->canBeInsideLowCardinality() && isStringOrFixedString(type))
+            if (const auto type = tryInferDataTypeByEscapingRule(
+                    value, hive_format_settings, FormatSettings::EscapingRule::Raw))
             {
-                hive_partition_columns_to_read_from_file_path.emplace_back(key, std::make_shared<DataTypeLowCardinality>(type));
+                if (type->canBeInsideLowCardinality() && isStringOrFixedString(type))
+                {
+                    hive_partition_columns_to_read_from_file_path.emplace_back(key, std::make_shared<DataTypeLowCardinality>(type));
+                }
+                else
+                {
+                    hive_partition_columns_to_read_from_file_path.emplace_back(key, type);
+                }
             }
             else
             {
-                hive_partition_columns_to_read_from_file_path.emplace_back(key, type);
+                hive_partition_columns_to_read_from_file_path.emplace_back(key, std::make_shared<DataTypeString>());
             }
         }
     }

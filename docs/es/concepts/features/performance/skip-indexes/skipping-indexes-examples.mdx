@@ -28,7 +28,9 @@ ClickHouse admite seis tipos de índices de omisión:
 
 Cada sección ofrece ejemplos con datos de ejemplo y muestra cómo verificar el uso del índice durante la ejecución de consultas.
 
-## Índice MinMax {#minmax-index}
+<div id="minmax-index">
+  ## Índice MinMax
+</div>
 
 El índice `minmax` es más adecuado para predicados de rango en datos poco ordenados o en columnas correlacionadas con `ORDER BY`.
 
@@ -58,7 +60,9 @@ SELECT count() FROM events WHERE ts >= now() - 3600;
 
 Consulta un [ejemplo detallado](/es/concepts/best-practices/using-data-skipping-indices#example) con `EXPLAIN` y poda.
 
-## Índice set {#set-index}
+<div id="set-index">
+  ## Índice set
+</div>
 
 Utiliza el índice `set` cuando la cardinalidad local (por bloque) sea baja; no es útil si cada bloque tiene muchos valores distintos.
 
@@ -74,7 +78,9 @@ SELECT * FROM events WHERE user_id IN (101, 202);
 
 En la [guía básica de funcionamiento](/es/concepts/features/performance/skip-indexes/skipping-indexes#basic-operation) se muestran un flujo de trabajo de creación/materialización y su efecto antes y después.
 
-## Índice de texto (text) para búsqueda de texto completo {#textindex-for-full-text-search}
+<div id="textindex-for-full-text-search">
+  ## Índice de texto (text) para búsqueda de texto completo
+</div>
 
 `text` es un índice invertido sobre datos de texto tokenizados.
 Está diseñado específicamente para cargas de trabajo de búsqueda de texto completo, lo que permite una búsqueda eficiente y determinista de tokens y términos.
@@ -93,7 +99,9 @@ Consulte en la documentación un ejemplo más completo de observabilidad [aquí]
 
 El índice de texto es totalmente determinista y completamente configurable en términos de tokenización y procesamiento de texto, a costa de un mayor consumo de almacenamiento en comparación con los índices basados en bloom filter,
 
-## Filtro Bloom genérico (escalar) {#generic-bloom-filter-scalar}
+<div id="generic-bloom-filter-scalar">
+  ## Filtro Bloom genérico (escalar)
+</div>
 
 El índice `bloom_filter` es adecuado para búsquedas de igualdad o pertenencia en IN del tipo &quot;aguja en un pajar&quot;. Acepta un parámetro opcional, que es la tasa de falsos positivos (valor predeterminado: 0.025).
 
@@ -107,7 +115,9 @@ EXPLAIN indexes = 1
 SELECT * FROM events WHERE value IN (7, 42, 99);
 ```
 
-## Filtro Bloom de n-gramas (ngrambf_v1) para la búsqueda de subcadenas *(Obsoleto)* {#n-gram-bloom-filter-ngrambf-v1-for-substring-search}
+<div id="n-gram-bloom-filter-ngrambf-v1-for-substring-search">
+  ## Filtro Bloom de n-gramas (ngrambf_v1) para la búsqueda de subcadenas *(Obsoleto)*
+</div>
 
 <Note>
   El uso de índices `ngrambf_v1` para la búsqueda de texto completo está obsoleto en las versiones de ClickHouse `>= 26.2` en favor de los índices `text` (consulta [aquí](/es/reference/engines/table-engines/mergetree-family/textindexes) para más detalles).
@@ -147,7 +157,9 @@ SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) AS k; -- ~13
 
 Consulte la [documentación de parámetros](/es/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter) para obtener una guía completa de optimización.
 
-## Filtro Bloom de tokens (tokenbf_v1) para búsquedas por palabras *(Obsoleto)* {#token-bloom-filter-tokenbf-v1-for-word-based-search}
+<div id="token-bloom-filter-tokenbf-v1-for-word-based-search">
+  ## Filtro Bloom de tokens (tokenbf_v1) para búsquedas por palabras *(Obsoleto)*
+</div>
 
 <Note>
   El uso de índices `tokenbf_v1` para la búsqueda de texto completo está obsoleto en las versiones de ClickHouse `>= 26.2` en favor de los índices `text` (consulta [aquí](/es/reference/engines/table-engines/mergetree-family/textindexes) para obtener más información).
@@ -170,7 +182,9 @@ SELECT count() FROM logs WHERE hasToken(lower(msg), 'exception');
 
 Consulte ejemplos de observabilidad y recomendaciones sobre token frente a ngram [aquí](/es/guides/use-cases/observability/build-your-own/schema-design#text-index-for-full-text-search).
 
-## Agregar índices durante CREATE TABLE (varios ejemplos) {#add-indexes-during-create-table-multiple-examples}
+<div id="add-indexes-during-create-table-multiple-examples">
+  ## Agregar índices durante CREATE TABLE (varios ejemplos)
+</div>
 
 Los índices de omisión también admiten expresiones compuestas y tipos `Map`/`Tuple`/`Nested`. Esto se demuestra en el ejemplo siguiente:
 
@@ -191,7 +205,9 @@ ENGINE = MergeTree
 ORDER BY u64;
 ```
 
-## Materializar datos existentes y verificarlo {#materializing-on-existing-data-and-verifying}
+<div id="materializing-on-existing-data-and-verifying">
+  ## Materializar datos existentes y verificarlo
+</div>
 
 Puedes añadir un índice a las partes de datos existentes con `MATERIALIZE` y examinar la poda con `EXPLAIN` o con logs de nivel trace, como se muestra a continuación:
 
@@ -207,7 +223,9 @@ SET send_logs_level = 'trace';
 
 Este [ejemplo práctico de minmax](/es/concepts/best-practices/using-data-skipping-indices#example) muestra la estructura de la salida de EXPLAIN y cuántos elementos se descartan.
 
-## Cuándo usar y cuándo evitar los índices de omisión {#when-use-and-when-to-avoid}
+<div id="when-use-and-when-to-avoid">
+  ## Cuándo usar y cuándo evitar los índices de omisión
+</div>
 
 **Use índices de omisión cuando:**
 
@@ -226,24 +244,30 @@ Este [ejemplo práctico de minmax](/es/concepts/best-practices/using-data-skippi
   Si un valor aparece aunque sea una sola vez en un bloque de datos, ClickHouse debe leer el bloque completo. Pruebe los índices con conjuntos de datos realistas y ajuste la granularidad y los parámetros específicos del tipo en función de mediciones de rendimiento reales.
 </Info>
 
-## Ignorar temporalmente o forzar índices {#temporarily-ignore-or-force-indexes}
+<div id="temporarily-ignore-or-force-indexes">
+  ## Ignorar temporalmente o forzar índices
+</div>
 
-Deshabilite índices específicos por nombre para consultas individuales durante las pruebas y la solución de problemas. También hay ajustes para forzar el uso de índices cuando sea necesario. Consulte [`ignore_data_skipping_indexes`](/es/reference/settings/session-settings/ignore#ignore_data_skipping_indexes).
+Deshabilite índices específicos por nombre para consultas individuales durante las pruebas y la solución de problemas. También hay ajustes para forzar el uso de índices cuando sea necesario. Consulte [`ignore_data_skipping_indices`](/es/reference/settings/session-settings#ignore_data_skipping_indices).
 
 ```sql
--- Ignore an index by name
+-- Ignorar un índice por nombre
 SELECT * FROM logs
 WHERE hasToken(lower(msg), 'exception')
 SETTINGS ignore_data_skipping_indices = 'msg_token';
 ```
 
-## Notas y advertencias {#notes-and-caveats}
+<div id="notes-and-caveats">
+  ## Notas y advertencias
+</div>
 
 * Los índices de omisión solo son compatibles con las [tablas de la familia MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree); la poda se realiza a nivel de gránulo/bloque.
 * Los índices basados en filtros de Bloom son probabilísticos (los falsos positivos generan lecturas adicionales, pero no omiten datos válidos).
 * Los filtros de Bloom y otros índices de omisión deben validarse con `EXPLAIN` y tracing; ajuste la granularidad para equilibrar la poda y el tamaño del índice.
 
-## Documentación relacionada {#related-docs}
+<div id="related-docs">
+  ## Documentación relacionada
+</div>
 
 * [Guía sobre índices de omisión de datos](/es/concepts/features/performance/skip-indexes/skipping-indexes)
 * [Guía de buenas prácticas](/es/concepts/best-practices/using-data-skipping-indices)

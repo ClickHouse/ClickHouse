@@ -14,7 +14,6 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
-#include <DataTypes/TypeTree.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <base/sort.h>
@@ -218,7 +217,16 @@ static bool haveCompatibleConstantValues(const Field & actual, const Field & exp
 /// the type of every value it holds is still fixed by the declared `Map(K, V)`.
 static bool typeCanHideTheValueType(const IDataType & type)
 {
-    return anyInTypeTree(type, [](const IDataType & node) { return isVariant(node) || isDynamic(node) || isObject(node); });
+    if (isVariant(type) || isDynamic(type) || isObject(type))
+        return true;
+
+    bool result = false;
+    type.forEachChild([&](const IDataType & child)
+    {
+        result = result || typeCanHideTheValueType(child);
+    });
+
+    return result;
 }
 
 template <typename ReturnType>
@@ -1162,9 +1170,6 @@ Block materializeBlock(const Block & block, bool remove_special_column_represent
     for (size_t i = 0; i < columns; ++i)
     {
         auto & element = res.getByPosition(i);
-        /// Plan-derived headers may declare a column by type only; instantiate it before use.
-        if (!element.column)
-            element.column = element.type->createColumn();
         element.column = element.column->convertToFullColumnIfConst();
         if (remove_special_column_representations)
             element.column = removeSpecialRepresentations(element.column);
@@ -1177,13 +1182,9 @@ void materializeBlockInplace(Block & block, bool remove_special_column_represent
 {
     for (size_t i = 0; i < block.columns(); ++i)
     {
-        auto & element = block.getByPosition(i);
-        /// Plan-derived headers may declare a column by type only; instantiate it before use.
-        if (!element.column)
-            element.column = element.type->createColumn();
-        element.column = element.column->convertToFullColumnIfConst();
+        block.getByPosition(i).column = block.getByPosition(i).column->convertToFullColumnIfConst();
         if (remove_special_column_representations)
-            element.column = removeSpecialRepresentations(element.column);
+            block.getByPosition(i).column = removeSpecialRepresentations(block.getByPosition(i).column);
     }
 }
 

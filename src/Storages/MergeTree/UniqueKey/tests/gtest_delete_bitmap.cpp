@@ -7,8 +7,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 
-#include <algorithm>
-#include <numeric>
 #include <random>
 #include <string>
 #include <vector>
@@ -44,7 +42,7 @@ namespace
 /// ---------- primitive ----------
 ///
 /// One smoke test gates the wrapper layer; the rest of the suite exercises
-/// our own logic: `buildKeepFilterRange`, `rangeCardinality`, the dynamic-width
+/// our own logic: `containsBulk`, `rangeCardinality`, the dynamic-width
 /// upgrade, serialize/deserialize invariants, and filename helpers.
 
 TEST(DeleteBitmapTest, WrapperSmoke)
@@ -72,6 +70,70 @@ TEST(DeleteBitmapTest, WrapperSmoke)
 
     auto v = a.toVector();
     EXPECT_EQ(v, (std::vector<UInt64>{10, 20, 30, 40, 50}));
+}
+
+TEST(DeleteBitmapTest, ContainsBulkMatchesScalar)
+{
+    /// Correctness lock for the bulk API: must produce the same keep/drop
+    /// decision as per-row `contains`. Exercises empty-bitmap fast path,
+    /// n==0, sparse + dense shapes, and offsets inside + outside the
+    /// bitmap.
+    DeleteBitmap bm;
+    /// Mixed shape: singletons + a dense run — crosses the CRoaring
+    /// container-type boundary (array vs bitset), so containsBulk must
+    /// handle both paths in a single call.
+    for (UInt32 i = 0; i < 5000; ++i)
+        bm.add(100 + i);
+    bm.add(1'000'000);
+    bm.add(2'000'000);
+    bm.add(std::numeric_limits<UInt32>::max());
+
+    /// n == 0 is a no-op.
+    {
+        uint8_t dummy = 0xAA;
+        bm.containsBulk(nullptr, 0, &dummy);
+        EXPECT_EQ(dummy, 0xAA);
+    }
+
+    /// Empty bitmap → all 1s.
+    {
+        DeleteBitmap empty;
+        std::vector<UInt64> rows = {0, 1, 999, std::numeric_limits<UInt32>::max()};
+        std::vector<uint8_t> keep(rows.size(), 0);
+        empty.containsBulk(rows.data(), rows.size(), keep.data());
+        for (auto k : keep)
+            EXPECT_EQ(k, 1u);
+    }
+
+    /// Mixed hit / miss pattern. Final probe is above UInt32::max — the
+    /// narrow path must short-circuit it as "keep".
+    constexpr UInt64 kU32Max = std::numeric_limits<UInt32>::max();
+    std::vector<UInt64> rows = {
+        0, 50, 99, 100, 500, 5099, 5100, 1'000'000, 1'000'001,
+        2'000'000, 4'000'000, kU32Max, kU32Max + 1};
+    std::vector<uint8_t> keep(rows.size(), 0xFF);
+    bm.containsBulk(rows.data(), rows.size(), keep.data());
+    for (size_t i = 0; i < rows.size(); ++i)
+    {
+        const uint8_t expected = bm.contains(rows[i]) ? 0 : 1;
+        EXPECT_EQ(keep[i], expected)
+            << "row " << rows[i] << " idx " << i
+            << " bulk=" << int(keep[i]) << " scalar=" << int(expected);
+    }
+
+    /// Randomised cross-check: 10k random probes against a sparse bitmap.
+    std::mt19937 rng(424242); // NOLINT(cert-msc32-c, cert-msc51-cpp)
+    std::uniform_int_distribution<UInt32> dist(0, 10'000'000);
+    std::vector<UInt64> many(10'000);
+    for (auto & r : many)
+        r = dist(rng);
+    std::vector<uint8_t> bulk_keep(many.size(), 0);
+    bm.containsBulk(many.data(), many.size(), bulk_keep.data());
+    for (size_t i = 0; i < many.size(); ++i)
+    {
+        const uint8_t expected = bm.contains(many[i]) ? 0 : 1;
+        EXPECT_EQ(bulk_keep[i], expected) << "random idx " << i << " row " << many[i];
+    }
 }
 
 TEST(DeleteBitmapTest, RangeCardinality)
@@ -140,85 +202,6 @@ TEST(DeleteBitmapTest, AutoUpgradeOnAdd)
     /// Range query crosses the UInt32 ceiling without clamping after upgrade.
     EXPECT_EQ(bm.rangeCardinality(0, kAboveU32 + 1), 3u);
     EXPECT_EQ(bm.rangeCardinality(kAboveU32, kAboveU32 + 1), 1u);
-}
-
-/// `subtract` is `merge`'s counterpart, and its four width combinations are dispatched
-/// separately, so each is covered here. Width is not asserted directly -- `is64Bit` is private,
-/// and a widened bitmap is indistinguishable for every value it can hold -- so each case is
-/// pinned by WHICH rows survive, which is what a mis-dispatch would get wrong.
-TEST(DeleteBitmapTest, SubtractNarrowFromNarrow)
-{
-    DeleteBitmap a;
-    a.addMany({1, 2, 3, 10});
-    DeleteBitmap b;
-    b.addMany({2, 10, 99});   /// 99 is absent from `a`; removing it must be a no-op
-
-    a.subtract(b);
-    EXPECT_EQ(a.toVector(), (std::vector<UInt64>{1, 3}));
-}
-
-TEST(DeleteBitmapTest, SubtractWideFromWide)
-{
-    constexpr UInt64 kAboveU32 = static_cast<UInt64>(std::numeric_limits<UInt32>::max()) + 5;
-
-    DeleteBitmap a;
-    a.addMany({1, kAboveU32, kAboveU32 + 1});
-    ASSERT_TRUE(a.contains(kAboveU32));   /// upgraded, per AutoUpgradeOnAddMany
-
-    DeleteBitmap b;
-    b.addMany({kAboveU32});
-    ASSERT_TRUE(b.contains(kAboveU32));
-
-    a.subtract(b);
-    EXPECT_EQ(a.toVector(), (std::vector<UInt64>{1, kAboveU32 + 1}));
-}
-
-TEST(DeleteBitmapTest, SubtractNarrowFromWide)
-{
-    constexpr UInt64 kAboveU32 = static_cast<UInt64>(std::numeric_limits<UInt32>::max()) + 5;
-
-    DeleteBitmap a;
-    a.addMany({1, 2, kAboveU32});
-    ASSERT_TRUE(a.contains(kAboveU32));
-
-    DeleteBitmap b;   /// nothing above the ceiling, so it stays narrow
-    b.addMany({2});
-
-    a.subtract(b);
-    EXPECT_EQ(a.toVector(), (std::vector<UInt64>{1, kAboveU32}));
-}
-
-/// The combination `merge` deliberately does not have: it would widen `dst` first, while
-/// difference must not -- a value above the ceiling is not in `dst`, so it has nothing to remove.
-///
-/// `kAboveU32` truncates to 4 in 32 bits, and `a` holds 4. Casting the wide
-/// operand down instead of skipping it deletes row 4, which is in neither operand's intersection.
-TEST(DeleteBitmapTest, SubtractWideFromNarrowSkipsUnaddressableRows)
-{
-    constexpr UInt64 kAboveU32 = static_cast<UInt64>(std::numeric_limits<UInt32>::max()) + 5;
-    static_assert(static_cast<UInt32>(kAboveU32) == 4, "the truncation this test detects");
-
-    DeleteBitmap a;   /// narrow
-    a.addMany({1, 2, 3, 4});
-
-    DeleteBitmap b;
-    b.addMany({2, kAboveU32});
-    ASSERT_TRUE(b.contains(kAboveU32));
-
-    a.subtract(b);
-    EXPECT_EQ(a.toVector(), (std::vector<UInt64>{1, 3, 4}));
-}
-
-TEST(DeleteBitmapTest, SubtractEverythingLeavesEmpty)
-{
-    DeleteBitmap a;
-    a.addMany({4, 5, 6});
-    DeleteBitmap b;
-    b.addMany({4, 5, 6});
-
-    a.subtract(b);
-    EXPECT_TRUE(a.empty());
-    EXPECT_EQ(a.cardinality(), 0u);
 }
 
 TEST(DeleteBitmapTest, AutoUpgradeOnAddMany)
@@ -292,7 +275,7 @@ TEST(DeleteBitmapTest, RoundtripSingleRow)
 TEST(DeleteBitmapTest, RoundtripSparse1M)
 {
     DeleteBitmap in;
-    std::mt19937 rng(12345); // NOLINT(bugprone-random-generator-seed,cert-msc32-c, cert-msc51-cpp)
+    std::mt19937 rng(12345); // NOLINT(cert-msc32-c, cert-msc51-cpp)
     std::uniform_int_distribution<UInt32> dist(0, 100'000'000);
     std::vector<UInt64> samples;
     samples.reserve(1'000'000);
@@ -303,7 +286,7 @@ TEST(DeleteBitmapTest, RoundtripSparse1M)
     auto out = roundtrip(in);
     EXPECT_EQ(out->cardinality(), in.cardinality());
     /// Spot-check 1000 random samples.
-    std::mt19937 rng2(9999); // NOLINT(bugprone-random-generator-seed,cert-msc32-c, cert-msc51-cpp)
+    std::mt19937 rng2(9999); // NOLINT(cert-msc32-c, cert-msc51-cpp)
     std::uniform_int_distribution<size_t> idx_dist(0, samples.size() - 1);
     for (size_t i = 0; i < 1000; ++i)
     {
@@ -468,33 +451,29 @@ TEST(DeleteBitmapTest, TrailingBytesAfterCRCRejected)
     }
 }
 
-TEST(DeleteBitmapTest, CarriedFileNameRoundtrip)
+TEST(DeleteBitmapTest, FileNameRoundtrip)
 {
-    EXPECT_EQ(DeleteBitmap::fileNameForCarriedTarget(19, "all_1_5_1"), "delete_bitmap_19_for_all_1_5_1.rbm");
+    EXPECT_EQ(DeleteBitmap::fileNameForCSN(0), "delete_bitmap_0.rbm");
+    EXPECT_EQ(DeleteBitmap::fileNameForCSN(12345), "delete_bitmap_12345.rbm");
 
-    EXPECT_TRUE(DeleteBitmap::isCarriedBitmapFile("delete_bitmap_19_for_all_1_5_1.rbm"));
-    EXPECT_EQ(DeleteBitmap::parseCarriedFromFileName("delete_bitmap_19_for_all_1_5_1.rbm").csn, 19U);
-    EXPECT_EQ(DeleteBitmap::parseCarriedFromFileName("delete_bitmap_19_for_all_1_5_1.rbm").target_part_name,
-        "all_1_5_1");
+    EXPECT_TRUE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_0.rbm"));
+    EXPECT_TRUE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_999.rbm"));
+    EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_.rbm"));
+    EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_abc.rbm"));
+    EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("foo.rbm"));
+    EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_1"));
+    EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_1.rbm.tmp"));
+    EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile(""));
+    /// Noncanonical numeric forms must be rejected so two filenames cannot
+    /// resolve to the same csn (would confuse `readBitmapFromStorage`).
+    EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_+7.rbm"));
+    EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_-7.rbm"));
+    EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_007.rbm"));
+    EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_ 7.rbm"));
 
-    /// DISCRIMINATING: put the csn after the target instead and this pair collapses -- a trailing
-    /// number is indistinguishable from the mutation component of a part name.
-    EXPECT_EQ(DeleteBitmap::parseCarriedFromFileName("delete_bitmap_19_for_all_1_5_1_19.rbm").target_part_name,
-        "all_1_5_1_19");
-
-    /// A partition id may contain the infix; the csn may not, so the FIRST one splits.
-    EXPECT_EQ(DeleteBitmap::parseCarriedFromFileName("delete_bitmap_7_for_a_for_b_1_1_0.rbm").target_part_name,
-        "a_for_b_1_1_0");
-
-    /// The two forms are disjoint, which is what lets `enumerateFiles` classify by name alone.
-    EXPECT_FALSE(DeleteBitmap::isStagedBitmapFile("delete_bitmap_19_for_all_1_5_1.rbm"));
-    EXPECT_FALSE(DeleteBitmap::isCarriedBitmapFile("delete_bitmap_for_all_1_5_1.rbm"));
-    EXPECT_FALSE(DeleteBitmap::isCarriedBitmapFile("delete_bitmap_19.rbm"));
-
-    EXPECT_FALSE(DeleteBitmap::isCarriedBitmapFile("delete_bitmap_19_for_.rbm"));
-    EXPECT_FALSE(DeleteBitmap::isCarriedBitmapFile("delete_bitmap__for_all_1_1_0.rbm"));
-    EXPECT_FALSE(DeleteBitmap::isCarriedBitmapFile("delete_bitmap_007_for_all_1_1_0.rbm"));
-    EXPECT_FALSE(DeleteBitmap::isCarriedBitmapFile("delete_bitmap_19_for_all_1_5_1.rbm.tmp"));
+    EXPECT_EQ(DeleteBitmap::parseCSNFromFileName("delete_bitmap_0.rbm"), 0U);
+    EXPECT_EQ(DeleteBitmap::parseCSNFromFileName("delete_bitmap_999.rbm"), 999U);
+    EXPECT_THROW(DeleteBitmap::parseCSNFromFileName("foo.rbm"), Exception);
 }
 
 /// ---------- cache ----------
@@ -514,7 +493,7 @@ TEST(DeleteBitmapCacheTest, GetOrSetLoadsOnceAndIsKeyDeterministic)
 
     size_t load_calls = 0;
     auto key = DeleteBitmapCache::makeKey("part-b", 7);
-    auto load = [&]() -> DeleteBitmapPtr
+    auto load = [&]() -> std::shared_ptr<DeleteBitmap>
     {
         ++load_calls;
         auto bm = std::make_shared<DeleteBitmap>();
@@ -595,138 +574,4 @@ TEST(DeleteBitmapInspectTest, FlippedBodyByteIsCorruptNotThrowing)
     EXPECT_TRUE(info.magic_ok);
     EXPECT_FALSE(info.crc_ok);
     EXPECT_NE(info.crc_stored, info.crc_computed);
-}
-
-/// ---------- buildKeepFilter / buildKeepFilterRange ----------
-
-TEST(DeleteBitmapTest, KeepFilterRangeOverEmptyBitmapKeepsEverything)
-{
-    DeleteBitmap bm;
-    std::vector<UInt8> keep(5, 0);
-    EXPECT_EQ(bm.buildKeepFilterRange(/*begin=*/10, keep.size(), keep.data()), 5u);
-    EXPECT_EQ(keep, (std::vector<UInt8>{1, 1, 1, 1, 1}));
-
-    /// An empty range is a no-op, not a read of `out_keep`.
-    EXPECT_EQ(bm.buildKeepFilterRange(/*begin=*/0, 0, nullptr), 0u);
-}
-
-TEST(DeleteBitmapTest, KeepFilterRangeIsOffsetByBegin)
-{
-    DeleteBitmap bm;
-    bm.addMany({11, 13});
-
-    /// Rows 10..14, so the deleted ones land at indices 1 and 3 of the mask.
-    std::vector<UInt8> keep(5, 0);
-    EXPECT_EQ(bm.buildKeepFilterRange(/*begin=*/10, keep.size(), keep.data()), 3u);
-    EXPECT_EQ(keep, (std::vector<UInt8>{1, 0, 1, 0, 1}));
-
-    /// A range entirely past the set rows keeps all of them.
-    std::vector<UInt8> after(3, 0);
-    EXPECT_EQ(bm.buildKeepFilterRange(/*begin=*/20, after.size(), after.data()), 3u);
-    EXPECT_EQ(after, (std::vector<UInt8>{1, 1, 1}));
-}
-
-TEST(DeleteBitmapTest, KeepFilterRangeOnWideRepresentation)
-{
-    /// Above `UInt32` the bitmap switches representation, and the range walk has its own overload
-    /// per width -- a mis-dispatch would answer for the truncated row number instead.
-    constexpr UInt64 kAboveU32 = static_cast<UInt64>(std::numeric_limits<UInt32>::max()) + 5;
-    DeleteBitmap bm;
-    bm.addMany({kAboveU32, kAboveU32 + 2});
-
-    std::vector<UInt8> keep(4, 0);
-    EXPECT_EQ(bm.buildKeepFilterRange(kAboveU32, keep.size(), keep.data()), 2u);
-    EXPECT_EQ(keep, (std::vector<UInt8>{0, 1, 0, 1}));
-
-    /// The truncated row numbers are not deleted, so the narrow window is untouched.
-    std::vector<UInt8> narrow(6, 0);
-    EXPECT_EQ(bm.buildKeepFilterRange(/*begin=*/0, narrow.size(), narrow.data()), 6u);
-}
-
-/// ---------- clearInFilter ----------
-
-TEST(DeleteBitmapTest, ClearInFilterOverSparseRows)
-{
-    DeleteBitmap bm;
-    bm.addMany({3, 11, 13, 16, 50});
-
-    /// Rows [11, 16): starts on a set row, 16 is one past the end and stays, 3 and 50 are outside.
-    /// Row 13 is set and already filtered out: it stays out and still counts. Rows 12 and 15 are not set.
-    std::vector<UInt8> filter{1, 0, 0, 1, 0};
-    EXPECT_EQ(bm.clearInFilter(/*begin=*/11, filter.size(), filter.data()), 2u);
-    EXPECT_EQ(filter, (std::vector<UInt8>{0, 0, 0, 1, 0}));
-}
-
-TEST(DeleteBitmapTest, ClearInFilterOverDenseRows)
-{
-    DeleteBitmap bm;
-    std::vector<UInt64> rows(10'000);
-    std::iota(rows.begin(), rows.end(), 0);
-    bm.addMany(rows);
-
-    std::vector<UInt8> whole(rows.size(), 1);
-    EXPECT_EQ(bm.clearInFilter(/*begin=*/0, whole.size(), whole.data()), rows.size());
-    EXPECT_EQ(std::ranges::count(whole, 0), static_cast<ptrdiff_t>(rows.size()));
-
-    std::vector<UInt8> window(100, 1);
-    EXPECT_EQ(bm.clearInFilter(/*begin=*/5'000, window.size(), window.data()), 100u);
-    EXPECT_EQ(std::ranges::count(window, 0), 100);
-}
-
-TEST(DeleteBitmapTest, ClearInFilterOnWideRepresentation)
-{
-    constexpr UInt64 kAboveU32 = static_cast<UInt64>(std::numeric_limits<UInt32>::max()) + 5;
-    DeleteBitmap wide;
-    wide.addMany({7, kAboveU32, kAboveU32 + 2});
-
-    std::vector<UInt8> filter(4, 1);
-    EXPECT_EQ(wide.clearInFilter(kAboveU32, filter.size(), filter.data()), 2u);
-    EXPECT_EQ(filter, (std::vector<UInt8>{0, 1, 0, 1}));
-
-    /// The truncated row numbers are not set, so a low window clears only the low row.
-    std::vector<UInt8> narrow(8, 1);
-    EXPECT_EQ(wide.clearInFilter(/*begin=*/5, narrow.size(), narrow.data()), 1u);
-    EXPECT_EQ(narrow, (std::vector<UInt8>{1, 1, 0, 1, 1, 1, 1, 1}));
-
-    /// A 32-bit bitmap holds nothing above `UInt32`.
-    DeleteBitmap narrow_bitmap;
-    narrow_bitmap.add(5);
-    std::vector<UInt8> high(4, 1);
-    EXPECT_EQ(narrow_bitmap.clearInFilter(kAboveU32, high.size(), high.data()), 0u);
-    EXPECT_EQ(high, (std::vector<UInt8>{1, 1, 1, 1}));
-}
-
-TEST(DeleteBitmapCacheTest, RemoveEntriesForPartTakesEveryVersionOfThatPartOnly)
-{
-    DeleteBitmapCache cache(
-        "LRU",
-        CurrentMetrics::DeleteBitmapCacheBytes,
-        CurrentMetrics::DeleteBitmapCacheEntries,
-        /*max_size_in_bytes=*/8 * 1024 * 1024,
-        /*size_ratio=*/0.5);
-
-    auto bitmap = [](UInt64 row)
-    {
-        return [row]() -> DeleteBitmapPtr
-        {
-            auto bm = std::make_shared<DeleteBitmap>();
-            bm->add(row);
-            return bm;
-        };
-    };
-
-    /// Two versions of the part being dropped, one of a part that stays.
-    cache.getOrSet(DeleteBitmapCache::makeKey("dropped", 7), bitmap(1));
-    cache.getOrSet(DeleteBitmapCache::makeKey("dropped", 12), bitmap(2));
-    cache.getOrSet(DeleteBitmapCache::makeKey("survivor", 7), bitmap(3));
-
-    cache.removeEntriesForPart("dropped");
-
-    EXPECT_EQ(cache.get(DeleteBitmapCache::makeKey("dropped", 7)), nullptr);
-    EXPECT_EQ(cache.get(DeleteBitmapCache::makeKey("dropped", 12)), nullptr);
-
-    /// Same version number, different part: the version is not what identifies an entry.
-    const auto survivor = cache.get(DeleteBitmapCache::makeKey("survivor", 7));
-    ASSERT_NE(survivor, nullptr);
-    EXPECT_TRUE(survivor->contains(3));
 }

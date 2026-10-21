@@ -24,6 +24,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int CANNOT_CREATE_CHARSET_CONVERTER;
     extern const int CANNOT_CONVERT_CHARSET;
     extern const int ILLEGAL_COLUMN;
@@ -170,9 +171,14 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(String, const String, const String) -> String";
+        for (size_t i : collections::range(0, 3))
+            if (!isString(arguments[i]))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}, must be String",
+                    arguments[i]->getName(), getName());
+
+        return std::make_shared<DataTypeString>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -230,9 +236,9 @@ Returns string `s` converted from the encoding `from` to encoding `to`.
         "Usage example",
         "SELECT convertCharset('Café', 'UTF-8', 'ISO-8859-1');",
         R"(
-┌─convertCharset('Café', 'UTF-8', 'ISO-8859-1')─┐
-│ Caf�                                           │
-└───────────────────────────────────────────────┘
+┌─convertChars⋯SO-8859-1')─┐
+│ Caf�                     │
+└──────────────────────────┘
         )"
     }
     };

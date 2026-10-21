@@ -30,7 +30,7 @@ StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescrip
 {
 }
 
-std::optional<Float64> StatisticsCountMinSketch::estimateEqual(const Field & val) const
+Float64 StatisticsCountMinSketch::estimateEqual(const Field & val) const
 {
     /// Coerce the comparison field to data_type (e.g. parse '5' into a number). `val` may have an
     /// unrelated type on paths that do not pre-coerce it, such as `col IN (subquery)`.
@@ -67,13 +67,6 @@ void StatisticsCountMinSketch::build(const ColumnPtr & column)
         auto data = column->getDataAt(row);
         sketch.update(data.data(), data.size(), 1);
     }
-}
-
-size_t StatisticsCountMinSketch::allocatedBytes() const
-{
-    /// The counters, one row of buckets per hash function, and the seeds of the hash functions.
-    const size_t sketch_num_hashes = sketch.get_num_hashes();
-    return sizeof(*this) + (sketch_num_hashes * sketch.get_num_buckets() + sketch_num_hashes) * sizeof(UInt64);
 }
 
 void StatisticsCountMinSketch::merge(const StatisticsPtr & other_stats)

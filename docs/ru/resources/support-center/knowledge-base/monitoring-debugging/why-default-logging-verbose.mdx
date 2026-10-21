@@ -24,7 +24,7 @@ keywords: ['Логирование по умолчанию']
   ## Изменение уровня логирования
 </div>
 
-Описание доступных уровней логирования приведено [здесь](/ru/reference/settings/server-settings/settings/other#logger)
+Описание доступных уровней логирования приведено [здесь](/ru/reference/settings/server-settings/settings#logger)
 
 Чтобы изменить уровень логирования, вам потребуется отредактировать файл конфигурации сервера ClickHouse (`/etc/clickhouse-server/config.xml`).
 
@@ -33,9 +33,9 @@ keywords: ['Логирование по умолчанию']
 ```
 <clickhouse>
     <logger>
-        {/* Possible levels [1]:
+        {/* Возможные уровни [1]:
 
-          - none (turns off logging)
+          - none (отключает логирование)
           - fatal
           - critical
           - error
@@ -44,10 +44,10 @@ keywords: ['Логирование по умолчанию']
           - information
           - debug
           - trace
-          - test (not for production usage)
+          - test (не для использования в production)
 
             [1]: https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/Logger.h#L105-L114 */}
         <level>trace</level>
-... Rest of the configuration file
+... Остальная часть файла конфигурации
 </clickhouse>
 ```

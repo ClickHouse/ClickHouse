@@ -8,7 +8,6 @@
 #include <IO/Operators.h>
 
 #include <Storages/IStorage.h>
-#include <Storages/StorageView.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
@@ -23,25 +22,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-
-/// An unqualified parameterized-view name re-resolves against the receiving server's default
-/// database, so it is sent qualified. Only a 2-part result is resolvable as a parameterized view,
-/// so a dotted database name is left alone.
-bool isSentQualified(const TableFunctionNode & node)
-{
-    if (!node.isParameterizedView() || node.getTableFunctionName().contains('.'))
-        return false;
-
-    const auto & storage_id = node.getStorageID();
-    return storage_id.hasDatabase() && !storage_id.getDatabaseName().contains('.');
-}
-
-}
-
 TableFunctionNode::TableFunctionNode(String table_function_name_)
-    : ITableExpressionNode(children_size)
+    : IQueryTreeNode(children_size)
     , table_function_name(table_function_name_)
     , storage_id("system", "one")
 {
@@ -53,21 +35,9 @@ void TableFunctionNode::resolve(TableFunctionPtr table_function_value, StoragePt
     table_function = std::move(table_function_value);
     storage = std::move(storage_value);
     storage_id = storage->getStorageID();
-    unresolved_arguments_indexes = std::move(unresolved_arguments_indexes_);
-
     const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
     storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
-
-    if (table_expression_modifiers)
-        storage_snapshot = storage_snapshot->clone(extendMetadataWithModifiers(storage_snapshot->metadata, *table_expression_modifiers), storage_snapshot->data);
-}
-
-void TableFunctionNode::setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
-{
-    table_expression_modifiers = std::move(table_expression_modifiers_value);
-
-    if (storage_snapshot)
-        storage_snapshot = storage_snapshot->clone(extendMetadataWithModifiers(storage_snapshot->metadata, *table_expression_modifiers), storage_snapshot->data);
+    unresolved_arguments_indexes = std::move(unresolved_arguments_indexes_);
 }
 
 const StorageID & TableFunctionNode::getStorageID() const
@@ -84,12 +54,6 @@ const StorageSnapshotPtr & TableFunctionNode::getStorageSnapshot() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function node {} is not resolved", table_function_name);
 
     return storage_snapshot;
-}
-
-bool TableFunctionNode::isParameterizedView() const
-{
-    const auto * storage_view = storage ? storage->as<StorageView>() : nullptr;
-    return storage_view && storage_view->isParameterizedView();
 }
 
 void TableFunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
@@ -125,14 +89,11 @@ void TableFunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_
 bool TableFunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const TableFunctionNode &>(rhs);
-
-    /// A parameterized view is identified by its storage, whether it is spelled `pv` or `db.pv`.
-    const bool both_parameterized_views = isParameterizedView() && rhs_typed.isParameterizedView();
-    if (!both_parameterized_views && table_function_name != rhs_typed.table_function_name)
+    if (table_function_name != rhs_typed.table_function_name)
         return false;
 
-    if (storage && rhs_typed.storage && storage_id != rhs_typed.storage_id)
-        return false;
+    if (storage && rhs_typed.storage)
+        return storage_id == rhs_typed.storage_id;
 
     if (settings_changes != rhs_typed.settings_changes)
         return false;
@@ -142,15 +103,12 @@ bool TableFunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) 
 
 void TableFunctionNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 {
-    const auto full_name = storage ? storage_id.getFullNameNotQuoted() : String{};
-
-    /// Hash the name `toASTImpl` sends to other servers: `IN` set names derive from this hash.
-    const auto & name = isSentQualified(*this) ? full_name : table_function_name;
-    state.update(name.size());
-    state.update(name);
+    state.update(table_function_name.size());
+    state.update(table_function_name);
 
     if (storage)
     {
+        auto full_name = storage_id.getFullNameNotQuoted();
         state.update(full_name.size());
         state.update(full_name);
     }
@@ -163,7 +121,6 @@ void TableFunctionNode::updateTreeHashImpl(HashState & state, CompareOptions) co
     {
         state.update(change.name.size());
         state.update(change.name);
-        state.update(change.shorthand);
 
         const auto & value_dump = change.value.dump();
         state.update(value_dump.size());
@@ -189,7 +146,7 @@ ASTPtr TableFunctionNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto table_function_ast = make_intrusive<ASTFunction>();
 
-    table_function_ast->name = isSentQualified(*this) ? storage_id.getFullNameNotQuoted() : table_function_name;
+    table_function_ast->name = table_function_name;
 
     const auto & arguments = getArguments();
     table_function_ast->children.push_back(arguments.toAST(options));

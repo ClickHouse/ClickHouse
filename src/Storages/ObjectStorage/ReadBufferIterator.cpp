@@ -66,10 +66,7 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
     const ObjectInfos::iterator & begin,
     const ObjectInfos::iterator & end)
 {
-    /// The cache key does not include the compression method, and a cache hit never opens the object.
-    /// Under an explicit `compression_method` the same object can decode differently (or fail), so schemas
-    /// are only cached and reused when the codec follows from the path, same as row counts.
-    if (!query_settings.schema_inference_use_cache || !isCompressionMethodHintAuto(configuration->compression_method))
+    if (!query_settings.schema_inference_use_cache)
         return std::nullopt;
 
     for (auto it = begin; it < end; ++it)
@@ -86,7 +83,7 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
                 /// plain string overload would drop it and could validate one shard using another's metadata.
                 auto metadata_object = object_info->relative_path_with_metadata;
                 metadata_object.relative_path = path;
-                auto meta = tryGetObjectMetadataForRead(*object_storage, metadata_object, /*with_tags=*/ false);
+                auto meta = object_storage->tryGetObjectMetadata(metadata_object, /*with_tags=*/ false);
                 if (meta)
                     object_info->setObjectMetadata(*meta);
             }
@@ -129,15 +126,13 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
 
 void ReadBufferIterator::setNumRowsToLastFile(size_t num_rows)
 {
-    /// Same as `StorageObjectStorageSource::addNumRowsToCache`: the key does not include the compression method.
-    if (query_settings.schema_inference_use_cache && isCompressionMethodHintAuto(configuration->compression_method))
+    if (query_settings.schema_inference_use_cache)
         schema_cache.addNumRows(getKeyForSchemaCache(*current_object_info, *format), num_rows);
 }
 
 void ReadBufferIterator::setSchemaToLastFile(const ColumnsDescription & columns)
 {
-    /// See `tryGetColumnsFromCache`.
-    if (query_settings.schema_inference_use_cache && isCompressionMethodHintAuto(configuration->compression_method))
+    if (query_settings.schema_inference_use_cache)
         schema_cache.addColumns(getKeyForSchemaCache(*current_object_info, *format), columns);
 }
 
@@ -158,12 +153,8 @@ std::unique_ptr<ReadBuffer> ReadBufferIterator::recreateLastReadBuffer()
     auto context = getContext();
 
     const auto & path = current_object_info->isArchive() ? current_object_info->getPathToArchive() : current_object_info->getPath();
-    std::unique_ptr<ReadBuffer> impl;
-    using ObjectInfoInArchive = StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive;
-    if (const auto * object_info_in_archive = dynamic_cast<const ObjectInfoInArchive *>(current_object_info.get()))
-        impl = object_info_in_archive->readFile();
-    else
-        impl = createReadBuffer(current_object_info->relative_path_with_metadata, object_storage, context, getLogger("ReadBufferIterator"));
+    auto impl
+        = createReadBuffer(current_object_info->relative_path_with_metadata, object_storage, context, getLogger("ReadBufferIterator"));
 
     const auto compression_method = chooseCompressionMethod(current_object_info->getFileName(), configuration->compression_method);
     const auto & settings_ref = context->getSettingsRef();
@@ -284,7 +275,8 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         if (const auto * object_info_in_archive = dynamic_cast<const ObjectInfoInArchive *>(current_object_info.get()))
         {
             compression_method = chooseCompressionMethod(filename, configuration->compression_method);
-            read_buf = object_info_in_archive->readFile();
+            const auto & archive_reader = object_info_in_archive->archive_reader;
+            read_buf = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
         }
         else
         {

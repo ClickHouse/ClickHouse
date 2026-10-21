@@ -33,25 +33,14 @@ public:
         return false;
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
-        return "(Any) -> UInt8";
+        return std::make_shared<DataTypeUInt8>();
     }
 
     size_t getNumberOfArguments() const override
     {
         return 1;
-    }
-
-    /// `FunctionExists` is a marker — it is constructed by the analyzer for
-    /// correlated EXISTS and replaced by JOINs during planning, never
-    /// executed. The analyzer creates the adaptor with an empty `DataTypes{}`
-    /// (the subquery doesn't have a regular column type), so we must not
-    /// validate the argument count via the declarative signature here; just
-    /// return `UInt8` directly.
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
-    {
-        return std::make_shared<DataTypeUInt8>();
     }
 };
 

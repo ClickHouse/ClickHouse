@@ -43,7 +43,7 @@ function(add_contrib cmake_folder)
 endfunction()
 
 # Use the original launchers for the projects that are needed for source code generation:
-# protoc, flatc and llvm-tlbgen.
+# protoc and llvm-tlbgen.
 disable_heavy_build_check_if_needed()
 disable_dummy_launchers_if_needed()
 
@@ -52,24 +52,13 @@ add_contrib (openssl-cmake openssl)  # Needed for delta-lake
 
 if (USE_MUSL)
     add_contrib (musl-cmake musl)
-    add_contrib (libucontext-cmake libucontext)
 endif()
 add_contrib (abseil-cpp-cmake abseil-cpp)
 add_contrib (zlib-ng-cmake zlib-ng)
 add_contrib (google-protobuf-cmake google-protobuf)
 add_contrib (grpc-cmake grpc)
-# Declared here rather than in `arrow-cmake`, because `flatbuffers-cmake` below builds `flatc` only
-# when Arrow needs it, and has to see the final value on the first configure.
-set (ENABLE_PARQUET_DEFAULT ${ENABLE_LIBRARIES})
-if (OS_FREEBSD)
-    set (ENABLE_PARQUET_DEFAULT OFF)
-endif()
-option (ENABLE_PARQUET "Enable parquet" ${ENABLE_PARQUET_DEFAULT})
-
-add_contrib (flatbuffers-cmake flatbuffers) # builds `flatc`, which generates the Arrow IPC bindings
 add_contrib (compiler-rt-cmake llvm-project)
 add_contrib (libllvmlibc-cmake llvm-project)
-add_contrib (optimized-routines-cmake optimized-routines)
 add_contrib (llvm-project-cmake llvm-project)
 
 enable_dummy_launchers_if_needed()
@@ -113,10 +102,9 @@ add_contrib (minizip-ng-cmake minizip-ng)
 add_contrib (snappy-cmake snappy)
 add_contrib (thrift-cmake thrift)
 add_contrib (StringZilla-cmake StringZilla)
-add_contrib (heks-cmake heks)
 # parquet/arrow/orc
 add_contrib (xsimd-cmake xsimd) # required by arrow's SIMD codepaths
-add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion, xsimd, flatbuffers
+add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion, xsimd
 add_contrib (avro-cmake avro) # requires: snappy
 add_contrib (openldap-cmake openldap)
 add_contrib (msgpack-c-cmake msgpack-c)
@@ -125,6 +113,7 @@ add_contrib (libarchive-cmake libarchive)
 add_contrib (corrosion-cmake corrosion)
 add_contrib (delta-kernel-rs-cmake delta-kernel-rs)
 add_contrib (chdig-cmake chdig)
+add_contrib (wasmedge-cmake wasmedge)
 
 if (ENABLE_FUZZING)
     add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
@@ -195,13 +184,6 @@ add_contrib (idna-cmake idna)
 add_contrib (datasketches-cpp-cmake datasketches-cpp)
 add_contrib (sqids-cpp-cmake sqids-cpp)
 
-option(ENABLE_CHINESE_TOKENIZER "Enable the Chinese tokenizer (jieba-style segmentation in contrib/Jieba-CPP)" ${ENABLE_LIBRARIES})
-if (ENABLE_CHINESE_TOKENIZER)
-    # The dictionary ships little- and big-endian variants and is #embed-ed per host byte order, so no s390x guard is needed.
-    add_contrib (darts-clone-cmake darts-clone)
-    add_contrib (Jieba-CPP-cmake Jieba-CPP)
-endif()
-
 option(USE_MONGODB "Enable MongoDB support" ${ENABLE_LIBRARIES})
 if (USE_MONGODB)
     add_contrib (mongo-c-driver-cmake mongo-c-driver) # requires: zlib
@@ -215,11 +197,6 @@ if (ENABLE_NLP)
     add_contrib (wordnet-blast-cmake wordnet-blast)
     add_contrib (lemmagen-c-cmake lemmagen-c)
     add_contrib (cld2-cmake cld2)
-endif()
-
-option(ENABLE_MECAB "Enable MeCab (Japanese morphological analyzer) support" ${ENABLE_LIBRARIES})
-if (ENABLE_MECAB)
-    add_contrib (MeCab-cmake MeCab)
 endif()
 
 add_contrib (sqlite-cmake sqlite-amalgamation)
@@ -253,19 +230,18 @@ add_contrib (xxHash-cmake xxHash)
 
 add_contrib (libbcrypt-cmake libbcrypt)
 
-if (ENABLE_TESTS OR ENABLE_BENCHMARKS)
-    add_contrib (google-benchmark-cmake google-benchmark)
-endif ()
+add_contrib (google-benchmark-cmake google-benchmark)
 add_contrib (ulid-c-cmake ulid-c)
 
 add_contrib (libssh-cmake libssh)
 
 add_contrib (prometheus-protobufs-cmake prometheus-protobufs prometheus-protobufs-gogo)
-add_contrib (substrait-cmake substrait) # requires: google-protobuf
 add_contrib (antlr4-cpp-runtime-cmake antlr4-cpp-runtime)
+add_contrib (antlr4-grammars-cmake antlr4-grammars)
 
 add_contrib(simdcomp-cmake simdcomp)
 
+add_contrib (numactl-cmake numactl)
 
 # Google Cloud Cpp
 if(ENABLE_LIBRARIES AND (OS_LINUX OR OS_DARWIN OR OS_FREEBSD) AND (ARCH_AMD64 OR (ARCH_AARCH64 AND NOT NO_ARMV81_OR_HIGHER)))
@@ -277,12 +253,8 @@ option(ENABLE_GOOGLE_CLOUD_CPP "Enable Google Cloud Cpp" ${ENABLE_GOOGLE_CLOUD_C
 # `crc32c` is a small portable library used by both `google-cloud-cpp` and the snappy framing format
 # in `SnappyWriteBuffer`/`SnappyFramedReadBuffer`, so it is always built when libraries are enabled.
 add_contrib (crc32c-cmake crc32c)
-# `nlohmann::json` is header-only and is used by both `google-cloud-cpp` and `ai-sdk-cpp`, which are
-# enabled independently of each other. It is added for everyone so that there is one copy of it in
-# the build: two copies of the same version define the same symbols with different layouts, which
-# the linker resolves silently - see `contrib/ai-sdk-cpp-cmake/CMakeLists.txt`.
-add_contrib (nlohmann-json-cmake nlohmann-json)
 if(ENABLE_GOOGLE_CLOUD_CPP)
+    add_contrib (nlohmann-json-cmake nlohmann-json)
     add_contrib (google-cloud-cpp-cmake google-cloud-cpp) # requires grpc, protobuf, absl, nlohmann's json, crc32c
 else()
     message(STATUS "Not using Google Cloud Cpp")
@@ -292,40 +264,18 @@ add_contrib (jwt-cpp-cmake jwt-cpp)
 
 add_contrib (sha3iuf-cmake SHA3IUF)
 
-add_contrib (xgboost-cmake xgboost dmlc-core)
-
 add_contrib (ai-sdk-cpp-cmake ai-sdk-cpp)
 
 add_contrib (bech32)
 
 add_contrib (libcotp-cmake libcotp)
 
-add_contrib (sql-console-cmake sql-console)
 add_contrib (clickstack-cmake clickstack)
-
-add_contrib (ipcrypt2-cmake ipcrypt2)
 
 add_contrib (librseq-cmake librseq)
 add_contrib (silk-cmake silk)
 
 add_contrib (sz3-cmake sz3)
-
-# cuDF and friends. Guarded by ENABLE_GPU inside each -cmake file, and listed in
-# dependency order: cccl before cuCollections, spdlog before rapids-logger before rmm.
-add_contrib (cccl-cmake cccl)
-add_contrib (cuCollections-cmake cuCollections)
-add_contrib (bs-thread-pool-cmake bs-thread-pool)
-add_contrib (dlpack-cmake dlpack)
-add_contrib (nvtx-cmake nvtx)
-add_contrib (spdlog-cmake spdlog)
-add_contrib (rapids-logger-cmake rapids-logger)
-add_contrib (rmm-cmake rmm)
-add_contrib (nanoarrow-cmake nanoarrow)
-add_contrib (kvikio-cmake kvikio)
-add_contrib (librtcx-cmake librtcx)
-# No base folder: nvcomp is not vendored, see contrib/nvcomp-cmake/CMakeLists.txt.
-add_contrib (nvcomp-cmake)
-add_contrib (cudf-cmake cudf) # requires: everything above, plus flatbuffers, xxHash, zlib, zstd
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

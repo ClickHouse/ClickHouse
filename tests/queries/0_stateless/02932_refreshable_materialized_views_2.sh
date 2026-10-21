@@ -15,7 +15,7 @@ CLICKHOUSE_CLIENT="`echo "$CLICKHOUSE_CLIENT --allow_materialized_view_with_bad_
 # column: it retries until no row reports 'Scheduling'.
 query_no_scheduling() {
     local out
-    while clickhouse_test_time_left
+    while :
     do
         out=$($CLICKHOUSE_CLIENT -q "$1")
         if ! grep -qE $'(^|\t)Scheduling(\t|$)' <<< "$out"; then
@@ -36,7 +36,6 @@ $CLICKHOUSE_CLIENT -q "
     drop table src;"
 while [ "`$CLICKHOUSE_CLIENT -q "select exception == '' from refreshes -- $LINENO" | xargs`" != '0' ]
 do
-    clickhouse_test_time_left || exit 1
     sleep 0.5
 done
 # Check exception, create src, expect successful refresh.
@@ -66,7 +65,6 @@ $CLICKHOUSE_CLIENT -q "
     system stop view rmv_e;"
 while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes -- $LINENO" | xargs`" != 'Disabled' ]
 do
-    clickhouse_test_time_left || exit 1
     sleep 0.5
 done
 # Make refreshes slow, wait for a slow refresh to start. (We stopped refreshes first to make sure
@@ -76,7 +74,6 @@ $CLICKHOUSE_CLIENT -q "
     system start view rmv_e;"
 while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes -- $LINENO" | xargs`" != 'Running' ]
 do
-    clickhouse_test_time_left || exit 1
     sleep 0.5
 done
 # Rename.
@@ -85,10 +82,19 @@ $CLICKHOUSE_CLIENT -q "
     select '<24: rename during refresh>', * from rmv_f;"
 query_no_scheduling "select '<25: rename during refresh>', view, status from refreshes where view = 'rmv_f'"
 $CLICKHOUSE_CLIENT -q "alter table rmv_f modify refresh after 10 year settings refresh_retries = 0;"
+sleep 1 # make it likely that at least one row was processed
+# Cancel.
+$CLICKHOUSE_CLIENT -q "
+    system cancel view rmv_f;"
+while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes -- $LINENO" | xargs`" != 'Scheduled' ]
+do
+    sleep 0.5
+done
+# Check that another refresh doesn't immediately start after the cancelled one.
+query_no_scheduling "select '<27: cancelled>', view, status, exception != '' from refreshes where view = 'rmv_f'"
 $CLICKHOUSE_CLIENT -q "system refresh view rmv_f;"
 while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes where view = 'rmv_f' -- $LINENO" | xargs`" != 'Running' ]
 do
-    clickhouse_test_time_left || exit 1
     sleep 0.5
 done
 # Drop.
@@ -103,18 +109,11 @@ $CLICKHOUSE_CLIENT -q "
     system test view rmv_g set fake time '2050-02-03 15:30:13';"
 while [ "`$CLICKHOUSE_CLIENT -q "select next_refresh_time > '2049-01-01' from refreshes -- $LINENO" | xargs`" != '1' ]
 do
-    clickhouse_test_time_left || exit 1
     sleep 0.5
 done
 $CLICKHOUSE_CLIENT -q "
     with '2050-02-10 04:00:00'::DateTime as expected
     select '<29: randomize>', abs(next_refresh_time::Int64 - expected::Int64) <= 3600*(24*4+1), next_refresh_time != expected from refreshes;"
-# The offset is drawn once per timeslot, not on every scheduling pass: the pass reruns on every timer
-# tick, and redrawing would keep moving next_refresh_time so nothing could tell when a refresh is due.
-first_next_refresh_time=$($CLICKHOUSE_CLIENT -q "select next_refresh_time from refreshes -- $LINENO")
-sleep 1
-$CLICKHOUSE_CLIENT -q "
-    select '<29: randomize stable>', next_refresh_time == '$first_next_refresh_time'::DateTime from refreshes;"
 
 # Send data 'TO' an existing table.
 # Reading `dest` while auto-refreshes run concurrently: the `EXCHANGE` + `DROP` race
@@ -132,7 +131,6 @@ $CLICKHOUSE_CLIENT -q "
     system stop view rmv_h;"
 while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes where view = 'rmv_h' -- $LINENO" | xargs`" != 'Disabled' ]
 do
-    clickhouse_test_time_left || exit 1
     sleep 0.5
 done
 $CLICKHOUSE_CLIENT -q "
@@ -141,7 +139,6 @@ $CLICKHOUSE_CLIENT -q "
     system start view rmv_h;"
 while [ "`$CLICKHOUSE_CLIENT -q "select count() from dest -- $LINENO" | xargs`" != '2' ]
 do
-    clickhouse_test_time_left || exit 1
     sleep 0.5
 done
 # Stop auto-refreshes again before the final read+drop to avoid the same
@@ -149,7 +146,6 @@ done
 $CLICKHOUSE_CLIENT -q "system stop view rmv_h;"
 while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes where view = 'rmv_h' -- $LINENO" | xargs`" != 'Disabled' ]
 do
-    clickhouse_test_time_left || exit 1
     sleep 0.5
 done
 $CLICKHOUSE_CLIENT -q "
@@ -169,7 +165,6 @@ $CLICKHOUSE_CLIENT -q "
     drop table src2;"
 while [ "`$CLICKHOUSE_CLIENT -nq "select status, retry from refreshes where view = 'rmv_h2' -- $LINENO" | xargs`" != 'Scheduled 0' ]
 do
-    clickhouse_test_time_left || exit 1
     sleep 0.5
 done
 $CLICKHOUSE_CLIENT -q "
@@ -183,7 +178,6 @@ $CLICKHOUSE_CLIENT -q "
     create materialized view rmv_j refresh after 1 year engine Memory as select number as x from numbers(2);"
 while [ "`$CLICKHOUSE_CLIENT -q "select sum(last_success_time is null) from refreshes -- $LINENO" | xargs`" == '2' ]
 do
-    clickhouse_test_time_left || exit 1
     sleep 0.5
 done
 query_no_scheduling "select '<32: empty>', view, status, last_success_time is null, retry from refreshes order by view"

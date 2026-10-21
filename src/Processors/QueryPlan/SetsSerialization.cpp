@@ -9,7 +9,6 @@
 #include <Analyzer/Identifier.h>
 #include <Analyzer/TableNode.h>
 #include <Columns/ColumnSet.h>
-#include <Interpreters/Set.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Formats/NativeReader.h>
@@ -27,13 +26,13 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
-    extern const int SET_SIZE_LIMIT_EXCEEDED;
-    extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_DEEP_RECURSION;
 }
 
 namespace Setting
 {
+    extern const SettingsBool transform_null_in;
+    extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -77,34 +76,6 @@ struct QueryPlanAndSets::SetFromSubquery : public QueryPlanAndSets::Set
     QueryPlanAndSets plan_and_sets;
 };
 
-/// The payload of a `TupleValues` record: column count, row count, then per column the encoded
-/// type and the native-encoded data.
-static void writeSetValues(const DataTypes & types, const Columns & columns, WriteBuffer & out)
-{
-    if (columns.size() != types.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Invalid number of columns for Set. Expected {} got {}",
-            columns.size(), types.size());
-
-    UInt64 num_columns = columns.size();
-    UInt64 num_rows = num_columns > 0 ? columns.front()->size() : 0;
-
-    writeVarUInt(num_columns, out);
-    writeVarUInt(num_rows, out);
-
-    for (size_t col = 0; col < num_columns; ++col)
-    {
-        if (columns[col]->size() != num_rows)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Invalid number of rows in column of Set. Expected {} got {}",
-                num_rows, columns[col]->size());
-
-        encodeDataType(types[col], out);
-        auto serialization = types[col]->getDefaultSerialization();
-        NativeWriter::writeData(*serialization, columns[col], out, {}, 0, 0, 0);
-    }
-}
-
 void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & out, const SerializationFlags & flags)
 {
     writeVarUInt(registry.sets.size(), out);
@@ -125,52 +96,41 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
         else if (auto * from_tuple = typeid_cast<FutureSetFromTuple *>(set.get()))
         {
             writeIntBinary(SetSerializationKind::TupleValues, out);
-            writeSetValues(from_tuple->getTypes(), from_tuple->getKeyColumns(), out);
+
+            auto types = from_tuple->getTypes();
+            auto columns = from_tuple->getKeyColumns();
+
+            if (columns.size() != types.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Invalid number of columns for Set. Expected {} got {}",
+                    columns.size(), types.size());
+
+            UInt64 num_columns = columns.size();
+            UInt64 num_rows = num_columns > 0 ? columns.front()->size() : 0;
+
+            writeVarUInt(num_columns, out);
+            writeVarUInt(num_rows, out);
+
+            for (size_t col = 0; col < num_columns; ++col)
+            {
+                if (columns[col]->size() != num_rows)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Invalid number of rows in column of Set. Expected {} got {}",
+                        num_rows, columns[col]->size());
+
+                encodeDataType(types[col], out);
+                auto serialization = types[col]->getDefaultSerialization();
+                NativeWriter::writeData(*serialization, columns[col], out, {}, 0, 0, 0);
+            }
         }
         else if (auto * from_subquery = typeid_cast<FutureSetFromSubquery *>(set.get()))
         {
-            if (flags.sets_must_be_ready)
-            {
-                /// A worker task binds a ready set before its own planning; shipping the
-                /// subquery plan instead would make every task re-run the subquery.
-                auto built_set = from_subquery->get();
-                if (!built_set || !built_set->hasExplicitSetElements() || built_set->isTruncated())
-                {
-                    String reason = !built_set ? "the set is not built"
-                        : built_set->isTruncated() ? "the set was truncated by `set_overflow_mode = 'break'`"
-                                                   : "the set was built without its values";
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Cannot ship an IN-subquery set to distributed-plan worker tasks ({}): {}",
-                        reason,
-                        from_subquery->getSourceAST() ? from_subquery->getSourceAST()->formatForErrorMessage() : "");
-                }
+            writeIntBinary(SetSerializationKind::SubqueryPlan, out);
+            const auto * plan = from_subquery->getQueryPlan();
+            if (!plan)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot serialize FutureSetFromSubquery with no query plan");
 
-                auto columns = built_set->getSetElements();
-                UInt64 num_rows = columns.empty() ? 0 : columns.front()->size();
-                size_t num_bytes = 0;
-                for (const auto & column : columns)
-                    num_bytes += column->byteSize();
-                /// `transfer_overflow_mode = 'break'` cannot apply here: truncating the set
-                /// would change `IN` results on the workers, so an over-limit set always
-                /// throws, whatever the overflow mode.
-                if (!flags.sets_transfer_limits.check(
-                        num_rows, num_bytes, "IN-subquery set shipped to distributed-plan tasks", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
-                    throw Exception(ErrorCodes::SET_SIZE_LIMIT_EXCEEDED,
-                        "Cannot ship an IN-subquery set of {} rows ({} bytes) to distributed-plan worker tasks: "
-                        "it exceeds the transfer limits", num_rows, num_bytes);
-
-                writeIntBinary(SetSerializationKind::TupleValues, out);
-                writeSetValues(built_set->getElementsTypes(), columns, out);
-            }
-            else
-            {
-                writeIntBinary(SetSerializationKind::SubqueryPlan, out);
-                const auto * plan = from_subquery->getQueryPlan();
-                if (!plan)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot serialize FutureSetFromSubquery with no query plan");
-
-                plan->serialize(out, flags);
-            }
+            plan->serialize(out, flags);
         }
         else
         {
@@ -235,8 +195,8 @@ QueryPlanAndSets QueryPlan::deserializeSets(
             {
                 auto type = decodeDataType(in, max_type_complexity);
                 auto serialization = type->getDefaultSerialization();
-                auto column = type->createColumn();
-                NativeReader::readData(*serialization, *column, in, &format_settings, num_rows, nullptr, nullptr);
+                ColumnPtr column = type->createColumn();
+                NativeReader::readData(*serialization, column, in, &format_settings, num_rows, nullptr, nullptr);
 
                 set_columns.emplace_back(std::move(column), std::move(type), String{});
             }
@@ -277,12 +237,7 @@ static void makeSetsFromStorage(std::list<QueryPlanAndSets::SetFromStorage> sets
         if (!storage_set)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Table {} is not a StorageSet", set.storage_name);
 
-        /// The initiator ran this check against its own policies; the replica's may differ.
-        storage_set->checkNoRowPolicy(context);
-
-        /// The `StorageSet` this replica resolved the name to, so its set is mutable like any other.
-        auto future_set = std::make_shared<FutureSetFromStorage>(
-            set.hash, nullptr, storage_set->getSet(), table_node->getStorageID(), /*is_mutable_during_query_=*/ true);
+        auto future_set = std::make_shared<FutureSetFromStorage>(set.hash, nullptr, storage_set->getSet(), table_node->getStorageID());
         for (auto * column : set.columns)
             column->setData(future_set);
     }
@@ -291,11 +246,12 @@ static void makeSetsFromStorage(std::list<QueryPlanAndSets::SetFromStorage> sets
 static void makeSetsFromTuple(std::list<QueryPlanAndSets::SetFromTuple> sets, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
-    const FutureSetSettings set_settings(settings);
     for (auto & set : sets)
     {
-        auto future_set = std::make_shared<FutureSetFromTuple>(
-            set.hash, nullptr, std::move(set.set_columns), set_settings.transform_null_in, set_settings.size_limits);
+        SizeLimits size_limits = PreparedSets::getSizeLimitsForSet(settings);
+        bool transform_null_in = settings[Setting::transform_null_in];
+
+        auto future_set = std::make_shared<FutureSetFromTuple>(set.hash, nullptr, std::move(set.set_columns), transform_null_in, size_limits);
         for (auto * column : set.columns)
             column->setData(future_set);
     }
@@ -314,8 +270,14 @@ static void makeSetsFromSubqueries(QueryPlan & plan, std::list<QueryPlanAndSets:
     {
         auto subquery_plan = QueryPlan::makeSets(std::move(set.plan_and_sets), context);
 
+        SizeLimits size_limits = PreparedSets::getSizeLimitsForSet(settings);
+        bool transform_null_in = settings[Setting::transform_null_in];
+        size_t max_size_for_index = settings[Setting::use_index_for_in_with_subqueries_max_values];
+
         auto future_set = std::make_shared<FutureSetFromSubquery>(
-            set.hash, nullptr, std::make_unique<QueryPlan>(std::move(subquery_plan)), nullptr, nullptr, FutureSetSettings(settings));
+            set.hash, nullptr, std::make_unique<QueryPlan>(std::move(subquery_plan)),
+            nullptr, nullptr,
+            transform_null_in, size_limits, max_size_for_index);
 
         for (auto * column : set.columns)
             column->setData(future_set);

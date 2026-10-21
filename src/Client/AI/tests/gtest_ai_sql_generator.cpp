@@ -33,15 +33,15 @@ QueryExecutor createMockQueryExecutor()
 {
     return [](const std::string & query) -> std::string
     {
-        if (query.contains("SHOW DATABASES"))
+        if (query.find("SHOW DATABASES") != std::string::npos)
         {
             return "default\nsystem";
         }
-        else if (query.contains("SHOW TABLES FROM"))
+        else if (query.find("SHOW TABLES FROM") != std::string::npos)
         {
             return "users\norders";
         }
-        else if (query.contains("SHOW CREATE TABLE"))
+        else if (query.find("SHOW CREATE TABLE") != std::string::npos)
         {
             return "CREATE TABLE users (id UInt64, name String) ENGINE = MergeTree ORDER BY id";
         }
@@ -80,14 +80,14 @@ std::string toLower(const std::string & str)
 /// Helper to check if result contains SQL keywords
 bool containsSQLKeywords(const std::string & result)
 {
-    return result.contains("SELECT") ||
-           result.contains("SHOW") ||
-           result.contains("COUNT") ||
-           result.contains("DESCRIBE") ||
-           result.contains("CREATE") ||
-           result.contains("INSERT") ||
-           result.contains("UPDATE") ||
-           result.contains("DELETE");
+    return result.find("SELECT") != std::string::npos ||
+           result.find("SHOW") != std::string::npos ||
+           result.find("COUNT") != std::string::npos ||
+           result.find("DESCRIBE") != std::string::npos ||
+           result.find("CREATE") != std::string::npos ||
+           result.find("INSERT") != std::string::npos ||
+           result.find("UPDATE") != std::string::npos ||
+           result.find("DELETE") != std::string::npos;
 }
 
 
@@ -137,19 +137,19 @@ QueryExecutor createRealQueryExecutor()
     return [](const std::string & query) -> std::string
     {
         // Simulate a real database schema
-        if (query.contains("SHOW DATABASES"))
+        if (query.find("SHOW DATABASES") != std::string::npos)
         {
             return "default\nsystem\ntest_db";
         }
-        else if (query.contains("SHOW TABLES FROM default"))
+        else if (query.find("SHOW TABLES FROM default") != std::string::npos)
         {
             return "customers\norders\nproducts";
         }
-        else if (query.contains("SHOW TABLES FROM test_db"))
+        else if (query.find("SHOW TABLES FROM test_db") != std::string::npos)
         {
             return "analytics\nmetrics";
         }
-        else if (query.contains("SHOW CREATE TABLE default.customers"))
+        else if (query.find("SHOW CREATE TABLE default.customers") != std::string::npos)
         {
             return "CREATE TABLE default.customers (\n"
                    "    customer_id UInt64,\n"
@@ -159,7 +159,7 @@ QueryExecutor createRealQueryExecutor()
                    ") ENGINE = MergeTree()\n"
                    "ORDER BY customer_id";
         }
-        else if (query.contains("SHOW CREATE TABLE default.orders"))
+        else if (query.find("SHOW CREATE TABLE default.orders") != std::string::npos)
         {
             return "CREATE TABLE default.orders (\n"
                    "    order_id UInt64,\n"
@@ -170,7 +170,7 @@ QueryExecutor createRealQueryExecutor()
                    ") ENGINE = MergeTree()\n"
                    "ORDER BY (customer_id, order_date)";
         }
-        else if (query.contains("SHOW CREATE TABLE default.products"))
+        else if (query.find("SHOW CREATE TABLE default.products") != std::string::npos)
         {
             return "CREATE TABLE default.products (\n"
                    "    product_id UInt64,\n"
@@ -190,23 +190,23 @@ QueryExecutor createSQLInjectionTestExecutor()
     return [](const std::string & query) -> std::string
     {
         // Detect obvious SQL injection patterns
-        if (query.contains("'; DROP TABLE") ||
-            query.contains("--") ||
-            query.contains("/*") ||
-            query.contains("UNION SELECT"))
+        if (query.find("'; DROP TABLE") != std::string::npos ||
+            query.find("--") != std::string::npos ||
+            query.find("/*") != std::string::npos ||
+            query.find("UNION SELECT") != std::string::npos)
         {
             throw std::runtime_error("Potential SQL injection detected");
         }
         
-        if (query.contains("SHOW DATABASES"))
+        if (query.find("SHOW DATABASES") != std::string::npos)
         {
             return "default\n`test-db`\n\"quoted.db\"";
         }
-        else if (query.contains("SHOW TABLES FROM"))
+        else if (query.find("SHOW TABLES FROM") != std::string::npos)
         {
             return "`user-accounts`\n\"order.items\"\nproduct_catalog";
         }
-        else if (query.contains("SHOW CREATE TABLE"))
+        else if (query.find("SHOW CREATE TABLE") != std::string::npos)
         {
             return "CREATE TABLE `user-accounts` (\n"
                    "    `user-id` UInt64,\n"
@@ -341,8 +341,8 @@ TEST_F(AITestFixture, RealAIGeneration)
     std::string output_str = output.str();
     EXPECT_NE(output_str.find("Starting AI SQL generation"), std::string::npos);
     // SQL generation might succeed or fail, but we should see some status
-    EXPECT_TRUE(output_str.contains("SQL query generated successfully") ||
-                output_str.contains("No SQL query was generated"));
+    EXPECT_TRUE(output_str.find("SQL query generated successfully") != std::string::npos ||
+                output_str.find("No SQL query was generated") != std::string::npos);
 }
 
 /// Test AI with complex query requiring joins
@@ -361,22 +361,22 @@ TEST_F(AITestFixture, ComplexQueryGeneration)
     EXPECT_FALSE(result.empty());
     
     // For a revenue query, we expect certain patterns
-    if (result.contains("SELECT"))
+    if (result.find("SELECT") != std::string::npos)
     {
         std::string result_lower = toLower(result);
         
         // Should have aggregation (SUM, GROUP BY) or JOIN for this complex query
-        bool has_aggregation = result_lower.contains("sum") ||
-                               result_lower.contains("group by");
-        bool has_join = result_lower.contains("join");
+        bool has_aggregation = result_lower.find("sum") != std::string::npos || 
+                               result_lower.find("group by") != std::string::npos;
+        bool has_join = result_lower.find("join") != std::string::npos;
         
         EXPECT_TRUE(has_aggregation || has_join) 
             << "Complex query should use aggregation or joins";
         
         // Should reference relevant tables (customers, orders, or products)
-        bool references_tables = result_lower.contains("customer") ||
-                                 result_lower.contains("order") ||
-                                 result_lower.contains("product");
+        bool references_tables = result_lower.find("customer") != std::string::npos || 
+                                result_lower.find("order") != std::string::npos || 
+                                result_lower.find("product") != std::string::npos;
         
         EXPECT_TRUE(references_tables)
             << "Query should reference relevant tables";
@@ -415,8 +415,8 @@ TEST_F(AITestFixture, SchemaExploration)
     std::string output_str = output.str();
     
     // Check that schema exploration tools were used
-    EXPECT_TRUE(output_str.contains("list_databases") ||
-                output_str.contains("list_tables_in_database"))
+    EXPECT_TRUE(output_str.find("list_databases") != std::string::npos ||
+                output_str.find("list_tables_in_database") != std::string::npos)
         << "AI should use schema exploration tools";
 }
 
@@ -438,9 +438,9 @@ TEST_F(AITestFixture, SQLCleaningWithRealAI)
     
     // Should generate some SQL-like content
     std::string result_lower = toLower(result);
-    bool has_sql_keywords = result_lower.contains("select") ||
-                           result_lower.contains("from") ||
-                           result_lower.contains("create");
+    bool has_sql_keywords = result_lower.find("select") != std::string::npos ||
+                           result_lower.find("from") != std::string::npos ||
+                           result_lower.find("create") != std::string::npos;
     EXPECT_TRUE(has_sql_keywords) << "Should contain SQL keywords";
 }
 
@@ -498,12 +498,12 @@ TEST_F(AITestFixture, SpecialCharacterHandling)
     // 4. Use the exact schema discovered name
     
     // Just verify the result doesn't have unquoted special chars that would break SQL
-    if (result.contains("user-accounts"))
+    if (result.find("user-accounts") != std::string::npos)
     {
         // If the hyphenated name appears, it should be quoted
-        bool is_quoted = (result.contains("`user-accounts`")) ||
-                        (result.contains("\"user-accounts\"")) ||
-                        (result.contains("'user-accounts'"));
+        bool is_quoted = (result.find("`user-accounts`") != std::string::npos) ||
+                        (result.find("\"user-accounts\"") != std::string::npos) ||
+                        (result.find("'user-accounts'") != std::string::npos);
         EXPECT_TRUE(is_quoted) 
             << "Table names with special characters should be properly quoted";
     }

@@ -21,8 +21,11 @@ endif ()
 #   dirty_decay_ms:5000        Purge dirty pages 5s after they go idle, off the allocation path.
 #   background_thread:true     Purge on jemalloc's own threads rather than from application allocations,
 #                              keeping RSS bounded without eager (per-free) purging.
-#   lg_extent_max_active_fit:6 Default
-#                              Previously was 8 to let Q35 ClickBench query works better, but this may significantly increase fragmentation
+#   lg_extent_max_active_fit:8 Reuse an extent for requests up to 2^8 (256x) smaller; default 6 (64x).
+#                              Lets ClickBench Q35's 256 coalesced 16KB sub-hashtables be split and
+#                              reused instead of faulting via MADV_DONTNEED.
+#                              https://github.com/ClickHouse/ClickHouse/pull/80245
+#                              https://github.com/jemalloc/jemalloc/pull/2842
 # Linux and macOS:
 #   prof:true,prof_active:true,prof_thread_active_init:false
 #                              Compile in and globally arm sampling but leave it off per-thread, so it can
@@ -48,7 +51,7 @@ endif ()
 #                              madvise on the oversize arena (JEMALLOC_HAVE_MADVISE_HUGE, absent on macOS)
 #                              and is unvalidated there.
 if (OS_LINUX)
-    set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:67108864,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:true,prof_thread_active_init:false,background_thread:true,lg_extent_max_active_fit:6")
+    set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:67108864,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:true,prof_thread_active_init:false,background_thread:true,lg_extent_max_active_fit:8")
 elseif (OS_DARWIN)
     # background_thread is unavailable in upstream jemalloc on Darwin; we enable it via the Darwin config
     # headers (include_darwin_*/jemalloc/internal/jemalloc_internal_defs.h.in), where the full rationale
@@ -57,10 +60,10 @@ elseif (OS_DARWIN)
     # assumption that background_thread was unavailable; see
     # https://github.com/ClickHouse/ClickHouse/issues/108429
     # percpu_arena relies on malloc_getcpu, which reads the CPU number via TPIDR_EL0/sidt on macOS (see above).
-    set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:true,prof_thread_active_init:false,background_thread:true,lg_extent_max_active_fit:6")
+    set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:true,prof_thread_active_init:false,background_thread:true,lg_extent_max_active_fit:8")
 else()
     # FreeBSD and any other non-Linux target. background_thread is supported out of the box.
-    set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,background_thread:true,lg_extent_max_active_fit:6")
+    set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,background_thread:true,lg_extent_max_active_fit:8")
 endif()
 # CACHE variable is empty to allow changing defaults without the necessity
 # to purge cache
@@ -68,12 +71,6 @@ set (JEMALLOC_CONFIG_MALLOC_CONF_OVERRIDE "" CACHE STRING "Change default config
 if (JEMALLOC_CONFIG_MALLOC_CONF_OVERRIDE)
     set (JEMALLOC_CONFIG_MALLOC_CONF "${JEMALLOC_CONFIG_MALLOC_CONF_OVERRIDE}")
 endif()
-
-option (ENABLE_JEMALLOC_UAF_SAN "Enable jemalloc sanitizer mode: junk fill, guard pages, use-after-free detection")
-if (ENABLE_JEMALLOC_UAF_SAN)
-    set (JEMALLOC_CONFIG_MALLOC_CONF "${JEMALLOC_CONFIG_MALLOC_CONF},abort_conf:true,junk:true,san_guard_small:100,san_guard_large:1,lg_san_uaf_align:12")
-endif ()
-
 message (STATUS "jemalloc malloc_conf: ${JEMALLOC_CONFIG_MALLOC_CONF}")
 
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/jemalloc")
@@ -229,10 +226,6 @@ target_compile_definitions(_jemalloc INTERFACE -DJEMALLOC_NO_RENAME)
 target_compile_options(_jemalloc PRIVATE ${WITHOUT_COVERAGE_FLAGS_LIST})
 
 target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_PROF=1)
-
-if (ENABLE_JEMALLOC_UAF_SAN)
-    target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_UAF_DETECTION)
-endif ()
 
 # jemalloc provides support two unwind flavors:
 # - JEMALLOC_PROF_LIBUNWIND - unw_backtrace() - gnu libunwind (compatible with llvm libunwind)

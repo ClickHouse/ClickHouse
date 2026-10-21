@@ -98,7 +98,9 @@ PRIMARY KEY Id
 
 * `PRIMARY KEY` – O nome da coluna que contém as chaves.
 
-### Chave composta {#composite-key}
+<div id="composite-key">
+  ### Chave composta
+</div>
 
 A chave pode ser uma `tuple` formada por campos de qualquer tipo. O [layout](/pt-BR/reference/statements/create/dictionary/layouts/overview) nesse caso deve ser `complex_key_hashed` ou `complex_key_cache`.
 
@@ -122,7 +124,6 @@ A estrutura da chave é definida no elemento `<key>`. Os campos da chave são es
         ...
     </key>
 ...
-</structure>
 ```
 
 ou
@@ -138,8 +139,6 @@ PRIMARY KEY field1, field2
 ```
 
 Para uma consulta à função `dictGet*`, uma tupla é usada como chave. Exemplo: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
-
-Quando a chave composta consiste em um único atributo, o valor da chave pode ser passado diretamente, sem encapsulá-lo em `tuple`. Por exemplo, tanto `dictGetString('dict_name', 'attr_name', 'key')` quanto `dictGetString('dict_name', 'attr_name', tuple('key'))` são válidos.
 
 <div id="attributes">
   ## Atributos

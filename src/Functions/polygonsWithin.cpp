@@ -52,9 +52,9 @@ public:
         return 2;
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
-        return "(Any, Any) -> UInt8";
+        return std::make_shared<DataTypeUInt8>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -63,7 +63,6 @@ public:
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool isSpatialPredicate() const override { return std::is_same_v<Point, CartesianPoint>; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
@@ -85,17 +84,18 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be LineString", getName());
             else if constexpr (std::is_same_v<ColumnToMultiLineStringsConverter<Point>, LeftConverter> || std::is_same_v<ColumnToMultiLineStringsConverter<Point>, RightConverter>)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be MultiLineString", getName());
-            else if constexpr (std::is_same_v<ColumnToMultiPointsConverter<Point>, LeftConverter> || std::is_same_v<ColumnToMultiPointsConverter<Point>, RightConverter>)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be MultiPoint", getName());
             else
             {
-                CorrectedGeometries<LeftConverter> first(arguments[0].column);
-                CorrectedGeometries<RightConverter> second(arguments[1].column);
+                auto first = LeftConverter::convert(arguments[0].column->convertToFullColumnIfConst());
+                auto second = RightConverter::convert(arguments[1].column->convertToFullColumnIfConst());
 
                 /// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    res_data.emplace_back(boost::geometry::within(first.get(i), second.get(i)));
+                    boost::geometry::correct(first[i]);
+                    boost::geometry::correct(second[i]);
+
+                    res_data.emplace_back(boost::geometry::within(first[i], second[i]));
                 }
             }
         });

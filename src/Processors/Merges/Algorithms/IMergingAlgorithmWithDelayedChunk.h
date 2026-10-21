@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
@@ -18,10 +17,7 @@ public:
     size_t prev_unequal_column = 0;
 
 protected:
-    /// The batch queue identifies how many consecutive rows can be taken from the front
-    /// cursor in one go (see `SortingQueueImpl::updateBatchSize`), so consuming rows one by
-    /// one with `next(1)` restructures the queue once per batch instead of once per row.
-    SortingQueueForCursor<SortCursor, SortingQueueStrategy::Batch> queue;
+    SortingQueue<SortCursor> queue;
     SortDescription description;
 
     /// Previous row. May refer to last_chunk_sort_columns or row from source_chunks.
@@ -58,7 +54,7 @@ private:
     Inputs current_inputs;
     SortCursorImpls cursors;
 
-    VectorWithMemoryTracking<size_t> inputs_origin_merge_tree_part_level;
+    std::vector<size_t> inputs_origin_merge_tree_part_level;
 
     /// In merging algorithm, we need to compare current sort key with the last one.
     /// So, sorting columns for last row needed to be stored.

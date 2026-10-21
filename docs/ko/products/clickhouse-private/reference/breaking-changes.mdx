@@ -1,0 +1,48 @@
+---
+noindex: true
+title: "호환되지 않는 변경 사항"
+sidebarTitle: "호환되지 않는 변경 사항"
+description: "ClickHouse Private 구성 요소의 버전별 호환되지 않는 변경 사항입니다."
+---
+
+ClickHouse Private 구성 요소의 버전별 호환되지 않는 변경 사항입니다. 업그레이드 전에 이 페이지를 확인하십시오.
+
+***
+
+<div id="helmonprem-clickhouse-cluster-version-11245-shared-catalog-and-stateless-servers-enabled-by-default">
+  ## `helm/onprem-clickhouse-cluster` 버전 `1.1.245` — Shared Catalog 및 무상태 서버가 기본적으로 활성화됨
+</div>
+
+차트 버전 `1.1.245`부터 `featureFlags.enableSharedCatalog`와 `featureFlags.disableMetadataPersistentVolumes`의 기본값은 `true`입니다. 새로 설치하면 기본적으로 [Shared](https://clickhouse.com/docs/engines/database-engines/shared) 데이터베이스 엔진과 무상태 서버 노드를 사용합니다.
+
+**새 설치**에는 별도의 조치가 필요하지 않습니다 — 새 기본값이 자동으로 적용됩니다.
+
+**아직 Shared Catalog를 사용하지 않는 기존 설치**는 업그레이드 시 의도하지 않은 마이그레이션을 방지하기 위해 이전 기본값을 명시적으로 설정해야 합니다:
+
+```yaml
+featureFlags:
+  enableSharedCatalog: false
+  disableMetadataPersistentVolumes: false
+```
+
+마이그레이션할 준비가 되면 [Shared Catalog로 마이그레이션](/ko/products/clickhouse-private/guides/migrate-to-shared-catalog) 가이드를 따르십시오.
+
+**이미 Shared Catalog를 사용 중인 기존 설치 환경**에서는 별도의 조치가 필요하지 않습니다 — 새 기본값이 현재 구성과 일치합니다.
+
+***
+
+<div id="helmonprem-clickhouse-cluster-version-11210">
+  ## `helm/onprem-clickhouse-cluster` 버전 `1.1.210`
+</div>
+
+chart 버전 `1.1.210`부터는 새로운 구성 제약 조건이 기본으로 포함됩니다. **25.10 미만의** ClickHouse 서버 버전을 사용 중이라면, 이러한 제약 조건을 제외하려면 서버 구성에 다음 내용을 추가해야 합니다:
+
+```yaml
+server:
+  excludeConfigConstraints:
+    - allow_experimental_qbit_type
+    - rewrite_in_to_join
+    - allow_experimental_alias_table_engine
+```
+
+이 구성이 없으면 25.10 이전 버전에서는 이러한 설정을 인식할 수 없으므로 ClickHouse가 시작되지 않습니다.

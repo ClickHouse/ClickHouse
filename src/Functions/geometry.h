@@ -39,16 +39,6 @@ Point getPointFromField(const Field & field)
 }
 
 template <typename Point>
-MultiPoint<Point> getMultiPointFromField(const Field & field)
-{
-    MultiPoint<Point> multipoint;
-    const auto & array = field.safeGet<Array>();
-    for (const auto & tuple : array)
-        multipoint.push_back(getPointFromField<Point>(tuple));
-    return multipoint;
-}
-
-template <typename Point>
 LineString<Point> getLineStringFromField(const Field & field)
 {
     LineString<Point> linestring;
@@ -107,7 +97,6 @@ MultiPolygon<Point> getMultiPolygonFromField(const Field & field)
     return polygon;
 }
 
-/// Must match the global discriminators of the Geometry Variant type.
 enum class GeometryColumnType
 {
     Linestring = 0,
@@ -116,7 +105,6 @@ enum class GeometryColumnType
     Point = 3,
     Polygon = 4,
     Ring = 5,
-    MultiPoint = 6,
     Null = 255
 };
 
@@ -130,7 +118,6 @@ inline std::optional<GeometryColumnType> getGeometryColumnTypeFromDataType(const
 
     /// Check custom type names first.
     if (type_name == "Point") return GeometryColumnType::Point;
-    if (type_name == "MultiPoint") return GeometryColumnType::MultiPoint;
     if (type_name == "Ring") return GeometryColumnType::Ring;
     if (type_name == "LineString") return GeometryColumnType::Linestring;
     if (type_name == "Polygon") return GeometryColumnType::Polygon;
@@ -220,25 +207,6 @@ public:
         return 1;
     }
 
-    /// Declarative signature — covers `areaCartesian`, `areaSpherical`,
-    /// `perimeterCartesian`, `perimeterSpherical`: a single geometry-typed
-    /// argument, a `Float64` result.
-    String getSignatureString() const override
-    {
-        return "(Any) -> Float64";
-    }
-
-    /// The `(Any)` signature is documentation-only: the DSL cannot express "must be a Geometry
-    /// (or a custom Variant) type", so keep the legacy `getReturnTypeImpl(DataTypes)` authoritative
-    /// to reject non-geometry arguments at analysis time instead of failing later in execution.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        DataTypes data_types(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
-            data_types[i] = arguments[i].type;
-        return getReturnTypeImpl(data_types);
-    }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments[0]->getName() != "Geometry" && !getGeometryColumnTypeFromDataType(arguments[0]))
@@ -270,16 +238,14 @@ public:
         if (column_variant)
         {
             /// Geometry (Variant) type path.
-            /// GeometryColumnType matches the global discriminators of the Geometry Variant, while the local
-            /// order can differ (e.g. after a variant-to-variant conversion), so map local to global per row.
             Field field;
+            const auto & descriptors = column_variant->getLocalDiscriminators();
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 column_variant->get(i, field);
-                auto global_discr = column_variant->globalDiscriminatorAt(i);
-                auto type = magic_enum::enum_cast<GeometryColumnType>(global_discr);
+                auto type = magic_enum::enum_cast<GeometryColumnType>(descriptors[i]);
                 if (!type)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of geometry {}", static_cast<Int32>(global_discr));
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of geometry {}", static_cast<Int32>(descriptors[i]));
                 processField(field, *type, res_data);
             }
         }
@@ -317,12 +283,6 @@ private:
             {
                 MultiLineString<Point> multilinestring = getMultiLineStringFromField<Point>(field);
                 res_data.push_back(FunctionToCalculate()(multilinestring));
-                break;
-            }
-            case GeometryColumnType::MultiPoint:
-            {
-                MultiPoint<Point> multipoint = getMultiPointFromField<Point>(field);
-                res_data.push_back(FunctionToCalculate()(multipoint));
                 break;
             }
             case GeometryColumnType::MultiPolygon:

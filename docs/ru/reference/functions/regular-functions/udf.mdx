@@ -6,30 +6,36 @@ title: 'Пользовательские функции (UDF)'
 doc_type: 'reference'
 ---
 
-import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+import PrivatePreviewBadge from "/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
-import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="udfs-user-defined-functions">
+  # Пользовательская функция (UDF) Пользовательские функции
+</div>
 
 ClickHouse поддерживает несколько типов пользовательских функций (UDF):
 
-* [исполняемые UDF](#executable-user-defined-functions) запускают внешнюю программу или скрипт (Python, Bash и т. д.) и потоково передают им блоки данных через STDIN / STDOUT. Используйте их для интеграции существующего кода или инструментов без перекомпиляции ClickHouse. По сравнению с внутрипроцессными вариантами у них выше накладные расходы на каждый вызов, поэтому они лучше подходят для более сложной логики или случаев, когда нужна другая среда выполнения.
+* [исполняемые пользовательские функции](#executable-user-defined-functions) запускают внешнюю программу или скрипт (Python, Bash и т. д.) и потоково передают им блоки данных через STDIN / STDOUT. Используйте их для интеграции существующего кода или инструментов без перекомпиляции ClickHouse. По сравнению с внутрипроцессными вариантами у них выше накладные расходы на каждый вызов, поэтому они лучше подходят для более сложной логики или случаев, когда нужна другая среда выполнения.
 * [пользовательские функции SQL](#sql-user-defined-functions) определяются с помощью `CREATE FUNCTION` исключительно на SQL. Они подставляются/разворачиваются в план запроса (без отдельного процесса), что делает их лёгкими и идеально подходящими для повторного использования логики выражений или упрощения сложных вычисляемых столбцов.
 * [Экспериментальные пользовательские функции WebAssembly](#webassembly-user-defined-functions) выполняют код, скомпилированный в WebAssembly, внутри песочницы в процессе сервера. Они обеспечивают меньшие накладные расходы на каждый вызов, чем внешние исполняемые файлы, и лучшую изоляцию, чем нативные расширения, что делает их подходящими для пользовательских алгоритмов, написанных на языках, которые можно компилировать в WASM (например, C/C++/Rust).
-* [Экспериментальные исполняемые UDF на базе драйверов](#driver-based-executable-user-defined-functions) позволяют предоставляемому оператором &quot;драйверу&quot; преобразовывать фрагмент кода, указанный в `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'`, в исполняемый UDF при создании функции (например, путём компиляции). Они основаны на исполняемых UDF и требуют серверной конфигурации драйвера.
 
-## Исполняемые пользовательские функции {#executable-user-defined-functions}
+<div id="executable-user-defined-functions">
+  ## Исполняемые пользовательские функции
+</div>
 
-<BetaBadge />
+<PrivatePreviewBadge />
 
 <Note>
-  В ClickHouse Cloud исполняемые UDF общедоступны и создаются через консоль Cloud, Cloud API или Terraform. См. [Пользовательские функции в Cloud](/ru/products/cloud/features/sql-console-features/user-defined-functions), чтобы ознакомиться со специальным процессом для Cloud, включая среду выполнения Native для скомпилированных бинарных файлов.
+  Эта возможность доступна в рамках закрытой предварительной версии в ClickHouse Cloud.
+  Чтобы получить доступ, обратитесь в ClickHouse Support: https://clickhouse.cloud/support.
 </Note>
 
 ClickHouse может вызывать любую внешнюю исполняемую программу или скрипт для обработки данных.
 
 Конфигурация исполняемых пользовательских функций может находиться в одном или нескольких XML-файлах.
-Путь к конфигурации задаётся параметром [`user_defined_executable_functions_config`](/ru/reference/settings/server-settings/settings/user-defined#user_defined_executable_functions_config).
+Путь к конфигурации задаётся параметром [`user_defined_executable_functions_config`](/ru/reference/settings/server-settings/settings#user_defined_executable_functions_config).
 
 Конфигурация функции включает следующие настройки:
 
@@ -48,7 +54,7 @@ ClickHouse может вызывать любую внешнюю исполня�
 | `command_write_timeout`       | Тайм-аут записи данных в stdin команды в миллисекундах                                                                                                                                                                                                                                                                                                                                                                                                    | Необязательно | `10000`                   |
 | `pool_size`                   | Размер пула команд                                                                                                                                                                                                                                                                                                                                                                                                                                        | Необязательно | `16`                      |
 | `send_chunk_header`           | Определяет, нужно ли отправлять количество строк перед передачей фрагмента данных процессу                                                                                                                                                                                                                                                                                                                                                                | Необязательно | `false`                   |
-| `execute_direct`              | Если `execute_direct` = `1`, `command` будет искаться в каталоге user&#95;scripts, указанном в [user&#95;scripts&#95;path](/ru/reference/settings/server-settings/settings/user#user_scripts_path). Дополнительные аргументы скрипта можно указать, разделив их пробелами. Пример: `script_name arg1 arg2`. Если `execute_direct` = `0`, `command` передается как аргумент в `bin/sh -c`                                                                     | Необязательно | `1`                       |
+| `execute_direct`              | Если `execute_direct` = `1`, `command` будет искаться в каталоге user&#95;scripts, указанном в [user&#95;scripts&#95;path](/ru/reference/settings/server-settings/settings#user_scripts_path). Дополнительные аргументы скрипта можно указать, разделив их пробелами. Пример: `script_name arg1 arg2`. Если `execute_direct` = `0`, `command` передается как аргумент в `bin/sh -c`                                                                          | Необязательно | `1`                       |
 | `lifetime`                    | Интервал перезагрузки функции в секундах. Если задано значение `0`, функция не перезагружается                                                                                                                                                                                                                                                                                                                                                            | Необязательно | `0`                       |
 | `deterministic`               | Является ли функция детерминированной (возвращает один и тот же результат для одних и тех же входных данных)                                                                                                                                                                                                                                                                                                                                              | Необязательно | `false`                   |
 | `stderr_reaction`             | Как обрабатывать вывод команды в stderr. Значения: `none` (игнорировать), `log` (сразу записывать весь stderr в лог), `log_first` (записывать в лог первые 4 KiB после завершения), `log_last` (записывать в лог последние 4 KiB после завершения), `throw` (немедленно сгенерировать исключение при любом выводе в stderr). При использовании `log_first` или `log_last` с ненулевым кодом выхода содержимое stderr включается в сообщение об исключении | Необязательно | `log_last`                |
@@ -56,11 +62,17 @@ ClickHouse может вызывать любую внешнюю исполня�
 
 Команда должна читать аргументы из `STDIN` и выводить результат в `STDOUT`. Команда должна обрабатывать аргументы итеративно. То есть после обработки одного фрагмента аргументов она должна ждать следующий.
 
-## Исполняемые пользовательские функции {#executable-user-defined-functions}
+<div id="executable-user-defined-functions">
+  ## Исполняемые пользовательские функции
+</div>
 
-## Примеры {#examples}
+<div id="examples">
+  ## Примеры
+</div>
 
-### UDF из встроенного скрипта {#udf-inline}
+<div id="udf-inline">
+  ### UDF из встроенного скрипта
+</div>
 
 Создайте `test_function_sum`, вручную задав `execute_direct` значение `0`, с помощью конфигурации XML или YAML.
 
@@ -124,7 +136,9 @@ SELECT test_function_sum(2, 2);
 └─────────────────────────┘
 ```
 
-### UDF из скрипта Python {#udf-python}
+<div id="udf-python">
+  ### UDF из скрипта Python
+</div>
 
 В этом примере мы создаём UDF, которая считывает значение из `STDIN` и возвращает его в виде строки.
 
@@ -193,7 +207,9 @@ SELECT test_function_python(toUInt64(2));
 └─────────────────────────┘
 ```
 
-### Прочитайте два значения из `STDIN` и верните их сумму в виде объекта JSON {#udf-stdin}
+<div id="udf-stdin">
+  ### Прочитайте два значения из `STDIN` и верните их сумму в виде объекта JSON
+</div>
 
 Создайте `test_function_sum_json` с именованными аргументами и форматом [JSONEachRow](/ru/reference/formats/JSON/JSONEachRow), используя конфигурацию в XML или YAML.
 
@@ -273,7 +289,9 @@ SELECT test_function_sum_json(2, 2);
 └──────────────────────────────┘
 ```
 
-### Использование параметров в настройке `command` {#udf-parameters-in-command}
+<div id="udf-parameters-in-command">
+  ### Использование параметров в настройке `command`
+</div>
 
 Пользовательские функции типа `executable` могут принимать константные параметры, заданные в настройке `command` (это работает только для пользовательских функций типа `executable`).
 Также требуется параметр `execute_direct`, чтобы исключить уязвимость, связанную с подстановкой аргументов командной оболочкой.
@@ -341,7 +359,9 @@ SELECT test_function_parameter_python(1)(2);
 └──────────────────────────────────────┘
 ```
 
-### UDF из shell-скрипта {#udf-shell-script}
+<div id="udf-shell-script">
+  ### UDF из shell-скрипта
+</div>
 
 В этом примере мы создаём shell-скрипт, который умножает каждое значение на 2.
 
@@ -414,20 +434,26 @@ SELECT test_shell(number) FROM numbers(10);
     └────────────────────┘
 ```
 
-## Обработка ошибок {#error-handling}
+<div id="error-handling">
+  ## Обработка ошибок
+</div>
 
 Некоторые функции могут сгенерировать исключение, если данные некорректны.
 В этом случае запрос отменяется, а клиенту возвращается текст ошибки.
 При распределённой обработке, если исключение возникает на одном из серверов, остальные серверы также пытаются прервать запрос.
 
-## Вычисление выражений аргументов {#evaluation-of-argument-expressions}
+<div id="evaluation-of-argument-expressions">
+  ## Вычисление выражений аргументов
+</div>
 
 Почти во всех языках программирования для некоторых операторов один из аргументов может не вычисляться.
 Обычно это операторы `&&`, `||` и `?:`.
 В ClickHouse аргументы функций (операторов) вычисляются всегда.
 Это связано с тем, что вычисляются сразу целые части столбцов, а не каждая строка отдельно.
 
-## Выполнение функций при распределённой обработке запросов {#performing-functions-for-distributed-query-processing}
+<div id="performing-functions-for-distributed-query-processing">
+  ## Выполнение функций при распределённой обработке запросов
+</div>
 
 При распределённой обработке запросов на удалённых серверах выполняется как можно больше этапов обработки запроса, а остальные этапы (слияние промежуточных результатов и всё последующее) — на сервере-инициаторе запроса.
 
@@ -443,11 +469,15 @@ SELECT test_shell(number) FROM numbers(10);
 
 Если функция в запросе выполняется на сервере-инициаторе запроса, но её нужно выполнить на удалённых серверах, можно обернуть её в агрегатную функцию &#39;any&#39; или добавить в ключ `GROUP BY`.
 
-## Пользовательские функции SQL {#sql-user-defined-functions}
+<div id="sql-user-defined-functions">
+  ## Пользовательские функции SQL
+</div>
 
 Пользовательские функции на основе лямбда-выражений можно создавать с помощью оператора [CREATE FUNCTION](/ru/reference/statements/create/function). Для удаления этих функций используйте оператор [DROP FUNCTION](/ru/reference/statements/drop#drop-function).
 
-## Пользовательские функции WebAssembly {#webassembly-user-defined-functions}
+<div id="webassembly-user-defined-functions">
+  ## Пользовательские функции WebAssembly
+</div>
 
 <CloudNotSupportedBadge />
 
@@ -455,7 +485,9 @@ SELECT test_shell(number) FROM numbers(10);
 
 Пользовательские функции WebAssembly (WASM UDF) позволяют выполнять пользовательский код, скомпилированный в WebAssembly, внутри процесса сервера ClickHouse.
 
-### Быстрый старт {#quick-start}
+<div id="quick-start">
+  ### Быстрый старт
+</div>
 
 Включите экспериментальную поддержку WebAssembly в конфигурации ClickHouse:
 
@@ -489,130 +521,14 @@ RETURNS UInt32;
 SELECT my_function(10, 20);
 ```
 
-### Дополнительная информация {#more-information}
+<div id="more-information">
+  ### Дополнительная информация
+</div>
 
 Подробнее см. в документации [Пользовательские функции WebAssembly](/ru/reference/functions/regular-functions/wasm_udf).
 
-## Исполняемые UDF на базе драйверов {#driver-based-executable-user-defined-functions}
-
-<CloudNotSupportedBadge />
-
-<ExperimentalBadge />
-
-<Note>
-  Это экспериментальная возможность, которая в будущих релизах может измениться с нарушением обратной совместимости. Включите её с помощью настройки сервера [`allow_experimental_executable_udf_drivers`](/ru/reference/settings/server-settings/settings/allow-experimental#allow_experimental_executable_udf_drivers).
-</Note>
-
-*Драйвер* — это предоставляемый оператором адаптер, который превращает фрагмент пользовательского кода в исполняемый [UDF](#executable-user-defined-functions). Когда функция создаётся с `ENGINE = DriverName(...)`, ClickHouse запускает `create_command` драйвера, передавая ему сигнатуру функции и тело кода; драйвер компилирует тело или иным образом его обрабатывает и выводит конфигурацию исполняемого UDF, которую ClickHouse затем сохраняет и загружает.
-
-Это позволяет администраторам дать пользователям безопасный и строго ограниченный способ определять функции на произвольном языке (например, на C, компилируемом внутри изолированного контейнера), не предоставляя им доступ к конфигурационным файлам или файловой системе сервера. Набор доступных драйверов полностью контролируется оператором.
-
-### Включение драйверов {#enabling-drivers}
-
-Исполняемые UDF на базе драйверов по умолчанию отключены. Чтобы их включить:
-
-1. Установите экспериментальный флаг в конфигурации сервера:
-
-   ```xml
-   <clickhouse>
-       <allow_experimental_executable_udf_drivers>true</allow_experimental_executable_udf_drivers>
-   </clickhouse>
-   ```
-
-2. Укажите в `user_defined_executable_function_drivers_config` один или несколько файлов конфигурации драйверов (поддерживаются glob-шаблоны) и при необходимости задайте [`dynamic_user_defined_executable_functions_path`](/ru/reference/settings/server-settings/settings/other#dynamic_user_defined_executable_functions_path) — каталог, где хранятся сгенерированные конфигурации исполняемых UDF:
-
-   ```xml
-   <clickhouse>
-       <user_defined_executable_function_drivers_config>user_defined_executable_function_drivers_config.d/*_driver.xml</user_defined_executable_function_drivers_config>
-       <dynamic_user_defined_executable_functions_path>/var/lib/clickhouse/dynamic_user_defined_executable_functions/</dynamic_user_defined_executable_functions_path>
-   </clickhouse>
-   ```
-
-Реестр драйверов загружается при запуске сервера и обновляется командой `SYSTEM RELOAD CONFIG`, поэтому драйверы можно добавлять, изменять или удалять без перезапуска сервера.
-
-### Конфигурация драйвера {#driver-configuration}
-
-Драйвер описывается XML- или YAML-файлом с корневым элементом `<driver>`. Поддерживаются следующие поля:
-
-| Поле               | Описание                                                                                                                                                                                | Обязательно |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| `name`             | Имя драйвера, используемое в `CREATE FUNCTION ... ENGINE = <name>(...)`.                                                                                                                | Да          |
-| `create_command`   | Путь к программе, которая вызывается для создания UDF из фрагмента кода. Относительные пути разрешаются относительно файла конфигурации драйвера.                                       | Да          |
-| `drop_command`     | Путь к программе, которая вызывается при удалении функции, основанной на этом драйвере.                                                                                                 | Нет         |
-| `engine_arguments` | Объявляет аргументы, допустимые внутри `ENGINE = DriverName(...)`. Каждый дочерний элемент — имя аргумента; дочерний элемент `<required>true</required>` помечает его как обязательный. | Нет         |
-| `env`              | Переменные окружения, экспортируемые при вызове команд драйвера.                                                                                                                        | Нет         |
-
-Пример конфигурации драйвера:
-
-```xml
-<clickhouse>
-    <driver>
-        <name>DockerC</name>
-        <create_command>../user_defined_executable_function_drivers/docker_c_create.sh</create_command>
-        <drop_command>../user_defined_executable_function_drivers/docker_c_drop.sh</drop_command>
-        <engine_arguments>
-            <opt_level><required>false</required></opt_level>
-        </engine_arguments>
-        <env>
-            <CLICKHOUSE_C_DRIVER_MEMORY>256m</CLICKHOUSE_C_DRIVER_MEMORY>
-            <CLICKHOUSE_C_DRIVER_CPUS>1.0</CLICKHOUSE_C_DRIVER_CPUS>
-        </env>
-    </driver>
-</clickhouse>
-```
-
-#### Контракт вызова драйвера {#driver-invocation-contract}
-
-При выполнении `CREATE FUNCTION` вызывается `create_command` с заданными переменными `env` и следующими аргументами:
-
-* `--name <function_name>`
-* `--return <return_type>` (если указана секция `RETURNS`)
-* `--args <signature>` (если указана секция `ARGUMENTS`), где signature — это объявленный список аргументов, например `x UInt8, y DateTime`
-* `--<key> <value>` для каждого объявленного аргумента движка, указанного в `ENGINE = DriverName(key = value)`
-
-Тело пользовательского кода (текст после `AS`) передаётся на стандартный ввод команды. Команда должна вывести конфигурацию исполняемой UDF в стандартный вывод. Формат определяется автоматически: вывод, начинающийся с `<`, обрабатывается как XML, иначе — как YAML. Имя функции, заданное в сгенерированной конфигурации, должно совпадать с именем создаваемой функции. Если `create_command` завершается с ненулевым кодом выхода, оператор завершается ошибкой с исключением, включающим код выхода и содержимое стандартного потока ошибок драйвера.
-
-`drop_command`, если он указан, вызывается таким же образом (без тела кода в stdin) при удалении функции.
-
-### Создание FUNCTION {#creating-a-function-with-a-driver}
-
-```sql
-CREATE [OR REPLACE] FUNCTION [IF NOT EXISTS] name [ON CLUSTER cluster]
-    ARGUMENTS (a UInt8, b String) RETURNS UInt64
-    ENGINE = DriverName(key1 = 'value1', key2 = 42)
-    AS '...code body...'
-```
-
-ClickHouse выполняет `create_command` драйвера, записывает сгенерированную конфигурацию в [`dynamic_user_defined_executable_functions_path`](/ru/reference/settings/server-settings/settings/other#dynamic_user_defined_executable_functions_path), после чего её подхватывает существующий загрузчик исполняемых UDF. После этого функцию можно вызывать как и любую другую функцию.
-
-### Удаление функции {#dropping-a-function-with-a-driver}
-
-```sql
-DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
-```
-
-`DROP FUNCTION` вызывает `drop_command` драйвера (если она задана), удаляет сгенерированную динамическую конфигурацию и отдельный рабочий каталог функции, перезагружает загрузчик исполняемых UDF и удаляет сохранённый запрос.
-
-### Сохранение и перезапуск {#driver-persistence-and-restart}
-
-Исходный запрос сохраняется в виде оператора `ATTACH FUNCTION ...` в каталоге пользовательских SQL-объектов, поэтому функция сохраняется после перезапуска сервера. При запуске сгенерированные конфигурации из [`dynamic_user_defined_executable_functions_path`](/ru/reference/settings/server-settings/settings/other#dynamic_user_defined_executable_functions_path) загружаются напрямую, без повторного запуска драйвера. Если для сохранённого `ATTACH FUNCTION` нет соответствующей сгенерированной конфигурации (например, если динамический каталог был утерян), драйвер запускается повторно, чтобы создать её заново.
-
-### Ограничения {#driver-limitations}
-
-* Эта возможность экспериментальная и доступна только при включении `allow_experimental_executable_udf_drivers`.
-* Исполняемые UDF на базе драйверов не поддерживаются с реплицируемым хранилищем пользовательских функций (`ON CLUSTER` и `<user_defined_zookeeper_path>`), поскольку реплицируется только исходный запрос, а не сгенерированные артефакты.
-* `RESTORE` исполняемого UDF на базе драйверов из резервной копии сохраняет запрос, но не запускает драйвер повторно; сгенерированная конфигурация материализуется позже в процессе восстановления при перезапуске.
-
-### Пример драйверов на C {#example-c-drivers}
-
-В дереве исходного кода есть демонстрационные драйверы в `programs/server/user_defined_executable_function_drivers_config.d/`, которые компилируют и выполняют тело функции на C. Это лишь примеры, и **пакеты их не устанавливают**:
-
-* `DockerC` - компилирует и выполняет код внутри изолированных контейнеров Docker (`--network=none --read-only --cap-drop=ALL --security-opt=no-new-privileges`, а также с ограничениями по памяти/CPU/PID), создавая UDF `executable_pool`.
-* `GVisorC` - вариант, запускающий скомпилированный бинарный файл в среде выполнения `runsc` от [gVisor](https://gvisor.dev/).
-* `UnsafeC` - компилирует и выполняет код напрямую на хосте, без песочницы. Как следует из названия, он не обеспечивает никакой изоляции и предназначен только для доверенных окружений и тестирования.
-
-Эти драйверы-примеры служат отправной точкой; прежде чем открывать к ним доступ недоверенным пользователям, проверьте и при необходимости усильте изоляцию для вашей среды.
-
-## См. также {#related-content}
+<div id="related-content">
+  ## См. также
+</div>
 
 * [Пользовательские функции в ClickHouse Cloud](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)

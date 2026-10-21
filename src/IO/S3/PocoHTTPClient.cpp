@@ -19,12 +19,9 @@
 #include <IO/Expect404ResponseScope.h>
 #include <IO/GCPOAuth.h>
 #include <IO/HTTPCommon.h>
-#include <IO/ReadHelpers.h>
-#include <IO/copyData.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/S3/ProviderType.h>
-#include <IO/SocketPeerClosed.h>
 #include <Interpreters/Context.h>
 
 #include <aws/core/http/HttpRequest.h>
@@ -33,6 +30,7 @@
 #include <aws/core/utils/xml/XmlSerializer.h>
 #include <aws/core/monitoring/HttpClientMetrics.h>
 #include <aws/core/utils/ratelimiter/RateLimiterInterface.h>
+#include <Poco/StreamCopier.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/JSON/JSON.h>
@@ -111,13 +109,6 @@ bool isS3WrongSigningRegionBadRequest(int status_code, const Poco::Net::HTTPMess
     if (!response.has("x-amz-bucket-region"))
         return false;
     return !response.get("x-amz-bucket-region").empty();
-}
-
-String httpResponseCodeToString(Aws::Http::HttpResponseCode response_code)
-{
-    if (response_code == Aws::Http::HttpResponseCode::REQUEST_NOT_MADE)
-        return "none (no response from the server)";
-    return std::to_string(static_cast<std::underlying_type_t<Aws::Http::HttpResponseCode>>(response_code));
 }
 
 PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
@@ -481,7 +472,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
     auto method = getMethod(request);
 
     auto sdk_attempt = getSDKAttemptNumber(request);
-    auto ch_attempt = getClickHouseAttemptNumber(request);
+    auto ch_attempt = getClickhouseAttemptNumber(request);
     bool first_attempt = ch_attempt == 1 && sdk_attempt == 1;
 
     if (!first_attempt)
@@ -575,7 +566,6 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
             Poco::Net::HTTPRequest poco_request(Poco::Net::HTTPRequest::HTTP_1_1);
 
-            poco_request.setSuppressKeepAliveHeader(true);
             /** According to RFC-2616, Request-URI is allowed to be encoded.
               * However, there is no clear agreement on which exact symbols must be encoded.
               * Effectively, `Poco::URI` chooses smaller subset of characters to encode,
@@ -627,15 +617,12 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
             Stopwatch watch;
 
-            auto request_body = sendHTTPRequest(*session, poco_request, DBMS_DEFAULT_BUFFER_SIZE, &connect_time, &first_byte_time);
+            auto & request_body_stream = session->sendRequest(poco_request, &connect_time, &first_byte_time);
             /// We record connect time here and not earlier, so that if an exception occurs while sending a request,
             /// we won't record the same latency twice.
             observeLatency(request, S3LatencyType::Connect, static_cast<HistogramMetrics::Value>(connect_time));
             observeLatency(request, first_byte_latency_type, static_cast<HistogramMetrics::Value>(first_byte_time));
             latency_recorded = true;
-
-            /// Set when the server has already answered while the request body was being sent.
-            std::unique_ptr<HTTPResponseReadBuffer> response_body;
 
             if (request.GetContentBody())
             {
@@ -649,37 +636,16 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 request.GetContentBody()->seekg(0);
 
                 setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
-                try
-                {
-                    auto size = copyFromIStreamToWriteBuffer(*request.GetContentBody(), *request_body);
-                    request_body->finalize();
-                    if (enable_s3_requests_logging)
-                        LOG_TEST(log, "Written {} bytes to request body", size);
-                }
-                catch (const Poco::IOException &)
-                {
-                    /// A server may answer with an error and close the connection before reading the whole body.
-                    /// TLS allows no I/O after a failed write.
-                    if (session->secure()
-                        || DB::getSocketState(session->socket()) != DB::SocketState::DataPending
-                        || !(response_body = receiveEarlyHTTPResponse(session, poco_response, DBMS_DEFAULT_BUFFER_SIZE))
-                        || poco_response.getStatus() < Poco::Net::HTTPResponse::HTTP_MULTIPLE_CHOICES)
-                        throw;
-                    LOG_DEBUG(log, "Failed to send the request body to {}, using the response the server has already sent: {}",
-                        uri, getCurrentExceptionMessage(/* with_stacktrace */ false));
-                }
-            }
-
-            if (!response_body)
-            {
-                request_body->finalize();
-
-                setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
-
+                auto size = Poco::StreamCopier::copyStream(*request.GetContentBody(), request_body_stream);
                 if (enable_s3_requests_logging)
-                    LOG_TEST(log, "Receiving response...");
-                response_body = receiveHTTPResponse(session, poco_response, DBMS_DEFAULT_BUFFER_SIZE);
+                    LOG_TEST(log, "Written {} bytes to request body", size);
             }
+
+            setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
+
+            if (enable_s3_requests_logging)
+                LOG_TEST(log, "Receiving response...");
+            auto & response_body_stream = session->receiveResponse(poco_response);
 
             watch.stop();
             addMetric(request, S3MetricType::Microseconds, watch.elapsedMicroseconds());
@@ -727,21 +693,12 @@ void PocoHTTPClient::makeRequestInternalImpl(
             response->SetResponseCode(static_cast<Aws::Http::HttpResponseCode>(status_code));
             response->SetContentType(poco_response.getContentType());
 
-            /// GCS answers in its own spelling and the SDK parses only the `x-amz-` one, so add
-            /// that alongside for the headers the request side renames. The original is kept too.
-            const auto add_response_header = [&](const std::string & name, const std::string & value)
-            {
-                response->AddHeader(name, value);
-                if (auto amz_name = translateHeaderNameFromGCS(name))
-                    response->AddHeader(*amz_name, value);
-            };
-
             if (enable_s3_requests_logging)
             {
                 WriteBufferFromOwnString headers_ss;
                 for (const auto & [header_name, header_value] : poco_response)
                 {
-                    add_response_header(header_name, header_value);
+                    response->AddHeader(header_name, header_value);
                     headers_ss << header_name << ": " << header_value << "; ";
                 }
                 LOG_TEST(log, "Received headers: {}", headers_ss.str());
@@ -749,15 +706,15 @@ void PocoHTTPClient::makeRequestInternalImpl(
             else
             {
                 for (const auto & [header_name, header_value] : poco_response)
-                    add_response_header(header_name, header_value);
+                    response->AddHeader(header_name, header_value);
             }
 
             /// Request is successful but for some special requests we can have actual error message in body
             if (status_code >= SUCCESS_RESPONSE_MIN && status_code <= SUCCESS_RESPONSE_MAX && checkRequestCanReturn2xxAndErrorInBody(request))
             {
                 /// reading the full response
-                std::string response_string;
-                readStringUntilEOF(response_string, *response_body);
+                std::string response_string((std::istreambuf_iterator<char>(response_body_stream)),
+                               std::istreambuf_iterator<char>());
 
                 /// Just trim string so it will not be so long
                 LOG_TRACE(log, "Got dangerous response with successful code {}, checking its body: '{}'", status_code, response_string.substr(0, 300));
@@ -789,12 +746,8 @@ void PocoHTTPClient::makeRequestInternalImpl(
                         error_report(proxy_configuration);
                 }
 
-                /// expose the body, after that client reads data from it without built-in retries
-                const auto content_length = poco_response.getContentLength();
-                response->SetResponseBody(
-                    std::move(response_body),
-                    content_length == Poco::Net::HTTPMessage::UNKNOWN_CONTENT_LENGTH ? std::numeric_limits<size_t>::max()
-                                                                                    : static_cast<size_t>(content_length));
+                /// expose stream, after that client reads data from that stream without built-in retries
+                response->SetResponseBody(response_body_stream, session);
             }
 
             return;
@@ -851,25 +804,6 @@ constexpr auto DEFAULT_SERVICE_ACCOUNT = "default";
 constexpr auto DEFAULT_METADATA_SERVICE = "metadata.google.internal";
 constexpr auto DEFAULT_REQUEST_TOKEN_PATH = "computeMetadata/v1/instance/service-accounts";
 
-/// A non-positive receive timeout is unbounded downstream: Poco maps it to INT_MAX microseconds in
-/// `SecureSocketImpl::getMaxTimeoutOrLimit`, so it must be replaced by the cap rather than compared
-/// against it.
-Poco::Timespan capTimespan(Poco::Timespan timespan, Poco::Timespan cap)
-{
-    if (timespan.totalMicroseconds() <= 0)
-        return cap;
-    return std::min(timespan, cap);
-}
-
-}
-
-ConnectionTimeouts getCredentialAcquisitionTimeouts(const ConnectionTimeouts & timeouts)
-{
-    const Poco::Timespan request_cap(DEFAULT_CREDENTIAL_REQUEST_TIMEOUT_MS * 1000);
-
-    return ConnectionTimeouts(timeouts)
-        .withSendTimeout(capTimespan(timeouts.send_timeout, request_cap))
-        .withReceiveTimeout(capTimespan(timeouts.receive_timeout, request_cap));
 }
 
 PocoHTTPClientGCPOAuth::PocoHTTPClientGCPOAuth(const PocoHTTPClientConfiguration & client_configuration)
@@ -943,17 +877,17 @@ PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken()
         LOG_TEST(log, "Make request to: {}", url.toString());
 
     auto group = for_disk_s3 ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
-    auto session = makeHTTPSession(group, url, getCredentialAcquisitionTimeouts(timeouts));
-    sendHTTPRequest(*session, request)->finalize();
+    auto session = makeHTTPSession(group, url, timeouts);
+    session->sendRequest(request);
 
     Poco::Net::HTTPResponse response;
-    auto in = receiveHTTPResponse(*session, response);
+    auto & in = session->receiveResponse(response);
 
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
         throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Failed to request bearer token: {}", response.getReason());
 
     String token_json_raw;
-    readStringUntilEOF(token_json_raw, *in);
+    Poco::StreamCopier::copyToString(in, token_json_raw);
 
     if (enable_s3_requests_logging)
         LOG_TEST(log, "Received token in response: {}", token_json_raw);
@@ -983,8 +917,7 @@ PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken()
 PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerTokenFromADC() const
 {
     auto group = for_disk_s3 ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
-    auto result = fetchGCPOAuthToken(
-        google_adc_client_id, google_adc_client_secret, google_adc_refresh_token, getCredentialAcquisitionTimeouts(timeouts), group);
+    auto result = fetchGCPOAuthToken(google_adc_client_id, google_adc_client_secret, google_adc_refresh_token, timeouts, group);
     return
     {
         .token = std::move(result.access_token),

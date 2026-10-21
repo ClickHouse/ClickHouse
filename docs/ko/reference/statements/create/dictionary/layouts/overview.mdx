@@ -8,7 +8,9 @@ doc_type: 'reference'
 
 import CloudDetails from '/snippets/ko/_snippet_dictionary_in_cloud.mdx';
 
-## 딕셔너리 레이아웃 유형 {#storing-dictionaries-in-memory}
+<div id="storing-dictionaries-in-memory">
+  ## 딕셔너리 레이아웃 유형
+</div>
 
 딕셔너리를 메모리에 저장하는 방식은 여러 가지가 있으며, 각 방식마다 CPU와 RAM 사용량 사이에 절충이 있습니다.
 
@@ -30,9 +32,6 @@ import CloudDetails from '/snippets/ko/_snippet_dictionary_in_cloud.mdx';
 | [direct](/ko/reference/statements/create/dictionary/layouts/direct)                                                              | 메모리에 저장하지 않고, 각 요청마다 소스를 직접 쿼리합니다.                                                     |
 | [complex&#95;key&#95;direct](/ko/reference/statements/create/dictionary/layouts/direct#complex_key_direct)                       | `direct`와 유사하며, 복합 키에 사용합니다.                                                           |
 | [ip&#95;trie](/ko/reference/statements/create/dictionary/layouts/ip-trie)                                                        | 빠른 IP 프리픽스 조회(CIDR 기반)를 위한 트라이 구조입니다.                                                  |
-| [hierarchical](/ko/reference/statements/create/dictionary/layouts/hierarchical)                                                  | 부모-자식 관계를 나타내는 숫자 키를 사용하는 계층 구조를 지원합니다.                                                |
-| [polygon](/ko/reference/statements/create/dictionary/layouts/polygon)                                                            | 효율적인 point-in-polygon 조회(역지오코딩)를 지원합니다.                                                |
-| [regexp&#95;tree](/ko/reference/statements/create/dictionary/layouts/regexp-tree)                                                | 정규식 트리에 대해 키를 매칭합니다.                                                                   |
 
 <Tip>
   **권장 레이아웃**
@@ -41,11 +40,9 @@ import CloudDetails from '/snippets/ko/_snippet_dictionary_in_cloud.mdx';
   캐싱 레이아웃은 성능이 떨어질 가능성이 있고 매개변수 튜닝도 어렵기 때문에 권장하지 않습니다. 자세한 내용은 [cache](/ko/reference/statements/create/dictionary/layouts/cache)를 참조하십시오.
 </Tip>
 
-<Note>
-  캐시 기반 레이아웃은 삽입 시점의 데이터 보강(enrichment)을 안정적으로 수행하는 데 적합하지 않습니다. 워밍된 캐시 항목은 각 서버에만 로컬로 존재하므로, 서버가 재시작되거나 교체되면 사라지기 때문입니다. ClickHouse Cloud에서는 자동 스케일링과 관리형 노드 교체로 인해 이러한 상황이 발생할 가능성이 더 높습니다. 대신 전체 데이터를 로드하는 레이아웃을 사용하십시오. 자세한 내용은 [수집 경로의 캐시 딕셔너리](/ko/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path)를 참조하십시오.
-</Note>
-
-## 딕셔너리 레이아웃 지정 {#specify-dictionary-layout}
+<div id="specify-dictionary-layout">
+  ## 딕셔너리 레이아웃 지정
+</div>
 
 <CloudDetails />
 
@@ -139,7 +136,9 @@ import CloudDetails from '/snippets/ko/_snippet_dictionary_in_cloud.mdx';
   </Tab>
 </Tabs>
 
-## 딕셔너리 성능 개선 {#improve-performance}
+<div id="improve-performance">
+  ## 딕셔너리 성능 개선
+</div>
 
 딕셔너리 성능을 개선하는 방법은 여러 가지가 있습니다.
 

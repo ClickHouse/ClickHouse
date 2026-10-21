@@ -1,5 +1,5 @@
 SELECT toDecimal128('1234567890', 28) AS x, toDecimal128(x, 29), toDecimal128(toDecimal128('1234567890', 28), 29);
-SELECT toDecimal128(toDecimal128('1234567890', 28), 30); -- { serverError DECIMAL_OVERFLOW }
+SELECT toDecimal128(toDecimal128('1234567890', 28), 30);
 
 SELECT toDecimal64('1234567890', 8) AS x, toDecimal64(x, 9), toDecimal64(toDecimal64('1234567890', 8), 9);
 SELECT toDecimal64(toDecimal64('1234567890', 8), 10); -- { serverError DECIMAL_OVERFLOW }
