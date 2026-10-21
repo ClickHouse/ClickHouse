@@ -6,6 +6,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
+#include <functional>
 #include <span>
 #include <string_view>
 #include <variant>
@@ -40,6 +41,14 @@ using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
 struct ExplainFormatSettings;
 
 using StepProcessors = std::span<IProcessor * const>;
+
+/// Builds the analysis report of one step from the processors that ran it.
+///
+/// A step hands one of these out instead of reporting on itself, so that the report can be built
+/// after the step is gone: the closure holds what it needs by value, or by `shared_ptr` for the
+/// objects the processors share with it, such as the `IJoin`. An empty reporter means the step has
+/// nothing to report.
+using StepReporter = std::function<StepAnalysisReport(StepProcessors)>;
 
 /// Identity of a plan step, unique within a query.
 class PlanStepIndex
@@ -222,7 +231,8 @@ public:
     virtual std::vector<size_t> getStepGroups() const { return {0}; }
     virtual String getStepGroupName(size_t) const { return {}; }
 
-    virtual StepAnalysisReport getAnalysisReport(StepProcessors /*step_processors*/) const { return {}; }
+    /// See `StepReporter`. The default reports nothing.
+    virtual StepReporter makeReporter() const { return {}; }
 
 protected:
     virtual void updateOutputHeader() = 0;

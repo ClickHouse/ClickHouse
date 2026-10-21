@@ -26,17 +26,21 @@ class StepProfiler;
 
 class AnalyzeStepsStats
 {
-    using StepAndGroup = std::pair<const IQueryPlanStep *, size_t>;
+    /// Everything below is keyed by the step's uniq id rather than its address, so the collected
+    /// statistics outlive the plan. The processors carry the same id (`IProcessor::getStepUniqID`),
+    /// and it is unique within a query: the counter behind `PlanStepIndex` lives in the thread
+    /// group's local data, so every thread building steps for one query draws from it.
+    using StepAndGroup = std::pair<String, size_t>;
 
     /// Per-processor elapsed times collected per (step, group) to compute the distribution.
     /// A multiset keeps the values sorted and preserves duplicates so the median stays correct.
     using ElapsedTimes = std::multiset<UInt64>;
     using ElapsedTimesPerStepGroup = std::unordered_map<StepAndGroup, ElapsedTimes, boost::hash<StepAndGroup>>;
 
-    using StatsByStep = std::unordered_map<const IQueryPlanStep *, StepIOStats>;
+    using StatsByStep = std::unordered_map<String, StepIOStats>;
     using StatsByStepAndGroup = std::unordered_map<StepAndGroup, StepGroupStats, boost::hash<StepAndGroup>>;
-    using ProcessorsByStep = std::unordered_map<const IQueryPlanStep *, std::vector<IProcessor *>>;
-    using ReportsByStep = std::unordered_map<const IQueryPlanStep *, StepAnalysisReport>;
+    using ProcessorsByStep = std::unordered_map<String, std::vector<IProcessor *>>;
+    using ReportsByStep = std::unordered_map<String, StepAnalysisReport>;
 
 public:
     AnalyzeStepsStats(const QueryPipeline & pipeline, const QueryPlan & plan, StepProfiler & step_profiler, UInt64 execution_start_ns, UInt64 execution_query_time_ns_);

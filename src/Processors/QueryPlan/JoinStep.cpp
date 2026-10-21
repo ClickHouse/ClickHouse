@@ -312,7 +312,8 @@ StepAnalysisReport buildShardedHashJoinReport(const std::unordered_set<const IJo
 
 }
 
-JoinAnalysisCounters JoinStep::collectMergeJoinCounters(StepProcessors step_processors) const
+/// Reads only the processors, so the reporter can call it without holding the step.
+static JoinAnalysisCounters collectMergeJoinCounters(StepProcessors step_processors)
 {
     JoinAnalysisCounters counters;
     MatchedRowsAccumulator matched_left;
@@ -335,30 +336,35 @@ JoinAnalysisCounters JoinStep::collectMergeJoinCounters(StepProcessors step_proc
     return counters;
 }
 
-StepAnalysisReport JoinStep::getAnalysisReport(StepProcessors step_processors) const
+StepReporter JoinStep::makeReporter() const
 {
     /// A join gathers these metrics only when the query runs with the analyze mode on.
     /// Report no metrics at all, rather than zeros that look measured.
     if (!join->getTableJoin().collectAnalyzeStats())
         return {};
 
-    /// Case of Y-shaped join
-    if (typeid_cast<const FullSortingMergeJoin *>(join.get()))
-        return buildMatchedRowsReport(collectMergeJoinCounters(step_processors));
+    /// The `IJoin` is shared with the processors that run it, so holding it keeps the report
+    /// available after the step is gone. Nothing else of the step is captured.
+    return [join_ptr = join](StepProcessors step_processors) -> StepAnalysisReport
+    {
+        /// Case of Y-shaped join
+        if (typeid_cast<const FullSortingMergeJoin *>(join_ptr.get()))
+            return buildMatchedRowsReport(collectMergeJoinCounters(step_processors));
 
-    if (typeid_cast<const PasteJoin *>(join.get()))
-        return join->getAnalysisReport();
+        if (typeid_cast<const PasteJoin *>(join_ptr.get()))
+            return join_ptr->getAnalysisReport();
 
-    /// Case for sharded join
-    auto executed_joins = collectExecutedJoins(step_processors);
-    const bool executed_by_shard_clones = !executed_joins.empty() && !executed_joins.contains(join.get());
-    if (executed_by_shard_clones)
-        return buildShardedHashJoinReport(executed_joins);
+        /// Case for sharded join
+        auto executed_joins = collectExecutedJoins(step_processors);
+        const bool executed_by_shard_clones = !executed_joins.empty() && !executed_joins.contains(join_ptr.get());
+        if (executed_by_shard_clones)
+            return buildShardedHashJoinReport(executed_joins);
 
-    chassert(executed_joins.size() == 1);
+        chassert(executed_joins.size() == 1);
 
-    /// Case for one join, stored in the JoinStep directly
-    return join->getAnalysisReport();
+        /// Case for one join, stored in the JoinStep directly
+        return join_ptr->getAnalysisReport();
+    };
 }
 
 bool JoinStep::allowPushDownToRight() const
@@ -577,12 +583,12 @@ void FilledJoinStep::updateOutputHeader()
     output_header = std::make_shared<const Block>(JoiningTransform::transformHeader(*input_headers.front(), join));
 }
 
-StepAnalysisReport FilledJoinStep::getAnalysisReport(StepProcessors /*step_processors*/) const
+StepReporter FilledJoinStep::makeReporter() const
 {
     if (!join->getTableJoin().collectAnalyzeStats())
         return {};
 
-    return join->getAnalysisReport();
+    return [join_ptr = join](StepProcessors) { return join_ptr->getAnalysisReport(); };
 }
 
 void FilledJoinStep::describeActions(FormatSettings & settings) const

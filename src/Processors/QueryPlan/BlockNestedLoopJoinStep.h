@@ -59,7 +59,7 @@ public:
     std::vector<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
 
-    StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
+    StepReporter makeReporter() const override;
 
 private:
     void updateOutputHeader() override;
