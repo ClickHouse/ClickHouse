@@ -187,8 +187,7 @@ ch_cc_library(
         "Combinators/AggregateFunctionState.cpp",
         "Combinators/AggregateFunctionTuple.cpp",
     ] + glob(["TimeSeries/*.cpp"]) + _PRIVATE_AGGREGATE_FUNCTIONS_0_HEADERS,
-    hdrs = [
-    ] + glob(
+    hdrs = glob(
         [
             "**/*.h",
         ],
@@ -196,8 +195,9 @@ ch_cc_library(
     ),
     clickhouse_code = True,
     implementation_deps = [
-        "@clickhouse_azure//:_azure_sdk",
-    ] + ["@clickhouse_libpqxx//:_libpqxx"] + [
+        "@clickhouse_llvm_project//:llvm_headers",
+        "@clickhouse_libdivide//:libdivide",
+        "//contrib/libdivide-cmake:headers",
         "//contrib/pdqsort:headers",
         "//src/Compression:clickhouse_compression",
         "//src/Functions:headers",
@@ -289,13 +289,7 @@ ch_cc_library(
         "../../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
         "../../" + "bazel/gen",
     ],
-    deps = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            "@clickhouse_llvm_project//:LLVMAArch64Info",
-            "@clickhouse_llvm_project//:LLVMAArch64Desc",
-        ],
-    }) + [
+    deps = [
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
         "@clickhouse_llvm_project//:LLVMBitReader",
         "@clickhouse_llvm_project//:LLVMBitWriter",
@@ -310,29 +304,15 @@ ch_cc_library(
         "@clickhouse_llvm_project//:LLVMObjCARCOpts",
         "@clickhouse_llvm_project//:LLVMSandboxIR",
         "@clickhouse_llvm_project//:LLVMSupport",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_llvm_project//:LLVMX86Info",
-            "@clickhouse_llvm_project//:LLVMX86Desc",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }) + [
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_datasketches_cpp//:datasketches_cpp",
-        "@clickhouse_libdivide//:libdivide",
         "//base/glibc-compatibility",
         "//base/poco/Foundation:_poco_foundation",
         "//contrib/cityhash102:_cityhash",
-        "//contrib/jemalloc-cmake:headers",
-        "//contrib/libdivide-cmake:headers",
-        "@clickhouse_openssl//:crypto",
         "//base:common",
         "//src:headers",
         "//src/Common",
         "//src/Parsers:headers",
-    ] + [
-        "@clickhouse_libhdfs3//:_hdfs3",
-    ] + [
         "//bazel:clickhouse_config_headers",
         "@clickhouse_croaring//:_roaring",
         "@clickhouse_croaring//:_roaring__compile_0",
@@ -347,8 +327,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     hdrs = select({
-        "@platforms//cpu:x86_64": [
-        ] + glob(
+        "@platforms//cpu:x86_64": glob(
             [
                 "**/*.h",
             ],
@@ -365,14 +344,6 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    implementation_deps = select({
-        "@platforms//cpu:x86_64": ["@clickhouse_double_conversion//:_double-conversion"],
-        "@platforms//cpu:aarch64": [],
-    }) + [
-        "@clickhouse_azure//:_azure_sdk",
-    ] + [
-        "@clickhouse_libpqxx//:_libpqxx",
-    ],
     local_defines = select({
         "@platforms//cpu:x86_64": [
             "AI_SDK_HAS_ANTHROPIC=1",
@@ -457,27 +428,16 @@ ch_cc_library(
     ] + select({
         "@platforms//cpu:x86_64": [
             "@clickhouse_datasketches_cpp//:datasketches_cpp",
-            "@clickhouse_libdivide//:libdivide",
         ],
         "@platforms//cpu:aarch64": [],
     }) + [
         "//base/glibc-compatibility",
         "//base/poco/Foundation:_poco_foundation",
         "//contrib/cityhash102:_cityhash",
-        "//contrib/jemalloc-cmake:headers",
-        "//contrib/libdivide-cmake:headers",
-        "@clickhouse_openssl//:crypto",
         "//base:common",
         "//src:headers",
         "//src/Common",
         "//src/Parsers:headers",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-        "@clickhouse_libhdfs3//:_hdfs3",
-    ],
-        "@platforms//cpu:aarch64": [],
-        "//conditions:default": [],
-    }) + [
         "//bazel:clickhouse_config_headers",
         "@clickhouse_croaring//:_roaring",
         "@clickhouse_croaring//:_roaring__compile_0",
@@ -735,4 +695,7 @@ cc_library(
         ],
         exclude = _PRIVATE_AGGREGATE_FUNCTIONS_0_HEADERS,
     ),
+    deps = [
+        "@clickhouse_croaring//:_roaring",
+    ],
 )

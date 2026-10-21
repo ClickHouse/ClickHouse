@@ -34,9 +34,9 @@ ch_cc_library(
     implementation_deps = [
         "//bazel:clickhouse_config_headers",
         "//bazel/rust:pco_cc",
+        "@clickhouse_openssl//:crypto",
         "//contrib/libdivide-cmake:headers",
         "@clickhouse_libdivide//:libdivide",
-    ] + [
         "//contrib/cityhash102:_cityhash",
         "@clickhouse_zxc//:_zxc",
         "@clickhouse_sz3//:sz3",
@@ -111,14 +111,7 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            "@clickhouse_llvm_project//:LLVMAArch64CodeGen",
-            "@clickhouse_llvm_project//:LLVMAArch64Info",
-            "@clickhouse_llvm_project//:LLVMAArch64Desc",
-        ],
-    }) + [
+    deps = [
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
         "@clickhouse_llvm_project//:LLVMBitReader",
         "@clickhouse_llvm_project//:LLVMBitWriter",
@@ -133,45 +126,25 @@ ch_cc_library(
         "@clickhouse_llvm_project//:LLVMObjCARCOpts",
         "@clickhouse_llvm_project//:LLVMSandboxIR",
         "@clickhouse_llvm_project//:LLVMSupport",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_llvm_project//:LLVMX86CodeGen",
-            "@clickhouse_llvm_project//:LLVMX86Info",
-            "@clickhouse_llvm_project//:LLVMX86Desc",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }) + [
-        "@lz4//:lz4_frame",
+    ] + [
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_llvm_project//:LLVMAsmPrinter",
         "@clickhouse_llvm_project//:LLVMRuntimeDyld",
         "@clickhouse_llvm_project//:LLVMSelectionDAG",
         "@clickhouse_aws//:_aws",
-        "@clickhouse_azure//:_azure_sdk",
         "@clickhouse_boost//:_boost_context",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_libcpuid//:_cpuid",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }) + [
         "@clickhouse_openldap//:_ldap",
         "//contrib/lz4-cmake:_lz4",
-        "@clickhouse_croaring//:_roaring",
         "@clickhouse_silk//:_silk_fibers",
         "@clickhouse_zstd//:_zstd",
         "@clickhouse_llvm_project//:clang_rt_builtins",
-        "//src/Access/Common:clickhouse_common_access",
         "//src/Parsers:clickhouse_parsers",
         "//base:common",
-        "@clickhouse_openssl//:crypto",
         "//base/glibc-compatibility",
         "@clickhouse_cctz//:tzdata",
-        "//contrib/sz3-cmake:headers",
         "//src:headers",
         "//src/Common",
         "//base/poco/Util:_poco_util",
-    ] + [
         "//base:pcg_random",
         "@clickhouse_abseil_cpp//:absl_inlined_vector_internal",
     ],
