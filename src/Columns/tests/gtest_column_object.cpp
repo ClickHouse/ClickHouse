@@ -475,6 +475,82 @@ TEST(ColumnObject, InsertFromMappingAllocatedBytesWithoutPaths)
     ASSERT_GE(destination->allocatedBytes(), without_mappings->allocatedBytes() + num_sources * sizeof(UInt64));
 }
 
+TEST(ColumnObject, InsertFromMappingAfterRollback)
+{
+    for (bool insert_range : {false, true})
+    {
+        SCOPED_TRACE(insert_range);
+        auto type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=2, typed UInt32)");
+        auto source = type->createColumn();
+        source->insert(Object{{"typed", Field{7u}}, {"a", Field{42u}}});
+        auto column = type->createColumn();
+        auto & destination = assert_cast<ColumnObject &>(*column);
+        const auto & destination_const = destination;
+        auto checkpoint = destination.getCheckpoint();
+
+        auto insert = [&]
+        {
+            if (insert_range)
+                destination.insertRangeFrom(*source, 0, 1);
+            else
+                destination.insertFrom(*source, 0);
+        };
+
+        insert();
+        insert();
+        ASSERT_EQ(destination.size(), 2);
+        destination.rollback(*checkpoint);
+        ASSERT_TRUE(destination.empty());
+        ASSERT_TRUE(destination_const.getDynamicPaths().empty());
+
+        insert();
+        insert();
+        ASSERT_EQ(destination.size(), 2);
+        ASSERT_EQ(destination_const.getDynamicPaths().size(), 1);
+        ASSERT_EQ(destination_const.getDynamicPaths().at("a")->size(), 2);
+        ASSERT_EQ(destination_const.getTypedPaths().at("typed")->size(), 2);
+        ASSERT_EQ(destination_const.getSharedDataColumn().size(), 2);
+        ASSERT_EQ(destination[0], (Object{{"typed", Field{7u}}, {"a", Field{42u}}}));
+        ASSERT_EQ(destination[1], destination[0]);
+    }
+}
+
+TEST(ColumnObject, InsertFromMappingAfterSourceAddsPath)
+{
+    for (bool insert_range : {false, true})
+    {
+        SCOPED_TRACE(insert_range);
+        auto type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=2)");
+        auto source = type->createColumn();
+        source->insert(Object{{"a", Field{42u}}});
+        auto column = type->createColumn();
+        auto & destination = assert_cast<ColumnObject &>(*column);
+        const auto & destination_const = destination;
+
+        auto insert = [&](size_t row)
+        {
+            if (insert_range)
+                destination.insertRangeFrom(*source, row, 1);
+            else
+                destination.insertFrom(*source, row);
+        };
+
+        insert(0);
+        source->insert(Object{{"a", Field{43u}}, {"b", Field{44u}}});
+        insert(1);
+        insert(0);
+
+        ASSERT_EQ(destination.size(), 3);
+        ASSERT_EQ(destination_const.getDynamicPaths().size(), 2);
+        ASSERT_EQ(destination_const.getDynamicPaths().at("a")->size(), 3);
+        ASSERT_EQ(destination_const.getDynamicPaths().at("b")->size(), 3);
+        ASSERT_EQ(destination_const.getSharedDataColumn().size(), 3);
+        ASSERT_EQ(destination[0], (Object{{"a", Field{42u}}}));
+        ASSERT_EQ(destination[1], (Object{{"a", Field{43u}}, {"b", Field{44u}}}));
+        ASSERT_EQ(destination[2], destination[0]);
+    }
+}
+
 TEST(ColumnObject, RepairDuplicatesInDynamicPathsAndSharedData)
 {
     auto type_with_dynamic_paths = DataTypeFactory::instance().get("JSON");
