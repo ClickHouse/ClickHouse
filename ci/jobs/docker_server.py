@@ -9,7 +9,12 @@ from typing import Dict, List
 
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.clickhouse_version import CHVersion
-from ci.jobs.scripts.docker_server.docker_library import test_docker_library
+from ci.jobs.scripts.docker_server.docker_library import (
+    changed_tests,
+    test_docker_library,
+    validate_bugfix_tests,
+)
+from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika import Secret
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -783,14 +788,31 @@ def main():
                 )
             )
 
+    # The server image job validates the tests of both images. Only on a PR to master: a backported fix is in master's `head`.
+    bugfix_tests = []
+    if not push and info.workflow_name == "PR" and "server image" in info.job_name:
+        bugfix_tests = changed_tests(info.get_changed_files())
     if not push:
         # The image is built locally only when we don't push it
         # See `--output=type=docker`
         test_docker_library(test_results)
+        if bugfix_tests and any(
+            label in info.pr_labels
+            for label in (Labels.PR_BUGFIX, Labels.PR_CRITICAL_BUGFIX)
+        ):
+            master_images = [
+                f"{repo}:head{suffix}"
+                for repo in ("clickhouse/clickhouse-server", "clickhouse/clickhouse-keeper")
+                for suffix in ("", "-alpine", "-distroless")
+            ]
+            validate_bugfix_tests(test_results, master_images, bugfix_tests)
 
     test_results.append(check_server_readme(image.path))
 
-    Result.create_from(results=test_results, stopwatch=sw).complete_job()
+    # Not cached with changed tests: the PR can become a bug fix later, and the `head` images move with master.
+    Result.create_from(results=test_results, stopwatch=sw).complete_job(
+        do_not_cache=bool(bugfix_tests)
+    )
 
 
 if __name__ == "__main__":
