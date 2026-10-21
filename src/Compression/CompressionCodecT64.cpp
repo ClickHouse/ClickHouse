@@ -341,6 +341,30 @@ NO_INLINE void decompressOneBit(const char * src, char * dst, UInt32 num_element
     }
 }
 
+/// Copies the first `num_bits` planes from `src` into `matrix` and zeroes the rest.
+template <size_t N>
+ALWAYS_INLINE void loadPlanes(UInt64 (&matrix)[N], const char * src, UInt32 num_bits)
+{
+#if defined(__AVX2__)
+    /// Not `memset` followed by `memcpy` of a variable size: the overlapping, unaligned tail stores of `memcpy`
+    /// cannot be forwarded to the narrower loads of the transpose that immediately reads the matrix back,
+    /// so every block waits for them to retire, and how long depends on where the stack happens to place
+    /// the matrix. One select per plane compiles to masked loads and aligned full-width stores instead.
+    /// Without masked loads (e.g. on AArch64) it would be a scalar loop over all `N` planes, slower than the copy.
+    /// A full matrix (e.g. random values) needs no masks: a copy of a constant size is aligned stores only.
+    if (num_bits == N)
+    {
+        memcpy(matrix, src, sizeof(matrix));
+        return;
+    }
+    for (UInt32 i = 0; i < N; ++i)
+        matrix[i] = i < num_bits ? unalignedLoad<UInt64>(src + i * sizeof(UInt64)) : 0;
+#else
+    memset(matrix, 0, sizeof(matrix));
+    memcpy(matrix, src, num_bits * sizeof(UInt64));
+#endif
+}
+
 MULTITARGET_FUNCTION_X86_V4(
 MULTITARGET_FUNCTION_HEADER(
 template <typename T, bool full>
@@ -353,8 +377,8 @@ void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((
     /// A 64-byte matrix avoids clearing unused planes and reconstructing zero high bytes.
     if (num_bits <= 8)
     {
-        UInt64 matrix[8] = {};
-        memcpy(matrix, src, num_bits * sizeof(UInt64));
+        alignas(64) UInt64 matrix[8];
+        loadPlanes(matrix, src, num_bits);
 
         /// Always the plane loop. The shuffle measured slower here even at six to eight planes.
         if (full || part_bits)
@@ -370,8 +394,10 @@ void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((
         return;
     }
 
-    UInt64 matrix[64] = {};
-    memcpy(matrix, src, num_bits * sizeof(UInt64));
+    /// Aligned to its size, so that the matrix never straddles a page boundary. Otherwise, depending on the stack layout,
+    /// the vector stores filling it may split across two pages on every call, which is very slow.
+    alignas(sizeof(UInt64) * 64) UInt64 matrix[64];
+    loadPlanes(matrix, src, num_bits);
 
     UInt32 full_bytes = num_bits / 8;
 
