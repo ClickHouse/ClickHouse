@@ -3,6 +3,7 @@
 #include <cctype>
 #if USE_AVRO && USE_HIVE
 #include <optional>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Core/Names.h>
 #include <Databases/DataLake/ICatalog.h>
@@ -19,6 +20,7 @@
 
 namespace DB::ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int FAULT_INJECTED;
     extern const int NO_HIVEMETASTORE;
@@ -76,14 +78,20 @@ std::pair<String, Int32> parseHostPort(const String & url)
 
 }
 
-HiveCatalog::HiveCatalog(const std::string & warehouse_, const std::string & base_url_, DB::ContextPtr context_)
+HiveCatalog::HiveCatalog(
+    const std::string & warehouse_, const std::string & base_url_, size_t max_connections_, DB::ContextPtr context_)
     : ICatalog(warehouse_)
     , DB::WithContext(context_)
     , base_url(base_url_)
+    , max_connections(max_connections_)
 {
+    if (max_connections == 0)
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Setting `hive_metastore_max_connections` must be greater than 0");
+
     auto connection = createConnection();
     std::lock_guard lock(pool_mutex);
     idle_connections.push_back(std::move(connection));
+    num_connections = 1;
 }
 
 HiveCatalog::Connection::~Connection()
@@ -117,6 +125,86 @@ HiveCatalog::ConnectionPtr HiveCatalog::createConnection() const
     return connection;
 }
 
+HiveCatalog::ConnectionPtr HiveCatalog::acquireConnection() const
+{
+    UInt64 connection_generation = 0;
+    {
+        std::unique_lock lock(pool_mutex);
+        while (idle_connections.empty() && num_connections >= max_connections)
+        {
+            DB::CurrentThread::checkIfNotCancelled();
+            connection_released.wait_for(lock, std::chrono::seconds(1));
+        }
+
+        if (!idle_connections.empty())
+        {
+            auto connection = std::move(idle_connections.back());
+            idle_connections.pop_back();
+            return connection;
+        }
+
+        ++num_connections;
+        connection_generation = generation;
+    }
+
+    try
+    {
+        auto connection = createConnection();
+        connection->generation = connection_generation;
+        return connection;
+    }
+    catch (...)
+    {
+        std::lock_guard lock(pool_mutex);
+        --num_connections;
+        connection_released.notify_one();
+        throw;
+    }
+}
+
+void HiveCatalog::releaseConnection(ConnectionPtr connection) const
+{
+    {
+        std::lock_guard lock(pool_mutex);
+        if (connection->generation == generation)
+        {
+            idle_connections.push_back(std::move(connection));
+            connection_released.notify_one();
+            return;
+        }
+        --num_connections;
+        connection_released.notify_one();
+    }
+    connection.reset();
+}
+
+void HiveCatalog::discardConnection(ConnectionPtr connection) const
+{
+    {
+        std::lock_guard lock(pool_mutex);
+        --num_connections;
+        connection_released.notify_one();
+    }
+    connection.reset();
+}
+
+void HiveCatalog::invalidateConnections(ConnectionPtr failed_connection) const
+{
+    std::vector<ConnectionPtr> stale_connections;
+    {
+        std::lock_guard lock(pool_mutex);
+        if (failed_connection->generation == generation)
+        {
+            ++generation;
+            stale_connections.swap(idle_connections);
+        }
+        num_connections -= stale_connections.size() + 1;
+        connection_released.notify_all();
+    }
+    failed_connection.reset();
+    stale_connections.clear();
+}
+
 template <typename Func>
 void HiveCatalog::executeWithRetry(Func && func) const
 {
@@ -126,44 +214,33 @@ void HiveCatalog::executeWithRetry(Func && func) const
     for (int i = 0; i < max_retries; ++i)
     {
         ConnectionPtr connection;
-        {
-            std::lock_guard lock(pool_mutex);
-            if (!idle_connections.empty())
-            {
-                connection = std::move(idle_connections.back());
-                idle_connections.pop_back();
-            }
-        }
-
         try
         {
-            if (!connection)
-                connection = createConnection();
+            connection = acquireConnection();
             func(*connection->client);
         }
         catch (apache::thrift::transport::TTransportException & e)
         {
             last_err_msg = e.what();
             LOG_TRACE(&Poco::Logger::get("HiveCatalog"), "Hive Metastore request failed in iteration {}/{} with error: {}", i, max_retries, e.what());
-            std::vector<ConnectionPtr> stale_connections;
-            {
-                std::lock_guard lock(pool_mutex);
-                stale_connections.swap(idle_connections);
-            }
+            if (connection)
+                invalidateConnections(std::move(connection));
             continue;
         }
         catch (const apache::thrift::TException &)
         {
             if (connection)
-            {
-                std::lock_guard lock(pool_mutex);
-                idle_connections.push_back(std::move(connection));
-            }
+                releaseConnection(std::move(connection));
+            throw;
+        }
+        catch (...)
+        {
+            if (connection)
+                discardConnection(std::move(connection));
             throw;
         }
 
-        std::lock_guard lock(pool_mutex);
-        idle_connections.push_back(std::move(connection));
+        releaseConnection(std::move(connection));
         return;
     }
 

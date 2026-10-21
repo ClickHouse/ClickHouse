@@ -2,6 +2,7 @@
 #include "config.h"
 
 #if USE_AVRO && USE_HIVE
+#    include <condition_variable>
 #    include <filesystem>
 #    include <Databases/DataLake/ICatalog.h>
 #    include <IO/HTTPHeaderEntries.h>
@@ -27,8 +28,8 @@ namespace DataLake
 class HiveCatalog final : public ICatalog, private DB::WithContext
 {
 public:
-    explicit HiveCatalog(
-        const std::string & warehouse_, const std::string & base_url_, DB::ContextPtr context_);
+    HiveCatalog(
+        const std::string & warehouse_, const std::string & base_url_, size_t max_connections_, DB::ContextPtr context_);
 
     ~HiveCatalog() override = default;
 
@@ -56,12 +57,17 @@ private:
     {
         std::shared_ptr<apache::thrift::transport::TTransport> transport;
         std::unique_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> client;
+        UInt64 generation = 0;
 
         ~Connection();
     };
     using ConnectionPtr = std::unique_ptr<Connection>;
 
     ConnectionPtr createConnection() const;
+    ConnectionPtr acquireConnection() const;
+    void releaseConnection(ConnectionPtr connection) const;
+    void discardConnection(ConnectionPtr connection) const;
+    void invalidateConnections(ConnectionPtr failed_connection) const;
 
     template <typename Func>
     void executeWithRetry(Func && func) const;
@@ -69,9 +75,13 @@ private:
     CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
 
     String base_url;
+    const size_t max_connections;
 
     mutable std::mutex pool_mutex;
+    mutable std::condition_variable connection_released;
     mutable std::vector<ConnectionPtr> idle_connections TSA_GUARDED_BY(pool_mutex);
+    mutable size_t num_connections TSA_GUARDED_BY(pool_mutex) = 0;
+    mutable UInt64 generation TSA_GUARDED_BY(pool_mutex) = 0;
 };
 
 }
