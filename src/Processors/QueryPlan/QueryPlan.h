@@ -2,7 +2,6 @@
 
 #include <Core/Block_fwd.h>
 #include <Core/Names.h>
-#include <Core/SortDescription.h>
 #include <Core/Field.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Interpreters/Context_fwd.h>
@@ -357,21 +356,9 @@ struct ExchangeDescription
     };
 
     String name;
-    /// Id of the producer stage: the N of `exchange_N`, or the id of the `main` stage for `final_result`.
-    /// Not sent to workers.
-    UInt32 id = 0;
     Kind kind = Kind::Persisted;
     size_t source_bucket_count = 0;
     size_t destination_bucket_count = 0;
-
-    /// Name of the logical exchange step this exchange was cut from (`ShuffleExchange`, `ScatterExchange`,
-    /// `BroadcastExchange`, `GatherExchange`). Kept for `EXPLAIN`; not sent to workers. Empty for `final_result`,
-    /// which is not cut from a logical exchange step.
-    String exchange_step_name = {};
-    /// Hash keys of a shuffle or scatter exchange; empty for `any` distribution, broadcast and gather.
-    Names keys = {};
-    /// Sort order a gather exchange maintains when merging, if any.
-    std::optional<SortDescription> sort_description = {};
 };
 
 using ExchangeDescriptions = std::unordered_map<String, ExchangeDescription>;
@@ -409,9 +396,6 @@ struct DistributedQueryTask
 /// Tasks can be executed in parallel on different partitions of data
 struct DistributedQueryStage
 {
-    /// Number of the stage: the N of `stage_N` for worker stages, the next number for `main`, so that
-    /// ids ascend from the leaves to `main`. Not sent to workers.
-    UInt32 id = 0;
     QueryPlan query_plan_fragment;   /// Common for all tasks
     std::vector<DistributedQueryTask> tasks;   /// Individual set of parameter values for each task
 

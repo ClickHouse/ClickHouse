@@ -17,10 +17,6 @@
 #include <Common/saturatedDuration.h>
 #include <base/scope_guard.h>
 
-#include <Access/AccessControl.h>
-#include <Access/SettingsProfile.h>
-#include <Access/SettingsProfilesInfo.h>
-
 #include <Processors/QueryPlan/FractionalLimitStep.h>
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -167,7 +163,6 @@ namespace Setting
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsUInt64 max_bytes_before_external_group_by;
     extern const SettingsDouble max_bytes_ratio_before_external_group_by;
-    extern const SettingsUInt64 min_bytes_before_external_group_by;
     extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
     extern const SettingsBool compile_aggregate_expressions;
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
@@ -778,7 +773,6 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::group_by_two_level_threshold_bytes],
         Aggregator::Params::getMaxBytesBeforeExternalGroupBy(
             settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
-        settings[Setting::min_bytes_before_external_group_by],
         settings[Setting::empty_result_for_aggregation_by_empty_set]
             || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set]
                 && aggregation_analysis_result.aggregation_keys.empty() && aggregation_analysis_result.group_by_with_constant_keys),
@@ -2502,50 +2496,29 @@ static bool isQueryKindEligibleForSubqueryCache(const ContextPtr & query_context
 }
 
 /// Returns the explicit `use_query_cache` opt-in / opt-out carried by a node's own query-level
-/// `SETTINGS` clause, or `std::nullopt` when the clause does not set the setting, neither literally
-/// nor through a `profile` it applies. `QueryNode` and `UnionNode` store the clause the same way,
-/// so a plain subquery and a `UNION` subquery are handled alike.
+/// `SETTINGS` clause, or `std::nullopt` when the clause does not mention the setting. `QueryNode`
+/// and `UnionNode` store the clause the same way, so a plain subquery and a `UNION` subquery are
+/// handled alike.
 ///
 /// The clause is only inspected for the *presence* of the setting; the value is then read from the
 /// node's own context, which already has the whole clause applied in order (and clamped against the
 /// constraints). `ParserSetQuery` keeps every occurrence, so `SETTINGS use_query_cache = 1,
-/// use_query_cache = 0` - or an assignment followed by `= DEFAULT`, or a literal followed by a
-/// profile that sets it the other way - has a last-wins effective value, which the first entry of
-/// `settings_changes` does not report. Returning that first entry would make this path disagree with
-/// every other consumer of the setting, e.g. taking the cache path (and possibly raising
-/// `QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS`) for a query that opted out.
-///
-/// A profile stays in the clause as written (`profile = 'p'`), so that every shard of a distributed
-/// query applies its own profile under its own constraints; it is resolved here instead. A profile
-/// that sets `use_query_cache` is this clause's opt-in / opt-out exactly like the literal, while a
-/// profile that does not mention it contributes nothing, so an outer `use_query_cache` still does
-/// not propagate into the subquery (#119019).
-template <typename Node>
-static std::optional<bool> explicitUseQueryCacheSetting(const Node & node)
+/// use_query_cache = 0` - or an assignment followed by `= DEFAULT` - has a last-wins effective value,
+/// which the first entry of `settings_changes` does not report. Returning that first entry would make
+/// this path disagree with every other consumer of the setting, e.g. taking the cache path (and
+/// possibly raising `QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS`) for a query that opted out.
+static std::optional<bool> explicitUseQueryCacheSetting(
+    const SettingsChanges & settings_changes, const std::vector<String> & default_settings, const ContextPtr & node_context)
 {
-    const ContextPtr & node_context = node.getContext();
-    const SettingsChanges & settings_changes = node.getSettingsChanges();
-
-    bool mentioned_in_clause = settings_changes.tryGet("use_query_cache") != nullptr
-        || std::ranges::contains(node.getDefaultSettings(), "use_query_cache");
-
-    if (!mentioned_in_clause)
-    {
-        /// The profile lookup needs the mutable `AccessControl`, which only the global context exposes.
-        AccessControl & access_control = node_context->getGlobalContext()->getAccessControl();
-        for (const SettingChange & change : settings_changes)
-        {
-            if (change.name != "profile")
-                continue;
-            /// The profile resolved when the clause was applied to the node's context; one dropped since is not consulted.
-            auto profile_id = access_control.find<SettingsProfile>(change.value.safeGet<String>());
-            if (profile_id && access_control.getSettingsProfileInfo(*profile_id)->settings.tryGet("use_query_cache"))
-            {
-                mentioned_in_clause = true;
-                break;
-            }
-        }
-    }
+    bool mentioned_in_clause
+        = std::any_of(
+              settings_changes.begin(),
+              settings_changes.end(),
+              [](const auto & change) { return change.name == "use_query_cache"; })
+        || std::any_of(
+              default_settings.begin(),
+              default_settings.end(),
+              [](const auto & setting_name) { return setting_name == "use_query_cache"; });
 
     if (!mentioned_in_clause)
         return {};
@@ -2568,7 +2541,8 @@ static bool shouldUseQueryCacheForSubquery(
     /// For the top-level query, this setting is handled by `executeQuery` (with `is_subquery = false` key).
     if (is_subquery)
     {
-        if (auto explicit_setting = explicitUseQueryCacheSetting(query_node))
+        if (auto explicit_setting = explicitUseQueryCacheSetting(
+                query_node.getSettingsChanges(), query_node.getDefaultSettings(), query_node.getContext()))
             return *explicit_setting;
     }
 
@@ -2719,7 +2693,8 @@ void Planner::buildPlanForUnionNode()
     bool can_use_query_result_cache = query_context->getCanUseQueryResultCache();
     std::optional<bool> explicit_use_query_cache;
     if (select_query_options.is_subquery)
-        explicit_use_query_cache = explicitUseQueryCacheSetting(union_node);
+        explicit_use_query_cache = explicitUseQueryCacheSetting(
+            union_node.getSettingsChanges(), union_node.getDefaultSettings(), union_node.getContext());
 
     bool should_cache = select_query_options.is_subquery && query_result_cache != nullptr
         && isQueryKindEligibleForSubqueryCache(query_context)

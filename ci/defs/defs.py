@@ -28,7 +28,6 @@ class RunnerLabels:
     ARM_MEDIUM_CPU = ["self-hosted", "arm-medium-cpu"]
     AMD_MEDIUM_MEM = ["self-hosted", "amd-medium-mem"]
     ARM_MEDIUM_MEM = ["self-hosted", "arm-medium-mem"]
-    ARM_MEDIUM_STORAGE = ["self-hosted", "arm-medium-storage"]
     AMD_SMALL = ["self-hosted", "amd-small"]
     ARM_SMALL = ["self-hosted", "arm-small"]
     AMD_SMALL_MEM = ["self-hosted", "amd-small-mem"]
@@ -141,14 +140,14 @@ DOCKERS = [
         name="clickhouse/fasttest",
         path="./ci/docker/fasttest",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/cctools"],
+        depends_on=[],
         build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
         name="clickhouse/binary-builder",
         path="./ci/docker/binary-builder",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/fasttest", "clickhouse/cctools"],
+        depends_on=["clickhouse/fasttest"],
     ),
     Docker.Config(
         name="clickhouse/wasm-builder",
@@ -160,14 +159,13 @@ DOCKERS = [
         name="clickhouse/stateless-test",
         path="./ci/docker/stateless-test",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base", "clickhouse/cctools"],
+        depends_on=["clickhouse/test-base"],
     ),
     Docker.Config(
         name="clickhouse/cctools",
         path="./ci/docker/cctools",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
-        build_args=APT_MIRROR_BUILD_ARGS,
+        depends_on=["clickhouse/fasttest"],
     ),
     Docker.Config(
         name="clickhouse/utils",
@@ -179,7 +177,7 @@ DOCKERS = [
         name="clickhouse/test-base",
         path="./ci/docker/test-base",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/cctools"],
+        depends_on=[],
         build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
@@ -198,7 +196,7 @@ DOCKERS = [
         name="clickhouse/performance-comparison",
         path="./ci/docker/performance-comparison",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base", "clickhouse/cctools"],
+        depends_on=["clickhouse/test-base"],
     ),
     Docker.Config(
         name="clickhouse/keeper-jepsen-test",
@@ -216,13 +214,13 @@ DOCKERS = [
         name="clickhouse/integration-test",
         path="./ci/docker/integration/base",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base", "clickhouse/cctools"],
+        depends_on=["clickhouse/test-base"],
     ),
     Docker.Config(
         name="clickhouse/integration-tests-runner",
         path="./ci/docker/integration/runner",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base", "clickhouse/cctools"],
+        depends_on=["clickhouse/test-base"],
     ),
     Docker.Config(
         name="clickhouse/integration-test-with-unity-catalog",
@@ -360,17 +358,18 @@ DOCKERS = [
 class BuildTypes(metaclass=MetaClasses.WithIter):
     AMD_DEBUG = "amd_debug"
     AMD_RELEASE = "amd_release"
-    # The release builds of master made exactly like a PR release build (MasterCI
-    # only, see PERFORMANCE_REFERENCE_TO_RELEASE in build_clickhouse.py). Their
-    # server binary is the reference of the PR performance comparison, and as
-    # master builds they also fill the shared sccache that PR builds read.
-    AMD_RELEASE_PERFORMANCE_REFERENCE = "amd_release_performance_reference"
+    # sccache-warmup variants of the release builds (MasterCI only): PR-style
+    # cmake flags (no official-build flag, debug symbols stripped, no PGO/BOLT),
+    # but built on master so the shared sccache is populated read-write for
+    # read-only PR builds to reuse. See build_clickhouse.py and
+    # PR_CACHE_WARMUP_BUILD_TYPES.
+    AMD_RELEASE_PR_CACHE_WARMUP = "amd_release_pr_cache_warmup"
     AMD_BINARY = "amd_binary"
     AMD_ASAN_UBSAN = "amd_asan_ubsan"
     AMD_TSAN = "amd_tsan"
     AMD_MSAN = "amd_msan"
     ARM_RELEASE = "arm_release"
-    ARM_RELEASE_PERFORMANCE_REFERENCE = "arm_release_performance_reference"
+    ARM_RELEASE_PR_CACHE_WARMUP = "arm_release_pr_cache_warmup"
     ARM_DEBUG = "arm_debug"
     ARM_ASAN_UBSAN = "arm_asan_ubsan"
     ARM_TSAN = "arm_tsan"
@@ -381,12 +380,6 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     ARM_BINARY = "arm_binary"
     AMD_TIDY = "amd_tidy"
     ARM_TIDY = "arm_tidy"
-    # The limited clang-tidy check. Configured exactly like `arm_tidy`, but
-    # instead of running clang-tidy over the whole tree it analyzes only the
-    # translation units the change touches, which is what makes it fast enough
-    # to be part of the merge queue.
-    # See ci/jobs/scripts/clang_tidy_changed_files.py.
-    ARM_TIDY_CHANGED_FILES = "arm_tidy_changed_files"
     AMD_DARWIN = "amd_darwin"
     ARM_DARWIN = "arm_darwin"
     ARM_V80COMPAT = "arm_v80compat"
@@ -416,7 +409,6 @@ class JobNames:
     STYLE_CHECK = "Style check"
     CODE_REVIEW = "Code Review"
     FAST_TEST = "Fast test"
-    CLANG_TIDY_CHANGED_FILES = "Clang-tidy (changed files)"
     BUILD = "Build"
     UNITTEST = "Unit tests"
     STATELESS = "Stateless tests"
@@ -504,13 +496,11 @@ class ArtifactNames:
     LLVM_COVERAGE_FILE = "LLVM_COVERAGE_FILE"  # .profdata file
     LLVM_COVERAGE_INFO_FILE = "LLVM_COVERAGE_INFO_FILE"  # .info file generated from .profdata, used for debugging coverage results
     CH_AMD_RELEASE = "CH_AMD_RELEASE"
-    CH_AMD_RELEASE_PERFORMANCE_REFERENCE = "CH_AMD_RELEASE_PERFORMANCE_REFERENCE"
     CH_AMD_ASAN_UBSAN = "CH_AMD_ASAN_UBSAN"
     CH_AMD_TSAN = "CH_AMD_TSAN"
     CH_AMD_MSAN = "CH_AMD_MSAN"
     CH_AMD_BINARY = "CH_AMD_BINARY"
     CH_ARM_RELEASE = "CH_ARM_RELEASE"
-    CH_ARM_RELEASE_PERFORMANCE_REFERENCE = "CH_ARM_RELEASE_PERFORMANCE_REFERENCE"
     CH_ARM_DEBUG = "CH_ARM_DEBUG"
     CH_ARM_ASAN_UBSAN = "CH_ARM_ASAN_UBSAN"
     CH_ARM_TSAN = "CH_ARM_TSAN"
@@ -720,17 +710,6 @@ class ArtifactConfigs:
             path=f"{TEMP_DIR}/build/programs/clickhouse",
             compress_zst=True,
         )
-    )
-    # Built by MasterCI only, hence not part of the shared `clickhouse_binaries`.
-    clickhouse_performance_reference_binaries = Artifact.Config(
-        name="...",
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/programs/self-extracting/clickhouse",
-    ).parametrize(
-        names=[
-            ArtifactNames.CH_AMD_RELEASE_PERFORMANCE_REFERENCE,
-            ArtifactNames.CH_ARM_RELEASE_PERFORMANCE_REFERENCE,
-        ]
     )
     clickhouse_darwin_plain_binaries = Artifact.Config(
         name="...",

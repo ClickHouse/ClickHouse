@@ -298,10 +298,12 @@ void StorageMergeTree::startup()
             enableBackgroundWorkers();
             startBackgroundWorkers();
         }
-        /// The streaming subscription enrichment only reads parts and must also
+        /// Statistics refresh and the streaming subscription enrichment only read parts and must also
         /// run for read-only tables: without the streaming assignee, `triggerStreamingSubscriptionEnrichment`
         /// is a no-op and a `STREAM BOUNDED` read on the table never receives its first snapshot.
         background_streaming_assignee.start();
+        startStatisticsCache();
+
         /// A concurrent `shutdown()` (e.g. a `DETACH` racing with this async startup) may have already set
         /// `shutdown_called`. `shutdown()` publishes that flag before stopping the background workers, so if
         /// we observe it here — after arming — we must unwind *everything* we just armed above; otherwise a
@@ -363,6 +365,7 @@ void StorageMergeTree::shutdown(bool)
     {
         if (refresh_parts_task)
             refresh_parts_task->deactivate();
+        stopStatisticsCache();
         stopOutdatedAndUnexpectedDataPartsLoadingTask();
 
         /// Unlock all waiting mutations
@@ -390,6 +393,7 @@ void StorageMergeTree::stopAllBackgroundTasks()
 {
     if (refresh_parts_task)
         refresh_parts_task->deactivate();
+    stopStatisticsCache();
     stopOutdatedAndUnexpectedDataPartsLoadingTask();
     cleanup_thread.stop();
     background_operations_assignee.finish();
@@ -455,16 +459,6 @@ std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr local_context) cons
 {
     chassert(local_context);
 
-    /// Each part's rows and its bitmap come from one read snapshot, so the count matches a `SELECT`'s.
-    if (hasUniqueKey())
-    {
-        const auto uk_read_snapshot = makeDeleteBitmapSnapshot(local_context);
-        UInt64 res = 0;
-        for (const auto & part : getVisibleDataPartsVector(uk_read_snapshot->snapshotCSN(), uk_read_snapshot->readerTID()))
-            res += uk_read_snapshot->liveRows(*part);
-        return res;
-    }
-
     UInt64 res = 0;
     if (local_context->getCurrentTransaction())
     {
@@ -485,15 +479,8 @@ std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const Acti
 {
     chassert(local_context);
 
-    /// Guarded, so a plain count on a table without a unique key does not start a transaction
-    /// as a side effect.
-    DeleteBitmapSnapshotPtr uk_read_snapshot;
-    if (hasUniqueKey())
-        uk_read_snapshot = makeDeleteBitmapSnapshot(local_context);
-    auto parts = uk_read_snapshot
-        ? getVisibleDataPartsVector(uk_read_snapshot->snapshotCSN(), uk_read_snapshot->readerTID())
-        : getVisibleDataPartsVector(local_context);
-    return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, RangesInDataParts(parts), uk_read_snapshot.get());
+    auto parts = getVisibleDataPartsVector(local_context);
+    return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, RangesInDataParts(parts));
 }
 
 std::optional<UInt64> StorageMergeTree::totalBytes(ContextPtr) const

@@ -136,11 +136,6 @@ namespace ServerSetting
     extern const ServerSettingsBool s3_load_table_anonymously_if_credentials_restricted;
 }
 
-namespace S3RequestSetting
-{
-    extern const S3RequestSettingsBool use_idempotency_id;
-}
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -1203,17 +1198,6 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     /// with_table_structure = false: because there will be
     /// no table structure in table definition AST.
     StorageObjectStorageConfiguration::initialize(*configuration, args, context_copy, /* with_table_structure */false);
-
-#if USE_AWS_S3
-    /// Amazon S3 Tables rejects user-defined object metadata (`x-amz-meta-*`) in its data buckets with
-    /// `S3TablesUnsupportedHeader`, so don't stamp the idempotency id on the objects written into its tables.
-    /// An explicit `s3_use_idempotency_id` in the query settings still takes precedence on write.
-    if (catalog->getCatalogType() == DatabaseDataLakeCatalogType::S3_TABLES)
-    {
-        if (auto * s3_configuration = dynamic_cast<StorageS3Configuration *>(configuration.get()))
-            s3_configuration->s3_settings->request_settings[S3RequestSetting::use_idempotency_id] = false;
-    }
-#endif
 
     /// When we applied static credentials from database settings, they are authoritative:
     /// do not let a catalog-vended refresh callback (e.g. Unity/REST `requestCredentials`)

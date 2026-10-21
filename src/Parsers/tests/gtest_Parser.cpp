@@ -22,7 +22,6 @@
 #include <Parsers/Lexer.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
-#include "config.h"
 #include <Common/re2.h>
 #include <span>
 #include <string_view>
@@ -898,7 +897,6 @@ TEST(ParserRenameQueryDeathTest, FormatNullToDatabaseAborts)
 }
 #endif
 
-#if USE_PRQL
 static constexpr size_t kDummyMaxQuerySize = 256 * 1024;
 static constexpr size_t kDummyMaxParserDepth = 256;
 static constexpr size_t kDummyMaxParserBacktracks = 1000000;
@@ -918,7 +916,6 @@ INSTANTIATE_TEST_SUITE_P(
                 "WITH\n    table_0 AS\n    (\n        SELECT\n            country,\n            city,\n            AVG(c + some_derived_value) AS _expr_0,\n            MAX(c + some_derived_value) AS aggr\n        FROM matches\n        WHERE (start_date > toDate('2023-05-30')) AND ((c + some_derived_value) > 0)\n        GROUP BY\n            country,\n            city\n    )\nSELECT\n    country,\n    city,\n    _expr_0,\n    aggr,\n    CONCAT(city, ' in ', country) AS place,\n    LEFT(country, 2) AS country_code\nFROM table_0\nORDER BY\n    aggr ASC,\n    country DESC\nLIMIT 20",
             },
         })));
-#endif
 
 namespace
 {

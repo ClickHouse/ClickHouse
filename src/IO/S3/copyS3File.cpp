@@ -65,7 +65,6 @@ namespace S3RequestSetting
     extern const S3RequestSettingsUInt64 max_single_operation_copy_size;
     extern const S3RequestSettingsUInt64 max_single_part_upload_size;
     extern const S3RequestSettingsUInt64 max_unexpected_write_error_retries;
-    extern const S3RequestSettingsBool use_idempotency_id;
     extern const S3RequestSettingsUInt64 max_upload_part_size;
     extern const S3RequestSettingsUInt64 min_upload_part_size;
     extern const S3RequestSettingsString storage_class_name;
@@ -124,9 +123,7 @@ namespace
         const LoggerPtr log;
         const std::optional<S3::RequestChecksum::Algorithm> upload_checksum_algorithm;
         /// Identifies this upload among all writers to `dest_key`, stamped by `CreateMultipartUpload`.
-        /// Empty if disabled by the `use_idempotency_id` request setting.
-        const String idempotency_id
-            = request_settings[S3RequestSetting::use_idempotency_id] ? getRandomASCIIString(S3::IDEMPOTENCY_ID_LENGTH) : "";
+        const String idempotency_id = getRandomASCIIString(S3::IDEMPOTENCY_ID_LENGTH);
 
         /// Represents a task uploading a single part.
         /// Keep this struct small because there can be thousands of parts.
@@ -156,8 +153,7 @@ namespace
             request.SetContentType("binary/octet-stream");
 
             auto metadata = object_metadata.value_or(ObjectAttributes{});
-            if (!idempotency_id.empty())
-                metadata[S3::IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
+            metadata[S3::IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
             request.SetMetadata(metadata);
 
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];

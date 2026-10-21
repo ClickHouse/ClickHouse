@@ -86,18 +86,6 @@
                         "unencoded_byte_array_data_bytes": null,
                         "repetition_level_histogram": [],
                         "definition_level_histogram": []
-                    },
-                    "have_geospatial_statistics": false,
-                    "geospatial_statistics": {
-                        "xmin": null,
-                        "xmax": null,
-                        "ymin": null,
-                        "ymax": null,
-                        "zmin": null,
-                        "zmax": null,
-                        "mmin": null,
-                        "mmax": null,
-                        "geospatial_types": []
                     }
                 },
                 {
@@ -119,18 +107,6 @@
                         "unencoded_byte_array_data_bytes": null,
                         "repetition_level_histogram": [],
                         "definition_level_histogram": []
-                    },
-                    "have_geospatial_statistics": false,
-                    "geospatial_statistics": {
-                        "xmin": null,
-                        "xmax": null,
-                        "ymin": null,
-                        "ymax": null,
-                        "zmin": null,
-                        "zmax": null,
-                        "mmin": null,
-                        "mmax": null,
-                        "geospatial_types": []
                     }
                 },
                 {
@@ -152,18 +128,6 @@
                         "unencoded_byte_array_data_bytes": null,
                         "repetition_level_histogram": [],
                         "definition_level_histogram": []
-                    },
-                    "have_geospatial_statistics": false,
-                    "geospatial_statistics": {
-                        "xmin": null,
-                        "xmax": null,
-                        "ymin": null,
-                        "ymax": null,
-                        "zmin": null,
-                        "zmax": null,
-                        "mmin": null,
-                        "mmax": null,
-                        "geospatial_types": []
                     }
                 }
             ]
@@ -194,18 +158,6 @@
                         "unencoded_byte_array_data_bytes": null,
                         "repetition_level_histogram": [],
                         "definition_level_histogram": []
-                    },
-                    "have_geospatial_statistics": false,
-                    "geospatial_statistics": {
-                        "xmin": null,
-                        "xmax": null,
-                        "ymin": null,
-                        "ymax": null,
-                        "zmin": null,
-                        "zmax": null,
-                        "mmin": null,
-                        "mmax": null,
-                        "geospatial_types": []
                     }
                 },
                 {
@@ -227,18 +179,6 @@
                         "unencoded_byte_array_data_bytes": null,
                         "repetition_level_histogram": [],
                         "definition_level_histogram": []
-                    },
-                    "have_geospatial_statistics": false,
-                    "geospatial_statistics": {
-                        "xmin": null,
-                        "xmax": null,
-                        "ymin": null,
-                        "ymax": null,
-                        "zmin": null,
-                        "zmax": null,
-                        "mmin": null,
-                        "mmax": null,
-                        "geospatial_types": []
                     }
                 },
                 {
@@ -260,18 +200,6 @@
                         "unencoded_byte_array_data_bytes": null,
                         "repetition_level_histogram": [],
                         "definition_level_histogram": []
-                    },
-                    "have_geospatial_statistics": false,
-                    "geospatial_statistics": {
-                        "xmin": null,
-                        "xmax": null,
-                        "ymin": null,
-                        "ymax": null,
-                        "zmin": null,
-                        "zmax": null,
-                        "mmin": null,
-                        "mmax": null,
-                        "geospatial_types": []
                     }
                 }
             ]
@@ -396,18 +324,6 @@
                         "definition_level_histogram": [
                             5
                         ]
-                    },
-                    "have_geospatial_statistics": false,
-                    "geospatial_statistics": {
-                        "xmin": null,
-                        "xmax": null,
-                        "ymin": null,
-                        "ymax": null,
-                        "zmin": null,
-                        "zmax": null,
-                        "mmin": null,
-                        "mmax": null,
-                        "geospatial_types": []
                     }
                 }
             ]

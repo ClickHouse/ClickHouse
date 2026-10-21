@@ -8,7 +8,6 @@ import struct
 import time
 import xml.etree.ElementTree as ET
 
-import psycopg2
 import pymysql
 import pytest
 
@@ -33,7 +32,7 @@ MYSQL_USERS = {
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
-    main_configs=["config/mysql.xml", "config/postgresql.xml"],
+    main_configs=["config/mysql.xml"],
     user_configs=["config/users.xml"],
     stay_alive=True,
 )
@@ -99,37 +98,9 @@ def test_one_time_password(started_cluster):
         query_text, user="totuser", password=f"aa+bb+{old_password}"
     )
 
-    # Without a code the response does not depend on the password, so the error REQUIRED_SECOND_FACTOR
-    # does not confirm a guessed password: a wrong or an empty password gets exactly the same error
-    error_without_code = node.query_and_get_error(
+    assert "REQUIRED_SECOND_FACTOR" in node.query_and_get_error(
         query_text, user="totuser", password="aa+bb"
     )
-    assert "REQUIRED_SECOND_FACTOR" in error_without_code
-    for password in ["wrongpwd", ""]:
-        assert error_without_code == node.query_and_get_error(
-            query_text, user="totuser", password=password
-        )
-
-    http_responses = [
-        node.http_request(
-            "",
-            params={"query": query_text},
-            headers={"X-ClickHouse-User": "totuser", "X-ClickHouse-Key": password},
-        )
-        for password in ["aa+bb", "wrongpwd"]
-    ]
-    for response in http_responses:
-        assert response.status_code == 403
-        assert response.headers["X-ClickHouse-Exception-Code"] == "767"
-    assert http_responses[0].text == http_responses[1].text
-
-    response = node.http_request(
-        "",
-        params={"query": query_text},
-        headers={"X-ClickHouse-User": "totuser", "X-ClickHouse-Key": "aa+bb+000000000"},
-    )
-    assert response.status_code == 403
-    assert response.headers["X-ClickHouse-Exception-Code"] == "516"
 
     assert "totuser42\n" == node.query(
         query_text, user="totuser", password=f"aa+bb+{get_otp('totuser')}"
@@ -225,17 +196,13 @@ def test_interactive_totp_authentication(started_cluster):
 
         # Then enter wrong TOTP when prompted
         c.expect("TOTP.*:")
-        c.send("000000000", eol="\r")
+        c.send("000000", eol="\r")
         c.expect(expected_error)
 
-    # A wrong code of the configured length (9 digits); a suffix of another length counts as no code
-    with client(command=f"{client_command(user0)} --password aa+bb+000000000") as c:
+    with client(command=f"{client_command(user0)} --password aa+bb+000000") as c:
         c.expect(expected_error)
 
-    # A wrong password without a code is asked for the code like a right one, and fails only after that
     with client(command=f"{client_command(user0)} --password wrongpwd") as c:
-        c.expect("TOTP.*:")
-        c.send(get_otp(user0), eol="\r")
         c.expect(expected_error)
 
     with client(
@@ -408,47 +375,6 @@ def test_mysql_protocol_user_altered_during_authentication(started_cluster):
         node.query(f"DROP USER IF EXISTS {user}")
 
 
-def test_postgresql_protocol_requires_totp(started_cluster):
-    """The PostgreSQL protocol must enforce TOTP. A SCRAM proof is derived from the password
-    alone and cannot carry a one-time password, so the server refuses the SCRAM exchange for
-    a `scram_sha256_password` user with TOTP. For cleartext password authentication the client
-    appends the TOTP to the password."""
-
-    def connect(user, password):
-        return psycopg2.connect(
-            host=node.ip_address,
-            port=9005,
-            user=user,
-            password=password,
-            dbname="default",
-        )
-
-    # A SCRAM user with TOTP must be refused: the exchange cannot verify the second factor.
-    scram_user = "totuser_postgresql_scram"
-    with pytest.raises(psycopg2.OperationalError, match="not supported"):
-        connect(scram_user, "abacaba")
-
-    with pytest.raises(psycopg2.OperationalError, match="not supported"):
-        connect(scram_user, f"abacaba+{get_otp(scram_user)}")
-
-    # Cleartext password authentication enforces the second factor.
-    # The message is intentionally generic and does not reveal the reason.
-    user = "totuser_postgresql_plaintext"
-    with pytest.raises(psycopg2.OperationalError, match="Invalid user or password"):
-        connect(user, "aa+bb")
-
-    with pytest.raises(psycopg2.OperationalError, match="Invalid user or password"):
-        connect(user, "aa+bb+000000000")
-
-    conn = connect(user, f"aa+bb+{get_otp(user)}")
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT currentUser()")
-        assert cursor.fetchall() == [(user,)]
-    finally:
-        conn.close()
-
-
 def test_one_time_only_no_password(started_cluster):
     query_text = "SELECT currentUser() || toString(42)"
     user0, user1 = NO_PASSWORD_USERS
@@ -459,10 +385,7 @@ def test_one_time_only_no_password(started_cluster):
 
     assert f"{user0}42\n" == node.query(query_text, user=user0, password=get_otp(user0))
 
-    # The client cannot know that the account has no password: it asks for the password first
     with client(command=f"{client_command(user0)}") as c:
-        c.expect("Password.*:")
-        c.send("", eol="\r")
         c.expect("TOTP.*:")
         c.send(get_otp(user0, offset_steps=1), eol="\r")
         c.expect(prompt)

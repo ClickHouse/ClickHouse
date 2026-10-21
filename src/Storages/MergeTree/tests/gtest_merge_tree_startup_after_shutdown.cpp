@@ -112,7 +112,9 @@ TEST(StorageMergeTree, StartupAfterShutdownArmsNoBackgroundTasks)
     EXPECT_EQ(countLiveTasks(context, storage_id), 0u);
 }
 
-/// `startup` and `shutdown` running concurrently, in any interleaving, must leave no task armed.
+/// `startup` and `shutdown` running concurrently, in any interleaving, must leave no task armed. This also
+/// covers `startStatisticsCache` reassigning the `refresh_stats_task` holder while `shutdown` deactivates it,
+/// which is a data race without `refresh_stats_task_mutex` (visible under TSan).
 TEST(StorageMergeTree, ConcurrentStartupAndShutdownArmNoBackgroundTasks)
 {
     using namespace DB;

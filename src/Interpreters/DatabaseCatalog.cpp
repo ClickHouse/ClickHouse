@@ -106,7 +106,6 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char database_catalog_drop_finally_before_id_erase[];
-    extern const char database_catalog_drop_finally_after_notify[];
 }
 
 class DatabaseNameHints : public IHints<>
@@ -624,12 +623,8 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 
 bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
 {
-    static const char * information_schema_views[] = {
-        "schemata", "tables", "views", "columns", "key_column_usage", "referential_constraints", "statistics",
-        "engines", "character_sets", "collations", "user_privileges", "schema_privileges", "table_privileges", "column_privileges"};
-    static const char * information_schema_views_uppercase[] = {
-        "SCHEMATA", "TABLES", "VIEWS", "COLUMNS", "KEY_COLUMN_USAGE", "REFERENTIAL_CONSTRAINTS", "STATISTICS",
-        "ENGINES", "CHARACTER_SETS", "COLLATIONS", "USER_PRIVILEGES", "SCHEMA_PRIVILEGES", "TABLE_PRIVILEGES", "COLUMN_PRIVILEGES"};
+    static const char * information_schema_views[] = {"schemata", "tables", "views", "columns"};
+    static const char * information_schema_views_uppercase[] = {"SCHEMATA", "TABLES", "VIEWS", "COLUMNS"};
 
     auto check_database_and_table_name = [&](const String & database_name, const String & table_name)
     {
@@ -638,14 +633,15 @@ bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
             auto storage = getSystemDatabase()->tryGetTable(table_name, getContext());
             return storage && storage->isSystemStorage();
         }
-        /// Each view is attached under both its lowercase and its UPPERCASE name in both databases
-        /// (see attachInformationSchema), so both spellings are predefined in both databases.
-        if (database_name == INFORMATION_SCHEMA || database_name == INFORMATION_SCHEMA_UPPERCASE)
+        if (database_name == INFORMATION_SCHEMA)
         {
             return std::find(std::begin(information_schema_views), std::end(information_schema_views), table_name)
-                    != std::end(information_schema_views)
-                || std::find(std::begin(information_schema_views_uppercase), std::end(information_schema_views_uppercase), table_name)
-                    != std::end(information_schema_views_uppercase);
+                != std::end(information_schema_views);
+        }
+        if (database_name == INFORMATION_SCHEMA_UPPERCASE)
+        {
+            return std::find(std::begin(information_schema_views_uppercase), std::end(information_schema_views_uppercase), table_name)
+                != std::end(information_schema_views_uppercase);
         }
         return false;
     };
@@ -1802,9 +1798,6 @@ void DatabaseCatalog::dropTablesParallel(TablesMarkedAsDropped tables_to_drop)
                 /// tables_marked_dropped_ids until the guarded erase below: window for a same-UUID re-drop.
                 FailPointInjection::pauseFailPoint(FailPoints::database_catalog_drop_finally_before_id_erase);
 
-                /// The dropped storage is destroyed before the waiters of `DROP ... SYNC` see the drop finished.
-                table_iterator->table.reset();
-
                 TableMarkedAsDropped table_to_delete_without_lock;
                 {
                     std::lock_guard lock(tables_marked_dropped_mutex);
@@ -1822,8 +1815,6 @@ void DatabaseCatalog::dropTablesParallel(TablesMarkedAsDropped tables_to_drop)
 
                     wait_table_finally_dropped.notify_all();
                 }
-
-                FailPointInjection::pauseFailPoint(FailPoints::database_catalog_drop_finally_after_notify);
             }
             catch (...)
             {

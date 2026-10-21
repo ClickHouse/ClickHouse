@@ -1257,7 +1257,7 @@ The following table shows how Iceberg data types are mapped to ClickHouse data t
 
 The data type mappings above apply to reads. The following limitations apply when ClickHouse creates or evolves Iceberg schemas and writes data:
 
-- ClickHouse cannot create an Iceberg schema containing `Bool`, `FixedString`, `Int8`, `UInt8`, `Int16`, `UInt16`, `Time`, or `Time64`, or add or modify a column to one of these types. The operation fails with an unsupported-type exception. This does not prevent inserting `Bool` values into existing Iceberg columns.
+- ClickHouse cannot create an Iceberg schema containing `Bool`, `FixedString`, `Int8`, `UInt8`, `Int16`, or `UInt16`, or add or modify a column to one of these types. The operation fails with an unsupported-type exception. This does not prevent inserting `Bool` values into existing Iceberg columns.
 - ClickHouse cannot create an Iceberg schema containing `UInt64` either: the widest Iceberg integer type is the signed 64-bit `long`, which cannot represent every `UInt64` value. Use `Int64` or `Decimal(20, 0)`. Creating a table with a `UInt64` column, including a nested one such as `Array(UInt64)`, fails with an exception even if the Iceberg table already exists at the path. A `UInt32` column is widened to Iceberg `long` for the same reason, and is therefore read back as `Int64`.
 - When ClickHouse creates or evolves an Iceberg schema, it maps every `DateTime` and `DateTime64` column to Iceberg `timestamp`, which has microsecond precision and no timezone. ClickHouse cannot generate `timestamptz`, `timestamp_ns`, or `timestamptz_ns` schema types, so higher precision and timezone semantics are not represented in the Iceberg schema.
 - ClickHouse cannot write to an Iceberg table that uses a `decimal`, `fixed`, `timestamp_ns`, or `timestamptz_ns` column as a direct partition field. The operation fails with an unsupported-type exception.
@@ -1858,27 +1858,6 @@ CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 Merge-on-read is not implemented, so **primary-key tables cannot be read**: the reader returns the raw union of the
 snapshot's data files, which still contains the row versions superseded by later upserts. Reading a table whose schema
 declares `primary-key` therefore throws.
-
-## Tables with deletion vectors {#deletion-vectors}
-
-Deletion vectors are not applied, so **snapshots with deletion vectors cannot be read**: the result would still
-contain the rows that later `DELETE` and `UPDATE` statements removed. Reading a snapshot whose index manifest lists
-deletion vectors therefore throws, even after `deletion-vectors.enabled` is turned off.
-
-A full compaction in Paimon (`compact_strategy => 'full'`) applies the deletion vectors, and the snapshots created after
-it can be read again.
-
-An incremental read stops at the first unconsumed snapshot with deletion vectors and stays there even after a full
-compaction, because every snapshot up to that compaction lists the same deletion vectors. The cursor is not advanced.
-The read resumes once Paimon expires those snapshots, or once they are abandoned by moving the cursor to the snapshot of
-the full compaction, which drops every snapshot not yet consumed up to it (see
-[When a snapshot cannot be read](#when-a-snapshot-cannot-be-read)):
-
-```bash
-clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<snapshot id of the full compaction>'"
-```
-
-Either way, the rows that those deletion vectors removed stay in what the incremental read has already delivered.
 
 ## Settings {#settings}
 

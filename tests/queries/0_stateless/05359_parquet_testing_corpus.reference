@@ -66,16 +66,16 @@ data/flba12_timestamp.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
 data/float16_nonzeros_and_nans.parquet	x Nullable(Float32)	8	10255489029228252868
 data/float16_zeros_and_nans.parquet	x Nullable(Float32)	3	8185591135324831177
 data/floating_orders_nan_count.parquet	float_ieee754 Float32, float_typedef Float32, double_ieee754 Float64, double_typedef Float64, float16_ieee754 Float32, float16_typedef Float32	50	3277100030492025908
-data/geospatial/crs-arbitrary-value.parquet	wkt Nullable(String), geometry Polygon	1	4376663470311987882
-data/geospatial/crs-default.parquet	wkt Nullable(String), geometry Polygon	1	4925107662361951733
-data/geospatial/crs-geography.parquet	wkt Nullable(String), geography Geometry	1	4925107662361951733
-data/geospatial/crs-projjson.parquet	wkt Nullable(String), geometry Polygon	1	4376663470311987882
-data/geospatial/crs-srid.parquet	wkt Nullable(String), geometry Polygon	1	4376663470311987882
-data/geospatial/geography-lines.parquet	id Nullable(Int64), geometry LineString	499	11955191970326423809
-data/geospatial/geography-points.parquet	id Nullable(Int64), geometry Point	500	921765012531809185
-data/geospatial/geography-polygons.parquet	id Nullable(Int64), geometry Polygon	500	11650904259029060845
-data/geospatial/geospatial-with-nan.parquet	group Nullable(String), wkt Nullable(String), geometry Nullable(String)	3	9827706560882024052
-data/geospatial/geospatial.parquet	group Nullable(String), wkt Nullable(String), geometry Nullable(String)	196	14194775638968559790
+data/geospatial/crs-arbitrary-value.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
+data/geospatial/crs-default.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
+data/geospatial/crs-geography.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
+data/geospatial/crs-projjson.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
+data/geospatial/crs-srid.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
+data/geospatial/geography-lines.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
+data/geospatial/geography-points.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
+data/geospatial/geography-polygons.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
+data/geospatial/geospatial-with-nan.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
+data/geospatial/geospatial.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
 data/hadoop_lz4_compressed.parquet	c0 Int64, c1 String, v11 Nullable(Float64)	4	12663793641782637981
 data/hadoop_lz4_compressed_larger.parquet	a String	10000	2123126204979134156
 data/incorrect_map_schema.parquet	my_map Map(String, Nullable(String))	1	16501389170884063001

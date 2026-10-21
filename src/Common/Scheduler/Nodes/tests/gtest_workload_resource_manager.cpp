@@ -594,45 +594,6 @@ TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueue)
 // failed the request), the thread-local `Request` must be reset back to `Finished`. Otherwise
 // the next `ResourceGuard` on the same thread chasserts in `enqueue` because the request is
 // still in `Dequeued` state with `exception` set.
-TEST(SchedulerWorkloadResourceManager, DropWorkloadFailsPendingRequests)
-{
-    ResourceTest t;
-
-    t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
-    t.query("CREATE WORKLOAD all SETTINGS max_io_requests = 1");
-    t.query("CREATE WORKLOAD intermediate IN all");
-
-    std::barrier<std::__empty_completion> sync_before_enqueue(2);
-    std::barrier<std::__empty_completion> sync_before_drop(3);
-    std::barrier<std::__empty_completion> sync_after_drop(2);
-    t.async("intermediate", "res1", [&] (ResourceLink link)
-    {
-        TestGuard g(t, link, 1);
-        sync_before_enqueue.arrive_and_wait();
-        sync_before_drop.arrive_and_wait(); // 1st resource request is consuming
-        sync_after_drop.arrive_and_wait(); // 1st resource request is still consuming
-    });
-
-    sync_before_enqueue.arrive_and_wait(); // to maintain correct order of resource requests
-
-    t.async("intermediate", "res1", [&] (ResourceLink link)
-    {
-        {
-            TestGuard g(t, link, 1, EnqueueOnly);
-            sync_before_drop.arrive_and_wait(); // 2nd resource request is enqueued
-            g.waitFailed("is about to be destructed");
-        }
-        // The dropped workload's queue is kept alive by this classifier, but it must not accept new requests.
-        EXPECT_THROW(ResourceGuard(ResourceGuard::Metrics::getIOWrite(), link, 1), DB::Exception);
-    });
-
-    sync_before_drop.arrive_and_wait();
-    t.query("DROP WORKLOAD intermediate");
-    sync_after_drop.arrive_and_wait();
-
-    t.wait(); // Wait for threads to finish before destructing locals
-}
-
 TEST(SchedulerWorkloadResourceManager, ResourceGuardDefaultLockResetsOnFailure)
 {
     ResourceTest t;
@@ -1122,10 +1083,6 @@ struct TestQuery {
     UInt64 work_left = UInt64(-1);
     String name;
 
-    // Park control (to emulate worker threads entering a non-CPU wait, e.g. blocking I/O).
-    bool park_requested = false;
-    size_t parked_threads = 0;
-
     // Only used if preemption is enabled
     struct ThreadStatus
     {
@@ -1220,53 +1177,6 @@ struct TestQuery {
             }
             std::this_thread::sleep_for(std::chrono::microseconds(100));
         }
-    }
-
-    // Ask all worker threads to park their CPU lease (emulate entering a blocking-I/O wait).
-    void requestPark()
-    {
-        std::unique_lock lock{mutex};
-        park_requested = true;
-        cv.notify_all();
-    }
-
-    // Let parked worker threads unpark and resume.
-    void releasePark()
-    {
-        std::unique_lock lock{mutex};
-        park_requested = false;
-        cv.notify_all();
-    }
-
-    // Wait until at least `count` worker threads have parked their lease.
-    void waitParkedThreads(size_t count)
-    {
-        std::unique_lock lock{mutex};
-        cv.wait(lock, [=, this] { return parked_threads >= count || query_is_finished; });
-    }
-
-    // If a park was requested, park this worker's lease (freeing its CPU slot), block until the
-    // park is released, then unpark. Master thread (0) is noncompeting and never parks here.
-    void maybePark(ISlotLease * cpu_lease, size_t thread_num)
-    {
-        if (!cpu_lease || thread_num == 0)
-            return;
-        {
-            std::unique_lock lock{mutex};
-            if (!park_requested || query_is_finished)
-                return;
-        }
-        if (!cpu_lease->park()) // free the CPU slot (the give-back happens here)
-            return;             // no-op (e.g. shutting down) -> do not unpark
-        {
-            std::unique_lock lock{mutex};
-            ++parked_threads;
-            cv.notify_all();
-            cv.wait(lock, [this] { return !park_requested || query_is_finished; });
-            --parked_threads;
-            cv.notify_all();
-        }
-        cpu_lease->unpark(); // re-acquire the slot (borrow)
     }
 
     // Returns unique thread number
@@ -1366,7 +1276,6 @@ struct TestQuery {
         {
             if (!controlConcurrency(cpu_lease))
                 break;
-            maybePark(cpu_lease, thread_num);
             if (!doWork(thread_num))
                 break;
         }
@@ -1498,33 +1407,6 @@ TEST(SchedulerWorkloadResourceManager, CPUSchedulingRoundRobin)
         // Q0 - is done, Q1 still have pending resource requests, but we cancel it
         queries.clear();
     }
-
-    t.wait();
-}
-
-TEST(SchedulerWorkloadResourceManager, CPULeaseParkDoesNotOverAcquireOwnSlots)
-{
-    // Regression: a single query occupies all its slots and parks its workers all at once (a long
-    // sequential phase). Parking must not push `granted` positive while every slot_id is leased —
-    // that would make the executor acquire an out-of-range slot (OOB in its per-slot arrays). The
-    // query must finish cleanly.
-    ResourceTest t;
-
-    // Target mode (master and worker share one resource), the only mode where parking is enabled.
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
-    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 4");
-
-    auto q = std::make_shared<TestQuery>(t);
-    q->start(TestQuery::AllocateLease, "all", 4); // master + 3 workers (all competing)
-    q->waitStartedThreads(4);
-
-    // All three worker threads park simultaneously. With the old accounting this made `granted > 0`
-    // while every slot_id was leased -> over-acquire -> out-of-range slot_id.
-    q->requestPark();
-    q->waitParkedThreads(3);
-
-    q->releasePark();
-    q.reset();
 
     t.wait();
 }
@@ -3436,100 +3318,6 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationDropQueueWhilePending)
     for (auto & th : waiters)
         th.join();
     EXPECT_EQ(threw.load(), waiter_count);
-}
-
-TEST(SchedulerWorkloadResourceManager, RetiredAllocationQueueOutlivesWorkload)
-{
-    ResourceTest t;
-
-    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
-    t.query("CREATE WORKLOAD A SETTINGS max_memory = 100");
-    t.query("CREATE WORKLOAD B SETTINGS max_memory = 100");
-
-    // Only `B`'s classifier retains the old hierarchy version after the temporary classifier for `A` is released.
-    ClassifierPtr classifier_b = t.manager->acquire("B");
-    auto * retired_queue = t.manager->acquire("A")->get("memory").allocation_queue;
-    ASSERT_NE(retired_queue, nullptr);
-    t.executeFromScheduler("memory", [&]
-    {
-        EXPECT_EQ(retired_queue->getWorkloadName(), "A");
-    });
-
-    t.query("CREATE WORKLOAD child IN A");
-    t.executeFromScheduler("memory", [&]
-    {
-        // Check retirement while `A` is still alive: this fails deterministically without relying on
-        // ASan or on the contents of freed memory when the retired queue is eventually destroyed.
-        EXPECT_TRUE(retired_queue->getWorkloadName().empty());
-    });
-
-    t.query("DROP WORKLOAD child");
-    EXPECT_NE(retired_queue, t.manager->acquire("A")->get("memory").allocation_queue);
-    t.query("DROP WORKLOAD A");
-
-    // Destroy the original queue after its workload, through the classifier for a different workload.
-    classifier_b.reset();
-}
-
-TEST(SchedulerWorkloadResourceManager, MemoryReservationDropWorkloadFailsRunningAllocation)
-{
-    ResourceTest t;
-
-    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
-    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
-    t.query("CREATE WORKLOAD A IN all");
-    t.query("CREATE WORKLOAD B IN all");
-
-    ClassifierPtr c_a = t.manager->acquire("A");
-    TestAllocation a(c_a->get("memory"), "a", 60);
-    a.waitSync();
-
-    // The classifier keeps `A`'s queue alive, but the allocation must not keep running outside the limits of `all`.
-    t.query("DROP WORKLOAD A");
-    EXPECT_THROW(a.waitSync(), Exception);
-    a.setSize(80);
-    EXPECT_THROW(a.waitSync(), Exception);
-
-    // The memory of the failed allocation is available to the rest of the hierarchy.
-    ClassifierPtr c_b = t.manager->acquire("B");
-    TestAllocation b(c_b->get("memory"), "b", 100);
-    b.waitSync();
-}
-
-TEST(SchedulerWorkloadResourceManager, MemoryReservationDropWorkloadWhileAllocating)
-{
-    ResourceTest t;
-
-    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
-    t.query("CREATE WORKLOAD A SETTINGS max_memory = 100, max_waiting_queries = 0");
-
-    ClassifierPtr c_a = t.manager->acquire("A");
-    ResourceLink link = c_a->get("memory");
-
-    // Keep inserting allocations into `A`'s queue while `A` is dropped. Every one is rejected and the rejection reads
-    // the workload's name: by `max_waiting_queries` before the purge, as an unusable queue after it. This lets TSan
-    // check those reads against the drop and the destruction of the workload node.
-    std::atomic<bool> dropped{false};
-    std::atomic<size_t> rejected{0};
-    std::thread allocator([&]
-    {
-        while (!dropped.load() || rejected.load() < 100)
-        {
-            try
-            {
-                TestAllocation allocation(link, "racer", 10);
-            }
-            catch (const Exception &)
-            {
-                rejected.fetch_add(1);
-            }
-        }
-    });
-
-    t.query("DROP WORKLOAD A");
-    dropped.store(true);
-    allocator.join();
-    EXPECT_GE(rejected.load(), 100);
 }
 
 // Regression: simulate the race where the owner's destructor reaches `queue.removeAllocation`

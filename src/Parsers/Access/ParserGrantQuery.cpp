@@ -854,7 +854,6 @@ Possible parameters:
 - `AZURE`
 - `BIGQUERY`
 - `DISK`
-- `ELASTICSEARCH`
 - `FILE`
 - `HDFS`
 - `HIVE`

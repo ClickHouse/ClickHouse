@@ -150,7 +150,6 @@ public:
         /// Settings to flush temporary data to the filesystem (external aggregation).
         /// 0 - do not use external aggregation.
         size_t max_bytes_before_external_group_by = 0;
-        size_t min_bytes_before_external_group_by = 0;
         /// Return empty result when aggregating without keys on empty set.
         bool empty_result_for_aggregation_by_empty_set = false;
         TemporaryDataOnDiskScopePtr tmp_data_scope;
@@ -323,7 +322,6 @@ public:
             size_t group_by_two_level_threshold_,
             size_t group_by_two_level_threshold_bytes_,
             size_t max_bytes_before_external_group_by_,
-            size_t min_bytes_before_external_group_by_,
             bool empty_result_for_aggregation_by_empty_set_,
             TemporaryDataOnDiskScopePtr tmp_data_scope_,
             size_t max_threads_,

@@ -44,7 +44,6 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/ProjectionsDescription.h>
 
-#include <algorithm>
 #include <unordered_map>
 
 namespace DB
@@ -242,8 +241,6 @@ static const ActionsDAG::Node * buildResidualFilterNode(
         filter_root = filter_root->children.front();
 
     auto query_atoms = ActionsDAG::extractConjunctionAtoms(filter_root);
-    /// `extractConjunctionAtoms` yields the atoms right to left, while the rebuilt `and` is evaluated left to right.
-    std::ranges::reverse(query_atoms);
 
     std::vector<ASTPtr> proj_conjuncts;
     extractConjunctsFromAST(projection_where, proj_conjuncts);
@@ -990,12 +987,6 @@ static Block makeBlockWithMinMaxFromStatistics(
     size_t covered_marks = 0;
     size_t covered_ranges = 0;
 
-    /// The columns whose estimates are needed, so that only their statistics are read.
-    NameSet required_columns;
-    for (const auto & stats_aggregate : stats_aggregates)
-        if (stats_aggregate.kind != StatisticsMinMaxAggregate::Kind::Count)
-            required_columns.insert(stats_aggregate.column_name);
-
     auto part_covered_by_statistics = [&](const RangesInDataPart & part_with_ranges)
     {
         const auto & part = part_with_ranges.data_part;
@@ -1016,9 +1007,7 @@ static Block makeBlockWithMinMaxFromStatistics(
         Estimates estimates;
         try
         {
-            /// An empty set would mean all columns, but `count` needs no statistics.
-            if (!required_columns.empty())
-                estimates = part->getEstimates(required_columns);
+            estimates = part->getEstimates();
         }
         catch (const Exception &)
         {

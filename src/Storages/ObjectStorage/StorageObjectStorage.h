@@ -173,12 +173,6 @@ public:
 
     std::shared_ptr<DataLake::ICatalog> getCatalog() const { return catalog; }
 
-    /// The body of `drop`, shared with `StorageObjectStorageCluster`.
-    static void dropTable(
-        const StorageObjectStorageConfigurationPtr & configuration,
-        const std::shared_ptr<DataLake::ICatalog> & catalog,
-        const StorageID & storage_id);
-
     /// True when the target commits the refresh cursor atomically with the data (Iceberg on a CAS catalog),
     /// so the refresh reads/persists the cursor here instead of in the Keeper znode.
     bool isTransactionalRefreshTarget();

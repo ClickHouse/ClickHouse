@@ -8,7 +8,129 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/components/Image.jsx";
 
-ClickHouse supports a wide selection of JOIN algorithms that trade execution speed for memory use. For JOIN syntax and semantics, see the [`JOIN` clause reference](/reference/statements/select/join). For prescriptive optimization guidance and worked examples, see [Minimize and optimize JOINs](/concepts/best-practices/minimize-optimize-joins).
+ClickHouse has [full `JOIN` support](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1), with a wide selection of join algorithms. To maximize performance, we recommend following the join optimization suggestions listed in this guide.
+
+- For optimal performance, you should aim to reduce the number of `JOIN`s in queries, especially for real-time analytical workloads where millisecond performance is required. Aim for a maximum of 3 to 4 joins in a query. We detail a number of changes to minimize joins in the [data modeling section](/guides/clickhouse/data-modelling/schema-design), including denormalization, dictionaries, and materialized views.
+- As of ClickHouse 24.12, the query planner automatically reorders two-table joins to place the smaller table on the right-hand side for optimal performance. In version 25.9, this was extended to optimize join order across queries joining three or more tables.
+- If your query requires a direct join i.e. a `LEFT ANY JOIN` - as shown below, we recommend using [Dictionaries](/concepts/features/dictionaries/index) where possible.
+
+<Image img="/images/guides/joins-1.webp" size="sm" alt="Left any join"/>
+
+- If performing inner joins, it is often more optimal to write these as sub-queries using the `IN` clause. Consider the following queries, which are functionally equivalent. Both find the number of `posts` that don't mention ClickHouse in the question but do in the `comments`.
+
+```sql
+SELECT count()
+FROM stackoverflow.posts AS p
+ANY INNER `JOIN` stackoverflow.comments AS c ON p.Id = c.PostId
+WHERE (p.Title != '') AND (p.Title NOT ILIKE '%clickhouse%') AND (p.Body NOT ILIKE '%clickhouse%') AND (c.Text ILIKE '%clickhouse%')
+```
+
+```response
+┌─count()─┐
+│       86 │
+└─────────┘
+
+1 row in set. Elapsed: 8.209 sec. Processed 150.20 million rows, 56.05 GB (18.30 million rows/s., 6.83 GB/s.)
+Peak memory usage: 1.23 GiB.
+```
+
+Note we use an `ANY INNER JOIN` vs. just an `INNER` join as we don't want the cartesian product i.e. we want only one match for each post.
+
+This join can be rewritten using a subquery, improving performance significantly:
+
+```sql
+SELECT count()
+FROM stackoverflow.posts
+WHERE (Title != '') AND (Title NOT ILIKE '%clickhouse%') AND (Body NOT ILIKE '%clickhouse%') AND (Id IN (
+        SELECT PostId
+        FROM stackoverflow.comments
+        WHERE Text ILIKE '%clickhouse%'
+))
+```
+
+```response
+┌─count()─┐
+│       86 │
+└─────────┘
+
+1 row in set. Elapsed: 2.284 sec. Processed 150.20 million rows, 16.61 GB (65.76 million rows/s., 7.27 GB/s.)
+Peak memory usage: 323.52 MiB.
+```
+
+Although ClickHouse makes attempts to push down conditions to all join clauses and subqueries, we recommend users always manually apply conditions to all sub-clauses where possible - thus minimizing the size of the data to `JOIN`. Consider the following example below, where we want to compute the number of up-votes for Java-related posts since 2020.
+
+A naive query, with the larger table on the left side, completes in 56s:
+
+```sql
+SELECT countIf(VoteTypeId = 2) AS upvotes
+FROM stackoverflow.posts AS p
+INNER JOIN stackoverflow.votes AS v ON p.Id = v.PostId
+WHERE has(arrayFilter(t -> (t != ''), splitByChar('|', p.Tags)), 'java') AND (p.CreationDate >= '2020-01-01')
+```
+
+```response
+┌─upvotes─┐
+│  261915 │
+└─────────┘
+
+1 row in set. Elapsed: 56.642 sec. Processed 252.30 million rows, 1.62 GB (4.45 million rows/s., 28.60 MB/s.)
+```
+
+Re-ordering this join improves performance dramatically to 1.5s:
+
+```sql
+SELECT countIf(VoteTypeId = 2) AS upvotes
+FROM stackoverflow.votes AS v
+INNER JOIN stackoverflow.posts AS p ON v.PostId = p.Id
+WHERE has(arrayFilter(t -> (t != ''), splitByChar('|', p.Tags)), 'java') AND (p.CreationDate >= '2020-01-01')
+```
+
+```response
+┌─upvotes─┐
+│  261915 │
+└─────────┘
+
+1 row in set. Elapsed: 1.519 sec. Processed 252.30 million rows, 1.62 GB (166.06 million rows/s., 1.07 GB/s.)
+```
+
+Adding a filter to the left side table improves performance even further to 0.5s.
+
+```sql
+SELECT countIf(VoteTypeId = 2) AS upvotes
+FROM stackoverflow.votes AS v
+INNER JOIN stackoverflow.posts AS p ON v.PostId = p.Id
+WHERE has(arrayFilter(t -> (t != ''), splitByChar('|', p.Tags)), 'java') AND (p.CreationDate >= '2020-01-01') AND (v.CreationDate >= '2020-01-01')
+```
+
+```response
+┌─upvotes─┐
+│  261915 │
+└─────────┘
+
+1 row in set. Elapsed: 0.597 sec. Processed 81.14 million rows, 1.31 GB (135.82 million rows/s., 2.19 GB/s.)
+Peak memory usage: 249.42 MiB.
+```
+
+This query can be improved even more by moving the `INNER JOIN` to a subquery, as noted earlier, maintaining the filter on both the outer and inner queries.
+
+```sql
+SELECT count() AS upvotes
+FROM stackoverflow.votes
+WHERE (VoteTypeId = 2) AND (PostId IN (
+        SELECT Id
+        FROM stackoverflow.posts
+        WHERE (CreationDate >= '2020-01-01') AND has(arrayFilter(t -> (t != ''), splitByChar('|', Tags)), 'java')
+))
+```
+
+```response
+┌─upvotes─┐
+│  261915 │
+└─────────┘
+
+1 row in set. Elapsed: 0.383 sec. Processed 99.64 million rows, 804.55 MB (259.85 million rows/s., 2.10 GB/s.)
+Peak memory usage: 250.66 MiB.
+```
 
 ## Choosing a JOIN algorithm {#choosing-a-join-algorithm}
 

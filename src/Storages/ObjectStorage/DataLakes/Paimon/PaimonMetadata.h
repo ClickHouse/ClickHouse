@@ -103,8 +103,7 @@ private:
         ManifestKind kind,
         const std::optional<Paimon::PartitionPruner> & partition_pruner,
         bool deduplicate,
-        bool track_deletes,
-        std::optional<Int64> incremental_cursor = {}) const;
+        bool track_deletes) const;
 
     /// Lock-free read of current state
     PaimonTableStatePtr getCurrentState() const;
@@ -114,9 +113,6 @@ private:
 
     /// Validate that the underlying Paimon table still has the same identity.
     void validateTableIdentity() const;
-
-    /// Throws if the snapshot's index manifest lists deletion vectors. Pass the cursor of an incremental read for its recovery hint.
-    void checkNoDeletionVectors(const PaimonTableState & state, std::optional<Int64> incremental_cursor = {}) const;
 
     /// Load state for a specific snapshot ID
     PaimonTableStatePtr loadStateForSnapshot(Int64 snapshot_id) const;
@@ -143,9 +139,6 @@ private:
 
     /// Get or load manifest content (uses cache)
     ManifestConstPtr getManifest(const String & manifest_path, Int64 schema_id) const;
-
-    /// Get or load index manifest content (uses cache)
-    PaimonIndexManifest getIndexManifest(const String & index_manifest_path) const;
 
     /// Validate configuration
     void checkSupportedConfiguration() const;
