@@ -433,9 +433,6 @@ public:
     /// `base_setting_name` is the name of the setting the base came from, used in error messages.
     static String resolveURLBase(const String & url, const String & base, const String & base_setting_name = "url_base");
 
-    /// Returns true if `url` starts with `scheme://`, so that `resolveURLBase` returns it unchanged for any base.
-    static bool isAbsoluteURL(const String & url);
-
     /// Rewrite engine args so that the URL literal (positional) or `url='...'`
     /// override (named-collection) matches the URL resolved via `url_base`.
     /// `skip_userinfo` skips the rewrite when the resolved URL embeds credentials,

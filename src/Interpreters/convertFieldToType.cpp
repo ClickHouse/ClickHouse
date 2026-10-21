@@ -145,15 +145,10 @@ Field convertStringToDecimalType(const Field & from, const DataTypeDecimal<T> & 
 }
 
 template <typename From, typename T>
-Field convertDecimalToDecimalType(const Field & from, const DataTypeDecimal<T> & type, bool strict)
+Field convertDecimalToDecimalType(const Field & from, const DataTypeDecimal<T> & type)
 {
     auto field = from.safeGet<DecimalField<From>>();
-    T value{};
-    if (!strict)
-        value = convertDecimals<DataTypeDecimal<From>, DataTypeDecimal<T>>(field.getValue(), field.getScale(), type.getScale());
-    /// Does not fit `type`, so it equals none of its values.
-    else if (!tryConvertDecimals<DataTypeDecimal<From>, DataTypeDecimal<T>>(field.getValue(), field.getScale(), type.getScale(), value))
-        return {};
+    T value = convertDecimals<DataTypeDecimal<From>, DataTypeDecimal<T>>(field.getValue(), field.getScale(), type.getScale());
     return DecimalField<T>(value, type.getScale());
 }
 
@@ -207,13 +202,13 @@ Field convertDecimalType(const Field & from, const To & type, bool strict)
     else if (from.getType() == Field::Types::String)
         result = convertStringToDecimalType(from, type);
     else if (from.getType() == Field::Types::Decimal32)
-        result = convertDecimalToDecimalType<Decimal32>(from, type, strict);
+        result = convertDecimalToDecimalType<Decimal32>(from, type);
     else if (from.getType() == Field::Types::Decimal64)
-        result = convertDecimalToDecimalType<Decimal64>(from, type, strict);
+        result = convertDecimalToDecimalType<Decimal64>(from, type);
     else if (from.getType() == Field::Types::Decimal128)
-        result = convertDecimalToDecimalType<Decimal128>(from, type, strict);
+        result = convertDecimalToDecimalType<Decimal128>(from, type);
     else if (from.getType() == Field::Types::Decimal256)
-        result = convertDecimalToDecimalType<Decimal256>(from, type, strict);
+        result = convertDecimalToDecimalType<Decimal256>(from, type);
     else if (from.getType() == Field::Types::Float64)
         result = convertFloatToDecimalType<Float64>(from, type);
     else
@@ -222,9 +217,6 @@ Field convertDecimalType(const Field & from, const To & type, bool strict)
 
     if (strict)
     {
-        if (result.isNull())
-            return result;
-
         if (Field::isDecimal(from.getType()) && !accurateEquals(from, result))
             return {};
 
@@ -1043,8 +1035,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             for (size_t i = 0; i < src_arr_size; ++i)
             {
                 res[i] = convertFieldToType(src_arr[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
-                /// Strict: a value that is not representable is not a NULL element.
-                if (res[i].isNull() && (!canContainNull(element_type) || (strict && !src_arr[i].isNull())))
+                if (res[i].isNull() && !canContainNull(element_type))
                 {
                     // See the comment for Tuples below.
                     have_unconvertible_element = true;
@@ -1076,7 +1067,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             {
                 const auto & element_type = *(type_tuple->getElements()[i]);
                 res[i] = convertFieldToType(src_tuple[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
-                if (res[i].isNull() && (!canContainNull(element_type) || (strict && !src_tuple[i].isNull())))
+                if (res[i].isNull() && !canContainNull(element_type))
                 {
                     /*
                      * Either the source element was Null, or the conversion did not
@@ -1269,11 +1260,11 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
                 updated_entry[0] = convertFieldToType(key, key_type, nullptr, format_settings, strict, convert_inexact_floats);
 
-                if (updated_entry[0].isNull() && (!canContainNull(key_type) || (strict && !key.isNull())))
+                if (updated_entry[0].isNull() && !canContainNull(key_type))
                     have_unconvertible_element = true;
 
                 updated_entry[1] = convertFieldToType(value, value_type, nullptr, format_settings, strict, convert_inexact_floats);
-                if (updated_entry[1].isNull() && (!canContainNull(value_type) || (strict && !value.isNull())))
+                if (updated_entry[1].isNull() && !canContainNull(value_type))
                     have_unconvertible_element = true;
 
                 res[i] = updated_entry;

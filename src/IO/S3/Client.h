@@ -385,20 +385,6 @@ public:
         const HTTPRequestThrottler & request_throttler,
         const String & protocol = "https");
 
-    /// The configuration keeps a reference to the filter, so the filter must not be a temporary.
-    PocoHTTPClientConfiguration createClientConfiguration(
-        const String & force_region,
-        const RemoteHostFilter && remote_host_filter,
-        unsigned int s3_max_redirects,
-        const PocoHTTPClientConfiguration::RetryStrategy & retry_strategy,
-        bool s3_slow_all_threads_after_network_error,
-        bool s3_slow_all_threads_after_retryable_error,
-        bool enable_s3_requests_logging,
-        bool for_disk_s3,
-        std::optional<std::string> opt_disk_name,
-        const HTTPRequestThrottler & request_throttler,
-        const String & protocol = "https") = delete;
-
 private:
     ClientFactory();
 

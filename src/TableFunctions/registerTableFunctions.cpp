@@ -30,7 +30,6 @@ void registerTableFunctions()
 #endif
     registerTableFunctionRedis(factory);
     registerTableFunctionBigQuery(factory);
-    registerTableFunctionElasticsearch(factory);
 
 #if USE_ARROWFLIGHT
     registerTableFunctionArrowFlight(factory);

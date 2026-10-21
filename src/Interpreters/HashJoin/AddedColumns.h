@@ -95,8 +95,14 @@ struct LazyOutput
     void reserve(size_t size) { row_refs.reserve(size); }
 
     /// `ref_word` is either an inline single ref or a RowRefList list word (pointer + count).
-    /// Out of line: inlined into the probe loops it makes them slower even where it does not run.
-    NO_INLINE void addRef(UInt64 ref_word);
+    void addRef(UInt64 ref_word)
+    {
+        chassert(ref_word != 0);
+        row_refs.emplace_back(ref_word);
+        const auto rows = refWordRows(ref_word);
+        row_count += rows;
+        hash_table_matches += rows;
+    }
 
     void addDefault()
     {
@@ -230,16 +236,7 @@ public:
 
     /// Encoded RowRef word (inline single ref, including an ASOF match) or a RowRefList
     /// list word (pointer + count).
-    ALWAYS_INLINE void appendFromBlock(UInt64 ref_word)
-    {
-#ifndef NDEBUG
-        /// `ref_word` may be an inline single ref or a list word (pointer + count); firstWord yields
-        /// the head ref of either, whose block is valid for the column-structure assertion.
-        checkColumns(*lazy_output.stored_columns[refWordBlockNo(RowRefList::fromWord(ref_word).firstWord())]);
-#endif
-        if (record_row_refs)
-            lazy_output.addRef(ref_word);
-    }
+    void appendFromBlock(UInt64 ref_word);
 
     void appendDefaultRow()
     {

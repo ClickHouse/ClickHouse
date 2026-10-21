@@ -68,9 +68,6 @@ public:
     bool isTopKFilterApplied() const override;
     bool isMinMaxFromStatisticsApplied() const override { return min_max_from_statistics; }
 
-    /// Use the columns cache, see `Parquet::ColumnsCacheOptions`. Must be called before the first read.
-    void setColumnsCacheOptions(std::shared_ptr<const Parquet::ColumnsCacheOptions> options) { read_options.columns_cache = std::move(options); }
-
 private:
     Chunk read() override;
 
@@ -100,11 +97,7 @@ private:
     void initializeIfNeeded();
     std::shared_ptr<ParquetFileBucketInfo> buckets_to_read;
 
-    /// nullopt if the metadata cache is not used.
-    std::optional<ParquetMetadataCacheKey> getMetadataCacheKey() const;
-    std::shared_ptr<const Parquet::FileFooter> readFileFooter(Parquet::Prefetcher & prefetcher) const;
-    /// For count(), which needs no column chunks.
-    std::shared_ptr<const Parquet::FileFooter> getFileFooter(Parquet::Prefetcher & prefetcher) const;
+    parquet::format::FileMetaData getFileMetadata(Parquet::Prefetcher & prefetcher) const;
 };
 
 class NativeParquetSchemaReader final : public ISchemaReader
@@ -119,7 +112,7 @@ private:
     void initializeIfNeeded();
 
     Parquet::ReadOptions read_options;
-    std::shared_ptr<const Parquet::FileFooter> file_footer;
+    parquet::format::FileMetaData file_metadata;
     bool initialized = false;
 };
 

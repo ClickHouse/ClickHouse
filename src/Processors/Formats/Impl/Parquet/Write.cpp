@@ -2,7 +2,6 @@
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 #include <arrow/util/key_value_metadata.h>
 #include <parquet/encoding.h>
-#include <parquet/geospatial/statistics.h>
 #include <parquet/schema.h>
 #include <arrow/util/rle_encoding_internal.h>
 #include <arrow/util/crc32.h>
@@ -324,65 +323,6 @@ struct StatisticsStringCopy
     }
 };
 
-/// For WKB values of a `GEOMETRY` column: the sort order of this logical type is undefined, so no
-/// min/max are produced. Instead, the bounding box and the set of geometry types are accumulated
-/// for `GeospatialStatistics` of the column chunk.
-struct StatisticsGeometry
-{
-    /// Held by pointer, because `GeoStatistics` is not movable. The methods below modify the
-    /// pointee, so they are not const, although clang-tidy suggests it.
-    std::unique_ptr<parquet::geospatial::GeoStatistics> geo = std::make_unique<parquet::geospatial::GeoStatistics>();
-
-    void add(parquet::ByteArray x) // NOLINT(readability-make-member-function-const)
-    {
-        geo->Update(&x, 1);
-    }
-
-    void merge(const StatisticsGeometry & s) // NOLINT(readability-make-member-function-const)
-    {
-        geo->Merge(*s.geo);
-    }
-
-    void clear() { geo->Reset(); } // NOLINT(readability-make-member-function-const)
-
-    parq::Statistics get(const WriteOptions &) const
-    {
-        return {};
-    }
-
-    /// Returns nullopt if a value could not be parsed as WKB, then no statistics are written.
-    std::optional<parq::GeospatialStatistics> getGeospatial() const
-    {
-        auto encoded = geo->Encode();
-        if (!encoded)
-            return std::nullopt;
-
-        parq::GeospatialStatistics res;
-        /// An empty list means that the types are unknown, this is the case only if all values are NULL.
-        res.__set_geospatial_types(encoded->geospatial_types);
-        if (encoded->xy_bounds_present)
-        {
-            parq::BoundingBox bbox;
-            bbox.__set_xmin(encoded->xmin);
-            bbox.__set_xmax(encoded->xmax);
-            bbox.__set_ymin(encoded->ymin);
-            bbox.__set_ymax(encoded->ymax);
-            if (encoded->z_bounds_present)
-            {
-                bbox.__set_zmin(encoded->zmin);
-                bbox.__set_zmax(encoded->zmax);
-            }
-            if (encoded->m_bounds_present)
-            {
-                bbox.__set_mmin(encoded->mmin);
-                bbox.__set_mmax(encoded->mmax);
-            }
-            res.__set_bbox(bbox);
-        }
-        return res;
-    }
-};
-
 /// The column usually needs to be converted to one of Parquet physical types, e.g. UInt16 -> Int32
 /// or [element of ColumnString] -> std::string_view.
 /// We do this conversion in small batches rather than all at once, just before encoding the batch,
@@ -483,14 +423,6 @@ struct ConverterString
         }
         return buf.data();
     }
-};
-
-/// WKB values of a `GEOMETRY` column.
-struct ConverterGeometry : ConverterString
-{
-    using Statistics = StatisticsGeometry;
-
-    using ConverterString::ConverterString;
 };
 
 template <typename T>
@@ -1677,12 +1609,6 @@ void writeColumnImpl(
 
         if (s.max_def == 1 && s.max_rep == 0)
             s.column_chunk.meta_data.statistics.__set_null_count(static_cast<Int64>(def_offset - data_offset));
-
-        if constexpr (std::is_same_v<typename Converter::Statistics, StatisticsGeometry>)
-        {
-            if (auto geospatial_statistics = total_statistics.getGeospatial())
-                s.column_chunk.meta_data.__set_geospatial_statistics(*std::move(geospatial_statistics));
-        }
     }
 
     /// Report which encodings we've used.
@@ -1800,12 +1726,8 @@ void writeColumnChunkBody(
             break;
 
         case TypeIndex::String:
-            if (s.is_geometry)
-                writeColumnImpl<parquet::ByteArrayType>(
-                    s, options, out, ConverterGeometry(s.primitive_column));
-            else
-                writeColumnImpl<parquet::ByteArrayType>(
-                    s, options, out, ConverterString(s.primitive_column));
+            writeColumnImpl<parquet::ByteArrayType>(
+                s, options, out, ConverterString(s.primitive_column));
             break;
 
         case TypeIndex::FixedString:
@@ -2049,29 +1971,16 @@ void writeFileFooter(FileWriteState & file,
                 Poco::JSON::Array::Ptr geom_types = new Poco::JSON::Array;
                 geom_types->add(type->getCustomName()->getName());
                 geom_meta->set("geometry_types", geom_types);
-                /// With the `GEOMETRY` logical type, the column has the default CRS of the logical
-                /// type (`OGC:CRS84`). Omit `crs` here, which means the same default in GeoParquet,
-                /// so that both kinds of metadata describe the same CRS.
-                if (!options.write_geometry_logical_type)
-                    geom_meta->set("crs", "EPSG:4326");
+                geom_meta->set("crs", "EPSG:4326");
+
+                geo_columns_metadata.push_back({column_name, geom_meta});
 
                 if (type->getCustomName()->getName() == WKBPolygonTransform::name ||
                     type->getCustomName()->getName() == WKBMultiPolygonTransform::name)
                 {
                     geom_meta->set("edges", "planar");
+                    geom_meta->set("orientation", "counterclockwise");
                 }
-                geo_columns_metadata.push_back({column_name, geom_meta});
-            }
-            else if (options.write_geometry_logical_type && type->getCustomName() && type->getCustomName()->getName() == "Geometry")
-            {
-                /// An empty list of geometry types means that any type can be present. Without the
-                /// metadata, readers (including older versions of ClickHouse) that rely only on the
-                /// GeoParquet metadata would read the WKB column as a plain binary one, and readers
-                /// that use `GeospatialStatistics` of the `GEOMETRY` logical type could narrow the
-                /// type to the one that happens to be present in the data.
-                Poco::JSON::Object::Ptr geom_meta = new Poco::JSON::Object;
-                geom_meta->set("encoding", "WKB");
-                geom_meta->set("geometry_types", Poco::JSON::Array::Ptr(new Poco::JSON::Array));
                 geo_columns_metadata.push_back({column_name, geom_meta});
             }
         }

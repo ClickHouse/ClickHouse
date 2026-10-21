@@ -326,16 +326,6 @@ StatisticsPartPruner::StatisticsPartPruner(const StorageMetadataPtr & metadata_,
     }
 }
 
-NameSet StatisticsPartPruner::getRequiredColumns() const
-{
-    NameSet result;
-    for (const auto & [col_name, _] : stats_column_name_to_type_map)
-        result.insert(col_name);
-    for (const auto & [col_name, _] : null_predicates)
-        result.insert(col_name);
-    return result;
-}
-
 KeyCondition * StatisticsPartPruner::getKeyConditionForEstimates(const NamesAndTypesList & columns, bool record_used_columns)
 {
     const auto column_names = columns.getNames();

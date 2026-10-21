@@ -19,24 +19,24 @@ cleanup()
 trap cleanup EXIT
 
 $CLICKHOUSE_CLIENT --multiquery --query "
-CREATE SETTINGS PROFILE ${exact_profile} SETTINGS sql_compatible_division_for_integers = 1;
-CREATE SETTINGS PROFILE ${legacy_profile} SETTINGS sql_compatible_division_for_integers = 0;"
+CREATE SETTINGS PROFILE ${exact_profile} SETTINGS exact_division_for_integers = 1;
+CREATE SETTINGS PROFILE ${legacy_profile} SETTINGS exact_division_for_integers = 0;"
 
 query()
 {
-    $CLICKHOUSE_CURL -fsS "${CLICKHOUSE_URL}&sql_compatible_division_for_integers=$1" --data-binary "$2"
+    $CLICKHOUSE_CURL -fsS "${CLICKHOUSE_URL}&exact_division_for_integers=$1" --data-binary "$2"
 }
 
 query 0 "SELECT q, toTypeName(q) FROM (SELECT 5 / 2 AS q SETTINGS profile = '${exact_profile}')"
 query 1 "SELECT q, toTypeName(q) FROM (SELECT 5 / 2 AS q SETTINGS profile = '${legacy_profile}')"
 query 0 "SELECT (SELECT 5 / 2 SETTINGS profile = '${exact_profile}'), 5 / 2"
-query 0 "SELECT q FROM (SELECT 5 / 2 AS q SETTINGS sql_compatible_division_for_integers = 0, profile = '${exact_profile}')"
-query 0 "SELECT q FROM (SELECT 5 / 2 AS q SETTINGS profile = '${exact_profile}', sql_compatible_division_for_integers = 0)"
-query 1 "SELECT q FROM (SELECT 5 / 2 AS q SETTINGS profile = '${exact_profile}', sql_compatible_division_for_integers = DEFAULT)"
+query 0 "SELECT q FROM (SELECT 5 / 2 AS q SETTINGS exact_division_for_integers = 0, profile = '${exact_profile}')"
+query 0 "SELECT q FROM (SELECT 5 / 2 AS q SETTINGS profile = '${exact_profile}', exact_division_for_integers = 0)"
+query 1 "SELECT q FROM (SELECT 5 / 2 AS q SETTINGS profile = '${exact_profile}', exact_division_for_integers = DEFAULT)"
 query 0 "SELECT q FROM (SELECT q FROM (SELECT 5 / 2 AS q SETTINGS profile = '${exact_profile}') SETTINGS profile = '${legacy_profile}')"
 query 0 "CREATE VIEW division_profile_view AS SELECT q FROM (SELECT 5 / 2 AS q SETTINGS profile = '${exact_profile}')"
 query 0 "SELECT q FROM division_profile_view"
-$CLICKHOUSE_CLIENT --query "ALTER SETTINGS PROFILE ${exact_profile} SETTINGS sql_compatible_division_for_integers = 0"
+$CLICKHOUSE_CLIENT --query "ALTER SETTINGS PROFILE ${exact_profile} SETTINGS exact_division_for_integers = 0"
 query 1 "SELECT q FROM division_profile_view"
 $CLICKHOUSE_CLIENT --multiquery --query "DETACH TABLE division_profile_view; ATTACH TABLE division_profile_view;"
 query 0 "SELECT q FROM division_profile_view"

@@ -676,49 +676,6 @@ std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(
     return cache_keys;
 }
 
-/// A capped step keeps fewer groups, and so does every aggregation above it: all caps in the subtree are part of the key.
-/// So is the cutoff of each cap: the kept-keys one trims the tables to the cap, the per-stream one keeps whole blocks.
-static UInt64 mixGroupByCapsIntoKey(const QueryPlan::Node & aggregating_node, UInt64 key)
-{
-    std::vector<std::tuple<UInt64, UInt8, bool>> caps;
-    bool has_cap = false;
-    std::vector<const QueryPlan::Node *> stack{&aggregating_node};
-    while (!stack.empty())
-    {
-        const auto * node = stack.back();
-        stack.pop_back();
-        if (const auto * aggregating = typeid_cast<const AggregatingStep *>(node->step.get()))
-        {
-            const auto & params = aggregating->getParams();
-            if (params.max_rows_to_group_by != 0 && params.group_by_overflow_mode != OverflowMode::THROW)
-            {
-                caps.emplace_back(
-                    params.max_rows_to_group_by,
-                    static_cast<UInt8>(params.group_by_overflow_mode),
-                    params.shared_kept_keys_for_overflow_any);
-                has_cap = true;
-            }
-            else
-                caps.emplace_back(0, 0, false);
-        }
-        for (auto child = node->children.rbegin(); child != node->children.rend(); ++child)
-            stack.push_back(*child);
-    }
-
-    if (!has_cap)
-        return key;
-
-    SipHash hash;
-    hash.update(key);
-    for (const auto & [max_rows, mode, kept_keys_cutoff] : caps)
-    {
-        hash.update(max_rows);
-        hash.update(mode);
-        hash.update(kept_keys_cutoff);
-    }
-    return hash.get64();
-}
-
 void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root)
 {
     if (!optimization_settings.collect_hash_table_stats_during_aggregation)
@@ -737,8 +694,7 @@ void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & opti
             auto * node = stack.back();
             stack.pop_back();
             /// Without GROUP BY keys the method is `without_key`, whose `init` discards the size
-            /// hint, so such a key can never be consumed, except by the radix partitioned `uniqExact`
-            /// (see `AggregatingStep::canUseRadixUniqExact`).
+            /// hint, so such a key can never be consumed.
             /// A step whose `stats_collecting_params` were left default-constructed (zero
             /// `max_entries_for_hash_table_stats`) keeps no entries, so a key cannot be consumed
             /// there either — stamping one would only make the query collect statistics that are
@@ -746,10 +702,7 @@ void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & opti
             /// Skipping such a step also makes a server-level
             /// `max_entries_for_hash_table_stats = 0` a clean disable for aggregation.
             if (const auto * aggregating = typeid_cast<const AggregatingStep *>(node->step.get());
-                aggregating
-                && (!aggregating->getParams().keys.empty()
-                    || (optimization_settings.optimize_uniq_exact_radix_partitioning
-                        && aggregating->canUseRadixUniqExact()))
+                aggregating && !aggregating->getParams().keys.empty()
                 && aggregating->getParams().stats_collecting_params.max_entries_for_hash_table_stats != 0)
                 aggregating_nodes.push_back(node);
             for (auto * child : node->children)
@@ -763,14 +716,13 @@ void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & opti
     for (auto * aggregating_node : aggregating_nodes)
     {
         /// Hash only the aggregation's own input subtree (this node as the root). This excludes the
-        /// steps ABOVE the aggregation (LIMIT, `ORDER BY ... WITH FILL`, ...): they may not be
-        /// serializable, and a LIMIT affects the number of groups only through the step's own cap.
+        /// steps ABOVE the aggregation (LIMIT, `ORDER BY ... WITH FILL`, ...) — they do not affect
+        /// the number of groups and may not be serializable.
         try
         {
             const auto cache_keys = calculateHashTableCacheKeys(*aggregating_node);
             if (auto it = cache_keys.find(aggregating_node); it != cache_keys.end())
-                keys_to_set.emplace_back(
-                    typeid_cast<AggregatingStep *>(aggregating_node->step.get()), mixGroupByCapsIntoKey(*aggregating_node, it->second));
+                keys_to_set.emplace_back(typeid_cast<AggregatingStep *>(aggregating_node->step.get()), it->second);
         }
         catch (...)
         {

@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
-#include <Storages/MergeTree/StatisticsCache.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadGroupSwitcher.h>
 
@@ -184,9 +183,6 @@ void MergePlainMergeTreeTask::finish()
         /// a correct part name after rename for a key of cache entry.
         new_part->moveIndexToCache(*prewarm_caches.primary_index_cache);
     }
-
-    if (prewarm_caches.statistics_cache)
-        new_part->loadStatisticsToCache(*prewarm_caches.statistics_cache);
 
     write_part_log({});
 

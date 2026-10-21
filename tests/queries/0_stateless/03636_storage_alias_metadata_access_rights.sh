@@ -210,7 +210,7 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
     WHERE database = currentDatabase() AND name = 'test_alias_access';
 "
 
-echo "Test table metadata with column-scoped target permission"
+echo "Test table metadata with target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
     SELECT
         notEmpty(partition_key),
@@ -223,7 +223,7 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
     WHERE database = currentDatabase() AND name = 'test_alias_access';
 "
 
-echo "Test persisted table metadata with column-scoped target permission"
+echo "Test persisted table metadata with target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
     SELECT notEmpty(create_table_query), notEmpty(engine_full)
     FROM system.tables
@@ -283,22 +283,6 @@ echo "Test ENGINE = Buffer structure inference with target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --multiquery --query "CREATE TABLE test_buffer_infer_access ENGINE = Buffer(currentDatabase(), test_alias_access, 1, 1000, 1000, 1000, 1000, 1000000, 1000000); SELECT 'ENGINE = Buffer OK';"
 ${CLICKHOUSE_CLIENT} --query "SELECT arraySort(groupArray(name)) FROM system.columns WHERE database = currentDatabase() AND table = 'test_buffer_infer_access';"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE test_buffer_infer_access;"
-
-echo "Test table and persisted metadata with target permission"
-# The same seven flags the two column-scoped blocks above assert as withheld. Target `SHOW
-# COLUMNS` is what changed, so these must come back through the `Alias` here.
-${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
-    SELECT
-        notEmpty(partition_key),
-        notEmpty(sorting_key),
-        notEmpty(primary_key),
-        notEmpty(sampling_key),
-        notEmpty(skipping_indices_types),
-        notEmpty(create_table_query),
-        notEmpty(engine_full)
-    FROM system.tables
-    WHERE database = currentDatabase() AND name = 'test_alias_access';
-"
 
 # Test target access checks for `CREATE TABLE ... AS` an `Alias`
 copy_table="create_as_copy_${CLICKHOUSE_TEST_UNIQUE_NAME}"

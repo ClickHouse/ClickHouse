@@ -1,10 +1,5 @@
 -- Tags: stateful, long, no-msan
 
--- `test.hits` lives on a `web` disk (S3) behind a local filesystem cache. With the randomized
--- `enable_filesystem_cache=0` every query of this test downloads the whole table from S3 again, and when
--- the S3 throughput drops the full scans become slow enough to be killed by `max_estimated_execution_time`.
-SET enable_filesystem_cache=1, read_from_filesystem_cache_if_exists_otherwise_bypass_cache=0;
-
 SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=2, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
 SET optimize_move_to_prewhere = 1, query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10000;

@@ -19,7 +19,6 @@
 #include <base/EnumReflection.h>
 #include <base/demangle.h>
 #include <base/errnoToString.h>
-#include <base/scope_guard.h>
 #include <Common/logger_useful.h>
 #include <Common/StackTrace.h>
 #include <Common/SymbolIndex.h>
@@ -31,7 +30,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -69,9 +67,6 @@ std::string symbolizeNormalizedTrace(const std::vector<UInt64> & trace)
 
     return result;
 }
-
-/// The first byte of a pipe message: 0 for a trace (`TraceSender::send`), 1 to stop the collector, 2 for a `flush` marker.
-constexpr char FLUSH_MARKER = 2;
 
 }
 
@@ -196,16 +191,9 @@ void TraceCollector::run()
     {
         while (true)
         {
-            char message_type = 0;
-            readChar(message_type, in);
-            if (message_type == FLUSH_MARKER)
-            {
-                std::lock_guard lock(TraceSender::flush_mutex);
-                ++TraceSender::flush_completed;
-                TraceSender::flush_cv.notify_all();
-                continue;
-            }
-            if (message_type)
+            char is_last = 0;
+            readChar(is_last, in);
+            if (is_last)
                 break;
 
             std::string query_id;
@@ -327,24 +315,6 @@ void TraceCollector::run()
         tryLogCurrentException("TraceCollector");
         throw;
     }
-}
-
-void TraceCollector::flush()
-{
-    std::unique_lock lock(TraceSender::flush_mutex);
-    {
-        TraceSender::in_flight.fetch_add(1);
-        SCOPE_EXIT(TraceSender::in_flight.fetch_sub(1));
-        /// A full pipe drops the marker like it drops traces, then there is nothing to wait for.
-        if (!TraceSender::isCollecting() || ::write(TraceSender::pipe.fds_rw[1], &FLUSH_MARKER, 1) != 1)
-            return;
-    }
-
-    /// The markers reach the pipe in the order of their numbers, and the collector reads the pipe in order.
-    const UInt64 marker = ++TraceSender::flush_requested;
-    constexpr auto timeout = std::chrono::seconds(180);
-    if (!TraceSender::flush_cv.wait_for(lock, timeout, [&] { return TraceSender::flush_completed >= marker; }))
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded ({} s) while waiting for the trace collector", timeout.count());
 }
 
 }

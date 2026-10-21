@@ -416,7 +416,7 @@ Unlike the `s3_plain` disk type, `s3_plain_rewritable` allows executing merges
 and supports `INSERT` operations.
 Replication of tables is not supported.
 [Mutations](/reference/statements/alter/index#mutations) and `ALTER` operations
-are supported unless hard links are disabled with `enable_hard_links`, see below.
+are supported only if the disk is configured with `enable_hard_links`, see below.
 
 A use case for this disk type is for non-replicated `MergeTree` tables. Although 
 the `s3` disk type is suitable for non-replicated `MergeTree` tables, you may opt
@@ -452,24 +452,23 @@ Starting from `24.5` it is possible to configure any object storage disk
 
 `ALTER` operations and mutations of a `MergeTree` table share the unchanged files
 between a part and its mutated successor with hard links, instead of copying
-them. The `enable_hard_links` setting (`1` by default) allows a disk with the
+them. The `enable_hard_links` setting (`0` by default) allows a disk with the
 `plain_rewritable` metadata to create real hard links, which unlocks these
-operations. Set it to `0` to keep the disk readable by servers older than `26.10`;
-then the hard links are emulated by copies, and `ALTER` operations that modify
-data and mutations are not supported:
+operations:
 
 ```xml
 <s3_plain_rewritable>
     <type>s3_plain_rewritable</type>
     <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
     <use_environment_credentials>1</use_environment_credentials>
-    <enable_hard_links>0</enable_hard_links>
+    <enable_hard_links>1</enable_hard_links>
 </s3_plain_rewritable>
 ```
 
 A hard link makes the metadata of a directory list its files explicitly, together
 with the keys of the objects storing them, so that a file can refer to an object
-stored under the prefix of another directory. Consider the following:
+stored under the prefix of another directory. Consider the following before
+enabling it:
 
 - A server that does not have the `enable_hard_links` setting cannot read a
   directory in this form - it reads the whole metadata of the directory as its

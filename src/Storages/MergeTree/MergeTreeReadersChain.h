@@ -50,8 +50,7 @@ public:
     using ReadResult = MergeTreeRangeReader::ReadResult;
 
     ReadResult
-    read(size_t max_rows, MarkRanges & ranges, std::vector<MarkRanges> & patch_ranges, const DataflowCacheUpdateCallback & update_cb = {},
-         size_t max_block_size_rows = 0);
+    read(size_t max_rows, MarkRanges & ranges, std::vector<MarkRanges> & patch_ranges, const DataflowCacheUpdateCallback & update_cb = {});
 
     size_t numReadRowsInCurrentGranule() const;
     size_t numPendingRowsInCurrentGranule() const;
@@ -106,8 +105,6 @@ private:
         const Block & additional_columns) const;
 
     RangeReaders range_readers;
-    /// The readers of `range_readers` that read columns, not only a filter: see `MergeTreeRangeReader::startReadingChain`.
-    std::vector<IMergeTreeReader *> columns_cache_readers;
     MergeTreePatchReaders patch_readers;
     std::vector<std::deque<PatchReadResultPtr>> patches_results;
 

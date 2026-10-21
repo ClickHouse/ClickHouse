@@ -1,5 +1,4 @@
--- Tags: no-old-analyzer, no-parallel-replicas
--- no-parallel-replicas: each replica joins only its share of the table read in parallel, so a padded side may be split across joins and the `unlimited` checks are not deterministic.
+-- Tags: no-old-analyzer
 
 -- The limits on the size of an output block of the block nested loop join. `max_joined_block_size_rows`
 -- caps the rows of a block, `max_joined_block_size_bytes` caps their estimated size; the pairs a tile

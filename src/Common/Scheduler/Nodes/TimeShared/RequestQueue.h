@@ -636,9 +636,6 @@ public:
             queue_cost = 0;
             total_requests = 0;
             cancelActivation();
-
-            // Older hierarchy versions can retain this retired queue after its workload is destroyed.
-            workload = nullptr;
         }
         failRequests(requests_to_fail, []
         {

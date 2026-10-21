@@ -158,8 +158,6 @@ struct ConnectionParams
 
     String getContainer() const { return endpoint.container_name; }
     String getConnectionURL() const;
-    /// Without the query, which can be a SAS, for where the url only names the endpoint (logs, errors, cache keys).
-    String getConnectionURLWithoutQuery() const;
 
     std::unique_ptr<ServiceClient> createForService() const;
     std::unique_ptr<ContainerClient> createForContainer() const;

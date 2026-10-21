@@ -256,9 +256,9 @@ set(RUST_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../rust_vendor")
 # `opt-level = 0` — up to an order of magnitude slower at runtime (e.g. the `PCO` codec,
 # Delta Lake reads). CI was unaffected only because it always passes -DSANITIZE= explicitly.
 if (SANITIZE)
-    set(RUST_RELEASE_PROFILE_EXTRA "opt-level = 1
+    set(RUST_RELEASE_PROFILE_EXTRA "opt-level = 0
 codegen-units = 4")
-    message(STATUS "Rust release profile: opt-level = 1, to limit LLVM memory usage under sanitizers")
+    message(STATUS "Rust release profile: unoptimized (opt-level = 0), to limit LLVM memory usage under sanitizers")
 else()
     set(RUST_RELEASE_PROFILE_EXTRA "")
     message(STATUS "Rust release profile: optimized")
@@ -393,7 +393,7 @@ function(clickhouse_config_crate_flags target_name)
         # caller of this function.
         set(_localize_ref_libs "")
         set(_localize_ref_deps "")
-        foreach (_ref_target libllvmlibc aor clang_rt_builtins)
+        foreach (_ref_target libllvmlibc clang_rt_builtins)
             if (TARGET ${_ref_target})
                 list(APPEND _localize_ref_libs "$<TARGET_FILE:${_ref_target}>")
                 list(APPEND _localize_ref_deps ${_ref_target})

@@ -31,7 +31,6 @@ void registerTableFunctionYTsaurus(TableFunctionFactory & factory);
 #endif
 void registerTableFunctionRedis(TableFunctionFactory & factory);
 void registerTableFunctionBigQuery(TableFunctionFactory & factory);
-void registerTableFunctionElasticsearch(TableFunctionFactory & factory);
 
 #if USE_ARROWFLIGHT
 void registerTableFunctionArrowFlight(TableFunctionFactory & factory);
