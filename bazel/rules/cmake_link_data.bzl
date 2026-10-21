@@ -300,7 +300,7 @@ CMAKE_LINK = {
     "@clickhouse_abseil_cpp//:absl_flags_private_handle_accessor",
     "@clickhouse_abseil_cpp//:absl_flags_commandlineflag",
     "@clickhouse_abseil_cpp//:absl_flags_commandlineflag_internal",
-    "@clickhouse_google_protobuf//:utf8_validity",
+    "@clickhouse_google_protobuf//:_utf8_validity_c",
     "@clickhouse_abseil_cpp//:absl_die_if_null",
     "@clickhouse_abseil_cpp//:absl_log_internal_conditions",
     "@clickhouse_abseil_cpp//:absl_log_internal_message",

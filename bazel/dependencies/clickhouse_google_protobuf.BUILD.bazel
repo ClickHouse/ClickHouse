@@ -467,12 +467,35 @@ ch_cc_library(
     ],
     includes = ["src"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":utf8_validity", "@clickhouse_abseil_cpp//:absl_die_if_null", "@clickhouse_abseil_cpp//:absl_flags_internal", "@clickhouse_abseil_cpp//:absl_log_initialize", "@clickhouse_abseil_cpp//:absl_statusor", "@clickhouse_zlib_ng//:_zlib"] + [
+    deps = [
+        ":utf8_validity",
+        "@clickhouse_abseil_cpp//:absl_die_if_null",
+        "@clickhouse_abseil_cpp//:absl_statusor",
         "@clickhouse_abseil_cpp//:absl_cleanup_internal",
         "@clickhouse_abseil_cpp//:absl_log_internal_check_impl",
+        "@clickhouse_abseil_cpp//:absl_base",
+        "@clickhouse_abseil_cpp//:absl_base_config",
+        "@clickhouse_abseil_cpp//:absl_bits",
+        "@clickhouse_abseil_cpp//:absl_cord",
+        "@clickhouse_abseil_cpp//:absl_function_ref",
+        "@clickhouse_abseil_cpp//:absl_hash",
+        "@clickhouse_abseil_cpp//:absl_inlined_vector_internal",
+        "@clickhouse_abseil_cpp//:absl_int128",
+        "@clickhouse_abseil_cpp//:absl_memory",
+        "@clickhouse_abseil_cpp//:absl_optional",
+        "@clickhouse_abseil_cpp//:absl_raw_hash_set",
+        "@clickhouse_abseil_cpp//:absl_span",
+        "@clickhouse_abseil_cpp//:absl_status",
+        "@clickhouse_abseil_cpp//:absl_str_format_internal",
+        "@clickhouse_abseil_cpp//:absl_strings",
+        "@clickhouse_abseil_cpp//:absl_strings_internal",
+        "@clickhouse_abseil_cpp//:absl_synchronization",
     ],
     implementation_deps = [
         "@clickhouse_abseil_cpp//:absl_overload",
+        "@clickhouse_zlib_ng//:_zlib",
+        "@clickhouse_abseil_cpp//:absl_algorithm",
+        "@clickhouse_abseil_cpp//:absl_time",
     ],
 )
 
@@ -1096,18 +1119,26 @@ ch_cc_library(
 )
 
 ch_cc_library(
-    name = "utf8_validity",
+    name = "_utf8_validity_c",
     srcs = [
         "third_party/utf8_range/utf8_range.c",
-    ] + glob([
-        "third_party/**/*.inc",
-    ]),
-    hdrs = glob([
-        "third_party/**/*.h",
-    ]),
+    ] + select({
+        "@platforms//cpu:x86_64": ["third_party/utf8_range/utf8_range_sse.inc"],
+        "@platforms//cpu:aarch64": ["third_party/utf8_range/utf8_range_neon.inc"],
+    }),
+    hdrs = ["third_party/utf8_range/utf8_range.h"],
     copts = _UTF8_COPTS,
     includes = ["third_party/utf8_range"],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     language = "C",
-    deps = ["@clickhouse_abseil_cpp//:absl_strings"],
+    libcxx_headers = False,
+)
+
+ch_cc_library(
+    name = "utf8_validity",
+    hdrs = ["third_party/utf8_range/utf8_validity.h"],
+    deps = [
+        ":_utf8_validity_c",
+        "@clickhouse_abseil_cpp//:absl_strings",
+    ],
 )
