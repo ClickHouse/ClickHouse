@@ -4,6 +4,10 @@
         <max_entries>2</max_entries>
     </query_cache>
 
+    <query_plan_cache>
+        <max_entries>2</max_entries>
+    </query_plan_cache>
+
     <mark_cache_size>496</mark_cache_size>
 
 </clickhouse>
