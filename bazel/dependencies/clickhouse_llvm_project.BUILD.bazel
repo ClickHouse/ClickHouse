@@ -11410,18 +11410,9 @@ llvm_runtime_objects(
 )
 
 cc_library(
-    name = "cxx__compile_0",
-    srcs = [
-        ":cxx__runtime_objects_0",
-    ],
-)
-
-cc_library(
     name = "cxx",
-    deps = [
-        ":cxxabi",
-        ":cxx__compile_0",
-    ],
+    srcs = [":cxx__runtime_objects_0"],
+    deps = [":cxxabi"],
 )
 
 llvm_runtime_objects(
@@ -11511,18 +11502,9 @@ llvm_runtime_objects(
 )
 
 cc_library(
-    name = "cxxabi__compile_0",
-    srcs = [
-        ":cxxabi__runtime_objects_0",
-    ],
-)
-
-cc_library(
     name = "cxxabi",
-    deps = [
-        ":unwind",
-        ":cxxabi__compile_0",
-    ],
+    srcs = [":cxxabi__runtime_objects_0"],
+    deps = [":unwind"],
 )
 
 llvm_runtime_objects(
