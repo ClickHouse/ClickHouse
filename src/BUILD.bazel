@@ -2783,7 +2783,11 @@ ch_cc_library(
         "@clickhouse_ulid_c//:_ulid",
         "//bazel:arrow_flatbuffer_headers",
         "@clickhouse_sha3iuf//:_sha3iuf",
-    ] + ["@clickhouse_libpqxx//:_libpqxx"] + ["//src/Common/ZooKeeper:clickhouse_common_zookeeper_base"],
+    ] + ["@clickhouse_libpqxx//:_libpqxx"] + ["//src/Common/ZooKeeper:clickhouse_common_zookeeper_base"] + [
+        "@clickhouse_abseil_cpp//:absl_log_globals",
+        "@clickhouse_abseil_cpp//:absl_log_initialize",
+        "@clickhouse_abseil_cpp//:absl_log_internal_log_sink_set",
+    ],
     includes = ["."],
     local_defines = _DBMS_LOCAL_DEFINES,
     local_includes = [
@@ -3422,6 +3426,9 @@ cc_test(
         "//src/Common:tests/gtest_helper_functions.h",
         "//src/Common:tests/gtest_silk_scheduler.h",
         "Coordination/tests/gtest_coordination_common.h",
+    ] + [
+        "//src/Parsers:tests/gtest_common.h",
+        "//src/Parsers:tests/play_fallback_tokenizer.h",
     ],
     additional_compiler_inputs = [
         "//bazel:gen/base/base/GitHash.generated.cpp",
@@ -4178,5 +4185,6 @@ cc_library(
         "@clickhouse_mongo_cxx_driver//:_bsoncxx",
         "@clickhouse_mongo_cxx_driver//:_mongocxx",
         "@clickhouse_sparsehash_c11//:sparsehash_c11",
+        "@clickhouse_azure//:_azure_sdk",
     ],
 )
