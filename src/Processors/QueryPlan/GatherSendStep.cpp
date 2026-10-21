@@ -82,7 +82,7 @@ QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pip
     pipeline.setSinks([&](const SharedHeader & header, Pipe::StreamType stream_type) -> ProcessorPtr
     {
         chassert(stream_type == Pipe::StreamType::Main);
-        return settings.exchange_lookup->createSink(header, ExchangeStreamId(exchange_id, bucket, "0"));
+        return settings.exchange_lookup->createSink(header, ExchangeStreamId(exchange_id, bucket, "0"), /*advisory*/ false);
     });
 
     return std::move(pipelines.front());
@@ -108,7 +108,7 @@ void GatherSendStep::serialize(Serialization & ctx) const
 
     writeVarUInt(maintain_sort_description.has_value(), ctx.out);
     if (maintain_sort_description.has_value())
-        serializeSortDescription(*maintain_sort_description, ctx.out, ctx.version);
+        serializeSortDescription(*maintain_sort_description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
 }
 
 std::unique_ptr<IQueryPlanStep> GatherSendStep::deserialize(Deserialization & ctx)

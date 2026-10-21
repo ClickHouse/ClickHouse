@@ -78,6 +78,8 @@ private:
     ContextMutablePtr global_context;
     /// Updated/recent config, to compare http_handlers
     ConfigurationPtr latest_config;
+    /// The `application.*` properties that `Poco::Util::Application` sets before any file or command-line layer is added.
+    ConfigurationPtr application_properties;
 
     HTTPContextPtr httpContext() const;
 

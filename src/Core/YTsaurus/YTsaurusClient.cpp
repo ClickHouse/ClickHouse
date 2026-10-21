@@ -4,11 +4,11 @@
 
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromOStream.h>
 #include <Formats/formatBlock.h>
 #include <Core/Block.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Core/Settings.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/JSON/Parser.h>
@@ -43,9 +43,21 @@ namespace Setting
     extern const SettingsUInt64 max_http_get_redirects;
 }
 
+static String authorizationHeaderValue(const String & oauth_token)
+{
+    return fmt::format("OAuth {}", oauth_token);
+}
+
 YTsaurusClient::YTsaurusClient(ContextPtr context_, const ConnectionInfo & connection_info_)
     : context(context_), connection_info(connection_info_), log(getLogger("YTsaurusClient"))
 {
+    checkHeaders(context, connection_info.oauth_token);
+}
+
+void YTsaurusClient::checkHeaders(const ContextPtr & context, const String & oauth_token)
+{
+    HTTPHeaderEntries headers{{"Authorization", authorizationHeaderValue(oauth_token)}};
+    context->getHTTPHeaderFilter().checkHeaders(headers);
 }
 
 YTsaurusClient::YTsaurusClient(const YTsaurusClient & other)
@@ -146,14 +158,12 @@ ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path, const Colu
 ReadBufferPtr YTsaurusClient::lookupRows(const String & cypress_path, const Block & lookup_block_input, ThrottlerPtr lookup_throttler)
 {
     YTsaurusQueryPtr lookup_rows_query(new YTsaurusLookupRows(cypress_path));
-    auto out_callback = [lookup_block_input, this](std::ostream & ostr)
+    auto out_callback = [lookup_block_input, this](WriteBuffer & out)
     {
         FormatSettings format_settings;
         format_settings.json.quote_64bit_integers = false;
-        WriteBufferFromOStream out_buffer(ostr);
-        auto output_format = context->getOutputFormat("JSONEachRow", out_buffer, lookup_block_input.cloneEmpty(), format_settings);
+        auto output_format = context->getOutputFormat("JSONEachRow", out, lookup_block_input.cloneEmpty(), format_settings);
         formatBlock(output_format, lookup_block_input);
-        out_buffer.finalize();
     };
     /// The throttler is passed down to `executeQuery` so that every real `lookup_rows` HTTP attempt, including retries
     /// against other http proxies, consumes its own token; otherwise one logical lookup could exceed the limit on failover.
@@ -228,7 +238,7 @@ ReadBufferPtr YTsaurusClient::createQueryRWBuffer(const URI & uri, const ReadWri
         /// Always use json format for input and output.
         {"Accept", "application/json"},
         {"Content-Type", "application/json"},
-        {"Authorization", fmt::format("OAuth {}", connection_info.oauth_token)},
+        {"Authorization", authorizationHeaderValue(connection_info.oauth_token)},
         {"X-YT-Header-Format", "<format=text>yson"},
         {"X-YT-Output-Format", fmt::format("{}json", output_params)},
     };

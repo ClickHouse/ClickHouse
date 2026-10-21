@@ -118,7 +118,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_database_paimon_rest_catalog;
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool log_queries;
-    extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool database_datalake_require_metadata_access;
     extern const SettingsBool s3_allow_server_credentials_in_user_queries;
@@ -135,6 +134,11 @@ namespace DataLakeStorageSetting
 namespace ServerSetting
 {
     extern const ServerSettingsBool s3_load_table_anonymously_if_credentials_restricted;
+}
+
+namespace S3RequestSetting
+{
+    extern const S3RequestSettingsBool use_idempotency_id;
 }
 
 namespace ErrorCodes
@@ -1157,10 +1161,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     const auto & query_settings = context_->getSettingsRef();
 
     const auto parallel_replicas_cluster_name = query_settings[Setting::cluster_for_parallel_replicas].toString();
-    const auto can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
-        && query_settings[Setting::parallel_replicas_for_cluster_engines]
-        && context_->canUseTaskBasedParallelReplicas()
-        && !context_->isDistributed();
+    const auto can_use_parallel_replicas = context_->canReplaceClusterEngineWithClusterVariant();
 
     const auto is_secondary_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
@@ -1202,6 +1203,17 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     /// with_table_structure = false: because there will be
     /// no table structure in table definition AST.
     StorageObjectStorageConfiguration::initialize(*configuration, args, context_copy, /* with_table_structure */false);
+
+#if USE_AWS_S3
+    /// Amazon S3 Tables rejects user-defined object metadata (`x-amz-meta-*`) in its data buckets with
+    /// `S3TablesUnsupportedHeader`, so don't stamp the idempotency id on the objects written into its tables.
+    /// An explicit `s3_use_idempotency_id` in the query settings still takes precedence on write.
+    if (catalog->getCatalogType() == DatabaseDataLakeCatalogType::S3_TABLES)
+    {
+        if (auto * s3_configuration = dynamic_cast<StorageS3Configuration *>(configuration.get()))
+            s3_configuration->s3_settings->request_settings[S3RequestSetting::use_idempotency_id] = false;
+    }
+#endif
 
     /// When we applied static credentials from database settings, they are authoritative:
     /// do not let a catalog-vended refresh callback (e.g. Unity/REST `requestCredentials`)

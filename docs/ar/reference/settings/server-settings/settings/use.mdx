@@ -12,45 +12,18 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 تُعِدّ هذه الإعدادات خادم ClickHouse، وهي مُنشأة تلقائيًا استنادًا إلى الشفرة المصدرية لـ ClickHouse.
 
-<div id="use_minimalistic_part_header_in_zookeeper">
-  ## use_minimalistic_part_header_in_zookeeper
-</div>
+## use_minimalistic_part_header_in_zookeeper {#use_minimalistic_part_header_in_zookeeper}
 
-طريقة تخزين رؤوس أجزاء البيانات في ZooKeeper. لا ينطبق هذا الإعداد إلا على عائلة [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/index). ويمكن تحديده على النحو التالي:
+إعداد متقادم، ليس له أي تأثير. تخزّن الجداول [المتماثلة](/ar/reference/engines/table-engines/mergetree-family/replication) دائمًا ترويسة جزء البيانات بشكل مضغوط في `znode` واحد. ولا تزال ترويسات أجزاء البيانات التي كتبتها إصدارات أقدم باستخدام عقد `znodes` فرعية منفصلة لـ `columns` و`checksums` قابلةً للقراءة.
 
-**على مستوى عام في قسم [merge&#95;tree](/ar/reference/settings/server-settings/settings/merge#merge_tree) ضمن ملف `config.xml`**
-
-يستخدم ClickHouse هذا الإعداد لجميع الجداول على الخادم. يمكنك تغيير الإعداد في أي وقت. وتغيّر الجداول الحالية سلوكها عند تغيير هذا الإعداد.
-
-**لكل جدول**
-
-عند إنشاء جدول، حدِّد [إعداد المحرك](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) المقابل. ولا يتغير سلوك أي جدول موجود يستخدم هذا الإعداد، حتى إذا تغيّر الإعداد العام.
-
-**القيم الممكنة**
-
-* `0` — تكون هذه الوظيفة معطلة.
-* `1` — تكون هذه الوظيفة مفعّلة.
-
-إذا كان [`use_minimalistic_part_header_in_zookeeper = 1`](/ar/reference/settings/server-settings/settings/use#use_minimalistic_part_header_in_zookeeper)، فإن الجداول [المكررة](/ar/reference/engines/table-engines/mergetree-family/replication) تخزّن رؤوس أجزاء البيانات بشكل مضغوط باستخدام `znode` واحد. وإذا كان الجدول يحتوي على عدد كبير من الأعمدة، فإن طريقة التخزين هذه تقلّل بشكل كبير من حجم البيانات المخزنة في ZooKeeper.
-
-<Note>
-  بعد تطبيق `use_minimalistic_part_header_in_zookeeper = 1`، لا يمكنك الرجوع بإصدار خادم ClickHouse إلى إصدار لا يدعم هذا الإعداد. توخَّ الحذر عند ترقية ClickHouse على الخوادم ضمن عنقود. لا تُرقِّ جميع الخوادم دفعة واحدة. ومن الأكثر أمانًا اختبار الإصدارات الجديدة من ClickHouse في بيئة اختبار، أو على عدد قليل فقط من خوادم العنقود.
-
-  لا يمكن استعادة رؤوس أجزاء البيانات المخزنة مسبقًا باستخدام هذا الإعداد إلى تمثيلها السابق (غير المضغوط).
-</Note>
-
-<div id="use_separate_cache_arena">
-  ## use_separate_cache_arena
-</div>
+## use_separate_cache_arena {#use_separate_cache_arena}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
 يفعّل ساحة Arena مخصّصة في jemalloc لتخصيصات ذاكرة التخزين المؤقت (mark cache، وuncompressed cache، وpage cache).
 يعزل بيانات ذاكرة التخزين المؤقت عن تخصيصات الذاكرة الخاصة بمعالجة الاستعلامات، مما يقلّل من تجزؤ الذاكرة.
 
-<div id="use_shared_merge_tree_log_pipeline">
-  ## use_shared_merge_tree_log_pipeline
-</div>
+## use_shared_merge_tree_log_pipeline {#use_shared_merge_tree_log_pipeline}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
