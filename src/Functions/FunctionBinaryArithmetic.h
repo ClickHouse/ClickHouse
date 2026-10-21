@@ -4551,7 +4551,7 @@ public:
             case sizeof(Int256): limit = std::numeric_limits<Int256>::max(); break;
             default: return false;
         }
-        const Int256 multiplier = DecimalUtils::scaleMultiplier<Int256>(getDecimalScale(divisor_type));
+        const Int256 bound = limit / DecimalUtils::scaleMultiplier<Int256>(getDecimalScale(divisor_type));
 
         auto fits = [&](const Field & point)
         {
@@ -4564,9 +4564,7 @@ public:
                 case Field::Types::Decimal256: value = point.safeGet<DecimalField<Decimal256>>().getValue().value; break;
                 default: return false;
             }
-            if (value < 0)
-                value = -value;
-            return value <= limit / multiplier;
+            return -bound <= value && value <= bound;
         };
         return fits(left_point) && fits(right_point);
     }
