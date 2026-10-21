@@ -7,6 +7,7 @@
 #include <DataTypes/IDataType.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/checkStackSize.h>
 
 
 namespace DB
@@ -24,6 +25,10 @@ namespace DB
  * When the limit on number of dynamic types is exceeded, all values
  * with new types are inserted into special shared variant with type String
  * that contains values and their types in binary format.
+ *
+ * Values nest into each other through variants like Array(Dynamic) to a depth that comes
+ * from the data, not from the declared type, so methods that recurse into the Variant
+ * column call checkStackSize.
  */
 class ColumnDynamic final : public COWHelper<IColumnHelper<ColumnDynamic>, ColumnDynamic>
 {
@@ -224,37 +229,44 @@ public:
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
+        checkStackSize();
         return create(variant_column_ptr->filter(filt, result_size_hint), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     void filter(const Filter & filt) override
     {
+        checkStackSize();
         variant_column_ptr->filter(filt);
         statistics.reset();
     }
 
     void expand(const Filter & mask, bool inverted) override
     {
+        checkStackSize();
         variant_column_ptr->expand(mask, inverted);
     }
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
+        checkStackSize();
         return create(variant_column_ptr->permute(perm, limit), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     ColumnPtr index(const IColumn & indexes, size_t limit) const override
     {
+        checkStackSize();
         return create(variant_column_ptr->index(indexes, limit), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     ColumnPtr replicate(const Offsets & replicate_offsets) const override
     {
+        checkStackSize();
         return create(variant_column_ptr->replicate(replicate_offsets), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override
     {
+        checkStackSize();
         VectorWithMemoryTracking<MutableColumnPtr> scattered_variant_columns = variant_column_ptr->scatter(num_columns, selector);
         VectorWithMemoryTracking<MutableColumnPtr> scattered_columns;
         scattered_columns.reserve(num_columns);
