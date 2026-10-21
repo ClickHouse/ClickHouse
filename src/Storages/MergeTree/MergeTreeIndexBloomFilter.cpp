@@ -973,11 +973,9 @@ static ColumnPtr createColumnFromConstantArray(
         if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType())) /// NOLINT(readability-static-accessed-through-instance)
             return nullptr;
 
-        /// `hasAny`/`hasAll` compare a `String` or `FixedString` constant with `Enum` elements by the name
+        /// `has`, `hasAny` and `hasAll` compare a `String` or `FixedString` constant with an `Enum` by the name
         /// of the enum value, see `tryConvertEnumNameConstant`.
-        std::optional<Field> enum_value;
-        if (coerce_like_search_function)
-            enum_value = tryConvertEnumNameConstant(f, element_type, actual_type);
+        std::optional<Field> enum_value = tryConvertEnumNameConstant(f, element_type, actual_type);
 
         Field converted;
         if (enum_value)
@@ -1165,7 +1163,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             else if (function_name == "has")
             {
                 /// `has(<constant array>, <indexed scalar>)` compares `Field`s directly
-                /// (arrayIndex.h `executeConst`), so it needs the padded form and no coercion.
+                /// (arrayIndex.h `executeConst`), so it needs the padded form and no coercion;
+                /// a string searched for an `Enum` is compared by its name.
                 const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
                 ColumnPtr column = createColumnFromConstantArray(value_field, value_type, actual_type, /*coerce_like_search_function=*/ false);
 

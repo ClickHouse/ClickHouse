@@ -164,7 +164,7 @@ REGISTER_FUNCTION(ExactDivide)
 Calculates the quotient of two integer arguments without conversion to floating point, truncating toward zero.
 The result has the width of `x` and is signed if either argument is signed. Integer types through 256 bits are supported, including mixed signed and unsigned arguments.
 Division by zero or a quotient outside the result type's range throws `ILLEGAL_DIVISION`. Nullable arguments propagate `NULL`.
-The `exact_division_for_integers` setting does not affect this function.
+The `sql_compatible_division_for_integers` setting does not affect this function.
 
 This is the integer-only implementation used by `divideExact` for cases that require checked division.
 Use `divideExact` for expressions that may also have floating-point or `Decimal` arguments and for the stable function name stored in metadata.
