@@ -93,7 +93,7 @@ JSONColumnsBlockInputFormatBase::JSONColumnsBlockInputFormatBase(
 }
 
 size_t JSONColumnsBlockInputFormatBase::readColumn(
-    IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, const String & column_name)
+    IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, const String & column_name, size_t column_index)
 {
     /// Check for empty column.
     if (reader->checkColumnEnd())
@@ -101,7 +101,11 @@ size_t JSONColumnsBlockInputFormatBase::readColumn(
 
     do
     {
-        JSONUtils::readField(*in, column, type, serialization, column_name, format_settings, false);
+        /// readField returns false if it inserted a default value instead of the actual one (e.g. for null
+        /// with input_format_null_as_default), so mark this row to let the DEFAULT expression be evaluated for it.
+        bool read = JSONUtils::readField(*in, column, type, serialization, column_name, format_settings, false);
+        if (!read && format_settings.defaults_for_omitted_fields)
+            block_missing_values.setBit(column_index, column.size() - 1);
     }
     while (!reader->checkColumnEndOrSkipFieldDelimiter());
 
@@ -184,7 +188,8 @@ Chunk JSONColumnsBlockInputFormatBase::read()
             throw Exception(ErrorCodes::INCORRECT_DATA, "Repeated field (`{}`) when processing data.", column_name.value());
 
         seen_columns[column_index] = 1;
-        size_t columns_size = readColumn(*columns[column_index], fields[column_index].type, serializations[column_index], fields[column_index].name);
+        size_t columns_size = readColumn(
+            *columns[column_index], fields[column_index].type, serializations[column_index], fields[column_index].name, column_index);
         if (rows != -1 && size_t(rows) != columns_size)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Number of rows differs in different columns: {} != {}", rows, columns_size);
         rows = columns_size;
