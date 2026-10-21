@@ -33,8 +33,9 @@ $CH --query "
         WHERE query_id = '$PREMISE_ID' AND content_type = 'ManifestListEntry'
         GROUP BY path)"
 
-$CH --query "SELECT count(), sum(id) FROM ${TABLE} SETTINGS max_threads = 1, use_iceberg_metadata_files_cache = 0"
-$CH --query "SELECT count(), sum(id) FROM ${TABLE} SETTINGS max_threads = 8, use_iceberg_metadata_files_cache = 0"
+# The table keeps the metadata cache it was created with, so the uncached reads go through the table function.
+$CH --query "SELECT count(), sum(id) FROM icebergLocal('${TABLE_PATH}/') SETTINGS max_threads = 1, use_iceberg_metadata_files_cache = 0"
+$CH --query "SELECT count(), sum(id) FROM icebergLocal('${TABLE_PATH}/') SETTINGS max_threads = 8, use_iceberg_metadata_files_cache = 0"
 $CH --query "SELECT count(), sum(id) FROM ${TABLE} SETTINGS max_threads = 8, use_iceberg_metadata_files_cache = 1"
 $CH --query "SELECT count(), sum(id) FROM ${TABLE} SETTINGS max_threads = 8, use_iceberg_metadata_files_cache = 1"
 
