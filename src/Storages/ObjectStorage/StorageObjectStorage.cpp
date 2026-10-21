@@ -69,6 +69,7 @@ namespace Setting
     extern const SettingsBool iceberg_delete_data_on_drop;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool parallel_replicas_for_object_storage_tables;
+    extern const SettingsNonZeroUInt64 max_parallel_replicas;
 }
 
 namespace ErrorCodes
@@ -719,12 +720,16 @@ StoragePtr StorageObjectStorage::getStorageForParallelReplicasRead(const Storage
     if (!context->canReplaceClusterEngineWithClusterVariant() || !settings[Setting::parallel_replicas_for_object_storage_tables])
         return nullptr;
 
+    /// `ReadFromCluster` uses every replica when `max_parallel_replicas` is 1, so such a query reads the table itself.
+    if (settings[Setting::max_parallel_replicas] <= 1)
+        return nullptr;
+
     /// A materialized view reads the inserted block, not the table.
     if (context->getViewSource())
         return nullptr;
 
-    /// The replicas run the query as the initial user, so a query running as another user (e.g. the body of
-    /// a `SQL SECURITY DEFINER` view) reads the table itself.
+    /// The replicas do not run the query as the current user when it is not the initial one (e.g. the
+    /// definer of a `SQL SECURITY DEFINER` view body), so such a query reads the table itself.
     if (context->getUserName() != context->getClientInfo().initial_user)
         return nullptr;
 

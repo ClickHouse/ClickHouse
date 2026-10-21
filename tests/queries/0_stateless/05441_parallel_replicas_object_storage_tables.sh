@@ -41,6 +41,7 @@ check "SELECT sum(id), count() FROM ice"
 echo "-- disabled"
 check "SELECT sum(a) FROM t" "parallel_replicas_for_object_storage_tables = 0"
 check "SELECT sum(a) FROM t" "parallel_replicas_for_cluster_engines = 0"
+check "SELECT sum(a) FROM t" "max_parallel_replicas = 1, parallel_replicas_prefer_local_replica = 0"
 
 echo "-- JOIN"
 check "SELECT count() FROM t AS x JOIN t AS y USING (a)"
