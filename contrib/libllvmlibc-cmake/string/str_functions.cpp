@@ -1,19 +1,23 @@
 // Strong x86_64 `memchr` and `strlen`, overriding musl's generic C versions in
 // the static link (musl ships x86_64 assembly only for memcpy/memmove/memset;
-// LLVM-libc's are byte loops). glibc uses EVEX/AVX2 assembly for both, and the
-// CSV parser showed musl's word-at-a-time `memchr` taking twice the samples.
+// LLVM-libc's are byte and word loops). glibc uses EVEX/AVX2 assembly for both,
+// and the CSV parser showed musl's word-at-a-time `memchr` taking twice the
+// samples.
 //
-// Vector loads are done on aligned addresses only, and the unrolled loop on
-// addresses aligned to its whole stride, so no load ever crosses a page
-// boundary: reading past the buffer or past the first match stays inside a
-// page that is known to be mapped, and the bytes outside [s, s + n) are masked
-// off before the result is used. `n` is treated as a count of bytes left to
-// look at and never added to the pointer, since callers may pass a limit that
-// overstates the buffer, up to SIZE_MAX. Not built under sanitizers: their
-// interceptors define strong `memchr`/`strlen` and the wrapped libc versions
-// carry the range checks.
+// Two tiers from one body (str_functions_impl.h): the build's baseline (AVX2 at
+// x86-64-v3, SSE2 in the compat build) and an AVX-512BW clone with 64-byte
+// vectors and mask registers, selected once at runtime through a function
+// pointer, as in x86_64_mem_functions.cpp. The 64-byte tier is what matches
+// glibc's `__memchr_evex512` above 4 KiB; 32-byte vectors cap at 1.6x its time
+// because of load width. Measured against glibc, musl, LLVM-libc, FreeBSD,
+// bionic and StringZilla in libc-func-bench (2026-10-21, Zen 5).
+//
+// Not built under sanitizers: their interceptors define strong `memchr` /
+// `strlen` and the wrapped libc versions carry the range checks.
 
 #if defined(__x86_64__)
+
+#include "x86_cpu_dispatch.h"
 
 #include <immintrin.h>
 
@@ -22,153 +26,143 @@
 
 namespace {
 
+constexpr uintptr_t PAGE = 4096;
+
+#define ALIGN_DOWN(p)                                                          \
+  reinterpret_cast<const char *>(reinterpret_cast<uintptr_t>(p) &              \
+                                 ~(uintptr_t{VEC} - 1))
+#define ALIGN_DOWN4(p)                                                         \
+  reinterpret_cast<const char *>(reinterpret_cast<uintptr_t>(p) &              \
+                                 ~(uintptr_t{4 * VEC} - 1))
+
+// ---------------------------------------------------------------------------
+// AVX-512BW clone: 64-byte vectors, compares into k registers, masked loads
+// with fault suppression for the head and tail.
+// ---------------------------------------------------------------------------
+#define CHSTR_AVX512 1
+#define VEC 64
+#define vec_t __m512i
+#define mask_t __mmask64
+#define SPLAT(c) _mm512_set1_epi8(static_cast<char>(c))
+#define LOAD(p) _mm512_load_si512(static_cast<const void *>(p))
+#define LOADU(p) _mm512_loadu_si512(static_cast<const void *>(p))
+#define MLOADZ(k, p) _mm512_maskz_loadu_epi8((k), (p))
+#define CMPEQ_M(a, b) _mm512_cmpeq_epi8_mask((a), (b))
+#define CMPEQ_MM(k, a, b) _mm512_mask_cmpeq_epi8_mask((k), (a), (b))
+#define MINU(a, b) _mm512_min_epu8((a), (b))
+#define XOR(a, b) _mm512_xor_si512((a), (b))
+#define MASK_LO(n) static_cast<mask_t>(_bzhi_u64(~0ull, static_cast<unsigned>(n)))
+#define MASK_ALL (~mask_t{0})
+#define CTZ(m) static_cast<size_t>(__builtin_ctzll(m))
+#define CHSTR_ATTR CH_AVX512_CLONE
+#define FN(name) name##_avx512
+#include "str_functions_impl.h"
+#undef FN
+#undef CHSTR_ATTR
+#undef CTZ
+#undef MASK_ALL
+#undef MASK_LO
+#undef XOR
+#undef MINU
+#undef CMPEQ_MM
+#undef CMPEQ_M
+#undef MLOADZ
+#undef LOADU
+#undef LOAD
+#undef SPLAT
+#undef mask_t
+#undef vec_t
+#undef VEC
+#undef CHSTR_AVX512
+
+// ---------------------------------------------------------------------------
+// Baseline: AVX2 (x86-64-v3 build) or SSE2 (compat build).
+// ---------------------------------------------------------------------------
 #if defined(__AVX2__)
-
-constexpr size_t VEC = 32;
-using vec_t = __m256i;
-
-__attribute__((always_inline)) inline vec_t splat(unsigned char c) {
-  return _mm256_set1_epi8(static_cast<char>(c));
-}
-__attribute__((always_inline)) inline vec_t eq_vec(const void *aligned,
-                                                   vec_t needle) {
-  vec_t v = _mm256_load_si256(static_cast<const vec_t *>(aligned));
-  return _mm256_cmpeq_epi8(v, needle);
-}
-__attribute__((always_inline)) inline vec_t or_vec(vec_t a, vec_t b) {
-  return _mm256_or_si256(a, b);
-}
-__attribute__((always_inline)) inline uint64_t to_mask(vec_t v) {
-  return static_cast<uint32_t>(_mm256_movemask_epi8(v));
-}
-
-#else // x86-64-v2 compat build: SSE2
-
-constexpr size_t VEC = 16;
-using vec_t = __m128i;
-
-__attribute__((always_inline)) inline vec_t splat(unsigned char c) {
-  return _mm_set1_epi8(static_cast<char>(c));
-}
-__attribute__((always_inline)) inline vec_t eq_vec(const void *aligned,
-                                                   vec_t needle) {
-  vec_t v = _mm_load_si128(static_cast<const vec_t *>(aligned));
-  return _mm_cmpeq_epi8(v, needle);
-}
-__attribute__((always_inline)) inline vec_t or_vec(vec_t a, vec_t b) {
-  return _mm_or_si128(a, b);
-}
-__attribute__((always_inline)) inline uint64_t to_mask(vec_t v) {
-  return static_cast<uint32_t>(_mm_movemask_epi8(v));
-}
-
+#define VEC 32
+#define vec_t __m256i
+#define SPLAT(c) _mm256_set1_epi8(static_cast<char>(c))
+#define LOAD(p) _mm256_load_si256(reinterpret_cast<const __m256i *>(p))
+#define LOADU(p) _mm256_loadu_si256(reinterpret_cast<const __m256i *>(p))
+#define CMPEQ(a, b) _mm256_cmpeq_epi8((a), (b))
+#define MINU(a, b) _mm256_min_epu8((a), (b))
+#define OR(a, b) _mm256_or_si256((a), (b))
+#define MOVEMASK(v) static_cast<uint32_t>(_mm256_movemask_epi8(v))
+#else
+#define VEC 16
+#define vec_t __m128i
+#define SPLAT(c) _mm_set1_epi8(static_cast<char>(c))
+#define LOAD(p) _mm_load_si128(reinterpret_cast<const __m128i *>(p))
+#define LOADU(p) _mm_loadu_si128(reinterpret_cast<const __m128i *>(p))
+#define CMPEQ(a, b) _mm_cmpeq_epi8((a), (b))
+#define MINU(a, b) _mm_min_epu8((a), (b))
+#define OR(a, b) _mm_or_si128((a), (b))
+#define MOVEMASK(v) static_cast<uint32_t>(_mm_movemask_epi8(v))
 #endif
+#define mask_t uint32_t
+#define CTZ(m) static_cast<size_t>(__builtin_ctz(m))
+#if defined(__BMI2__)
+#define MASK_LO(n) _bzhi_u32(~0u, static_cast<unsigned>(n))
+#else
+// Only used with n < VEC <= 16 here, so the shift is defined.
+#define MASK_LO(n) ((1u << static_cast<unsigned>(n)) - 1u)
+#endif
+#define CHSTR_ATTR CH_NO_SSP
+#define FN(name) name##_baseline
+#include "str_functions_impl.h"
+#undef FN
+#undef CHSTR_ATTR
+#undef MASK_LO
+#undef CTZ
+#undef mask_t
+#undef MOVEMASK
+#undef OR
+#undef MINU
+#undef CMPEQ
+#undef LOADU
+#undef LOAD
+#undef SPLAT
+#undef vec_t
+#undef VEC
+#undef ALIGN_DOWN4
+#undef ALIGN_DOWN
 
-__attribute__((always_inline)) inline uint64_t eq_mask(const void *aligned,
-                                                       vec_t needle) {
-  return to_mask(eq_vec(aligned, needle));
+// ---------------------------------------------------------------------------
+// Dispatch: a function pointer initialised to a resolver that runs cpuid once
+// and swaps itself out (glibc-IFUNC shape; LLVM will not tail-call from a v3
+// function into a v4 clone, so an `if (avx512)` branch would cost a frame).
+// ---------------------------------------------------------------------------
+using memchr_fn = void *(*)(const void *, int, size_t) noexcept;
+using strlen_fn = size_t (*)(const char *) noexcept;
+
+void *memchr_resolve(const void *s, int c, size_t n) noexcept;
+size_t strlen_resolve(const char *s) noexcept;
+
+memchr_fn memchr_ptr = memchr_resolve;
+strlen_fn strlen_ptr = strlen_resolve;
+
+void *memchr_resolve(const void *s, int c, size_t n) noexcept {
+  const memchr_fn fn =
+      cpu_level() >= CPU_AVX512 ? memchr_avx512 : memchr_baseline;
+  __atomic_store_n(&memchr_ptr, fn, __ATOMIC_RELAXED);
+  return fn(s, c, n);
 }
 
-// Scan 4 * VEC bytes starting at the aligned `a`: one branch per iteration on
-// the OR of the four compares (glibc unrolls the same way), then locate the
-// first match only when there is one. Returns nullptr if none.
-__attribute__((always_inline)) inline const char *scan4(const char *a,
-                                                        vec_t needle) {
-  const vec_t e0 = eq_vec(a, needle);
-  const vec_t e1 = eq_vec(a + VEC, needle);
-  const vec_t e2 = eq_vec(a + 2 * VEC, needle);
-  const vec_t e3 = eq_vec(a + 3 * VEC, needle);
-  if (to_mask(or_vec(or_vec(e0, e1), or_vec(e2, e3))) == 0)
-    return nullptr;
-  if (uint64_t m = to_mask(e0))
-    return a + __builtin_ctzll(m);
-  if (uint64_t m = to_mask(e1))
-    return a + VEC + __builtin_ctzll(m);
-  if (uint64_t m = to_mask(e2))
-    return a + 2 * VEC + __builtin_ctzll(m);
-  return a + 3 * VEC + __builtin_ctzll(to_mask(e3));
-}
-
-__attribute__((always_inline)) inline const char *align_down(const char *p) {
-  return reinterpret_cast<const char *>(reinterpret_cast<uintptr_t>(p) &
-                                        ~(uintptr_t{VEC} - 1));
+size_t strlen_resolve(const char *s) noexcept {
+  const strlen_fn fn =
+      cpu_level() >= CPU_AVX512 ? strlen_avx512 : strlen_baseline;
+  __atomic_store_n(&strlen_ptr, fn, __ATOMIC_RELAXED);
+  return fn(s);
 }
 
 } // namespace
 
-extern "C" void *memchr(const void *s, int c, size_t n) noexcept {
-  if (n == 0)
-    return nullptr;
-  const char *p = static_cast<const char *>(s);
-  const vec_t needle = splat(static_cast<unsigned char>(c));
-
-  // `n` is only an upper bound on how far to look, never turned into a
-  // pointer: callers may pass an `n` that overstates the buffer and rely on
-  // the search stopping at the first match (musl's strnlen passes the caller's
-  // limit, realpath's is PATH_MAX past a shorter string, strndup(s, -1) passes
-  // SIZE_MAX), so `p + n` may lie outside the object or wrap the address space
-  // altogether. The search is driven by the number of bytes left to look at,
-  // and the pointer only ever advances to the next aligned block, which is at
-  // most `n` bytes in.
-  //
-  // First block: drop the bytes before `p`.
-  const char *a = align_down(p);
-  const size_t head = static_cast<size_t>(p - a);
-  uint64_t m = eq_mask(a, needle) >> head;
-  // Bytes at or past `p + n` are not part of the buffer. This can only happen
-  // in the first block if the whole buffer fits into it.
-  if (n < VEC)
-    m &= (uint64_t{1} << n) - 1;
-  if (m)
-    return const_cast<char *>(p + __builtin_ctzll(m));
-  // The first block covered `VEC - head` bytes of the buffer.
-  if (n <= VEC - head)
-    return nullptr;
-  size_t remaining = n - (VEC - head);
-  a += VEC;
-
-  // Re-align to the 4 * VEC stride before the unrolled loop: a 4 * VEC-aligned
-  // group never crosses a page, so it is only ever read beyond the match
-  // within the page that holds the match.
-  for (; remaining >= VEC && (reinterpret_cast<uintptr_t>(a) & (4 * VEC - 1));
-       a += VEC, remaining -= VEC) {
-    m = eq_mask(a, needle);
-    if (m)
-      return const_cast<char *>(a + __builtin_ctzll(m));
-  }
-  for (; remaining >= 4 * VEC; a += 4 * VEC, remaining -= 4 * VEC)
-    if (const char *r = scan4(a, needle))
-      return const_cast<char *>(r);
-  for (; remaining >= VEC; a += VEC, remaining -= VEC) {
-    m = eq_mask(a, needle);
-    if (m)
-      return const_cast<char *>(a + __builtin_ctzll(m));
-  }
-
-  if (remaining) {
-    m = eq_mask(a, needle) & ((uint64_t{1} << remaining) - 1);
-    if (m)
-      return const_cast<char *>(a + __builtin_ctzll(m));
-  }
-  return nullptr;
+extern "C" CH_NO_SSP void *memchr(const void *s, int c, size_t n) noexcept {
+  return __atomic_load_n(&memchr_ptr, __ATOMIC_RELAXED)(s, c, n);
 }
 
-extern "C" size_t strlen(const char *s) noexcept {
-  const vec_t zero = splat(0);
-  const char *a = align_down(s);
-  uint64_t m = eq_mask(a, zero) >> (s - a);
-  if (m)
-    return static_cast<size_t>(__builtin_ctzll(m));
-  a += VEC;
-  // Re-align to the 4 * VEC stride so the unrolled loads stay within one page.
-  for (; reinterpret_cast<uintptr_t>(a) & (4 * VEC - 1); a += VEC) {
-    m = eq_mask(a, zero);
-    if (m)
-      return static_cast<size_t>(a - s) + static_cast<size_t>(__builtin_ctzll(m));
-  }
-  for (;; a += 4 * VEC)
-    if (const char *r = scan4(a, zero))
-      return static_cast<size_t>(r - s);
+extern "C" CH_NO_SSP size_t strlen(const char *s) noexcept {
+  return __atomic_load_n(&strlen_ptr, __ATOMIC_RELAXED)(s);
 }
 
 #endif // __x86_64__
