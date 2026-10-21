@@ -17,7 +17,7 @@ namespace
 /** timezoneOf(x) - get the name of the timezone of DateTime data type.
   * Example: Pacific/Pitcairn.
   */
-class FunctionTimezoneOf final : public IFunction
+class FunctionTimezoneOf : public IFunction
 {
 public:
     static constexpr auto name = "timezoneOf";
@@ -28,10 +28,15 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & types) const override
     {
-        /// Legacy validator removed Nullable before checking DateTime/DateTime64.
-        return "(MaybeNullable(DateTime | DateTime64)) -> String";
+        FunctionArgumentDescriptors mandatory_args{
+            {"datetime", &isDateTimeOrDateTime64, nullptr, "DateTime or DateTime64"},
+        };
+
+        validateFunctionArguments(*this, types, mandatory_args);
+
+        return std::make_shared<DataTypeString>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -59,6 +64,13 @@ public:
             dynamic_cast<const TimezoneMixin &>(*type_no_nullable).getTimeZone().getTimeZone());
     }
 
+private:
+    static bool isDateTimeOrDateTime64(const IDataType & type)
+    {
+        DataTypePtr type_no_nullable = removeNullable(type.getPtr());
+
+        return WhichDataType(*type_no_nullable).isDateTimeOrDateTime64();
+    }
 };
 
 }
@@ -66,7 +78,7 @@ public:
 REGISTER_FUNCTION(TimezoneOf)
 {
     FunctionDocumentation::Description description = R"(
-Returns the timezone name of a [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64) value.
+Returns the timezone name of a [`DateTime`](/sql-reference/data-types/datetime) or [`DateTime64`](/sql-reference/data-types/datetime64) value.
     )";
     FunctionDocumentation::Syntax syntax = "timezoneOf(datetime)";
     FunctionDocumentation::Arguments arguments = {
@@ -80,7 +92,7 @@ SELECT timezoneOf(now());
         )",
         R"(
 ┌─timezoneOf(now())─┐
-│ Etc/UTC           │
+│ Europe/Amsterdam  │
 └───────────────────┘
         )"}
     };

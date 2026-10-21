@@ -2,7 +2,6 @@
 
 #include <Functions/IFunction.h>
 
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
@@ -15,7 +14,7 @@ namespace DB
 /** tuple(x, y, ...) is a function that allows you to group several columns.
   * tupleElement(tuple, n) is a function that allows you to retrieve a column from tuple.
   */
-class FunctionTuple final : public IFunction
+class FunctionTuple : public IFunction
 {
     bool enable_named_columns;
 
@@ -42,28 +41,6 @@ public:
     bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-
-    /// Documentation-only — collects N argument types into a `Tuple` (or an
-    /// empty `Tuple()` for zero args). With `enable_named_columns_in_function_tuple`
-    /// and all-unique unquoted-identifier argument names, the result is a
-    /// named tuple — that's not expressible in the DSL, so the legacy
-    /// `getReturnTypeImpl` stays authoritative.
-    String getSignatureString() const override
-    {
-        return "(A1 : Any, ...) -> Tuple(A1, ...)";
-    }
-
-    /// The signature is documentation-only: in particular, it cannot express
-    /// the zero-argument case or tuple element names. Keep both return-type
-    /// entry points on the authoritative implementation below.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        ColumnsWithTypeAndName columns;
-        columns.reserve(arguments.size());
-        for (const auto & type : arguments)
-            columns.emplace_back(nullptr, type, String{});
-        return getReturnTypeImpl(columns);
-    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

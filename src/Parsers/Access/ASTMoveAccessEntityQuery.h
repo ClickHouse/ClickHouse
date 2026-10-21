@@ -14,7 +14,7 @@ class ASTRowPolicyNames;
 class ASTMoveAccessEntityQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
-    AccessEntityType type{};
+    AccessEntityType type;
     Strings names;
     boost::intrusive_ptr<ASTRowPolicyNames> row_policy_names;
 

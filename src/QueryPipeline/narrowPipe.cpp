@@ -2,7 +2,6 @@
 
 #include <random>
 #include <Processors/ConcatProcessor.h>
-#include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 #include <QueryPipeline/Pipe.h>
 #include <Common/thread_local_rng.h>
@@ -13,7 +12,7 @@ namespace DB
 
 namespace
 {
-    using Distribution = VectorWithMemoryTracking<size_t>;
+    using Distribution = std::vector<size_t>;
     Distribution getDistribution(size_t from, size_t to)
     {
         Distribution distribution(from);
@@ -32,22 +31,17 @@ void narrowPipe(Pipe & pipe, size_t width)
     if (size <= width)
         return;
 
-    /// A `ConcatProcessor` leaves its later inputs undemanded until the earlier ones finish, and a
-    /// fan-out that must push to all of its outputs before it consumes again cannot wait that out.
-    for (const auto & processor : pipe.getProcessors())
-        if (processor->requiresAllOutputsPushable())
-            return;
-
-    VectorWithMemoryTracking<OutputPortRawPtrs> partitions(width);
+    std::vector<std::vector<OutputPort *>> partitions(width);
 
     auto distribution = getDistribution(size, width);
 
-    pipe.transform([&](const OutputPortRawPtrs & ports)
+    pipe.transform([&](OutputPortRawPtrs ports)
     {
         for (size_t i = 0; i < size; ++i)
             partitions[distribution[i]].emplace_back(ports[i]);
 
         Processors concats;
+        concats.reserve(width);
 
         for (size_t i = 0; i < width; ++i)
         {

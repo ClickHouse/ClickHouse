@@ -1,4 +1,4 @@
-#include <Functions/h3Common.h>
+#include "config.h"
 
 #if USE_H3
 
@@ -12,42 +12,45 @@
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
+#include <h3api.h>
 
 
 namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
 namespace
 {
 
-class FunctionH3GetUnidirectionalEdgeBoundary final : public IFunction
+class FunctionH3GetUnidirectionalEdgeBoundary : public IFunction
 {
 public:
     static constexpr auto name = "h3GetUnidirectionalEdgeBoundary";
 
-    H3Validator validator;
-
-    explicit FunctionH3GetUnidirectionalEdgeBoundary(const ContextPtr & context) : validator(context) {}
-
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3GetUnidirectionalEdgeBoundary>(context); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3GetUnidirectionalEdgeBoundary>(); }
 
     std::string getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
-    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
-    /// fail on entirely valid data.
-    bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(UInt64) -> Array(Tuple(Float64, Float64))";
+        const auto * arg = arguments[0].get();
+        if (!WhichDataType(arg).isUInt64())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arg->getName(), 1, getName());
+
+        return std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeTuple>(
+                DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()}));
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -76,21 +79,17 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             H3Index edge = data_hindex_edge[row];
+            CellBoundary boundary{};
 
-            if (validator.validateEdge(edge))
+            directedEdgeToBoundary(edge, &boundary);
+
+            for (int vert = 0; vert < boundary.numVerts; ++vert)
             {
-                CellBoundary boundary{};
-                directedEdgeToBoundary(edge, &boundary);
-
-                for (int vert = 0; vert < boundary.numVerts; ++vert)
-                {
-                    latitude->getData().push_back(radsToDegs(boundary.verts[vert].lat));
-                    longitude->getData().push_back(radsToDegs(boundary.verts[vert].lng));
-                }
-
-                current_offset += boundary.numVerts;
+                latitude->getData().push_back(radsToDegs(boundary.verts[vert].lat));
+                longitude->getData().push_back(radsToDegs(boundary.verts[vert].lng));
             }
 
+            current_offset += boundary.numVerts;
             offsets->insert(current_offset);
         }
 
@@ -112,8 +111,8 @@ Returns the coordinates defining the unidirectional edge [H3](#h3-index).
         {"index", "Hexagon index number that represents a unidirectional edge.", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns an array of (latitude, longitude) pairs defining a unidirectional edge. Throws `INCORRECT_DATA` if the input is not a valid directed edge unless `functions_h3_default_if_invalid = 1`, in which case it returns `[]`.",
-        {"Array(Tuple(Float64, Float64))"}
+        "Returns an array of (longitude, latitude) pairs defining a unidirectional edge.",
+        {"Array(Float64, Float64)"}
     };
     FunctionDocumentation::Examples examples = {
         {
@@ -121,7 +120,7 @@ Returns the coordinates defining the unidirectional edge [H3](#h3-index).
             "SELECT h3GetUnidirectionalEdgeBoundary(1248204388774707199) AS boundary",
             R"(
 ┌─boundary────────────────────────────────────────────────────────────────────────┐
-│ [(37.4201286776778,-122.03773496427027),(37.337556084353004,-122.090428929044)] │
+│ [(37.42012867767779,-122.03773496427027),(37.33755608435299,-122.090428929044)] │
 └─────────────────────────────────────────────────────────────────────────────────┘
             )"
         }

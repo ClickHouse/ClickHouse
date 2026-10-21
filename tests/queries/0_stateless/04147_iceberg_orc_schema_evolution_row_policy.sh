@@ -48,7 +48,7 @@ rm -rf "${ICEBERG_PATH}"
 # ORC data files only via the `icebergLocal` table function. After this we
 # have one ORC file under the table's first schema.
 ${CLICKHOUSE_CLIENT} --query "
-    SET allow_experimental_insert_into_iceberg = 1;
+    SET allow_experimental_insert_into_iceberg = 1,input_format_parquet_use_native_reader_v3 = 1;
 
     CREATE TABLE ${TEST_TABLE} (c0 Int64, c1 String)
         ENGINE = IcebergLocal('${ICEBERG_PATH}', 'Parquet');

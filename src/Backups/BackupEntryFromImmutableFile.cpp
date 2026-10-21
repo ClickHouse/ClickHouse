@@ -15,7 +15,8 @@ BackupEntryFromImmutableFile::BackupEntryFromImmutableFile(
     bool allow_checksum_from_remote_path_)
     : disk(disk_)
     , file_path(file_path_)
-    , copy_encrypted(copy_encrypted_ && disk_->getDataSourceDescription().is_encrypted)
+    , data_source_description(disk->getDataSourceDescription())
+    , copy_encrypted(copy_encrypted_ && data_source_description.is_encrypted)
     , passed_file_size(file_size_)
     , passed_checksum(checksum_)
     , allow_checksum_from_remote_path(allow_checksum_from_remote_path_)
@@ -23,11 +24,6 @@ BackupEntryFromImmutableFile::BackupEntryFromImmutableFile(
 }
 
 BackupEntryFromImmutableFile::~BackupEntryFromImmutableFile() = default;
-
-DataSourceDescription BackupEntryFromImmutableFile::getDataSourceDescription() const
-{
-    return disk->getDataSourceDescription();
-}
 
 std::unique_ptr<SeekableReadBuffer> BackupEntryFromImmutableFile::getReadBuffer(const ReadSettings & read_settings) const
 {

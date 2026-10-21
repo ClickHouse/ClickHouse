@@ -1,10 +1,9 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <IO/ReadHelpers.h>
 #include <iostream>
-#include <Examples/clickhouse_examples.h>
 
 
-int mainEntryExampleZkutilTestAsync(int argc, char ** argv)
+int main(int argc, char ** argv)
 try
 {
     auto zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(zkutil::ZooKeeperArgs("localhost:2181"));
