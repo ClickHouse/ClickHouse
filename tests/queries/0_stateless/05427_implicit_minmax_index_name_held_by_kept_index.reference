@@ -1,0 +1,22 @@
+-- load path
+auto_minmax_index__block_number	set	1	Explicit
+auto_minmax_index_a	minmax	8	Explicit
+auto_minmax_index_b	set	1	Explicit
+auto_minmax_index_id	minmax	1	Implicit
+1
+auto_minmax_index__block_number	set	1	Explicit
+auto_minmax_index_a	minmax	8	Explicit
+auto_minmax_index_b	set	1	Explicit
+auto_minmax_index_id	minmax	1	Implicit
+-- alter paths
+auto_minmax_index_b	minmax	8	Explicit
+auto_minmax_index_x	minmax	1	Implicit
+auto_minmax_index_y	set	1	Explicit
+-- after alter
+auto_minmax_index_b	minmax	8	Explicit
+auto_minmax_index_y	set	1	Explicit
+1
+1
+-- after reload
+auto_minmax_index_b	minmax	8	Explicit
+auto_minmax_index_y	set	1	Explicit
