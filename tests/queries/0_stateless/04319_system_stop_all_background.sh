@@ -38,15 +38,25 @@ wait_running_with_progress() {
 
 $CLICKHOUSE_CLIENT -q "
     create table src (x Int64) engine Memory;
-    insert into src select * from numbers(2) settings max_block_size=1;
-    create materialized view p refresh every 1 year (x Int64) engine Memory empty as
-        select x + sleepEachRow(1) as x from src settings max_block_size = 1, max_threads = 1;
-    system refresh p;"
+    insert into src select * from numbers(2) settings max_block_size=1;"
 
-wait_status p Running
-
-# Pause while the refresh is running. This should NOT cancel the ongoing refresh.
-$CLICKHOUSE_CLIENT -q "system pause p;"
+# Pause while a slow refresh (2 rows * 1 second) is running; PAUSE must not cancel it. On a slow server
+# the pause can land before the refresh starts or after it ends, so retry with a new view until the
+# refresh is still running right after the pause.
+for _ in {1..10}
+do
+    $CLICKHOUSE_CLIENT -q "
+        drop table if exists p;
+        create materialized view p refresh every 1 year (x Int64) engine Memory empty as
+            select x + sleepEachRow(1) as x from src settings max_block_size = 1, max_threads = 1;
+        system refresh p;"
+    # 1 = the refresh started before the pause (`Running`) and had not swapped in its result yet (`p` empty).
+    running=`$CLICKHOUSE_CLIENT -q "
+        system pause p;
+        select status = 'Running' and (select count() from p) = 0 from refreshes where view = 'p' -- $LINENO"`
+    [ "$running" = 1 ] && break
+done
+echo "<1: refresh running after pause: $running>"
 
 # The currently running refresh must complete successfully.
 $CLICKHOUSE_CLIENT -q "system wait view p;"
