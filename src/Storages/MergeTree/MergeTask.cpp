@@ -1074,6 +1074,23 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         /// See https://github.com/ClickHouse/ClickHouse/issues/86123
         {
             auto & expired_columns = global_ctx->new_data_part->expired_columns;
+
+            /// Only an array subcolumn of a `Nested` structure whose outermost offsets are shared with a
+            /// sibling array subcolumn can corrupt those offsets. A dotted scalar (`x.y UInt64`), an array
+            /// without array siblings, or any column of a table with `share_nested_offsets = 0` writes
+            /// its own offsets, so its default is materialized by the merge as for any other column.
+            const bool share_nested_offsets = (*merge_tree_settings)[MergeTreeSetting::share_nested_offsets];
+            std::unordered_map<String, size_t> array_subcolumns_by_nested_name;
+            if (share_nested_offsets)
+            {
+                for (const auto & storage_column : global_ctx->storage_columns)
+                {
+                    auto split = Nested::splitName(storage_column.name);
+                    if (!split.second.empty() && isArray(storage_column.type))
+                        ++array_subcolumns_by_nested_name[split.first];
+                }
+            }
+
             bool changed = true;
             while (changed)
             {
@@ -1097,7 +1114,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                         continue;
 
                     auto split = Nested::splitName(storage_column.name);
-                    if (split.second.empty())
+                    if (split.second.empty() || !isArray(storage_column.type))
+                        continue;
+
+                    auto nested_it = array_subcolumns_by_nested_name.find(split.first);
+                    if (nested_it == array_subcolumns_by_nested_name.end() || nested_it->second < 2)
                         continue;
 
                     auto col_default = columns_desc.getDefault(storage_column.name);
@@ -1180,18 +1201,25 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     const auto & expired_columns = global_ctx->new_data_part->expired_columns;
     if (!expired_columns.empty())
     {
-        /// Columns read out of the merged block by the consumers rebuilt during this merge:
-        /// projections and skip indexes. `merge_required_columns` does not cover them - it is
-        /// snapshotted before their inputs are added to the merged column set.
-        NameSet columns_required_by_rebuilt_consumers;
+        /// Columns read out of the merged block during this merge: the ones the merge algorithm itself
+        /// consumes (`merge_required_columns`, e.g. the columns summed by `SummingMergeTree`), the
+        /// inputs of the TTL expressions, and the inputs of the consumers rebuilt during this merge -
+        /// projections and skip indexes (`merge_required_columns` does not cover the latter, it is
+        /// snapshotted before their inputs are added to the merged column set).
+        NameSet columns_required_during_merge = global_ctx->merge_required_columns;
         {
             const auto all_storage_columns = global_ctx->storage_columns.getNameSet();
             const auto all_virtual_columns = global_ctx->virtual_columns.getNameSet();
 
+            auto add_required_column = [&](const String & name)
+            {
+                columns_required_during_merge.emplace(getColumnNameInStorage(name, all_storage_columns, all_virtual_columns));
+            };
+
             auto add_required_columns = [&](const Names & names)
             {
                 for (const auto & name : names)
-                    columns_required_by_rebuilt_consumers.emplace(getColumnNameInStorage(name, all_storage_columns, all_virtual_columns));
+                    add_required_column(name);
             };
 
             for (const auto * projection : global_ctx->projections_to_rebuild)
@@ -1205,30 +1233,63 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
             /// Single-column skip indexes are built in the vertical stage from the gathered column.
             for (const auto & [column_name, _] : global_ctx->skip_indexes_by_column)
-                columns_required_by_rebuilt_consumers.emplace(column_name);
+                columns_required_during_merge.emplace(column_name);
+
+            /// The TTL step evaluates its expressions over the merged block, so their inputs must be
+            /// produced by the merge.
+            auto add_ttl_columns = [&](const TTLDescription & ttl)
+            {
+                for (const auto & column : ttl.expression_columns)
+                    add_required_column(column.name);
+                for (const auto & column : ttl.where_expression_columns)
+                    add_required_column(column.name);
+                add_required_columns(ttl.group_by_keys);
+                for (const auto & set_part : ttl.set_parts)
+                    if (set_part.expression)
+                        add_required_columns(set_part.expression->getRequiredColumns());
+                for (const auto & aggregate : ttl.aggregate_descriptions)
+                    add_required_columns(aggregate.argument_names);
+            };
+
+            const auto & metadata = *global_ctx->metadata_snapshot;
+            if (metadata.hasRowsTTL())
+                add_ttl_columns(metadata.getRowsTTL());
+            for (const auto & ttl : metadata.getRowsWhereTTLs())
+                add_ttl_columns(ttl);
+            for (const auto & ttl : metadata.getMoveTTLs())
+                add_ttl_columns(ttl);
+            for (const auto & ttl : metadata.getRecompressionTTLs())
+                add_ttl_columns(ttl);
+            for (const auto & ttl : metadata.getGroupByTTLs())
+                add_ttl_columns(ttl);
+            for (const auto & [column_name, ttl] : metadata.getColumnTTLs())
+            {
+                add_required_column(column_name);
+                add_ttl_columns(ttl);
+            }
         }
 
         /// A column expired because its `DEFAULT` cannot be materialized here is not expired after all
-        /// when one of those consumers needs it: nothing else would produce it, and the TTL step must
-        /// not (see below). It is merged and written like any other column instead. Reading it goes
-        /// through `reconcileEvaluatedDefaultWithSharedOffsets`, which makes the values consistent with
-        /// the offsets the source parts store, so the written `Nested` offsets are not corrupted.
-        /// Writing it is what keeps the rebuilt consumer consistent with the base part: if the column
-        /// were still dropped from the written part, ordinary reads would recompute it from its
-        /// `DEFAULT` without that reconciliation, and could return a value different from the one the
-        /// projection or skip index was built from.
-        NameSet columns_kept_for_rebuilt_consumers;
+        /// when the merge needs it: nothing else would produce it, and the TTL step must not (see
+        /// below). It is merged and written like any other column instead. Reading it goes through
+        /// `reconcileEvaluatedDefaultWithSharedOffsets`, which makes the values consistent with the
+        /// offsets the source parts store, so the written `Nested` offsets are not corrupted.
+        /// Writing it is what keeps the merged part consistent: if the column were still dropped from
+        /// the written part, ordinary reads would recompute it from its `DEFAULT` without that
+        /// reconciliation, and could return a value different from the one the projection or skip
+        /// index was built from, or lose the result of the merge algorithm (e.g. summed values).
+        NameSet columns_kept_for_merge;
         NameSet columns_to_drop_from_merge;
         for (const auto & name : expired_columns)
         {
             if (global_ctx->columns_expired_by_unmaterializable_default.contains(name)
-                && columns_required_by_rebuilt_consumers.contains(name))
-                columns_kept_for_rebuilt_consumers.emplace(name);
+                && columns_required_during_merge.contains(name))
+                columns_kept_for_merge.emplace(name);
             else
                 columns_to_drop_from_merge.emplace(name);
         }
 
-        for (const auto & name : columns_kept_for_rebuilt_consumers)
+        for (const auto & name : columns_kept_for_merge)
         {
             global_ctx->new_data_part->expired_columns.erase(name);
             global_ctx->columns_expired_by_unmaterializable_default.erase(name);
