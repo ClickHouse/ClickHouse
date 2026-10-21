@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-parallel
 -- Tag no-parallel: failpoint is used which can force DelayedSource on other tests
 
 -- Disable aggregation-in-order limit push-down: early termination reduces

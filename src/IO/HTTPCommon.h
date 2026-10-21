@@ -13,7 +13,6 @@
 #include <Common/ProxyConfiguration.h>
 
 #include <IO/ConnectionTimeouts.h>
-#include <IO/HTTP/HTTPClientIO.h>
 
 
 namespace DB
@@ -33,19 +32,15 @@ public:
     )
         : Exception(makeExceptionMessage(code, uri, http_status_, reason, body))
         , http_status(http_status_)
-        , response_body(body)
     {}
 
     HTTPException * clone() const override { return new HTTPException(*this); }
-    void rethrow() const override { throw *this; } /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
+    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
 
     Poco::Net::HTTPResponse::HTTPStatus getHTTPStatus() const { return http_status; }
-    /// Kept apart from the message so a caller can read the structured error a server put in it.
-    const std::string & getResponseBody() const { return response_body; }
 
 private:
     Poco::Net::HTTPResponse::HTTPStatus http_status{};
-    std::string response_body;
 
     static Exception makeExceptionMessage(
         int code,
@@ -57,6 +52,8 @@ private:
     const char * name() const noexcept override { return "DB::HTTPException"; }
     const char * className() const noexcept override { return "DB::HTTPException"; }
 };
+
+using HTTPSessionPtr = std::shared_ptr<Poco::Net::HTTPClientSession>;
 
 void setResponseDefaultHeaders(HTTPServerResponse & response);
 
@@ -79,12 +76,12 @@ bool isRetriableHTTPError(Poco::Net::HTTPResponse::HTTPStatus http_status) noexc
 /** Used to receive response (response headers and possibly body)
   *  after sending data (request headers and possibly body).
   * Throws exception in case of non HTTP_OK (200) response code.
-  * The returned buffer reads the body from 'session', which has to outlive it.
+  * Returned istream lives in 'session' object.
   */
-std::unique_ptr<HTTPResponseReadBuffer> receiveResponse(
+std::istream * receiveResponse(
     Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, bool allow_redirects);
 
 void assertResponseIsOk(
-    const String & uri, Poco::Net::HTTPResponse & response, ReadBuffer & body, bool allow_redirects = false);
+    const String & uri, Poco::Net::HTTPResponse & response, std::istream & istr, bool allow_redirects = false);
 
 }

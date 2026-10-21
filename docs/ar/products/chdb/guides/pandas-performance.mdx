@@ -1,0 +1,462 @@
+---
+title: 'دليل الأداء'
+sidebarTitle: 'دليل الأداء'
+slug: /chdb/guides/pandas-performance
+description: 'نصائح لتحسين أداء DataStore مقارنةً بـ pandas'
+keywords: ['chdb', 'DataStore', 'pandas', 'الأداء', 'قياس الأداء', 'التحسين']
+doc_type: 'guide'
+---
+
+يوفّر DataStore تحسينات ملحوظة في الأداء مقارنةً بـ pandas في كثير من العمليات. يوضّح هذا الدليل سبب ذلك وكيفية تحسين أعباء العمل لديكم.
+
+<div id="why-faster">
+  ## لماذا يُعد DataStore أسرع
+</div>
+
+<div id="sql-pushdown">
+  ### 1. SQL Pushdown
+</div>
+
+تُنفَّذ العمليات على مصدر البيانات مباشرةً:
+
+```python
+# pandas: Loads ALL data, then filters in memory
+df = pd.read_csv("huge.csv")       # Load 10GB
+df = df[df['year'] == 2024]        # Filter in Python
+
+# DataStore: Filter at source
+ds = pd.read_csv("huge.csv")       # Just metadata
+ds = ds[ds['year'] == 2024]        # Filter in SQL
+df = ds.to_df()                    # Only load filtered data
+```
+
+<div id="column-pruning">
+  ### 2. استبعاد الأعمدة غير اللازمة
+</div>
+
+لا تُقرأ إلا الأعمدة المطلوبة:
+
+```python
+# DataStore: Only reads name, age columns
+ds = pd.read_parquet("wide_table.parquet")
+result = ds.select('name', 'age').to_df()
+
+# vs pandas: Reads all 100 columns, then selects
+```
+
+<div id="lazy-evaluation">
+  ### 3. التنفيذ الكسول
+</div>
+
+تُجمَّع عمليات متعددة في استعلام واحد:
+
+```python
+# DataStore: One optimized SQL query
+result = (ds
+    .filter(ds['amount'] > 100)
+    .groupby('region')
+    .agg({'amount': 'sum'})
+    .sort('sum', ascending=False)
+    .head(10)
+    .to_df()
+)
+
+# Becomes:
+# SELECT region, SUM(amount) FROM data
+# WHERE amount > 100
+# GROUP BY region ORDER BY sum DESC LIMIT 10
+```
+
+***
+
+<div id="benchmark">
+  ## قياس الأداء: DataStore مقابل pandas
+</div>
+
+<div id="test-environment">
+  ### بيئة الاختبار
+</div>
+
+* البيانات: 10 ملايين صف
+* الجهاز: حاسوب محمول عادي
+* صيغة الملف: CSV
+
+<div id="results">
+  ### النتائج
+</div>
+
+| العملية                   | pandas (ms) | DataStore (ms) | الأفضل                 |
+| ------------------------- | ----------- | -------------- | ---------------------- |
+| GroupBy count             | 347         | 17             | **DataStore (19.93x)** |
+| عمليات مجمّعة             | 1,535       | 234            | **DataStore (6.56x)**  |
+| مسار المعالجة معقّد       | 2,047       | 380            | **DataStore (5.39x)**  |
+| MultiFilter+Sort+Head     | 1,963       | 366            | **DataStore (5.36x)**  |
+| Filter+Sort+Head          | 1,537       | 350            | **DataStore (4.40x)**  |
+| Head/Limit                | 166         | 45             | **DataStore (3.69x)**  |
+| فائق التعقيد (10+ عمليات) | 1,070       | 338            | **DataStore (3.17x)**  |
+| GroupBy agg               | 406         | 141            | **DataStore (2.88x)**  |
+| Select+Filter+Sort        | 1,217       | 443            | **DataStore (2.75x)**  |
+| Filter+GroupBy+Sort       | 466         | 184            | **DataStore (2.53x)**  |
+| Filter+Select+Sort        | 1,285       | 533            | **DataStore (2.41x)**  |
+| Sort (منفرد)              | 1,742       | 1,197          | **DataStore (1.45x)**  |
+| Filter (منفرد)            | 276         | 526            | متقارب                 |
+| Sort (متعدد)              | 947         | 1,477          | متقارب                 |
+
+<div id="insights">
+  ### أبرز الاستنتاجات
+</div>
+
+1. **عمليات GroupBy**: DataStore أسرع بما يصل إلى **19.93x**
+2. **مسارات المعالجة المعقدة**: DataStore **أسرع بمقدار 5-6x** (بفضل SQL pushdown)
+3. **عمليات التقطيع البسيطة**: الأداء متقارب - والفرق لا يُذكر
+4. **أفضل حالة استخدام**: العمليات متعددة الخطوات مع groupby/التجميع
+5. **النسخ الصفري**: لا يضيف `to_df()` أي عبء إضافي لتحويل البيانات
+
+***
+
+<div id="when-datastore-wins">
+  ## متى يكون DataStore الخيار الأفضل
+</div>
+
+<div id="heavy-aggregations">
+  ### عمليات التجميع الثقيلة
+</div>
+
+```python
+# DataStore excels: 19.93x faster
+result = ds.groupby('category')['amount'].sum()
+```
+
+<div id="complex-pipelines">
+  ### مسارات معالجة معقّدة
+</div>
+
+```python
+# DataStore excels: 5-6x faster
+result = (ds
+    .filter(ds['date'] >= '2024-01-01')
+    .filter(ds['amount'] > 100)
+    .groupby('region')
+    .agg({'amount': ['sum', 'mean', 'count']})
+    .sort('sum', ascending=False)
+    .head(20)
+)
+```
+
+<div id="large-file-processing">
+  ### معالجة الملفات الكبيرة
+</div>
+
+```python
+# DataStore: Only loads what you need
+ds = pd.read_parquet("huge_file.parquet")
+result = ds.filter(ds['id'] == 12345).to_df()  # Fast!
+```
+
+<div id="multiple-column-operations">
+  ### عمليات على أعمدة متعددة
+</div>
+
+```python
+# DataStore: Combines into single SQL
+ds['total'] = ds['price'] * ds['quantity']
+ds['is_large'] = ds['total'] > 1000
+ds = ds.filter(ds['is_large'])
+```
+
+***
+
+<div id="when-pandas-wins">
+  ## متى يكون pandas منافسًا
+</div>
+
+في معظم الحالات، يوازي DataStore أداء pandas أو يتفوق عليه. ومع ذلك، قد يكون pandas أسرع قليلًا في الحالات التالية:
+
+<div id="small-datasets">
+  ### مجموعات البيانات الصغيرة (&lt;1,000 صفوف)
+</div>
+
+```python
+# For very small datasets, overhead is minimal for both
+# Performance difference is negligible
+small_df = pd.DataFrame({'x': range(100)})
+```
+
+<div id="simple-slice-operations">
+  ### عمليات التقطيع البسيطة
+</div>
+
+```python
+# Single slice operations without aggregation
+df = df[df['x'] > 10]  # pandas slightly faster
+ds = ds[ds['x'] > 10]  # DataStore comparable
+```
+
+<div id="custom-python-functions">
+  ### دوال Lambda مخصّصة في Python
+</div>
+
+```python
+# pandas required for custom Python code
+def complex_function(row):
+    return custom_logic(row)
+
+df['result'] = df.apply(complex_function, axis=1)
+```
+
+<Info>
+  **مهم**
+
+  حتى في الحالات التي يكون فيها DataStore &quot;أبطأ&quot;، يكون الأداء عادةً **مماثلًا لأداء pandas** - والفارق لا يُذكر عمليًا. كما أن مزايا DataStore في العمليات المعقدة تفوق هذه الحالات المحدودة بدرجة كبيرة.
+
+  للتحكم الدقيق في التنفيذ، راجع [إعدادات محرك التنفيذ](/ar/products/chdb/configuration/execution-engine).
+</Info>
+
+***
+
+<div id="zero-copy">
+  ## تكامل DataFrame بتقنية النسخ الصفري
+</div>
+
+يستخدم DataStore تقنية **النسخ الصفري** لقراءة pandas DataFrames وكتابتها. وهذا يعني:
+
+```python
+# to_df() does NOT copy data - it's a zero-copy operation
+result = ds.filter(ds['x'] > 10).to_df()  # No data conversion overhead
+
+# Same for creating DataStore from DataFrame
+ds = DataStore(existing_df)  # No data copy
+```
+
+**النتائج الرئيسية:**
+
+* `to_df()` مجاني عمليًا — من دون `serialization` أو نسخ للذاكرة
+* إنشاء DataStore من pandas DataFrame يتم فورًا
+* الذاكرة مشتركة بين DataStore وعروض pandas
+
+***
+
+<div id="tips">
+  ## نصائح لتحسين الأداء
+</div>
+
+<div id="use-performance-mode">
+  ### 1. فعِّل وضع الأداء لأعباء العمل الثقيلة
+</div>
+
+بالنسبة إلى أعباء العمل كثيفة التجميع التي لا تتطلب تنسيق إخراج pandas الدقيق (ترتيب الصفوف، وأعمدة MultiIndex، وتصحيحات dtype)، فعِّل وضع الأداء لتحقيق أقصى إنتاجية:
+
+```python
+from chdb.datastore.config import config
+
+config.use_performance_mode()
+
+# Now all operations use SQL-first execution with no pandas overhead:
+# - Parallel Parquet reading (no preserve_order)
+# - Single-SQL aggregation (filter+groupby in one query)
+# - No row-order preservation overhead
+# - No MultiIndex, no dtype corrections
+result = (ds
+    .filter(ds['amount'] > 100)
+    .groupby('region')
+    .agg({'amount': ['sum', 'mean', 'count']})
+)
+```
+
+**التحسّن المتوقع**: أداء أسرع بما يصل إلى 2-8 مرات في أعباء عمل filter+groupby، مع تقليل استخدام الذاكرة عند التعامل مع ملفات Parquet الكبيرة.
+
+راجع [وضع الأداء](/ar/products/chdb/configuration/performance-mode) للاطلاع على التفاصيل الكاملة.
+
+<div id="use-parquet">
+  ### 2. استخدم Parquet بدلًا من CSV
+</div>
+
+```python
+# CSV: Slower, reads entire file
+ds = pd.read_csv("data.csv")
+
+# Parquet: Faster, columnar, compressed
+ds = pd.read_parquet("data.parquet")
+
+# Convert once, benefit forever
+df = pd.read_csv("data.csv")
+df.to_parquet("data.parquet")
+```
+
+**التحسّن المتوقع**: زيادة سرعة القراءة بمقدار 3 إلى 10 مرات
+
+<div id="filter-early">
+  ### 3. طبّق التصفية مبكرًا
+</div>
+
+```python
+# Good: Filter first, then aggregate
+result = (ds
+    .filter(ds['date'] >= '2024-01-01')  # Reduce data early
+    .groupby('category')['amount'].sum()
+)
+
+# Less optimal: Process all data
+result = (ds
+    .groupby('category')['amount'].sum()
+    .filter(ds['sum'] > 1000)  # Filter too late
+)
+```
+
+<div id="select-only-needed-columns">
+  ### 4. اختر فقط الأعمدة المطلوبة
+</div>
+
+```python
+# Good: Column pruning
+result = ds.select('name', 'amount').filter(ds['amount'] > 100)
+
+# Less optimal: All columns loaded
+result = ds.filter(ds['amount'] > 100)  # Loads all columns
+```
+
+<div id="leverage-sql-aggregations">
+  ### 5. استفد من عمليات التجميع في SQL
+</div>
+
+```python
+# GroupBy is where DataStore shines
+# Up to 20x speedup!
+result = ds.groupby('category').agg({
+    'amount': ['sum', 'mean', 'count', 'max'],
+    'quantity': 'sum'
+})
+```
+
+<div id="use-head">
+  ### 6. استخدم head() بدلًا من الاستعلامات الكاملة
+</div>
+
+```python
+# Don't load entire result if you only need a sample
+result = ds.filter(ds['type'] == 'A').head(100)  # LIMIT 100
+
+# Avoid this for large results
+# result = ds.filter(ds['type'] == 'A').to_df()  # Loads everything
+```
+
+<div id="batch-operations">
+  ### 7. عمليات الدُفعات
+</div>
+
+```python
+# Good: Single execution
+result = ds.filter(ds['x'] > 10).filter(ds['y'] < 100).to_df()
+
+# Bad: Multiple executions
+result1 = ds.filter(ds['x'] > 10).to_df()  # Execute
+result2 = result1[result1['y'] < 100]       # Execute again
+```
+
+<div id="use-explain">
+  ### 8. استخدم explain() لتحسين الأداء
+</div>
+
+```python
+# View the query plan before executing
+query = ds.filter(...).groupby(...).agg(...)
+query.explain()  # Check if operations are pushed down
+
+# Then execute
+result = query.to_df()
+```
+
+***
+
+<div id="profiling">
+  ## تحليل أداء عبء العمل لديك
+</div>
+
+<div id="enable-profiling">
+  ### تفعيل تحليل الأداء
+</div>
+
+```python
+from chdb.datastore.config import config, get_profiler
+
+config.enable_profiling()
+
+# Run your workload
+result = your_pipeline()
+
+# View report
+profiler = get_profiler()
+profiler.report()
+```
+
+<div id="identify-bottlenecks">
+  ### تحديد مواطن الاختناق
+</div>
+
+```text
+Performance Report
+==================
+Step                    Duration    % Total
+----                    --------    -------
+SQL execution           2.5s        62.5%     <- Bottleneck!
+read_csv                1.2s        30.0%
+Other                   0.3s        7.5%
+```
+
+<div id="compare-approaches">
+  ### مقارنة بين الأساليب
+</div>
+
+```python
+# Test approach 1
+profiler.reset()
+result1 = approach1()
+time1 = profiler.get_steps()[-1]['duration_ms']
+
+# Test approach 2
+profiler.reset()
+result2 = approach2()
+time2 = profiler.get_steps()[-1]['duration_ms']
+
+print(f"Approach 1: {time1:.0f}ms")
+print(f"Approach 2: {time2:.0f}ms")
+```
+
+***
+
+<div id="summary">
+  ## ملخص أفضل الممارسات
+</div>
+
+| الممارسة                        | الأثر                           |
+| ------------------------------- | ------------------------------- |
+| فعِّل وضع الأداء                | أسرع بمقدار 2-8x لأحمال التجميع |
+| استخدم ملفات Parquet            | قراءات أسرع بمقدار 3-10x        |
+| صفِّ البيانات مبكرًا            | تقليل معالجة البيانات           |
+| اختر الأعمدة المطلوبة           | تقليل I/O واستهلاك الذاكرة      |
+| استخدم GroupBy/عمليات التجميع   | أسرع حتى 20x                    |
+| استخدم عمليات الدُفعات          | تجنّب التنفيذ المتكرر           |
+| أجرِ تحليلًا للأداء قبل التحسين | اعثر على الاختناقات الفعلية     |
+| استخدم explain()                | تحقّق من تحسين الاستعلام        |
+| استخدم head() للعينات           | تجنّب فحص الجدول بالكامل        |
+
+***
+
+<div id="decision">
+  ## دليل سريع لاتخاذ القرار
+</div>
+
+| عبء العمل                        | التوصية                       |
+| -------------------------------- | ----------------------------- |
+| GroupBy/التجميع                  | استخدم DataStore              |
+| مسار المعالجة معقّد متعدد الخطوات | استخدم DataStore              |
+| ملفات كبيرة مع عوامل تصفية       | استخدم DataStore              |
+| عمليات التقطيع البسيطة           | أيٌّ منهما (أداء متقارب)      |
+| دوال لامبدا مخصّصة في Python     | استخدم pandas أو حوِّل لاحقًا |
+| بيانات صغيرة جدًا (&lt;1,000 صف) | أيٌّ منهما (فرق طفيف)         |
+
+<Tip>
+  للاختيار التلقائي الأمثل لمحرك التنفيذ، استخدم `config.set_execution_engine('auto')` (الإعداد الافتراضي).
+  لتحقيق أقصى إنتاجية في أعباء عمل التجميع، استخدم `config.use_performance_mode()`.
+  راجع [محرك التنفيذ](/ar/products/chdb/configuration/execution-engine) و[وضع الأداء](/ar/products/chdb/configuration/performance-mode) لمزيد من التفاصيل.
+</Tip>

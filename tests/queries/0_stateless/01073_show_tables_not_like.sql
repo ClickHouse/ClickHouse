@@ -8,8 +8,6 @@ CREATE TABLE test2 (x UInt8) ENGINE = Memory;
 
 SHOW TABLES;
 SELECT '--';
-SHOW TABLES LIKE '';
-SELECT '--';
 SHOW TABLES LIKE 'tes%';
 SELECT '--';
 SHOW TABLES NOT LIKE 'tes%';

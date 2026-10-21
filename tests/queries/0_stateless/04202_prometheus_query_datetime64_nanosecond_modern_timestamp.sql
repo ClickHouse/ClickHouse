@@ -1,6 +1,7 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-replicated-database
 -- ^^ ANTLR4 support is disabled in the fast-test build, and the PromQL
--- grammar requires it.
+-- grammar requires it. The experimental TimeSeries table engine does not
+-- round-trip through DatabaseReplicated.
 
 -- Regression test for `timeSeriesTimestampToAST`. With `DateTime64(9)` and a
 -- modern Unix timestamp the raw value (e.g. 1.7e18 for 2024-01-01) exceeds
@@ -28,11 +29,11 @@ CREATE TABLE ts_tags (
 ENGINE = AggregatingMergeTree ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1;
 
 CREATE TABLE ts_metrics (
-    metric_family String,
+    metric_family_name String,
     type String,
     unit String,
     help String)
-ENGINE = ReplacingMergeTree ORDER BY metric_family;
+ENGINE = ReplacingMergeTree ORDER BY metric_family_name;
 
 CREATE TABLE ts_ns ENGINE = TimeSeries
 DATA ts_data TAGS ts_tags METRICS ts_metrics;

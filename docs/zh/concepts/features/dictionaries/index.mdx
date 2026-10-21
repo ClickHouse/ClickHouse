@@ -17,7 +17,9 @@ ClickHouse 中的字典提供了一种以内存中的[键值](https://en.wikiped
 
 <Image img="/images/dictionary/dictionary-use-cases.webp" size="lg" alt="ClickHouse 中字典的使用场景" />
 
-## 使用字典加速 JOIN {#speeding-up-joins-using-a-dictionary}
+<div id="speeding-up-joins-using-a-dictionary">
+  ## 使用字典加速 JOIN
+</div>
 
 字典可用于加速一种特定类型的 `JOIN`：[`LEFT ANY` 类型](/zh/reference/statements/select/join#supported-types-of-join)。在这种情况下，连接键需要与底层键值存储的键属性相匹配。
 
@@ -264,13 +266,11 @@ LIMIT 5
 Peak memory usage: 248.84 MiB.
 ```
 
-## 索引时富集 {#index-time-enrichment}
+<div id="index-time-enrichment">
+  ## 索引时富集
+</div>
 
-在上面的示例中，我们在查询时使用了字典来避免一次连接。字典也可以用于在写入时对行补充信息。如果富集值不会发生变化，并且存在于可用于填充字典的外部数据源中，那么这种方式通常很合适。在这种情况下，在写入时对行进行富化，可以避免查询时对字典进行查找。
-
-<Note>
-  如果对延迟的可预测性和数据源的可用性有要求，请避免在写入时富集中使用基于缓存的字典布局。每个服务器都各自维护独立的本地缓存，一旦重启或被替换，缓存就会清空，导致插入操作只能依赖对字典源的冷缓存查找。ClickHouse Cloud 的自动扩缩容和托管节点替换会使这种情况更容易发生。请选择会在每个服务器上加载完整字典的布局。参见[摄取路径中的缓存字典](/zh/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path)。
-</Note>
+在上面的示例中，我们在查询时使用了字典来避免一次 join。字典也可以用于在写入时对行进行富集。如果富集值不会发生变化，并且存在于可用于填充字典的外部数据源中，那么这种方式通常很合适。在这种情况下，在写入时对行进行富集，可以避免查询时对字典进行查找。
 
 假设 Stack Overflow 中用户的 `Location` 永远不会变化 (实际上会变化) ——具体来说，是 `users` 表中的 `Location` 列。假设我们希望按位置对 `posts` 表执行分析查询。该表中包含一个 `UserId`。
 
@@ -362,8 +362,10 @@ Peak memory usage: 666.82 MiB.
 
 ClickHouse 还支持 [分层](/zh/reference/statements/create/dictionary/layouts/hierarchical)、[Polygon](/zh/reference/statements/create/dictionary/layouts/polygon) 和[正则表达式](/zh/reference/statements/create/dictionary/layouts/regexp-tree) 字典。
 
-### 延伸阅读 {#more-reading}
+<div id="more-reading">
+  ### 更多阅读
+</div>
 
 * [字典最佳实践](/zh/concepts/features/dictionaries/best-practices) — 布局选择、字典与 JOIN 的比较、监控
 * [使用字典加速查询](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)
-* [字典的高级配置](/zh/reference/statements/create/dictionary)
+* [字典高级配置](/zh/reference/statements/create/dictionary)

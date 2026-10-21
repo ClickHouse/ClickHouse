@@ -50,7 +50,6 @@ SETTINGS
     text_index_posting_list_apply_mode = 'lazy',
     query_plan_direct_read_from_text_index = 1,
     use_skip_indexes_on_data_read = 1,
-    query_plan_optimize_count_from_text_index = 0,
     use_query_condition_cache = 0,
     use_text_index_postings_cache = 0,
     merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,

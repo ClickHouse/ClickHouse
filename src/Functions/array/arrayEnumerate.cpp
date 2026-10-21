@@ -79,7 +79,7 @@ REGISTER_FUNCTION(ArrayEnumerate)
     FunctionDocumentation::Description description = R"(
 Returns the array `[1, 2, 3, ..., length (arr)]`
 
-This function is normally used with the [`ARRAY JOIN`](/reference/statements/select/array-join) clause. It allows counting something just
+This function is normally used with the [`ARRAY JOIN`](/sql-reference/statements/select/array-join) clause. It allows counting something just
 once for each array after applying `ARRAY JOIN`.
 This function can also be used in higher-order functions. For example, you can use it to get array indexes for elements that match a condition.
 )";

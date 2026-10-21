@@ -41,14 +41,16 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 * 可访问 EC2 实例元数据服务 (默认启用)
 
 <Steps>
-  <Step title="验证是否可访问 EC2 元数据" id="verify-metadata">
+  <Step>
+    #### 验证是否可访问 EC2 元数据
+
     在 EC2 实例上，验证元数据服务是否可访问：
 
     ```bash
-    # Get metadata token (IMDSv2)
+    # 获取元数据令牌 (IMDSv2)
     TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
 
-    # Verify instance metadata
+    # 验证实例元数据
     curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id
     curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region
     curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-type
@@ -65,40 +67,46 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="验证 syslog 文件是否存在" id="verify-syslog">
+  <Step>
+    #### 验证 syslog 文件是否存在
+
     确认您的 EC2 实例正在写入 syslog 文件：
 
     ```bash
-    # Ubuntu instances
+    # Ubuntu 实例
     ls -la /var/log/syslog
 
-    # Amazon Linux / RHEL instances
+    # Amazon Linux / RHEL 实例
     ls -la /var/log/messages
 
-    # View recent entries
+    # 查看最近的日志条目
     tail -20 /var/log/syslog
-    # or
+    # 或
     tail -20 /var/log/messages
     ```
   </Step>
 
-  <Step title="安装 OpenTelemetry Collector" id="install-collector">
+  <Step>
+    #### 安装 OpenTelemetry Collector
+
     在 EC2 实例上安装 OpenTelemetry Collector Contrib 发行版：
 
     ```bash
-    # Download the latest release
+    # 下载最新版本
     wget https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.114.0/otelcol-contrib_0.114.0_linux_amd64.tar.gz
 
-    # Extract and install
+    # 解压并安装
     tar -xvf otelcol-contrib_0.114.0_linux_amd64.tar.gz
     sudo mv otelcol-contrib /usr/local/bin/
 
-    # Verify installation
+    # 验证安装
     otelcol-contrib --version
     ```
   </Step>
 
-  <Step title="创建 collector 配置" id="create-config">
+  <Step>
+    #### 创建 collector 配置
+
     在 `/etc/otelcol-contrib/config.yaml` 处为 OpenTelemetry Collector 创建配置文件：
 
     ```bash
@@ -249,7 +257,9 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     </Info>
   </Step>
 
-  <Step title="设置 ClickStack API 密钥" id="set-api-key">
+  <Step>
+    #### 设置 ClickStack API 密钥
+
     将 ClickStack API 密钥导出为环境变量：
 
     ```bash
@@ -264,7 +274,9 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="运行 Collector" id="run-collector">
+  <Step>
+    #### 运行 Collector
+
     启动 OpenTelemetry Collector：
 
     ```bash
@@ -278,7 +290,9 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     </Info>
   </Step>
 
-  <Step title="在 HyperDX 中验证日志" id="verifying-logs">
+  <Step>
+    #### 在 HyperDX 中验证日志
+
     采集器运行后，登录 HyperDX，确认日志已连同 EC2 元数据一起流入：
 
     1. 进入搜索视图
@@ -305,7 +319,9 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 对于希望在配置生产实例前先测试 EC2 主机日志集成的用户，我们提供了一个包含模拟 EC2 元数据的演示数据集。
 
 <Steps>
-  <Step title="下载示例数据集" id="download-sample">
+  <Step>
+    #### 下载示例数据集
+
     下载示例日志文件：
 
     ```bash
@@ -323,7 +339,9 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     * 正常运行与重要事件交织出现
   </Step>
 
-  <Step title="创建测试 collector 的配置" id="test-config">
+  <Step>
+    #### 创建测试 collector 的配置
+
     创建一个名为 `ec2-host-logs-demo.yaml` 的文件，并添加以下配置：
 
     ```yaml
@@ -348,7 +366,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
             value: "ec2-demo"
 
     processors:
-      # Simulate EC2 metadata for demo (no real EC2 instance required)
+      # 为演示模拟 EC2 元数据（无需真实 EC2 实例）
       resource:
         attributes:
           - key: service.name
@@ -395,7 +413,9 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="使用演示配置运行 ClickStack" id="run-demo">
+  <Step>
+    #### 使用演示配置运行 ClickStack
+
     使用演示日志和配置运行 ClickStack：
 
     ```bash
@@ -408,7 +428,9 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="在 HyperDX 中验证日志" id="verify-demo-logs">
+  <Step>
+    #### 在 HyperDX 中验证日志
+
     collector 运行后：
 
     1. 打开 [HyperDX](http://localhost:8080/) 并登录账户 (你可能需要先创建账户)
@@ -443,11 +465,13 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 为了帮助你开始使用 ClickStack 监控 EC2 主机日志，我们提供了包含云上下文信息的关键可视化。
 
 <Steps>
-  <Step title="下载仪表盘配置" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.ec2_host_logs_monitoring.dashboard_download">下载仪表盘配置文件</TrackedLink>。
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.ec2_host_logs_monitoring.dashboard_download">下载</TrackedLink>仪表盘配置
   </Step>
 
-  <Step title="导入预置仪表盘" id="import-dashboard">
+  <Step>
+    #### 导入预置仪表盘
+
     1. 打开 HyperDX，进入“仪表盘”部分
     2. 点击右上角省略号菜单下的 **Import Dashboard**
 
@@ -458,7 +482,9 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="完成导入" />
   </Step>
 
-  <Step title="查看仪表盘" id="created-dashboard">
+  <Step>
+    #### 查看仪表盘
+
     仪表盘创建后，其中的所有可视化都已预先配置好：
 
     <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="EC2 日志仪表盘" />
@@ -598,7 +624,7 @@ sudo journalctl -u otelcol-contrib -n 50
 * 为安全监控 (SSH 尝试、sudo 使用情况、防火墙拦截) 创建自定义仪表盘
 
 <div id="going-to-production">
-  ## 用于生产环境
+  ## 生产环境部署
 </div>
 
-本指南介绍如何将 OpenTelemetry Collector 直接安装到 EC2 实例上，这是主机级监控推荐采用的生产环境部署方式。若要在大量实例上管理采集器，建议使用配置管理工具 (Ansible、Chef、Puppet) ，或在 Kubernetes 环境中使用 OpenTelemetry Operator。有关生产环境配置，请参见[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。
+本指南将 OpenTelemetry Collector 直接安装到 EC2 实例上，这是进行主机级监控时推荐的生产环境部署方式。若要在大量实例之间统一管理采集器，可考虑使用配置管理工具 (Ansible、Chef、Puppet) ；在 Kubernetes 环境中，则可使用 OpenTelemetry Operator。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。

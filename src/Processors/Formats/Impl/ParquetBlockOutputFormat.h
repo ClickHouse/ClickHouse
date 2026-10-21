@@ -118,8 +118,6 @@ private:
     size_t staging_bytes = 0;
 
     Parquet::WriteOptions options;
-    /// Filled in by the ctor and read-only afterwards, so the encoder threads can share it.
-    Parquet::IcebergOptionality iceberg_optionality;
     Parquet::SchemaElements schema;
     Parquet::FileWriteState file_state;
     std::unordered_map<String, size_t> column_sizes_on_disk;

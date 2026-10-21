@@ -1,5 +1,5 @@
 ---
-description: '本页说明如何通过 XML 或 YAML 语法的配置文件来配置 ClickHouse 服务器。'
+description: '本页说明如何通过 XML 或 YAML 语法的配置文件来配置 ClickHouse server。'
 sidebarTitle: '配置文件'
 slug: /operations/configuration-files
 title: '配置文件'
@@ -12,15 +12,11 @@ doc_type: 'guide'
   更多详情，请参阅[“配置设置”](/zh/products/cloud/reference/settings)
 </Note>
 
-ClickHouse 服务器可以通过 XML 或 YAML 语法的配置文件进行配置。
-在大多数安装类型中，ClickHouse 服务器默认使用 `/etc/clickhouse-server/config.xml` 作为配置文件，但也可以在服务器启动时使用命令行选项 `--config-file` 或 `-C` 手动指定配置文件的位置。
-如果这两个选项均未指定，服务器会在当前工作目录中依次查找 `config.xml`、`config.yaml` 和 `config.yml`，并使用找到的第一个文件。
-如果这些文件都不存在，服务器将使用内嵌在二进制文件中的配置启动。
-通过 `--config-file` 指定的文件会被原样使用：如果该文件不存在，服务器会直接报错，而不会去查找其他扩展名的同名文件。
-`clickhouse-keeper` 遵循相同的规则，对应的文件为 `keeper_config.xml`、`keeper_config.yaml` 和 `keeper_config.yml`。
+ClickHouse server 可以通过 XML 或 YAML 语法的配置文件进行配置。
+在大多数安装类型中，ClickHouse server 默认使用 `/etc/clickhouse-server/config.xml` 作为配置文件，但也可以在服务器启动时使用命令行选项 `--config-file` 或 `-C` 手动指定配置文件的位置。
 其他配置文件可以放在相对于主配置文件的 `config.d/` 目录中，例如 `/etc/clickhouse-server/config.d/` 目录。
-在这些目录中的文件和主配置会在配置应用到 ClickHouse 服务器之前，通过预处理步骤先合并。
-配置片段会按其完整路径的词典序合并。对于标准 `config.d/` 目录中的文件，这等同于按文件名排序。旧版 `conf.d/` 目录也会合并；由于 `conf.d` 排在 `config.d` 之前，因此当两个目录都存在时，其中的所有片段会先被处理。
+在这些目录中的文件和主配置会在配置应用到 ClickHouse server 之前，通过预处理步骤先合并。
+配置文件按字母顺序合并。
 为简化更新并提高模块化程度，最佳实践是保持默认的 `config.xml` 文件不作修改，并将额外的自定义配置放入 `config.d/` 中。
 ClickHouse Keeper 的配置位于 `/etc/clickhouse-keeper/keeper_config.xml`。
 同样，Keeper 的其他配置文件需要放在 `/etc/clickhouse-keeper/keeper_config.d/` 中。
@@ -140,29 +136,6 @@ XML 配置文件应使用 `<clickhouse>...</clickhouse>` 作为顶层标签。
 </clickhouse>
 ```
 
-#### 值的解释方式 {#value-interpretation}
-
-`from_env` 和 `from_zk` 对替换值的解释方式不同：
-
-* 通过 `from_env` 直接替换的值会被视为字面文本。`&`、`<` 和 `>` 等 XML 特殊字符会自动转义，因此环境变量可以包含任何 XML 可表示的值，例如 `a&b<c>d`，而不会破坏配置 (参见下文关于 XML 非法控制字符的说明) 。直接替换的值绝不会被解释为 XML，即使它看起来像 XML 片段：`<a>1</a>` 替换后仍是字面文本 `<a>1</a>`。将该属性直接放在 `<profiles from_env="…"/>` 这样的普通容器元素上时也是如此：现有的 XML 子树替换必须迁移为 `<profiles><include from_env="…"/></profiles>`。为保持向后兼容，`<include from_env="…"/>` 的行为有所不同：它会将环境变量解析为 XML 片段，并将其子元素插入父元素。
-* 通过 `from_zk` 替换的值如何解释，取决于它是否以 `<` 开头。以 `<` 开头的值始终会被解析为 XML 片段：无论是结构性的 `<include from_zk="…"/>`，还是 `<profiles from_zk="…"/>` 这样的普通容器元素，都可以通过这种方式将子树插入元素。保留这一行为是为了向后兼容，因为早期版本始终将 `from_zk` 的值解释为 XML。不以 `<` 开头的值，只有显式使用 `<include from_zk="…" yaml="true"/>` 时才会被解析为 YAML 子树；如果 YAML 格式有误，配置将被拒绝。凡是使用通用的 `<include>` 形式，`yaml="true"` 属性都会启用 YAML 解析，包括在叶元素内使用时，因此不要将其用于需要保留字面文本的配置项或机密信息。没有 `yaml="true"` 时，不以 `<` 开头的值会被视为字面文本，即使通过通用的叶元素替换形式 `<password><include from_zk="/secret"/></password>` 使用也是如此。这样，即使值恰好包含 YAML 语法或不是有效的 YAML，例如 `abc # rotated` 或 `[1`，也能保留。对于这种形式，只有 `<include>` 与周围内容紧接、没有空白文本节点时，才能保留原始字节；对于原始字节必须保持不变的机密信息和叶元素配置项，建议使用直接形式 `<password from_zk="…"/>`。在任何其他元素上，无论是 `<some_setting from_zk="…"/>` 或 `<password from_zk="…"/>` 这样的叶元素替换，还是 `<profiles from_zk="…"/>` 这样的普通容器元素，不以 `<` 开头的值也会按原始字节保留为字面文本 (XML 特殊字符会像 `from_env` 一样自动转义) 。因此，`abc: def` 这样的值仍是字面文本 `abc: def`，而不会变成 `<abc>def</abc>` 子元素。若要将子树插入普通元素 (而非结构性的 `<include>`) ，请提供以 `<` 开头的 XML 片段。
-
-<Note>
-  **字面值必须是有效的 XML 1.0 文本**
-
-  对于 XML 1.0 可表示为文本的每个字符，字面值替换 (`from_env`，或不以 `<` 开头的叶元素 `from_zk` 值) 都会保留该值的原始字节。XML 1.0 中非法的控制字符——`0x00`–`0x08`、`0x0B`、`0x0C` 和 `0x0E`–`0x1F`——完全无法通过 XML 配置传递 (XML 规范甚至禁止以 `&#1;` 这样的数字字符引用形式使用它们) ；如果值中包含此类字符，处理替换时就会拒绝该值。制表符 (`\t`) 、换行符 (`\n`) 和回车符 (`\r`) 是合法的，往返读写后可逐字节保持不变。
-</Note>
-
-<Note>
-  **升级后实体编码的叶元素值如何变化**
-
-  早期版本会将每个直接通过 `from_env` 获取的值重新解析为 XML，因此未经编码的 `&`、`<` 或 `>` 会因不符合 XML 格式要求而被拒绝。要包含这些字符，只能使用 XML 实体编码：环境变量设为 `a&amp;b` 时会解码为 `a&b`，`&lt;a&gt;1&lt;/a&gt;` 会解码为 `<a>1</a>`，`&#13;` 会解码为回车符。现在，直接通过 `from_env` 获取的值会被视为字面文本，因此上述环境变量值会分别得到原样的 `a&amp;b`、`&lt;a&gt;1&lt;/a&gt;` 和 `&#13;`。这意味着，只有*纯文本*值的含义保持不变：如果环境变量值曾为适配旧的 XML 解析方式而使用实体编码，现在必须改为设置未经编码的文本 (例如设置为 `a&b`；旧版会拒绝该值，新版则会将其作为字面文本 `a&b` 接受) 。
-
-  早期版本会将每个通过 `from_zk` 获取的叶元素值重新解析为 XML，因此未经编码的 `&`、`<` 或 `>` 会因不符合 XML 格式要求而被拒绝。要包含这些字符，只能使用 XML 实体编码：存储为 `a&amp;b` 的值会解码为 `a&b`，`&lt;a&gt;1&lt;/a&gt;` 会解码为 `<a>1</a>`，`&#13;` 会解码为回车符。现在，不以 `<` 开头的叶元素值会保留其原始字节，因此上述节点值现在会分别得到原样的 `a&amp;b`、`&lt;a&gt;1&lt;/a&gt;` 和 `&#13;`。这意味着，只有*纯文本*标量的含义保持不变：如果叶元素值曾为适配旧的 XML 解析方式而使用实体编码，现在必须改为存储未经编码的文本 (例如存储为 `a&b`；旧版会拒绝该值，新版则会将其作为字面文本 `a&b` 接受) 。
-
-  同样的变化也适用于通过叶元素配置项或机密信息中的内联 `<include from_zk="…"/>` 替换的纯文本标量，例如 `<password><include from_zk="/secret"/></password>`：此处的标量现在也会保留其原始字节，因此 `/secret = a&amp;b` (以前会解码为 `a&b`) 现在会得到原样的 `a&amp;b`，必须改为存储未经编码的 `a&b`。使用这种形式时，不要在其周围添加空白字符，因为这些空白字符也会成为最终配置值的一部分；如果需要确保字节完全一致，优先使用直接指定 `<password from_zk="…"/>` 的形式。 (以 `<` 开头的 `from_zk` 值，以及通过 `<include from_zk="…" yaml="true"/>` 引用的 YAML 子树不受影响——只有未标记且不以 `<` 开头的值会按原样保留。) 
-</Note>
-
 <div id="default-values">
   #### 默认值
 </div>
@@ -201,22 +174,18 @@ XML 配置文件应使用 `<clickhouse>...</clickhouse>` 作为顶层标签。
 
 也可以用文件内容替换配置中的部分内容。这可以通过两种方式实现：
 
-* *替换值*：如果某个元素带有 `incl` 属性，其值将被替换为所引用文件的内容。包含替换内容的文件路径由 server 配置中的 [`include_from`](/zh/reference/settings/server-settings/settings/other#include_from) 元素指定；没有默认路径，因此只有在指定后才会读取替换内容。替换值在该文件的 `/clickhouse/substitution_name` 元素中指定。如果 `incl` 中指定的替换项不存在，则会记录到日志中。要防止 ClickHouse 记录缺失的替换项，请指定属性 `optional="true"` (例如，[macros](/zh/reference/settings/server-settings/settings/other#macros) 的设置) 。
-* *替换元素*：如果要用替换内容替换整个元素，请使用 `include` 作为元素名。元素名 `include` 可以与属性 `from_zk = "/path/to/node"` 结合使用。在这种情况下，元素值会被替换为 ZooKeeper 中 `/path/to/node` 节点的内容。如果将整个 XML 子树存储为 Zookeeper 节点，这种方式同样适用，它会被完整插入到源元素中。
-
-<Note>
-  在版本 26.8 中更改：在该版本之前，只要文件 `/etc/metrika.xml` 存在，即使未指定 `include_from`，也会隐式使用该文件。如果依赖该文件，请在 `include_from` 中显式指定其路径。请注意，`include_from` 会从每个配置文件中单独读取：从主 server 配置中单独加载的文件——用户配置 (例如，未包含在主文件中的 `users.xml`) 和 XML 字典配置——各自都需要自己的 `include_from` 元素；仅在主 server 配置中指定它不会应用于这些文件。
-</Note>
+* *替换值*：如果某个元素带有 `incl` 属性，其值将被替换为所引用文件的内容。默认情况下，包含替换内容的文件路径为 `/etc/metrika.xml`。这可以在 server 配置的 [`include_from`](/zh/reference/settings/server-settings/settings#include_from) 元素中修改。替换值在该文件的 `/clickhouse/substitution_name` 元素中指定。如果 `incl` 中指定的替换项不存在，则会记录到日志中。要防止 ClickHouse 记录缺失的替换项，请指定属性 `optional="true"` (例如，[macros](/zh/reference/settings/server-settings/settings#macros) 的设置) 。
+* *替换元素*：如果要用替换内容替换整个元素，请使用 `include` 作为元素名。元素名 `include` 可以与属性 `from_zk = "/path/to/node"` 结合使用。在这种情况下，元素值会被替换为 ZooKeeper 中 `/path/to/node` 节点的内容。如果将整个 XML 子树存储为 ZooKeeper 节点，这种方式同样适用，它会被完整插入到源元素中。
 
 下面给出一个示例：
 
 ```xml
 <clickhouse>
-    <!-- Appends XML subtree found at `/profiles-in-zookeeper` ZK path to `<profiles>` element. -->
+    <!-- 将 `/profiles-in-zookeeper` ZK 路径下的 XML 子树追加到 `<profiles>` 元素。 -->
     <profiles from_zk="/profiles-in-zookeeper" />
 
     <users>
-        <!-- Replaces `include` element with the subtree found at `/users-in-zookeeper` ZK path. -->
+        <!-- 将 `include` 元素替换为 `/users-in-zookeeper` ZK 路径下的子树。 -->
         <include from_zk="/users-in-zookeeper" />
         <include from_zk="/other-users-in-zookeeper" />
     </users>
@@ -230,9 +199,9 @@ XML 配置文件应使用 `<clickhouse>...</clickhouse>` 作为顶层标签。
 </div>
 
 你可以使用对称加密来加密配置元素，例如明文密码或私钥。
-为此，先配置[加密编解码器](/zh/reference/statements/create/table/codec#encryption-codecs)，然后为要加密的元素添加属性 `encrypted_by`，并将其值设为加密编解码器的名称。
+为此，先配置[加密编解码器](/zh/reference/statements/create/table#encryption-codecs)，然后为要加密的元素添加属性 `encrypted_by`，并将其值设为加密编解码器的名称。
 
-与属性 `from_zk`、`from_env` 和 `incl` 以及元素 `include` 不同，预处理文件中不会进行替换 (即不会解密加密后的值) 。
+与属性 `from_zk`、`from_env` 和 `incl` 以及元素 `include` 不同，预处理后的文件中不会进行替换 (即不会解密加密后的值) 。
 解密只会在服务器进程运行时发生。
 
 例如：
@@ -356,7 +325,6 @@ XML 配置文件应使用 `<clickhouse>...</clickhouse>` 作为顶层标签。
 与 `config.xml` 和 `config.d/` 类似，用户配置也可以拆分到多个单独的文件中。
 目录名称定义为：将 `users_config` 设置去掉 `.xml` 后缀后，再拼接 `.d``。
 默认使用 `users.d`目录，因为`users&#95;config`的默认值为`users.xml&#96;。
-用户配置片段会按其完整路径的词典序进行合并。对于标准 `users.d/` 目录中的文件，这等同于按文件名排序。旧版 `conf.d/` 目录也会被合并；由于 `conf.d` 排在 `users.d` 之前，当两个目录都存在时，会先处理其中的所有片段。
 
 请注意，配置文件会先在考虑相关设置的情况下进行[合并](#merging)，之后才会处理 include。
 
@@ -385,7 +353,9 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 </clickhouse>
 ```
 
-## YAML 示例 {#example-1}
+<div id="example-1">
+  ## YAML 示例
+</div>
 
 你可以在这里查看用 YAML 编写的默认配置：[`config.yaml.example`](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.yaml.example)。
 
@@ -398,7 +368,7 @@ YAML 和 XML 格式在 ClickHouse 配置上存在一些差异。
 key: value
 ```
 
-对应的 XML：
+相应的 XML：
 
 ```xml
 <key>value</key>
@@ -497,7 +467,7 @@ map_key:
 对应的 XML：
 
 ```xml
-<map_key attr1="value1">value2</map_key>
+<map_key attr1="value1">value2</map>
 ```
 
 <div id="implementation-details">

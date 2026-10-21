@@ -1,4 +1,3 @@
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -58,9 +57,6 @@ public:
 
     bool isDeterministic() const override { return false; }
     bool isSuitableForConstantFolding() const override { return !is_distributed; }
-
-    /// Read per executing node, so two nodes can disagree.
-    bool isServerConstant() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
@@ -95,9 +91,6 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool isDeterministic() const override { return false; }
 
-    /// Read per executing node, so two nodes can disagree.
-    bool isServerConstant() const override { return true; }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & data_types) const override
     {
         size_t number_of_arguments = data_types.size();
@@ -112,15 +105,12 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
-        /// `getReturnTypeImpl` is called on a `LowCardinality`-stripped type, so strip it here too:
-        /// otherwise `getServerPort(toLowCardinality('tcp_port'))` is rejected.
-        if (!isStringOrFixedString(recursiveRemoveLowCardinality(arguments[0].type)))
+        if (!isString(arguments[0].type))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "The argument of function {} should be a constant string with the name of a setting",
                 getName());
-        const auto full_column = arguments[0].column ? recursiveRemoveLowCardinality(arguments[0].column) : nullptr;
-        const auto * column = full_column.get();
+        const auto * column = arguments[0].column.get();
         if (!column || !checkAndGetColumnConstStringOrFixedString(column))
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,

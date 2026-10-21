@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Tags: no-parallel-replicas
 # no-parallel-replicas: The EXPLAIN output is completely different
 

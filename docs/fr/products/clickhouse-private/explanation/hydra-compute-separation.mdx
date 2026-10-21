@@ -1,0 +1,59 @@
+---
+noindex: true
+title: "Hydra : Compute Separation"
+sidebarTitle: "Hydra Compute Separation"
+description: "Ce document présente Hydra, la fonctionnalité Compute Separation des clusters ClickHouse Private."
+---
+
+Ce document présente Hydra, la fonctionnalité Compute Separation des clusters ClickHouse Private.
+
+<div id="what-is-hydra">
+  ## Qu’est-ce que Hydra ?
+</div>
+
+Hydra permet de créer **plusieurs groupes de nœuds au sein d’un même cluster ClickHouse logique**, où chaque groupe de nœuds peut disposer :
+
+* D’un nombre de nœuds différent
+* D’allocations de ressources différentes (CPU, mémoire)
+* D’un point de terminaison réseau distinct
+
+Cela vous permet d’exécuter différentes charges de travail (par ex. analytique lourde vs tableaux de bord légers) sur le même jeu de données, sans que ces charges de travail se disputent les mêmes ressources de calcul.
+
+<div id="how-it-works">
+  ## Fonctionnement
+</div>
+
+Hydra permet la Compute Separation tout en maintenant une couche de données unifiée :
+
+* **ClickHouse Keeper partagé** -- Tous les groupes de nœuds d’un cluster Hydra utilisent le même ensemble Keeper pour la coordination distribuée. Il n’est pas nécessaire d’avoir des instances Keeper distinctes pour chaque groupe de nœuds.
+* **Données S3 partagées** -- Tous les groupes de nœuds lisent depuis le même préfixe de données S3 (et peuvent éventuellement y écrire). Comme ClickHouse utilise un object storage partagé pour les données de table, plusieurs groupes de calcul peuvent accéder aux mêmes données sous-jacentes sans duplication.
+* **Ressources de calcul distinctes** -- Chaque groupe de nœuds exécute son propre ensemble de pods serveur ClickHouse, avec des configurations de ressources indépendantes et son propre point de terminaison de service Kubernetes.
+
+<div id="parent-child-relationship">
+  ## Relation parent-enfant
+</div>
+
+Hydra utilise un **modèle parent-enfant** :
+
+* Le **parent** est un cluster ClickHouse existant qui détient les données et l&#39;ensemble Keeper.
+* Les **enfants** sont des groupes de nœuds supplémentaires créés en référençant le nom et l&#39;espace de noms du parent. Lors de la création d&#39;un enfant, vous indiquez le parent à l&#39;aide de `parentCluster.name` et `parentCluster.namespace`.
+
+Un parent peut avoir plusieurs enfants, chacun avec des caractéristiques de dimensionnement et d&#39;accès différentes.
+
+<div id="read-only-vs-read-write-children">
+  ## Instances enfants en lecture seule ou en lecture-écriture
+</div>
+
+Par défaut, les instances enfants sont en mode **lecture-écriture**, ce qui signifie qu&#39;elles peuvent à la fois lire et écrire des données dans le stockage partagé.
+
+Une instance enfant peut aussi être configurée en **lecture seule** (en définissant `isReadonly=true` lors de sa création). Les instances enfants en lecture seule peuvent interroger les données, mais ne peuvent pas les modifier, ce qui les rend adaptées à des charges de travail comme le reporting, les tableaux de bord ou l’analytique, lorsque l’accès en écriture n’est pas nécessaire et qu’une isolation vis-à-vis des opérations d’écriture est souhaitée.
+
+<div id="limitations">
+  ## Limites
+</div>
+
+Il y a deux contraintes importantes à connaître lors de l’utilisation de Hydra :
+
+1. **Vous ne pouvez pas créer d’instances enfants si l’instance parente est arrêtée, supprimée ou mise en veille.** L’instance parente doit être en cours d’exécution pour que des enfants puissent être créés, car ceux-ci dépendent de son ensemble Keeper et de sa configuration des données partagées.
+
+2. **Vous devez supprimer toutes les instances enfants avant de supprimer le cluster parent.** Le parent ne peut pas être supprimé tant que des enfants s’y réfèrent encore. Toute tentative de suppression d’un parent avec des enfants actifs échouera.

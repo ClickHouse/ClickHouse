@@ -308,9 +308,7 @@ UPDATE posts SET AnswerCount = AnswerCount + 1 WHERE Id = 404346
 
 자세히 보기: [Lightweight UPDATE](/ko/reference/statements/update)
 
-<div id="on-the-fly-mutations-summary">
-  ### 온더플라이 뮤테이션
-</div>
+### 온더플라이 뮤테이션
 
 온더플라이 뮤테이션은 행을 업데이트할 때 백그라운드 처리가 끝날 때까지 기다리지 않아도, 이후 `SELECT` 쿼리에서 변경된 값을 자동으로 반환할 수 있게 해줍니다. 이는 일반 뮤테이션의 원자성 한계를 효과적으로 해결합니다.
 
@@ -327,10 +325,10 @@ SELECT ViewCount FROM posts WHERE Id = 404346
 ```
 
 ```sql
--- Increment the count
+-- 카운트 증가
 ALTER TABLE posts UPDATE ViewCount = ViewCount + 1 WHERE Id = 404346
 
--- The updated value is immediately visible
+-- 업데이트된 값이 즉시 반영됨
 SELECT ViewCount FROM posts WHERE Id = 404346
 ```
 

@@ -2,7 +2,6 @@
 
 #include <Parsers/ASTQueryWithOutput.h>
 
-namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -93,7 +92,7 @@ public:
         res->table_override = nullptr;
 
         if (ast_settings)
-            res->setSettings(ast_settings->clone(), settings_text);
+            res->setSettings(ast_settings->clone());
         if (query)
             res->setExplainedQuery(query->clone());
         if (table_function)
@@ -113,16 +112,10 @@ public:
         query = std::move(query_);
     }
 
-    /** `settings_text_` is the SETTINGS clause as written in the query, which only the parser knows.
-      * `ParserSubquery` rewrites `(EXPLAIN <kind> <settings> SELECT ...)` into
-      * `viewExplain('<kind>', '<settings>', (SELECT ...))`, which needs the settings as a string,
-      * and a build with no formatter has nowhere else to get one - see `astText`.
-      */
-    void setSettings(ASTPtr settings_, String settings_text_ = {})
+    void setSettings(ASTPtr settings_)
     {
         children.emplace_back(settings_);
         ast_settings = std::move(settings_);
-        settings_text = std::move(settings_text_);
     }
 
     void setTableFunction(ASTPtr table_function_)
@@ -138,32 +131,11 @@ public:
     }
 
     const ASTPtr & getExplainedQuery() const { return query; }
-
-    /// Replace the explained query, keeping the `children` entry in sync (the explained query is
-    /// stored both in `query` and in `children`, see `setExplainedQuery`).
-    void replaceExplainedQuery(ASTPtr query_)
-    {
-        for (auto & child : children)
-        {
-            if (child == query)
-            {
-                child = query_;
-                break;
-            }
-        }
-        query = std::move(query_);
-    }
-
     const ASTPtr & getSettings() const { return ast_settings; }
-    /// Empty unless this query came from the parser - see `setSettings`.
-    const String & getSettingsText() const { return settings_text; }
     const ASTPtr & getTableFunction() const { return table_function; }
     const ASTPtr & getTableOverride() const { return table_override; }
 
     QueryKind getQueryKind() const override { return QueryKind::Explain; }
-
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
@@ -180,49 +152,23 @@ protected:
         {
             ostr << settings.nl_or_ws;
 
-            /// Trailing output options belong to the EXPLAIN only if the inner query cannot take them on re-parse.
-            /// EXPLAIN AST accepts any parenthesized query except one the subquery parser reads; other kinds parenthesize only a SELECT.
-            bool need_parens = false;
-            if (frame.has_trailing_output_options)
-            {
-                const auto inner_kind = query->getQueryKind();
-                const auto * inner_output = dynamic_cast<const ASTQueryWithOutput *>(query.get());
-                if (kind == ParsedAST)
-                {
-                    bool parsed_as_subquery = inner_kind == QueryKind::Select;
-                    if (const auto * inner_explain = query->as<ASTExplainQuery>())
-                    {
-                        const auto & explained = inner_explain->getExplainedQuery();
-                        parsed_as_subquery = inner_explain->getKind() == ParsedAST || !explained
-                            || explained->getQueryKind() == QueryKind::Select;
-                    }
-                    need_parens = !inner_output || !parsed_as_subquery;
-                    /// A bare inner query takes INTO OUTFILE only if it has no output options, FORMAT or SETTINGS only if it lacks that clause.
-                    if (!need_parens)
-                    {
-                        if (out_file)
-                            need_parens = !inner_output->hasOutputOptions();
-                        else if (format_ast)
-                            need_parens = !inner_output->format_ast;
-                        else if (settings_ast)
-                            need_parens = !inner_output->settings_ast;
-                    }
-                }
-                else
-                    need_parens = !inner_output && inner_kind == QueryKind::Select;
-            }
-
+            /// When trailing output options (SETTINGS, FORMAT, etc.) follow the EXPLAIN body,
+            /// and the inner query is not an ASTQueryWithOutput (e.g. a bare SELECT or UNION),
+            /// we must wrap it in parentheses. Otherwise the trailing SETTINGS clause would be
+            /// consumed by the inner SELECT during re-parsing.
+            /// For inner ASTQueryWithOutput queries (like CREATE TABLE), the flag propagates
+            /// through the frame and is handled by each query's own `formatQueryImpl`.
+            /// INSERT queries also don't need wrapping: wrapping INSERT in parens would
+            /// produce `(INSERT ...)` which cannot be parsed back.
+            bool need_parens = frame.has_trailing_output_options
+                && !dynamic_cast<const ASTQueryWithOutput *>(query.get())
+                && query->getQueryKind() != QueryKind::Insert
+                && query->getQueryKind() != QueryKind::AsyncInsertFlush;
             if (need_parens)
-            {
-                FormatStateStacked frame_nested = frame;
-                frame_nested.parent_has_trailing_settings = false;
-                frame_nested.has_trailing_output_options = false;
                 ostr << "(";
-                query->format(ostr, settings, state, frame_nested);
+            query->format(ostr, settings, state, frame);
+            if (need_parens)
                 ostr << ")";
-            }
-            else
-                query->format(ostr, settings, state, frame);
         }
         if (table_function)
         {
@@ -241,7 +187,6 @@ private:
 
     ASTPtr query;
     ASTPtr ast_settings;
-    String settings_text;
 
     /// Used by EXPLAIN TABLE OVERRIDE
     ASTPtr table_function;
