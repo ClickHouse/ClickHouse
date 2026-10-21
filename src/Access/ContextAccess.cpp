@@ -39,24 +39,27 @@ namespace ErrorCodes
 
 namespace
 {
-    const std::vector<String> source_table_engines = {
-        "File",
-        "URL",
-        "Distributed",
-        "MongoDB",
-        "Redis",
-        "MySQL",
-        "PostgreSQL",
-        "SQLite",
-        "ODBC",
-        "JDBC",
-        "HDFS",
-        "S3",
-        "Hive",
-        "AzureBlobStorage",
-        "Kafka",
-        "NATS",
-        "RabbitMQ",
+    /// Table engines which require `READ` and `WRITE` on a source, paired with that source.
+    /// `FileLog` reads the same files under `user_files_path` as `File`, so it is guarded by `FILE`.
+    const std::vector<std::pair<String, AccessTypeObjects::Source>> source_table_engines = {
+        {"File", AccessTypeObjects::Source::FILE},
+        {"FileLog", AccessTypeObjects::Source::FILE},
+        {"URL", AccessTypeObjects::Source::URL},
+        {"Distributed", AccessTypeObjects::Source::REMOTE},
+        {"MongoDB", AccessTypeObjects::Source::MONGO},
+        {"Redis", AccessTypeObjects::Source::REDIS},
+        {"MySQL", AccessTypeObjects::Source::MYSQL},
+        {"PostgreSQL", AccessTypeObjects::Source::POSTGRES},
+        {"SQLite", AccessTypeObjects::Source::SQLITE},
+        {"ODBC", AccessTypeObjects::Source::ODBC},
+        {"JDBC", AccessTypeObjects::Source::JDBC},
+        {"HDFS", AccessTypeObjects::Source::HDFS},
+        {"S3", AccessTypeObjects::Source::S3},
+        {"Hive", AccessTypeObjects::Source::HIVE},
+        {"AzureBlobStorage", AccessTypeObjects::Source::AZURE},
+        {"Kafka", AccessTypeObjects::Source::KAFKA},
+        {"NATS", AccessTypeObjects::Source::NATS},
+        {"RabbitMQ", AccessTypeObjects::Source::RABBITMQ},
     };
 
 
@@ -285,9 +288,9 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
     /// Sync SOURCE_READ/WRITE and TABLE_ENGINE, so only need to check TABLE_ENGINE later.
     if (access_control.doesTableEnginesRequireGrant())
     {
-        for (const auto & table_engine : source_table_engines)
+        for (const auto & [table_engine, source] : source_table_engines)
         {
-            if (res.isGranted(AccessType::READ | AccessType::WRITE, AccessTypeObjects::unifySource(table_engine)))
+            if (res.isGranted(AccessType::READ | AccessType::WRITE, AccessTypeObjects::toStringSource(source)))
                 res.grant(AccessType::TABLE_ENGINE, table_engine);
         }
     }
@@ -295,9 +298,9 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
     {
         /// Add TABLE_ENGINE on * and then remove TABLE_ENGINE on particular engines.
         res.grant(AccessType::TABLE_ENGINE);
-        for (const auto & table_engine : source_table_engines)
+        for (const auto & [table_engine, source] : source_table_engines)
         {
-            if (!res.isGranted(AccessType::READ | AccessType::WRITE, AccessTypeObjects::unifySource(table_engine)))
+            if (!res.isGranted(AccessType::READ | AccessType::WRITE, AccessTypeObjects::toStringSource(source)))
                 res.revoke(AccessType::TABLE_ENGINE, table_engine);
         }
     }
