@@ -392,7 +392,6 @@ ch_cc_library(
         ".",
     ],
     deps = [
-        "@clickhouse//contrib/lz4-cmake:_lz4",
         "@clickhouse_zstd//:_zstd",
     ],
     implementation_deps = [
