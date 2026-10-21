@@ -48,9 +48,9 @@ namespace DB
  * This keeps the scheduler single-child while letting the otherwise-root workloads be scheduled with
  * fairness/priorities via the normal workload policy machinery.
  * The implicit root node exists in every resource regardless of entities. Its settings come from the root
- * workload entity, the WORKLOAD with the empty name (see IWorkloadEntityStorage.h): the manager never creates
- * a node for this entity, but applies its settings to the root node of every resource (a `FOR` clause selects
- * the resource), including resources created later, and resets them to defaults when the entity is dropped.
+ * workload entity, the WORKLOAD with the empty name (see IWorkloadEntityStorage.h). It is handled like any other
+ * workload, except that its node is the implicit root itself: creating, updating and dropping the entity sets the
+ * root node's settings in place, and dropping it resets them to defaults.
  * So every resource has its dedicated thread for processing of resource request and other events (see EventQueue).
  *
  * Here is an example of SQL and corresponding hierarchy of scheduler nodes:
@@ -187,9 +187,6 @@ private:
         /// Updates resource entity
         void updateResource(const ASTPtr & new_resource_entity);
 
-        /// Sets the scheduling settings of the root node of this resource in place, on the scheduler thread
-        void updateRootSettings(const WorkloadSettings & root_settings);
-
         /// Updates a classifier to contain a reference for specified workload
         std::future<void> attachClassifier(Classifier & classifier, const String & workload_name);
 
@@ -201,6 +198,9 @@ private:
 
     private:
         void updateCurrentVersion();
+
+        /// Applies the settings of the root workload entity to the implicit root node, which always exists
+        void updateRootNode(const WorkloadSettings & root_settings);
 
         /// The implicit anonymous root workload, stored in node_for_workload under the empty-string key.
         WorkloadNodePtr implicitRoot()
@@ -348,10 +348,6 @@ private:
     void createOrUpdateResource(const String & resource_name, const ASTPtr & ast);
     void deleteResource(const String & resource_name);
 
-    /// Settings of the root workload entity for the given resource (defaults if there is no root workload entity).
-    /// Assumes `mutex` is held.
-    WorkloadSettings getRootSettings(const Resource & resource) const;
-
     // Topological sorting of workloads
     void topologicallySortedWorkloadsImpl(Workload * workload, std::unordered_set<Workload *> & visited, std::vector<Workload *> & sorted_workloads);
     std::vector<Workload *> topologicallySortedWorkloads();
@@ -364,7 +360,6 @@ private:
     mutable std::mutex mutex;
     std::unordered_map<String, WorkloadPtr> workloads; // TSA_GUARDED_BY(mutex);
     std::unordered_map<String, ResourcePtr> resources; // TSA_GUARDED_BY(mutex);
-    ASTPtr root_workload_entity; // The root workload entity (empty name), if any. TSA_GUARDED_BY(mutex);
 
     LoggerPtr log;
 };
