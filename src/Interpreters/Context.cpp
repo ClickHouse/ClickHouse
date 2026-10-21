@@ -33,6 +33,9 @@
 #include <Common/callOnce.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/PageCache.h>
+#if USE_GPU
+#include <GPU/GPUDevice.h>
+#endif
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
 #include <Common/isLocalAddress.h>
@@ -172,6 +175,9 @@
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
+#include <Server/StatelessWorker/StatelessWorkersProviderRegistry.h>
+#include <Server/StatelessWorker/StatelessWorkerAllocation.h>
 
 namespace fs = std::filesystem;
 
@@ -322,6 +328,9 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsBool cloud_mode;
     extern const SettingsString default_format;
+    extern const SettingsString distributed_plan_worker_cluster;
+    extern const SettingsUInt64 distributed_plan_workers_num;
+    extern const SettingsUInt64 distributed_plan_workers_provisioning_timeout_ms;
     extern const SettingsBoolAuto force_read_through_distributed_cache;
     extern const SettingsBoolAuto force_write_through_distributed_cache;
     extern const SettingsBool enable_filesystem_cache;
@@ -490,6 +499,9 @@ namespace FailPoints
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+#if USE_GPU
+    extern const int GPU_ERROR;
+#endif
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_ALREADY_EXISTS;
@@ -705,6 +717,9 @@ struct ContextSharedPart : boost::noncopyable
 #endif
     AsynchronousMetrics * asynchronous_metrics TSA_GUARDED_BY(mutex) = nullptr;       /// Points to asynchronous metrics
     mutable PageCachePtr page_cache TSA_GUARDED_BY(mutex);                            /// Userspace page cache.
+#if USE_GPU
+    std::unique_ptr<GPU::GPUDevice> gpu;    /// Set at the start of the server, before any query, so read without the mutex.
+#endif
     ProcessList process_list;                                   /// Executing queries at the moment.
     SessionTracker session_tracker;
     GlobalOvercommitTracker global_overcommit_tracker;
@@ -887,6 +902,9 @@ struct ContextSharedPart : boost::noncopyable
 #if USE_NURAFT
     mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
 #endif
+
+    mutable std::mutex stateless_worker_provider_mutex;
+    mutable StatelessWorkersProviderRegistryPtr stateless_workers_registry TSA_GUARDED_BY(stateless_worker_provider_mutex);
 
     ContextSharedPart()
         : access_control(std::make_unique<AccessControl>()), global_overcommit_tracker(&process_list), macros(std::make_unique<Macros>())
@@ -1241,6 +1259,20 @@ struct ContextSharedPart : boost::noncopyable
         }
 
         {
+            /// Detach under the lock (a racing query may read it), then shut down outside the lock.
+            StatelessWorkersProviderRegistryPtr registry;
+            {
+                std::lock_guard lock(stateless_worker_provider_mutex);
+                registry.swap(stateless_workers_registry);
+            }
+            if (registry)
+            {
+                LOG_TRACE(log, "Shutting down stateless worker providers");
+                registry->shutdown();
+            }
+        }
+
+        {
             // Disk selector might not be initialized if there was some error during
             // its initialization. Don't try to initialize it again on shutdown.
             if (merge_tree_disk_selector)
@@ -1361,6 +1393,11 @@ struct ContextSharedPart : boost::noncopyable
         join_background_pool(std::move(delete_streaming_schedule_pool));
 
         delete_access_control.reset();
+
+#if USE_GPU
+        /// After everything that may still hold device or pinned memory.
+        gpu.reset();
+#endif
 
         total_memory_tracker.resetOvercommitTracker();
         total_memory_tracker.resetPageCache();
@@ -1546,7 +1583,6 @@ ContextData::ContextData(const ContextData &o) :
     is_recovery_from_stored_metadata(o.is_recovery_from_stored_metadata),
     skip_forced_projection_check(o.skip_forced_projection_check),
     is_view_inner_query(o.is_view_inner_query),
-    positional_arguments_already_resolved(o.positional_arguments_already_resolved),
     join_analyze_mode(o.join_analyze_mode),
     temp_data_on_disk(o.temp_data_on_disk),
     classifier(o.classifier),
@@ -4486,6 +4522,7 @@ AsyncLoader & Context::getAsyncLoader() const
             /* log_failures = */ true,
             /* log_progress = */ true,
             /* log_events = */ true);
+        shared->async_loader->setWaiterCallbacks(onLoadJobWaitersIncrement, onLoadJobWaitersDecrement);
     });
 
     return *shared->async_loader;
@@ -4866,6 +4903,23 @@ void Context::waitAllBackupsAndRestores() const
         shared->backups_worker->waitAll();
 }
 
+void Context::stopDDLWorkerAndWaitAllBackupsAndRestores() const
+{
+    /// A worker that has not started yet must never start, because its startup job would undo the stop.
+    if (shared->ddl_worker_startup_task)
+        getAsyncLoader().remove(shared->ddl_worker_startup_task->goals());
+
+    DDLWorker * ddl_worker = nullptr;
+    {
+        SharedLockGuard lock(shared->mutex);
+        ddl_worker = shared->ddl_worker.get();
+    }
+    if (ddl_worker)
+        ddl_worker->shutdown();
+
+    waitAllBackupsAndRestores();
+}
+
 bool Context::cancelAllBackupsAndRestores(std::optional<std::chrono::steady_clock::time_point> deadline) const
 {
     if (shared->backups_worker)
@@ -5055,6 +5109,23 @@ void Context::setPageCache(std::chrono::milliseconds history_window,
         history_window, cache_policy, size_ratio,
         min_size_in_bytes, max_size_in_bytes, free_memory_ratio, num_shards);
 }
+
+#if USE_GPU
+void Context::setGPU(const ServerSettings & server_settings)
+{
+    if (shared->gpu)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The GPU has been already set.");
+
+    shared->gpu = std::make_unique<GPU::GPUDevice>(GPU::GPUDeviceSettings::fromServerSettings(server_settings));
+}
+
+GPU::GPUDevice & Context::getGPU() const
+{
+    if (!shared->gpu)
+        throw Exception(ErrorCodes::GPU_ERROR, "There is no GPU: the server setting `enable_gpu` is not set");
+    return *shared->gpu;
+}
+#endif
 
 PageCachePtr Context::getPageCache() const
 {
@@ -9354,6 +9425,57 @@ OrdinaryBackgroundExecutorPtr Context::getCommonExecutor() const
 {
     SharedLockGuard lock(shared->background_executors_mutex);
     return shared->common_executor;
+}
+
+StatelessWorkersProviderPtr Context::getStatelessWorkersProvider() const
+{
+    auto query_context_ptr = getQueryContext();
+    std::lock_guard lock(query_context_ptr->stateless_worker_allocation_mutex);
+    if (!query_context_ptr->stateless_worker_provider)
+        query_context_ptr->stateless_worker_provider = query_context_ptr->getStatelessWorkersProvider(
+            query_context_ptr->getSettingsRef()[Setting::distributed_plan_worker_cluster]);
+    return query_context_ptr->stateless_worker_provider;
+}
+
+StatelessWorkerAllocationPtr Context::getOrCreateStatelessWorkerAllocation() const
+{
+    /// Sized from the query context's settings, as planning is, so a subquery's `SETTINGS` cannot change it.
+    auto query_context_ptr = getQueryContext();
+
+    /// Resolve the provider before locking (it takes the same mutex).
+    auto provider = query_context_ptr->getStatelessWorkersProvider();
+
+    /// Held across the blocking allocation: a concurrent caller waits, then reuses the stored handle.
+    std::lock_guard lock(query_context_ptr->stateless_worker_allocation_mutex);
+    if (!query_context_ptr->stateless_worker_allocation)
+    {
+        const auto & settings = query_context_ptr->getSettingsRef();
+        UInt64 workers_num = settings[Setting::distributed_plan_workers_num];
+        /// The plans are built for at most this many nodes, so `TaskToHostMap` uses no more workers.
+        if (const size_t node_count = getCascadesClusterNodeCountParam(query_context_ptr); node_count > 0)
+            workers_num = std::min<UInt64>(workers_num, node_count);
+        query_context_ptr->stateless_worker_allocation
+            = provider->allocate(workers_num, settings[Setting::distributed_plan_workers_provisioning_timeout_ms]);
+    }
+    return query_context_ptr->stateless_worker_allocation;
+}
+
+StatelessWorkersProviderRegistryPtr Context::getStatelessWorkersProviderRegistry() const
+{
+    std::lock_guard lock(shared->stateless_worker_provider_mutex);
+    if (!shared->stateless_workers_registry)
+        shared->stateless_workers_registry = std::make_shared<StatelessWorkersProviderRegistry>();
+    return shared->stateless_workers_registry;
+}
+
+StatelessWorkersProviderPtr Context::getStatelessWorkersProvider(const String & cluster_name) const
+{
+    return getStatelessWorkersProviderRegistry()->getProvider(cluster_name);
+}
+
+void Context::reloadStatelessWorkersConfig(const Poco::Util::AbstractConfiguration & config) const
+{
+    getStatelessWorkersProviderRegistry()->reloadConfig(config);
 }
 
 IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) const
