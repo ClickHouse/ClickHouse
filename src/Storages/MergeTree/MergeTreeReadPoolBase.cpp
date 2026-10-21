@@ -13,6 +13,7 @@
 #include <Access/ContextAccess.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapSnapshot.h>
 
 #include <span>
 
@@ -446,6 +447,11 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
 #endif
     );
     read_task_info.read_hints = part_with_ranges.read_hints;
+    if (const auto * uk_read_snapshot = tryGetDeleteBitmapSnapshot(*storage_snapshot))
+    {
+        if (auto delete_bitmap = uk_read_snapshot->bitmapAt(data_part->info); !delete_bitmap->empty())
+            read_task_info.delete_bitmap = std::move(delete_bitmap);
+    }
 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
         .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
@@ -542,12 +548,12 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
         Block sample_block_from_part;
         for (const auto & column_name : all_column_names)
         {
-            if (auto column_in_part = data_part->tryGetColumn(column_name))
+            if (auto column_in_part = data_part_info->tryGetColumn(column_name))
                 sample_block_from_part.insert(ColumnWithTypeAndName(column_in_part->type->createColumn(), column_in_part->type, column_in_part->name));
         }
 
         read_task_info.shared_size_predictor = std::make_unique<MergeTreeBlockSizePredictor>(
-            data_part,
+            data_part_info,
             Names(all_column_names.begin(), all_column_names.end()),
             sample_block_from_part,
             settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading]);

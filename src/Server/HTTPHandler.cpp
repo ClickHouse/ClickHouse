@@ -1,4 +1,5 @@
 #include <Server/HTTPHandler.h>
+#include <Server/ConnectionRegistry.h>
 #include <Server/HTTPQueryConstructor.h>
 
 #include <Access/AccessControl.h>
@@ -25,7 +26,9 @@
 #include <Interpreters/TableNameHints.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/Lexer.h>
+#include <Parsers/ParserQuery.h>
 #include <Parsers/QueryParameterVisitor.h>
+#include <Parsers/parseQuery.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandler.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
@@ -83,7 +86,9 @@ namespace Setting
     extern const SettingsBool http_wait_end_of_query;
     extern const SettingsBool http_write_exception_in_output_format;
     extern const SettingsInt64 http_zlib_compression_level;
+    extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 input_format_max_block_wait_ms;
+    extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 readonly;
     extern const SettingsBool run_query_in_background;
     extern const SettingsBool send_progress_in_http_headers;
@@ -438,17 +443,6 @@ void HTTPHandler::processQuery(
     {
         context->setHTTPHandlerName(introspection_handler_name);
 
-        /// The query a SQL-defined handler executes is the server's own stored text, parsed and validated
-        /// when the handler was created (possibly in a session with raised parser limits) and re-parsed
-        /// with unlimited limits on every reload (see `SQLDefinedHandlersMetadataStorage::readHandler`).
-        /// Parse it with unlimited depth and backtracks (`0` disables the limit) here too, so a handler
-        /// that was accepted at creation stays invokable under ordinary session limits instead of failing
-        /// each request until the caller raises `max_parser_depth` / `max_parser_backtracks` themselves.
-        /// The client controls only the typed query parameters, never the query text, and could raise
-        /// these settings per-request anyway (they are changeable under `readonly = 2`); `parseQuery`
-        /// still guards against stack overflow via `checkStackSize`.
-        context->setSetting("max_parser_depth", Field(0));
-        context->setSetting("max_parser_backtracks", Field(0));
     }
 
     /// === Authentication and user profile are applied first ===
@@ -474,8 +468,57 @@ void HTTPHandler::processQuery(
 
     context->setCurrentQueryId(query_id);
 
+    /// Set the connection of this request to active in `system.connections` until the request ends.
+    /// The connection gets its registration on its first query. The registration stays until the socket closes.
+    /// Between the requests, the connection is idle. See `HTTPConnectionRegistration`.
+    /// Refresh an existing registration also if `collect_connection_metrics` is `false` now.
+    /// The registry keeps such registrations and shows them again when the setting changes to `true`.
+    /// Thus, they must have the client properties and the state of the last request, not of a request before the change.
+    /// The setting controls only new registrations.
+    HTTPConnectionRegistration * connection_registration = request.getConnectionRegistration();
+    if (connection_registration && (connection_registration->handle || ConnectionRegistry::instance().isEnabled()))
+    {
+        /// Each request sets the client properties again.
+        /// A reverse proxy can send the requests of different clients and users on one keep-alive connection.
+        /// Use `current_address` for the address and for the port. Do not use `request.clientAddress`.
+        /// `request.clientAddress` is always the direct TCP peer. Behind a proxy, it is the address of the proxy.
+        /// `authenticateUserByHTTP` sets `current_address`. If `auth_use_forwarded_address` is `true`, this address comes from `X-Forwarded-For`.
+        /// Thus, `system.connections`, `system.processes`, and `system.query_log` show the same address and port.
+        const auto & http_client_info = context->getClientInfo();
+        ConnectionPeer peer;
+        peer.user = http_client_info.current_user;
+        peer.user_id = context->getUserID();
+        peer.client_address = http_client_info.current_address->host();
+        peer.client_port = http_client_info.current_address->port();
+        peer.client_name = request.get("User-Agent", "");
+
+        if (!connection_registration->handle)
+        {
+            ConnectionInfo info;
+            info.protocol = "HTTP";
+            info.server_port = request.serverAddress().port();
+            info.connected_time = connection_registration->connected_time;
+            connection_registration->handle = ConnectionRegistry::instance().add(std::move(info), peer);
+        }
+        connection_registration->handle.setActive(context->getCurrentQueryId(), std::move(peer));
+    }
+    SCOPE_EXIT({
+        if (connection_registration)
+            connection_registration->handle.setIdle();
+    });
+
     context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
     context->applySettingsChanges(settings_changes);
+
+    /// The query a SQL-defined handler executes is the server's own stored text, parsed and validated
+    /// when the handler was created (possibly in a session with raised parser limits) and re-parsed
+    /// with unlimited limits on every reload (see `SQLDefinedHandlersMetadataStorage::readHandler`).
+    /// The parser limits are not zeroed on the query context here: `executeQuery` lifts them only for
+    /// the stored text itself via the `parse_server_owned_query_without_limits` flag (`has_server_owned_query`
+    /// is set by `PredefinedQueryHandler`, from which `SQLDefinedQueryHandler` inherits), so the
+    /// request-controlled construction snippets (`select`/`filter`/`order`/`page`) keep the caller's limits. The
+    /// same flag also pins the stored text to the ClickHouse SQL parser, so a request cannot make the handler
+    /// unparsable by asking for another `dialect`.
 
     /// The `X-ClickHouse-Format` header is an alias for the `output_format` setting, or - when
     /// `http_x_clickhouse_format_overrides_output_format` is disabled - for the `default_format`
@@ -722,6 +765,15 @@ void HTTPHandler::processQuery(
     bool enable_http_compression = params.getParsedLast<bool>("enable_http_compression", settings[Setting::enable_http_compression]);
     Int64 http_zlib_compression_level
         = params.getParsed<Int64>("http_zlib_compression_level", settings[Setting::http_zlib_compression_level]);
+    /// `http_zlib_compression_level` is for the zlib-based methods only. Other methods have their own ranges
+    /// and meanings of levels (e.g. `lz4` switches to the slow high-compression mode starting from level 2),
+    /// so they use the generic `output_format_compression_level`.
+    auto compression_level_for_method = [&](CompressionMethod method)
+    {
+        if (method == CompressionMethod::Gzip || method == CompressionMethod::Zlib)
+            return static_cast<int>(http_zlib_compression_level);
+        return static_cast<int>(settings[Setting::output_format_compression_level]);
+    };
     /// HTTP `Content-Encoding: snappy` is standardized to use the snappy framing format,
     /// independent of the user-tunable `snappy_mode` (which controls generic `file()`/`url()` reads).
     auto snappy_mode = SnappyMode::Framed;
@@ -740,7 +792,7 @@ void HTTPHandler::processQuery(
         used_output.wrap_compressed_holder = wrapWriteBufferWithCompressionMethod(
             used_output.out.get(),
             http_response_compression_method,
-            static_cast<int>(http_zlib_compression_level),
+            compression_level_for_method(http_response_compression_method),
             0,
             snappy_mode,
             DBMS_DEFAULT_BUFFER_SIZE,
@@ -766,7 +818,7 @@ void HTTPHandler::processQuery(
             used_output.generic_compression_holder = wrapWriteBufferWithCompressionMethod(
                 used_output.out.get(),
                 response_compression_method,
-                static_cast<int>(http_zlib_compression_level),
+                compression_level_for_method(response_compression_method),
                 0,
                 settings[Setting::snappy_mode],
                 DBMS_DEFAULT_BUFFER_SIZE,
@@ -1049,11 +1101,13 @@ void HTTPHandler::processQuery(
 
     if (!settings[Setting::run_query_in_background] && settings[Setting::readonly] > 0 && settings[Setting::cancel_http_readonly_queries_on_client_close])
     {
-        append_callback([&context, &request](const Progress &)
+        /// Assume that at the point this method is called no one is reading data from the socket any more:
+        /// should be true for read-only queries.
+        auto client_connected = [&request] { return request.checkPeerConnected(); };
+        context->setClientConnectedCallback(client_connected);
+        append_callback([&context, client_connected](const Progress &)
         {
-            /// Assume that at the point this method is called no one is reading data from the socket any more:
-            /// should be true for read-only queries.
-            if (!request.checkPeerConnected())
+            if (!client_connected())
                 context->killCurrentQuery();
         });
     }
@@ -1388,6 +1442,7 @@ void HTTPHandler::processQuery(
     };
     query_flags.parse_query_from_initial_buffer
         = settings[Setting::input_format_max_block_wait_ms] != 0 && url_query_starts_with_insert();
+    query_flags.parse_server_owned_query_without_limits = has_server_owned_query;
 
     executeQuery(
         std::move(in),
@@ -1731,6 +1786,7 @@ PredefinedQueryHandler::PredefinedQueryHandler(
     , url_regexp(url_regexp_)
     , header_name_with_capture_regexp(header_name_with_regexp_)
 {
+    setHasServerOwnedQuery();
 }
 
 bool PredefinedQueryHandler::customizeQueryParam(NameToNameMap & query_parameters, const std::string & key, const std::string & value)
@@ -1967,7 +2023,15 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     /// Remove leading and trailing whitespace that may come from XML formatting in the config file.
     /// This prevents whitespace from being interpreted as data for binary formats like MsgPack.
     boost::algorithm::trim(predefined_query);
-    NameSet analyze_receive_params = analyzeReceiveQueryParams(predefined_query);
+
+    /// The stored query is server-owned and can be accepted with parser limits higher than the defaults.
+    /// Parse it without parser depth or backtrack limits while discovering its query parameters, just as it
+    /// is parsed when the handler serves a request.
+    const char * query_begin = predefined_query.data();
+    const char * query_end = query_begin + predefined_query.size();
+    ParserQuery parser(query_end);
+    auto query_ast = parseQuery(parser, query_begin, query_end, "predefined query handler", 0, 0, 0);
+    NameSet analyze_receive_params = analyzeReceiveQueryParams(query_ast);
 
     HTTPHandlerConnectionConfig connection_config(config, config_prefix);
     connection_config.default_session_user = default_session_user;

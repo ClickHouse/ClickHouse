@@ -1,0 +1,29 @@
+-- LEFT JOIN, join_use_nulls = 1
+99	l99	\N	\N	\N
+98	l98	42	const	r49
+97	l97	\N	\N	\N
+96	l96	42	const	r48
+99	l99	\N	\N	\N
+98	l98	42	const	r49
+97	l97	\N	\N	\N
+96	l96	42	const	r48
+1
+-- RIGHT JOIN, join_use_nulls = 1
+\N	\N	\N	\N	98	r49
+96	7	left	l96	96	r48
+\N	\N	\N	\N	94	r47
+\N	\N	\N	\N	92	r46
+\N	\N	\N	\N	98	r49
+96	7	left	l96	96	r48
+\N	\N	\N	\N	94	r47
+\N	\N	\N	\N	92	r46
+1
+-- LEFT JOIN, join_use_nulls = 0
+99	l99	0		
+98	l98	42	const	r49
+97	l97	0		
+96	l96	42	const	r48
+99	l99	0		
+98	l98	42	const	r49
+97	l97	0		
+96	l96	42	const	r48
