@@ -49,6 +49,8 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFunction.h>
@@ -5598,8 +5600,13 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                     resolveExpressionNode(value, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/, false /*ignore_alias*/, false /*allow_niladic_functions*/);
                     if (const auto * constant = value->as<ConstantNode>())
                     {
+                        /// Other servers parse the printed value and `IN` set names hash the tree, so build it the same way.
+                        auto value_text = std::make_shared<ConstantNode>(constant->getColumn(), constant->getResultType())
+                                              ->toAST()->formatWithSecretsOneLine();
+                        ParserExpression value_parser;
                         key_and_value[1] = buildQueryTree(
-                            std::make_shared<ConstantNode>(constant->getValue(), constant->getResultType())->toAST(), scope.context);
+                            parseQuery(value_parser, value_text, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                            scope.context);
                     }
                 }
             }

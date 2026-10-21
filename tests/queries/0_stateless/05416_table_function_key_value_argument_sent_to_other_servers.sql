@@ -27,3 +27,7 @@ SELECT rid, p0 FROM remote('127.0.0.2', s3(s3_conn,
 -- The table function in an IN subquery evaluated by two shards.
 SELECT countIf(number IN (SELECT rid FROM s3(s3_conn,
     filename = currentDatabase() || '/05416/p0=*/data.jsonl', format = JSONEachRow))) FROM remote('127.0.0.{1,2}', numbers(4));
+
+-- Numeric values in an IN subquery evaluated by two shards.
+SELECT countIf(number IN (SELECT rid FROM s3(s3_conn, filename = currentDatabase() || '/05416/p0=*/data.jsonl',
+    format = JSONEachRow, max_single_read_retries = toInt16(4), max_connections = toInt64(100)))) FROM remote('127.0.0.{1,2}', numbers(4));
