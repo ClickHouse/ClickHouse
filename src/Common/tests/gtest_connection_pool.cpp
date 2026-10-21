@@ -179,7 +179,7 @@ protected:
         return DB::HTTPConnectionPools::instance().getPool(DB::HTTPConnectionGroupType::HTTP, uri, DB::ProxyConfiguration{});
     }
 
-    std::string getServerUrl() const
+    [[nodiscard]] std::string getServerUrl() const
     {
         return "http://" + server_data.server->socket().address().toString();
     }
@@ -194,7 +194,7 @@ protected:
         server_data.server->start();
     }
 
-    Poco::Net::HTTPServer & getServer() const
+    [[nodiscard]] Poco::Net::HTTPServer & getServer() const
     {
         return *server_data.server;
     }

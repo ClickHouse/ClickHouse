@@ -85,7 +85,7 @@ public:
         fs::create_directories(temp_folder.path());
     }
 
-    const String & getPathToArchive() const { return path_to_archive; }
+    [[nodiscard]] const String & getPathToArchive() const { return path_to_archive; }
 
     static void expectException(int code, const String & message, const std::function<void()> & func)
     {

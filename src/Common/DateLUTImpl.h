@@ -611,7 +611,7 @@ public:
 
     /// Round down to start of monday.
     template <typename DateOrTime>
-    Time toFirstDayOfWeek(DateOrTime v) const
+    [[nodiscard]] Time toFirstDayOfWeek(DateOrTime v) const
     {
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
             if (unlikely(isOutOfLUTRange(v)))
@@ -640,7 +640,7 @@ public:
 
     /// Round up to the last day of week.
     template <typename DateOrTime>
-    Time toLastDayOfWeek(DateOrTime v) const
+    [[nodiscard]] Time toLastDayOfWeek(DateOrTime v) const
     {
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
             if (unlikely(isOutOfLUTRange(v)))
@@ -669,7 +669,7 @@ public:
 
     /// Round down to start of month.
     template <typename DateOrTime>
-    Time toFirstDayOfMonth(DateOrTime v) const
+    [[nodiscard]] Time toFirstDayOfMonth(DateOrTime v) const
     {
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
             if (unlikely(isOutOfLUTRange(v)))
@@ -698,7 +698,7 @@ public:
 
     /// Round up to last day of month.
     template <typename DateOrTime>
-    Time toLastDayOfMonth(DateOrTime v) const
+    [[nodiscard]] Time toLastDayOfMonth(DateOrTime v) const
     {
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
             if (unlikely(isOutOfLUTRange(v)))
@@ -765,7 +765,7 @@ public:
     }
 
     template <typename DateOrTime>
-    Time toFirstDayOfQuarter(DateOrTime v) const
+    [[nodiscard]] Time toFirstDayOfQuarter(DateOrTime v) const
     {
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
             if (unlikely(isOutOfLUTRange(v)))

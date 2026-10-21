@@ -319,7 +319,7 @@ public:
         return delegate->hasPendingRemovalBlobs(blobs);
     }
 
-    bool hasDeadBlobsQueue() const override
+    [[nodiscard]] bool hasDeadBlobsQueue() const override
     {
         return delegate->hasDeadBlobsQueue();
     }
@@ -339,7 +339,7 @@ public:
         return delegate->recordAsReplicated(blobs);
     }
 
-    bool hasMissingBlobsQueue() const override
+    [[nodiscard]] bool hasMissingBlobsQueue() const override
     {
         return delegate->hasMissingBlobsQueue();
     }

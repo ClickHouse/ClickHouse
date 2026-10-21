@@ -449,7 +449,7 @@ protected:
             "local_blobs", std::move(cluster), std::move(metadata_storage), std::move(object_storages), nullptr, *config, "");
     }
 
-    size_t countBlobs() const
+    [[nodiscard]] size_t countBlobs() const
     {
         size_t count = 0;
         const String prefix = object_storage->getCommonKeyPrefix();

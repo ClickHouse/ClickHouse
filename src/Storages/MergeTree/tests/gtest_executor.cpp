@@ -57,7 +57,7 @@ public:
 
     void cancel() noexcept override { /* no op */ }
 
-    StorageID getStorageID() const override
+    [[nodiscard]] StorageID getStorageID() const override
     {
         return {"test", name};
     }
@@ -69,8 +69,8 @@ public:
             throw TestException();
     }
 
-    Priority getPriority() const override { return {}; }
-    String getQueryId() const override { return {}; }
+    [[nodiscard]] Priority getPriority() const override { return {}; }
+    [[nodiscard]] String getQueryId() const override { return {}; }
 
 private:
     std::mt19937 generator;
@@ -361,10 +361,10 @@ public:
 
     bool executeStep() override { return false; }
     void cancel() noexcept override {}
-    StorageID getStorageID() const override { return {"test", name}; }
+    [[nodiscard]] StorageID getStorageID() const override { return {"test", name}; }
     void onCompleted() override {}
-    Priority getPriority() const override { return {}; }
-    String getQueryId() const override { return "test::slow_destructor"; }
+    [[nodiscard]] Priority getPriority() const override { return {}; }
+    [[nodiscard]] String getQueryId() const override { return "test::slow_destructor"; }
 
 private:
     String name;

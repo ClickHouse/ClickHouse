@@ -165,7 +165,7 @@ public:
         return current_value;
     }
 
-    size_t itemsLeft() const
+    [[nodiscard]] size_t itemsLeft() const
     {
         return reinterpret_cast<const char *>(data_end) - reinterpret_cast<const char *>(data);
     }
@@ -448,7 +448,7 @@ struct StopwatchTimer
         stopwatch.stop();
     }
 
-    const std::vector<std::tuple<const char*, UInt64>> & getResults() const
+    [[nodiscard]] const std::vector<std::tuple<const char*, UInt64>> & getResults() const
     {
         return results;
     }

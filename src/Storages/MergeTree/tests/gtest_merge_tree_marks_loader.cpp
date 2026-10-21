@@ -18,44 +18,44 @@ class EmptyDataPartInfoForReader final : public IMergeTreeDataPartInfoForReader
 public:
     EmptyDataPartInfoForReader() : IMergeTreeDataPartInfoForReader(ContextPtr{}) { }
 
-    bool isCompactPart() const override { unexpectedCall(); }
-    bool isWidePart() const override { unexpectedCall(); }
-    bool isProjectionPart() const override { unexpectedCall(); }
-    bool hasLightweightDelete() const override { unexpectedCall(); }
-    const String & getPartName() const override { unexpectedCall(); }
-    const MergeTreePartInfo & getPartInfo() const override { unexpectedCall(); }
-    const MergeTreePartition & getPartition() const override { unexpectedCall(); }
-    Int64 getMinDataVersion() const override { unexpectedCall(); }
-    Int64 getMaxDataVersion() const override { unexpectedCall(); }
-    IndexPtr getIndexPtr() const override { unexpectedCall(); }
-    DataPartStoragePtr getDataPartStorage() const override { return {}; }
-    const NamesAndTypesList & getColumns() const override { unexpectedCall(); }
-    const ColumnsDescription & getColumnsDescription() const override { unexpectedCall(); }
-    const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const override { unexpectedCall(); }
-    const ColumnsSubstreams & getColumnsSubstreams() const override { unexpectedCall(); }
-    std::optional<size_t> getColumnPosition(const String &) const override { unexpectedCall(); }
-    std::optional<NameAndTypePair> tryGetColumn(const String &) const override { unexpectedCall(); }
-    bool isSystemColumnInvalidated(const String &) const override { unexpectedCall(); }
-    String getColumnNameWithMinimumCompressedSize(const NamesAndTypesList &) const override { unexpectedCall(); }
-    String getParentPartName() const override { unexpectedCall(); }
-    ColumnSize getColumnSize(const String &) const override { unexpectedCall(); }
-    std::shared_ptr<const std::unordered_map<String, ColumnSize>> getColumnSizes() const override { unexpectedCall(); }
-    CompressionCodecPtr getDefaultCompressionCodec() const override { unexpectedCall(); }
-    ColumnSize getSubcolumnSize(const String &) const override { unexpectedCall(); }
-    MergeTreeSettingsPtr getStorageSettings() const override { unexpectedCall(); }
-    std::shared_ptr<const IMergeTreeDataPart> getDataPart() const override { unexpectedCall(); }
-    const MergeTreeDataPartChecksums & getChecksums() const override { unexpectedCall(); }
-    AlterConversionsPtr getAlterConversions() const override { unexpectedCall(); }
-    size_t getMarksCount() const override { unexpectedCall(); }
-    size_t getFileSizeOrZero(const std::string &) const override { unexpectedCall(); }
-    const MergeTreeIndexGranularityInfo & getIndexGranularityInfo() const override { unexpectedCall(); }
-    const MergeTreeIndexGranularity & getIndexGranularity() const override { unexpectedCall(); }
-    SerializationPtr getSerialization(const NameAndTypePair &) const override { unexpectedCall(); }
-    SerializationPtr tryGetSerialization(const String &) const override { unexpectedCall(); }
-    const SerializationInfoByName & getSerializationInfos() const override { unexpectedCall(); }
-    String getTableName() const override { unexpectedCall(); }
+    [[nodiscard]] bool isCompactPart() const override { unexpectedCall(); }
+    [[nodiscard]] bool isWidePart() const override { unexpectedCall(); }
+    [[nodiscard]] bool isProjectionPart() const override { unexpectedCall(); }
+    [[nodiscard]] bool hasLightweightDelete() const override { unexpectedCall(); }
+    [[nodiscard]] const String & getPartName() const override { unexpectedCall(); }
+    [[nodiscard]] const MergeTreePartInfo & getPartInfo() const override { unexpectedCall(); }
+    [[nodiscard]] const MergeTreePartition & getPartition() const override { unexpectedCall(); }
+    [[nodiscard]] Int64 getMinDataVersion() const override { unexpectedCall(); }
+    [[nodiscard]] Int64 getMaxDataVersion() const override { unexpectedCall(); }
+    [[nodiscard]] IndexPtr getIndexPtr() const override { unexpectedCall(); }
+    [[nodiscard]] DataPartStoragePtr getDataPartStorage() const override { return {}; }
+    [[nodiscard]] const NamesAndTypesList & getColumns() const override { unexpectedCall(); }
+    [[nodiscard]] const ColumnsDescription & getColumnsDescription() const override { unexpectedCall(); }
+    [[nodiscard]] const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const override { unexpectedCall(); }
+    [[nodiscard]] const ColumnsSubstreams & getColumnsSubstreams() const override { unexpectedCall(); }
+    [[nodiscard]] std::optional<size_t> getColumnPosition(const String &) const override { unexpectedCall(); }
+    [[nodiscard]] std::optional<NameAndTypePair> tryGetColumn(const String &) const override { unexpectedCall(); }
+    [[nodiscard]] bool isSystemColumnInvalidated(const String &) const override { unexpectedCall(); }
+    [[nodiscard]] String getColumnNameWithMinimumCompressedSize(const NamesAndTypesList &) const override { unexpectedCall(); }
+    [[nodiscard]] String getParentPartName() const override { unexpectedCall(); }
+    [[nodiscard]] ColumnSize getColumnSize(const String &) const override { unexpectedCall(); }
+    [[nodiscard]] std::shared_ptr<const std::unordered_map<String, ColumnSize>> getColumnSizes() const override { unexpectedCall(); }
+    [[nodiscard]] CompressionCodecPtr getDefaultCompressionCodec() const override { unexpectedCall(); }
+    [[nodiscard]] ColumnSize getSubcolumnSize(const String &) const override { unexpectedCall(); }
+    [[nodiscard]] MergeTreeSettingsPtr getStorageSettings() const override { unexpectedCall(); }
+    [[nodiscard]] std::shared_ptr<const IMergeTreeDataPart> getDataPart() const override { unexpectedCall(); }
+    [[nodiscard]] const MergeTreeDataPartChecksums & getChecksums() const override { unexpectedCall(); }
+    [[nodiscard]] AlterConversionsPtr getAlterConversions() const override { unexpectedCall(); }
+    [[nodiscard]] size_t getMarksCount() const override { unexpectedCall(); }
+    [[nodiscard]] size_t getFileSizeOrZero(const std::string &) const override { unexpectedCall(); }
+    [[nodiscard]] const MergeTreeIndexGranularityInfo & getIndexGranularityInfo() const override { unexpectedCall(); }
+    [[nodiscard]] const MergeTreeIndexGranularity & getIndexGranularity() const override { unexpectedCall(); }
+    [[nodiscard]] SerializationPtr getSerialization(const NameAndTypePair &) const override { unexpectedCall(); }
+    [[nodiscard]] SerializationPtr tryGetSerialization(const String &) const override { unexpectedCall(); }
+    [[nodiscard]] const SerializationInfoByName & getSerializationInfos() const override { unexpectedCall(); }
+    [[nodiscard]] String getTableName() const override { unexpectedCall(); }
     void reportBroken() override { unexpectedCall(); }
-    size_t getRowCount() const override { unexpectedCall(); }
+    [[nodiscard]] size_t getRowCount() const override { unexpectedCall(); }
 
 private:
     [[noreturn]] static void unexpectedCall()
