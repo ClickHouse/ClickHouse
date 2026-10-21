@@ -10,5 +10,8 @@ cc_library(
     name = "aws_c_mqtt",
     hdrs = glob(["include/aws/mqtt/**/*.h"], exclude = ["include/aws/mqtt/private/**/*.h"]),
     includes = ["include"],
-    deps = ["@clickhouse_aws_c_http//:aws_c_http"],
+    deps = [
+        "@clickhouse_aws_c_io//:aws_c_io",
+        "@clickhouse_aws_c_common//:aws_c_common",
+    ],
 )
