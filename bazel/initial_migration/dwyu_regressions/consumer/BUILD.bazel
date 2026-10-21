@@ -249,3 +249,9 @@ dwyu_cc_consumer_audit(
     consumers = ["@clickhouse_nuraft//:_nuraft"],
     owner = "@clickhouse_boost//:boost_asio_options",
 )
+
+dwyu_cc_consumer_audit(
+    name = "boost_config",
+    consumers = ["@clickhouse_boost//:_boost_iostreams"],
+    owner = "@clickhouse_boost//:boost_config",
+)

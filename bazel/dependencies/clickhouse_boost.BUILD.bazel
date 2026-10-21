@@ -27,7 +27,10 @@ ch_cc_library(
         "libs/context/src/posix/stack_traits.cpp",
     ],
     copts = _BOOST_COPTS,
-    implementation_deps = [":boost_headers"],
+    implementation_deps = [
+        ":boost_config",
+        ":boost_headers",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
 )
 
@@ -67,7 +70,10 @@ ch_cc_library(
         "libs/coroutine/src/posix/stack_traits.cpp",
     ],
     copts = _BOOST_COPTS,
-    implementation_deps = [":boost_headers"],
+    implementation_deps = [
+        ":boost_config",
+        ":boost_headers",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":_boost_context"],
 )
@@ -117,6 +123,7 @@ ch_cc_library(
     ],
     copts = _BOOST_COPTS,
     implementation_deps = [
+        ":boost_config",
         ":boost_headers",
         "@clickhouse_zlib_ng//:_zlib",
         "@clickhouse_zstd//:_zstd__compile_0",
@@ -173,7 +180,10 @@ ch_cc_library(
     name = "_boost_program_options",
     srcs = glob(["libs/program_options/src/*.cpp"]),
     copts = _BOOST_COPTS,
-    implementation_deps = [":boost_headers"],
+    implementation_deps = [
+        ":boost_config",
+        ":boost_headers",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )
@@ -202,6 +212,41 @@ cc_library(
     textual_hdrs = _ASIO_COMPILER_OPTIONS,
 )
 
+_BOOST_CONFIG_HEADERS = [
+    "boost/config.hpp",
+    "boost/config/compiler/clang.hpp",
+    "boost/config/compiler/clang_version.hpp",
+    "boost/config/detail/cxx_composite.hpp",
+    "boost/config/detail/posix_features.hpp",
+    "boost/config/detail/select_compiler_config.hpp",
+    "boost/config/detail/select_platform_config.hpp",
+    "boost/config/detail/select_stdlib_config.hpp",
+    "boost/config/helper_macros.hpp",
+    "boost/config/platform/linux.hpp",
+    "boost/config/stdlib/libcpp.hpp",
+    "boost/config/user.hpp",
+]
+
+_BOOST_CONFIG_PRIVATE_HEADERS = [
+    "boost/config/detail/suffix.hpp",
+]
+
+_BOOST_CONFIG_ABI = [
+    "boost/config/abi_prefix.hpp",
+    "boost/config/abi_suffix.hpp",
+]
+
+# detail/suffix.hpp is included only by config.hpp. The ABI headers are a
+# public pair; the Boost.Iostreams consumer audit verifies both in context.
+cc_library(
+    name = "boost_config",
+    srcs = _BOOST_CONFIG_PRIVATE_HEADERS,
+    hdrs = _BOOST_CONFIG_HEADERS,
+    features = ["external_include_paths"],
+    includes = ["."],
+    textual_hdrs = _BOOST_CONFIG_ABI,
+)
+
 cc_library(
     name = "boost_headers",
     hdrs = glob(
@@ -210,12 +255,14 @@ cc_library(
             "boost/**/*.hpp",
             "boost/**/*.ipp",
         ],
-        exclude = _ASIO_COMPILER_OPTIONS,
+        exclude = _ASIO_COMPILER_OPTIONS + _BOOST_CONFIG_HEADERS + _BOOST_CONFIG_PRIVATE_HEADERS + _BOOST_CONFIG_ABI,
     ),
     features = ["external_include_paths"],
-    includes = ["."],
     textual_hdrs = glob(["boost/**/*.inc"]),
-    deps = [":boost_asio_options"],
+    deps = [
+        ":boost_asio_options",
+        ":boost_config",
+    ],
 )
 
 cc_library(
