@@ -1,4 +1,5 @@
 #include <Server/HTTPHandler.h>
+#include <Server/ConnectionRegistry.h>
 #include <Server/HTTPQueryConstructor.h>
 
 #include <Access/AccessControl.h>
@@ -85,6 +86,7 @@ namespace Setting
     extern const SettingsBool http_wait_end_of_query;
     extern const SettingsBool http_write_exception_in_output_format;
     extern const SettingsInt64 http_zlib_compression_level;
+    extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 input_format_max_block_wait_ms;
     extern const SettingsUInt64 max_generic_compression_threads;
     extern const SettingsUInt64 max_query_size;
@@ -467,6 +469,45 @@ void HTTPHandler::processQuery(
 
     context->setCurrentQueryId(query_id);
 
+    /// Set the connection of this request to active in `system.connections` until the request ends.
+    /// The connection gets its registration on its first query. The registration stays until the socket closes.
+    /// Between the requests, the connection is idle. See `HTTPConnectionRegistration`.
+    /// Refresh an existing registration also if `collect_connection_metrics` is `false` now.
+    /// The registry keeps such registrations and shows them again when the setting changes to `true`.
+    /// Thus, they must have the client properties and the state of the last request, not of a request before the change.
+    /// The setting controls only new registrations.
+    HTTPConnectionRegistration * connection_registration = request.getConnectionRegistration();
+    if (connection_registration && (connection_registration->handle || ConnectionRegistry::instance().isEnabled()))
+    {
+        /// Each request sets the client properties again.
+        /// A reverse proxy can send the requests of different clients and users on one keep-alive connection.
+        /// Use `current_address` for the address and for the port. Do not use `request.clientAddress`.
+        /// `request.clientAddress` is always the direct TCP peer. Behind a proxy, it is the address of the proxy.
+        /// `authenticateUserByHTTP` sets `current_address`. If `auth_use_forwarded_address` is `true`, this address comes from `X-Forwarded-For`.
+        /// Thus, `system.connections`, `system.processes`, and `system.query_log` show the same address and port.
+        const auto & http_client_info = context->getClientInfo();
+        ConnectionPeer peer;
+        peer.user = http_client_info.current_user;
+        peer.user_id = context->getUserID();
+        peer.client_address = http_client_info.current_address->host();
+        peer.client_port = http_client_info.current_address->port();
+        peer.client_name = request.get("User-Agent", "");
+
+        if (!connection_registration->handle)
+        {
+            ConnectionInfo info;
+            info.protocol = "HTTP";
+            info.server_port = request.serverAddress().port();
+            info.connected_time = connection_registration->connected_time;
+            connection_registration->handle = ConnectionRegistry::instance().add(std::move(info), peer);
+        }
+        connection_registration->handle.setActive(context->getCurrentQueryId(), std::move(peer));
+    }
+    SCOPE_EXIT({
+        if (connection_registration)
+            connection_registration->handle.setIdle();
+    });
+
     context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
     context->applySettingsChanges(settings_changes);
 
@@ -725,6 +766,15 @@ void HTTPHandler::processQuery(
     bool enable_http_compression = params.getParsedLast<bool>("enable_http_compression", settings[Setting::enable_http_compression]);
     Int64 http_zlib_compression_level
         = params.getParsed<Int64>("http_zlib_compression_level", settings[Setting::http_zlib_compression_level]);
+    /// `http_zlib_compression_level` is for the zlib-based methods only. Other methods have their own ranges
+    /// and meanings of levels (e.g. `lz4` switches to the slow high-compression mode starting from level 2),
+    /// so they use the generic `output_format_compression_level`.
+    auto compression_level_for_method = [&](CompressionMethod method)
+    {
+        if (method == CompressionMethod::Gzip || method == CompressionMethod::Zlib)
+            return static_cast<int>(http_zlib_compression_level);
+        return static_cast<int>(settings[Setting::output_format_compression_level]);
+    };
     /// HTTP `Content-Encoding: snappy` is standardized to use the snappy framing format,
     /// independent of the user-tunable `snappy_mode` (which controls generic `file()`/`url()` reads).
     auto snappy_mode = SnappyMode::Framed;
@@ -746,7 +796,7 @@ void HTTPHandler::processQuery(
         used_output.wrap_compressed_holder = wrapWriteBufferWithCompressionMethod(
             used_output.out.get(),
             http_response_compression_method,
-            static_cast<int>(http_zlib_compression_level),
+            compression_level_for_method(http_response_compression_method),
             0,
             snappy_mode,
             DBMS_DEFAULT_BUFFER_SIZE,
@@ -773,7 +823,7 @@ void HTTPHandler::processQuery(
             used_output.generic_compression_holder = wrapWriteBufferWithCompressionMethod(
                 used_output.out.get(),
                 response_compression_method,
-                static_cast<int>(http_zlib_compression_level),
+                compression_level_for_method(response_compression_method),
                 0,
                 settings[Setting::snappy_mode],
                 DBMS_DEFAULT_BUFFER_SIZE,
@@ -1057,11 +1107,13 @@ void HTTPHandler::processQuery(
 
     if (!settings[Setting::run_query_in_background] && settings[Setting::readonly] > 0 && settings[Setting::cancel_http_readonly_queries_on_client_close])
     {
-        append_callback([&context, &request](const Progress &)
+        /// Assume that at the point this method is called no one is reading data from the socket any more:
+        /// should be true for read-only queries.
+        auto client_connected = [&request] { return request.checkPeerConnected(); };
+        context->setClientConnectedCallback(client_connected);
+        append_callback([&context, client_connected](const Progress &)
         {
-            /// Assume that at the point this method is called no one is reading data from the socket any more:
-            /// should be true for read-only queries.
-            if (!request.checkPeerConnected())
+            if (!client_connected())
                 context->killCurrentQuery();
         });
     }

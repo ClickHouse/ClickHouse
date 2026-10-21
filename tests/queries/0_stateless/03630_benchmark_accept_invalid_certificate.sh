@@ -2,6 +2,9 @@
 # Tags: no-fasttest
 # - no-fasttest: require SSL
 
+# A set port adds `--port` to `$CLICKHOUSE_CLIENT` and `$CLICKHOUSE_BENCHMARK`, but the test checks the default port.
+unset CLICKHOUSE_PORT_TCP
+
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh

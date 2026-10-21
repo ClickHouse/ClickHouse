@@ -73,6 +73,16 @@ see https://iceberg.apache.org/docs/1.5.2/configuration/.
 
 Threshold for compaction data files in iceberg.
 
+## iceberg_orphan_files_min_retention_seconds {#iceberg_orphan_files_min_retention_seconds}
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="UInt64" default_value="86400" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "86400"},{"label": "New setting. `remove_orphan_files` rejects an `older_than` less than this many seconds before now, so it keeps the files of a write that started less than this long ago and has not committed yet. `compatibility` with versions before 26.10 restores the previous behavior (no minimum)."}]}]}/>
+
+Minimum age in seconds of the files that `ALTER TABLE ... EXECUTE remove_orphan_files` may delete from an Iceberg table. An `older_than` (given explicitly or derived from `iceberg_orphan_files_older_than_seconds`) that is closer to now than this is rejected: files of a write that has not committed yet are not referenced by the table metadata and would be deleted, which corrupts the table when the write commits. Keep it above the longest time a write to the table can take to commit. 0 disables the check.
+
 ## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}
 
 <ExperimentalBadge/>

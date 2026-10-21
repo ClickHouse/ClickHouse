@@ -37,6 +37,8 @@
 #include <Poco/UUID.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/DateLUT.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/ErrnoException.h>
 #include <Common/quoteString.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -65,6 +67,11 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
 
+#if USE_AWS_S3
+#include <IO/S3Common.h>
+#include <IO/S3/getObjectInfo.h>
+#endif
+
 
 using namespace DB;
 
@@ -78,6 +85,7 @@ extern const int BAD_ARGUMENTS;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int LOGICAL_ERROR;
 extern const int UNSUPPORTED_METHOD;
+extern const int READONLY;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -97,6 +105,12 @@ extern const SettingsString iceberg_metadata_compression_method;
 namespace ProfileEvents
 {
     extern const Event IcebergVersionHintUsed;
+    extern const Event IcebergVersionHintReadMicroseconds;
+    extern const Event IcebergMetadataJSONReads;
+    extern const Event IcebergMetadataJSONReadMicroseconds;
+    extern const Event IcebergMetadataJSONParses;
+    extern const Event IcebergMetadataJSONParsedBytes;
+    extern const Event IcebergMetadataJSONParseMicroseconds;
 }
 
 namespace DB::Setting
@@ -354,6 +368,36 @@ void writeMessageToFile(
     }
 }
 
+/// Whether the storage refused the request itself rather than its condition, so that a retry is refused again.
+static bool isRefusedWrite(const Exception & e)
+{
+    if (e.code() == ErrorCodes::UNSUPPORTED_METHOD || e.code() == ErrorCodes::READONLY)
+        return true;
+    if (const auto * errno_exception = dynamic_cast<const ErrnoException *>(&e))
+        return errno_exception->getErrno() == EACCES || errno_exception->getErrno() == EPERM
+            || errno_exception->getErrno() == EROFS;
+#if USE_AWS_S3
+    if (const auto * s3_exception = dynamic_cast<const S3Exception *>(&e))
+        return DB::S3::isAuthenticationError(s3_exception->getS3ErrorCode())
+            || s3_exception->getS3ErrorCode() == Aws::S3::S3Errors::SIGNATURE_DOES_NOT_MATCH;
+#endif
+    return false;
+}
+
+/// Whether `path` is known to be absent; a failed check proves nothing.
+static bool isKnownAbsent(const DB::ObjectStoragePtr & object_storage, const std::string & path)
+{
+    try
+    {
+        return !object_storage->exists(StoredObject(path));
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return false;
+    }
+}
+
 bool writeMetadataFile(
     const IcebergPathResolver & resolver,
     const GeneratedMetadataFileWithInfo & metadata_file_info,
@@ -362,11 +406,13 @@ bool writeMetadataFile(
     DB::ContextPtr context)
 {
     auto storage_metadata_path = resolver.resolve(metadata_file_info.path);
+    bool write_attempted = false;
     try
     {
         if (object_storage->exists(StoredObject(storage_metadata_path)))
             return false;
 
+        write_attempted = true;
         Iceberg::writeMessageToFile(
             metadata_file_content,
             storage_metadata_path,
@@ -378,10 +424,9 @@ bool writeMetadataFile(
     }
     catch (const Exception & e)
     {
-        /// A backend that cannot express the commit's compare-and-swap will never be able to, so
-        /// reporting a lost race would make the caller retry an operation that can never succeed.
-        /// Propagate instead; every other failure (including a genuinely lost CAS) stays retryable.
-        if (e.code() == ErrorCodes::UNSUPPORTED_METHOD)
+        /// A refused write is not a lost race, and retrying the commit cannot get past it. Once the write was sent,
+        /// a refusal (e.g. of the check after an upload) proves nothing was written only while the file is absent.
+        if (isRefusedWrite(e) && (!write_attempted || isKnownAbsent(object_storage, storage_metadata_path)))
             throw;
         tryLogCurrentException(__PRETTY_FUNCTION__);
         return false;
@@ -608,6 +653,9 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
 {
     auto create_fn = [&]()
     {
+        ProfileEvents::increment(ProfileEvents::IcebergMetadataJSONReads);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataJSONReadMicroseconds);
+
         ObjectInfo object_info(metadata_file_path);
 
         auto read_settings = local_context->getReadSettings();
@@ -637,6 +685,11 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
             IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path), create_fn);
     else
         metadata_json_str = create_fn();
+
+    /// The cache holds the raw content, so the file is parsed on every call.
+    ProfileEvents::increment(ProfileEvents::IcebergMetadataJSONParses);
+    ProfileEvents::increment(ProfileEvents::IcebergMetadataJSONParsedBytes, metadata_json_str.size());
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataJSONParseMicroseconds);
 
     Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
     Poco::Dynamic::Var json = parser.parse(metadata_json_str);
@@ -685,8 +738,6 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
         case TypeIndex::DateTime:
         case TypeIndex::DateTime64:
             return {"timestamp", true};
-        case TypeIndex::Time:
-            return {"time", true};
         case TypeIndex::String:
             return {"string", true};
         case TypeIndex::UUID:
@@ -1621,6 +1672,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     }
     else if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value && !ignore_metadata_pointer_overrides)
     {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergVersionHintReadMicroseconds);
         auto version_hint_path = std::filesystem::path(table_path) / "metadata" / "version-hint.text";
         std::string metadata_file;
         StoredObject version_hint(version_hint_path);
@@ -1764,6 +1816,21 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
 {
     auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
     Poco::JSON::Array::Ptr sort_orders = metadata_object->getArray(f_sort_orders);
+
+    Poco::JSON::Array::Ptr fields;
+    for (UInt32 i = 0; i < sort_orders->size(); ++i)
+    {
+        auto sort_order = sort_orders->getObject(i);
+        if (sort_order->getValue<Int64>(f_order_id) == sort_order_id)
+        {
+            fields = sort_order->getArray(f_fields);
+            break;
+        }
+    }
+
+    if (!fields || fields->size() == 0)
+        return KeyDescription{};
+
     std::unordered_map<Int64, String> source_id_to_column_name;
     auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
 
@@ -1773,70 +1840,55 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
         source_id_to_column_name[source_id] = col_name;
     }
 
-    KeyDescription key_description;
-    ColumnsDescription column_description;
-    for (size_t i = 0; i < ch_schema.size(); ++i)
-        column_description.add(ColumnDescription(ch_schema.getNames()[i], ch_schema.getTypes()[i]));
-
     String order_by_str;
 
-    for (UInt32 i = 0; i < sort_orders->size(); ++i)
+    for (UInt32 field_index = 0; field_index < fields->size(); ++field_index)
     {
-        auto sort_order = sort_orders->getObject(i);
-        if (sort_order->getValue<Int64>(f_order_id) != sort_order_id)
-            continue;
-        auto fields = sort_order->getArray(f_fields);
-        for (UInt32 field_index = 0; field_index < fields->size(); ++field_index)
+        auto field = fields->getObject(field_index);
+        auto source_id = field->getValue<Int64>(f_source_id);
+        auto column_name = source_id_to_column_name[source_id];
+        int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
+        auto iceberg_transform_name = field->getValue<String>(f_transform);
+        std::optional<TransformAndArgument> clickhouse_transform_name;
+        try
         {
-            auto field = fields->getObject(field_index);
-            auto source_id = field->getValue<Int64>(f_source_id);
-            auto column_name = source_id_to_column_name[source_id];
-            int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
-            auto iceberg_transform_name = field->getValue<String>(f_transform);
-            std::optional<TransformAndArgument> clickhouse_transform_name;
-            try
-            {
-                clickhouse_transform_name = parseTransformAndArgument(iceberg_transform_name);
-            }
-            catch (const Exception & e)
-            {
-                if (e.code() != ErrorCodes::BAD_ARGUMENTS)
-                    throw;
-            }
-            if (!clickhouse_transform_name.has_value())
-            {
-                /// An unknown or malformed transform is not a reason to reject the table: an Iceberg
-                /// sort order is only an optimization hint, so drop it and read/write the table as unsorted.
-                return KeyDescription{};
-            }
-            /// Quote the column name so identifiers with special characters (e.g. `@timestamp`)
-            /// produce a parseable ORDER BY clause.
-            auto quoted_column_name = backQuoteIfNeed(column_name);
-            String full_argument;
-            if (clickhouse_transform_name->transform_name != "identity")
-            {
-                full_argument = clickhouse_transform_name->transform_name + "(";
-                if (clickhouse_transform_name->argument)
-                {
-                    full_argument += std::to_string(*clickhouse_transform_name->argument) +  ", ";
-                }
-                full_argument += quoted_column_name + ")";
-            }
-            else
-            {
-                full_argument = quoted_column_name;
-            }
-            if (direction == 1)
-                order_by_str += fmt::format("{} ASC,", full_argument);
-            else
-                order_by_str += fmt::format("{} DESC,", full_argument);
+            clickhouse_transform_name = parseTransformAndArgument(iceberg_transform_name);
         }
-        break;
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::BAD_ARGUMENTS)
+                throw;
+        }
+        if (!clickhouse_transform_name.has_value())
+        {
+            /// An unknown or malformed transform is not a reason to reject the table: an Iceberg
+            /// sort order is only an optimization hint, so drop it and read/write the table as unsorted.
+            return KeyDescription{};
+        }
+        /// Quote the column name so identifiers with special characters (e.g. `@timestamp`)
+        /// produce a parseable ORDER BY clause.
+        auto quoted_column_name = backQuoteIfNeed(column_name);
+        String full_argument;
+        if (clickhouse_transform_name->transform_name != "identity")
+        {
+            full_argument = clickhouse_transform_name->transform_name + "(";
+            if (clickhouse_transform_name->argument)
+            {
+                full_argument += std::to_string(*clickhouse_transform_name->argument) +  ", ";
+            }
+            full_argument += quoted_column_name + ")";
+        }
+        else
+        {
+            full_argument = quoted_column_name;
+        }
+        if (direction == 1)
+            order_by_str += fmt::format("{} ASC,", full_argument);
+        else
+            order_by_str += fmt::format("{} DESC,", full_argument);
     }
-    if (order_by_str.empty())
-        return KeyDescription{};
     order_by_str.pop_back();
-    return KeyDescription::parse(order_by_str, column_description, {}, local_context, true);
+    return KeyDescription::parse(order_by_str, ColumnsDescription(ch_schema), {}, local_context, true);
 }
 
 DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTypePtr source_type)
@@ -1864,9 +1916,9 @@ void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_descri
     ColumnsWithTypeAndName reordered_columns;
     for (const auto & column_name : initial_column_names)
         reordered_columns.push_back(block.getByName(column_name));
-    for (size_t i = 0; i < block.columns(); ++i)
-        if (!initial_column_names_set.contains(block.getNames()[i]))
-            reordered_columns.push_back(block.getColumnsWithTypeAndName()[i]);
+    for (const auto & column : block.getColumnsWithTypeAndName())
+        if (!initial_column_names_set.contains(column.name))
+            reordered_columns.push_back(column);
 
     block = Block(reordered_columns);
     SortDescription result_sort_description;

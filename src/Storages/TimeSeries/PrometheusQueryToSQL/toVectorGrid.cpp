@@ -67,7 +67,7 @@ SQLQueryPiece toVectorGrid(SQLQueryPiece && query_piece, ConverterContext & cont
             /// SELECT CAST(0, 'UInt64') AS group, arrayResize([], <count_of_time_steps>, value) AS values FROM <subquery>
             SelectQueryBuilder builder;
 
-            builder.select_list.push_back(makeASTFunction("CAST", make_intrusive<ASTLiteral>(0u), make_intrusive<ASTLiteral>("UInt64")));
+            builder.select_list.push_back(timeSeriesNoTagsGroupToAST());
             builder.select_list.back()->setAlias(ColumnNames::Group);
 
             ASTPtr value = (query_piece.store_method == StoreMethod::CONST_SCALAR)
@@ -102,7 +102,7 @@ SQLQueryPiece toVectorGrid(SQLQueryPiece && query_piece, ConverterContext & cont
             /// FROM <scalar_grid>
             SelectQueryBuilder builder;
 
-            builder.select_list.push_back(makeASTFunction("CAST", make_intrusive<ASTLiteral>(0u), make_intrusive<ASTLiteral>("UInt64")));
+            builder.select_list.push_back(timeSeriesNoTagsGroupToAST());
             builder.select_list.back()->setAlias(ColumnNames::Group);
 
             builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));

@@ -1,4 +1,3 @@
-import re
 import shlex
 import time
 
@@ -8,15 +7,22 @@ from praktika.utils import Shell
 class Git:
     """Minimal git helper using Shell; reads tags for version tweak computation."""
 
-    _TAG_PATTERN = re.compile(
-        r"\Av\d{2}([.][1-9]\d*){3}-(new|testing|prestable|stable|lts)\Z"
-    )
+    @staticmethod
+    def is_shallow(cwd=None, strict: bool = False) -> bool:
+        prefix = f"git -C {shlex.quote(str(cwd))}" if cwd is not None else "git"
+        return (
+            Shell.get_output(
+                f"{prefix} rev-parse --is-shallow-repository", strict=strict
+            )
+            or ""
+        ).strip() == "true"
 
     @staticmethod
-    def is_shallow() -> bool:
-        return (
-            Shell.get_output("git rev-parse --is-shallow-repository") or ""
-        ).strip() == "true"
+    def get_tags(cwd=None) -> list[str]:
+        if Git.is_shallow(cwd=cwd, strict=True):
+            raise RuntimeError("attempt to run on a shallow repository")
+        prefix = f"git -C {shlex.quote(str(cwd))}" if cwd is not None else "git"
+        return Shell.get_output(f"{prefix} tag", strict=True).split()
 
     @staticmethod
     def get_shortlog(ref: str = "HEAD") -> str:
