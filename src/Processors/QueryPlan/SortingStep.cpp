@@ -454,7 +454,7 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
                 buffering ? sort_settings.max_block_bytes : 0,
                 read_ahead_window));
         }
-        /// Without virtual rows (the setting is disabled, or the query uses FINAL) the
+        /// Without virtual rows (the setting is disabled, or the read does not provide them) the
         /// plain buffering path remains.
         else if (!apply_virtual_row_conversions && use_buffering && sort_settings.read_in_order_use_buffering)
         {
