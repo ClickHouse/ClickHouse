@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <base/unaligned.h>
+#include <base/sanitizer_defs.h>
 #include <Common/HyperLogLogBiasEstimator.h>
 #include <Common/CompactArray.h>
 #include <Common/Exception.h>
@@ -290,8 +291,9 @@ struct RankWidth<UInt64>
 
 /// The maximum of two groups of 8 registers of `width` bits; bit i of `raised` is set when register i of rhs is above that of lhs.
 /// Even and odd registers are compared apart, so that every field has free bits above it for the borrow of the subtraction.
+/// The multiplication that gathers the flags overflows on purpose: only the bits it moves into one byte are kept.
 template <UInt8 width>
-UInt64 maxOfGroups(UInt64 lhs, UInt64 rhs, UInt64 & raised)
+NO_SANITIZE_UNSIGNED_OVERFLOW UInt64 maxOfGroups(UInt64 lhs, UInt64 rhs, UInt64 & raised)
 {
     static_assert(width >= 5 && 8 * width <= 64);
     constexpr size_t slot = 2 * width;
