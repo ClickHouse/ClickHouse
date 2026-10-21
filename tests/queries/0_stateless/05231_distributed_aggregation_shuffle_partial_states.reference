@@ -1,0 +1,52 @@
+-- rule-based: partial aggregation, shuffle of the states, merge per bucket
+GatherExchange
+  Expression ((Project names + Projection))
+    MergingAggregated (merge)
+      ShuffleExchange (by hash([__table1.k]))
+        Aggregating (partial)
+          Expression ((Before GROUP BY + Change column names to column identifiers))
+            ReadFromMergeTree (default.t_shuffle_states)
+-- rule-based, setting off: shuffle of the input rows
+GatherExchange
+  Expression ((Project names + Projection))
+    Aggregating
+      ShuffleExchange (by hash([__table1.k]))
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (default.t_shuffle_states)
+-- rule-based, forced shuffle: shuffle of the input rows, as in the Cascades optimizer
+GatherExchange
+  Expression ((Project names + Projection))
+    Aggregating
+      ShuffleExchange (by hash([__table1.k]))
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (default.t_shuffle_states)
+-- Cascades, many groups: the merge runs per bucket over shuffled states
+GatherExchange
+  Expression ((Project names + Projection))
+    MergingAggregated
+      ShuffleExchange
+        Aggregating
+          Expression ((Before GROUP BY + Change column names to column identifiers))
+            ReadFromMergeTree (ParallelRead default.t_shuffle_states)
+-- Cascades, many groups, setting off: shuffle of the input rows
+GatherExchange
+  Expression ((Project names + Projection))
+    Aggregating
+      Expression ((Before GROUP BY + Change column names to column identifiers))
+        ShuffleExchange
+          ReadFromMergeTree (ParallelRead default.t_shuffle_states)
+-- Cascades, few groups: the merge stays on one node
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (ParallelRead default.t_shuffle_states)
+-- results match the local execution
+5000	2470415301766506596
+5000	2470415301766506596
+5000	2470415301766506596
+-- two keys, a nullable key and HAVING
+4200	4188915161387084765
+4200	4188915161387084765
+4200	4188915161387084765
