@@ -198,9 +198,6 @@ private:
     private:
         void updateCurrentVersion();
 
-        /// Applies the settings of the root workload entity to the implicit root node, which always exists
-        void updateRootNode(const WorkloadSettings & root_settings);
-
         /// The implicit anonymous root workload, stored in node_for_workload under the empty-string key.
         WorkloadNodePtr implicitRoot()
         {

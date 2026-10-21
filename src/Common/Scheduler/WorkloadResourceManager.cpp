@@ -87,8 +87,14 @@ WorkloadResourceManager::Resource::~Resource()
 
 void WorkloadResourceManager::Resource::createNode(const NodeInfo & info)
 {
+    // The node of the root workload entity is the implicit root, which always exists. It has no parent, priority or
+    // precedence, so `updateNode` sets its settings in place.
     if (info.name.empty())
-        return updateRootNode(info.settings);
+    {
+        NodeInfo defaults = info;
+        defaults.settings = {};
+        return updateNode(defaults, info);
+    }
 
     if (info.name == info.parent)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Self-referencing workload '{}' is not allowed in resource '{}'",
@@ -117,7 +123,11 @@ void WorkloadResourceManager::Resource::createNode(const NodeInfo & info)
 void WorkloadResourceManager::Resource::deleteNode(const NodeInfo & info)
 {
     if (info.name.empty())
-        return updateRootNode(WorkloadSettings{});
+    {
+        NodeInfo defaults = info;
+        defaults.settings = {};
+        return updateNode(info, defaults);
+    }
 
     if (!node_for_workload.contains(info.name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Node for removing workload '{}' does not exist in resource '{}'",
@@ -158,9 +168,6 @@ void WorkloadResourceManager::Resource::updateNode(const NodeInfo & old_info, co
     if (old_info.name != new_info.name)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Updating a name of workload '{}' to '{}' is not allowed in resource '{}'",
             old_info.name, new_info.name, resource_name);
-
-    if (old_info.name.empty())
-        return updateRootNode(new_info.settings);
 
     if (!node_for_workload.contains(old_info.name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Node for updating workload '{}' does not exist in resource '{}'",
@@ -479,16 +486,6 @@ void WorkloadResourceManager::Resource::updateResource(const ASTPtr & new_resour
     chassert(getEntityName(new_resource_entity) == resource_name);
     chassert(getResourceUnit(new_resource_entity) == unit); // resource unit cannot be changed
     resource_entity = new_resource_entity;
-}
-
-void WorkloadResourceManager::Resource::updateRootNode(const WorkloadSettings & root_settings)
-{
-    executeInSchedulerThread([&, this]
-    {
-        // The implicit root has no parent or siblings, so it is updated in place
-        implicitRoot()->updateSchedulingSettings(root_settings);
-        updateCurrentVersion();
-    });
 }
 
 std::future<void> WorkloadResourceManager::Resource::attachClassifier(Classifier & classifier, const String & workload_name)
