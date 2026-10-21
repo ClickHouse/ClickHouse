@@ -118,11 +118,13 @@ private:
     {
         COLLECTING, // Right-side blocks are being collected in HashJoin, no spilling yet.
         GRACE_HASH_JOIN, // Spilled to disk and switched to GraceHashJoin, but the blocks of some workers may still be unconverted.
-        IN_MEMORY_JOIN // All blocks fit in memory, using HashJoin directly without switching.
+        IN_MEMORY_JOIN, // All blocks fit in memory, using HashJoin directly without switching.
+        FAILED // A switch requested by `spill` threw after freeing the maps, so no join can take more blocks.
     };
 
     void switchToGraceHashJoin(JoinBuildContext context, bool spill_immediately = false);
     void tryConvertWorkers(JoinBuildContext context);
+    void throwIfSwitchFailed() const;
 
     LoggerPtr log;
     std::shared_ptr<TableJoin> table_join;
@@ -140,6 +142,10 @@ private:
     bool supports_parallel_non_joined_blocks_processing{false};
 
     std::atomic<State> state{State::COLLECTING};
+
+    /// The error of the failed switch, written before `state` becomes `FAILED`.
+    int switch_error_code = 0;
+    String switch_error_message;
 
     std::shared_ptr<HashJoin> hash_join;
 

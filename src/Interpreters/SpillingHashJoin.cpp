@@ -4,6 +4,7 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/TableJoin.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
@@ -16,6 +17,16 @@ extern const Event JoinSpillingHashJoinSwitchedToGraceJoin;
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+extern const char spilling_hash_join_throw_after_maps_release[];
+}
 
 SpillingHashJoin::SpillingHashJoin(
     std::shared_ptr<TableJoin> table_join_,
@@ -99,6 +110,7 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, Join
     /// Fast path: already switched to GraceHashJoin (no lock needed).
     if (state.load(std::memory_order_acquire) != State::COLLECTING)
     {
+        throwIfSwitchFailed();
         tryConvertWorkers(context);
         return chosen_join->addBlockToJoin(block, num_rows, context);
     }
@@ -116,6 +128,7 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, Join
     /// Re-check: we may have just switched.
     if (state.load(std::memory_order_acquire) != State::COLLECTING)
     {
+        throwIfSwitchFailed();
         tryConvertWorkers(context);
         return chosen_join->addBlockToJoin(block, num_rows, context);
     }
@@ -124,7 +137,10 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, Join
     std::shared_lock lock(switch_mutex);
 
     if (state.load(std::memory_order_acquire) != State::COLLECTING)
+    {
+        throwIfSwitchFailed();
         return chosen_join->addBlockToJoin(block, num_rows, context);
+    }
 
     return hash_join->addBlockToJoin(block, num_rows, context);
 }
@@ -158,6 +174,8 @@ size_t SpillingHashJoin::spill(size_t at_least_bytes)
 {
     if (!at_least_bytes)
         return 0;
+
+    throwIfSwitchFailed();
 
     if (state.load(std::memory_order_acquire) == State::COLLECTING)
     {
@@ -207,8 +225,25 @@ void SpillingHashJoin::switchToGraceHashJoin(JoinBuildContext context, bool spil
         /// the new join, so its `serial` context cannot overlap another insert into that join.
         if (spill_immediately)
         {
-            hash_join->releaseJoinMaps();
-            tryConvertWorkers(context);
+            try
+            {
+                hash_join->releaseJoinMaps();
+                fiu_do_on(FailPoints::spilling_hash_join_throw_after_maps_release,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after the in-memory maps were released");
+                });
+                tryConvertWorkers(context);
+            }
+            catch (...)
+            {
+                /// The maps are freed and some blocks may be gone too, so neither join can take another block.
+                /// A retry would build the grace join from what is left. Threads waiting on the lock must see
+                /// the failure, not `COLLECTING`.
+                switch_error_code = getCurrentExceptionCode();
+                switch_error_message = getCurrentExceptionMessage(/*with_stacktrace=*/ false);
+                state.store(State::FAILED, std::memory_order_release);
+                throw;
+            }
         }
 
         state.store(State::GRACE_HASH_JOIN, std::memory_order_release);
@@ -224,8 +259,17 @@ void SpillingHashJoin::switchToGraceHashJoin(JoinBuildContext context, bool spil
     tryConvertWorkers(context);
 }
 
+void SpillingHashJoin::throwIfSwitchFailed() const
+{
+    /// Each thread gets its own exception, because the pipeline appends to the message of the one it catches.
+    if (state.load(std::memory_order_acquire) == State::FAILED)
+        throw Exception(switch_error_code, "Switching the join to GraceHashJoin failed: {}", switch_error_message);
+}
+
 void SpillingHashJoin::onBuildPhaseFinish()
 {
+    throwIfSwitchFailed();
+
     if (state.load(std::memory_order_acquire) == State::COLLECTING)
     {
         /// Safety net for the terminal block: the proactive pre-insert check in `addBlockToJoin`
