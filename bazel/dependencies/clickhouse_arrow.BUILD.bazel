@@ -492,6 +492,7 @@ ch_cc_library(
     includes = ["cpp/src"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = ["config/contrib/arrow-cmake/cpp/src"],
+    private_hdrs = ["@clickhouse//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.cc"],
     deps = [
         "@clickhouse//bazel:arrow_flight_generated_headers",
         ":_arrow",

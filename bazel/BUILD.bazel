@@ -1594,7 +1594,6 @@ cc_library(
     ],
     includes = ["gen/contrib/arrow-cmake/cpp/src"],
     textual_hdrs = [
-        "gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.cc",
         "gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
     ],
     visibility = ["@clickhouse_arrow//:__pkg__"],
