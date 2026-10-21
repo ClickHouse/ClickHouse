@@ -1,5 +1,5 @@
 diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
-index 13af75e..38b635a 100644
+index 13af75e..cf12ba2 100644
 --- a/dwyu/cc/aspect/dwyu.bzl
 +++ b/dwyu/cc/aspect/dwyu.bzl
 @@ -1,6 +1,7 @@
@@ -78,7 +78,7 @@ index 13af75e..38b635a 100644
      return reports
  
  def _return_on_skip(ctx):
-@@ -386,12 +416,304 @@ def _return_on_skip(ctx):
+@@ -386,12 +416,307 @@ def _return_on_skip(ctx):
          return []
      return [OutputGroupInfo(dwyu = depset(transitive = _gather_transitive_reports(ctx)))]
  
@@ -149,7 +149,7 @@ index 13af75e..38b635a 100644
 +def _as_list(value):
 +    return value.to_list() if type(value) == "depset" else value
 +
-+def _compiler_header_manifest(ctx, target, link_inputs, raw_assembly, prefix = ""):
++def _compiler_header_manifest(ctx, target, srcs, link_inputs, raw_assembly, prefix = ""):
 +    # Header evidence cannot establish whether a raw assembler call needs a library.
 +    # Include linker inputs from transitive deps: a header target can forward a library.
 +    link_candidates = []
@@ -179,6 +179,9 @@ index 13af75e..38b635a 100644
 +            public[alias] = original
 +        else:
 +            private[alias] = original
++    # These are the rule's own rules_cc compile inputs, not files inherited
++    # from deps or additional_compiler_inputs. Preserve explicitly public TU files.
++    private.update({file.path: file.path for file in srcs if file.path not in public})
 +    manifest = ctx.actions.declare_file("{}{}.dwyu_owned_headers.json".format(prefix, target.label.name))
 +    ctx.actions.write(manifest, json.encode({
 +        "public": public,
@@ -385,7 +388,7 @@ index 13af75e..38b635a 100644
  
      # Work around the bug described in https://github.com/bazelbuild/bazel/issues/19663
      # Implementation_deps are not added to CcInfo.compilation_context
-@@ -440,7 +762,7 @@ def _extract_includes_from_files(ctx, config, target, files, defines, cc_toolcha
+@@ -440,7 +765,7 @@ def _extract_includes_from_files(ctx, config, target, files, defines, cc_toolcha
  
          preprocessor_results.append(pp_output)
  
@@ -394,7 +397,7 @@ index 13af75e..38b635a 100644
  
  def dwyu_cc_aspect_impl(target, ctx):
      """
-@@ -510,8 +832,17 @@ def dwyu_cc_aspect_impl(target, ctx):
+@@ -510,8 +835,17 @@ def dwyu_cc_aspect_impl(target, ctx):
      #
  
      config = _make_dwyu_config(ctx)
@@ -408,13 +411,13 @@ index 13af75e..38b635a 100644
 +        # compile even if also textual. Precompiled link inputs have no cpp roots.
 +        public_files = [file for file in getattr(ctx.rule.files, "hdrs", []) if not _is_rules_cc_textual_header(file)]
 +        private_files, link_inputs, raw_assembly = _compiler_srcs(target, private_files)
-+        header_manifest = _compiler_header_manifest(ctx, target, link_inputs, raw_assembly)
++        header_manifest = _compiler_header_manifest(ctx, target, private_files, link_inputs, raw_assembly)
 +
 +    defines = [] if config.preprocessing_mode in ["fast", "compiler"] else _parse_compiler_command(ctx, target[CcInfo].compilation_context, cc_toolchain, feature_configuration)
      processed_target = _process_target(
          ctx,
          target = struct(label = target.label, cc_info = target[CcInfo]),
-@@ -529,26 +860,35 @@ def dwyu_cc_aspect_impl(target, ctx):
+@@ -529,26 +863,35 @@ def dwyu_cc_aspect_impl(target, ctx):
  
      report_file = ctx.actions.declare_file("{}_dwyu_report.json".format(target.label.name))
  
@@ -452,7 +455,7 @@ index 13af75e..38b635a 100644
      args.add("--output", report_file)
      args.add("--target_under_inspection", str(target.label))
      args.add_all("--preprocessed_public_files", preprocessed_public_files, omit_if_empty = False)
-@@ -560,17 +900,20 @@ def dwyu_cc_aspect_impl(target, ctx):
+@@ -560,17 +903,20 @@ def dwyu_cc_aspect_impl(target, ctx):
          args.add("--ignored_includes_config", ctx.files._ignored_includes[0])
      args.add_all("--extra_ignored_includes", config.extra_ignored_includes, omit_if_empty = True)
      args.add_all("--ignored_unused_deps", config.ignored_unused_deps, omit_if_empty = True)
@@ -476,7 +479,7 @@ index 13af75e..38b635a 100644
          transitive = [target[CcInfo].compilation_context.headers],
      )
      ctx.actions.run(
-@@ -584,3 +927,186 @@ def dwyu_cc_aspect_impl(target, ctx):
+@@ -584,3 +930,186 @@ def dwyu_cc_aspect_impl(target, ctx):
  
      accumulated_reports = depset(direct = [report_file], transitive = _gather_transitive_reports(ctx))
      return [OutputGroupInfo(dwyu = accumulated_reports)]
@@ -522,7 +525,7 @@ index 13af75e..38b635a 100644
 +    config = struct(ignore_private_headers_from_deps = True)
 +    public = [file for file in getattr(ctx.rule.files, "hdrs", []) if not _is_rules_cc_textual_header(file)]
 +    srcs, link_inputs, raw_assembly = _compiler_srcs(target, getattr(ctx.rule.files, "srcs", []))
-+    headers = _compiler_header_manifest(ctx, target, link_inputs, raw_assembly, prefix = "consumer_collect.")
++    headers = _compiler_header_manifest(ctx, target, srcs, link_inputs, raw_assembly, prefix = "consumer_collect.")
 +    target_file = _process_target(
 +        ctx,
 +        target = struct(label = target.label, cc_info = target[CcInfo]),
@@ -909,7 +912,7 @@ index b0697ed..a4703c2 100644
  } // namespace dwyu
  
 diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/private/analyze_includes/main.cpp
-index d062c5b..6b3af9f 100644
+index d062c5b..bb76969 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/main.cpp
 +++ b/dwyu/cc/aspect/private/analyze_includes/main.cpp
 @@ -11,6 +11,7 @@
@@ -938,7 +941,7 @@ index d062c5b..6b3af9f 100644
      // Preprocessor results for all public source files of the target under inspection
      parser.addOptionList("--preprocessed_public_files", options.preprocessed_public_files);
      // Preprocessor results for all private source files of the target under inspection
-@@ -92,10 +97,32 @@ int main_impl(const ProgramOptions& options) {
+@@ -92,10 +97,33 @@ int main_impl(const ProgramOptions& options) {
      const auto ignored_includes = getIgnoredIncludes(options.ignored_includes_config, options.extra_ignored_includes);
      auto system_under_inspection =
          getSystemUnderInspection(options.target_under_inspection_info, options.deps, options.implementation_deps);
@@ -964,9 +967,10 @@ index d062c5b..6b3af9f 100644
 +            abortWithError("DWYU cannot validate ", options.target_under_inspection,
 +                           ": declared private or textual headers not entered by any owner source/public header: ",
 +                           listToStr(missing));
-+        promoteReachedPrivateIncludes(
-+            public_includes, private_includes,
-+            headers.at("private").get<std::unordered_map<std::string, std::string>>());
++        const auto private_files = headers.at("private").get<std::unordered_map<std::string, std::string>>();
++        for (const auto& [alias, original] : private_files)
++            system_under_inspection.target_under_inspection.header_files.insert(alias);
++        promoteReachedPrivateIncludes(public_includes, private_includes, private_files);
 +    }
  
 -    const auto result =
@@ -974,7 +978,7 @@ index d062c5b..6b3af9f 100644
          evaluateIncludes(public_includes, private_includes, system_under_inspection, options.report_missing_direct_deps,
                           options.report_unused_deps, options.ignored_unused_deps, options.optimize_implementation_deps);
  
-@@ -103,9 +130,18 @@ int main_impl(const ProgramOptions& options) {
+@@ -103,9 +131,18 @@ int main_impl(const ProgramOptions& options) {
          std::cout << result.toString(options.output) << "\n";
      }
  
@@ -1073,7 +1077,7 @@ index e914b98..96a1fc6 100644
      visibility = ["//visibility:public"],
      deps = [
          "//dwyu/cc/aspect/private/preprocessing/fast_parsing:process_files",
-diff --git a/modified/dwyu/cc/aspect/private/preprocessing/compiler.h b/dwyu/cc/aspect/private/preprocessing/compiler.h
+diff --git a/trial/dwyu/cc/aspect/private/preprocessing/compiler.h b/dwyu/cc/aspect/private/preprocessing/compiler.h
 new file mode 100644
 index 0000000..f14d6ac
 --- /dev/null
@@ -1291,7 +1295,7 @@ index 0000000..f14d6ac
 +} // namespace dwyu
 +
 +#endif
-diff --git a/modified/dwyu/cc/aspect/private/preprocessing/compiler_search.h b/dwyu/cc/aspect/private/preprocessing/compiler_search.h
+diff --git a/trial/dwyu/cc/aspect/private/preprocessing/compiler_search.h b/dwyu/cc/aspect/private/preprocessing/compiler_search.h
 new file mode 100644
 index 0000000..f5f565e
 --- /dev/null
