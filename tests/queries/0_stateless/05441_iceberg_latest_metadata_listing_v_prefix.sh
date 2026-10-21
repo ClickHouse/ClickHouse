@@ -63,7 +63,6 @@ $CLIENT --query "
     ORDER BY event_time_microseconds"
 
 # Next to the `v` files, a `<N>-<uuid>` file is not a candidate, even with a higher number.
-# Ranking by `last-updated-ms` lists and ranks every file.
 P3="${PREFIX}/mixed"
 $CLIENT --query "
     CREATE TABLE t_mixed (c Int32) ENGINE = IcebergS3(s3_conn, filename = '${P3}');
@@ -71,9 +70,7 @@ $CLIENT --query "
     INSERT INTO t_mixed VALUES (2);"
 copy_object "${P3}/metadata/v2.metadata.json" "${P3}/metadata/00005-${UUID_A}.metadata.json"
 $CLIENT --query "
-    SELECT 'mixed', count() FROM icebergS3(s3_conn, filename = '${P3}');
-    SELECT 'mixed, by last-updated-ms', count()
-    FROM icebergS3(s3_conn, filename = '${P3}', SETTINGS iceberg_recent_metadata_file_by_last_updated_ms_field = 1);"
+    SELECT 'mixed', count() FROM icebergS3(s3_conn, filename = '${P3}');"
 
 # A directory with only `<N>-<uuid>` files is listed whole. The copies keep the location of `${P3}`,
 # so the count is taken from the snapshot summary: data files would be looked up under `${P4}`.
@@ -84,16 +81,27 @@ $CLIENT --query "
     SELECT 'uuid-named', count() FROM icebergS3(s3_conn, filename = '${P4}')
     SETTINGS optimize_trivial_count_query = 1"
 
-# DROP PARTITION drops from the snapshot a read shows and commits the next `v` file.
+# Ranking by `last-updated-ms` lists every file: the `<N>-<uuid>` file committed last is selected.
+P6="${PREFIX}/by_last_updated_ms"
+copy_object "${P3}/metadata/v2.metadata.json" "${P6}/metadata/v1.metadata.json"
+copy_object "${P3}/metadata/v3.metadata.json" "${P6}/metadata/00002-${UUID_B}.metadata.json"
+$CLIENT --query "
+    SELECT 'v file only', count() FROM icebergS3(s3_conn, filename = '${P6}')
+    SETTINGS optimize_trivial_count_query = 1;
+    SELECT 'by last-updated-ms', count()
+    FROM icebergS3(s3_conn, filename = '${P6}', SETTINGS iceberg_recent_metadata_file_by_last_updated_ms_field = 1)
+    SETTINGS optimize_trivial_count_query = 1;"
+
+# DROP PARTITION resolves like INSERT: a directory holding both namings is refused and left as it is.
 P5="${PREFIX}/drop_partition"
 $CLIENT --query "
     CREATE TABLE t_drop (a Int32, s String) ENGINE = IcebergS3(s3_conn, filename = '${P5}') PARTITION BY (a);
     INSERT INTO t_drop VALUES (1, 'x'), (2, 'y');
     INSERT INTO t_drop VALUES (3, 'z');"
 copy_object "${P5}/metadata/v2.metadata.json" "${P5}/metadata/00005-${UUID_A}.metadata.json"
+$CLIENT --query "SELECT 'before drop', a, s FROM t_drop ORDER BY a"
+$CLIENT --query "ALTER TABLE t_drop DROP PARTITION 1" 2>&1 | grep -q "nothing declares which of the two schemes" && echo 'drop refused'
 $CLIENT --query "
-    SELECT 'before drop', a, s FROM t_drop ORDER BY a;
-    ALTER TABLE t_drop DROP PARTITION 1;
     SELECT 'after drop', a, s FROM t_drop ORDER BY a;
     SELECT 'v files', _file FROM s3(s3_conn, filename = '${P5}/metadata/v*.metadata.json', format = 'One') ORDER BY _file;"
 

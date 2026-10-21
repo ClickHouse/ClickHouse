@@ -1753,9 +1753,9 @@ When using the `iceberg` table function in ClickHouse, the system needs to locat
     *Filter for files containing a `table-uuid` field matching your specified UUID (case-insensitive)
 
 3. **Default Search**:
-*If neither of the above settings are provided, all `.metadata.json` files in the `metadata` directory become candidates
-*On S3 and Azure, if some of these files have names starting with `v` (as ClickHouse and Hadoop catalogs name them), only those files are candidates, and only they are listed (by the key prefix `metadata/v`, so the manifests stored in the same directory are not)
-*To rank all `.metadata.json` files of a directory written with both naming schemes, enable `iceberg_recent_metadata_file_by_last_updated_ms_field`
+* If neither of the above settings are provided, all `.metadata.json` files in the `metadata` directory become candidates
+* On S3 and Azure, if some of these files have names starting with `v` (as ClickHouse and Hadoop catalogs name them), only those files are candidates, and only they are listed (by the key prefix `metadata/v`, so the manifests stored in the same directory are not)
+* To rank all `.metadata.json` files of a directory written with both naming schemes, enable `iceberg_recent_metadata_file_by_last_updated_ms_field`
 
 ### Selecting the Most Recent File {#most-recent-file}
 

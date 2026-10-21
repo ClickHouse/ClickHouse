@@ -1306,7 +1306,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
  *   1) v<V>.metadata.json, where V - metadata version.
  *   2) <V>-<random-uuid>.metadata.json, where V - metadata version
 
-A read with no pointer setting takes the files named `v...` as the only candidates whenever any exist.
+On S3 and Azure, a read with no pointer setting takes the files named `v...` as the only candidates whenever any exist.
 
 We use table_uuid both for metadata cache queries and selection of the latest metadata file.
 For legacy reasons, we keep the option to not use table_uuid for metadata file selection.
@@ -1332,14 +1332,14 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
         bool need_all_metadata_files_parsing = (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
             || (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection);
 
-        const bool list_version_numbered_names_only = !ignore_metadata_pointer_overrides && !need_all_metadata_files_parsing
+        const bool list_v_prefixed_names_only = !ignore_metadata_pointer_overrides && !need_all_metadata_files_parsing
             && !data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value
             && !data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed;
 
         std::vector<String> metadata_files;
         /// Manifests and manifest lists share the directory but are never named `v...`. `<N>-<uuid>`
         /// names share their first character with uuid-named manifests, so they need the full listing.
-        if (list_version_numbered_names_only)
+        if (list_v_prefixed_names_only)
             metadata_files = listFiles(*object_storage, table_path, "metadata/v", ".metadata.json");
         if (metadata_files.empty())
         {
