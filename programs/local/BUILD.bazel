@@ -9,6 +9,7 @@ ch_cc_library(
     ] + glob(["**/*.h"]),
     clickhouse_code = True,
     implementation_deps = [
+        "//src/Common:memory_tracking_api",
         "//base:common",
         "@clickhouse_azure//:_azure_sdk",
         "//bazel:clickhouse_config_headers",

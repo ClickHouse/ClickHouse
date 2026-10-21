@@ -112,6 +112,7 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     deps = [
+        "//src:core_types",
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
         "@clickhouse_llvm_project//:LLVMBitReader",
         "@clickhouse_llvm_project//:LLVMBitWriter",

@@ -990,6 +990,8 @@ ch_cc_library(
         "../../" + "bazel/gen",
     ],
     deps = [
+        "//src/Common:memory_tracking_api",
+        "//src:core_types",
         "//base:common",
         "//base:pcg_random",
         "//base/glibc-compatibility",

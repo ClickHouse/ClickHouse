@@ -76,6 +76,8 @@ ch_cc_library(
     ] + _PRIVATE_TABLE_FUNCTIONS_HEADERS),
     clickhouse_code = True,
     implementation_deps = [
+        "//src/Common:memory_tracking_api",
+        "//src:core_types",
         ":headers",
         "//base:common",
         "//base/poco/Foundation:_poco_foundation",

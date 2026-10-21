@@ -9,6 +9,7 @@ ch_cc_library(
     hdrs = ["OwnJSONPatternFormatter.h"],
     clickhouse_code = True,
     implementation_deps = [
+        "//src:core_types",
         "//base:common",
         "//src:headers",
         "//src/Common",

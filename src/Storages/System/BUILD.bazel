@@ -275,6 +275,7 @@ ch_cc_library(
     ],
     clickhouse_code = True,
     implementation_deps = [
+        "//src:core_types",
         "@clickhouse_nuraft//:_nuraft",
         "@clickhouse_icu//:_icuuc",
         "@clickhouse_libstemmer_c//:_stemmer",

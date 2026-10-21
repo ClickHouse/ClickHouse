@@ -39,6 +39,8 @@ ch_cc_library(
     additional_compiler_inputs = ["//bazel:gen/embedded/programs/server/embedded.xml"],
     clickhouse_code = True,
     implementation_deps = [
+        "//src/Common:memory_tracking_api",
+        "//src:core_types",
         "//base:common",
         "@clickhouse_azure//:_azure_sdk",
         "//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_0",

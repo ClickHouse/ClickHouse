@@ -19,6 +19,7 @@ ch_cc_library(
     hdrs = glob(["*.h"]),
     clickhouse_code = True,
     implementation_deps = [
+        "//src:headers",
         "//src/Common/ZooKeeper:clickhouse_common_zookeeper_base",
         "//src/Common/ZooKeeper:headers",
         "@clickhouse_boost//:boost_headers",
@@ -91,6 +92,7 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     deps = [
+        "//src:core_types",
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
         "@clickhouse_llvm_project//:LLVMBitReader",
         "@clickhouse_llvm_project//:LLVMBitWriter",
@@ -124,6 +126,5 @@ ch_cc_library(
         "//base/poco/XML:_poco_xml",
         "//bazel:clickhouse_config_headers",
         "//base:common",
-        "//src:headers",
     ],
 )

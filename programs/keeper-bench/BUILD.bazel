@@ -10,6 +10,7 @@ ch_cc_library(
     ) + glob(["**/*.h"]),
     clickhouse_code = True,
     implementation_deps = [
+        "//src:core_types",
         "@clickhouse_rapidjson//:rapidjson",
         "//src/Common/Config:clickhouse_common_config",
         "//base:common",

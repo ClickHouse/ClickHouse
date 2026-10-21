@@ -185,6 +185,7 @@ ch_cc_library(
     ),
     clickhouse_code = True,
     implementation_deps = [
+        "//src:core_types",
         "@clickhouse_llvm_project//:llvm_headers",
         "@clickhouse_libdivide//:libdivide",
         "//contrib/libdivide-cmake:headers",
@@ -280,6 +281,7 @@ ch_cc_library(
         "../../" + "bazel/gen",
     ],
     deps = [
+        "//src/Common:memory_tracking_api",
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
         "@clickhouse_llvm_project//:LLVMBitReader",
         "@clickhouse_llvm_project//:LLVMBitWriter",
@@ -397,6 +399,7 @@ ch_cc_library(
     }),
     deps = select({
         "@platforms//cpu:x86_64": [
+            "//src/Common:memory_tracking_api",
             "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
             "@clickhouse_llvm_project//:LLVMBitReader",
             "@clickhouse_llvm_project//:LLVMBitWriter",

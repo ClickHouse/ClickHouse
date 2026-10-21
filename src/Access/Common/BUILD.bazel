@@ -90,6 +90,7 @@ ch_cc_library(
     ],
     source_headers = False,
     deps = [
+        "//src:core_types",
         "//src/Common",
         "//src:headers",
         "//src/Parsers:headers",
@@ -98,7 +99,10 @@ ch_cc_library(
     ],
 )
 
-cc_library(
+ch_cc_library(
     name = "headers",
     hdrs = ["SQLSecurityDefs.h"],
+    clickhouse_code = True,
+    source_headers = False,
+    deps = ["//src:core_types"],
 )

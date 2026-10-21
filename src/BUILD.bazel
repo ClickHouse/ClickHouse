@@ -1499,6 +1499,8 @@ ch_cc_library(
     local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
     source_headers = False,
     deps = [
+        "//src/Common:memory_tracking_api",
+        ":core_types",
         ":headers",
         "//src/Functions:headers",
         "//base:pcg_random",
@@ -1535,7 +1537,7 @@ ch_cc_library(
         "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE",
     ],
     implementation_deps = [
-        ":headers",
+        ":core_types",
         "//base:common",
         "//src/Common",
         "@clickhouse_boost//:boost_headers",
@@ -1554,6 +1556,7 @@ ch_cc_library(
         "-momit-leaf-frame-pointer",
     ],
     implementation_deps = [
+        "//src/Common:memory_tracking_api",
         ":clickhouse_common_io__compile_0",
         ":headers",
         "//base:common",
@@ -2727,7 +2730,7 @@ ch_cc_library(
         "Core/YTsaurus/YTsaurusQueries.h",
         "Storages/YTsaurus/YTsaurusSettings.h",
     ],
-    deps = ["//src/Access/Common:headers", "@clickhouse_nuraft//:_nuraft"] + ([
+    deps = ["//src/Common:memory_tracking_api", "//src/Access/Common:headers", "@clickhouse_nuraft//:_nuraft"] + ([
         "@clickhouse_llvm_project//:LLVMPasses",
         "@clickhouse_llvm_project//:LLVMSupport",
         "@llvm-project//third-party/siphash",
@@ -4015,6 +4018,24 @@ cc_test(
     ],
 )
 
+_CORE_TYPE_HEADERS = [
+    "Core/Types.h",
+    "Core/TypeId.h",
+    "Core/Types_fwd.h",
+]
+
+ch_cc_library(
+    name = "core_types",
+    hdrs = _CORE_TYPE_HEADERS,
+    clickhouse_code = True,
+    includes = ["."],
+    source_headers = False,
+    deps = [
+        "//base:common",
+        "//src/Common:memory_tracking_api",
+    ],
+)
+
 cc_library(
     name = "clickhouse_source_headers",
     hdrs = glob(
@@ -4054,7 +4075,7 @@ cc_library(
         [
             "Core/**/*.h",
         ],
-        exclude = _PRIVATE_DBMS_0_HEADERS,
+        exclude = _PRIVATE_DBMS_0_HEADERS + _CORE_TYPE_HEADERS,
     ) + glob(
         [
             "DataTypes/**/*.h",
@@ -4114,6 +4135,7 @@ cc_library(
         ".",
     ],
     deps = [
+        ":core_types",
         "//base:common",
         "//src/Access/Common:headers",
         "//src/AggregateFunctions:headers",
@@ -4147,7 +4169,7 @@ cc_library(
         [
             "**/*.h",
         ],
-        exclude = _PRIVATE_IO_HEADERS + _PRIVATE_DBMS_0_HEADERS + _IO_COMPILED_API_HEADERS + [
+        exclude = _PRIVATE_IO_HEADERS + _PRIVATE_DBMS_0_HEADERS + _IO_COMPILED_API_HEADERS + _CORE_TYPE_HEADERS + [
             "Client/BuzzHouse/**/*.h",
             "Coordination/tests/gtest_coordination_common.h",
         ],
@@ -4156,6 +4178,7 @@ cc_library(
         ".",
     ],
     deps = [
+        ":core_types",
         "@clickhouse_hive_metastore//:_hivemetastore",
         "@clickhouse_sqlite_amalgamation//:_sqlite",
         "@clickhouse_cppkafka//:_cppkafka",

@@ -286,6 +286,7 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     deps = [
+        "//src:core_types",
         ":headers",
         "//base/poco/Foundation:_poco_foundation",
         "//bazel:clickhouse_config_headers",

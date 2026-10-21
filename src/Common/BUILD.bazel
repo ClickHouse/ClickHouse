@@ -589,6 +589,27 @@ _PRIVATE_COMMON_IO_HEADERS = [
 
 exports_files(_PRIVATE_COMMON_IO_HEADERS, visibility = ["//src:__pkg__"])
 
+_MEMORY_TRACKING_API_HEADERS = [
+    "AllocationInterceptors.h",
+    "AllocationTrace.h",
+    "AllocatorWithMemoryTracking.h",
+    "CurrentMemoryTracker.h",
+    "UnorderedSetWithMemoryTracking.h",
+]
+
+ch_cc_library(
+    name = "memory_tracking_api",
+    hdrs = _MEMORY_TRACKING_API_HEADERS,
+    clickhouse_code = True,
+    source_headers = False,
+    strip_include_prefix = "/src",
+    deps = [
+        "//base:common",
+        "//bazel:clickhouse_config_headers",
+        "@clickhouse_jemalloc//:_jemalloc",
+    ],
+)
+
 ch_cc_library(
     name = "Common",
     srcs = [
@@ -607,7 +628,7 @@ ch_cc_library(
             "LLVMCoverageMapping.h",
             "MachO.h",
             "**/tests/**/*.h",
-        ] + _PRIVATE_DBMS_HEADERS + _PRIVATE_COMMON_IO_HEADERS,
+        ] + _PRIVATE_DBMS_HEADERS + _PRIVATE_COMMON_IO_HEADERS + _MEMORY_TRACKING_API_HEADERS,
     ),
     clickhouse_code = True,
     implementation_deps = [
@@ -618,6 +639,8 @@ ch_cc_library(
     local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
     source_headers = False,
     deps = [
+        "//src:core_types",
+        ":memory_tracking_api",
         "//src/Parsers:headers",
         "//src:headers",
         "//base:common",

@@ -163,6 +163,7 @@ ch_cc_library(
         "../../" + "bazel/gen",
     ],
     deps = [
+        "//src:core_types",
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
         "@clickhouse_llvm_project//:LLVMBitReader",
         "@clickhouse_llvm_project//:LLVMBitWriter",
@@ -234,6 +235,7 @@ ch_cc_library(
     hdrs = _PUBLIC_HEADERS,
     clickhouse_code = True,
     implementation_deps = [
+        "//src/Common:memory_tracking_api",
         "@clickhouse_libpqxx//:_libpqxx",
         "//src/Compression:clickhouse_compression",
         "//src/Access/Common:clickhouse_common_access",
@@ -255,6 +257,7 @@ ch_cc_library(
     ],
     private_hdrs = glob(["*.txx"]),
     deps = [
+        "//src:core_types",
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
         "@clickhouse_llvm_project//:LLVMBitReader",
         "@clickhouse_llvm_project//:LLVMBitWriter",
@@ -312,6 +315,7 @@ ch_cc_library(
         "../../" + "bazel/gen",
     ],
     deps = [
+        "//src:core_types",
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
         "@clickhouse_llvm_project//:LLVMBitReader",
         "@clickhouse_llvm_project//:LLVMBitWriter",
