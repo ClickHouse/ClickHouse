@@ -32,7 +32,7 @@ void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry);
 
 using namespace DB;
 
-/// Pins the rendezvous key carried by `BuildRuntimeFilter` step version 1, and the decisions
+/// Pins the rendezvous key carried by `BuildRuntimeFilter` step version 2, and the decisions
 /// `pairJoinRuntimeFilters` takes on the steps of a plan taken over the wire.
 
 namespace
@@ -41,6 +41,7 @@ namespace
 constexpr auto step_name = "BuildRuntimeFilter";
 constexpr UInt64 current_version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
 constexpr UInt64 pre_key_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES - 1;
+constexpr UInt64 pre_local_key_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LOCAL_RUNTIME_FILTER_KEY - 1;
 
 /// A registry holding just the step under test, registered the way `registerPlanSteps` registers it.
 /// Not the process-wide instance: other tests in this binary populate that one.
@@ -210,17 +211,24 @@ TEST(BuildRuntimeFilterStepKey, KeyRoundTripsAtCurrentVersion)
     EXPECT_EQ(bytes, serializeStep(*restored, current_version));
 }
 
-/// A peer below the key version gets step version 0 without the key: its build step stays inert.
+/// A peer below the local key version gets step version 0 or 1 without the key of a local build (a peer
+/// at step version 1 refuses a local build with a key): its build step stays inert.
 TEST(BuildRuntimeFilterStepKey, OlderPeerGetsInertStep)
 {
     tryRegisterFunctions();
 
-    const String bytes = serializeStep(*makeBuildStep("key-a"), pre_key_version);
-    EXPECT_EQ(bytes, serializeStep(*makeBuildStep("key-b"), pre_key_version));
+    ASSERT_EQ(stepRegistry().versionToWrite(step_name, pre_key_version), 0);
+    ASSERT_EQ(stepRegistry().versionToWrite(step_name, pre_local_key_version), 1);
+    for (const UInt64 version : {pre_key_version, pre_local_key_version})
+    {
+        SCOPED_TRACE(version);
+        const String bytes = serializeStep(*makeBuildStep("key-a"), version);
+        EXPECT_EQ(bytes, serializeStep(*makeBuildStep("key-b"), version));
 
-    auto restored = deserializeStep(bytes, pre_key_version);
-    EXPECT_TRUE(restored->getFilterKey().empty());
-    EXPECT_FALSE(restored->needsPairing());
+        auto restored = deserializeStep(bytes, version);
+        EXPECT_TRUE(restored->getFilterKey().empty());
+        EXPECT_FALSE(restored->needsPairing());
+    }
 }
 
 /// The key is random per plan build, so two builds of one plan must hash alike.

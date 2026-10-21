@@ -36,7 +36,8 @@ INNER JOIN system.processors_profile_log AS p ON p.query_id = q.query_id
 WHERE q.event_date >= yesterday() AND q.type = 'QueryFinish' AND q.current_database = currentDatabase()
   AND q.log_comment = '05368_merge'
   AND p.event_date >= yesterday() AND p.name LIKE 'MergeTreeSelect%' AND p.plan_step_description = currentDatabase() || '.rf_probe'
-GROUP BY q.query_id, q.ProfileEvents['RuntimeFiltersCreated'];
+GROUP BY q.query_id, q.ProfileEvents['RuntimeFiltersCreated']
+SETTINGS max_rows_to_read = 0; -- the system logs can be really big
 
 DROP TABLE rf_merge;
 DROP VIEW rf_view;

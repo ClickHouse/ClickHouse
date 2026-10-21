@@ -441,7 +441,8 @@ void BuildRuntimeFilterStep::serialize(Serialization & ctx) const
     writeStringBinary(ctx.for_cache_key ? String{} : filter_name, ctx.out);
     writeBinary(build_options.polarity == RuntimeFilterPolarity::Contains, ctx.out);
 
-    /// Step version 1 carries the filter exchange topology and the key. The registry picks version 0
+    /// Step version 1 carries the filter exchange topology and the key of a build with filter exchanges,
+    /// step version 2 the key of a local build as well. The registry picks version 0
     /// for a peer whose release predates the transport. Such a peer would run the step as a local
     /// build, and the filter would silently never arrive. So the topology is refused, not dropped.
     if (ctx.step_version < 1)
@@ -462,10 +463,12 @@ void BuildRuntimeFilterStep::serialize(Serialization & ctx) const
         writeVarUInt(tree_exchange->fan_in, ctx.out);
     }
     /// The rendezvous key is random per plan build, so a cache key leaves it out, as `ActionsDAG::serialize`
-    /// does with the `__applyFilter` label carrying it. A local build sends its key too: its `__applyFilter`
-    /// is often already in `PREWHERE` of the shipped fragment, and `pairJoinRuntimeFilters` on the receiver
-    /// keeps the key only if that fragment also has the join that consumes it.
-    writeStringBinary(ctx.for_cache_key ? String{} : filter_key, ctx.out);
+    /// does with the `__applyFilter` label carrying it. From step version 2 a local build sends its key too:
+    /// its `__applyFilter` is often already in `PREWHERE` of the shipped fragment, and `pairJoinRuntimeFilters`
+    /// on the receiver keeps the key only if that fragment also has the join that consumes it. At step
+    /// version 1 a local build sends no key, as the reader requires, and stays inert on the receiver.
+    const bool write_key = !ctx.for_cache_key && (ctx.step_version >= 2 || hasFilterExchanges());
+    writeStringBinary(write_key ? filter_key : String{}, ctx.out);
 }
 
 QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
@@ -504,8 +507,12 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
         }
 
         readStringBinary(filter_key, ctx.in);
-        /// A local build may come without a key (written for a cache key, or made inert), but the partials
-        /// of a build with filter exchanges are registered and merged under it.
+        /// The partials of a build with filter exchanges are registered and merged under its key. At step
+        /// version 1 a local build has none. From version 2 it may have one, or not (written for a cache
+        /// key, or made inert).
+        if (ctx.step_version < 2 && filter_key.empty() == static_cast<bool>(has_tree_exchange))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA, "BuildRuntimeFilterStep must carry a rendezvous key exactly when it has filter exchanges");
         if (has_tree_exchange && filter_key.empty())
             throw Exception(
                 ErrorCodes::INCORRECT_DATA, "BuildRuntimeFilterStep with filter exchanges must carry a rendezvous key");
@@ -572,11 +579,14 @@ void BuildRuntimeFilterStep::describeActions(FormatSettings & format_settings) c
 void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry);
 void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry)
 {
-    /// Version 1 adds the filter exchange topology and the rendezvous key.
+    /// Version 1 adds the filter exchange topology and the rendezvous key of a build with filter exchanges.
+    /// Version 2 adds the rendezvous key of a local build.
     registry.registerStep(
         "BuildRuntimeFilter",
         BuildRuntimeFilterStep::deserialize,
-        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES}});
+        {{0, 0},
+         {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES},
+         {2, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LOCAL_RUNTIME_FILTER_KEY}});
 }
 
 }

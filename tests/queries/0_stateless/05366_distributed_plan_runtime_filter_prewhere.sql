@@ -68,7 +68,8 @@ LEFT JOIN
     GROUP BY query_id
 ) AS reads ON reads.query_id = tasks.query_id
 GROUP BY log_comment
-ORDER BY log_comment;
+ORDER BY log_comment
+SETTINGS max_rows_to_read = 0; -- the system logs can be really big
 
 DROP TABLE probe;
 DROP TABLE build;
