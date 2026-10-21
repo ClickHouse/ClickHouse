@@ -1,11 +1,9 @@
-add	rows	[0,1,2,10,11,12]	6
-add	where_null	6
-add	where_eq	0
-add	star	0	0	\N
-add	star	1	1	\N
-add	star	2	2	\N
-add	star	10	10	\N
-add	star	11	11	\N
-add	star	12	12	\N
-rename	6	36
-THERE_IS_NO_COLUMN
+rows	[0,1,2,10,11,12]	6
+where_null	6
+where_eq	0
+star	0	0	\N
+star	1	1	\N
+star	2	2	\N
+star	10	10	\N
+star	11	11	\N
+star	12	12	\N

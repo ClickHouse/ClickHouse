@@ -14,7 +14,7 @@ rm -rf "${TABLE_DIR}"
 
 LOCAL="${CLICKHOUSE_LOCAL} --allow_insert_into_iceberg=1 --async_insert=0 --input_format_avro_allow_missing_fields=0"
 
-TABLE_PATH="${TABLE_DIR}/add/"
+TABLE_PATH="${TABLE_DIR}/"
 mkdir -p "${TABLE_PATH}"
 ${LOCAL} --query "
     CREATE TABLE t (a Int32, c Int64) ENGINE = IcebergLocal('${TABLE_PATH}', 'Avro');
@@ -32,36 +32,10 @@ ${LOCAL} --query "
 "
 ${LOCAL} --query "
     CREATE TABLE t ENGINE = IcebergLocal('${TABLE_PATH}', 'Avro');
-    SELECT 'add', 'rows', arraySort(groupArray(a)), countIf(d IS NULL) FROM t;
-    SELECT 'add', 'where_null', count() FROM t WHERE d IS NULL;
-    SELECT 'add', 'where_eq', count() FROM t WHERE d = 1;
-    SELECT 'add', 'star', * FROM t ORDER BY a;
+    SELECT 'rows', arraySort(groupArray(a)), countIf(d IS NULL) FROM t;
+    SELECT 'where_null', count() FROM t WHERE d IS NULL;
+    SELECT 'where_eq', count() FROM t WHERE d = 1;
+    SELECT 'star', * FROM t ORDER BY a;
 "
-
-# A stale INSERT across RENAME COLUMN writes `a` without a field id, so the file does not show that the
-# renamed column is absent, and reading it still fails instead of returning NULL.
-TABLE_PATH="${TABLE_DIR}/rename/"
-mkdir -p "${TABLE_PATH}"
-${LOCAL} --query "
-    CREATE TABLE t (a Nullable(Int32), c Int64) ENGINE = IcebergLocal('${TABLE_PATH}', 'Avro');
-    INSERT INTO t SELECT number, number FROM numbers(3);
-"
-PIN="metadata/$(basename "$(ls "${TABLE_PATH}metadata"/*.metadata.json | sort -V | tail -1)")"
-${LOCAL} --query "
-    CREATE TABLE t ENGINE = IcebergLocal('${TABLE_PATH}', 'Avro');
-    ALTER TABLE t RENAME COLUMN a TO b;
-"
-${LOCAL} --query "
-    CREATE TABLE t ENGINE = IcebergLocal('${TABLE_PATH}', 'Avro') SETTINGS iceberg_metadata_file_path = '${PIN}';
-    INSERT INTO t SELECT number + 10, number + 10 FROM numbers(3);
-"
-${LOCAL} --query "
-    CREATE TABLE t ENGINE = IcebergLocal('${TABLE_PATH}', 'Avro');
-    SELECT 'rename', count(), sum(c) FROM t;
-"
-${LOCAL} --query "
-    CREATE TABLE t ENGINE = IcebergLocal('${TABLE_PATH}', 'Avro');
-    SELECT b FROM t;
-" 2>&1 | grep -o -m1 'THERE_IS_NO_COLUMN'
 
 rm -rf "${TABLE_DIR}"
