@@ -1568,8 +1568,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// the filter info asks for them. Ask here, from the same `object_info` the transforms are
         /// built from, rather than relying on the caller having asked: a caller that reads a data
         /// lake object without going through `ReadFromObjectStorageStep` would otherwise assemble
-        /// a pipeline whose delete transform has no row numbers to filter by.
-        if (hasAttachedDeletes(*object_info) && (!filter_info || !filter_info->need_row_numbers))
+        /// a pipeline whose delete transform has no row numbers to filter by. The same holds for a
+        /// requested `_row_number` (or another row-dependent virtual column): it is materialized from
+        /// `ChunkInfoRowNumbers` too, and callers like `S3Queue` / `AzureQueue` pass no filter info.
+        const bool need_row_numbers = hasAttachedDeletes(*object_info)
+            || VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
+        if (need_row_numbers && (!filter_info || !filter_info->need_row_numbers))
         {
             auto filter_info_with_row_numbers = std::make_shared<FormatFilterInfo>(
                 filter_info ? filter_info->filter_actions_dag : nullptr,
