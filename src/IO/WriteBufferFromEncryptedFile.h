@@ -31,6 +31,8 @@ public:
 
     void sync() override;
 
+    void preFinalize() override;
+
     std::string getFileName() const override { return assert_cast<WriteBufferFromFileBase *>(out)->getFileName(); }
 
 private:
