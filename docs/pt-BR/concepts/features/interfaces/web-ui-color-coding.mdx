@@ -9,9 +9,7 @@ sidebar: false
 
 A interface web SQL integrada (`play.html`, disponibilizada no caminho [`/play`](/pt-BR/concepts/features/interfaces/http) de qualquer porta HTTP do ClickHouse) pode colorir as células de resultado para facilitar a identificação visual de padrões em uma coluna. Cada coluna tem seu próprio modo de codificação por cores, que pode ser alternado de forma independente.
 
-<div id="switching-the-mode">
-  ## Alternando o modo
-</div>
+## Alternando o modo {#switching-the-mode}
 
 Um ícone 🌈 aparece à direita de cada cabeçalho de coluna. Clique nele para alternar a coluna entre os modos disponíveis. Em dispositivos com ponteiro com suporte a hover (como um mouse), o ícone é exibido apenas quando o cursor está sobre o cabeçalho, para não atrapalhar; em dispositivos touch e outros dispositivos com ponteiro de baixa precisão, que não têm hover, o ícone é sempre exibido para que possa ser tocado diretamente.
 
@@ -22,9 +20,7 @@ O conjunto de modos que uma coluna oferece depende do seu tipo:
 
 O modo padrão é `bar` para colunas numéricas e `none` para todas as demais colunas, incluindo colunas de data e hora.
 
-<div id="modes">
-  ## Modos
-</div>
+## Modos {#modes}
 
 * **`bar`** — desenha uma barra horizontal na célula, proporcional ao valor. Para colunas numéricas, a barra cresce a partir de uma base zero; para colunas `Date`/`DateTime`, ela cobre o intervalo `min`..`max` da coluna, já que uma base zero não faz sentido para timestamps.
 * **`heatmap`** — preenche todo o plano de fundo da célula com uma cor que representa o valor, escalado entre o valor mínimo e máximo da coluna.
@@ -35,21 +31,17 @@ As colunas `Date`, `DateTime`, `Date32` e `DateTime64` são coloridas com base n
 
 As cores de plano de fundo de `heatmap` e `categorical` usam o espaço de cores `oklch`, variando apenas o matiz e mantendo a luminosidade e o croma fixos por tema, para que o texto da célula continue legível tanto no tema claro quanto no escuro. O plano de fundo preenche a célula inteira mesmo quando uma linha é exibida em mais de uma linha.
 
-<div id="categorical-emphasis">
-  ## Ênfase categórica na seleção
-</div>
+## Ênfase categórica na seleção {#categorical-emphasis}
 
 No modo `categorical`, selecionar uma célula dá destaque às outras células que compartilham o mesmo valor, exibindo-as com uma fonte mais grossa e uma cor de texto com contraste total (branco puro no tema escuro, preto puro no tema claro). A própria célula selecionada permanece sem destaque. Isso facilita ver em que outros pontos um determinado valor ocorre na coluna.
 
-<div id="persistence">
-  ## Persistência
-</div>
+## Persistência {#persistence}
 
 Os modos escolhidos ficam salvos por coluna na URL da página e no histórico do navegador, de modo que recarregar a página, compartilhar o link ou voltar e avançar na navegação os preserva. Apenas as escolhas diferentes do padrão são armazenadas, para manter a URL e o estado do histórico compactos.
 
-<div id="limitations">
-  ## Limitações
-</div>
+Assim como as [colunas fixadas](/pt-BR/concepts/features/interfaces/web-ui-pinned-columns), os modos pertencem ao resultado que colorem: à aba da consulta e, dentro de uma aba que seja um [notebook](/pt-BR/concepts/features/interfaces/web-ui-notebook), a cada célula individualmente. As tabelas de uma mesma execução de `Run all` (várias consultas) compartilham os mesmos modos, enquanto as demais células e abas mantêm os seus próprios.
+
+## Limitações {#limitations}
 
 * O layout vertical (transposto) de uma única linha não exibe codificação por cores.
 * Diferenças em `DateTime64(9)` inferiores a um microssegundo não são distinguidas na escala de cores, o que não faz sentido visualmente em um gradiente.

@@ -41,13 +41,9 @@
       FROM numbers({table_size})
   </fill_query>
 
-  <!-- Test prefix matching rewrite -->
-  <query>
-      SELECT count() FROM tab
-      WHERE str LIKE {prefix_pattern}
-      SETTINGS optimize_rewrite_like_perfect_affix=0
-  </query>
+  <!-- The path without the rewrite is measured in regexp_anchored_literal.xml. -->
 
+  <!-- Test prefix matching rewrite -->
   <query>
       SELECT count() FROM tab
       WHERE str LIKE {prefix_pattern}
@@ -55,12 +51,6 @@
   </query>
 
   <!-- Test suffix matching rewrite -->
-  <query>
-      SELECT count() FROM tab
-      WHERE str LIKE {suffix_pattern}
-      SETTINGS optimize_rewrite_like_perfect_affix=0
-  </query>
-
   <query>
       SELECT count() FROM tab
       WHERE str LIKE {suffix_pattern}

@@ -1,10 +1,10 @@
 #include <Server/StatelessWorker/StatelessWorkerClient.h>
+#include <Server/StatelessWorker/StatelessWorkerTaskSerialization.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterserverCredentials.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <IO/WriteBufferFromOStream.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -67,11 +67,9 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
     if (collectors.any())
         uri.addQueryParameter("collect", collectors.toString());
 
-    auto write_body_callback = [&task_serializer] (std::ostream & os)
+    auto write_body_callback = [&task_serializer] (WriteBuffer & out)
     {
-        WriteBufferFromOStream buf(os);
-        task_serializer(buf);
-        buf.finalize();
+        task_serializer(out);
     };
 
     auto in = BuilderRWBufferFromHTTP(uri)
@@ -91,9 +89,6 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
 }
 
 }
-
-void serializeTask(const DistributedQueryTaskDescription & task_description, WriteBuffer & out);
-
 
 String sendTask(const String & endpoint_uri, const String & unique_task_id, const DistributedQueryTaskDescription & task_description, const String & unique_temp_file_path, const TaskCollectors & collectors, const ContextPtr & context)
 {

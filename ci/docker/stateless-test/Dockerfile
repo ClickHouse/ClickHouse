@@ -1,6 +1,8 @@
 # docker build -t clickhouse/stateless-test .
+ARG CCTOOLS_TAG
 ARG FROM_TAG=latest
 ARG REDPANDA_VERSION=v25.1.3
+FROM clickhouse/cctools:${CCTOOLS_TAG} AS cctools
 FROM redpandadata/redpanda:${REDPANDA_VERSION} AS redpanda
 
 FROM clickhouse/test-base:$FROM_TAG
@@ -161,10 +163,10 @@ ENV PYTHONPATH=".:./ci"
 # A directory for cache
 RUN mkdir /dev/shm/clickhouse
 
-COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /opt/gdb /opt/gdb
+COPY --from=cctools /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
 
-COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
+COPY --from=cctools \
   /opt/openssl-fips/openssl.cnf \
   /opt/openssl-fips/fipsmodule.cnf \
   /opt/openssl-fips/fips.so \

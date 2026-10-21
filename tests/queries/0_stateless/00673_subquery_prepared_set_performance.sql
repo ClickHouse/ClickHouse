@@ -1,4 +1,5 @@
--- Random settings limits: enable_parallel_replicas=(0, 0)
+-- Random settings limits: enable_parallel_replicas=(0, 0); max_bytes_before_external_set=(0, 0); max_bytes_ratio_before_external_set=(0, 0)
+-- The set of `IN` stays in memory: a set written to disk while it is built is not used by the primary key.
 -- The regression this test guards against is a re-preparation of the `IN` set once per level of
 -- nesting. Instead of relying on the test's time budget to notice it, the number of rows read is
 -- checked directly below: the set has to be prepared exactly once, no matter how deep the nesting.
