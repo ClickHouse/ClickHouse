@@ -1369,8 +1369,12 @@ std::shared_ptr<StatisticsCacheCell> IMergeTreeDataPart::readStatistics() const
             CompressedReadBuffer compressed_buf(in);
             if (auto stats = ColumnStatistics::deserialize(compressed_buf, column_desc->type))
             {
-                cell->memory_bytes += stats->allocatedBytes();
-                cell->stats.emplace(column_desc->name, std::move(stats));
+                /// The node of the map (approximately: the value, two child pointers, a parent pointer and the color)
+                /// and the buffer of the column name are retained too.
+                auto [it, inserted] = cell->stats.emplace(column_desc->name, std::move(stats));
+                if (inserted)
+                    cell->memory_bytes += it->second->allocatedBytes() + sizeof(ColumnsStatistics::value_type) + 4 * sizeof(void *)
+                        + (it->first.capacity() > String().capacity() ? it->first.capacity() : 0);
             }
         }
         catch (Exception & e)
@@ -1448,13 +1452,21 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics(const NameSet & required_co
     if (required_columns.empty())
         return cell->stats;
 
+    /// Probe the required columns rather than scan all columns of the part: it is done for every part on every query.
     ColumnsStatistics result;
-    for (const auto & [column_name, stats] : cell->stats)
+    for (const auto & required_column : required_columns)
     {
         /// `<col>.null` subcolumn may appear in required_columns when
         /// `optimize_functions_to_subcolumns=1`, keep stats for the parent column in that case.
-        if (required_columns.contains(column_name) || required_columns.contains(column_name + ".null"))
-            result.emplace(column_name, stats);
+        static constexpr std::string_view null_suffix = ".null";
+        if (auto it = cell->stats.find(required_column); it != cell->stats.end())
+            result.emplace(it->first, it->second);
+        else if (required_column.ends_with(null_suffix))
+        {
+            String parent_column = required_column.substr(0, required_column.size() - null_suffix.size());
+            if (auto parent_it = cell->stats.find(parent_column); parent_it != cell->stats.end())
+                result.emplace(parent_it->first, parent_it->second);
+        }
     }
     return result;
 }
