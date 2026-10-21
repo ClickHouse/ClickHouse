@@ -31,22 +31,9 @@ namespace DB
 {
 class DirectoryWatcherBase;
 
-/// A single thread that multiplexes all `DirectoryWatcherBase` objects, so that the number of threads does not
-/// depend on the number of `FileLog` tables.
-///
-/// On Linux the reactor owns one inotify descriptor, which it waits on with `epoll`, so that the number of inotify
-/// instances does not depend on the number of tables either (`fs.inotify.max_user_instances` is only 128 by default).
-/// The directory of each watcher is a watch of that descriptor: `add` adds it and `remove` removes it. The kernel
-/// gives the watchers of the same directory the same watch, and the reactor hands its events to each of them. The
-/// callbacks of a watcher (`DirectoryWatcherBase::onEvent`, `DirectoryWatcherBase::hasUnpairedMoves`,
-/// `DirectoryWatcherBase::commitEvents` and `DirectoryWatcherBase::onPairingTimeout`) run on the reactor thread, one at a time, and must not block.
-///
-/// On macOS the reactor owns one `kqueue`. It registers the directory descriptor of a watcher in it in `add`, and the
-/// watchers register the descriptors of their files (`watchVnode`), with the registration of the watcher as the user
-/// data of the event. The reactor hands the
-/// events to the owning watcher (`DirectoryWatcherBase::onVnodeEvent`), and the same single thread also scans the
-/// directories of the watchers when their scan is due (`DirectoryWatcherBase::onTimer`). The events these report are
-/// committed once per watcher (`DirectoryWatcherBase::commitEvents`) after the due scans and after each batch of events.
+/// One thread for all `DirectoryWatcherBase` objects, so threads and inotify instances don't grow with `FileLog` tables.
+/// Linux: one inotify descriptor under `epoll`, a watch per directory. macOS: one `kqueue` for directory and file
+/// descriptors, plus timed scans. Watcher callbacks run on this thread, one at a time, and must not block.
 class DirectoryWatchReactor
 {
 public:
@@ -58,10 +45,10 @@ public:
     /// Closing `fd` removes the registration.
     void watchVnode(DirectoryWatcherBase & watcher, int fd, uint32_t fflags);
 
-    /// Called by a watcher from `onTimer`, that is on the reactor thread only.
-    /// Hands the events that are ready in the kqueue right now, of this and of the other watchers, to their watchers
-    /// without waiting. A watcher uses it to learn whether its directory changed while it was scanning it.
-    void drainReadyEvents();
+    /// Called from `onTimer` on the reactor thread. Dispatches the events ready in the kqueue now, without waiting, so
+    /// a watcher learns whether its directory changed during a scan. Bounded so commands are not delayed: returns
+    /// false if it stopped before taking all ready events, and then the caller cannot rely on what it got.
+    [[nodiscard]] bool drainReadyEvents();
 #endif
 
     /// All watchers must have been removed.
@@ -72,16 +59,14 @@ public:
     DirectoryWatchReactor(const DirectoryWatchReactor &) = delete;
     DirectoryWatchReactor & operator=(const DirectoryWatchReactor &) = delete;
 
-    /// Starts watching the directory of `watcher`: on Linux it adds a watch of the directory to the inotify
-    /// descriptor of the reactor, on macOS it registers the descriptor of the directory that the watcher has
-    /// opened, and the reactor thread makes the first scan of the directory right after, once `add` has returned.
-    /// Waits until the reactor thread has done it, and throws what it failed with.
+    /// Starts watching the directory of `watcher`: an inotify watch on Linux, the watcher's directory descriptor on
+    /// macOS (the first scan follows right after `add` returns). Waits until the reactor thread has done it, and
+    /// throws what it failed with.
     void add(DirectoryWatcherBase & watcher);
 
-    /// Stops watching `watcher` and closes its descriptors. Waits until the reactor thread has done it, so
-    /// that no callback of `watcher` is running or will run once this returns, and the watcher can be destroyed.
-    /// Does nothing if the reactor has dropped the watcher after a failure of its callback.
-    /// Must not be called from a callback.
+    /// Stops watching `watcher` and closes its descriptors; once it returns no callback of `watcher` runs, so it can be
+    /// destroyed. Does nothing if the reactor dropped the watcher after a failed callback. Must not be called from a
+    /// callback.
     void remove(DirectoryWatcherBase & watcher);
 
 private:
@@ -164,10 +149,8 @@ private:
     /// The registrations of the watchers of each watch of `inotify_fd`.
     std::unordered_map<int, std::vector<WatcherRegistration *>> registrations_by_wd;
 
-    /// The watchers that wait for the second half of a rename, in no particular order. A watcher sets its
-    /// deadline when it starts to wait, while the events of a read are decoded, before the reactor sees it, so
-    /// the deadlines are not kept sorted: the loop looks through all of them for the earliest one and the expired
-    /// ones. There are few of them, only while a rename is split between two reads. When the deadline expires, the
+    /// Watchers waiting for the second half of a rename split between two reads; few, so unsorted. Each sets its own
+    /// deadline while decoding, and the loop scans all of them for the earliest and the expired ones. On expiry the
     /// watcher is committed as it is.
     std::unordered_set<WatcherRegistration *> waiting_for_pairing;
     /// The events are read here and decoded at once, so one buffer serves all the watchers.

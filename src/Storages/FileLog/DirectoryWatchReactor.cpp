@@ -274,9 +274,8 @@ void DirectoryWatchReactor::runLoop()
 
 void DirectoryWatchReactor::attachWatcher(DirectoryWatcherBase & watcher, std::unique_ptr<WatcherRegistration> registration)
 {
-    /// The kernel gives the same watch to the same directory, so the queue can already have events of this watch,
-    /// which happened before the watcher took its baseline of the directory. They are handed to the other watchers of
-    /// the directory first. This is done before the watch is added: otherwise the events between the two would reach
+    /// The kernel shares one watch per directory, so the queue can hold events from before this watcher's baseline.
+    /// Hand them to the other watchers first, before adding the watch; otherwise events between the two would reach
     /// the other watchers only, and this watcher would lose events that happened after its baseline.
     dispatchQueuedEvents();
 
@@ -578,17 +577,30 @@ size_t DirectoryWatchReactor::waitForEvents(std::array<struct kevent, max_events
     return watcher_events;
 }
 
-void DirectoryWatchReactor::drainReadyEvents()
+
+static constexpr size_t max_drain_batches = 16;
+
+/// Dispatches the events that are ready in the kqueue right now to their watchers, without waiting.
+/// Returns true if it took all of them, false if it stopped after `max_drain_batches` full batches.
+bool DirectoryWatchReactor::drainReadyEvents()
 {
     std::array<struct kevent, max_events_per_wait> events{};
-    while (true)
+    for (size_t batches = 0; batches < max_drain_batches; ++batches)
     {
-        const size_t ready = waitForEvents(events, 0, commands_pending);
-        if (ready == 0)
-            return;
+        /// `waitForEvents` drops the wake-up of the control pipe from the batch, so the size of the batch is checked
+        /// together with it.
+        bool has_commands = false;
+        const size_t ready = waitForEvents(events, 0, has_commands);
+        commands_pending |= has_commands;
         for (size_t i = 0; i < ready; ++i)
             dispatch(*static_cast<WatcherRegistration *>(events[i].udata), static_cast<int>(events[i].ident), events[i].fflags);
+
+        /// A batch that is not full has drained the queue. Don't wait for later events: with `EV_CLEAR` a file that is
+        /// written all the time is reported again at once, and the drain would never end.
+        if (ready + (has_commands ? 1 : 0) < max_events_per_wait)
+            return true;
     }
+    return false;
 }
 
 void DirectoryWatchReactor::runLoop()
@@ -597,11 +609,8 @@ void DirectoryWatchReactor::runLoop()
 
     while (true)
     {
-        /// Scan the directories of the watchers whose scan is due. This is done between the batches of events, never
-        /// while one is being handled: a scan closes and opens descriptors, so an event of the same batch could carry
-        /// the number of a descriptor that now belongs to another file.
-        /// The due watchers are collected first and then scanned once each, so that a watcher that is due again at
-        /// once does not keep the others waiting.
+        /// Scan due watchers between event batches: a scan reopens descriptors, so a pending event could refer to a
+        /// reused descriptor number. Collect them first, so a watcher that is due again at once can't starve the others.
         std::vector<WatcherRegistration *> due;
         const auto now = std::chrono::steady_clock::now();
         for (const auto & [watcher, registration] : registrations)
@@ -704,9 +713,6 @@ void DirectoryWatchReactor::attachWatcher(DirectoryWatcherBase & watcher, std::u
 {
     registerVnode(*registration, watcher.directoryFd(), watcher.directoryWatchFlags());
     registrations.emplace(&watcher, std::move(registration));
-
-    /// The first scan of the directory, which takes the baseline and watches its files, is left to the loop: the scan
-    /// of a new watcher is due at once, so the loop makes it right after the commands of this batch.
 }
 
 void DirectoryWatchReactor::detachWatcher(DirectoryWatcherBase & watcher)

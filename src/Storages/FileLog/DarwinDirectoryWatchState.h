@@ -55,10 +55,9 @@ struct DarwinDirectoryWatchState
     std::unordered_map<int, std::string> watched_names;
     int dir_fd = -1;
 
-    /// File names whose watched inode was unlinked (`NOTE_DELETE`), accumulated across the scans. Kept here so that a scan
-    /// that is retried does not lose the deletes it already got: the events are edge-triggered (`EV_CLEAR`), so a
-    /// dropped `NOTE_DELETE` would never be reported again and a same-inode recreate would slip through as a
-    /// modification.
+    /// File names whose watched inode lost its last link (`NOTE_DELETE`), accumulated across the scans, so a retried
+    /// scan keeps them: with `EV_CLEAR` a dropped `NOTE_DELETE` is never reported again, and a same-inode recreate
+    /// would slip through as a modification.
     std::set<std::string> deleted_files;
 
     /// An entry of the directory was added, removed or renamed since the last reset. `scanFilesAndUpdateWatches`
@@ -69,10 +68,9 @@ struct DarwinDirectoryWatchState
     /// yet. Until then `watched_names` may map a descriptor to a name that now belongs to another file.
     bool structural_change_pending = false;
 
-    /// The inodes of the watched files whose contents changed while `structural_change_pending` was set. They are
-    /// reported by the scan that commits the change, under the names of its listing and after the events of the
-    /// change, so that a modification is never reported under a stale name. Keyed by inode, as the name is what may
-    /// be stale.
+    /// Inodes of watched files modified while `structural_change_pending` was set. The scan that commits the change
+    /// reports them after its events, under the names of its listing, so a modification is never reported under a
+    /// stale name. Keyed by inode, as the name is what may be stale.
     std::set<UInt64> deferred_modifications;
 
     /// Whether the first snapshot, the baseline of the files that already existed, has been taken. Until then

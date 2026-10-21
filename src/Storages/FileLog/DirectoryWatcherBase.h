@@ -17,6 +17,7 @@ struct inotify_event;
 #include <chrono>
 #include <map>
 #include <optional>
+#include <vector>
 #endif
 
 namespace DB
@@ -26,22 +27,9 @@ class DirectoryWatchReactor;
 
 class DirectoryWatcherBase : WithContext
 {
-    /// Most of code in this class is copy from the Poco project:
-    /// https://github.com/ClickHouse-Extras/poco/blob/clickhouse/Foundation/src/DirectoryWatcher.cpp
-    /// This class is used to get notifications about changes
-    /// to the filesystem, more precisely, to a specific
-    /// directory. Changes to a directory are reported via
-    /// events.
-    ///
-    /// The directory is watched by the `DirectoryWatchReactor`, one thread for all watchers, and events are
-    /// reported in the context of that thread. On Linux the directory is a watch of the one inotify descriptor of
-    /// the reactor.
-    /// macOS has no inotify, so the watcher diffs snapshots of the directory, and the reactor wakes it up with the
-    /// events of the `kqueue` and by a timer.
-    ///
-    /// Note that changes to files in subdirectories of the watched
-    /// directory are not reported. Separate DirectoryWatcher objects
-    /// must be created for these directories if they should be watched.
+    /// Reports changes of one directory (not its subdirectories), based on Poco's `DirectoryWatcher`. Events come from the
+    /// `DirectoryWatchReactor` thread: on Linux via a watch of its inotify descriptor, on macOS by diffing snapshots
+    /// of the directory, woken up by `kqueue` events and a timer.
 public:
     enum DirectoryEventType
     {
@@ -137,11 +125,9 @@ private:
     /// The inotify mask for the events the watcher is interested in.
     uint32_t watchMask() const;
 
-    /// Called by the `DirectoryWatchReactor` thread only.
-    /// `onEvent` decodes one event of the directory, and `hasUnpairedMoves` is called once after all the events of
-    /// the directory that one read of the inotify descriptor has brought. If every rename in them is complete, the
-    /// reactor calls `commitEvents` to hand the events to `owner`, otherwise it calls `onPairingTimeout` unless the
-    /// rest of the events come in time.
+    /// Reactor thread only. `onEvent` decodes one event; `hasUnpairedMoves` is checked after each read of inotify. If
+    /// every rename is complete, the reactor calls `commitEvents` to hand the events to `owner`, otherwise it calls
+    /// `onPairingTimeout` unless the rest of the events come in time.
     void onEvent(const inotify_event & event);
     bool hasUnpairedMoves() const;
     void onPairingTimeout();
@@ -166,6 +152,8 @@ private:
     std::optional<std::chrono::steady_clock::time_point> nextScan() const;
 
     void scan(std::map<std::string, UInt64> & current_files_inodes);
+    /// The one of the excluded names `aliases` of the followed file `inode` that `scan` lists it under.
+    std::string chooseFollowedAlias(UInt64 inode, std::vector<std::string> & aliases) const;
     void syncFileWatches(std::map<std::string, UInt64> & files);
     /// Returns whether the directory changed during the scan, then the caller discards it.
     bool scanFilesAndUpdateWatches(std::map<std::string, UInt64> & current_files_inodes);
