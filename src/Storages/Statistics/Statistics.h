@@ -230,6 +230,8 @@ public:
     ColumnStatisticsPtr get(const ColumnDescription & column_desc) const;
     ColumnStatisticsPtr get(const ColumnStatisticsDescription & stats_desc) const;
     ColumnStatisticsDescription::StatisticsTypeDescMap get(const std::vector<StatisticsType> & stat_types, const DataTypePtr & data_type) const;
+    /// Whether the statistics type is known to this build. The V4 deserializer skips the types it does not know.
+    bool isRegistered(StatisticsType type) const { return validators.contains(type) && creators.contains(type); }
     /// Create a single statistics object by type. Returns `nullptr` if the type is unknown
     /// or unsupported for `data_type`. Used by the V4 deserializer to instantiate statistics
     /// types one at a time (and to silently skip types the current build doesn't know about).

@@ -619,6 +619,14 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
                 continue;
             }
 
+            /// A type written by a newer build is unknown here and has no name, so it is skipped before
+            /// its description is created.
+            if (!factory.isRegistered(type))
+            {
+                buf.ignore(stat_size);
+                continue;
+            }
+
             SingleStatisticsDescription single_desc(type, make_intrusive<ASTIdentifier>(statisticsTypeToString(type)), false);
             if (auto stat_ptr = factory.tryCreateSingle(single_desc, data_type))
             {
