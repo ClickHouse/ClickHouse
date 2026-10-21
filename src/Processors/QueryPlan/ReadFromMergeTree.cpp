@@ -316,7 +316,6 @@ namespace Setting
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsUInt64 parallel_replicas_count;
-    extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool distributed_index_analysis;
@@ -475,14 +474,21 @@ static SortDescription getSortDescriptionForOutputHeader(
     return {};
 }
 
+static Int64 getMaxPartitionsToRead(const Settings & settings, const MergeTreeSettings & data_settings)
+{
+    return settings[Setting::max_partitions_to_read].changed
+        ? settings[Setting::max_partitions_to_read].value
+        : data_settings[MergeTreeSetting::max_partitions_to_read].value;
+}
+
 std::shared_ptr<QueryIdHolder> ReadFromMergeTree::AnalysisResult::checkLimits(
     const Context & context_, const MergeTreeData & data_, const MergeTreeSettings & data_settings_) const
 {
     const Settings & settings = context_.getSettingsRef();
-    auto max_partitions_to_read = settings[Setting::max_partitions_to_read].changed
-        ? settings[Setting::max_partitions_to_read].value
-        : data_settings_[MergeTreeSetting::max_partitions_to_read].value;
-    if (max_partitions_to_read > 0)
+    auto max_partitions_to_read = getMaxPartitionsToRead(settings, data_settings_);
+    /// Without its own analysis a follower would count parts that the coordinator never assigns to it.
+    /// The initiator checks the limit on the coordinator's analysis.
+    if (max_partitions_to_read > 0 && !index_analysis_was_already_done_on_initiator)
     {
         std::set<String> partitions;
         for (const auto & part_with_ranges : parts_with_ranges)
@@ -3831,8 +3837,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     /// JOIN - answers `true` here as well, and skipping would leave it reading every mark with nobody to
     /// narrow it. Such a read has to analyze itself in any case: an analysis made on the initiator names
     /// the initiator's parts, which are not the parts this replica reads.
+    /// The initiator must also run a local plan: without one nobody analyzes the indexes or checks the
+    /// partition limit for the followers.
     if (context_->canUseParallelReplicasOnFollower() && is_parallel_reading_from_replicas_
-        && settings[Setting::parallel_replicas_local_plan]
+        && ClusterProxy::canUseLocalPlanForParallelReplicas(context_)
         && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator]
         /// If parallel replicas support projection optimization, selected_marks will be used to determine the optimal projection.
         && !support_projection_optimization)
@@ -3840,6 +3848,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         // Skip index analysis and return parts with all marks
         // The coordinator will choose ranges to read for workers based on index analysis on its side
         result.parts_with_ranges = std::move(res_parts);
+        result.index_analysis_was_already_done_on_initiator = true;
     }
     else
     {
@@ -5136,6 +5145,11 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
     if (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
         return false;
     if (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf])
+        return false;
+
+    /// Same for `max_partitions_to_read`: it is checked before the read, so parts that a skip index
+    /// would drop must already be excluded by index analysis.
+    if (getMaxPartitionsToRead(settings, *data_settings) > 0)
         return false;
 
     /// Pending ALTER mutations (e.g. `MODIFY COLUMN`) can change the type of an indexed column,
