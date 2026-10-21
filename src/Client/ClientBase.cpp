@@ -4175,17 +4175,22 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
         /// PromQL and LogsQL have comment rules of their own (a `#` comment that the SQL
         /// lexer does not recognize), so a `;` that is the last SQL token can be inside
         /// a comment there, e.g. `sum( #keep ;`. For them the statement loop below finds
-        /// the terminator with the dialect's own rules instead.
-        if (settings[Setting::dialect] != Dialect::promql && settings[Setting::dialect] != Dialect::logsql)
+        /// the terminator with the dialect's own rules instead. The dialect that matters
+        /// is the one of the statement being judged, which a `SET dialect = ...` earlier
+        /// in the buffer may have changed, so the terminator is applied by
+        /// `unless_terminated` to the verdict of each statement rather than up front:
+        /// `SET dialect = 'logsql'; error and #keep ;` typed from SQL must stay open.
+        ///
+        /// Use a separate `Tokens` instance for this scan. Iterating to
+        /// `EndOfStream` advances `Tokens::max_pos`, and the parse loop below
+        /// relies on `token_iterator.max()` (which reads the same `max_pos`)
+        /// to tell whether a failed parse stopped at end of input. Scanning
+        /// the shared `tokens` here would poison that cursor to `EndOfStream`
+        /// and make every failed parse -- e.g. `exit` or a plain syntax error
+        /// -- look like an end-of-input failure, so Enter would keep inserting
+        /// newlines instead of submitting.
+        bool ends_with_sql_terminator = false;
         {
-            /// Use a separate `Tokens` instance for this scan. Iterating to
-            /// `EndOfStream` advances `Tokens::max_pos`, and the parse loop below
-            /// relies on `token_iterator.max()` (which reads the same `max_pos`)
-            /// to tell whether a failed parse stopped at end of input. Scanning
-            /// the shared `tokens` here would poison that cursor to `EndOfStream`
-            /// and make every failed parse -- e.g. `exit` or a plain syntax error
-            /// -- look like an end-of-input failure, so Enter would keep inserting
-            /// newlines instead of submitting.
             Tokens terminator_tokens(begin, end, 0, true);
             TokenIterator terminator_it(terminator_tokens);
             TokenType last_significant_type = TokenType::Whitespace;
@@ -4194,9 +4199,19 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
                 last_significant_type = terminator_it->type;
                 ++terminator_it;
             }
-            if (last_significant_type == TokenType::Semicolon)
-                return false;
+            ends_with_sql_terminator = last_significant_type == TokenType::Semicolon;
         }
+
+        /// Applies the trailing `;` to the verdict of the statement being probed, unless
+        /// its dialect is PromQL or LogsQL. Every verdict is given before the `SET`
+        /// mirroring of the loop below, so `effective_settings` holds that dialect.
+        auto unless_terminated = [&](bool needs_continuation)
+        {
+            const Dialect statement_dialect = effective_settings[Setting::dialect];
+            if (statement_dialect == Dialect::promql || statement_dialect == Dialect::logsql)
+                return needs_continuation;
+            return needs_continuation && !ends_with_sql_terminator;
+        };
 
         /// Parse statements one by one. The buffer needs continuation only if its
         /// last statement is incomplete because the parser reached the end of
@@ -4283,7 +4298,7 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
 
                 /// The object is still open at the end of input: the user is typing it.
                 if (depth != 0)
-                    return true;
+                    return unless_terminated(true);
 
                 /// A complete JSON object. The executor accepts only `;` or the end of input
                 /// after it (anything else is "excessive input" to report), so submit unless
@@ -4386,8 +4401,8 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
                     }
 
                     if (incomplete_at_end_of_query)
-                        return true;
-                    return has_unclosed_opener(statement_begin);
+                        return unless_terminated(true);
+                    return unless_terminated(has_unclosed_opener(statement_begin));
                 }
 
                 /// PromQL validates the statement with its own parser, which reports a syntax
@@ -4452,7 +4467,7 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
                     if (!effective_settings[Setting::enable_trino_dialect])
                         return false;
                     if (has_unclosed_opener(statement_begin))
-                        return true;
+                        return unless_terminated(true);
                     Tokens sql_tokens(statement_begin, end, 0, true);
                     IParser::Pos sql_pos(sql_tokens, max_parser_depth, max_parser_backtracks);
                     ParserQuery sql_parser(end, effective_settings[Setting::allow_settings_after_format_in_insert], effective_settings[Setting::implicit_select]);
@@ -4460,7 +4475,7 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
                     Expected sql_expected;
                     if (sql_parser.parse(sql_pos, sql_ast, sql_expected))
                         return false;
-                    return sql_pos.max().type == TokenType::EndOfStream;
+                    return unless_terminated(sql_pos.max().type == TokenType::EndOfStream);
                 }
 
                 /// PRQL validates its entire statement with an external compiler and
@@ -4471,9 +4486,9 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
                 /// missing input.
                 const auto query = std::string_view{statement_begin, static_cast<size_t>(end - statement_begin)};
                 if (effective_settings[Setting::dialect] == Dialect::prql && ParserPRQLQuery::isIncompleteAtEOF(query))
-                    return true;
+                    return unless_terminated(true);
 
-                return has_unclosed_opener(statement_begin);
+                return unless_terminated(has_unclosed_opener(statement_begin));
             }
 
             if (!parsed)
@@ -4483,10 +4498,10 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
                 /// over the current statement's text, so it does not apply bracket
                 /// rules to the inline data of a successfully parsed INSERT.
                 if (has_unclosed_opener(statement_begin))
-                    return true;
+                    return unless_terminated(true);
 
                 /// Otherwise continuation only if the failure is at the end of input.
-                return token_iterator.max().type == TokenType::EndOfStream;
+                return unless_terminated(token_iterator.max().type == TokenType::EndOfStream);
             }
 
             /// The statement parsed. If it is a `SET` that changes parser-shaping
