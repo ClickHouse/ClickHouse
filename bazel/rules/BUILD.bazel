@@ -1,6 +1,7 @@
 """Rules and tools used to build ClickHouse."""
 
 load("@rules_python//python:py_binary.bzl", "py_binary")
+load(":dwyu_tool.bzl", "dwyu_tool")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -26,5 +27,17 @@ exports_files([
         "cmake_cargo",
         "cbindgen",
         "generate_timezones",
+    ]
+]
+
+[
+    dwyu_tool(
+        name = "dwyu_" + name,
+        binary = "@depend_on_what_you_use//dwyu/cc/aspect/private/" + name + ":main",
+    )
+    for name in [
+        "analyze_includes",
+        "preprocessing",
+        "process_target",
     ]
 ]

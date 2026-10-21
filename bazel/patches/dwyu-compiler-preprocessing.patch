@@ -1,4 +1,5 @@
 diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
+index 13af75e..38b635a 100644
 --- a/dwyu/cc/aspect/dwyu.bzl
 +++ b/dwyu/cc/aspect/dwyu.bzl
 @@ -1,6 +1,7 @@
@@ -10,7 +11,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
  load("//dwyu/cc/cc_info_mapping:providers.bzl", "DwyuCcInfoMappingInfo")
  load("//dwyu/private:utils.bzl", "make_param_file_args", "string_to_bool")
-@@ -28,7 +29,7 @@
+@@ -28,7 +29,7 @@ _CPLUSPLUS_VERSIONS_MAP = {
      "98": "199711",
  }
  
@@ -19,7 +20,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
  def _is_verbose(ctx):
      return ctx.attr.dwyu_verbose
-@@ -158,6 +159,11 @@
+@@ -158,6 +159,11 @@ def _get_includes(ctx, target_cc):
              if impl_dep_cc.system_includes:
                  system_includes.append(impl_dep_cc.system_includes)
  
@@ -31,7 +32,53 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      return includes, quote_includes, external_includes, system_includes
  
  def _process_target(ctx, target, config, output_path, is_target_under_inspection):
-@@ -386,12 +392,298 @@
+@@ -363,7 +369,11 @@ def _dywu_results_from_deps(deps):
+     """
+     We cannot rely on DWYU being executed on the dependencies as analysis of the dependency might have been skipped.
+     """
+-    return [dep[OutputGroupInfo].dwyu for dep in deps if hasattr(dep[OutputGroupInfo], "dwyu")]
++    return [
++        dep[OutputGroupInfo].dwyu
++        for dep in deps
++        if OutputGroupInfo in dep and hasattr(dep[OutputGroupInfo], "dwyu")
++    ]
+ 
+ def _gather_transitive_reports(ctx):
+     """
+@@ -373,9 +383,29 @@ def _gather_transitive_reports(ctx):
+     """
+     reports = []
+     if ctx.attr._recursive:
+-        reports.extend(_dywu_results_from_deps(ctx.rule.attr.deps))
+-        if hasattr(ctx.rule.attr, "implementation_deps"):
+-            reports.extend(_dywu_results_from_deps(ctx.rule.attr.implementation_deps))
++        if ctx.attr._follow_configured_closure:
++            # Only inspect the underlying rule. ctx.attr also contains the
++            # aspect's own checker tools, which are not production deps.
++            for name in dir(ctx.rule.attr):
++                value = getattr(ctx.rule.attr, name)
++                if type(value) == "Target":
++                    targets = [value]
++                elif type(value) in ["list", "tuple"]:
++                    targets = [v for v in value if type(v) == "Target"]
++                elif type(value) == "dict":
++                    targets = [v for v in value if type(v) == "Target"]
++                    targets.extend([v for v in value.values() if type(v) == "Target"])
++                else:
++                    continue
++                reports.extend(_dywu_results_from_deps(targets))
++            for toolchain_type in ctx.rule.toolchains.toolchain_types():
++                toolchain = ctx.rule.toolchains[toolchain_type]
++                if toolchain and OutputGroupInfo in toolchain and hasattr(toolchain[OutputGroupInfo], "dwyu"):
++                    reports.append(toolchain[OutputGroupInfo].dwyu)
++        else:
++            reports.extend(_dywu_results_from_deps(ctx.rule.attr.deps))
++            if hasattr(ctx.rule.attr, "implementation_deps"):
++                reports.extend(_dywu_results_from_deps(ctx.rule.attr.implementation_deps))
+     return reports
+ 
+ def _return_on_skip(ctx):
+@@ -386,12 +416,304 @@ def _return_on_skip(ctx):
          return []
      return [OutputGroupInfo(dwyu = depset(transitive = _gather_transitive_reports(ctx)))]
  
@@ -144,12 +191,17 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +    return manifest
 +
 +def _preprocess_with_compiler(ctx, target, files, cc_toolchain, feature_configuration, attr_prefix, header_manifest, capture = None):
-+    # rules_cc expands and tokenizes rule-local options before registering CcCompile.
++    # ctx.var contains aspect variables. cc_library also receives make
++    # variables from TemplateVariableInfo in its own toolchains attribute.
++    rule_variables = dict(ctx.var)
++    for toolchain in getattr(ctx.rule.attr, "toolchains", []):
++        if platform_common.TemplateVariableInfo in toolchain:
++            rule_variables.update(toolchain[platform_common.TemplateVariableInfo].variables)
 +    rule_ctx = struct(
 +        attr = ctx.rule.attr,
 +        expand_location = ctx.expand_location,
 +        label = target.label,
-+        var = ctx.var,
++        var = rule_variables,
 +    )
 +    make_variables = cc_helper.get_toolchain_global_make_variables(cc_toolchain, feature_configuration)
 +    make_variables.update(cc_helper.get_cc_flags_make_variable(ctx, feature_configuration, cc_toolchain))
@@ -262,6 +314,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +            # includer during this action, so Clang cannot determine macro use.
 +            args.add("-Wno-unused-macros")
 +        args.add("-dI")
++
 +        # The same Clang invocation reports files suppressed by include guards.
 +        # System headers must be present too: Bazel can put project hdrs in
 +        # -isystem directories, which does not make them toolchain files.
@@ -332,7 +385,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
      # Work around the bug described in https://github.com/bazelbuild/bazel/issues/19663
      # Implementation_deps are not added to CcInfo.compilation_context
-@@ -440,7 +732,7 @@
+@@ -440,7 +762,7 @@ def _extract_includes_from_files(ctx, config, target, files, defines, cc_toolcha
  
          preprocessor_results.append(pp_output)
  
@@ -341,7 +394,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
  def dwyu_cc_aspect_impl(target, ctx):
      """
-@@ -510,8 +802,17 @@
+@@ -510,8 +832,17 @@ def dwyu_cc_aspect_impl(target, ctx):
      #
  
      config = _make_dwyu_config(ctx)
@@ -361,7 +414,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      processed_target = _process_target(
          ctx,
          target = struct(label = target.label, cc_info = target[CcInfo]),
-@@ -529,26 +830,35 @@
+@@ -529,26 +860,35 @@ def dwyu_cc_aspect_impl(target, ctx):
  
      report_file = ctx.actions.declare_file("{}_dwyu_report.json".format(target.label.name))
  
@@ -375,10 +428,9 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
          cc_toolchain = cc_toolchain,
 +        feature_configuration = feature_configuration,
          attr_prefix = "pub",
--    )
--    preprocessed_private_files = _extract_includes_from_files(
 +        header_manifest = header_manifest,
-+    )
+     )
+-    preprocessed_private_files = _extract_includes_from_files(
 +    public_from_srcs, private_from_srcs = _extract_includes_from_files(
          ctx = ctx,
          config = config,
@@ -388,9 +440,8 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
          cc_toolchain = cc_toolchain,
 +        feature_configuration = feature_configuration,
          attr_prefix = "priv",
--    )
 +        header_manifest = header_manifest,
-+    )
+     )
 +    preprocessed_public_files = public_from_headers + public_from_srcs
 +    assembly_outputs = [file for file in private_from_srcs if file.extension == "o"]
 +    preprocessed_private_files = private_from_headers + [file for file in private_from_srcs if file.extension != "o"]
@@ -401,7 +452,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      args.add("--output", report_file)
      args.add("--target_under_inspection", str(target.label))
      args.add_all("--preprocessed_public_files", preprocessed_public_files, omit_if_empty = False)
-@@ -560,17 +870,20 @@
+@@ -560,17 +900,20 @@ def dwyu_cc_aspect_impl(target, ctx):
          args.add("--ignored_includes_config", ctx.files._ignored_includes[0])
      args.add_all("--extra_ignored_includes", config.extra_ignored_includes, omit_if_empty = True)
      args.add_all("--ignored_unused_deps", config.ignored_unused_deps, omit_if_empty = True)
@@ -425,7 +476,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
          transitive = [target[CcInfo].compilation_context.headers],
      )
      ctx.actions.run(
-@@ -584,3 +897,186 @@
+@@ -584,3 +927,186 @@ def dwyu_cc_aspect_impl(target, ctx):
  
      accumulated_reports = depset(direct = [report_file], transitive = _gather_transitive_reports(ctx))
      return [OutputGroupInfo(dwyu = accumulated_reports)]
@@ -613,9 +664,10 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +    )
 +    return [DefaultInfo(files = depset([report])), OutputGroupInfo(dwyu_consumer = depset([report]))]
 diff --git a/dwyu/cc/aspect/factory.bzl b/dwyu/cc/aspect/factory.bzl
+index bd8a745..edd3c49 100644
 --- a/dwyu/cc/aspect/factory.bzl
 +++ b/dwyu/cc/aspect/factory.bzl
-@@ -2,7 +2,7 @@
+@@ -2,7 +2,7 @@ load("@rules_cc//cc:find_cc_toolchain.bzl", "use_cc_toolchain")
  load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
  load("//dwyu/cc/cc_info_mapping:providers.bzl", "DwyuCcInfoMappingInfo")
  load("//dwyu/private:utils.bzl", "unique_list")
@@ -624,7 +676,95 @@ diff --git a/dwyu/cc/aspect/factory.bzl b/dwyu/cc/aspect/factory.bzl
  
  _LEGACY_SKIPPED_TAGS = ["no-dwyu"]
  _MANDATORY_SKIPPED_TAGS = ["dwyu:skip"]
-@@ -292,3 +292,54 @@
+@@ -36,6 +36,7 @@ def dwyu_cc_aspect_factory(
+         ignored_unused_deps = [],
+         preprocessing_mode = "full",
+         recursive = False,
++        follow_configured_closure = False,
+         recursion_stops_on_skip = False,
+         skip_external_targets = False,
+         skip_features = [],
+@@ -44,6 +45,9 @@ def dwyu_cc_aspect_factory(
+         skip_toolchain_features = [],
+         skipped_tags = [],
+         target_mapping = None,
++        tool_analyze_includes = None,
++        tool_preprocessing = None,
++        tool_process_target = None,
+         verbose = False):
+     """
+     Create and configure a "**D**epend on **W**hat **Y**ou **U**se" (DWYU) aspect.
+@@ -131,6 +135,8 @@ def dwyu_cc_aspect_factory(
+                    You can change this to recursively analyzing dependencies following the `deps` and `implementation_deps` attributes by setting this to True.<br>
+                    This feature is demonstrated in the [recursion example](/examples/recursion).
+ 
++        follow_configured_closure: Traverse all rule attributes and the rule's configured C++ toolchain.
++                                   Only supported native C++ rules are checked. Requires recursive=True.
+         recursion_stops_on_skip: If `True`, skipping a target will also stop the recursive analysis of its dependencies.
+                                  This does not just influence the behavior of the `skip_*` options, but also skipping to inbuilt logic (e.g. skipping incompatible rule types).
+ 
+@@ -187,15 +193,21 @@ def dwyu_cc_aspect_factory(
+                         For the full details see the `dwyu_make_cc_info_mapping` documentation.<br>
+                         This feature is demonstrated in the [target_mapping example](/examples/target_mapping).
+ 
++        tool_analyze_includes: Optional executable label for include analysis.
++        tool_preprocessing: Optional executable label for source preprocessing.
++        tool_process_target: Optional executable label for processing target metadata.
++
+         verbose: If `True`, print debugging information about the individual DWYU actions.<br>
+                  This flag can also be controlled in a Bazel config or on the command line via `--aspects_parameters=dwyu_verbose=[True|False]`.
+ 
+     Returns:
+         Configured DWYU aspect
+     """
++    if follow_configured_closure and not recursive:
++        fail("follow_configured_closure requires recursive=True")
+     attr_aspects = []
+     if recursive:
+-        attr_aspects = ["implementation_deps", "deps"]
++        attr_aspects = ["*"] if follow_configured_closure else ["implementation_deps", "deps"]
+     aspect_ignored_includes = [ignored_includes] if ignored_includes else []
+ 
+     if skip_tags != _DEFAULT_SKIPPED_TAGS and skipped_tags:
+@@ -218,9 +230,12 @@ def dwyu_cc_aspect_factory(
+         implementation = dwyu_cc_aspect_impl,
+         attr_aspects = attr_aspects,
+         fragments = ["cpp"],
+-        required_providers = [CcInfo],
+-        toolchains = use_cc_toolchain(mandatory = True),
++        required_providers = [] if follow_configured_closure else [CcInfo],
++        toolchains = use_cc_toolchain(mandatory = not follow_configured_closure),
++        toolchains_aspects = ["@bazel_tools//tools/cpp:toolchain_type"] if follow_configured_closure else [],
++        apply_to_generating_rules = follow_configured_closure,
+         attrs = {
++            "_follow_configured_closure": attr.bool(default = follow_configured_closure),
+             "dwyu_analysis_ignores_private_headers_from_deps": attr.bool(
+                 default = analysis_ignores_private_headers_from_deps,
+             ),
+@@ -272,19 +287,19 @@ def dwyu_cc_aspect_factory(
+                 default = aspect_target_mapping,
+             ),
+             "_tool_analyze_includes": attr.label(
+-                default = Label("//dwyu/cc/aspect/private/analyze_includes:main"),
++                default = tool_analyze_includes or Label("//dwyu/cc/aspect/private/analyze_includes:main"),
+                 executable = True,
+                 cfg = "exec",
+                 doc = "Main logic for the analysis done by this aspect. This compares the include statements in the code and compares them to the available dependencies.",
+             ),
+             "_tool_preprocessing": attr.label(
+-                default = Label("//dwyu/cc/aspect/private/preprocessing:main"),
++                default = tool_preprocessing or Label("//dwyu/cc/aspect/private/preprocessing:main"),
+                 executable = True,
+                 cfg = "exec",
+                 doc = "Preprocess the source code under inspection to resolve conditional preprocessor statements and discover include statements.",
+             ),
+             "_tool_process_target": attr.label(
+-                default = Label("//dwyu/cc/aspect/private/process_target:main"),
++                default = tool_process_target or Label("//dwyu/cc/aspect/private/process_target:main"),
+                 executable = True,
+                 cfg = "exec",
+                 doc = "Tool for processing the target under inspection and its dependencies. We have to perform this" +
+@@ -292,3 +307,54 @@ def dwyu_cc_aspect_factory(
              ),
          },
      )
@@ -680,6 +820,7 @@ diff --git a/dwyu/cc/aspect/factory.bzl b/dwyu/cc/aspect/factory.bzl
 +    },
 +)
 diff --git a/dwyu/cc/aspect/private/analyze_includes/include_statement.cpp b/dwyu/cc/aspect/private/analyze_includes/include_statement.cpp
+index f27d618..ba3fa79 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/include_statement.cpp
 +++ b/dwyu/cc/aspect/private/analyze_includes/include_statement.cpp
 @@ -12,7 +12,8 @@
@@ -692,7 +833,7 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/include_statement.cpp b/dwy
      std::vector<IncludeStatement> include_statements{};
  
      for (const auto& file_path : files) {
-@@ -20,6 +21,10 @@
+@@ -20,6 +21,10 @@ std::vector<IncludeStatement> getIncludeStatements(const std::vector<std::string
          const auto data = nlohmann::json::parse(file);
  
          for (const auto& per_file_data : data) {
@@ -703,7 +844,7 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/include_statement.cpp b/dwy
              for (const auto& include_data : per_file_data["resolved_includes"]) {
                  auto include = include_data["include"].get<std::string>();
                  if (!isIgnoredInclude(include, ignored_includes)) {
-@@ -36,4 +41,36 @@
+@@ -36,4 +41,36 @@ std::vector<IncludeStatement> getIncludeStatements(const std::vector<std::string
      return include_statements;
  }
  
@@ -741,6 +882,7 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/include_statement.cpp b/dwy
 +
  } // namespace dwyu
 diff --git a/dwyu/cc/aspect/private/analyze_includes/include_statement.h b/dwyu/cc/aspect/private/analyze_includes/include_statement.h
+index b0697ed..a4703c2 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/include_statement.h
 +++ b/dwyu/cc/aspect/private/analyze_includes/include_statement.h
 @@ -4,6 +4,8 @@
@@ -752,7 +894,7 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/include_statement.h b/dwyu/
  #include <vector>
  
  namespace dwyu {
-@@ -19,7 +21,12 @@
+@@ -19,7 +21,12 @@ struct IncludeStatement {
  
  // Parse the result of preprocessing the individual source files of the target under inspection
  std::vector<IncludeStatement> getIncludeStatements(const std::vector<std::string>& files,
@@ -767,6 +909,7 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/include_statement.h b/dwyu/
  } // namespace dwyu
  
 diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/private/analyze_includes/main.cpp
+index d062c5b..6b3af9f 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/main.cpp
 +++ b/dwyu/cc/aspect/private/analyze_includes/main.cpp
 @@ -11,6 +11,7 @@
@@ -777,7 +920,7 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/p
  #include <vector>
  
  namespace dwyu {
-@@ -20,6 +21,8 @@
+@@ -20,6 +21,8 @@ struct ProgramOptions {
      std::string output{};
      std::string target_under_inspection{};
      std::string target_under_inspection_info{};
@@ -786,7 +929,7 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/p
      std::vector<std::string> preprocessed_public_files{};
      std::vector<std::string> preprocessed_private_files{};
      std::vector<std::string> deps{};
-@@ -43,6 +46,8 @@
+@@ -43,6 +46,8 @@ ProgramOptions parseProgramOptions(int argc, ProgramOptionsParser::ConstCharArra
      parser.addOptionValue("--target_under_inspection", options.target_under_inspection);
      // Information about target under inspection
      parser.addOptionValue("--target_under_inspection_info", options.target_under_inspection_info);
@@ -795,7 +938,7 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/p
      // Preprocessor results for all public source files of the target under inspection
      parser.addOptionList("--preprocessed_public_files", options.preprocessed_public_files);
      // Preprocessor results for all private source files of the target under inspection
-@@ -92,10 +97,32 @@
+@@ -92,10 +97,32 @@ int main_impl(const ProgramOptions& options) {
      const auto ignored_includes = getIgnoredIncludes(options.ignored_includes_config, options.extra_ignored_includes);
      auto system_under_inspection =
          getSystemUnderInspection(options.target_under_inspection_info, options.deps, options.implementation_deps);
@@ -831,7 +974,7 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/p
          evaluateIncludes(public_includes, private_includes, system_under_inspection, options.report_missing_direct_deps,
                           options.report_unused_deps, options.ignored_unused_deps, options.optimize_implementation_deps);
  
-@@ -103,9 +130,18 @@
+@@ -103,9 +130,18 @@ int main_impl(const ProgramOptions& options) {
          std::cout << result.toString(options.output) << "\n";
      }
  
@@ -852,9 +995,10 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/p
      }
      else {
 diff --git a/dwyu/cc/aspect/private/analyze_includes/result.cpp b/dwyu/cc/aspect/private/analyze_includes/result.cpp
+index 5d235c1..a4aee6e 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/result.cpp
 +++ b/dwyu/cc/aspect/private/analyze_includes/result.cpp
-@@ -39,7 +39,16 @@
+@@ -39,7 +39,16 @@ Result::Result(std::string target) : target_{std::move(target)} {}
  
  bool Result::isOk() const {
      return public_includes_without_direct_dep_.empty() && private_includes_without_direct_dep_.empty() &&
@@ -872,7 +1016,7 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/result.cpp b/dwyu/cc/aspect
  }
  
  void Result::setPublicIncludesWithoutDirectDep(std::vector<IncludeStatement> includes) {
-@@ -105,6 +114,11 @@
+@@ -105,6 +114,11 @@ std::string Result::toString(const std::string& report_path) const {
          }
      }
  
@@ -884,7 +1028,7 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/result.cpp b/dwyu/cc/aspect
      content += "\n";
      content += "DWYU Report: " + report_path + "\n";
  
-@@ -118,6 +132,7 @@
+@@ -118,6 +132,7 @@ nlohmann::json Result::toJson(const bool use_implementation_deps) const {
      data["private_includes_without_dep"] = makeMissingIncludesMap(private_includes_without_direct_dep_);
      data["unused_deps"] = unused_deps_;
      data["unused_implementation_deps"] = unused_impl_deps_;
@@ -893,9 +1037,10 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/result.cpp b/dwyu/cc/aspect
      // The fixing script has to know if it should add missing private dependencies to 'deps' or 'implementation_deps'.
      // Only cc_library targets with the 'optimize_implementation_deps' flag set to true should add missing private
 diff --git a/dwyu/cc/aspect/private/analyze_includes/result.h b/dwyu/cc/aspect/private/analyze_includes/result.h
+index 4129d2d..8696486 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/result.h
 +++ b/dwyu/cc/aspect/private/analyze_includes/result.h
-@@ -16,6 +16,7 @@
+@@ -16,6 +16,7 @@ class Result {
      explicit Result(std::string target);
  
      bool isOk() const;
@@ -903,7 +1048,7 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/result.h b/dwyu/cc/aspect/p
  
      std::string toString(const std::string& report_path) const;
      nlohmann::json toJson(bool use_implementation_deps) const;
-@@ -33,6 +34,7 @@
+@@ -33,6 +34,7 @@ class Result {
      std::vector<IncludeStatement> private_includes_without_direct_dep_;
      std::set<std::string> unused_deps_;
      std::set<std::string> unused_impl_deps_;
@@ -912,9 +1057,10 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/result.h b/dwyu/cc/aspect/p
  };
  
 diff --git a/dwyu/cc/aspect/private/preprocessing/BUILD b/dwyu/cc/aspect/private/preprocessing/BUILD
+index e914b98..96a1fc6 100644
 --- a/dwyu/cc/aspect/private/preprocessing/BUILD
 +++ b/dwyu/cc/aspect/private/preprocessing/BUILD
-@@ -2,7 +2,11 @@
+@@ -2,7 +2,11 @@ load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
  
  cc_binary(
      name = "main",
@@ -927,8 +1073,9 @@ diff --git a/dwyu/cc/aspect/private/preprocessing/BUILD b/dwyu/cc/aspect/private
      visibility = ["//visibility:public"],
      deps = [
          "//dwyu/cc/aspect/private/preprocessing/fast_parsing:process_files",
-diff --git a/dwyu/cc/aspect/private/preprocessing/compiler.h b/dwyu/cc/aspect/private/preprocessing/compiler.h
+diff --git a/modified/dwyu/cc/aspect/private/preprocessing/compiler.h b/dwyu/cc/aspect/private/preprocessing/compiler.h
 new file mode 100644
+index 0000000..f14d6ac
 --- /dev/null
 +++ b/dwyu/cc/aspect/private/preprocessing/compiler.h
 @@ -0,0 +1,212 @@
@@ -1144,8 +1291,9 @@ new file mode 100644
 +} // namespace dwyu
 +
 +#endif
-diff --git a/dwyu/cc/aspect/private/preprocessing/compiler_search.h b/dwyu/cc/aspect/private/preprocessing/compiler_search.h
+diff --git a/modified/dwyu/cc/aspect/private/preprocessing/compiler_search.h b/dwyu/cc/aspect/private/preprocessing/compiler_search.h
 new file mode 100644
+index 0000000..f5f565e
 --- /dev/null
 +++ b/dwyu/cc/aspect/private/preprocessing/compiler_search.h
 @@ -0,0 +1,203 @@
@@ -1353,6 +1501,7 @@ new file mode 100644
 +
 +#endif
 diff --git a/dwyu/cc/aspect/private/preprocessing/main.cpp b/dwyu/cc/aspect/private/preprocessing/main.cpp
+index e1818bd..0c4b58b 100644
 --- a/dwyu/cc/aspect/private/preprocessing/main.cpp
 +++ b/dwyu/cc/aspect/private/preprocessing/main.cpp
 @@ -1,3 +1,4 @@
@@ -1360,7 +1509,7 @@ diff --git a/dwyu/cc/aspect/private/preprocessing/main.cpp b/dwyu/cc/aspect/priv
  #include "dwyu/cc/aspect/private/preprocessing/fast_parsing/process_files.h"
  #include "dwyu/cc/aspect/private/preprocessing/wave/gather_direct_includes_hook.h"
  #include "dwyu/cc/aspect/private/preprocessing/wave/process_files.h"
-@@ -22,16 +23,24 @@
+@@ -22,16 +23,24 @@ namespace {
  struct ProgramOptions {
      std::vector<std::string> files{};
      std::string mode{};
@@ -1385,7 +1534,7 @@ diff --git a/dwyu/cc/aspect/private/preprocessing/main.cpp b/dwyu/cc/aspect/priv
  
      // Files which we are preprocessing
      parser.addOptionList("--files", options.files);
-@@ -43,6 +52,12 @@
+@@ -43,6 +52,12 @@ ProgramOptions parseProgramOptions(const int argc, ProgramOptionsParser::ConstCh
      parser.addOptionList("--system_include_paths", options.system_include_paths);
      // Macros defined by the CC toolchain or the user
      parser.addOptionList("--defines", options.defines);
@@ -1398,7 +1547,7 @@ diff --git a/dwyu/cc/aspect/private/preprocessing/main.cpp b/dwyu/cc/aspect/priv
      // Stores the discovered includes in this file
      parser.addOptionValue("--output", options.output);
      // Print debugging information
-@@ -88,7 +103,22 @@
+@@ -88,7 +103,22 @@ int main_impl(const ProgramOptions& options) {
          std::cout << "Defines              : " << listToStr(options.defines) << "\n";
      }
  
@@ -1423,6 +1572,7 @@ diff --git a/dwyu/cc/aspect/private/preprocessing/main.cpp b/dwyu/cc/aspect/priv
      std::ofstream output{options.output};
      if (output.is_open()) {
 diff --git a/dwyu/cc/defs.bzl b/dwyu/cc/defs.bzl
+index c7eda70..3bd3eb2 100644
 --- a/dwyu/cc/defs.bzl
 +++ b/dwyu/cc/defs.bzl
 @@ -2,7 +2,7 @@
@@ -1434,7 +1584,7 @@ diff --git a/dwyu/cc/defs.bzl b/dwyu/cc/defs.bzl
  load(
      "//dwyu/cc/cc_info_mapping:cc_info_mapping.bzl",
      _MAP_DIRECT_DEPS = "MAP_DIRECT_DEPS",
-@@ -15,3 +15,5 @@
+@@ -15,3 +15,5 @@ dwyu_cc_aspect_factory = _dwyu_cc_aspect_factory
  dwyu_make_cc_info_mapping = _dwyu_make_cc_info_mapping
  MAP_DIRECT_DEPS = _MAP_DIRECT_DEPS
  MAP_TRANSITIVE_DEPS = _MAP_TRANSITIVE_DEPS

@@ -121,6 +121,30 @@ The compile failures in Config and DoubleConverter were fixed in the binary
 verification snapshot below. These checks do not establish repository-wide
 DWYU cleanliness.
 
+### Audit the configured C++ owners
+
+On a Linux host configured for BuildBuddy, run from the workspace root:
+
+```sh
+python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match --out /tmp/clickhouse-dwyu-x86
+python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match_aarch64 --out /tmp/clickhouse-dwyu-arm
+```
+
+Each output directory must be new. `manifest.json` records owners by
+canonical label and native configuration checksum. It retains the original
+configured query, action query and build event protocol (BEP) files. The audit
+matches each original `DwyuAnalyzeTarget` action and BEP to its owner before
+using a report. A clean owner requires the actual report bytes, no missing or
+unused dependency findings, and no unverified assembly or link dependencies.
+Missing reports and untested tool configurations do not pass.
+
+The default root `//:clickhouse` covers the binary's configured graph. It
+does not cover every target in the repository. Repeat `--seed` for additional
+roots; include `--seed //:clickhouse` to keep the binary when specifying other
+roots. `--enumerate-only` and `--audit-target` collect partial results;
+eligible untested owners remain incomplete. `--config=dwyu` retains its
+existing behavior for explicitly requested targets.
+
 ## Binary comparison
 
 The current Bazel cleanup checks rebuild the selected compiler and `//:clickhouse`.
@@ -212,6 +236,7 @@ CMake hash recorded below.
 | `d7867522c` (verification snapshot) | Declare OpenSSL's used Linux headers and private included C files; keep the crypto assembly and compiler builtins dependencies | [f78509e7](https://app.buildbuddy.io/invocation/f78509e7-2ebe-4120-9093-7eeb21e3a254) | [01500365](https://app.buildbuddy.io/invocation/01500365-a053-4d91-ac1c-d87d7c523611) |
 | `2a8623ca3` (verification snapshot) | Make RangeHashed templates private to their instantiations and give URL lookup its own header; three DWYU reports recovered per CPU. Five existing Dictionaries header findings and unused deps remain | [fd1065eb](https://app.buildbuddy.io/invocation/fd1065eb-0d16-40e9-b45a-52d576d17955) | [9c3bfa49](https://app.buildbuddy.io/invocation/9c3bfa49-1f14-46b8-ae45-ce421f945a41) |
 | `97fe6288d` (verification snapshot) | Give Functions and array headers one compiled owner; remove 166 redundant forwarding deps and three unused jemalloc deps. All 13 compiled-owner reports available across both CPUs; source-free forwarders are native-only, main Functions findings remain | [883e5567](https://app.buildbuddy.io/invocation/883e5567-2a9a-45c3-932c-a7907b6ba071) | [04df3d76](https://app.buildbuddy.io/invocation/04df3d76-1f62-460b-a07e-2c5e79220ca2) |
+| `323af11bf` (verification snapshot) | Build DWYU's three C++ executables with the complete exec toolchain; collect actual reports in original native configurations | [08174423](https://app.buildbuddy.io/invocation/08174423-de64-4542-8a56-eb9481c96229) | [ae0b631e](https://app.buildbuddy.io/invocation/ae0b631e-4068-4e2d-83fd-a51332d7ec1c) |
 
 The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`
