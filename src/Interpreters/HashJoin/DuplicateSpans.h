@@ -15,7 +15,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/** Scratch for one pass of duplicate rows in a `PartitionedHashJoin` build. A pass is the inserts
+/** Scratch for one pass of duplicate rows in a `HashJoin` build. A pass is the inserts
   * between two `SpanWriter::finish` calls: one owner's partition, one drain run, or on the single
   * fill thread a run of sections up to the first one whose duplicate groups look complete
   * (`cheapToFinish`). On a key's first duplicate, the cell's previous word becomes the first item:

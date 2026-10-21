@@ -6,7 +6,6 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/HashJoin/HashJoin.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/TableLockHolder.h>
@@ -29,7 +28,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-class HashJoin;
 using StorageJoinPtr = std::shared_ptr<StorageJoin>;
 
 namespace

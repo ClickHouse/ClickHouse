@@ -1,5 +1,5 @@
 #include <Columns/ColumnsNumber.h>
-#include <Interpreters/PartitionedHashJoin/DuplicateSpans.h>
+#include <Interpreters/HashJoin/DuplicateSpans.h>
 #include <Interpreters/RowRefs.h>
 #include <Common/Arena.h>
 
@@ -257,7 +257,7 @@ TEST(RowRefListDeathTest, RangeLeavingItsBlockIsRejected)
 
 #endif
 
-/// Spans as `PartitionedHashJoin` writes them through `SpanWriter`. The cases check the reader
+/// Spans as `HashJoin` writes them through `SpanWriter`. The cases check the reader
 /// contract (`rows`, `firstWord`, the iterator) and, where a header is expected, its links.
 namespace
 {

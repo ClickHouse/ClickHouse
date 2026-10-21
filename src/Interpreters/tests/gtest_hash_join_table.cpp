@@ -12,11 +12,11 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Interpreters/PartitionedHashJoin/AmacRing.h>
-#include <Interpreters/PartitionedHashJoin/DenseHyperLogLog.h>
-#include <Interpreters/PartitionedHashJoin/JoinRouteHashing.h>
-#include <Interpreters/PartitionedHashJoin/RangeCommittedBuffer.h>
-#include <Interpreters/PartitionedHashJoin/HashJoinTable.h>
+#include <Interpreters/HashJoin/AmacRing.h>
+#include <Interpreters/HashJoin/DenseHyperLogLog.h>
+#include <Interpreters/HashJoin/JoinRouteHashing.h>
+#include <Interpreters/HashJoin/RangeCommittedBuffer.h>
+#include <Interpreters/HashJoin/HashJoinTable.h>
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
 #include <base/getPageSize.h>
@@ -354,7 +354,7 @@ TEST(HashJoinTable, RoutesMatchTablePlacement)
         const Sizes key_sizes{sizeof(UInt64)};
         PaddedPODArray<UInt16> routes(uint64_key->size());
         DenseHyperLogLog hll;
-        computeJoinRoutesForFill(HashJoin::Type::key64, key_columns, key_sizes, uint64_key->size(), nullptr, routes.data(), hll);
+        computeJoinRoutesForFill(HashJoinTypes::Type::key64, key_columns, key_sizes, uint64_key->size(), nullptr, routes.data(), hll);
         EXPECT_NEAR(hll.estimate(), static_cast<double>(uint64_key->size()), 0.05 * static_cast<double>(uint64_key->size()));
 
         for (const size_t bits : {1uz, 9uz, 15uz})
@@ -386,7 +386,7 @@ TEST(HashJoinTable, RoutesMatchTablePlacement)
         const Sizes key_sizes{0};
         PaddedPODArray<UInt16> routes(rows);
         DenseHyperLogLog hll;
-        computeJoinRoutesForFill(HashJoin::Type::key_string, key_columns, key_sizes, rows, nullptr, routes.data(), hll);
+        computeJoinRoutesForFill(HashJoinTypes::Type::key_string, key_columns, key_sizes, rows, nullptr, routes.data(), hll);
 
         constexpr size_t bits = 7;
         StringTable table(/*size_degree_=*/16, bits);
@@ -402,7 +402,7 @@ TEST(HashJoinTable, RoutesMatchTablePlacement)
 TEST(HashJoinTable, RoutesMatchWithoutSketch)
 {
     const std::array<UInt8, 6> skip{0, 1, 0, 0, 1, 0};
-    const auto check = [&](HashJoin::Type type, const IColumn & key, size_t key_size, bool fixed)
+    const auto check = [&](HashJoinTypes::Type type, const IColumn & key, size_t key_size, bool fixed)
     {
         const ColumnRawPtrs key_columns{&key};
         const Sizes key_sizes{key_size};
@@ -420,7 +420,7 @@ TEST(HashJoinTable, RoutesMatchWithoutSketch)
     auto strings = ColumnString::create();
     for (const auto & value : {"alpha", "skip-one", "beta", "gamma", "skip-two", "delta"})
         strings->insertData(value, strlen(value));
-    check(HashJoin::Type::key_string, *strings, /*key_size=*/0, /*fixed=*/false);
+    check(HashJoinTypes::Type::key_string, *strings, /*key_size=*/0, /*fixed=*/false);
 
     auto key8 = ColumnUInt8::create();
     auto key16 = ColumnUInt16::create();
@@ -429,8 +429,8 @@ TEST(HashJoinTable, RoutesMatchWithoutSketch)
         key8->insertValue(static_cast<UInt8>(key));
         key16->insertValue(static_cast<UInt16>(key));
     }
-    check(HashJoin::Type::key8, *key8, sizeof(UInt8), /*fixed=*/true);
-    check(HashJoin::Type::key16, *key16, sizeof(UInt16), /*fixed=*/true);
+    check(HashJoinTypes::Type::key8, *key8, sizeof(UInt8), /*fixed=*/true);
+    check(HashJoinTypes::Type::key16, *key16, sizeof(UInt16), /*fixed=*/true);
 }
 
 /// Every row completes exactly once, whether the run has no rows, stays in the drain (fewer rows than

@@ -1,7 +1,7 @@
 #include <Interpreters/SpillingHashJoin.h>
 
 #include <Interpreters/GraceHashJoin.h>
-#include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
+#include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/TableJoin.h>
 #include <Common/ProfileEvents.h>
@@ -39,7 +39,7 @@ SpillingHashJoin::SpillingHashJoin(
     , max_bytes_before_external_join(table_join->maxBytesBeforeExternalJoin())
     , max_threads(std::max<size_t>(1, num_threads_))
 {
-    partitioned_join = std::make_shared<PartitionedHashJoin>(
+    partitioned_join = std::make_shared<HashJoin>(
         table_join,
         right_sample_block_,
         max_threads,
@@ -273,7 +273,7 @@ void SpillingHashJoin::onBuildPhaseFinish()
             /// `planPostBuild` then judges the resident set against the budget.
             partitioned_join->onBuildPhaseFinish();
             const auto plan = partitioned_join->planPostBuild();
-            if (plan == PartitionedHashJoin::PostBuildPlan::MustSpill)
+            if (plan == HashJoin::PostBuildPlan::MustSpill)
             {
                 ProfileEvents::increment(ProfileEvents::JoinSpillingHashJoinSwitchedToGraceJoin);
 
@@ -310,7 +310,7 @@ void SpillingHashJoin::onBuildPhaseFinish()
             {
                 LOG_DEBUG(
                     log,
-                    "All blocks fit in memory ({} bytes, {} rows), promoting PartitionedHashJoin",
+                    "All blocks fit in memory ({} bytes, {} rows), promoting HashJoin",
                     partitioned_join->getTotalByteCount(),
                     partitioned_join->getTotalRowCount());
                 chosen_join = partitioned_join;

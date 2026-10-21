@@ -1,5 +1,5 @@
 -- `GraceHashJoin` builds every bucket in an in-memory join. When `join_algorithm` lists
--- `hash` and the shape allows it, that join is a `PartitionedHashJoin`: when `grace_hash`
+-- `hash` and the shape allows it, that join is a `HashJoin`: when `grace_hash`
 -- is chosen outright, and when the spilling wrapper of `hash` switches to grace under
 -- `max_bytes_before_external_join`. Either way the result must be what the in-memory join returns. The bucket
 -- limits are tight enough to make the first bucket rebucket (which hands its blocks back out of the

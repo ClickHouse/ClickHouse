@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Interpreters/HashJoin/HashJoin.h>
-#include <Interpreters/PartitionedHashJoin/RangeCommittedBuffer.h>
+#include <Interpreters/HashJoin/HashJoinTypes.h>
+#include <Interpreters/HashJoin/RangeCommittedBuffer.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashMap.h>
@@ -22,7 +22,7 @@ extern const int UNSUPPORTED_JOIN_KEYS;
 extern const int LOGICAL_ERROR;
 }
 
-/// What a partitioned build can produce: `HashJoin::Type` without the `range*` types, which no build
+/// What a partitioned build can produce: `HashJoinTypes::Type` without the `range*` types, which no build
 /// creates directly.
 #define APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M) \
     M(key8) \
@@ -51,7 +51,7 @@ extern const int LOGICAL_ERROR;
     M(range17_key64) \
     M(range18_key64)
 
-/// Every table a built join may hold - every `HashJoin::Type` - which is what the probe, the non-joined
+/// Every table a built join may hold - every `HashJoinTypes::Type` - which is what the probe, the non-joined
 /// scan and the accounting dispatch over.
 #define APPLY_FOR_PARTITIONED_JOIN_TABLES(M) \
     APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M) \
@@ -85,8 +85,8 @@ ALWAYS_INLINE inline UInt64 hashJoinTableMix(size_t hash_value)
   * The table may grow in place during post-build (a new buffer, same object, same partition bits).
   * The probe is the standard linear walk over one `{buf, mask}` pair, wrapping at the end of the buffer.
   *
-  * `Cell` and `Hash` are the standard join map's, taken from `HashJoin::MapsTemplate`. The cells
-  * are bit-identical to `HashJoin`'s. Every key getter works on this table unchanged: it provides
+  * `Cell` and `Hash` are the standard join map's, taken from `HashJoinTypes::MapsTemplate`. The cells
+  * are bit-identical to that map's. Every key getter works on this table unchanged: it provides
   * `find`, `offsetInternal`, `prefetch` and the type aliases `ColumnsHashing` reads. The partitioned
   * build does not `emplace`: it claims cells through `claim` under its own ownership protocol. The
   * table's size is published once at the end. `emplace` exists for the Join table engine alone, whose
@@ -492,8 +492,8 @@ struct TableFor<FixedHashMap<Key, Mapped, Cell, Size, Alloc, size_bits>>
 
 }
 
-/** The build's tables for one mapped-value type: one member per supported `HashJoin::Type`, exactly one
-  * of them created. Every member type is derived from `HashJoin::MapsTemplate`. A master-side change of
+/** The build's tables for one mapped-value type: one member per supported `HashJoinTypes::Type`, exactly one
+  * of them created. Every member type is derived from `HashJoinTypes::MapsTemplate`. A master-side change of
   * a cell type or hash therefore propagates here, and an incompatible restructuring breaks the build
   * instead of silently diverging.
   */
@@ -501,7 +501,7 @@ template <typename Mapped>
 struct HashJoinTableMapsTemplate
 {
 private:
-    using StandardMaps = HashJoin::MapsTemplate<Mapped>;
+    using StandardMaps = HashJoinTypes::MapsTemplate<Mapped>;
 
 public:
     /// NOLINTBEGIN(bugprone-macro-parentheses)
@@ -560,48 +560,48 @@ private:
 public:
     /// The bytes of a table with `2^size_degree` cells. For plans that widened the degree beyond what
     /// `reserve` asks for: the plan keeps at least 2^10 cells per partition range.
-    static size_t bufferBytesForDegree(HashJoin::Type which, size_t size_degree)
+    static size_t bufferBytesForDegree(HashJoinTypes::Type which, size_t size_degree)
     {
         switch (which)
         {
 #define M(NAME) \
-    case HashJoin::Type::NAME: return bufferBytesForDegreeFor<typename decltype(HashJoinTableMapsTemplate::NAME)::element_type>(size_degree);
+    case HashJoinTypes::Type::NAME: return bufferBytesForDegreeFor<typename decltype(HashJoinTableMapsTemplate::NAME)::element_type>(size_degree);
             APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
 #undef M
             default: throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys for the partitioned join (type: {})", which);
         }
     }
 
-    size_t maxFill(HashJoin::Type which) const
+    size_t maxFill(HashJoinTypes::Type which) const
     {
         switch (which)
         {
 #define M(NAME) \
-    case HashJoin::Type::NAME: return NAME ? maxFillOf(*NAME) : 0;
+    case HashJoinTypes::Type::NAME: return NAME ? maxFillOf(*NAME) : 0;
             APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
         }
     }
 
     /// The buffer degree the table for `reserve` keys gets (0 for the fixed-size types).
-    static size_t sizeDegree(HashJoin::Type which, size_t reserve)
+    static size_t sizeDegree(HashJoinTypes::Type which, size_t reserve)
     {
         switch (which)
         {
 #define M(NAME) \
-    case HashJoin::Type::NAME: return sizeDegreeFor<typename decltype(HashJoinTableMapsTemplate::NAME)::element_type>(reserve);
+    case HashJoinTypes::Type::NAME: return sizeDegreeFor<typename decltype(HashJoinTableMapsTemplate::NAME)::element_type>(reserve);
             APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
 #undef M
             default: throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys for the partitioned join (type: {})", which);
         }
     }
 
-    static size_t cellBytes(HashJoin::Type which)
+    static size_t cellBytes(HashJoinTypes::Type which)
     {
         switch (which)
         {
 #define M(NAME) \
-    case HashJoin::Type::NAME: return sizeof(typename decltype(HashJoinTableMapsTemplate::NAME)::element_type::cell_type);
+    case HashJoinTypes::Type::NAME: return sizeof(typename decltype(HashJoinTableMapsTemplate::NAME)::element_type::cell_type);
             APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
 #undef M
             default: throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys for the partitioned join (type: {})", which);
@@ -610,12 +610,12 @@ public:
 
     /// Creates the one table: a `HashJoinTable` of `2^size_degree` cells in `2^partition_bits` ranges, or the
     /// fixed map, whose partition count is always one.
-    void create(HashJoin::Type which, size_t size_degree, size_t partition_bits)
+    void create(HashJoinTypes::Type which, size_t size_degree, size_t partition_bits)
     {
         switch (which)
         {
 #define M(NAME) \
-    case HashJoin::Type::NAME: { \
+    case HashJoinTypes::Type::NAME: { \
         using Table = typename decltype(NAME)::element_type; \
         if constexpr (is_hash_join_table<Table>) \
             NAME = std::make_shared<Table>(size_degree, partition_bits); \
@@ -629,45 +629,45 @@ public:
         }
     }
 
-    size_t getTotalRowCount(HashJoin::Type which) const
+    size_t getTotalRowCount(HashJoinTypes::Type which) const
     {
         switch (which)
         {
 #define M(NAME) \
-    case HashJoin::Type::NAME: return NAME ? NAME->size() : 0;
+    case HashJoinTypes::Type::NAME: return NAME ? NAME->size() : 0;
             APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
         }
     }
 
-    size_t getBufferSizeInBytes(HashJoin::Type which) const
+    size_t getBufferSizeInBytes(HashJoinTypes::Type which) const
     {
         switch (which)
         {
 #define M(NAME) \
-    case HashJoin::Type::NAME: return NAME ? NAME->getBufferSizeInBytes() : 0;
+    case HashJoinTypes::Type::NAME: return NAME ? NAME->getBufferSizeInBytes() : 0;
             APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
         }
     }
 
-    size_t getBufferSizeInCells(HashJoin::Type which) const
+    size_t getBufferSizeInCells(HashJoinTypes::Type which) const
     {
         switch (which)
         {
 #define M(NAME) \
-    case HashJoin::Type::NAME: return NAME ? NAME->getBufferSizeInCells() : 0;
+    case HashJoinTypes::Type::NAME: return NAME ? NAME->getBufferSizeInCells() : 0;
             APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
         }
     }
 
-    size_t getReservedBufferBytes(HashJoin::Type which) const
+    size_t getReservedBufferBytes(HashJoinTypes::Type which) const
     {
         switch (which)
         {
 #define M(NAME) \
-    case HashJoin::Type::NAME: return NAME ? reservedBufferBytesOf(*NAME) : 0;
+    case HashJoinTypes::Type::NAME: return NAME ? reservedBufferBytesOf(*NAME) : 0;
             APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
         }
@@ -686,13 +686,13 @@ using HashJoinTableMapsAsof = HashJoinTableMapsTemplate<AsofRowRefs>;
     static_assert( \
         std::is_same_v< \
             typename decltype(HashJoinTableMapsOne::NAME)::element_type::cell_type, \
-            typename decltype(HashJoin::MapsOne::NAME)::element_type::cell_type> \
+            typename decltype(HashJoinTypes::MapsOne::NAME)::element_type::cell_type> \
             && std::is_same_v< \
                 typename decltype(HashJoinTableMapsAll::NAME)::element_type::cell_type, \
-                typename decltype(HashJoin::MapsAll::NAME)::element_type::cell_type> \
+                typename decltype(HashJoinTypes::MapsAll::NAME)::element_type::cell_type> \
             && std::is_same_v< \
                 typename decltype(HashJoinTableMapsAsof::NAME)::element_type::cell_type, \
-                typename decltype(HashJoin::MapsAsof::NAME)::element_type::cell_type>, \
+                typename decltype(HashJoinTypes::MapsAsof::NAME)::element_type::cell_type>, \
         "HashJoinTable cells must be identical to the standard join map cells");
 APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
@@ -703,22 +703,22 @@ template <typename StandardMaps>
 struct HashJoinTableMapsFor;
 
 template <>
-struct HashJoinTableMapsFor<HashJoin::MapsOne>
+struct HashJoinTableMapsFor<HashJoinTypes::MapsOne>
 {
     using Type = HashJoinTableMapsOne;
 };
 template <>
-struct HashJoinTableMapsFor<HashJoin::MapsAll>
+struct HashJoinTableMapsFor<HashJoinTypes::MapsAll>
 {
     using Type = HashJoinTableMapsAll;
 };
 template <>
-struct HashJoinTableMapsFor<HashJoin::MapsAsof>
+struct HashJoinTableMapsFor<HashJoinTypes::MapsAsof>
 {
     using Type = HashJoinTableMapsAsof;
 };
 
-/** A variant over the three mapped-value types whose active alternative mirrors the inner `HashJoin`'s
+/** A variant over the three mapped-value types whose active alternative mirrors the join's
   * own `MapsVariant`. Build and probe agree with the standard machinery about which maps type a
   * given (kind, strictness) uses.
   */
@@ -726,16 +726,16 @@ struct HashJoinTableMaps
 {
     using Variant = std::variant<HashJoinTableMapsOne, HashJoinTableMapsAll, HashJoinTableMapsAsof>;
 
-    /// Index-compatible with `HashJoin::MapsVariant` - the active alternative is selected by that
-    /// variant's index. `HashJoin::MapsSet` (index 3) is the one alternative without a counterpart here:
-    /// its key-only tables are hash sets, not the hash maps the traits rebind. The inner `HashJoin` is
-    /// therefore built with `allow_set_maps_ = false`. It never selects one.
+    /// Index-compatible with `HashJoinTypes::MapsVariant` - the active alternative is selected by that
+    /// variant's index. `HashJoinTypes::MapsSet` (index 3) is the one alternative without a counterpart here:
+    /// its key-only tables are hash sets, not the hash maps the traits rebind. The join therefore
+    /// sets `allow_set_maps` to false. It never selects one.
     static_assert(
-        std::is_same_v<std::variant_alternative_t<0, HashJoin::MapsVariant>, HashJoin::MapsOne>
-        && std::is_same_v<std::variant_alternative_t<1, HashJoin::MapsVariant>, HashJoin::MapsAll>
-        && std::is_same_v<std::variant_alternative_t<2, HashJoin::MapsVariant>, HashJoin::MapsAsof>
-        && std::is_same_v<std::variant_alternative_t<3, HashJoin::MapsVariant>, HashJoin::MapsSet>
-        && std::variant_size_v<HashJoin::MapsVariant> == 4);
+        std::is_same_v<std::variant_alternative_t<0, HashJoinTypes::MapsVariant>, HashJoinTypes::MapsOne>
+        && std::is_same_v<std::variant_alternative_t<1, HashJoinTypes::MapsVariant>, HashJoinTypes::MapsAll>
+        && std::is_same_v<std::variant_alternative_t<2, HashJoinTypes::MapsVariant>, HashJoinTypes::MapsAsof>
+        && std::is_same_v<std::variant_alternative_t<3, HashJoinTypes::MapsVariant>, HashJoinTypes::MapsSet>
+        && std::variant_size_v<HashJoinTypes::MapsVariant> == 4);
 
     Variant maps;
 
@@ -750,12 +750,12 @@ struct HashJoinTableMaps
         }
     }
 
-    static bool isSupportedType(HashJoin::Type which)
+    static bool isSupportedType(HashJoinTypes::Type which)
     {
         switch (which)
         {
 #define M(NAME) \
-    case HashJoin::Type::NAME: return true;
+    case HashJoinTypes::Type::NAME: return true;
             APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
 #undef M
             default: return false;
@@ -764,12 +764,12 @@ struct HashJoinTableMaps
 
     /// A `FixedHashMap` buffer does not depend on the build size. Partitioning cannot shrink it,
     /// and such plans always run as a single partition.
-    static bool isFixedSizeType(HashJoin::Type which)
+    static bool isFixedSizeType(HashJoinTypes::Type which)
     {
         switch (which)
         {
 #define M(NAME) \
-    case HashJoin::Type::NAME: return !is_hash_join_table<typename decltype(HashJoinTableMapsAll::NAME)::element_type>;
+    case HashJoinTypes::Type::NAME: return !is_hash_join_table<typename decltype(HashJoinTableMapsAll::NAME)::element_type>;
             APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
         }
@@ -777,12 +777,12 @@ struct HashJoinTableMaps
 
     /// The bytes the table for `reserve` keys will take: the standard grower's rounding of `reserve`
     /// (`sizeDegree`), then the buffer of that degree.
-    static size_t predictedBufferBytes(size_t standard_variant_index, HashJoin::Type which, size_t reserve)
+    static size_t predictedBufferBytes(size_t standard_variant_index, HashJoinTypes::Type which, size_t reserve)
     {
         return bufferBytesForDegree(standard_variant_index, which, sizeDegree(standard_variant_index, which, reserve));
     }
 
-    static size_t sizeDegree(size_t standard_variant_index, HashJoin::Type which, size_t reserve)
+    static size_t sizeDegree(size_t standard_variant_index, HashJoinTypes::Type which, size_t reserve)
     {
         switch (standard_variant_index)
         {
@@ -793,7 +793,7 @@ struct HashJoinTableMaps
         }
     }
 
-    static size_t cellBytes(size_t standard_variant_index, HashJoin::Type which)
+    static size_t cellBytes(size_t standard_variant_index, HashJoinTypes::Type which)
     {
         switch (standard_variant_index)
         {
@@ -804,7 +804,7 @@ struct HashJoinTableMaps
         }
     }
 
-    static size_t bufferBytesForDegree(size_t standard_variant_index, HashJoin::Type which, size_t size_degree)
+    static size_t bufferBytesForDegree(size_t standard_variant_index, HashJoinTypes::Type which, size_t size_degree)
     {
         switch (standard_variant_index)
         {
@@ -815,32 +815,32 @@ struct HashJoinTableMaps
         }
     }
 
-    void create(HashJoin::Type which, size_t size_degree, size_t partition_bits)
+    void create(HashJoinTypes::Type which, size_t size_degree, size_t partition_bits)
     {
         std::visit([&](auto & shape) { shape.create(which, size_degree, partition_bits); }, maps);
     }
 
-    size_t getTotalRowCount(HashJoin::Type which) const
+    size_t getTotalRowCount(HashJoinTypes::Type which) const
     {
         return std::visit([&](const auto & shape) { return shape.getTotalRowCount(which); }, maps);
     }
 
-    size_t getBufferSizeInBytes(HashJoin::Type which) const
+    size_t getBufferSizeInBytes(HashJoinTypes::Type which) const
     {
         return std::visit([&](const auto & shape) { return shape.getBufferSizeInBytes(which); }, maps);
     }
 
-    size_t getBufferSizeInCells(HashJoin::Type which) const
+    size_t getBufferSizeInCells(HashJoinTypes::Type which) const
     {
         return std::visit([&](const auto & shape) { return shape.getBufferSizeInCells(which); }, maps);
     }
 
-    size_t getReservedBufferBytes(HashJoin::Type which) const
+    size_t getReservedBufferBytes(HashJoinTypes::Type which) const
     {
         return std::visit([&](const auto & shape) { return shape.getReservedBufferBytes(which); }, maps);
     }
 
-    size_t maxFill(HashJoin::Type which) const
+    size_t maxFill(HashJoinTypes::Type which) const
     {
         return std::visit([&](const auto & shape) { return shape.maxFill(which); }, maps);
     }

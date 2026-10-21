@@ -1,6 +1,6 @@
 -- `join_algorithm = 'auto'` runs `JoinSwitcher`: an in-memory join that drains onto `MergeJoin` once the
 -- right side exceeds `max_rows_in_join` or `max_bytes_in_join`. When the list names `hash` as
--- well, the in-memory join is a `PartitionedHashJoin`, and a shape `MergeJoin` declines runs the
+-- well, the in-memory join is a `HashJoin`, and a shape `MergeJoin` declines runs the
 -- partitioned join alone. A join that stays in memory and one that switches must both return what
 -- `hash` returns. The log checks at the end assert that the partitioned join built every in-memory case
 -- and that every switch started from it.
@@ -66,7 +66,7 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comm
 SELECT '-- every switching query started from the partitioned join';
 SELECT count() > 0, count() = (
     SELECT uniqExact(query_id) FROM system.text_log
-    WHERE logger_name = 'JoinSwitcher' AND message LIKE 'Memory limit reached with PartitionedHashJoin%'
+    WHERE logger_name = 'JoinSwitcher' AND message LIKE 'Memory limit reached with HashJoin%'
         AND query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05220 auto switch'))
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05220 auto switch';
