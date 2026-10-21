@@ -27,3 +27,62 @@ SELECT count() FROM t_json_idx WHERE j.k = '42';
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT j FROM t_json_idx WHERE j['k'] = '42') WHERE explain LIKE '%j.@`k`%' OR explain LIKE '%j.@k%';
 
 DROP TABLE t_json_idx;
+
+-- Chained access over typed JSON / Map subcolumns on indexed JSON column
+DROP TABLE IF EXISTS t_json_chained;
+CREATE TABLE t_json_chained
+(
+    id UInt64,
+    j JSON(a JSON),
+    INDEX idx_paths JSONAllPaths(j) TYPE bloom_filter
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO t_json_chained VALUES (1, '{"a":{"b":42}}');
+
+SELECT j['a']['b'] FROM t_json_chained SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT j['a']['b'] FROM t_json_chained SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT count() FROM t_json_chained WHERE j['a']['b'] = 42 SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT count() FROM t_json_chained WHERE j['a']['b'] = 42 SETTINGS optimize_functions_to_subcolumns = 1;
+
+DROP TABLE t_json_chained;
+
+DROP TABLE IF EXISTS t_json_map_chained;
+CREATE TABLE t_json_map_chained
+(
+    id UInt64,
+    j JSON(a Map(String, UInt64)),
+    INDEX idx_paths JSONAllPaths(j) TYPE bloom_filter
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO t_json_map_chained VALUES (1, '{"a":{"b":42}}');
+
+SELECT j['a']['b'] FROM t_json_map_chained SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT j['a']['b'] FROM t_json_map_chained SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT count() FROM t_json_map_chained WHERE j['a']['b'] = 42 SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT count() FROM t_json_map_chained WHERE j['a']['b'] = 42 SETTINGS optimize_functions_to_subcolumns = 1;
+
+DROP TABLE t_json_map_chained;
+
+-- Pruning for subscript primary keys and secondary indices
+DROP TABLE IF EXISTS t_json_pk_idx;
+CREATE TABLE t_json_pk_idx
+(
+    id UInt64,
+    j JSON(k UInt64),
+    INDEX idx_k j['k'] TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY j['k']
+SETTINGS index_granularity = 1;
+
+INSERT INTO t_json_pk_idx SELECT number, concat('{"k":', toString(number), '}')::JSON FROM numbers(100);
+
+-- Secondary index pruning survives when j['k'] defines the index
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_json_pk_idx WHERE j['k'] = 42) WHERE explain LIKE '%idx_k%' AND explain LIKE '%1/100%';
+
+-- Primary key pruning survives when j['k'] defines the primary key
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_json_pk_idx WHERE j['k'] = 42) WHERE explain LIKE '%Condition:%' AND NOT (explain LIKE '%Condition: true%');
+
+DROP TABLE t_json_pk_idx;
+
