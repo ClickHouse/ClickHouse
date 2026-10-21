@@ -219,6 +219,40 @@ python -m ci.praktika run "Build (amd_debug)"
 ```
 
 If the above approach does not work for you, use the cmake options from the build log and follow the [general build process](/resources/develop-contribute/build/build).
+
+## Clang-tidy checks {#clang-tidy-checks}
+
+Two jobs run `clang-tidy` with the checks configured in the `.clang-tidy` file at the repository root.
+
+`Build (arm_tidy, i/N)` analyzes every translation unit in the tree, split into shards.
+It is thorough, but it takes hours, which is why it is not part of the merge queue -- and why a pull request that was green on its own can still break `clang-tidy` on `master` once it is merged on top of changes that landed after its last run.
+
+`Clang-tidy (changed files)` is the merge-queue counterpart.
+It configures the same build, but analyzes only the translation units the pull request touches: the changed `.cpp` files, and for a changed header either the `.cpp` file of the same name or, when the header has none, a few of the translation units that include it, directly or through other headers.
+A changed C++ fragment that translation units include, such as a `.inc` or `.txx` file, is checked through a few of its includers as well; `clang-tidy` reports no findings located in such a file, so only their compile errors and their own findings are reported for it.
+Like the full job, it analyzes only the targets that enable `clang-tidy`: a changed source of Poco, for instance, is not analyzed, while a changed Poco header is checked through the analyzed translation units that include it.
+It reports only the diagnostics located in the changed files, so a diagnostic that was already present on `master` cannot fail an unrelated pull request; a compiler error is reported wherever it occurs, because the translation unit was not analyzed.
+That narrower scope is the trade-off: a change to a widely included header is only spot-checked here, and the full job is what covers the rest of the tree.
+A change to an input of a code generator, such as a `.proto` file, a FlatBuffers `.fbs` schema, a `configure_file` template like `config.h.in`, or the embedded web UI resources, is checked through a few of the files that include the generated header, as if those files had changed.
+A `configure_file` template of a translation unit, such as `config_version.cpp.in`, is checked by analyzing the translation unit generated from it.
+In `contrib`, only the generator inputs and submodules the check lists explicitly are covered: the Prometheus protocol buffers, for instance, through a few includers of the generated headers, and the Arrow and LLVM submodules and their CMake configuration through every analyzed file that directly includes one of their `<arrow/...>`, `<parquet/...>` or `<llvm/...>` headers. Any other change to `contrib` is left to the full job.
+A change to the `clang-tidy` configuration, to the check itself, or to the definition of the job touches no translation unit, so instead it analyzes a small fixed set of translation units and reports every diagnostic found in them.
+A change to a directory-local `.clang-tidy` file, such as `src/Functions/.clang-tidy`, is checked the same way on a translation unit beneath that directory.
+A change to the check itself additionally runs a self-test of how it selects translation units and attributes diagnostics, and analyzes a representative changed header and a representative generator input as if the pull request had changed them.
+
+Both jobs can be run locally:
+
+```bash
+python -m ci.praktika run "Clang-tidy (changed files)" --workflow MergeQueueCI --pr <PR number>
+```
+
+The limited check is registered only in the `MergeQueueCI` workflow, and it derives what to analyze from the files changed by the pull request given with `--pr`, so run it from the branch of that pull request.
+A single file can also be checked directly against a configured build directory:
+
+```bash
+clang-tidy -p ci/tmp/build src/Common/StringUtils.cpp
+```
+
 ## Functional stateless tests {#functional-stateless-tests}
 
 Runs [stateless functional tests](/resources/develop-contribute/contribute/tests#functional-tests) for ClickHouse binaries built in various configurations -- release, debug, with sanitizers, etc.
