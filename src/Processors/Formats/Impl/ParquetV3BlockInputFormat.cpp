@@ -75,8 +75,9 @@ static std::optional<AccessTypeObjects::Source> getColumnsCacheSource(ObjectStor
 
 /// The columns cache options for reading a file, or nullptr if the read does not use the cache.
 /// The cache is used only for a file whose content is identified by a strong version token:
-/// an ETag of an object in an object storage, or the version token of a local file once it has
-/// settled (see `StorageFile`), the same as for the userspace page cache. The file must also be
+/// an ETag of an object in an object storage, the identity of an immutable file recorded by its
+/// table, or the version token of a local file once it has settled (see `StorageFile`), the same
+/// as for the userspace page cache. The file must also be
 /// identified among all storages, see `RelativePathWithMetadata::path_for_content_cache`.
 static std::shared_ptr<const Parquet::ColumnsCacheOptions> getColumnsCacheOptions(
     const ContextPtr & context, const FormatSettings & format_settings, const std::optional<RelativePathWithMetadata> & object_with_metadata)
