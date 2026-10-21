@@ -281,6 +281,10 @@ namespace
             auto indexes_column = ColumnUInt64::create(input_rows_count);
             auto & indexes = indexes_column->getData();
 
+            /// The value under a NULL is ignored.
+            const auto & null_map = in.getNullMapData();
+            const size_t null_idx = cache->null_from_idx.value_or(not_found);
+
             const IColumn & nested = in.getNestedColumn();
             if (cache->table_num_to_idx)
             {
@@ -298,18 +302,15 @@ namespace
                     && !lookupNum<ColumnDecimal<Decimal64>>(nested, indexes, not_found))
                     throw Exception(
                         ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", in.getName(), getName());
+
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    if (null_map[i])
+                        indexes[i] = null_idx;
             }
             else if (const auto * nested_string = checkAndGetColumn<ColumnString>(&nested))
-                lookupString(*nested_string, indexes, not_found);
+                lookupString(*nested_string, null_map, null_idx, indexes, not_found);
             else
-                lookupString(nested, indexes, not_found);
-
-            /// The value under a NULL is ignored.
-            const auto & null_map = in.getNullMapData();
-            const size_t null_idx = cache->null_from_idx.value_or(not_found);
-            for (size_t i = 0; i < input_rows_count; ++i)
-                if (null_map[i])
-                    indexes[i] = null_idx;
+                lookupString(nested, null_map, null_idx, indexes, not_found);
 
             if (cache->to_column_with_default)
                 return cache->to_column_with_default->index(*indexes_column, 0);
@@ -345,11 +346,17 @@ namespace
         }
 
         template <typename Column>
-        void lookupString(const Column & column, PaddedPODArray<UInt64> & indexes, size_t not_found) const
+        void lookupString(
+            const Column & column, const NullMap & null_map, size_t null_idx, PaddedPODArray<UInt64> & indexes, size_t not_found) const
         {
             const auto & table = *cache->table_string_to_idx;
             for (size_t i = 0; i < column.size(); ++i)
             {
+                if (null_map[i])
+                {
+                    indexes[i] = null_idx;
+                    continue;
+                }
                 const auto * it = table.find(column.getDataAt(i));
                 indexes[i] = it ? it->getMapped() : not_found;
             }
