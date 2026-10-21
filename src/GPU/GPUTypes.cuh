@@ -1,6 +1,6 @@
 #pragma once
 
-#include <rmm/cuda_stream_view.hpp>
+#include <GPU/CCCL.h>
 
 #include <cuda_runtime_api.h>
 
