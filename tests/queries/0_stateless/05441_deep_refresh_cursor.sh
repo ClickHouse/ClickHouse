@@ -8,15 +8,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 DEEP_PATH="a$(printf '.a%.0s' {1..100000})"
-${CLICKHOUSE_CLIENT} --max_query_size 10000000 --query "SELECT 1 FROM system.one STREAM CURSOR {'${DEEP_PATH}': 1}" 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
+echo "SELECT 1 FROM system.one STREAM CURSOR {'${DEEP_PATH}': 1}" | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&max_query_size=10000000" --data-binary @- | grep -o -m1 'BAD_ARGUMENTS'
 
 TABLE_PATH="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_deep_refresh_cursor/"
 rm -rf "${TABLE_PATH}"
 
 ${CLICKHOUSE_CLIENT} --query "
-    CREATE TABLE src (id UInt64) ENGINE = MergeTree ORDER BY id
+    CREATE TABLE src (id Int64) ENGINE = MergeTree ORDER BY id
         SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
-    CREATE TABLE tgt (id UInt64) ENGINE = IcebergLocal('${TABLE_PATH}');
+    CREATE TABLE tgt (id Int64) ENGINE = IcebergLocal('${TABLE_PATH}');
     CREATE MATERIALIZED VIEW mv REFRESH EVERY 1 YEAR APPEND INCREMENTAL TO tgt EMPTY AS SELECT id FROM src;
     INSERT INTO src VALUES (1), (2);
     SYSTEM REFRESH VIEW mv;
