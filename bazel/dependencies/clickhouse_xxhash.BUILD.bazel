@@ -14,16 +14,13 @@ ch_cc_library(
     srcs = [
         "xxhash.c",
     ],
-    hdrs = glob([
-        "**/*.h",
-        "**/*.hh",
-    ]),
+    hdrs = ["xxhash.h", "xxh3.h"],
     copts = [
         "-w",
         "-std=gnu11",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
+    libcxx_headers = False,
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "XXH_INLINE_ALL",

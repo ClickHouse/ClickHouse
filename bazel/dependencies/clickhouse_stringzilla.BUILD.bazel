@@ -9,19 +9,14 @@ exports_files([
 ch_cc_library(
     name = "_stringzilla",
     srcs = glob(["c/stringzilla/*.c"]) + glob(["c/stringzilla/**/*.h"]),
-    hdrs = glob([
-        "include/**/*.h",
-        "include/**/*.hpp",
-    ]),
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    hdrs = glob(["include/stringzilla/**/*.h", "include/stringzilla/**/*.hpp"]),
+    copts = ["-w"],
+    conlyopts = ["-std=gnu11"],
     includes = [
         "include",
     ],
     language = "C",
+    libcxx_headers = False,
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "SZ_AVOID_LIBC=0",
