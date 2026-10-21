@@ -13,6 +13,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/SetUtils.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
 #include <Interpreters/misc.h>
@@ -206,6 +207,14 @@ private:
                 has_totals_in_group_by = typed_query_node.isGroupByWithTotals();
                 /// A subquery with `WITH TOTALS`, a view or a remote table may produce a totals row.
                 has_totals_in_join_tree = queryHasWithTotalsInAnySubqueryInJoinTree(node) || readsViewOrRemoteStorage(typed_query_node.getJoinTreeNode());
+                has_correlated_join_tree = std::ranges::any_of(
+                    extractTableExpressions(typed_query_node.getJoinTreeNodeTyped(), /*add_array_join=*/ false, /*recursive=*/ true),
+                    [](const TableExpressionNodePtr & table_expression)
+                    {
+                        const auto * query = table_expression->as<QueryNode>();
+                        const auto * union_node = table_expression->as<UnionNode>();
+                        return (query && query->isCorrelated()) || (union_node && union_node->isCorrelated());
+                    });
             }
             return;
         }
@@ -247,11 +256,12 @@ private:
     }
 
     /// Whether this `IN` can become a join. A join can not match a totals row and in a correlated query only
-    /// `WHERE` qualifies, because decorrelation does not support a join above the correlated filter.
+    /// `WHERE` over an uncorrelated join tree qualifies, because decorrelation does not support a join above
+    /// a correlated step.
     bool isUnblockedJoinRewriteScope(const QueryTreeNodePtr & node) const
     {
         return query_node && !blocked_in_subqueries.contains(node.get()) && !has_totals_in_join_tree
-            && (!query_node->as<const QueryNode &>().isCorrelated() || where);
+            && (!query_node->as<const QueryNode &>().isCorrelated() || (where && !has_correlated_join_tree));
     }
 
     /// Whether the planner adds the joins of an `IN` in this clause of the query below the step that computes it.
@@ -302,6 +312,8 @@ private:
     bool has_totals_in_group_by = false;
     /// Whether the input of the query already carries a totals row.
     bool has_totals_in_join_tree = false;
+    /// Whether a subquery in the join tree reads a column of an outer query.
+    bool has_correlated_join_tree = false;
     /// The `WHERE` of the query while it is being walked.
     const IQueryTreeNode * where = nullptr;
     int blocked_depth = 0;

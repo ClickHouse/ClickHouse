@@ -302,6 +302,9 @@ bool canRewriteInToJoin(const QueryTreeNodePtr & in_node, const QueryTreeNodePtr
     if (left_key->as<ConstantNode>())
         return false;
 
+    if (isNothingOrNullableNothing(function_node.getResultType()))
+        return false;
+
     auto key_elements = getInToJoinKeyElements(function_node);
     DataTypes key_types;
     if (key_elements.size() == subquery_columns.size())
