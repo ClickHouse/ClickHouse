@@ -37,6 +37,7 @@ common --verbose_failures
 common --@rules_rust//rust/toolchain/channel=nightly
 common --@rules_python//python/config_settings:bootstrap_impl=script
 common --@llvm//toolchain:bootstrap_stage=stage1_from_source
+common --@llvm//toolchain:sysroot_compile_files=@clickhouse_sysroot//:linux_compile_files
 # Match contrib/llvm-project-cmake/config/llvm-config.h.in. ClickHouse links
 # its own compression libraries; the compiler retains its compression support.
 common --@llvm-project//third-party:llvm_enable_zlib=false

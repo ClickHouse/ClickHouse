@@ -755,9 +755,6 @@ cc_binary(
     srcs = [
         "cpp/tools/parquet/parquet_dump_schema.cc",
     ],
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-    ],
     copts = _PARQUET_COPTS,
     features = _GENERATED_FEATURES_1,
     linkopts = _GENERATED_LINKOPTS_0,
@@ -783,9 +780,6 @@ cc_binary(
     srcs = [
         "cpp/tools/parquet/parquet_reader.cc",
     ],
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-    ],
     copts = _PARQUET_COPTS,
     features = _GENERATED_FEATURES_1,
     linkopts = _GENERATED_LINKOPTS_0,
@@ -810,9 +804,6 @@ cc_binary(
     name = "parquet_scan",
     srcs = [
         "cpp/tools/parquet/parquet_scan.cc",
-    ],
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
     ],
     copts = _PARQUET_COPTS,
     features = _GENERATED_FEATURES_1,

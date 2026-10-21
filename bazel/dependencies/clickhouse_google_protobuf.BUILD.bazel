@@ -936,9 +936,6 @@ cc_binary(
     srcs = [
         "src/google/protobuf/compiler/main.cc",
     ],
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-    ],
     copts = [
         "--no-default-config",
         "-fdiagnostics-color=always",

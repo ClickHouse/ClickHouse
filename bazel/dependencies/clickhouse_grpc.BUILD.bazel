@@ -1878,9 +1878,6 @@ cc_binary(
     srcs = [
         "src/compiler/cpp_plugin.cc",
     ] + ["src/compiler/cpp_plugin.h"],
-    additional_compiler_inputs = [
-        "@clickhouse_sysroot//:linux_compile_files",
-    ],
     copts = [
         "--no-default-config",
         "-fdiagnostics-color=always",

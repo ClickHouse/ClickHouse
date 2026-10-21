@@ -955,3 +955,175 @@ diff --git a/kernel/extension/kernel-headers.BUILD.bazel b/kernel/extension/kern
      visibility = ["//visibility:public"],
  )
  
+diff --git a/toolchain/BUILD.bazel b/toolchain/BUILD.bazel
+--- a/toolchain/BUILD.bazel
++++ b/toolchain/BUILD.bazel
+@@ -8,6 +8,14 @@
+ load(":declare_toolchains.bzl", "declare_toolchains")
+ 
+ package(default_visibility = ["//toolchain:__subpackages__"])
++
++# Extra target sysroot files, separate from compiler and runtime construction.
++label_flag(
++    name = "sysroot_compile_files",
++    build_setting_default = "//runtimes:none",
++    scope = "universal",
++    visibility = ["//visibility:public"],
++)
+ 
+ # TODO(cerisier): Find a better name ?
+ # This should be the semantic for "what are we building ?"
+@@ -304,6 +312,7 @@
+         "//platforms/config:gnu": [
+             "//toolchain/args/linux:kernel_headers_include_search_paths",
+             "//toolchain/args/linux:glibc_headers_include_search_paths",
++            "//toolchain/args/linux:sysroot_compile_files",
+         ],
+         "//conditions:default": [],
+     }) + select({
+diff --git a/toolchain/args/linux/BUILD.bazel b/toolchain/args/linux/BUILD.bazel
+--- a/toolchain/args/linux/BUILD.bazel
++++ b/toolchain/args/linux/BUILD.bazel
+@@ -4,6 +4,20 @@
+ 
+ # Extracted from rules_cc unix_cc_configure.bzl
+ # TODO(cerisier): Extract those into proper semantic args list.
++# Sysroot files follow the target CPU; LLVM tool binaries follow the exec CPU.
++cc_args(
++    name = "sysroot_compile_files",
++    actions = [
++        "//toolchain:source_compile_actions",
++        "@rules_cc//cc/toolchains/actions:assembly_actions",
++    ],
++    data = select({
++        "@platforms//cpu:x86_64": ["//toolchain:sysroot_compile_files"],
++        "@platforms//cpu:aarch64": ["//toolchain:sysroot_compile_files"],
++        "//conditions:default": [],
++    }),
++)
++
+ cc_args(
+     name = "default_link_flags",
+     actions = [
+diff --git a/toolchain/bootstrap/bootstrap_binary.bzl b/toolchain/bootstrap/bootstrap_binary.bzl
+--- a/toolchain/bootstrap/bootstrap_binary.bzl
++++ b/toolchain/bootstrap/bootstrap_binary.bzl
+@@ -33,6 +33,7 @@
+         bootstrap_stage = "stage0_prebuilt_seed"
+ 
+     transition_settings = {
++        "//toolchain:sysroot_compile_files": str(Label("//runtimes:none")),
+         # we are compiling final programs, so we want all runtimes.
+         "//toolchain:runtime_stage": "complete",
+         "//toolchain:bootstrap_stage": bootstrap_stage,
+@@ -64,6 +65,7 @@
+         "//command_line_option:platforms",
+     ],
+     outputs = [
++        "//toolchain:sysroot_compile_files",
+         "//command_line_option:compilation_mode",
+         "//command_line_option:fdo_profile",
+         "//command_line_option:features",
+diff --git a/toolchain/bootstrap/fdo_profile.bzl b/toolchain/bootstrap/fdo_profile.bzl
+--- a/toolchain/bootstrap/fdo_profile.bzl
++++ b/toolchain/bootstrap/fdo_profile.bzl
+@@ -49,6 +49,7 @@
+ 
+ def _profile_generation_transition_impl(_settings, attr):
+     transition_settings = {
++        "//toolchain:sysroot_compile_files": str(Label("//runtimes:none")),
+         "//command_line_option:fdo_profile": None,
+         "//command_line_option:platforms": str(attr.target_platform),
+         "//toolchain:runtime_stage": "complete",
+@@ -64,6 +65,7 @@
+     implementation = _profile_generation_transition_impl,
+     inputs = [],
+     outputs = [
++        "//toolchain:sysroot_compile_files",
+         "//command_line_option:fdo_profile",
+         "//command_line_option:platforms",
+         "//toolchain:runtime_stage",
+@@ -74,6 +76,7 @@
+ 
+ def _profile_merge_transition_impl(_settings, _attr):
+     return {
++        "//toolchain:sysroot_compile_files": str(Label("//runtimes:none")),
+         "//command_line_option:fdo_profile": None,
+         "//toolchain:bootstrap_stage": "stage1_from_source",
+     }
+@@ -82,6 +85,7 @@
+     implementation = _profile_merge_transition_impl,
+     inputs = [],
+     outputs = [
++        "//toolchain:sysroot_compile_files",
+         "//command_line_option:fdo_profile",
+         "//toolchain:bootstrap_stage",
+     ],
+diff --git a/toolchain/runtimes/cc_unsanitized_library.bzl b/toolchain/runtimes/cc_unsanitized_library.bzl
+--- a/toolchain/runtimes/cc_unsanitized_library.bzl
++++ b/toolchain/runtimes/cc_unsanitized_library.bzl
+@@ -4,6 +4,7 @@
+ 
+ def _reset_sanitizers_impl(settings, attr):
+     return {
++        "//toolchain:sysroot_compile_files": str(Label("//runtimes:none")),
+         "//command_line_option:copt": settings["//command_line_option:copt"] + attr.copts,
+         "//command_line_option:cxxopt": settings["//command_line_option:cxxopt"] + attr.cxxopts,
+         "//command_line_option:platforms": str(attr.platform) if attr.platform else settings["//command_line_option:platforms"],
+@@ -47,6 +48,7 @@
+         "@llvm-project//third-party:llvm_enable_zstd",
+     ],
+     outputs = [
++        "//toolchain:sysroot_compile_files",
+         "//command_line_option:copt",
+         "//command_line_option:cxxopt",
+         "//command_line_option:platforms",
+diff --git a/toolchain/runtimes/cc_internal_symbolizer_object.bzl b/toolchain/runtimes/cc_internal_symbolizer_object.bzl
+--- a/toolchain/runtimes/cc_internal_symbolizer_object.bzl
++++ b/toolchain/runtimes/cc_internal_symbolizer_object.bzl
+@@ -5,6 +5,7 @@
+ 
+ def _internal_symbolizer_libcxx_transition_impl(settings, attr):
+     return {
++        "//toolchain:sysroot_compile_files": str(Label("//runtimes:none")),
+         "//command_line_option:copt": settings["//command_line_option:copt"] + attr.copts,
+         "//command_line_option:cxxopt": settings["//command_line_option:cxxopt"] + attr.cxxopts,
+         "//command_line_option:platforms": str(attr.platform),
+@@ -18,6 +19,7 @@
+         "//command_line_option:platforms",
+     ],
+     outputs = [
++        "//toolchain:sysroot_compile_files",
+         "//command_line_option:copt",
+         "//command_line_option:cxxopt",
+         "//command_line_option:platforms",
+diff --git a/toolchain/runtimes/cc_stage0_object.bzl b/toolchain/runtimes/cc_stage0_object.bzl
+--- a/toolchain/runtimes/cc_stage0_object.bzl
++++ b/toolchain/runtimes/cc_stage0_object.bzl
+@@ -5,6 +5,7 @@
+ #TODO(cerisier): use a single shared transition
+ bootstrap_transition = transition(
+     implementation = lambda settings, attr: {
++        "//toolchain:sysroot_compile_files": str(Label("//runtimes:none")),
+         # we are compiling runtimes without any kind of other dependencies
+         # Compiler-rt startup objects must not inherit application C flags.
+         "//command_line_option:copt": [],
+@@ -38,6 +39,7 @@
+     },
+     inputs = [],
+     outputs = [
++        "//toolchain:sysroot_compile_files",
+         "//command_line_option:copt",
+         "//command_line_option:conlyopt",
+         "//toolchain:runtime_stage",
+diff --git a/toolchain/runtimes/with_cfg_runtimes_common.bzl b/toolchain/runtimes/with_cfg_runtimes_common.bzl
+--- a/toolchain/runtimes/with_cfg_runtimes_common.bzl
++++ b/toolchain/runtimes/with_cfg_runtimes_common.bzl
+@@ -3,6 +3,7 @@
+     # a specific set of flags and compilation mode. It is not safe to let the user
+     # interfere with them using default command line flags.
+     # TODO: Expose a build setting to extend those flags.
++    builder.set(Label("//toolchain:sysroot_compile_files"), str(Label("//runtimes:none")))
+     builder.set("copt", [])
+     builder.set("cxxopt", [])
+     builder.set("conlyopt", [])

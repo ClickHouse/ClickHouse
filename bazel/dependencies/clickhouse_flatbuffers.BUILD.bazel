@@ -81,7 +81,6 @@ cc_binary(
         "**/*.h",
         "**/*.hpp",
     ]),
-    additional_compiler_inputs = ["@clickhouse_sysroot//:linux_compile_files"],
     copts = [
         "--no-default-config",
         "-fdiagnostics-color=always",
