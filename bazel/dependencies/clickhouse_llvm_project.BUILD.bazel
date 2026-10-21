@@ -2045,10 +2045,8 @@ ch_cc_library(
     copts =
         _LLVM_PROJECT_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    textual_hdrs = [
-        "llvm/include/llvm/Analysis/VecFuncs.def",
-        "llvm/include/llvm/IR/FunctionProperties.def",
-    ],
+    private_hdrs = ["llvm/include/llvm/IR/FunctionProperties.def"],
+    textual_hdrs = ["llvm/include/llvm/Analysis/VecFuncs.def"],
     deps = [
         ":LLVMObject",
         ":LLVMProfileData",
@@ -3739,9 +3737,7 @@ ch_cc_library(
         ":LLVMInstrumentation",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    textual_hdrs = [
-        "llvm/lib/Passes/PassRegistry.def",
-    ],
+    private_hdrs = ["llvm/lib/Passes/PassRegistry.def"],
     deps = [
         ":LLVMTarget",
         ":LLVMipo",
@@ -4717,9 +4713,7 @@ ch_cc_library(
         ":LLVMCore",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    textual_hdrs = [
-        "llvm/lib/Transforms/Vectorize/SandboxVectorizer/Passes/PassRegistry.def",
-    ],
+    private_hdrs = ["llvm/lib/Transforms/Vectorize/SandboxVectorizer/Passes/PassRegistry.def"],
     deps = [
         ":LLVMTransformUtils",
         ":llvm_headers",
@@ -4856,7 +4850,7 @@ ch_cc_library(
         "llvm/lib/Target/X86",
     ],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
-    textual_hdrs = select({
+    private_hdrs = select({
         "@platforms//cpu:x86_64": [
             "llvm/lib/Target/X86/X86GenRegisterBankInfo.def",
             "llvm/lib/Target/X86/X86ReplaceableInstrs.def",
@@ -4923,7 +4917,7 @@ ch_cc_library(
         "llvm/lib/Target/X86",
     ],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
-    textual_hdrs = select({
+    private_hdrs = select({
         "@platforms//cpu:x86_64": [
             "llvm/lib/Target/X86/MCTargetDesc/X86EncodingOptimizationForImmediate.def",
         ],
@@ -12096,7 +12090,7 @@ ch_cc_library(
         "llvm/lib/Target/AArch64",
     ],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_1,
-    textual_hdrs = select({
+    private_hdrs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
             "llvm/lib/Target/AArch64/AArch64GenRegisterBankInfo.def",
