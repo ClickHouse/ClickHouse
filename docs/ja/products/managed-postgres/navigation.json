@@ -95,7 +95,7 @@
         "ja/products/managed-postgres/monitoring/dashboard",
         "ja/products/managed-postgres/monitoring/metrics",
         "ja/products/managed-postgres/monitoring/prometheus",
-        "ja/products/managed-postgres/monitoring/query-insights",
+        "products/managed-postgres/monitoring/query-insights",
         "ja/products/managed-postgres/monitoring/notifications"
       ]
     },

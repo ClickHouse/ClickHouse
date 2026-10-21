@@ -142,7 +142,7 @@
             "fr/reference/statements/grant",
             "fr/reference/statements/hypothetical-index",
             "fr/reference/statements/hypothetical-projection",
-            "fr/reference/statements/in",
+            "reference/statements/in",
             "fr/reference/statements/insert-into",
             "fr/reference/statements/kill",
             "fr/reference/statements/move",
@@ -188,7 +188,7 @@
             "fr/reference/statements/system",
             "fr/reference/statements/truncate",
             "fr/reference/statements/undrop",
-            "fr/reference/statements/update",
+            "reference/statements/update",
             "fr/reference/statements/use"
           ]
         },
