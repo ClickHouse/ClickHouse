@@ -25,7 +25,7 @@ FROM (EXPLAIN QUERY TREE SELECT n.a + 1 FROM t_nested ARRAY JOIN n RIGHT JOIN (S
 -- Nothing is pruned.
 SELECT n.a + 1, n, r.b FROM t_nested ARRAY JOIN n RIGHT JOIN (SELECT 2 AS b UNION ALL SELECT 9) AS r ON r.b = n.a ORDER BY r.b SETTINGS join_use_nulls = 1;
 SELECT kv.2 + 1, r.k FROM t_arr ARRAY JOIN m AS kv RIGHT JOIN (SELECT 1 AS k UNION ALL SELECT 9) AS r ON r.k = kv.2 ORDER BY r.k SETTINGS join_use_nulls = 1;
-SELECT lowerUTF8(lc.key), r.k FROM t_arr ARRAY JOIN lc RIGHT JOIN (SELECT 7 AS k UNION ALL SELECT 9) AS r ON r.k = lc.v ORDER BY r.k SETTINGS join_use_nulls = 1;
+SELECT lower(lc.key), r.k FROM t_arr ARRAY JOIN lc RIGHT JOIN (SELECT 7 AS k UNION ALL SELECT 9) AS r ON r.k = lc.v ORDER BY r.k SETTINGS join_use_nulls = 1;
 SELECT kv.2 + 1 AS v FROM t_arr ARRAY JOIN m AS kv GROUP BY kv WITH CUBE ORDER BY v SETTINGS group_by_use_nulls = 1;
 SELECT tupleElement(x, 'a') + 1 FROM t_arr ARRAY JOIN arr AS x INNER JOIN (SELECT CAST((1, 'x'), 'Tuple(a UInt64, b String)') AS x) AS r USING (x);
 SELECT tupleElement(u, 'a') + 1 FROM t_arr ARRAY JOIN u INNER JOIN (SELECT CAST((1, 3), 'Tuple(a UInt64, b UInt64)') AS u) AS r USING (u);
