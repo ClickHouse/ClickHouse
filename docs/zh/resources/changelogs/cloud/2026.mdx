@@ -2,18 +2,50 @@
 slug: /whats-new/changelog/cloud
 sidebarTitle: '2026'
 title: 'Cloud 更新日志 - 2026'
-description: 'ClickHouse Cloud 更新日志，介绍每个 ClickHouse Cloud 版本的新增内容'
+description: 'ClickHouse Cloud 更新日志，介绍每个 ClickHouse Cloud 发行版的新增内容'
 doc_type: 'changelog'
-keywords: ['changelog', 'release notes', 'updates', 'new features', 'cloud changes']
+keywords: ['更新日志', '发行说明', '更新', '新功能', 'Cloud 变更']
 rss: true
 ---
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-除本 ClickHouse Cloud 更新日志外，另请参阅 [Cloud 兼容性](/zh/products/cloud/guides/cloud-compatibility)页面。
+除本 ClickHouse Cloud 更新日志外，另请参阅 [Cloud 兼容性](/zh/products/cloud/guides/cloud-compatibility) 页面。
 
-<Update label="2026-09-22">
-  本周更新将 ClickHouse Cloud 的 compliance 覆盖范围扩展至新的亚太区域，新增处于 public beta 阶段的 replica-aware routing，并为指标、compute 和 dbt 带来了新能力。受 HIPAA 和 PCI 监管的 cell 现已在 AWS 首尔和悉尼上线；符合条件的客户可试用兼容 Prometheus 的指标工作负载与按需计算；此外，ClickHouse 现已通过 dbt Core v2 与 dbt Platform 提供。
+<Update label="Oct 5, 2026">
+  本周发布的版本为拥有多个 ClickHouse Cloud 组织的客户简化了计费流程，扩展了 ClickPipes 对 Kafka 和 Kinesis 的序列化支持，并为 .NET 开发者引入了实验性的原生 TCP 选项。现在，您可以在控制台中跨组织管理预付费额度，也可以通过编程方式获取余额；流式 ClickPipes 已支持常见的 Avro 和 Protobuf 工作流；.NET 驱动程序则提供了速度更快、内存分配更少的原生客户端。
+
+  ## 新功能
+
+  ### 在组织之间转移预付费额度
+
+  拥有多个组织的客户现在可以直接在控制台中将预付费额度在组织之间转移，无需提交支持工单。您可以在同一视图中查看所有组织的预付费额度，便于跟踪用量并规划续订。执行此操作需要在所涉及的每个组织中拥有 Org Admin 或 Billing Admin 角色，或具备计费权限的自定义角色。额度可以在不同层级之间拆分，但不能在 Cloud 组织与 BYOC 组织之间转移，也不能跨不同的云市场转移。请参阅[自助式预付费额度管理文档](/zh/products/cloud/reference/billing/self-service-prepaid-credit-management)。
+
+  ## API
+
+  ### 用于查询组织额度余额的新 API 端点
+
+  ClickHouse Cloud OpenAPI 新增了 `GET /v1/organizations/{organizationId}/creditBalances` 端点，用于返回组织当前有效的额度余额，包括预付费额度和试用额度。您可以借助该端点在自有工具中监控额度消耗情况。请参阅[自助式预付费额度管理文档](/zh/products/cloud/reference/billing/self-service-prepaid-credit-management)。
+
+  ## ClickPipes
+
+  ### Kinesis ClickPipes 支持 Avro 和 Protobuf
+
+  Kinesis ClickPipes 现在除 JSON 外，还支持 **Avro** 和 **Protobuf**。schema 既可以来自 **AWS Glue Schema Registry**，也可以来自上传的 schema 文件。至此，Kafka 和 Kinesis ClickPipes 支持的常用序列化格式已保持一致，该功能可在 UI、OpenAPI 和 Terraform 中使用。请参阅 [Kinesis ClickPipes 文档](/zh/integrations/clickpipes/kinesis/)。
+
+  ### Kafka ClickPipes 支持上传 Protobuf schema 文件
+
+  Kafka ClickPipes 现在支持以 `.proto` 文件或文件描述符集 (`.desc`) 的形式上传 Protobuf schema。如果您未使用 Schema Registry，现在也可以提供独立的 schema 进行反序列化。请参阅 [Kafka ClickPipes 文档](/zh/integrations/clickpipes/kafka/create-kafka-clickpipe#7-select-your-topic)。
+
+  ## 集成
+
+  ### .NET 驱动程序 v1.5.0 新增原生 TCP 客户端
+
+  ClickHouse .NET 驱动程序 v1.5.0 在现有 HTTP 客户端的基础上新增了原生 TCP 客户端，支持连接池、会话、TLS、LZ4/ZSTD 压缩、查询参数以及 OpenTelemetry 追踪。在 ClickHouse Cloud 上的基准测试中，读取速度最高提升至 2 倍，并发插入速度最高提升至 2 倍，内存分配则减少了几个数量级。TCP API 目前仍为实验性功能，后续可能会有变动；对于 `ADO.NET`、ORM 以及 CSV、Parquet 等原始格式，请继续使用 HTTP 客户端。请参阅 [TCP 客户端文档](/zh/integrations/language-clients/csharp/tcp)和 [NuGet 包](https://www.nuget.org/packages/ClickHouse.Driver/1.5.0)。
+</Update>
+
+<Update label="Sep 22, 2026">
+  本周更新将 ClickHouse Cloud 的 compliance 覆盖范围扩展至新的亚太区域，新增处于 Public Beta 阶段的副本感知路由，并为指标、compute 和 dbt 带来了新能力。受 HIPAA 和 PCI 监管的 cell 现已在 AWS 首尔和悉尼上线；符合条件的客户可试用兼容 Prometheus 的指标工作负载与按需计算；此外，ClickHouse 现已通过 dbt Core v2 与 dbt Platform 提供。
 
   ## 安全
 
@@ -23,13 +55,13 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
   ## 新功能
 
-  ### Replica-aware routing 进入 public beta
+  ### 副本感知路由进入 Public Beta
 
-  [Replica-aware routing](/zh/products/cloud/features/infrastructure/replica-aware-routing) 现已面向 Enterprise 客户进入 public beta，支持原生 ClickHouse Cloud 与 BYOC 部署。在你的 account 上启用该功能后，即可直接在服务设置中开启。详见[通知](https://clickhouse.com/blog/replica-aware-routing-public-beta)。
+  [副本感知路由](/zh/products/cloud/features/infrastructure/replica-aware-routing) 现已面向 Enterprise 客户进入 Public Beta，支持原生 ClickHouse Cloud 与 BYOC 部署。在你的 account 上启用该功能后，即可直接在服务设置中开启。详见[通知](https://clickhouse.com/blog/replica-aware-routing-public-beta)。
 
   ### PromQL 支持进入私有预览
 
-  现在，你可以将 Prometheus 指标存储在 `TimeSeries` table 引擎中，并直接针对 ClickHouse 服务使用 PromQL 查询——无需转译器或代理，现有的采集器、Grafana 仪表板和 Prometheus 工具链无需改动即可继续使用。可通过 Prometheus 远程写入 v1 写入数据，并通过 Prometheus HTTP API 读取；也可以在 SQL 会话中使用 `prometheusQuery` 和 `prometheusQueryRange` table 函数运行 PromQL。该功能通过[私有预览等待名单](https://clickhouse.com/cloud/promql-support-waitlist)向 AWS、GCP 和 Azure 上的部分 ClickHouse Cloud 与 BYOC 客户开放。请参阅 [Prometheus interface 文档](/zh/concepts/features/interfaces/prometheus)和[通知](https://clickhouse.com/blog/introducing-promql)。
+  现在，你可以将 Prometheus 指标存储在 `TimeSeries` 表引擎中，并直接针对 ClickHouse 服务使用 PromQL 查询——无需转译器或代理，现有的采集器、Grafana 仪表盘和 Prometheus 工具链无需改动即可继续使用。可通过 Prometheus 远程写入 v1 写入数据，并通过 Prometheus HTTP API 读取；也可以在 SQL 会话中使用 `prometheusQuery` 和 `prometheusQueryRange` 表函数运行 PromQL。该功能通过[私有预览等待名单](https://clickhouse.com/cloud/promql-support-waitlist)向 AWS、GCP 和 Azure 上的部分 ClickHouse Cloud 与 BYOC 客户开放。请参阅 [Prometheus interface 文档](/zh/concepts/features/interfaces/prometheus)和[通知](https://clickhouse.com/blog/introducing-promql)。
 
   ### 按需计算进入私有预览
 
@@ -39,7 +71,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
   ### 适用于 dbt v2 的 ClickHouse 适配器，以及 dbt Platform 中的 ClickHouse
 
-  现在，你可以借助处于 public beta 的 dbt v2 adapter，在基于 Rust 的全新 Core v2 引擎上针对 ClickHouse 运行 dbt。ClickHouse 也首次作为一种连接方式出现在 dbt Platform (Studio、作业和环境) 中，目前处于私有 beta 阶段，按 account 启用。现有的 v1 adapter (`dbt-clickhouse`) 仍会并行获得完整维护。请参阅 [dbt Core](https://github.com/dbt-labs/dbt)、[dbt-clickhouse adapter 拉取请求](https://github.com/ClickHouse/dbt-clickhouse/pull/739)以及 [dbt Platform 文档拉取请求](https://github.com/dbt-labs/docs.getdbt.com/pull/9975)。
+  现在，你可以借助处于 Public Beta 的 dbt v2 adapter，在基于 Rust 的全新 Core v2 引擎上针对 ClickHouse 运行 dbt。ClickHouse 也首次作为一种连接方式出现在 dbt Platform (Studio、作业和环境) 中，目前处于私有 beta 阶段，按 account 启用。现有的 v1 adapter (`dbt-clickhouse`) 仍会并行获得完整维护。请参阅 [dbt Core](https://github.com/dbt-labs/dbt)、[dbt-clickhouse adapter 拉取请求](https://github.com/ClickHouse/dbt-clickhouse/pull/739)以及 [dbt Platform 文档拉取请求](https://github.com/dbt-labs/docs.getdbt.com/pull/9975)。
 </Update>
 
 <Update label="2026 年 9 月 8 日">
@@ -47,7 +79,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
   ### ClickHouse 服务的 JWT 身份验证现已正式可用
 
-  现在，你可以使用由自有身份提供商签发的 JWT 对 ClickHouse 服务进行身份验证，支持 Okta、Auth0、Microsoft Entra ID、Keycloak，以及任何提供 JWKS endpoint 的提供商。JWT 身份验证让你可以通过现有身份提供商管理访问权限，并由策略强制执行令牌过期时间——无需再单独维护和轮换 ClickHouse 密码与共享密钥。该功能适用于运行 ClickHouse 26.4 及以上版本服务的 Enterprise 计划。可在 **Service → Settings → Security → JWT authentication** 中进行配置。请参阅 [JWT 身份验证设置指南](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)。
+  现在，你可以使用由自有身份提供商签发的 JWT 对 ClickHouse 服务进行身份验证，支持 Okta、Auth0、Microsoft Entra ID、Keycloak，以及任何提供 JWKS 端点的提供商。JWT 身份验证让你可以通过现有身份提供商管理访问权限，并由策略强制执行令牌过期时间——无需再单独维护和轮换 ClickHouse 密码与共享密钥。该功能适用于运行 ClickHouse 26.4 及以上版本服务的 Enterprise 计划。可在 **Service → Settings → Security → JWT authentication** 中进行配置。请参阅 [JWT 身份验证设置指南](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)。
 
   ### ClickPipes 的 MySQL CDC 连接器现已正式可用
 
@@ -127,7 +159,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
   ### ClickHouse 智能体更新 (Public Beta)
 
-  [ClickHouse Agents](/zh/products/cloud/features/ai-ml/agents/index) 现已支持使用 Chat Projects 组织会话、显示 token 和上下文窗口用量的上下文使用量指示器、由智能体编写的技能，以及内置的 ClickHouse 最佳实践技能。此版本还包含对设置、导航、快捷键和固定功能的改进。
+  [ClickHouse 智能体](/zh/products/cloud/features/ai-ml/agents/index) 现已支持使用 Chat Projects 组织会话、显示 token 和上下文窗口用量的上下文使用量指示器、由智能体编写的技能，以及内置的 ClickHouse 最佳实践技能。此版本还包含对设置、导航、快捷键和固定功能的改进。
 
   ### Azure Marketplace 上的 ClickHouse BYOC
 
@@ -151,13 +183,13 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
   更多详情，请参阅 [ClickPipes 静态 IP 列表](/zh/integrations/clickpipes/networking/static-ips)。
 
-  ### ClickPipes for GCP Pub/Sub (私有预览)
+  ### 适用于 GCP Pub/Sub 的 ClickPipes (私有预览)
 
   ClickPipes 现已支持将 GCP Pub/Sub topics 中的数据直接流式传输至 ClickHouse Cloud，为原生 GCP 团队提供了一条直接分析 Cloud Logging、Cloud Monitoring、GKE 等服务数据的路径。可通过 ClickPipes UI、OpenAPI 和 Terraform 使用；私有预览期间需提前[注册](https://clickhouse.com/cloud/clickpipes#pubsub-private-preview)。
 
   有关设置和配置的详细信息，请参阅 [ClickPipes for GCP Pub/Sub 文档](/zh/integrations/clickpipes/pubsub/overview)。
 
-  ### ClickHouse 智能体：由 Claude 驱动的智能体分析 (public beta)
+  ### ClickHouse 智能体：由 Claude 驱动的智能体分析 (公开测试版)
 
   ClickHouse 智能体现已在 [ai.clickhouse.cloud](http://ai.clickhouse.cloud) 进入 Public Beta 阶段——这是一个由 Claude 驱动的原生智能体平台，支持对您的 ClickHouse Cloud 数据进行对话式、schema 感知分析。通过无代码 AgentBuilder 构建自定义智能体，接入 MCP servers (Slack、Linear、Notion 等) ，编排子智能体工作流，并在对话中直接生成查询、管道和应用。平台集成了 AWS Bedrock AgentCore，并以托管的 LibreChat 为底层基础。
 
@@ -204,7 +236,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
   现在，您可以用 Python 编写函数，将其打包压缩后上传至集群，并像调用任何内置函数一样在 SQL 中调用它。ClickHouse 维护一个长期运行的沙箱进程池，以查询速度将行通过管道传输其中，因此您可以在任何支持 SQL 的场景中调用该函数：即席查询、join 操作，乃至在每次插入时触发的物化视图 (materialized view) 。您的模型代码与数据紧密共存，部署只需在 Cloud 控制台中完成一次上传即可。
 
-  为了展示其功能，我们构建了一个 [Demo](https://github.com/ClickHouse/stock-anomaly-udf)。基于 StockHouse 中的实时股票交易数据，我们训练了一个小型 PyTorch 自编码器，在数据摄取时对股票交易 tick 进行异常评分。整个方案只需一个 UDF 和一条 DDL 语句，其余全部为普通 SQL。我们还抢先预览了网络访问 UDFs (私网 Beta) 功能——该功能允许 UDFs 发起出站 HTTPS 调用。我们借助这一特性拉取新闻和 SEC 文件，并让 Claude 对特定交易出现异常的原因进行分类。
+  为了展示其功能，我们构建了一个 [Demo](https://github.com/ClickHouse/stock-anomaly-udf)。基于 StockHouse 中的实时股票交易数据，我们训练了一个小型 PyTorch 自编码器，在数据摄取时对股票交易 tick 进行异常评分。整个方案只需一个 UDF 和一条 DDL 语句，其余全部为普通 SQL。我们还顺带预览了网络访问 UDF (私有 Beta) 功能——该功能允许 UDF 发起出站 HTTPS 调用。我们借助这一特性拉取新闻和 SEC 文件，并让 Claude 对特定交易出现异常的原因进行分类。
 
   如需了解更多详情，请参阅[公告博客](https://clickhouse.com/blog/executable-udfs-clickhouse-cloud-beta)或[文档](/zh/products/cloud/features/sql-console-features/user-defined-functions)
 </Update>
@@ -290,7 +322,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
   ### ClickPipes 的 Terraform 和 OpenAPI (正式可用)
 
-  ClickHouse [Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) 中的 ClickPipes 资源现已随稳定版本正式可用，并且 [OpenAPI endpoints](/zh/products/cloud/api-reference/organization/get-list-of-available-organizations) 不再标记为 beta。其中包括对 CDC connectors (Postgres、MySQL、MongoDB) 的完整覆盖。更多详情请参阅 [Terraform 文档](/zh/integrations/clickpipes/programmatic-access/terraform)、[OpenAPI 文档](/zh/integrations/clickpipes/programmatic-access/openapi) 和[博客文章](https://clickhouse.com/blog/terraform-ga)。
+  ClickHouse [Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) 中的 ClickPipes 资源现已随稳定版本正式可用，并且 [OpenAPI 端点](/zh/products/cloud/api-reference/organization/get-list-of-available-organizations) 不再标记为 beta。其中包括对 CDC 连接器 (Postgres、MySQL、MongoDB) 的完整覆盖。更多详情请参阅 [Terraform 文档](/zh/integrations/clickpipes/programmatic-access/terraform)、[OpenAPI 文档](/zh/integrations/clickpipes/programmatic-access/openapi) 和[博客文章](https://clickhouse.com/blog/terraform-ga)。
 </Update>
 
 <Update label="2026年4月17日">
@@ -318,7 +350,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
   更多详情请参阅[计费文档](/zh/products/cloud/reference/billing/managing-payment-methods)。
 
-  ### clickhousectl CLI (Public Beta)
+  ### clickhousectl 命令行客户端 (Public Beta)
 
   [clickhousectl](https://github.com/ClickHouse/clickhousectl) 是官方的 ClickHouse 命令行客户端，用于管理本地安装、运行本地服务器以及操作 ClickHouse Cloud。立即安装：
 

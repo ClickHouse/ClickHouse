@@ -27,8 +27,12 @@ $CLICKHOUSE_CLIENT --query "SELECT name, rows, active FROM system.parts WHERE ta
 
 $CLICKHOUSE_CLIENT --query "ALTER TABLE table_with_gap DROP PART 'all_3_3_0';"
 
+# The covered part is removed right after the drop only if nobody else holds a reference to it,
+# e.g. a concurrent scan of system.parts; otherwise it stays Outdated until the cleanup thread runs.
+# Its presence is not what this test checks, so it is excluded from the listings below.
+
 $CLICKHOUSE_CLIENT --query "SELECT 'parts with gap';"
-$CLICKHOUSE_CLIENT --query "SELECT name, rows, active FROM system.parts WHERE table = 'table_with_gap' AND database = currentDatabase();"
+$CLICKHOUSE_CLIENT --query "SELECT name, rows, active FROM system.parts WHERE table = 'table_with_gap' AND database = currentDatabase() AND name != 'all_3_3_0';"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM START MERGES table_with_gap;"
 
@@ -39,11 +43,11 @@ $CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE table_with_gap FINAL SETTINGS optimiz
 $CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE table_with_gap;"
 
 $CLICKHOUSE_CLIENT --query "SELECT 'parts after optimize';"
-$CLICKHOUSE_CLIENT --query "SELECT name, rows, active FROM system.parts WHERE table = 'table_with_gap' AND database = currentDatabase();"
+$CLICKHOUSE_CLIENT --query "SELECT name, rows, active FROM system.parts WHERE table = 'table_with_gap' AND database = currentDatabase() AND name != 'all_3_3_0';"
 
 $CLICKHOUSE_CLIENT --query "DETACH TABLE table_with_gap;"
 $CLICKHOUSE_CLIENT --query "ATTACH TABLE table_with_gap;"
 
 $CLICKHOUSE_CLIENT --query "SELECT 'parts after detach/attach';"
 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT LOADING PARTS table_with_gap;"
-$CLICKHOUSE_CLIENT --query "SELECT name, rows, active FROM system.parts WHERE table = 'table_with_gap' AND database = currentDatabase() AND rows > 0;"
+$CLICKHOUSE_CLIENT --query "SELECT name, rows, active FROM system.parts WHERE table = 'table_with_gap' AND database = currentDatabase() AND name != 'all_3_3_0' AND rows > 0;"
