@@ -600,7 +600,7 @@ then
   WHERE (name NOT IN (
       SELECT name
       FROM old_settings
-  )) AND (name NOT IN (
+  )) AND alias_for = '' AND (name NOT IN (
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
       (
