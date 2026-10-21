@@ -71,11 +71,11 @@ struct DeserializeBinaryBulkStateObjectSharedDataPath : public ISerialization::D
 
     ISerialization::DeserializeBinaryBulkStatePtr structure_state;
 
-    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateObjectSharedDataPath>(*this);
-        new_state->map_state = map_state ? map_state->clone(context) : nullptr;
-        new_state->structure_state = structure_state ? structure_state->clone(context) : nullptr;
+        new_state->map_state = map_state ? map_state->clone() : nullptr;
+        new_state->structure_state = structure_state ? structure_state->clone() : nullptr;
         return new_state;
     }
 };

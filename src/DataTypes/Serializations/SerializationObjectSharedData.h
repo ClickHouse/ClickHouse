@@ -204,7 +204,7 @@ private:
         /// We can read only a part of the chunk, so we need to remember the state of the last read chunk.
         ChunkStructure last_chunk_structure;
 
-        ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext &) const override
+        ISerialization::DeserializeBinaryBulkStatePtr clone() const override
         {
             return std::make_shared<DeserializeBinaryBulkStateObjectSharedDataStructure>(*this);
         }

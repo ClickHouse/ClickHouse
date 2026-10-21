@@ -86,12 +86,6 @@ public:
 
     String getName() const override { return function_name; }
 
-    /// A `Join` table is local to the server that holds it and is not kept in sync with anything, so
-    /// the same call answers differently on another node. The overload resolver says so already, but
-    /// whoever asks the built function - a predicate on its way to a shard, an index analysis - asks
-    /// this one, and `IFunctionBase` answers `true` by default. `dictGet` overrides it here as well.
-    bool isDeterministic() const override { return false; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
@@ -125,15 +119,6 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override;
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override { return {}; } // Not used
-
-    /// Documentation-only — `joinGet[OrNull](join_table, attribute_name, key, ...)`
-    /// returns the value of the named attribute from the JOIN table for the
-    /// given key. The result type is read from the JOIN table's column type
-    /// (wrapped in `Nullable` for the OrNull variant).
-    String getSignatureString() const override
-    {
-        return "(const String, const String, Any, ...) -> Any";
-    }
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
@@ -197,8 +182,6 @@ getJoin(const ColumnsWithTypeAndName & arguments, ContextPtr context)
     auto storage_join = castStorage<StorageJoin>(table, DeferredTable::Load);
     if (!storage_join)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Table {} should have engine StorageJoin", join_name);
-    /// Resolved on the executing server: a `make_distributed_plan` worker would look it up in its own catalog.
-    context->addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind::JoinTable, storage_id.getFullTableName());
 
     String attr_name;
     if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))

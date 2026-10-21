@@ -15,24 +15,6 @@ WORKING_DIR="${CLICKHOUSE_TMP}/05099_mergetree_array_missing_elements"
 rm -rf "${WORKING_DIR}"
 mkdir -p "${WORKING_DIR}"
 
-# A part without `checksums.txt` is checked on load against its marks, and the marks of the corrupted
-# column point past the end of its data, so the part is detached as broken. That load has already
-# written the recalculated `checksums.txt` into it, so move it back: the next load trusts these
-# checksums, and the corruption reaches the reader.
-function reattach_broken_part()
-{
-    local table=$1
-    local part_dir=$2
-    local detached
-    detached=$(${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" --query "SELECT path FROM system.detached_parts WHERE database = currentDatabase() AND table = '${table}'")
-    if [ -z "${detached}" ]
-    then
-        echo "the corrupted part of table ${table} was not detached" >&2
-        return
-    fi
-    mv "${detached}" "${part_dir%/}"
-}
-
 # A `Nested` column added by `ALTER` reads its offsets from a sibling column and is filled with
 # defaults: both part types keep working.
 ${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" --query "
@@ -79,7 +61,6 @@ then
 fi
 : > "${ELEMENTS_FILE}"
 rm -f "${PART_DIR}checksums.txt"
-reattach_broken_part corrupted "${PART_DIR}"
 
 ${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" --query "SELECT a FROM corrupted ORDER BY k" 2>&1 | grep -c -F 'INCORRECT_DATA'
 
@@ -97,7 +78,6 @@ then
 fi
 truncate -s "${ELEMENTS_OFFSET}" "${COMPACT_PART_DIR}data.bin"
 rm -f "${COMPACT_PART_DIR}checksums.txt"
-reattach_broken_part corrupted_compact "${COMPACT_PART_DIR}"
 
 ${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" --query "SELECT a FROM corrupted_compact ORDER BY k" 2>&1 | grep -c -F 'INCORRECT_DATA'
 

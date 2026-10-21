@@ -2,7 +2,7 @@
 
 #include <IO/ReadHelpers.h>
 #include <Common/StringUtils.h>
-#include <Common/Hex.h>
+#include <base/hex.h>
 #include <base/arithmeticOverflow.h>
 
 

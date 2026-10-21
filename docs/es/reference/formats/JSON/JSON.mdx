@@ -15,7 +15,9 @@ doc_type: 'reference'
 | ------- | ------ | ----- |
 | ✔       | ✔      |       |
 
-## Descripción {#description}
+<div id="description">
+  ## Descripción
+</div>
 
 El formato `JSON` lee y genera datos en formato JSON.
 
@@ -38,12 +40,14 @@ El tipo `JSON` es compatible con JavaScript. Para garantizarlo, algunos caracter
 * Los caracteres de control ASCII se escapan: retroceso, salto de página, salto de línea, retorno de carro y tabulación horizontal se reemplazan por `\b`, `\f`, `\n`, `\r`, `\t`, así como los bytes restantes en el rango 00-1F mediante secuencias `\uXXXX`.
 * Las secuencias UTF-8 no válidas se sustituyen por el carácter de reemplazo � para que el texto de salida conste de secuencias UTF-8 válidas.
 
-Los enteros de 64 bits o más (como `Int64`, `UInt64` o `Int128`) se generan sin comillas de forma predeterminada.
-Para mantener la compatibilidad con JavaScript, puede encerrarlos entre comillas dobles estableciendo el parámetro de configuración [`output_format_json_quote_64bit_integers`](/es/reference/settings/formats/output-format#output_format_json_quote_64bit_integers) en `1`.
+Para mantener la compatibilidad con JavaScript, los enteros Int64 y UInt64 se encierran entre comillas dobles de forma predeterminada.
+Para quitar las comillas, puede establecer el parámetro de configuración [`output_format_json_quote_64bit_integers`](/es/reference/settings/formats/output-format#output_format_json_quote_64bit_integers) en `0`.
 
 ClickHouse admite [NULL](/es/reference/syntax), que se muestra como `null` en la salida JSON. Para habilitar los valores `+nan`, `-nan`, `+inf`, `-inf` en la salida, establezca [output&#95;format&#95;json&#95;quote&#95;denormals](/es/reference/settings/formats/output-format#output_format_json_quote_denormals) en `1`.
 
-## Ejemplo de uso {#example-usage}
+<div id="example-usage">
+  ## Ejemplo de uso
+</div>
 
 Ejemplo:
 
@@ -101,12 +105,16 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
 }
 ```
 
-## Configuración de formato {#format-settings}
+<div id="format-settings">
+  ## Configuración de formato
+</div>
 
 Para el formato de entrada JSON, si la configuración [`input_format_json_validate_types_from_metadata`](/es/reference/settings/formats/input-format#input_format_json_validate_types_from_metadata) se establece en `1`,
 los tipos definidos en los metadatos de los datos de entrada se compararán con los tipos de las columnas correspondientes de la tabla.
 
-## Véase también {#see-also}
+<div id="see-also">
+  ## Véase también
+</div>
 
 * formato [JSONEachRow](/es/reference/formats/JSON/JSONEachRow)
 * ajuste [output&#95;format&#95;json&#95;array&#95;of&#95;rows](/es/reference/settings/formats/output-format#output_format_json_array_of_rows)

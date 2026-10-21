@@ -20,8 +20,6 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    bool hasCorrelatedExpressions() const override { return false; }
-
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 

@@ -87,57 +87,6 @@ public:
     {
     }
 
-    /// Inserts the keys, which must fit without a resize. Prefetches the cell of the key `prefetch_distance` ahead, if
-    /// it is not zero. The fields are kept in local variables, because the stores into the cells could alias them.
-    template <size_t prefetch_distance>
-    void ALWAYS_INLINE insertManyWithoutResize(const Key * __restrict keys, size_t num_keys)
-    {
-        Cell * __restrict cells = this->buf;
-        const Grower local_grower = this->grower;
-        size_t local_size = this->m_size;
-        bool has_zero = this->hasZero();
-
-        for (size_t i = 0; i < num_keys; ++i)
-        {
-            if constexpr (prefetch_distance != 0)
-            {
-                if (i + prefetch_distance < num_keys)
-                    __builtin_prefetch(&cells[local_grower.place(this->hash(keys[i + prefetch_distance]))]);
-            }
-
-            const Key key = keys[i];
-            if (Cell::isZero(key, *this))
-            {
-                has_zero = true;
-                continue;
-            }
-
-            const size_t hash_value = this->hash(key);
-            size_t place = local_grower.place(hash_value);
-            while (true)
-            {
-                Cell & cell = cells[place];
-                if (cell.keyEquals(key, hash_value, *this))
-                    break;
-                if (cell.isZero(*this))
-                {
-                    new (&cell) Cell(key, *this);
-                    cell.setHash(hash_value);
-                    ++local_size;
-                    break;
-                }
-                place = local_grower.next(place);
-            }
-        }
-
-        if (has_zero && !this->hasZero())
-        {
-            this->setHasZero();
-            ++local_size;
-        }
-        this->m_size = local_size;
-    }
-
     /// Merge every key of *this into `that`, growing `that` incrementally (with optional prefetch), reusing
     /// each source cell's stored hash. Unlike `merge`, it does NOT preemptively resize to dst+src - that
     /// over-allocates and triggers a full rehash for high-overlap aggregation merges. The set analogue of
@@ -194,14 +143,13 @@ template <
     typename TCell, /// Supposed to have no state (HashTableNoState)
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
-    typename Allocator = HashTableAllocator,
-    size_t BITS_FOR_BUCKET = DEFAULT_BITS_FOR_BUCKET>
+    typename Allocator = HashTableAllocator>
 class TwoLevelHashSetTable
-    : public TwoLevelHashTable<Key, TCell, Hash, Grower, Allocator, HashSetTable<Key, TCell, Hash, Grower, Allocator>, BITS_FOR_BUCKET>
+    : public TwoLevelHashTable<Key, TCell, Hash, Grower, Allocator, HashSetTable<Key, TCell, Hash, Grower, Allocator>>
 {
 public:
     using Self = TwoLevelHashSetTable;
-    using Base = TwoLevelHashTable<Key, TCell, Hash, Grower, Allocator, HashSetTable<Key, TCell, Hash, Grower, Allocator>, BITS_FOR_BUCKET>;
+    using Base = TwoLevelHashTable<Key, TCell, Hash, Grower, Allocator, HashSetTable<Key, TCell, Hash, Grower, Allocator>>;
 
     using Base::Base;
 
@@ -282,9 +230,8 @@ template <
     typename Key,
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
-    typename Allocator = HashTableAllocator,
-    size_t BITS_FOR_BUCKET = DEFAULT_BITS_FOR_BUCKET>
-using TwoLevelHashSet = TwoLevelHashSetTable<Key, HashTableCell<Key, Hash>, Hash, Grower, Allocator, BITS_FOR_BUCKET>;
+    typename Allocator = HashTableAllocator>
+using TwoLevelHashSet = TwoLevelHashSetTable<Key, HashTableCell<Key, Hash>, Hash, Grower, Allocator>;
 
 template <typename Key, typename Hash, size_t initial_size_degree>
 using HashSetWithStackMemory = HashSet<
@@ -306,10 +253,8 @@ template <
     typename Key,
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
-    typename Allocator = HashTableAllocator,
-    size_t BITS_FOR_BUCKET = DEFAULT_BITS_FOR_BUCKET>
-using TwoLevelHashSetWithSavedHash
-    = TwoLevelHashSetTable<Key, HashSetCellWithSavedHash<Key, Hash>, Hash, Grower, Allocator, BITS_FOR_BUCKET>;
+    typename Allocator = HashTableAllocator>
+using TwoLevelHashSetWithSavedHash = TwoLevelHashSetTable<Key, HashSetCellWithSavedHash<Key, Hash>, Hash, Grower, Allocator>;
 
 template <typename Key, typename Hash, size_t initial_size_degree>
 using HashSetWithSavedHashWithStackMemory = HashSetWithSavedHash<
