@@ -262,12 +262,20 @@ void IcebergMetadata::setExplicitMetadataFilePath(const String & path)
 
 void IcebergMetadata::update(const ContextPtr & context)
 {
+    UInt64 lookup_id = 0;
+    {
+        std::lock_guard lock(cached_latest_metadata_mutex);
+        lookup_id = ++last_metadata_lookup_id;
+    }
     auto latest_metadata = fetchLatestMetadata(context, /* force_fetch_latest_metadata */ false);
     FailPointInjection::pauseFailPoint(FailPoints::iceberg_metadata_update_pause_before_publish);
     {
         std::lock_guard lock(cached_latest_metadata_mutex);
-        if (!cached_latest_metadata || cached_latest_metadata->version <= latest_metadata.version)
+        if (lookup_id > cached_latest_metadata_lookup_id)
+        {
             cached_latest_metadata = std::move(latest_metadata);
+            cached_latest_metadata_lookup_id = lookup_id;
+        }
     }
     FailPointInjection::pauseFailPoint(FailPoints::iceberg_metadata_update_pause_after_publish);
 }
