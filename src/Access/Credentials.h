@@ -137,6 +137,47 @@ class MySQLNative41Credentials : public CredentialsWithScramble
     using CredentialsWithScramble::CredentialsWithScramble;
 };
 
+/// A request signed with AWS Signature Version 4 (as S3 clients do).
+/// The access key ID is the user name, and the secret access key is the user's password.
+/// The HTTP layer builds the "string to sign" from the request; the server recomputes the
+/// signature with the stored password and compares it with the one provided by the client.
+/// See https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_sigv-create-signed-request.html
+class AWSSignatureV4Credentials : public Credentials
+{
+public:
+    AWSSignatureV4Credentials(
+        const String & user_name_,
+        const String & date_,
+        const String & region_,
+        const String & service_,
+        const String & string_to_sign_,
+        const String & signature_)
+        : Credentials(user_name_)
+        , date(date_)
+        , region(region_)
+        , service(service_)
+        , string_to_sign(string_to_sign_)
+        , signature(signature_)
+    {
+        is_ready = true;
+    }
+
+    /// The date of the credential scope in the `YYYYMMDD` form.
+    const String & getDate() const { return date; }
+    const String & getRegion() const { return region; }
+    const String & getService() const { return service; }
+    const String & getStringToSign() const { return string_to_sign; }
+    /// Lowercase hex.
+    const String & getSignature() const { return signature; }
+
+private:
+    String date;
+    String region;
+    String service;
+    String string_to_sign;
+    String signature;
+};
+
 #if USE_SSH
 class SshCredentials : public Credentials
 {

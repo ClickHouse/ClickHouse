@@ -4,6 +4,8 @@
 #include <Common/Base64.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Server/HTTPHandler.h>
+#include <Server/HTTP/AWSSignatureV4.h>
+#include <Server/HTTP/authenticateUserByHTTP.h>
 #include <Server/HTTP/HTTPServerRequest.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPServerResponse.h>
@@ -88,16 +90,8 @@ bool authenticateUserByHTTP(
     std::unique_ptr<Credentials> & request_credentials,
     const HTTPHandlerConnectionConfig & connection_config,
     ContextPtr global_context,
-    LoggerPtr log);
-bool authenticateUserByHTTP(
-    const HTTPServerRequest & request,
-    const HTMLForm & params,
-    HTTPServerResponse & response,
-    Session & session,
-    std::unique_ptr<Credentials> & request_credentials,
-    const HTTPHandlerConnectionConfig & connection_config,
-    ContextPtr global_context,
-    LoggerPtr log)
+    LoggerPtr log,
+    bool allow_aws_signature_v4)
 {
     /// Get the credentials created by the previous call of authenticateUserByHTTP() while handling the previous HTTP request.
     auto current_credentials = std::move(request_credentials);
@@ -153,6 +147,11 @@ bool authenticateUserByHTTP(
     /// authentication methods, regardless of the query parameters (see below).
     bool has_http_credentials = has_authorization_header && !has_credentials_in_query_params;
 
+    /// The request is signed with AWS Signature Version 4: either by the `Authorization: AWS4-HMAC-SHA256 ...` header
+    /// or by the `X-Amz-*` query parameters of a presigned URL.
+    bool has_aws_signature_v4 = allow_aws_signature_v4 && isAWSSignatureV4Request(request);
+    std::optional<AWSSignatureV4Request> aws_signature_v4;
+
     std::string spnego_challenge;
 #if USE_SSL
     X509Certificate::Subjects certificate_subjects;
@@ -190,7 +189,24 @@ bool authenticateUserByHTTP(
         checkUserNameNotEmptyAndServerHasEnoughMemory(
             config_credentials->getUserName(), "config authentication", global_context, session, client_address);
     }
-    if (has_ssl_certificate_auth)
+    if (has_aws_signature_v4)
+    {
+        /// It is prohibited to mix different authorization schemes.
+        if (has_config_credentials)
+            throwMultipleAuthenticationMethods("AWS Signature Version 4", "authentication set in config");
+        if (has_ssl_certificate_auth)
+            throwMultipleAuthenticationMethods("AWS Signature Version 4", "SSL certificate authentication");
+        if (has_auth_headers)
+            throwMultipleAuthenticationMethods("AWS Signature Version 4", "X-ClickHouse HTTP headers");
+        if (has_credentials_in_query_params)
+            throwMultipleAuthenticationMethods("AWS Signature Version 4", "authentication via parameters");
+
+        aws_signature_v4 = parseAWSSignatureV4Request(request, time(nullptr));
+        /// The access key ID is the user name.
+        user = aws_signature_v4->access_key_id;
+        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "AWS Signature Version 4", global_context, session, client_address);
+    }
+    else if (has_ssl_certificate_auth)
     {
 #if USE_SSL
         /// It is prohibited to mix different authorization schemes. The mix is rejected before
@@ -305,6 +321,16 @@ bool authenticateUserByHTTP(
     if (has_config_credentials)
     {
         current_credentials = std::make_unique<AlwaysAllowCredentials>(*config_credentials);
+    }
+    else if (aws_signature_v4)
+    {
+        current_credentials = std::make_unique<AWSSignatureV4Credentials>(
+            user,
+            aws_signature_v4->date,
+            aws_signature_v4->region,
+            aws_signature_v4->service,
+            aws_signature_v4->string_to_sign,
+            aws_signature_v4->signature);
     }
 #if USE_SSL
     else if (!certificate_subjects.empty())
