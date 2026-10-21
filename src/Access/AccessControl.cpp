@@ -465,6 +465,9 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
 
     setThrowOnInvalidReplicatedAccessEntities(config_.getBool("access_control_improvements.throw_on_invalid_replicated_access_entities", false));
 
+    /// Defaults to false for backwards compatibility — some deployments create SQL policies targeting `default`.
+    setForbidSQLAccessEntitiesTargetingUsersConfig(config_.getBool("access_control_improvements.forbid_sql_access_entities_targeting_users_config", false));
+
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
 
     role_cache = std::make_unique<RoleCache>(*this, config_.getInt("access_control_improvements.role_cache_expiration_time_seconds", 600));
@@ -1418,6 +1421,21 @@ std::shared_ptr<const SettingsProfilesInfo> AccessControl::getEnabledSettingsInf
 std::shared_ptr<const SettingsProfilesInfo> AccessControl::getSettingsProfileInfo(const UUID & profile_id)
 {
     return settings_profiles_cache->getSettingsProfileInfo(profile_id);
+}
+
+
+bool AccessControl::isEntityFromUsersConfig(const UUID & id) const
+{
+    auto storage = findStorage(id);
+    return storage && (strcmp(storage->getStorageType(), UsersConfigAccessStorage::STORAGE_TYPE) == 0);
+}
+
+
+bool AccessControl::shouldSkipSQLAccessEntityForUser(const UUID & policy_id, const UUID & user_id) const
+{
+    return doesForbidSQLAccessEntitiesTargetingUsersConfig()
+        && isEntityFromUsersConfig(user_id)
+        && !isEntityFromUsersConfig(policy_id);
 }
 
 

@@ -14,7 +14,6 @@
 #include <Interpreters/TreeRewriter.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterSortedStreamByRange.h>
@@ -22,7 +21,9 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Common/FieldAccurateComparison.h>
 
+#include <algorithm>
 #include <list>
+#include <ranges>
 
 #include <boost/functional/hash.hpp>
 
@@ -910,13 +911,8 @@ static ASTs buildFilters(const KeyDescription & primary_key, const std::vector<V
         {
             const auto & type = primary_key.data_types.at(i);
 
-            // Refer to the key column by name instead of inlining the key AST. `applyRangeFilterFromAST`
-            // composes this predicate with the table's own key expression, so the name resolves to the value
-            // the table computed. Inlining the key AST here and re-resolving it in the query context would
-            // instead give different values for a key expression whose result type depends on a setting
-            // (`CAST(json.b, 'String')` under `cast_keep_nullable`), and rows the table sorted into a layer
-            // would fall out of that layer's filter.
-            ASTPtr pk_ast = make_intrusive<ASTIdentifier>(primary_key.column_names.at(i));
+            // PK may contain functions of the table columns, so we need the actual PK AST with all expressions it contains.
+            auto pk_ast = primary_key.expression_list_ast->children.at(i)->clone();
 
             // If PK is nullable, prepend a null mask column for > comparison.
             // Also transform the AST into assumeNotNull(pk) so that the result type is not-nullable.
@@ -971,28 +967,32 @@ static ASTs buildFilters(const KeyDescription & primary_key, const std::vector<V
 /// primary key intervals of the selected ranges, so we add back every granule with this property.
 ///
 /// Granules of a part are sorted by the primary key, so the granules of a part that intersect a given
-/// interval form one contiguous range of marks, found by two binary searches. The work is
-/// O(parts * intervals * log(marks in part)), and it does not depend on the number of rejected granules.
+/// interval form one contiguous range of marks, found by two binary searches. A part only visits the
+/// intervals that overlap its key range, and the work does not depend on the number of rejected granules.
 static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ranges_in_data_parts, bool cannot_sort_primary_key, const LoggerPtr & logger)
 {
     IndexAccess index_access(ranges_in_data_parts);
 
     RangesInDataPartsBuilder result(ranges_in_data_parts);
 
-    auto skip_and_return_all_part_ranges = [&]()
+    auto return_ranges_selected_by_primary_key = [&]()
     {
         RangesInDataParts all_part_ranges(std::move(ranges_in_data_parts));
         for (auto & all_part_range : all_part_ranges)
         {
-            const auto & index_granularity = all_part_range.data_part->index_granularity;
-            all_part_range.ranges = MarkRanges{{MarkRange{0, index_granularity->getMarksCountWithoutFinal()}}};
+            if (!all_part_range.ranges_snapshot_after_pk_analysis)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ranges selected by primary key for part {}",
+                        all_part_range.data_part->name);
+            all_part_range.ranges = *all_part_range.ranges_snapshot_after_pk_analysis;
         }
+        std::erase_if(all_part_ranges, [](const auto & part) { return part.ranges.empty(); });
         return all_part_ranges;
     };
 
-    if (cannot_sort_primary_key) /// just expand to all parts + ranges
+    /// The ranges selected by the primary key are what FINAL reads without skip indexes.
+    if (cannot_sort_primary_key)
     {
-        return skip_and_return_all_part_ranges();
+        return return_ranges_selected_by_primary_key();
     }
 
     /// Closed primary key intervals of the selected ranges.
@@ -1014,7 +1014,7 @@ static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataPart
         {
             LOG_TRACE(logger, "use_skip_indexes_if_final_exact_mode processing is not applied, because {} does not have the final mark",
                         ranges_in_data_parts[part_index].data_part->name);
-            return skip_and_return_all_part_ranges();
+            return return_ranges_selected_by_primary_key();
         }
 
         for (const auto & range : ranges_in_data_parts[part_index].ranges)
@@ -1022,7 +1022,7 @@ static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataPart
             const bool value_is_defined_at_end_mark = range.end < index_granularity->getMarksCount();
             if (!value_is_defined_at_end_mark)
             {
-                return skip_and_return_all_part_ranges();
+                return return_ranges_selected_by_primary_key();
             }
 
             intervals.push_back({index_access.getValue(part_index, range.begin), index_access.getValue(part_index, range.end)});
@@ -1069,10 +1069,15 @@ static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataPart
         const size_t part_begin = candidate_ranges.front().begin;
         const size_t part_end = candidate_ranges.back().end;
 
+        /// The intervals are sorted and disjoint, so their upper bounds are sorted.
+        const Values part_begin_value = index_access.getValue(part_index, part_begin);
+        const auto first_interval = std::ranges::partition_point(
+            intervals, [&](const Interval & interval) { return compareValues(interval.upper, part_begin_value, false) < 0; });
+
         /// Ranges of marks whose granules intersect one of the intervals, sorted and disjoint.
         MarkRanges intersecting_ranges;
         size_t search_begin = part_begin;
-        for (const auto & interval : intervals)
+        for (const auto & interval : std::ranges::subrange(first_interval, intervals.end()))
         {
             /// Granule `m` intersects the interval if value(m) <= upper and value(m + 1) >= lower.
             /// The first such mark is the rightmost mark with value < lower, because the next mark has value >= lower.
@@ -1242,6 +1247,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 
     auto split_ranges = splitIntersectingPartsRangesIntoLayers(
         intersecting_parts_ranges, max_layers, primary_key.column_names.size(), in_reverse_order, logger);
+    result.borders = split_ranges.borders;
     result.merging_pipes = readByLayers(std::move(split_ranges), primary_key, create_merging_pipe, context);
     return result;
 }
@@ -1265,23 +1271,8 @@ static void applyRangeFilterFromAST(Pipe & pipe, ASTPtr & filter_function, const
     if (!filter_function || pipe.empty())
         return;
 
-    /// The filter refers to the key columns by name, see `buildFilters`. It is resolved against the key
-    /// sample block and then composed with the table's own key expression, so the values it compares are
-    /// the ones the table computed - the ones the layer borders came from. Inlining the key AST into the
-    /// filter and resolving it with the query's `ExpressionAnalyzer` instead made a key expression whose
-    /// result type depends on a setting a different function: `CAST(json.b, 'String')` is `String` for a
-    /// table created under `cast_keep_nullable = 0` and `Nullable(String)` in a session with
-    /// `cast_keep_nullable = 1`, the row whose `json.b` is missing is `''` for the table and `NULL` for
-    /// the query, and `FilterSortedStreamByRange` dropped it from every layer.
-    ///
-    /// Composing with the key expression - rather than reading the key columns off the stream header -
-    /// is what keeps the two shapes of caller working: `readByLayers` and `MergeTreeFinalMerge` run the
-    /// sorting expression on the pipe first, but the join-by-shards layers of
-    /// `ReadFromMergeTree::readByLayers` are read without it and carry the plain table columns only.
-    /// Either way the key expression needs the same source columns the filter needed before.
-    auto syntax_result = TreeRewriter(context).analyze(filter_function, primary_key.sample_block.getNamesAndTypesList());
-    auto filter_actions = ExpressionAnalyzer(filter_function, syntax_result, context).getActionsDAG(false);
-    auto actions = ActionsDAG::merge(primary_key.expression->getActionsDAG().clone(), std::move(filter_actions));
+    auto syntax_result = TreeRewriter(context).analyze(filter_function, primary_key.expression->getRequiredColumnsWithTypes());
+    auto actions = ExpressionAnalyzer(filter_function, syntax_result, context).getActionsDAG(false);
     reorderColumns(actions, pipe.getHeader(), filter_function->getColumnName());
     ExpressionActionsPtr expression_actions = std::make_shared<ExpressionActions>(std::move(actions));
     pipe.addSimpleTransform(
@@ -1342,7 +1333,7 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndex(
     bool cannot_sort_primary_key = false;
     if (!isSafePrimaryKey(primary_key) || !sorting_key.reverse_flags.empty())
     {
-        LOG_TRACE(logger, "Primary key is not sortable, expanding PK range to entire due to exact_mode.");
+        LOG_TRACE(logger, "Primary key is not sortable, using the ranges selected by the primary key due to exact_mode.");
         cannot_sort_primary_key = true;
     }
     return findPKRangesForFinalAfterSkipIndexImpl(ranges_in_data_parts, cannot_sort_primary_key, logger);

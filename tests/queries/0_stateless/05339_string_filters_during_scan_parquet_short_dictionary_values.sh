@@ -25,7 +25,8 @@ for enable in 0 1; do
     $CLICKHOUSE_CLIENT -q "SELECT count(), sum(cityHash64(s)) FROM file('$FILE', Parquet) PREWHERE s LIKE '%R%' SETTINGS apply_string_filters_during_scan = $enable"
 done
 
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$FILE', Parquet) PREWHERE s LIKE '%R%' SETTINGS apply_string_filters_during_scan = 1, max_threads = 1, log_comment = '05338_short_dictionary_values'"
+# A column that can be written to the columns cache is decoded without the filter, so that the cache gets its values.
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$FILE', Parquet) PREWHERE s LIKE '%R%' SETTINGS apply_string_filters_during_scan = 1, use_columns_cache = 0, max_threads = 1, log_comment = '05338_short_dictionary_values'"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 # Two thirds of the rows do not match. If the filter disabled itself after the first row group,
