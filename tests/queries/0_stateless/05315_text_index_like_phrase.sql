@@ -60,7 +60,7 @@ SELECT 'ilike, three words, no index', groupArray(id) FROM tab WHERE message ILI
 SELECT 'ilike, kelvin sign', groupArray(id) FROM tab WHERE message ILIKE '%Kelvin heap%' SETTINGS log_comment = '05315_ilike_kelvin';
 SELECT 'ilike, kelvin sign, no index', groupArray(id) FROM tab WHERE message ILIKE '%Kelvin heap%' SETTINGS use_skip_indexes = 0;
 
--- A word containing 'k' or starting with 's' is not searched; here no other word is left, so nothing is pruned.
+-- A word starting with 'k' or 's' is not searched; here no other word is left, so nothing is pruned.
 SELECT 'ilike, only word with k', groupArray(id) FROM tab WHERE message ILIKE '%java kafka%' SETTINGS log_comment = '05315_ilike_k';
 SELECT 'ilike, only word with k, no index', groupArray(id) FROM tab WHERE message ILIKE '%java kafka%' SETTINGS use_skip_indexes = 0;
 SELECT 'ilike, only word with s', groupArray(id) FROM tab WHERE message ILIKE '%java sunrise%' SETTINGS log_comment = '05315_ilike_s';
