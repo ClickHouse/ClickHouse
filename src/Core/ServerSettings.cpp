@@ -2303,6 +2303,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
 
         /// Cluster and replication
         "remote_servers",
+        "cluster_metadata",
         "zookeeper",
         "keeper",
         "auxiliary_zookeepers",
