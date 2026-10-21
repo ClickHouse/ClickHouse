@@ -139,8 +139,7 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
     const PersistentTableComponents & persistent_table_components,
     ContextPtr local_context,
     LoggerPtr log,
-    const IcebergPathFromMetadata & filename,
-    size_t manifest_length)
+    const IcebergPathFromMetadata & filename)
 {
     auto log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
 
@@ -153,12 +152,10 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergManifestFilesReadMicroseconds);
 
         RelativePathWithMetadata manifest_object_info(persistent_table_components.path_resolver.resolve(filename));
-        /// `manifest_length` is not always exact, so it only sizes the buffer and the manifest is read to the end.
+        /// `manifest_length` is not always exact, so the manifest is read to the end without a size.
         manifest_object_info.metadata = ObjectMetadata::fromTableRecords(std::nullopt);
 
         auto read_settings = local_context->getReadSettings();
-        if (manifest_length > 0)
-            read_settings = read_settings.adjustBufferSize(manifest_length);
         /// Do not utilize filesystem cache if more precise cache enabled
         if (use_iceberg_metadata_cache)
             read_settings.enable_filesystem_cache = false;
@@ -200,8 +197,7 @@ Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesH
         persistent_table_components,
         local_context,
         log,
-        cache_key.manifest_file_path,
-        cache_key.manifest_file_byte_size);
+        cache_key.manifest_file_path);
 
     auto iterator = Iceberg::ManifestFileIterator::create(
         cacheable_info.deserializer,

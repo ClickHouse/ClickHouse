@@ -423,8 +423,7 @@ Iceberg::ManifestIteratorPtr IcebergIterator::createManifestIterator(const Manif
         persistent_components,
         local_context,
         logger,
-        manifest_list_entry.manifest_file_path,
-        manifest_list_entry.manifest_file_byte_size);
+        manifest_list_entry.manifest_file_path);
 
     return Iceberg::ManifestFileIterator::create(
         manifest_file_cacheable_part.deserializer,
