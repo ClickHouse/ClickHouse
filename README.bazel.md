@@ -195,6 +195,7 @@ CMake hash recorded below.
 | `b2c047c57` (verification snapshot) | Access and Parser public headers from compiled libraries; direct owning dependencies in DBMS and IO | [e29e417a](https://app.buildbuddy.io/invocation/e29e417a-bfcf-4b57-bfa1-1905e0df6848) | [be4edfb7](https://app.buildbuddy.io/invocation/be4edfb7-76c2-4195-8344-b394a8770669) |
 | `7e75a6d00` (verification snapshot) | Base public headers in common, Poco XML/Expat ownership, complete REST dependencies and LLVM Atomic owner | [0f4d2fc4](https://app.buildbuddy.io/invocation/0f4d2fc4-61f4-4692-a166-37a9575cadcc) | [30935dd1](https://app.buildbuddy.io/invocation/30935dd1-15e2-4e75-9894-9e26567bb370) |
 | `e70a4f987` (verification snapshot) | Remove unrelated headers and 138 dependencies from the generated System licenses source | [64bfaf5b](https://app.buildbuddy.io/invocation/64bfaf5b-4645-4eb9-a11c-cfa5224cb9d2) | [32f8ffef](https://app.buildbuddy.io/invocation/32f8ffef-e681-414c-b65a-c4a4e72247d0) |
+| `f6b06dbce` (verification snapshot) | Select the 125 ARM-only compiler-rt outline atomic targets on ARM | [4da44d66](https://app.buildbuddy.io/invocation/4da44d66-718e-488a-8fab-12971e70e25e) | [2b778ee0](https://app.buildbuddy.io/invocation/2b778ee0-c6f9-41f5-b6a4-3b4c0a6d1ff5) |
 
 The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`
