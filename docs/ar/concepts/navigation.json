@@ -41,7 +41,7 @@
         {
           "group": "الإسقاطات",
           "pages": [
-            "ar/concepts/features/projections/projections",
+            "concepts/features/projections/projections",
             "ar/concepts/features/projections/materialized-views-versus-projections"
           ]
         },
@@ -99,7 +99,7 @@
             {
               "group": "استرجاع البيانات",
               "pages": [
-                "ar/concepts/features/operations/select/joining-tables"
+                "concepts/features/operations/select/joining-tables"
               ]
             },
             {
@@ -191,7 +191,7 @@
                 },
                 "ar/concepts/features/security/external-authenticators/http",
                 "ar/concepts/features/security/external-authenticators/kerberos",
-                "ar/concepts/features/security/external-authenticators/jwt"
+                "concepts/features/security/external-authenticators/jwt"
               ]
             }
           ]
@@ -219,7 +219,7 @@
               "group": "المشغّلات والواجهات",
               "pages": [
                 "ar/concepts/features/interfaces/overview",
-                "ar/concepts/features/interfaces/http",
+                "concepts/features/interfaces/http",
                 "ar/concepts/features/interfaces/framing-formats",
                 "ar/concepts/features/interfaces/tcp",
                 "ar/concepts/features/interfaces/adbc",

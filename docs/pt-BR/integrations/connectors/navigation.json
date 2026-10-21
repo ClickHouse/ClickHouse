@@ -8,7 +8,7 @@
           "expanded": false,
           "group": "AWS S3",
           "pages": [
-            "pt-BR/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse",
+            "integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse",
             "pt-BR/integrations/connectors/data-ingestion/AWS/performance",
             "pt-BR/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket"
           ]
@@ -26,7 +26,7 @@
             "pt-BR/integrations/connectors/data-ingestion/kafka/kafka-vector",
             "pt-BR/integrations/connectors/data-ingestion/kafka/kafka-table-engine",
             "pt-BR/integrations/connectors/data-ingestion/kafka/confluent/index",
-            "pt-BR/integrations/connectors/data-ingestion/kafka/confluent/kafka-connect-http",
+            "integrations/connectors/data-ingestion/kafka/confluent/kafka-connect-http",
             "pt-BR/integrations/connectors/data-ingestion/kafka/kafka-connect-jdbc",
             "pt-BR/integrations/connectors/data-ingestion/kafka/kafka-table-engine-named-collections"
           ]
