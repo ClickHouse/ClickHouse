@@ -7,7 +7,7 @@
 #   4. skip index: the scan drops granules by the table's skip index, like a plain read
 #   5. read limit: under break-mode `max_rows_to_read`, every matching row still dies
 #   6. time limit: a soft timeout fails the DELETE instead of committing part of it
-#   7. simple predicate: one that reads another table is refused
+#   7. simple predicate: one that reads another table is refused, also through a column's expression
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -141,11 +141,18 @@ $CLICKHOUSE_CLIENT --query "SELECT 'time_after_timeout', count() FROM uk_del_tim
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE uk_del_timelimit"
 
-# 7. simple predicate: red if a predicate reading another table runs (`refused ... 0`, rows die).
+# 7. simple predicate: red if a predicate reading another table runs (`refused ... 0`, rows die), or if an Array
+# column of the table on the right of IN is refused (`array_survivors` keeps id 1).
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS uk_del_simple"
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS uk_simple_keys"
-$CLICKHOUSE_CLIENT --query "CREATE TABLE uk_del_simple (id UInt64) ENGINE = MergeTree ORDER BY id UNIQUE KEY (id)"
 $CLICKHOUSE_CLIENT --query "CREATE TABLE uk_simple_keys (id UInt64) ENGINE = MergeTree ORDER BY id"
+$CLICKHOUSE_CLIENT --query "
+    CREATE TABLE uk_del_simple (
+        id UInt64,
+        outside UInt8 ALIAS id NOT IN uk_simple_keys,
+        outside_chain UInt8 ALIAS outside,
+        outside_tuple Tuple(flag UInt8) ALIAS CAST(tuple(id NOT IN uk_simple_keys), 'Tuple(flag UInt8)'))
+    ENGINE = MergeTree ORDER BY id UNIQUE KEY (id)"
 $CLICKHOUSE_CLIENT --query "INSERT INTO uk_del_simple SELECT number FROM numbers(100)"
 $CLICKHOUSE_CLIENT --query "INSERT INTO uk_simple_keys VALUES (1)"
 
@@ -153,13 +160,32 @@ for case in \
     "in_subquery:id IN (SELECT id FROM uk_simple_keys)" \
     "in_table:id IN uk_simple_keys" \
     "scalar_subquery:id = (SELECT max(id) FROM uk_simple_keys)" \
-    "exists:EXISTS (SELECT 1 FROM uk_simple_keys)"
+    "exists:EXISTS (SELECT 1 FROM uk_simple_keys)" \
+    "alias:outside" \
+    "alias_chain:outside_chain" \
+    "alias_qualified:uk_del_simple.outside" \
+    "alias_subcolumn:outside_tuple.flag = 1"
 do
     $CLICKHOUSE_CLIENT --query "DELETE FROM uk_del_simple WHERE ${case#*:}" 2>&1 \
         | grep -q "SUPPORT_IS_DISABLED" && echo "refused ${case%%:*} 1" || echo "refused ${case%%:*} 0"
 done
 
 $CLICKHOUSE_CLIENT --query "SELECT 'simple_survivors', count() FROM uk_del_simple"
+
+# A DEFAULT column added after the insert, so the part computes it from its expression. Never read back: computing
+# `IN` a table there aborts a debug server, a stock bug.
+$CLICKHOUSE_CLIENT --query "CREATE TABLE uk_del_default (id UInt64) ENGINE = MergeTree ORDER BY id UNIQUE KEY (id)"
+$CLICKHOUSE_CLIENT --query "INSERT INTO uk_del_default SELECT number FROM numbers(100)"
+$CLICKHOUSE_CLIENT --query "ALTER TABLE uk_del_default ADD COLUMN outside UInt8 DEFAULT id NOT IN uk_simple_keys"
+$CLICKHOUSE_CLIENT --query "DELETE FROM uk_del_default WHERE outside" 2>&1 \
+    | grep -q "SUPPORT_IS_DISABLED" && echo "refused default 1" || echo "refused default 0"
+$CLICKHOUSE_CLIENT --query "DROP TABLE uk_del_default"
+
+$CLICKHOUSE_CLIENT --query "CREATE TABLE uk_del_array (id UInt64, allowed Array(UInt64)) ENGINE = MergeTree ORDER BY id UNIQUE KEY (id)"
+$CLICKHOUSE_CLIENT --query "INSERT INTO uk_del_array VALUES (1, [3]), (2, [2])"
+$CLICKHOUSE_CLIENT --query "DELETE FROM uk_del_array WHERE id IN (allowed)"
+$CLICKHOUSE_CLIENT --query "SELECT 'array_survivors', groupArray(id) FROM uk_del_array"
+$CLICKHOUSE_CLIENT --query "DROP TABLE uk_del_array"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE uk_del_simple"
 $CLICKHOUSE_CLIENT --query "DROP TABLE uk_simple_keys"

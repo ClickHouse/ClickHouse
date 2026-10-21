@@ -18,4 +18,10 @@ refused in_subquery 1
 refused in_table 1
 refused scalar_subquery 1
 refused exists 1
+refused alias 1
+refused alias_chain 1
+refused alias_qualified 1
+refused alias_subcolumn 1
 simple_survivors	100
+refused default 1
+array_survivors	[1]

@@ -106,21 +106,41 @@ std::vector<String> partitionsToVisit(const MergeTreeData & storage, const ASTDe
 
 /// The predicate reads only the deleted table: a subquery, or a table on the right of `IN`, brings in SQL with its
 /// own settings, whose limits could end it early and leave a `NOT IN` set incomplete.
-void throwIfPredicateReadsTables(const IAST & ast)
+/// A column with an expression brings it in: an `ALIAS` column on every read, a `DEFAULT` or `MATERIALIZED` one in a
+/// part written before it was added. So the expressions of the columns it names are checked too.
+void throwIfPredicateReadsTables(const IAST & ast, const ColumnsDescription & columns, NameSet & expanded_columns)
 {
     if (ast.as<ASTSubquery>())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "DELETE on a UNIQUE KEY table does not support subqueries");
+
+    if (const auto * identifier = ast.as<ASTIdentifier>())
+    {
+        /// Every dotted run of the parts, for a column qualified with its table or one whose subcolumn is named.
+        const auto & parts = identifier->name_parts;
+        for (size_t begin = 0; begin < parts.size(); ++begin)
+        {
+            String name;
+            for (size_t end = begin; end < parts.size(); ++end)
+            {
+                name += (end == begin ? "" : ".") + parts[end];
+                if (const auto * column = columns.tryGet(name);
+                    column && column->default_desc.expression && expanded_columns.insert(column->name).second)
+                    throwIfPredicateReadsTables(*column->default_desc.expression, columns, expanded_columns);
+            }
+        }
+        return;
+    }
 
     if (const auto * function = ast.as<ASTFunction>();
         function && functionIsInOrGlobalInOperator(function->name) && function->arguments && function->arguments->children.size() == 2)
     {
         const auto & rhs = function->arguments->children[1];
-        if (rhs->as<ASTIdentifier>() || rhs->as<ASTTableIdentifier>())
+        if ((rhs->as<ASTIdentifier>() && !columns.has(rhs->as<ASTIdentifier>()->name())) || rhs->as<ASTTableIdentifier>())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "DELETE on a UNIQUE KEY table does not support a table on the right of `{}`", function->name);
     }
 
     for (const auto & child : ast.children)
-        throwIfPredicateReadsTables(*child);
+        throwIfPredicateReadsTables(*child, columns, expanded_columns);
 }
 
 /// `READ_COLUMN _part, _part_offset` plus an `UPDATE _row_exists = 0 IN PARTITION ID ... WHERE <predicate>`
@@ -190,6 +210,8 @@ struct DeleteStatement
     StorageMergeTree & storage;
     const ASTDeleteQuery & query;
     const ContextPtr query_context;
+    /// The one the predicate was checked against.
+    const StorageMetadataPtr metadata_snapshot;
     const LoggerPtr log;
 
     /// The rows of one partition the predicate matches at `txn`'s snapshot. Scanned like a lightweight
@@ -208,7 +230,6 @@ struct DeleteStatement
         settings.return_mutated_rows = true;
         settings.max_threads = query_context->getSettingsRef()[Setting::max_threads];
 
-        const auto metadata_snapshot = storage.getInMemoryMetadataPtr(scan_context, /*bypass_metadata_cache=*/false);
         MutationsInterpreter interpreter(
             storage.shared_from_this(),
             metadata_snapshot,
@@ -289,12 +310,15 @@ void StorageMergeTree::deleteByUniqueKey(const ASTPtr & query_ptr, ContextPtr qu
     throwIfInsideTransaction(query_context->getCurrentTransaction(), "DELETE");
 
     const auto & query = query_ptr->as<ASTDeleteQuery &>();
-    throwIfPredicateReadsTables(*query.predicate);
+    const auto metadata_snapshot = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/false);
+    NameSet expanded_columns;
+    throwIfPredicateReadsTables(*query.predicate, metadata_snapshot->getColumns(), expanded_columns);
 
     const DeleteStatement statement{
         .storage = *this,
         .query = query,
         .query_context = query_context,
+        .metadata_snapshot = metadata_snapshot,
         .log = getLogger(getLogName())};
 
     const auto partition_ids = partitionsToVisit(*this, query, query_context);
