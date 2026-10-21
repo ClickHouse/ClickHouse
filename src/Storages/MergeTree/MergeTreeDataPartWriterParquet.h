@@ -76,6 +76,8 @@ private:
         UInt64 uncompressed_bytes = 0;
         /// The size of the written data of the column in the file.
         UInt64 compressed_bytes = 0;
+        /// The positions in `schema` of the leaves of the column, in the order of its column chunks.
+        std::vector<size_t> leaf_schema_indices;
     };
 
     std::vector<ColumnToWrite> columns_to_write;

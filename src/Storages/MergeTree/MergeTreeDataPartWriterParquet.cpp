@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ParallelSyncFiles.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionCodecMultiple.h>
@@ -22,6 +23,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/isValidUTF8.h>
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
@@ -300,7 +302,11 @@ MergeTreeDataPartWriterParquet::MergeTreeDataPartWriterParquet(
             column.options.output_string_as_string = false;
 
         DataTypePtr type_in_file = column.binary ? std::make_shared<DataTypeString>() : name_and_type.type;
+        size_t schema_size_before = schema.size();
         Parquet::prepareColumnForWrite(type_in_file->createColumn(), type_in_file, name_and_type.name, column.options, nullptr, &schema);
+        for (size_t i = schema_size_before; i < schema.size(); ++i)
+            if (!schema[i].__isset.num_children)
+                column.leaf_schema_indices.push_back(i);
 
         Poco::JSON::Object::Ptr column_metadata = new Poco::JSON::Object;
         column_metadata->set("name", name_and_type.name);
@@ -347,6 +353,32 @@ MergeTreeDataPartWriterParquet::MergeTreeDataPartWriterParquet(
 
 namespace
 {
+
+/// Whether all values of a column of strings, written with the `STRING` logical type, are valid UTF-8.
+bool isValidUTF8Strings(const IColumn & column)
+{
+    if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column))
+        return isValidUTF8Strings(*low_cardinality->getDictionary().getNestedNotNullableColumn());
+
+    const auto * string_column = typeid_cast<const ColumnString *>(&column);
+    if (!string_column)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} with the STRING logical type", column.getName());
+
+    const auto & chars = string_column->getChars();
+    if (!UTF8::isValidUTF8(chars.data(), chars.size()))
+        return false;
+
+    /// The concatenation of the values is valid, so every value is valid if none of them starts in the middle
+    /// of a character, i.e. with a continuation byte.
+    const auto & offsets = string_column->getOffsets();
+    for (size_t row = 0; row < offsets.size(); ++row)
+    {
+        size_t begin = offsets[row - 1];
+        if (begin < offsets[row] && (chars[begin] & 0xC0) == 0x80)
+            return false;
+    }
+    return true;
+}
 
 /// Get granules for block using index_granularity
 Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity, size_t block_rows, size_t current_mark, bool last_block)
@@ -506,6 +538,24 @@ void MergeTreeDataPartWriterParquet::writeColumnChunks(size_t column_idx, const 
 
     Parquet::ColumnChunkWriteStates states;
     Parquet::prepareColumnForWrite(column_in_file, type_in_file, name, column_to_write.options, &states);
+
+    if (states.size() != column_to_write.leaf_schema_indices.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Unexpected number of column chunks for column {}: {}, expected {}", name, states.size(), column_to_write.leaf_schema_indices.size());
+
+    /// `String` can contain arbitrary bytes, but the `STRING` logical type requires UTF-8. The schema is written
+    /// in the footer of the file, so the annotation is removed from it as soon as any value is not valid UTF-8,
+    /// and external applications read such a column as binary. The statistics and bloom filters are the same.
+    for (size_t i = 0; i < states.size(); ++i)
+    {
+        auto & element = schema[column_to_write.leaf_schema_indices[i]];
+        if (element.__isset.logicalType && element.logicalType.__isset.STRING && !isValidUTF8Strings(*states[i].primitive_column))
+        {
+            element.__isset.logicalType = false;
+            element.logicalType = {};
+            element.__isset.converted_type = false;
+        }
+    }
 
     FormatSettings format_settings;
     for (auto & state : states)
