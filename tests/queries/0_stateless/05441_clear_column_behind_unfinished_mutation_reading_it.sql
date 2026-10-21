@@ -10,6 +10,7 @@ DROP TABLE IF EXISTS t_clear_mt;
 DROP TABLE IF EXISTS t_clear_ttl;
 DROP TABLE IF EXISTS t_clear_rmt;
 DROP TABLE IF EXISTS t_clear_b;
+DROP TABLE IF EXISTS t_clear_m;
 
 CREATE TABLE t_clear_mt (id UInt32, a UInt32, b UInt32, w UInt32, tp Tuple(x UInt32), n Nested(x UInt32))
 ENGINE = MergeTree ORDER BY id;
@@ -155,6 +156,14 @@ ALTER TABLE t_clear_b UPDATE x = x + 1 WHERE 1 SETTINGS mutations_sync = 0;
 ALTER TABLE t_clear_b CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
 KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_b' AND NOT is_done SYNC FORMAT Null;
 
+-- An UPDATE of `x` recomputes `m`, which reads `b`.
+CREATE TABLE t_clear_m (id UInt32, x UInt32, b UInt32, m UInt32 MATERIALIZED x + b) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_clear_m (id, x, b) VALUES (1, 1, 2222), (2, 2, 4444);
+SYSTEM STOP MERGES t_clear_m;
+ALTER TABLE t_clear_m UPDATE x = x + 1 WHERE 1 SETTINGS mutations_sync = 0;
+ALTER TABLE t_clear_m CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_m' AND NOT is_done SYNC FORMAT Null;
+
 CREATE TABLE t_clear_rmt (id UInt32, a UInt32, b UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_clear_rmt', '1') ORDER BY id
 SETTINGS merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 200;
@@ -175,3 +184,4 @@ DROP TABLE t_clear_mt;
 DROP TABLE t_clear_ttl;
 DROP TABLE t_clear_rmt;
 DROP TABLE t_clear_b;
+DROP TABLE t_clear_m;
