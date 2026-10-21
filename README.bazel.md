@@ -194,6 +194,7 @@ CMake hash recorded below.
 | `fd40501a2` (verification snapshot) | Native C++ header ownership; Poco Foundation/XML and program deps; Avro public/private deps | [8edb9851](https://app.buildbuddy.io/invocation/8edb9851-f92a-4ae4-b8fd-06fef6688e42) | [818fcf79](https://app.buildbuddy.io/invocation/818fcf79-ae68-4ec8-8ad5-165c79f83cfa) |
 | `b2c047c57` (verification snapshot) | Access and Parser public headers from compiled libraries; direct owning dependencies in DBMS and IO | [e29e417a](https://app.buildbuddy.io/invocation/e29e417a-bfcf-4b57-bfa1-1905e0df6848) | [be4edfb7](https://app.buildbuddy.io/invocation/be4edfb7-76c2-4195-8344-b394a8770669) |
 | `7e75a6d00` (verification snapshot) | Base public headers in common, Poco XML/Expat ownership, complete REST dependencies and LLVM Atomic owner | [0f4d2fc4](https://app.buildbuddy.io/invocation/0f4d2fc4-61f4-4692-a166-37a9575cadcc) | [30935dd1](https://app.buildbuddy.io/invocation/30935dd1-15e2-4e75-9894-9e26567bb370) |
+| `e70a4f987` (verification snapshot) | Remove unrelated headers and 138 dependencies from the generated System licenses source | [64bfaf5b](https://app.buildbuddy.io/invocation/64bfaf5b-4645-4eb9-a11c-cfa5224cb9d2) | [32f8ffef](https://app.buildbuddy.io/invocation/32f8ffef-e681-414c-b65a-c4a4e72247d0) |
 
 The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`

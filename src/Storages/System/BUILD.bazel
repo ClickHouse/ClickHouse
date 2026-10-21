@@ -282,13 +282,12 @@ _GENERATED_DEPS_0 = select({
 ch_cc_library(
     name = "clickhouse_storages_system__compile_0",
     srcs = ["//bazel:gen/src/Storages/System/StorageSystemLicenses.generated.cpp"],
-    hdrs = _GENERATED_HDRS_0,
     clickhouse_code = True,
     copts = [
         "-w",
     ],
     local_defines = _CLICKHOUSE_STORAGES_SYSTEM_LOCAL_DEFINES,
-    deps = _GENERATED_DEPS_0,
+    source_headers = False,
 )
 
 ch_cc_library(
@@ -449,7 +448,6 @@ ch_cc_library(
         "@clickhouse_cppkafka//:_cppkafka",
         "@clickhouse_croaring//:_roaring",
         "@clickhouse_nuraft//:_nuraft",
-        "//bazel:clickhouse_config_headers",
         "@clickhouse_libfiu//:_libfiu",
         "@clickhouse_libarchive//:_libarchive",
         "@clickhouse_mongo_c_driver//:_libmongoc",
@@ -474,7 +472,7 @@ ch_cc_library(
         "../../../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
         "../../../" + "bazel/gen",
     ],
-    deps = _GENERATED_DEPS_0,
+    deps = ["//bazel:clickhouse_config_headers"] + _GENERATED_DEPS_0,
 )
 
 cc_library(
