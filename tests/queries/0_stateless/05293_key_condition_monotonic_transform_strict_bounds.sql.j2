@@ -10,6 +10,7 @@
 
 SET explain_query_plan_default = 'legacy';
 SET session_timezone = 'UTC';
+SET min_marks_to_use_statistics = 0;
 
 {#- Each check prints the predicate, the count with index analysis, the count of a full scan, the marks
     selected by index analysis and the key condition. -#}
