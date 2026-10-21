@@ -83,17 +83,17 @@ run_global() {
 is_cloud=$(${CLICKHOUSE_CLIENT} --query "SELECT value FROM system.build_options WHERE name = 'CLICKHOUSE_CLOUD'")
 
 # SYSTEM VIRTUAL PARTS UPDATE is a private feature, so only the access check is common to both
-# builds. Assert the grant holder is not denied, and pin the open-source outcome (the command is
-# not implemented there, so it stops at BAD_ARGUMENTS after the access check).
+# builds. Assert the grant holder is not denied, and pin the open-source outcome (the action lock
+# is not used by `MergeTree` there, so the command succeeds as a no-op after the access check).
 vparts_allowed() {
     local out
     out=$(run --user "$1" --query "$2" 2>&1)
     if grep -qF ACCESS_DENIED <<< "$out"; then
         echo "FAIL: access denied: $out"
-    elif [ "$is_cloud" = 1 ] || grep -qF BAD_ARGUMENTS <<< "$out"; then
+    elif [ "$is_cloud" = 1 ] || [ -z "$out" ]; then
         echo "ok"
     else
-        echo "FAIL: expected BAD_ARGUMENTS on the open-source build: $out"
+        echo "FAIL: expected success on the open-source build: $out"
     fi
 }
 
