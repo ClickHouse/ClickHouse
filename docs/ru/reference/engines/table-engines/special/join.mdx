@@ -14,9 +14,7 @@ doc_type: 'reference'
   В ClickHouse Cloud, если ваш сервис был создан с версией ниже 25.4, вам потребуется установить совместимость не ниже 25.4 с помощью `SET compatibility=25.4`.
 </Note>
 
-<div id="creating-a-table">
-  ## Создание таблицы
-</div>
+## Создание таблицы {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -28,45 +26,31 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 См. подробное описание запроса [CREATE TABLE](/ru/reference/statements/create/table).
 
-<div id="engine-parameters">
-  ## Параметры движка
-</div>
+## Параметры движка {#engine-parameters}
 
-<div id="join_strictness">
-  ### `join_strictness`
-</div>
+### `join_strictness` {#join_strictness}
 
 `join_strictness` – [режим строгости JOIN](/ru/reference/statements/select/join#supported-types-of-join).
 
-<div id="join_type">
-  ### `join_type`
-</div>
+### `join_type` {#join_type}
 
 `join_type` — [тип JOIN](/ru/reference/statements/select/join#supported-types-of-join).
 
-<div id="key-columns">
-  ### Столбцы ключа
-</div>
+### Столбцы ключа {#key-columns}
 
 `k1[, k2, ...]` — столбцы ключа из предложения `USING`, по которым выполняется операция `JOIN`.
 
 Укажите параметры `join_strictness` и `join_type` без кавычек, например: `Join(ANY, LEFT, col1)`. Они должны соответствовать операции `JOIN`, для которой будет использоваться таблица. Если параметры не совпадают, ClickHouse не сгенерирует исключение и может вернуть некорректные данные.
 
-<div id="specifics-and-recommendations">
-  ## Особенности и рекомендации
-</div>
+## Особенности и рекомендации {#specifics-and-recommendations}
 
-<div id="data-storage">
-  ### Хранение данных
-</div>
+### Хранение данных {#data-storage}
 
 Данные таблицы `Join` всегда хранятся в оперативной памяти. При вставке строк в таблицу ClickHouse записывает блоки данных в каталог на диске, чтобы их можно было восстановить после перезапуска сервера.
 
 Если сервер перезапустился некорректно, блок данных на диске может быть утерян или повреждён. В этом случае может потребоваться вручную удалить файл с повреждёнными данными.
 
-<div id="selecting-and-inserting-data">
-  ### Выборка и вставка данных
-</div>
+### Выборка и вставка данных {#selecting-and-inserting-data}
 
 Вы можете использовать запросы `INSERT`, чтобы добавлять данные в таблицы движка `Join`. Если таблица была создана со строгостью `ANY`, данные для повторяющихся ключей игнорируются. При строгости `ALL` добавляются все строки.
 
@@ -75,55 +59,37 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * Размещать таблицу в правой части выражения `JOIN`.
 * Вызывать функцию [joinGet](/ru/reference/functions/regular-functions/other-functions#joinGet), которая позволяет извлекать данные из таблицы так же, как из словаря.
 
-<div id="deleting-data">
-  ### Удаление данных
-</div>
+### Удаление данных {#deleting-data}
 
 Запросы `ALTER DELETE` для таблиц движка `Join` реализованы как [мутации](/ru/reference/statements/alter/index#mutations). Мутация `DELETE` считывает отфильтрованные данные и перезаписывает данные в памяти и на диске.
 
-<div id="join-limitations-and-settings">
-  ### Ограничения и настройки
-</div>
+### Ограничения и настройки {#join-limitations-and-settings}
 
 При создании таблицы применяются следующие настройки:
 
-<div id="join_use_nulls">
-  #### `join_use_nulls`
-</div>
+#### `join_use_nulls` {#join_use_nulls}
 
 [join&#95;use&#95;nulls](/ru/reference/settings/session-settings/join#join_use_nulls)
 
-<div id="max_rows_in_join">
-  #### `max_rows_in_join`
-</div>
+#### `max_rows_in_join` {#max_rows_in_join}
 
 [max&#95;rows&#95;in&#95;join](/ru/reference/settings/session-settings/max-rows#max_rows_in_join)
 
-<div id="max_bytes_in_join">
-  #### `max_bytes_in_join`
-</div>
+#### `max_bytes_in_join` {#max_bytes_in_join}
 
 [max&#95;bytes&#95;in&#95;join](/ru/reference/settings/session-settings/max-bytes#max_bytes_in_join)
 
-<div id="join_overflow_mode">
-  #### `join_overflow_mode`
-</div>
+#### `join_overflow_mode` {#join_overflow_mode}
 
 [join&#95;overflow&#95;mode](/ru/reference/settings/session-settings/join#join_overflow_mode)
 
-<div id="join_any_take_last_row">
-  #### `join_any_take_last_row`
-</div>
+#### `join_any_take_last_row` {#join_any_take_last_row}
 
 [join&#95;any&#95;take&#95;last&#95;row](/ru/reference/settings/session-settings/join#join_any_take_last_row)
 
-<div id="join_use_nulls">
-  #### `join_use_nulls`
-</div>
+#### `join_use_nulls` {#join_use_nulls-1}
 
-<div id="persistent">
-  #### Persistent
-</div>
+#### Persistent {#persistent}
 
 Отключает постоянное хранение данных для движков таблиц Join и [Set](/ru/reference/engines/table-engines/special/set).
 
@@ -138,11 +104,11 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Таблицы движка `Join` нельзя использовать в операциях `GLOBAL JOIN`.
 
+[Политика строк](/ru/reference/statements/create/row-policy) для таблицы движка `Join` применяется к обычному `SELECT` из неё, однако `JOIN` и `joinGet` читают подготовленную хеш-таблицу как есть и не могут отфильтровать её строки. Поэтому, пока к таблице применяется политика, такие запросы завершаются ошибкой `ACCESS_DENIED`.
+
 Движок `Join` позволяет указать настройку [join&#95;use&#95;nulls](/ru/reference/settings/session-settings/join#join_use_nulls) в операторе `CREATE TABLE`. В запросе [SELECT](/ru/reference/statements/select/index) должно использоваться то же значение `join_use_nulls`.
 
-<div id="example">
-  ## Примеры использования
-</div>
+## Примеры использования {#example}
 
 Создание левой таблицы:
 

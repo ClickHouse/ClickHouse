@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/TextIndexBlockedPositionsCodec.h>
+#include <Storages/MergeTree/MergeTreeIndexText.h>
 
 #include <Compression/PFor.h>
 #include <IO/ReadHelpers.h>
@@ -324,6 +325,21 @@ void TextIndexBlockedPositionsCodec::decodeAll(
     }
 
     chassert(doc_offsets.size() == expected_num_docs + 1);
+}
+
+void validateTokenPositions(const TokenPostingsInfo & info, size_t file_size)
+{
+    if (!(info.header & PostingsSerialization::Flags::HasPositions))
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data in text index: a token with {} postings has no positions", info.cardinality);
+
+    if ((info.position_bytes == 0)
+        || (info.position_offset > file_size)
+        || (info.position_bytes > file_size - info.position_offset))
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index positions: blob of {} bytes at offset {} is outside the {}-byte stream",
+            info.position_bytes, info.position_offset, file_size);
+    }
 }
 
 }

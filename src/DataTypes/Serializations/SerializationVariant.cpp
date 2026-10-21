@@ -73,13 +73,13 @@ struct DeserializeBinaryBulkStateVariant : public ISerialization::DeserializeBin
     ISerialization::DeserializeBinaryBulkStatePtr discriminators_state;
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> variant_states;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateVariant>();
-        new_state->discriminators_state = discriminators_state ? discriminators_state->clone() : nullptr;
+        new_state->discriminators_state = discriminators_state ? discriminators_state->clone(context) : nullptr;
         new_state->variant_states.reserve(variant_states.size());
         for (const auto & variant_state : variant_states)
-            new_state->variant_states.push_back(variant_state ? variant_state->clone() : nullptr);
+            new_state->variant_states.push_back(variant_state ? variant_state->clone(context) : nullptr);
         return new_state;
     }
 };
