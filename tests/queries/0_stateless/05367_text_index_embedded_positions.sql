@@ -23,7 +23,7 @@ CREATE TABLE tab_idx
 (
     id UInt32,
     message String,
-    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1)
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, posting_list_codec = 'pfor', support_phrase_search = 1)
 )
 ENGINE = MergeTree
 ORDER BY id
