@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <string_view>
+#include <Common/StringUtils.h>
 
 #if USE_SSL
 #    include <Common/OpenSSLHelpers.h>
@@ -117,6 +118,13 @@ namespace
         if (authentication_method.getType() != AuthenticationType::SCRAM_SHA256_PASSWORD)
             return false;
 
+        /// The SCRAM client proof is derived from the password alone, so it cannot carry or verify
+        /// a one-time password. Accepting it would let the client skip the second factor.
+        /// The PostgreSQL frontend refuses to run the SCRAM exchange for such users (see `getScramSalt`);
+        /// this check keeps the bypass closed for any other producer of SCRAM credentials.
+        if (authentication_method.getOneTimePassword())
+            return false;
+
         const auto & client_proof = scram_sha256_credentials->getClientProof();
         const auto & auth_message = scram_sha256_credentials->getAuthMessage();
         const auto & password = authentication_method.getPasswordHashBinary();
@@ -140,6 +148,13 @@ namespace
         const MySQLNative41Credentials * mysql_credentials,
         const AuthenticationData & authentication_method)
     {
+        /// The Native41 auth response is a hash of the password alone, so it cannot carry a one-time password.
+        /// Accepting it would let the client skip the second factor. `MySQLHandler` switches such users
+        /// to the `Sha256Password` plugin, which transmits the actual password string with the one-time
+        /// password appended, verified via the `BasicCredentials` path.
+        if (authentication_method.getOneTimePassword())
+            return false;
+
         switch (authentication_method.getType())
         {
             case AuthenticationType::PLAINTEXT_PASSWORD:
@@ -214,7 +229,7 @@ namespace
             case AuthenticationType::PLAINTEXT_PASSWORD:
             {
                 const auto & password_plaintext = authentication_method.getPasswordHashBinary();
-                return Util::stringToDigest(password) == password_plaintext ? on_success : Authentication::CredentialsCheckResult::Fail;
+                return constantTimeEquals(Util::stringToDigest(password), password_plaintext) ? on_success : Authentication::CredentialsCheckResult::Fail;
             }
             case AuthenticationType::SHA256_PASSWORD:
             {
@@ -307,6 +322,11 @@ namespace
 
                     for (const auto & certificate_subject : ssl_certificate_credentials->getSSLCertificateSubjects().at(type))
                     {
+                        // Subjects are extracted with their exact bytes, so an embedded NUL byte survives. No valid
+                        // hostname or URI contains one, and '*' must not match a span like "evil\0" in
+                        // "evil\0.corp.example.com", so such a subject never matches a wildcard.
+                        if (certificate_subject.contains('\0'))
+                            continue;
                         // Checked before the substr below so its length cannot underflow when prefix and suffix overlap.
                         if (certificate_subject.size() < prefix.size() + suffix.size())
                             continue;
@@ -417,6 +437,22 @@ Authentication::CredentialsCheckResult Authentication::areCredentialsValid(
         return CredentialsCheckResult::Success;
 
     return CredentialsCheckResult::Fail;
+}
+
+bool Authentication::mysqlNative41CannotVerify(const AuthenticationData & authentication_method)
+{
+    if (authentication_method.getOneTimePassword())
+        return true;
+
+    switch (authentication_method.getType())
+    {
+        case AuthenticationType::SHA256_PASSWORD:
+        case AuthenticationType::SCRAM_SHA256_PASSWORD:
+        case AuthenticationType::BCRYPT_PASSWORD:
+            return true;
+        default:
+            return false;
+    }
 }
 
 bool Authentication::consumeOneTimePassword(const Credentials & credentials, const AuthenticationData & authentication_method)

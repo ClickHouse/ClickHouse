@@ -42,6 +42,7 @@ private:
 
 public:
     static constexpr auto name = "splitByRegexp";
+    static constexpr auto signature = "(const String, String, [const NativeInteger]) -> Array(String)";
 
     static bool isVariadic() { return true; }
     static size_t getNumberOfArguments() { return 0; }
@@ -64,7 +65,7 @@ public:
                             "Must be constant string.", arguments[0].column->getName(), name);
 
         if (!col->getValue<String>().empty())
-            re = std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, false, false>(col->getValue<String>()));
+            re = std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, false, false, false>(col->getValue<String>()));
 
         max_substrings_includes_remaining_string = max_substrings_includes_remaining_string_;
         max_splits = extractMaxSplits(arguments, 2);
@@ -186,6 +187,8 @@ public:
         return split_by_regexp->getReturnTypeImpl(arguments);
     }
 
+    String getSignatureString() const override { return split_by_regexp->getSignatureString(); }
+
 private:
     bool patternIsTrivialChar(const ColumnsWithTypeAndName & arguments) const
     {
@@ -198,7 +201,7 @@ private:
         String pattern = col->getValue<String>();
         if (pattern.size() == 1)
         {
-            OptimizedRegularExpression re = Regexps::createRegexp<false, false, false>(pattern);
+            OptimizedRegularExpression re = Regexps::createRegexp<false, false, false, false>(pattern);
 
             std::string required_substring;
             bool is_trivial = false;

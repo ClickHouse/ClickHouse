@@ -5,6 +5,10 @@
 namespace DB
 {
 
+/// Runtime bloom filter should be small and fast otherwise it is pointless
+constexpr UInt64 MAX_RUNTIME_BLOOM_FILTER_BYTES = 16 * 1024 * 1024;
+constexpr UInt64 MAX_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS = 10;
+
 struct RuntimeBloomFilterParameters
 {
     UInt64 bytes;
