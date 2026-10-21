@@ -292,7 +292,6 @@ ch_cc_library(
     deps = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse_llvm_project//:LLVMAArch64CodeGen",
             "@clickhouse_llvm_project//:LLVMAArch64Info",
             "@clickhouse_llvm_project//:LLVMAArch64Desc",
         ],
@@ -313,7 +312,6 @@ ch_cc_library(
         "@clickhouse_llvm_project//:LLVMSupport",
     ] + select({
         "@platforms//cpu:x86_64": [
-            "@clickhouse_llvm_project//:LLVMX86CodeGen",
             "@clickhouse_llvm_project//:LLVMX86Info",
             "@clickhouse_llvm_project//:LLVMX86Desc",
         ],
@@ -452,7 +450,6 @@ ch_cc_library(
             "@clickhouse_llvm_project//:LLVMObjCARCOpts",
             "@clickhouse_llvm_project//:LLVMSandboxIR",
             "@clickhouse_llvm_project//:LLVMSupport",
-            "@clickhouse_llvm_project//:LLVMX86CodeGen",
         ],
         "@platforms//cpu:aarch64": [],
     }) + [

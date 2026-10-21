@@ -891,7 +891,6 @@ ch_cc_library(
     deps = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse_llvm_project//:LLVMAArch64CodeGen",
             "@clickhouse_llvm_project//:LLVMAArch64Info",
             "@clickhouse_llvm_project//:LLVMAArch64Desc",
         ],
@@ -942,7 +941,6 @@ ch_cc_library(
         "@clickhouse_llvm_project//:LLVMVectorize",
     ] + select({
         "@platforms//cpu:x86_64": [
-            "@clickhouse_llvm_project//:LLVMX86CodeGen",
             "@clickhouse_llvm_project//:LLVMX86Info",
             "@clickhouse_llvm_project//:LLVMX86Desc",
         ],
