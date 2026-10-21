@@ -9,9 +9,11 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageProxy.h>
 
 namespace DB
 {
@@ -30,16 +32,43 @@ namespace ErrorCodes
 namespace
 {
 
-/// A materialized view, a `Buffer` and a `Merge` table hand the row policy filter to the read of their targets, but do
-/// not list them as underlying storages, because the targets' own policies must not apply to them
-std::vector<StoragePtr> getReadTargets(const IStorage & storage)
+/// The storages which `storage` hands the row policy filter to. Throws unless the user can see all the tables which
+/// the definition of `storage` names for the read, whether they exist or not. Otherwise the answer tells the user
+/// the engine of a table which the user cannot see, or that the table exists.
+std::vector<StoragePtr> getReadTargets(const IStorage & storage, const ContextPtr & context)
 {
+    auto access = context->getAccess();
+    auto can_see = [&](const StorageID & id) { return access->isGranted(AccessType::SHOW_TABLES, id.database_name, id.table_name); };
+    auto check = [&](bool granted)
+    {
+        if (!granted)
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "Not enough privileges to check the engine of the tables which {} reads: a row policy on a table which reads "
+                "a table with an engine that merges rows does not hide the values of the rows it filters out. "
+                "Grant SHOW TABLES on all the tables which it can read, or set allow_suspicious_row_policies_with_blending_engines = 1 "
+                "to continue anyway",
+                storage.getStorageID().getNameForLogs());
+    };
+
+    /// A materialized view, a `Buffer` and a `Merge` table hand the filter to the read of their targets, but do not list
+    /// them as underlying storages, because the targets' own policies must not apply to them
     if (const auto * view = typeid_cast<const StorageMaterializedView *>(&storage))
+    {
+        /// The inner table of a materialized view is a part of the view, so the user sees its engine anyway
+        check(view->hasInnerTable() || can_see(view->getTargetTableId()));
         return {view->tryGetTargetTable()};
+    }
     if (const auto * buffer = typeid_cast<const StorageBuffer *>(&storage))
+    {
+        check(!buffer->getDestinationId() || can_see(buffer->getDestinationId()));
         return {buffer->getDestinationTable()};
+    }
     if (const auto * merge = typeid_cast<const StorageMerge *>(&storage))
     {
+        /// A regular expression selects the sources, so the user must see all the tables which it can select
+        auto source_database = merge->getSourceDatabase();
+        check(source_database ? access->isGranted(AccessType::SHOW_TABLES, *source_database) : access->isGranted(AccessType::SHOW_TABLES));
         std::vector<StoragePtr> sources;
         merge->hasChildTable([&](const StoragePtr & source)
         {
@@ -48,7 +77,16 @@ std::vector<StoragePtr> getReadTargets(const IStorage & storage)
         });
         return sources;
     }
-    return storage.getUnderlyingStorages();
+    if (const auto * alias = typeid_cast<const StorageAlias *>(&storage))
+    {
+        check(alias->isDeclaredTargetGranted(context, AccessType::SHOW_TABLES, {}));
+        return {alias->tryGetTargetTable()};
+    }
+
+    auto targets = storage.getUnderlyingStorages();
+    for (const auto & target : targets)
+        check(!target || can_see(target->getStorageID()));
+    return targets;
 }
 
 /// The visited set terminates the walk if the chain of underlying storages loops
@@ -57,28 +95,17 @@ ConstStoragePtr findBlendingEngineImpl(const IStorage & storage, const ContextPt
     if (storage.isBlendingEngine())
         return storage.shared_from_this();
 
+    /// A table function or a lazily loaded table reads through the storage it creates, which has the same name
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(&storage))
+        return findBlendingEngineImpl(*proxy->getNested(), context, visited);
+
     if (!visited.emplace(storage.getStorageID().getNameForLogs()).second)
         return nullptr;
 
-    /// The inner table of a materialized view is a part of the view, so the user sees its engine anyway
-    const auto * view = typeid_cast<const StorageMaterializedView *>(&storage);
-    bool check_access = !view || !view->hasInnerTable();
-
-    for (const auto & target : getReadTargets(storage))
+    for (const auto & target : getReadTargets(storage, context))
     {
         if (!target)
             continue;
-
-        /// Otherwise the answer tells the engine of a table which the user cannot see
-        auto target_id = target->getStorageID();
-        if (check_access && !context->getAccess()->isGranted(AccessType::SHOW_TABLES, target_id.database_name, target_id.table_name))
-            throw Exception(
-                ErrorCodes::ACCESS_DENIED,
-                "Not enough privileges to check the engine of a table which {} reads: a row policy on a table which reads "
-                "a table with an engine that merges rows does not hide the values of the rows it filters out. "
-                "Grant SHOW TABLES on the tables it reads, or set allow_suspicious_row_policies_with_blending_engines = 1 to continue anyway",
-                storage.getStorageID().getNameForLogs());
-
         if (auto blending = findBlendingEngineImpl(*target, context, visited))
             return blending;
     }

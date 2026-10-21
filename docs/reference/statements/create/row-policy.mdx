@@ -240,8 +240,10 @@ result for all the times that each rollup rule rounds to the same value.
 The same check runs in these cases:
 
 - A policy on the whole database (`ON db.*`), if the database holds such a table.
-- A policy on a table which reads such a table: an `Alias` table, a materialized view, a `Buffer` table or a `Merge` table.
-  If the user does not have `SHOW TABLES` on the table which it reads, the check fails with `ACCESS_DENIED`.
+- A policy on a table which reads such a table: an `Alias` table, a materialized view, a `Buffer` table, a `Merge` table
+  or a table which a table function makes. If the user does not have `SHOW TABLES` on all the tables which it can read,
+  the check fails with `ACCESS_DENIED`, also when these tables do not exist. For a `Merge` table, these are all the
+  tables of its source database, or of all the databases if a regular expression selects the databases.
 - `CREATE TABLE` and `ATTACH TABLE` with a full definition, if a policy for the table already exists.
 - `RENAME TABLE` and `EXCHANGE TABLES`, if a policy for the new name exists.
 

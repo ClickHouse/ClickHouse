@@ -24,6 +24,14 @@ CREATE ROW POLICY p ON t_merge_outer USING v % 2 = 1 TO ALL; -- { serverError BA
 CREATE ROW POLICY p ON mv_plain USING v % 2 = 1 TO ALL;
 CREATE ROW POLICY p ON t_merge_plain USING v % 2 = 1 TO ALL;
 
+-- a table function creates its storage on first use, and the check follows that storage
+CREATE TABLE t_function AS merge(currentDatabase(), '^t_target$');
+CREATE ROW POLICY p ON t_function USING v % 2 = 1 TO ALL; -- { serverError BAD_ARGUMENTS }
+CREATE ROW POLICY p_later ON t_function_later USING v % 2 = 1 TO ALL;
+CREATE TABLE t_function_later AS merge(currentDatabase(), '^t_target$'); -- { serverError BAD_ARGUMENTS }
+RENAME TABLE t_function TO t_function_later; -- { serverError BAD_ARGUMENTS }
+DROP ROW POLICY p_later ON t_function_later;
+
 SET allow_suspicious_row_policies_with_blending_engines = 1;
 CREATE ROW POLICY p ON mv_to USING v % 2 = 1 TO ALL;
 
