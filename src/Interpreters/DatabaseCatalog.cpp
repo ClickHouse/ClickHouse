@@ -106,6 +106,7 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char database_catalog_drop_finally_before_id_erase[];
+    extern const char database_catalog_drop_finally_after_notify[];
 }
 
 class DatabaseNameHints : public IHints<>
@@ -842,6 +843,12 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 void DatabaseCatalog::updateDatabaseName(const String & old_name, const String & new_name, const Strings & tables_in_database)
 {
     std::lock_guard lock{databases_mutex};
+
+    /// Re-check under the same lock as the rewrite: a concurrent `CREATE TABLE` in another database may
+    /// have added an edge to a table under the new name since the preflight check of the caller.
+    /// Nothing is modified yet, so the exception leaves the catalog intact.
+    checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(old_name, new_name, tables_in_database);
+
     chassert(!databases.contains(new_name));
     auto it = databases.find(old_name);
     chassert(it != databases.end());
@@ -1792,6 +1799,9 @@ void DatabaseCatalog::dropTablesParallel(TablesMarkedAsDropped tables_to_drop)
                 /// tables_marked_dropped_ids until the guarded erase below: window for a same-UUID re-drop.
                 FailPointInjection::pauseFailPoint(FailPoints::database_catalog_drop_finally_before_id_erase);
 
+                /// The dropped storage is destroyed before the waiters of `DROP ... SYNC` see the drop finished.
+                table_iterator->table.reset();
+
                 TableMarkedAsDropped table_to_delete_without_lock;
                 {
                     std::lock_guard lock(tables_marked_dropped_mutex);
@@ -1809,6 +1819,8 @@ void DatabaseCatalog::dropTablesParallel(TablesMarkedAsDropped tables_to_drop)
 
                     wait_table_finally_dropped.notify_all();
                 }
+
+                FailPointInjection::pauseFailPoint(FailPoints::database_catalog_drop_finally_after_notify);
             }
             catch (...)
             {
@@ -2207,6 +2219,50 @@ void DatabaseCatalog::checkTablesCanBeExchangedWithNoCyclicDependencies(const St
         }
 
         restore_dependencies();
+    };
+
+    check(referential_dependencies);
+    check(loading_dependencies);
+}
+
+/// `RENAME DATABASE` re-keys every table of the database under the new name (see `updateDatabaseName`),
+/// which can merge a renamed table into a node that other tables already reference by the future name -
+/// the simplest case being a table `db.t = Alias(<new name>, t)` accepted at `CREATE` because the target
+/// database did not exist yet, and thus becoming a self-reference. Such a cycle in the server-wide
+/// dependency graph then makes every later DDL statement that adds a dependency edge fail with
+/// `INFINITE_LOOP`, anywhere on the server, and the database stops being listable after a restart.
+/// The check applies the rename to a copy of the graph and refuses the rename if it becomes cyclic, the
+/// same way `RENAME TABLE` and `EXCHANGE TABLES` do for a single table. The caller passes the exact set
+/// of tables it is about to re-key and holds the locks that keep that set stable until `updateDatabaseName`.
+/// This is a preflight check that lets the rename fail before anything is modified; `updateDatabaseName`
+/// repeats it in the same critical section as the rewrite, because DDL in other databases can add edges
+/// to the dependency graph in between.
+void DatabaseCatalog::checkDatabaseCanBeRenamedWithNoCyclicDependencies(
+    const String & old_database_name, const String & new_database_name, const Strings & tables_in_database)
+{
+    std::lock_guard lock{databases_mutex};
+    checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(old_database_name, new_database_name, tables_in_database);
+}
+
+void DatabaseCatalog::checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(
+    const String & old_database_name, const String & new_database_name, const Strings & tables_in_database) const
+{
+    auto check = [&](const TablesDependencyGraph & dependencies)
+    {
+        TablesDependencyGraph after_rename = dependencies;
+        for (const auto & table_name : tables_in_database)
+        {
+            auto old_dependencies = after_rename.removeDependencies(StorageID{old_database_name, table_name}, /* remove_isolated_tables= */ true);
+            after_rename.addDependencies(StorageID{new_database_name, table_name}, old_dependencies);
+        }
+
+        if (after_rename.hasCyclicDependencies())
+            throw Exception(
+                ErrorCodes::INFINITE_LOOP,
+                "Cannot rename database {} to {}, because it will lead to cyclic dependencies: {}",
+                backQuoteIfNeed(old_database_name),
+                backQuoteIfNeed(new_database_name),
+                after_rename.describeCyclicDependencies());
     };
 
     check(referential_dependencies);

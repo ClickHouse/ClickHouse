@@ -194,9 +194,24 @@ SELECT * FROM mv;
 └───┘
 ```
 
-<div id="alter-table--modify-refresh-statement">
-  ## ALTER TABLE ... MODIFY REFRESH ステートメント
-</div>
+## 必要な権限 {#required-privileges}
+
+`ALTER TABLE ... MODIFY QUERY` を実行するには、ビューに対する `ALTER VIEW MODIFY QUERY` 権限が必要です。新しいクエリはビューの [SQL security](/ja/reference/statements/create/view#sql_security) に従って実行されるため、このステートメントには、その SQL security でビューを作成する際に必要な権限も必要です。
+
+* 現在のユーザー以外の definer を指定した `SQL SECURITY DEFINER`：その definer に対する `SET DEFINER`
+* `SQL SECURITY NONE`：`ALLOW SQL SECURITY NONE`
+
+同じステートメント内で `MODIFY SQL SECURITY` を使って SQL security も変更する場合は、変更前ではなく変更後の SQL security に対応するこれらの権限が必要です。
+
+`ON CLUSTER` を指定した場合、権限チェックはステートメントを実行するホスト上で行われるため、そのホストにビューが存在している必要があります。存在しない場合、ステートメントは `UNKNOWN_TABLE` エラーで失敗します。
+
+```sql
+GRANT ALTER VIEW MODIFY QUERY ON db.mv TO alice;
+-- Only if `db.mv` runs as another user, for example `bob`:
+GRANT SET DEFINER ON bob TO alice;
+```
+
+## ALTER TABLE ... MODIFY REFRESH ステートメント {#alter-table--modify-refresh-statement}
 
 `ALTER TABLE ... MODIFY REFRESH` は、スケジュール、依存関係、ランダム化、[リフレッシュ設定](/ja/reference/statements/create/view#refresh-settings) など、[リフレッシャブルmaterialized view](/ja/reference/statements/create/view#refreshable-materialized-view) のリフレッシュパラメータを変更します。
 

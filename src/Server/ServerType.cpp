@@ -156,7 +156,7 @@ bool ServerType::shouldStop(const std::string & port_name) const
     else if (port_name == "cloud.port")
         port_type = Type::CLOUD;
 
-    else if (port_name == "iceberg_rest_catalog.port")
+    else if (port_name == "iceberg_rest_catalog.port" || port_name == "iceberg_rest_catalog.secure_port")
         port_type = Type::ICEBERG_REST_CATALOG;
 
     else

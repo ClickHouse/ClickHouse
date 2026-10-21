@@ -241,6 +241,10 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                 settings.query_write_settings,
                 packing);
 
+            /// An encrypting part codec is applied to every block, so the index data is not written in plain text.
+            if (!skip_index->isCompressible() && !default_codec->isEncryption())
+                stream->compressor.storeIncompressibleBlocksUncompressed();
+
             index_streams[index_substream.type] = stream.get();
             skip_indices_streams_holders.push_back(std::move(stream));
 

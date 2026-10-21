@@ -50,13 +50,13 @@ struct WindowFunctionNthValue final : public StatelessWindowFunction
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) const override
     {
-        const auto & current_block = transform->blocks.blockAt(transform->current.location.block);
+        const auto & current_block = transform->blocks.blockAt(transform->peers.current().location.block);
         IColumn & to = *current_block.result_columns[function_index];
         const auto & workspace = transform->workspaces[function_index];
 
         Int64 offset = (*current_block.materialized_columns[
                 workspace.argument_column_indices[1]])[
-            transform->current.location.row].safeGet<Int64>();
+            transform->peers.current().location.row].safeGet<Int64>();
 
         /// Either overflow or really negative value, both is not acceptable.
         if (offset <= 0)
@@ -67,10 +67,8 @@ struct WindowFunctionNthValue final : public StatelessWindowFunction
         }
 
         --offset;
-        const auto target_row = transform->blocks.move(transform->frame_start, offset);
-        if (!target_row
-            || *target_row < transform->frame_start
-            || transform->frame_end <= *target_row)
+        const FrameBounds & frame = transform->frame.bounds();
+        if (offset >= frame.end.row_index_in_partition - frame.start.row_index_in_partition)
         {
             // Offset is outside the frame.
             to.insertDefault();
@@ -78,9 +76,10 @@ struct WindowFunctionNthValue final : public StatelessWindowFunction
         else
         {
             // Offset is inside the frame.
-            to.insertFrom(*transform->blocks.blockAt(target_row->block).materialized_columns[
+            const RowNumber target_row = transform->blocks.move(frame.start.location, offset);
+            to.insertFrom(*transform->blocks.blockAt(target_row.block).materialized_columns[
                     workspace.argument_column_indices[0]],
-               target_row->row);
+               target_row.row);
         }
     }
 };
