@@ -61,7 +61,6 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Common/FailPoint.h>
 #include <Common/HTTPHeaderFilter.h>
-#include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
 
 namespace ProfileEvents
