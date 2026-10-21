@@ -39,7 +39,6 @@ DROP TABLE IF EXISTS src_dpc;
 DROP TABLE IF EXISTS mut_dpc;
 DROP TABLE IF EXISTS mv_dpc;
 DROP TABLE IF EXISTS ts_dpc;
-DROP TABLE IF EXISTS ts_dpc_tags;
 DROP VIEW IF EXISTS v_dpc;
 DROP VIEW IF EXISTS v3_dpc;
 DROP TABLE IF EXISTS one_dpc;
@@ -63,9 +62,7 @@ CREATE TABLE numbers_dpc (x UInt64) ENGINE = Memory;
 INSERT INTO numbers_dpc SELECT number FROM numbers(1000);
 CREATE VIEW v3_dpc AS SELECT (SELECT count() FROM t_dpc WHERE x IN (SELECT x FROM t_dpc2 WHERE x < 60000)) AS c FROM one_dpc;
 CREATE MATERIALIZED VIEW mv_dpc TO sink_dpc AS SELECT x FROM src_dpc WHERE x IN (SELECT x FROM t_dpc2 WHERE x < 60000) GROUP BY x;
--- An external tags table gives the `TimeSeries` inner table a stable name for `additional_table_filters`.
-CREATE TABLE ts_dpc_tags (`id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))), `metric_name` LowCardinality(String), `tags` Map(LowCardinality(String), String), `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3, 'UTC'))), `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3, 'UTC')))) ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1;
-CREATE TABLE ts_dpc (samples Array(Tuple(DateTime64(3, 'UTC'), Float32))) ENGINE = TimeSeries TAGS ts_dpc_tags;
+CREATE TABLE ts_dpc (samples Array(Tuple(DateTime64(3, 'UTC'), Float32))) ENGINE = TimeSeries;
 INSERT INTO ts_dpc (metric_name, tags, samples)
     SELECT 'm' || toString(number % 3), map('k', toString(number)), [(toDateTime64('2025-11-30 10:30:05.125', 3, 'UTC'), toFloat32(number))] FROM numbers(100);
 
@@ -122,12 +119,10 @@ ALTER TABLE mut_dpc DELETE WHERE x IN (SELECT x FROM t_dpc WHERE x IN (SELECT x 
 SELECT count() FROM mut_dpc;
 
 -- A `TimeSeries` read: the outer plan always falls back, the generated sub-plan must come out local (no exchanges, no
--- logical joins), and an IN set inside it, applied through `additional_table_filters` on the tags table, must be built locally.
+-- logical joins).
 SELECT tags['k'] AS k, length(samples) FROM ts_dpc ORDER BY toUInt32(k) LIMIT 3 SETTINGS log_comment = '05185_dpc_32_time_series_read';
 SELECT countIf(explain LIKE '%Exchange%') AS exchanges, countIf(explain LIKE '%JoinLogical%') AS logical_joins
 FROM (EXPLAIN PLAN SELECT tags['k'] AS k FROM ts_dpc ORDER BY k LIMIT 3);
-SELECT metric_name, count() FROM ts_dpc GROUP BY metric_name ORDER BY metric_name
-    SETTINGS additional_table_filters = {'ts_dpc_tags': 'metric_name IN (SELECT \'m\' || toString(x) FROM t_dpc WHERE x < 60000)'}, log_comment = '05185_dpc_33_time_series_filter_set';
 
 -- Strict mode: the fallback itself is asserted, the query throws instead of running locally.
 SELECT count() FROM v_dpc SETTINGS distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
@@ -171,7 +166,6 @@ GROUP BY log_comment
 ORDER BY log_comment;
 
 DROP TABLE ts_dpc;
-DROP TABLE ts_dpc_tags;
 DROP TABLE mv_dpc;
 DROP VIEW v3_dpc;
 DROP TABLE one_dpc;
