@@ -1530,6 +1530,8 @@ bool StorageFileLog::updateFileInfos()
                 if (!std::filesystem::is_regular_file(file_path))
                 {
                     name_is_read[file_name] = false;
+                    /// A rename from outside the directory is reported as an addition, with no removal event for what it replaces.
+                    file_infos.other_names.erase(file_name);
                     if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
                         it->second.status = FileStatus::REMOVED;
                 }
@@ -1652,6 +1654,13 @@ bool StorageFileLog::updateFileInfos()
                     /// The rename source was not tracked, e.g. it was created and renamed within one batch
                     else
                         file_infos.meta_by_inode.emplace(inode, FileMeta{.file_name = file_name});
+                }
+                /// A rename emits no removal event for what it replaces.
+                else
+                {
+                    file_infos.other_names.erase(file_name);
+                    if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
+                        it->second.status = FileStatus::REMOVED;
                 }
                 break;
             }

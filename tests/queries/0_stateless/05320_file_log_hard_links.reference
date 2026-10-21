@@ -93,3 +93,11 @@ c.log	20
 alias2.log	21
 app.log.1	2
 hidden.txt	11
+-- dangling symbolic links renamed over hard links from outside and inside the directory, then the read name is removed: the file linked back is read from the start
+a.log	1
+a.log	2
+d.log	1
+d.log	2
+d.log	3
+-- a dangling symbolic link renamed over the read name from inside the directory: a hard link reads on
+e.log	4

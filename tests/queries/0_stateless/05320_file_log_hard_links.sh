@@ -13,10 +13,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 logs_dir=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}
 rm -rf "${logs_dir}"
-mkdir -p "${logs_dir}"/{d1,d2,d3,d4,d5,d6}
+mkdir -p "${logs_dir}"/{d1,d2,d3,d4,d5,d6,d7}
 d1=${logs_dir}/d1
 held=${logs_dir}/held.log
 held2=${logs_dir}/held2.log
+held3=${logs_dir}/held3.log
 out=${logs_dir}/out.log
 tmp=${logs_dir}/tmp.txt
 
@@ -290,10 +291,40 @@ printf '11\n' >> "${d6}/hidden.txt"
 printf '21\n' >> "${d6}/hidden2.txt"
 read_until file_log_glob_create 2 11 21
 
+echo '-- dangling symbolic links renamed over hard links from outside and inside the directory, then the read name is removed: the file linked back is read from the start'
+d7=${logs_dir}/d7
+printf '1\n' > "${d7}/a.log"
+: > "${d7}/sync.log"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_dangling (id UInt64) ENGINE = FileLog('${d7}/', 'TSV') SETTINGS poll_timeout_ms = 100"
+read_log file_log_dangling
+sync_watch file_log_dangling "${d7}/sync.log"
+ln "${d7}/a.log" "${d7}/b.log"
+ln "${d7}/a.log" "${d7}/c.log"
+ln "${d7}/a.log" "${held3}"
+printf '2\n' >> "${d7}/a.log"
+read_until file_log_dangling 2
+ln -s nonexistent "${logs_dir}/tmp.sym"
+mv "${logs_dir}/tmp.sym" "${d7}/b.log"
+ln -s nonexistent "${d7}/tmp.sym"
+mv "${d7}/tmp.sym" "${d7}/c.log"
+rm "${d7}/a.log"
+sync_watch file_log_dangling "${d7}/sync.log"
+ln "${held3}" "${d7}/d.log"
+printf '3\n' >> "${d7}/d.log"
+read_until file_log_dangling 1 2 3
+
+echo '-- a dangling symbolic link renamed over the read name from inside the directory: a hard link reads on'
+ln "${d7}/d.log" "${d7}/e.log"
+ln -s nonexistent "${d7}/tmp.sym"
+mv "${d7}/tmp.sym" "${d7}/d.log"
+printf '4\n' >> "${d7}/e.log"
+read_until file_log_dangling 4
+
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_create"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_symlink"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_glob"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_glob_symlink"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_glob_create"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_dangling"
 rm -rf "${logs_dir}"
