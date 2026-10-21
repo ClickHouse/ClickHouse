@@ -32,7 +32,7 @@ CLIENT_NAME = "query plan deep recursion poc"
 REVISION = 54482
 
 # Plan serialization version gates for header fields (see Core/ProtocolDefines.h).
-WITH_EXECUTION_LIMITS = 11  # max_threads + concurrency_control
+WITH_EXECUTION_LIMITS = 10  # max_threads + concurrency_control
 WITH_STEP_VERSIONS = 19     # per-step version
 
 # ActionsDAG::ActionType (Interpreters/ActionsDAG.h)
