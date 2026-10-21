@@ -206,6 +206,7 @@ CMake hash recorded below.
 | `2cb60420e` (verification snapshot) | Give libxml2 and jemalloc their configured public headers; remove unused private, C++ runtime and disabled zlib inputs | [c6e27cc7](https://app.buildbuddy.io/invocation/c6e27cc7-329a-4937-a305-01903f32574f) | [171dfda4](https://app.buildbuddy.io/invocation/171dfda4-247b-416f-9be2-f0cf93e01788) |
 | `826781f96` (verification snapshot) | Remove unused direct NuRaft dependencies from Compression and ZooKeeper; retain the required ZooKeeper base dependency | [e2cb9c03](https://app.buildbuddy.io/invocation/e2cb9c03-d73a-4759-bd37-5669ed9be2b8) | [1493e7ca](https://app.buildbuddy.io/invocation/1493e7ca-b75b-4118-b902-3cbdfd0abef9) |
 | `125dea6d8` (verification snapshot) | Remove 722 copied dependency entries from TableFunctions, TimeSeries and GatherUtils; add their direct private C++ imports | [1d0669af](https://app.buildbuddy.io/invocation/1d0669af-6566-4ba5-a1e7-23a9d4d1e093) | [4c01c0ca](https://app.buildbuddy.io/invocation/4c01c0ca-e55e-47c9-a80e-0620663695bf) |
+| `ea65909ca` (verification snapshot) | Shorten default-package labels in migration output and the contrib documentation; keep source verification and canonical dependency identities | [1c20801e](https://app.buildbuddy.io/invocation/1c20801e-08b4-4856-bd08-37b77dac7cfe) | [74ca0038](https://app.buildbuddy.io/invocation/74ca0038-64a2-4b79-935c-892e2a03c1fb) |
 
 The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`

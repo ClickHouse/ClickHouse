@@ -74,6 +74,8 @@ def physical(package, value):
 def relative_label(package, name, current='', repo=''):
     if package == current and not repo:
         return ':' + name
+    if package and posixpath.basename(package) == name:
+        return repo + '//' + package
     return repo + '//' + package + ':' + name
 
 
@@ -620,6 +622,8 @@ class Migration:
     def normalize_source(self, value, package):
         if value.startswith(':'):
             return physical(package, value[1:])
+        if value.startswith(('//', '@clickhouse//')):
+            value = canonical_dependency(value, '', '')
         match = MAIN_LABEL.fullmatch(value)
         if match:
             return physical(match['pkg'], match['name'])
@@ -714,7 +718,9 @@ class Migration:
                 if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
                     continue
                 for value in [node.value, *[m[2] for m in LOCATION.finditer(node.value)]]:
-                    match = MAIN_LABEL.fullmatch(value)
+                    match = MAIN_LABEL.fullmatch(
+                        canonical_dependency(value, '', '')
+                        if value.startswith(('//', '@clickhouse//')) else value)
                     if not match or foreign and not match['repo']:
                         continue
                     # Also reject labels for unknown native packages: a

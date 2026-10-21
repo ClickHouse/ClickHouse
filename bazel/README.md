@@ -149,7 +149,7 @@ API graphs and declared Ninja generator commands into native Bazel targets.
 `initial_migration/build_file.py` renders rules from both captured graphs.
 `initial_migration/first_party_packages.py` assigns the native rules to their
 source directories, updates labels across the main and external repositories,
-and checks source order on both architectures. `//contrib:contrib` keeps
+and checks source order on both architectures. `//contrib` keeps
 auxiliary dependency targets in the complete `//...` build, even when the
 server does not depend on them.
 `initial_migration/build_file.py` reads unconditional `common --copt`, `--conlyopt`, and
