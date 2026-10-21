@@ -38,14 +38,18 @@ ch_cc_library(
         "src/setup.c",
         "src/syscall.c",
         "src/version.c",
-    ] + glob([
-        "src/*.h",
-        "src/arch/**/*.h",
-    ]),
+    ] + glob(["src/*.h", "src/arch/*.h"]) + select({
+        "@platforms//cpu:x86_64": glob(["src/arch/x86/**/*.h"]),
+        "@platforms//cpu:aarch64": glob(["src/arch/aarch64/**/*.h"]),
+    }),
     hdrs = [
         ":config/contrib/liburing/src/include-compat/liburing/compat.h",
         ":config/contrib/liburing/src/include/liburing/io_uring_version.h",
-    ] + glob(["src/include/**/*.h"]),
+    ] + glob(
+        ["src/include/**/*.h"],
+        exclude = ["src/include/liburing/io_uring.h"],
+    ),
+    textual_hdrs = ["src/include/liburing/io_uring.h"],
     copts = [
         "-w",
         "-std=gnu11",

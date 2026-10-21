@@ -18,6 +18,18 @@ expand_template(
     template = ":include/libssh/libssh_version.h.cmake",
 )
 
+# Installed C headers from include/libssh/CMakeLists.txt.
+_LIBSSH_PUBLIC_C_HEADERS = [
+    "include/libssh/callbacks.h",
+    "include/libssh/libssh.h",
+    "include/libssh/ssh2.h",
+    "include/libssh/legacy.h",
+    "include/libssh/sftp.h",
+    "include/libssh/server.h",
+    "include/libssh/sftpserver.h",
+    "include/libssh/sk_api.h",
+]
+
 ch_cc_library(
     name = "_ssh",
     srcs = [
@@ -98,11 +110,21 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [
             "@clickhouse//contrib/libssh-cmake:linux/aarch64/config.h",
         ],
-    }) + glob(["src/**/*.h"]),
-    hdrs = [":config/contrib/libssh/include/libssh/libssh_version.h"] + glob([
-        "include/**/*.h",
-        "include/**/*.hpp",
-    ]),
+    }) + glob(
+        ["src/**/*.h", "include/**/*.h"],
+        exclude = _LIBSSH_PUBLIC_C_HEADERS + [
+            "include/libssh/dh-gex.h",
+            "include/libssh/ed25519.h",
+            "include/libssh/fe25519.h",
+            "include/libssh/ge25519.h",
+            "include/libssh/mlkem_native.h",
+            "include/libssh/sc25519.h",
+            "include/libssh/sftp_priv.h",
+            "include/libssh/sk_usbhid.h",
+            "src/mbedcrypto-compat.h",
+        ],
+    ),
+    hdrs = [":config/contrib/libssh/include/libssh/libssh_version.h"] + _LIBSSH_PUBLIC_C_HEADERS,
     copts = ["-w", "-std=gnu11"],
     implementation_deps = (["@clickhouse_llvm_project//:libcxxabi_headers"]) + ["@clickhouse//contrib/libssh-cmake:libssh_config_headers"],
     includes = [
@@ -117,4 +139,10 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     deps = ["@clickhouse_openssl//:crypto"],
+)
+
+ch_cc_library(
+    name = "_ssh_cpp",
+    hdrs = ["include/libssh/libsshpp.hpp"],
+    deps = [":_ssh"],
 )

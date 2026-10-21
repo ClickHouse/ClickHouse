@@ -11,8 +11,24 @@ ch_cc_library(
     srcs = [
         "src/rseq.c",
         "src/smp.c",
-    ] + glob(["src/**/*.h"]),
-    hdrs = glob(["include/**/*.h"]),
+    ] + glob(
+        ["src/**/*.h"],
+        exclude = ["src/list.h", "src/rseq-utils.h"],
+    ),
+    hdrs = glob(
+        ["include/**/*.h"],
+        exclude = ["include/rseq/arch.h", "include/rseq/arch/**/*.h"],
+    ),
+    textual_hdrs = [
+        "include/rseq/arch.h",
+        "include/rseq/arch/generic/common.h",
+    ] + glob(["include/rseq/arch/templates/**/*.h"]) + select({
+        "@platforms//cpu:x86_64": ["include/rseq/arch/x86.h"] + glob(["include/rseq/arch/x86/**/*.h"]),
+        "@platforms//cpu:aarch64": [
+            "include/rseq/arch/aarch64.h",
+            "include/rseq/arch/generic/thread-pointer.h",
+        ] + glob(["include/rseq/arch/aarch64/**/*.h"]),
+    }),
     copts = [
         "-w",
         "-std=gnu11",
