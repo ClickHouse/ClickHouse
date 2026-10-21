@@ -188,7 +188,7 @@
             "ru/reference/statements/system",
             "ru/reference/statements/truncate",
             "ru/reference/statements/undrop",
-            "ru/reference/statements/update",
+            "reference/statements/update",
             "ru/reference/statements/use"
           ]
         },

@@ -5,7 +5,7 @@
       "icon": "/images/icons/icon-clickhouse-cloud.svg",
       "pages": [
         "fr/resources/changelogs/cloud/index",
-        "fr/resources/changelogs/cloud/2026",
+        "resources/changelogs/cloud/2026",
         {
           "group": "Archives",
           "pages": [
