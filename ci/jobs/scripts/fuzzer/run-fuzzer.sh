@@ -172,7 +172,7 @@ function collect_hung_server_diagnostics
     echo "Server is hung, saving its state to hung_server.log"
     local out=hung_server.log path task
     {
-        echo "Hung server $server_pid at $(date -u)"
+        echo "Hung server $server_pid at $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
         for path in /proc/pressure/{cpu,memory,io} /sys/fs/cgroup/{memory.current,memory.max,memory.events,memory.pressure,cpu.pressure,io.pressure}; do
             if [[ -r "$path" ]]; then
                 echo "$path: $(tr '\n' ' ' < "$path")"
@@ -196,7 +196,7 @@ function collect_hung_server_diagnostics
             kill -KILL "$server_gdb_pid" 2>/dev/null ||:
         fi
         kill -CONT "$server_pid" ||:
-        echo "--- gdb: thread apply all backtrace" >> "$out"
+        echo "--- gdb: thread apply all backtrace" >> "$out" ||:
         timeout --verbose --signal=TERM --kill-after=60 300 gdb -batch -ex 'thread apply all backtrace' -p "$server_pid" >> "$out" 2>&1 ||:
     fi
     set -x

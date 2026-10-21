@@ -681,7 +681,7 @@ def run_fuzz_job(check_name: str):
             parsed_name = "Server liveness check failed"
             parsed_info = (
                 "The server did not answer the liveness probes after fuzzing; "
-                "thread states, kernel and gdb stacks are in hung_server.log\n"
+                "the diagnostics taken before stopping it are in hung_server.log\n"
                 + _hung_server_summary(hung_server_log)
             )[:4000]
 
