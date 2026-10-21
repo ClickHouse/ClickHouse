@@ -10,7 +10,9 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTWithElement.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageBuffer.h>
@@ -36,21 +38,33 @@ namespace ErrorCodes
 namespace
 {
 
-/// The tables in `FROM` and `JOIN` of the query and its subqueries
-void collectTableIds(const IAST & ast, const ContextPtr & context, std::vector<StorageID> & ids)
+/// The tables in `FROM` and `JOIN` of the query and its subqueries. `CREATE VIEW` qualifies the names of the tables,
+/// so a name without a database which a `WITH` element of an enclosing query declares is a common table expression
+void collectTableIds(const IAST & ast, const ContextPtr & context, Names & with_names, std::vector<StorageID> & ids)
 {
+    size_t enclosing_with_names = with_names.size();
+    if (const auto * select = ast.as<ASTSelectQuery>(); select && select->with())
+    {
+        for (const auto & child : select->with()->children)
+            if (const auto * with_element = child->as<ASTWithElement>())
+                with_names.push_back(with_element->name);
+    }
+
     if (const auto * expr = ast.as<ASTTableExpression>(); expr && expr->database_and_table_name)
     {
         if (const auto * identifier = expr->database_and_table_name->as<ASTTableIdentifier>())
         {
             auto id = identifier->getTableId();
-            if (id.database_name.empty())
-                id.database_name = context->getCurrentDatabase();
-            ids.push_back(std::move(id));
+            if (!id.database_name.empty())
+                ids.push_back(std::move(id));
+            else if (!std::ranges::contains(with_names, id.table_name))
+                ids.emplace_back(context->getCurrentDatabase(), id.table_name);
         }
     }
     for (const auto & child : ast.children)
-        collectTableIds(*child, context, ids);
+        collectTableIds(*child, context, with_names, ids);
+
+    with_names.resize(enclosing_with_names);
 }
 
 /// The storages which `storage` hands the row policy filter to. Throws unless the user can see all the tables which
@@ -109,8 +123,9 @@ std::vector<StoragePtr> getReadTargets(const IStorage & storage, const ContextPt
     if (typeid_cast<const StorageView *>(&storage))
     {
         auto metadata = storage.getInMemoryMetadataPtr(context, false);
+        Names with_names;
         std::vector<StorageID> ids;
-        collectTableIds(*metadata->getSelectQuery().inner_query, context, ids);
+        collectTableIds(*metadata->getSelectQuery().inner_query, context, with_names, ids);
         for (const auto & id : ids)
             check(can_see(id));
         std::vector<StoragePtr> sources;
