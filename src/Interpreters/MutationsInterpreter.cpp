@@ -2211,20 +2211,32 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                     dag.getOutputs().push_back(&value);
                 };
 
-                /// The part reader reads the subcolumns a default reads from the part; here they come from the header's parent column.
-                Block header(input_columns);
-                ActionsDAG default_inputs_dag(input_columns);
-                auto in_header = [&](const String & name) { return header.has(name); };
+                /// The part reader reads the subcolumns a default reads from the part; here they always come from the header's
+                /// parent column, which an earlier stage may have rewritten.
+                NameSet input_names;
+                for (const auto & column : input_columns)
+                    input_names.insert(column.name);
+                auto in_header = [&](const String & name) { return input_names.contains(name); };
+                NamesAndTypesList default_input_subcolumns;
+                NameSet default_input_subcolumn_names;
                 for (const auto & column : columns_to_compute)
                 {
                     for (const auto & name : getColumnsReadByDefault(default_columns, column.name, in_header))
                     {
                         auto subcolumn = storage_snapshot->tryGetColumn(col_options, name);
-                        if (!subcolumn || !subcolumn->isSubcolumn() || header.has(name) || !header.has(subcolumn->getNameInStorage()))
-                            continue;
-                        add_subcolumn(default_inputs_dag, *subcolumn);
-                        header.insert(ColumnWithTypeAndName(subcolumn->type, subcolumn->name));
+                        if (subcolumn && subcolumn->isSubcolumn() && input_names.contains(subcolumn->getNameInStorage())
+                            && default_input_subcolumn_names.insert(subcolumn->name).second)
+                            default_input_subcolumns.push_back(*subcolumn);
                     }
+                }
+                std::erase_if(input_columns, [&](const auto & column) { return default_input_subcolumn_names.contains(column.name); });
+
+                Block header(input_columns);
+                ActionsDAG default_inputs_dag(input_columns);
+                for (const auto & subcolumn : default_input_subcolumns)
+                {
+                    add_subcolumn(default_inputs_dag, subcolumn);
+                    header.insert(ColumnWithTypeAndName(subcolumn.type, subcolumn.name));
                 }
 
                 stale_defaults_dag = evaluateMissingDefaults(header, columns_to_compute, default_columns, defaults_context);

@@ -24,6 +24,10 @@ nested	0	[]	0	0
 nested	1	[0]	1	1
 nested	2	[0,1]	2	2
 nested	3	[1,2,3,4,5]	5	5
+subcolumn_read	0	0	0	0
+subcolumn_read	1	1	0	10
+subcolumn_read	2	2	22	20
+subcolumn_read	3	100	1100	1000
 delete	0	0	0
 delete	1	1	10
 delete	3	100	1000

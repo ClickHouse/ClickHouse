@@ -65,6 +65,15 @@ ALTER TABLE t_nested UPDATE `n.e` = [1, 2, 3, 4, 5] WHERE id = 3, UPDATE y = a W
 SELECT 'nested', id, n.e, y, a FROM t_nested ORDER BY id;
 DROP TABLE t_nested;
 
+-- The commands also read the subcolumn the DEFAULT reads.
+DROP TABLE IF EXISTS t_subcolumn_read;
+CREATE TABLE t_subcolumn_read (id Int64, t Tuple(p Int64), y Int64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_subcolumn_read SELECT number, tuple(number), 0 FROM numbers(4);
+ALTER TABLE t_subcolumn_read ADD COLUMN a Int64 DEFAULT t.p * 10;
+ALTER TABLE t_subcolumn_read UPDATE t = tuple(100) WHERE id = 3, UPDATE y = a + t.p WHERE t.p > 1, DELETE WHERE a = 30 AND t.p > 0;
+SELECT 'subcolumn_read', id, t.p, y, a FROM t_subcolumn_read ORDER BY id;
+DROP TABLE t_subcolumn_read;
+
 -- DELETE predicate and the columns DELETE writes.
 DROP TABLE IF EXISTS t_delete;
 CREATE TABLE t_delete (id Int64, x Int64) ENGINE = MergeTree ORDER BY id;
