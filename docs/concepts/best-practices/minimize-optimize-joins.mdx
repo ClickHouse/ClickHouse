@@ -3,7 +3,7 @@ slug: /best-practices/minimize-optimize-joins
 sidebarTitle: 'Minimize and optimize JOINs'
 title: 'Minimize and optimize JOINs'
 description: 'Document describing best practices for using JOINs in ClickHouse'
-keywords: ['JOIN', 'Parallel Hash JOIN']
+keywords: ['JOIN', 'Hash JOIN']
 show_related_blogs: true
 doc_type: 'guide'
 ---
@@ -124,7 +124,7 @@ The `IN` query also returns `261915`. Its median elapsed time was 0.696 seconds,
 ## Choosing a JOIN algorithm {#choosing-the-right-join-algorithm}
 
 ClickHouse supports several JOIN algorithms that trade off between speed and memory.
-The default value of [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) is `direct,parallel_hash,hash,ie_join`, and ClickHouse selects the first applicable algorithm for the JOIN type, strictness, condition, and table engine. Consider changing it only after reducing both inputs and when measurements on representative data show that a different memory or execution strategy is needed. See [Choosing a JOIN algorithm](/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm) for algorithm details and selection guidance.
+The default value of [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) is `direct,hash,ie_join`, and ClickHouse selects the first applicable algorithm for the JOIN type, strictness, condition, and table engine. Consider changing it only after reducing both inputs and when measurements on representative data show that a different memory or execution strategy is needed. See [Choosing a JOIN algorithm](/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm) for algorithm details and selection guidance.
 
 ## Further reading {#further-reading}
 

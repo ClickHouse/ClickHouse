@@ -22,7 +22,7 @@ INSERT INTO t_05393_right VALUES ('x', 1);
 INSERT INTO t_05393_keys VALUES ('a');
 
 -- Only a hash join that builds the right table stops early (parallel_hash, grace_hash and full_sorting_merge read it anyway).
-SET join_algorithm = 'hash', query_plan_join_swap_table = 'false';
+SET join_algorithm = 'hash', query_plan_join_swap_table = 'false', parallel_hash_join_threshold = 18446744073709551615;
 
 SELECT * FROM
 (

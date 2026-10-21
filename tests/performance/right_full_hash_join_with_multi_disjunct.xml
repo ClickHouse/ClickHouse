@@ -11,13 +11,15 @@
     FORMAT Null
   </query>
 
-  <!-- Each probe row matches via at most one disjunct: dedup set is built but never hit. -->
+  <!-- Each probe row matches via at most one disjunct: dedup set is built but never hit.
+       Pinned to the serial layout, which master builds for every OR join. On the parallel layout the
+       1000 keys of each map spread over 256 buckets, and this probe-heavy query runs slower. -->
   <query>
     SELECT max(r.k1)
     FROM (SELECT number % 10000 AS a FROM numbers_mt(1e7)) AS l
     RIGHT JOIN (SELECT number % 1000 AS k1, 1000 + (number % 1000) AS k2 FROM numbers(1e5)) AS r
     ON l.a = r.k1 OR l.a = r.k2
-    FORMAT Null
+    FORMAT Null SETTINGS parallel_hash_join_threshold = 18446744073709551615
   </query>
 
   <!-- FULL variant of the overlap case. -->

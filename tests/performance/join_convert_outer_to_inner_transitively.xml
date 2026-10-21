@@ -11,8 +11,8 @@
     <fill_query>INSERT INTO mid SELECT number, number % 1000000 FROM numbers_mt(10000000)</fill_query>
     <fill_query>INSERT INTO small SELECT number * 9973 + 7 FROM numbers(100)</fill_query>
 
-    <query>SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON m.val = s.val SETTINGS join_algorithm = 'hash'</query>
-    <query>SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON m.val = s.val SETTINGS join_algorithm = 'parallel_hash'</query>
+    <query>SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON m.val = s.val SETTINGS join_algorithm = 'hash', parallel_hash_join_threshold = 18446744073709551615</query>
+    <query>SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON m.val = s.val SETTINGS join_algorithm = 'parallel_hash', parallel_hash_join_threshold = 0</query>
 
     <drop_query>DROP TABLE fact</drop_query>
     <drop_query>DROP TABLE mid</drop_query>

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: stateful
+# Tags: stateful, long
 
 set -e
 
@@ -39,6 +39,7 @@ ORDER BY
 LIMIT $ROWS;
 
 set max_memory_usage = 0;
+set query_plan_optimize_join_order_limit = 10;
 
 CREATE TABLE res_hash
 ENGINE = MergeTree()
@@ -50,7 +51,7 @@ FROM t1
 LEFT JOIN t2 ON (t1.UserID = t2.UserID) AND ((t1.EventDate < t2.EventDate) OR (length(t1.URL) > length(t2.URL)))
 ORDER BY ALL
 LIMIT $ROWS
-SETTINGS join_algorithm = 'hash';
+SETTINGS join_algorithm = 'hash', parallel_hash_join_threshold = 1000000000, log_comment = '00184_serial';
 
 CREATE TABLE res_parallel_hash
 ENGINE = MergeTree()
@@ -62,7 +63,7 @@ FROM t1
 LEFT JOIN t2 ON (t1.UserID = t2.UserID) AND ((t1.EventDate < t2.EventDate) OR (length(t1.URL) > length(t2.URL)))
 ORDER BY ALL
 LIMIT $ROWS
-SETTINGS join_algorithm = 'parallel_hash';
+SETTINGS join_algorithm = 'hash', parallel_hash_join_threshold = 0, log_comment = '00184_parallel';
 
 SELECT *
 FROM (
@@ -71,4 +72,11 @@ FROM (
     SELECT * FROM res_parallel_hash ORDER BY ALL
 )
 LIMIT 1;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT log_comment, ProfileEvents['HashJoinBuiltWithSerialLayout'] AS serial, ProfileEvents['HashJoinBuiltWithParallelLayout'] AS parallel
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND is_initial_query AND log_comment IN ('00184_serial', '00184_parallel')
+ORDER BY event_time_microseconds;
 "

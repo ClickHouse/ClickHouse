@@ -1,17 +1,10 @@
--- Tests that ASOF JOIN with join_algorithm = 'parallel_hash' produces the same
--- result as with join_algorithm = 'hash'. Previously parallel_hash was opted
--- out for ASOF in allowParallelHashJoin.
---
--- Strategy: per-row mutual EXCEPT in both directions. This is strictly stronger
--- than comparing aggregate count/sum and avoids float-summation-order
--- non-determinism (ConcurrentHashJoin materializes rows in a different order
--- than HashJoin, which changes the bit-level result of sum() over floats —
--- semantically identical, but EXCEPT would treat the rows as different).
+-- An ASOF JOIN must return the same rows with the serial and the parallel layout. Each join runs once with
+-- `parallel_hash_join_threshold = 18446744073709551615` (serial) and once with `0` (parallel), and stores its rows.
+-- The two results are compared row by row with EXCEPT in both directions. Comparing count() and sum()
+-- would not work: the two builds return rows in different orders, and that changes sum() over floats.
 
--- Force more than one ConcurrentHashJoin shard. With max_threads = 1 the number
--- of shards is 1, dispatchBlock returns the whole block without ever calling
--- selectDispatchBlock, and the ASOF prefix-slicing fix would not be exercised.
 SET max_threads = 4;
+SET join_algorithm = 'hash';
 
 DROP TABLE IF EXISTS asof_left;
 DROP TABLE IF EXISTS asof_right;
@@ -19,8 +12,7 @@ DROP TABLE IF EXISTS asof_right;
 CREATE TABLE asof_left  (k UInt32, t UInt32, v Float64) ENGINE = MergeTree ORDER BY (k, t);
 CREATE TABLE asof_right (k UInt32, t UInt32, v Float64) ENGINE = MergeTree ORDER BY (k, t);
 
--- Multi-key, multi-timestamp dataset large enough to actually exercise
--- the parallel build.
+-- Multi-key, multi-timestamp dataset.
 INSERT INTO asof_left
 SELECT
     toUInt32(keys.k)            AS k,
@@ -38,73 +30,48 @@ FROM (SELECT number AS k FROM numbers(500)) AS keys
 CROSS JOIN (SELECT number AS t FROM numbers(100)) AS tt;
 
 -- ASOF INNER JOIN: per-row identity in both directions.
-SELECT count() FROM (
-    SELECT l.k AS k, l.t AS t, l.v AS lv, r.v AS rv
-    FROM asof_left AS l
-    ASOF INNER JOIN asof_right AS r
-        ON l.k = r.k AND l.t >= r.t
-    SETTINGS join_algorithm = 'hash'
-    EXCEPT
-    SELECT l.k AS k, l.t AS t, l.v AS lv, r.v AS rv
-    FROM asof_left AS l
-    ASOF INNER JOIN asof_right AS r
-        ON l.k = r.k AND l.t >= r.t
-    SETTINGS join_algorithm = 'parallel_hash'
-);
+CREATE TABLE inner_serial ENGINE = Memory AS
+SELECT l.k AS k, l.t AS t, l.v AS lv, r.v AS rv
+FROM asof_left AS l
+ASOF INNER JOIN asof_right AS r
+    ON l.k = r.k AND l.t >= r.t
+SETTINGS parallel_hash_join_threshold = 18446744073709551615, log_comment = '04319_inner_serial';
 
-SELECT count() FROM (
-    SELECT l.k AS k, l.t AS t, l.v AS lv, r.v AS rv
-    FROM asof_left AS l
-    ASOF INNER JOIN asof_right AS r
-        ON l.k = r.k AND l.t >= r.t
-    SETTINGS join_algorithm = 'parallel_hash'
-    EXCEPT
-    SELECT l.k AS k, l.t AS t, l.v AS lv, r.v AS rv
-    FROM asof_left AS l
-    ASOF INNER JOIN asof_right AS r
-        ON l.k = r.k AND l.t >= r.t
-    SETTINGS join_algorithm = 'hash'
-);
+CREATE TABLE inner_parallel ENGINE = Memory AS
+SELECT l.k AS k, l.t AS t, l.v AS lv, r.v AS rv
+FROM asof_left AS l
+ASOF INNER JOIN asof_right AS r
+    ON l.k = r.k AND l.t >= r.t
+SETTINGS parallel_hash_join_threshold = 0, log_comment = '04319_inner_parallel';
+
+SELECT count() FROM (SELECT * FROM inner_serial EXCEPT SELECT * FROM inner_parallel);
+SELECT count() FROM (SELECT * FROM inner_parallel EXCEPT SELECT * FROM inner_serial);
 
 -- ASOF LEFT JOIN: same shape.
-SELECT count() FROM (
-    SELECT l.k AS k, l.t AS t, l.v AS lv, r.v AS rv
-    FROM asof_left AS l
-    ASOF LEFT JOIN asof_right AS r
-        ON l.k = r.k AND l.t >= r.t
-    SETTINGS join_algorithm = 'hash'
-    EXCEPT
-    SELECT l.k AS k, l.t AS t, l.v AS lv, r.v AS rv
-    FROM asof_left AS l
-    ASOF LEFT JOIN asof_right AS r
-        ON l.k = r.k AND l.t >= r.t
-    SETTINGS join_algorithm = 'parallel_hash'
-);
+CREATE TABLE left_serial ENGINE = Memory AS
+SELECT l.k AS k, l.t AS t, l.v AS lv, r.v AS rv
+FROM asof_left AS l
+ASOF LEFT JOIN asof_right AS r
+    ON l.k = r.k AND l.t >= r.t
+SETTINGS parallel_hash_join_threshold = 18446744073709551615, log_comment = '04319_left_serial';
 
-SELECT count() FROM (
-    SELECT l.k AS k, l.t AS t, l.v AS lv, r.v AS rv
-    FROM asof_left AS l
-    ASOF LEFT JOIN asof_right AS r
-        ON l.k = r.k AND l.t >= r.t
-    SETTINGS join_algorithm = 'parallel_hash'
-    EXCEPT
-    SELECT l.k AS k, l.t AS t, l.v AS lv, r.v AS rv
-    FROM asof_left AS l
-    ASOF LEFT JOIN asof_right AS r
-        ON l.k = r.k AND l.t >= r.t
-    SETTINGS join_algorithm = 'hash'
-);
+CREATE TABLE left_parallel ENGINE = Memory AS
+SELECT l.k AS k, l.t AS t, l.v AS lv, r.v AS rv
+FROM asof_left AS l
+ASOF LEFT JOIN asof_right AS r
+    ON l.k = r.k AND l.t >= r.t
+SETTINGS parallel_hash_join_threshold = 0, log_comment = '04319_left_parallel';
+
+SELECT count() FROM (SELECT * FROM left_serial EXCEPT SELECT * FROM left_parallel);
+SELECT count() FROM (SELECT * FROM left_parallel EXCEPT SELECT * FROM left_serial);
 
 DROP TABLE asof_left;
 DROP TABLE asof_right;
 
--- Multi-equality-key ASOF JOIN. Exercises the HashMethodKeysFixed /
--- HashMethodHashed code paths in ConcurrentHashJoin::selectDispatchBlock,
--- which hash N columns based on `key_sizes.size()`. Without the trailing-
--- asof-key slicing in selectDispatchBlock, same-(a,b) rows with different
--- t values would be scattered to different partitions and probe rows would
--- miss their asof matches. The single-key tests above pass even without
--- that slicing because HashMethodOneNumber only reads column[0].
+-- ASOF JOIN with two equality keys. The parallel build must split the rows by the equality keys
+-- only, so that rows with the same (a, b) and different t go to the same bucket. Otherwise probe
+-- rows miss their ASOF matches. With one equality key, as above, the ASOF column is never part
+-- of the split, so only this case checks it.
 
 DROP TABLE IF EXISTS asof_left2;
 DROP TABLE IF EXISTS asof_right2;
@@ -120,61 +87,59 @@ INSERT INTO asof_right2
 SELECT toUInt32(number % 100), toUInt32((number / 100) % 50), toUInt32(number * 2), -toFloat64(number) / 1000
 FROM numbers(50000);
 
-SELECT count() FROM (
-    SELECT l.a AS a, l.b AS b, l.t AS t, l.v AS lv, r.v AS rv
-    FROM asof_left2 AS l
-    ASOF INNER JOIN asof_right2 AS r
-        ON l.a = r.a AND l.b = r.b AND l.t >= r.t
-    SETTINGS join_algorithm = 'hash'
-    EXCEPT
-    SELECT l.a AS a, l.b AS b, l.t AS t, l.v AS lv, r.v AS rv
-    FROM asof_left2 AS l
-    ASOF INNER JOIN asof_right2 AS r
-        ON l.a = r.a AND l.b = r.b AND l.t >= r.t
-    SETTINGS join_algorithm = 'parallel_hash'
-);
+CREATE TABLE two_keys_inner_serial ENGINE = Memory AS
+SELECT l.a AS a, l.b AS b, l.t AS t, l.v AS lv, r.v AS rv
+FROM asof_left2 AS l
+ASOF INNER JOIN asof_right2 AS r
+    ON l.a = r.a AND l.b = r.b AND l.t >= r.t
+SETTINGS parallel_hash_join_threshold = 18446744073709551615, log_comment = '04319_two_keys_inner_serial';
 
-SELECT count() FROM (
-    SELECT l.a AS a, l.b AS b, l.t AS t, l.v AS lv, r.v AS rv
-    FROM asof_left2 AS l
-    ASOF INNER JOIN asof_right2 AS r
-        ON l.a = r.a AND l.b = r.b AND l.t >= r.t
-    SETTINGS join_algorithm = 'parallel_hash'
-    EXCEPT
-    SELECT l.a AS a, l.b AS b, l.t AS t, l.v AS lv, r.v AS rv
-    FROM asof_left2 AS l
-    ASOF INNER JOIN asof_right2 AS r
-        ON l.a = r.a AND l.b = r.b AND l.t >= r.t
-    SETTINGS join_algorithm = 'hash'
-);
+CREATE TABLE two_keys_inner_parallel ENGINE = Memory AS
+SELECT l.a AS a, l.b AS b, l.t AS t, l.v AS lv, r.v AS rv
+FROM asof_left2 AS l
+ASOF INNER JOIN asof_right2 AS r
+    ON l.a = r.a AND l.b = r.b AND l.t >= r.t
+SETTINGS parallel_hash_join_threshold = 0, log_comment = '04319_two_keys_inner_parallel';
 
-SELECT count() FROM (
-    SELECT l.a AS a, l.b AS b, l.t AS t, l.v AS lv, r.v AS rv
-    FROM asof_left2 AS l
-    ASOF LEFT JOIN asof_right2 AS r
-        ON l.a = r.a AND l.b = r.b AND l.t >= r.t
-    SETTINGS join_algorithm = 'hash'
-    EXCEPT
-    SELECT l.a AS a, l.b AS b, l.t AS t, l.v AS lv, r.v AS rv
-    FROM asof_left2 AS l
-    ASOF LEFT JOIN asof_right2 AS r
-        ON l.a = r.a AND l.b = r.b AND l.t >= r.t
-    SETTINGS join_algorithm = 'parallel_hash'
-);
+SELECT count() FROM (SELECT * FROM two_keys_inner_serial EXCEPT SELECT * FROM two_keys_inner_parallel);
+SELECT count() FROM (SELECT * FROM two_keys_inner_parallel EXCEPT SELECT * FROM two_keys_inner_serial);
 
-SELECT count() FROM (
-    SELECT l.a AS a, l.b AS b, l.t AS t, l.v AS lv, r.v AS rv
-    FROM asof_left2 AS l
-    ASOF LEFT JOIN asof_right2 AS r
-        ON l.a = r.a AND l.b = r.b AND l.t >= r.t
-    SETTINGS join_algorithm = 'parallel_hash'
-    EXCEPT
-    SELECT l.a AS a, l.b AS b, l.t AS t, l.v AS lv, r.v AS rv
-    FROM asof_left2 AS l
-    ASOF LEFT JOIN asof_right2 AS r
-        ON l.a = r.a AND l.b = r.b AND l.t >= r.t
-    SETTINGS join_algorithm = 'hash'
-);
+CREATE TABLE two_keys_left_serial ENGINE = Memory AS
+SELECT l.a AS a, l.b AS b, l.t AS t, l.v AS lv, r.v AS rv
+FROM asof_left2 AS l
+ASOF LEFT JOIN asof_right2 AS r
+    ON l.a = r.a AND l.b = r.b AND l.t >= r.t
+SETTINGS parallel_hash_join_threshold = 18446744073709551615, log_comment = '04319_two_keys_left_serial';
+
+CREATE TABLE two_keys_left_parallel ENGINE = Memory AS
+SELECT l.a AS a, l.b AS b, l.t AS t, l.v AS lv, r.v AS rv
+FROM asof_left2 AS l
+ASOF LEFT JOIN asof_right2 AS r
+    ON l.a = r.a AND l.b = r.b AND l.t >= r.t
+SETTINGS parallel_hash_join_threshold = 0, log_comment = '04319_two_keys_left_parallel';
+
+SELECT count() FROM (SELECT * FROM two_keys_left_serial EXCEPT SELECT * FROM two_keys_left_parallel);
+SELECT count() FROM (SELECT * FROM two_keys_left_parallel EXCEPT SELECT * FROM two_keys_left_serial);
 
 DROP TABLE asof_left2;
 DROP TABLE asof_right2;
+
+-- The first build of each pair has the serial layout and the second the parallel one. A `Replicated`
+-- database also logs each `CREATE TABLE ... AS SELECT` as a secondary query of its DDL worker, so only
+-- initial queries count.
+SYSTEM FLUSH LOGS query_log;
+SELECT log_comment, ProfileEvents['HashJoinBuiltWithSerialLayout'] AS serial, ProfileEvents['HashJoinBuiltWithParallelLayout'] AS parallel
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND is_initial_query
+    AND log_comment IN ('04319_inner_serial', '04319_inner_parallel', '04319_left_serial', '04319_left_parallel',
+        '04319_two_keys_inner_serial', '04319_two_keys_inner_parallel', '04319_two_keys_left_serial', '04319_two_keys_left_parallel')
+ORDER BY event_time_microseconds;
+
+DROP TABLE inner_serial;
+DROP TABLE inner_parallel;
+DROP TABLE left_serial;
+DROP TABLE left_parallel;
+DROP TABLE two_keys_inner_serial;
+DROP TABLE two_keys_inner_parallel;
+DROP TABLE two_keys_left_serial;
+DROP TABLE two_keys_left_parallel;
