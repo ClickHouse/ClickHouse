@@ -1,6 +1,6 @@
 #include <Functions/FunctionsConversion.h>
-#include <Functions/castNestedResult.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/isQueryOuterGuardError.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -138,10 +138,6 @@ ColumnPtr ConvertImplFromDynamicToColumn::execute(
     {
         /// Skip shared variant, it will be processed later.
         if (i == column_dynamic.getSharedVariantDiscriminator())
-            continue;
-
-        /// Types without values are not converted, so they cannot fail the conversion.
-        if (variant_column.getVariantPtrByGlobalDiscriminator(i)->empty())
             continue;
 
         ColumnsWithTypeAndName new_args = arguments;
@@ -2181,12 +2177,11 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
     const auto & variant_types = from_variant.getVariants();
     ElementWrappers variant_wrappers;
     variant_wrappers.reserve(variant_types.size());
-    VectorWithMemoryTracking<std::shared_ptr<const Exception>> variant_errors(variant_types.size());
+    std::optional<Exception> first_error;
 
     /// Create conversion wrapper for each variant.
-    for (size_t i = 0; i != variant_types.size(); ++i)
+    for (const auto & variant_type : variant_types)
     {
-        const auto & variant_type = variant_types[i];
         WrapperType wrapper;
         if (cast_type == CastType::accurateOrNull)
         {
@@ -2195,6 +2190,8 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
         }
         else
         {
+            /// Only an exception tells that two types cannot be converted. A variant that cannot be converted
+            /// gets no wrapper here, and its conversion fails at execution only if it has values.
             try
             {
                 Exception::SuppressErrorCodesScope suppress_error_codes;
@@ -2205,23 +2202,24 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
             }
             catch (Exception & e)
             {
-                if (!isTypeMismatchError(e.code()) && e.code() != ErrorCodes::NOT_IMPLEMENTED)
+                if (isQueryOuterGuardError(e.code()))
                 {
                     e.recordToSystemErrors();
                     throw;
                 }
                 wrapper = {};
-                variant_errors[i] = std::make_shared<Exception>(e);
+                if (!first_error)
+                    first_error.emplace(e);
             }
         }
         variant_wrappers.push_back(wrapper);
     }
 
-    if (std::ranges::all_of(variant_errors, [](const auto & error) { return error != nullptr; }))
-        throw copyDeferredError(*variant_errors.front());
+    if (first_error && std::ranges::none_of(variant_wrappers, [](const auto & wrapper) { return static_cast<bool>(wrapper); }))
+        throw copyDeferredError(*first_error);
 
     bool keep_nullable = settings.cast_keep_nullable;
-    return [variant_wrappers, variant_errors, variant_types, to_type, keep_nullable]
+    return [this, variant_wrappers, variant_types, to_type, keep_nullable]
            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * col_nullable, size_t input_rows_count) -> ColumnPtr
     {
         const auto & column_variant = assert_cast<const ColumnVariant &>(*arguments.front().column.get());
@@ -2239,9 +2237,14 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
             ColumnPtr cast_variant;
             /// Check if we have wrapper for this variant.
             if (variant_wrapper)
+            {
                 cast_variant = variant_wrapper(variant, result_type, nullptr, variant_col->size());
-            else if (variant_errors[i] && !variant_col->empty())
-                throw copyDeferredError(*variant_errors[i]);
+            }
+            else if (cast_type != CastType::accurateOrNull && !variant_col->empty())
+            {
+                /// The conversion failed at analysis, so it is prepared again only to convert values, and throws then.
+                cast_variant = prepareUnpackDictionaries(variant_types[i], to_type)(variant, result_type, nullptr, variant_col->size());
+            }
             cast_variant_columns.push_back(std::move(cast_variant));
         }
 
@@ -2476,6 +2479,9 @@ FunctionCast::WrapperType FunctionCast::createDynamicToColumnWrapper(const DataT
         }
         else
         {
+            /// Types without values are not converted, so they cannot fail the conversion.
+            if (args[0].column->empty())
+                return nullptr;
             wrapper = prepareUnpackDictionaries(args[0].type, result_type);
         }
 

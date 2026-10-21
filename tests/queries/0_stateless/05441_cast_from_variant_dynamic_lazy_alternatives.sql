@@ -10,11 +10,15 @@ SELECT CAST([x] AS Array(UInt8)), CAST(tuple(x) AS Tuple(UInt8)), CAST(map('k', 
 SELECT CAST(x AS Array(UInt8)) FROM (SELECT [1, 2]::Array(UInt8)::Variant(UInt64, Array(UInt8)) AS x);
 SELECT CAST(x AS FixedString(2)) FROM (SELECT 'ab'::Variant(String, UInt64) AS x);
 SELECT CAST(x AS Tuple(UInt8, UInt8)) FROM (SELECT (1, 2)::Tuple(UInt8, UInt8)::Variant(Tuple(UInt8, UInt8), Tuple(UInt8)) AS x);
+SELECT CAST(x AS FixedString(2)) FROM (SELECT 'ab'::Variant(String)::Variant(String, FixedString(4)) AS x) SETTINGS allow_suspicious_variant_types = 1;
+SELECT CAST(x AS Date) FROM (SELECT toDate('2020-01-01')::Variant(Date, Decimal(9, 2)) AS x);
 
 SELECT 'Variant, values of an alternative that cannot be converted';
 SELECT CAST(x AS UInt8) FROM (SELECT [1]::Array(UInt8)::Variant(UInt64, Array(UInt8)) AS x); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT CAST(x AS UInt8) FROM (SELECT if(number = 1, [1]::Array(UInt8)::Variant(UInt64, Array(UInt8)), number::Variant(UInt64, Array(UInt8))) AS x FROM numbers(3)) FORMAT Null; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT CAST(x AS FixedString(2)) FROM (SELECT 5::UInt64::Variant(String, UInt64) AS x); -- { serverError NOT_IMPLEMENTED }
+SELECT CAST(x AS FixedString(2)) FROM (SELECT 'abcd'::FixedString(4)::Variant(String, FixedString(4)) AS x) SETTINGS allow_suspicious_variant_types = 1; -- { serverError TOO_LARGE_STRING_SIZE }
+SELECT CAST(x AS Date) FROM (SELECT 1.5::Decimal(9, 2)::Variant(Date, Decimal(9, 2)) AS x); -- { serverError ILLEGAL_COLUMN }
 
 SELECT 'Variant, no alternative can be converted';
 SELECT CAST(x AS UInt8) FROM (SELECT [1]::Array(UInt8)::Variant(Array(UInt8), Map(String, UInt8)) AS x LIMIT 0); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
@@ -42,6 +46,11 @@ INSERT INTO t_dynamic SELECT number, if(number = 1, number::Dynamic, [1]::Array(
 SELECT id, CAST(d AS UInt8) FROM t_dynamic WHERE id = 1;
 SELECT id, CAST(d AS UInt8) FROM t_dynamic ORDER BY id FORMAT Null; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 DROP TABLE t_dynamic;
+
+SELECT 'accurateCastOrNull';
+SELECT accurateCastOrNull(tuple(x::Dynamic), 'Tuple(UInt8)') FROM (SELECT [1]::Array(UInt8)::Variant(UInt64, Array(UInt8)) AS x);
+SELECT accurateCastOrDefault(tuple(x::Dynamic), 'Tuple(UInt8)', tuple(99::UInt8)) FROM (SELECT [1]::Array(UInt8)::Variant(UInt64, Array(UInt8)) AS x);
+SELECT accurateCastOrNull(tuple(x::Dynamic), 'Tuple(UInt8)') FROM (SELECT arrayJoin([1::UInt64::Variant(UInt64, Array(UInt8)), [1]::Array(UInt8)::Variant(UInt64, Array(UInt8))]) AS x);
 
 SELECT 'ALTER';
 SET mutations_sync = 2;

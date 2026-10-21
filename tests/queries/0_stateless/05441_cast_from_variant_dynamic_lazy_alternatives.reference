@@ -10,6 +10,8 @@ Variant
 [1,2]
 ab
 (1,2)
+ab
+2020-01-01
 Variant, values of an alternative that cannot be converted
 Variant, no alternative can be converted
 Geometry
@@ -21,5 +23,10 @@ Dynamic
 1
 [1]
 1	1
+accurateCastOrNull
+\N
+(99)
+(1)
+\N
 ALTER
 1	5	UInt8
