@@ -14,6 +14,8 @@ set (SRCS
     Decimal.cpp
     getAvailableMemoryAmount.cpp
     getFQDNOrHostName.cpp
+    getCPUCacheSize.cpp
+    getL1CacheSize.cpp
     getL2CacheSize.cpp
     getMemoryAmount.cpp
     getPageSize.cpp
