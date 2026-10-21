@@ -6,8 +6,8 @@
 
 # A row group written to the columns cache is not held by the query until the row group is read: each chunk of
 # 65536 rows is written to the cache as it is decoded, and its memory is the server's from then on. So a query that
-# populates the cache needs no more memory than one that does not, even if the decoded row group is larger than the
-# memory limit of the query. The chunks of a column that turns out not to be cacheable as a whole are taken back.
+# populates the cache needs memory for about a chunk, not for the decoded row group, and fits a memory limit below the
+# size of the row group. The chunks of a column that turns out not to be cacheable as a whole are taken back.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -27,19 +27,22 @@ $CLICKHOUSE_CLIENT -q "SELECT num_row_groups, num_rows FROM file('${FILE}', Parq
 touch -d "1 minute ago" "${FILE_PATH}"
 
 CACHE="use_columns_cache = 1"
-QUERY="SELECT count(), sum(length(s)) FROM file('${FILE}', Parquet, 'id UInt64, s String') SETTINGS max_threads = 1, max_memory_usage = '32Mi'"
+QUERY="SELECT count(), sum(length(s)) FROM file('${FILE}', Parquet, 'id UInt64, s String') SETTINGS max_threads = 1"
+# Below the decoded row group. The peak memory usage of a read without the cache varies with the block sizes it decodes,
+# so only the reads with the cache are limited.
+LIMIT="max_memory_usage = '32Mi'"
 ENTRIES="SELECT column, count(), sum(rows) FROM system.columns_cache WHERE database = '' AND endsWith(part, '/${FILE}') GROUP BY column ORDER BY column"
 
-echo "--- a memory limit below the decoded row group, without the cache"
+echo "--- without the cache"
 $CLICKHOUSE_CLIENT -q "SYSTEM DROP COLUMNS CACHE"
 $CLICKHOUSE_CLIENT -q "${QUERY}, use_columns_cache = 0"
 
-echo "--- the same limit, with a cold cache: all chunks are written"
-$CLICKHOUSE_CLIENT -q "${QUERY}, ${CACHE}"
+echo "--- a memory limit below the decoded row group, with a cold cache: all chunks are written"
+$CLICKHOUSE_CLIENT -q "${QUERY}, ${LIMIT}, ${CACHE}"
 $CLICKHOUSE_CLIENT -q "${ENTRIES}"
 
 echo "--- the same limit, served from the cache"
-$CLICKHOUSE_CLIENT -q "${QUERY}, ${CACHE}"
+$CLICKHOUSE_CLIENT -q "${QUERY}, ${LIMIT}, ${CACHE}"
 
 echo "--- the chunks of a column that cannot be written in full are taken back"
 # The first four chunks of `s` pass `PREWHERE` in full and are written, the next ones are filtered. The chunks of `id`,
