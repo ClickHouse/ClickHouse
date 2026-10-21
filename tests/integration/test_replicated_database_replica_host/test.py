@@ -8,6 +8,7 @@ This test suite validates:
 4. Special character handling (URL encoding)
 """
 
+import os
 import pytest
 import urllib.parse
 from helpers.cluster import ClickHouseCluster
@@ -466,3 +467,47 @@ def test_replica_host_on_cluster_only_active(started_cluster):
             node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
         node1.exec_in_container(["bash", "-c", "cp /etc/hosts.bak /etc/hosts"], user="root")
         node1.query("SYSTEM DROP DNS CACHE")
+
+
+def test_replica_host_on_cluster_with_ddl_host_name(started_cluster):
+    """Test `ON CLUSTER` of a Replicated database when `distributed_ddl.host_name` is also set.
+
+    With `host_name` configured, `DDLTask::findCurrentHostID` matches host IDs by name instead of
+    resolving them. The cluster of a Replicated database lists node1 under its `replica_host`
+    (`public.node1.com`), which is neither `host_name` nor resolvable here, so the `DDLWorker` must
+    accept `replica_host` as a self-name, or node1 never executes its part of the query.
+    """
+    db = "test_on_cluster_ddl_host_name"
+    config_path = "/etc/clickhouse-server/config.d/distributed_ddl_host_name.xml"
+
+    node1.copy_file_to_container(
+        os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs/distributed_ddl_host_name.xml"),
+        config_path,
+    )
+
+    try:
+        node1.restart_clickhouse()
+
+        for node in [node1, node2]:
+            node.query(
+                f"CREATE DATABASE {db} ENGINE = Replicated('/clickhouse/databases/{db}', 'shard1', '{node.name}')"
+            )
+            node.query(f"SYSTEM SYNC DATABASE REPLICA {db}")
+
+        # A table in a non-replicated database, so the query goes through the generic `DDLWorker`
+        # on the cluster of the Replicated database.
+        result = node2.query(
+            f"CREATE TABLE default.t_on_cluster_ddl_host_name ON CLUSTER {db} (x UInt64) ENGINE = Memory "
+            "SETTINGS distributed_ddl_output_mode = 'throw', distributed_ddl_task_timeout = 60"
+        )
+        print(f"ON CLUSTER result: {result}")
+        assert "public.node1.com" in result, f"Expected node1 to be reported by its replica_host, got: {result}"
+
+        for node in [node1, node2]:
+            assert node.query("EXISTS TABLE default.t_on_cluster_ddl_host_name").strip() == "1"
+    finally:
+        for node in [node1, node2]:
+            node.query("DROP TABLE IF EXISTS default.t_on_cluster_ddl_host_name SYNC")
+            node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+        node1.exec_in_container(["rm", "-f", config_path], user="root")
+        node1.restart_clickhouse()

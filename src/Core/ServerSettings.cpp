@@ -1798,6 +1798,8 @@ The advertised hostname is also used for the cluster that a `Replicated` databas
 
 An IPv6 address may be given either as a bare literal or in the bracketed form; both are published to the automatically generated cluster in the bracketed form.
 
+When `<distributed_ddl><host_name>` is set, distributed DDL accepts `replica_host` as a name of this server in addition to `host_name`, because the automatically generated cluster lists the server under `replica_host`.
+
 **Example**
 
 ```xml
