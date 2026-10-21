@@ -172,21 +172,39 @@ ch_cc_library(
     srcs = glob(["src/libmongoc/src/mongoc/*.c"]) + glob(["src/common/src/*.c"]) + [
         "src/utf8proc-2.11.3/utf8proc.c",
         ":config/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config-private.h",
+        "src/libmongoc/src/mongoc/mongoc-ocsp-cache-private.h",
+        "src/libmongoc/src/mongoc/mongoc-openssl-private.h",
+        "src/libmongoc/src/mongoc/mongoc-stream-tls-openssl-bio-private.h",
     ],
     hdrs = [
         ":config/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config.h",
         ":config/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-version.h",
-    ] + glob([
-        "src/libmongoc/src/**/*.h",
-        "src/utf8proc-2.11.3/**/*.h",
-        "src/uthash/**/*.h",
-    ]),
-    additional_compiler_inputs = ["src/utf8proc-2.11.3/utf8proc_data.c"],
+    ] + glob(
+        [
+            "src/libmongoc/src/**/*.h",
+            "src/utf8proc-2.11.3/**/*.h",
+            "src/uthash/**/*.h",
+        ],
+        exclude = [
+            "src/libmongoc/src/mongoc/mongoc-ocsp-cache-private.h",
+            "src/libmongoc/src/mongoc/mongoc-openssl-private.h",
+            "src/libmongoc/src/mongoc/mongoc-stream-tls-openssl-bio-private.h",
+            "src/libmongoc/src/mongoc/mongoc-cyrus-private.h",
+            "src/libmongoc/src/mongoc/mongoc-secure-channel-private.h",
+            "src/libmongoc/src/mongoc/mongoc-secure-transport-private.h",
+            "src/libmongoc/src/mongoc/mongoc-sspi-private.h",
+        ],
+    ),
+    private_hdrs = ["src/utf8proc-2.11.3/utf8proc_data.c"],
     copts = [
         "-w",
         "-std=gnu11",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    implementation_deps = [
+        "@clickhouse_llvm_project//:libcxxabi_headers",
+        "@clickhouse_openssl//:crypto",
+        "@clickhouse_zstd//:_zstd__compile_0",
+    ],
     includes = [
         "src/libmongoc/src",
         "src/libmongoc/src/mongoc",
