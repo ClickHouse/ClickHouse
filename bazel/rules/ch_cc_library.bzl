@@ -73,9 +73,13 @@ def ch_cc_library(
         runtime = [
             Label("@clickhouse_llvm_project//:cxx"),
             Label("@clickhouse_llvm_project//:cxxabi"),
-            Label("@clickhouse_llvm_project//:unwind"),
         ]
+        unwind = [Label("@clickhouse_llvm_project//:unwind")]
         kwargs["deps"] = kwargs.get("deps", []) + select({
+            str(Label("@platforms//cpu:" + arch)): unwind if arch in arches else []
+            for arch in CLICKHOUSE_TARGET_FLAGS
+        } | {"//conditions:default": unwind})
+        kwargs["implementation_deps"] = kwargs.get("implementation_deps", []) + select({
             str(Label("@platforms//cpu:" + arch)): runtime if arch in arches else []
             for arch in CLICKHOUSE_TARGET_FLAGS
         } | {"//conditions:default": runtime})
