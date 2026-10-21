@@ -21,6 +21,10 @@ public:
 
     ASTPtr clone() const override;
 
+    /// `PROPERTIES` may hold endpoint passwords or cluster secrets; they are kept outside the AST children,
+    /// so advertise them explicitly to make `formatForLogging` mask them in logs and `system.query_log`.
+    bool hasSecretParts() const override { return true; }
+
     QueryKind getQueryKind() const override { return QueryKind::Alter; }
 
 protected:
