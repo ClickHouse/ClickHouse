@@ -99,7 +99,7 @@ struct RadixUniqExactEntry
     bool shouldBeUpdated(const RadixUniqExactEntry & new_entry) const
     {
         auto differs = [](size_t lhs, size_t rhs) { return lhs < rhs / 2 || rhs < lhs / 2; };
-        return num_streams != new_entry.num_streams || differs(num_distinct, new_entry.num_distinct)
+        return differs(num_streams, new_entry.num_streams) || differs(num_distinct, new_entry.num_distinct)
             || differs(stream_distinct, new_entry.stream_distinct) || differs(stream_keys, new_entry.stream_keys);
     }
 

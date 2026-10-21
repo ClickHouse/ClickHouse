@@ -74,12 +74,16 @@ class IDataType;
 /// of the number of keys and of distinct keys of a stream, and the number of streams. The distinct keys of
 /// a stream that ended in `Routing` are estimated: its buffers hold repeated keys, so a sample of buffers is deduplicated and
 /// its count is scaled to all of them. A run that spilled keeps nothing, since its streams do not know their distinct keys.
-/// When the same query runs again with as many streams:
-/// - The number of buckets and the sizes of the bucket sets follow from the result.
-/// - A stream starts in `UnboundedSet`, allocated for its distinct keys, by the same rule as the switch during the
-///   routing: its keys were mostly repeated and the set fits into `MAX_UNBOUNDED_SET_BYTES`. Otherwise it starts in
-///   `BoundedSet` if its distinct keys fit there, and in `Routing` if not. With many streams, each one has few distinct
-///   keys, so the size alone would put streams of distinct keys into sets that only cost inserts that miss the cache.
+/// When the same query runs again, with up to twice or half as many streams (the numbers of a stream are scaled to them,
+/// because the number of streams of a source varies between the runs):
+/// - The sizes of the bucket sets follow from the result, and so does the number of buckets, so that each bucket set
+///   fits into half of the L2 cache, unless the buffer of a stream would hold less than two pages of keys: with many
+///   streams, the build would walk many tiny scattered buffers and miss the TLB.
+/// - A stream starts in `UnboundedSet`, allocated for its distinct keys, if each of its keys was routed at least 8 times
+///   and the set fits into `MAX_UNBOUNDED_SET_BYTES`. Otherwise it starts in `BoundedSet` if its distinct keys fit there,
+///   and in `Routing` if not. A set from the start costs inserts that miss the cache, which pay only for keys repeated
+///   many times, and the bound is far from the one of the switch during the routing, so that the estimate of the
+///   distinct keys does not move the streams between the modes from run to run.
 /// - A stream in `Routing` is not deduplicated if its keys are at most twice its budget, because a deduplication late in
 ///   the stream costs a pass over its keys that the build repeats anyway. For example, with 700000 distinct keys the
 ///   budget is 5.6 million keys: a stream of 6 million keys is not deduplicated, and one of 20 million is first

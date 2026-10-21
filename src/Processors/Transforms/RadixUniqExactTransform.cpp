@@ -241,6 +241,14 @@ constexpr size_t SPLIT_INSERT_CHUNK = 1024;
 
 /// At least 256 buckets, and at most 4096, because every stream keeps a buffer per bucket.
 constexpr size_t MIN_BUCKET_BITS = 8;
+
+/// Two pages of keys, see `bucketBits`.
+constexpr size_t MIN_BUFFER_BYTES = 8192;
+
+/// A stream starts in its set from the statistics only if each of its keys was routed this many times (see
+/// `startFromHint`), e.g. `number % 200000` with 16 streams, but not `EventTime` of `hits`, repeated 4 times: the
+/// estimate of the distinct keys, from a sample, would move it between the modes from run to run.
+constexpr size_t MIN_REPEATS_TO_START_IN_SET = 8;
 constexpr size_t MAX_BUCKET_BITS = 12;
 
 /// The blocks of a buffer of buffered keys grow from `MIN_BLOCK_SIZE` to `MIN_BLOCK_SIZE << MAX_BLOCK_CLASS` keys,
@@ -830,11 +838,11 @@ private:
     void startFromHint(Stream & stream)
     {
         /// Whether a stream ended in a set does not tell whether a set pays: a stream that started in it ends in it. With
-        /// many streams, each one has few distinct keys, and a set of keys that are not repeated only costs inserts that
-        /// miss the cache.
+        /// many streams, each one has few distinct keys, and a set from the start costs inserts that miss the cache, which
+        /// pays only for keys repeated many times. The bound is far from the one of the switch during the routing, so that
+        /// the estimate of the distinct keys, from a sample, does not move the stream between the modes from run to run.
         const size_t stream_distinct = hint->stream_distinct;
-        const double new_distinct_ratio = static_cast<double>(stream_distinct) / static_cast<double>(std::max<size_t>(hint->stream_keys, 1));
-        if (worthUnboundedSet(new_distinct_ratio, stream_distinct))
+        if (stream_distinct * MIN_REPEATS_TO_START_IN_SET <= hint->stream_keys && stream_distinct * 2 * sizeof(Key) <= MAX_UNBOUNDED_SET_BYTES)
         {
             stream.mode = Mode::UnboundedSet;
             stream.local_set.reset(std::bit_ceil(std::max<size_t>(stream_distinct * 2, INITIAL_LOCAL_SET_CAPACITY)));
@@ -1030,7 +1038,7 @@ private:
         size_t num_deduplicated = sample.num_buffers;
 
         const size_t estimated_size = static_cast<size_t>(static_cast<double>(stream.num_buffered) * sample.remaining_ratio) + 1;
-        if (worthUnboundedSet(sample.new_distinct_ratio, estimated_size))
+        if (sample.new_distinct_ratio <= 0.25 && estimated_size * 2 * sizeof(Key) <= MAX_UNBOUNDED_SET_BYTES)
         {
             switchToUnboundedSet(stream, estimated_size);
             return;
@@ -1112,13 +1120,6 @@ private:
             .num_buffers = num_deduplicated,
             .remaining_ratio = median(remaining_ratios, 1),
             .new_distinct_ratio = median(new_distinct_ratios, 1)};
-    }
-
-    /// Whether the keys of a stream are mostly repeated, so that a set deduplicates them right away, and the set of its
-    /// distinct keys is small enough for the inserts to stay fast.
-    static bool worthUnboundedSet(double new_distinct_ratio, size_t num_distinct)
-    {
-        return new_distinct_ratio <= 0.25 && num_distinct * 2 * sizeof(Key) <= MAX_UNBOUNDED_SET_BYTES;
     }
 
     /// Most of the keys of the stream are repeated, and their set is small, so they are better deduplicated right
@@ -1425,13 +1426,24 @@ void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, 
     }
 }
 
-/// With the statistics, there are enough buckets for each bucket set to fit into half of the L2 cache.
+/// With the statistics, there are enough buckets for each bucket set to fit into half of the L2 cache, unless the buffer of a
+/// stream would hold less than `MIN_BUFFER_BYTES` of keys: with many streams, the build would then walk many tiny buffers
+/// scattered over the memory, and miss the TLB at each of their blocks. For example, 100 million distinct keys in 111
+/// streams take 2048 buckets, not 4096.
 size_t bucketBits(size_t num_streams, size_t key_size, const std::optional<RadixUniqExactEntry> & hint)
 {
-    size_t num_buckets = num_streams * BUCKETS_PER_STREAM;
+    /// The bits of the powers of two at least and at most `n`.
+    auto bits_up = [](size_t n) { return static_cast<size_t>(std::bit_width(std::max<size_t>(n, 1) - 1)); };
+    auto bits_down = [](size_t n) { return n ? static_cast<size_t>(std::bit_width(n)) - 1 : 0; };
+
+    size_t bits = bits_up(num_streams * BUCKETS_PER_STREAM);
     if (hint)
-        num_buckets = std::max(num_buckets, hint->num_distinct * 2 * key_size / std::max<size_t>(getL2CacheSize() / 2, 1));
-    return std::clamp<size_t>(std::bit_width(num_buckets - 1), MIN_BUCKET_BITS, MAX_BUCKET_BITS);
+    {
+        const size_t for_cache = hint->num_distinct * 2 * key_size / std::max<size_t>(getL2CacheSize() / 2, 1);
+        const size_t for_buffers = hint->num_distinct * key_size / (num_streams * MIN_BUFFER_BYTES);
+        bits = std::max(bits, std::min(bits_up(for_cache), bits_down(for_buffers)));
+    }
+    return std::clamp<size_t>(bits, MIN_BUCKET_BITS, MAX_BUCKET_BITS);
 }
 
 template <typename Key>
@@ -1442,9 +1454,17 @@ RadixUniqExactStatePtr createState(
     if (stats_collecting_params.isCollectionAndUseEnabled())
     {
         hint = getHashTablesStatistics<RadixUniqExactEntry>().getSizeHint(stats_collecting_params);
-        /// The numbers of a stream are not comparable with a different number of streams.
-        if (hint && hint->num_streams != num_streams)
+        /// The number of streams of a source varies between the runs, e.g. from 88 to 90 for 192 threads, and a hint that
+        /// applies only to the same number makes the runs alternate between two modes. The rows of a stream follow the number
+        /// of streams, so the numbers of a stream are scaled to it, unless it is too different.
+        if (hint && (hint->num_streams > 2 * num_streams || num_streams > 2 * hint->num_streams))
             hint.reset();
+        if (hint && hint->num_streams != num_streams)
+        {
+            hint->stream_distinct = hint->stream_distinct * hint->num_streams / num_streams;
+            hint->stream_keys = hint->stream_keys * hint->num_streams / num_streams;
+            hint->num_streams = num_streams;
+        }
 
         /// As the ordinary aggregation, do not preallocate the sets above `max_size_to_preallocate`: one local set per
         /// stream, then the bucket sets.
