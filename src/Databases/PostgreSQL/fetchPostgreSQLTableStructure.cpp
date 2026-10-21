@@ -507,7 +507,8 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
                 "FROM pg_index i "
                 "JOIN pg_attribute a ON a.attrelid = i.indrelid "
                 "AND a.attnum = ANY(i.indkey) "
-                "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) AND i.indisprimary", where);
+                "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) AND i.indisprimary "
+                "ORDER BY array_position(i.indkey, a.attnum)", where); /// in the order of the index columns
 
         table.primary_key_columns
             = readNamesAndTypesList(tx, postgres_table_with_schema, postgres_table_for_messages, query, use_nulls, true);
