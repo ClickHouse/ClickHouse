@@ -61,7 +61,7 @@ ALTER TABLE t_clear_mt CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError 
 KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_mt' AND NOT is_done SYNC FORMAT Null;
 
 -- An ALTER DELETE rewrites every column of a part it changes, so it writes `e` and `d2` from `b`.
-ALTER TABLE t_clear_mt DELETE WHERE id = 3 SETTINGS mutations_sync = 0;
+ALTER TABLE t_clear_mt DELETE WHERE id = 1 SETTINGS mutations_sync = 0;
 ALTER TABLE t_clear_mt CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
 KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_mt' AND NOT is_done SYNC FORMAT Null;
 
@@ -166,7 +166,7 @@ ALTER TABLE t_clear_m UPDATE x = x + 1 WHERE 1 SETTINGS mutations_sync = 0;
 ALTER TABLE t_clear_m CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
 KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_m' AND NOT is_done SYNC FORMAT Null;
 
--- Rebuilding an index or a projection on a compact part stores the defaulted columns it needs, so `d` from `b`.
+-- A mutation of a compact part stores the defaulted columns of its indexes and projections, so every mutation reads `d` and `b`, also after a later ADD INDEX or ADD PROJECTION.
 CREATE TABLE t_clear_i (id UInt32, x UInt32, b UInt32, w UInt32) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_clear_i VALUES (1, 1, 2222, 0), (2, 2, 4444, 0);
 ALTER TABLE t_clear_i ADD COLUMN d UInt32 DEFAULT b * 2;
@@ -175,6 +175,9 @@ ALTER TABLE t_clear_i UPDATE w = w + 1 WHERE 1 SETTINGS alter_sync = 0, mutation
 ALTER TABLE t_clear_i CLEAR COLUMN b SETTINGS alter_sync = 0;
 ALTER TABLE t_clear_i ADD INDEX idx_d (x + d) TYPE minmax GRANULARITY 1; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t_clear_i ADD PROJECTION p_d (SELECT id, x, d ORDER BY x); -- { serverError BAD_ARGUMENTS }
+-- A hypothetical projection changes no mutation's reads.
+CREATE HYPOTHETICAL PROJECTION p_h ON t_clear_i (SELECT id, x, d ORDER BY x);
+DROP HYPOTHETICAL PROJECTION p_h ON t_clear_i;
 KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_i' AND NOT is_done SYNC FORMAT Null;
 ALTER TABLE t_clear_i ADD INDEX idx_d (x + d) TYPE minmax GRANULARITY 1;
 ALTER TABLE t_clear_i UPDATE w = w + 1 WHERE 1 SETTINGS alter_sync = 0, mutations_sync = 0;

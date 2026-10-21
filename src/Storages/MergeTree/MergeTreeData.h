@@ -1176,7 +1176,7 @@ public:
 
     /// the half of checkAlterIsPossible that depends only on metadata and settings, without the
     /// transient guards. lets a caller ask whether a command is eligible at all
-    void checkAlterEligibility(const AlterCommands & commands, ContextPtr context) const;
+    void checkAlterEligibility(const AlterCommands & commands, ContextPtr context, bool check_unfinished_mutation_reads = false) const;
 
     /// Throws if a column TTL is set on a column that a key reads, directly or through a subcolumn.
     static void checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata);

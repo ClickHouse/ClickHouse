@@ -5727,7 +5727,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Schema-changing ALTER is rejected while a streaming query holds a subscription on this table.");
     }
 
-    checkAlterEligibility(commands, local_context);
+    checkAlterEligibility(commands, local_context, /*check_unfinished_mutation_reads=*/ true);
 }
 
 /// TODO(unique-key): allow the mutations that keep every row.
@@ -5759,7 +5759,7 @@ static void checkUniqueKeyMutationCommands(const MutationCommands & commands)
     }
 }
 
-void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, ContextPtr local_context) const
+void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, ContextPtr local_context, bool check_unfinished_mutation_reads) const
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
     auto storage_metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
@@ -6753,7 +6753,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         }
     }
 
-    checkAlterDoesntReorderInProgressMutationReads(commands, unfinished_mutations, old_metadata, new_metadata, local_context);
+    if (check_unfinished_mutation_reads)
+        checkAlterDoesntReorderInProgressMutationReads(commands, unfinished_mutations, old_metadata, new_metadata, local_context);
 
     checkColumnFilenamesForCollision(new_metadata, /*throw_on_error=*/ true);
 
