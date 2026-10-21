@@ -17,9 +17,14 @@ BlockIO InterpreterUseQuery::execute()
     const String & new_database = query_ptr->as<ASTUseQuery &>().getDatabase();
 
     /// A hierarchical name (`USE a.b`) may denote the tables `b.*` of the database `a`: the access is checked for the
-    /// database it denotes. When it is only a prefix of database names, it is checked as written.
-    auto resolved = DatabaseCatalog::instance().resolveHierarchicalDatabase(new_database);
-    getContext()->checkAccess(AccessType::SHOW_DATABASES, resolved.database_name.empty() ? new_database : resolved.database_name);
+    /// database it denotes. When it is only a prefix of database names, or denotes nothing, it is checked as written.
+    /// The access is checked before a name that denotes nothing is reported, so that `USE` does not tell a user who
+    /// is not allowed to see a database whether it exists.
+    auto resolved = DatabaseCatalog::instance().tryResolveHierarchicalDatabase(new_database);
+    getContext()->checkAccess(AccessType::SHOW_DATABASES, (resolved && !resolved->database_name.empty()) ? resolved->database_name : new_database);
+    if (!resolved)
+        DatabaseCatalog::instance().resolveHierarchicalDatabase(new_database); /// Throws UNKNOWN_DATABASE with a hint.
+
     auto session_context = getContext()->getSessionContext();
 
     /// `database` is a real setting that `executeQuery` applies as the documented equivalent of

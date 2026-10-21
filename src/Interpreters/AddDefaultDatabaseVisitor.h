@@ -260,8 +260,8 @@ private:
     /// visitors know. The subqueries among the arguments are covered by the generic recursion of
     /// `visitTableExpressionsImpl`.
     ///
-    /// `joinGet` is qualified here although `visit(ASTFunction &)` of the full traversal leaves it
-    /// alone: the loading dependency graph resolves a bare name against the database owning the
+    /// An unqualified name of `joinGet` is qualified here although `visit(ASTFunction &)` of the full
+    /// traversal leaves it alone: the loading dependency graph resolves a bare name against the database owning the
     /// definition, while `joinGet` itself resolves it against the current database of the query
     /// reading the view or inserting into the table. Persisting the qualified name is what makes
     /// the two agree.
@@ -279,18 +279,17 @@ private:
         {
             if (auto * identifier = arguments[0]->as<ASTIdentifier>())
             {
-                /// A compound identifier is already qualified, a parameterized name is only known
-                /// when the view is called, a temporary table has no database, and an alias of an
-                /// expression is not a table name at all.
+                /// A parameterized name is only known when the view is called, a temporary table has no database,
+                /// and an alias of an expression is not a table name at all.
                 if (!identifier->compound() && !identifier->isParam()
                     && !external_tables.contains(identifier->name()) && !isExpressionAlias(identifier->name()))
                 {
-                    arguments[0] = make_intrusive<ASTIdentifier>(std::vector<String>{database_name, identifier->name()});
+                    StorageID qualified = qualifyTableName(identifier->name());
+                    arguments[0] = make_intrusive<ASTIdentifier>(std::vector<String>{qualified.database_name, qualified.table_name});
                 }
-                else if (identifier->compound() && !identifier->isParam())
+                else
                 {
-                    if (auto bound = tryBindQualifiedTableName(identifier->name()))
-                        arguments[0] = make_intrusive<ASTIdentifier>(std::vector<String>{bound->database_name, bound->table_name});
+                    bindQualifiedJoinGetArgument(arguments[0]);
                 }
             }
             else if (auto * literal = arguments[0]->as<ASTLiteral>())
@@ -301,12 +300,12 @@ private:
                     auto qualified_table_name = QualifiedTableName::tryParseFromString(literal_value.safeGet<String>());
                     if (qualified_table_name && qualified_table_name->database.empty() && !external_tables.contains(qualified_table_name->table))
                     {
-                        qualified_table_name->database = database_name;
-                        literal_value = qualified_table_name->getFullName();
+                        StorageID qualified = qualifyTableName(qualified_table_name->table);
+                        literal_value = DatabaseCatalog::formatHierarchicalName(qualified.database_name, qualified.table_name);
                     }
-                    else if (auto bound = tryBindQualifiedTableName(literal_value.safeGet<String>()))
+                    else
                     {
-                        literal_value = bound->getFullNameNotQuoted();
+                        bindQualifiedJoinGetArgument(arguments[0]);
                     }
                 }
             }
@@ -316,8 +315,7 @@ private:
         {
             if (auto * identifier = arguments[0]->as<ASTIdentifier>())
             {
-                /// A compound identifier is already qualified, and a parameterized name is only
-                /// known when the view is called, so there is nothing to qualify.
+                /// A parameterized name is only known when the view is called, so there is nothing to qualify.
                 /// The name is resolved against `database_name` and not against the current database
                 /// of `context`: on the metadata-load paths the context is the loading context, whose
                 /// current database is unrelated to the database owning the definition.
@@ -326,26 +324,19 @@ private:
                     auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(identifier->name(), database_name);
                     arguments[0] = make_intrusive<ASTIdentifier>(qualified_dictionary_name.getParts());
                 }
-                else if (identifier->compound() && !identifier->isParam())
+                else
                 {
-                    if (auto bound = tryBindQualifiedDictionaryName(identifier->name(), database_name))
-                        arguments[0] = make_intrusive<ASTIdentifier>(bound->getParts());
+                    bindQualifiedDictGetArgument(arguments[0]);
                 }
             }
             else if (auto * literal = arguments[0]->as<ASTLiteral>())
             {
                 auto & literal_value = literal->value;
-                if (literal_value.getType() == Field::Types::String)
+                if (literal_value.getType() == Field::Types::String && !bindQualifiedDictGetArgument(arguments[0]))
                 {
-                    if (auto bound = tryBindQualifiedDictionaryName(literal_value.safeGet<String>(), database_name))
-                    {
-                        literal_value = bound->getFullName();
-                    }
-                    else
-                    {
-                        auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(literal_value.safeGet<String>(), database_name);
-                        literal_value = qualified_dictionary_name.getFullName();
-                    }
+                    auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(literal_value.safeGet<String>(), database_name);
+                    if (!qualified_dictionary_name.database.empty())
+                        literal_value = DatabaseCatalog::formatHierarchicalName(qualified_dictionary_name.database, qualified_dictionary_name.table);
                 }
             }
         }
@@ -688,43 +679,100 @@ private:
         if (isWithAlias(identifier.name()))
             return;
 
-        StorageID qualified(database_name, identifier.name());
-        /// A hierarchical default database (`USE a.b`, which is not a database itself; see `DatabaseCatalog`):
-        /// the name is bound to the table it denotes, `a`.`b.name` or `name` of the database `a.b.c`.
-        if (!database_name.empty() && !DatabaseCatalog::instance().isDatabaseExist(database_name))
-            qualified = DatabaseCatalog::instance().resolveHierarchicalName(StorageID("", identifier.name()), database_name, context);
-
+        StorageID qualified = qualifyTableName(identifier.name());
         auto qualified_identifier = make_intrusive<ASTTableIdentifier>(qualified.database_name, qualified.table_name);
         if (!identifier.alias.empty())
             qualified_identifier->setAlias(identifier.alias);
         ast = qualified_identifier;
     }
 
-    /// A qualified table name carried by a function argument (`joinGet`), bound like in `visitCompound`. Returns nothing
-    /// when the name is not qualified or is already bound.
-    std::optional<StorageID> tryBindQualifiedTableName(const String & name) const
+    /// An unqualified table name qualified with the default database. A hierarchical default database (`USE a.b`,
+    /// which is not a database itself; see `DatabaseCatalog`): the name is bound to the table it denotes,
+    /// `a`.`b.name` or `name` of the database `a.b.c`.
+    StorageID qualifyTableName(const String & table_name) const
     {
-        if (!bind_qualified_names || database_name.empty() || name.empty())
-            return {};
-
-        StorageID as_written = DatabaseCatalog::parseHierarchicalName(name);
-        if (as_written.database_name.empty())
-            return {};
-
-        StorageID resolved = DatabaseCatalog::instance().resolveHierarchicalName(
-            StorageID(as_written.database_name, as_written.table_name), database_name, context);
-        if (resolved.database_name == as_written.database_name && resolved.table_name == as_written.table_name)
-            return {};
-        return StorageID(resolved.database_name, resolved.table_name);
+        if (!database_name.empty() && !DatabaseCatalog::instance().isDatabaseExist(database_name))
+        {
+            StorageID resolved = DatabaseCatalog::instance().resolveHierarchicalName(StorageID("", table_name), database_name, context);
+            return StorageID(resolved.database_name, resolved.table_name);
+        }
+        return StorageID(database_name, table_name);
     }
 
-    /// A qualified dictionary name is bound to the dictionary it denotes now, see
-    /// `ExternalDictionariesLoader::tryBindQualifiedDictionaryName`.
-    std::optional<QualifiedTableName> tryBindQualifiedDictionaryName(const String & name, const String & current_database) const
+    /// The database and the table of a qualified name in the first argument of `joinGet` or `dictGet`, as written:
+    /// an identifier keeps the split of its parts (`db.`ns.t``), a string is split by `parseHierarchicalName`.
+    /// Returns nothing for an unqualified or a parameterized name, and for an argument of another kind.
+    static std::optional<StorageID> getQualifiedNameArgument(const ASTPtr & argument)
     {
-        if (!bind_qualified_names || current_database.empty())
+        StorageID as_written = StorageID::createEmpty();
+        if (const auto * identifier = argument->as<ASTIdentifier>())
+        {
+            if (!identifier->compound() || identifier->isParam())
+                return {};
+            as_written = identifier->createTable()->getTableId();
+        }
+        else if (const auto * literal = argument->as<ASTLiteral>())
+        {
+            if (literal->value.getType() != Field::Types::String || literal->value.safeGet<String>().empty())
+                return {};
+            as_written = DatabaseCatalog::parseHierarchicalName(literal->value.safeGet<String>());
+        }
+        else
+        {
             return {};
-        return context->getExternalDictionariesLoader().tryBindQualifiedDictionaryName(name, current_database);
+        }
+
+        if (as_written.database_name.empty())
+            return {};
+        return StorageID(as_written.database_name, as_written.table_name);
+    }
+
+    /// Replaces the argument (an identifier or a string) with the bound database and table. A string keeps the split
+    /// by quoting the parts with dots (see `DatabaseCatalog::formatHierarchicalName`).
+    static void replaceQualifiedNameArgument(ASTPtr & argument, const String & bound_database, const String & bound_table)
+    {
+        if (auto * literal = argument->as<ASTLiteral>())
+            literal->value = DatabaseCatalog::formatHierarchicalName(bound_database, bound_table);
+        else
+            argument = make_intrusive<ASTIdentifier>(std::vector<String>{bound_database, bound_table});
+    }
+
+    /// A qualified table name carried by the first argument of `joinGet` is bound like in `visitCompound`.
+    void bindQualifiedJoinGetArgument(ASTPtr & argument) const
+    {
+        if (!bind_qualified_names || database_name.empty())
+            return;
+
+        auto as_written = getQualifiedNameArgument(argument);
+        if (!as_written)
+            return;
+
+        StorageID resolved = DatabaseCatalog::instance().resolveHierarchicalName(*as_written, database_name, context);
+        if (resolved.database_name == as_written->database_name && resolved.table_name == as_written->table_name)
+            return;
+        replaceQualifiedNameArgument(argument, resolved.database_name, resolved.table_name);
+    }
+
+    /// A qualified dictionary name carried by the first argument of `dictGet` is bound to the dictionary it denotes now,
+    /// see `ExternalDictionariesLoader::tryBindQualifiedDictionaryName`. Returns whether the argument is bound.
+    bool bindQualifiedDictGetArgument(ASTPtr & argument) const
+    {
+        if (!bind_qualified_names || database_name.empty())
+            return false;
+
+        auto as_written = getQualifiedNameArgument(argument);
+        if (!as_written)
+            return false;
+
+        /// A string is passed as written, it may be the name of an XML dictionary.
+        const auto * literal = argument->as<ASTLiteral>();
+        String name = literal ? literal->value.safeGet<String>() : DatabaseCatalog::formatHierarchicalName(as_written->database_name, as_written->table_name);
+        auto bound = context->getExternalDictionariesLoader().tryBindQualifiedDictionaryName(name, database_name);
+        if (!bound)
+            return false;
+        if (bound->database != as_written->database_name || bound->table != as_written->table_name)
+            replaceQualifiedNameArgument(argument, bound->database, bound->table);
+        return true;
     }
 
     /// A qualified name is hierarchical as well (see `DatabaseCatalog`): `ns.t` may be the table `ns.t` of the default
@@ -751,6 +799,7 @@ private:
     {
         bool is_operator_in = functionIsInOrGlobalInOperator(function.name);
         bool is_dict_get = functionIsDictGet(function.name);
+        bool is_join_get = functionIsJoinGet(function.name);
 
         for (auto & child : function.children)
         {
@@ -758,16 +807,24 @@ private:
             {
                 for (size_t i = 0; i < child->children.size(); ++i)
                 {
-                    if (is_dict_get && i == 0)
+                    if (is_join_get && i == 0)
+                    {
+                        /// An unqualified name is left alone, but a qualified one is bound to the table it denotes now,
+                        /// like a table reference (see `visitCompound`): the expressions of a mutation are executed
+                        /// later, without a current database.
+                        if (child->children[i]->as<ASTIdentifier>() || child->children[i]->as<ASTLiteral>())
+                            bindQualifiedJoinGetArgument(child->children[i]);
+                        else
+                            visit(child->children[i]);
+                    }
+                    else if (is_dict_get && i == 0)
                     {
                         if (auto * identifier = child->children[i]->as<ASTIdentifier>())
                         {
-                            /// A qualified name is bound to the dictionary it denotes now (see `tryBindQualifiedDictionaryName`).
+                            /// A qualified name is bound to the dictionary it denotes now (see `bindQualifiedDictGetArgument`).
                             if (identifier->compound())
                             {
-                                if (!identifier->isParam())
-                                    if (auto bound = tryBindQualifiedDictionaryName(identifier->name(), context->getCurrentDatabase()))
-                                        child->children[i] = make_intrusive<ASTIdentifier>(bound->getParts());
+                                bindQualifiedDictGetArgument(child->children[i]);
                                 continue;
                             }
 
@@ -786,14 +843,11 @@ private:
                             if (literal_value.getType() != Field::Types::String)
                                 continue;
 
-                            auto dictionary_name = literal_value.safeGet<String>();
-                            if (auto bound = tryBindQualifiedDictionaryName(dictionary_name, context->getCurrentDatabase()))
-                            {
-                                literal_value = bound->getFullName();
+                            if (bindQualifiedDictGetArgument(child->children[i]))
                                 continue;
-                            }
-                            auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dictionary_name, context);
-                            literal_value = qualified_dictionary_name.getFullName();
+                            auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(literal_value.safeGet<String>(), context);
+                            if (!qualified_dictionary_name.database.empty())
+                                literal_value = DatabaseCatalog::formatHierarchicalName(qualified_dictionary_name.database, qualified_dictionary_name.table);
                         }
                     }
                     else if (is_operator_in && i == 1)

@@ -257,9 +257,11 @@ QualifiedTableName ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase
     {
         auto resolved = resolveDictionaryNameFromDatabaseCatalog(dictionary_name, current_database_name);
 
-        /// If after qualify dictionary_name with default_database_name we find it, add default_database to qualified name.
+        /// If after qualify dictionary_name with default_database_name we find it, return the name of the dictionary found.
+        /// It is not always `current_database_name` with `dictionary_name`: inside `USE db.ns`, where `db.ns` is
+        /// a namespace of the database `db` (see `DatabaseCatalog`), the dictionary `d` is `db`.`ns.d`.
         if (has(resolved.key))
-            qualified_name->database = current_database_name;
+            return resolved.qualified_name;
     }
 
     return *qualified_name;

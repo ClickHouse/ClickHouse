@@ -28,16 +28,26 @@ run "SELECT * FROM v"
 
 echo '--- the query sent to the shards'
 query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_$RANDOM$RANDOM"
+# The explicit aliases keep the names as written out of the column names of the query sent to the shards.
 $CLICKHOUSE_CLIENT --query_id "$query_id" --prefer_localhost_replica 0 -q "
-    SELECT joinGet(ns.j, 'v', toUInt64(dummy + 1)), joinGet('ns.j', 'v', toUInt64(dummy + 1)),
-        dictGet(ns.d, 'v', toUInt64(dummy + 1)), dictGet('ns.d', 'v', toUInt64(dummy + 1))
+    SELECT joinGet(ns.j, 'v', toUInt64(dummy + 1)) AS a, joinGet('ns.j', 'v', toUInt64(dummy + 1)) AS b,
+        dictGet(ns.d, 'v', toUInt64(dummy + 1)) AS c, dictGet('ns.d', 'v', toUInt64(dummy + 1)) AS d
     FROM remote('127.0.0.2', system.one)"
 run "SYSTEM FLUSH LOGS query_log"
-# The backquoted aliases repeat the names as written, so they are removed first. The queries on the shards may be
-# logged with `current_database` = `default` rather than the test database.
-run "SELECT arraySort(arrayDistinct(extractAll(replaceRegexpAll(query, '\\\`[^\\\`]*\\\`', ''), '(?:joinGet|dictGet)\\\\(\\'[^\\']+\\''))) AS names
+# The queries on the shards may be logged with `current_database` = `default` rather than the test database.
+run "SELECT arraySort(arrayDistinct(extractAll(query, '(?:joinGet|dictGet)\\\\(\\'[^\\']+\\''))) AS names
     FROM system.query_log
     WHERE event_date >= yesterday() AND current_database IN ['default', currentDatabase()] AND initial_query_id = '$query_id' AND NOT is_initial_query AND type = 'QueryFinish' AND notEmpty(names)"
+
+echo '--- the bound names keep naming the same objects when a database db.ns appears'
+run "CREATE DATABASE \`${db}.ns\`"
+run "CREATE TABLE \`${db}.ns\`.j (k UInt64, v String) ENGINE = Join(ANY, LEFT, k)"
+run "INSERT INTO \`${db}.ns\`.j VALUES (1, 'other')"
+run "CREATE TABLE \`${db}.ns\`.src (k UInt64, v String) ENGINE = Memory"
+run "INSERT INTO \`${db}.ns\`.src VALUES (1, 'other')"
+run "CREATE DICTIONARY \`${db}.ns\`.d (k UInt64, v String) PRIMARY KEY k SOURCE(CLICKHOUSE(TABLE 'src' DB '${db}.ns')) LAYOUT(FLAT()) LIFETIME(0)"
+run "SELECT * FROM v"
+run "DROP DATABASE \`${db}.ns\`"
 
 echo '--- SHOW TABLES of a prefix of a remote database'
 run "CREATE DATABASE \`${db}_pfx.r\` ENGINE = Remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', '${db}')"

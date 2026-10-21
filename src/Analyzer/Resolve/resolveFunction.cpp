@@ -1671,9 +1671,22 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     identifier.getFullName(),
                     scope.scope_node->formatASTForErrorMessage());
 
+            /// The string form of the name keeps the split of the identifier into the database (all the parts but the
+            /// last) and the table: `db.`ns.t`` is the table `ns.t` of the database `db` as written. The name of an XML
+            /// dictionary is not split.
+            String name_as_written = identifier.getFullName();
+            if (parts_size > 1 && !(is_special_function_dict_get && scope.context->getExternalDictionariesLoader().has(name_as_written)))
+            {
+                const auto & parts = identifier.getParts();
+                String database_as_written = parts[0];
+                for (size_t i = 1; i + 1 < parts_size; ++i)
+                    database_as_written += '.' + parts[i];
+                name_as_written = DatabaseCatalog::formatHierarchicalName(database_as_written, parts.back());
+            }
+
             if (is_special_function_dict_get)
             {
-                scope.context->getExternalDictionariesLoader().assertDictionaryStructureExists(identifier.getFullName(), scope.context);
+                scope.context->getExternalDictionariesLoader().assertDictionaryStructureExists(name_as_written, scope.context);
             }
             else
             {
@@ -1694,7 +1707,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         scope.scope_node->formatASTForErrorMessage());
             }
 
-            first_argument = std::make_shared<ConstantNode>(identifier.getFullName());
+            first_argument = std::make_shared<ConstantNode>(name_as_written);
         }
     }
 
@@ -2532,11 +2545,19 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 const auto & loader = scope.context->getExternalDictionariesLoader();
                 /// A qualified name is hierarchical (see `DatabaseCatalog`): `ns.d` may be the dictionary `ns.d` of the
                 /// current database, and it is bound the same way.
-                String qualified_dictionary_name;
+                /// The bound name keeps its split into the database and the dictionary (`db.`ns.d``, see
+                /// `DatabaseCatalog::formatHierarchicalName`), so that it is not retargeted by a database `db.ns`.
+                String qualified_dictionary_name = dictionary_name;
                 if (auto bound = loader.tryBindQualifiedDictionaryName(dictionary_name, scope.context->getCurrentDatabase()))
-                    qualified_dictionary_name = bound->getFullName();
+                {
+                    qualified_dictionary_name = DatabaseCatalog::formatHierarchicalName(bound->database, bound->table);
+                }
                 else
-                    qualified_dictionary_name = loader.qualifyDictionaryNameWithDatabase(dictionary_name, scope.context).getFullName();
+                {
+                    auto qualified = loader.qualifyDictionaryNameWithDatabase(dictionary_name, scope.context);
+                    if (!qualified.database.empty())
+                        qualified_dictionary_name = DatabaseCatalog::formatHierarchicalName(qualified.database, qualified.table);
+                }
 
                 /// `assignCentroid` also takes a Nullable or LowCardinality name and its result type follows it.
                 if (qualified_dictionary_name != dictionary_name)
@@ -2568,7 +2589,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         StorageID resolved = DatabaseCatalog::instance().resolveHierarchicalName(as_written, scope.context);
                         if (resolved.database_name != as_written.database_name || resolved.table_name != as_written.table_name)
                             join_get_arguments[0] = std::make_shared<ConstantNode>(
-                                StorageID(resolved.database_name, resolved.table_name).getFullNameNotQuoted());
+                                DatabaseCatalog::formatHierarchicalName(resolved.database_name, resolved.table_name));
                     }
                 }
             }

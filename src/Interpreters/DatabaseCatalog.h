@@ -212,6 +212,8 @@ public:
     /// with the rest as a namespace of its tables, when there are such tables; or a common prefix of database
     /// names. Throws UNKNOWN_DATABASE with a hint when none applies.
     HierarchicalDatabase resolveHierarchicalDatabase(const String & name) const;
+    /// The same, but returns nothing instead of throwing.
+    std::optional<HierarchicalDatabase> tryResolveHierarchicalDatabase(const String & name) const;
 
     /// Whether the database has tables whose names start with `prefix` (a namespace, `b.`).
     static bool hasTablesWithPrefix(const IDatabase & database, const String & prefix, ContextPtr context_);
@@ -223,8 +225,14 @@ public:
     /// A qualified name written as a string (`'a.b.c'`, the first argument of `joinGet` or `dictGet`), split the same
     /// way as `ASTTableIdentifier` splits an identifier: the database is all the parts but the last (`a.b`); the other
     /// splits are tried when the name is resolved. A name without dots is a table name without a database.
-    /// Throws UNKNOWN_TABLE for an empty name.
+    /// A part can be quoted with backquotes, like in an identifier: `'db.`ns.t`'` is the table `ns.t` of the
+    /// database `db` as written (see `formatHierarchicalName`).
     static StorageID parseHierarchicalName(const String & name);
+
+    /// The string form of a database and a table that `parseHierarchicalName` splits back the same way: the parts
+    /// with dots are quoted, `db.`ns.t``. A name bound to a table is stored in this form (the first argument of
+    /// `joinGet` or `dictGet` in a view), so that it keeps naming that table when a database `db.ns` appears later.
+    static String formatHierarchicalName(const String & database_name, const String & table_name);
 
     DatabasePtr getDatabaseForTemporaryTables() const;
     DatabasePtr getSystemDatabase() const;

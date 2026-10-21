@@ -592,10 +592,14 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     /// A hierarchical name: try the other splits of the name (see the header). Only when the table as written does not
     /// exist: when it exists but cannot be got (e.g. it failed to load), the name as written still wins, and its
     /// exception is reported rather than hidden behind another split.
+    ///
+    /// The current database is not applied here: the callers resolve a name relative to the current database first
+    /// (see `Context::resolveStorageID`), and they check the access for the result. A lookup of such a resolved name
+    /// must not reinterpret it as relative again: inside `USE db`, the resolved `db`.`t` must not become the table
+    /// `db.t` of the database `db`, which is another object than the one the access was checked for.
     if (!table && !(exception && exception->has_value() && database->isTableExist(table_id.table_name, context_)))
     {
-        String current_database = context_->getCurrentDatabase();
-        for (const auto & candidate : getHierarchicalNameCandidates(table_id, current_database))
+        for (const auto & candidate : getHierarchicalNameCandidates(table_id, /*current_database=*/ ""))
         {
             if (candidate.database_name == table_id.database_name && candidate.table_name == table_id.table_name)
                 continue;
@@ -747,8 +751,102 @@ void addHierarchicalNameSplits(const std::vector<String> & parts, std::vector<St
 
 }
 
+namespace
+{
+
+/// The parts of a name with backquoted parts, like `db.`ns.t``. Returns nothing when the name has no quoted parts or
+/// is not a well-formed sequence of parts; it is a plain dotted name then.
+std::optional<std::vector<String>> tryParseQuotedHierarchicalName(std::string_view name)
+{
+    if (!name.contains('`'))
+        return {};
+
+    std::vector<String> parts;
+    size_t pos = 0;
+    while (true)
+    {
+        String part;
+        if (pos < name.size() && name[pos] == '`')
+        {
+            ++pos;
+            bool closed = false;
+            while (pos < name.size())
+            {
+                char c = name[pos++];
+                if (c == '\\' && pos < name.size())
+                {
+                    part += name[pos++];
+                }
+                else if (c == '`')
+                {
+                    /// A doubled backquote is an escaped backquote.
+                    if (pos < name.size() && name[pos] == '`')
+                    {
+                        part += '`';
+                        ++pos;
+                    }
+                    else
+                    {
+                        closed = true;
+                        break;
+                    }
+                }
+                else
+                {
+                    part += c;
+                }
+            }
+            if (!closed)
+                return {};
+        }
+        else
+        {
+            size_t end = name.find('.', pos);
+            if (end == std::string_view::npos)
+                end = name.size();
+            part = String(name.substr(pos, end - pos));
+            if (part.contains('`'))
+                return {};
+            pos = end;
+        }
+
+        if (part.empty())
+            return {};
+        parts.push_back(std::move(part));
+
+        if (pos == name.size())
+            return parts;
+        if (name[pos] != '.' || pos + 1 == name.size())
+            return {};
+        ++pos;
+    }
+}
+
+}
+
+String DatabaseCatalog::formatHierarchicalName(const String & database_name, const String & table_name)
+{
+    auto format_part = [](const String & part)
+    {
+        if (part.contains('.') || part.contains('`'))
+            return backQuote(part);
+        return part;
+    };
+
+    if (database_name.empty())
+        return format_part(table_name);
+    return format_part(database_name) + '.' + format_part(table_name);
+}
+
 StorageID DatabaseCatalog::parseHierarchicalName(const String & name)
 {
+    if (auto quoted_parts = tryParseQuotedHierarchicalName(name))
+    {
+        if (quoted_parts->size() == 1)
+            return StorageID("", quoted_parts->front());
+        return StorageID(joinHierarchicalName(*quoted_parts, 0, quoted_parts->size() - 1), quoted_parts->back());
+    }
+
     std::vector<String> parts = splitHierarchicalName(name);
     if (parts.size() == 1)
         return StorageID("", parts[0]);
@@ -945,8 +1043,25 @@ StorageID DatabaseCatalog::resolveHierarchicalNameForCreation(const StorageID & 
 
 DatabaseCatalog::HierarchicalDatabase DatabaseCatalog::resolveHierarchicalDatabase(const String & name) const
 {
+    if (auto resolved = tryResolveHierarchicalDatabase(name))
+        return *resolved;
+
+    DatabaseNameHints hints(*this);
+    auto names = hints.getHints(name);
+    if (names.empty())
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(name));
+
+    throw Exception(
+        ErrorCodes::UNKNOWN_DATABASE,
+        "Database {} does not exist. Maybe you meant {}?",
+        backQuoteIfNeed(name),
+        backQuoteIfNeed(names[0]));
+}
+
+std::optional<DatabaseCatalog::HierarchicalDatabase> DatabaseCatalog::tryResolveHierarchicalDatabase(const String & name) const
+{
     if (isDatabaseExist(name))
-        return {.database_name = name, .table_prefix = ""};
+        return HierarchicalDatabase{.database_name = name, .table_prefix = ""};
 
     /// The longest prefix that is a database, with the rest as a namespace of its tables.
     std::vector<String> parts = splitHierarchicalName(name);
@@ -959,7 +1074,7 @@ DatabaseCatalog::HierarchicalDatabase DatabaseCatalog::resolveHierarchicalDataba
 
         String table_prefix = joinHierarchicalName(parts, database_parts, parts.size()) + '.';
         if (hasTablesWithPrefix(*database, table_prefix, getContext()))
-            return {.database_name = database_name, .table_prefix = table_prefix};
+            return HierarchicalDatabase{.database_name = database_name, .table_prefix = table_prefix};
     }
 
     /// A common prefix of database names.
@@ -968,19 +1083,10 @@ DatabaseCatalog::HierarchicalDatabase DatabaseCatalog::resolveHierarchicalDataba
         std::lock_guard lock{databases_mutex};
         auto it = databases.lower_bound(database_prefix);
         if (it != databases.end() && it->first.starts_with(database_prefix))
-            return {.database_name = "", .table_prefix = ""};
+            return HierarchicalDatabase{.database_name = "", .table_prefix = ""};
     }
 
-    DatabaseNameHints hints(*this);
-    auto names = hints.getHints(name);
-    if (names.empty())
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(name));
-
-    throw Exception(
-        ErrorCodes::UNKNOWN_DATABASE,
-        "Database {} does not exist. Maybe you meant {}?",
-        backQuoteIfNeed(name),
-        backQuoteIfNeed(names[0]));
+    return std::nullopt;
 }
 
 bool DatabaseCatalog::hasDatalakeCatalogs() const

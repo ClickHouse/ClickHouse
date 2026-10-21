@@ -1,9 +1,11 @@
 --- a view
-joinGet(db.`ns.j`, \'v\', toUInt64(1)) AS a, joinGet(\'db.ns.j\', \'v\', toUInt64(1)) AS b, dictGet(db.`ns.d`, \'v\', toUInt64(1)) AS c, dictGet(\'db.ns.d\', \'v\', toUInt64(1)) AS d
+joinGet(db.`ns.j`, \'v\', toUInt64(1)) AS a, joinGet(\'db.`ns.j`\', \'v\', toUInt64(1)) AS b, dictGet(db.`ns.d`, \'v\', toUInt64(1)) AS c, dictGet(\'db.`ns.d`\', \'v\', toUInt64(1)) AS d
 j1	j1	d1	d1
 --- the query sent to the shards
 j1	j1	d1	d1
-['dictGet(\'db.ns.d\'','joinGet(\'db.ns.j\'']
+['dictGet(\'db.`ns.d`\'','joinGet(\'db.`ns.j`\'']
+--- the bound names keep naming the same objects when a database db.ns appears
+j1	j1	d1	d1
 --- SHOW TABLES of a prefix of a remote database
 r.ns.d
 r.ns.j
