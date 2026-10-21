@@ -176,7 +176,7 @@ bool TopKAggregationHeapBase::sampleCollatedSkips(const ColumnRawPtrs & key_colu
     if (skip_sample_done)
     {
         rows = std::max<size_t>(1, rows / collated_block_slices_after_sample);
-        begin = std::min(row_begin + (blocks_after_sample++ % collated_block_slices_after_sample) * rows, row_end - 1);
+        begin = std::min<size_t>(row_begin + (blocks_after_sample++ % collated_block_slices_after_sample) * rows, row_end - 1);
         weight = collated_block_slices_after_sample;
     }
 
