@@ -99,6 +99,13 @@ _FOUNDATION_DEFINES = select({
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
+_FOUNDATION_PRIVATE_HEADERS = [
+    "include/Poco/DirectoryIterator_UNIX.h",
+    "include/Poco/Environment_UNIX.h",
+    "include/Poco/Path_UNIX.h",
+    "include/Poco/SharedMemory_POSIX.h",
+]
+
 _PCRE_INTERNAL_HEADERS = [
     "src/pcre_internal.h",
     "src/ucp.h",
@@ -242,7 +249,7 @@ poco_cc_library(
         "src/VarHolder.cpp",
         "src/VarIterator.cpp",
         "src/Void.cpp",
-    ]) + _PCRE_INTERNAL_HEADERS,
+    ]) + _PCRE_INTERNAL_HEADERS + _FOUNDATION_PRIVATE_HEADERS,
     hdrs = glob(
         ["include/**/*.h"],
         exclude = [
@@ -250,7 +257,7 @@ poco_cc_library(
             "include/Poco/NamedEvent_Android.h",
             "include/Poco/NamedMutex_Android.h",
             "include/Poco/RWLock_Android.h",
-        ],
+        ] + _FOUNDATION_PRIVATE_HEADERS,
     ),
     copts = _FOUNDATION_COPTS,
     implementation_deps = [
