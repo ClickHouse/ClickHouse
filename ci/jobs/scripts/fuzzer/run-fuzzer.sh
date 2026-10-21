@@ -165,6 +165,43 @@ function stop_server
     pstree -aspgT
 }
 
+# The /proc sections need no ptrace, so they are written even when the debugger cannot stop the threads.
+function collect_hung_server_diagnostics
+{
+    { set +x; } 2>/dev/null
+    echo "Server is hung, saving its state to hung_server.log"
+    local out=hung_server.log path task
+    {
+        echo "Hung server $server_pid at $(date -u)"
+        for path in /proc/pressure/{cpu,memory,io} /sys/fs/cgroup/{memory.current,memory.max,memory.events,memory.pressure,cpu.pressure,io.pressure}; do
+            if [[ -r "$path" ]]; then
+                echo "$path: $(tr '\n' ' ' < "$path")"
+            fi
+        done
+        echo "--- threads by state and wait channel"
+        for task in /proc/"$server_pid"/task/*; do
+            echo "$(sed 's/.*) //' "$task/stat" | cut -d' ' -f1) $(cat "$task/wchan")"
+        done | sort | uniq -c | sort -rn
+        echo "--- per-thread: tid state wchan comm, then the kernel stack"
+        for task in /proc/"$server_pid"/task/*; do
+            echo "TID ${task##*/} $(sed 's/.*) //' "$task/stat" | cut -d' ' -f1) $(cat "$task/wchan") $(cat "$task/comm")"
+            cat "$task/stack" 2>/dev/null
+        done
+    } > "$out" 2>&1 ||:
+
+    if [[ "${IS_ASAN:-}" != "1" ]]; then
+        if [[ -n "${server_gdb_pid:-}" ]] && kill -0 "$server_gdb_pid" 2>/dev/null; then
+            kill -TERM "$server_gdb_pid" ||:
+            timeout 60 tail --pid="$server_gdb_pid" -f /dev/null ||:
+            kill -KILL "$server_gdb_pid" 2>/dev/null ||:
+        fi
+        kill -CONT "$server_pid" ||:
+        echo "--- gdb: thread apply all backtrace" >> "$out"
+        timeout --verbose --signal=TERM --kill-after=60 300 gdb -batch -ex 'thread apply all backtrace' -p "$server_pid" >> "$out" 2>&1 ||:
+    fi
+    set -x
+}
+
 function fuzz
 {
     $repo_dir/ci/jobs/scripts/fuzzer/generate-test-j2.py --path $repo_dir/tests/queries/0_stateless
@@ -245,6 +282,7 @@ function fuzz
     " > script.gdb
 
         gdb -batch -command script.gdb -p $server_pid &
+        server_gdb_pid=$!
         sleep 5
         # gdb will send SIGSTOP, spend some time loading debug info, and then send SIGCONT, wait for it (up to send_timeout, 300s)
         time clickhouse-client $NO_AST_FUZZER --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
@@ -410,6 +448,7 @@ function fuzz
     # turns a clean (exit 143) run into a bogus "server died" FAIL.
     # BEGIN: server-liveness probe loop
     server_died=0
+    server_hung=0
     timeouts=0
     timeouts_max=12
 
@@ -454,6 +493,7 @@ function fuzz
                     echo "Server live check: probe timed out $timeouts times, treating server as hung"
                     cat err
                     server_died=1
+                    server_hung=1
                     break
                 fi
                 sleep 1
@@ -466,6 +506,10 @@ function fuzz
         fi
     done
     # END: server-liveness probe loop
+
+    if [[ "$server_hung" == 1 ]]; then
+        collect_hung_server_diagnostics
+    fi
 
     # Stop the server in background so we can wait for the subshell to
     # finish in the foreground. We wait on server_bg_pid (the subshell running

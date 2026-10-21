@@ -52,6 +52,21 @@ def _log_tail(path: Path, max_lines: int = 50, max_bytes: int = 65536) -> str:
     return "\n".join(data.decode("utf-8", errors="replace").splitlines()[-max_lines:])
 
 
+def _hung_server_summary(path: Path, max_bytes: int = 65536) -> str:
+    """hung_server.log up to its per-thread section (bounded read), or "" if unreadable."""
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read(max_bytes)
+    except OSError:
+        return ""
+    lines = []
+    for line in data.decode("utf-8", errors="replace").splitlines():
+        if line.startswith("--- per-thread"):
+            break
+        lines.append(line)
+    return "\n".join(lines)
+
+
 # A server-transmitted exception is printed by the client prefixed with
 # "Received from <host>." A client-side 241 raised under
 # --max_memory_usage_in_client prints "Code: 241. DB::Exception: ..." with no
@@ -501,6 +516,10 @@ def run_fuzz_job(check_name: str):
     jemalloc_profiles = WORKSPACE_PATH / "jemalloc.tar.zst"
     paths.append(jemalloc_profiles)
 
+    # Written by run-fuzzer.sh only when the liveness probes found the server hung.
+    hung_server_log = WORKSPACE_PATH / "hung_server.log"
+    paths.append(hung_server_log)
+
     server_died = False
     server_exit_code = 0
     fuzzer_exit_code = 0
@@ -607,7 +626,10 @@ def run_fuzz_job(check_name: str):
             # with no sanitizer report is an OOM, not a bug.
             has_sanitizer_report = any(WORKSPACE_PATH.glob("sanitizer.log.*"))
             kernel_oom_kill = (
-                server_died and server_exit_code == 137 and not has_sanitizer_report
+                server_died
+                and server_exit_code == 137
+                and not has_sanitizer_report
+                and not hung_server_log.exists()
             )
             if sanitizer_oom or kernel_oom_kill:
                 print("Sanitizer OOM")
@@ -651,6 +673,17 @@ def run_fuzz_job(check_name: str):
             ),
         )
         parsed_name, parsed_info, files = fuzzer_log_parser.parse_failure()
+        # Nothing in the logs explains a hung server; "Received signal 15" is the harness's own stop.
+        if hung_server_log.exists() and (
+            parsed_name == FuzzerLogParser.UNKNOWN_ERROR
+            or parsed_name.startswith("Received signal 15 ")
+        ):
+            parsed_name = "Server liveness check failed"
+            parsed_info = (
+                "The server did not answer the liveness probes after fuzzing; "
+                "thread states, kernel and gdb stacks are in hung_server.log\n"
+                + _hung_server_summary(hung_server_log)
+            )[:4000]
 
         if parsed_name:
             results.append(
