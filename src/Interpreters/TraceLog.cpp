@@ -23,9 +23,9 @@
 #include <Common/SipHash.h>
 #include <Common/StackTrace.h>
 #include <Common/SymbolIndex.h>
-#include <Common/thread_local_rng.h>
 
 #include <cstring>
+#include <random>
 
 namespace DB
 {
@@ -37,7 +37,17 @@ namespace
 /// same value, but the heap address is not published. 0 stays 0 (no address).
 UInt64 hideAllocationAddress(UInt64 ptr)
 {
-    static const std::pair<UInt64, UInt64> key{thread_local_rng(), thread_local_rng()};
+    /// ClickHouse's libc++ obtains `std::random_device` output from the OS
+    /// randomness source and throws if it cannot be read.
+    static const std::pair<UInt64, UInt64> key = []
+    {
+        std::random_device device;
+        const auto next = [&device]
+        {
+            return (UInt64{device()} << 32) | UInt64{device()};
+        };
+        return std::pair{next(), next()};
+    }();
 
     if (ptr == 0)
         return 0;
