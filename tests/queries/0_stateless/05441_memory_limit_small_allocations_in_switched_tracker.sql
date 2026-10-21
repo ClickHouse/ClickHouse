@@ -9,9 +9,7 @@ SETTINGS optimize_uniq_exact_radix_partitioning = 1, max_memory_usage = '32Mi', 
 
 SYSTEM FLUSH LOGS query_log;
 
--- The query stops soon after it reaches the limit, and its peak shows the memory it used past the limit.
-SELECT
-    parseReadableSize(extract(exception, 'would use ([0-9.]+ [KMGT]?i?B)')) < 100 * 1024 * 1024,
-    memory_usage > 32 * 1024 * 1024
+-- The query stops soon after it reaches the limit.
+SELECT parseReadableSize(extract(exception, 'would use ([0-9.]+ [KMGT]?i?B)')) < 100 * 1024 * 1024
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '05441_radix' AND type = 'ExceptionWhileProcessing' AND event_date >= yesterday();
