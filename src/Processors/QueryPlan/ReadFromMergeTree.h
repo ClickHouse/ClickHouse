@@ -13,9 +13,6 @@
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Processors/TopKThresholdTracker.h>
 #include <Parsers/ASTFunction.h>
-#include <base/defines.h>
-
-#include <mutex>
 
 namespace DB
 {
@@ -29,7 +26,6 @@ using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 
 class LazilyReadFromMergeTree;
-class RuntimeFilterReadRangesRefiner;
 struct QueryIdHolder;
 
 struct MergeTreeDataSelectSamplingData
@@ -46,28 +42,10 @@ struct UsefulSkipIndexes
     bool empty() const { return useful_indices.empty() && !skip_index_for_top_k_filtering; }
 
     std::vector<MergeTreeIndexWithCondition> useful_indices;
+    std::vector<std::vector<size_t>> per_part_index_orders;
     MergeTreeIndexPtr skip_index_for_top_k_filtering{nullptr};
     TopKThresholdTrackerPtr threshold_tracker{nullptr};
 };
-
-/// The order in which the useful skip indexes are applied to a single part: cheapest and coarsest first.
-using SkipIndexOrder = std::shared_ptr<const std::vector<size_t>>;
-
-/// Memoizes `SkipIndexOrder` per part for one `ReadFromMergeTree::Indexes` object.
-/// The order is derived from the part's index formats and file sizes, so it is stable for a given part,
-/// and computing it walks that metadata. The walk is done lazily, for the parts that survive pruning
-/// (see `filterPartsByPrimaryKeyAndSkipIndexes`), and its result is reused when the same read step is
-/// analyzed again - estimation, parallel replicas and then the executed read all share one `Indexes`.
-struct SkipIndexOrderCache
-{
-    std::mutex mutex;
-    std::unordered_map<String, SkipIndexOrder> orders TSA_GUARDED_BY(mutex);
-
-    /// The key must be unique within the table: a projection part is named after the projection,
-    /// which repeats in every parent part, so it is qualified with the parent part name.
-    static String makeKey(const IMergeTreeDataPart & part);
-};
-using SkipIndexOrderCachePtr = std::shared_ptr<SkipIndexOrderCache>;
 
 /// Contains parts each from different projection index
 using ProjectionIndexReadRangesByIndex = std::unordered_map<size_t, RangesInDataParts>;
@@ -103,31 +81,12 @@ struct TopKFilterInfo
     /// query condition cache key so that QCC entries written under a TopK plan are partitioned
     /// by the TopK parameters and don't bleed across plans with different LIMIT, sort key, etc.
     UInt64 condition_hash = 0;
-
-    /// `tryOptimizeTopK` requested the `__topKFilter` PREWHERE condition and `installTopKDynamicFilter` has not run yet.
-    bool dynamic_filter_pending = false;
 };
-
-namespace QueryPlanOptimizations
-{
-/// The PREWHERE that `installTopKDynamicFilter` gives a read whose current PREWHERE is `existing_prewhere_info`
-/// (may be null): `__topKFilter` merged into it as the first conjunct. Null when the filter cannot share it.
-/// The query condition cache consults a read that still waits for the filter under this PREWHERE, because
-/// the executed read writes its entries under it.
-PrewhereInfoPtr buildTopKDynamicFilterPrewhere(const PrewhereInfoPtr & existing_prewhere_info, const TopKFilterInfo & top_k_filter_info);
-
-/// True if the actions depend on the block they run on, which the threshold filter shrinks: a stateful
-/// function, or one not deterministic within a query (`blockSize`, `rand`, but not `today`), also inside the
-/// body of a lambda (`arrayMap(x -> rowNumberInBlock(), arr)`).
-bool dependsOnItsBlock(const ActionsDAG & actions);
-}
 
 struct LazyMaterializingRows;
 using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 
 /// `DistributedReadBucket` and `buildDistributedFinalPipe` live in `MergeTreeFinalMerge.h`.
-
-struct HypotheticalProjection;
 
 /// This step is created to read from MergeTree* table.
 /// For now, it takes a list of parts and creates source from it.
@@ -213,15 +172,6 @@ public:
         UInt64 total_marks_pk = 0;
         UInt64 selected_rows = 0;
         bool has_exact_ranges = false;
-        /// `ranges` exclude `exact_ranges`: their rows are counted from the primary key without being read.
-        bool exact_ranges_excluded = false;
-        /// The filter constrains the primary key of the analyzed parts (the same criterion the
-        /// `force_primary_key` check uses). A projection whose own key is not used may not serve
-        /// the read.
-        bool pk_condition_useful = false;
-        /// Set when the read skipped its own index analysis (a parallel replicas follower): its ranges are whole parts,
-        /// not narrowed by this condition.
-        ConditionTemplate<KeyCondition>::Ptr key_condition_not_applied;
         std::atomic<bool> exceeded_row_limits = false;
 
         AnalysisResult() = default;
@@ -243,9 +193,6 @@ public:
             , total_marks_pk(other.total_marks_pk)
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
-            , exact_ranges_excluded(other.exact_ranges_excluded)
-            , pk_condition_useful(other.pk_condition_useful)
-            , key_condition_not_applied(other.key_condition_not_applied)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -266,9 +213,6 @@ public:
             , total_marks_pk(other.total_marks_pk)
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
-            , exact_ranges_excluded(other.exact_ranges_excluded)
-            , pk_condition_useful(other.pk_condition_useful)
-            , key_condition_not_applied(std::move(other.key_condition_not_applied))
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -361,8 +305,6 @@ public:
         ConditionTemplate<KeyCondition>::Ptr total_offset_condition;
         std::optional<PartitionPruner> partition_pruner;
         UsefulSkipIndexes skip_indexes;
-        /// Shared by every index analysis of this step, see `SkipIndexOrderCache`.
-        SkipIndexOrderCachePtr skip_index_orders = std::make_shared<SkipIndexOrderCache>();
         bool use_skip_indexes;
         bool use_skip_indexes_for_disjunctions;
         bool use_skip_indexes_if_final_exact_mode;
@@ -371,10 +313,6 @@ public:
     };
 
     void addJoinRuntimeFilterIndexAnalysisOnDataRead(const String & filter_id, const String & column_name, const DataTypePtr & column_type);
-    const std::vector<RuntimeFilterIndexAnalysisDescriptor> & getJoinRuntimeFiltersForIndexAnalysis() const
-    {
-        return join_runtime_filters_for_index_analysis;
-    }
 
     static AnalysisResultPtr selectRangesToRead(
         const RangesInDataParts & parts,
@@ -394,46 +332,25 @@ public:
         bool find_exact_ranges,
         bool is_parallel_reading_from_replicas_,
         bool allow_query_condition_cache_,
-        bool allow_top_k_prewhere_query_condition_cache_,
-        bool supports_skip_indexes_on_data_read,
-        bool check_row_limits);
+        bool supports_skip_indexes_on_data_read);
 
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
-    /// Analyze ranges only for an intermediate cardinality estimate, without enforcing row limits
-    /// or memoizing the result. The executed read analyzes again after its final mode is known.
-    /// `allow_query_condition_cache_ = false` also bypasses the query condition cache: an estimate runs
-    /// before `tryOptimizeTopK`, so the `use_query_condition_cache_for_top_k` gate is not yet known.
-    AnalysisResultPtr selectRangesToReadForEstimation(bool allow_query_condition_cache_) const;
 
-    /// Range analysis charges whole granules, so an estimate must not enforce a throwing read row limit.
-    bool hasThrowingReadRowLimit() const;
-
-    /// How many compressed bytes this step reads off disk, based on index analysis (which is run here
-    /// if it has not run yet, and memoized as usual). Where a per-column estimate cannot be made
-    /// conservatively (e.g. a partial read of a compact part, which does not track per-column sizes),
-    /// it charges every selected part in full rather than giving up, so the answer errs high. Returns
-    /// nullopt only when the ranges to read cannot be analyzed at all.
-    std::optional<size_t> estimateCompressedBytesToRead() const;
+    /// Analyze the ranges to read for a throwaway pre-plan estimate, without consulting or populating
+    /// the query condition cache and without caching the analysis on the step. Used for the automatic
+    /// parallel-replicas sizing of a query which may still become a TopK read: that estimate runs before
+    /// `tryOptimizeTopK`, so it cannot know whether the `use_query_condition_cache_for_top_k` gate
+    /// applies, and the read that actually executes analyzes again with the gate that matches its final
+    /// shape.
+    AnalysisResultPtr estimateRangesToReadWithoutQueryConditionCache() const;
 
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
 
-    /// The query condition cache is keyed by (table UUID, part name, condition hash), so it must not
-    /// see filters whose value can change while that key stays the same: non-deterministic virtual
-    /// columns (query-wide part numbering, catalog names, disk placement).
-    static bool filterDependsOnNonDeterministicVirtuals(const VirtualColumnsDescription & virtuals, const SelectQueryInfo & query_info_);
-
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0);
-    /// Whether `requestReadingInOrder` accepts a reverse direction. With `FINAL`, only the engines whose merge
-    /// does not depend on the direct order of rows can read in reverse order.
-    bool canReadInReverseOrder() const;
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
     void resetVirtualRowConversions() { virtual_row_conversion = nullptr; }
-
-    /// Whether every part surviving pruning has the value of its virtual row in the index.
-    /// Loads only those parts' primary indexes; returns false if part filters are unavailable.
-    bool everyPartHasVirtualRowBound(bool read_in_reverse) const;
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
     const SortDescription & getSortDescription() const override { return result_sort_description; }
@@ -452,66 +369,16 @@ public:
     /// Returns true if the optimization is applicable (and applies it then).
     bool requestOutputEachPartitionThroughSeparatePortForAggregation();
     bool requestOutputEachPartitionThroughSeparatePortForLimitBy();
-    void requestOutputEachPartitionThroughSeparatePortForDistinct();
-    void requestOutputEachPartitionThroughSeparatePortForWindow();
-    bool requestOutputEachPartitionThroughSeparatePortForCreatingSet();
 
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
 
-    /// Cost heuristic for per-partition (independent) processing, shared by GROUP BY, DISTINCT and
-    /// window functions.
-    enum class ProcessorKind : uint8_t { Aggregation, Distinct, Window };
-    bool isPartitionIndependentProcessingProfitable(ProcessorKind kind) const;
-
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
-
-    /// Adopt from another read of the same table, for the same query, everything that
-    /// `optimizePrimaryKeyConditionAndLimit` and `applyFilters` would have produced. A plan optimized
-    /// without that pass has none of it, and a read handed an analysis result never builds it later
-    /// either: `selectRangesToRead` returns the analysis it was given and stops. The ranges are not
-    /// enough on their own, because each of these is consumed separately while reading:
-    ///   - `indexes`, or `supportsSkipIndexesOnDataRead` is false and skip indexes are not applied to
-    ///     granules at all;
-    ///   - the filter actions, or the reader has no condition to record, so the query condition cache is
-    ///     never populated and every later query over the same predicate misses it;
-    ///   - `limit`, which nothing in `ReadFromMergeTree` reads today - the ordered read takes its bound
-    ///     from `query_info.input_order_info` - but which the pass does produce, so a read that skipped
-    ///     the pass is missing it and would diverge here the moment that changes.
-    /// They are adopted together rather than one at a time as each turns out to be needed.
-    /// Taken over wholesale rather than only where this read has nothing: it is called together with
-    /// `setAnalyzedResult`, which replaces the ranges outright, and these are the conditions those ranges
-    /// were selected by. Keeping anything of this read's own would pair one read's ranges with another's
-    /// conditions. Nothing here is built by a plan optimized without the pass named above, so in practice
-    /// there is nothing to replace; this makes that independent of whether something prefilled it.
-    void adoptFiltersFrom(const ReadFromMergeTree & other)
-    {
-        indexes = other.indexes;
-
-        filter_actions_dag = other.filter_actions_dag;
-        query_info.filter_actions_dag = filter_actions_dag;
-
-        limit = other.limit;
-
-        /// `FINAL` defers the row policy and `PREWHERE` past deduplication, and what does it is part of
-        /// `applyFilters`, so a read of a plan optimized without that pass applies them during reading
-        /// instead - before the rows they filter have been deduplicated. No caller reaches this with a
-        /// `FINAL` read today: `supportsDataflowStatisticsCollection` is false for one, and automatic
-        /// parallel replicas requires every step of the plan to support it. Redone here rather than
-        /// adopted from the other read, which would hold only as long as the two plans split the `WHERE`
-        /// into a `PREWHERE` the same way: a deferred filter is this read's own
-        /// `query_info.prewhere_info` or `query_info.row_level_filter` under another name.
-        deferFiltersAfterFinalIfNeeded();
-    }
-
-    /// selectRangesToRead() will always re-analyze
-    AnalysisResultPtr getOrCreateAnalyzedResult() const { return analyzed_result_ptr ? analyzed_result_ptr : selectRangesToRead(); }
 
     const RangesInDataParts & getParts() const { return analyzed_result_ptr ? analyzed_result_ptr->parts_with_ranges : *prepared_parts; }
     MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot() const { return mutations_snapshot; }
 
     const MergeTreeData & getMergeTreeData() const { return data; }
-    const MergeTreeReaderSettings & getReaderSettings() const { return reader_settings; }
     size_t getMaxBlockSize() const { return block_size.max_block_size_rows; }
     size_t getNumStreams() const { return requested_num_streams; }
     bool isParallelReadingEnabled() const { return read_task_callback != std::nullopt; }
@@ -523,25 +390,12 @@ public:
 
     bool isParallelReadingFromReplicas() const { return is_parallel_reading_from_replicas; }
     void disableQueryConditionCache() { allow_query_condition_cache = false; }
+    void disableMergeTreePartsSnapshotRemoval() { enable_remove_parts_from_snapshot_optimization = false; }
 
     /// After projection optimization, ReadFromMergeTree may be replaced with a new reading step, and the ParallelReadingExtension must be forwarded to the new step.
     /// Meanwhile, the ParallelReadingExtension originally in ReadFromMergeTree might be clear.
     void clearParallelReadingExtension();
     std::shared_ptr<ParallelReadingExtension> getParallelReadingExtension();
-
-    /// Announce an empty read set to the parallel-replicas coordinator (what initializePipeline() sends
-    /// when there are no ranges). Callable from the projection optimizer when it replaces this step and
-    /// initializePipeline() will not run. No-op unless this is the initiator local plan; returns whether
-    /// an announcement was sent.
-    bool announceEmptyReadRangesToCoordinatorIfInitiator();
-
-    bool isParallelReplicasLocalPlanForInitiator() const;
-    bool isParallelReplicasLocalPlanForFollower() const;
-
-    /// A non-storage filter above this read, such as a join runtime `__applyFilter`, can affect the
-    /// dynamic TopK threshold without participating in the PREWHERE query condition cache key.
-    /// Keep the regular query condition cache enabled, but do not read or write TopK PREWHERE entries.
-    void disableTopKPrewhereQueryConditionCache() { allow_top_k_prewhere_query_condition_cache = false; }
 
     /// Mark a (non-executed) read as a parallel-replicas read purely so that serialization records it.
     /// No callbacks are attached: the read is only serialized on the initiator and shipped to replicas,
@@ -550,30 +404,12 @@ public:
 
     bool supportsDataflowStatisticsCollection() const override { return !isQueryWithFinal(); }
 
-    /// Sets the read tasks for text indexes and adds their virtual columns for reading.
+    /// Adds virtual columns for reading from text index.
     /// Removes physical text columns that were eliminated by direct read from text index.
-    void createReadTasksForTextIndex(IndexReadTasks text_index_read_tasks, const Names & removed_columns);
+    void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final);
 
     const std::optional<Indexes> & getIndexes() const { return indexes; }
-    /// A temporary part snapshot for PREWHERE costs; does not publish range analysis.
-    RangesInDataParts getPartsForPrewhere() const;
-    IStorage::ColumnSizeByName getColumnSizesForPrewhere(const Names & columns, const RangesInDataParts & parts) const;
-    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns, const RangesInDataParts & parts) const;
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns) const;
-    /// Compose statistics over the part set of the given partition/PK analysis result
-    /// instead of all prepared parts. Passing nullptr falls back to getParts().
-    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns, const AnalysisResultPtr & analyzed_result) const;
-
-    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimatorForPrewhere(
-        const Names & required_columns, const ActionsDAG::Node * predicate) const;
-
-    static RangesInDataParts filterPartsForStatistics(
-        const RangesInDataParts & parts,
-        const ActionsDAG::Node * predicate,
-        const MergeTreeData & data,
-        const StorageMetadataPtr & metadata_snapshot,
-        const ContextPtr & query_context,
-        bool skip_partition_pruning_ = false);
 
     static void buildIndexes(
         std::optional<ReadFromMergeTree::Indexes> & indexes,
@@ -589,55 +425,28 @@ public:
 
     void setTopKColumn(const TopKFilterInfo & top_k_filter_info_);
     bool isSkipIndexAvailableForTopK(const String & sort_column) const;
-
-    /// Gate this read on the seal of a join marked with enableSealGatedProbeReading: nothing
-    /// is read until the seal arrives, and the given filters (covering a primary key prefix)
-    /// then prune mark ranges at task-cut time (see RuntimeFilterReadRangesRefiner).
-    /// Ungatable shapes (FINAL, parallel replicas, sharded joins) ignore the mark and fall
-    /// back to ungated reading; see the gating decision in initializePipeline.
-    void enableSealGatedReading(std::vector<RuntimeFilterIndexAnalysisDescriptor> pk_prefix_filters)
-    {
-        seal_gated_reading = SealGatedReading{std::move(pk_prefix_filters)};
-    }
-
     const ProjectionIndexReadDescription & getProjectionIndexReadDescription() const { return projection_index_read_desc; }
     ProjectionIndexReadDescription & getProjectionIndexReadDescription() { return projection_index_read_desc; }
     /// In distributed query plan, this step will be executed in a distributed manner - shards will be read in parallel.
     void setDistributedRead(size_t bucket_count);
-    /// Ceiling for the tasks of one distributed read (lanes per task are unbounded).
-    static constexpr size_t max_distributed_read_buckets = 256;
-
-    /// Splits the analyzed marks into up to `target_buckets` distributed-read buckets: mark-balanced
-    /// slices for a plain read, primary-key-range layers grouped into the buckets for `FINAL`. Returns
-    /// the bucket count, or 0 (read serially) when a `FINAL` read cannot be split safely.
+    /// Splits the analyzed marks into up to `target_buckets` distributed-read buckets and records them. A
+    /// non-FINAL read is sliced into contiguous mark-balanced buckets; a FINAL read is split into
+    /// primary-key-range layers (one merge per layer, per partition when FINAL does not merge across
+    /// partitions). Returns the bucket count, or 0 (read serially) when a FINAL read cannot be range-split
+    /// (SAMPLE, unsafe or mixed-order primary key, a single layer) or the split exceeds `max_total_buckets`.
     size_t setupDistributedReadBuckets(size_t target_buckets, size_t max_total_buckets);
     /// Serializes each bucket (its marks, the merge flag, and a merge layer's borders + index) into a
-    /// per-bucket blob shipped as the per-read bucket task parameter; empty unless this is a distributed read.
+    /// per-bucket blob shipped as the `read_bucket` task parameter; empty unless this is a distributed read.
     std::vector<String> serializeDistributedReadBuckets() const;
     /// Makes a list of shards to read in parallel in distributed query plan
     Strings getShardsForDistributedRead() const;
 
     bool canRemoveUnusedColumns() const override;
-    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs) override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
+    bool canRemoveColumnsFromOutput() const override;
 
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
     const std::optional<TopKFilterInfo> & getTopKFilterInfo() const { return top_k_filter_info; }
-
-    /// a hypothetical projection that the projection optimization also weighs
-    void setHypotheticalProjection(std::shared_ptr<HypotheticalProjection> projection) { hypothetical_projection = std::move(projection); }
-    const std::shared_ptr<HypotheticalProjection> & getHypotheticalProjection() const { return hypothetical_projection; }
-    bool isTopKPrewhereQueryConditionCacheAllowed() const { return allow_top_k_prewhere_query_condition_cache; }
-    bool isQueryConditionCacheAllowed() const { return allow_query_condition_cache; }
-
-    bool hasPendingTopKDynamicFilter() const
-    {
-        return top_k_filter_info.has_value() && top_k_filter_info->dynamic_filter_pending;
-    }
-    void clearPendingTopKDynamicFilter()
-    {
-        if (top_k_filter_info.has_value())
-            top_k_filter_info->dynamic_filter_pending = false;
-    }
 
     /// Carries the TopK stamp and the query condition cache gate over from a read step that this
     /// step replaces (e.g. the projection read built by `optimizeUseNormalProjections`; `clone` and
@@ -649,64 +458,18 @@ public:
     {
         top_k_filter_info = replaced_step.top_k_filter_info;
         allow_query_condition_cache = replaced_step.allow_query_condition_cache;
-        allow_top_k_prewhere_query_condition_cache = replaced_step.allow_top_k_prewhere_query_condition_cache;
     }
 
-    /// Carries the join runtime filter descriptors for the second-pass index analysis over from a read
-    /// step that this step replaces: the projection read built by `optimizeUseNormalProjections`, and the
-    /// steps `clone` and `createLocalParallelReplicasReadingStep` rebuild, which are not always optimized
-    /// again afterwards. `registerLeftSideIndexAnalysisSecondPass` runs before the projection rewrite, so
-    /// the descriptors are attached to the base-table read and would be lost otherwise. Every descriptor
-    /// is registered anew through `addJoinRuntimeFilterIndexAnalysisOnDataRead`, so it is kept only if the
-    /// key column is prunable through this step's own metadata (the projection's primary key or skip
-    /// indexes).
-    void copyJoinRuntimeFilterIndexAnalysisDescriptors(const ReadFromMergeTree & replaced_step);
-
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
-    /// The columns `keepOnlyRequiredColumnsAndCreateLazyReadStep` would move to the lazy read, without moving
-    /// them: the read keeps more than it is asked to, such as the inputs of PREWHERE and virtual columns.
-    Names getLazilyReadColumns(const NameSet & required_outputs) const;
-
-    /// Of `unneeded_output_positions`, the ones whose storage column `removeUnusedColumns` would stop reading, so that a
-    /// lazy read can read it instead. The read keeps the others: FINAL merges by them, PREWHERE or the row policy reads
-    /// them, or they are virtual.
-    std::vector<size_t> getLazilyReadablePositions(const std::vector<size_t> & unneeded_output_positions) const;
-    /// `removeUnusedColumns`, and a lazy read of the columns at `lazy_output_positions`, which are among the ones
-    /// `getLazilyReadablePositions` returns for `unneeded_output_positions`. Without them, it is `removeUnusedColumns`.
-    std::pair<RemoveUnusedColumnsResult, std::unique_ptr<LazilyReadFromMergeTree>> removeUnusedColumnsAndCreateLazyReadStep(
-        const std::vector<size_t> & unneeded_output_positions, const std::vector<size_t> & lazy_output_positions);
-
-    /// Whether some columns of this read were moved to a lazy read, which addresses the rows of this one by
-    /// their part offsets. Reading a projection instead would address other rows.
-    bool hasLazilyReadColumns() const { return has_lazily_read_columns; }
-
-    /// The columns `addStartingPartOffsetAndPartOffset` reads, where they are in the output header, and whether it added
-    /// them. The columns the output header had keep their order.
-    struct PartOffsetColumns
-    {
-        size_t part_starting_offset_position = 0;
-        size_t part_offset_position = 0;
-        bool added_part_starting_offset = false;
-        bool added_part_offset = false;
-    };
-    PartOffsetColumns addStartingPartOffsetAndPartOffset();
+    void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
 
     void setLazyMaterializingRows(LazyMaterializingRowsPtr lazy_materializing_rows_) { lazy_materializing_rows = std::move(lazy_materializing_rows_); }
 
     void deferFiltersAfterFinalIfNeeded();
 
-    /// Whether PREWHERE (present or moved from WHERE later) is applied after FINAL instead of during reading
-    bool isPrewhereDeferredAfterFinal() const;
-    bool canReadPrewhereColumnsAhead(const RangesInDataParts & parts) const;
-
     const FilterDAGInfoPtr & getDeferredRowLevelFilter() const { return deferred_row_level_filter; }
     const PrewhereInfoPtr & getDeferredPrewhereInfo() const { return deferred_prewhere_info; }
     size_t getDistributedReadBucketCount() const { return distributed_read_bucket_count; }
-    /// The task-parameter key under which this read's bucket marks travel. Unique per read so several
-    /// bucketed reads can share one worker fragment (e.g. a broadcast join's partitioned probe side and
-    /// its replicated build side) without their bucket blobs colliding in the shared parameter map.
-    const String & getDistributedReadParamName() const { return distributed_read_param_name; }
-    void setDistributedReadParamName(String param_name) { distributed_read_param_name = std::move(param_name); }
     bool getEnableVerticalFinal() const { return enable_vertical_final; }
 
     /// Whether a FINAL read must merge parts within each partition independently instead of globally
@@ -731,33 +494,6 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
-    /// What removing the columns at `unneeded_output_positions` comes to, worked out without changing anything.
-    struct ColumnPruning
-    {
-        /// The output positions that go away.
-        std::vector<size_t> dropped_output_positions;
-        /// The output positions of the row policy filter, which PREWHERE reads, that nothing needs.
-        std::vector<size_t> unneeded_row_level_output_positions;
-        /// The positions in `all_column_names` the read stops reading, sorted.
-        std::vector<size_t> dropped_storage_positions;
-        /// For each output position, the position in `all_column_names` of the column it is, unchanged, if it is one.
-        std::vector<std::optional<size_t>> storage_position_of_output;
-    };
-    ColumnPruning pruneColumns(const std::vector<size_t> & unneeded_output_positions) const;
-    /// Of the dropped output positions, the ones a lazy read can read: storage columns the read stops reading.
-    std::vector<size_t> getLazilyReadablePositions(const ColumnPruning & pruning) const;
-    /// Prunes the filters and the columns of this read as `pruning` says.
-    RemoveUnusedColumnsResult applyColumnPruning(const ColumnPruning & pruning);
-
-    static void buildPartitionPruningIndexes(
-        Indexes & indexes,
-        const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag_ptr,
-        const MergeTreeData & data,
-        const ContextPtr & query_context,
-        const StorageMetadataPtr & metadata_snapshot,
-        bool skip_partition_pruning_,
-        bool require_ready_sets = false);
-
     MergeTreeSettingsPtr data_settings;
     MergeTreeReaderSettings reader_settings;
 
@@ -786,12 +522,9 @@ private:
 
     /// Used for granule pruning in JOINs (enable_join_runtime_filters_index_analysis).
     /// Populated post-construction by addJoinRuntimeFilterIndexAnalysisOnDataRead during query-plan
-    /// optimization, and carried over by copyJoinRuntimeFilterIndexAnalysisDescriptors whenever the step
-    /// is rebuilt - a projection read, a clone, a parallel-replicas read - because a rebuilt step is not
-    /// always optimized again afterwards. Not serialized: a replica that receives a plan packet attaches
-    /// its own while optimizing it. A read that ends up without them reads its share unpruned, which is
-    /// what still happens with `make_distributed_plan`, and is pinned by
-    /// `05153_join_runtime_filters_index_analysis_modes`.
+    /// optimization. Not carried by clone()/serialize()/deserialize(), so the pruning is intentionally
+    /// skipped when the step is rebuilt for distributed or parallel-replicas reads (results stay correct,
+    /// only the optimization is lost); propagating it there is a follow-up.
     std::vector<RuntimeFilterIndexAnalysisDescriptor> join_runtime_filters_for_index_analysis;
 
     /// Row policy / prewhere deferred to after FINAL, if needed
@@ -846,12 +579,6 @@ private:
         /// a single pool reads the whole table (no splitting).
         std::optional<size_t> split_index = std::nullopt);
 
-    /// Whether the `FINAL` merges of this read can be followed by a virtual row (see `spreadMarkRangesAmongStreamsFinal`).
-    bool canUseVirtualRowWithFinal() const;
-
-    /// The columns of a virtual row: the leading primary key columns the conversions read.
-    Block makeVirtualRowHeader() const;
-
     Pipe spreadMarkRanges(
         RangesInDataParts && parts_with_ranges,
         const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -873,15 +600,6 @@ private:
         const Names & column_names,
         const InputOrderInfoPtr & input_order_info);
 
-    /// A pipe of `num_streams` `NullSource`s, used when there is nothing to read.
-    Pipe createEmptyPipe(size_t num_streams) const;
-
-    /// How many output ports this step must produce when there is nothing to read. Normally one, but
-    /// when the parts are pre-split into primary-key layers by `optimizeJoinByShards`, the number of
-    /// ports is a part of the plan: the JOIN above consumes exactly one port per layer and pairs the
-    /// ports of its two sides positionally (see `QueryPipelineBuilder::joinPipelinesYShapedByShards`).
-    size_t getNumStreamsWhenNothingToRead(const AnalysisResult & result) const;
-
     Pipe spreadMarkRangesAmongStreams(
         RangesInDataParts && parts_with_ranges,
         const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -895,8 +613,6 @@ private:
         const Names & column_names,
         std::optional<ActionsDAG> & out_projection,
         const InputOrderInfoPtr & input_order_info);
-
-    bool isRowPolicyDeferredAfterFinal() const;
 
     Pipe spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,
@@ -924,6 +640,8 @@ private:
     int getSortDirection() const;
     void updateSortDescription();
 
+    bool isParallelReplicasLocalPlanForInitiator() const;
+    bool isParallelReplicasLocalPlanForFollower() const;
     bool supportsSkipIndexesOnDataRead() const;
 
     mutable AnalysisResultPtr analyzed_result_ptr;
@@ -934,44 +652,25 @@ private:
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
+    bool enable_remove_parts_from_snapshot_optimization = true;
     bool allow_query_condition_cache = true;
-    bool allow_top_k_prewhere_query_condition_cache = true;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
-    bool has_lazily_read_columns = false;
 
     ExpressionActionsPtr virtual_row_conversion;
 
     std::optional<size_t> number_of_current_replica;
 
     std::optional<TopKFilterInfo> top_k_filter_info;
-    std::shared_ptr<HypotheticalProjection> hypothetical_projection;
-
-    /// See enableSealGatedReading.
-    struct SealGatedReading
-    {
-        /// Runtime filters covering a prefix of the primary key, in the key order.
-        std::vector<RuntimeFilterIndexAnalysisDescriptor> pk_prefix_filters;
-    };
-    std::optional<SealGatedReading> seal_gated_reading;
-
-    /// The refiner turning the runtime filter delivered by the seal into primary key pruning
-    /// of every task cut. Created by initializePipeline once it is known that the chosen
-    /// reading paths support gating, installed on their read pools, and fed by the
-    /// SealGatedReadTransforms they build. Null means the read is not gated.
-    std::shared_ptr<RuntimeFilterReadRangesRefiner> seal_gate_refiner;
-
     ProjectionIndexReadDescription projection_index_read_desc;
     /// Number of tasks when this leaf read is distributed; each worker reads the lanes described by its
-    /// per-read bucket parameter.
+    /// `read_bucket` parameter.
     size_t distributed_read_bucket_count = 0;
-    /// Per-read task-parameter key for this read's bucket marks (see getDistributedReadParamName).
-    String distributed_read_param_name;
     /// Initiator side: every virtual bucket across all tasks; `serializeDistributedReadBuckets` groups
-    /// `distributed_read_lanes_per_task` of them into each task's bucket parameter. Empty on a worker.
+    /// `distributed_read_lanes_per_task` of them into each task's `read_bucket` parameter. Empty on a worker.
     std::vector<DistributedReadBucket> distributed_read_buckets;
     size_t distributed_read_lanes_per_task = 1;
-    /// Worker side: the virtual buckets (lanes) of this worker's task, filled from its bucket
+    /// Worker side: the virtual buckets (lanes) of this worker's task, filled from its `read_bucket`
     /// parameter. A FINAL worker builds one merge/non-merge pipe per lane and unites them.
     std::vector<DistributedReadBucket> distributed_read_task_buckets;
 };

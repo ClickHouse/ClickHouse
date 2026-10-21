@@ -145,7 +145,9 @@ class LakeTableGenerator:
         # Escape backslashes BEFORE quotes: an entry like `\'` would otherwise become
         # `\\'` in the literal, where `\\` parses as a backslash and the quote then
         # terminates the string early -> PARSE_SYNTAX_ERROR on the rest of the DDL
-        return random.choice(SOME_STRINGS).replace("\\", "\\\\").replace("'", "\\'")
+        return (
+            random.choice(SOME_STRINGS).replace("\\", "\\\\").replace("'", "\\'")
+        )
 
     @staticmethod
     def _refresh_table_model(spark: SparkSession, table: SparkTable):
@@ -161,11 +163,7 @@ class LakeTableGenerator:
             # Only inherit the recorded ClickHouse type while the Spark type is unchanged; an
             # ALTER COLUMN ... TYPE makes the old clickhouse_type stale, which would mislead the
             # _LOSSY_CH_INT_RE hash-comparability check. Clear it on a type change (no CH origin).
-            inherited_ch_type = (
-                prev.clickhouse_type
-                if prev and prev.spark_type == field.dataType
-                else ""
-            )
+            inherited_ch_type = prev.clickhouse_type if prev and prev.spark_type == field.dataType else ""
             new_columns[field.name] = SparkColumn(
                 field.name,
                 field.dataType,
@@ -312,10 +310,6 @@ class LakeTableGenerator:
         random.shuffle(random_subset)
         return ",".join(random_subset)
 
-    def set_table_location(self, next_location: typing.Optional[str]) -> str:
-        """Spark puts LOCATION after PARTITIONED BY and before COMMENT."""
-        return f" LOCATION '{next_location}'" if next_location is not None else ""
-
     def generate_create_table_ddl(
         self,
         catalog_name: str,
@@ -326,7 +320,6 @@ class LakeTableGenerator:
         deterministic: bool,
         next_storage: TableStorage,
         next_catalog: LakeCatalogs,
-        next_location: typing.Optional[str] = None,
     ) -> tuple[str, SparkTable]:
         """
         Generate a complete CREATE TABLE DDL statement with random properties
@@ -484,7 +477,7 @@ class LakeTableGenerator:
                 flat_cols = res.flat_columns()
                 res.partition_keys = [c for c in random_subset if c in flat_cols]
 
-        ddl += self.set_table_location(next_location)
+        # ddl += self.set_table_location(next_location) no location needed yet
 
         # Optional table COMMENT (metadata only; supported by Iceberg and Delta)
         if random.randint(1, 3) == 1:
@@ -1537,9 +1530,9 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
             if random.randint(1, 2) == 1:
                 properties["delta.columnMapping.mode"] = "none"
             else:
-                properties["delta.compatibility.symlinkFormatManifest.enabled"] = (
-                    "false"
-                )
+                properties[
+                    "delta.compatibility.symlinkFormatManifest.enabled"
+                ] = "false"
         return properties
 
     def generate_alter_table_statements(

@@ -22,14 +22,13 @@ void registerStorageDictionary(StorageFactory & factory);
 void registerStorageSet(StorageFactory & factory);
 void registerStorageJoin(StorageFactory & factory);
 void registerStorageView(StorageFactory & factory);
-void registerStorageObfuscate(StorageFactory & factory);
 void registerStorageMaterializedView(StorageFactory & factory);
 void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageExecutable(StorageFactory & factory);
+void registerStorageWindowView(StorageFactory & factory);
 void registerStorageLoop(StorageFactory & factory);
 void registerStorageFuzzQuery(StorageFactory & factory);
 void registerStorageTimeSeries(StorageFactory & factory);
-void registerStorageElasticsearch(StorageFactory & factory);
 void registerStorageAlias(StorageFactory & factory);
 
 #if USE_ARROWFLIGHT
@@ -80,7 +79,6 @@ void registerStorageYTsaurus(StorageFactory & factory);
 #endif
 
 void registerStorageRedis(StorageFactory & factory);
-void registerStorageBigQuery(StorageFactory & factory);
 
 
 #if USE_RDKAFKA
@@ -136,14 +134,13 @@ void registerStorages()
     registerStorageSet(factory);
     registerStorageJoin(factory);
     registerStorageView(factory);
-    registerStorageObfuscate(factory);
     registerStorageMaterializedView(factory);
     registerStorageGenerateRandom(factory);
     registerStorageExecutable(factory);
+    registerStorageWindowView(factory);
     registerStorageLoop(factory);
     registerStorageFuzzQuery(factory);
     registerStorageTimeSeries(factory);
-    registerStorageElasticsearch(factory);
     registerStorageAlias(factory);
 
 #if USE_ARROWFLIGHT
@@ -191,7 +188,6 @@ void registerStorages()
 
     registerStorageYTsaurus(factory);
     registerStorageRedis(factory);
-    registerStorageBigQuery(factory);
 
 #if USE_RDKAFKA
     registerStorageKafka(factory);

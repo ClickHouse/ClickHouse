@@ -128,7 +128,7 @@ Calculates the sum of the numbers and counts the number of rows at the same time
 
 **See also**
 
-- [`optimize_syntax_fuse_functions`](/reference/settings/session-settings/optimize#optimize_syntax_fuse_functions) setting.
+- [`optimize_syntax_fuse_functions`](../../../operations/settings/settings.md#optimize_syntax_fuse_functions) setting.
     )";
     FunctionDocumentation::Syntax syntax_sumCount = R"(
 sumCount(x)
@@ -149,7 +149,7 @@ SELECT sumCount(x) FROM s_table;
         )",
         R"(
 ┌─sumCount(x)─┐
-│ (190,21)    │
+│ (190,20)    │
 └─────────────┘
         )"
     }

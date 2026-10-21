@@ -11,9 +11,7 @@ doc_type: 'reference'
 Вы можете отслеживать затраченное время CPU и реальное время, включая время простоя.
 
 Профилировщик запросов автоматически включен в ClickHouse Cloud.
-Следующий пример запроса находит наиболее частые трассировки стека для профилируемого запроса с разрешенными именами функций и указанием их местоположения в исходном коде:
-
-По умолчанию профилировщик символизирует трассировки стека во время сбора и сохраняет результаты в столбцах `symbols` и `lines` таблицы [`system.trace_log`](/ru/reference/system-tables/trace_log), поэтому приведенные ниже примеры считывают эти столбцы напрямую и не требуют функций интроспекции. Символизация управляется настройкой `symbolize` в разделе конфигурации сервера `trace_log` (включена по умолчанию) и поддерживается на платформах ELF (например, Linux) и macOS; в FreeBSD столбцы `symbols` и `lines` всегда пусты. Имена функций в `symbols` берутся из таблицы символов бинарного файла и доступны по умолчанию. Местоположения в исходном коде в `lines` определяются по мере возможности: для них требуется отладочная информация (в macOS — пакет `.dSYM` рядом с бинарным файлом), а на платформах ELF разрешаются только кадры внутри основного бинарного файла ClickHouse, поэтому записи для кадров, которые не удается разрешить (например, в общих библиотеках), остаются пустыми. Если символизация отключена, используйте [функции интроспекции](/ru/reference/functions/regular-functions/introspection) `addressToSymbol`, `demangle` и `addressToLine`, чтобы вместо этого разрешить необработанные адреса в столбце `trace`. Эти функции доступны на тех же платформах, что и символизация (платформы ELF, такие как Linux, и macOS); в FreeBSD они также не скомпилированы, поэтому адреса в `trace` необходимо разрешать вне сервера.
+Следующий пример запроса находит наиболее частые трассировки стека для профилируемого запроса с разрешенными именами функций и указанием их расположения в исходном коде:
 
 <Tip>
   Замените значение `query_id` на ID запроса, который вы хотите профилировать.
@@ -28,12 +26,13 @@ doc_type: 'reference'
     ```sql
     SELECT
         count(),
-        arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
+        arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
     FROM clusterAllReplicas(default, system.trace_log)
     WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
     GROUP BY trace
     ORDER BY count() DESC
     LIMIT 10
+    SETTINGS allow_introspection_functions = 1
     ```
   </Tab>
 
@@ -41,12 +40,13 @@ doc_type: 'reference'
     ```sql
     SELECT
         count(),
-        arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
+        arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
     FROM system.trace_log
     WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
     GROUP BY trace
     ORDER BY count() DESC
     LIMIT 10
+    SETTINGS allow_introspection_functions = 1
     ```
   </Tab>
 </Tabs>
@@ -58,7 +58,9 @@ doc_type: 'reference'
 Чтобы использовать профилировщик запросов в самоуправляемых развертываниях, выполните следующие шаги:
 
 <Steps>
-  <Step title="Установите ClickHouse с отладочной информацией" id="debug-info">
+  <Step>
+    ### Установите ClickHouse с отладочной информацией
+
     Установите пакет `clickhouse-common-static-dbg`:
 
     1. Следуйте инструкциям из шага [&quot;Настройте Debian-репозиторий&quot;](/ru/get-started/setup/self-managed/debian-ubuntu#setup-the-debian-repository)
@@ -67,12 +69,14 @@ doc_type: 'reference'
     4. Выполните `clickhouse-client`. Отладочные символы из `clickhouse-common-static-dbg` будут автоматически подхвачены сервером — ничего дополнительно включать не нужно
   </Step>
 
-  <Step title="Проверьте конфигурацию сервера" id="server-config">
-    Убедитесь, что раздел [`trace_log`](/ru/reference/settings/server-settings/settings/other#trace_log) в вашем [файле конфигурации сервера](/ru/concepts/features/configuration/server-config/configuration-files) настроен. По умолчанию он включен:
+  <Step>
+    ### Проверьте конфигурацию сервера
+
+    Убедитесь, что раздел [`trace_log`](/ru/reference/settings/server-settings/settings#trace_log) в вашем [файле конфигурации сервера](/ru/concepts/features/configuration/server-config/configuration-files) настроен. По умолчанию он включен:
 
     ```xml
-    <!-- Trace log. Stores stack traces collected by query profilers.
-         See query_profiler_real_time_period_ns and query_profiler_cpu_time_period_ns settings. -->
+    <!-- Журнал трассировки. Хранит трассировки стека, собранные профилировщиками запросов.
+         См. настройки query_profiler_real_time_period_ns и query_profiler_cpu_time_period_ns. -->
     <trace_log>
         <database>system</database>
         <table>trace_log</table>
@@ -82,25 +86,21 @@ doc_type: 'reference'
         <max_size_rows>1048576</max_size_rows>
         <reserved_size_rows>8192</reserved_size_rows>
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <!-- Indication whether logs should be dumped to the disk in case of a crash -->
+        <!-- Указывает, следует ли сбрасывать журналы на диск в случае сбоя -->
         <flush_on_crash>false</flush_on_crash>
         <symbolize>true</symbolize>
     </trace_log>
     ```
 
     Этот раздел настраивает системную таблицу [trace&#95;log](/ru/reference/system-tables/trace_log), содержащую результаты работы профилировщика.
-    Параметр `symbolize` (включен по умолчанию) позволяет ClickHouse разрешать каждый кадр стека во время сбора и сохранять деманглированные имена функций и расположения в исходном коде в столбцах `symbols` и `lines`.
-    Имена функций в `symbols` берутся из таблицы символов и доступны по умолчанию, тогда как расположения в исходном коде в `lines` требуют отладочной информации (пакета `.dSYM` в macOS) и на платформах ELF разрешаются только для кадров внутри основного бинарного файла ClickHouse; для неразрешённых кадров записи в `lines` остаются пустыми.
-
-    Обратите внимание, что исходные адреса в столбце `trace` менее стабильны при перезапусках и обновлениях, чем предварительно символизированные столбцы.
-    На платформах ELF, кроме FreeBSD, кадры в основном бинарном файле ClickHouse хранятся как физические смещения в файле, поэтому остаются разрешимыми после перезапуска, пока бинарный файл не изменён; в macOS и FreeBSD они хранятся как виртуальные адреса времени выполнения, которые могут стать недействительными после перезапуска.
-    Кадры за пределами основного бинарного файла (например, в разделяемых библиотеках) всегда хранятся как виртуальные адреса времени выполнения, которые могут стать недействительными после перезапуска, а любой исходный адрес становится неразрешимым после обновления бинарного файла из-за изменения структуры кода.
-    ClickHouse не очищает таблицу при перезапуске, поэтому устаревшие исходные адреса могут сохраняться.
-    Предварительно символизированные столбцы `symbols` и `lines`, напротив, остаются действительными после перезапусков и обновлений, поэтому при анализе исторических данных предпочтительно использовать их.
+    Помните, что данные в этой таблице актуальны только для работающего сервера.
+    После перезапуска сервера ClickHouse не очищает таблицу, и все сохраненные адреса виртуальной памяти могут стать недействительными.
   </Step>
 
-  <Step title="Настройте таймеры профилирования" id="configure-profile-timers">
-    Настройте параметры [`query_profiler_cpu_time_period_ns`](/ru/reference/settings/session-settings/query-profiler#query_profiler_cpu_time_period_ns) или [`query_profiler_real_time_period_ns`](/ru/reference/settings/session-settings/query-profiler#query_profiler_real_time_period_ns).
+  <Step>
+    ### Настройте таймеры профилирования
+
+    Настройте параметры [`query_profiler_cpu_time_period_ns`](/ru/reference/settings/session-settings#query_profiler_cpu_time_period_ns) или [`query_profiler_real_time_period_ns`](/ru/reference/settings/session-settings#query_profiler_real_time_period_ns).
     Оба параметра можно использовать одновременно.
 
     Эти параметры позволяют настроить таймеры профилировщика.
@@ -111,13 +111,10 @@ doc_type: 'reference'
     Если вам нужно профилировать каждый отдельный запрос, используйте более высокую частоту сэмплирования.
   </Step>
 
-  <Step title={<>Проанализируйте системную таблицу <code>trace_log</code></>} id="analyze-trace-log-system-table">
-    Чтобы получить профиль для какого-либо запроса, нужно агрегировать данные из таблицы `trace_log`.
-    Вы можете агрегировать данные по отдельным функциям или по всей трассировке стека.
+  <Step>
+    ### Проанализируйте системную таблицу `trace_log`
 
-    Когда символизация включена (по умолчанию), деманглированные имена функций и расположения в исходном коде уже доступны в столбцах `symbols` и `lines`, поэтому дополнительная настройка не требуется. Символизация не поддерживается в FreeBSD, где эти столбцы всегда пусты. Записи `lines` могут быть пустыми для кадров без отладочной информации или находящихся за пределами основного бинарного файла ClickHouse (см. [выше](#server-config)).
-
-    Если символизация отключена или вы хотите динамически разрешать необработанные адреса в столбце `trace` (например, чтобы развернуть встроенные кадры), разрешите функции интроспекции с помощью настройки [`allow_introspection_functions`](/ru/reference/settings/session-settings/allow#allow_introspection_functions):
+    Чтобы анализировать системную таблицу `trace_log`, разрешите функции интроспекции с помощью настройки [`allow_introspection_functions`](/ru/reference/settings/session-settings#allow_introspection_functions):
 
     ```sql
     SET allow_introspection_functions=1
@@ -127,7 +124,9 @@ doc_type: 'reference'
       По соображениям безопасности функции интроспекции по умолчанию отключены
     </Note>
 
-    Используйте [функции интроспекции](/ru/reference/functions/regular-functions/introspection) `addressToLine`, `addressToLineWithInlines`, `addressToSymbol` и `demangle`, чтобы получить имена функций и их расположение в коде ClickHouse. Как и символизация, эти функции доступны на платформах ELF (таких как Linux) и macOS, но недоступны в FreeBSD.
+    Используйте [функции интроспекции](/ru/reference/functions/regular-functions/introspection) `addressToLine`, `addressToLineWithInlines`, `addressToSymbol` и `demangle`, чтобы получить имена функций и их расположение в коде ClickHouse.
+    Чтобы получить профиль для какого-либо запроса, нужно агрегировать данные из таблицы `trace_log`.
+    Вы можете агрегировать данные по отдельным функциям или по всей трассировке стека.
 
     <Tip>
       Если вам нужно визуализировать данные из `trace_log`, попробуйте [флеймграф](/ru/integrations/connectors/tools/gui#clickhouse-flamegraph) и [speedscope](https://www.speedscope.app).
@@ -315,18 +314,18 @@ clickhouse client --allow_introspection_functions=1 \
   ## Пример
 </div>
 
-Приведённый ниже фрагмент кода:
+Фрагмент кода ниже:
 
 * Фильтрует данные `trace_log` по идентификатору запроса и текущей дате.
-* Считывает предварительно символизированные столбцы `symbols` и `lines`, чтобы сформировать отчёт со следующей информацией:
-  * Имена символов и соответствующих им функций исходного кода.
-  * Местоположения этих функций в исходном коде.
-* Выполняет агрегацию по исходной трассировке стека (столбцу `trace`), используя символизированные столбцы только для отображения, чтобы разные трассировки стека никогда не объединялись из-за приближённой символизации.
+* Выполняет агрегацию по трассировке стека.
+* Использует функции интроспекции, чтобы получить отчет о:
+  * Именах символов и соответствующих им функциях исходного кода.
+  * Расположении этих функций в исходном коде.
 
 ```sql
 SELECT
     count(),
-    arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
+    arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
 FROM system.trace_log
 WHERE (query_id = '<query_id>') AND (event_date = today())
 GROUP BY trace

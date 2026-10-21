@@ -24,3 +24,17 @@ SELECT number
 FROM numbers(5)
 ORDER BY number
 FORMAT Pretty; -- { serverError BAD_ARGUMENTS }
+
+set enable_analyzer = 0;
+
+SELECT number
+    ,lead(number, 1, 8472) OVER () lead
+FROM numbers(5)
+ORDER BY number
+FORMAT Pretty; -- { serverError NOT_IMPLEMENTED }
+
+SELECT number
+    ,lag(number, 1, 8472) OVER () lag
+FROM numbers(5)
+ORDER BY number
+FORMAT Pretty; -- { serverError NOT_IMPLEMENTED }

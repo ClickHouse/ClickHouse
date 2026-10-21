@@ -11,17 +11,18 @@ doc_type: 'guide'
 Если вам не нужно устанавливать ClickHouse для продакшна, можно запустить установочный скрипт через curl. Скрипт определит подходящий бинарный файл для вашей ОС.
 
 <Steps>
-  <Step title="Установка ClickHouse с помощью curl" id="install-clickhouse-using-curl">
+  <Step>
+    ## Установка ClickHouse с помощью curl
+
     Выполните следующую команду, чтобы загрузить единый бинарный файл для вашей операционной системы.
 
     ```bash
     curl https://clickhouse.com/ | sh
     ```
 
-    В Linux и macOS при этом также устанавливается [`clickhousectl`](/ru/get-started/setup/self-managed/clickhousectl),
-    ClickHouse CLI, в `~/.local/bin` (с псевдонимом `chctl`). `clickhousectl`
-    помогает устанавливать и управлять несколькими локальными версиями ClickHouse, запускать серверы
-    в фоновом режиме и управлять ClickHouse Cloud. Инструкции по работе через CLI см. на [странице установки clickhousectl](/ru/get-started/setup/self-managed/clickhousectl).
+    В Linux и macOS при этом также устанавливается [`clickhousectl`](https://github.com/ClickHouse/clickhousectl)
+    в `~/.local/bin` (с символьной ссылкой `chctl`), чтобы вы могли управлять локальными
+    версиями и серверами ClickHouse.
 
     Чтобы установить только бинарный файл `clickhouse` без `clickhousectl`, задайте
     `CLICKHOUSE_ONLY=1`:
@@ -35,7 +36,9 @@ doc_type: 'guide'
     </Note>
   </Step>
 
-  <Step title="Запуск clickhouse-local" id="start-clickhouse-local">
+  <Step>
+    ## Запуск clickhouse-local
+
     `clickhouse-local` позволяет обрабатывать локальные и удаленные файлы с помощью
     мощного SQL-синтаксиса ClickHouse без какой-либо конфигурации. Данные таблиц хранятся
     во временном расположении, а это значит, что после перезапуска `clickhouse-local`
@@ -48,7 +51,9 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="Запуск clickhouse-server" id="start-clickhouse-server">
+  <Step>
+    ## Запуск clickhouse-server
+
     Если вы хотите сохранять данные, запустите `clickhouse-server`. Для запуска
     сервера ClickHouse выполните следующую команду:
 
@@ -57,7 +62,9 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="Запуск clickhouse-client" id="start-clickhouse-client">
+  <Step>
+    ## Запуск clickhouse-client
+
     Когда сервер будет запущен, откройте новое окно терминала и выполните следующую команду,
     чтобы запустить `clickhouse-client`:
 

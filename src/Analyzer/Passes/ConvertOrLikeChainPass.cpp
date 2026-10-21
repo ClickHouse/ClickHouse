@@ -65,10 +65,8 @@ bool isExpressionNonDeterministic(const QueryTreeNodePtr & node)
     if (!node)
         return false;
 
-    /// Only check ORDINARY functions for determinism, WINDOW/AGGREGATE functions need
-    /// to have their children checked instead, so we fall through to the recursive check.
     if (auto * function = node->as<FunctionNode>())
-        if (function->isOrdinaryFunction())
+        if (function->isResolved())
             if (auto func = function->getFunctionOrThrow(); !func->isDeterministicInScopeOfQuery())
                 return true;
 
@@ -229,7 +227,7 @@ struct PatternInfo
     bool allRegexpsHaveNoEmbeddedNul() const
     {
         for (const auto & p : patterns)
-            if (p.regexp.contains('\0'))
+            if (p.regexp.find('\0') != String::npos)
                 return false;
         return true;
     }
@@ -595,12 +593,22 @@ public:
         /// Clone the optimized OR node
         auto optimized_or_clone = node->clone();
 
-        /// Mark the cloned OR as processed to prevent re-visiting
-        processed_nodes.insert(optimized_or_clone->as<FunctionNode>());
+        /// Create AND of the optimized OR with indexHint:
+        /// optimized_or AND indexHint(original_like_chain)
+        auto and_node = std::make_shared<FunctionNode>("and");
+        and_node->getArguments().getNodes().push_back(std::move(optimized_or_clone));
+        and_node->getArguments().getNodes().push_back(std::move(index_hint_node));
+        and_node->resolveAsFunction(and_function_resolver);
 
-        /// Rewrite the node in place to optimized_or AND indexHint(original_like_chain), as it may be shared by several references.
-        function_node->getArguments().getNodes() = {std::move(optimized_or_clone), std::move(index_hint_node)};
-        function_node->resolveAsFunction(and_function_resolver);
+        /// Mark the AND node as processed to prevent re-visiting
+        processed_nodes.insert(and_node.get());
+
+        /// Also mark the cloned OR inside AND as processed
+        if (auto * or_child = and_node->getArguments().getNodes()[0]->as<FunctionNode>())
+            processed_nodes.insert(or_child);
+
+        /// Replace the original node with the AND expression
+        node = std::move(and_node);
     }
 private:
     const FunctionOverloadResolverPtr or_function_resolver;

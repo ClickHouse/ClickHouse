@@ -89,7 +89,7 @@ ClickHouse を使い始めたばかりであれば、次の手順を検討して
 1. ユーザーアカウントの設定。
 2. ユーザーアカウントのデフォルトロールの設定。ある設定が複数のロールで構成されている場合、その設定の適用順序は未定義です。
 3. ユーザーまたはそのデフォルトロールに割り当てられた設定プロファイルの設定。ある設定が複数のプロファイルで構成されている場合、その設定の適用順序は未定義です。
-4. サーバー全体に既定で適用される設定、または [default profile](/ja/reference/settings/server-settings/settings/default#default_profile) で適用される設定。
+4. サーバー全体に既定で適用される設定、または [default profile](/ja/reference/settings/server-settings/settings#default_profile) で適用される設定。
 
 <div id="role-management">
   ### ロール
@@ -120,8 +120,6 @@ ClickHouse を使い始めたばかりであれば、次の手順を検討して
 </div>
 
 ROW POLICY は、ユーザーまたはロールがアクセスできる行を定義するフィルターです。ROW POLICY には、特定のテーブルに対するフィルターに加えて、この ROW POLICY を適用するロールやユーザーの一覧が含まれます。
-
-ROW POLICY は、テーブルデータがローカルで読み取られる場合に適用されます。[Distributed](/ja/reference/engines/table-engines/special/distributed) テーブル、または読み取りをリモートサーバーに委譲する別のテーブルの場合は、各サーバーの基になるテーブルにポリシーを定義してください。リモートサーバーをバックエンドとするテーブル自体に設定したポリシーは、送信されたクエリには適用できないため、そのテーブルを介した読み取りは拒否されます。イニシエーターが構築済みの読み取りプランを送信する場合、基になるテーブル上のこのようなポリシーは適用されないため、ROW POLICY を強制する必要があるユーザーでは [`serialize_query_plan = 0`](/ja/reference/settings/session-settings/serialize#serialize_query_plan) を維持してください ([issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891) を参照) 。
 
 <Note>
   ROW POLICY が有効なのは、readonly アクセス権限がある場合に限られます。テーブルを変更したり、テーブル間でパーティションをコピーしたりできる場合、ROW POLICY による制限は実質的に意味をなさなくなります。
@@ -172,20 +170,11 @@ QUOTA には、一定期間ごとの一連の制限と、この QUOTA を使用�
 
 * 設定の保存先となるディレクトリを用意します。
 
-  ClickHouse は、[access&#95;control&#95;path](/ja/reference/settings/server-settings/settings/access-control#access_control_path) サーバー設定パラメーターで指定されたフォルダーに、アクセスエンティティの設定を保存します。
+  ClickHouse は、[access&#95;control&#95;path](/ja/reference/settings/server-settings/settings#access_control_path) サーバー設定パラメーターで指定されたフォルダーに、アクセスエンティティの設定を保存します。
 
 * 少なくとも 1 つのユーザーアカウントで、SQL ベースのアクセス制御とアカウント管理を有効にします。
 
-  ClickHouse に同梱されている `users.xml` 設定ファイルでは、[`access_management`](/ja/concepts/features/configuration/settings/settings-users#access_management-user-setting) と [`named_collection_control`](/ja/concepts/features/configuration/settings/settings-users#named_collection_control-user-setting) が 1 に設定されており、`default` ユーザーに対して SQL ベースのアクセス制御とアカウント管理が有効になっています。それ以外のすべてのユーザーでは、いずれの設定もデフォルトで 0 のため、明示的に設定する必要があります。
-
-  [`show_named_collections_secrets`](/ja/concepts/features/configuration/settings/settings-users#show_named_collections_secrets-user-setting) は、`default` ユーザーであってもデフォルトで 0 です。named collections を管理できることと、そこにすでに保存されている認証情報を読み出せることは同義ではないためです。ユーザーは自分が持っている権限しか付与できないため、この設定が 0 である限り、そのユーザーは完全な権限のセットを持たず、`GRANT ALL ON *.* TO clickhouse_admin WITH GRANT OPTION` のようなクエリは拒否されます:
-
-  ```text
-  Not enough privileges. To execute this query, it's necessary to have the grant ALL ON *.* WITH GRANT OPTION.
-  (Missing permissions: SHOW NAMED COLLECTIONS SECRETS ON *)
-  ```
-
-  3 つの設定すべてを 1 に設定すると、そのユーザーは完全な管理者になります。
+  デフォルトでは、SQL ベースのアクセス制御とアカウント管理はすべてのユーザーで無効になっています。`users.xml` 設定ファイルで少なくとも 1 人のユーザーを設定し、[`access_management`](/ja/concepts/features/configuration/settings/settings-users#access_management-user-setting)、`named_collection_control`、`show_named_collections`、`show_named_collections_secrets` の各設定を 1 に設定する必要があります。
 
 <div id="defining-sql-users-and-roles">
   ## SQLユーザーとロールの定義
@@ -202,16 +191,12 @@ QUOTA には、一定期間ごとの一連の制限と、この QUOTA を使用�
 </div>
 
 1. `users.xml` ファイルの `<default>` ユーザー配下で SQL ユーザーモードを有効にします。
-
    ```xml
    <access_management>1</access_management>
    <named_collection_control>1</named_collection_control>
-   <!-- ユーザーを完全な管理者にするために必要です。
-        これがないと、以下の `GRANT ALL ... WITH GRANT OPTION` は拒否されます。 -->
+   <show_named_collections>1</show_named_collections>
    <show_named_collections_secrets>1</show_named_collections_secrets>
    ```
-
-   最初の 2 つの設定は、ClickHouse に同梱されている `users.xml` ファイル内で `default` ユーザーに対してすでに有効になっています。`show_named_collections_secrets` はコメントアウトされているため、コメントを解除する必要があります。
 
 <Note>
   `default` ユーザーは、新規インストール時に作成される唯一のユーザーであり、デフォルトではノード間通信に使用されるアカウントでもあります。

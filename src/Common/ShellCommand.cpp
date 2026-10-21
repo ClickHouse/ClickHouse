@@ -186,13 +186,13 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
 #if !defined(USE_MUSL)
     /** Here it is written that with a normal call `vfork`, there is a chance of deadlock in multithreaded programs,
       *  because of the resolving of symbols in the shared library
-      * https://web.archive.org/web/20191016050435/https://www.oracle.com/technetwork/server-storage/solaris10/subprocess-136439.html
+      * http://www.oracle.com/technetwork/server-storage/solaris10/subprocess-136439.html
       * Therefore, separate the resolving of the symbol from the call.
       */
     static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
 #else
     /// If we use Musl with static linking, there is no dlsym and no issue with vfork.
-    static void * real_vfork = reinterpret_cast<void *>(&vfork); // NOLINT(bugprone-unsafe-functions,cert-msc24-c,cert-msc33-c)
+    static void * real_vfork = reinterpret_cast<void *>(&vfork);
 #endif
 
     if (!real_vfork)

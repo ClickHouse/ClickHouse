@@ -38,9 +38,14 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(Number) -> String";
+        FunctionArgumentDescriptors mandatory_args{
+            {"length", &isNumber, nullptr, "(U)Int*"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args);
+        return std::make_shared<DataTypeString>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -99,7 +104,7 @@ public:
                 return code_point;
             }
 
-            if (UTF8::isSurrogateCodePoint(code_point))
+            if (0xD7FF < code_point && code_point < 0xE000) // this range will not be valid in isValidUTF8
             {
                 /// The distribution will be slightly non-uniform but we don't care.
                 return 0u;

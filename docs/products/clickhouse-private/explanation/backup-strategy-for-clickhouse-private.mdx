@@ -1,0 +1,33 @@
+---
+noindex: true
+title: "Backup Strategy for ClickHouse Private"
+sidebarTitle: "Backup strategy"
+description: "This document explains backup behavior and limitations specific to ClickHouse Private."
+---
+
+This document explains backup behavior and limitations specific to ClickHouse Private. For general ClickHouse backup concepts (full vs incremental, backup chains, SQL syntax), see the [upstream ClickHouse backup documentation](https://clickhouse.com/docs/operations/backup/overview). For step-by-step procedures, see [Back up and restore (manual)](/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual) or [Manage backups via API](/products/clickhouse-private/guides/manage-backups-via-the-private-api).
+
+## Backup Location
+
+Backups are stored in **Amazon S3**. Each cluster's backups are organized under the cluster's S3 key prefix (found in the CR at `spec.s3.keyPrefix`), which ensures that backups from different clusters remain isolated even when sharing the same S3 bucket.
+
+## Manual vs API-Driven Backups
+
+ClickHouse Private supports two backup approaches:
+
+- **Manual (SQL)** -- Execute `BACKUP`/`RESTORE` statements directly on a server pod. Full control over scope and S3 paths. See [Back up and restore (manual)](/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual).
+- **API-driven** -- Use the Private API REST endpoint, which creates `Backup` custom resources that the operator manages. See [Manage backups via API](/products/clickhouse-private/guides/manage-backups-via-the-private-api) and the [API reference](/products/clickhouse-private/reference/clickhouse-private-api-reference).
+
+## Backup Pod Designation
+
+In the MultiSTS architecture, exactly one replica is designated as the **backup pod** (`isBackupPod: true` in the ReplicaStateMap). Backup operations always execute on this pod. The operator avoids marking the backup pod as Condemned during scale-in to prevent disrupting backup operations.
+
+## Restore Limitation
+
+The Private API **disallows restoring a backup to the same cluster** it was taken from (`instance_id == target_instance_id`). This prevents placing additional load on a running production cluster and reduces the risk of data overwrites. The recommended approach is to provision a new cluster and restore into it.
+
+If you must restore to the same cluster (for example, to recover a specific table), use manual SQL commands directly on a server pod.
+
+## Incremental Backup Chain Integrity
+
+When using S3 lifecycle policies with incremental backups, ensure that expiration rules do not delete a full backup while incremental backups that depend on it still exist. If a full backup is deleted, all incremental backups in its chain become unrestorable.

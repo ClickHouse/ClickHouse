@@ -9,6 +9,7 @@
 #include <Interpreters/sortBlock.h>
 
 #include <Processors/Chunk.h>
+#include <Processors/Transforms/DeduplicationTokenTransforms.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
@@ -46,10 +47,6 @@ struct MergeTreeTemporaryPart
     };
 
     std::vector<Stream> streams;
-
-    /// UNIQUE KEY tables only: part row `i` was written from block row `sort_permutation[i]`.
-    /// Empty when the part keeps the block's row order.
-    IColumn::Permutation sort_permutation;
 
     void cancel();
     void finalize();
@@ -90,24 +87,15 @@ public:
 
     /** All rows must correspond to same partition.
       * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
-      * `may_have_leftover`: see `MergeTreeData::claimTemporaryPartDirectory`.
-      * `txn`, when set, stamps the part's `creation_tid` instead of the context's transaction: an
-      * INSERT commits each partition under its own, and for `INSERT ... SELECT` the context's is the SELECT's.
       */
-    MergeTreeTemporaryPartPtr writeTempPart(
-        BlockWithPartition & block,
-        StorageMetadataPtr metadata_snapshot,
-        ContextPtr context,
-        bool may_have_leftover = true,
-        const MergeTreeTransactionPtr & txn = nullptr);
+    MergeTreeTemporaryPartPtr writeTempPart(BlockWithPartition & block, StorageMetadataPtr metadata_snapshot, ContextPtr context);
 
     MergeTreeTemporaryPartPtr writeTempPatchPart(
         BlockWithPartition & block,
         StorageMetadataPtr metadata_snapshot,
         String partition_id,
-        PatchPartIndex patch_part_index,
-        ContextPtr context,
-        bool may_have_leftover = true);
+        SourcePartsSetForPatch source_parts_set,
+        ContextPtr context);
 
     MergeTreeData::MergingParams::Mode getMergingMode() const
     {
@@ -115,28 +103,23 @@ public:
     }
 
     /// For insertion.
-    /// `compression_codec` is the codec chosen for the parent part; the projection inherits it so
-    /// that a projection of a large (`ZSTD(3)`) part is not always written with `LZ4`.
     static MergeTreeTemporaryPartPtr writeProjectionPart(
         const MergeTreeData & data,
+        LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
-        CompressionCodecPtr compression_codec,
         bool merge_is_needed,
         ContextPtr context);
 
     /// For mutation: MATERIALIZE PROJECTION.
-    /// `compression_codec` is the codec chosen for the parent part; see `writeProjectionPart`.
     static MergeTreeTemporaryPartPtr writeTempProjectionPart(
         const MergeTreeData & data,
+        LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
-        CompressionCodecPtr compression_codec,
         size_t block_num,
-        bool use_selected_codec,
-        bool is_explicit_recompression,
         ContextPtr context);
 
     static Block mergeBlock(
@@ -151,24 +134,20 @@ private:
         BlockWithPartition & block_with_partition,
         StorageMetadataPtr metadata_snapshot,
         String partition_id,
-        std::optional<PatchPartIndex> patch_part_index,
+        SourcePartsSetForPatch source_parts_set,
         ContextPtr context,
-        UInt64 block_number,
-        bool may_have_leftover,
-        const MergeTreeTransactionPtr & txn = nullptr);
+        UInt64 block_number);
 
     static MergeTreeTemporaryPartPtr writeProjectionPartImpl(
         const String & part_name,
         bool is_temp,
         IMergeTreeDataPart * parent_part,
         const MergeTreeData & data,
+        LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
-        CompressionCodecPtr compression_codec,
         MergeTreeIndices indices,
-        bool merge_is_needed,
-        bool try_adaptive_codec,
-        bool use_selected_codec = false);
+        bool merge_is_needed);
 
     MergeTreeData & data;
     LoggerPtr log;

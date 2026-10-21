@@ -1,5 +1,3 @@
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS constraint_test_assumption;
 DROP TABLE IF EXISTS constraint_test_transitivity;
 DROP TABLE IF EXISTS constraint_test_transitivity2;

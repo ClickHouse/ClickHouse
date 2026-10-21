@@ -1,6 +1,0 @@
-fZZ	fZZ	fZZ
-fZZ	fZZ	fZZ
-SELECT replaceRegexpAll(materialize(\'foo\'), \'o$?\', \'Z\') AS `replaceRegexpAll(materialize(\'foo\'), \'o$?\', \'Z\')`
-FROM system.one AS __table1
-SELECT replaceRegexpOne(materialize(\'foo\'), \'o$\', \'Z\') AS `replaceRegexpAll(materialize(\'foo\'), \'o$\', \'Z\')`
-FROM system.one AS __table1

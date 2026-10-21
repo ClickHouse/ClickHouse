@@ -102,14 +102,14 @@ public:
     Pipe createPipe(
         const std::string & command,
         const VectorWithMemoryTracking<std::string> & arguments,
-        Pipes && input_pipes,
+        std::vector<Pipe> && input_pipes,
         Block sample_block,
         ContextPtr context,
         const ShellCommandSourceConfiguration & source_configuration = {});
 
     Pipe createPipe(
         const std::string & command,
-        Pipes && input_pipes,
+        std::vector<Pipe> && input_pipes,
         Block sample_block,
         ContextPtr context,
         const ShellCommandSourceConfiguration & source_configuration = {})

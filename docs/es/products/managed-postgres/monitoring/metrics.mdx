@@ -1,21 +1,23 @@
 ---
 slug: /cloud/managed-postgres/monitoring/metrics
 sidebarTitle: 'Referencia de métricas'
-title: 'Referencia de métricas de ClickHouse Managed Postgres'
-description: 'Lista completa de las métricas expuestas en el endpoint de Prometheus de ClickHouse Managed Postgres'
+title: 'Referencia de métricas de Managed Postgres'
+description: 'Lista completa de las métricas expuestas en el endpoint de Prometheus de Managed Postgres'
 keywords: ['managed postgres', 'métricas', 'prometheus', 'referencia', 'observabilidad']
 doc_type: 'reference'
 ---
 
-import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-metrics-beta" />
 
 Esta página enumera todas las métricas expuestas en el
-[endpoint de Prometheus de ClickHouse Managed Postgres](/es/products/managed-postgres/monitoring/prometheus).
+[endpoint de Prometheus de Managed Postgres](/es/products/managed-postgres/monitoring/prometheus).
 Para la configuración y la autenticación, consulta la página del [endpoint de Prometheus].
 
-## Etiquetas comunes {#common-labels}
+<div id="common-labels">
+  ## Etiquetas comunes
+</div>
 
 Cada métrica incluye las siguientes etiquetas:
 
@@ -29,7 +31,9 @@ Algunas métricas añaden una etiqueta para la dimensión que desglosan (p. ej.,
 `mode` en las métricas de CPU, `state` en las conexiones, `database` en el
 tamaño de la base de datos). Estas se indican junto a cada métrica.
 
-## Métrica de información {#information-metric}
+<div id="information-metric">
+  ## Métrica de información
+</div>
 
 `PostgresServiceInfo` es un gauge que siempre vale `1` y lleva el
 estado actual y la versión del servicio en sus etiquetas. Úselo para combinar
@@ -44,7 +48,9 @@ del estado `running`.
 (por ejemplo, `running`, `creating`, `stopped`). `postgres_version`
 informa de la versión principal de Postgres (p. ej., `17`, `18`).
 
-## Capacidad {#capacity}
+<div id="capacity">
+  ## Capacidad
+</div>
 
 Límites estáticos asignados al servicio. Solo cambian cuando se
 redimensiona el servicio.
@@ -55,7 +61,9 @@ redimensiona el servicio.
 | `PostgresServer_MemoryLimitBytes`  | gauge | bytes   | Memoria asignada al servicio.         |
 | `PostgresServer_StorageLimitBytes` | gauge | bytes   | Almacenamiento asignado al servicio.  |
 
-## Utilización de recursos {#resource-utilization}
+<div id="resource-utilization">
+  ## Utilización de recursos
+</div>
 
 | Métrica                                | Tipo    | Etiquetas adicionales | Descripción                                                                                                          |
 | -------------------------------------- | ------- | --------------------- | -------------------------------------------------------------------------------------------------------------------- |
@@ -68,7 +76,9 @@ Para calcular el uso de CPU como porcentaje, calcule la tasa de
 `PostgresServer_CPUSeconds_Total` para los modos que le interesen y
 divídala entre `PostgresServer_CPUCores`.
 
-## E/S de disco y red {#io}
+<div id="io">
+  ## E/S de disco y red
+</div>
 
 | Métrica                                     | Tipo     | Unidad | Descripción                                    |
 | ------------------------------------------- | -------- | ------ | ---------------------------------------------- |
@@ -77,7 +87,9 @@ divídala entre `PostgresServer_CPUCores`.
 | `PostgresServer_NetworkReceiveBytes_Total`  | counter  | bytes  | Bytes recibidos por la red.                    |
 | `PostgresServer_NetworkTransmitBytes_Total` | counter  | bytes  | Bytes transmitidos por la red.                 |
 
-## Actividad de la base de datos {#database-activity}
+<div id="database-activity">
+  ## Actividad de la base de datos
+</div>
 
 Contadores acumulativos desde el inicio del servicio. Use `rate()` o `irate()` para
 convertirlos en valores por segundo.
@@ -92,28 +104,9 @@ convertirlos en valores por segundo.
 | `PostgresServer_TransactionsRolledBack_Total` | counter | Transacciones revertidas.            |
 | `PostgresServer_Deadlocks_Total`              | counter | Interbloqueos detectados.            |
 
-## Rendimiento de las consultas {#query-performance}
-
-Contadores de los eventos registrados por Query Insights, sin incluir las operaciones `UTILITY`.
-
-| Métrica                                    | Tipo    | Unidad        | Descripción                                                                                  |
-| ------------------------------------------ | ------- | ------------- | -------------------------------------------------------------------------------------------- |
-| `PostgresQuery_Calls_Total`                | counter | eventos       | Eventos de consulta registrados.                                                             |
-| `PostgresQuery_DurationMicroseconds_Total` | counter | microsegundos | Duración total registrada de las consultas.                                                  |
-| `PostgresQuery_ErrorEvents_Total`          | counter | eventos       | Eventos registrados con una severidad de error distinta de cero, incluidas las advertencias. |
-| `PostgresQuery_FailureEvents_Total`        | counter | eventos       | Eventos registrados con severidad `ERROR` o superior.                                        |
-| `PostgresQuery_Rows_Total`                 | counter | filas         | Filas devueltas o afectadas por las consultas registradas.                                   |
-| `PostgresQuery_SharedBlocksHit_Total`      | counter | bloques       | Bloques compartidos servidos desde la caché a las consultas registradas.                     |
-| `PostgresQuery_SharedBlocksRead_Total`     | counter | bloques       | Bloques compartidos leídos por las consultas registradas.                                    |
-| `PostgresQuery_WALBytes_Total`             | counter | bytes         | Bytes de WAL generados por las consultas registradas.                                        |
-| `PostgresQuery_SelectCalls_Total`          | counter | eventos       | Eventos `SELECT` registrados.                                                                |
-| `PostgresQuery_InsertCalls_Total`          | counter | eventos       | Eventos `INSERT` registrados.                                                                |
-| `PostgresQuery_UpdateCalls_Total`          | counter | eventos       | Eventos `UPDATE` registrados.                                                                |
-| `PostgresQuery_DeleteCalls_Total`          | counter | eventos       | Eventos `DELETE` registrados.                                                                |
-| `PostgresQuery_MergeCalls_Total`           | counter | eventos       | Eventos `MERGE` registrados.                                                                 |
-| `PostgresQuery_OtherCalls_Total`           | counter | eventos       | Eventos registrados que no son `SELECT`, `INSERT`, `UPDATE`, `DELETE` ni `MERGE`.            |
-
-## Conexiones, caché y tamaño de las bases de datos {#connections-cache-size}
+<div id="connections-cache-size">
+  ## Conexiones, caché y tamaño de las bases de datos
+</div>
 
 | Métrica                            | Tipo  | Etiquetas adicionales | Descripción                                                                                                                                 |
 | ---------------------------------- | ----- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -121,7 +114,9 @@ Contadores de los eventos registrados por Query Insights, sin incluir las operac
 | `PostgresServer_CacheHitRatio`     | gauge |                       | Porcentaje de aciertos de la caché del búfer: bloques servidos desde la caché frente al total de bloques a los que se accedió.              |
 | `PostgresServer_DatabaseSizeBytes` | gauge | `database`            | Tamaño en disco de cada base de datos, en bytes. Incluye la base de datos predeterminada `postgres` y cualquier otra creada por el usuario. |
 
-## Páginas relacionadas {#related}
+<div id="related">
+  ## Páginas relacionadas
+</div>
 
 * [endpoint de Prometheus] — configuración, autenticación y scraping
 * [Dashboard](/es/products/managed-postgres/monitoring/dashboard) — gráficos integrados en la consola de Cloud

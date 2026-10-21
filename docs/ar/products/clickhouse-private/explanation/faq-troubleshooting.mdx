@@ -1,0 +1,111 @@
+---
+noindex: true
+title: "الأسئلة الشائعة / استكشاف الأخطاء وإصلاحها"
+sidebarTitle: "الأسئلة الشائعة"
+description: "إذا ظهر هذا الخطأ في سجلات ClickHouse Operator، فهذا يعني أنه لا يستطيع إكمال عملية مطابقة الحالة لعنقود ClickHouse لأن المشغّل"
+---
+
+<div id="zone-details-couldnt-be-found-for-any-pv">
+  ## تعذّر العثور على تفاصيل المنطقة لأي PV؟
+</div>
+
+إذا ظهر هذا الخطأ في سجلات ClickHouse Operator، فهذا يعني أنه غير قادر على إكمال عملية مطابقة الحالة لعنقود ClickHouse لأن المشغّل يتوقع أن تتم تعبئة إعدادات ألفة العقد المراعية للطوبولوجيا تلقائيًا على وحدات PersistentVolumes. وعلى وجه التحديد، يبحث المشغّل عن إعدادات ألفة العقد استنادًا إلى التصنيف `topology.kubernetes.io/zone`. وعادةً ما تتولى هذه المهمة أدوات تهيئة وحدات التخزين المراعية للطوبولوجيا (على سبيل المثال، عند استخدام أداة تهيئة وحدات تخزين AWS EBS).
+
+ومع ذلك، بالنسبة إلى بعض موفري الخدمات السحابية (مثل IBM) أو البيئات المحلية، لن تتم تعبئة هذه القيم تلقائيًا أو قد تُستخدم تصنيفات غير قياسية. ولضمان تمكّن المشغّل من مواصلة العمل، يُوصى بإضافة إعدادات ألفة العقد إلى فئة التخزين، كما في المثال التالي:
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-nvme-sc
+allowVolumeExpansion: true
+parameters:
+  path: /nvme/disk
+provisioner: rancher.io/local-path
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowedTopologies:
+  - matchLabelExpressions:
+      - key: topology.kubernetes.io/zone
+        values:
+          - <your_cluster_name>-keeper
+          - <your_host_1>
+          - <your_host_2>
+          - <your_host_3>
+          - <your_host_4>
+          - <your_host_5>
+          - <your_host_6>
+      - key: directpv.min.io/zone
+        values:
+          - default
+```
+
+سيضمن ذلك إنشاء وحدات التخزين بإعدادات تقارب العقد الصحيحة. على سبيل المثال:
+
+```yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  ...
+spec:
+  accessModes:
+    - ReadWriteOnce
+  ...
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: directpv.min.io/zone
+              operator: In
+              values:
+                - default
+  ...
+```
+
+إذا استُخدمت تسميات غير قياسية لإدارة الطوبولوجيا، فإن المُشغِّل يوفّر خاصية `additionalZoneLabelRegexes`. على سبيل المثال، إذا كنت تستخدم مخطط Helm لتثبيت المُشغِّل، فيمكنك تعيين قيمة Helm `operator.additionalZoneLabelRegexes` إلى `directpv.*zone` لمطابقة `PersistentVolume` المذكور أعلاه.
+
+<div id="what-does-the-loadbalancertype-field-on-the-clickhousecluster-crd-do">
+  ## ما وظيفة الحقل `loadBalancerType` في ClickHouseCluster CRD؟
+</div>
+
+لا يضيف `loadBalancerType` فعليًا annotations الخاصة بـ load balancer إلى كائن Service الخاص بـ عنقود ClickHouse. في الوقت الحالي، لا يدعم ClickHouse Operator إنشاء load balancer لـ عنقود ClickHouse. ولا تكون لهذا الحقل فائدة إلا في ClickHouse Cloud، حيث يُستخدم للمساعدة في إنشاء مستخدمين لـ Cloud SQL Console.
+
+<div id="do-i-have-to-use-a-nvme-attached-instance-what-purpose-does-the-nvme-disk-serve">
+  ## هل يجب أن أستخدم مثيلاً مزودًا بقرص NVMe؟ وما الغرض من قرص NVMe؟
+</div>
+
+يستخدم ClickHouse Operator قرص NVMe لتركيب وحدة تخزين مؤقت في جرابات خادم ClickHouse. وتُستخدم وحدة التخزين المؤقت هذه كذاكرة تخزين مؤقت للبيانات القادمة من S3 (أو خدمات تخزين الكائنات المماثلة). ويُعِدّ ClickHouse Operator الأقراص تلقائيًا ضمن تهيئة خادم ClickHouse:
+
+```yaml
+s3diskWithCache:
+    type: cache
+    disk: s3disk
+    path: /mnt/clickhouse-cache/sharedS3DiskCache
+    max_size:
+    '@from_env': CONFIG_DISK_CACHE_SIZE
+    cache_on_write_operations: 1
+```
+
+لاحظ أنه عند استخدام SharedMergeTree، فإن ClickHouse لا يخزّن البيانات محليًا في الواقع. ولا هدف من ذلك سوى تحسين أداء الاستعلامات التي تُنفَّذ على SharedMergeTree.
+
+يمكن استخدام أجهزة تخزين أخرى أيضًا، مثل AWS EBS عند استخدام مثيلات EC2. ويؤدي ذلك إلى تغيير بعض الخطوات في دليل الإعداد الأولي:
+
+* تحتاج إلى التأكد من أن الأقراص مُرفقة بالمثيلات المستخدمة لجدولة وحدات Kubernetes الخاصة بخادم ClickHouse
+* ينبغي تعديل قالب الإطلاق ليعكس التغييرات في بنية الأقراص. ولا يزال من الممكن إنشاء قرص RAID وتهيئة القرص بنظام ext4 أو xfs، لكن من الواضح أنه يجب سرد الأجهزة باستخدام أداة أخرى (مثل `lsblk`).
+* إذا لم تكن الأقراص مُركّبة عند `/nvme/disk` كما في قالب الإطلاق المستخدَم في المثال، فيجب ضبط `hostPathBaseDirectory` في مخطط Helm الخاص بـ ClickHouseCluster على نقطة التركيب الفعلية.
+
+لاحظ أنه، بحسب الخيارات المتخذة، قد يتأثر أداء الاستعلامات.
+
+<div id="can-i-deploy-multiple-clickhouseclusters-in-the-same-namespace">
+  ## هل يمكنني نشر عدة ClickHouseClusters في مساحة الأسماء نفسها؟
+</div>
+
+لا. يفترض الـ مشغّل وجود `ClickHouseCluster` واحد فقط في كل مساحة أسماء. سيؤدي نشر عدة مثيلات في مساحة الأسماء نفسها إلى حدوث تعارضات في عملية مطابقة الحالة. ويفرض مخطط Helm `onprem-clickhouse-cluster` ذلك افتراضيًا من خلال `ResourceQuota` يقيّد مساحة الأسماء بمورد `ClickHouseCluster` واحد فقط. وإذا كنت بحاجة إلى عدة مجموعات، فانشر كل مجموعة في مساحة أسماء خاصة بها.
+
+<div id="i-use-s3-compatible-storage-but-region-information-isnt-required-or-causes-issues">
+  ## أستخدم تخزينًا متوافقًا مع S3، لكن معلومات المنطقة ليست مطلوبة (أو تتسبب في مشكلات)
+</div>
+
+يفرض المُشغِّل افتراضيًا وجود معلومات المنطقة في اتصال S3. وهذا هو السلوك المفضّل لتخزين الكائنات السحابي، لكن إذا كنت تستخدم تخزين كائنات محليًا (مثل MinIO)، فقد تتسبب معلومات المنطقة في حدوث مشكلات.
+
+يمكن للمُشغِّل تعطيل فرض المنطقة لكل عنقود على حدة من خلال تعيين `spec.isOnPremiseInstance` إلى `true` في المورد المخصص `ClickHouseCluster`. وعند تعيين هذه القيمة، يجعل المُشغِّل معلومات المنطقة اختيارية في اتصال S3 -- وإذا لم يتم تمرير أي منطقة، فسيُزال حقل المنطقة من الإعداد بالكامل.

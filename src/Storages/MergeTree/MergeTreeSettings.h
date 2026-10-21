@@ -54,7 +54,6 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, String) \
-    M(CLASS_NAME, UniqueKeyConflictAction) \
     M(CLASS_NAME, UInt32) \
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, UInt64Auto) \
@@ -64,7 +63,6 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, MergeTreeObjectSerializationVersion) \
     M(CLASS_NAME, MergeTreeObjectSharedDataSerializationVersion) \
     M(CLASS_NAME, MergeTreeDynamicSerializationVersion) \
-    M(CLASS_NAME, MergeTreePatchPartsVersion) \
     M(CLASS_NAME, MergeTreeMapBucketsStrategy) \
     M(CLASS_NAME, MergeTreeMapSerializationVersion) \
     M(CLASS_NAME, MergeTreePartMinMaxIndexColumns) \
@@ -84,7 +82,6 @@ struct MergeTreeSettings
     MERGETREE_SETTINGS_SUPPORTED_TYPES(MergeTreeSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
     bool has(std::string_view name) const;
-    bool isChanged(std::string_view name) const;
 
     bool tryGet(std::string_view name, Field & value) const;
     Field get(std::string_view name) const;

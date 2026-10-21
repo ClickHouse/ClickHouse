@@ -111,26 +111,10 @@ namespace
         const ScramSHA256Credentials * scram_sha256_credentials,
         const AuthenticationData & authentication_method)
     {
-        /// Only the `scram_sha256_password` method stores the salted password which the client proof
-        /// is verified against. Other methods (e.g. `ssh_key`) must not be checked against a SCRAM
-        /// client proof: their password hash is empty, and using it as an HMAC key would throw,
-        /// aborting the whole authentication instead of letting the next method of the user be tried.
-        if (authentication_method.getType() != AuthenticationType::SCRAM_SHA256_PASSWORD)
-            return false;
-
-        /// The SCRAM client proof is derived from the password alone, so it cannot carry or verify
-        /// a one-time password. Accepting it would let the client skip the second factor.
-        /// The PostgreSQL frontend refuses to run the SCRAM exchange for such users (see `getScramSalt`);
-        /// this check keeps the bypass closed for any other producer of SCRAM credentials.
-        if (authentication_method.getOneTimePassword())
-            return false;
-
         const auto & client_proof = scram_sha256_credentials->getClientProof();
         const auto & auth_message = scram_sha256_credentials->getAuthMessage();
+        const auto & salt = authentication_method.getSalt();
         const auto & password = authentication_method.getPasswordHashBinary();
-        if (password.empty())
-            return false;
-
         auto computed_client_proof = computeScramSHA256ClientProof(password, auth_message);
 
         if (computed_client_proof.size() != client_proof.size())
@@ -148,13 +132,6 @@ namespace
         const MySQLNative41Credentials * mysql_credentials,
         const AuthenticationData & authentication_method)
     {
-        /// The Native41 auth response is a hash of the password alone, so it cannot carry a one-time password.
-        /// Accepting it would let the client skip the second factor. `MySQLHandler` switches such users
-        /// to the `Sha256Password` plugin, which transmits the actual password string with the one-time
-        /// password appended, verified via the `BasicCredentials` path.
-        if (authentication_method.getOneTimePassword())
-            return false;
-
         switch (authentication_method.getType())
         {
             case AuthenticationType::PLAINTEXT_PASSWORD:
@@ -448,22 +425,6 @@ Authentication::CredentialsCheckResult Authentication::areCredentialsValid(
         return CredentialsCheckResult::Success;
 
     return CredentialsCheckResult::Fail;
-}
-
-bool Authentication::mysqlNative41CannotVerify(const AuthenticationData & authentication_method)
-{
-    if (authentication_method.getOneTimePassword())
-        return true;
-
-    switch (authentication_method.getType())
-    {
-        case AuthenticationType::SHA256_PASSWORD:
-        case AuthenticationType::SCRAM_SHA256_PASSWORD:
-        case AuthenticationType::BCRYPT_PASSWORD:
-            return true;
-        default:
-            return false;
-    }
 }
 
 bool Authentication::consumeOneTimePassword(const Credentials & credentials, const AuthenticationData & authentication_method)
