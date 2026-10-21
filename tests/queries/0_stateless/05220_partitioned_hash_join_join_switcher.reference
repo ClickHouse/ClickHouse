@@ -1,22 +1,22 @@
 -- auto stays in memory
-INNER | auto,partitioned_hash	20000	1
-LEFT | auto,partitioned_hash	20000	1
-RIGHT | auto,partitioned_hash	21000	1
-FULL | auto,partitioned_hash	21000	1
-ANY LEFT | auto,partitioned_hash	20000	1
-ANY INNER | auto,partitioned_hash	5000	1
-SEMI LEFT | auto,partitioned_hash	20000	1
-ANTI LEFT | auto,partitioned_hash	0	1
-SEMI RIGHT | auto,partitioned_hash	5000	1
-ANTI RIGHT | auto,partitioned_hash	1000	1
+INNER | auto,hash	(20000,16383494783569790052)
+LEFT | auto,hash	(20000,16383494783569790052)
+RIGHT | auto,hash	(21000,3030146822021031319)
+FULL | auto,hash	(21000,3030146822021031319)
+ANY LEFT | auto,hash	(20000,8951636308818590699)
+ANY INNER | auto,hash	(5000,8861214719640598305,1)
+SEMI LEFT | auto,hash	(20000,3779435441789640158)
+ANTI LEFT | auto,hash	(0,0)
+SEMI RIGHT | auto,hash	(5000,13882709895436321913)
+ANTI RIGHT | auto,hash	(1000,9354722765425882060)
 -- auto switches to MergeJoin at max_rows_in_join
-INNER | auto,partitioned_hash | max_rows_in_join	20000	1
-LEFT | auto,partitioned_hash | max_rows_in_join	20000	1
-RIGHT | auto,partitioned_hash | max_rows_in_join	21000	1
-FULL | auto,partitioned_hash | max_rows_in_join	21000	1
-ANY LEFT | auto,partitioned_hash | max_rows_in_join	20000	1
-ANY INNER | auto,partitioned_hash | max_rows_in_join	20000	1
-SEMI LEFT | auto,partitioned_hash | max_rows_in_join	20000	1
+INNER | auto,hash | max_rows_in_join	(20000,16383494783569790052)
+LEFT | auto,hash | max_rows_in_join	(20000,16383494783569790052)
+RIGHT | auto,hash | max_rows_in_join	(21000,3030146822021031319)
+FULL | auto,hash | max_rows_in_join	(21000,3030146822021031319)
+ANY LEFT | auto,hash | max_rows_in_join	(20000,8951636308818590699)
+ANY INNER | auto,hash | max_rows_in_join	(20000,8951636308818590699)
+SEMI LEFT | auto,hash | max_rows_in_join	(20000,3779435441789640158)
 -- every in-memory query built its table with the partitioned join
 1	0
 -- every switching query started from the partitioned join

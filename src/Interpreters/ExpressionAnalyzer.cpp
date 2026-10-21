@@ -39,7 +39,6 @@
 #include <Interpreters/GetAggregatesVisitor.h>
 #include <Interpreters/GlobalSubqueriesVisitor.h>
 #include <Interpreters/GraceHashJoin.h>
-#include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/JoinUtils.h>
@@ -1047,17 +1046,14 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     };
     const bool spill_to_disk
         = analyzed_join->maxBytesBeforeExternalJoin() > 0 && context->getTempDataOnDisk() && GraceHashJoin::isSupported(analyzed_join);
-    /// The partitioned join serves this shape and `join_algorithm` lists it: `partitioned_hash` itself,
-    /// and the in-memory join of `auto` and the buckets of `grace_hash` when it is listed as well.
-    const bool partitioned_hash_wanted
-        = analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PARTITIONED_HASH) && PartitionedHashJoin::isSupported(*analyzed_join);
-    auto make_partitioned_join = [&]() -> std::shared_ptr<IJoin>
+    /// The estimate goes to the join as its build-rows hint: below `parallel_hash_join_threshold` it
+    /// builds on one fill thread, at or above it in parallel.
+    auto make_hash_join = [&]() -> std::shared_ptr<IJoin>
     {
         const auto & settings = context->getSettingsRef();
         if (spill_to_disk)
             if (auto left_sample = sanitized_left_sample())
                 return std::make_shared<SpillingHashJoin>(
-                    PartitionedCollectingTag{},
                     analyzed_join,
                     left_sample,
                     right_sample_block,
@@ -1077,42 +1073,14 @@ static std::shared_ptr<IJoin> tryCreateJoin(
             /*max_bytes_before_external_join_=*/0,
             rhs_size_estimation);
     };
-    /// The old analyzer has no estimate of the right table size.
-    const auto build_layout
-        = analyzed_join->preferParallelHashLayout(
-              /*rhs_size_estimation=*/std::nullopt, context->getSettingsRef()[Setting::parallel_hash_join_threshold])
-        ? HashJoinBuildLayout::twoLevel(context->getSettingsRef()[Setting::max_threads])
-        : HashJoinBuildLayout::oneBucket(1);
 
     if (algorithm == JoinAlgorithm::HASH ||
         /// partial_merge is preferred, but can't be used for specified kind of join, fallback to hash
         algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE ||
-        /// Covers the single-level hash-join shapes; the rest falls back to `hash` below, at plan time.
-        algorithm == JoinAlgorithm::PARTITIONED_HASH ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
-        const auto & settings = context->getSettingsRef();
-
-        if (algorithm == JoinAlgorithm::PARTITIONED_HASH && partitioned_hash_wanted)
-            return make_partitioned_join();
-
-        if (spill_to_disk)
-        {
-            Block left_sample_block(left_sample_columns);
-            if (sanitizeBlock(left_sample_block, false))
-            {
-                return std::make_shared<SpillingHashJoin>(
-                    analyzed_join,
-                    std::make_shared<const Block>(std::move(left_sample_block)),
-                    right_sample_block,
-                    context->getTempDataOnDisk(),
-                    settings[Setting::grace_hash_join_initial_buckets],
-                    settings[Setting::grace_hash_join_max_buckets],
-                    build_layout);
-            }
-        }
-
-        return HashJoin::create(analyzed_join, right_sample_block, build_layout);
+        if (PartitionedHashJoin::isSupported(*analyzed_join))
+            return make_hash_join();
     }
 
     if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE || algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
@@ -1151,31 +1119,16 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 context->getTempDataOnDisk(),
                 /*any_take_last_row_=*/false,
                 analyzed_join->legacyJoinSizeLimitsTriggerSpilling() ? 0 : analyzed_join->maxBytesBeforeExternalJoin(),
-                context->getSettingsRef()[Setting::max_threads],
-                /*partitioned_buckets_=*/partitioned_hash_wanted);
+                context->getSettingsRef()[Setting::max_threads]);
     }
 
     if (algorithm == JoinAlgorithm::AUTO)
     {
-        const auto & settings = context->getSettingsRef();
+        if (!PartitionedHashJoin::isSupported(*analyzed_join))
+            return nullptr;
 
         if (spill_to_disk)
-        {
-            if (partitioned_hash_wanted)
-                return make_partitioned_join();
-            Block left_sample_block(left_sample_columns);
-            if (sanitizeBlock(left_sample_block, false))
-            {
-                return std::make_shared<SpillingHashJoin>(
-                    analyzed_join,
-                    std::make_shared<const Block>(std::move(left_sample_block)),
-                    right_sample_block,
-                    context->getTempDataOnDisk(),
-                    settings[Setting::grace_hash_join_initial_buckets],
-                    settings[Setting::grace_hash_join_max_buckets],
-                    build_layout);
-            }
-        }
+            return make_hash_join();
 
         if (MergeJoin::isSupported(analyzed_join))
             return std::make_shared<JoinSwitcher>(
@@ -1183,12 +1136,9 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 right_sample_block,
                 /*any_take_last_row_=*/false,
                 HashJoinStatsCollectingParams{},
-                partitioned_hash_wanted,
-                settings[Setting::max_threads],
+                context->getSettingsRef()[Setting::max_threads],
                 rhs_size_estimation);
-        if (partitioned_hash_wanted)
-            return make_partitioned_join();
-        return HashJoin::create(analyzed_join, right_sample_block, build_layout);
+        return make_hash_join();
     }
     return nullptr;
 }

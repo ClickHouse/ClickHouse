@@ -2,22 +2,16 @@
 
 #include <concepts>
 #include <base/types.h>
-#include <Common/HashTable/PartitionedFixedHashTable.h>
 
 /// A `TwoLevelHashTable` takes the bucket from `hash_value`.
-/// A `PartitionedFixedHashTable` takes it from the cache line that the cell of `key` starts on, see `bucketOfKey`.
 template <typename Map>
-requires is_partitioned_fixed_table<Map> || requires(size_t hash_value) { Map::getBucketFromHash(hash_value); }
-size_t getBucketOfKey(const typename Map::key_type & key, size_t hash_value)
+requires requires(size_t hash_value) { Map::getBucketFromHash(hash_value); }
+size_t getBucketOfKey(const typename Map::key_type &, size_t hash_value)
 {
-    if constexpr (is_partitioned_fixed_table<Map>)
-        return Map::bucketOfKey(key);
-    else
-        return Map::getBucketFromHash(hash_value);
+    return Map::getBucketFromHash(hash_value);
 }
 
-/** What a caller that fills a table bucket by bucket relies on, whether the table is a `TwoLevelHashTable`
-  * or a `PartitionedFixedHashTable`.
+/** What a caller that fills a table bucket by bucket relies on.
   *
   * The bucket of a key is `getBucketOfKey<Map>(key, map.hash(key))`.
   * An iterator's `getBucket` is the bucket of the key it points to.

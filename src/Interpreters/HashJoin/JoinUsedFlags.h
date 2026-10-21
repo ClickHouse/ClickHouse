@@ -1,10 +1,9 @@
 #pragma once
-#include <algorithm>
 #include <atomic>
-#include <utility>
 #include <vector>
 #include <Core/Joins.h>
 #include <Interpreters/joinDispatch.h>
+#include <Common/CacheLine.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -23,17 +22,7 @@ class JoinUsedFlags
 public:
     using UsedFlagsForColumns = std::vector<std::atomic_bool>;
 
-    using PendingPerRowFlags = std::vector<std::pair<UInt32, UsedFlagsForColumns>>;
-
-    /// Per-row flags filled during the build phase: (block_no, flags) for each stored block.
-    /// One list per build worker, so that appending needs no synchronization.
-    std::vector<PendingPerRowFlags> pending_per_worker;
-
-    /// Call before the build starts: resizing later would race with the appends.
-    void setPendingFlagWorkers(size_t num_workers) { pending_per_worker.resize(num_workers); }
-
-    /// Dense flags indexed by block_no, built from `pending_per_worker` when the build finishes.
-    /// The probe and non-joined phases read and write only this.
+    /// Per-row flags indexed by block_no, one entry per stored block, written when the block is stored.
     std::vector<UsedFlagsForColumns> per_row_flags;
 
     /// For single disjunct we store all flags in a dedicated container to avoid calculating hash(nullptr) on each access.
@@ -78,35 +67,18 @@ public:
         }
     }
 
+    /// `StoredColumnsIndex::add` assigns each `block_no` once, so a second set of flags for a block is an error.
     template <JoinKind KIND, JoinStrictness STRICTNESS, JoinMapsKind maps_kind>
-    void reinit(size_t worker_id, UInt32 block_no, size_t rows)
+    void reinit(UInt32 block_no, size_t rows)
     {
         if constexpr (MapGetter<KIND, STRICTNESS, maps_kind>::flagged)
         {
-            chassert(worker_id < pending_per_worker.size());
-            pending_per_worker[worker_id].emplace_back(block_no, UsedFlagsForColumns(rows));
-        }
-    }
-
-    /// Call once no build worker can still be appending.
-    void finalizePerRowFlags(size_t num_blocks)
-    {
-        if (std::ranges::all_of(pending_per_worker, [](const auto & pending) { return pending.empty(); }))
-            return;
-
-        need_flags = true;
-        if (per_row_flags.size() < num_blocks)
-            per_row_flags.resize(num_blocks);
-
-        for (auto & pending : pending_per_worker)
-        {
-            for (auto & [block_no, flags] : pending)
-            {
-                if (block_no >= per_row_flags.size() || !per_row_flags[block_no].empty())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinUsedFlags: unexpected per-row flags for block {}", block_no);
-                per_row_flags[block_no] = std::move(flags);
-            }
-            pending.clear();
+            need_flags = true;
+            if (per_row_flags.size() <= block_no)
+                per_row_flags.resize(block_no + 1);
+            if (!per_row_flags[block_no].empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinUsedFlags: unexpected per-row flags for block {}", block_no);
+            per_row_flags[block_no] = UsedFlagsForColumns(rows);
         }
     }
 

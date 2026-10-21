@@ -1,4 +1,8 @@
 -- Tags: long
+-- Nested-column resolution, not join order. Pin fill and unmatched-right processing
+-- to the serial path: `hash` fills in parallel, and random `max_threads` /
+-- `parallel_non_joined_rows_processing` would shuffle unmatched FULL rows.
+-- Random settings limits: max_threads=(1, 1); parallel_non_joined_rows_processing=(0, 0); query_plan_join_shard_by_pk_ranges=(0, 0)
 
 DROP TABLE IF EXISTS ta;
 DROP TABLE IF EXISTS tb;

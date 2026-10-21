@@ -29,7 +29,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
-extern const int UNSUPPORTED_JOIN_KEYS;
 }
 
 /// Mapped values the find pass records by value. A `RowRef` encodes to its ref word and a `RowRefList`
@@ -1078,9 +1077,6 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane, const Blo
     }
             APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
-            default:
-                throw Exception(
-                    ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys for the partitioned join (type: {})", join.data->type);
         }
     }
     else

@@ -250,8 +250,6 @@ struct JoinAlgorithmParams
     bool collect_hash_table_stats_during_joins;
     UInt64 max_entries_for_hash_table_stats;
 
-    UInt64 parallel_hash_join_threshold;
-
     UInt64 grace_hash_join_initial_buckets;
     UInt64 grace_hash_join_max_buckets;
 

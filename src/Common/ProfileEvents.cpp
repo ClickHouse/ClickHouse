@@ -504,24 +504,22 @@
     M(JoinDelayedJoinedTransformBlockCount, "Number of blocks emitted by DelayedJoinedBlocksWorkerTransform.", ValueType::Number) \
     M(JoinDelayedJoinedTransformRowCount, "Number of rows emitted by DelayedJoinedBlocksWorkerTransform.", ValueType::Number) \
     M(JoinSpillingHashJoinSwitchedToGraceJoin, "Number of times a HashJoin was switched to GraceHashJoin due to memory limit in SpillingHashJoin.", ValueType::Number) \
-    M(HashJoinBuiltWithParallelLayout, "Number of hash tables built for hash joins as several parts. Up to `max_threads` threads fill the parts at the same time, and with `max_threads = 1` one thread fills them all. The `parallel_hash_join_threshold` setting decides which hash joins are built this way.", ValueType::Number) \
-    M(HashJoinBuiltWithSerialLayout, "Number of hash tables built for hash joins as one part, one insert at a time. Each hash table counts once, so a grace hash join adds one for every bucket that it loads into memory. See HashJoinBuiltWithParallelLayout.", ValueType::Number) \
-    M(HashJoinPartitionedBuildMicroseconds, "Time spent building the right side of a `partitioned_hash` join. This includes adding right-side blocks, waiting for all build threads, and inserting into the hash table. The value is summed over all build threads.", ValueType::Microseconds) \
+    M(HashJoinPartitionedBuildMicroseconds, "Time spent building the right side of a partitioned hash join. This includes adding right-side blocks, waiting for all build threads, and inserting into the hash table. The value is summed over all build threads.", ValueType::Microseconds) \
     M(HashJoinPartitionedBuildFillMicroseconds, "Part of `HashJoinPartitionedBuildMicroseconds`: time spent hashing the keys of right-side blocks and storing the blocks as they arrive.", ValueType::Microseconds) \
     M(HashJoinPartitionedBuildHistogramMicroseconds, "Part of `HashJoinPartitionedBuildMicroseconds`: time spent counting the rows of each partition and computing where each partition starts.", ValueType::Microseconds) \
     M(HashJoinPartitionedBuildScatterMicroseconds, "Part of `HashJoinPartitionedBuildMicroseconds`: time spent moving the right-side keys and row references into their partitions, over all passes.", ValueType::Microseconds) \
     M(HashJoinPartitionedBuildInsertMicroseconds, "Part of `HashJoinPartitionedBuildMicroseconds`: time spent inserting the partitioned rows into the hash table. This includes the later serial insert of rows that did not fit their partition's range.", ValueType::Microseconds) \
-    M(HashJoinPartitionedProbeMicroseconds, "Time spent joining left-side blocks in a `partitioned_hash` join. Summed over all probe threads.", ValueType::Microseconds) \
+    M(HashJoinPartitionedProbeMicroseconds, "Time spent joining left-side blocks in a partitioned hash join. Summed over all probe threads.", ValueType::Microseconds) \
     M(HashJoinPartitionedProbeLookupMicroseconds, "Part of `HashJoinPartitionedProbeMicroseconds`: time spent hashing the left-side keys, looking them up in the hash table, and recording the matches. Producing the joined columns is counted in `HashJoinProbeGatherMicroseconds`. The hash joins share that gather event.", ValueType::Microseconds) \
-    M(HashJoinPartitions, "Number of partitions a `partitioned_hash` join split its hash table into. Added once per join. 1 means the table was built as one partition.", ValueType::Number) \
-    M(HashJoinInsertedRows, "Number of right-side rows inserted into the hash tables of `partitioned_hash` joins.", ValueType::Number) \
-    M(HashJoinTableBytes, "Bytes allocated for the hash table of a `partitioned_hash` join. The table is sized once, from an estimate of the number of distinct keys.", ValueType::Bytes) \
-    M(HashJoinPartitionOverflowRows, "Number of right-side rows of a `partitioned_hash` join that did not fit in their partition's range of the hash table. One thread inserts those rows later.", ValueType::Number) \
-    M(HashJoinDuplicateRunBytes, "Bytes a `partitioned_hash` join allocated to store the row references of keys that occur more than once.", ValueType::Bytes) \
-    M(HashJoinTeardownMicroseconds, "Time spent freeing the hash table, the build buffers and the stored right-side blocks of a `partitioned_hash` join.", ValueType::Microseconds) \
-    M(HashJoinScatterGroups, "Number of groups of right-side blocks a `partitioned_hash` join partitioned separately to limit its peak memory. 1 means all blocks were partitioned at once.", ValueType::Number) \
-    M(HashJoinTableResizes, "Number of times the hash table of a `partitioned_hash` join grew after inserting started.", ValueType::Number) \
-    M(HashJoinRowStoreBlocks, "Number of right-side blocks a `partitioned_hash` join stored in row-major form (`RowDataStore`). The `hash` join stores the same way when the row store is enabled.", ValueType::Number) \
+    M(HashJoinPartitions, "Number of partitions a partitioned hash join split its hash table into. Added once per join. 1 means the table was built as one partition.", ValueType::Number) \
+    M(HashJoinInsertedRows, "Number of right-side rows inserted into the hash tables of partitioned hash joins.", ValueType::Number) \
+    M(HashJoinTableBytes, "Bytes allocated for the hash table of a partitioned hash join. The table is sized once, from an estimate of the number of distinct keys.", ValueType::Bytes) \
+    M(HashJoinPartitionOverflowRows, "Number of right-side rows of a partitioned hash join that did not fit in their partition's range of the hash table. One thread inserts those rows later.", ValueType::Number) \
+    M(HashJoinDuplicateRunBytes, "Bytes a partitioned hash join allocated to store the row references of keys that occur more than once.", ValueType::Bytes) \
+    M(HashJoinTeardownMicroseconds, "Time spent freeing the hash table, the build buffers and the stored right-side blocks of a partitioned hash join.", ValueType::Microseconds) \
+    M(HashJoinScatterGroups, "Number of groups of right-side blocks a partitioned hash join partitioned separately to limit its peak memory. 1 means all blocks were partitioned at once.", ValueType::Number) \
+    M(HashJoinTableResizes, "Number of times the hash table of a partitioned hash join grew after inserting started.", ValueType::Number) \
+    M(HashJoinRowStoreBlocks, "Number of right-side blocks a partitioned hash join stored in row-major form (`RowDataStore`). The `hash` join stores the same way when the row store is enabled.", ValueType::Number) \
     M(JoinReorderMicroseconds, "Total time spent executing JOIN reordering algorithm.", ValueType::Microseconds) \
     M(JoinOptimizeMicroseconds, "Total time spent executing JOIN plan optimizations.", ValueType::Microseconds) \
     M(QueryPlanOptimizeMicroseconds, "Total time spent executing query plan optimizations.", ValueType::Microseconds) \

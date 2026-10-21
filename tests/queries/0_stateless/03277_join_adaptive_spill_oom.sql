@@ -9,7 +9,12 @@ insert into adaptive_spill_03277_3 select cast(rand() as String) as k, cast(rand
 
 set max_threads=1;
 set join_algorithm='grace_hash';
-set max_memory_usage=314572800;
+-- 220 MiB. Two grace buckets of 1M String rows each are alive during the second probe; without the adaptive
+-- scheduler nothing rebuckets on its own and the query peaks at about 271 MiB (measured, both arms unlimited),
+-- so this limit must fail it; with the scheduler the peak stays at 118-133 MiB under limits of 180-240 MB, so the
+-- same limit must pass. The former 300 MiB fitted the old `HashJoin` buckets, whose key arena grew in doubling
+-- chunks and whose hash buffer doubled in place, about 40 MiB more than the exactly sized bucket of today.
+set max_memory_usage=230686720;
 set enable_parallel_replicas=0; -- parallel replicas distribute data across nodes, reducing per-node memory and preventing the expected OOM
 set grace_hash_join_initial_buckets=1; -- more initial buckets split the right side, reducing per-bucket memory and preventing the expected OOM
 set collect_hash_table_stats_during_joins=0;

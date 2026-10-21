@@ -4,6 +4,8 @@ SET explain_query_plan_default = 'legacy';
 SET max_bytes_before_external_join = 1000000000;
 SET grace_hash_join_initial_buckets = 1;
 SET query_plan_optimize_join_order_randomize = 0;
+-- The non-joined rows of the RIGHT and FULL joins below come from a transform of their own only with this setting.
+SET parallel_non_joined_rows_processing = 1;
 -- The JoinNonJoinedTransform* counters checked below depend on which physical side of the join
 -- emits non-joined rows. With the default `auto`, the optimizer swaps sides based on row-count
 -- estimates, so randomized settings can flip the orientation. Pin it to keep the counters stable.

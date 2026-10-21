@@ -17,33 +17,23 @@
 namespace DB
 {
 
-class HashJoin;
 class GraceHashJoin;
 class PartitionedHashJoin;
-struct HashJoinBuildLayout;
-
-/// Selects the partitioned collecting mode; the constructors otherwise take the same leading arguments.
-struct PartitionedCollectingTag
-{
-};
 
 /// An IJoin wrapper that automatically switches to GraceHashJoin to spill to disk when memory limits are exceeded.
 ///
-/// Blocks are fed into a HashJoin, possibly from multiple threads concurrently.
+/// The build phase feeds one in-memory PartitionedHashJoin, possibly from multiple threads concurrently.
 /// A SharedMutex protects the COLLECTING -> GRACE_HASH_JOIN transition: addBlockToJoin takes a shared lock, while
 /// switchToGraceHashJoin takes an exclusive lock.
-/// If the data exceeds max_bytes_before_external_join, a GraceHashJoin is created and HashJoin workers are converted via
-/// addBlockToJoin calls possibly from multiple threads.
-/// If all blocks fit in memory, the HashJoin is promoted to chosen_join with zero rework.
 ///
-/// Partitioned mode (`PartitionedCollectingTag`): the in-memory join is a PartitionedHashJoin. It builds
-/// its table only at the barrier, so the overflow check reads `predictedResidentBytes` instead of
-/// `getTotalByteCount`. On overflow the fill lanes are handed to GraceHashJoin one block at a time
-/// (`tryConvertFillLanes`). A build that stays under the threshold runs its barrier and asks
-/// `planPostBuild`: a `MustSpill` verdict still switches, otherwise the PartitionedHashJoin is promoted.
+/// The in-memory join builds its table only at the barrier, so the overflow check reads `predictedResidentBytes`
+/// instead of `getTotalByteCount`. On overflow a GraceHashJoin is created and the fill lanes are handed to it one
+/// block at a time (`tryConvertFillLanes`). A build that stays under the threshold runs its barrier and asks
+/// `planPostBuild`: a `MustSpill` verdict still switches, otherwise the PartitionedHashJoin is promoted to
+/// chosen_join with zero rework.
 ///
 /// hasDelayedBlocks always returns true so that the pipeline includes the delayed-block
-/// transforms needed by GraceHashJoin. When HashJoin is used,
+/// transforms needed by GraceHashJoin. When the in-memory join is kept,
 /// getDelayedBlocks returns nullptr and the delayed transforms finish instantly.
 /// Because hasDelayedBlocks returns true, the read-in-order-through-join optimisation
 /// in optimizeReadInOrder.cpp will NOT propagate through SpillingHashJoin (same as
@@ -51,21 +41,8 @@ struct PartitionedCollectingTag
 class SpillingHashJoin final : public IJoin
 {
 public:
+    /// `build_rows_hint_` is the planner's right-side row estimate, see `PartitionedHashJoin`.
     SpillingHashJoin(
-        std::shared_ptr<TableJoin> table_join_,
-        SharedHeader left_sample_block_,
-        SharedHeader right_sample_block_,
-        TemporaryDataOnDiskScopePtr tmp_data_,
-        size_t initial_num_buckets_,
-        size_t max_num_buckets_,
-        HashJoinBuildLayout build_layout_,
-        const HashJoinStatsCollectingParams & stats_collecting_params_ = {},
-        bool any_take_last_row_ = false);
-
-    /// Partitioned mode: wraps a PartitionedHashJoin. `build_rows_hint_` is the planner's right-side
-    /// row estimate, see `PartitionedHashJoin`.
-    SpillingHashJoin(
-        PartitionedCollectingTag,
         std::shared_ptr<TableJoin> table_join_,
         SharedHeader left_sample_block_,
         SharedHeader right_sample_block_,
@@ -101,7 +78,7 @@ public:
 
     ISpillable * getSpillable() override { return &spillable; }
     /// While collecting: the whole right side, spilled by switching to the grace join.
-    /// After the switch: the grace join and the blocks of unconverted workers. Nothing once the build ended in memory.
+    /// After the switch: the grace join and the blocks of unconverted fill lanes. Nothing once the build ended in memory.
     ProcessorMemoryStats getMemoryStats() const;
     size_t spill(size_t at_least_bytes);
 
@@ -127,9 +104,9 @@ public:
     void onBuildPhaseFinish() override;
     void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override;
 
-    /// Forwarded to the join actually chosen in `onBuildPhaseFinish`, so that an in-memory
-    /// `HashJoin` still gets its post-build optimizations (right-table reranging, conversion to a
-    /// fixed hash map, publishing the shared runtime filter).
+    /// Forwarded to the join actually chosen in `onBuildPhaseFinish`, so that an in-memory join still
+    /// gets its post-build optimizations (right-table reranging, conversion to a fixed hash map,
+    /// publishing the shared runtime filter).
     /// After a spill `chosen_join` is a `GraceHashJoin`, which does not override these methods, so
     /// forwarding keeps the spilled path exactly as it is today: `GraceHashJoin` itself runs the
     /// post-build phase only when the right table ended up in a single bucket. Multi-bucket spills
@@ -145,9 +122,9 @@ private:
 
     enum class State
     {
-        COLLECTING, // Right-side blocks are being collected in HashJoin / PartitionedHashJoin, no spilling yet.
-        GRACE_HASH_JOIN, // Spilled to disk and switched to GraceHashJoin, but the blocks of some workers / fill lanes may still be unconverted.
-        IN_MEMORY_JOIN // All blocks fit in memory, using HashJoin / PartitionedHashJoin directly without switching.
+        COLLECTING, // Right-side blocks are being collected in the PartitionedHashJoin, no spilling yet.
+        GRACE_HASH_JOIN, // Spilled to disk and switched to GraceHashJoin, but some fill lanes may still be unconverted.
+        IN_MEMORY_JOIN // All blocks fit in memory, using the PartitionedHashJoin directly without switching.
     };
 
     void switchToGraceHashJoin(JoinBuildContext context, bool spill_immediately = false);
@@ -156,13 +133,8 @@ private:
     /// A non-zero `initial_buckets_hint` raises the starting bucket count; `GraceHashJoin` rounds it up to
     /// a power of two and clamps it to the maximum.
     void createGraceJoin(size_t initial_buckets_hint = 0);
-    void tryConvertWorkers(JoinBuildContext context);
+    /// Hands the in-memory join's fill lanes to `grace_join`.
     void tryConvertFillLanes(JoinBuildContext context);
-    /// Whichever in-memory join is collecting hands its blocks to `grace_join`.
-    void helpConvert(JoinBuildContext context);
-    /// The join that owns the data while the state is COLLECTING.
-    IJoin & collectingJoin();
-    const IJoin & collectingJoin() const;
 
     LoggerPtr log;
     std::shared_ptr<TableJoin> table_join;
@@ -176,16 +148,13 @@ private:
     size_t max_threads = 1;
 
     SharedMutex switch_mutex;
-    std::atomic<size_t> next_worker_to_convert{0};
     std::atomic<size_t> next_fill_lane_to_convert{0};
     mutable std::mutex totals_mutex;
     bool supports_parallel_non_joined_blocks_processing{false};
 
     std::atomic<State> state{State::COLLECTING};
 
-    std::shared_ptr<HashJoin> hash_join;
-
-    /// PartitionedHashJoin for the partitioned collecting mode (mutually exclusive with `hash_join`).
+    /// The in-memory join that collects the right blocks.
     std::shared_ptr<PartitionedHashJoin> partitioned_join;
 
     /// GraceHashJoin created during overflow. Also assigned to chosen_join.

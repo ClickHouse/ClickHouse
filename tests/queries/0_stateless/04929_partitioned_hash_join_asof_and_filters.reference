@@ -1,14 +1,14 @@
-asof inner >=	340000	1	1
-asof left > string equi key	400000	1	1
-asof inner <=	297500	1	1
-asof inner nullable asof key	333459	1	1
-on filter right side left join	400000	1	1
-on filter right side right join (filtered rows are non-joined)	300000	1	1
-on filter left side inner join	60000	1	1
-on filter both sides full join	680000	1	1
-multi-disjunct inner	2040000	1
-multi-disjunct left join_use_nulls	2100000	1
-multi-disjunct right (used flags kept per row)	2040000	1
+asof inner >=	(340000,11027769436610465669)
+asof left > string equi key	(400000,14895792972633796434)
+asof inner <=	(297500,12042223836782672497)
+asof inner nullable asof key	(333459,11958124033984514092)
+on filter right side left join	(400000,1602297294977053118)
+on filter right side right join (filtered rows are non-joined)	(300000,16593468128927413942)
+on filter left side inner join	(60000,11629830329049523071)
+on filter both sides full join	(680000,10121403084269582405)
+multi-disjunct inner	(2040000,4570907860661044988)
+multi-disjunct left join_use_nulls	(2100000,10745378381760316979)
+multi-disjunct right (used flags kept per row)	(2040000,4570907860661044988)
 partition plans
 04929 asof inner ge	1	1
 04929 asof inner le	1	1

@@ -1338,7 +1338,6 @@ test_s3_redirect_remote_host_filter/test.py	11686
 test_remote_function_view/test.py	11678
 test_spark_session_recovery/test.py	11648
 test_backup_s3_storage_class/test.py	11628
-test_concurrent_hash_join_single_join_memory_limit/test.py	11626
 test_arrowflight_interface/test_session_options_settings_profile.py	11574
 test_remote_prewhere/test.py	11532
 test_s3_storage_class/test.py	11517

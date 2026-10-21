@@ -1,7 +1,7 @@
--- With `query_plan_join_shard_by_pk_ranges`, a RIGHT or FULL `hash` join of two tables ordered by the
--- join key runs as one join per range of the primary key. The sharded join must return the same rows
--- as the unsharded one, including the unmatched right rows. This holds also when the unsharded join
--- would use the parallel layout.
+-- `query_plan_join_shard_by_pk_ranges` clones the join with `cloneNoParallel`. That clone used to
+-- keep the parallel non-joined processing on, so `JoiningTransform` skipped unmatched right rows
+-- (it expected `NonJoinedBlocksTransform`, which the sharded pipeline never adds). RIGHT/FULL must
+-- still emit those rows.
 
 SET enable_analyzer = 1;
 SET query_plan_optimize_join_order_randomize = 0;

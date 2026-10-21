@@ -1,15 +1,15 @@
 -- hash: no squashing after the join
 1	50
--- partitioned_hash, bare join: the blocks pass through
+-- hash, bare join: the blocks pass through
 1	50
 1	50
 1	50
 1	50
--- partitioned_hash inside the spilling wrapper, build kept in memory: still pass through
+-- hash inside the spilling wrapper, build kept in memory: still pass through
 1	50
 1	50
 -- switched to grace during the build: the blocks stay within the cap and the rows match
 1	50
--- the bare join has no squashing after the join; the wrapper keeps it for the run-time decision, as hash has
-1	1
+-- the bare join has no squashing after the join; the wrapper keeps it for the run-time decision
+1
 1

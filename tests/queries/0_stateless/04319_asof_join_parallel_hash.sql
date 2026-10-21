@@ -124,17 +124,6 @@ SELECT count() FROM (SELECT * FROM two_keys_left_parallel EXCEPT SELECT * FROM t
 DROP TABLE asof_left2;
 DROP TABLE asof_right2;
 
--- The first build of each pair has the serial layout and the second the parallel one. A `Replicated`
--- database also logs each `CREATE TABLE ... AS SELECT` as a secondary query of its DDL worker, so only
--- initial queries count.
-SYSTEM FLUSH LOGS query_log;
-SELECT log_comment, ProfileEvents['HashJoinBuiltWithSerialLayout'] AS serial, ProfileEvents['HashJoinBuiltWithParallelLayout'] AS parallel
-FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND is_initial_query
-    AND log_comment IN ('04319_inner_serial', '04319_inner_parallel', '04319_left_serial', '04319_left_parallel',
-        '04319_two_keys_inner_serial', '04319_two_keys_inner_parallel', '04319_two_keys_left_serial', '04319_two_keys_left_parallel')
-ORDER BY event_time_microseconds;
-
 DROP TABLE inner_serial;
 DROP TABLE inner_parallel;
 DROP TABLE left_serial;

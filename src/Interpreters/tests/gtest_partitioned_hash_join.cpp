@@ -31,6 +31,11 @@
 
 using namespace DB;
 
+namespace ProfileEvents
+{
+extern const Event QueryMemoryLimitExceeded;
+}
+
 namespace DB::ErrorCodes
 {
 extern const int LOGICAL_ERROR;
@@ -151,7 +156,7 @@ struct BuildOptions
     bool duplicate_major = false;
     /// `parallel_hash_join_threshold`; unset keeps the default (100000 rows).
     std::optional<size_t> parallel_hash_join_threshold;
-    /// `partitioned_hash_join_max_fanout_per_pass`, lowered to force refine passes without a 500M-key
+    /// `hash_join_max_fanout_per_pass`, lowered to force refine passes without a 500M-key
     /// build. Only the pass split changes; the partition count must not.
     std::optional<size_t> max_fanout_per_pass;
     bool cap_partitions_by_l1_descriptors = true;
@@ -161,6 +166,7 @@ struct BuildOptions
     const StatsCollectingParams * stats_collecting_params = nullptr;
     /// The post-build memory gate: zero disables grouping.
     size_t max_bytes_before_external_join = 0;
+    std::optional<size_t> max_rows_in_join;
     /// A factor below 1 sizes the table under the key count, so the build has to grow it.
     double reserve_safety_for_tests = 0;
     std::optional<size_t> reserve_override_for_tests;
@@ -182,10 +188,12 @@ std::shared_ptr<TableJoin> makeTableJoin(const Block & left_header, const Block 
     Settings settings;
     if (options.parallel_hash_join_threshold)
         settings.set("parallel_hash_join_threshold", *options.parallel_hash_join_threshold);
+    if (options.max_rows_in_join)
+        settings.set("max_rows_in_join", *options.max_rows_in_join);
     if (options.max_fanout_per_pass)
-        settings.set("partitioned_hash_join_max_fanout_per_pass", *options.max_fanout_per_pass);
+        settings.set("hash_join_max_fanout_per_pass", *options.max_fanout_per_pass);
     if (!options.cap_partitions_by_l1_descriptors)
-        settings.set("partitioned_hash_join_cap_partitions_by_l1_descriptors", false);
+        settings.set("hash_join_cap_partitions_by_l1_descriptors", false);
     /// These tests read the shared table's geometry after the build; the dense sequential keys they
     /// build would otherwise be converted to a range map.
     settings.set("enable_join_fixed_hash_table_conversion", false);
@@ -712,10 +720,6 @@ TEST(PartitionedHashJoin, SeveralClausesMatchHashJoin)
         built.table_join,
         std::make_shared<const Block>(twoColumnBlock("rk", "build_id", {}, {})),
         /*any_take_last_row_=*/false,
-        /*reserve_num_=*/0,
-        /*instance_id_=*/"",
-        HashJoinBuildLayout::oneBucket(1),
-        HashJoinStatsCollectingParams{},
         /*allow_set_maps_=*/false);
     addBuildBlocks(*hash_join, distinct_keys, duplicates, options);
     hash_join->onBuildPhaseFinish();
@@ -1162,10 +1166,6 @@ TEST(PartitionedHashJoin, SizesTwoClauseTablesFromSummedStatistics)
         warm.table_join,
         std::make_shared<const Block>(twoColumnBlock("rk", "build_id", {}, {})),
         /*any_take_last_row_=*/false,
-        /*reserve_num_=*/0,
-        /*instance_id_=*/"",
-        HashJoinBuildLayout::oneBucket(1),
-        HashJoinStatsCollectingParams{},
         /*allow_set_maps_=*/false);
     addBuildBlocks(*hash_join, distinct_keys, duplicates, options);
     hash_join->onBuildPhaseFinish();
@@ -1175,6 +1175,52 @@ TEST(PartitionedHashJoin, SizesTwoClauseTablesFromSummedStatistics)
     JoinedRows expected = probeKeys(*hash_join, keys);
     std::sort(expected.begin(), expected.end());
     expectSameRows(probeKeys(*warm.join, keys), expected);
+}
+
+TEST(PartitionedHashJoin, WarmStatisticsKeepRowLimitSketches)
+{
+    static std::atomic<UInt64> key_counter{0};
+    const StatsCollectingParams params(
+        0xC1D15117C4C60000ULL + key_counter.fetch_add(1),
+        /*enable_=*/true,
+        /*max_entries_for_hash_table_stats_=*/1024,
+        /*max_size_to_preallocate_=*/1ULL << 40);
+    constexpr size_t distinct_keys = 12000;
+    constexpr size_t duplicates = 2;
+    constexpr size_t input_rows = distinct_keys * duplicates;
+    constexpr size_t summed_keys = distinct_keys * (duplicates + 1);
+    constexpr size_t row_limit = 50000;
+
+    BuildOptions options;
+    options.second_clause_on_ids = true;
+    options.stats_collecting_params = &params;
+    options.max_rows_in_join = row_limit;
+    auto cold = buildJoin(distinct_keys, duplicates, options);
+    EXPECT_EQ(cold.join->getTotalRowCount(), summed_keys);
+    const auto published = getHashTablesStatistics<HashJoinEntry>().getSizeHint(params);
+    ASSERT_TRUE(published.has_value());
+    EXPECT_EQ(published->ht_size, summed_keys);
+
+    const auto preallocated_before = ProfileEvents::global_counters[ProfileEvents::HashJoinPreallocatedElementsInHashTables];
+    auto warm = makeJoin(options);
+    addBuildBlocks(*warm.join, distinct_keys, duplicates, options);
+    EXPECT_GT(warm.join->getFillSketchEstimateForTests(0), 0.0);
+    EXPECT_GT(warm.join->getFillSketchEstimateForTests(1), 0.0);
+    EXPECT_GT(warm.join->rowCountForLimit(row_limit), input_rows);
+    finishBuild(warm, options);
+    EXPECT_EQ(
+        ProfileEvents::global_counters[ProfileEvents::HashJoinPreallocatedElementsInHashTables] - preallocated_before,
+        summed_keys);
+    for (size_t clause_idx = 0; clause_idx < 2; ++clause_idx)
+        EXPECT_EQ(warm.join->getBuildStats(clause_idx).hll_estimate, static_cast<double>(summed_keys));
+    EXPECT_EQ(warm.join->getTotalRowCount(), summed_keys);
+
+    constexpr size_t crossing_limit = 30000;
+    options.max_rows_in_join = crossing_limit;
+    auto crossing = makeJoin(options);
+    EXPECT_EQ(crossing.table_join->sizeLimits().max_rows, crossing_limit);
+    EXPECT_THROW(addBuildBlocks(*crossing.join, distinct_keys, duplicates, options), Exception);
+    EXPECT_GT(crossing.join->rowCountForLimit(crossing_limit), crossing_limit);
 }
 
 TEST(PartitionedHashJoin, LiveEstimateGatePreservesFirstSpillPoint)
@@ -1251,7 +1297,7 @@ TEST(PartitionedHashJoin, LiveEstimateGatePreservesFirstSpillPoint)
     }
 }
 
-static void checkLiveEstimateConcurrentFill(bool spill_enabled, size_t workers, bool second_clause_on_ids)
+static void checkLiveEstimateConcurrentFill(bool spill_enabled, size_t workers, bool second_clause_on_ids, bool with_row_limit = false)
 {
     const size_t blocks_per_worker = 64 / workers;
     constexpr size_t keys_per_block = 1024;
@@ -1261,6 +1307,8 @@ static void checkLiveEstimateConcurrentFill(bool spill_enabled, size_t workers, 
     options.num_threads = workers;
     options.second_clause_on_ids = second_clause_on_ids;
     options.max_bytes_before_external_join = spill_enabled ? 1ULL << 30 : 0;
+    if (with_row_limit)
+        options.max_rows_in_join = 2 * distinct_keys + 8192;
     auto built = makeJoin(options);
 
     std::atomic<bool> reader_ready{false};
@@ -1374,6 +1422,15 @@ TEST(PartitionedHashJoin, LiveEstimateConcurrentFillWithoutSpill)
             SCOPED_TRACE(workers);
             checkLiveEstimateConcurrentFill(false, workers, second_clause_on_ids);
         }
+}
+
+TEST(PartitionedHashJoin, LiveEstimateConcurrentFillWithRowLimit)
+{
+    for (size_t workers : {2, 4, 8, 16})
+    {
+        SCOPED_TRACE(workers);
+        checkLiveEstimateConcurrentFill(false, workers, /*second_clause_on_ids=*/true, /*with_row_limit=*/true);
+    }
 }
 
 /// When the owner inserts fill their ranges under a budget that refused the load-factor grow, the drain grows the table
@@ -1804,6 +1861,40 @@ TEST(PartitionedHashJoin, DrainCreatedKeyAppendedByLaterGroup)
     EXPECT_EQ(probeKeys(*built.join, {key_b}).size(), 3u);
 }
 
+TEST(PartitionedHashJoin, DestructionWithAllocationFailure)
+{
+    std::thread([]
+    {
+        ThreadStatus thread_status;
+        thread_status.untracked_memory_limit = 0;
+        Int64 small_allocation_bytes = 0;
+        {
+            const auto before = thread_status.memory_tracker.get();
+            std::vector<UInt8> probe(1, 0);
+            small_allocation_bytes = thread_status.memory_tracker.get() - before;
+        }
+        /// Where small allocations are not charged to the tracker, no fault can be injected into one.
+        if (small_allocation_bytes == 0)
+            GTEST_SKIP() << "Small allocations are not tracked in this build";
+        BuildOptions options;
+        options.num_threads = 2;
+        auto built = buildJoin(/*distinct_keys=*/1, /*duplicates=*/16 * 1024 * 1024, options);
+
+        ASSERT_GT(built.join->getTotalByteCount(), 100 * 1024 * 1024);
+        CurrentThread::flushUntrackedMemory();
+        thread_status.untracked_memory_limit = 0;
+        const auto failures_before = CurrentThread::getProfileEvents()[ProfileEvents::QueryMemoryLimitExceeded];
+        const auto old_min_allocation = CurrentMemoryTracker::getMinAllocationSizeBytesToThrow();
+        CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(1);
+        /// Fail the allocation that divides the stored blocks between destruction threads.
+        thread_status.memory_tracker.setFaultProbability(1.0);
+        built.join.reset();
+        thread_status.memory_tracker.setFaultProbability(0.0);
+        CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(old_min_allocation);
+        EXPECT_GT(CurrentThread::getProfileEvents()[ProfileEvents::QueryMemoryLimitExceeded], failures_before);
+    }).join();
+}
+
 namespace
 {
 
@@ -1849,10 +1940,6 @@ void checkAsofGrowthCleanup(bool fail_overflow_allocation)
         table_join,
         std::make_shared<const Block>(build_header),
         /*any_take_last_row_=*/false,
-        /*reserve_num_=*/0,
-        /*instance_id_=*/"",
-        HashJoinBuildLayout::oneBucket(1),
-        /*stats_collecting_params_=*/{},
         /*allow_set_maps_=*/false);
     std::vector<HashJoinClause::FillBlock> build_blocks;
     std::atomic<size_t> accumulated_bytes{0};
