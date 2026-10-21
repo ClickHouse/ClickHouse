@@ -431,6 +431,8 @@ void TableFunctionMergeTreeParts::parseArguments(const ASTPtr & ast_function, Co
         /// The table function only reads, so the disk is created read-only. The access check would write a
         /// test file, which a read-only disk rejects, so it has to be skipped. Both are forced, so drop the
         /// values the query gave for them: the first occurrence of a key in the configuration wins.
+        /// `read_only` is an option of object storage disks only (a `local` disk does not read it and
+        /// rejects it as an unknown element), so it is added below, once the type of the disk is known.
         static constexpr std::array<std::string_view, 2> forced_disk_settings = {"read_only", "skip_access_check"};
 
         auto is_forced_setting = [&](const ASTPtr & disk_arg)
@@ -454,8 +456,7 @@ void TableFunctionMergeTreeParts::parseArguments(const ASTPtr & ast_function, Co
         for (const auto & disk_arg : disk_args)
             if (!is_forced_setting(disk_arg))
                 disk_function_to_create->arguments->children.push_back(disk_arg->clone());
-        for (const auto & forced_setting : forced_disk_settings)
-            disk_function_to_create->arguments->children.push_back(make_setting(forced_setting, 1));
+        disk_function_to_create->arguments->children.push_back(make_setting("skip_access_check", 1));
 
         disk_function_ast = disk_function_to_create;
 
@@ -562,6 +563,9 @@ void TableFunctionMergeTreeParts::parseArguments(const ASTPtr & ast_function, Co
             throw_bad_argument(disk_arg_num, fmt::format(
                 "table function `{}` cannot read from a disk of type `{}`",
                 getName(), object_storage_type.empty() ? type : type + ", object_storage_type = " + object_storage_type));
+
+        if (type != "local")
+            disk_function_to_create->arguments->children.push_back(make_setting("read_only", 1));
 
         /// An object storage disk reads under its location, so that is the URI a filtered source grant
         /// is matched against. Only plain literals are trusted: a substitution or a macro would make the
