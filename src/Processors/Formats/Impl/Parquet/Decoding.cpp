@@ -212,13 +212,13 @@ struct BitPackedRLEDecoder : public PageDecoder
             /// bit_width == 0 means all values are 0.
             size_t count = num_values;
             if constexpr (filtered)
-                count = countBytesInFilter(filter, 0, num_values);
-            if constexpr (!skip)
             {
+                count = countBytesInFilter(filter, 0, num_values);
                 if (count && limit == 0)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Dict index or rep/def level out of bounds (rle)");
-                memset(out, 0, count * sizeof(T));
             }
+            if constexpr (!skip)
+                memset(out, 0, count * sizeof(T));
             if constexpr (count_zeros)
                 *num_zeros += num_values;
             return;
@@ -2518,6 +2518,9 @@ void Int96Converter::convertColumn(std::span<const char> data, size_t num_values
 
 void GeoConverter::convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const
 {
+    /// E.g. the dictionary page of a column chunk with only NULLs. `offsets[num_values - 1]` is not valid then.
+    if (num_values == 0)
+        return;
     col.reserve(col.size() + num_values);
     chassert(chars.size() >= offsets[num_values - 1]);
     for (ssize_t i = 0; i < ssize_t(num_values); ++i)
