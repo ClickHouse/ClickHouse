@@ -34,6 +34,8 @@ DROP TABLE IF EXISTS lc_policy;
 CREATE TABLE lc_policy (allowed UInt8, s LowCardinality(String)) ENGINE = Memory;
 -- One INSERT, one block: both values share one dictionary.
 INSERT INTO lc_policy VALUES (1, 'public'), (0, 'secret');
+-- Before the row policy exists: a policy for another user would deny the default user.
+SELECT 'where', ${FN_ROWS}(s), ${FN_HEX}(s) FROM lc_policy WHERE allowed = 1;
 
 DROP USER IF EXISTS ${TEST_USER};
 CREATE USER ${TEST_USER} IDENTIFIED WITH no_password;
@@ -41,7 +43,6 @@ GRANT SELECT ON ${CLICKHOUSE_DATABASE}.lc_policy TO ${TEST_USER};
 DROP ROW POLICY IF EXISTS ${TEST_POLICY} ON ${CLICKHOUSE_DATABASE}.lc_policy;
 CREATE ROW POLICY ${TEST_POLICY} ON ${CLICKHOUSE_DATABASE}.lc_policy FOR SELECT USING allowed = 1 TO ${TEST_USER};
 
-SELECT 'where', ${FN_ROWS}(s), ${FN_HEX}(s) FROM lc_policy WHERE allowed = 1;
 EOF
 
 ${CLICKHOUSE_CLIENT} --user "${TEST_USER}" --query "SELECT 'row policy', ${FN_ROWS}(s), ${FN_HEX}(s) FROM lc_policy"

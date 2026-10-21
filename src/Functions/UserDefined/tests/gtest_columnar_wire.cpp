@@ -1008,7 +1008,7 @@ TEST(ColumnarWire, VariantLowCardinalityAlternativeDictionaryCompacted)
     ASSERT_NE(compacted.get(), variant.get());
     const auto & alternative = assert_cast<const ColumnVariant &>(*compacted).getVariantByLocalDiscriminator(0);
     EXPECT_EQ(dictionaryRows(assert_cast<const ColumnLowCardinality &>(alternative)), 2u);
-    EXPECT_EQ(compacted->getDataAt(0), "public");
+    EXPECT_EQ(alternative.getDataAt(0), "public");
 }
 
 // ── Bounds check: wrapped offset must not bypass the check via integer overflow ──
