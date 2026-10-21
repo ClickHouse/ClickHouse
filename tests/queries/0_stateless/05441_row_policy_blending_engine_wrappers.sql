@@ -32,6 +32,21 @@ CREATE TABLE t_function_later AS merge(currentDatabase(), '^t_target$'); -- { se
 RENAME TABLE t_function TO t_function_later; -- { serverError BAD_ARGUMENTS }
 DROP ROW POLICY p_later ON t_function_later;
 
+-- a policy on a view filters the rows of its query, which can read a merging table directly or in a subquery or another view
+CREATE VIEW v_final AS SELECT * FROM t_target FINAL;
+CREATE VIEW v_subquery AS SELECT * FROM t_plain WHERE k IN (SELECT k FROM t_plain) UNION ALL SELECT * FROM (SELECT * FROM t_target);
+CREATE VIEW v_outer AS SELECT * FROM v_final;
+CREATE VIEW v_plain AS SELECT * FROM t_plain;
+CREATE ROW POLICY p ON v_final USING v % 2 = 1 TO ALL; -- { serverError BAD_ARGUMENTS }
+CREATE ROW POLICY p ON v_subquery USING v % 2 = 1 TO ALL; -- { serverError BAD_ARGUMENTS }
+CREATE ROW POLICY p ON v_outer USING v % 2 = 1 TO ALL; -- { serverError BAD_ARGUMENTS }
+CREATE ROW POLICY p ON v_plain USING v % 2 = 1 TO ALL;
+CREATE ROW POLICY p_later ON v_later USING v % 2 = 1 TO ALL;
+CREATE VIEW v_later AS SELECT * FROM t_target; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE v_later AS view(SELECT * FROM {CLICKHOUSE_DATABASE:Identifier}.t_target); -- { serverError BAD_ARGUMENTS }
+RENAME TABLE v_final TO v_later; -- { serverError BAD_ARGUMENTS }
+DROP ROW POLICY p_later ON v_later;
+
 SET allow_suspicious_row_policies_with_blending_engines = 1;
 CREATE ROW POLICY p ON mv_to USING v % 2 = 1 TO ALL;
 
@@ -40,3 +55,4 @@ SELECT table FROM system.row_policies WHERE database = currentDatabase() ORDER B
 DROP ROW POLICY p ON mv_to;
 DROP ROW POLICY p ON mv_plain;
 DROP ROW POLICY p ON t_merge_plain;
+DROP ROW POLICY p ON v_plain;

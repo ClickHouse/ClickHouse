@@ -6,5 +6,7 @@ policy on an alias of a hidden table which exists
 check the engine
 policy on a merge table which can read hidden tables
 check the engine
+policy on a view of a hidden table
+check the engine
 table under a hidden policy
 BAD_ARGUMENTS
