@@ -73,10 +73,11 @@ function stop_server()
 #   `logger.errorlog` (the key of `logger_errorlog`). The last occurrence must win across the spellings: the
 #   built-in `--log-file` after `--logger_log`, and `--LOGGER_ERRORLOG:...` after `-E` - which also checks that
 #   an option spelled in a different case and with the `:` separator, both accepted by `Poco`, is recognized.
-# - A setting backed by a key in a section whose mere presence enables a component must not enable that
-#   component: `--prometheus_keeper_metrics_only 1` binds `prometheus.keeper_metrics_only`, but the HTTP port
-#   must not start serving `/metrics`, because the configuration has no `prometheus` section. The value is
-#   still applied, as is `--distributed_ddl_task_max_lifetime` (the `distributed_ddl` section enables the DDL worker).
+# - A setting backed by a key in a section whose presence enables a component behaves exactly like the same key
+#   given after the `--` separator: a section that only has keys on the command line counts as present, so
+#   `--prometheus_keeper_metrics_only 1` (bound to `prometheus.keeper_metrics_only`) makes the HTTP port serve
+#   `/metrics`, same as `-- --prometheus.keeper_metrics_only 1`. The value is applied, as is
+#   `--distributed_ddl_task_max_lifetime` (bound to `distributed_ddl.task_max_lifetime`).
 srv_dir1="${CLICKHOUSE_TMP}/srv1"
 SRV1_HTTP_PORT=50223
 mkdir -p "$srv_dir1"
@@ -118,8 +119,8 @@ $CLICKHOUSE_CLIENT --query "
                    'prometheus.keeper_metrics_only', 'distributed_ddl.task_max_lifetime')
     ORDER BY name"
 
-# The embedded configuration has no `prometheus` section, so `/metrics` must not be served.
-${CLICKHOUSE_CURL} -sS "http://127.0.0.1:${SRV1_HTTP_PORT}/metrics" | grep -c '^ClickHouse'
+# The `prometheus` section given on the command line is applied, so `/metrics` is served on the HTTP port.
+${CLICKHOUSE_CURL} -sS "http://127.0.0.1:${SRV1_HTTP_PORT}/metrics" | grep -c '^ClickHouse' | awk '{ print ($1 > 0) }'
 $CLICKHOUSE_CLIENT --query "SELECT name, splitByChar('/', value)[-1] FROM system.server_settings WHERE name IN ('logger.log', 'logger.errorlog') ORDER BY name"
 
 stop_server

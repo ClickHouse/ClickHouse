@@ -13,7 +13,7 @@ query_cache.max_entries	11
 query_cache.max_size_in_bytes	2097152
 shutdown_wait_unfinished_queries	1
 uncompressed_cache_size	1048576
-0
+1
 logger.errorlog	winner.err
 logger.log	winner.log
 winner.log exists
