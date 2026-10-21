@@ -144,6 +144,7 @@ namespace Setting
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsUInt64 distributed_plan_default_reader_bucket_count;
     extern const SettingsNonZeroUInt64 distributed_plan_min_rows_per_reader;
+    extern const SettingsUInt64 distributed_plan_workers_num;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 distributed_plan_max_rows_to_broadcast;
     extern const SettingsBool distributed_plan_read_in_order;
@@ -185,6 +186,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int INVALID_SETTING_VALUE;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -517,7 +519,24 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
 #endif
 
     if (make_distributed_plan && !enable_cascades_optimizer && distributed_plan_default_reader_bucket_count == 0)
-        distributed_plan_worker_count = getCascadesPlanningNodeCount(from);
+    {
+        /// Local execution runs in-process and needs no worker provider.
+        if (distributed_plan_execute_locally)
+        {
+            const size_t workers = from->getSettingsRef()[Setting::distributed_plan_workers_num];
+            get_distributed_plan_worker_count = [workers] { return workers; };
+        }
+        else
+        {
+            get_distributed_plan_worker_count = [weak_context = ContextWeakPtr(from)]
+            {
+                const auto context = weak_context.lock();
+                if (!context)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "The context of a distributed plan has expired");
+                return getCascadesPlanningNodeCount(context);
+            };
+        }
+    }
 
     /// A foreign shard scope is declined later, in `ClusterProxy::canUseParallelReplicasOnInitiator`,
     /// so it has to be declined here as well: otherwise the optimizations that only run for a local read

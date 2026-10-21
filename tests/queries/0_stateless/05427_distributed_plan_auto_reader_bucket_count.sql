@@ -1,7 +1,5 @@
--- `distributed_plan_default_reader_bucket_count = 0` chooses one read task per
--- `distributed_plan_min_rows_per_reader` rows, at most one per worker. The keyless scatter under a partial
--- aggregation takes the read's bucket count, so the aggregation runs in the read tasks: the fragments are
--- the read tasks and one task that merges the partial states.
+-- Automatic read task count: one per `distributed_plan_min_rows_per_reader` rows, at most one per worker.
+-- The partial aggregation runs in the read tasks, so fragments = read tasks + one merge task.
 
 SET enable_analyzer = 1;
 SET max_rows_to_group_by = 0;

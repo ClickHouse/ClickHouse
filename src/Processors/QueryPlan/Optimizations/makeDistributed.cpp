@@ -553,8 +553,9 @@ static bool shuffleJoinKeysHaveCommonType(const JoinOperator & join_info)
 static size_t chooseReaderBucketCount(size_t rows, const QueryPlanOptimizationSettings & optimization_settings)
 {
     size_t bucket_count = std::max<size_t>(1, rows / optimization_settings.distributed_plan_min_rows_per_reader);
-    if (optimization_settings.distributed_plan_worker_count)
-        bucket_count = std::min(bucket_count, optimization_settings.distributed_plan_worker_count);
+    if (optimization_settings.get_distributed_plan_worker_count)
+        if (const size_t worker_count = optimization_settings.get_distributed_plan_worker_count())
+            bucket_count = std::min(bucket_count, worker_count);
     return std::min<size_t>(bucket_count, MAX_DISTRIBUTED_PLAN_BUCKET_COUNT);
 }
 
