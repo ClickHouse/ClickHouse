@@ -5,6 +5,7 @@
 #include <optional>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/UniqueLock.h>
 #include <Core/Names.h>
 #include <Databases/DataLake/ICatalog.h>
 
@@ -129,11 +130,11 @@ HiveCatalog::ConnectionPtr HiveCatalog::acquireConnection() const
 {
     UInt64 connection_generation = 0;
     {
-        std::unique_lock lock(pool_mutex);
+        DB::UniqueLock lock(pool_mutex);
         while (idle_connections.empty() && num_connections >= max_connections)
         {
             DB::CurrentThread::checkIfNotCancelled();
-            connection_released.wait_for(lock, std::chrono::seconds(1));
+            connection_released.wait_for(lock.getUnderlyingLock(), std::chrono::seconds(1));
         }
 
         if (!idle_connections.empty())
@@ -168,7 +169,16 @@ void HiveCatalog::releaseConnection(ConnectionPtr connection) const
         std::lock_guard lock(pool_mutex);
         if (connection->generation == generation)
         {
-            idle_connections.push_back(std::move(connection));
+            try
+            {
+                idle_connections.push_back(std::move(connection));
+            }
+            catch (...)
+            {
+                --num_connections;
+                connection_released.notify_one();
+                throw;
+            }
             connection_released.notify_one();
             return;
         }
