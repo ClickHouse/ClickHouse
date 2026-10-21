@@ -47,11 +47,14 @@ struct MergeTreeTemporaryPart
 
     std::vector<Stream> streams;
 
+    bool finalization_started = false;
+
     /// UNIQUE KEY tables only: part row `i` was written from block row `sort_permutation[i]`.
     /// Empty when the part keeps the block's row order.
     IColumn::Permutation sort_permutation;
 
     void cancel();
+    void startFinalization();
     void finalize();
     void prewarmCaches();
 };
