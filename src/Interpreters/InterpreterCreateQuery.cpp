@@ -53,6 +53,7 @@
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMoveDestinationAccess.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageProxy.h>
@@ -3943,6 +3944,12 @@ BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
     prepareOnClusterQuery(create, getContext(), create.cluster);
     DDLQueryOnClusterParams params;
     params.access_to_check = getRequiredAccess();
+    /// The hosts run the entry without the user, so the move destination of a queue table is authorized here:
+    /// after the standard checks and before the entry is enqueued. `executeDDLQueryOnCluster` calls it synchronously.
+    params.additional_access_check = [this](const String & /* default_database */, bool /* throw_if_unresolved */)
+    {
+        checkQueueMoveDestinationAccess();
+    };
     return executeDDLQueryOnCluster(query_ptr, getContext(), params);
 }
 
@@ -4027,6 +4034,7 @@ BlockIO InterpreterCreateQuery::execute()
     }
 
     getContext()->checkAccess(getRequiredAccess());
+    checkQueueMoveDestinationAccess();
 
     ASTQueryWithOutput::resetOutputASTIfExist(create);
 
@@ -4123,6 +4131,18 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
         required_access.emplace_back(AccessType::READ | AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE));
 
     return required_access;
+}
+
+void InterpreterCreateQuery::checkQueueMoveDestinationAccess() const
+{
+    /// Internal queries (initiated by the server itself) always have access to everything.
+    if (internal)
+        return;
+
+    const auto & create = query_ptr->as<const ASTCreateQuery &>();
+    if (create.storage && create.storage->engine && create.storage->settings
+        && (create.storage->engine->name == "S3Queue" || create.storage->engine->name == "AzureQueue"))
+        checkObjectStorageQueueMoveDestinationAccess(create.storage->settings->changes, getContext());
 }
 
 void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const

@@ -124,6 +124,10 @@ private:
     void setEngine(ASTCreateQuery & create) const;
     AccessRightsElements getRequiredAccess() const;
 
+    /// Checks the grants for the move destination of an `S3Queue` or `AzureQueue` table. It is filtered by the destination URL,
+    /// which an `AccessRightsElement` cannot express, so it is not a part of `getRequiredAccess`.
+    void checkQueueMoveDestinationAccess() const;
+
     /// Create IStorage and add it to database. If table already exists and IF NOT EXISTS specified, do nothing and return false.
     bool doCreateTable(ASTCreateQuery & create, const TableProperties & properties, DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode);
     BlockIO doCreateOrReplaceTable(ASTCreateQuery & create, const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode);

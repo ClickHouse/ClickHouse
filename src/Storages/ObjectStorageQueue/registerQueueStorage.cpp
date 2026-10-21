@@ -396,6 +396,8 @@ Default value: empty string.
 
 URI of S3 bucket to move successfully processed files to, if the destination is another S3 bucket.
 
+Setting it is the same data flow as `INSERT INTO FUNCTION s3('<destination>') SELECT * FROM <table>`, so it requires the `WRITE` grant on the `S3` source for the destination URI. `ALTER TABLE ... MODIFY SETTING` also requires `SELECT` on the table. The destination must be allowed by `remote_url_allow_hosts`.
+
 Possible values:
 
 - String.
@@ -853,6 +855,8 @@ Below are the settings only compatible with AzureQueue and not applicable for S3
 ### `after_processing_move_connection_string` {#after_processing_move_connection_string}
 
 Connection string for Azure Blob Storage to move successfully processed files to, if the destination is another Azure container.
+
+Setting it requires the `WRITE` grant on the `AZURE` source (a grant limited by a URL filter is not enough, because a move has no single blob path). `ALTER TABLE ... MODIFY SETTING` also requires `SELECT` on the table. The destination must be allowed by `remote_url_allow_hosts`.
 
 Possible values:
 

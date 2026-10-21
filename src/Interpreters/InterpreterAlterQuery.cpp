@@ -35,6 +35,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTSetQuery.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
@@ -47,6 +48,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMoveDestinationAccess.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
@@ -480,6 +482,20 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
     return res;
 }
 
+/// Setting a move destination of an `S3Queue` or `AzureQueue` table needs `WRITE` on the source of the destination
+/// (see `checkObjectStorageQueueMoveDestinationAccess`). It is filtered by the destination URL, which an
+/// `AccessRightsElement` cannot express, so it is checked here instead of in `getRequiredAccess`.
+/// The check reads only the settings of the query, so it does not need the table to exist on this host.
+void checkMoveDestinationAccess(const ASTAlterQuery & alter, const ContextPtr & context)
+{
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto & command = child->as<const ASTAlterCommand &>();
+        if (command.type == ASTAlterCommand::MODIFY_SETTING && command.settings_changes)
+            checkObjectStorageQueueMoveDestinationAccess(command.settings_changes->as<ASTSetQuery &>().changes, context);
+    }
+}
+
 }
 
 InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_) : WithMutableContext(context_), query_ptr(query_ptr_)
@@ -578,12 +594,18 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                 if (command.type == ASTAlterCommand::DELETE || command.type == ASTAlterCommand::UPDATE)
                     checkNoRowPolicyForSetOperands(child, default_database, context, throw_if_unresolved);
             }
+
+            /// The hosts run the entry without the user, so the destination is authorized here, before the entry is enqueued.
+            checkMoveDestinationAccess(captured_alter, context);
         };
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
     if (!skip_access_check)
+    {
         getContext()->checkAccess(getRequiredAccess(table));
+        checkMoveDestinationAccess(alter, getContext());
+    }
 
     if (!table_id)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(alter.getDatabase()));
@@ -1038,6 +1060,13 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         case ASTAlterCommand::MODIFY_SETTING:
         {
             required_access.emplace_back(AccessType::ALTER_SETTINGS, database, table);
+
+            /// A move destination of an `S3Queue` or `AzureQueue` table receives the files that the table reads with its own
+            /// source credentials, so it is the same data flow as `INSERT INTO FUNCTION s3(...) SELECT * FROM <table>`.
+            /// The `WRITE` grant for the destination is checked by `checkMoveDestinationAccess`; the reading part is `SELECT` here.
+            if (command.type == ASTAlterCommand::MODIFY_SETTING && command.settings_changes
+                && hasObjectStorageQueueMoveDestination(command.settings_changes->as<ASTSetQuery &>().changes))
+                required_access.emplace_back(AccessType::SELECT, database, table);
             break;
         }
         case ASTAlterCommand::ATTACH_PARTITION:
