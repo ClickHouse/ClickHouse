@@ -4172,5 +4172,6 @@ cc_library(
         "//base:pcg_random",
         "@clickhouse_mongo_cxx_driver//:_bsoncxx",
         "@clickhouse_mongo_cxx_driver//:_mongocxx",
+        "@clickhouse_sparsehash_c11//:sparsehash_c11",
     ],
 )

@@ -12,4 +12,5 @@ cc_library(
     includes = [
         "include",
     ],
+    deps = ["@clickhouse_mapbox_geometry//:mapbox_geometry"],
 )
