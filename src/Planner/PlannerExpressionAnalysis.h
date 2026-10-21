@@ -61,6 +61,8 @@ struct SortAnalysisResult
     ActionsAndProjectInputsFlagPtr before_order_by_actions;
     bool has_with_fill = false;
     ActionsAndProjectInputsFlagPtr before_interpolate_actions;
+    /// INTERPOLATE target name -> name of the column `before_interpolate_actions` interpolates for it.
+    NameToNameMap interpolated_column_names;
 };
 
 struct LimitByAnalysisResult
