@@ -17,7 +17,7 @@ ClickStack supports two types of alerts:
 - [Search alerts](/clickstack/features/alerts#search-alerts): trigger notifications when the count of matching log or trace results within a time window exceeds or falls below a threshold.
 - [Dashboard chart alerts](/clickstack/features/alerts#dashboard-alerts): trigger notifications when a metric plotted on a dashboard tile crosses a defined threshold.
 
-Both alert types use static threshold conditions. For full details, see [Alerts](/clickstack/features/alerts).
+Both alert types use static threshold conditions by default. On Managed ClickStack, they can instead use [anomaly detection](/clickstack/features/anomaly-detection), which fires when a value moves outside its expected range. For full details, see [Alerts](/clickstack/features/alerts).
 </Accordion>
 
 <Accordion title="Can I alert on complex metric conditions such as ratios, p95/p99, or multi-metric formulas?">
@@ -27,9 +27,8 @@ However, ClickStack does not currently support:
 
 - Alerting on custom SQL queries for metrics.
 - Multi-condition or multi-metric alert rules combined into a single alert.
-- Dynamic or anomaly-detection-based alert conditions (anomaly detection is planned).
 
-If you need to alert on a complex metric, the recommended approach is to build the visualization as a dashboard chart first, then attach a threshold alert to that chart.
+If you need to alert on a complex metric, the recommended approach is to build the visualization as a dashboard chart first, then attach a threshold alert to that chart. On Managed ClickStack, you can attach an [anomaly detection alert](/clickstack/features/anomaly-detection) to the chart instead, so it fires when the value moves outside its expected range rather than past a fixed threshold.
 </Accordion>
 
 <Accordion title="Can I use materialized views for alerting use cases?">
