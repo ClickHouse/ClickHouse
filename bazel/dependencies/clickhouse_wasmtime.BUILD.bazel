@@ -43,12 +43,14 @@ expand_template(
 cc_library(
     name = "wasmtime",
     srcs = ["@clickhouse//bazel/rust:wasmtime_processed"],
-    hdrs = glob(["crates/c-api/include/**/*.h"]) + [":config/contrib/wasmtime/include/wasmtime/conf.h"],
+    hdrs = glob([
+        "crates/c-api/include/**/*.h",
+        "crates/c-api/include/**/*.hh",
+    ]) + [":config/contrib/wasmtime/include/wasmtime/conf.h"],
     includes = [
         "config/contrib/wasmtime/include",
         "crates/c-api/include",
     ],
-    textual_hdrs = glob(["crates/c-api/include/**/*.hh"]),
 )
 
 filegroup(

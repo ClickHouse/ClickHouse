@@ -12,14 +12,14 @@ exports_files([
 cc_library(
     name = "sparsehash_c11",
     hdrs = glob([
+        "sparsehash/dense_hash_*",
+        "sparsehash/sparse_hash_*",
         "sparsehash/internal/**/*.h",
-        "tests/**/*.h",
-    ]),
+    ]) + [
+        "sparsehash/sparsetable",
+        "sparsehash/traits",
+    ],
     includes = [
         ".",
     ],
-    textual_hdrs = glob(
-        ["sparsehash/*"],
-        exclude = ["sparsehash/*.*"],
-    ),
 )
