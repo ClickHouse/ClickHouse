@@ -31,6 +31,8 @@ namespace ProfileEvents
     extern const Event ParquetReadRowGroups;
     extern const Event ParquetPrunedRowGroups;
     extern const Event ParquetTopKSkippedRowGroups;
+    extern const Event ParquetBloomFilterPrunedRowGroups;
+    extern const Event ParquetDictionaryFilterPrunedRowGroups;
 }
 
 namespace DB::Parquet
@@ -67,9 +69,8 @@ void ReadManager::init(
 {
     parser_shared_resources = parser_shared_resources_;
 
-    if (!reader.file_metadata)
-        reader.file_metadata = std::make_shared<const parq::FileMetaData>(
-            Reader::readFileMetaData(reader.prefetcher, reader.options.format.parquet.footer_read_size));
+    if (!reader.file_footer)
+        reader.setFileFooter(Reader::readFileFooter(reader.prefetcher, reader.options.format.parquet.footer_read_size));
 
     if (buckets_to_read_)
     {
@@ -83,11 +84,11 @@ void ReadManager::init(
     /// The row groups of other buckets of a split file are neither read nor pruned by this reader. Otherwise,
     /// the row groups not in the bucket count as pruned, e.g. the ones the query condition cache knows to
     /// have no matching rows.
-    size_t row_groups_to_consider = reader.file_metadata->row_groups.size();
+    size_t row_groups_to_consider = reader.file_metadata().row_groups.size();
     if (row_groups_to_read && other_row_groups_are_read_by_other_readers)
     {
         row_groups_to_consider = 0;
-        for (size_t i = 0; i < reader.file_metadata->row_groups.size(); ++i)
+        for (size_t i = 0; i < reader.file_metadata().row_groups.size(); ++i)
             row_groups_to_consider += row_groups_to_read->contains(i);
     }
     ProfileEvents::increment(ProfileEvents::ParquetReadRowGroups, reader.row_groups.size());
@@ -250,11 +251,16 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
         /// still change the outcome.
         bool any_dictionary_filter = false;
         if (reader.applyBloomFilters(row_group))
+        {
             any_dictionary_filter = std::any_of(
                 row_group.columns.begin(), row_group.columns.end(),
                 [](const ColumnChunk & c) { return c.use_dictionary_filter; });
+        }
         else
+        {
+            ProfileEvents::increment(ProfileEvents::ParquetBloomFilterPrunedRowGroups);
             stage = ReadStage::Deliver; // skip the row group
+        }
 
         /// Keep the blocks alive for `applyBloomAndDictionaryFilters`, which uses them as the
         /// fallback for a column whose dictionary does not fit the pruning memory budget.
@@ -264,7 +270,10 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
     else if (stage == ReadStage::Dictionary)
     {
         if (!reader.applyBloomAndDictionaryFilters(row_group, pruningMemoryReservation(diff)))
+        {
+            ProfileEvents::increment(ProfileEvents::ParquetDictionaryFilterPrunedRowGroups);
             stage = ReadStage::Deliver; // skip the row group
+        }
         release_bloom_filters();
     }
 
@@ -1394,17 +1403,13 @@ ReadManager::ReadResult ReadManager::read()
     ///       ISource::progress()/addTotalRowsApprox instead.
     ///       For (4) and (5), either add things to struct Progress or make progress bar use
     ///       ProfileEvents instead of Progress.
-    /// Sum compressed sizes of selected columns only. `reader.primitive_columns[i].column_idx`
-    /// indexes into the parquet row group's `columns` array, so we pick exactly the column
-    /// chunks that the query reads. Using `row_group.meta->total_compressed_size` here would
-    /// inflate `read_bytes` by `total_columns / selected_columns`.
+    /// Sum compressed sizes of the column chunks that the query reads. Using
+    /// `row_group.meta->total_compressed_size` here would inflate `read_bytes` by
+    /// `total_columns / selected_columns`.
     size_t selected_columns_compressed_bytes = 0;
     for (const auto & primitive_column : reader.primitive_columns)
-    {
-        size_t parquet_column_idx = primitive_column.column_idx;
-        if (parquet_column_idx < row_group.meta->columns.size())
-            selected_columns_compressed_bytes += size_t(row_group.meta->columns[parquet_column_idx].meta_data.total_compressed_size);
-    }
+        selected_columns_compressed_bytes += size_t(
+            reader.getColumnChunk(row_group.row_group_idx, primitive_column.column_idx).meta_data.total_compressed_size);
     size_t virtual_bytes_read = selected_columns_compressed_bytes * row_subgroup.filter.rows_total / std::max(size_t(1), size_t(row_group.meta->num_rows));
 
     /// This updates `memory_usage` of previous stages, which may allow more tasks to be scheduled.

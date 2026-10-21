@@ -21,11 +21,13 @@ struct ParquetFileBucketInfo : public FileBucketInfo
     /// instead of reading and parsing the footer again. The caller is responsible for the bucket being
     /// read from the same version of the file. Not serialized: the buckets sent to other servers don't
     /// carry it.
-    std::shared_ptr<const parquet::format::FileMetaData> file_metadata;
+    std::shared_ptr<const Parquet::FileFooter> file_footer;
+    /// The column chunks of `file_footer` that were already parsed, see `ParquetMetadataCacheCell`.
+    std::vector<Parquet::FileColumnChunksPtr> column_chunks;
 
     /// Whether the bucket is one of the buckets made by `ParquetBucketSplitter::splitForParallelReading`,
     /// so that the other row groups of the file are read by other readers of the same query rather than
-    /// skipped. Not serialized, like `file_metadata`.
+    /// skipped. Not serialized, like `file_footer`.
     bool is_split_for_parallel_reading = false;
 
     ParquetFileBucketInfo() = default;
@@ -118,7 +120,11 @@ private:
     void initializeIfNeeded();
     std::shared_ptr<ParquetFileBucketInfo> buckets_to_read;
 
-    std::shared_ptr<const parquet::format::FileMetaData> getFileMetadata(Parquet::Prefetcher & prefetcher) const;
+    /// nullopt if the metadata cache is not used.
+    std::optional<ParquetMetadataCacheKey> getMetadataCacheKey() const;
+    std::shared_ptr<const Parquet::FileFooter> readFileFooter(Parquet::Prefetcher & prefetcher) const;
+    /// For count(), which needs no column chunks.
+    std::shared_ptr<const Parquet::FileFooter> getFileFooter(Parquet::Prefetcher & prefetcher) const;
 };
 
 class NativeParquetSchemaReader final : public ISchemaReader
@@ -133,7 +139,7 @@ private:
     void initializeIfNeeded();
 
     Parquet::ReadOptions read_options;
-    parquet::format::FileMetaData file_metadata;
+    std::shared_ptr<const Parquet::FileFooter> file_footer;
     bool initialized = false;
 };
 
