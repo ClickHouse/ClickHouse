@@ -55,6 +55,12 @@ public:
     {
         impl.initialize(std::forward<TArgs>(args)...);
     }
+
+    void initializeFromVectorAndBitmap(const NumericIndexedVector & schema, const AggregateFunctionGroupBitmapData<IndexType> & bitmap)
+    {
+        impl.initializeFromVectorAndBitmap(schema.impl, bitmap.roaring_bitmap_with_small_set);
+    }
+
     void deepCopyFrom(const NumericIndexedVector & rhs) { impl.deepCopyFrom(rhs.impl); }
 
     void merge(const NumericIndexedVector & rhs) { impl.merge(rhs.impl); }
@@ -166,9 +172,22 @@ public:
         VectorImpl::pointwiseGreaterEqual(lhs.impl, rhs, res.impl);
     }
 
+    static void pointwiseMax(const NumericIndexedVector & lhs, const NumericIndexedVector & rhs, NumericIndexedVector & res)
+    {
+        VectorImpl::pointwiseMax(lhs.impl, rhs.impl, res.impl);
+    }
+
+    static void pointwiseMin(const NumericIndexedVector & lhs, const NumericIndexedVector & rhs, NumericIndexedVector & res)
+    {
+        VectorImpl::pointwiseMin(lhs.impl, rhs.impl, res.impl);
+    }
+
     void addValue(IndexType index, ValueType value) { impl.addValue(index, value); }
 
     ValueType getValue(IndexType index) const { return impl.getValue(index); }
+
+    ValueType getMaxValue() const { return impl.getMaxValue(); }
+    ValueType getMinValue() const { return impl.getMinValue(); }
 
     Float64 getAllValueSum() const { return impl.getAllValueSum(); }
 
