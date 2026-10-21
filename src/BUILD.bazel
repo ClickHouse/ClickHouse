@@ -169,6 +169,7 @@ _PRIVATE_DBMS_0_HEADERS = glob(
     "Client/InternalTextLogs.h",
     "Client/MultiplexedConnections.h",
     "Client/PacketReceiver.h",
+    "Client/SQLKeywordsForHighlighting.inc",
     "Client/TerminalKeystrokeInterceptor.h",
     "Client/TestHint.h",
     "Client/TestTags.h",
@@ -1700,7 +1701,6 @@ _GENERATED_HDRS_1 = [
     "Client/PortsProbe.h",
     "Client/ProgressTable.h",
     "Client/ReplxxLineReader.h",
-    "Client/SQLKeywordsForHighlighting.inc",
     "Client/SecondaryQuerySettings.h",
     "Client/SilkConnectionPool.h",
     "Client/Suggest.h",
@@ -4126,7 +4126,6 @@ cc_library(
     includes = [
         ".",
     ],
-    textual_hdrs = ["Client/SQLKeywordsForHighlighting.inc"],
     deps = [
         "//base:common",
         "//src/Access/Common:headers",
@@ -4169,7 +4168,6 @@ cc_library(
     includes = [
         ".",
     ],
-    textual_hdrs = glob(["**/*.inc"]),
     deps = [
         "//base:pcg_random",
         "@clickhouse_mongo_cxx_driver//:_bsoncxx",
