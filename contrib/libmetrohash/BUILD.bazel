@@ -19,7 +19,6 @@ ch_cc_library(
         "-std=c++23",
     ],
     includes = ["src"],
-    link_runtime = True,
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
@@ -29,5 +28,6 @@ ch_cc_library(
     deps = [
         "@clickhouse_llvm_project//:clang_rt_builtins",
         "//base/glibc-compatibility",
+        "@clickhouse_llvm_project//:unwind",
     ],
 )
