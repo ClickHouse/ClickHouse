@@ -83,10 +83,12 @@ echo "-- a subquery that the replica plans as a query of its own"
 check "SELECT count() FROM t WHERE a IN (SELECT a FROM t WHERE a < 50 UNION ALL SELECT a FROM t WHERE a < 50)"
 check "SELECT count() FROM mt WHERE a IN (SELECT a FROM t WHERE a < 50 UNION ALL SELECT a FROM t WHERE a < 50)" "parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1"
 
-echo "-- another cluster read in the query"
+echo "-- another source in the query"
 $CLICKHOUSE_CLIENT -q "CREATE VIEW vc AS SELECT a FROM s3Cluster('test_cluster_one_shard_three_replicas_localhost', s3_conn, filename = '${CLICKHOUSE_DATABASE}/*.parquet', format = 'Parquet')"
 check "SELECT count() FROM t WHERE a IN (SELECT a FROM s3Cluster('test_cluster_one_shard_three_replicas_localhost', s3_conn, filename = '${CLICKHOUSE_DATABASE}/*.parquet', format = 'Parquet') WHERE a < 50)"
 check "SELECT count() FROM t WHERE a IN (SELECT a FROM vc WHERE a < 50)"
+check "SELECT count() FROM t WHERE a IN (SELECT a FROM mt WHERE a < 50)"
+check "SELECT (SELECT count() FROM t WHERE a IN vc AND a < 50)"
 
 echo "-- hive partitioning"
 $CLICKHOUSE_CLIENT -q "

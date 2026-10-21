@@ -49,20 +49,26 @@ same result
 same result
 20
 -- the table in a subquery is read in full by every replica
-1
+0
 same result
 50
-1
+0
 same result
 50
 -- a subquery that the replica plans as a query of its own
-1
+0
 same result
 50
-2
+0
 same result
 50
--- another cluster read in the query
+-- another source in the query
+0
+same result
+50
+0
+same result
+50
 0
 same result
 50
