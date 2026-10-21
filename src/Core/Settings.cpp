@@ -660,7 +660,8 @@ source, but it is synchronous: the service copies the whole object before it ans
 the request waits meanwhile, so this limits how long one object may hold that thread. A value above the
 5000 MiB that the request itself accepts is capped at that size, with a warning
 (https://learn.microsoft.com/en-us/rest/api/storageservices/put-blob-from-url).
-)", 0) \
+)", 0, \
+        {"26.11", 0, 0, "New setting to retry a server-side copy refused with 401 as one Put Blob From URL request"}) \
     DECLARE(UInt64, s3_max_single_read_retries, S3::DEFAULT_MAX_SINGLE_READ_TRIES, R"(
 The maximum number of retries during single S3 read.
 )", 0) \
