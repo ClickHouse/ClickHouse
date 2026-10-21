@@ -1,3 +1,4 @@
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/CurrentThread.h>
 
@@ -94,6 +95,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool fsync_metadata;
+    extern const SettingsBool allow_experimental_table_namespaces;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
     extern const SettingsBool show_remote_databases_in_system_tables;
 }
@@ -693,6 +695,13 @@ void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
             backQuoteIfNeed(database_name),
             backQuoteIfNeed(names[0]));
     }
+}
+
+void DatabaseCatalog::assertDatabaseAndNamespacesExist(const CurrentDatabaseInfo & database_info) const
+{
+    assertDatabaseExists(String(database_info.getDatabasePart()));
+    if (database_info.hasSchema())
+        getDatabase(database_info.getDatabasePart())->validateTableNamespace(database_info.getSchemaPart());
 }
 
 bool DatabaseCatalog::hasDatalakeCatalogs() const

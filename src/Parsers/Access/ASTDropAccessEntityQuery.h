@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
@@ -32,7 +33,7 @@ public:
     ASTPtr clone() const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTDropAccessEntityQuery>(clone()); }
 
-    void replaceEmptyDatabase(const String & current_database) const;
+    void replaceEmptyDatabase(const CurrentDatabaseInfo & current_database) const;
 
     QueryKind getQueryKind() const override { return QueryKind::Drop; }
 

@@ -500,7 +500,7 @@ private:
 #if USE_AVRO && USE_PARQUET
     static std::shared_ptr<DatabaseDataLake> tryGetDataLakeDatabase(const StorageID & table_id, const ContextPtr & context)
     {
-        const String db_name = table_id.hasDatabase() ? table_id.database_name : context->getCurrentDatabase();
+        const String db_name = table_id.hasDatabase() ? table_id.database_name : context->getCurrentDatabase().getFullName();
         /// Having no associated `DataLakeDatabase` is a valid state (e.g. an `Iceberg` table in a
         /// regular `Atomic`/`Ordinary` database, or a database not currently registered during
         /// async load), so return nullptr rather than throwing. Callers treat a null catalog as

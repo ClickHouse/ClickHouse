@@ -267,7 +267,7 @@ TableExpressionNodePtr buildSubqueryToReadColumnsFromTableExpression(const Names
   */
 TableExpressionNodePtr buildSubqueryToReadColumnsFromTableExpression(const TableNodePtr & table_node, const ContextPtr & context);
 
-std::pair<String, String> extractDatabaseAndTableNameForParameterizedView(const String & table_function_name, const ContextPtr & context);
+std::pair<String, String> extractDatabaseAndTableNameForParameterizedView(const String & table_function_name, const ContextPtr & context, bool can_throw);
 
 /** Does a node or its children have a dependency on column
   * NOT from a specific table expression.

@@ -21,6 +21,7 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
@@ -105,7 +106,7 @@ void qualifyNamesFromLegacyMetadata(ASTCreateQuery & ast_create_query, const Str
     if (ast_create_query.is_dictionary)
         return;
 
-    AddDefaultDatabaseVisitor visitor(context, database_name);
+    AddDefaultDatabaseVisitor visitor(context, CurrentDatabaseInfo::fromOnlyDatabaseName(database_name));
     if (ast_create_query.select && ast_create_query.isView())
         visitor.visitTableExpressions(*ast_create_query.select);
     if (ast_create_query.columns_list)

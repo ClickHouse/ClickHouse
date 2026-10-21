@@ -15,17 +15,17 @@ namespace
 
 class FunctionCurrentSchemas final : public IFunction
 {
-    const String db_name;
+    const String schema_name;
 
 public:
     static constexpr auto name = "currentSchemas";
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionCurrentSchemas>(context->getCurrentDatabase());
+        return std::make_shared<FunctionCurrentSchemas>(String(context->getCurrentDatabase().getSchemaPart()));
     }
 
-    explicit FunctionCurrentSchemas(const String & db_name_) :
-        db_name{db_name_}
+    explicit FunctionCurrentSchemas(const String & schema_name_) :
+        schema_name{schema_name_}
     {
     }
 
@@ -51,7 +51,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return DataTypeArray(std::make_shared<DataTypeString>())
-                               .createColumnConst(input_rows_count, Array { db_name });
+                               .createColumnConst(input_rows_count, Array { schema_name });
     }
 };
 
@@ -60,9 +60,10 @@ public:
 REGISTER_FUNCTION(CurrentSchema)
 {
     FunctionDocumentation::Description description = R"(
-Same as function [`currentDatabase`](#currentDatabase) but
+Similar to function [`currentDatabase`](#currentDatabase) but
 - accepts a boolean argument which is ignored
-- returns the database name as an array with a single value.
+- returns the schema name as an array with a single value
+- returns an array with empty string if the schema name is not set.
 
 Function `currentSchemas` only exists for compatibility with PostgreSQL.
 Please use `currentDatabase` instead.
@@ -73,7 +74,7 @@ Also see the [`SET` statement](/reference/statements/use).
     FunctionDocumentation::Arguments arguments = {
         {"bool", "A boolean value, which is ignored.", {"Bool"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a single-element array with the name of the current database.", {"Array(String)"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a single-element array with the name of the current schema.", {"Array(String)"}};
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",
@@ -82,7 +83,7 @@ SELECT currentSchemas(true)
         )",
         R"(
 ┌─currentSchemas(true)─┐
-│ ['default']          │
+│ ['']                 │
 └──────────────────────┘
         )"
     }

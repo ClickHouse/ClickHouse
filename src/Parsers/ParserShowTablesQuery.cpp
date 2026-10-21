@@ -4,6 +4,7 @@
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserShowTablesQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
@@ -37,7 +38,6 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_where(Keyword::WHERE);
     ParserKeyword s_limit(Keyword::LIMIT);
     ParserStringLiteral like_p(Highlight::string_like);
-    ParserIdentifier name_p(true);
     ParserExpressionWithOptionalAlias exp_elem(false);
 
     ASTPtr like;
@@ -173,8 +173,12 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         }
 
         if (s_from.ignore(pos, expected) || s_in.ignore(pos, expected))
-            if (!name_p.parse(pos, database, expected))
+        {
+            /// in `FROM db.namespace` keep the parts separate so
+            /// interpreter sees the structure
+            if (!ParserCompoundIdentifier({.allow_query_parameter = true, .allow_json_subcolumns = false}).parse(pos, database, expected))
                 return false;
+        }
 
         if (s_not.ignore(pos, expected))
             query->not_like = true;

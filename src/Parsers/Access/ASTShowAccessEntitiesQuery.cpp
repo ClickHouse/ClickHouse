@@ -1,3 +1,4 @@
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Parsers/Access/ASTShowAccessEntitiesQuery.h>
 #include <Parsers/Access/parseAccessEntityName.h>
 #include <Common/quoteString.h>
@@ -43,13 +44,13 @@ void ASTShowAccessEntitiesQuery::formatQueryImpl(WriteBuffer & ostr, const Forma
 }
 
 
-void ASTShowAccessEntitiesQuery::replaceEmptyDatabase(const String & current_database)
+void ASTShowAccessEntitiesQuery::replaceEmptyDatabase(const CurrentDatabaseInfo & current_database)
 {
     if (database_and_table_name)
     {
         String & database = database_and_table_name->first;
         if (database.empty())
-            database = current_database;
+            database_and_table_name = current_database.rebase(database_and_table_name->second);
     }
 }
 

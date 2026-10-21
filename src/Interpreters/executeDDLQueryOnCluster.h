@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/Common/AccessRightsElement.h>
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
@@ -45,7 +46,7 @@ struct DDLQueryOnClusterParams
     /// `distributed_ddl_use_initial_user_and_roles` is enabled and `distributed_ddl_entry_format_version` carries
     /// the initiator's user: the workers then run the query as that user and roles and repeat the check against
     /// their own objects.
-    std::function<void(const String & default_database, bool throw_if_unresolved)> additional_access_check;
+    std::function<void(const CurrentDatabaseInfo & default_database, bool throw_if_unresolved)> additional_access_check;
 
     /// Use retries when creating nodes "query-0000000000", "query-0000000001", "query-0000000002" in ZooKeeper.
     ZooKeeperRetriesInfo retries_info;

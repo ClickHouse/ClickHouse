@@ -2,6 +2,7 @@
 
 #include <Core/QualifiedTableName.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
 #include <unordered_set>
@@ -24,9 +25,9 @@ struct CreateQueryDependencies
 /// Does not validate AST, works a best-effort way.
 /// @param validate_current_database - if false, skips validation that database exists when setting current database (for bootstrap/restore scenarios)
 /// @param max_expanded_ast_elements - bounds the expansion of `WITH` elements in the query of a materialized view, zero means no limit
-CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database, bool can_throw = false, bool validate_current_database = true, size_t max_expanded_ast_elements = 0);
+CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const CurrentDatabaseInfo & current_database, bool can_throw = false, bool validate_current_database = true, size_t max_expanded_ast_elements = 0);
 
 /// Returns a list of all tables explicitly referenced in the select query specified as a dictionary source.
-TableNamesSet getDependenciesFromDictionaryNestedSelectQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & select_query, const String & current_database, bool can_throw = false);
+TableNamesSet getDependenciesFromDictionaryNestedSelectQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & select_query, const CurrentDatabaseInfo & current_database, bool can_throw = false);
 
 }

@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/DDLTask.h>
@@ -119,7 +120,7 @@ namespace ErrorCodes
 
 void checkNoRowPolicyForSetOperands(
     const ASTPtr & mutation_ast,
-    const String & default_database,
+    const CurrentDatabaseInfo & default_database,
     const ContextPtr & context,
     bool throw_if_unresolved)
 {

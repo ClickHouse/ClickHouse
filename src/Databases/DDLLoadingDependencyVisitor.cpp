@@ -2,6 +2,7 @@
 #include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include "config.h"
 #if USE_LIBPQXX
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
@@ -24,7 +25,7 @@ namespace DB
 
 using TableLoadingDependenciesVisitor = DDLLoadingDependencyVisitor::Visitor;
 
-TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, const String & current_database, bool can_throw)
+TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, const CurrentDatabaseInfo & current_database, bool can_throw)
 {
     chassert(global_context == global_context->getGlobalContext());
     TableLoadingDependenciesVisitor::Data data;
@@ -290,7 +291,7 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
         /// attached — the graph must not disagree with the attached storage. Note that this is not
         /// the default database of the server: that one is only for a nested query executed with
         /// the global context rather than with the context of the CREATE query.
-        qualified_name.database = data.current_database;
+        std::tie(qualified_name.database, qualified_name.table) = data.current_database.rebase(qualified_name.table);
     }
     data.dependencies.emplace(std::move(qualified_name));
 }

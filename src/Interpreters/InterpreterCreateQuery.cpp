@@ -112,6 +112,7 @@
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
+#include <fmt/format.h>
 
 #include "config.h"
 
@@ -1993,8 +1994,19 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             "Temporary objects (tables/views) cannot be created ON CLUSTER. "
             "You should not specify a cluster for a temporary objects.");
 
-    String current_database = getContext()->getCurrentDatabase();
-    auto database_name = create.database ? create.getDatabase() : current_database;
+    auto current_database = getContext()->getCurrentDatabase();
+
+    String database_name;
+    String table_name;
+    if (create.database)
+    {
+        database_name = create.getDatabase();
+        table_name = create.getTable();
+    }
+    else
+    {
+        std::tie(database_name, table_name) = current_database.rebase(create.getTable());
+    }
 
     bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
     auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query || is_restore_from_backup);
@@ -2061,14 +2073,14 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 "ATTACH applies the table definition from stored metadata and can't be changed in the query itself. "
                 "Use 'ATTACH TABLE {0};' to re-attach with stored metadata, or 'ALTER TABLE {0} MODIFY SETTING ...' "
                 "(or 'MODIFY ORDER BY ...') after ATTACH to change settings.",
-                backQuoteIfNeed(create.getTable()));
+                backQuoteIfNeed(table_name));
         }
 
         // In case of an ON CLUSTER query, the database may not be present on the initiator node
         auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
         if (database && database->shouldReplicateQuery(getContext(), query_ptr))
         {
-            auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable(), database.get());
+            auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, table_name, database.get());
             create.setDatabase(database_name);
             guard->releaseTableLock();
             return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), QueryFlags{ .internal = internal, .distributed_backup_restore = is_restore_from_backup }, std::move(guard));
@@ -2083,36 +2095,38 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         /// For short syntax of ATTACH query we have to lock table name here, before reading metadata
         /// and hold it until table is attached
         if (likely(need_ddl_guard))
-            ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable(), database.get());
+            ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, table_name, database.get());
 
         bool if_not_exists = create.if_not_exists;
 
         // Table SQL definition is available even if the table is detached (even permanently)
-        auto query = database->getCreateTableQuery(create.getTable(), getContext());
+        auto query = database->getCreateTableQuery(table_name, getContext());
         FunctionNameNormalizer::visit(query.get());
         auto create_query = query->as<ASTCreateQuery &>();
 
         /// Set replicated or not replicated MergeTree engine in metadata and query
         if (create.attach_as_replicated.has_value())
         {
-            if (database->isTableExist(create.getTable(), getContext()))
+            if (database->isTableExist(table_name, getContext()))
                 throw Exception(
                     ErrorCodes::TABLE_ALREADY_EXISTS,
                     "Table {}.{} already exists",
                     backQuoteIfNeed(create.getDatabase()),
-                    backQuoteIfNeed(create.getTable()));
+                    backQuoteIfNeed(table_name));
             convertMergeTreeTableIfPossible(create_query, database, create.attach_as_replicated.value());
         }
 
         if (!create.is_dictionary && create_query.is_dictionary)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "Cannot ATTACH TABLE {}.{}, it is a Dictionary",
-                backQuoteIfNeed(database_name), backQuoteIfNeed(create.getTable()));
+                backQuoteIfNeed(database_name),
+                backQuoteIfNeed(table_name));
 
         if (create.is_dictionary && !create_query.is_dictionary)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "Cannot ATTACH DICTIONARY {}.{}, it is a Table",
-                backQuoteIfNeed(database_name), backQuoteIfNeed(create.getTable()));
+                backQuoteIfNeed(database_name),
+                backQuoteIfNeed(table_name));
 
         create = create_query; // Copy the saved create query, but use ATTACH instead of CREATE
 
@@ -2169,7 +2183,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                          "use either ATTACH TABLE {}; to attach existing table "
                          "or CREATE TABLE {} <table definition>; to create new table "
                          "or ATTACH TABLE {} FROM '/path/to/data/' <table definition>; to create new table and attach data.",
-                         create.getTable(), create.getTable(), create.getTable());
+                         table_name, table_name, table_name);
     }
 
     if (!create.isTemporary() && !create.database)
@@ -4129,7 +4143,7 @@ void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
 {
     if (!as_table_saved.empty())
     {
-        String database = backQuoteIfNeed(as_database_saved.empty() ? getContext()->getCurrentDatabase() : as_database_saved);
+        String database = backQuoteIfNeed(as_database_saved.empty() ? getContext()->getCurrentDatabase().getFullName() : as_database_saved);
         elem.query_databases.insert(database);
         elem.query_tables.insert(database + "." + backQuoteIfNeed(as_table_saved));
     }

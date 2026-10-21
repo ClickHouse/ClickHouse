@@ -2,6 +2,7 @@
 
 #include <Interpreters/ClientInfo.h>
 #include <Core/UUID.h>
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <optional>
 #include <vector>
 
@@ -28,7 +29,7 @@ public:
         const std::shared_ptr<const std::vector<UUID>> & external_roles_,
         const std::shared_ptr<const AccessRightsElements> & authentication_grants_,
         const Settings & settings_,
-        const String & current_database_,
+        const CurrentDatabaseInfo & current_database_,
         const ClientInfo & client_info_,
         const std::optional<UUID> & initial_user_id_);
 
@@ -50,7 +51,7 @@ public:
     const bool allow_ddl;
     const bool allow_introspection;
 
-    const String current_database;
+    const CurrentDatabaseInfo current_database;
 
     const ClientInfo::Interface interface;
     const ClientInfo::HTTPMethod http_method;

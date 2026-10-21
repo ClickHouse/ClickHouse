@@ -130,9 +130,9 @@ namespace
         /// Qualified as outside this session, where the name of a temporary table is a table of the view's database.
         /// No current database: a recursive CTE stays unqualified. No `table_name`: it would be dropped from the result.
         ASTPtr select_copy = select_with_union->clone();
-        AddDefaultDatabaseVisitor(context->getGlobalContext(), view_id.database_name).visit(select_copy);
+        AddDefaultDatabaseVisitor(context->getGlobalContext(), CurrentDatabaseInfo::fromOnlyDatabaseName(view_id.database_name)).visit(select_copy);
         auto referenced_tables = getDependenciesFromCreateQuery(
-            context, /*table_name=*/{}, select_copy, /*current_database=*/"").dependencies;
+            context, /*table_name=*/{}, select_copy, /*current_database=*/CurrentDatabaseInfo{}).dependencies;
         return referenced_tables.contains(view_id.getQualifiedName());
     }
 

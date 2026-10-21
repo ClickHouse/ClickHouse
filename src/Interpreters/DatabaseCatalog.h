@@ -3,6 +3,7 @@
 #include <Core/UUID.h>
 #include <Databases/TablesDependencyGraph.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Interpreters/DDLGuard.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
@@ -152,6 +153,7 @@ public:
 
 
     void assertDatabaseExists(const String & database_name) const;
+    void assertDatabaseAndNamespacesExist(const CurrentDatabaseInfo & database_info) const;
     void assertDatabaseDoesntExist(const String & database_name) const;
 
     DatabasePtr getDatabaseForTemporaryTables() const;

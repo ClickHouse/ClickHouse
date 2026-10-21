@@ -1,3 +1,4 @@
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
 #include <Parsers/Access/parseAccessEntityName.h>
@@ -75,7 +76,7 @@ void ASTShowCreateAccessEntityQuery::formatQueryImpl(WriteBuffer & ostr, const F
 }
 
 
-void ASTShowCreateAccessEntityQuery::replaceEmptyDatabase(const String & current_database)
+void ASTShowCreateAccessEntityQuery::replaceEmptyDatabase(const CurrentDatabaseInfo & current_database)
 {
     if (row_policy_names)
         row_policy_names->replaceEmptyDatabase(current_database);
@@ -84,7 +85,7 @@ void ASTShowCreateAccessEntityQuery::replaceEmptyDatabase(const String & current
     {
         String & database = database_and_table_name->first;
         if (database.empty())
-            database = current_database;
+            database_and_table_name = current_database.rebase(database_and_table_name->second);
     }
 }
 

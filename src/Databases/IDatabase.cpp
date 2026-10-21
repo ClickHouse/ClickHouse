@@ -278,4 +278,11 @@ DiskPtr IDatabase::getDisk() const
 {
     return Context::getGlobalContextInstance()->getDatabaseDisk();
 }
+
+void IDatabase::validateTableNamespace(std::string_view /*namespace_parts*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        "Database {} does not support table namespaces", backQuoteIfNeed(getDatabaseName()));
+}
+
 }

@@ -1,0 +1,57 @@
+-- INSERT
+ok
+ok
+ok
+3
+-- statements with output
+select: same
+3	3
+exists: same
+1
+-- OPTIMIZE, CHECK
+ok
+ok
+ok
+1
+check: same
+-- ALTER
+x
+y1
+y2
+y3
+describe: same
+show columns: same
+show indexes: same
+show create: same
+-- SYSTEM
+Code: 236
+Code: 236
+Code: 236
+-- query parameter as the first part of a folded path
+1
+1
+-- RENAME
+1
+0
+1
+-- DROP
+0
+0
+0
+-- database with a dot in its name
+1
+7
+Code: 344
+Code: 36
+Code: 344
+Code: 48
+-- USE and SHOW TABLES FROM, setting off
+Code: 344
+Code: 344
+Code: 344
+Code: 344
+Code: 344
+-- formatting
+INSERT INTO a.`b.c.d` FORMAT Values
+-- query parameter inside a path
+Code: 62

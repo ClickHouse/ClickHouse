@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/IAST.h>
@@ -49,7 +50,7 @@ public:
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateMaskingPolicyQuery>(clone()); }
 
     void replaceCurrentUserTag(const String & current_user_name) const;
-    void replaceEmptyDatabase(const String & current_database) const;
+    void replaceEmptyDatabase(const CurrentDatabaseInfo & current_database);
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }
 

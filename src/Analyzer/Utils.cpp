@@ -87,6 +87,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int TYPE_MISMATCH;
+    extern const int NOT_IMPLEMENTED;
 }
 
 bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root)
@@ -1409,14 +1410,24 @@ TableExpressionNodePtr buildSubqueryToReadColumnsFromTableExpression(const Table
     return buildSubqueryToReadColumnsFromTableExpression(columns_to_select, table_node, context);
 }
 
-std::pair<String, String> extractDatabaseAndTableNameForParameterizedView(const String & table_function_name, const ContextPtr & context)
+std::pair<String, String> extractDatabaseAndTableNameForParameterizedView(const String & table_function_name, const ContextPtr & context, bool can_throw)
 {
-    String database_name = context->getCurrentDatabase();
+    auto current_database = context->getCurrentDatabase();
+
+    String database_name = current_database.getFullName();
     String table_name;
 
     Identifier table_identifier{table_function_name};
     if (table_identifier.getPartsSize() == 1)
     {
+        // Table namespaces are not supported for parameterized views.
+        if (current_database.hasSchema())
+        {
+            if (can_throw)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table namespaces are not supported for parameterized views.");
+            return {};
+        }
+
         table_name = table_identifier[0];
     }
     else if (table_identifier.getPartsSize() == 2)

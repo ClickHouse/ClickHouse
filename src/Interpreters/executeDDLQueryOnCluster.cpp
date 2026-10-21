@@ -9,6 +9,7 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Interpreters/DDLOnClusterQueryStatusSource.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DDLWorker.h>
@@ -158,16 +159,16 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
         || needsDefaultDatabaseForBareDictionaryOnCluster(query_ptr);
 
     bool use_local_default_database = false;
-    const String & current_database = context->getCurrentDatabase();
-    Strings access_check_default_databases{current_database};
+    const auto current_database = context->getCurrentDatabase();
+    std::vector<CurrentDatabaseInfo> access_check_default_databases{current_database};
 
     if (need_replace_current_database)
     {
-        Strings host_default_databases;
+        std::vector<CurrentDatabaseInfo> host_default_databases;
         for (const auto * address : addresses)
         {
             if (!address->default_database.empty())
-                host_default_databases.push_back(address->default_database);
+                host_default_databases.push_back(CurrentDatabaseInfo{address->default_database});
             else
                 use_local_default_database = true;
         }
@@ -265,7 +266,7 @@ bool maybeRemoveOnCluster(const ASTPtr & query_ptr, ContextPtr context)
     /// Extract the target database(s). For multi-element queries (RENAME / EXCHANGE TABLES)
     /// all elements must reference the same database, otherwise we can't safely pass through.
     String database_name;
-    const String & current_database = context->getCurrentDatabase();
+    const String current_database = context->getCurrentDatabase().getFullName();
 
     if (const auto * with_table = dynamic_cast<const ASTQueryWithTableAndOutput *>(query_ptr.get()))
     {

@@ -1,3 +1,4 @@
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Parsers/Access/ASTMoveAccessEntityQuery.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
 #include <Common/quoteString.h>
@@ -56,7 +57,7 @@ void ASTMoveAccessEntityQuery::formatImpl(WriteBuffer & ostr, const FormatSettin
     formatOnCluster(ostr, settings);
 }
 
-void ASTMoveAccessEntityQuery::replaceEmptyDatabase(const String & current_database) const
+void ASTMoveAccessEntityQuery::replaceEmptyDatabase(const CurrentDatabaseInfo & current_database) const
 {
     if (row_policy_names)
         row_policy_names->replaceEmptyDatabase(current_database);

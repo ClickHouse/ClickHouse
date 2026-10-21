@@ -1,6 +1,8 @@
 #pragma once
 
+#include <Analyzer/Resolve/IdentifierResolver.h>
 #include <Common/typeid_cast.h>
+#include <Analyzer/TableNode.h>
 #include <Core/QualifiedTableName.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTLiteral.h>
@@ -32,6 +34,14 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+
+extern const int NOT_IMPLEMENTED;
+extern const int UNKNOWN_TABLE;
+
+}
+
 /// Visitors consist of functions with unified interface 'void visit(Cast & x, ASTPtr & y)', there x is y, successfully cast to Cast.
 /// Both types and function could have const specifiers. The second argument is used by visitor to replaces AST node (y) if needed.
 
@@ -41,13 +51,14 @@ class AddDefaultDatabaseVisitor
 public:
     explicit AddDefaultDatabaseVisitor(
         ContextPtr context_,
-        const String & database_name_,
+        const CurrentDatabaseInfo & database_name_,
         bool only_replace_current_database_function_ = false,
         bool only_replace_in_join_ = false)
         : context(context_)
-        , database_name(database_name_)
+        , current_database(database_name_)
         , only_replace_current_database_function(only_replace_current_database_function_)
         , only_replace_in_join(only_replace_in_join_)
+        , allow_table_namespaces(getAllowTableNamespaces(context_))
     {
         if (!context->isGlobalContext())
         {
@@ -154,7 +165,7 @@ private:
 
     ContextPtr context;
 
-    const String database_name;
+    const CurrentDatabaseInfo current_database;
     std::set<String> external_tables;
     struct WithDeclaration
     {
@@ -174,6 +185,10 @@ private:
 
     bool only_replace_current_database_function = false;
     bool only_replace_in_join = false;
+
+    const bool allow_table_namespaces = false;
+
+    static bool getAllowTableNamespaces(const ContextPtr & context);
 
     void visitTableExpressionsImpl(IAST & ast) const
     {
@@ -275,7 +290,11 @@ private:
                 if (!identifier->compound() && !identifier->isParam()
                     && !external_tables.contains(identifier->name()) && !isExpressionAlias(identifier->name()))
                 {
-                    arguments[0] = make_intrusive<ASTIdentifier>(std::vector<String>{database_name, identifier->name()});
+                    if (current_database.hasSchema())
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "Dicionaries are not supported in context with schema or namespaces set, but unqualified dictionary name '{}' is used",
+                            identifier->name());
+                    arguments[0] = make_intrusive<ASTIdentifier>(std::vector<String>{String(current_database.getDatabasePart()), identifier->name()});
                 }
             }
             else if (auto * literal = arguments[0]->as<ASTLiteral>())
@@ -286,9 +305,13 @@ private:
                     auto qualified_table_name = QualifiedTableName::tryParseFromString(literal_value.safeGet<String>());
                     if (qualified_table_name && qualified_table_name->database.empty() && !external_tables.contains(qualified_table_name->table))
                     {
-                        qualified_table_name->database = database_name;
-                        literal_value = qualified_table_name->getFullName();
-                    }
+                        if (current_database.hasSchema())
+                            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                                "Dicionaries are not supported in context with schema or namespaces set, but unqualified dictionary name '{}' is used",
+                                identifier->name());
+
+                        qualified_table_name->database = current_database.getDatabasePart();
+                        literal_value = qualified_table_name->getFullName();                    }
                 }
             }
         }
@@ -304,7 +327,10 @@ private:
                 /// current database is unrelated to the database owning the definition.
                 if (!identifier->compound() && !identifier->isParam())
                 {
-                    auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(identifier->name(), database_name);
+                    if (current_database.hasSchema())
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "Can not qualify dictionary {} because current schema or namespace are set", identifier->name());
+                    auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(identifier->name(), String(current_database.getDatabasePart()));
                     arguments[0] = make_intrusive<ASTIdentifier>(qualified_dictionary_name.getParts());
                 }
             }
@@ -313,7 +339,10 @@ private:
                 auto & literal_value = literal->value;
                 if (literal_value.getType() == Field::Types::String)
                 {
-                    auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(literal_value.safeGet<String>(), database_name);
+                    if (current_database.hasSchema())
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "Can not qualify dictionary {} because current schema or namespace are set", identifier->name());
+                    auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(literal_value.safeGet<String>(), String(current_database.getDatabasePart()));
                     literal_value = qualified_dictionary_name.getFullName();
                 }
             }
@@ -577,7 +606,7 @@ private:
     /// substituted here, in the same way as it is done for table names.
     void visitTableFunction(IAST & table_function) const
     {
-        if (database_name.empty())
+        if (current_database.empty())
             return;
 
         auto * function = table_function.as<ASTFunction>();
@@ -591,7 +620,11 @@ private:
             /// merge('tables_regexp') -> merge('database_name', 'tables_regexp')
             if (arguments.size() == 1)
             {
-                arguments.insert(arguments.begin(), make_intrusive<ASTLiteral>(database_name));
+                if (current_database.hasSchema())
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Can not substitute current database into 'merge' table function because current schema or namespace are set");
+
+                arguments.insert(arguments.begin(), make_intrusive<ASTLiteral>(current_database.getDatabasePart()));
             }
             /// merge(currentDatabase(), 'tables_regexp') -> merge('database_name', 'tables_regexp'),
             /// because `currentDatabase` would be evaluated too late, in a context where the current database can be different.
@@ -630,7 +663,7 @@ private:
             /// The `updatePointerToChild` function replaces the old address with the new one without access, so it is safe to invalidate it in place.
             /// However, just for safety, let's store the old node for a little longer.
             ASTPtr old_ast = ast;
-            ast = make_intrusive<ASTLiteral>(database_name);
+            ast = make_intrusive<ASTLiteral>(current_database.getDatabasePart());
             parent.updatePointerToChild(old_ast.get(), ast);
             return;
         }
@@ -643,7 +676,24 @@ private:
     {
         /// Already has database.
         if (identifier.compound())
+        {
+            if (!allow_table_namespaces)
+                return;
+
+            auto table_node = IdentifierResolver::tryResolveTableIdentifier(Identifier(identifier.name()), context);
+            if (!table_node)
+                throw Exception(ErrorCodes::UNKNOWN_TABLE, "Unknown table {} in the query", identifier.name());
+            auto storage_id = table_node->getStorageID();
+
+            auto qualified_identifier = make_intrusive<ASTTableIdentifier>(
+                storage_id.getDatabaseName(),
+                storage_id.getTableName());
+
+            if (!identifier.alias.empty())
+                qualified_identifier->setAlias(identifier.alias);
+            ast = qualified_identifier;
             return;
+        }
         /// A parameterized name is only known when the view is called, and it has no
         /// resolvable name to qualify here.
         if (identifier.isParam())
@@ -655,7 +705,9 @@ private:
         if (isWithAlias(identifier.name()))
             return;
 
-        auto qualified_identifier = make_intrusive<ASTTableIdentifier>(database_name, identifier.name());
+        auto [database_name, table_name] = current_database.rebase(identifier.name());
+
+        auto qualified_identifier = make_intrusive<ASTTableIdentifier>(database_name, table_name);
         if (!identifier.alias.empty())
             qualified_identifier->setAlias(identifier.alias);
         ast = qualified_identifier;
@@ -684,6 +736,11 @@ private:
                             /// has no resolvable name to qualify here.
                             if (identifier->isParam())
                                 continue;
+
+                            if (current_database.hasSchema())
+                                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                                    "Unqualified referenced to dictionaries are not supported when current schema or namespaces are set, but '{}' used",
+                                    identifier->name());
 
                             auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(identifier->name(), context);
                             child->children[i] = make_intrusive<ASTIdentifier>(qualified_dictionary_name.getParts());
@@ -766,7 +823,7 @@ private:
             return;
 
         if (!node.database)
-            node.setDatabase(database_name);
+            node.setDatabase(current_database);
     }
 
     void visitDDL(ASTPtr & /* parent */, ASTRenameQuery & node, ASTPtr &) const
@@ -774,7 +831,7 @@ private:
         if (only_replace_current_database_function)
             return;
 
-        node.setDatabaseIfNotExists(database_name);
+        node.setDatabaseIfNotExists(current_database);
     }
 
     void visitDDL(ASTPtr & /* parent */, ASTAlterQuery & node, ASTPtr &) const
@@ -783,15 +840,23 @@ private:
             return;
 
         if (!node.database)
-            node.setDatabase(database_name);
+            node.setDatabase(current_database);
 
         for (const auto & child : node.command_list->children)
         {
             auto * command_ast = child->as<ASTAlterCommand>();
             if (command_ast->from_database.empty())
-                command_ast->from_database = database_name;
+            {
+                auto [database_name, table_name] = current_database.rebase(command_ast->from_table);
+                command_ast->from_database = std::move(database_name);
+                command_ast->from_table = std::move(table_name);
+            }
             if (command_ast->to_database.empty())
-                command_ast->to_database = database_name;
+            {
+                auto [database_name, table_name] = current_database.rebase(command_ast->to_table);
+                command_ast->to_database = std::move(database_name);
+                command_ast->to_table = std::move(table_name);
+            }
         }
     }
 
@@ -804,7 +869,12 @@ private:
         if (!query.table || query.database || only_replace_current_database_function)
             return;
 
-        query.setDatabase(database_name);
+        if (current_database.hasSchema())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Unqualified referenced to dictionaries are not supported when current schema or namespaces are set, but '{}' used",
+                query.getTable());
+
+        query.setDatabase(String(current_database.getDatabasePart()));
     }
 
     void visitDDL(ASTPtr & parent, ASTFunction & function, ASTPtr & node) const
@@ -814,7 +884,7 @@ private:
             /// The `updatePointerToChild` function replaces the old address with the new one without access, so it is safe to invalidate it in place.
             /// However, just for safety, let's store the old node for a little longer.
             ASTPtr old_node = node;
-            node = make_intrusive<ASTLiteral>(database_name);
+            node = make_intrusive<ASTLiteral>(current_database.getDatabasePart());
 
             if (parent)
             {

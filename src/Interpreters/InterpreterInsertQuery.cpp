@@ -224,7 +224,7 @@ Block InterpreterInsertQuery::getSampleBlock(
     }
 
     /// Form the block based on the column names from the query
-    const auto columns_ast = processColumnTransformers(context_->getCurrentDatabase(), table, metadata_snapshot, query.columns);
+    const auto columns_ast = processColumnTransformers(context_->getCurrentDatabase().getFullName(), table, metadata_snapshot, query.columns);
     Names names;
     names.reserve(columns_ast->children.size());
     for (const auto & identifier : columns_ast->children)
@@ -1646,7 +1646,7 @@ void InterpreterInsertQuery::setInsertContextValues(ContextMutablePtr context_, 
     std::optional<Names> insert_columns;
     if (insert_query.columns)
     {
-        const auto columns_ast = processColumnTransformers(context_->getCurrentDatabase(), table, metadata_snapshot, insert_query.columns);
+        const auto columns_ast = processColumnTransformers(context_->getCurrentDatabase().getFullName(), table, metadata_snapshot, insert_query.columns);
         Names names;
         names.reserve(columns_ast->children.size());
         for (const auto & identifier : columns_ast->children)
@@ -1679,7 +1679,7 @@ void registerInterpreterInsertQuery(InterpreterFactory & factory)
             is_initial_insert,
             args.options.positional_arguments_already_resolved);
     };
-    factory.registerInterpreter("InterpreterInsertQuery", create_fn);
+    factory.registerInterpreter("InterpreterInsertQuery", create_fn, /*supports_table_namespace_scope*/ true);
 }
 
 

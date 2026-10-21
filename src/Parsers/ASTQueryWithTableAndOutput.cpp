@@ -1,6 +1,8 @@
 #include <Common/SipHash.h>
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <fmt/format.h>
 
 
 namespace DB
@@ -25,6 +27,17 @@ void ASTQueryWithTableAndOutput::setDatabase(const String & name)
     reset(database);
     if (!name.empty())
         set(database, make_intrusive<ASTIdentifier>(name));
+}
+
+void ASTQueryWithTableAndOutput::setDatabase(const CurrentDatabaseInfo & current_database)
+{
+    reset(database);
+    if (!current_database.empty())
+    {
+        auto [database_name, table_name] = current_database.rebase(getTable());
+        set(database, make_intrusive<ASTIdentifier>(std::move(database_name)));
+        setTable(table_name);
+    }
 }
 
 void ASTQueryWithTableAndOutput::setTable(const String & name)

@@ -30,6 +30,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -93,6 +94,14 @@ BlockIO InterpreterSetQuery::execute()
     /// Checked before anything is applied, so that a violation leaves the whole statement without effect.
     getContext()->checkSettingsConstraintsForSettingsReset(ast.default_settings, changes, SettingSource::QUERY);
     auto session_context = getContext()->getSessionContext();
+
+    if (session_context->getCurrentDatabase().hasSchema())
+        for (const auto & change : changes)
+            if (change.name == "allow_experimental_table_namespaces" && !change.value.safeGet<bool>())
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "allow_experimental_table_namespaces cannot be disabled while a table namespace is selected; "
+                    "select the database itself with USE first");
+
     session_context->applySettingsChanges(changes);
     session_context->addQueryParameters(NameToNameMap{ast.query_parameters.begin(), ast.query_parameters.end()});
     session_context->resetSettingsToDefaultValue(ast.default_settings);
@@ -411,6 +420,6 @@ void registerInterpreterSetQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterSetQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterSetQuery", create_fn);
+    factory.registerInterpreter("InterpreterSetQuery", create_fn, /*supports_table_namespace_scope*/ true);
 }
 }

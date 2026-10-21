@@ -1023,7 +1023,7 @@ bool referencesDistributedTableAnywhere(const ASTPtr & ast, const ContextPtr & c
     {
         String database = table_id->getDatabaseName();
         if (database.empty())
-            database = context->getCurrentDatabase();
+            database = context->getCurrentDatabase().getFullName();
         try
         {
             auto storage = DatabaseCatalog::instance().tryGetTable({database, table_id->shortName()}, context);
@@ -1121,7 +1121,7 @@ bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr
                         || hasNonDeterministicJoinAnywhere(definition, context->getSettingsRef()[Setting::join_default_strictness])
                         || hasNonStrippableInlineSettings(definition)
                         || hasNestedThreadSettings(definition, nullptr)
-                        || referencesSystemDatabaseAnywhere(definition, context->getCurrentDatabase())
+                        || referencesSystemDatabaseAnywhere(definition, context->getCurrentDatabase().getFullName())
                         || referencesDistributedTableAnywhere(definition, context)
                         || referencesUnscreenedDefinitionAnywhere(definition, context, depth + 1))
                         return true;
@@ -2819,8 +2819,8 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     /// always shows drift in `processes`, `merges`, `metric_log`, etc.
     /// Reject the whole query at the gate to avoid spurious mismatches in
     /// every oracle.
-    if (referencesNonDeterministicDatabase(*select, context->getCurrentDatabase())
-        || referencesSystemDatabaseAnywhere(query_ast, context->getCurrentDatabase()))
+    if (referencesNonDeterministicDatabase(*select, context->getCurrentDatabase().getFullName())
+        || referencesSystemDatabaseAnywhere(query_ast, context->getCurrentDatabase().getFullName()))
     {
         LOG_TRACE(logger, "Oracle skip: query reads from system database");
         return false;

@@ -1,5 +1,6 @@
 #pragma once
 #include <Core/QualifiedTableName.h>
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 
@@ -20,7 +21,7 @@ using TableNamesSet = std::unordered_set<QualifiedTableName>;
 /// `current_database` is the database against which the unqualified table names of the CREATE query
 /// have to be resolved: the current database of the query for a freshly executed CREATE, or the
 /// database owning the table for the metadata loaded at startup.
-TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, const String & current_database, bool can_throw = false);
+TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, const CurrentDatabaseInfo & current_database, bool can_throw = false);
 
 
 class DDLMatcherBase
@@ -40,9 +41,9 @@ public:
     {
         /// The default database of the server, used where a nested query is executed with the global
         /// context rather than with the context of the CREATE query.
-        String default_database;
+        CurrentDatabaseInfo default_database;
         /// The database against which the unqualified table names of the CREATE query are resolved.
-        String current_database;
+        CurrentDatabaseInfo current_database;
         TableNamesSet dependencies;
         ContextPtr global_context;
         ASTPtr create_query;

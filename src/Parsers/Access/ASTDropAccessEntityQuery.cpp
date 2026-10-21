@@ -1,3 +1,4 @@
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
@@ -85,12 +86,12 @@ void ASTDropAccessEntityQuery::formatImpl(WriteBuffer & ostr, const FormatSettin
 }
 
 
-void ASTDropAccessEntityQuery::replaceEmptyDatabase(const String & current_database) const
+void ASTDropAccessEntityQuery::replaceEmptyDatabase(const CurrentDatabaseInfo & current_database) const
 {
     if (row_policy_names)
         row_policy_names->replaceEmptyDatabase(current_database);
 
     if (masking_policy_name && masking_policy_name->database.empty())
-        masking_policy_name->database = current_database;
+        std::tie(masking_policy_name->database, masking_policy_name->table_name) = current_database.rebase(masking_policy_name->table_name);
 }
 }

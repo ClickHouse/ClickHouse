@@ -482,7 +482,7 @@ BlockIO InterpreterGrantQuery::execute()
     }
 
     /// Replacing empty database with the default. This step must be done before replication to avoid privilege escalation.
-    String current_database = getContext()->getCurrentDatabase();
+    auto current_database = getContext()->getCurrentDatabase();
     elements_to_grant.replaceEmptyDatabase(current_database);
     elements_to_revoke.replaceEmptyDatabase(current_database);
     query.access_rights_elements.replaceEmptyDatabase(current_database);

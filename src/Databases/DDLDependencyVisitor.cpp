@@ -5,6 +5,7 @@
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Interpreters/misc.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -43,7 +44,7 @@ namespace
     {
         friend void tryVisitNestedSelect(const String & query, DDLDependencyVisitorData & data);
     public:
-        DDLDependencyVisitorData(const ContextPtr & global_context_, const QualifiedTableName & table_name_, const ASTPtr & ast_, const String & current_database_, bool can_throw_, bool validate_current_database_, size_t max_expanded_ast_elements_)
+        DDLDependencyVisitorData(const ContextPtr & global_context_, const QualifiedTableName & table_name_, const ASTPtr & ast_, const CurrentDatabaseInfo & current_database_, bool can_throw_, bool validate_current_database_, size_t max_expanded_ast_elements_)
             : create_query(ast_), table_name(table_name_), default_database(global_context_->getCurrentDatabase()), current_database(current_database_), global_context(global_context_), can_throw(can_throw_), validate_current_database(validate_current_database_), max_expanded_ast_elements(max_expanded_ast_elements_)
         {
         }
@@ -92,8 +93,8 @@ namespace
         ASTPtr create_query;
         std::unordered_set<const IAST *> skip_asts;
         QualifiedTableName table_name;
-        String default_database;
-        String current_database;
+        CurrentDatabaseInfo default_database;
+        CurrentDatabaseInfo current_database;
         ContextPtr global_context;
         TableNamesSet dependencies;
         bool can_throw;
@@ -116,7 +117,7 @@ namespace
                         {
                             mv_to_dependency = table_id;
                             if (mv_to_dependency->database_name.empty())
-                                mv_to_dependency->database_name = current_database;
+                                std::tie(mv_to_dependency->database_name, mv_to_dependency->table_name) = current_database.rebase(table_id.table_name);
                             dependencies.emplace(mv_to_dependency->getQualifiedName());
                         }
                         else
@@ -145,13 +146,13 @@ namespace
                         {
                             QualifiedTableName target_name{table_id.database_name, table_id.table_name};
                             if (target_name.database.empty())
-                                target_name.database = current_database;
+                                std::tie(target_name.database, target_name.table) = current_database.rebase(target_name.table);
                             dependencies.emplace(std::move(target_name));
                         }
                     }
 
                     if (mv_to_dependency && mv_to_dependency->database_name.empty())
-                        mv_to_dependency->database_name = current_database;
+                        std::tie(mv_to_dependency->database_name, mv_to_dependency->table_name) = current_database.rebase(mv_to_dependency->table_name);
                 }
             }
 
@@ -160,7 +161,7 @@ namespace
             {
                 /// AS table_name
                 if (as_table.database.empty())
-                    as_table.database = current_database;
+                    std::tie(as_table.database, as_table.table) = current_database.rebase(as_table.table);
                 dependencies.emplace(as_table);
             }
 
@@ -231,7 +232,7 @@ namespace
                 /// All tables from select query in dictionary definition won't
                 /// use current database, as this query is executed with global context.
                 /// Use default database from global context while visiting select query.
-                String current_database_ = current_database;
+                auto current_database_ = current_database;
                 current_database = default_database;
                 tryVisitNestedSelect(info->query, *this);
                 current_database = current_database_;
@@ -261,7 +262,7 @@ namespace
             if (qualified_name.database.empty())
             {
                 /// It can be table/dictionary from default database or XML dictionary, but we cannot distinguish it here.
-                qualified_name.database = current_database;
+                std::tie(qualified_name.database, qualified_name.table) = current_database.rebase(qualified_name.table);
             }
 
             dependencies.emplace(qualified_name);
@@ -496,7 +497,7 @@ namespace
             }
 
             if (qualified_name.database.empty() && apply_current_database)
-                qualified_name.database = current_database;
+                std::tie(qualified_name.database, qualified_name.table) = current_database.rebase(qualified_name.table);
 
             return qualified_name;
         }
@@ -539,7 +540,7 @@ namespace
             qualified_name.table = std::move(table).value();
 
             if (qualified_name.database.empty() && apply_current_database)
-                qualified_name.database = current_database;
+                std::tie(qualified_name.database, qualified_name.table) = current_database.rebase(qualified_name.table);
 
             return qualified_name;
         }
@@ -604,7 +605,7 @@ namespace
 }
 
 
-CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database, bool can_throw, bool validate_current_database, size_t max_expanded_ast_elements)
+CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const CurrentDatabaseInfo & current_database, bool can_throw, bool validate_current_database, size_t max_expanded_ast_elements)
 {
     DDLDependencyVisitor::Data data{global_global_context, table_name, ast, current_database, can_throw, validate_current_database, max_expanded_ast_elements};
     DDLDependencyVisitor::Visitor visitor{data};
@@ -612,7 +613,7 @@ CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global
     return {data.getDependencies(), data.getMvToDependency(), data.getMvFromDependency()};
 }
 
-TableNamesSet getDependenciesFromDictionaryNestedSelectQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & select_query, const String & current_database, bool can_throw)
+TableNamesSet getDependenciesFromDictionaryNestedSelectQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & select_query, const CurrentDatabaseInfo & current_database, bool can_throw)
 {
     DDLDependencyVisitor::Data data{global_context, table_name, ast, current_database, can_throw, /*validate_current_database=*/true, /*max_expanded_ast_elements=*/0};
     tryVisitNestedSelect(select_query, data);

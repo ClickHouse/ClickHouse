@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Parsers/IAST.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
@@ -32,7 +33,7 @@ public:
 
     String getID(char) const override;
     ASTPtr clone() const override;
-    void replaceEmptyDatabase(const String & current_database);
+    void replaceEmptyDatabase(const CurrentDatabaseInfo & current_database);
     void replaceCurrentUserTag(const String & current_user_name) const;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTGrantQuery>(clone()); }
     QueryKind getQueryKind() const override { return is_revoke ? QueryKind::Revoke : QueryKind::Grant; }

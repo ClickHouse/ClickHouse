@@ -281,7 +281,7 @@ public:
         /// The effective timezone of the query, as the `timezone` function reports it: `DateLUT::instance`
         /// resolves the `session_timezone` setting of the current query context and falls back to the
         /// server timezone when it is not set. Capturing a constant here is what `timezone` does too.
-        return std::make_shared<FunctionCurrentSetting>(context->getCurrentDatabase(), String(DateLUT::instance().getTimeZone()));
+        return std::make_shared<FunctionCurrentSetting>(String(context->getCurrentDatabase().getDatabasePart()), String(DateLUT::instance().getTimeZone()));
     }
 
     FunctionCurrentSetting(String current_database_, String current_timezone_)

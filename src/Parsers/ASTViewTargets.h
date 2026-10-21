@@ -13,6 +13,8 @@ namespace DB
 class ASTColumns;
 class ASTStorage;
 
+struct CurrentDatabaseInfo;
+
 /// Information about target tables (external or inner) of a materialized view or a TimeSeries table.
 /// See ASTViewTargets for more details.
 struct ViewTarget
@@ -99,7 +101,7 @@ public:
     bool hasTableID(ViewTarget::Kind kind) const;
 
     /// Replaces an empty database in the StorageID of the target table with a specified database.
-    void setCurrentDatabase(const String & current_database);
+    void setCurrentDatabase(const CurrentDatabaseInfo & current_database);
 
     /// Sets the UUID of the target table, if it's inner.
     /// The UUID is calculated automatically and can be seen for example after "TO INNER UUID" in a statement like
