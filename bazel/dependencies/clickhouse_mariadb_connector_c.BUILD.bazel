@@ -131,6 +131,17 @@ expand_template(
 ch_cc_library(
     name = "_mariadbclient",
     srcs = [
+        "include/ma_common.h",
+        "include/ma_context.h",
+        "include/ma_crypt.h",
+        "include/ma_decimal.h",
+        "include/ma_global.h",
+        "include/ma_hashtbl.h",
+        "include/ma_priv.h",
+        "include/ma_pthread.h",
+        "include/ma_server_error.h",
+        "include/ma_string.h",
+        "include/mariadb_async.h",
         "plugins/pvio/pvio_socket.c",
         "plugins/auth/caching_sha2_pw.c",
         "plugins/auth/sha256_pw.c",
@@ -166,17 +177,27 @@ ch_cc_library(
         ":config/contrib/mariadb-connector-c-cmake/libmariadb/ma_client_plugin.c",
         "libmariadb/mariadb_async.c",
         "libmariadb/ma_context.c",
-        ":config/contrib/mariadb-connector-c-cmake/include-private/config.h",
         ":config/contrib/mariadb-connector-c-cmake/include-private/ma_config.h",
-    ] + glob([
-        "plugins/auth/**/*.h",
-        "win-iconv/*.h",
-    ]),
+    ],
     hdrs = [
         ":config/contrib/mariadb-connector-c-cmake/include-public/mariadb_version.h",
+        "include/errmsg.h",
+        "include/ma_compress.h",
+        "include/ma_hash.h",
+        "include/ma_list.h",
+        "include/ma_pvio.h",
+        "include/ma_sys.h",
+        "include/ma_tls.h",
+        "include/mariadb_com.h",
+        "include/mariadb_ctype.h",
+        "include/mariadb_dyncol.h",
+        "include/mariadb_rpl.h",
+        "include/mariadb_stmt.h",
+        "include/mysql.h",
+        "include/mysqld_error.h",
     ] + glob([
-        "include/**/*.h",
-        "libmariadb/**/*.h",
+        "include/mariadb/*.h",
+        "include/mysql/*.h",
     ]),
     additional_compiler_inputs = ["plugins/pvio/pvio_plugin.def"],
     copts = [
@@ -190,13 +211,18 @@ ch_cc_library(
         "THREAD",
         "-Wno-incompatible-pointer-types",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    implementation_deps = [
+        "@clickhouse_openssl//:crypto",
+        "@clickhouse_openssl//:ssl",
+        "@clickhouse_zlib_ng//:_zlib",
+    ],
     includes = [
         "include",
         "libmariadb",
         "config/contrib/mariadb-connector-c-cmake/include-public",
     ],
     language = "C",
+    libcxx_headers = False,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -256,9 +282,5 @@ ch_cc_library(
     ],
     local_includes = [
         "config/contrib/mariadb-connector-c-cmake/include-private",
-    ],
-    deps = [
-        "@clickhouse_zlib_ng//:_zlib",
-        "@clickhouse_openssl//:ssl",
     ],
 )

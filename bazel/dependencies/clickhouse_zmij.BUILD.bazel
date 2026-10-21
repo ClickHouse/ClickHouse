@@ -14,7 +14,7 @@ ch_cc_library(
     srcs = [
         "zmij.cc",
     ],
-    hdrs = glob(["**/*.h"]),
+    hdrs = glob(["zmij*.h"]),
     copts = [
         "-w",
         "-std=c++23",
@@ -28,10 +28,5 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"] + [
-        "@clickhouse_abseil_cpp//:absl_any",
-        "@clickhouse_abseil_cpp//:absl_optional",
-        "@clickhouse_abseil_cpp//:absl_strings",
-        "@clickhouse_abseil_cpp//:absl_variant",
-    ],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )

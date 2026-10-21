@@ -13,17 +13,20 @@ ch_cc_library(
     name = "_bcrypt",
     srcs = [
         "bcrypt.c",
+        "crypt_blowfish/crypt_blowfish.h",
+        "crypt_blowfish/crypt_gensalt.h",
+        "crypt_blowfish/ow-crypt.h",
     ] + glob(["crypt_blowfish/*.c"]),
-    hdrs = glob(["**/*.h"]),
+    hdrs = ["bcrypt.h"],
     copts = [
         "-w",
         "-std=gnu11",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     includes = [
         ".",
     ],
     language = "C",
+    libcxx_headers = False,
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
