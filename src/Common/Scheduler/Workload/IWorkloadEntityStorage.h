@@ -6,7 +6,6 @@
 #include <compare>
 #include <limits>
 #include <map>
-#include <set>
 #include <string_view>
 
 #include <Interpreters/Context_fwd.h>

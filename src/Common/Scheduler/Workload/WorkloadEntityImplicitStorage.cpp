@@ -1,7 +1,7 @@
 #include <Common/Scheduler/Workload/WorkloadEntityImplicitStorage.h>
 
 #include <Common/Exception.h>
-#include <Common/logger_useful.h>
+#include <Common/Logger.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTCreateResourceQuery.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
