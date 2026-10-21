@@ -13,6 +13,8 @@ ch_cc_library(
         "//base/poco/Util:_poco_util",
         "//src/Common",
         "//src/Common/Config:clickhouse_common_config",
+        "//src/Common/ZooKeeper:headers",
+        "//src/Parsers:clickhouse_parsers",
     ],
     link_runtime = True,
     local_defines = [

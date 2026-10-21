@@ -40,6 +40,8 @@ ch_cc_library(
         "//src/Common/Config:clickhouse_common_config",
         "//base:common",
         "@clickhouse_boost//:boost_headers",
+        "//src/Common/ZooKeeper:headers",
+        "//src/Loggers:headers",
     ],
     link_runtime = True,
     local_defines = [
@@ -132,7 +134,6 @@ ch_cc_library(
     deps = [
         "//src/AggregateFunctions:clickhouse_aggregate_functions",
         "//src/Dictionaries:clickhouse_dictionaries",
-        "//src/Functions/GatherUtils:clickhouse_functions_gatherutils",
         "//src/TableFunctions:clickhouse_table_functions",
     ],
 )

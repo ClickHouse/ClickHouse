@@ -24,6 +24,7 @@ ch_cc_library(
         "//src/Common/Config:clickhouse_common_config",
         "//base:common",
         "@clickhouse_boost//:boost_headers",
+        "//src/Access/Common:clickhouse_common_access",
     ],
     link_runtime = True,
     local_defines = [

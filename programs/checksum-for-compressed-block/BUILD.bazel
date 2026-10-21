@@ -100,6 +100,5 @@ ch_cc_library(
     ],
     deps = [
         "//src/Dictionaries:clickhouse_dictionaries",
-        "//src/Functions/GatherUtils:clickhouse_functions_gatherutils",
     ],
 )
