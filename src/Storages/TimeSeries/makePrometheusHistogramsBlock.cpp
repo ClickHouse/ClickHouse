@@ -34,6 +34,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -48,13 +49,13 @@ namespace
         size_t num_custom_values = 0;
     };
 
-    Sizes countSizes(const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series)
+    Sizes countSizes(std::span<const prometheus::TimeSeries * const> time_series)
     {
         Sizes sizes;
-        for (const auto & element : time_series)
+        for (const auto * element : time_series)
         {
-            sizes.num_histograms += element.histograms_size();
-            for (const auto & histogram : element.histograms())
+            sizes.num_histograms += element->histograms_size();
+            for (const auto & histogram : element->histograms())
             {
                 sizes.num_spans += histogram.positive_spans_size() + histogram.negative_spans_size();
                 sizes.num_int_buckets += histogram.positive_deltas_size() + histogram.negative_deltas_size();
@@ -274,42 +275,24 @@ namespace
         }
     }
 
-    /// Returns the type of the elements of the `histograms.timestamp` outer column, or nullptr if the table has no
-    /// `histograms.*` columns (its version is older than TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET).
-    DataTypePtr tryGetHistogramsTimestampType(const StorageInMemoryMetadata & metadata)
+    /// Returns the type of the elements of the `histograms.timestamp` outer column. A table with a histograms table has it
+    /// (see normalizeTimeSeriesDefinition), so a table without the column must not get here.
+    DataTypePtr getHistogramsTimestampType(const StorageInMemoryMetadata & metadata)
     {
         const auto column_name = TimeSeriesHistogramsColumns::getOuterColumnName(TimeSeriesColumnNames::Timestamp);
         if (!metadata.columns.has(column_name))
-            return nullptr;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column `{}` is missing in a TimeSeries table with a histograms table", column_name);
         const auto array_type = typeid_cast<std::shared_ptr<const DataTypeArray>>(metadata.columns.get(column_name).type);
         if (!array_type)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column `{}` must have an Array type", column_name);
         return array_type->getNestedType();
     }
-
-    /// A table of an older version has no histograms table. Rejecting the request would make the sender drop the float
-    /// samples of the same request too, so the histograms are dropped and the rest of the request is written.
-    void logDroppedHistograms(const StorageTimeSeries & time_series_storage, size_t num_histograms)
-    {
-        static const LoggerPtr log = getLogger("PrometheusRemoteWriteProtocol");
-        ProfileEvents::increment(ProfileEvents::PrometheusRemoteWriteDroppedHistograms, num_histograms);
-        LOG_WARNING(
-            LogFrequencyLimiter(log, 60),
-            "{}: Dropped {} native histogram samples: the table has no histograms table because its version {} is older than {}. "
-            "To store native histograms, create a table of the current version and move the data into it "
-            "(see the documentation of the TimeSeries table engine)",
-            time_series_storage.getStorageID().getNameForLogs(),
-            num_histograms,
-            time_series_storage.getVersion(),
-            TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET);
-    }
 }
 
 
 Block makePrometheusHistogramsBlock(
-    const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
+    std::span<const prometheus::TimeSeries * const> time_series,
     size_t num_metadata_rows,
-    const StorageTimeSeries & time_series_storage,
     const StorageInMemoryMetadata & metadata)
 {
     const auto sizes = countSizes(time_series);
@@ -317,13 +300,7 @@ Block makePrometheusHistogramsBlock(
         return {};
     ProfileEvents::increment(ProfileEvents::PrometheusRemoteWriteHistograms, sizes.num_histograms);
 
-    const auto timestamp_type = tryGetHistogramsTimestampType(metadata);
-    if (!timestamp_type)
-    {
-        logDroppedHistograms(time_series_storage, sizes.num_histograms);
-        return {};
-    }
-
+    const auto timestamp_type = getHistogramsTimestampType(metadata);
     const size_t num_rows = time_series.size() + num_metadata_rows;
     const UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_type).value_or(0);
     auto timestamps = timestamp_type->createColumn();
@@ -335,9 +312,9 @@ Block makePrometheusHistogramsBlock(
     auto & offsets_data = offsets->getData();
     offsets_data.reserve(num_rows);
 
-    for (const auto & element : time_series)
+    for (const auto * element : time_series)
     {
-        for (const auto & histogram : element.histograms())
+        for (const auto & histogram : element->histograms())
             appendHistogram(histogram, *timestamps, timestamp_scale, payload);
         offsets_data.push_back(timestamps->size());
     }
@@ -356,6 +333,31 @@ Block makePrometheusHistogramsBlock(
         ++outer_column;
     }
     return block;
+}
+
+
+void dropPrometheusHistograms(
+    const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
+    const StorageTimeSeries & time_series_storage)
+{
+    size_t num_histograms = 0;
+    for (const auto & element : time_series)
+        num_histograms += element.histograms_size();
+    if (!num_histograms)
+        return;
+    ProfileEvents::increment(ProfileEvents::PrometheusRemoteWriteHistograms, num_histograms);
+    ProfileEvents::increment(ProfileEvents::PrometheusRemoteWriteDroppedHistograms, num_histograms);
+
+    static const LoggerPtr log = getLogger("PrometheusRemoteWriteProtocol");
+    LOG_WARNING(
+        LogFrequencyLimiter(log, 60),
+        "{}: Dropped {} native histogram samples: the table has no histograms table because its version {} is older than {}. "
+        "To store native histograms, create a table of the current version and move the data into it "
+        "(see the documentation of the TimeSeries table engine)",
+        time_series_storage.getStorageID().getNameForLogs(),
+        num_histograms,
+        time_series_storage.getVersion(),
+        TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET);
 }
 
 }

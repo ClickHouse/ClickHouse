@@ -46,8 +46,10 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool useDefaultImplementationForVariant() const override { return false; }
 
-    /// Inside `if` it must check only the rows of its branch, like `throwIf`.
+    /// Inside `if` it must check only the rows of its branch, like `throwIf`: it is executed lazily on them and not evaluated
+    /// on constant arguments during the analysis, which would throw for a branch no row takes.
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForConstantFolding() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -66,8 +68,12 @@ public:
         return arguments[0].type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
+        /// A branch of `if` which no row takes still gets a constant `array` with its data, so there is nothing to check.
+        if (input_rows_count == 0)
+            return arguments[0].column;
+
         const IColumn * array_column = arguments[1].column.get();
         if (const auto * array_const = checkAndGetColumn<ColumnConst>(array_column))
             array_column = &array_const->getDataColumn();

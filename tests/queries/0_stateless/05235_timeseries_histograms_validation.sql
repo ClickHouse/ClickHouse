@@ -44,6 +44,8 @@ INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.is_float
     VALUES ('m', {'job': 'api'}, [toDateTime64('2026-01-01 00:00:00', 3)], [true], [[(0, 1)]], [[-1]]); -- { serverError INCORRECT_DATA }
 INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.is_float, histograms.zero_count_float)
     VALUES ('m', {'job': 'api'}, [toDateTime64('2026-01-01 00:00:00', 3)], [true], [-1]); -- { serverError INCORRECT_DATA }
+INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.is_float, histograms.count_float)
+    VALUES ('m', {'job': 'api'}, [toDateTime64('2026-01-01 00:00:00', 3)], [true], [-1]); -- { serverError INCORRECT_DATA }
 INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.is_float, histograms.count_float, histograms.positive_spans, histograms.positive_values_float)
     VALUES ('m', {'job': 'api'}, [toDateTime64('2026-01-01 00:00:00', 3)], [true], [100], [[(0, 1)]], [[1]]);
 

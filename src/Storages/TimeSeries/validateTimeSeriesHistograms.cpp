@@ -175,11 +175,12 @@ namespace
         }
     }
 
+    /// The total count and the zero bucket can't be negative either.
     template <typename Fail>
-    void checkFloatZeroCount(Float64 zero_count, const Fail & fail)
+    void checkFloatCount(Float64 count, std::string_view error_message, const Fail & fail)
     {
-        if (zero_count < 0)
-            fail("the zero bucket has a negative count {}", zero_count);
+        if (count < 0)
+            fail("{} {}", error_message, count);
     }
 
     /// Prometheus keeps the bucket counts of an integer histogram as `int64` (they travel as `int64` deltas),
@@ -274,7 +275,8 @@ void validateTimeSeriesHistograms(const Block & histograms_block, UInt64 max_buc
         {
             checkFloatBuckets(columns.positive_values_float[row], "positive", fail);
             checkFloatBuckets(columns.negative_values_float[row], "negative", fail);
-            checkFloatZeroCount(columns.zero_count_float[row], fail);
+            checkFloatCount(columns.count_float[row], "count_float is negative:", fail);
+            checkFloatCount(columns.zero_count_float[row], "the zero bucket has a negative count", fail);
         }
         else
         {

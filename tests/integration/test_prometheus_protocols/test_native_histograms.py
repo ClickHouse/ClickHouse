@@ -371,6 +371,27 @@ def test_table_without_histograms_drops_them():
     assert node.contains_in_log("Dropped 1 native histogram samples: the table has no histograms table because its version 5 is older than ")
 
 
+def test_table_without_histograms_writes_no_phantom_series():
+    # A series of the request with histograms only has nothing left to store once they are dropped: it must not become a
+    # row of the tags table without any sample, visible through timeSeriesTags and the labels API. The other series of the
+    # request are written as usual.
+    node.query("DROP TABLE prometheus SYNC")
+    node.query("CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS version = 5")
+    histogram = types_pb2.Histogram(count_int=1, sum=1, positive_spans=[span(0, 1)], positive_deltas=[1], timestamp=TIMESTAMP_MS)
+
+    events_before = get_events()
+    send(make_write_request(
+        ({"__name__": "histograms_only"}, [histogram]),
+        ({"__name__": "both", "job": "api"}, [histogram], {TIMESTAMP_MS: 1.0}),
+        ({"__name__": "samples_only", "job": "api"}, [], {TIMESTAMP_MS: 2.0}),
+    ))
+    events_after = get_events()
+
+    assert node.query("SELECT metric_name, tags['job'], length(samples) FROM prometheus ORDER BY metric_name") == "both\tapi\t1\nsamples_only\tapi\t1\n"
+    assert node.query("SELECT metric_name FROM timeSeriesTags(prometheus) ORDER BY metric_name") == "both\nsamples_only\n"
+    assert events_after["PrometheusRemoteWriteDroppedHistograms"] == events_before["PrometheusRemoteWriteDroppedHistograms"] + 2
+
+
 def remote_read(start_ms, end_ms):
     """Reads every time series in [start_ms, end_ms] over remote read: {sorted labels: prompb.TimeSeries}."""
     read_request = remote_pb2.ReadRequest()
