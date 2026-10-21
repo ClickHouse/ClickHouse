@@ -95,6 +95,7 @@ run "$GW" -q "EXECUTE AS ${QMT} SETTINGS merge_tree_index_granularity = 1 SELECT
 run "$GW" -q "SELECT formatQuery('EXECUTE AS u SETTINGS SQL_tenant = DEFAULT SELECT 1')"
 run "$GW" -q "SELECT formatQuery('EXECUTE AS u SETTINGS SQL_tenant = {p:String} SELECT 1')"
 run "$GW" -q "SELECT formatQuery('EXECUTE AS u SETTINGS SQL_tenant SELECT 1')"
+run "$GW" -q "SELECT formatQuery('EXECUTE AS u SETTINGS SQL_tenant = {\'k\':\'v\'} SELECT 1')"
 run "$GW" -q "EXECUTE AS ${QW} SETTINGS SQL_tenant = 'acme' SELECT 1"
 run "$GW" -q "EXECUTE AS ${QVAL} SETTINGS SQL_tenant = 'acme' SELECT 1"
 run "$GW" -q "EXECUTE AS ${QEMPTY} SETTINGS SQL_tenant = 'acme' SELECT 1"

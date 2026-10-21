@@ -240,11 +240,11 @@ bool ParserSetQuery::parseNameLiteralPair(SettingChange & change, IParser::Pos &
 {
     ParserCompoundIdentifier name_p;
     ParserToken s_eq(TokenType::Equals);
-    ParserLiteralOrMap literal_or_map_p;
+    ParserLiteral literal_p;
 
     ASTPtr name;
     ASTPtr value;
-    if (!name_p.parse(pos, name, expected) || !s_eq.ignore(pos, expected) || !literal_or_map_p.parse(pos, value, expected))
+    if (!name_p.parse(pos, name, expected) || !s_eq.ignore(pos, expected) || !literal_p.parse(pos, value, expected))
         return false;
 
     tryGetIdentifierNameInto(name, change.name);

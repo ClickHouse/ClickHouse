@@ -134,7 +134,7 @@ so neither the following queries nor a later `SET`, `SET profile` or `SETTINGS` 
 server setting `access_control_improvements.allow_execute_as_settings` (disabled by default). A setting may be given
 only once, `target_user` must not be defined in the server configuration files, and the caller must be allowed to set
 the same value for itself. A nested `EXECUTE AS` keeps the values: the next user must declare the same settings, and its
-`SETTINGS` clause may only repeat them.
+`SETTINGS` clause may only repeat them. Each value is a string, number, boolean or `NULL` literal, not a map.
 
 The values also reach the remote nodes of a distributed query over a cluster with `<secret>`, which check them against
 the same user there; the query fails if a remote node does not have the feature enabled or is of an older version.
