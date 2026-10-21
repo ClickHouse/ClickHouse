@@ -169,9 +169,7 @@ public:
 
     /// The first part of `convertToDistributed`: checks that the optimized plan can still be distributed,
     /// takes the `IN`-subquery sets out of it, cuts it into the stages of a distributed plan, and adds the
-    /// `final_result` exchange to the `main` stage. It builds no pipeline, does not resolve worker hosts
-    /// and touches no executor, so `EXPLAIN` can use it too. The cut consumes the plan: its nodes are
-    /// moved into the stages, and this plan is empty afterwards (only its resources stay).
+    /// `final_result` exchange to the `main` stage.
     DistributedPlanCut cutIntoDistributedPlan(const QueryPlanOptimizationSettings & optimization_settings);
 
     /// The single decision function for `make_distributed_plan`. When this plan cannot be

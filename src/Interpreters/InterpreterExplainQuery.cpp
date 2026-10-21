@@ -1244,7 +1244,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                         /// `cut` must outlive `graph`, whose fragments point to the plans of its stages.
                         auto cut = plan.cutIntoDistributedPlan(optimization_settings);
                         auto graph = buildFragmentGraph(cut.distributed_plan);
-                        explainFragmentGraph(graph, buf, settings.query_plan_options, max_step_description_length);
+                        FragmentGraphExplain(graph, settings.query_plan_options, max_step_description_length).explain(buf);
                     }
                     else
                     {
@@ -1252,7 +1252,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                         if (plan.didFallBackToLocal())
                             fallback_reason = plan.getDistributedPlanFallbackReason();
                         auto graph = buildSingleFragmentGraph(plan, std::move(fallback_reason));
-                        explainFragmentGraph(graph, buf, settings.query_plan_options, max_step_description_length);
+                        FragmentGraphExplain(graph, settings.query_plan_options, max_step_description_length).explain(buf);
                     }
                     break;
                 }
