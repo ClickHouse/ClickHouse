@@ -19,7 +19,6 @@
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/TableJoin.h>
 
-#include <algorithm>
 
 namespace DB
 {

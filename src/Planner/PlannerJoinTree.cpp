@@ -3532,8 +3532,7 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
         array_join_column_names.push_back(array_join_column_identifier);
 
         auto & array_join_expression_column = array_join_expression->as<ColumnNode &>();
-        const auto & array_join_source_expression = array_join_expression_column.getExpressionOrThrow();
-        auto [expression_dag_index_nodes, correlated_subtrees] = actions_visitor.visit(array_join_action_dag, array_join_source_expression);
+        auto [expression_dag_index_nodes, correlated_subtrees] = actions_visitor.visit(array_join_action_dag, array_join_expression_column.getExpressionOrThrow());
         correlated_subtrees.assertEmpty("in ARRAY JOIN");
 
         for (auto & expression_dag_index_node : expression_dag_index_nodes)
