@@ -14,8 +14,9 @@ class ICompressionCodec;
 using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 struct Settings;
 
-/// The codec the exchange compresses its packets with: `network_compression_method` and, for `ZSTD`,
-/// `network_zstd_compression_level`. This is the same choice the native protocol makes for a connection.
+/// The codec the exchange compresses its packets with: `distributed_plan_exchange_compression_method` and,
+/// for `ZSTD`, `distributed_plan_exchange_zstd_compression_level`. When the method is empty, the codec of the
+/// native protocol: `network_compression_method` and `network_zstd_compression_level`.
 CompressionCodecPtr streamingExchangeCompressionCodec(const Settings & settings);
 
 ExchangeLookupPtr createStreamingExchangeLookup(

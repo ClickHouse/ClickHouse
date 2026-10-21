@@ -188,6 +188,7 @@ Cluster::Address::Address(
     host_name = parsed_host_port.first;
     database_shard_name = info.shard_name;
     database_replica_name = info.replica_name;
+    replica_group = info.replica_group;
     port = parsed_host_port.second;
     secure = params.secure ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     bind_host = params.bind_host;
@@ -620,6 +621,11 @@ Cluster::Cluster(
     UInt32 current_shard_num = 1;
 
     secret = params.cluster_secret;
+    /// `getName` is what a parallel replicas read ships to the shards in `cluster_for_parallel_replicas`, so a
+    /// cluster assembled from a host list has to carry the name it is configured under, the same way one read
+    /// from the config does. An ad-hoc cluster - the one `remote()` builds from a literal host list - is passed
+    /// no name, and stays unnamed because it has no name a shard could resolve.
+    name = params.cluster_name;
 
     for (const auto & shard : names)
     {
@@ -629,7 +635,7 @@ Cluster::Cluster(
         Addresses current;
         for (const auto & replica : shard)
             current.emplace_back(
-                DatabaseReplicaInfo{replica, "", "", {}},
+                DatabaseReplicaInfo{replica, "", "", {}, ""},
                 params,
                 current_shard_num,
                 current.size() + 1);
@@ -679,6 +685,8 @@ Cluster::Cluster(
     UInt32 current_shard_num = 1;
 
     secret = params.cluster_secret;
+    /// Carries the configured name for the same reason as the constructor above.
+    name = params.cluster_name;
 
     for (const auto & shard : infos)
     {

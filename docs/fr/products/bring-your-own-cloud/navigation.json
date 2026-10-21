@@ -57,6 +57,7 @@
           "pages": [
             "fr/products/bring-your-own-cloud/connector/overview",
             "fr/products/bring-your-own-cloud/connector/onboarding",
+            "fr/products/bring-your-own-cloud/connector/terraform-aws",
             "fr/products/bring-your-own-cloud/connector/architecture",
             "fr/products/bring-your-own-cloud/connector/managed-services",
             "fr/products/bring-your-own-cloud/connector/platform-updates",

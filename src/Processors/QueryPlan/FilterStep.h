@@ -3,6 +3,8 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Interpreters/ActionsDAG.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -79,6 +81,22 @@ public:
         bool & remove_filter_column,
         const Block & input_header,
         const std::vector<size_t> & unneeded_output_positions);
+
+    /// The input positions `pruneDAGOutputsByPosition` would say are unneeded, without changing the DAG.
+    static std::vector<size_t> getUnneededInputPositions(
+        const ActionsDAG & dag,
+        const String & filter_column_name,
+        bool remove_filter_column,
+        const Block & input_header,
+        const std::vector<size_t> & unneeded_output_positions);
+
+    /// For each column of the output header of a filter DAG, the position of the input column it is, unchanged: one the
+    /// filter passes through, or an input the DAG outputs as it is. Nothing for a column the DAG computes, an alias too.
+    static std::vector<std::optional<size_t>> mapOutputsToInputs(
+        const ActionsDAG & dag,
+        const String & filter_column_name,
+        bool remove_filter_column,
+        const Block & input_header);
 
 private:
     void updateOutputHeader() override;

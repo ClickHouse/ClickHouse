@@ -11,7 +11,7 @@ for i in {1..50}
 do
     query_id="$CLICKHOUSE_TEST_UNIQUE_NAME-$i"
     $CLICKHOUSE_CLIENT --format Null --query_id "$query_id" --max_rows_to_read 0 --max_bytes_to_read 0 --max_result_rows 0 --max_result_bytes 0 -q "select * from remote('127.{1|2|3|4|5|6}', numbers(1e12))" 2>/dev/null &
-    while true
+    while clickhouse_test_time_left
     do
         killed_queries="$($CLICKHOUSE_CLIENT -q "kill query where query_id = '$query_id' sync SETTINGS kill_throw_if_noop = false" | wc -l)"
         if [[ "$killed_queries" -ge 1 ]]
