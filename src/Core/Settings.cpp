@@ -760,6 +760,12 @@ Enables or disables creating a new file on each insert in azure engine tables
     DECLARE(Bool, s3_check_objects_after_upload, false, R"(
 Check each uploaded object to s3 with head request to be sure that upload was successful
 )", 0) \
+    DECLARE(Bool, s3_use_idempotency_id, true, R"(
+Put a unique idempotency id into the user-defined metadata (the `x-amz-meta-clickhouse-idempotency-id` header) of every object uploaded to S3. When a write is retried after its response was lost, the id lets ClickHouse recognize that the object was written by the earlier attempt of the same write and treat the write as successful instead of failing it.
+
+Disable it for S3-compatible storages that reject user-defined object metadata. Such writes lose the recovery of lost responses. Writes into the tables of a `DataLakeCatalog` database with `catalog_type = 's3tables'` (Amazon S3 Tables) don't put the id unless this setting is explicitly enabled in the query, because S3 Tables doesn't support user-defined object metadata.
+)", 0, \
+        {"26.11", true, true, "New setting to disable the idempotency id in the metadata of objects uploaded to S3."}) \
     DECLARE(Bool, s3_validate_etag_on_read, true, R"(
 When reading an object from S3 (or an S3-compatible store such as GCS), check that every GET request returns the same ETag that was observed when the object was listed. A single file read issues many ranged GET requests; if the object is overwritten in place between them (for example by an external writer rewriting a fixed key), the reads can otherwise be stitched together from two different object generations and surface as a corrupted checksum or parse error. When a mismatch is detected the read fails with `S3_OBJECT_CHANGED_DURING_READ` instead of returning inconsistent data. Disable only for workloads that intentionally read objects that are being overwritten and can tolerate inconsistent reads.
 )", 0, \
@@ -3912,8 +3918,8 @@ server or user memory limit, the ratio has no effect.
 `max_memory_usage` does not affect this calculation. To configure spilling relative to that limit,
 use `max_bytes_before_external_set`, leaving room for additional memory usage.
 )", 0, \
-        {"26.11", 0., 0.5, "Enabled spilling of the set of `IN` with a subquery to disk by default, at half of the available server or user memory."}, \
-        {"26.10", 0., 0., "New setting to enable spilling of the set of `IN` with a subquery to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_set` applies."}) \
+        {"26.11", 0.5, 0.5, "The default change to 0.5 was backported to 26.10."}, \
+        {"26.10", 0., 0.5, "New setting to enable spilling of the set of `IN` with a subquery to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_set` applies."}) \
     DECLARE(UInt64, max_bytes_for_external_set_bloom_filter, 128_MiB, R"(
 Memory budget, in bytes, for the Bloom filter that each set of `IN` written to disk keeps in memory. The
 filter lets lookups of values that are not in the set skip reading the disk. It does not speed up lookups
@@ -3940,7 +3946,8 @@ The filter counts towards the memory usage of the query, such as `max_memory_usa
 
 See [IN in external memory](/reference/statements/in#in-in-external-memory).
 )", 0, \
-        {"26.11", 0, 128 * 1024 * 1024, "New setting to limit the memory of the Bloom filter that a set of `IN` on disk keeps to skip reading the disk for values that are not in the set."}) \
+        {"26.11", 128_MiB, 128_MiB, "The setting was backported to 26.10."}, \
+        {"26.10", 0, 128 * 1024 * 1024, "New setting to limit the memory of the Bloom filter that a set of `IN` on disk keeps to skip reading the disk for values that are not in the set."}) \
     DECLARE(UInt64, max_bytes_for_external_set_cache, 128_MiB, R"(
 Memory budget, in bytes, for the cache of blocks that each set of `IN` written to disk keeps in memory. A
 lookup that needs a block already read by an earlier lookup gets it from the cache instead of reading it
@@ -3953,7 +3960,8 @@ The budget applies per set. The cache counts towards the memory usage of the que
 
 See [IN in external memory](/reference/statements/in#in-in-external-memory).
 )", 0, \
-        {"26.11", 0, 128 * 1024 * 1024, "New setting to limit the memory of the cache of blocks that a set of `IN` on disk keeps, so that its lookups do not read the same blocks from the disk again."}) \
+        {"26.11", 128_MiB, 128_MiB, "The setting was backported to 26.10."}, \
+        {"26.10", 0, 128 * 1024 * 1024, "New setting to limit the memory of the cache of blocks that a set of `IN` on disk keeps, so that its lookups do not read the same blocks from the disk again."}) \
     \
     DECLARE(UInt64, max_result_rows, 0, R"(
 Limits the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
@@ -5841,7 +5849,7 @@ Patterns recognised:
 - `col > 0`, `col >= 1`, `col < 1`, `col <= 0` on unsigned integer columns.
 - Bare `col` / `NOT col` on `Int*`, `UInt*`, `Bool` columns (truthy test).
 
-The equality patterns are not applied to `Float*`, `Enum*`, `Nullable`, `LowCardinality`,
+The equality patterns are not applied to `Float*`, `Enum*`, `Date32`, `Nullable`, `LowCardinality`,
 or composite types (`Tuple`, `Array`, `Map`, ...) — for these the count is served from the
 regular scan path.
 
@@ -6304,7 +6312,7 @@ Given that, for example, dictionaries, can be out of sync across nodes, mutation
     DECLARE(Seconds, lock_acquire_timeout, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC, R"(
 Defines how many seconds a locking request waits before failing.
 
-Locking timeout is used to protect from deadlocks while executing read/write operations with tables. When the timeout expires and the locking request fails, the ClickHouse server throws an exception "Locking attempt timed out! Possible deadlock avoided. Client should retry." with error code `DEADLOCK_AVOIDED`.
+Locking timeout is used to protect from deadlocks while executing read/write operations with tables. When the timeout expires and the locking request fails, the ClickHouse server throws an exception "Locking attempt timed out. Possible deadlock avoided. Client should retry." with error code `DEADLOCK_AVOIDED`.
 
 Possible values:
 
@@ -7469,6 +7477,10 @@ Enable independent `DISTINCT` evaluation per partition on separate threads when 
 Force independent `DISTINCT` evaluation per partition when it is applicable, but the cost heuristic decided not to use it. Only bypasses the cost heuristic of [allow_distinct_partitions_independently](#allow_distinct_partitions_independently); the remaining conditions still apply.
 )", 0, \
         {"26.8", false, false, "New setting to force independent per-partition evaluation of `DISTINCT` even when the cost heuristic would skip it."}) \
+    DECLARE(Bool, optimize_uniq_exact_radix_partitioning, true, R"(
+Compute a single `uniqExact` (and `count(DISTINCT)`, which uses it by default) of a query without `GROUP BY` by partitioning the values by their hash instead of merging per-thread hash sets. Every thread routes its values into the partitions, then the partitions are deduplicated in parallel, each in a hash set small enough to stay in the CPU cache, and the result is the sum of their sizes. Applies to a single argument of a numeric type up to 64 bits, `Date`, `Date32`, `DateTime`, `Enum`, `IPv4`, `IPv6`, `UUID`, 128-bit integers, `String`, `FixedString`, or `Nullable` of them, when the result is finalized on the same server. A thread keeps inserting into its own small set, as the ordinary aggregation does, until the set outgrows the CPU cache, so the routing is only engaged for high-cardinality inputs, and a thread goes back to its own set if most of its values turn out to be repeated.
+)", 0, \
+        {"26.11", false, true, "New setting to compute a single `uniqExact` or `count(DISTINCT)` without `GROUP BY` by partitioning the values by their hash instead of merging per-thread hash sets."}) \
     DECLARE(Bool, allow_preliminary_distinct_abandoning, true, R"(
 Let the preliminary (per-stream) `DISTINCT` give up deduplicating mostly-unique input, freeing its hash table and passing the remaining rows through. The preliminary `DISTINCT` is best-effort by design - duplicates from different streams pass through it even when it deduplicates - and the final `DISTINCT` deduplicates its output again, so abandoning gives up the removal of almost nothing and saves the memory and hashing of a second copy of the unique keys. Not applied when the preliminary `DISTINCT` carries a limit hint (a plain `LIMIT` with no subsequent ordering).
 )", 0, \
@@ -8064,7 +8076,12 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
-    DECLARE(Bool, query_plan_read_in_order_through_join, true, "Keep reading in order from the left table in JOIN operations, which can be utilized by subsequent steps.", 0, \
+    DECLARE(BoolForce, query_plan_read_in_order_through_join, true, R"(
+Keep reading in order from the left table in JOIN operations, which can be utilized by subsequent steps.
+
+For a join other than `LEFT`, the read stays in order only when every part of the left table announces a virtual row (see [`read_in_order_use_virtual_row`](#read_in_order_use_virtual_row)); without the virtual rows the merge after the join may read far more than the limit needs. The value `force` keeps the read in order regardless.
+)", 0, \
+        {"26.10", true, true, "Added the value `force`: keep reading in order through a join even when the parts announce no virtual rows."}, \
         {"25.12", false, true, "New setting"}) \
     DECLARE(Bool, query_plan_remove_redundant_sorting, true, R"(
 Toggles a query-plan-level optimization which removes redundant sorting steps, e.g. in subqueries.
@@ -10375,16 +10392,17 @@ Possible values:
 - 1 - Enable
 )", 0, \
         {"25.12", false, true, "New setting. Add optimization to remove unused columns in query plan."}) \
-    DECLARE(Bool, kill_throw_if_noop, false, R"(
+    DECLARE(Bool, kill_throw_if_noop, true, R"(
 Controls whether [`KILL QUERY`](/sql-reference/statements/kill#kill-query) and [`KILL MUTATION`](/sql-reference/statements/kill#kill-mutation) throw an exception when their `WHERE` clauses match no rows.
 
-If set to true, `KILL QUERY` throws when there are no eligible rows in `system.processes` after excluding the current `KILL` statement, and `KILL MUTATION` throws when no rows match in `system.mutations`. By default, an empty match returns without an exception. `ON CLUSTER` execution does not throw for empty matches because match results are not aggregated across hosts.
+Enabled by default. `KILL QUERY` throws when there are no eligible rows in `system.processes` after excluding the current `KILL` statement, and `KILL MUTATION` throws when no rows match in `system.mutations`. Set to `false` to allow empty matches without an exception. `TEST` dry runs return an empty preview without throwing. `ON CLUSTER` execution does not throw for empty matches because match results are not aggregated across hosts.
 
 Possible values:
 
 - 1 — Throw an exception.
 - 0 — Do not throw an exception.
 )", 0, \
+        {"26.11", false, true, "Enable `kill_throw_if_noop` by default so that `KILL QUERY` and `KILL MUTATION` report empty matches."}, \
         {"26.10", false, false, "New setting"}) \
     DECLARE(Bool, jemalloc_enable_profiler, false, R"(
 Enable jemalloc profiler for the query. Jemalloc will sample allocations and all deallocations for sampled allocations.
@@ -10625,6 +10643,10 @@ Enable experimental IP address encryption functions (`ipcryptEncrypt`, `ipcryptD
 Enable the experimental XGBoost integration: the `XGBOOST` dictionary layout and the `predictXGBoost` function.
 )", EXPERIMENTAL, \
         {"26.10", false, false, "New setting to gate the experimental XGBoost integration (the `XGBOOST` dictionary layout and the `predictXGBoost` function)."}) \
+    DECLARE(Bool, enable_elasticsearch, false, R"(
+Enable the experimental Elasticsearch integration: the `Elasticsearch` table engine and the `elasticsearch` table function.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting to gate the experimental Elasticsearch integration (the `Elasticsearch` table engine and the `elasticsearch` table function)."}) \
     DECLARE_WITH_ALIAS(Bool, enable_time_series_table, false, R"(
 Allows creation of tables with the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine. Possible values:
 - 0 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is disabled.
@@ -11128,6 +11150,12 @@ Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distri
 Ignored where the Shuffle strategy cannot produce a correct result, for example for `GROUPING SETS` or when the aggregation must produce results in bucket order.
 )", EXPERIMENTAL, \
         {"25.7", 0, 0, "New experimental setting"}) \
+    DECLARE(Bool, distributed_plan_partial_aggregation_before_shuffle, true, R"(
+Aggregate partially on the nodes that read the data before a distributed aggregation shuffles it by the `GROUP BY` keys, so the shuffle sends one aggregation state per group from each node instead of every input row, and each bucket merges the states of its own keys.
+The rule-based planner keeps shuffling the input rows when column statistics show that partial aggregation would not reduce the data at least twofold. With `enable_cascades_optimizer`, the setting allows the optimizer to choose such a merge per bucket by cost.
+Takes effect only together with `make_distributed_plan = 1`, and not with `distributed_plan_force_shuffle_aggregation`, which shuffles the input rows.
+)", BETA, \
+        {"26.11", false, true, "New experimental setting: a distributed aggregation shuffles partial aggregation states instead of input rows."}) \
     DECLARE(Bool, enable_cascades_optimizer, false, R"(
 Enable the Cascades cost-based optimizer for distributed query plans.
 Takes effect only together with `make_distributed_plan = 1`: the setting alone does not change single-node query planning.
