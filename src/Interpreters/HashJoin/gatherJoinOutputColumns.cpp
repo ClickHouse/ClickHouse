@@ -714,10 +714,10 @@ void gatherArrayRows(ColumnArray & dst, const GatherNode & node, const UInt64 * 
     gatherNodeRanges(dst.getData(), node.children[0], child_ranges, child_rows);
 }
 
-void gatherTupleRows(ColumnTuple & dst, const GatherNode & node, const UInt64 * words, size_t count)
+void gatherTupleRows(ColumnTuple & dst, const GatherNode & node, const UInt64 * words, size_t count, std::optional<size_t> row_store_row_length)
 {
     for (size_t i = 0; i < node.children.size(); ++i)
-        gatherNodeRows(dst.getColumn(i), node.children[i], words, count);
+        gatherNodeRows(dst.getColumn(i), node.children[i], words, count, row_store_row_length);
 }
 
 void gatherVariantRows(ColumnVariant & dst, const GatherNode & node, const UInt64 * words, size_t count)
@@ -964,7 +964,7 @@ void gatherNodeRows(IColumn & dst, const GatherNode & node, const UInt64 * words
         case Nullable: gatherNullableRows(assert_cast<ColumnNullable &>(dst), node, words, count, row_store_row_length); break;
         case String: gatherStringRows(assert_cast<ColumnString &>(dst), node, words, count); break;
         case Array: gatherArrayRows(assert_cast<ColumnArray &>(dst), node, words, count); break;
-        case Tuple: gatherTupleRows(assert_cast<ColumnTuple &>(dst), node, words, count); break;
+        case Tuple: gatherTupleRows(assert_cast<ColumnTuple &>(dst), node, words, count, row_store_row_length); break;
         case Variant: gatherVariantRows(assert_cast<ColumnVariant &>(dst), node, words, count); break;
         case Map: gatherNodeRows(assert_cast<ColumnMap &>(dst).getNestedColumn(), node.children[0], words, count); break;
         case Rows: gatherRowsByRuns(dst, node, words, count); break;
@@ -1157,75 +1157,88 @@ void resolveRowStoreGatherNode(
     GatherNode & node,
     const DataTypePtr & type,
     const RowDataStore & row_store,
-    const ColumnAccessIndex & access,
+    const RowDataStore::FieldLayout & field,
     size_t block_no,
-    size_t num_blocks)
+    size_t num_blocks,
+    bool default_from_type)
 {
     using enum GatherNode::Kind;
+    using FieldShape = RowDataStore::FieldPlanes::Shape;
 
-    const char * const field = row_store.size() ? row_store.getRowAt(0) + access.field_offset : nullptr;
-    /// A nullable field spends its first byte on the null flag and the rest on the value.
-    const size_t value_size = access.is_nullable ? access.field_size - 1 : access.field_size;
+    const RowDataStore::FieldPlanes planes = row_store.getPlanes(field);
 
-    const bool first = !node.column_type;
-    if (first)
+    GatherNode * value_node = &node;
+    DataTypePtr value_type = type;
+    bool value_default_from_type = default_from_type;
+    if (planes.null_map.has_value())
     {
-        const MutableColumnPtr emit_column = type->createColumn();
-        const IColumn & emit_column_ref = *emit_column;
-        const auto * emit_nullable = typeid_cast<const ColumnNullable *>(&emit_column_ref);
-        if (static_cast<bool>(emit_nullable) != access.is_nullable)
-            throwTypeDisagrees(*type, emit_column_ref);
-        const IColumn & value_column = emit_nullable ? emit_nullable->getNestedColumn() : emit_column_ref;
-        if (access.is_string)
+        if (!node.column_type)
         {
-            if (!typeid_cast<const ColumnString *>(&value_column) || value_size != sizeof(UnhashedPackedStringRef))
-                throwNoGatherKernel(*type, emit_column_ref, "the row store holds it as an `UnhashedPackedStringRef`");
-        }
-        else if (!value_column.isFixedAndContiguous() || value_column.sizeOfValueIfFixed() != value_size)
-            throwNoGatherKernel(*type, emit_column_ref, "the row store holds it at another width");
+            const MutableColumnPtr emit_column = type->createColumn();
+            const IColumn & emit_column_ref = *emit_column;
+            if (!typeid_cast<const ColumnNullable *>(&emit_column_ref))
+                throwTypeDisagrees(*type, emit_column_ref);
 
-        node.column_type = &typeid(emit_column_ref);
-        node.data_by_block.resize(num_blocks);
-        if (access.is_nullable)
-        {
+            node.column_type = &typeid(emit_column_ref);
             node.kind = Nullable;
             node.children.resize(1);
-            GatherNode & nested = node.children[0];
-            nested.column_type = &typeid(value_column);
-            nested.kind = access.is_string ? String : Fixed;
-            nested.stride = value_size;
-            nested.data_by_block.resize(num_blocks);
-            if (!access.is_string)
-            {
-                nested.default_pattern = fixedDefaultPattern(value_column, /*type=*/ nullptr);
-                chassert(nested.default_pattern.size() == nested.stride);
-            }
+            node.data_by_block.resize(num_blocks);
         }
-        else
-        {
-            node.kind = access.is_string ? String : Fixed;
-            node.stride = value_size;
-            if (!access.is_string)
-            {
-                node.default_pattern = fixedDefaultPattern(value_column, type.get());
-                chassert(node.default_pattern.size() == node.stride);
-            }
-        }
-    }
-    else
-    {
-        const GatherNode & value_node = access.is_nullable ? node.children[0] : node;
-        if (value_node.stride != value_size)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Join emit cannot read a right column of type {} from the row store: the stored blocks keep it as a {}-byte value and "
-                "as a {}-byte value",
-                type->getName(), value_node.stride, value_size);
+        node.data_by_block[block_no] = *planes.null_map;
+
+        value_node = &node.children[0];
+        value_type = removeNullable(type);
+        value_default_from_type = false;
     }
 
-    node.data_by_block[block_no] = field;
-    if (access.is_nullable)
-        node.children[0].data_by_block[block_no] = field ? field + 1 : nullptr;
+    const bool first = !value_node->column_type;
+    if (first)
+    {
+        const MutableColumnPtr emit_column = value_type->createColumn();
+        const IColumn & emit_column_ref = *emit_column;
+        if (typeid_cast<const ColumnNullable *>(&emit_column_ref))
+            throwTypeDisagrees(*value_type, emit_column_ref);
+
+        switch (planes.shape)
+        {
+            case FieldShape::Fixed:
+                if (!emit_column_ref.isFixedAndContiguous() || emit_column_ref.sizeOfValueIfFixed() != planes.stride)
+                    throwNoGatherKernel(*value_type, emit_column_ref, "the row store holds it at another width");
+                value_node->kind = Fixed;
+                value_node->default_pattern = fixedDefaultPattern(emit_column_ref, value_default_from_type ? value_type.get() : nullptr);
+                chassert(value_node->default_pattern.size() == planes.stride);
+                break;
+            case FieldShape::String:
+                if (!typeid_cast<const ColumnString *>(&emit_column_ref) || planes.stride != sizeof(UnhashedPackedStringRef))
+                    throwNoGatherKernel(*value_type, emit_column_ref, "the row store holds it as an `UnhashedPackedStringRef`");
+                value_node->kind = String;
+                break;
+            case FieldShape::Tuple:
+            {
+                const auto * emit_tuple = typeid_cast<const ColumnTuple *>(&emit_column_ref);
+                if (!emit_tuple || emit_tuple->tupleSize() != planes.children.size())
+                    throwTypeDisagrees(*value_type, emit_column_ref);
+                value_node->kind = Tuple;
+                break;
+            }
+        }
+
+        value_node->column_type = &typeid(emit_column_ref);
+        value_node->stride = planes.stride;
+        value_node->children.resize(planes.children.size());
+        value_node->data_by_block.resize(num_blocks);
+    }
+    else if (value_node->stride != planes.stride || value_node->children.size() != planes.children.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Join emit cannot read a right column of type {} from the row store: the stored blocks lay it out differently",
+            type->getName());
+
+    value_node->data_by_block[block_no] = planes.data;
+
+    const DataTypes child_types = childTypes(value_node->kind, *value_type);
+    for (size_t i = 0; i < planes.children.size(); ++i)
+        resolveRowStoreGatherNode(value_node->children[i], child_types[i], row_store, *planes.children[i], block_no, num_blocks, value_default_from_type);
 }
 
 void gatherJoinOutputColumns(

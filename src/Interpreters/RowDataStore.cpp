@@ -1,9 +1,11 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
 #include <Interpreters/RowDataStore.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/TableJoin.h>
 #include <base/types.h>
@@ -106,12 +108,26 @@ void gatherStringField(char * __restrict dst, const char * __restrict null_src, 
     }
 }
 
-void doGatherRows(const RowDataStore::RowLayout & layout, size_t row_length, const Columns & columns, size_t start, size_t length, char * dst, char *& overflow_cursor)
+template <typename ColumnsContainer>
+void doGatherRows(const RowDataStore::RowLayout & layout, size_t row_length, const ColumnsContainer & columns, size_t start, size_t length, char * dst, char *& overflow_cursor)
 {
     for (size_t i = 0; i < layout.size(); ++i)
     {
         const auto & field_layout = layout[i];
-        if (field_layout.is_string)
+        if (!field_layout.elements.empty())
+        {
+            const IColumn * tuple_column = columns[i].get();
+            if (field_layout.is_nullable)
+            {
+                const auto & nullable_column = assert_cast<const ColumnNullable &>(*tuple_column);
+                const char * null_src = nullable_column.getNullMapColumn().getDataAt(start).data();
+                gatherField<1>(dst, null_src, row_length, field_layout.offset, length);
+                tuple_column = &nullable_column.getNestedColumn();
+            }
+            const auto & elements = assert_cast<const ColumnTuple &>(*tuple_column).getColumns();
+            doGatherRows(field_layout.elements, row_length, elements, start, length, dst, overflow_cursor);
+        }
+        else if (field_layout.is_string)
         {
             if (field_layout.is_nullable)
             {
@@ -169,6 +185,33 @@ void doGatherRows(const RowDataStore::RowLayout & layout, size_t row_length, con
 
 #undef APPLY_FOR_FIELD_SIZES
 
+void fillFieldFromRowStorePtrs(IColumn & column, const RowDataStore::FieldLayout & field, const RowStorePointers & row_store_ptrs, size_t begin, size_t count)
+{
+    if (field.elements.empty())
+    {
+        column.fillFromRowStorePtrs(field.type, row_store_ptrs, field.offset, field.size, begin, count);
+        return;
+    }
+
+    IColumn * tuple_column = &column;
+    if (field.is_nullable)
+    {
+        auto & nullable_column = assert_cast<ColumnNullable &>(column);
+        auto & null_map = nullable_column.getNullMapData();
+        null_map.reserve(null_map.size() + count);
+        for (size_t row = begin; row < begin + count; ++row)
+        {
+            const char * row_store_ptr = row_store_ptrs.base_ptr ? row_store_ptrs.base_ptr + row * row_store_ptrs.row_length : row_store_ptrs.ptrs[row];
+            null_map.push_back(static_cast<UInt8>(row_store_ptr ? row_store_ptr[field.offset] : 1));
+        }
+        tuple_column = &nullable_column.getNestedColumn();
+    }
+
+    auto & tuple = assert_cast<ColumnTuple &>(*tuple_column);
+    for (size_t i = 0; i < field.elements.size(); ++i)
+        fillFieldFromRowStorePtrs(tuple.getColumn(i), field.elements[i], row_store_ptrs, begin, count);
+}
+
 MutableColumns doScatterRows(const RowDataStore::RowLayout & layout, std::optional<size_t> batch_size_opt, const RowStorePointers & row_store_ptrs, size_t count)
 {
     MutableColumns columns(layout.size());
@@ -186,22 +229,17 @@ MutableColumns doScatterRows(const RowDataStore::RowLayout & layout, std::option
     {
         const size_t remaining_batch_size = std::min(batch_size, count - batch_start);
         for (size_t i = 0; i < layout.size(); ++i)
-            columns[i]->fillFromRowStorePtrs(layout[i].type, row_store_ptrs, layout[i].offset, layout[i].size, batch_start, remaining_batch_size);
+            fillFieldFromRowStorePtrs(*columns[i], layout[i], row_store_ptrs, batch_start, remaining_batch_size);
     }
     return columns;
 }
 
-}
-
-RowDataStore::RowLayoutPtr RowDataStore::computeLayout(const Columns & columns, const DataTypes & types)
+template <typename ColumnsContainer>
+RowDataStore::RowLayout doComputeLayout(const ColumnsContainer & columns, const DataTypes & types, size_t offset)
 {
-    if (columns.size() != types.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "RowDataStore got {} columns but {} types.", columns.size(), types.size());
-
-    RowLayout layout;
+    RowDataStore::RowLayout layout;
     layout.reserve(columns.size());
 
-    size_t offset = 0;
     for (size_t i = 0; i < columns.size(); ++i)
     {
         const auto & column = columns[i];
@@ -216,23 +254,67 @@ RowDataStore::RowLayoutPtr RowDataStore::computeLayout(const Columns & columns, 
             field_size = 1;
         }
 
+        if (const auto * tuple = typeid_cast<const ColumnTuple *>(check_col))
+        {
+            const auto & tuple_type = assert_cast<const DataTypeTuple &>(*removeNullable(types[i]));
+            auto elements = doComputeLayout(tuple->getColumns(), tuple_type.getElements(), offset + field_size);
+            if (elements.empty() || std::ranges::any_of(elements, &RowDataStore::FieldLayout::is_string))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "RowDataStore can only store non-empty tuples of fixed-size elements, but got {}.", types[i]->getName());
+
+            field_size = RowDataStore::rowLengthOf(elements) - offset;
+            layout.push_back(RowDataStore::FieldLayout{types[i], offset, field_size, is_nullable, false, std::move(elements)});
+            offset += field_size;
+            continue;
+        }
+
         const bool is_string = typeid_cast<const ColumnString *>(check_col) != nullptr;
         if (!check_col->isFixedAndContiguous() && !is_string)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "RowDataStore can only store fixed-size and contiguous or String columns, but got {}.", column->getFamilyName());
 
         field_size += is_string ? sizeof(UnhashedPackedStringRef) : check_col->sizeOfValueIfFixed();
-        layout.push_back(FieldLayout{types[i], offset, field_size, is_nullable, is_string});
+        layout.push_back(RowDataStore::FieldLayout{types[i], offset, field_size, is_nullable, is_string, {}});
         offset += field_size;
     }
-    return std::make_shared<const RowLayout>(std::move(layout));
+    return layout;
+}
+
+size_t columnarCacheLines(const RowDataStore::RowLayout & layout)
+{
+    size_t cache_lines = 0;
+    for (const auto & field : layout)
+    {
+        cache_lines += field.is_nullable ? 1 : 0;
+        if (field.is_string)
+            cache_lines += 2;
+        else if (!field.elements.empty())
+            cache_lines += columnarCacheLines(field.elements);
+        else
+            cache_lines += 1;
+    }
+    return cache_lines;
+}
+
+bool isSupportedFixedType(const DataTypePtr & type)
+{
+    const DataTypePtr nested_type = removeNullable(type);
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(nested_type.get()))
+        return !tuple_type->getElements().empty() && std::ranges::all_of(tuple_type->getElements(), isSupportedFixedType);
+    return nested_type->createColumn()->isFixedAndContiguous() && type->createColumn()->sizeOfValueIfFixed() <= 32;
+}
+
+}
+
+RowDataStore::RowLayoutPtr RowDataStore::computeLayout(const Columns & columns, const DataTypes & types)
+{
+    if (columns.size() != types.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "RowDataStore got {} columns but {} types.", columns.size(), types.size());
+
+    return std::make_shared<const RowLayout>(doComputeLayout(columns, types, 0));
 }
 
 size_t RowDataStore::cacheMissReduction(const RowLayout & layout)
 {
-    size_t columnar_cache_lines = 0;
-    for (const auto & field : layout)
-        /// A columnar string touches both its offsets and its chars.
-        columnar_cache_lines += (field.is_string ? 2 : 1) + (field.is_nullable ? 1 : 0);
+    const size_t columnar_cache_lines = columnarCacheLines(layout);
     const size_t row_store_cache_lines = (rowLengthOf(layout) + CH_CACHE_LINE_SIZE - 1) / CH_CACHE_LINE_SIZE;
     return columnar_cache_lines - row_store_cache_lines;
 }
@@ -340,6 +422,28 @@ const RowDataStore::FieldLayout & RowDataStore::getFieldLayout(size_t input_col_
     return (*layout)[input_col_index];
 }
 
+RowDataStore::FieldPlanes RowDataStore::getPlanes(const FieldLayout & field) const
+{
+    const char * const field_data = size() ? getRowAt(0) + field.offset : nullptr;
+
+    FieldPlanes planes;
+    if (field.is_nullable)
+        planes.null_map = field_data;
+
+    if (!field.elements.empty())
+    {
+        planes.shape = FieldPlanes::Shape::Tuple;
+        for (const auto & element : field.elements)
+            planes.children.push_back(&element);
+        return planes;
+    }
+
+    planes.shape = field.is_string ? FieldPlanes::Shape::String : FieldPlanes::Shape::Fixed;
+    planes.data = field_data && field.is_nullable ? field_data + 1 : field_data;
+    planes.stride = field.is_nullable ? field.size - 1 : field.size;
+    return planes;
+}
+
 static constexpr UInt64 MIN_BYTES_IN_BATCH = 32 * 1024;
 static constexpr UInt64 MAX_BYTES_IN_BATCH = 512 * 1024;
 
@@ -361,7 +465,6 @@ NameSet computeRowStoreCandidateColumns(
     NameSet columns;
     for (const auto & column : right_sample_block)
     {
-        const auto sample = column.type->createColumn();
         const auto nested = removeNullable(column.type)->createColumn();
         if (typeid_cast<const ColumnString *>(nested.get()))
         {
@@ -371,7 +474,7 @@ NameSet computeRowStoreCandidateColumns(
                 && static_cast<Float64>(right_rows) * avg_value_bytes >= static_cast<Float64>(min_string_column_bytes))
                 columns.insert(column.name);
         }
-        else if (nested->isFixedAndContiguous() && sample->sizeOfValueIfFixed() <= 32)
+        else if (isSupportedFixedType(column.type))
             columns.insert(column.name);
     }
     return columns;
