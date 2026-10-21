@@ -408,8 +408,6 @@ void copyAzureBlobStorageFile(
 
     if (settings->use_native_copy)
     {
-        settings->validateCopySettings();
-
         /// Do native copy
         LOG_TRACE(log, "Copying Blob: {} from Container: {} using native copy", src_blob, src_container_for_logging);
         ProfileEvents::increment(ProfileEvents::AzureCopyObject);

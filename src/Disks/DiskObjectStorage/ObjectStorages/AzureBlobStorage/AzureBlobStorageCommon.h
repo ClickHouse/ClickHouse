@@ -63,9 +63,9 @@ struct RequestSettings
     /// `WriteBufferFromAzureDataLakeStorage` (ADLS Gen2 / OneLake), which ignore these settings.
     void validateUploadSettings() const;
 
-    /// Rejects a `max_put_blob_from_url_size` above what the request itself accepts. Invoked by
-    /// `copyAzureBlobStorageFile`, the only consumer of that setting.
-    void validateCopySettings() const;
+    /// Caps `max_put_blob_from_url_size` at what the request itself accepts, warning once per
+    /// construction of these settings rather than once per copied object.
+    void capPutBlobFromUrlSize();
 };
 
 struct Endpoint

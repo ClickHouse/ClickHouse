@@ -650,14 +650,18 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
     return {storage_url, account_name, account_key, container_name, prefix, /* sas_auth */"", /* additional_params */"", container_already_exists, endpoint_contains_account_name};
 }
 
-void RequestSettings::validateCopySettings() const
+void RequestSettings::capPutBlobFromUrlSize()
 {
-    if (max_put_blob_from_url_size > MAX_PUT_BLOB_FROM_URL_SIZE)
-        throw Exception(
-            ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting azure_max_put_blob_from_url_size ({}) can't be greater than the {} that one Put Blob From URL "
-            "request accepts",
-            ReadableSize(max_put_blob_from_url_size), ReadableSize(MAX_PUT_BLOB_FROM_URL_SIZE));
+    if (max_put_blob_from_url_size <= MAX_PUT_BLOB_FROM_URL_SIZE)
+        return;
+
+    LOG_WARNING(
+        getLogger("AzureBlobStorageCommon"),
+        "Setting azure_max_put_blob_from_url_size ({}) is greater than the {} that one Put Blob From URL request "
+        "accepts, capping it at that size",
+        ReadableSize(max_put_blob_from_url_size), ReadableSize(MAX_PUT_BLOB_FROM_URL_SIZE));
+
+    max_put_blob_from_url_size = MAX_PUT_BLOB_FROM_URL_SIZE;
 }
 
 void RequestSettings::validateUploadSettings() const
@@ -737,6 +741,8 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_setti
     settings->check_objects_after_upload = query_settings[Setting::azure_check_objects_after_upload];
     settings->max_put_blob_from_url_size = query_settings[Setting::azure_max_put_blob_from_url_size];
 
+    settings->capPutBlobFromUrlSize();
+
     return settings;
 }
 
@@ -790,6 +796,8 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractCo
     settings->sdk_retry_max_backoff_ms = config.getUInt64(config_prefix + ".retry_max_backoff_ms", settings_ref[Setting::azure_sdk_retry_max_backoff_ms]);
 
     settings->check_objects_after_upload = config.getBool(config_prefix + ".check_objects_after_upload", settings_ref[Setting::azure_check_objects_after_upload]);
+
+    settings->capPutBlobFromUrlSize();
 
     return settings;
 }

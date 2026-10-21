@@ -658,7 +658,7 @@ source, and the copy then reads the object through the server, holding
 `azure_max_inflight_parts_for_one_file` of its parts in memory. `Put Blob From URL` is accepted for such a
 source, but it is synchronous: the service copies the whole object before it answers and the thread that sent
 the request waits meanwhile, so this limits how long one object may hold that thread. A value above the
-5000 MiB that the request itself accepts is rejected
+5000 MiB that the request itself accepts is capped at that size, with a warning
 (https://learn.microsoft.com/en-us/rest/api/storageservices/put-blob-from-url).
 )", 0) \
     DECLARE(UInt64, s3_max_single_read_retries, S3::DEFAULT_MAX_SINGLE_READ_TRIES, R"(
