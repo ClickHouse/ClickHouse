@@ -213,15 +213,6 @@ ch_cc_library(
         "include",
         "include/hdfs",
     ],
-    additional_compiler_inputs = glob([
-        "src/*.in",
-        "src/proto/*.proto",
-    ]) + [
-        "src/.gitignore",
-        "src/common/crc_iscsi_v_pcl.asm",
-        "src/common/perf_checksum.cpp",
-        "src/rpc/RpcClient.cpp",
-    ],
     copts = [
         "-w",
         "-std=c++23",
@@ -296,26 +287,6 @@ ch_cc_library(
     ] + [
         "@clickhouse//contrib/libhdfs3-cmake:absl_log_undef.h",
         ":config/contrib/libhdfs3-cmake/platform.h",
-    ],
-    additional_compiler_inputs = glob([
-        "src/*.in",
-        "src/client/*.cpp",
-        "src/common/*.cpp",
-        "src/network/*.cpp",
-        "src/proto/*.proto",
-        "src/server/*.cpp",
-    ]) + [
-        "src/.gitignore",
-        "src/common/crc_iscsi_v_pcl.asm",
-        "src/rpc/RpcAuth.cpp",
-        "src/rpc/RpcChannel.cpp",
-        "src/rpc/RpcChannelKey.cpp",
-        "src/rpc/RpcConfig.cpp",
-        "src/rpc/RpcContentWrapper.cpp",
-        "src/rpc/RpcProtocolInfo.cpp",
-        "src/rpc/RpcRemoteCall.cpp",
-        "src/rpc/RpcServerInfo.cpp",
-        "src/rpc/SaslClient.cpp",
     ],
     copts = [
         "-w",

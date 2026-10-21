@@ -10,7 +10,6 @@ ch_cc_library(
     name = "_cppkafka",
     srcs = glob(["src/*.cpp"]),
     hdrs = glob(["include/**/*.h"]),
-    additional_compiler_inputs = ["src/error.cpp"],
     copts = [
         "-w",
         "-std=c++23",
