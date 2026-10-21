@@ -1,4 +1,4 @@
--- Tags: no-ordinary-database, no-async-insert, no-fasttest
+-- Tags: no-ordinary-database, no-async-insert, no-fasttest, no-object-storage, no-s3-storage
 -- `optimize_aggregation_max_by_sorting_key` on a table with `UNIQUE KEY`: overwritten rows are hidden by a delete
 -- bitmap, so an index row may be a hidden row. The optimization is not applied.
 -- Here the last granule of the run `k = 1` is overwritten with `k = 2`, so its rows are hidden in the first part.
