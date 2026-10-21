@@ -1544,18 +1544,22 @@ TEST(SchedulerWorkloadResourceManager, CPUSlotsWaitTimerOutlivesCreatingThread)
     auto blocker = std::make_shared<CPUSlotsAllocation>(1, 0, link, link);
     auto blocker_slot = blocker->acquire();
 
-    ThreadGroupPtr group;
+    std::weak_ptr<ThreadGroup> weak_group;
     SlotAllocationPtr allocation;
     std::thread([&]
     {
         DB::ThreadStatus thread_status;
-        group = std::make_shared<ThreadGroup>(Context::getGlobalContextInstance(), 0);
+        auto group = std::make_shared<ThreadGroup>(Context::getGlobalContextInstance(), 0);
+        weak_group = group;
         CurrentThread::attachToGroupIfDetached(group);
         allocation = std::make_shared<CPUSlotsAllocation>(1, 0, link, link);
         CurrentThread::detachFromGroupIfNotDetached();
     }).join();
 
     ASSERT_TRUE(allocation->isRequesting());
+    /// The creating thread is gone, so only the allocation can still own the group.
+    ThreadGroupPtr group = weak_group.lock();
+    ASSERT_NE(group, nullptr);
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
     allocation.reset();
     EXPECT_GE(group->performance_counters[ProfileEvents::ConcurrencyControlWaitMicroseconds], 10'000);
