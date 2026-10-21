@@ -72,12 +72,22 @@ copy_object "${P3}/metadata/v2.metadata.json" "${P3}/metadata/00005-${UUID_A}.me
 $CLIENT --query "
     SELECT 'mixed', count() FROM icebergS3(s3_conn, filename = '${P3}');"
 
-# A directory with only `<N>-<uuid>` files is listed whole. The copies keep the location of `${P3}`,
-# so the count is taken from the snapshot summary: data files would be looked up under `${P4}`.
+# The copies of `${P3}`'s metadata files keep its location, which a read re-roots under the copy's
+# directory, so its manifest lists and manifests are copied along.
+copy_manifests()
+{
+    for f in $($CLIENT --query "SELECT _file FROM s3(s3_conn, filename = '${P3}/metadata/*.avro', format = 'One') ORDER BY _file"); do
+        copy_object "${P3}/metadata/${f}" "$1/metadata/${f}"
+    done
+}
+
+# A directory with only `<N>-<uuid>` files is listed whole. Its data files are not copied, so the
+# count is taken from the snapshot summary.
 P4="${PREFIX}/uuid_named"
 copy_object "${P3}/metadata/v2.metadata.json" "${P4}/metadata/00001-${UUID_A}.metadata.json"
 copy_object "${P3}/metadata/v3.metadata.json" "${P4}/metadata/00002-${UUID_B}.metadata.json"
-$CLIENT --query "
+copy_manifests "${P4}"
+$CLIENT --use_iceberg_metadata_files_cache=0 --query "
     SELECT 'uuid-named', count() FROM icebergS3(s3_conn, filename = '${P4}')
     SETTINGS optimize_trivial_count_query = 1"
 
@@ -85,7 +95,8 @@ $CLIENT --query "
 P6="${PREFIX}/by_last_updated_ms"
 copy_object "${P3}/metadata/v2.metadata.json" "${P6}/metadata/v1.metadata.json"
 copy_object "${P3}/metadata/v3.metadata.json" "${P6}/metadata/00002-${UUID_B}.metadata.json"
-$CLIENT --query "
+copy_manifests "${P6}"
+$CLIENT --use_iceberg_metadata_files_cache=0 --query "
     SELECT 'v file only', count() FROM icebergS3(s3_conn, filename = '${P6}')
     SETTINGS optimize_trivial_count_query = 1;
     SELECT 'by last-updated-ms', count()
