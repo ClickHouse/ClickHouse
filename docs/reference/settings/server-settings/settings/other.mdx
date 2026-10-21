@@ -101,6 +101,29 @@ Interval in seconds during which the server's maximum allowed memory consumption
 
 To disable the cgroup observer, set this value to `0`.
 
+## collect_connection_metrics {#collect_connection_metrics}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />Enables the collection of connections for the `system.connections` table. This table shows the connections of the native TCP and HTTP query interfaces. It does not show connections of MySQL, PostgreSQL, gRPC, or other protocols.
+
+When you set this setting to `true`, the server keeps a list of connections in memory:
+- The server adds a native TCP connection to the list after authentication.
+- The server adds an HTTP connection to the list when the connection gets its first query.
+- The server removes a connection from the list when the connection closes. Between the requests, an HTTP keep-alive connection has the status `idle`.
+
+Each connection and each query has a small synchronization cost. Thus, the default value is `false`.
+
+A user without the `SHOW CONNECTIONS` privilege sees only the connections of this user.
+
+You can change this setting without a restart. When you change it to `false`, `system.connections` becomes empty and the server stops the registration of new connections. When you change it to `true`, an open connection shows in `system.connections` on its next query.
+
+Example configuration:
+
+```xml
+<collect_connection_metrics>true</collect_connection_metrics>
+```
+
+See also: `system.connections`, `system.processes`.
+
 ## compression {#compression}
 
 Data compression settings for [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree)-engine tables.

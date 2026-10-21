@@ -37,6 +37,38 @@ Used by the rule-based distributed planner. The cost-based optimizer chooses the
 Default number of buckets for distributed shuffle-hash-join.
 Used by the rule-based distributed planner. The cost-based optimizer chooses the fan-out by estimated cost and does not use this setting.
 
+## distributed_plan_exchange_compression_method {#distributed_plan_exchange_compression_method}
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="String" default_value="LZ4" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "LZ4"},{"label": "New setting: the streaming exchange of a distributed query plan compresses with `LZ4` instead of the codec of `network_compression_method`."}]}]}/>
+
+The codec for compressing the packets of the streaming exchange between the tasks of a distributed query plan. Exchanges through temporary files use the default codec of the server.
+
+Possible values:
+
+- `''` — use the codec of [network_compression_method](/reference/settings/session-settings/network#network_compression_method).
+- `NONE` — no compression.
+- `LZ4` — use the LZ4 codec.
+- `LZ4HC` — use the LZ4HC codec at its default level 9. It compresses many times slower than `LZ4`.
+- `ZSTD` — use the ZSTD codec with the level of [distributed_plan_exchange_zstd_compression_level](/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_zstd_compression_level).
+
+## distributed_plan_exchange_zstd_compression_level {#distributed_plan_exchange_zstd_compression_level}
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="Int64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "New setting for the level of ZSTD compression of the streaming exchange of a distributed query plan."}]}]}/>
+
+The level of ZSTD compression of the streaming exchange of a distributed query plan. Used only when [distributed_plan_exchange_compression_method](/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_compression_method) is set to `ZSTD`.
+
+Possible values:
+
+- Integer from 1 to 22. Higher levels compress better and slower.
+
 ## distributed_plan_execute_locally {#distributed_plan_execute_locally}
 
 <ExperimentalBadge/>

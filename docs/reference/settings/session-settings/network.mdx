@@ -19,7 +19,7 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "ZSTD"},{"label": "Switched the default compression method for client\/server and server\/server communication from `LZ4` to `ZSTD` to reduce network traffic."}]}]}/>
 
-The codec for compressing the client/server and server/server communication over the native protocol, the response of an HTTP request made with `compress=1`, which uses the same frame format, and the streaming exchange between the tasks of a distributed query plan (`make_distributed_plan`). Exchanges through temporary files use the default codec of the server.
+The codec for compressing the client/server and server/server communication over the native protocol and the response of an HTTP request made with `compress=1`, which uses the same frame format. The streaming exchange between the tasks of a distributed query plan (`make_distributed_plan`) uses [distributed_plan_exchange_compression_method](/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_compression_method) instead.
 
 Possible values:
 
@@ -38,7 +38,7 @@ Possible values:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "3"},{"label": "Aligned the default network `ZSTD` compression level with the new default on-disk `ZSTD(3)` compression."}]}]}/>
 
-Adjusts the level of ZSTD compression. Used only when [network_compression_method](/reference/settings/session-settings/network#network_compression_method) is set to `ZSTD`.
+Adjusts the level of ZSTD compression. Used only when [network_compression_method](/reference/settings/session-settings/network#network_compression_method) is set to `ZSTD`. The streaming exchange of a distributed query plan uses it only when [distributed_plan_exchange_compression_method](/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_compression_method) is empty.
 
 Possible values:
 
