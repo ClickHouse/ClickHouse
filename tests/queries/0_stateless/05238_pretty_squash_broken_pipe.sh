@@ -13,7 +13,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # background writer is only used when it is non-zero. `timeout` exits with 124 if the query hangs.
 # The query has to fail with the original write error, `CANNOT_WRITE_TO_FILE_DESCRIPTOR` (exit code 75),
 # not with `QUERY_WAS_CANCELLED` or anything else.
-timeout 60 $CLICKHOUSE_LOCAL --max_threads=1 --output_format_pretty_squash_consecutive_ms=50 --output_format_pretty_max_rows=1000000000000 \
+# The reading is throttled to keep each squashed table small. Otherwise the first table holds everything read
+# before the background thread writes, which on a fast machine exceeds the memory limit or the timeout.
+timeout 60 $CLICKHOUSE_LOCAL --max_threads=1 --max_execution_speed=1000000 --timeout_before_checking_execution_speed=0 \
+    --output_format_pretty_squash_consecutive_ms=50 --output_format_pretty_max_rows=1000000000000 \
     --query "SELECT number FROM numbers(1e18) FORMAT PrettyCompact" 2>/dev/null | head -n 1 > /dev/null
 
 code=${PIPESTATUS[0]}

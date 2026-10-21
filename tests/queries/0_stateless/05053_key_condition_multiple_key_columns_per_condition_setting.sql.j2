@@ -1,0 +1,39 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- no-random-settings, no-random-merge-tree-settings: EXPLAIN output and granule counts may differ with random
+-- settings.
+
+SET explain_query_plan_default = 'legacy';
+
+{#- Each check prints the predicate, the count with index analysis, the count of a full scan and the marks
+    selected by index analysis; with `condition`, it also prints the key conditions. -#}
+{% macro check(table, predicate, condition = false) -%}
+SELECT '{{ predicate | replace("\\", "\\\\") | replace("'", "\\'") }}', (SELECT count() FROM {{ table }} WHERE {{ predicate }}),
+    (SELECT count() FROM {{ table }} WHERE {{ predicate }} SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0),
+    (SELECT sum(marks) FROM (EXPLAIN ESTIMATE SELECT 1 FROM {{ table }} WHERE {{ predicate }}))
+    {%- if condition %}, (SELECT arrayStringConcat(groupArray(trimLeft(explain)), ' | ') FROM (EXPLAIN indexes = 1 SELECT 1 FROM {{ table }} WHERE {{ predicate }}) WHERE trimLeft(explain) LIKE 'Condition:%'){% endif %}
+FORMAT TSVRaw;
+{%- endmacro %}
+
+CREATE TABLE test_multi_key_setting (ts DateTime('UTC')) ENGINE = MergeTree ORDER BY (toYYYYMM(ts), toDate(ts), ts)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_multi_key_setting SELECT toDateTime('2026-01-01 00:00:00', 'UTC') + INTERVAL number HOUR FROM numbers(24 * 40);
+
+-- With the setting enabled (default), one comparison constrains all three key columns.
+{{ check('test_multi_key_setting', "ts = toDateTime('2026-01-10 00:00:00', 'UTC')", condition = true) }}
+-- With the setting disabled, the same comparison constrains at most one key column. The same applies to set
+-- membership: no wrapped-set atoms are built for the derived key columns, which prune again once the setting
+-- is enabled.
+SET analyze_index_with_multiple_key_columns_per_condition = 0;
+{{ check('test_multi_key_setting', "ts = toDateTime('2026-01-10 00:00:00', 'UTC')", condition = true) }}
+{{ check('test_multi_key_setting', "ts IN (toDateTime('2026-01-10 00:00:00', 'UTC'), toDateTime('2026-02-05 00:00:00', 'UTC'))") }}
+SET analyze_index_with_multiple_key_columns_per_condition = 1;
+{{ check('test_multi_key_setting', "ts IN (toDateTime('2026-01-10 00:00:00', 'UTC'), toDateTime('2026-02-05 00:00:00', 'UTC'))") }}
+
+-- A key column computed by a deterministic (non-monotonic) function of the predicate column: with the setting
+-- disabled, the direct match on `s` wins and no atom is built for the leading key column `concat(s, '_x')`.
+CREATE TABLE test_multi_key_setting_det (s String) ENGINE = MergeTree ORDER BY (concat(s, '_x'), s)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_multi_key_setting_det SELECT char(97 + number % 26) FROM numbers(100);
+{{ check('test_multi_key_setting_det', "s = 'b'", condition = true) }}
+SET analyze_index_with_multiple_key_columns_per_condition = 0;
+{{ check('test_multi_key_setting_det', "s = 'b'", condition = true) }}

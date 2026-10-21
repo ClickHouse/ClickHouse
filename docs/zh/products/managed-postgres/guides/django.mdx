@@ -1,0 +1,305 @@
+---
+slug: /cloud/managed-postgres/guides/django
+sidebarTitle: 'Django'
+title: '将 Django 与 ClickHouse Managed Postgres 配合使用'
+description: '借助 psycopg 3 和经过验证的 TLS，通过 PgBouncer 将 Django 应用连接到 ClickHouse Managed Postgres，执行迁移，并提供一个简单的 JSON API'
+keywords: ['managed postgres', 'django', 'python', 'psycopg', 'psycopg 3', 'orm', 'migrations', 'pgbouncer', 'conn_max_age', 'server-side cursors']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-django-beta" />
+
+[Django](https://www.djangoproject.com/) 是一个 Python Web 框架，内置 ORM 和迁移系统，并通过 [psycopg 3](https://www.psycopg.org/psycopg3/) 驱动程序与 PostgreSQL 通信。在本指南中，您将通过 PgBouncer 把一个新建的 Django 项目连接到 ClickHouse Managed Postgres，借助迁移创建 `todos` 表，并通过一个小型 JSON 视图处理增删改查请求。所有连接均使用 TLS，并启用完整的证书验证。
+
+## 前置条件 {#prerequisites}
+
+* Python 3.12 或更高版本 (Django 6 的最低要求) 。本指南已在 Python 3.13、Django 6.1.1 和 psycopg 3.3.6 环境下测试通过。
+* 一个 ClickHouse Cloud 账户
+* [`psql`](https://www.postgresql.org/download/)，用于创建数据库。也可以在 [SQL 控制台](/zh/integrations/connectors/sql-clients/sql-console)中执行 `CREATE DATABASE` 语句。
+
+## 创建 ClickHouse Managed Postgres 服务 {#create-service}
+
+在 ClickHouse Cloud 控制台中，点击 **New service**，然后选择 **Postgres**。实例会在几分钟内就绪。详细步骤请参阅[快速入门](/zh/products/managed-postgres/quickstart)。
+
+## 获取连接详细信息 {#connection-details}
+
+在服务的左侧边栏中点击 **Connect**。弹出的对话框会显示您的用户名、密码、服务器和端口，并提供 **Directly** / **via PgBouncer** 切换开关。
+
+本指南通过内置的 [PgBouncer](/zh/products/managed-postgres/connection#pgbouncer) (端口 `6432`) 连接 Django。生产环境中的 Django 应用通常会在多台机器上运行多个工作进程，每个进程都会建立各自的连接。PgBouncer 以事务池化模式运行，让所有这些进程共享少量 Postgres 连接。要使用事务池化，Django 需要进行一些相应设置，本指南已包含这些设置，并在[适用于 Django 的 PgBouncer 设置](#pgbouncer)中加以说明。
+
+选择 **via PgBouncer** 即可查看池化连接的详细信息。此时端口会变为 `6432`，连接字符串中也会包含 `sslmode=verify-full`。
+
+在对话框中点击 **Download CA certificate**。您也可以在 **Settings → CA Certificate** 中下载。该证书为您的实例所独有，因此驱动程序可借助它验证所连接的确实是您的服务器。
+
+## 搭建项目 {#project-setup}
+
+创建一个项目目录并在其中配置虚拟环境，安装 Django 和 psycopg 3，然后创建一个包含 `todos` 应用的 Django 项目：
+
+```bash
+mkdir django-managed-postgres && cd django-managed-postgres
+python3 -m venv .venv
+source .venv/bin/activate
+pip install django "psycopg[binary]"
+django-admin startproject mysite .
+python manage.py startapp todos
+```
+
+`psycopg[binary]` 自带较新版本的 `libpq`，因此无需在本地安装 PostgreSQL。
+
+<Tip>
+  **要集成到现有应用中？**
+
+  请跳过上述命令。在项目的虚拟环境中运行 `pip install "psycopg[binary]"`，然后继续完成[配置连接](#configure-connection)这一步，该步骤会替换原有的 SQLite `DATABASES` 设置。如需迁移 SQLite 中的数据：
+
+  * 修改 `DATABASES` 之前，先运行 `python manage.py dumpdata --natural-foreign --natural-primary -e contenttypes -e auth.permission -o data.json`。
+  * 运行 `python manage.py migrate` 之后，再运行 `python manage.py loaddata data.json`。
+</Tip>
+
+## 配置连接 {#configure-connection}
+
+将下载的 CA 证书移动到项目目录中 `manage.py` 所在的位置，并将其重命名为 `ca-certificate.pem`。
+
+为应用创建一个数据库。将 `<PASSWORD>` 和主机名替换为 **Connect** 弹窗中显示的值：
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_django;"
+```
+
+```text
+CREATE DATABASE
+```
+
+将主机和密码设置为环境变量，避免将其写入代码：
+
+```bash
+export DB_HOST="your-instance.pg.clickhouse.cloud"
+export DB_PASSWORD='<PASSWORD>'
+```
+
+打开 `mysite/settings.py`，在 `from pathlib import Path` 下方添加 `import os`，然后将 `DATABASES` 配置项替换为：
+
+```python title="mysite/settings.py"
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "HOST": os.environ["DB_HOST"],
+        "PORT": "6432",
+        "NAME": "guide_django",
+        "USER": "postgres",
+        "PASSWORD": os.environ["DB_PASSWORD"],
+        # Reuse connections across requests instead of opening one per request
+        "CONN_MAX_AGE": 600,
+        "CONN_HEALTH_CHECKS": True,
+        # Server-side cursors don't work with PgBouncer transaction pooling
+        "DISABLE_SERVER_SIDE_CURSORS": True,
+        "OPTIONS": {
+            "sslmode": "verify-full",
+            "sslrootcert": BASE_DIR / "ca-certificate.pem",
+        },
+    }
+}
+```
+
+Django 会将 `OPTIONS` 中的键传给 psycopg，再由 psycopg 交给 `libpq`。将 `sslmode` 设为 `verify-full` 后，`libpq` 会校验服务器证书是否由您服务的 CA 签发，以及证书是否与主机名匹配。`BASE_DIR` 会将证书路径转换为绝对路径，因此无论从哪个目录启动 Django，该设置都能正常生效。
+
+<Note>
+  如果 `sslrootcert` 指向了错误的 CA，连接会失败并报错 `SSL error: certificate verify failed`。如果未设置 `sslrootcert`，则会报错 `root certificate file ".../.postgresql/root.crt" does not exist`，因为 `libpq` 会回退到其默认的 CA 位置。如果使用 IP 地址而非主机名进行连接，则会报错 `server certificate for "..." does not match host name`。
+</Note>
+
+<Tip>
+  如果您的应用通过 [`dj-database-url`](https://github.com/jazzband/dj-database-url) 读取 `DATABASE_URL`，它会将 URL 查询字符串中的 `sslmode` 和 `sslrootcert` 传入 `OPTIONS`。调用 `dj_database_url.config(conn_max_age=600, conn_health_checks=True, disable_server_side_cursors=True)` 即可获得相同的设置。URL 中的 `sslrootcert` 如果是相对路径，会以启动 Django 时所在的目录为基准进行解析。
+</Tip>
+
+## 创建模型并运行迁移 {#migrations}
+
+在 `mysite/settings.py` 中，将 `todos` 应用添加到 `INSTALLED_APPS`：
+
+```python title="mysite/settings.py"
+INSTALLED_APPS = [
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    'todos',
+]
+```
+
+在 `todos/models.py` 中定义一个 `Todo` 模型：
+
+```python title="todos/models.py"
+from django.db import models
+
+
+class Todo(models.Model):
+    title = models.CharField(max_length=200)
+    done = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+```
+
+为该模型创建迁移，并应用所有迁移：
+
+```bash
+python manage.py makemigrations todos
+python manage.py migrate
+```
+
+```text
+Migrations for 'todos':
+  todos/migrations/0001_initial.py
+    + Create model Todo
+Operations to perform:
+  Apply all migrations: admin, auth, contenttypes, sessions, todos
+Running migrations:
+  Applying contenttypes.0001_initial... OK
+  Applying auth.0001_initial... OK
+  Applying admin.0001_initial... OK
+  Applying admin.0002_logentry_remove_auto_add... OK
+  Applying admin.0003_logentry_add_action_flag_choices... OK
+  Applying contenttypes.0002_remove_content_type_name... OK
+  Applying auth.0002_alter_permission_name_max_length... OK
+  Applying auth.0003_alter_user_email_max_length... OK
+  Applying auth.0004_alter_user_username_opts... OK
+  Applying auth.0005_alter_user_last_login_null... OK
+  Applying auth.0006_require_contenttypes_0002... OK
+  Applying auth.0007_alter_validators_add_error_messages... OK
+  Applying auth.0008_alter_user_username_max_length... OK
+  Applying auth.0009_alter_user_last_name_max_length... OK
+  Applying auth.0010_alter_group_name_max_length... OK
+  Applying auth.0011_update_proxy_permissions... OK
+  Applying auth.0012_alter_user_first_name_max_length... OK
+  Applying sessions.0001_initial... OK
+  Applying todos.0001_initial... OK
+```
+
+除 `todos_todo` 外，`migrate` 还会为 Django 的内置应用 (例如 `auth_user` 和 `django_session`) 创建表，并将已应用的迁移记录在 `django_migrations` 中。如果是现有应用，请跳过创建 `todos` 模型这一步，直接运行 `python manage.py migrate`，该命令会在新数据库中创建应用的所有表。
+
+`migrate` 不会获取会话级咨询锁，因此可以通过 PgBouncer 正常运行。但它也无法阻止并发执行，因此请只在一个地方运行迁移，例如放在某个单独的部署步骤中。
+
+## 添加 JSON 端点 {#query}
+
+将 `todos/views.py` 替换为以下两个视图，它们通过 Django ORM 创建、列出、更新和删除待办事项：
+
+```python title="todos/views.py"
+import json
+
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
+from django.views.decorators.csrf import csrf_exempt
+
+from .models import Todo
+
+FIELDS = ["id", "title", "done", "created_at"]
+
+
+def as_dict(todo):
+    return {field: getattr(todo, field) for field in FIELDS}
+
+
+# This example API skips CSRF checks; add authentication before you deploy it
+@csrf_exempt
+def todo_list(request):
+    if request.method == "POST":
+        # Create
+        todo = Todo.objects.create(title=json.loads(request.body)["title"])
+        return JsonResponse(as_dict(todo), status=201)
+    # Read
+    return JsonResponse(list(Todo.objects.order_by("id").values(*FIELDS)), safe=False)
+
+
+@csrf_exempt
+def todo_detail(request, pk):
+    todo = get_object_or_404(Todo, pk=pk)
+    if request.method == "PATCH":
+        # Update: toggle the done flag
+        todo.done = not todo.done
+        todo.save(update_fields=["done"])
+    elif request.method == "DELETE":
+        # Delete
+        data = as_dict(todo)
+        todo.delete()
+        return JsonResponse(data)
+    return JsonResponse(as_dict(todo))
+```
+
+替换 `mysite/urls.py` 的内容，将 `/todos` 和 `/todos/<id>` 路由到这些视图：
+
+```python title="mysite/urls.py"
+from django.contrib import admin
+from django.urls import path
+
+from todos import views
+
+urlpatterns = [
+    path("admin/", admin.site.urls),
+    path("todos", views.todo_list),
+    path("todos/<int:pk>", views.todo_detail),
+]
+```
+
+## 运行与验证 {#verify}
+
+启动开发服务器：
+
+```bash
+python manage.py runserver 3111
+```
+
+```text
+Performing system checks...
+
+System check identified no issues (0 silenced).
+October 01, 2026 - 14:39:10
+Django version 6.1.1, using settings 'mysite.settings'
+Starting WSGI development server at http://127.0.0.1:3111/
+Quit the server with CONTROL-C.
+```
+
+在另一个终端中，创建两个待办事项，将第一个标记为已完成，然后删除第二个：
+
+```bash
+curl -X POST http://localhost:3111/todos -d '{"title": "Try Django"}'
+curl -X POST http://localhost:3111/todos -d '{"title": "Write a migration"}'
+curl -X PATCH http://localhost:3111/todos/1
+curl -X DELETE http://localhost:3111/todos/2
+```
+
+`PATCH` 请求会返回更新后的行：
+
+```json
+{"id": 1, "title": "Try Django", "done": true, "created_at": "2026-10-01T14:38:51.036Z"}
+```
+
+在浏览器中打开 `http://localhost:3111/todos`，即可列出剩余的待办事项。响应如下所示：
+
+```json
+[{"id": 1, "title": "Try Django", "done": true, "created_at": "2026-10-01T14:38:51.036Z"}]
+```
+
+要在控制台中查看数据，请在服务的左侧边栏中打开 **SQL 控制台**，依次展开 `guide_django` 和 `public`，然后点击 `todos_todo` 表。表中包含剩余的那一行：
+
+| id | title      | done | created&#95;at                |
+| -- | ---------- | ---- | ----------------------------- |
+| 1  | Try Django | true | 2026-10-01 14:38:51.036352+00 |
+
+## 适用于 Django 的 PgBouncer 设置 {#pgbouncer}
+
+PgBouncer 以事务池化模式运行：每个事务 (或事务之外的每条语句) 都可能在不同的 Postgres 连接上执行。下面说明这对上述设置以及 Django 其他功能的影响：
+
+* **`DISABLE_SERVER_SIDE_CURSORS`**：`QuerySet.iterator` 通过服务器端游标分块读取行。在事务之外，Django 会将游标声明为 `WITH HOLD`，并逐块分别拉取，因此经由 PgBouncer 时，某次拉取可能落到并不持有该游标的 Postgres 连接上，并报错 `cursor "_django_curs_..." does not exist`。只有当其他客户端同时使用连接池时才会出现这种情况，所以在开发环境中往往难以发现。启用该设置后，`.iterator()` 会改用普通游标，由 psycopg 将整个结果加载到内存中。如需流式读取超大表，请关闭该设置，并通过端口 `5432` 直连运行相应代码。
+* **`CONN_MAX_AGE`**：默认值为 `0`，此时 Django 会为每个请求新建一个连接。无论经由 PgBouncer 还是直连，建立 TLS 连接都需要多次网络往返，因此复用连接能显著提升请求速度。在一次从笔记本电脑发起、使用四个 Gunicorn 工作进程的测试中，将 `CONN_MAX_AGE` 设为 `600` 后，请求耗时中位数从约 670 ms 降至 95 ms。经由 PgBouncer 时，已打开的 Django 连接在事务之间不会占用 Postgres 连接，因此持久连接不会耗尽 `max_connections`。启用 `CONN_HEALTH_CHECKS` 后，Django 会在每个请求开始时检查复用的连接，如果连接已关闭则重新连接。
+* **连接池**：Django 内置的连接池 (在 `OPTIONS` 中设置 `"pool": True`，需先执行 `pip install "psycopg[binary,pool]"`) 能带来类似的提速效果，同样可以经由 PgBouncer 使用。它要求将 `CONN_MAX_AGE` 设为 `0`，并且每个进程至少保持四个打开的连接。使用 PgBouncer 时，对大多数应用而言 `CONN_MAX_AGE` 已经足够；如果使用多线程或 ASGI 服务器，可以考虑连接池。
+* **预处理语句**：无需任何设置。Django 默认将 psycopg 的 `prepare_threshold` 设为 `None`，并在客户端绑定查询参数，因此不会创建服务器端预处理语句。如果在 `OPTIONS` 中启用 `"server_side_binding": True` 并设置 `"prepare_threshold"`，预处理语句同样可以经由 PgBouncer 使用，因为 `psycopg[binary]` 内置了 `libpq` 18，会通过协议层的 `Close` 消息释放语句。如果 psycopg 基于 `libpq` 16 或更早版本构建，在事务内释放语句时会报错 `prepared statement "_pg3_0" does not exist`。可运行 `python -c "import psycopg; print(psycopg.pq.version())"` 检查版本，结果需为 `170000` 或更高。
+* **会话状态**：`SET` 语句 (例如 `SET search_path`) 只对执行它的 Postgres 连接生效，因此后续查询可能看不到其效果，其他客户端反而可能受到影响。PgBouncer 会拒绝 Django 的 `"options": "-c search_path=..."` 设置，并报错 `unsupported startup parameter in options: search_path`。请改为在数据库级别设置默认值，例如执行 `ALTER DATABASE guide_django SET search_path = myschema, public;`。不要使用 `assume_role` 选项，因为它会执行 `SET ROLE`。Django 自身的 `TIME_ZONE` 处理以及 `isolation_level` 选项均可经由 PgBouncer 正常工作。
+
+如需改为直连，请将 `PORT` 设为 `5432` 并移除 `DISABLE_SERVER_SIDE_CURSORS`。此时每个 Django 工作进程都会各自持有一个 Postgres 连接，因此请确保工作进程总数低于 `max_connections`。
+
+## 后续步骤 {#next-steps}
+
+* [连接](/zh/products/managed-postgres/connection)：连接字符串、PgBouncer 和 TLS
+* [设置](/zh/products/managed-postgres/settings)：Postgres 和 PgBouncer 参数，例如 `max_connections`
+* [只读副本](/zh/products/managed-postgres/read-replicas)：利用 Django 的[多数据库](https://docs.djangoproject.com/en/stable/topics/db/multi-db/)支持，将读请求路由到副本
+* [安全](/zh/products/managed-postgres/security)：IP 访问列表和私网连接

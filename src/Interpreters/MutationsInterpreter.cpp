@@ -91,7 +91,6 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsBool use_concurrency_control;
-    extern const SettingsBool allow_statistics;
     extern const SettingsSetOperationMode union_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode except_default_mode;
@@ -566,6 +565,11 @@ bool MutationsInterpreter::Source::hasProjection(const String & name) const
 bool MutationsInterpreter::Source::hasBrokenProjection(const String & name) const
 {
     return part && part->hasBrokenProjection(name);
+}
+
+bool MutationsInterpreter::Source::hasUnloadedProjection(const String & name) const
+{
+    return part && part->hasUnloadedProjection(name);
 }
 
 bool MutationsInterpreter::Source::isCompactPart() const
@@ -1058,7 +1062,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         [&](const String & name, ColumnDependency::Kind kind)
     {
         if (kind == ColumnDependency::PROJECTION)
-            return source.hasProjection(name);
+            return source.hasProjection(name) || source.hasUnloadedProjection(name);
 
         if (kind == ColumnDependency::SKIP_INDEX)
             return source.hasSecondaryIndex(name, metadata_snapshot);
@@ -1392,8 +1396,12 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::MATERIALIZE_STATISTICS)
         {
-            if (!context->getSettingsRef()[Setting::allow_statistics])
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
+            /// `allow_statistics` gates the DDL: whether statistics may be declared on a table. Only
+            /// the submitting session's value is meaningful for that, so the gate lives at submission
+            /// time - `checkStatisticsMutationsAreAllowed` in `InterpreterAlterQuery`. Checking it here
+            /// asked the background context that executes the mutation, which reads the server-default
+            /// profile rather than the session that submitted the statement, so a mutation accepted
+            /// with a session opt-in failed forever and wedged the table's mutation queue.
 
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
             /// if we execute `ALTER TABLE ... MATERIALIZE STATISTICS ALL`, we materalize all the statistics in this table.
@@ -1448,8 +1456,8 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::DROP_STATISTICS)
         {
-            if (!context->getSettingsRef()[Setting::allow_statistics])
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
+            /// See MATERIALIZE_STATISTICS above: gated at submission time, not under the background
+            /// context that executes the mutation.
 
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
 
@@ -1827,9 +1835,11 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 LOG_DEBUG(logger, "Will rebuild commit-order projection {}", projection.name);
                 materialized_projections.insert(projection.name);
+                continue;
             }
 
-            continue;
+            if (!source.hasUnloadedProjection(projection.name))
+                continue;
         }
 
         /// Always rebuild broken projections.
