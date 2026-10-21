@@ -12,4 +12,5 @@ cc_library(
     includes = [
         "include",
     ],
+    deps = ["@clickhouse_fp16//:fp16"],
 )
