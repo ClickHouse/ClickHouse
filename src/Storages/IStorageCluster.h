@@ -54,6 +54,9 @@ public:
 
     const String & getClusterName() const { return cluster_name; }
 
+    /// The existing table that the replicas read by its name, if this storage reads such a table.
+    virtual std::optional<QualifiedTableName> getTableReadOnReplicas() const { return {}; }
+
     /// Prepare the `SELECT ... FROM f(...)` query (`f` is a table function) for the other nodes of the cluster: add the
     /// structure and format arguments so that the nodes do not infer the schema again, and turn a plain table
     /// function (`url`, `s3`, ...) that `parallel_replicas_for_cluster_engines` converted into this cluster

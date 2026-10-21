@@ -282,6 +282,11 @@ private:
 
     void initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope);
 
+    /// Make the table of a single-table `FROM` read with parallel replicas, if its storage supports that for the query.
+    void replaceTableStorageForParallelReplicasReadIfNeeded(const TableNodePtr & table_node, IdentifierResolveScope & scope);
+
+    void restoreReplacedTableStoragesIfCorrelated(const QueryTreeNodePtr & node);
+
     void initializeTableExpressionData(const TableExpressionNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
     void resolveTableFunction(QueryTreeNodePtr & table_function_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor, bool nested_table_function);
@@ -319,6 +324,15 @@ private:
     std::unordered_set<IQueryTreeNode *> windows_in_resolve_process;
 
     std::unordered_map<IQueryTreeNode *, QueryTreeNodePtr> cte_copy_to_original_map;
+
+    /// Storages of table nodes replaced by `replaceTableStorageForParallelReplicasReadIfNeeded`.
+    struct ReplacedTableStorage
+    {
+        StoragePtr replacement;
+        StoragePtr storage;
+        StorageSnapshotPtr storage_snapshot;
+    };
+    std::vector<ReplacedTableStorage> replaced_table_storages;
 
     /** The name of the view a table expression was inlined from, see `inlineViewSubqueryIfNeeded`.
       * An inlined view keeps behaving as a table expression with that name, exactly as it does without

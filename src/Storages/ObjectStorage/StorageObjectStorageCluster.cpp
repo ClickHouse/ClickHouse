@@ -203,9 +203,46 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     setInMemoryMetadata(metadata);
 }
 
+StorageObjectStorageCluster::StorageObjectStorageCluster(
+    const String & cluster_name_,
+    StorageObjectStorageConfigurationPtr configuration_,
+    ObjectStoragePtr object_storage_,
+    const StorageID & table_id_,
+    const StorageMetadataPtr & metadata_,
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path_,
+    std::optional<FormatSettings> format_settings_,
+    std::shared_ptr<DataLake::ICatalog> catalog_,
+    ConstStoragePtr table_)
+    : IStorageCluster(
+        cluster_name_, table_id_, getLogger(fmt::format("{}({})", configuration_->getEngineName(), table_id_.table_name)))
+    , configuration{configuration_}
+    , object_storage(object_storage_)
+    , format_settings(std::move(format_settings_))
+    , catalog(std::move(catalog_))
+    , hive_partition_columns_to_read_from_file_path(std::move(hive_partition_columns_to_read_from_file_path_))
+    , table(std::move(table_))
+{
+    setInMemoryMetadata(*metadata_);
+}
+
 std::string StorageObjectStorageCluster::getName() const
 {
     return configuration->getEngineName();
+}
+
+std::optional<QualifiedTableName> StorageObjectStorageCluster::getTableReadOnReplicas() const
+{
+    if (!table)
+        return {};
+    const auto table_id = getStorageID();
+    return QualifiedTableName{table_id.database_name, table_id.table_name};
+}
+
+void StorageObjectStorageCluster::updateConfigurationIfNeeded(ContextPtr context)
+{
+    /// The same per-query update as `StorageObjectStorage::read` does for the table.
+    if (table && !configuration->isDataLakeConfiguration())
+        configuration->update(object_storage, context);
 }
 
 SinkToStoragePtr StorageObjectStorageCluster::write(
