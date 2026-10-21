@@ -250,6 +250,20 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
             return this->traverseAtomNode(node, out);
         }).extractRPN());
 
+    /// Exceeding the postings budget of the dictionary scan bypasses all patterns, so a phrase word must not share it.
+    const bool has_other_patterns = std::ranges::any_of(rpn, [](const RPNElement & element)
+    {
+        return !element.is_phrase_word
+            && std::ranges::any_of(element.text_search_queries, [](const auto & query) { return !query->getPatterns().empty(); });
+    });
+
+    if (has_other_patterns)
+    {
+        for (auto & element : rpn)
+            if (element.is_phrase_word)
+                element = RPNElement{};
+    }
+
     NameSet all_search_tokens_set;
 
     for (const auto & element : rpn)
@@ -1794,6 +1808,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             {
                 out.function = RPNElement::FUNCTION_LIKE;
                 out.text_search_queries.emplace_back(makePhraseWordQuery</*case_insensitive=*/ false>(function_name, *phrase_word));
+                out.is_phrase_word = true;
                 return true;
             }
         }
@@ -1835,6 +1850,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             {
                 out.function = RPNElement::FUNCTION_LIKE;
                 out.text_search_queries.emplace_back(makePhraseWordQuery</*case_insensitive=*/ true>(function_name, *phrase_word));
+                out.is_phrase_word = true;
                 return true;
             }
         }

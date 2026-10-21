@@ -161,6 +161,8 @@ private:
 
         Function function = FUNCTION_UNKNOWN;
         std::vector<TextSearchQueryPtr> text_search_queries;
+        /// Searches a phrase by one of its words, which only skips granules.
+        bool is_phrase_word = false;
     };
 
     using RPN = std::vector<RPNElement>;

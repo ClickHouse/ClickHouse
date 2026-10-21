@@ -81,6 +81,10 @@ SELECT 'like and ilike, no index', groupArray(id) FROM tab WHERE message LIKE '%
 SELECT 'postings budget exhausted', groupArray(id) FROM tab WHERE message LIKE '%error budget%' SETTINGS log_comment = '05315_like_budget', text_index_like_max_postings_to_read = 0;
 SELECT 'postings budget exhausted, no index', groupArray(id) FROM tab WHERE message LIKE '%error budget%' SETTINGS use_skip_indexes = 0;
 
+-- The phrase is not searched along with another pattern, so its postings cannot exhaust the budget of '%lang%'.
+SELECT 'like and phrase, postings budget', groupArray(id) FROM tab WHERE message LIKE '%lang%' AND message LIKE '%error budget%' SETTINGS log_comment = '05315_like_and_budget', text_index_like_max_postings_to_read = 0;
+SELECT 'like and phrase, postings budget, no index', groupArray(id) FROM tab WHERE message LIKE '%lang%' AND message LIKE '%error budget%' SETTINGS use_skip_indexes = 0;
+
 -- A case-insensitive prefix reads only the dictionary blocks holding the case variants of 'ab01'.
 SELECT 'ilike prefix', groupArray(id) FROM tab WHERE message ILIKE 'AB01%' SETTINGS log_comment = '05315_ilike_prefix';
 SELECT 'ilike prefix, no index', groupArray(id) FROM tab WHERE message ILIKE 'AB01%' SETTINGS use_skip_indexes = 0;
@@ -109,7 +113,7 @@ FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
   AND type = 'QueryFinish'
   AND log_comment IN ('05315_like', '05315_like_punctuation', '05315_ilike', '05315_ilike_three', '05315_ilike_kelvin',
-                      '05315_ilike_two_words')
+                      '05315_ilike_two_words', '05315_like_and_budget')
 ORDER BY log_comment;
 
 DROP TABLE tab;
@@ -140,6 +144,11 @@ SELECT 'not like', count() FROM tab_nullable WHERE NOT (message LIKE '%java heap
 SELECT 'not like, no index', count() FROM tab_nullable WHERE NOT (message LIKE '%java heap%') SETTINGS use_skip_indexes = 0;
 SELECT 'not ilike', count() FROM tab_nullable WHERE NOT (message ILIKE '%java heap%');
 SELECT 'not ilike, no index', count() FROM tab_nullable WHERE NOT (message ILIKE '%java heap%') SETTINGS use_skip_indexes = 0;
+
+-- A part holding a NULL and a phrase word whose postings exhaust the budget: '%java%' must not fall back to row evaluation.
+INSERT INTO tab_nullable SELECT 201 + number, if(number = 0, NULL, 'error budget') FROM numbers(17);
+SELECT 'like or phrase, postings budget', count() FROM tab_nullable WHERE message LIKE '%java%' OR message ILIKE '%error budget%' SETTINGS text_index_like_max_postings_to_read = 0;
+SELECT 'like or phrase, postings budget, no index', count() FROM tab_nullable WHERE message LIKE '%java%' OR message ILIKE '%error budget%' SETTINGS use_skip_indexes = 0;
 
 SYSTEM FLUSH LOGS query_log;
 
