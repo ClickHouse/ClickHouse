@@ -979,7 +979,6 @@ bool canHaveSameNumberOfDimensions(const IDataType & from, const IDataType & to)
     return from_dimensions.min <= to_dimensions.max && to_dimensions.min <= from_dimensions.max;
 }
 
-/// `from` is a `Point`, `LineString` or `Polygon` and `to` is the multi-geometry of the same kind.
 bool isGeometryToMultiGeometry(const IDataType & from, const IDataType & to)
 {
     const auto * from_name = from.getCustomName();
@@ -994,7 +993,6 @@ bool isGeometryToMultiGeometry(const IDataType & from, const IDataType & to)
         || (from_geometry == "Polygon" && to_geometry == "MultiPolygon");
 }
 
-/// The two types wrap a single geometry and its multi-geometry into the same `Array` nesting.
 bool isGeometryToMultiGeometryUnderArrays(const IDataType & from, const IDataType & to)
 {
     if (isGeometryToMultiGeometry(from, to))
