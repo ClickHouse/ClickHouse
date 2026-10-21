@@ -79,9 +79,7 @@ Alternatively, Vector also supports receiving events over the Lumberjack protoco
 
 We illustrate both of these architectures below.
 
-{/* Follow-up: replace this shared legacy diagram for the managed flow. Use ClickHouse Observability branding instead of ClickStack/HyperDX, show Vector sending OTLP HTTP directly to the managed telemetry endpoint, and distinguish customer-operated components from the managed service. Preserve both the Kafka and direct Lumberjack input paths. Create a separate asset because the original is shared with other guides. */}
-
-<Image img="/images/use-cases/observability/clickstack-migrating-agents.webp" alt="Migrating agents" size="lg" background/>
+<Image img="/images/use-cases/observability/clickstack-migrating-agents-ui.png" alt="Beats agents sending logs through Vector to the collector, ClickHouse, and ClickStack UI" size="lg" background/>
 
 In the following example, we provide the initial steps to configure Vector to receive log events from Filebeat via the Lumberjack protocol. We provide VRL for mapping the inbound ECS events to OTel specification, before sending these to your configured OTLP endpoint via OTLP. Users consuming events from Kafka can replace the Vector Logstash source with the [Kafka source](https://vector.dev/docs/reference/configuration/sources/kafka/) - all other steps remain the same.
 
