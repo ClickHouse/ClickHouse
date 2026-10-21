@@ -789,7 +789,6 @@ ch_cc_library(
     ],
     deps = [
         ":google_cloud_cpp_common",
-        "@clickhouse//base:common",
         "@clickhouse_nlohmann_json//:nlohmann_json",
         "@clickhouse_abseil_cpp//:absl_function_ref",
         "@clickhouse_abseil_cpp//:absl_optional",
