@@ -1,0 +1,14 @@
+-- revoke one of two filters
+READ	URL(`https://bar/.*`)	0	0
+-- revoke a filter which is not granted
+READ	URL(`https://bar/.*`)	0	0
+-- revoke the only filter
+0
+-- revoke without a filter
+0
+-- revoke a filter under the unfiltered grant
+READ	URL	0	0
+READ		0	1
+-- revoke the grant option of one filter
+READ	URL(`https://bar/.*`)	0	1
+READ	URL(`https://foo/.*`)	0	0
