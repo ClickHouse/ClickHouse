@@ -204,6 +204,7 @@ CMake hash recorded below.
 | `cba24794c` (verification snapshot) | Give libpq only its 49 private Linux headers and three public API headers | [c80af064](https://app.buildbuddy.io/invocation/c80af064-b110-4d96-b39b-77f8b360c97c) | [24f4bb87](https://app.buildbuddy.io/invocation/24f4bb87-4ace-4672-bab1-1be3fb388f3d) |
 | `f05573ccb` (verification snapshot) | Give SASL its two public API headers and eight private Linux headers | [b600961e](https://app.buildbuddy.io/invocation/b600961e-221a-442d-9e7e-440deab28b33) | [fe01e4e0](https://app.buildbuddy.io/invocation/fe01e4e0-0061-4d3f-b172-1701a9714641) |
 | `2cb60420e` (verification snapshot) | Give libxml2 and jemalloc their configured public headers; remove unused private, C++ runtime and disabled zlib inputs | [c6e27cc7](https://app.buildbuddy.io/invocation/c6e27cc7-329a-4937-a305-01903f32574f) | [171dfda4](https://app.buildbuddy.io/invocation/171dfda4-247b-416f-9be2-f0cf93e01788) |
+| `826781f96` (verification snapshot) | Remove unused direct NuRaft dependencies from Compression and ZooKeeper; retain the required ZooKeeper base dependency | [e2cb9c03](https://app.buildbuddy.io/invocation/e2cb9c03-d73a-4759-bd37-5669ed9be2b8) | [1493e7ca](https://app.buildbuddy.io/invocation/1493e7ca-b75b-4118-b902-3cbdfd0abef9) |
 
 The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`

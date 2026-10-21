@@ -208,7 +208,6 @@ ch_cc_library(
         "@clickhouse_libxml2//:_libxml2",
         "//contrib/lz4-cmake:_lz4",
         "@clickhouse_minizip_ng//:_minizip",
-        "@clickhouse_nuraft//:_nuraft",
         "//base/poco/Foundation:_poco_foundation_pcre",
         "//base/poco/JSON:_poco_json_pdjson",
         "@clickhouse_re2//:_re2",
