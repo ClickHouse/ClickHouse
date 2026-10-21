@@ -55,10 +55,6 @@ MutateFromLogEntryTask::~MutateFromLogEntryTask()
     /// cleanup (MergeTreeBackgroundExecutor::routine), so set one explicitly here.
     auto component_guard = Coordination::setCurrentComponent("MutateFromLogEntryTask::~MutateFromLogEntryTask");
     zero_copy_lock.reset();
-    ThreadGroupSwitcher operation_group(
-        merge_mutate_entry ? (*merge_mutate_entry)->thread_group : nullptr, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
-    mutate_task.reset();
-    new_part.reset();
 }
 
 void MutateFromLogEntryTask::cancel() noexcept
