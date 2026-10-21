@@ -1236,7 +1236,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         has_index_column = true;
         direct_read_mode = getHintOrNoneMode();
         candidate_for_exact_mode = false;
-        bool is_special_text_index_function = function_name == "hasAnyTokens" || function_name == "hasAllTokens";
+        bool is_special_text_index_function = function_name == "hasAnyTokens" || function_name == "hasAllTokens" || function_name == "hasPhrase";
 
         /// Convert non-string values to their text representation to match the format produced by `JSONAllValues`.
         /// Keep array values as-is for special text index functions.
