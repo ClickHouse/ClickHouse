@@ -24,12 +24,10 @@ ch_cc_library(
     ] + glob(["sliceFrom*.cpp"]) + [
         "starts_with.cpp",
     ]),
+    hdrs = glob(["**/*.h"]),
     clickhouse_code = True,
     copts = ["-g1"],
-    implementation_deps = [
-        ":headers",
-        "//src/Common",
-    ],
+    implementation_deps = [],
     link_runtime = True,
     local_defines = [
         "AI_SDK_HAS_ANTHROPIC=1",
@@ -150,7 +148,7 @@ ch_cc_library(
         "@clickhouse_silk//:_silk_fibers",
     ] + [
         "//base/glibc-compatibility",
-        "//src:dbms",
+        "//src:dbms__compile_0",
         "//src/Common/ZooKeeper:clickhouse_common_zookeeper",
         "//src/Common/mysqlxx",
         "@clickhouse_cctz//:tzdata",
@@ -158,6 +156,10 @@ ch_cc_library(
         "@clickhouse_llvm_project//:clang_rt_builtins",
         "@clickhouse_vectorscan//:_vectorscan",
         "@clickhouse_zstd//:_zstd",
+    ] + [
+        "//base:common",
+        "//src/Common",
+        "//src/Functions:clickhouse_functions_obj__compile_0",
     ],
 )
 

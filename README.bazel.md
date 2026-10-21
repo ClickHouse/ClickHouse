@@ -290,6 +290,7 @@ hash comparison below. Its before and after global, dynamic and undefined
 symbol sets match; the ARM-only local-symbol differences are AArch64 thunks
 and their mapping symbols. Ten existing BloomFilter and Storage gtests pass
 before and after on both CPUs.
+| `2942389ee` (verification snapshot) | Use compiled Functions, DBMS and GatherUtils header owners for Array; put private Array headers in srcs and private dependencies in implementation_deps. Both Functions owners, all four Array owners and UniqTheta have zero CPP dependency findings on both CPUs. GatherUtils retains exactly the parent's two unused dependencies, OpenLDAP _ldap and mysqlxx; its complete report is byte-identical before and after. Ordinary compiler and DBMS link checks pass. Original and normalized ClickHouse ELF hashes remain as recorded below | [41d25a76](https://app.buildbuddy.io/invocation/41d25a76-f4b1-4a40-a412-3b303e571048) | [074d4871](https://app.buildbuddy.io/invocation/074d4871-d666-4bf1-a750-2d47c22d1af9) |
 
 The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`
