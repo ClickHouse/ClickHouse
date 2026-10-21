@@ -28,33 +28,7 @@ public:
     virtual bool fileExists(const String & file_name) = 0;
     virtual UInt64 getFileSize(const String & file_name) = 0;
 
-    /// `expected_file_size` is the size the backup metadata recorded for the file, when the caller
-    /// knows it. A reader whose object storage can have the blob replaced under it (Azure) refuses
-    /// to read a blob of another size, because such a blob is not the one the backup wrote; the
-    /// others ignore it. Nothing is passed for a read whose size is not recorded anywhere, such as
-    /// the `.backup` metadata file itself.
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name, std::optional<size_t> expected_file_size) = 0;
-
-    /// Names the generation of `file_name` that is in the storage now, for a reader whose files can
-    /// be replaced under an open backup (Azure, where a blob is rewritten in place, and S3, where an
-    /// object of an unversioned bucket is). A backup read through several buffers - an archive,
-    /// which is reopened for every handle the archive reader needs - takes this token once and
-    /// passes it to every one of those reads, so that the whole session reads one generation of the
-    /// archive or fails, instead of taking whatever generation each reopen is answered with. Empty
-    /// where a file cannot change identity under an open backup, which is also the case of an S3
-    /// URI that names a version: such a read is pinned by the version itself. A reader of a storage
-    /// where a file can be replaced in place never returns an empty token: when the endpoint does
-    /// not name the generation (no `ETag`), it throws instead, because the session could then not be
-    /// kept on one generation at all.
-    virtual String getFileGeneration(const String & /*file_name*/) { return {}; }
-
-    /// Reads `file_name` pinned to the generation named by `generation` (a token of
-    /// getFileGeneration()): a file that does not hold that generation any more is refused rather
-    /// than read - with `FILE_CHANGED_DURING_READ` on Azure and `S3_OBJECT_CHANGED_DURING_READ` on
-    /// S3, whose `If-Match` failure has a code of its own. An empty token pins nothing, which is
-    /// what a reader of a storage where a file cannot be replaced in place has to offer.
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFilePinnedToGeneration(
-        const String & file_name, std::optional<size_t> expected_file_size, const String & generation);
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) = 0;
 
     /// The function copyFileToDisk() can be much faster than reading the file with readFile() and then writing it to some disk.
     /// (especially for S3 where it can use CopyObject to copy objects inside S3 instead of downloading and uploading them).
@@ -95,6 +69,21 @@ public:
     /// Object-storage writers override this to create a file atomically without replacing an existing one.
     virtual std::unique_ptr<WriteBuffer> writeFileIfNotExists(const String & file_name);
 
+    /// Whether `writeFileIfNotExists` is a real conditional create: it either creates the file or fails,
+    /// and it never replaces a file somebody else created. The default implementation falls back to
+    /// `writeFile`, which overwrites, so only writers that override both may answer `true`. Callers that
+    /// take the destination with a lock file rely on this: with an overwriting writer, finding one's own
+    /// contents in the lock proves nothing, because the write could have destroyed a foreign lock.
+    virtual bool supportsAtomicCreateIfNotExists() const { return false; }
+
+    /// Whether `writeFileIfNotExists` creates the file exclusively already when it returns the buffer, before
+    /// any of its contents are written (an `O_EXCL` open). If the write fails afterwards, the file left in the
+    /// destination was created by this caller, even though it does not hold the contents the caller meant to
+    /// write. It is not proof that the file is still the caller's: another writer reaching the same path in
+    /// rewrite mode can have written over it since. Object-storage writers create the object only when the
+    /// buffer is finalized, so they answer `false`.
+    virtual bool createsFileOnOpenIfNotExists() const { return false; }
+
     using CreateReadBufferFunction = std::function<std::unique_ptr<SeekableReadBuffer>()>;
     virtual void copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length) = 0;
 
@@ -115,6 +104,14 @@ public:
 
     /// Removes the backup folder if it's empty or contains empty subfolders.
     virtual void removeEmptyDirectories() = 0;
+
+    /// fsync one already-written file and remember its parent directories for
+    /// `syncDirectoriesToDisk`. No-op where a completed upload is already durable.
+    virtual void syncFileToDisk(const String & /* file_name */) {}
+
+    /// fsync the directories recorded by `syncFileToDisk`: a created file is durable only once
+    /// its parent directory entry is persisted. Called once after all files are synced.
+    virtual void syncDirectoriesToDisk() {}
 
     virtual const ReadSettings & getReadSettings() const = 0;
     virtual const WriteSettings & getWriteSettings() const = 0;

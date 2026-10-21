@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 本页介绍PROJECTION的概念、使用方式，以及管理PROJECTION的各种选项。
 
-<div id="overview">
-  ## 投影概述
-</div>
+## 投影概述 {#overview}
 
 投影以有利于优化查询执行的格式存储数据，此功能适用于：
 
@@ -30,13 +28,9 @@ doc_type: 'reference'
 
 你可以在此[页面](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)查看有关投影内部工作原理的更多技术细节。
 
-<div id="examples">
-  ## 使用投影
-</div>
+## 使用投影 {#examples}
 
-<div id="example-filtering-without-using-primary-keys">
-  ### 不使用主键进行过滤的示例
-</div>
+### 不使用主键进行过滤的示例 {#example-filtering-without-using-primary-keys}
 
 创建表：
 
@@ -91,9 +85,7 @@ LIMIT 2
 SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
 ```
 
-<div id="example-pre-aggregation-query">
-  ### 预聚合查询示例
-</div>
+### 预聚合查询示例 {#example-pre-aggregation-query}
 
 创建带有投影 `projection_visits_by_user` 的表：
 
@@ -173,9 +165,7 @@ GROUP BY user_agent
 SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
 ```
 
-<div id="projection-indexes">
-  ### 创建和使用投影索引
-</div>
+### 创建和使用投影索引 {#projection-indexes}
 
 创建[投影索引](/zh/reference/engines/table-engines/mergetree-family/mergetree#projection-index)：
 
@@ -236,9 +226,7 @@ WHERE _part_starting_offset + _part_offset IN (
 SETTINGS enable_shared_storage_snapshot_in_query = 1
 ```
 
-<div id="example-projection-with-where">
-  ### 带 `WHERE` 子句的 PROJECTION 示例
-</div>
+### 带 `WHERE` 子句的 PROJECTION 示例 {#example-projection-with-where}
 
 PROJECTION 可以包含 `WHERE` 子句，只存储部分行。如果查询经常按某个已知条件进行过滤，这就很有用——PROJECTION 只会物化符合条件的行，从而减少存储占用并提高查询性能。
 
@@ -287,15 +275,11 @@ SELECT time, message FROM events WHERE event_type = 'click';
 
 这种蕴含检查是保守的——它基于表达式的规范化形式对合取项进行精确匹配。它可能会错过一些有效的优化机会 (例如区间蕴含) ，但绝不会产生错误结果。
 
-<div id="manipulating-projections">
-  ## 管理投影
-</div>
+## 管理投影 {#manipulating-projections}
 
 可对[投影](/zh/reference/engines/table-engines/mergetree-family/mergetree#projections)执行以下操作：
 
-<div id="add-projection">
-  ### ADD PROJECTION
-</div>
+### ADD PROJECTION {#add-projection}
 
 使用以下语句为表的元数据添加 PROJECTION 描述：
 
@@ -311,9 +295,7 @@ ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name (
   当 PROJECTION 定义了 `WHERE` 子句时，只有匹配该谓词的行才会被物化。优化器可以在查询的 `WHERE` 在逻辑上蕴含该 PROJECTION 的 `WHERE`，且该 PROJECTION 对查询计划有利时使用此类 PROJECTION。这同时适用于普通 PROJECTION 和聚合 PROJECTION。
 </Note>
 
-<div id="with-settings">
-  #### `WITH SETTINGS` 子句
-</div>
+#### `WITH SETTINGS` 子句 {#with-settings}
 
 `WITH SETTINGS` 用于定义**投影级设置**，以自定义投影存储数据的方式 (例如 `index_granularity` 或 `index_granularity_bytes`) 。
 这些设置与 **MergeTree 表设置** 一一对应，但**仅对当前投影生效**。
@@ -332,9 +314,7 @@ ADD PROJECTION p (
 
 投影设置会覆盖该投影实际生效的表设置，但必须符合验证规则 (例如，无效或不兼容的覆盖会被拒绝) 。
 
-<div id="modify-projection">
-  ### MODIFY PROJECTION
-</div>
+### MODIFY PROJECTION {#modify-projection}
 
 使用以下语句可修改现有PROJECTION的 [`WITH SETTINGS`](#with-settings) 子句，而无需重建其数据：
 
@@ -349,10 +329,11 @@ ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name IN
 ```
 
 该语句会重新声明完整的PROJECTION定义，但仅 `WITH SETTINGS` 子句可以与现有定义不同。
-PROJECTION查询本身 (对于PROJECTION索引，则是索引表达式和类型) 必须保持不变，因为现有投影 parts 中存储的数据基于此构建；如需更改，请先使用 [`DROP PROJECTION`](#drop-projection)，再使用 [`ADD PROJECTION`](#add-projection)。
+PROJECTION查询本身 (对于PROJECTION索引，则是索引表达式和类型) 必须保持不变，因为现有PROJECTION 分片 中存储的数据基于此构建；如需更改，请先使用 [`DROP PROJECTION`](#drop-projection)，再使用 [`ADD PROJECTION`](#add-projection)。
 
-该命令仅修改表元数据，不会重写任何数据：现有投影 parts 会保留写入时使用的设置，而后续插入和合并写入的投影 parts 将使用新设置。
-要使用新设置重建现有 parts，请运行 [`MATERIALIZE PROJECTION`](#materialize-projection)。
+该命令仅修改表元数据，不会重写任何数据：现有PROJECTION 分片 会保留写入时使用的设置，而后续插入和合并写入的PROJECTION 分片 将使用新设置。
+[`MATERIALIZE PROJECTION`](#materialize-projection) 也不会将新设置应用于现有 分片：它只会在缺少该PROJECTION或PROJECTION已损坏的 分片 中构建PROJECTION，已存在的PROJECTION 分片 则保持不变。
+要使用新设置重建现有 分片，请先运行 [`CLEAR PROJECTION`](#clear-projection)，再运行 [`MATERIALIZE PROJECTION`](#materialize-projection)；也可以合并这些 分片，例如使用 [`OPTIMIZE TABLE ... FINAL`](/zh/reference/statements/optimize)。
 
 示例：
 
@@ -365,9 +346,7 @@ MODIFY PROJECTION p (
 );
 ```
 
-<div id="drop-projection">
-  ### DROP PROJECTION
-</div>
+### DROP PROJECTION {#drop-projection}
 
 使用以下语句可从表元数据中移除PROJECTION描述，并删除磁盘上的PROJECTION文件。
 这是通过 [变更](/zh/reference/statements/alter/index#mutations) 实现的。
@@ -376,20 +355,17 @@ MODIFY PROJECTION p (
 ALTER TABLE [db.]name [ON CLUSTER cluster] DROP PROJECTION [IF EXISTS] name
 ```
 
-<div id="materialize-projection">
-  ### MATERIALIZE PROJECTION
-</div>
+### MATERIALIZE PROJECTION {#materialize-projection}
 
-使用下面的语句重建分区 `partition_name` 中的PROJECTION `name`。
+使用下面的语句在缺失或损坏 PROJECTION `name` 的 分片 中构建该 projection，也可以仅限于分区 `partition_name`。
+已包含该 projection 的 分片 将保持不变，即使在这些 分片 写入后又通过 [`MODIFY PROJECTION`](#modify-projection) 更改了 projection 设置，也同样如此；如需重建这些 分片，请先运行 [`CLEAR PROJECTION`](#clear-projection)。
 这是通过[变更](/zh/reference/statements/alter/index#mutations)实现的。
 
 ```sql
 ALTER TABLE [db.]table [ON CLUSTER cluster] MATERIALIZE PROJECTION [IF EXISTS] name [IN PARTITION partition_name]
 ```
 
-<div id="clear-projection">
-  ### CLEAR PROJECTION
-</div>
+### CLEAR PROJECTION {#clear-projection}
 
 使用以下语句可从磁盘中删除PROJECTION文件，而不删除其定义。
 这是通过 [变更](/zh/reference/statements/alter/index#mutations) 实现的。
@@ -405,9 +381,7 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [I
   只有使用 [`*MergeTree`](/zh/reference/engines/table-engines/mergetree-family/mergetree) 引擎的表 (包括[复制](/zh/reference/engines/table-engines/mergetree-family/replication)变体) 才支持PROJECTION操作。
 </Note>
 
-<div id="control-projections-merges">
-  ### 控制PROJECTION合并行为
-</div>
+### 控制PROJECTION合并行为 {#control-projections-merges}
 
 执行查询时，ClickHouse 会在读取原始表还是其某个PROJECTION之间进行选择。
 读取原始表还是某个PROJECTION，这一决策会针对每个表分片单独作出。
@@ -435,9 +409,7 @@ ClickHouse 通常会尽可能少读数据，并采用一些方法来识别最佳
 * `drop`：删除受影响的PROJECTION表分片。对于受影响的PROJECTION分片，查询将回退到原始表分片。
 * `rebuild`：重建受影响的PROJECTION分片，使其与原始表分片中的数据保持一致。
 
-<div id="limitations">
-  ## 限制
-</div>
+## 限制 {#limitations}
 
 不能在投影的 `ORDER BY` 子句中使用 `ALIAS` 列。例如：
 
@@ -478,9 +450,7 @@ CREATE TABLE t
 ENGINE = MergeTree ORDER BY id;
 ```
 
-<div id="see-also">
-  ## 另请参阅
-</div>
+## 另请参阅 {#see-also}
 
 * [&quot;合并期间对PROJECTION的控制&quot; (博客文章) ](https://clickhouse.com/blog/clickhouse-release-24-08#control-of-projections-during-merges)
 * [&quot;PROJECTION&quot; (指南) ](/zh/concepts/features/projections/projections#using-projections-to-speed-up-UK-price-paid)

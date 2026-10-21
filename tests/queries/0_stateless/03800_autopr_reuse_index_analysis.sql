@@ -6,6 +6,11 @@ SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=1, parallel_rep
 -- To avoid too slow test execution
 set remote_filesystem_read_method='threadpool', allow_prefetched_read_pool_for_remote_filesystem=1, filesystem_prefetch_step_marks=0, filesystem_prefetch_step_bytes='100Mi';
 
+-- `test.hits` lives on a `web` disk (S3) behind a local filesystem cache. With the randomized
+-- `enable_filesystem_cache=0` every query of this test downloads the whole table from S3 again, and when
+-- the S3 throughput drops the full scans become slow enough to be killed by `max_estimated_execution_time`.
+SET enable_filesystem_cache=1, read_from_filesystem_cache_if_exists_otherwise_bypass_cache=0;
+
 SET automatic_parallel_replicas_min_bytes_per_replica=0;
 
 SET use_query_condition_cache=0;
@@ -46,7 +51,8 @@ SELECT sum(length(URL)) FROM test.hits WHERE CounterID IN (SELECT a % 100000 FRO
 
 SELECT sum(length(URL)) FROM test.hits WHERE WatchID IN (SELECT a % 1000000 FROM t) FORMAT Null SETTINGS log_comment='3800_autopr_reuse_index_analysis_query_5';
 
--- For Global IN-s now we can execute subquery twice with automatic parallel replicas :(
+-- The probe plan is costed and usually discarded, so it no longer materializes the `GLOBAL IN`
+-- subquery. That leaves the same number of index analysis rounds as the non-global case above.
 SELECT sum(length(URL)) FROM test.hits WHERE WatchID GLOBAL IN (SELECT a % 1000000 FROM t) FORMAT Null SETTINGS log_comment='3800_autopr_reuse_index_analysis_query_6';
 
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;

@@ -2,7 +2,7 @@
 -- a logical error due to incorrect getSerializedValueSize in ColumnLowCardinality/ColumnUnique.
 -- The serialized size didn't account for the null flag byte, causing key deserialization corruption.
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 SET allow_suspicious_low_cardinality_types = 1;
 SET enable_analyzer = 1;
 

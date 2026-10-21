@@ -131,6 +131,18 @@ void expectTrailingPayloadIsRejectedAndAligned(std::string payload)
     EXPECT_EQ(marker, 'X');
 }
 
+class FailingReadBuffer : public ReadBuffer
+{
+public:
+    FailingReadBuffer() : ReadBuffer(nullptr, 0) {}
+
+private:
+    bool nextImpl() override
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Synthetic read failure");
+    }
+};
+
 }
 
 TEST(PostgreSQLProtocol, DropMessageRejectsLengthBelowFour)
@@ -156,6 +168,95 @@ TEST(PostgreSQLProtocol, DropMessageRejectsLengthBelowFour)
     WriteBufferFromOwnString out;
     Messaging::MessageTransport mt(&in, &out);
     EXPECT_NO_THROW(mt.dropMessage());
+}
+
+TEST(PostgreSQLProtocol, StartupMessageRejectsParametersExceedingDeclaredPayload)
+{
+    std::string bytes("user\0default\0", 13);
+    bytes.push_back('\0');
+
+    {
+        ReadBufferFromMemory in(bytes.data(), bytes.size());
+        Messaging::StartupMessage msg(static_cast<Int32>(bytes.size()));
+        EXPECT_NO_THROW(msg.deserialize(in));
+        EXPECT_EQ(msg.user, "default");
+    }
+
+    ReadBufferFromMemory in(bytes.data(), bytes.size());
+    try
+    {
+        Messaging::StartupMessage msg(static_cast<Int32>(bytes.size() - 1));
+        msg.deserialize(in);
+        FAIL() << "Expected malformed startup message to be rejected";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+    }
+    EXPECT_EQ(in.count(), bytes.size() - 1);
+}
+
+TEST(PostgreSQLProtocol, StartupMessageDoesNotReadPastDeclaredPayload)
+{
+    const std::string bytes("user\0default\0\0subsequent data", 29);
+
+    for (Int32 payload_size : {2, 7})
+    {
+        ReadBufferFromMemory in(bytes.data(), bytes.size());
+        try
+        {
+            Messaging::StartupMessage msg(payload_size);
+            msg.deserialize(in);
+            FAIL() << "Expected truncated startup message to be rejected";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+        }
+        EXPECT_EQ(in.count(), payload_size);
+    }
+}
+
+TEST(PostgreSQLProtocol, StartupMessageValidatesPayloadAndTerminator)
+{
+    /// Total startup message lengths from 0 through 8 leave no room for the required final zero.
+    for (Int32 payload_size = -8; payload_size <= 0; ++payload_size)
+    {
+        EXPECT_TRUE(throwsUnknownPacket("", [&](ReadBuffer & in)
+        {
+            Messaging::StartupMessage msg(payload_size);
+            msg.deserialize(in);
+        })) << "payload_size = " << payload_size;
+    }
+
+    {
+        const std::string bytes(1, '\0');
+        ReadBufferFromMemory in(bytes.data(), bytes.size());
+        Messaging::StartupMessage msg(static_cast<Int32>(bytes.size()));
+        EXPECT_NO_THROW(msg.deserialize(in));
+        EXPECT_EQ(in.count(), bytes.size());
+    }
+
+    EXPECT_TRUE(throwsUnknownPacket("x", [&](ReadBuffer & in)
+    {
+        Messaging::StartupMessage msg(1);
+        msg.deserialize(in);
+    }));
+}
+
+TEST(PostgreSQLProtocol, StartupMessagePreservesUnrelatedReadErrors)
+{
+    FailingReadBuffer in;
+    Messaging::StartupMessage msg(1);
+    try
+    {
+        msg.deserialize(in);
+        FAIL() << "Expected synthetic read failure";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
+    }
 }
 
 TEST(PostgreSQLProtocol, SASLResponseRejectsLengthBelowFour)
@@ -280,7 +381,10 @@ TEST(PostgreSQLProtocol, BindHandlesParameterLength)
         Messaging::BindQuery msg;
         EXPECT_NO_THROW(msg.deserialize(in));
         ASSERT_EQ(msg.parameters.size(), 1u);
-        EXPECT_EQ(msg.parameters[0], "hi");
+        /// A value is present, and the four-character string `NULL` would be an ordinary value too:
+        /// protocol NULL is `std::nullopt`, never a sentinel string.
+        ASSERT_TRUE(msg.parameters[0].has_value());
+        EXPECT_EQ(*msg.parameters[0], "hi");
     }
 
     /// A parameter declaring more bytes than the frame carries is rejected on the frame boundary,
@@ -934,11 +1038,14 @@ TEST(PostgreSQLProtocol, BindSnapshotsStatementForPortalContract)
         manager.attachBindQuery(std::move(msg));
     };
 
-    /// Redefining the prepared statement after Bind does not affect the portal.
+    /// Redefining the prepared statement after Bind does not affect the portal. PostgreSQL requires a
+    /// named statement to be closed before another one is parsed under the same name (a second `Parse`
+    /// is `42P05`), so the redefinition goes through the `Close` that a client has to send first.
     {
         PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
         addStatement(manager, "s", "SELECT 1");
         bind(manager, "s");
+        manager.tryDeleteStatement("s"); /// Close('S', 's')
         addStatement(manager, "s", "SELECT 2"); /// Parse s AS SELECT 2
         EXPECT_EQ(manager.getStatmentFromBind(), "SELECT 1");
     }

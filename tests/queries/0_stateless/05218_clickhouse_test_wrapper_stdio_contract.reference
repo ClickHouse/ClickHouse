@@ -1,0 +1,7 @@
+per-test files exist before the wrapper starts: yes OK
+runner reports such a test instead of failing: yes OK
+earlier attempt's stdout is cleared: yes OK
+earlier attempt's stderr is cleared: yes OK
+wrapper diagnostic reaches the collected stderr: yes OK
+wrapper stdout is not the runner's own: yes OK
+wrapper stderr lands after the test's own: yes OK

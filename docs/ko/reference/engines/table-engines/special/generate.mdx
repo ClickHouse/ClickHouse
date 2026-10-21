@@ -16,24 +16,28 @@ GenerateRandom 테이블 엔진은 지정된 테이블 스키마에 맞는 무�
 * 테스트에서 재현 가능한 대규모 테이블을 채우는 데 사용합니다.
 * 퍼징 테스트용 무작위 입력을 생성합니다.
 
-<div id="usage-in-clickhouse-server">
-  ## ClickHouse 서버에서 사용
-</div>
+## ClickHouse 서버에서 사용하기 {#usage-in-clickhouse-server}
 
 ```sql
 ENGINE = GenerateRandom([random_seed [,max_string_length [,max_array_length]]])
+[SETTINGS null_ratio = ..., max_json_depth = ..., max_json_keys_per_object = ...]
 ```
 
-`max_array_length` 및 `max_string_length` 매개변수는 생성된 데이터에서 각각 모든
-배열 또는 맵 컬럼, 그리고 문자열의 최대 길이를 지정합니다.
+`max_array_length` 및 `max_string_length` 매개변수는 생성되는 데이터에서 모든
+배열 또는 맵 컬럼의 최대 길이와 문자열의 최대 길이를 각각 지정합니다.
+
+`SETTINGS` 절은 `Nullable`, `Variant`, `Dynamic`, `JSON` 값의 생성 방식을 제어합니다.
+`null_ratio`(기본값 `0.0625`)는 값이 `NULL`이 될 확률이자 행에서 `JSON` 키가 누락될
+기본 확률입니다. 단, 일부 희소 키는 이보다 몇 배 더 자주 누락됩니다. `max_json_depth`(기본값 `3`)는 생성되는 `JSON` 객체의 최대 중첩 깊이를 제한하며,
+`max_json_keys_per_object`(기본값 `8`)는 객체의 한 수준에서 생성되는 키의 최대 개수를 제한합니다. [`generateRandom`](/ko/reference/functions/table-functions/generate) 테이블 함수에서도
+동일한 설정을 사용할 수 있습니다.
 
 Generate 테이블 엔진은 `SELECT` 쿼리만 지원합니다.
 
-`AggregateFunction`을 제외하고, 테이블에 저장할 수 있는 모든 [DataTypes](/ko/reference/data-types/index)를 지원합니다.
+이 엔진은 `AggregateFunction`, `Interval`, `Nothing`, `QBit`를 제외하고
+테이블에 저장할 수 있는 모든 [DataTypes](/ko/reference/data-types/index)를 지원합니다.
 
-<div id="example">
-  ## 예시
-</div>
+## 예시 {#example}
 
 **1.** `generate_engine_table` 테이블을 생성합니다:
 
@@ -55,9 +59,7 @@ SELECT * FROM generate_engine_table LIMIT 3
 └──────┴────────────┘
 ```
 
-<div id="details-of-implementation">
-  ## 구현 세부 정보
-</div>
+## 구현 세부 정보 {#details-of-implementation}
 
 * 지원되지 않는 항목:
   * `ALTER`

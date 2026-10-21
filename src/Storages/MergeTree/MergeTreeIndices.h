@@ -264,7 +264,7 @@ struct IMergeTreeIndex
     /// Reimplement if you want new index format.
     ///
     /// NOTE: In case getSubstreams() is reimplemented,
-    /// getPhysicalFormat() should be reimplemented too,
+    /// `getPhysicalFormat` and `getPotentialSubstreams` should be reimplemented too,
     /// and check all previous extensions for substreams too
     /// (to avoid breaking backward compatibility).
     virtual MergeTreeIndexSubstreams getSubstreams() const { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}; }
@@ -272,8 +272,9 @@ struct IMergeTreeIndex
     /// Two distinct questions are asked about a part's copy of an index, and they must not be conflated:
     ///
     /// - getPhysicalFormat(): what is ON DISK? Discovers the substreams and format version actually
-    ///   present in the part, including legacy layouts. Callers that manipulate the files or their
-    ///   cache entries (e.g. evicting index marks) need this, even for an index we refuse to read.
+    ///   present in the part, including legacy layouts. Callers that manipulate the files need this,
+    ///   even for an index we refuse to read. It probes the part's storage, so it must not be called
+    ///   while destroying a part: use `getPotentialSubstreams` there.
     /// - getDeserializedFormat(): may this part's copy of the index be DESERIALIZED? Physical
     ///   discovery plus usability checks. Every read path must use this one.
     ///
@@ -285,8 +286,7 @@ struct IMergeTreeIndex
     /// @part's storage is consulted so that packed substreams (whose virtual filenames are not in
     /// checksums.txt) can still be discovered via the skp_idx.packed overlay.
     ///
-    /// The physical question needs only the checksums and the storage, so it is answered without a part:
-    /// it is also asked from ~IMergeTreeDataPart, where the part can no longer be shared.
+    /// The physical question needs only the checksums and the storage, so it is answered without a part.
     virtual MergeTreeIndexFormat getPhysicalFormat(
         const MergeTreeDataPartChecksums & checksums,
         const IDataPartStorage & storage,
@@ -315,10 +315,15 @@ struct IMergeTreeIndex
     /// `getDeserializedFormat`, which returns only the preferred readable layout and reports
     /// nothing once a required system column is invalidated). Mutation cleanup uses this so a
     /// stale legacy substream on a mixed-format part is skipped/stripped, not hardlinked forward.
-    virtual MergeTreeIndexSubstreams getAllSubstreamsInPart(
+    /// Probes `getPotentialSubstreams`, so reimplement that one to cover another version.
+    MergeTreeIndexSubstreams getAllSubstreamsInPart(
         const MergeTreeDataPartChecksums & checksums,
         const std::string & relative_path_prefix,
         const IDataPartStorage * storage) const;
+
+    /// Superset: every substream any version of this index could have written, whatever a given
+    /// part holds. Takes no part and must do no I/O, so it is safe during part destruction.
+    virtual MergeTreeIndexSubstreams getPotentialSubstreams() const { return getSubstreams(); }
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 
@@ -351,6 +356,11 @@ struct IMergeTreeIndex
     /// tables that still reference a removed index type stay attachable. Merge and mutation must
     /// never schedule it for recalculation, otherwise those operations get wedged.
     virtual bool isInert() const { return false; }
+
+    /// False when the index data usually does not compress (e.g. bloom filter bits), so a generic codec only
+    /// slows down reading it. The blocks of such an index that the part's codec does not compress well
+    /// are written with codec `NONE`.
+    virtual bool isCompressible() const { return true; }
 
     Names getColumnsRequiredForIndexCalc() const;
     const NamesAndTypesList & getColumnsWithTypesRequiredForIndexCalc() const;
@@ -421,6 +431,11 @@ void setIndexValidator(const IndexDescription & index, bool attach, const MergeT
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+/// Every granule of a text bloom filter index eagerly allocates one filter per indexed column, so the total size of the filters
+/// (not only the size of a single filter) is limited. The check is done only for indexes being declared or changed, not on `ATTACH`
+/// and not for indexes inherited unchanged from `old_index`, so that tables created before the check still load and can be altered.
+/// Does nothing for other index types.
+void bloomFilterIndexTextCheckTotalSize(const IndexDescription & index, const IndexDescription * old_index);
 
 MergeTreeIndexPtr bloomFilterIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void bloomFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
@@ -440,8 +455,9 @@ String getIndexFileName(const String & index_name, bool escape_filename);
 
 /// Check if an index substream file exists for the part. Returns true if the file is listed
 /// directly in checksums.txt (original or hashed name) OR if it's a virtual file inside
-/// skp_idx.packed (resolved through the storage overlay). Passing a null @storage skips
-/// the archive check, which is fine for callers that only see standalone per-file layouts.
+/// skp_idx.packed. Standalone files are always in checksums, so the archive check looks only at
+/// the archive index of @storage and never asks the disk about the file. Passing a null @storage
+/// skips the archive check, which is fine for callers that only see standalone per-file layouts.
 bool indexFileExistsInChecksums(
     const MergeTreeDataPartChecksums & checksums,
     const std::string & path_prefix,

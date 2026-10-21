@@ -1,0 +1,36 @@
+<test>
+    <!--
+        Native-format write of AggregateFunction state columns, through
+        `SerializationAggregateFunction::serializeBinaryBulk` -> `IAggregateFunction::serializeBatch`.
+        All three queries truncate the same file so the test leaves one behind, not three.
+    -->
+
+    <settings>
+        <engine_file_truncate_on_insert>1</engine_file_truncate_on_insert>
+    </settings>
+
+    <create_query>
+        CREATE TABLE agg_state_serialization
+        (
+            s_sum AggregateFunction(sum, Int64),
+            s_min AggregateFunction(min, Int64),
+            s_any AggregateFunction(any, Nullable(Int8))
+        )
+        ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <fill_query>
+        INSERT INTO agg_state_serialization
+        SELECT
+            initializeAggregation('sumState', toInt64(number)),
+            initializeAggregation('minState', toInt64(number)),
+            initializeAggregation('anyState', toNullable(toInt8(number)))
+        FROM numbers_mt(5000000)
+    </fill_query>
+
+    <query>INSERT INTO FUNCTION file('agg_state.native', 'Native') SELECT s_sum FROM agg_state_serialization SETTINGS max_threads = 1</query>
+    <query>INSERT INTO FUNCTION file('agg_state.native', 'Native') SELECT s_min FROM agg_state_serialization SETTINGS max_threads = 1</query>
+    <query>INSERT INTO FUNCTION file('agg_state.native', 'Native') SELECT s_any FROM agg_state_serialization SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS agg_state_serialization</drop_query>
+</test>

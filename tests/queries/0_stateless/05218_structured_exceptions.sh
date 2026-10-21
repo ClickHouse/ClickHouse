@@ -268,7 +268,7 @@ print('TCP new exception fields: OK')
 # must receive the legacy layout when the exception replaces `Hello`.
 with socket.create_connection((os.environ['CLICKHOUSE_HOST'], int(os.environ['CLICKHOUSE_PORT_TCP'])), timeout=30) as sock:
     sock.sendall(b'\0' + string('exception authentication test') + varuint(26) + varuint(9)
-                 + varuint(54493) + string('') + string('nonexistent_' + uuid.uuid4().hex) + string(''))
+                 + varuint(54495) + string('') + string('nonexistent_' + uuid.uuid4().hex) + string(''))
     assert readvar(sock) == 2
     assert struct.unpack('<i', readn(sock, 4))[0] != 0
     for _ in range(3):

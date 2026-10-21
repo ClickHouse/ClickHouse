@@ -1,21 +1,23 @@
 #include <Databases/DataLake/UnityCatalog.h>
 #include <Interpreters/StorageID.h>
+#include <Core/UUID.h>
 
 #if USE_PARQUET
 
-#include <sstream>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <Poco/URI.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Parser.h>
 #include <Common/checkStackSize.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <sstream>
 #include <Core/NamesAndTypes.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Databases/DataLake/StorageCredentials.h>
+#include <Databases/DataLake/UnityCatalogUtils.h>
 #include <fmt/ranges.h>
 
 namespace DB::ErrorCodes
@@ -77,32 +79,13 @@ static UnityCatalogFullSchemaName parseFullSchemaName(const std::string & full_n
     return UnityCatalogFullSchemaName{.catalog_name = catalog_name, .schema_name = schema};
 }
 
-/// Delta primitive type name (see `DeltaLakeMetadata::getSimpleTypeByName`) -> Unity `ColumnTypeName`.
-static std::string deltaPrimitiveToUnityTypeName(const std::string & delta_type)
-{
-    if (delta_type == "boolean") return "BOOLEAN";
-    if (delta_type == "byte")    return "BYTE";
-    if (delta_type == "short")   return "SHORT";
-    if (delta_type == "integer") return "INT";
-    if (delta_type == "long")    return "LONG";
-    if (delta_type == "float")   return "FLOAT";
-    if (delta_type == "double")  return "DOUBLE";
-    if (delta_type == "date")    return "DATE";
-    if (delta_type == "timestamp")     return "TIMESTAMP";
-    if (delta_type == "timestamp_ntz") return "TIMESTAMP_NTZ";
-    if (delta_type == "string")  return "STRING";
-    if (delta_type == "binary")  return "BINARY";
-    if (delta_type.starts_with("decimal(")) return "DECIMAL";
-    throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Cannot map Delta type `{}` to a Unity column type", delta_type);
-}
-
 std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::getJSONRequest(const std::string & route, const Poco::URI::QueryParameters & params) const
 {
     const auto & context = getContext();
     return makeHTTPRequestAndReadJSON(base_url / route, context, bearer_token, params);
 }
 
-std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::postJSONRequest(const std::string & route, std::function<void(std::ostream &)> out_stream_callaback) const
+std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::postJSONRequest(const std::string & route, std::function<void(DB::WriteBuffer &)> out_stream_callaback) const
 {
     const auto & context = getContext();
     /// Some Unity servers reject a POST whose body has no explicit `Content-Type: application/json`
@@ -157,13 +140,17 @@ void UnityCatalog::getTableMetadata(
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No response from unity catalog");
 }
 
-Poco::JSON::Object::Ptr UnityCatalog::requestReadCredentials(const String & table_id) const
+Poco::JSON::Object::Ptr UnityCatalog::requestCredentials(const String & table_id, const String & operation) const
 {
     Poco::JSON::Object request_body;
     request_body.set("table_id", table_id);
-    request_body.set("operation", "READ");
+    request_body.set("operation", operation);
 
-    auto callback = [&request_body] (std::ostream & os) { request_body.stringify(os); };
+    std::ostringstream request_body_str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    request_body_str.exceptions(std::ios::failbit);
+    request_body.stringify(request_body_str);
+
+    auto callback = [body = request_body_str.str()](DB::WriteBuffer & out) { DB::writeString(body, out); };
     auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, callback);
     return json.extract<Poco::JSON::Object::Ptr>();
 }
@@ -197,7 +184,7 @@ void UnityCatalog::getCredentials(const String & table_id, TableMetadata & metad
     if (storage_type != StorageType::S3 && storage_type != StorageType::Azure)
         return;
 
-    auto response = requestReadCredentials(table_id);
+    auto response = requestCredentials(table_id, "READ");
 
     std::shared_ptr<IStorageCredentials> creds;
     switch (storage_type)
@@ -346,87 +333,24 @@ void UnityCatalog::createTable(
     const String & table_location,
     Poco::JSON::Object::Ptr metadata_content) const
 {
-    /// Build the Unity `ColumnInfo` array from the Delta schema fields, with `type_json` matching what the read path (`tryGetTableMetadata`) parses back.
     auto fields = metadata_content->getArray("fields");
     if (!fields)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Delta schema fields are missing for Unity createTable");
 
-    Poco::JSON::Array::Ptr columns = new Poco::JSON::Array;
-    for (size_t i = 0; i < fields->size(); ++i)
-    {
-        auto field = fields->getObject(static_cast<int>(i));
-        const String name = field->getValue<String>("name");
-        const bool nullable = field->getValue<bool>("nullable");
-        auto type_var = field->get("type");
-
-        Poco::JSON::Object::Ptr column = new Poco::JSON::Object;
-        column->set("name", name);
-        column->set("nullable", nullable);
-        column->set("position", static_cast<int>(i));
-
-        int precision = 0;
-        int scale = 0;
-        String type_name;
-        String type_text;
-        String type_json;
-
-        if (type_var.isString())
-        {
-            const String & delta_type = type_var.extract<String>();
-            type_text = delta_type;
-            type_json = '"' + delta_type + '"';
-            type_name = deltaPrimitiveToUnityTypeName(delta_type);
-            if (type_name == "DECIMAL")
-            {
-                const auto decimal_type = DB::DeltaLakeMetadata::getSimpleTypeByName(delta_type);
-                precision = static_cast<int>(DB::getDecimalPrecision(*decimal_type));
-                scale = static_cast<int>(DB::getDecimalScale(*decimal_type));
-            }
-        }
-        else
-        {
-            const auto & descriptor = type_var.extract<Poco::JSON::Object::Ptr>();
-            const String kind = descriptor->getValue<String>("type");
-            if (kind == "array")       type_name = "ARRAY";
-            else if (kind == "map")    type_name = "MAP";
-            else if (kind == "struct") type_name = "STRUCT";
-            else
-                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unexpected complex Delta type `{}`", kind);
-            type_text = kind;
-
-            /// Wrap so the read path's `getFieldType(parsed, "type")` sees the descriptor under `type`.
-            Poco::JSON::Object::Ptr wrapper = new Poco::JSON::Object;
-            wrapper->set("type", descriptor);
-            std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            wrapper->stringify(oss);
-            type_json = oss.str();
-        }
-
-        column->set("type_name", type_name);
-        column->set("type_text", type_text);
-        column->set("type_json", type_json);
-        column->set("type_precision", precision);
-        column->set("type_scale", scale);
-        columns->add(column);
-    }
-
-    Poco::JSON::Object::Ptr body = new Poco::JSON::Object;
-    body->set("name", table_name);
-    body->set("catalog_name", warehouse);
-    body->set("schema_name", namespace_name);
-    body->set("table_type", "EXTERNAL");
-    body->set("data_source_format", "DELTA");
-    body->set("storage_location", table_location);
-    body->set("columns", columns);
-    body->set("properties", Poco::JSON::Object::Ptr(new Poco::JSON::Object));
+    auto body = buildUnityCreateTableBody(
+        warehouse, namespace_name, table_name, table_location, buildUnityColumnsFromDeltaSchema(fields));
 
     LOG_DEBUG(log, "Creating table {}.{}.{} at `{}` in Unity catalog", warehouse, namespace_name, table_name, table_location);
+
+    std::ostringstream body_str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    body_str.exceptions(std::ios::failbit);
+    body->stringify(body_str);
 
     try
     {
         auto response = postJSONRequest(
             TABLES_ENDPOINT,
-            [&](std::ostream & os) { body->stringify(os); });
+            [body_serialized = body_str.str()](DB::WriteBuffer & out) { DB::writeString(body_serialized, out); });
         LOG_TEST(log, "Unity createTable response: {}", response.second);
     }
     catch (...)
@@ -471,6 +395,31 @@ bool UnityCatalog::existsTable(const std::string & schema_name, const std::strin
         e.addMessage("while parsing JSON: " + json_str);
         throw;
     }
+}
+
+std::optional<std::string> UnityCatalog::getDefaultTableLocation(
+    const std::string & namespace_name,
+    const std::string & table_name) const
+{
+    checkNamespaceExists(namespace_name);
+
+    auto [json, json_str] = getJSONRequest(std::filesystem::path{SCHEMAS_ENDPOINT} / (warehouse + "." + namespace_name));
+    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+
+    /// Only Unity on Databricks reports a location for a schema; the open-source server does not,
+    /// and then the table engine arguments have to name the location explicitly.
+    if (!hasValueAndItsNotNone("storage_location", object))
+    {
+        LOG_DEBUG(log, "Schema {}.{} has no storage location", warehouse, namespace_name);
+        return std::nullopt;
+    }
+
+    return std::string(std::filesystem::path(object->get("storage_location").extract<String>()) / table_name);
+}
+
+void UnityCatalog::createNamespaceIfNotExists(const String & namespace_name) const
+{
+    checkNamespaceExists(namespace_name);
 }
 
 void UnityCatalog::checkNamespaceExists(const std::string & schema_name) const
@@ -637,20 +586,38 @@ UnityCatalog::UnityCatalog(
 }
 
 /// getCredentialsConfigurationCallback method is supported only for S3 storage
-ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsConfigurationCallback(const DB::StorageID & table_id)
+ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsConfigurationCallback(
+    const DB::StorageID & table_id, const TableMetadata & table_metadata)
 {
-    if (!table_id.hasUUID())
+    const auto table_uuid = table_metadata.getTableUUID();
+    if (!table_uuid)
         throw DB::Exception(
             DB::ErrorCodes::BAD_ARGUMENTS,
-            "Cannot build a Unity credentials refresh callback for `{}`: StorageID has no UUID",
+            "Cannot build a Unity credentials refresh callback for `{}`: the catalog returned no table_id",
             table_id.getNameForLogs());
 
-    const String unity_table_id = toString(table_id.uuid);
+    return getCredentialsCallbackForOperation(*table_uuid, "READ");
+}
 
-    return [this, unity_table_id] () -> std::shared_ptr<IStorageCredentials>    {
-        LOG_DEBUG(log, "Update credentials in the catalog");
+/// `StorageID::uuid` of a `DataLakeCatalog` table is the `table_id` returned by Unity.
+ICatalog::CredentialsRefreshCallback UnityCatalog::getWriteCredentialsConfigurationCallback(const DB::StorageID & table_id)
+{
+    if (table_id.uuid == DB::UUIDHelpers::Nil)
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "Cannot build a Unity credentials refresh callback for `{}`: the table has no UUID",
+            table_id.getNameForLogs());
 
-        return parseS3Credentials(requestReadCredentials(unity_table_id));
+    return getCredentialsCallbackForOperation(DB::toString(table_id.uuid), "READ_WRITE");
+}
+
+ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsCallbackForOperation(const String & unity_table_id, const String & operation)
+{
+    return [this, unity_table_id, operation] () -> std::shared_ptr<IStorageCredentials>
+    {
+        LOG_DEBUG(log, "Update {} credentials in the catalog", operation);
+
+        return parseS3Credentials(requestCredentials(unity_table_id, operation));
     };
 }
 
